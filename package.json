@@ -1,0 +1,23 @@
+{
+  "name": "envoy-mesh",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "node:dev": "npm run dev -w @envoymesh/node",
+    "desktop:dev": "npm run dev -w @envoymesh/desktop",
+    "desktop:build": "npm run build -w @envoymesh/desktop",
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  }
+}

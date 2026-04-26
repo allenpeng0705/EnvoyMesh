@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../../packages/protocol" },
+    { "path": "../../packages/identity" },
+    { "path": "../../packages/bonds" },
+    { "path": "../../packages/network" },
+    { "path": "../../packages/vault" },
+    { "path": "../../packages/local-store" }
+  ]
+}

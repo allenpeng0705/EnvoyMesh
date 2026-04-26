@@ -1,0 +1,26 @@
+{
+  "name": "@envoymesh/node",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "envoy-node": "./dist/src/index.js",
+    "envoyctl": "./dist/src/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "cli": "tsx src/cli.ts",
+    "connectivity:smoke": "tsx src/connectivity-smoke.ts"
+  },
+  "dependencies": {
+    "@envoymesh/bonds": "0.1.0",
+    "@envoymesh/identity": "0.1.0",
+    "@envoymesh/local-store": "0.1.0",
+    "@envoymesh/protocol": "0.1.0",
+    "@envoymesh/network": "0.1.0",
+    "@envoymesh/vault": "0.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  }
+}

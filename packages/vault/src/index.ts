@@ -1,0 +1,318 @@
+import { createHash, randomUUID } from "node:crypto";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { basename, extname, relative, resolve, sep } from "node:path";
+
+export const DEFAULT_SHARED_VAULT_DIR = "shared_vault";
+export const SUPPORTED_VAULT_EXTENSIONS = [".txt", ".md", ".json"] as const;
+
+export type SupportedVaultExtension = (typeof SUPPORTED_VAULT_EXTENSIONS)[number];
+
+export interface VaultDocumentMetadata {
+  documentId: string;
+  relativePath: string;
+  extension: SupportedVaultExtension;
+  title: string;
+  byteLength: number;
+  contentHash: string;
+  updatedAt: string;
+}
+
+export interface VaultChunk {
+  chunkId: string;
+  documentId: string;
+  relativePath: string;
+  index: number;
+  text: string;
+}
+
+export interface VaultIndex {
+  rootDir: string;
+  documents: VaultDocumentMetadata[];
+  chunks: VaultChunk[];
+}
+
+export interface BuildVaultIndexOptions {
+  rootDir: string;
+  maxChunkChars?: number;
+}
+
+export interface VaultSearchResult {
+  chunk: VaultChunk;
+  document: VaultDocumentMetadata;
+  score: number;
+  matches: string[];
+}
+
+export interface VaultSearchOptions {
+  limit?: number;
+}
+
+export type VaultAccessOperation = "index" | "search" | "read_metadata";
+export type VaultAccessOutcome = "allow" | "deny";
+
+export interface VaultAccessAuditEvent {
+  version: "0.1";
+  eventId: string;
+  operation: VaultAccessOperation;
+  outcome: VaultAccessOutcome;
+  createdAt: string;
+  query?: string;
+  requesterPeerId?: string;
+  requesterOwnerId?: string;
+  reason?: string;
+  resultCount: number;
+  documentIds: string[];
+  relativePaths: string[];
+}
+
+export interface CreateVaultAccessAuditEventInput {
+  operation: VaultAccessOperation;
+  outcome: VaultAccessOutcome;
+  query?: string;
+  requesterPeerId?: string;
+  requesterOwnerId?: string;
+  reason?: string;
+  results?: VaultSearchResult[];
+  createdAt?: string;
+  eventId?: string;
+}
+
+export interface AuditedVaultSearchResult {
+  results: VaultSearchResult[];
+  auditEvent: VaultAccessAuditEvent;
+}
+
+export interface AuditedVaultSearchOptions extends VaultSearchOptions {
+  requesterPeerId?: string;
+  requesterOwnerId?: string;
+  createdAt?: string;
+  eventId?: string;
+}
+
+const defaultMaxChunkChars = 800;
+
+export async function buildVaultIndex(options: BuildVaultIndexOptions): Promise<VaultIndex> {
+  const rootDir = resolve(options.rootDir);
+  const filePaths = await listSupportedVaultFiles(rootDir);
+  const documents: VaultDocumentMetadata[] = [];
+  const chunks: VaultChunk[] = [];
+
+  for (const filePath of filePaths) {
+    assertPathInsideVault(rootDir, filePath);
+
+    const fileStat = await stat(filePath);
+    const content = await readFile(filePath, "utf8");
+    const relativePath = toVaultRelativePath(rootDir, filePath);
+    const extension = extname(filePath) as SupportedVaultExtension;
+    const documentId = createDocumentId(relativePath, content);
+    const metadata: VaultDocumentMetadata = {
+      documentId,
+      relativePath,
+      extension,
+      title: titleFromRelativePath(relativePath),
+      byteLength: Buffer.byteLength(content, "utf8"),
+      contentHash: hashContent(content),
+      updatedAt: fileStat.mtime.toISOString(),
+    };
+
+    documents.push(metadata);
+    chunks.push(...chunkDocument(metadata, content, options.maxChunkChars ?? defaultMaxChunkChars));
+  }
+
+  return {
+    rootDir,
+    documents,
+    chunks,
+  };
+}
+
+export async function listSupportedVaultFiles(rootDir: string): Promise<string[]> {
+  const absoluteRoot = resolve(rootDir);
+  const entries = await walkVaultDirectory(absoluteRoot);
+
+  return entries
+    .filter((filePath) => isSupportedVaultFile(filePath))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+export function isSupportedVaultFile(filePath: string): boolean {
+  return SUPPORTED_VAULT_EXTENSIONS.includes(extname(filePath) as SupportedVaultExtension);
+}
+
+export function assertPathInsideVault(rootDir: string, candidatePath: string): void {
+  const absoluteRoot = resolve(rootDir);
+  const absoluteCandidate = resolve(candidatePath);
+  const relativePath = relative(absoluteRoot, absoluteCandidate);
+
+  if (
+    relativePath === "" ||
+    relativePath.startsWith("..") ||
+    relativePath.includes(`..${sep}`) ||
+    absoluteCandidate === absoluteRoot
+  ) {
+    throw new Error("Path is outside the shared vault root");
+  }
+}
+
+export function chunkDocument(
+  metadata: VaultDocumentMetadata,
+  content: string,
+  maxChunkChars = defaultMaxChunkChars,
+): VaultChunk[] {
+  const normalized = content.replace(/\s+/g, " ").trim();
+
+  if (!normalized) {
+    return [];
+  }
+
+  const chunks: VaultChunk[] = [];
+  for (let offset = 0; offset < normalized.length; offset += maxChunkChars) {
+    const text = normalized.slice(offset, offset + maxChunkChars);
+    const index = chunks.length;
+    chunks.push({
+      chunkId: `${metadata.documentId}:chunk:${index}`,
+      documentId: metadata.documentId,
+      relativePath: metadata.relativePath,
+      index,
+      text,
+    });
+  }
+
+  return chunks;
+}
+
+export function searchVault(
+  index: VaultIndex,
+  query: string,
+  options: VaultSearchOptions = {},
+): VaultSearchResult[] {
+  const terms = tokenize(query);
+  if (terms.length === 0) {
+    return [];
+  }
+
+  const documentsById = new Map(index.documents.map((document) => [document.documentId, document]));
+  const results = index.chunks
+    .map((chunk) => scoreChunk(chunk, terms))
+    .filter((result) => result.score > 0)
+    .map((result) => {
+      const document = documentsById.get(result.chunk.documentId);
+      if (!document) {
+        throw new Error(`Missing document metadata for ${result.chunk.documentId}`);
+      }
+
+      return {
+        ...result,
+        document,
+      };
+    })
+    .sort((left, right) => right.score - left.score || left.chunk.relativePath.localeCompare(right.chunk.relativePath));
+
+  return results.slice(0, options.limit ?? 10);
+}
+
+export function searchVaultWithAudit(
+  index: VaultIndex,
+  query: string,
+  options: AuditedVaultSearchOptions = {},
+): AuditedVaultSearchResult {
+  const results = searchVault(index, query, options);
+
+  return {
+    results,
+    auditEvent: createVaultAccessAuditEvent({
+      operation: "search",
+      outcome: "allow",
+      query,
+      requesterPeerId: options.requesterPeerId,
+      requesterOwnerId: options.requesterOwnerId,
+      results,
+      createdAt: options.createdAt,
+      eventId: options.eventId,
+    }),
+  };
+}
+
+export function createVaultAccessAuditEvent(
+  input: CreateVaultAccessAuditEventInput,
+): VaultAccessAuditEvent {
+  const results = input.results ?? [];
+
+  return {
+    version: "0.1",
+    eventId: input.eventId ?? `vault_audit_${randomUUID()}`,
+    operation: input.operation,
+    outcome: input.outcome,
+    createdAt: input.createdAt ?? new Date().toISOString(),
+    query: input.query,
+    requesterPeerId: input.requesterPeerId,
+    requesterOwnerId: input.requesterOwnerId,
+    reason: input.reason,
+    resultCount: results.length,
+    documentIds: [...new Set(results.map((result) => result.document.documentId))],
+    relativePaths: [...new Set(results.map((result) => result.document.relativePath))],
+  };
+}
+
+export function createDeniedVaultAccessAuditEvent(
+  input: Omit<CreateVaultAccessAuditEventInput, "outcome" | "results">,
+): VaultAccessAuditEvent {
+  return createVaultAccessAuditEvent({
+    ...input,
+    outcome: "deny",
+    results: [],
+  });
+}
+
+async function walkVaultDirectory(rootDir: string): Promise<string[]> {
+  const entries = await readdir(rootDir, { withFileTypes: true });
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    const entryPath = resolve(rootDir, entry.name);
+
+    if (entry.isDirectory()) {
+      files.push(...(await walkVaultDirectory(entryPath)));
+    } else if (entry.isFile()) {
+      files.push(entryPath);
+    }
+  }
+
+  return files;
+}
+
+function scoreChunk(chunk: VaultChunk, terms: string[]): Omit<VaultSearchResult, "document"> {
+  const lowerText = chunk.text.toLowerCase();
+  const matches = terms.filter((term) => lowerText.includes(term));
+  const uniqueMatches = [...new Set(matches)];
+
+  return {
+    chunk,
+    score: uniqueMatches.length,
+    matches: uniqueMatches,
+  };
+}
+
+function tokenize(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/[^a-z0-9_-]+/u)
+    .map((term) => term.trim())
+    .filter(Boolean);
+}
+
+function toVaultRelativePath(rootDir: string, filePath: string): string {
+  return relative(rootDir, filePath).split(sep).join("/");
+}
+
+function createDocumentId(relativePath: string, content: string): string {
+  return `doc_${hashContent(`${relativePath}\n${content}`).slice(0, 24)}`;
+}
+
+function hashContent(content: string): string {
+  return createHash("sha256").update(content).digest("base64url");
+}
+
+function titleFromRelativePath(relativePath: string): string {
+  return basename(relativePath, extname(relativePath));
+}

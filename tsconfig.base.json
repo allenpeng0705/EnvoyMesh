@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "paths": {
+      "@envoymesh/protocol": ["./packages/protocol/src/index.ts"],
+      "@envoymesh/identity": ["./packages/identity/src/index.ts"],
+      "@envoymesh/bonds": ["./packages/bonds/src/index.ts"],
+      "@envoymesh/network": ["./packages/network/src/index.ts"],
+      "@envoymesh/vault": ["./packages/vault/src/index.ts"],
+      "@envoymesh/models": ["./packages/models/src/index.ts"],
+      "@envoymesh/local-store": ["./packages/local-store/src/index.ts"]
+    },
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "skipLibCheck": true
+  }
+}

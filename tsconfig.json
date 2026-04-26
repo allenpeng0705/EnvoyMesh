@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/protocol" },
+    { "path": "./packages/identity" },
+    { "path": "./packages/bonds" },
+    { "path": "./packages/network" },
+    { "path": "./packages/vault" },
+    { "path": "./packages/models" },
+    { "path": "./packages/local-store" },
+    { "path": "./apps/node" },
+    { "path": "./apps/desktop" }
+  ]
+}
