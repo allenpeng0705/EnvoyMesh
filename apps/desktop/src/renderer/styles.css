@@ -194,6 +194,33 @@ small {
   margin-bottom: 12px;
 }
 
+.audit-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.audit-toolbar input[type="text"] {
+  flex: 1;
+  min-width: 220px;
+}
+
+.checkbox {
+  align-items: center;
+  color: #64728a;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.checkbox input {
+  width: auto;
+}
+
 @media (max-width: 980px) {
   .cards,
   .two {

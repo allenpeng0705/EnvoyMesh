@@ -6,6 +6,9 @@ import {
 } from "@envoymesh/identity";
 import type { NodeProfile } from "@envoymesh/local-store";
 import {
+  createBondRequestPayload,
+  createDiscoveryRequestPayload,
+  createKnowledgeQueryPayload,
   createReport,
   createReportCreatePayload,
   createTaskCancelPayload,
@@ -31,13 +34,69 @@ export function buildOutboundCliEnvelopes(
 ): OutboundCliEnvelope[] {
   const envelopes: OutboundCliEnvelope[] = [];
 
+  if (args.bondRequestTarget) {
+    envelopes.push({
+      target: args.bondRequestTarget,
+      label: "bond.request",
+      envelope: signedEnvelope(
+        args,
+        profile,
+        args.bondRequestTarget,
+        "bond.request",
+        createBondRequestPayload({
+          requesterOwnerId: profile.owner.ownerId,
+          message: args.bondMessage,
+          proofOfContext: args.bondProof,
+          requestedLevel: args.bondRequestedLevel,
+        }),
+      ),
+    });
+  }
+
+  if (args.discoveryRequestTarget) {
+    envelopes.push({
+      target: args.discoveryRequestTarget,
+      label: "discovery.request",
+      envelope: signedEnvelope(
+        args,
+        profile,
+        args.discoveryRequestTarget,
+        "discovery.request",
+        createDiscoveryRequestPayload({
+          requesterOwnerId: profile.owner.ownerId,
+          requestedTagHashes: args.discoveryTagHashes,
+          requestedCapabilities: args.discoveryCapabilities,
+          maxResults: args.discoveryMaxResults,
+        }),
+      ),
+    });
+  }
+
+  if (args.knowledgeQueryTarget) {
+    const queryText = args.knowledgeQueryText ?? "mock knowledge query";
+    envelopes.push({
+      target: args.knowledgeQueryTarget,
+      label: "knowledge.query",
+      envelope: signedEnvelope(
+        args,
+        profile,
+        args.knowledgeQueryTarget,
+        "knowledge.query",
+        createKnowledgeQueryPayload({
+          query: queryText,
+          requestedSensitivity: args.knowledgeQuerySensitivity,
+        }),
+      ),
+    });
+  }
+
   if (args.taskMandateTarget) {
     const taskId = requiredTaskId(args);
     const mandate = createSignedMandate(args, profile);
     envelopes.push({
       target: args.taskMandateTarget,
       label: `task.mandate task=${taskId} mandate=${mandate.mandateId}`,
-      envelope: signedEnvelope(profile, args.taskMandateTarget, "task.mandate", {
+      envelope: signedEnvelope(args, profile, args.taskMandateTarget, "task.mandate", {
         taskId,
         ...createTaskMandatePayload(mandate, { taskId }),
       }),
@@ -58,6 +117,7 @@ export function buildOutboundCliEnvelopes(
       target: args.taskProposeTarget,
       label: `task.propose task=${taskId} mandate=${mandate.mandateId}`,
       envelope: signedEnvelope(
+        args,
         profile,
         args.taskProposeTarget,
         "task.propose",
@@ -67,6 +127,7 @@ export function buildOutboundCliEnvelopes(
           proofOfIntent,
           objective: args.objective ?? mandate.objective,
           requestedResult: args.requestedResult ?? "Return a concise result with evidence.",
+          expiresAt: args.taskExpiresAt,
         }),
       ),
     });
@@ -78,6 +139,7 @@ export function buildOutboundCliEnvelopes(
       target: args.taskCancelTarget,
       label: `task.cancel task=${taskId}`,
       envelope: signedEnvelope(
+        args,
         profile,
         args.taskCancelTarget,
         "task.cancel",
@@ -106,6 +168,7 @@ export function buildOutboundCliEnvelopes(
       target: args.reportCreateTarget,
       label: `report.create task=${taskId} report=${report.reportId}`,
       envelope: signedEnvelope(
+        args,
         profile,
         args.reportCreateTarget,
         "report.create",
@@ -126,11 +189,14 @@ function createSignedMandate(args: NodeArgs, profile: NodeProfile): Mandate {
       taskIntent: args.taskIntent ?? "ad-hoc",
       objective: args.objective ?? "Owner-approved Envoy task.",
       mandateId: args.mandateId,
+      expiresAt: args.mandateExpiresAt,
+      closeOnFirstCompletedResult: args.closeOnFirstCompletedResult,
     }),
   });
 }
 
 function signedEnvelope(
+  args: NodeArgs,
   profile: NodeProfile,
   target: string,
   intent: EnvoyIntent,
@@ -143,6 +209,7 @@ function signedEnvelope(
       recipientPeerId: target,
       intent,
       payload,
+      correlationId: args.correlationId ?? undefined,
     }),
     profile.device.privateKeyPem,
   );

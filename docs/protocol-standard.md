@@ -4,6 +4,8 @@ EnvoyMesh Protocol, or EMP, is the standard contract that lets Envoys run across
 
 EMP defines identity, device roles, message envelopes, trust workflows, and the minimum verbs every Envoy should understand. The goal is to let a desktop Envoy, mobile Envoy, home server Envoy, or future embedded Envoy interoperate without depending on a central backend.
 
+For product-level narratives and user stories, see [EnvoyMesh scenarios](./scenarios.md), [narrative user stories](./UserStory.md), and [design ↔ implementation alignment](./alignment-review.md). For how EMP fields map to packages and the node runtime, see [detailed design](./detailed-design.md).
+
 ## Design Goals
 
 - One human owner can control one Envoy identity across many devices.
@@ -448,10 +450,46 @@ Purpose:
 
 Requests a social trust relationship.
 
+Executable payload shape: **`BondRequestPayloadSchema`** in `@envoymesh/protocol` (e.g. **`requesterOwnerId`**, optional **`proofOfContext`**, **`requestedLevel`**).
+
 Purpose:
 
 - Ask to become a direct friend or referred peer.
 - Carry referral proof or public profile metadata.
+
+### `bond.challenge`
+
+Presents a challenge in the bond / trust flow.
+
+Executable payload shape: **`BondChallengePayloadSchema`** in `@envoymesh/protocol` (e.g. **`targetOwnerId`**, optional **`message`**).
+
+### `bond.challenge.response`
+
+Responds to a bond challenge (nonces / proofs as designed).
+
+Executable payload shape: **`BondChallengeResponsePayloadSchema`** in `@envoymesh/protocol` (e.g. optional **`message`**, optional **`signedProof`**, **`challengedByOwnerId`**).
+
+### `discovery.request`
+
+Requests tag-scoped or capability-scoped discovery without sharing a full profile.
+
+Executable payload shape: **`DiscoveryRequestPayloadSchema`** in `@envoymesh/protocol` (includes **`requestedTagHashes`**, **`requestedCapabilities`**, **`maxResults`**).
+
+Purpose:
+
+- Ask a trusted peer for bounded discovery matches.
+- Keep requests scoped to hashed topics and/or capabilities.
+
+### `discovery.response`
+
+Returns bounded discovery matches correlated to a prior request.
+
+Executable payload shape: **`DiscoveryResponsePayloadSchema`** in `@envoymesh/protocol` (includes **`requestMessageId`**, **`matches`**, **`truncated`**).
+
+Purpose:
+
+- Return one or more scoped discovery candidates.
+- Preserve request/response correlation in audit trails.
 
 ### `bond.update`
 
@@ -495,6 +533,8 @@ Purpose:
 ### `knowledge.query`
 
 Requests knowledge from an Envoy.
+
+Executable payload shape: **`KnowledgeQueryPayloadSchema`** in `@envoymesh/protocol` (fields include **`query`** and optional **`requestedSensitivity`**).
 
 Purpose:
 

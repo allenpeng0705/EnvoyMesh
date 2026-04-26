@@ -21,6 +21,25 @@ EnvoyMesh is a distributed network of personal AI agents. Each agent, called an 
 - Forbid cloud models entirely; they are allowed when policy permits them.
 - Solve global-scale public discovery in the first version.
 
+For **user stories, epics, and prioritization** (discovery, broadcast termination, communication matrix, file sharing, and so on), see:
+
+- [EnvoyMesh scenarios](./scenarios.md) — structured backlog and acceptance.
+- [UserStory.md](./UserStory.md) — narrative requirements and journeys.
+- [Alignment review](./alignment-review.md) — how design and code compare today.
+- [Implementation plan](./implementation-plan.md) — phased delivery and traceability table.
+- [Detailed design](./detailed-design.md) — packages, runtime flow, and definition of **EMP fields**.
+
+This high-level design stays **stable**; when user stories and code diverge, update the **alignment review** and the **implementation plan** first, then reflect any lasting architecture change here.
+
+## Story-driven product themes
+
+These themes come from [UserStory.md](./UserStory.md) and map to the system diagram below:
+
+1. **Identity and trust** — Owner authority, device keys, bonds, and policy before the Brain or Vault is exposed (Scenarios 1 and 4; Stories A, C).
+2. **Mesh and discovery** — Diplomat finds peers safely; semantic discovery is a **planned** extension beyond raw mDNS/DHT (Scenario 2; Stories B, D, F).
+3. **Tasks and termination** — Work is bounded in time and outcome; agents stop when policy says so (Scenario 3; Phase 4D–4E in the implementation plan).
+4. **Data and communication** — Vault for approved retrieval; separate human vs agent traffic and file-transfer paths are **directional** design (Scenarios 5–6; Stories A, E).
+
 ## System Overview
 
 Each Envoy node contains six major parts:

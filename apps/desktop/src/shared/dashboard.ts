@@ -4,6 +4,8 @@ import type {
   NodeProfile,
   TrustRecord,
 } from "@envoymesh/local-store";
+
+export type { AuditEvent };
 import type { TaskJournalEntry } from "@envoymesh/protocol";
 
 export interface ObservedPeerSummary {

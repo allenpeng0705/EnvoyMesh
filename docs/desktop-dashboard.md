@@ -27,6 +27,14 @@ Override these paths with environment variables:
 ENVOYMESH_PROFILE=./data/alice ENVOYMESH_VAULT=./shared_vault npm run desktop:dev
 ```
 
+If you run the dashboard from an npm workspace, the process working directory may be `apps/desktop`. The dashboard tries to locate the repository root automatically so `./data/default` resolves consistently with `npm run node:dev` from the repo root.
+
+You can also pin the workspace explicitly:
+
+```bash
+ENVOYMESH_WORKSPACE=/path/to/EnvoyMesh npm run desktop:dev
+```
+
 ## First Operator Console
 
 The first dashboard slice includes:
@@ -35,8 +43,10 @@ The first dashboard slice includes:
 - Pending and historical owner approvals, with approve/reject actions.
 - Local trust records, with set/remove actions.
 - Observed peers derived from audit events.
-- Recent task journal and audit event panels.
+- Recent task journal and audit event panels (audit supports correlation/task id filtering and optional `p2p.trace` visibility).
 - Shared vault document summary and search.
+
+`p2p.trace` audit rows are only produced when the Envoy node is started with `--p2p-debug`.
 
 ## Security Shape
 

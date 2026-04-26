@@ -2,6 +2,9 @@ import { generateDeviceIdentity, generateOwnerIdentity } from "@envoymesh/identi
 import { createDeviceCertificate } from "@envoymesh/identity";
 import type { NodeProfile } from "@envoymesh/local-store";
 import {
+  parseBondRequestPayload,
+  parseDiscoveryRequestPayload,
+  parseKnowledgeQueryPayload,
   parseReportCreatePayload,
   parseTaskCancelPayload,
   parseTaskMandatePayload,
@@ -11,6 +14,76 @@ import { describe, expect, it } from "vitest";
 import { buildOutboundCliEnvelopes } from "../src/cli-actions.js";
 
 describe("cli actions", () => {
+  it("builds a signed bond.request envelope", () => {
+    const profile = testProfile();
+    const [outbound] = buildOutboundCliEnvelopes(
+      {
+        profileDir: "./data/test",
+        listen: [],
+        enableMdns: false,
+        bondRequestTarget: "peer-b",
+        bondMessage: "Let's connect.",
+        bondProof: "Met at the meetup.",
+        bondRequestedLevel: "referred",
+      },
+      profile,
+    );
+
+    expect(outbound.target).toBe("peer-b");
+    expect(outbound.envelope.intent).toBe("bond.request");
+    const payload = parseBondRequestPayload(outbound.envelope.payload);
+    expect(payload.requesterOwnerId).toBe(profile.owner.ownerId);
+    expect(payload.message).toBe("Let's connect.");
+    expect(payload.proofOfContext).toBe("Met at the meetup.");
+    expect(payload.requestedLevel).toBe("referred");
+  });
+
+  it("builds a signed knowledge.query envelope", () => {
+    const profile = testProfile();
+    const [outbound] = buildOutboundCliEnvelopes(
+      {
+        profileDir: "./data/test",
+        listen: [],
+        enableMdns: false,
+        knowledgeQueryTarget: "peer-b",
+        knowledgeQueryText: "What is in the vault?",
+        knowledgeQuerySensitivity: "friends",
+      },
+      profile,
+    );
+
+    expect(outbound.target).toBe("peer-b");
+    expect(outbound.envelope.intent).toBe("knowledge.query");
+    expect(outbound.envelope.signature).toBeTruthy();
+    const payload = parseKnowledgeQueryPayload(outbound.envelope.payload);
+    expect(payload.query).toBe("What is in the vault?");
+    expect(payload.requestedSensitivity).toBe("friends");
+  });
+
+  it("builds a signed discovery.request envelope", () => {
+    const profile = testProfile();
+    const [outbound] = buildOutboundCliEnvelopes(
+      {
+        profileDir: "./data/test",
+        listen: [],
+        enableMdns: false,
+        discoveryRequestTarget: "peer-discovery",
+        discoveryTagHashes: ["hash:books"],
+        discoveryCapabilities: ["task.execute"],
+        discoveryMaxResults: 4,
+      },
+      profile,
+    );
+
+    expect(outbound.target).toBe("peer-discovery");
+    expect(outbound.envelope.intent).toBe("discovery.request");
+    const payload = parseDiscoveryRequestPayload(outbound.envelope.payload);
+    expect(payload.requesterOwnerId).toBe(profile.owner.ownerId);
+    expect(payload.requestedTagHashes).toEqual(["hash:books"]);
+    expect(payload.requestedCapabilities).toEqual(["task.execute"]);
+    expect(payload.maxResults).toBe(4);
+  });
+
   it("builds a signed task mandate envelope", () => {
     const profile = testProfile();
     const [outbound] = buildOutboundCliEnvelopes(

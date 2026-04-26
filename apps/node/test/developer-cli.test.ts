@@ -48,6 +48,24 @@ describe("developer CLI", () => {
     });
   });
 
+  it("parses audit filtering flags", () => {
+    expect(
+      parseDeveloperCliArgs([
+        "audit",
+        "--profile",
+        "./data/alice",
+        "--audit-correlation",
+        "task-9",
+        "--include-p2p-trace",
+      ]),
+    ).toMatchObject({
+      command: "audit",
+      profileDir: "./data/alice",
+      auditCorrelationId: "task-9",
+      includeP2pTraceInAudit: true,
+    });
+  });
+
   it("shows a profile summary", async () => {
     const result = await runDeveloperCli(["profile", "--profile", profileDir]);
 
@@ -75,20 +93,47 @@ describe("developer CLI", () => {
         eventId: "audit-2",
         type: "message.rejected",
         intent: "task.propose",
+        correlationId: "corr-task-proposal",
         remotePeerId: "peer-a",
         outcome: "deny",
         summary: "Rejected task.",
         createdAt: "2026-04-27T10:01:00.000Z",
       }),
     );
+    await store.appendAuditEvent(
+      createAuditEvent({
+        eventId: "audit-3",
+        type: "p2p.trace",
+        remotePeerId: "peer-a",
+        outcome: "record",
+        summary: "p2p stream:open",
+        createdAt: "2026-04-27T10:02:00.000Z",
+      }),
+    );
 
     const audit = await runDeveloperCli(["audit", "--profile", profileDir]);
     const peers = await runDeveloperCli(["peer-list", "--profile", profileDir]);
 
-    expect(audit.lines).toContain("Audit events (2)");
+    expect(audit.lines).toContain("Audit events (2 of 3)");
     expect(audit.lines.join("\n")).toContain("Rejected task.");
+    expect(audit.lines.join("\n")).not.toContain("p2p.trace");
     expect(peers.lines).toContain("Observed peers (1)");
     expect(peers.lines.join("\n")).toContain("peer-a messages=2");
+
+    const withTrace = await runDeveloperCli(["audit", "--profile", profileDir, "--include-p2p-trace"]);
+    expect(withTrace.lines).toContain("Audit events (3 of 3)");
+    expect(withTrace.lines.join("\n")).toContain("p2p.trace");
+
+    const correlationFilter = await runDeveloperCli([
+      "audit",
+      "--profile",
+      profileDir,
+      "--include-p2p-trace",
+      "--audit-correlation",
+      "corr-task",
+    ]);
+    expect(correlationFilter.lines).toContain("Audit events (1 of 3)");
+    expect(correlationFilter.lines.join("\n")).toContain("task.propose");
   });
 
   it("lists tasks and pending approvals", async () => {

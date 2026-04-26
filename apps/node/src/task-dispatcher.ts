@@ -122,11 +122,11 @@ export function createTaskDispatcher(handlers: TaskDispatcherHandlers = {}): Tas
   };
 }
 
-function isA2ATaskIntent(intent: EnvoyIntent): intent is A2ATaskIntent {
+export function isA2ATaskIntent(intent: EnvoyIntent): intent is A2ATaskIntent {
   return a2aTaskIntents.has(intent);
 }
 
-function parseA2APayload<TIntent extends A2ATaskIntent>(
+export function parseA2APayload<TIntent extends A2ATaskIntent>(
   intent: TIntent,
   payload: unknown,
 ): A2ATaskPayloadByIntent[TIntent] {

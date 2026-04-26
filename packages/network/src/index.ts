@@ -44,7 +44,17 @@ export interface EnvoyMeshOptions {
   enableRelayServer?: boolean;
   enableAutoNat?: boolean;
   enableDcutr?: boolean;
+  enableP2pDebug?: boolean;
+  onP2pDebug?: (event: P2pDebugEvent) => void;
 }
+
+export type P2pDebugEvent =
+  | { kind: "peer:connect"; remotePeerId: string }
+  | { kind: "peer:disconnect"; remotePeerId: string }
+  | { kind: "connection:open"; remotePeerId: string; direction: "inbound" | "outbound" }
+  | { kind: "connection:close"; remotePeerId: string }
+  | { kind: "stream:open"; remotePeerId: string; protocol: string; direction: "inbound" | "outbound" }
+  | { kind: "stream:close"; remotePeerId: string; protocol: string; direction: "inbound" | "outbound" };
 
 export interface EnvoyMeshPeerDiscoveryService {
   addEventListener(
@@ -101,22 +111,45 @@ export class EnvoyMesh {
     this.attachPeerDiscovery(this.node);
 
     await this.node.handle(ENVOY_MESSAGE_PROTOCOL, async (stream: any, connection: any) => {
+      const remotePeerId = connection.remotePeer.toString();
+      this.emitP2pDebug({
+        kind: "stream:open",
+        remotePeerId,
+        protocol: ENVOY_MESSAGE_PROTOCOL,
+        direction: "inbound",
+      });
+
       try {
         const bytes = await byteStream(stream).read();
 
         if (bytes !== null) {
+          let envelope: EnvoyEnvelope;
+          try {
+            envelope = decodeEnvelope(bytes.subarray());
+          } catch (error) {
+            console.error("EnvoyMesh inbound envelope decode failed", error);
+            return;
+          }
+
           await this.dispatch({
-            envelope: decodeEnvelope(bytes.subarray()),
-            remotePeerId: connection.remotePeer.toString(),
+            envelope,
+            remotePeerId,
           });
         }
       } catch (error) {
         console.error("EnvoyMesh inbound stream failed", error);
-        throw error;
+      } finally {
+        this.emitP2pDebug({
+          kind: "stream:close",
+          remotePeerId,
+          protocol: ENVOY_MESSAGE_PROTOCOL,
+          direction: "inbound",
+        });
       }
     });
 
     await this.node.start();
+    this.attachP2pDebug(this.node);
   }
 
   async stop(): Promise<void> {
@@ -147,6 +180,7 @@ export class EnvoyMesh {
       ...(this.options.enableRelayServer ? ["relay-server"] : []),
       ...(this.options.enableAutoNat ? ["autonat"] : []),
       ...(this.options.enableDcutr ? ["dcutr"] : []),
+      ...(this.options.enableP2pDebug ? ["p2p-debug"] : []),
     ];
   }
 
@@ -160,9 +194,19 @@ export class EnvoyMesh {
     return () => this.peerDiscoveryHandlers.delete(handler);
   }
 
-  async send(target: string, envelope: EnvoyEnvelope): Promise<void> {
+  async send(target: string, envelope: EnvoyEnvelope): Promise<number> {
     const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
-    const stream = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_MESSAGE_PROTOCOL);
+    const startedAt = Date.now();
+    const stream: any = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_MESSAGE_PROTOCOL);
+    const remotePeerId = stream.connection?.remotePeer?.toString();
+    if (remotePeerId) {
+      this.emitP2pDebug({
+        kind: "stream:open",
+        remotePeerId,
+        protocol: ENVOY_MESSAGE_PROTOCOL,
+        direction: "outbound",
+      });
+    }
     if (stream.writeStatus !== "writable") {
       throw new Error(
         `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}`,
@@ -170,6 +214,50 @@ export class EnvoyMesh {
     }
     await byteStream(stream).write(encodeEnvelope(envelope));
     await stream.close();
+    if (remotePeerId) {
+      this.emitP2pDebug({
+        kind: "stream:close",
+        remotePeerId,
+        protocol: ENVOY_MESSAGE_PROTOCOL,
+        direction: "outbound",
+      });
+    }
+    return Date.now() - startedAt;
+  }
+
+  /**
+   * Sends raw bytes on the EnvoyMesh message protocol stream without encoding an envelope.
+   * Intended for adversarial probes and resilience testing (not for normal application traffic).
+   */
+  async sendRawBytes(target: string, bytes: Uint8Array): Promise<number> {
+    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    const startedAt = Date.now();
+    const stream: any = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_MESSAGE_PROTOCOL);
+    const remotePeerId = stream.connection?.remotePeer?.toString();
+    if (remotePeerId) {
+      this.emitP2pDebug({
+        kind: "stream:open",
+        remotePeerId,
+        protocol: ENVOY_MESSAGE_PROTOCOL,
+        direction: "outbound",
+      });
+    }
+    if (stream.writeStatus !== "writable") {
+      throw new Error(
+        `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}`,
+      );
+    }
+    await byteStream(stream).write(bytes);
+    await stream.close();
+    if (remotePeerId) {
+      this.emitP2pDebug({
+        kind: "stream:close",
+        remotePeerId,
+        protocol: ENVOY_MESSAGE_PROTOCOL,
+        direction: "outbound",
+      });
+    }
+    return Date.now() - startedAt;
   }
 
   private async dispatch(message: InboundMeshMessage): Promise<void> {
@@ -203,6 +291,51 @@ export class EnvoyMesh {
           ]
         : []),
     ];
+  }
+
+  private emitP2pDebug(event: P2pDebugEvent): void {
+    if (!this.options.enableP2pDebug) {
+      return;
+    }
+
+    this.options.onP2pDebug?.(event);
+  }
+
+  private attachP2pDebug(node: Libp2p): void {
+    if (!this.options.enableP2pDebug) {
+      return;
+    }
+
+    const typedNode = node as Libp2p & {
+      addEventListener?: (type: string, handler: (event: any) => void) => void;
+    };
+
+    if (typeof typedNode.addEventListener !== "function") {
+      return;
+    }
+
+    typedNode.addEventListener("peer:connect", (event: any) => {
+      const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
+      this.emitP2pDebug({ kind: "peer:connect", remotePeerId });
+    });
+
+    typedNode.addEventListener("peer:disconnect", (event: any) => {
+      const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
+      this.emitP2pDebug({ kind: "peer:disconnect", remotePeerId });
+    });
+
+    typedNode.addEventListener("connection:open", (event: any) => {
+      const connection = event.detail;
+      const remotePeerId = connection?.remotePeer?.toString?.() ?? "unknown";
+      const direction = connection?.direction === "outbound" ? "outbound" : "inbound";
+      this.emitP2pDebug({ kind: "connection:open", remotePeerId, direction });
+    });
+
+    typedNode.addEventListener("connection:close", (event: any) => {
+      const connection = event.detail;
+      const remotePeerId = connection?.remotePeer?.toString?.() ?? "unknown";
+      this.emitP2pDebug({ kind: "connection:close", remotePeerId });
+    });
   }
 
   private isAdvancedConnectivityEnabled(): boolean {

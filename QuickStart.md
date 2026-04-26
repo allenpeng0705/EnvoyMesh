@@ -2,6 +2,8 @@
 
 This guide shows how to install, build, verify, run the node, use the CLI, and launch the desktop dashboard.
 
+Requirements narrative: [docs/UserStory.md](docs/UserStory.md). Scenario backlog: [docs/scenarios.md](docs/scenarios.md). Design vs code: [docs/alignment-review.md](docs/alignment-review.md).
+
 ## Requirements
 
 - macOS, Linux, or Windows with a recent terminal.
@@ -78,6 +80,36 @@ Enable advanced P2P options:
 npm run node:dev -- --dht-client --bootstrap "<bootstrap-multiaddr>" --relay --autonat --dcutr
 ```
 
+Correlate outbound probes and A2A sends (optional `correlationId` on the wire envelope):
+
+```bash
+npm run node:dev -- --ping "<peer-multiaddr>" --correlation-id "demo-corr-1"
+```
+
+Send a signed **`knowledge.query`** (mock handler on the peer: validates payload, logs, writes audit — no vault RAG yet):
+
+```bash
+npm run node:dev -- --knowledge-query "<peer-multiaddr>" --knowledge-text "Summarize the vault README." --correlation-id "kq-1"
+```
+
+Send a signed **`bond.request`** (peer runs `evaluatePolicy` on the payload and writes audit):
+
+```bash
+npm run node:dev -- --bond-request "<peer-multiaddr>" --bond-message "Let's connect" --bond-proof "Met at meetup" --correlation-id "bond-1"
+```
+
+Send a signed **`discovery.request`** (peer enforces trust tier + per-owner rate limit, then returns `discovery.response`):
+
+```bash
+npm run node:dev -- --discovery-request "<peer-multiaddr>" --discovery-tag-hash "hash:books" --discovery-capability "task.execute" --discovery-max-results 5 --correlation-id "disc-1"
+```
+
+Emit libp2p connection/stream lifecycle telemetry into the local audit log as `p2p.trace` rows (no payload logging):
+
+```bash
+npm run node:dev -- --p2p-debug
+```
+
 ## Use The Developer CLI
 
 Show profile summary:
@@ -90,6 +122,12 @@ Inspect audit events:
 
 ```bash
 npm run cli -w @envoymesh/node -- audit --profile ./data/default --limit 20
+```
+
+Filter audit rows by correlation/task id substring, and optionally include noisy `p2p.trace` rows:
+
+```bash
+npm run cli -w @envoymesh/node -- audit --profile ./data/default --audit-correlation task-1 --include-p2p-trace
 ```
 
 Inspect task journal:
@@ -126,6 +164,14 @@ npm run cli -w @envoymesh/node -- vault-index --vault ./shared_vault
 npm run cli -w @envoymesh/node -- vault-search --vault ./shared_vault --query "P2P agent"
 ```
 
+## Social challenge probe (untrusted peer)
+
+This script dials a victim multiaddr and sends a small set of intentionally hostile (but non-secret-exfiltrating) frames to validate inbound guard and dispatcher reject paths:
+
+```bash
+npm run social:challenge -w @envoymesh/node -- --target "<victim-multiaddr>" --scenario all
+```
+
 ## Run The Desktop Dashboard
 
 Launch the Electron dashboard:
@@ -138,6 +184,12 @@ Use custom profile and vault paths:
 
 ```bash
 ENVOYMESH_PROFILE=./data/alice ENVOYMESH_VAULT=./shared_vault npm run desktop:dev
+```
+
+Pin the repository root explicitly if needed:
+
+```bash
+ENVOYMESH_WORKSPACE=/path/to/EnvoyMesh npm run desktop:dev
 ```
 
 The dashboard shows:

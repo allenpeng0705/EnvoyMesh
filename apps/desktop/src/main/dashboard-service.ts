@@ -11,8 +11,8 @@ import {
   searchVault,
   type VaultIndex,
 } from "@envoymesh/vault";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import type {
   DashboardConfig,
   DashboardSnapshot,
@@ -23,10 +23,74 @@ import type {
 } from "../shared/dashboard.js";
 
 export function createDashboardConfig(env: NodeJS.ProcessEnv = process.env): DashboardConfig {
+  const workspaceRoot = findEnvoyMeshWorkspaceRoot(env);
+
   return {
-    profileDir: resolve(env.ENVOYMESH_PROFILE ?? "./data/default"),
-    vaultDir: resolve(env.ENVOYMESH_VAULT ?? "./shared_vault"),
+    profileDir: resolvePathOrWorkspaceRelative(env.ENVOYMESH_PROFILE, "data/default", workspaceRoot),
+    vaultDir: resolvePathOrWorkspaceRelative(env.ENVOYMESH_VAULT, "shared_vault", workspaceRoot),
   };
+}
+
+function resolvePathOrWorkspaceRelative(
+  value: string | undefined,
+  workspaceRelativeDefault: string,
+  workspaceRoot: string,
+): string {
+  if (!value) {
+    return join(workspaceRoot, workspaceRelativeDefault);
+  }
+
+  return resolve(value);
+}
+
+function findEnvoyMeshWorkspaceRoot(env: NodeJS.ProcessEnv): string {
+  const explicit = env.ENVOYMESH_WORKSPACE;
+  if (explicit) {
+    return resolve(explicit);
+  }
+
+  const mainDirname = typeof __dirname !== "undefined" ? __dirname : process.cwd();
+  const searchRoots = [
+    process.cwd(),
+    resolve(join(mainDirname, "..", "..", "..")),
+    resolve(join(mainDirname, "..", "..", "..", "..")),
+  ];
+
+  for (const start of searchRoots) {
+    const root = walkUpForPackageRoot(start);
+    if (root) {
+      return root;
+    }
+  }
+
+  return process.cwd();
+}
+
+function walkUpForPackageRoot(startDir: string): string | undefined {
+  let current = resolve(startDir);
+
+  for (let depth = 0; depth < 12; depth += 1) {
+    const packagePath = join(current, "package.json");
+    if (existsSync(packagePath)) {
+      try {
+        const parsed = JSON.parse(readFileSync(packagePath, "utf8")) as { name?: string };
+        if (parsed.name === "envoy-mesh") {
+          return current;
+        }
+      } catch {
+        // ignore invalid package.json
+      }
+    }
+
+    const parent = dirname(current);
+    if (parent === current) {
+      return undefined;
+    }
+
+    current = parent;
+  }
+
+  return undefined;
 }
 
 export async function getDashboardSnapshot(config: DashboardConfig): Promise<DashboardSnapshot> {

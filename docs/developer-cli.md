@@ -22,6 +22,12 @@ npm run cli -w @envoymesh/node -- audit --profile ./data/default --limit 20
 
 Prints recent audit events from `audit-events.jsonl`.
 
+By default, `p2p.trace` rows are hidden (they can be very chatty). Include them with `--include-p2p-trace`, and optionally filter with `--audit-correlation <id>` (substring match against `correlationId` and `taskId`).
+
+```bash
+npm run cli -w @envoymesh/node -- audit --profile ./data/default --audit-correlation task-1 --include-p2p-trace
+```
+
 ```bash
 npm run cli -w @envoymesh/node -- tasks --profile ./data/default --limit 20
 ```
@@ -46,6 +52,8 @@ npm run cli -w @envoymesh/node -- peer-list --profile ./data/default
 ```
 
 Lists remote libp2p peer IDs observed in audit events. This is a developer view, not yet a full social graph.
+
+`peer-list` applies the same default audit filtering as `audit` (it ignores `p2p.trace` unless `--include-p2p-trace` is set).
 
 ```bash
 npm run cli -w @envoymesh/node -- vault-index --vault ./shared_vault
@@ -73,6 +81,8 @@ Lists, sets, or removes local trust records from `trust-records.json`. Supported
 - `--vault <dir>`: Shared vault directory. Default: `shared_vault`.
 - `--query <text>`: Search query for `vault-search`.
 - `--limit <n>`: Maximum rows to print. Default: `20`.
+- `--audit-correlation <id>`: Substring filter for audit listings (matches `correlationId` and `taskId`).
+- `--include-p2p-trace`: Include `p2p.trace` audit rows (hidden by default).
 - `--status <pending|approved|rejected>`: Approval status filter.
 - `--level <direct|referred|public|blocked>`: Trust level for `trust set`.
 - `--name <text>`: Optional display name for a trust record.

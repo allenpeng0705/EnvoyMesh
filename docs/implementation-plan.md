@@ -2,12 +2,44 @@
 
 This is the living plan for EnvoyMesh. Update it whenever scope changes, decisions are made, or milestones are completed.
 
+**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · [EMP](./protocol-standard.md) · [QuickStart](../QuickStart.md)
+
 ## Status Legend
 
 - `[ ]` Not started
 - `[~]` In progress
 - `[x]` Done
 - `[!]` Blocked or needs a decision
+
+Use these prefixes on **every phased work item** and on **exit criteria** below so merges show what moved. **`[~]`** is optional in **traceability** and **coverage** summary cells when both shipped and missing parts apply. **Open questions**: the first table column is **`[x]`** once settled or **`[ ]`** while open—flip it and move the row when answered.
+
+## On this page
+
+**Plan**
+
+- [Current direction](#current-direction)
+- [User story traceability](#user-story-traceability)
+- [Key decisions](#key-decisions)
+- [Current milestone & next pulls](#current-milestone)
+- [Coverage vs UserStory & design](#coverage-vs-userstory-and-design-docs)
+- [Open questions](#open-questions)
+- [Changelog (this document)](#changelog-this-document)
+
+**Phases**
+
+- [Phase 0 — Project foundation](#phase-0-project-foundation)
+- [Phase 1 — Protocol and identity](#phase-1-protocol-and-identity)
+- [Phase 2 — Bond and policy engine](#phase-2-bond-and-policy-engine)
+- [Phase 3 — Local node without P2P](#phase-3-local-node-without-p2p)
+- [Phase 4 — P2P local network](#phase-4-p2p-local-network)
+- [Phase 4A — Multi-device protocol](#phase-4a-multi-device-protocol)
+- [Phase 4B — A2A ambassador protocol](#phase-4b-a2a-ambassador-protocol)
+- [Phase 4C — Observability and multi-peer traceability](#phase-4c-observability-and-multi-peer-traceability)
+- [Phase 4D — Task broadcast termination (local enforcement)](#phase-4d-task-broadcast-termination-local-enforcement)
+- [Phase 4E — Semantic discovery (story-driven)](#phase-4e-semantic-discovery-story-driven)
+- [Phase 5 — Shared vault](#phase-5-shared-vault)
+- [Phase 6 — Model router](#phase-6-model-router)
+- [Phase 7 — Product surface](#phase-7-product-surface)
 
 ## Current Direction
 
@@ -20,6 +52,31 @@ The project should start small:
 3. Add P2P discovery and transport.
 4. Add the shared vault and policy checks.
 5. Add model routing after the security path is stable.
+
+Product-level **user stories and epics** (discovery, broadcast termination, communication matrix, and so on) live in [EnvoyMesh scenarios](./scenarios.md). Narrative journeys live in [UserStory.md](./UserStory.md). Periodically reconcile both with code via [alignment-review.md](./alignment-review.md). Use those files to prioritize; keep this plan aligned when scope or shipped work changes.
+
+**Story-driven principle:** Implementation phases stay anchored to **testable** entries in `scenarios.md`. Narrative text in `UserStory.md` becomes plan items only when it gains acceptance criteria and (usually) a scenario id.
+
+**North-star steps (all bootstrapped at high level; depth = open `[ ]` in phases below):** `[x]` protocol and trust boundaries · `[x]` local signed node · `[x]` P2P discovery/transport · `[x]` shared vault + policy · `[x]` model routing behind policy.
+
+**Prioritization:** **Parked for now** — satellite / **thin mobile UI** product path and phone-centric UX (no mobile app milestone). **Active next** — Phase **4E** discovery, Phase **4B** Batch 6 bonds on wire, Phase **6** semantic firewall depth, Phase **4** LAN identity match, Phase **5** vault CA/export, Phase **7** morning report (desktop/CLI). Phase **4A** still tracks **device pairing** and **primary-offline defer** for desktop-class multi-device; thin-mobile checkbox stays documented but not scheduled ahead of those.
+
+## User story traceability
+
+Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Update **`[x]` / `[ ]`** when code or docs change.
+
+| Theme ([UserStory.md](./UserStory.md)) | Primary phases | Shipped (`[x]`) · still missing (`[ ]`) |
+|----------------------------------------|-----------------|----------------------------------------|
+| Identity birth (Scenario 1) | 1, 4A | `[x]` Signed envelopes, owner/device split, device certs · `[ ]` DID as first-class product (beyond directional docs) |
+| Blind discovery (Scenario 2) | 4, **4E** | `[x]` Transport discovery (mDNS, optional DHT/relay/DCUtR), Agent Card types, signed `discovery.request/response`, trust+rate-gated inbound handling · `[ ]` Discovery ranking UX (Phase 7 morning report) |
+| Broadcast & kill (Scenario 3) | 4B, **4D** | `[x]` Local mandate/propose expiry, cancel / satisfied, first completed result + `closeOnFirstCompletedResult`, `correlationId`, audits · `[ ]` Hop TTL / gossip-wide cancel / collect-N (`Phase 4D` “not in this slice”) |
+| Social handshake (Scenario 4) | 2, 4B, 7 | `[x]` Trust store, bonds/policy, approvals, mandates, A2A tasks, **EMP `bond.*` payloads + inbound bond path + CLI `bond.request`** · `[ ]` Rich referral / owner queue UX beyond audit |
+| Intent-based file share (Scenario 5) | 5, Scenario 6 pick | `[x]` Shared vault, indexing, search, policy hooks, audit · `[ ]` Voucher + verified P2P chunk stream (Scenario **6** vertical pick) |
+| Communication matrix (Scenario 6) | Scenario 6 pick, Open questions | `[x]` Signed task + system traffic on `/envoymesh/message/0.1.0` · `[ ]` Roles on envelopes; `/chat` `/agent` `/data` split; H2A as distinct channel |
+| **Story A** (multi-device collaborator) | 4A, 5, 6, 7 | `[x]` Primary/Satellite **protocol** profiles, P2P, vault-backed tasks · `[ ]` Pairing + primary-offline defer (`Phase 4A`) · *Thin mobile / satellite app **parked*** |
+| **Stories B–C** (recruiter, researcher) | 4E, 2, 6, 7 | `[x]` Policy, approvals, audit, model path scaffolding · `[ ]` Discovery UX (**4E**), H2A wire path (**6**), morning report (**7**) |
+| **Stories D–E** (multi-hop, deals) | Backlog | `[ ]` Multi-hop / commerce / receipts — add phased work when scenarios + EMP economics are scoped |
+| **Story F** (crisis / LAN) | 4, 4C | `[x]` mDNS, local TCP, correlated audits, optional P2P debug · `[ ]` LAN identity-targeted match (`Phase 4`); live proofs outside CI (`Phase 4` `[!]`) |
 
 ## Key Decisions
 
@@ -39,7 +96,7 @@ The project should start small:
 - `[x]` Mobile v1 direction: Thin UI Mode only; phone acts as secure UI/control channel to Primary Envoy.
 - `[ ]` Storage: start with files for config, then add SQLite for records and audit.
 - `[x]` P2P transport: start with local libp2p/mDNS after core schemas are stable.
-- `[ ]` First UI: CLI first, dashboard later.
+- `[x]` First UI: developer CLI plus initial Electron dashboard for local operator tasks; richer composition flows later.
 
 ## Phase 0: Project Foundation
 
@@ -111,14 +168,14 @@ Goal: prove the request lifecycle in-process before libp2p.
 - `[x]` Add node app entry point.
 - `[x]` Add message dispatcher.
 - `[x]` Add `system.ping` handler.
-- `[ ]` Add mock `knowledge.query` handler.
+- `[x]` Add mock `knowledge.query` handler (EMP payload + inbound audit path + CLI `--knowledge-query`).
 - `[x]` Add audit event writer.
 - `[x]` Add CLI command for local test messages.
 
 Exit criteria:
 
-- A local command can create, sign, dispatch, and verify a message.
-- The response path writes audit events.
+- `[x]` A local command can create, sign, dispatch, and verify a message.
+- `[x]` The response path writes audit events.
 
 ## Phase 4: P2P Local Network
 
@@ -136,6 +193,12 @@ Goal: two Envoy nodes can discover and talk on the same machine or LAN.
 - `[x]` Add configurable relay and NAT hole punching support after DHT discovery.
 - `[!]` Prove live two-node mDNS discovery outside the current runner; `multicast-dns` cannot read OS network interfaces here. Smoke script and runbook: `docs/live-connectivity-testing.md`.
 - `[!]` Prove DHT, relay, and DCUtR behavior against real bootstrap/relay peers outside the current runner. Smoke script and runbook: `docs/live-connectivity-testing.md`.
+- `[ ]` Optional **LAN identity match**: discover or select a peer by **owner / Envoy stable identity** (not only libp2p `PeerID`) for “find DID on LAN” narratives (Story F).
+
+Exit criteria:
+
+- `[x]` Two nodes can exchange signed application messages over `/envoymesh/message/0.1.0` in CI and local dev.
+- `[ ]` Live mDNS and wide-area connectivity proofs completed per `docs/live-connectivity-testing.md` on target OSes and configured peers (blocked items: Phase 4 `[!]`).
 
 ## Phase 4A: Multi-Device Protocol
 
@@ -147,17 +210,18 @@ Goal: support one Envoy owner identity across Primary and Satellite devices.
 - `[ ]` Add device pairing request and approval workflow.
 - `[x]` Add Primary Envoy profile.
 - `[x]` Add Satellite Envoy profile for Thin UI Mode.
-- `[ ]` Add thin mobile UI channel assumptions.
-- `[ ]` Explicitly defer mobile Full Node Mode.
+- `[ ]` Add thin mobile UI channel assumptions *(parked — no satellite / mobile app scheduling; see **Prioritization** above)*.
+- `[x]` Explicitly defer mobile Full Node Mode (documented: Thin UI first; Full Node later — [EMP — Mobile modes](./protocol-standard.md#mobile-modes), *Full Node Mode*).
 - `[x]` Add capability checks for EMP intents.
+- `[ ]` When **primary** is unreachable from **satellite**, defer or queue owner-facing work and **surface** status to the owner (audit / dashboard / notification path) per Story A.
 
 Exit criteria:
 
-- One owner can authorize multiple device keys.
-- Device messages verify against an owner-signed device certificate.
-- A device can be revoked without changing the owner identity.
-- Primary and Satellite profiles are represented in protocol types.
-- Mobile v1 does not require full P2P mesh participation on the phone.
+- `[x]` One owner can authorize multiple device keys (via profile / certs; pairing workflow still `[ ]` above).
+- `[x]` Device messages verify against an owner-signed device certificate.
+- `[x]` A device can be revoked without changing the owner identity.
+- `[x]` Primary and Satellite profiles are represented in protocol types.
+- `[x]` Mobile v1 does not require full P2P mesh participation on the phone.
 
 ## Phase 4B: A2A Ambassador Protocol
 
@@ -170,6 +234,7 @@ Goal: let Envoys perform long-running tasks for owners through bounded, auditabl
 - `[x]` Define report schema.
 - `[x]` Add `agent.card.request` and `agent.card.response`.
 - `[x]` Add `task.mandate`.
+- `[x]` Add `task.propose`, `task.accept`, and `task.result` (payloads, parsers, dispatcher, two-node path).
 - `[x]` Add `task.negotiate`.
 - `[x]` Add `task.reject`.
 - `[x]` Add `task.cancel`.
@@ -184,20 +249,63 @@ Next larger work batches:
 - `[x]` Batch 3: Add CLI flows for creating a mandate, proposing a task, cancelling a task, and creating a report.
 - `[x]` Batch 4: Connect task lifecycle payloads to P2P message exchange between two local nodes.
 - `[x]` Batch 5: Add owner approval queue for actions that exceed mandate policy.
+- `[x]` Batch 6: EMP **`bond.*` payload schemas** + `parse*` / `create*` helpers; inbound **`bond.request` / `bond.challenge` / `bond.challenge.response`** in `apps/node` with **`evaluatePolicy`** (`packages/bonds`) + audit; CLI **`--bond-request`** (UserStory Scenario 4).
 
 Exit criteria:
 
-- A task can be bounded by a signed mandate.
-- A peer can verify Proof of Intent before negotiation.
-- An Envoy can record task state across multiple A2A messages.
-- An Envoy can produce a report with evidence and suggested actions.
-- Owner can cancel an active task.
+- `[x]` A task can be bounded by a signed mandate.
+- `[x]` A peer can verify Proof of Intent before negotiation.
+- `[x]` An Envoy can record task state across multiple A2A messages.
+- `[x]` An Envoy can produce a report with evidence and suggested actions.
+- `[x]` Owner can cancel an active task.
+
+## Phase 4C: Observability and multi-peer traceability
+
+Goal: operators can correlate traffic across peers and debug connectivity without logging sensitive payloads.
+
+- `[x]` Optional `correlationId` on signed envelopes (canonical signing).
+- `[x]` Audit events carry correlation, direction, verification outcome, latency, and protocol where applicable.
+- `[x]` Optional libp2p lifecycle traces as `p2p.trace` audit rows (`--p2p-debug` on the node).
+- `[x]` Inbound message stream tolerates non-envelope bytes (decode failures do not tear down the handler).
+- `[x]` `sendRawBytes` on the mesh runtime for adversarial / probe traffic.
+- `[x]` Social challenge probe script (`npm run social:challenge -w @envoymesh/node`).
+- `[x]` Developer CLI and dashboard: audit filtering, optional inclusion of `p2p.trace`.
 
 Exit criteria:
 
-- Two terminals can run two nodes.
-- Nodes discover each other locally.
-- `[x]` A signed message round trip succeeds.
+- `[x]` A two-node flow can be reasoned about from audit JSONL using `correlationId` and timestamps.
+- `[x]` Operators can enable P2P tracing for debugging without writing message payloads to audit.
+
+## Phase 4D: Task broadcast termination (local enforcement)
+
+Goal: a receiving node can **stop accepting work** for a task when policy says the window ended or the task was cancelled / satisfied.
+
+- `[x]` Mandate field `closeOnFirstCompletedResult` (default false) carried in signed mandates.
+- `[x]` Persisted `task-runtime-state.json` records mandate expiry metadata and per-task lifecycle (`cancelled` | `satisfied`).
+- `[x]` Inbound guard rejects A2A messages that are past deadline, cancelled, or already satisfied.
+- `[x]` After a handled `task.result` with `status: completed` and mandate `closeOnFirstCompletedResult`, mark task **satisfied** for subsequent rejects.
+- `[x]` CLI flags: `--mandate-expires-at`, `--task-expires-at`, `--close-on-first-completed-result`.
+
+Not in this slice (see [scenarios](./scenarios.md)):
+
+- `[ ]` Hop/TTL gossip fan-out and network-wide cancellation propagation.
+- `[ ]` `maxResponses` / collect-N semantics beyond first completed result.
+
+Exit criteria (local slice):
+
+- `[x]` Inbound peer stops accepting A2A work for a task when mandate/propose time bounds, cancel/satisfied state, or `closeOnFirstCompletedResult` rules apply.
+
+## Phase 4E: Semantic discovery (story-driven)
+
+Goal: support **UserStory** Scenario 2 and Story B — find peers or capabilities **without** publishing a full biography, using signed, policy-bound discovery.
+
+- `[x]` Design discovery transport: start with direct signed request/response over EMP; keep gossipsub/DHT hybrid as later extension; document privacy properties (hashed vs cleartext tags).
+- `[x]` Wire signed **discovery request / response** intents aligned with Agent Card metadata.
+- `[x]` Enforce trust tier and rate limits on discovery traffic.
+
+Exit criteria:
+
+- `[x]` Two nodes can complete a **tag- or capability-scoped** discovery round trip in CI or documented smoke, with audit correlation.
 
 ## Phase 5: Shared Vault
 
@@ -216,10 +324,10 @@ Goal: the Envoy can answer only from owner-approved data.
 
 Exit criteria:
 
-- Files outside the vault cannot be queried.
-- Trusted peers can receive approved summaries.
-- Raw file transfer remains disabled by default.
-- Shared content can be referenced by exact content identity before any external publishing is allowed.
+- `[x]` Files outside the vault cannot be queried.
+- `[x]` Trusted peers can receive approved summaries when policy allows.
+- `[x]` Raw file transfer remains disabled by default.
+- `[ ]` Shared content can be referenced by **exact content identity** before external publishing is allowed (depends on optional CA / export work in Phase 5 checkboxes).
 
 ## Phase 6: Model Router
 
@@ -231,12 +339,14 @@ Goal: support local, cloud, and peer models through policy.
 - `[x]` Add cloud provider adapter behind policy.
 - `[x]` Add owner approval for sensitive external calls.
 - `[x]` Audit model routing decisions.
+- `[x]` **Semantic firewall** slice (v1): `evaluateSemanticFirewall` in `@envoymesh/models` — length cap, disallowed C0 controls (except tab/LF/CR), newline-run collapse; runs inside `routeModelRequest` before any provider **`complete`**; deny path audited via existing model routing audit event. *(Trust-gated redaction / richer rules later.)*
 
 Exit criteria:
 
-- Private context defaults to local-only.
-- Cloud models can be used for approved tasks.
-- Model routing decisions are visible in audit logs.
+- `[x]` Private context defaults to local-only.
+- `[x]` Cloud models can be used for approved tasks.
+- `[x]` Model routing decisions are visible in audit logs.
+- `[x]` **Semantic firewall** exit: `routeModelRequest` applies `evaluateSemanticFirewall` before provider selection and **`complete`**; denials return `decision: deny` with `semantic_firewall:` reason on the routing audit event.
 
 ## Phase 7: Product Surface
 
@@ -257,35 +367,108 @@ Goal: make the system usable.
 - `[ ]` Add dashboard packaging, signing, and installer flow later.
 - `[ ]` Add live P2P visualization later.
 - `[ ]` Add chat/task composition flows later.
+- `[ ]` **Morning report** / ranked discovery digest UX (dashboard or CLI; Story B; builds on Phase 4E + reports).
+
+Exit criteria:
+
+- `[x]` Operator can inspect profile, peers, trust, vault index, audits, approvals, and tasks from CLI and/or desktop dashboard.
+- `[ ]` Installable / signed desktop release pipeline (packaging checkbox above).
+- `[ ]` Rich chat + multi-step task composition UX (checkbox above).
 
 ## Current Milestone
 
-Milestone: Phase 7 Product Surface first slice complete.
+Milestone: **Phase 7** first operator console slice remains the default product target. **User story traceability** (table above) and **Phase 4C–4D** work tie narrative requirements to shipped behavior; **Phase 4E** is the next story-shaped epic for discovery.
 
-Immediate tasks:
+### Archive (historical snapshot — do not use for status)
 
-- `[x]` Set up TypeScript workspace.
-- `[x]` Create `packages/protocol`.
-- `[x]` Create `packages/identity`.
-- `[x]` Create `packages/bonds`.
-- `[x]` Add first unit tests.
-- `[x]` Create `packages/network`.
-- `[x]` Add minimal `apps/node` start command.
-- `[x]` Prove two local nodes can exchange a signed ping.
-- `[!]` Prove two local nodes can discover each other through mDNS outside the current runner.
-- `[x]` Implement EMP owner/device identity split.
-- `[x]` Emit and verify certified `system.signal` at runtime.
-- `[x]` Implement Agent Card and mandate schemas.
-- `[x]` Add developer CLI for local profile, audit, task, approval, peer, and vault inspection.
-- `[x]` Add persisted trust store and trust mutation commands.
-- `[x]` Extract shared local stores into `packages/local-store`.
-- `[x]` Add Electron desktop operator console for local profile, approval, trust, audit, task, peer, and vault views.
-- `[x]` Verify Product Surface with `npm run typecheck`, `npm test`, and `npm run desktop:build`.
+**Source of truth** for shipped vs open work is the **phase checklists** above (`Phase 0`–`Phase 7`, **Open questions**, **Coverage**). This block is a compact merge of the old “Recently completed” + “Immediate tasks” lists so we do not maintain duplicate checklines.
 
-## Open Questions
+- `[x]` **Docs:** `docs/scenarios.md`, `docs/UserStory.md`, `docs/alignment-review.md` in place as story / alignment spine.
+- `[x]` **Monorepo bootstrap:** npm workspaces, `packages/protocol`, `packages/identity`, `packages/bonds`, `packages/network`, `apps/node` entry, first tests, two-node signed ping.
+- `[x]` **Runtime slice:** EMP owner/device split, certified `system.signal`, Agent Card + mandate schemas, CLI (profile, audit, tasks, approvals, peers, vault), persisted trust store, `@envoymesh/local-store`, Electron dashboard shell + panels; `npm run typecheck`, `npm test`, `npm run desktop:build` clean.
+- `[x]` **Observability / termination slice:** Phase 4C (correlation, audit enrichment, optional `p2p.trace`, probes, dashboard audit UX); Phase 4D (mandate/propose expiry, cancel / satisfied / `closeOnFirstCompletedResult`, `task-runtime-state`, CLI flags).
+- `[!]` **Live connectivity proofs** outside the default CI runner (mDNS / DHT / relay / DCUtR) — same as Phase 4 `[!]` items and [live-connectivity-testing.md](./live-connectivity-testing.md).
 
-- Should we use npm workspaces long term, or switch to pnpm once the repo grows?
-- Should SQLite be introduced in Phase 1 or delayed until audit/storage needs are clearer?
-- Should libp2p PeerID be derived from the Envoy identity key or kept separate?
-- Which cloud model providers should be supported first?
-- What is the default policy for sending redacted context to cloud models?
+### Next planning pulls (from [scenarios](./scenarios.md), [UserStory](./UserStory.md); [alignment](./alignment-review.md))
+
+- `[~]` Broadcast / fan-out **termination** — **Phase 4D shipped locally**: mandate / propose expiry, `task.cancel` / satisfied lifecycle, `closeOnFirstCompletedResult`, correlation in envelopes + audit. Still **open**: hop TTL, gossip-wide cancel, collect-N, correlation-only cancel on the wire.
+- `[x]` **Phase 4E** semantic **discovery** (signed `discovery.request/response`, trust+rate-gated inbound handling, Scenario 2, Story B baseline).
+- `[ ]` **Phase 4A** (**non-mobile**): device pairing + primary-offline defer / owner surface. *Thin-mobile channel checkbox **parked** (satellite app out of scope for now).*
+- `[ ]` **Scenario 6 pick**: either **H2H chat** sub-protocol (`/envoymesh/chat/…`) **or** **voucher + chunked data** (`/envoymesh/data/…`) — first vertical to narrow the communication matrix gap.
+- `[x]` **Semantic firewall** (US-F5) — first slice shipped in `@envoymesh/models` (`routeModelRequest`); extend with trust/redaction/tool gates later.
+
+## Coverage vs UserStory and design docs
+
+Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStory.md](./UserStory.md), [alignment-review.md](./alignment-review.md), [detailed-design.md](./detailed-design.md), and [protocol-standard.md](./protocol-standard.md). The traceability table at the top of this file is the primary map; the bullets below call out **narrative pressure** that is easy to under-specify in phase checklists alone.
+
+| Pressure (source) | In plan today? | Gap / where to track | Shipped (`[x]`) · missing (`[ ]`) |
+|-------------------|----------------|----------------------|----------------------------------|
+| Scenario 2 / Story B — **hashed or tag-scoped discovery** | Phase **4E** | EMP discovery intents (`discovery.request` / `discovery.response`) + node trust/rate gating + audit correlation shipped as baseline. | `[x]` |
+| Scenario 3 / US-C2 — **hop TTL, gossip cancel, collect-N** | Phase **4D** “not in slice” + **Open questions** | Two **`[ ]`** lines under Phase 4D; EMP fan-out TBD. | `[ ]` |
+| Scenario 3 — **local expiry / cancel / first result / correlation** | Phase **4D** + 4C | CLI + `task-runtime-state` + audits. | `[x]` |
+| Scenario 4 — **bond + proof-of-context on wire** | Phase **4B** Batch 6 + 2 / 4A | Batch 6 **`[x]`**; trust/approvals + policy today. | `[x]` |
+| Scenario 5 — **vault path** | Phase 5 | Indexing, policy, audit. | `[x]` |
+| Scenario 5 — **voucher + verified P2P chunk stream** | Phase 5 + Scenario 6 pick | Data sub-protocol not chosen. | `[ ]` |
+| Scenario 6 — **roles, `/chat` `/agent` `/data`** | Scenario 6 pick + **Open questions** | Single stream today. | `[ ]` |
+| Story A — **pairing (+ thin mobile parked)** | Phase **4A** | Pairing + offline defer **`[ ]]`**; thin mobile **`[ ]`** *parked*. | `[~]` |
+| Story A — **offline primary, defer / notify** | Phase **4A** | One **`[ ]`** line. | `[ ]` |
+| Story B — **morning report / ranked discovery UX** | Phase **7** | One **`[ ]`** line. | `[ ]` |
+| Story C — **H2A as distinct channel** | Scenario 6 pick | Same as matrix. | `[ ]` |
+| Stories D / E — **multi-hop, payments** | **Backlog** | No phase block yet. | `[ ]` |
+| Story F — **DID-targeted LAN discovery** | Phase **4** | LAN identity match **`[ ]`**; live proofs **`[!]`** | `[~]` |
+| **Semantic firewall** (UserStory + US-F5) | Phase **6** | `evaluateSemanticFirewall` + `routeModelRequest` integration. | `[x]` |
+| **`knowledge.query` handler** | Phase 3 | Inbound mock + CLI; EMP payload schema in protocol. | `[x]` |
+| **Distributed state (`loro` / `yjs`)** | Key Decisions | Direction only; no build checkbox. | `[ ]` |
+| Tooling / persistence | Key Decisions + detailed-design | SQLite Key Decision **`[ ]`**. | `[~]` |
+
+## Open questions
+
+**How to maintain this section:** When a question is answered, move it to **Resolved or decided** with a one-line outcome and a pointer (PR, doc section, or Key Decisions). Keep **Still open** short and decision-shaped. Large features that are not one-liners belong in **Backlog (framed in scenarios)** or in phase checklists.
+
+### Resolved or decided
+
+| Status | Topic | Outcome | Where to look |
+|--------|-------|---------|----------------|
+| `[x]` | Language, architecture, privacy, model strategy | TypeScript; P2P-first; owner vault; policy-gated local/cloud/peer models | Key Decisions |
+| `[x]` | Protocol v1 shape for core mesh | EMP: signed envelopes, owner/device split, mandates, task lifecycle, reports | Phase 1, [protocol-standard.md](./protocol-standard.md) |
+| `[x]` | P2P baseline stack | `js-libp2p`; TCP, Noise, Yamux, mDNS first; optional DHT, relay, DCUtR | Phase 4, `packages/network` |
+| `[x]` | **npm vs pnpm (near term)** | **Ship with npm workspaces**; pnpm is a later migration if monorepo pain justifies it | Key Decisions |
+| `[x]` | **SQLite vs “Phase 1”** | **SQLite not part of Phase 1 protocol/identity**; **local-store is JSONL + JSON files** until query/reporting needs justify SQLite | Key Decisions (storage line), [detailed-design.md](./detailed-design.md) (open implementation decisions) |
+| `[x]` | **Local “when do we stop work on a task?”** | Mandate + propose **wall-clock expiry**, **`task.cancel`**, **satisfied** after first **completed** `task.result` when `closeOnFirstCompletedResult`, persisted **`task-runtime-state.json`**, **`correlationId`** in envelopes and audit | Phase **4D**, [scenarios.md](./scenarios.md) US-C2 / US-C3 partial |
+| `[x]` | AI runtime local default | `node-llama-cpp` direction for local models | Key Decisions |
+| `[x]` | Mobile v1 | Thin UI Mode; explicit deferral of full mesh on phone | Key Decisions, Phase 4A |
+| `[x]` | First operator UI | Developer CLI + Electron dashboard shell | Phase 7 |
+
+### Still open
+
+| Status | Topic | Why it matters | Notes |
+|--------|-------|----------------|-------|
+| `[ ]` | **pnpm migration** | Repo scale, install determinism | Discretionary; no trigger metric locked. |
+| `[ ]` | **SQLite introduction** | Audit/query/reporting at scale | **Direction** is “when needs justify”; no milestone date. |
+| `[ ]` | **libp2p `PeerID` vs Envoy cryptographic identity** | Discovery logs, multi-key stories, DID mapping | Still open in [detailed-design.md](./detailed-design.md); affects addressing docs. |
+| `[ ]` | **Cloud model providers (first)** | Vendor keys, compliance, rate limits | `packages/models` is pluggable; product default unset. |
+| `[ ]` | **Default policy for redacted / non-public context to cloud** | Story C and semantic firewall | Tied to approvals + redaction pipeline; not normative in EMP yet. |
+| `[ ]` | **Broadcast termination on the wire** — hop TTL, **network-wide** cancel propagation, **collect-N** (`k > 1`), correlation-only cancel | Scenario 3, US-C2/US-C3 | Phase 4D is **per-receiver local** only; fan-out EMP/gossip shape TBD. |
+| `[ ]` | **Sender / receiver role** (human vs agent) **without breaking signing** | Scenario 6, UserStory header sketch | Options: optional EMP fields + version bump, parallel sub-protocol, or intent family; see [alignment-review](./alignment-review.md) recommendation. |
+| `[ ]` | **Live mDNS / DHT / relay proofs outside CI** | Story F, wide-area connectivity | Blocked on environment; [live-connectivity-testing.md](./live-connectivity-testing.md). |
+
+### Backlog (track in scenarios / phases, not as single-line Q&A)
+
+- `[x]` **Phase 4E** — semantic discovery baseline (Scenario 2, Story B, US-B1).
+- `[ ]` **Phase 4A** — device pairing; primary-offline defer / owner surface. *Thin mobile channel: **parked** (see Prioritization).*
+- `[ ]` **Scenario 6 vertical** — H2H chat **or** voucher + `/envoymesh/data` (matrix, Scenario 5).
+- `[ ]` **Stories D / E** — multi-hop discovery, commerce, receipts (no dedicated phase yet; add when scenarios are scoped).
+- `[ ]` **Optional vault** — content-addressing, IPFS/Filecoin paths (Phase 5 open items).
+
+*Bond wire work* (payloads + inbound + CLI) is Phase **4B** Batch 6 **`[x]`**; *Phase 4E discovery baseline* (`discovery.request/response`, trust/rate gating, audit correlation) is **`[x]`**; *semantic firewall* v1 is Phase **6** **`[x]`**; *morning report* under Phase **7**; *LAN identity match* under Phase **4**. *Hop TTL / gossip cancel / collect-N* are Phase **4D** “not in this slice” **`[ ]`** lines.
+
+## Changelog (this document)
+
+| Date | Change |
+|------|--------|
+| 2026-04-26 | Related-doc strip, north-star checkline, Phase 4A Full Node defer → `[x]`, Phase 6 semantic-firewall exit criterion, open-question table **Status** headers, Immediate tasks disclaimer, backlog footer unchanged in meaning. |
+| 2026-04-26 | **On this page** TOC (phases + plan sections); **Current Milestone** merged “Recently completed” + “Immediate tasks” into one **Archive** snapshot + **Next planning pulls** subsection. |
+| 2026-04-26 | **Phase 3:** `knowledge.query` EMP payload (`KnowledgeQueryPayloadSchema`), inbound mock handler, CLI flags, tests; docs (EMP, detailed-design, QuickStart). |
+| 2026-04-26 | **Prioritization:** park thin mobile / satellite app; **Phase 6** semantic firewall v1 in `@envoymesh/models` (`evaluateSemanticFirewall` + `routeModelRequest`). |
+| 2026-04-26 | **Phase 4B Batch 6:** `bond.*` EMP payloads, `apps/node` inbound bond path + `createLocalTrustStore` policy, CLI `--bond-request`; tests. |
+| 2026-04-27 | **Phase 4E baseline:** signed EMP `discovery.request` / `discovery.response` payloads + node inbound trust-tier/rate-limit gate + correlated audit + CLI `--discovery-request`; tests + docs. |

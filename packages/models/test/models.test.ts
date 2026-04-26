@@ -6,9 +6,47 @@ import {
   createModelRoutingAuditEvent,
   createOllamaLiteLlmProvider,
   evaluateModelProvider,
+  evaluateSemanticFirewall,
   routeModelRequest,
   selectModelProvider,
 } from "../src/index.js";
+
+describe("semantic firewall", () => {
+  it("rejects empty and disallowed control characters", () => {
+    expect(evaluateSemanticFirewall({ text: "   " }).ok).toBe(false);
+    expect(evaluateSemanticFirewall({ text: "hello\x00world" }).ok).toBe(false);
+    expect(evaluateSemanticFirewall({ text: "ok" })).toEqual({ ok: true, text: "ok" });
+  });
+
+  it("collapses very long newline runs", () => {
+    const long = "a" + "\n".repeat(55) + "b";
+    const result = evaluateSemanticFirewall({ text: long });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.text.split("\n").length).toBeLessThanOrEqual(52);
+    }
+  });
+
+  it("denies model routing before provider selection when prompt fails firewall", async () => {
+    const provider = createMockModelProvider({ providerType: "local" });
+    const result = await routeModelRequest(
+      {
+        taskType: "knowledge.query",
+        prompt: "bad\x01",
+        sensitivity: "private",
+      },
+      [provider],
+    );
+
+    expect(result.decision).toMatchObject({
+      action: "deny",
+      reason: expect.stringContaining("semantic_firewall"),
+    });
+    expect(result.response).toBeUndefined();
+    expect(result.auditEvent.outcome).toBe("deny");
+    expect(result.auditEvent.reason).toContain("semantic_firewall");
+  });
+});
 
 describe("model router", () => {
   it("defines conservative default provider policies", () => {

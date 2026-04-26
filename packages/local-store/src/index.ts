@@ -5,8 +5,19 @@ import type {
   DeviceProfile,
   EnvoyIntent,
   MandateAction,
+  SystemSignalPayload,
   TaskJournalEntry,
   TaskLifecycleState,
+} from "@envoymesh/protocol";
+import {
+  parseTaskAcceptPayload,
+  parseTaskCancelPayload,
+  parseTaskHeartbeatPayload,
+  parseTaskMandatePayload,
+  parseTaskNegotiatePayload,
+  parseTaskProposePayload,
+  parseTaskRejectPayload,
+  parseTaskResultPayload,
 } from "@envoymesh/protocol";
 import {
   createDeviceCertificate,
@@ -24,6 +35,7 @@ const TASK_JOURNAL_FILE = "task-journal.jsonl";
 const AUDIT_EVENTS_FILE = "audit-events.jsonl";
 const APPROVAL_QUEUE_FILE = "approval-queue.jsonl";
 const TRUST_STORE_FILE = "trust-records.json";
+const PEER_DIRECTORY_FILE = "peer-directory.json";
 
 export interface NodeProfile {
   owner: OwnerIdentity;
@@ -76,7 +88,12 @@ export type AuditEventType =
   | "message.rejected"
   | "message.verified"
   | "task.handled"
-  | "task.rejected";
+  | "task.rejected"
+  | "p2p.trace";
+
+export type AuditDirection = "inbound" | "outbound";
+
+export type AuditVerificationStatus = "verified" | "rejected";
 
 export interface AuditEvent {
   version: "0.1";
@@ -87,7 +104,12 @@ export interface AuditEvent {
   taskId?: string;
   mandateId?: string;
   messageId?: string;
+  correlationId?: string;
   remotePeerId?: string;
+  direction?: AuditDirection;
+  verificationStatus?: AuditVerificationStatus;
+  latencyMs?: number;
+  protocol?: string;
   outcome: "allow" | "deny" | "record";
   summary: string;
 }
@@ -98,7 +120,12 @@ export interface CreateAuditEventInput {
   taskId?: string;
   mandateId?: string;
   messageId?: string;
+  correlationId?: string;
   remotePeerId?: string;
+  direction?: AuditDirection;
+  verificationStatus?: AuditVerificationStatus;
+  latencyMs?: number;
+  protocol?: string;
   outcome: AuditEvent["outcome"];
   summary: string;
   createdAt?: string;
@@ -215,7 +242,12 @@ export function createAuditEvent(input: CreateAuditEventInput): AuditEvent {
     taskId: input.taskId,
     mandateId: input.mandateId,
     messageId: input.messageId,
+    correlationId: input.correlationId,
     remotePeerId: input.remotePeerId,
+    direction: input.direction,
+    verificationStatus: input.verificationStatus,
+    latencyMs: input.latencyMs,
+    protocol: input.protocol,
     outcome: input.outcome,
     summary: input.summary,
   };
@@ -241,8 +273,12 @@ export function auditEventForDispatcherDecision(
   decision: LocalDispatcherDecision,
   input: {
     messageId?: string;
+    correlationId?: string;
     remotePeerId?: string;
     createdAt?: string;
+    direction?: AuditDirection;
+    verificationStatus?: AuditVerificationStatus;
+    latencyMs?: number;
   } = {},
 ): AuditEvent {
   if (decision.action === "handled") {
@@ -252,7 +288,11 @@ export function auditEventForDispatcherDecision(
       taskId: decision.taskId,
       mandateId: decision.mandateId,
       messageId: input.messageId,
+      correlationId: input.correlationId ?? decision.taskId,
       remotePeerId: input.remotePeerId,
+      direction: input.direction,
+      verificationStatus: input.verificationStatus ?? "verified",
+      latencyMs: input.latencyMs,
       outcome: "record",
       summary: `Handled ${decision.intent} as ${decision.state}.`,
       createdAt: input.createdAt,
@@ -263,11 +303,56 @@ export function auditEventForDispatcherDecision(
     type: "task.rejected",
     intent: decision.intent,
     messageId: input.messageId,
+    correlationId: input.correlationId,
     remotePeerId: input.remotePeerId,
+    direction: input.direction,
+    verificationStatus: input.verificationStatus ?? "rejected",
+    latencyMs: input.latencyMs,
     outcome: "deny",
     summary: decision.reason,
     createdAt: input.createdAt,
   });
+}
+
+export function deriveCorrelationIdFromEnvelope(envelope: {
+  correlationId?: string;
+  intent: EnvoyIntent;
+  payload: unknown;
+}): string | undefined {
+  if (envelope.correlationId) {
+    return envelope.correlationId;
+  }
+
+  return inferTaskIdFromA2APayload(envelope.intent, envelope.payload);
+}
+
+function inferTaskIdFromA2APayload(intent: EnvoyIntent, payload: unknown): string | undefined {
+  try {
+    switch (intent) {
+      case "task.mandate": {
+        const parsed = parseTaskMandatePayload(payload);
+        return parsed.taskId ?? parsed.mandate.mandateId;
+      }
+      case "task.propose":
+        return parseTaskProposePayload(payload).taskId;
+      case "task.negotiate":
+        return parseTaskNegotiatePayload(payload).taskId;
+      case "task.accept":
+        return parseTaskAcceptPayload(payload).taskId;
+      case "task.reject":
+        return parseTaskRejectPayload(payload).taskId;
+      case "task.cancel":
+        return parseTaskCancelPayload(payload).taskId;
+      case "task.heartbeat":
+        return parseTaskHeartbeatPayload(payload).taskId;
+      case "task.result":
+        return parseTaskResultPayload(payload).taskId;
+      default:
+        return undefined;
+    }
+  } catch {
+    return undefined;
+  }
 }
 
 export interface TrustRecord {
@@ -298,6 +383,30 @@ export interface LocalTrustStore {
 interface TrustStoreFile {
   version: "0.1";
   records: TrustRecord[];
+}
+
+export interface PeerDirectoryRecord {
+  version: "0.1";
+  ownerId: string;
+  peerId: string;
+  deviceId: string;
+  lastSeenAt: string;
+  listenAddrs: string[];
+}
+
+export interface LocalPeerDirectoryStore {
+  listPeerRecords(): Promise<PeerDirectoryRecord[]>;
+  getPeerByOwnerId(ownerId: string): Promise<PeerDirectoryRecord | undefined>;
+  upsertPeerFromSignal(input: {
+    peerId: string;
+    payload: SystemSignalPayload;
+    seenAt?: string;
+  }): Promise<PeerDirectoryRecord>;
+}
+
+interface PeerDirectoryFile {
+  version: "0.1";
+  records: PeerDirectoryRecord[];
 }
 
 export function createLocalTrustStore(profileDir: string): LocalTrustStore {
@@ -356,6 +465,48 @@ export function createLocalTrustStore(profileDir: string): LocalTrustStore {
       file.records = file.records.filter((candidate) => candidate.peerOwnerId !== peerOwnerId);
       await writeTrustStoreFile(trustStorePath, file);
       return record;
+    },
+  };
+}
+
+export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDirectoryStore {
+  const directoryPath = join(profileDir, PEER_DIRECTORY_FILE);
+
+  return {
+    async listPeerRecords() {
+      return (await readPeerDirectoryFile(directoryPath)).records.sort((left, right) =>
+        right.lastSeenAt.localeCompare(left.lastSeenAt),
+      );
+    },
+
+    async getPeerByOwnerId(ownerId) {
+      return (await readPeerDirectoryFile(directoryPath)).records.find((record) => record.ownerId === ownerId);
+    },
+
+    async upsertPeerFromSignal(input) {
+      const file = await readPeerDirectoryFile(directoryPath);
+      const seenAt = input.seenAt ?? new Date().toISOString();
+      const existing = file.records.find((record) => record.ownerId === input.payload.ownerId);
+      if (existing) {
+        existing.peerId = input.peerId;
+        existing.deviceId = input.payload.deviceId;
+        existing.lastSeenAt = seenAt;
+        existing.listenAddrs = input.payload.listenAddrs;
+        await writePeerDirectoryFile(directoryPath, file);
+        return existing;
+      }
+
+      const created: PeerDirectoryRecord = {
+        version: "0.1",
+        ownerId: input.payload.ownerId,
+        peerId: input.peerId,
+        deviceId: input.payload.deviceId,
+        lastSeenAt: seenAt,
+        listenAddrs: input.payload.listenAddrs,
+      };
+      file.records.push(created);
+      await writePeerDirectoryFile(directoryPath, file);
+      return created;
     },
   };
 }
@@ -419,6 +570,25 @@ async function writeTrustStoreFile(path: string, file: TrustStoreFile): Promise<
   await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
 }
 
+async function readPeerDirectoryFile(path: string): Promise<PeerDirectoryFile> {
+  try {
+    return JSON.parse(await readFile(path, "utf8")) as PeerDirectoryFile;
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return {
+        version: "0.1",
+        records: [],
+      };
+    }
+    throw error;
+  }
+}
+
+async function writePeerDirectoryFile(path: string, file: PeerDirectoryFile): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+}
+
 function isMissingFileError(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -427,3 +597,5 @@ function isMissingFileError(error: unknown): boolean {
     error.code === "ENOENT"
   );
 }
+
+export * from "./task-runtime-state.js";

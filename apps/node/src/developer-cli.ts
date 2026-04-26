@@ -31,6 +31,8 @@ export interface DeveloperCliArgs {
   vaultDir: string;
   query?: string;
   limit: number;
+  auditCorrelationId?: string;
+  includeP2pTraceInAudit: boolean;
   status?: ApprovalRequest["status"];
   approvalAction: "list" | "approve" | "reject";
   approvalId?: string;
@@ -90,6 +92,7 @@ export function parseDeveloperCliArgs(argv: string[]): DeveloperCliArgs {
     profileDir: "./data/default",
     vaultDir: DEFAULT_SHARED_VAULT_DIR,
     limit: 20,
+    includeP2pTraceInAudit: false,
     approvalAction: "list",
     trustAction: "list",
   };
@@ -105,6 +108,10 @@ export function parseDeveloperCliArgs(argv: string[]): DeveloperCliArgs {
       args.query = readValue(argv, ++index, arg);
     } else if (arg === "--limit") {
       args.limit = parsePositiveInteger(readValue(argv, ++index, arg), arg);
+    } else if (arg === "--audit-correlation") {
+      args.auditCorrelationId = readValue(argv, ++index, arg);
+    } else if (arg === "--include-p2p-trace") {
+      args.includeP2pTraceInAudit = true;
     } else if (arg === "--status") {
       args.status = parseApprovalStatus(readValue(argv, ++index, arg));
     } else if (arg === "--level") {
@@ -155,6 +162,8 @@ Options:
   --vault <dir>     Shared vault directory. Default: shared_vault
   --query <text>    Query for vault-search.
   --limit <n>       Max rows to print. Default: 20
+  --audit-correlation <id>  Only show audit rows matching correlationId/taskId (substring match).
+  --include-p2p-trace         Include p2p.trace rows in audit listings (hidden by default).
   --status <status> Approval status filter: pending, approved, rejected.
   --level <level>   Trust level: direct, referred, public, blocked.
   --name <text>     Display name for trust records.
@@ -176,10 +185,11 @@ async function showProfile(args: DeveloperCliArgs): Promise<DeveloperCliResult> 
 
 async function listAuditEvents(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
   const events = await createLocalTaskStore(args.profileDir).readAuditEvents();
+  const filtered = filterAuditEventsForDeveloperView(args, events);
 
   return ok([
-    `Audit events (${events.length})`,
-    ...last(events, args.limit).map(formatAuditEvent),
+    `Audit events (${filtered.length} of ${events.length})`,
+    ...last(filtered, args.limit).map(formatAuditEvent),
   ]);
 }
 
@@ -271,7 +281,7 @@ async function handleTrust(args: DeveloperCliArgs): Promise<DeveloperCliResult> 
 }
 
 async function listObservedPeers(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
-  const events = await createLocalTaskStore(args.profileDir).readAuditEvents();
+  const events = filterAuditEventsForDeveloperView(args, await createLocalTaskStore(args.profileDir).readAuditEvents());
   const byPeer = new Map<string, { count: number; lastSeenAt: string }>();
 
   for (const event of events) {
@@ -336,8 +346,29 @@ function formatAuditEvent(event: AuditEvent): string {
   const intent = event.intent ? ` intent=${event.intent}` : "";
   const task = event.taskId ? ` task=${event.taskId}` : "";
   const remote = event.remotePeerId ? ` remote=${event.remotePeerId}` : "";
+  const correlation = event.correlationId ? ` correlation=${event.correlationId}` : "";
+  const direction = event.direction ? ` direction=${event.direction}` : "";
+  const verification = event.verificationStatus ? ` verify=${event.verificationStatus}` : "";
+  const latency = typeof event.latencyMs === "number" ? ` latencyMs=${event.latencyMs}` : "";
+  const protocol = event.protocol ? ` protocol=${event.protocol}` : "";
 
-  return `${event.createdAt} ${event.type} outcome=${event.outcome}${intent}${task}${remote} ${event.summary}`;
+  return `${event.createdAt} ${event.type} outcome=${event.outcome}${intent}${task}${correlation}${direction}${verification}${latency}${protocol}${remote} ${event.summary}`;
+}
+
+function filterAuditEventsForDeveloperView(args: DeveloperCliArgs, events: AuditEvent[]): AuditEvent[] {
+  const correlationNeedle = args.auditCorrelationId?.trim();
+  return events.filter((event) => {
+    if (!args.includeP2pTraceInAudit && event.type === "p2p.trace") {
+      return false;
+    }
+
+    if (!correlationNeedle) {
+      return true;
+    }
+
+    const haystack = `${event.correlationId ?? ""}\n${event.taskId ?? ""}`;
+    return haystack.includes(correlationNeedle);
+  });
 }
 
 function formatApprovalRequest(request: ApprovalRequest): string {

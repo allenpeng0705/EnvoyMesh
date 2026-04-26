@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type {
+  AuditEvent,
   DashboardConfig,
   DashboardSnapshot,
   SetTrustRecordRequest,
@@ -23,6 +24,8 @@ function App() {
     displayName: "",
     note: "",
   });
+  const [auditCorrelationFilter, setAuditCorrelationFilter] = useState("");
+  const [showP2pTrace, setShowP2pTrace] = useState(false);
 
   async function refresh() {
     try {
@@ -50,6 +53,26 @@ function App() {
 
     return loadState.snapshot.approvals.filter((approval) => approval.status === "pending");
   }, [loadState]);
+
+  const filteredAuditEvents = useMemo(() => {
+    if (loadState.status !== "ready") {
+      return [];
+    }
+
+    const needle = auditCorrelationFilter.trim();
+    return loadState.snapshot.auditEvents.filter((event) => {
+      if (!showP2pTrace && event.type === "p2p.trace") {
+        return false;
+      }
+
+      if (!needle) {
+        return true;
+      }
+
+      const haystack = `${event.correlationId ?? ""}\n${event.taskId ?? ""}`;
+      return haystack.includes(needle);
+    });
+  }, [auditCorrelationFilter, loadState, showP2pTrace]);
 
   async function updateApproval(approvalId: string, action: "approve" | "reject") {
     if (action === "approve") {
@@ -256,14 +279,28 @@ function App() {
         </Panel>
 
         <Panel title="Recent Audit">
+          <div className="audit-toolbar">
+            <input
+              type="text"
+              placeholder="Filter by correlation / task id"
+              value={auditCorrelationFilter}
+              onChange={(event) => setAuditCorrelationFilter(event.target.value)}
+            />
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={showP2pTrace}
+                onChange={(event) => setShowP2pTrace(event.target.checked)}
+              />
+              Show p2p.trace
+            </label>
+          </div>
+          <p className="muted">
+            p2p.trace rows only appear when the node is started with <code>--p2p-debug</code>.
+          </p>
           <ActivityList
-            empty="No audit events yet."
-            rows={snapshot.auditEvents.map((event) => ({
-              id: event.eventId,
-              title: `${event.type} · ${event.outcome}`,
-              detail: event.summary,
-              meta: event.createdAt,
-            }))}
+            empty="No audit events match the current filters."
+            rows={filteredAuditEvents.map((event) => formatAuditRow(event))}
           />
         </Panel>
       </section>
@@ -361,6 +398,22 @@ function ActivityList({
       ))}
     </div>
   );
+}
+
+function formatAuditRow(event: AuditEvent): { id: string; title: string; detail: string; meta: string } {
+  const correlation = event.correlationId ? ` · corr ${event.correlationId}` : "";
+  const direction = event.direction ? ` · ${event.direction}` : "";
+  const verify = event.verificationStatus ? ` · ${event.verificationStatus}` : "";
+  const latency = typeof event.latencyMs === "number" ? ` · ${event.latencyMs}ms` : "";
+  const protocol = event.protocol ? ` · ${event.protocol}` : "";
+  const remote = event.remotePeerId ? ` · ${event.remotePeerId}` : "";
+
+  return {
+    id: event.eventId,
+    title: `${event.type} · ${event.outcome}${correlation}`,
+    detail: event.summary,
+    meta: `${event.createdAt}${direction}${verify}${latency}${protocol}${remote}`,
+  };
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

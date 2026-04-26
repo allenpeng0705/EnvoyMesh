@@ -6,6 +6,12 @@ import {
   createAgentCardResponsePayload,
   createAuthChallengePayload,
   createAutonomousReportingPolicy,
+  createBondRequestPayload,
+  createBondChallengePayload,
+  createBondChallengeResponsePayload,
+  createDiscoveryRequestPayload,
+  createDiscoveryResponsePayload,
+  createKnowledgeQueryPayload,
   createReport,
   createReportCreatePayload,
   createUnsignedDeviceRevocationRecord,
@@ -32,6 +38,12 @@ import {
   parseAgentCardRequestPayload,
   parseAgentCardResponsePayload,
   parseAuthChallengePayload,
+  parseBondChallengePayload,
+  parseBondChallengeResponsePayload,
+  parseBondRequestPayload,
+  parseDiscoveryRequestPayload,
+  parseDiscoveryResponsePayload,
+  parseKnowledgeQueryPayload,
   parseDeviceRevocationRecord,
   parseMandate,
   parseReportCreatePayload,
@@ -50,6 +62,63 @@ import {
 } from "../src/index.js";
 
 describe("protocol", () => {
+  it("roundtrips knowledge.query payload", () => {
+    const payload = createKnowledgeQueryPayload({
+      query: "What is in the shared vault?",
+      requestedSensitivity: "public",
+    });
+    expect(parseKnowledgeQueryPayload(payload)).toEqual(payload);
+  });
+
+  it("roundtrips bond payloads", () => {
+    const request = createBondRequestPayload({
+      requesterOwnerId: "envoy:owner:alice",
+      message: "Hello",
+      proofOfContext: "Work",
+      requestedLevel: "referred",
+    });
+    expect(parseBondRequestPayload(request)).toEqual(request);
+
+    const challenge = createBondChallengePayload({
+      challengerOwnerId: "envoy:owner:bob",
+      targetOwnerId: "envoy:owner:alice",
+    });
+    expect(parseBondChallengePayload(challenge)).toEqual(challenge);
+
+    const response = createBondChallengeResponsePayload({
+      challengeId: challenge.challengeId,
+      nonce: challenge.nonce,
+      responderOwnerId: "envoy:owner:alice",
+      decision: "accept",
+      proofOfContext: "ok",
+    });
+    expect(parseBondChallengeResponsePayload(response)).toEqual(response);
+  });
+
+  it("roundtrips discovery payloads", () => {
+    const request = createDiscoveryRequestPayload({
+      requesterOwnerId: "envoy:owner:alice",
+      requestedTagHashes: ["hash:books"],
+      requestedCapabilities: ["task.execute"],
+      maxResults: 3,
+    });
+    expect(parseDiscoveryRequestPayload(request)).toEqual(request);
+
+    const response = createDiscoveryResponsePayload({
+      requestMessageId: "msg-1",
+      responderOwnerId: "envoy:owner:bob",
+      matches: [
+        {
+          ownerId: "envoy:owner:bob",
+          peerId: "peer-b",
+          matchedTagHashes: ["hash:books"],
+          matchedCapabilities: ["task.execute"],
+        },
+      ],
+    });
+    expect(parseDiscoveryResponsePayload(response)).toEqual(response);
+  });
+
   it("creates a valid unsigned envelope", () => {
     const envelope = createUnsignedEnvelope({
       senderPeerId: "peer-a",
@@ -62,6 +131,52 @@ describe("protocol", () => {
     expect(envelope.version).toBe("0.1");
     expect(envelope.intent).toBe("system.ping");
     expect(envelope.messageId).toBeTruthy();
+  });
+
+  it("defaults mandate closeOnFirstCompletedResult to false", () => {
+    const mandate = createUnsignedMandate({
+      ownerId: "envoy:owner:alice",
+      issuedToDeviceId: "envoy:device:desktop",
+      taskIntent: "find.book",
+      objective: "Find a book.",
+      mandateId: "mandate-1",
+      expiresAt: "2026-04-27T12:00:00.000Z",
+    });
+
+    expect(mandate.closeOnFirstCompletedResult).toBe(false);
+  });
+
+  it("persists closeOnFirstCompletedResult on mandates when set", () => {
+    const mandate = createUnsignedMandate({
+      ownerId: "envoy:owner:alice",
+      issuedToDeviceId: "envoy:device:desktop",
+      taskIntent: "find.book",
+      objective: "Find a book.",
+      mandateId: "mandate-1",
+      expiresAt: "2026-04-27T12:00:00.000Z",
+      closeOnFirstCompletedResult: true,
+    });
+
+    expect(mandate.closeOnFirstCompletedResult).toBe(true);
+  });
+
+  it("threads correlationId through envelope signing material", () => {
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: "peer-a",
+      senderPublicKey: "public-key",
+      recipientPeerId: "peer-b",
+      intent: "system.ping",
+      payload: { message: "hello" },
+      correlationId: "corr-1",
+      messageId: "msg-1",
+      createdAt: "2026-04-27T10:00:00.000Z",
+    });
+    const forSigning = envelopeForSigning({
+      ...unsigned,
+      signature: "signature",
+    } as any);
+
+    expect(forSigning.correlationId).toBe("corr-1");
   });
 
   it("rejects unknown intents", () => {

@@ -1,3 +1,5 @@
+import type { Sensitivity } from "@envoymesh/protocol";
+
 export interface NodeArgs {
   profileDir: string;
   listen: string[];
@@ -9,9 +11,22 @@ export interface NodeArgs {
   enableRelayServer: boolean;
   enableAutoNat: boolean;
   enableDcutr: boolean;
+  p2pDebug: boolean;
+  correlationId?: string;
   pingTarget?: string;
   pingMessage?: string;
   signalTarget?: string;
+  knowledgeQueryTarget?: string;
+  knowledgeQueryText?: string;
+  knowledgeQuerySensitivity?: Sensitivity;
+  bondRequestTarget?: string;
+  bondMessage?: string;
+  bondProof?: string;
+  bondRequestedLevel?: "direct" | "referred";
+  discoveryRequestTarget?: string;
+  discoveryTagHashes?: string[];
+  discoveryCapabilities?: string[];
+  discoveryMaxResults?: number;
   taskMandateTarget?: string;
   taskProposeTarget?: string;
   taskCancelTarget?: string;
@@ -24,6 +39,9 @@ export interface NodeArgs {
   reason?: string;
   reportSummary?: string;
   reportMode?: "instant" | "brief" | "silent" | "approval";
+  mandateExpiresAt?: string;
+  taskExpiresAt?: string;
+  closeOnFirstCompletedResult?: boolean;
 }
 
 export function parseNodeArgs(argv: string[]): NodeArgs {
@@ -37,6 +55,9 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     enableRelayServer: false,
     enableAutoNat: false,
     enableDcutr: false,
+    p2pDebug: false,
+    discoveryTagHashes: [],
+    discoveryCapabilities: [],
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -66,10 +87,36 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.enableAutoNat = true;
     } else if (arg === "--dcutr") {
       args.enableDcutr = true;
+    } else if (arg === "--p2p-debug") {
+      args.p2pDebug = true;
+    } else if (arg === "--correlation-id") {
+      args.correlationId = readValue(argv, ++index, arg);
     } else if (arg === "--ping") {
       args.pingTarget = readValue(argv, ++index, arg);
     } else if (arg === "--signal") {
       args.signalTarget = readValue(argv, ++index, arg);
+    } else if (arg === "--knowledge-query") {
+      args.knowledgeQueryTarget = readValue(argv, ++index, arg);
+    } else if (arg === "--knowledge-text") {
+      args.knowledgeQueryText = readValue(argv, ++index, arg);
+    } else if (arg === "--knowledge-sensitivity") {
+      args.knowledgeQuerySensitivity = parseSensitivity(readValue(argv, ++index, arg));
+    } else if (arg === "--bond-request") {
+      args.bondRequestTarget = readValue(argv, ++index, arg);
+    } else if (arg === "--bond-message") {
+      args.bondMessage = readValue(argv, ++index, arg);
+    } else if (arg === "--bond-proof") {
+      args.bondProof = readValue(argv, ++index, arg);
+    } else if (arg === "--bond-level") {
+      args.bondRequestedLevel = parseBondLevel(readValue(argv, ++index, arg));
+    } else if (arg === "--discovery-request") {
+      args.discoveryRequestTarget = readValue(argv, ++index, arg);
+    } else if (arg === "--discovery-tag-hash") {
+      args.discoveryTagHashes?.push(readValue(argv, ++index, arg));
+    } else if (arg === "--discovery-capability") {
+      args.discoveryCapabilities?.push(readValue(argv, ++index, arg));
+    } else if (arg === "--discovery-max-results") {
+      args.discoveryMaxResults = parsePositiveInteger(readValue(argv, ++index, arg), arg);
     } else if (arg === "--task-mandate") {
       args.taskMandateTarget = readValue(argv, ++index, arg);
     } else if (arg === "--task-propose") {
@@ -94,6 +141,12 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.reportSummary = readValue(argv, ++index, arg);
     } else if (arg === "--report-mode") {
       args.reportMode = parseReportMode(readValue(argv, ++index, arg));
+    } else if (arg === "--mandate-expires-at") {
+      args.mandateExpiresAt = readValue(argv, ++index, arg);
+    } else if (arg === "--task-expires-at") {
+      args.taskExpiresAt = readValue(argv, ++index, arg);
+    } else if (arg === "--close-on-first-completed-result") {
+      args.closeOnFirstCompletedResult = true;
     } else if (arg === "--message") {
       args.pingMessage = readValue(argv, ++index, arg);
     } else if (arg === "--help" || arg === "-h") {
@@ -125,9 +178,22 @@ Options:
   --relay-server        Enable this node as a circuit relay server.
   --autonat             Enable AutoNAT service.
   --dcutr               Enable DCUtR hole punching service.
-  --ping <target>       Send signed system.ping to a peer ID or /ip4/.../p2p/... multiaddr.
-  --signal <target>     Send signed certified system.signal to a peer ID or multiaddr.
+  --p2p-debug           Log libp2p connection lifecycle events to audit as p2p.trace.
+  --correlation-id <id> Optional correlation id for outbound ping/signal/A2A envelopes.
+  --ping <target>       Send signed system.ping to peer ID, /ip4/.../p2p/... multiaddr, or envoy:owner:... (resolved from LAN peer directory).
+  --signal <target>     Send signed certified system.signal to peer ID, multiaddr, or envoy:owner:... (resolved from LAN peer directory).
   --message <text>      Optional ping message.
+  --knowledge-query <target>  Send signed knowledge.query (mock payload; use --knowledge-text). Target supports envoy:owner:...
+  --knowledge-text <text>    Query string for knowledge.query. Default: mock query.
+  --knowledge-sensitivity <s> Optional requestedSensitivity: public, friends, trusted, private.
+  --bond-request <target>   Send signed bond.request (use --bond-message / --bond-proof / --bond-level). Target supports envoy:owner:...
+  --bond-message <text>     Short note for bond.request.
+  --bond-proof <text>       Proof-of-context string for bond.request.
+  --bond-level <level>      direct or referred. Default: direct.
+  --discovery-request <target>   Send signed discovery.request (repeat --discovery-tag-hash / --discovery-capability). Target supports envoy:owner:...
+  --discovery-tag-hash <hash>    Request matches for a hashed discovery topic. Repeatable.
+  --discovery-capability <cap>   Request matches by capability string. Repeatable.
+  --discovery-max-results <n>    Cap response matches to n (1..20). Default: 5.
   --task-mandate <target>   Send a signed task.mandate.
   --task-propose <target>   Send a task.propose with device Proof of Intent.
   --task-cancel <target>    Send a task.cancel.
@@ -140,6 +206,9 @@ Options:
   --reason <text>           Cancellation reason.
   --report-summary <text>   Report summary.
   --report-mode <mode>      Report mode: instant, brief, silent, approval. Default: brief.
+  --mandate-expires-at <iso>  Wall-clock mandate expiry (ISO 8601). Default: 24h from creation.
+  --task-expires-at <iso>     Optional task.propose-only expiry (ISO 8601).
+  --close-on-first-completed-result  Mandate flag: close task after first completed task.result.
 `);
 }
 
@@ -159,4 +228,28 @@ function parseReportMode(value: string): NodeArgs["reportMode"] {
   }
 
   throw new Error(`Invalid report mode: ${value}`);
+}
+
+function parseSensitivity(value: string): Sensitivity {
+  if (value === "public" || value === "friends" || value === "trusted" || value === "private") {
+    return value;
+  }
+
+  throw new Error(`Invalid sensitivity: ${value}`);
+}
+
+function parseBondLevel(value: string): "direct" | "referred" {
+  if (value === "direct" || value === "referred") {
+    return value;
+  }
+
+  throw new Error(`Invalid bond level: ${value}`);
+}
+
+function parsePositiveInteger(value: string, flag: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${flag} must be a positive integer`);
+  }
+  return parsed;
 }

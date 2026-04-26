@@ -11,6 +11,7 @@ describe("EnvoyMesh connectivity options", () => {
       enableRelayServer: true,
       enableAutoNat: true,
       enableDcutr: true,
+      enableP2pDebug: true,
     });
 
     expect(mesh.enabledFeatures).toEqual([
@@ -21,6 +22,7 @@ describe("EnvoyMesh connectivity options", () => {
       "relay-server",
       "autonat",
       "dcutr",
+      "p2p-debug",
     ]);
   });
 

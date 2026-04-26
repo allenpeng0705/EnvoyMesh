@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Sensitivity } from "@envoymesh/protocol";
+import {
+  evaluateSemanticFirewall,
+  MAX_MODEL_PROMPT_CHARS,
+  type SemanticFirewallResult,
+} from "./semantic-firewall.js";
+
+export { evaluateSemanticFirewall, MAX_MODEL_PROMPT_CHARS, type SemanticFirewallResult };
 
 export type ModelProviderType = "local" | "cloud" | "peer";
 export type ModelRouteDecision =
@@ -323,8 +330,21 @@ export async function routeModelRequest(
   request: ModelRequest,
   providers: readonly ModelProvider[],
 ): Promise<ModelRouterResult> {
-  const decision = selectModelProvider(request, providers);
-  const auditEvent = createModelRoutingAuditEvent(request, decision);
+  const firewall = evaluateSemanticFirewall({ text: request.prompt });
+  if (!firewall.ok) {
+    const decision = {
+      action: "deny" as const,
+      reason: `semantic_firewall: ${firewall.reason}`,
+    };
+    return {
+      decision,
+      auditEvent: createModelRoutingAuditEvent(request, decision),
+    };
+  }
+
+  const sanitizedRequest: ModelRequest = { ...request, prompt: firewall.text };
+  const decision = selectModelProvider(sanitizedRequest, providers);
+  const auditEvent = createModelRoutingAuditEvent(sanitizedRequest, decision);
 
   if (decision.action !== "allow") {
     return { decision, auditEvent };
@@ -337,7 +357,7 @@ export async function routeModelRequest(
   if (!provider) {
     return {
       decision: { action: "deny", reason: `provider ${decision.provider.providerId} not found` },
-      auditEvent: createModelRoutingAuditEvent(request, {
+      auditEvent: createModelRoutingAuditEvent(sanitizedRequest, {
         action: "deny",
         reason: `provider ${decision.provider.providerId} not found`,
       }),
@@ -347,7 +367,7 @@ export async function routeModelRequest(
   return {
     decision,
     auditEvent,
-    response: await provider.complete(request),
+    response: await provider.complete(sanitizedRequest),
   };
 }
 

@@ -10,7 +10,8 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "cli": "tsx src/cli.ts",
-    "connectivity:smoke": "tsx src/connectivity-smoke.ts"
+    "connectivity:smoke": "tsx src/connectivity-smoke.ts",
+    "social:challenge": "tsx src/social-challenge.ts"
   },
   "dependencies": {
     "@envoymesh/bonds": "0.1.0",

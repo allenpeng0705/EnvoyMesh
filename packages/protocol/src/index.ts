@@ -11,6 +11,8 @@ export const EnvoyIntentSchema = z.enum([
   "bond.request",
   "bond.challenge",
   "bond.challenge.response",
+  "discovery.request",
+  "discovery.response",
   "knowledge.query",
   "knowledge.response",
   "task.mandate",
@@ -91,6 +93,7 @@ export const DeviceRevocationRecordSchema = UnsignedDeviceRevocationRecordSchema
 export const EnvoyEnvelopeSchema = z.object({
   version: z.literal("0.1"),
   messageId: z.string().min(1),
+  correlationId: z.string().min(1).optional(),
   createdAt: z.string().datetime(),
   senderPeerId: z.string().min(1),
   senderPublicKey: z.string().min(1),
@@ -174,6 +177,67 @@ export const AgentCardResponsePayloadSchema = z.object({
   card: AgentCardSchema,
 });
 
+/** First-class EMP payload for `knowledge.query` (vault-backed retrieval is still mock/offline in node). */
+export const KnowledgeQueryPayloadSchema = z.object({
+  query: z.string().min(1).max(4096),
+  requestedSensitivity: SensitivitySchema.optional(),
+});
+
+export const BondRequestedLevelSchema = z.enum(["direct", "referred"]);
+
+/** `bond.request` — ask for a trust relationship; optional proof-of-context for policy / owner review. */
+export const BondRequestPayloadSchema = z.object({
+  requesterOwnerId: z.string().min(1),
+  requesterDisplayName: z.string().min(1).max(120).optional(),
+  message: z.string().max(1024).optional(),
+  proofOfContext: z.string().max(4096).optional(),
+  requestedLevel: BondRequestedLevelSchema.default("direct"),
+});
+
+export const BondChallengePayloadSchema = z.object({
+  challengeId: z.string().min(1),
+  nonce: z.string().min(1),
+  challengerOwnerId: z.string().min(1),
+  targetOwnerId: z.string().min(1),
+  expiresAt: z.string().datetime(),
+  message: z.string().max(1024).optional(),
+});
+
+export const BondChallengeResponsePayloadSchema = z.object({
+  challengeId: z.string().min(1),
+  nonce: z.string().min(1),
+  responderOwnerId: z.string().min(1),
+  decision: z.enum(["accept", "reject"]),
+  proofOfContext: z.string().max(4096).optional(),
+  note: z.string().max(512).optional(),
+});
+
+export const DiscoveryRequestPayloadSchema = z
+  .object({
+    requesterOwnerId: z.string().min(1),
+    requestedTagHashes: z.array(z.string().min(1)).default([]),
+    requestedCapabilities: z.array(z.string().min(1)).default([]),
+    maxResults: z.number().int().min(1).max(20).default(5),
+  })
+  .refine(
+    (value) => value.requestedTagHashes.length > 0 || value.requestedCapabilities.length > 0,
+    "discovery.request requires at least one tag hash or capability",
+  );
+
+export const DiscoveryMatchSchema = z.object({
+  ownerId: z.string().min(1),
+  peerId: z.string().min(1),
+  matchedTagHashes: z.array(z.string().min(1)).default([]),
+  matchedCapabilities: z.array(z.string().min(1)).default([]),
+});
+
+export const DiscoveryResponsePayloadSchema = z.object({
+  requestMessageId: z.string().min(1),
+  responderOwnerId: z.string().min(1),
+  matches: z.array(DiscoveryMatchSchema).default([]),
+  truncated: z.boolean().default(false),
+});
+
 export const MandateActionSchema = z.enum([
   "discover",
   "query",
@@ -206,6 +270,7 @@ export const UnsignedMandateSchema = z.object({
   maxSensitivity: SensitivitySchema,
   maxCost: MandateCostLimitSchema,
   expiresAt: z.string().datetime(),
+  closeOnFirstCompletedResult: z.boolean().default(false),
   requiresApprovalFor: z.array(MandateActionSchema).default([]),
 });
 
@@ -402,6 +467,14 @@ export type TrustPolicySummary = z.infer<typeof TrustPolicySummarySchema>;
 export type AgentCard = z.infer<typeof AgentCardSchema>;
 export type AgentCardRequestPayload = z.infer<typeof AgentCardRequestPayloadSchema>;
 export type AgentCardResponsePayload = z.infer<typeof AgentCardResponsePayloadSchema>;
+export type KnowledgeQueryPayload = z.infer<typeof KnowledgeQueryPayloadSchema>;
+export type BondRequestedLevel = z.infer<typeof BondRequestedLevelSchema>;
+export type BondRequestPayload = z.infer<typeof BondRequestPayloadSchema>;
+export type BondChallengePayload = z.infer<typeof BondChallengePayloadSchema>;
+export type BondChallengeResponsePayload = z.infer<typeof BondChallengeResponsePayloadSchema>;
+export type DiscoveryRequestPayload = z.infer<typeof DiscoveryRequestPayloadSchema>;
+export type DiscoveryMatch = z.infer<typeof DiscoveryMatchSchema>;
+export type DiscoveryResponsePayload = z.infer<typeof DiscoveryResponsePayloadSchema>;
 export type MandateAction = z.infer<typeof MandateActionSchema>;
 export type MandatePeerScope = z.infer<typeof MandatePeerScopeSchema>;
 export type MandateCostLimit = z.infer<typeof MandateCostLimitSchema>;
@@ -445,6 +518,7 @@ export interface CreateEnvelopeInput<TPayload> {
   payload: TPayload;
   createdAt?: string;
   messageId?: string;
+  correlationId?: string;
 }
 
 export function createUnsignedEnvelope<TPayload>(
@@ -453,6 +527,7 @@ export function createUnsignedEnvelope<TPayload>(
   return {
     version: "0.1",
     messageId: input.messageId ?? randomUUID(),
+    correlationId: input.correlationId,
     createdAt: input.createdAt ?? new Date().toISOString(),
     senderPeerId: input.senderPeerId,
     senderPublicKey: input.senderPublicKey,
@@ -498,6 +573,30 @@ export function parseAgentCardRequestPayload(input: unknown): AgentCardRequestPa
 
 export function parseAgentCardResponsePayload(input: unknown): AgentCardResponsePayload {
   return AgentCardResponsePayloadSchema.parse(input);
+}
+
+export function parseKnowledgeQueryPayload(input: unknown): KnowledgeQueryPayload {
+  return KnowledgeQueryPayloadSchema.parse(input);
+}
+
+export function parseBondRequestPayload(input: unknown): BondRequestPayload {
+  return BondRequestPayloadSchema.parse(input);
+}
+
+export function parseBondChallengePayload(input: unknown): BondChallengePayload {
+  return BondChallengePayloadSchema.parse(input);
+}
+
+export function parseBondChallengeResponsePayload(input: unknown): BondChallengeResponsePayload {
+  return BondChallengeResponsePayloadSchema.parse(input);
+}
+
+export function parseDiscoveryRequestPayload(input: unknown): DiscoveryRequestPayload {
+  return DiscoveryRequestPayloadSchema.parse(input);
+}
+
+export function parseDiscoveryResponsePayload(input: unknown): DiscoveryResponsePayload {
+  return DiscoveryResponsePayloadSchema.parse(input);
 }
 
 export function parseMandate(input: unknown): Mandate {
@@ -579,6 +678,114 @@ export function createSystemPingPayload(message?: string): SystemPingPayload {
     nonce: randomUUID(),
     message,
   };
+}
+
+export interface CreateKnowledgeQueryPayloadInput {
+  query: string;
+  requestedSensitivity?: Sensitivity;
+}
+
+export function createKnowledgeQueryPayload(input: CreateKnowledgeQueryPayloadInput): KnowledgeQueryPayload {
+  return KnowledgeQueryPayloadSchema.parse({
+    query: input.query,
+    requestedSensitivity: input.requestedSensitivity,
+  });
+}
+
+export interface CreateBondRequestPayloadInput {
+  requesterOwnerId: string;
+  requesterDisplayName?: string;
+  message?: string;
+  proofOfContext?: string;
+  requestedLevel?: BondRequestedLevel;
+}
+
+export function createBondRequestPayload(input: CreateBondRequestPayloadInput): BondRequestPayload {
+  return BondRequestPayloadSchema.parse({
+    requesterOwnerId: input.requesterOwnerId,
+    requesterDisplayName: input.requesterDisplayName,
+    message: input.message,
+    proofOfContext: input.proofOfContext,
+    requestedLevel: input.requestedLevel,
+  });
+}
+
+export interface CreateBondChallengePayloadInput {
+  challengeId?: string;
+  nonce?: string;
+  challengerOwnerId: string;
+  targetOwnerId: string;
+  expiresAt?: string;
+  message?: string;
+}
+
+export function createBondChallengePayload(input: CreateBondChallengePayloadInput): BondChallengePayload {
+  return BondChallengePayloadSchema.parse({
+    challengeId: input.challengeId ?? randomUUID(),
+    nonce: input.nonce ?? randomUUID(),
+    challengerOwnerId: input.challengerOwnerId,
+    targetOwnerId: input.targetOwnerId,
+    expiresAt: input.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    message: input.message,
+  });
+}
+
+export interface CreateBondChallengeResponsePayloadInput {
+  challengeId: string;
+  nonce: string;
+  responderOwnerId: string;
+  decision: BondChallengeResponsePayload["decision"];
+  proofOfContext?: string;
+  note?: string;
+}
+
+export function createBondChallengeResponsePayload(
+  input: CreateBondChallengeResponsePayloadInput,
+): BondChallengeResponsePayload {
+  return BondChallengeResponsePayloadSchema.parse({
+    challengeId: input.challengeId,
+    nonce: input.nonce,
+    responderOwnerId: input.responderOwnerId,
+    decision: input.decision,
+    proofOfContext: input.proofOfContext,
+    note: input.note,
+  });
+}
+
+export interface CreateDiscoveryRequestPayloadInput {
+  requesterOwnerId: string;
+  requestedTagHashes?: string[];
+  requestedCapabilities?: string[];
+  maxResults?: number;
+}
+
+export function createDiscoveryRequestPayload(
+  input: CreateDiscoveryRequestPayloadInput,
+): DiscoveryRequestPayload {
+  return DiscoveryRequestPayloadSchema.parse({
+    requesterOwnerId: input.requesterOwnerId,
+    requestedTagHashes: input.requestedTagHashes ?? [],
+    requestedCapabilities: input.requestedCapabilities ?? [],
+    maxResults: input.maxResults,
+  });
+}
+
+export interface CreateDiscoveryResponsePayloadInput {
+  requestMessageId: string;
+  responderOwnerId: string;
+  matches?: DiscoveryMatch[];
+  truncated?: boolean;
+}
+
+export function createDiscoveryResponsePayload(
+  input: CreateDiscoveryResponsePayloadInput,
+): DiscoveryResponsePayload {
+  return DiscoveryResponsePayloadSchema.parse({
+    requestMessageId: input.requestMessageId,
+    responderOwnerId: input.responderOwnerId,
+    matches: input.matches ?? [],
+    truncated: input.truncated ?? false,
+  });
 }
 
 export interface CreateUnsignedDeviceRevocationRecordInput {
@@ -727,6 +934,7 @@ export interface CreateUnsignedMandateInput {
   maxSensitivity?: Sensitivity;
   maxCost?: MandateCostLimit;
   expiresAt?: string;
+  closeOnFirstCompletedResult?: boolean;
   requiresApprovalFor?: MandateAction[];
   mandateId?: string;
 }
@@ -749,6 +957,7 @@ export function createUnsignedMandate(input: CreateUnsignedMandateInput): Unsign
     maxSensitivity: input.maxSensitivity ?? "public",
     maxCost: input.maxCost ?? { amount: 0, currency: "USD" },
     expiresAt: input.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    closeOnFirstCompletedResult: input.closeOnFirstCompletedResult ?? false,
     requiresApprovalFor: input.requiresApprovalFor ?? ["purchase", "raw_contact_exchange"],
   });
 }
