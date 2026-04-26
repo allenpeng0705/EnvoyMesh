@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo_with_text.png" alt="EnvoyMesh" width="520" />
+</p>
+
 # EnvoyMesh
 
 EnvoyMesh is an owner-controlled, peer-to-peer social agent network.
