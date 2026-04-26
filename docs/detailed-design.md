@@ -236,6 +236,7 @@ Responsibilities:
 
 - Scan only configured vault roots.
 - Store document metadata.
+- Store optional content-addressing metadata, such as content hashes and future CIDs.
 - Extract text from supported files.
 - Build a local search index.
 - Return approved snippets or summaries.
@@ -260,6 +261,10 @@ interface VaultService {
 ```
 
 The Vault should not send data directly over the network. It returns data to the workflow layer, which applies redaction, audit logging, and response shaping.
+
+Content addressing should be introduced before any external decentralized storage integration. The first version can compute stable local content hashes for vault documents and later map those hashes to IPFS CIDs when the owner explicitly approves export or pinning.
+
+IPFS and Filecoin are not default storage requirements. IPFS export/pinning should be an explicit owner-approved action for selected vault content. Filecoin should come later as an optional backup or persistence provider behind policy, approval, cost limits, and audit logging.
 
 ### `packages/agent`
 

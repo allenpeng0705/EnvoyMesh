@@ -68,6 +68,7 @@ Goals:
 - Add a `shared_vault/` directory.
 - Index only files from the vault.
 - Support basic metadata and text search.
+- Add optional content-addressing metadata so approved documents can be referenced by exact content identity.
 - Add audit logging for vault access.
 
 Success criteria:
@@ -75,6 +76,7 @@ Success criteria:
 - Files outside the vault cannot be queried.
 - Trusted peers can receive summaries from approved vault content.
 - Raw file transfer is disabled by default.
+- External IPFS publishing or pinning requires an explicit owner-approved action.
 - Audit records show what was accessed and shared.
 
 ## Phase 4: Model Integration
@@ -114,6 +116,20 @@ Success criteria:
 - Envoys on different networks can connect.
 - Offline messages are delivered when peers reconnect.
 - Primary Envoy can process delegated tasks from the Mobile UI.
+
+## Later: Decentralized Persistence
+
+Goals:
+
+- Support optional IPFS export and local pinning for approved vault content.
+- Treat IPFS CIDs as references to exact content, not as permission to publish private data.
+- Add Filecoin only as a later backup/persistence provider behind owner policy, approval, cost limits, and audit logging.
+
+Success criteria:
+
+- No vault content is published to IPFS or Filecoin by default.
+- Every external storage action records what was exported, why, who approved it, and how it can be revoked or unpinned.
+- Filecoin storage deals are optional and never required for local EnvoyMesh operation.
 
 ## Phase 6: Product Surface
 

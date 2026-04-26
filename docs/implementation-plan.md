@@ -210,12 +210,16 @@ Goal: the Envoy can answer only from owner-approved data.
 - `[x]` Add simple search.
 - `[x]` Enforce vault root path restrictions.
 - `[x]` Audit vault access.
+- `[ ]` Add optional content-addressing metadata for vault documents.
+- `[ ]` Add owner-approved IPFS export/pinning workflow later.
+- `[ ]` Add Filecoin backup/persistence provider later, behind policy and approvals.
 
 Exit criteria:
 
 - Files outside the vault cannot be queried.
 - Trusted peers can receive approved summaries.
 - Raw file transfer remains disabled by default.
+- Shared content can be referenced by exact content identity before any external publishing is allowed.
 
 ## Phase 6: Model Router
 
