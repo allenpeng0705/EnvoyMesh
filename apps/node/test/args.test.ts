@@ -262,6 +262,27 @@ discovery:
     }
   });
 
+  it("resolves --config relative to INIT_CWD when running in workspace mode", () => {
+    const dir = mkdtempSync(join(tmpdir(), "envoymesh-node-init-cwd-"));
+    const configPath = join(dir, "init-cwd-config.yaml");
+    writeFileSync(
+      configPath,
+      `
+discovery:
+  profile: wan-default
+      `.trimStart(),
+      "utf8",
+    );
+    const originalInitCwd = process.env.INIT_CWD;
+    process.env.INIT_CWD = dir;
+    try {
+      expect(parseNodeArgs(["--config", "./init-cwd-config.yaml"]).discoveryProfile).toBe("wan-default");
+    } finally {
+      process.env.INIT_CWD = originalInitCwd;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("applies public bootstrap preset", () => {
     const args = parseNodeArgs(["--bootstrap-preset", "public-libp2p"]);
     expect(args.bootstrapPresets).toEqual(["public-libp2p"]);

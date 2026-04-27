@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import { parse } from "yaml";
 
 export interface NodeYamlConfig {
@@ -21,10 +22,11 @@ export interface NodeYamlConfig {
 }
 
 export function loadNodeYamlConfig(configPath: string): NodeYamlConfig {
+  const resolvedPath = resolveConfigPath(configPath);
   let raw: string;
   try {
-    raw = readFileSync(configPath, "utf8");
-  } catch (error) {
+    raw = readFileSync(resolvedPath, "utf8");
+  } catch {
     throw new Error(`Unable to read config file: ${configPath}`);
   }
 
@@ -32,14 +34,14 @@ export function loadNodeYamlConfig(configPath: string): NodeYamlConfig {
   try {
     parsed = parse(raw);
   } catch {
-    throw new Error(`Invalid YAML in config file: ${configPath}`);
+    throw new Error(`Invalid YAML in config file: ${resolvedPath}`);
   }
 
   if (!isRecord(parsed)) {
-    throw new Error(`Invalid node config at ${configPath}: root must be an object`);
+    throw new Error(`Invalid node config at ${resolvedPath}: root must be an object`);
   }
 
-  return parseNodeYamlConfig(parsed, configPath);
+  return parseNodeYamlConfig(parsed, resolvedPath);
 }
 
 function parseNodeYamlConfig(parsed: Record<string, unknown>, configPath: string): NodeYamlConfig {
@@ -133,4 +135,22 @@ function parseBoolean(value: unknown, configPath: string, key: string): boolean 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function resolveConfigPath(configPath: string): string {
+  if (isAbsolute(configPath)) {
+    return configPath;
+  }
+  const cwdPath = resolve(configPath);
+  if (existsSync(cwdPath)) {
+    return cwdPath;
+  }
+  const initCwd = process.env.INIT_CWD?.trim();
+  if (initCwd) {
+    const initPath = resolve(initCwd, configPath);
+    if (existsSync(initPath)) {
+      return initPath;
+    }
+  }
+  return cwdPath;
 }
