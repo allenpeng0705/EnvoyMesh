@@ -47,6 +47,15 @@ describe("node args", () => {
     });
   });
 
+  it("parses chat flags", () => {
+    expect(
+      parseNodeArgs(["--chat", "peer-b", "--chat-text", "hello there"]),
+    ).toMatchObject({
+      chatTarget: "peer-b",
+      chatText: "hello there",
+    });
+  });
+
   it("parses knowledge.query outbound flags", () => {
     expect(
       parseNodeArgs([
@@ -160,6 +169,45 @@ describe("node args", () => {
       mandateExpiresAt: "2027-01-01T00:00:00.000Z",
       taskExpiresAt: "2027-01-02T00:00:00.000Z",
       closeOnFirstCompletedResult: true,
+    });
+  });
+
+  it("parses collect-N, cancel relay, and data-send flags", () => {
+    expect(
+      parseNodeArgs([
+        "--collect-completed-results",
+        "3",
+        "--cancel-forward-peer",
+        "12D3KooWA",
+        "--cancel-forward-peer",
+        "12D3KooWB",
+        "--cancel-relay-hops",
+        "2",
+        "--data-send",
+        "12D3KooWTarget",
+        "--data-relative-path",
+        "notes/hello.md",
+      ]),
+    ).toMatchObject({
+      collectCompletedResults: 3,
+      cancelForwardPeers: ["12D3KooWA", "12D3KooWB"],
+      cancelRelayHops: 2,
+      dataSendTarget: "12D3KooWTarget",
+      dataRelativePath: "notes/hello.md",
+    });
+  });
+
+  it("parses pairing request flags", () => {
+    expect(
+      parseNodeArgs([
+        "--pair-request",
+        "12D3KooWPrimary",
+        "--pair-note",
+        "Please approve my satellite device.",
+      ]),
+    ).toMatchObject({
+      pairRequestTarget: "12D3KooWPrimary",
+      pairNote: "Please approve my satellite device.",
     });
   });
 });

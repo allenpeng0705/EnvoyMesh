@@ -14,6 +14,7 @@ export async function resolveNodeArgsTargetsByOwnerId(
     knowledgeQueryTarget: await resolveTarget(args.knowledgeQueryTarget, store),
     bondRequestTarget: await resolveTarget(args.bondRequestTarget, store),
     discoveryRequestTarget: await resolveTarget(args.discoveryRequestTarget, store),
+    chatTarget: await resolveTarget(args.chatTarget, store),
     taskMandateTarget: await resolveTarget(args.taskMandateTarget, store),
     taskProposeTarget: await resolveTarget(args.taskProposeTarget, store),
     taskCancelTarget: await resolveTarget(args.taskCancelTarget, store),

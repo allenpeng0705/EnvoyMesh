@@ -9,8 +9,12 @@ import {
   createBondRequestPayload,
   createBondChallengePayload,
   createBondChallengeResponsePayload,
+  createChatMessagePayload,
   createDiscoveryRequestPayload,
   createDiscoveryResponsePayload,
+  createDevicePairApprovePayload,
+  createDevicePairDeferredPayload,
+  createDevicePairRequestPayload,
   createKnowledgeQueryPayload,
   createReport,
   createReportCreatePayload,
@@ -41,8 +45,12 @@ import {
   parseBondChallengePayload,
   parseBondChallengeResponsePayload,
   parseBondRequestPayload,
+  parseChatMessagePayload,
   parseDiscoveryRequestPayload,
   parseDiscoveryResponsePayload,
+  parseDevicePairApprovePayload,
+  parseDevicePairDeferredPayload,
+  parseDevicePairRequestPayload,
   parseKnowledgeQueryPayload,
   parseDeviceRevocationRecord,
   parseMandate,
@@ -117,6 +125,48 @@ describe("protocol", () => {
       ],
     });
     expect(parseDiscoveryResponsePayload(response)).toEqual(response);
+  });
+
+  it("roundtrips device pairing payloads", () => {
+    const request = createDevicePairRequestPayload({
+      requesterOwnerId: "envoy:owner:alice",
+      requesterDeviceId: "envoy:device:alice-laptop",
+      requesterDevicePublicKeyPem: "alice-device-key",
+      note: "Please pair this device.",
+    });
+    expect(parseDevicePairRequestPayload(request)).toEqual(request);
+
+    const approve = createDevicePairApprovePayload({
+      requestId: request.requestId,
+      deviceCertificate: {
+        version: "0.1",
+        certificateId: "cert-1",
+        ownerId: "envoy:owner:alice",
+        deviceId: "envoy:device:alice-laptop",
+        devicePublicKeyPem: "alice-device-key",
+        deviceProfile: "satellite",
+        capabilities: ["ui.channel", "message.send"],
+        issuedAt: "2026-04-27T10:00:00.000Z",
+        expiresAt: null,
+        signature: "sig",
+      },
+    });
+    expect(parseDevicePairApprovePayload(approve)).toEqual(approve);
+
+    const deferred = createDevicePairDeferredPayload({
+      requestId: request.requestId,
+      reason: "Primary unavailable.",
+      deferredByDeviceId: "envoy:device:proxy",
+    });
+    expect(parseDevicePairDeferredPayload(deferred)).toEqual(deferred);
+  });
+
+  it("roundtrips chat.message payload", () => {
+    const payload = createChatMessagePayload({
+      senderOwnerId: "envoy:owner:alice",
+      text: "hello from envoy mesh",
+    });
+    expect(parseChatMessagePayload(payload)).toEqual(payload);
   });
 
   it("creates a valid unsigned envelope", () => {

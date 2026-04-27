@@ -11,8 +11,11 @@
     "node:dev": "npm run dev -w @envoymesh/node",
     "desktop:dev": "npm run dev -w @envoymesh/desktop",
     "desktop:build": "npm run build -w @envoymesh/desktop",
+    "desktop:dist": "npm run dist -w @envoymesh/desktop",
     "test": "vitest run",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "smoke:multimachine:guide": "npm run cli -w @envoymesh/node -- smoke-checklist --machine-a primary --machine-b satellite",
+    "smoke:local": "npm run smoke:local-two-node -w @envoymesh/node"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

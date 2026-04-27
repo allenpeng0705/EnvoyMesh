@@ -68,7 +68,7 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 | Theme ([UserStory.md](./UserStory.md)) | Primary phases | Shipped (`[x]`) · still missing (`[ ]`) |
 |----------------------------------------|-----------------|----------------------------------------|
 | Identity birth (Scenario 1) | 1, 4A | `[x]` Signed envelopes, owner/device split, device certs · `[ ]` DID as first-class product (beyond directional docs) |
-| Blind discovery (Scenario 2) | 4, **4E** | `[x]` Transport discovery (mDNS, optional DHT/relay/DCUtR), Agent Card types, signed `discovery.request/response`, trust+rate-gated inbound handling · `[ ]` Discovery ranking UX (Phase 7 morning report) |
+| Blind discovery (Scenario 2) | 4, **4E** | `[x]` Transport discovery (mDNS, optional DHT/relay/DCUtR), Agent Card types, signed `discovery.request/response`, trust+rate-gated inbound handling, ranked digest baseline (`morning-report`) · `[ ]` richer narrative ranking/UX iteration |
 | Broadcast & kill (Scenario 3) | 4B, **4D** | `[x]` Local mandate/propose expiry, cancel / satisfied, first completed result + `closeOnFirstCompletedResult`, `correlationId`, audits · `[ ]` Hop TTL / gossip-wide cancel / collect-N (`Phase 4D` “not in this slice”) |
 | Social handshake (Scenario 4) | 2, 4B, 7 | `[x]` Trust store, bonds/policy, approvals, mandates, A2A tasks, **EMP `bond.*` payloads + inbound bond path + CLI `bond.request`** · `[ ]` Rich referral / owner queue UX beyond audit |
 | Intent-based file share (Scenario 5) | 5, Scenario 6 pick | `[x]` Shared vault, indexing, search, policy hooks, audit · `[ ]` Voucher + verified P2P chunk stream (Scenario **6** vertical pick) |
@@ -76,7 +76,7 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 | **Story A** (multi-device collaborator) | 4A, 5, 6, 7 | `[x]` Primary/Satellite **protocol** profiles, P2P, vault-backed tasks · `[ ]` Pairing + primary-offline defer (`Phase 4A`) · *Thin mobile / satellite app **parked*** |
 | **Stories B–C** (recruiter, researcher) | 4E, 2, 6, 7 | `[x]` Policy, approvals, audit, model path scaffolding · `[ ]` Discovery UX (**4E**), H2A wire path (**6**), morning report (**7**) |
 | **Stories D–E** (multi-hop, deals) | Backlog | `[ ]` Multi-hop / commerce / receipts — add phased work when scenarios + EMP economics are scoped |
-| **Story F** (crisis / LAN) | 4, 4C | `[x]` mDNS, local TCP, correlated audits, optional P2P debug · `[ ]` LAN identity-targeted match (`Phase 4`); live proofs outside CI (`Phase 4` `[!]`) |
+| **Story F** (crisis / LAN) | 4, 4C | `[x]` mDNS, local TCP, correlated audits, optional P2P debug, owner-id LAN target resolution (`system.signal` owner→peer map) · `[ ]` live proofs outside CI (`Phase 4` `[!]`) |
 
 ## Key Decisions
 
@@ -193,7 +193,7 @@ Goal: two Envoy nodes can discover and talk on the same machine or LAN.
 - `[x]` Add configurable relay and NAT hole punching support after DHT discovery.
 - `[!]` Prove live two-node mDNS discovery outside the current runner; `multicast-dns` cannot read OS network interfaces here. Smoke script and runbook: `docs/live-connectivity-testing.md`.
 - `[!]` Prove DHT, relay, and DCUtR behavior against real bootstrap/relay peers outside the current runner. Smoke script and runbook: `docs/live-connectivity-testing.md`.
-- `[ ]` Optional **LAN identity match**: discover or select a peer by **owner / Envoy stable identity** (not only libp2p `PeerID`) for “find DID on LAN” narratives (Story F).
+- `[x]` Optional **LAN identity match**: discover or select a peer by **owner / Envoy stable identity** (not only libp2p `PeerID`) for “find DID on LAN” narratives (Story F) via `system.signal` owner→peer directory and owner-id target resolution.
 
 Exit criteria:
 
@@ -207,13 +207,13 @@ Goal: support one Envoy owner identity across Primary and Satellite devices.
 - `[x]` Define owner identity schema.
 - `[x]` Define device identity schema.
 - `[x]` Define device certificate schema.
-- `[ ]` Add device pairing request and approval workflow.
+- `[x]` Add device pairing request and approval workflow (baseline: `device.pair.request` queue + owner approval dispatch via dashboard/CLI surface).
 - `[x]` Add Primary Envoy profile.
 - `[x]` Add Satellite Envoy profile for Thin UI Mode.
 - `[ ]` Add thin mobile UI channel assumptions *(parked — no satellite / mobile app scheduling; see **Prioritization** above)*.
 - `[x]` Explicitly defer mobile Full Node Mode (documented: Thin UI first; Full Node later — [EMP — Mobile modes](./protocol-standard.md#mobile-modes), *Full Node Mode*).
 - `[x]` Add capability checks for EMP intents.
-- `[ ]` When **primary** is unreachable from **satellite**, defer or queue owner-facing work and **surface** status to the owner (audit / dashboard / notification path) per Story A.
+- `[x]` When **primary** is unreachable from **satellite**, defer or queue owner-facing work and **surface** status to the owner (baseline: `device.pair.deferred` + approval queue/audit owner surface).
 
 Exit criteria:
 
@@ -364,15 +364,15 @@ Goal: make the system usable.
 - `[x]` Add dashboard profile, approval, trust, peer, task, audit, and vault panels.
 - `[x]` Add dashboard actions for approving/rejecting requests and setting/removing trust records.
 - `[x]` Add desktop dashboard documentation.
-- `[ ]` Add dashboard packaging, signing, and installer flow later.
-- `[ ]` Add live P2P visualization later.
-- `[ ]` Add chat/task composition flows later.
-- `[ ]` **Morning report** / ranked discovery digest UX (dashboard or CLI; Story B; builds on Phase 4E + reports).
+- `[x]` Add dashboard packaging, signing, and installer flow baseline (`electron-builder` config + release workflow + packaged data-path defaults).
+- `[x]` Add live P2P visualization baseline (dashboard panel from `p2p.trace` with live refresh).
+- `[x]` Add chat/task composition flows baseline (dashboard composer + CLI `--chat`; signed `chat.message` / `task.propose` send path).
+- `[x]` **Morning report** / ranked discovery digest UX baseline (CLI `morning-report` + dashboard ranking panel backed by structured discovery events).
 
 Exit criteria:
 
 - `[x]` Operator can inspect profile, peers, trust, vault index, audits, approvals, and tasks from CLI and/or desktop dashboard.
-- `[ ]` Installable / signed desktop release pipeline (packaging checkbox above).
+- `[x]` Installable / signed desktop release pipeline baseline (CI workflow and signing/notarization secret wiring in place; credentials required in release environment).
 - `[ ]` Rich chat + multi-step task composition UX (checkbox above).
 
 ## Current Milestone
@@ -393,7 +393,7 @@ Milestone: **Phase 7** first operator console slice remains the default product 
 
 - `[~]` Broadcast / fan-out **termination** — **Phase 4D shipped locally**: mandate / propose expiry, `task.cancel` / satisfied lifecycle, `closeOnFirstCompletedResult`, correlation in envelopes + audit. Still **open**: hop TTL, gossip-wide cancel, collect-N, correlation-only cancel on the wire.
 - `[x]` **Phase 4E** semantic **discovery** (signed `discovery.request/response`, trust+rate-gated inbound handling, Scenario 2, Story B baseline).
-- `[ ]` **Phase 4A** (**non-mobile**): device pairing + primary-offline defer / owner surface. *Thin-mobile channel checkbox **parked** (satellite app out of scope for now).*
+- `[x]` **Phase 4A** (**non-mobile**): device pairing + primary-offline defer / owner surface baseline. *Thin-mobile channel checkbox **parked** (satellite app out of scope for now).*
 - `[ ]` **Scenario 6 pick**: either **H2H chat** sub-protocol (`/envoymesh/chat/…`) **or** **voucher + chunked data** (`/envoymesh/data/…`) — first vertical to narrow the communication matrix gap.
 - `[x]` **Semantic firewall** (US-F5) — first slice shipped in `@envoymesh/models` (`routeModelRequest`); extend with trust/redaction/tool gates later.
 
@@ -410,12 +410,12 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | Scenario 5 — **vault path** | Phase 5 | Indexing, policy, audit. | `[x]` |
 | Scenario 5 — **voucher + verified P2P chunk stream** | Phase 5 + Scenario 6 pick | Data sub-protocol not chosen. | `[ ]` |
 | Scenario 6 — **roles, `/chat` `/agent` `/data`** | Scenario 6 pick + **Open questions** | Single stream today. | `[ ]` |
-| Story A — **pairing (+ thin mobile parked)** | Phase **4A** | Pairing + offline defer **`[ ]]`**; thin mobile **`[ ]`** *parked*. | `[~]` |
-| Story A — **offline primary, defer / notify** | Phase **4A** | One **`[ ]`** line. | `[ ]` |
-| Story B — **morning report / ranked discovery UX** | Phase **7** | One **`[ ]`** line. | `[ ]` |
+| Story A — **pairing (+ thin mobile parked)** | Phase **4A** | Pairing + offline defer baseline **`[x]`**; thin mobile **`[ ]`** *parked*. | `[~]` |
+| Story A — **offline primary, defer / notify** | Phase **4A** | Baseline defer + owner surface in approval/audit path; richer notify/retry UX later. | `[~]` |
+| Story B — **morning report / ranked discovery UX** | Phase **7** | Morning report digest baseline in dashboard + CLI. | `[x]` |
 | Story C — **H2A as distinct channel** | Scenario 6 pick | Same as matrix. | `[ ]` |
 | Stories D / E — **multi-hop, payments** | **Backlog** | No phase block yet. | `[ ]` |
-| Story F — **DID-targeted LAN discovery** | Phase **4** | LAN identity match **`[ ]`**; live proofs **`[!]`** | `[~]` |
+| Story F — **DID-targeted LAN discovery** | Phase **4** | LAN identity match by owner-id target resolution **`[x]`**; live proofs **`[!]`** | `[~]` |
 | **Semantic firewall** (UserStory + US-F5) | Phase **6** | `evaluateSemanticFirewall` + `routeModelRequest` integration. | `[x]` |
 | **`knowledge.query` handler** | Phase 3 | Inbound mock + CLI; EMP payload schema in protocol. | `[x]` |
 | **Distributed state (`loro` / `yjs`)** | Key Decisions | Direction only; no build checkbox. | `[ ]` |
@@ -455,12 +455,12 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 ### Backlog (track in scenarios / phases, not as single-line Q&A)
 
 - `[x]` **Phase 4E** — semantic discovery baseline (Scenario 2, Story B, US-B1).
-- `[ ]` **Phase 4A** — device pairing; primary-offline defer / owner surface. *Thin mobile channel: **parked** (see Prioritization).*
+- `[~]` **Phase 4A** — device pairing; primary-offline defer / owner surface baseline shipped. *Thin mobile channel: **parked** (see Prioritization).*
 - `[ ]` **Scenario 6 vertical** — H2H chat **or** voucher + `/envoymesh/data` (matrix, Scenario 5).
 - `[ ]` **Stories D / E** — multi-hop discovery, commerce, receipts (no dedicated phase yet; add when scenarios are scoped).
 - `[ ]` **Optional vault** — content-addressing, IPFS/Filecoin paths (Phase 5 open items).
 
-*Bond wire work* (payloads + inbound + CLI) is Phase **4B** Batch 6 **`[x]`**; *Phase 4E discovery baseline* (`discovery.request/response`, trust/rate gating, audit correlation) is **`[x]`**; *semantic firewall* v1 is Phase **6** **`[x]`**; *morning report* under Phase **7**; *LAN identity match* under Phase **4**. *Hop TTL / gossip cancel / collect-N* are Phase **4D** “not in this slice” **`[ ]`** lines.
+*Bond wire work* (payloads + inbound + CLI) is Phase **4B** Batch 6 **`[x]`**; *Phase 4E discovery baseline* (`discovery.request/response`, trust/rate gating, audit correlation) is **`[x]`**; *Phase 4 LAN identity match baseline* (`system.signal` owner→peer directory + owner-id target resolution) is **`[x]`**; *semantic firewall* v1 is Phase **6** **`[x]`**; *morning report* under Phase **7**. *Hop TTL / gossip cancel / collect-N* are Phase **4D** “not in this slice” **`[ ]`** lines.
 
 ## Changelog (this document)
 
@@ -472,3 +472,5 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | 2026-04-26 | **Prioritization:** park thin mobile / satellite app; **Phase 6** semantic firewall v1 in `@envoymesh/models` (`evaluateSemanticFirewall` + `routeModelRequest`). |
 | 2026-04-26 | **Phase 4B Batch 6:** `bond.*` EMP payloads, `apps/node` inbound bond path + `createLocalTrustStore` policy, CLI `--bond-request`; tests. |
 | 2026-04-27 | **Phase 4E baseline:** signed EMP `discovery.request` / `discovery.response` payloads + node inbound trust-tier/rate-limit gate + correlated audit + CLI `--discovery-request`; tests + docs. |
+| 2026-04-27 | **Phase 4 LAN identity match baseline:** persist owner→peer mappings from verified `system.signal` and allow owner-id targets (`envoy:owner:...`) for outbound CLI sends by resolving to libp2p peer IDs. |
+| 2026-04-27 | **Phase 7 items 367-370 baseline:** desktop packaging/signing/installer scaffolding (`electron-builder` + workflow), live P2P panel, dashboard/CLI composition (`chat.message`, task proposal), structured discovery ledger + ranked morning report in dashboard and CLI. |

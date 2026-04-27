@@ -491,6 +491,17 @@ Purpose:
 - Return one or more scoped discovery candidates.
 - Preserve request/response correlation in audit trails.
 
+### `chat.message`
+
+Sends a signed human-readable chat payload between peers.
+
+Executable payload shape: **`ChatMessagePayloadSchema`** in `@envoymesh/protocol` (includes **`senderOwnerId`**, **`text`**).
+
+Purpose:
+
+- Support direct conversational handoff between trusted peers.
+- Provide correlation-friendly conversational traffic without introducing a separate channel protocol yet.
+
 ### `bond.update`
 
 Shares a trust or revocation update.

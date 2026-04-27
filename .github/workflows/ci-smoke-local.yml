@@ -1,0 +1,41 @@
+name: ci-smoke-local
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke-local:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit and integration tests
+        run: npm test
+
+      - name: Local two-node smoke rehearsal
+        run: npm run smoke:local
+
+      - name: Generate smoke artifacts
+        run: |
+          mkdir -p ci-artifacts
+          npm run cli -w @envoymesh/node -- smoke-checklist --output ./ci-artifacts/smoke-checklist.md
+          npm run cli -w @envoymesh/node -- pairing timeline --profile ./data/default --format json --output ./ci-artifacts/pairing-timeline.json
+
+      - name: Upload smoke artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-local-artifacts
+          path: ci-artifacts/**

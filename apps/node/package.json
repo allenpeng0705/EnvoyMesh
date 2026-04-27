@@ -11,7 +11,8 @@
     "dev": "tsx src/index.ts",
     "cli": "tsx src/cli.ts",
     "connectivity:smoke": "tsx src/connectivity-smoke.ts",
-    "social:challenge": "tsx src/social-challenge.ts"
+    "social:challenge": "tsx src/social-challenge.ts",
+    "smoke:local-two-node": "tsx src/local-two-node-smoke.ts"
   },
   "dependencies": {
     "@envoymesh/bonds": "0.1.0",

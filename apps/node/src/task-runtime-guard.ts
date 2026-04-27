@@ -85,6 +85,11 @@ export async function applyTaskRuntimeAfterHandled(input: {
         const profile = await store.getMandateTermination(resultPayload.mandateId);
         if (profile?.closeOnFirstCompletedResult) {
           await store.markTaskSatisfied(resultPayload.taskId);
+        } else if (profile?.collectCompletedResults && profile.collectCompletedResults >= 2) {
+          const count = await store.incrementCompletedResultCount(resultPayload.taskId);
+          if (count >= profile.collectCompletedResults) {
+            await store.markTaskSatisfied(resultPayload.taskId);
+          }
         }
       }
     }

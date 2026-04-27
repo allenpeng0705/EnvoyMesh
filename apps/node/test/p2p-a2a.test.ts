@@ -1,15 +1,24 @@
 import {
   createDeviceCertificate,
+  derivePeerId,
   generateDeviceIdentity,
   generateOwnerIdentity,
+  signUnsignedEnvelope,
   verifyEnvelope,
 } from "@envoymesh/identity";
 import {
   auditEventForDispatcherDecision,
+  createApprovalRequest,
+  createAuditEvent,
   createLocalTaskStore,
   type NodeProfile,
 } from "@envoymesh/local-store";
 import { EnvoyMesh } from "@envoymesh/network";
+import {
+  createDevicePairRequestPayload,
+  createUnsignedEnvelope,
+  parseDevicePairRequestPayload,
+} from "@envoymesh/protocol";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -95,6 +104,58 @@ describe("A2A lifecycle over EnvoyMesh", () => {
     expect(audit).toHaveLength(4);
     expect(audit.every((event) => event.type === "task.handled")).toBe(true);
   });
+
+  it("sends pairing request over mesh and persists receiver approval queue", async () => {
+    const senderProfile = testProfile();
+    const receiver = await startMesh();
+    const sender = await startMesh();
+    const receiverStore = createLocalTaskStore(receiverProfileDir);
+
+    receiver.onMessage(async ({ envelope, remotePeerId }) => {
+      if (!verifyEnvelope(envelope) || envelope.intent !== "device.pair.request") {
+        return;
+      }
+      const payload = parseDevicePairRequestPayload(envelope.payload);
+      await receiverStore.appendApprovalRequest(
+        createApprovalRequest({
+          approvalId: `approval-${payload.requestId}`,
+          ownerId: "receiver-owner",
+          taskId: `pairing:${payload.requestId}`,
+          requestedAction: "device.sync",
+          reason: `Pairing from ${payload.requesterOwnerId}/${payload.requesterDeviceId}`,
+          peerOwnerId: payload.requesterOwnerId,
+          peerDeviceId: payload.requesterDeviceId,
+        }),
+      );
+      await receiverStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.verified",
+          intent: "device.pair.request",
+          messageId: envelope.messageId,
+          remotePeerId,
+          outcome: "allow",
+          summary: "pairing request received",
+          createdAt: envelope.createdAt,
+        }),
+      );
+    });
+
+    const requestPayload = createDevicePairRequestPayload({
+      requesterOwnerId: senderProfile.owner.ownerId,
+      requesterDeviceId: senderProfile.device.deviceId,
+      requesterDevicePublicKeyPem: senderProfile.device.publicKeyPem,
+      note: "please pair",
+    });
+    const signed = signEnvelope(senderProfile, receiver.multiaddrs[0], "device.pair.request", requestPayload);
+    await sender.send(receiver.multiaddrs[0], signed);
+
+    await waitFor(async () => (await receiverStore.readApprovalRequests()).length === 1);
+    const approvals = await receiverStore.readApprovalRequests();
+    const audit = await receiverStore.readAuditEvents();
+    expect(approvals[0].taskId).toContain("pairing:");
+    expect(approvals[0].requestedAction).toBe("device.sync");
+    expect(audit.some((event) => event.intent === "device.pair.request")).toBe(true);
+  });
 });
 
 async function startMesh(): Promise<EnvoyMesh> {
@@ -122,6 +183,24 @@ function testProfile(): NodeProfile {
       capabilities: ["mesh.listen", "message.send", "task.execute"],
     }),
   };
+}
+
+function signEnvelope(
+  profile: NodeProfile,
+  target: string,
+  intent: "device.pair.request",
+  payload: unknown,
+) {
+  return signUnsignedEnvelope(
+    createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      recipientPeerId: target,
+      intent,
+      payload,
+    }),
+    profile.device.privateKeyPem,
+  );
 }
 
 async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 2000): Promise<void> {

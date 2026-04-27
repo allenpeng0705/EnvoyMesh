@@ -66,6 +66,7 @@ const capabilityRequirements: Partial<Record<EnvoyIntent, Capability[][]>> = {
   "bond.challenge.response": [["message.send"]],
   "discovery.request": [["mesh.discovery"], ["message.send"]],
   "discovery.response": [["mesh.discovery"], ["message.send"]],
+  "chat.message": [["message.send"]],
   "knowledge.query": [["vault.retrieve"]],
   "knowledge.response": [["message.send"]],
   "task.mandate": [["message.send"]],

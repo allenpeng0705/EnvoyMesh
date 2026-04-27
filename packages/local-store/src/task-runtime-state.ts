@@ -10,11 +10,13 @@ export interface MandateTerminationRecord {
   taskId: string;
   expiresAt: string;
   closeOnFirstCompletedResult: boolean;
+  collectCompletedResults?: number;
 }
 
 export interface TaskRuntimeStateFile {
   version: "0.1";
   mandateTerminationByMandateId: Record<string, MandateTerminationRecord>;
+  completedResultCountByTaskId?: Record<string, number>;
   taskLifecycleByTaskId: Record<
     string,
     {
@@ -31,6 +33,7 @@ export interface TaskRuntimeStateStore {
   getTaskLifecycle(taskId: string): Promise<TaskLifecycleStatus | undefined>;
   markTaskCancelled(taskId: string): Promise<void>;
   markTaskSatisfied(taskId: string): Promise<void>;
+  incrementCompletedResultCount(taskId: string): Promise<number>;
 }
 
 export function createTaskRuntimeStateStore(profileDir: string): TaskRuntimeStateStore {
@@ -44,6 +47,7 @@ export function createTaskRuntimeStateStore(profileDir: string): TaskRuntimeStat
           taskId: resolvedTaskId,
           expiresAt: mandate.expiresAt,
           closeOnFirstCompletedResult: mandate.closeOnFirstCompletedResult ?? false,
+          collectCompletedResults: mandate.collectCompletedResults,
         };
       });
     },
@@ -71,6 +75,18 @@ export function createTaskRuntimeStateStore(profileDir: string): TaskRuntimeStat
         };
       });
     },
+    incrementCompletedResultCount: async (taskId) => {
+      let next = 0;
+      await mutateTaskRuntimeState(statePath, (draft) => {
+        if (!draft.completedResultCountByTaskId) {
+          draft.completedResultCountByTaskId = {};
+        }
+        const prior = draft.completedResultCountByTaskId[taskId] ?? 0;
+        next = prior + 1;
+        draft.completedResultCountByTaskId[taskId] = next;
+      });
+      return next;
+    },
   };
 }
 
@@ -78,6 +94,7 @@ function emptyTaskRuntimeState(): TaskRuntimeStateFile {
   return {
     version: "0.1",
     mandateTerminationByMandateId: {},
+    completedResultCountByTaskId: {},
     taskLifecycleByTaskId: {},
   };
 }
@@ -91,6 +108,7 @@ async function readTaskRuntimeStateFile(path: string): Promise<TaskRuntimeStateF
     return {
       version: "0.1",
       mandateTerminationByMandateId: parsed.mandateTerminationByMandateId ?? {},
+      completedResultCountByTaskId: parsed.completedResultCountByTaskId ?? {},
       taskLifecycleByTaskId: parsed.taskLifecycleByTaskId ?? {},
     };
   } catch (error) {

@@ -36,6 +36,7 @@ const AUDIT_EVENTS_FILE = "audit-events.jsonl";
 const APPROVAL_QUEUE_FILE = "approval-queue.jsonl";
 const TRUST_STORE_FILE = "trust-records.json";
 const PEER_DIRECTORY_FILE = "peer-directory.json";
+const DISCOVERY_EVENTS_FILE = "discovery-events.jsonl";
 
 export interface NodeProfile {
   owner: OwnerIdentity;
@@ -81,6 +82,14 @@ export async function loadOrCreateNodeProfile(profileDir: string): Promise<NodeP
   });
 
   return profile;
+}
+
+export async function saveNodeProfile(profileDir: string, profile: NodeProfile): Promise<void> {
+  const profilePath = join(profileDir, PROFILE_FILE);
+  await mkdir(dirname(profilePath), { recursive: true });
+  await writeFile(profilePath, `${JSON.stringify(profile, null, 2)}\n`, {
+    mode: 0o600,
+  });
 }
 
 export type AuditEventType =
@@ -166,9 +175,60 @@ export interface LocalTaskStore {
   readTaskJournalEntries(): Promise<TaskJournalEntry[]>;
   appendAuditEvent(event: AuditEvent): Promise<void>;
   readAuditEvents(): Promise<AuditEvent[]>;
+  appendDiscoveryEvent(event: DiscoveryEvent): Promise<void>;
+  readDiscoveryEvents(): Promise<DiscoveryEvent[]>;
   appendApprovalRequest(request: ApprovalRequest): Promise<void>;
   readApprovalRequests(): Promise<ApprovalRequest[]>;
   updateApprovalRequestStatus(approvalId: string, status: ApprovalRequestStatus): Promise<ApprovalRequest>;
+}
+
+export interface DiscoveryEvent {
+  version: "0.1";
+  eventId: string;
+  createdAt: string;
+  direction: "inbound" | "outbound";
+  intent: "discovery.request" | "discovery.response";
+  ownerId: string;
+  remotePeerId?: string;
+  correlationId?: string;
+  requestMessageId?: string;
+  matchCount: number;
+  requestedTagHashes: string[];
+  requestedCapabilities: string[];
+  matchedTagHashes: string[];
+  matchedCapabilities: string[];
+  trustLevel?: TrustRecord["level"];
+  outcome: "allow" | "deny" | "record";
+  summary: string;
+}
+
+export interface CreateDiscoveryEventInput {
+  createdAt?: string;
+  eventId?: string;
+  direction: DiscoveryEvent["direction"];
+  intent: DiscoveryEvent["intent"];
+  ownerId: string;
+  remotePeerId?: string;
+  correlationId?: string;
+  requestMessageId?: string;
+  matchCount?: number;
+  requestedTagHashes?: string[];
+  requestedCapabilities?: string[];
+  matchedTagHashes?: string[];
+  matchedCapabilities?: string[];
+  trustLevel?: TrustRecord["level"];
+  outcome: DiscoveryEvent["outcome"];
+  summary: string;
+}
+
+export interface MorningReportEntry {
+  ownerId: string;
+  peerId?: string;
+  trustLevel: TrustRecord["level"] | "unknown";
+  score: number;
+  reason: string;
+  lastSeenAt?: string;
+  discoveryMatchCount: number;
 }
 
 export interface LocalDispatcherHandledDecision {
@@ -191,6 +251,7 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
   const taskJournalPath = join(profileDir, TASK_JOURNAL_FILE);
   const auditEventsPath = join(profileDir, AUDIT_EVENTS_FILE);
   const approvalQueuePath = join(profileDir, APPROVAL_QUEUE_FILE);
+  const discoveryEventsPath = join(profileDir, DISCOVERY_EVENTS_FILE);
 
   return {
     async appendTaskJournalEntry(entry) {
@@ -207,6 +268,14 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
 
     async readAuditEvents() {
       return readJsonLines<AuditEvent>(auditEventsPath);
+    },
+
+    async appendDiscoveryEvent(event) {
+      await appendJsonLine(discoveryEventsPath, event);
+    },
+
+    async readDiscoveryEvents() {
+      return readJsonLines<DiscoveryEvent>(discoveryEventsPath);
     },
 
     async appendApprovalRequest(request) {
@@ -230,6 +299,113 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
       return request;
     },
   };
+}
+
+export function createDiscoveryEvent(input: CreateDiscoveryEventInput): DiscoveryEvent {
+  return {
+    version: "0.1",
+    eventId: input.eventId ?? `discovery_${randomUUID()}`,
+    createdAt: input.createdAt ?? new Date().toISOString(),
+    direction: input.direction,
+    intent: input.intent,
+    ownerId: input.ownerId,
+    remotePeerId: input.remotePeerId,
+    correlationId: input.correlationId,
+    requestMessageId: input.requestMessageId,
+    matchCount: input.matchCount ?? 0,
+    requestedTagHashes: input.requestedTagHashes ?? [],
+    requestedCapabilities: input.requestedCapabilities ?? [],
+    matchedTagHashes: input.matchedTagHashes ?? [],
+    matchedCapabilities: input.matchedCapabilities ?? [],
+    trustLevel: input.trustLevel,
+    outcome: input.outcome,
+    summary: input.summary,
+  };
+}
+
+export function buildMorningReportDigest(input: {
+  trustRecords: TrustRecord[];
+  peerDirectoryRecords: PeerDirectoryRecord[];
+  discoveryEvents: DiscoveryEvent[];
+  limit?: number;
+}): MorningReportEntry[] {
+  const trustByOwner = new Map(input.trustRecords.map((record) => [record.peerOwnerId, record]));
+  const peerByOwner = new Map(input.peerDirectoryRecords.map((record) => [record.ownerId, record]));
+  const discoveryByOwner = new Map<
+    string,
+    {
+      matches: number;
+      lastSeenAt?: string;
+    }
+  >();
+
+  for (const event of input.discoveryEvents) {
+    const current = discoveryByOwner.get(event.ownerId);
+    discoveryByOwner.set(event.ownerId, {
+      matches: (current?.matches ?? 0) + event.matchCount,
+      lastSeenAt: current?.lastSeenAt
+        ? current.lastSeenAt.localeCompare(event.createdAt) > 0
+          ? current.lastSeenAt
+          : event.createdAt
+        : event.createdAt,
+    });
+  }
+
+  const ownerIds = new Set<string>([
+    ...input.trustRecords.map((record) => record.peerOwnerId),
+    ...input.peerDirectoryRecords.map((record) => record.ownerId),
+    ...input.discoveryEvents.map((event) => event.ownerId),
+  ]);
+
+  const ranked = [...ownerIds].map((ownerId): MorningReportEntry => {
+    const trust = trustByOwner.get(ownerId);
+    const peer = peerByOwner.get(ownerId);
+    const discovery = discoveryByOwner.get(ownerId);
+    const trustScore = trustLevelScore(trust?.level);
+    const matchScore = Math.min(discovery?.matches ?? 0, 20) * 2;
+    const recencyScore = peer?.lastSeenAt ? recencyPoints(peer.lastSeenAt) : 0;
+    const score = trustScore + matchScore + recencyScore;
+    return {
+      ownerId,
+      peerId: peer?.peerId,
+      trustLevel: trust?.level ?? "unknown",
+      score,
+      reason: `trust=${trust?.level ?? "unknown"}, matches=${discovery?.matches ?? 0}, recency=${recencyScore}`,
+      lastSeenAt: peer?.lastSeenAt ?? discovery?.lastSeenAt,
+      discoveryMatchCount: discovery?.matches ?? 0,
+    };
+  });
+
+  return ranked.sort((left, right) => right.score - left.score).slice(0, input.limit ?? 10);
+}
+
+function trustLevelScore(level: TrustRecord["level"] | undefined): number {
+  switch (level) {
+    case "direct":
+      return 60;
+    case "referred":
+      return 45;
+    case "public":
+      return 20;
+    case "blocked":
+      return -100;
+    default:
+      return 10;
+  }
+}
+
+function recencyPoints(lastSeenAt: string): number {
+  const minutes = Math.max(0, (Date.now() - new Date(lastSeenAt).getTime()) / 60000);
+  if (minutes <= 15) {
+    return 20;
+  }
+  if (minutes <= 60) {
+    return 12;
+  }
+  if (minutes <= 24 * 60) {
+    return 6;
+  }
+  return 2;
 }
 
 export function createAuditEvent(input: CreateAuditEventInput): AuditEvent {
@@ -390,6 +566,8 @@ export interface PeerDirectoryRecord {
   ownerId: string;
   peerId: string;
   deviceId: string;
+  /** Present when learned from system.signal; used for signed payloads such as data-transfer vouchers. */
+  devicePublicKeyPem?: string;
   lastSeenAt: string;
   listenAddrs: string[];
 }
@@ -490,6 +668,7 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
       if (existing) {
         existing.peerId = input.peerId;
         existing.deviceId = input.payload.deviceId;
+        existing.devicePublicKeyPem = input.payload.deviceCertificate.devicePublicKeyPem;
         existing.lastSeenAt = seenAt;
         existing.listenAddrs = input.payload.listenAddrs;
         await writePeerDirectoryFile(directoryPath, file);
@@ -501,6 +680,7 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         ownerId: input.payload.ownerId,
         peerId: input.peerId,
         deviceId: input.payload.deviceId,
+        devicePublicKeyPem: input.payload.deviceCertificate.devicePublicKeyPem,
         lastSeenAt: seenAt,
         listenAddrs: input.payload.listenAddrs,
       };

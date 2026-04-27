@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, extname, relative, resolve, sep } from "node:path";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, relative, resolve, sep } from "node:path";
 
 export const DEFAULT_SHARED_VAULT_DIR = "shared_vault";
 export const SUPPORTED_VAULT_EXTENSIONS = [".txt", ".md", ".json"] as const;
@@ -29,6 +29,46 @@ export interface VaultIndex {
   rootDir: string;
   documents: VaultDocumentMetadata[];
   chunks: VaultChunk[];
+}
+
+export interface VaultContentManifestDocument {
+  documentId: string;
+  relativePath: string;
+  title: string;
+  byteLength: number;
+  contentHash: string;
+  updatedAt: string;
+}
+
+export interface VaultContentManifest {
+  version: "0.1";
+  generatedAt: string;
+  rootDir: string;
+  documents: VaultContentManifestDocument[];
+}
+
+export async function writeVaultContentManifestFile(
+  rootDir: string,
+  outputPath: string,
+): Promise<VaultContentManifest> {
+  const index = await buildVaultIndex({ rootDir: resolve(rootDir) });
+  const manifest: VaultContentManifest = {
+    version: "0.1",
+    generatedAt: new Date().toISOString(),
+    rootDir: index.rootDir,
+    documents: index.documents.map((document) => ({
+      documentId: document.documentId,
+      relativePath: document.relativePath,
+      title: document.title,
+      byteLength: document.byteLength,
+      contentHash: document.contentHash,
+      updatedAt: document.updatedAt,
+    })),
+  };
+  const out = resolve(outputPath);
+  await mkdir(dirname(out), { recursive: true });
+  await writeFile(out, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+  return manifest;
 }
 
 export interface BuildVaultIndexOptions {

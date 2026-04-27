@@ -38,6 +38,12 @@ Build the Electron dashboard:
 npm run desktop:build
 ```
 
+Build desktop installers/artifacts:
+
+```bash
+npm run desktop:dist
+```
+
 ## Local Data Layout
 
 EnvoyMesh defaults to:
@@ -86,6 +92,12 @@ Correlate outbound probes and A2A sends (optional `correlationId` on the wire en
 npm run node:dev -- --ping "<peer-multiaddr>" --correlation-id "demo-corr-1"
 ```
 
+After a peer sends verified `system.signal`, you can target by stable owner id (LAN identity match baseline):
+
+```bash
+npm run node:dev -- --ping "envoy:owner:alice" --correlation-id "demo-owner-1"
+```
+
 Send a signed **`knowledge.query`** (mock handler on the peer: validates payload, logs, writes audit — no vault RAG yet):
 
 ```bash
@@ -102,6 +114,12 @@ Send a signed **`discovery.request`** (peer enforces trust tier + per-owner rate
 
 ```bash
 npm run node:dev -- --discovery-request "<peer-multiaddr>" --discovery-tag-hash "hash:books" --discovery-capability "task.execute" --discovery-max-results 5 --correlation-id "disc-1"
+```
+
+Send a signed **`chat.message`**:
+
+```bash
+npm run node:dev -- --chat "<peer-multiaddr>" --chat-text "Hello from EnvoyMesh" --correlation-id "chat-1"
 ```
 
 Emit libp2p connection/stream lifecycle telemetry into the local audit log as `p2p.trace` rows (no payload logging):
@@ -157,11 +175,45 @@ npm run cli -w @envoymesh/node -- trust set envoy:owner:alice --level direct --n
 npm run cli -w @envoymesh/node -- trust remove envoy:owner:alice --profile ./data/default
 ```
 
+Show ranked morning discovery digest:
+
+```bash
+npm run cli -w @envoymesh/node -- morning-report --profile ./data/default --limit 10
+```
+
 Index and search the shared vault:
 
 ```bash
 npm run cli -w @envoymesh/node -- vault-index --vault ./shared_vault
 npm run cli -w @envoymesh/node -- vault-search --vault ./shared_vault --query "P2P agent"
+npm run cli -w @envoymesh/node -- vault-manifest --vault ./shared_vault --output ./shared_vault/manifest.json
+```
+
+Send a pairing request from CLI:
+
+```bash
+npm run node:dev -- --pair-request "<primary-peer-multiaddr>" --pair-note "Pair my satellite device"
+```
+
+Pairing-specific queue commands from developer CLI:
+
+```bash
+npm run cli -w @envoymesh/node -- pairing list --profile ./data/default
+npm run cli -w @envoymesh/node -- pairing approve <approval-id> --profile ./data/default
+npm run cli -w @envoymesh/node -- pairing reject <approval-id> --profile ./data/default
+npm run cli -w @envoymesh/node -- pairing retry <peer-id> --profile ./data/default
+npm run cli -w @envoymesh/node -- pairing timeline --profile ./data/default --limit 50
+npm run cli -w @envoymesh/node -- pairing timeline --profile ./data/default --format json --output ./pairing-timeline.json
+npm run cli -w @envoymesh/node -- pairing timeline --profile ./data/default --status deferred --query "Primary unavailable"
+```
+
+Generate a machine-to-machine smoke checklist:
+
+```bash
+npm run cli -w @envoymesh/node -- smoke-checklist --machine-a primary --machine-b satellite
+npm run cli -w @envoymesh/node -- smoke-checklist --output ./docs/generated-smoke-checklist.md
+npm run smoke:multimachine:guide
+npm run smoke:local
 ```
 
 ## Social challenge probe (untrusted peer)
@@ -200,6 +252,68 @@ The dashboard shows:
 - Observed peers from audit events.
 - Recent tasks and audit events.
 - Shared vault summary and search.
+- Pairing request composer and pairing queue (approve/reject + deferred-peer retry).
+
+## Two-Machine End-To-End Walkthrough (CLI + Dashboard)
+
+Use machine A as `primary`, machine B as `satellite`.
+
+### Step 1: Start both nodes
+
+Machine A:
+
+```bash
+npm run node:dev -- --profile ./data/primary --listen /ip4/0.0.0.0/tcp/0 --p2p-debug
+```
+
+Machine B:
+
+```bash
+npm run node:dev -- --profile ./data/satellite --listen /ip4/0.0.0.0/tcp/0 --p2p-debug
+```
+
+Copy each printed `Listening on:` multiaddr.
+
+### Step 2: Pairing workflow
+
+Machine B sends pairing request:
+
+```bash
+npm run node:dev -- --profile ./data/satellite --pair-request "<primary-multiaddr>" --pair-note "Request satellite pairing"
+```
+
+Machine A opens dashboard and approves:
+
+```bash
+ENVOYMESH_PROFILE=./data/primary ENVOYMESH_VAULT=./shared_vault npm run desktop:dev
+```
+
+In dashboard:
+- Open **Pairing Queue**.
+- Approve the pending `pairing:*` request.
+
+Machine B verifies in audit:
+
+```bash
+npm run cli -w @envoymesh/node -- audit --profile ./data/satellite --limit 40
+```
+
+### Step 3: Chat + task + data transfer
+
+Machine B:
+
+```bash
+npm run node:dev -- --profile ./data/satellite --chat "<primary-multiaddr>" --chat-text "Hello primary" --correlation-id "chat-e2e-1"
+npm run node:dev -- --profile ./data/satellite --task-propose "<primary-multiaddr>" --task-id task-e2e-1 --objective "Summarize notes" --requested-result "One bullet summary" --correlation-id "task-e2e-1"
+npm run node:dev -- --profile ./data/satellite --data-send "<primary-multiaddr>" --data-relative-path notes.md
+```
+
+Machine A verifies in both CLI and dashboard:
+
+```bash
+npm run cli -w @envoymesh/node -- audit --profile ./data/primary --limit 60 --include-p2p-trace
+npm run cli -w @envoymesh/node -- tasks --profile ./data/primary --limit 40
+```
 
 ## Live Connectivity Smoke Tests
 

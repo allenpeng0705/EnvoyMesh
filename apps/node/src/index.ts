@@ -1,6 +1,7 @@
 import { evaluateCapability } from "@envoymesh/bonds";
 import {
   auditEventForDispatcherDecision,
+  createApprovalRequest,
   createAuditEvent,
   createLocalPeerDirectoryStore,
   createLocalTaskStore,
@@ -8,21 +9,43 @@ import {
   createTaskRuntimeStateStore,
   deriveCorrelationIdFromEnvelope,
   loadOrCreateNodeProfile,
+  saveNodeProfile,
 } from "@envoymesh/local-store";
 import {
+  createSignedDataTransferVoucher,
   derivePeerId,
   signUnsignedEnvelope,
   verifyAuthorizedDeviceEnvelope,
+  verifyDeviceCertificate,
 } from "@envoymesh/identity";
-import { ENVOY_MESSAGE_PROTOCOL, EnvoyMesh, type P2pDebugEvent } from "@envoymesh/network";
+import {
+  ENVOY_DATA_PROTOCOL,
+  ENVOY_MESSAGE_PROTOCOL,
+  EnvoyMesh,
+  voucherJsonBytesFromObject,
+  type P2pDebugEvent,
+} from "@envoymesh/network";
 import {
   createDiscoveryResponsePayload,
+  createDevicePairApprovePayload,
+  createDevicePairDeferredPayload,
+  createTaskCancelPayload,
+  createUnsignedDataTransferVoucher,
+  parseDevicePairApprovePayload,
+  parseDevicePairDeferredPayload,
+  parseDevicePairRequestPayload,
+  parseChatMessagePayload,
   createSystemPingPayload,
   createSystemSignalPayload,
   createUnsignedEnvelope,
   parseSystemPingPayload,
   parseSystemSignalPayload,
+  parseTaskCancelPayload,
+  type EnvoyEnvelope,
 } from "@envoymesh/protocol";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { parseNodeArgs } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
@@ -30,8 +53,9 @@ import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundDiscoveryIntent } from "./discovery-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
-import { createTaskDispatcher, isA2ATaskIntent } from "./task-dispatcher.js";
+import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
 import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
+import { installEnvoyDataTransferReceiver } from "./data-transfer-inbound.js";
 
 const args = parseNodeArgs(process.argv.slice(2));
 const profile = await loadOrCreateNodeProfile(args.profileDir);
@@ -42,6 +66,7 @@ const peerDirectoryStore = createLocalPeerDirectoryStore(args.profileDir);
 const taskRuntimeStore = createTaskRuntimeStateStore(args.profileDir);
 const resolvedArgs = await resolveNodeArgsTargetsByOwnerId(args, peerDirectoryStore);
 const inboundGuard = createInboundMessageGuard();
+const vaultDirForNode = process.env.ENVOYMESH_VAULT ?? join(process.cwd(), "shared_vault");
 const mesh = new EnvoyMesh({
   listen: args.listen,
   enableMdns: args.enableMdns,
@@ -275,7 +300,211 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
           createdAt: signedResponse.createdAt,
         }),
       );
+      await taskStore.appendDiscoveryEvent({
+        version: "0.1",
+        eventId: `discovery_${signedResponse.messageId}`,
+        createdAt: signedResponse.createdAt,
+        direction: "outbound",
+        intent: "discovery.response",
+        ownerId: profile.owner.ownerId,
+        remotePeerId: envelope.senderPeerId,
+        correlationId: signedResponse.correlationId,
+        requestMessageId: envelope.messageId,
+        matchCount: discovery.responsePayload.matches.length,
+        requestedTagHashes: [],
+        requestedCapabilities: [],
+        matchedTagHashes: discovery.responsePayload.matches.flatMap((match) => match.matchedTagHashes),
+        matchedCapabilities: discovery.responsePayload.matches.flatMap(
+          (match) => match.matchedCapabilities,
+        ),
+        outcome: "record",
+        summary: `Sent discovery.response with ${discovery.responsePayload.matches.length} match(es).`,
+      });
     }
+    return;
+  }
+
+  if (envelope.intent === "chat.message") {
+    const payload = parseChatMessagePayload(envelope.payload);
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "message.verified",
+        intent: envelope.intent,
+        messageId: envelope.messageId,
+        correlationId,
+        remotePeerId,
+        direction: "inbound",
+        verificationStatus: "verified",
+        latencyMs: Date.now() - receivedAt,
+        outcome: "allow",
+        summary: `chat.message from ${payload.senderOwnerId}: ${payload.text.slice(0, 120)}`,
+        createdAt: envelope.createdAt,
+      }),
+    );
+    console.log(`[chat.message] ${payload.senderOwnerId}: ${payload.text}`);
+    return;
+  }
+
+  if (envelope.intent === "device.pair.request") {
+    const payload = parseDevicePairRequestPayload(envelope.payload);
+    const expectedRequester = derivePeerId(payload.requesterDevicePublicKeyPem);
+    if (expectedRequester !== envelope.senderPeerId) {
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.rejected",
+          intent: "device.pair.request",
+          messageId: envelope.messageId,
+          correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "rejected",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "deny",
+          summary: "Rejected device.pair.request: sender does not match requester device key.",
+          createdAt: envelope.createdAt,
+        }),
+      );
+      return;
+    }
+
+    const context = Buffer.from(
+      JSON.stringify({
+        requestId: payload.requestId,
+        requesterPeerId: envelope.senderPeerId,
+        requesterOwnerId: payload.requesterOwnerId,
+        requesterDeviceId: payload.requesterDeviceId,
+        requesterDevicePublicKeyPem: payload.requesterDevicePublicKeyPem,
+        requestedDeviceProfile: payload.requestedDeviceProfile,
+        requestedCapabilities: payload.requestedCapabilities,
+      }),
+      "utf8",
+    ).toString("base64url");
+
+    await taskStore.appendApprovalRequest(
+      createApprovalRequest({
+        ownerId: profile.owner.ownerId,
+        taskId: `pairing:${payload.requestId}`,
+        requestedAction: "device.sync",
+        reason: `Pairing request from ${payload.requesterOwnerId}/${payload.requesterDeviceId}. ${payload.note ?? ""}\nPAIRING_CONTEXT:${context}`,
+        peerOwnerId: payload.requesterOwnerId,
+        peerDeviceId: payload.requesterDeviceId,
+      }),
+    );
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "message.verified",
+        intent: "device.pair.request",
+        messageId: envelope.messageId,
+        correlationId,
+        remotePeerId,
+        direction: "inbound",
+        verificationStatus: "verified",
+        latencyMs: Date.now() - receivedAt,
+        outcome: "allow",
+        summary: `Queued pairing approval for request ${payload.requestId}.`,
+        createdAt: envelope.createdAt,
+      }),
+    );
+
+    if (profile.deviceCertificate.deviceProfile !== "primary") {
+      const deferredEnvelope = signUnsignedEnvelope(
+        createUnsignedEnvelope({
+          senderPeerId: derivePeerId(profile.device.publicKeyPem),
+          senderPublicKey: profile.device.publicKeyPem,
+          recipientPeerId: envelope.senderPeerId,
+          intent: "device.pair.deferred",
+          payload: createDevicePairDeferredPayload({
+            requestId: payload.requestId,
+            deferredByDeviceId: profile.device.deviceId,
+            reason: "Primary device approval required; request deferred.",
+          }),
+          correlationId,
+        }),
+        profile.device.privateKeyPem,
+      );
+      const latencyMs = await mesh.send(envelope.senderPeerId, deferredEnvelope);
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.sent",
+          intent: "device.pair.deferred",
+          messageId: deferredEnvelope.messageId,
+          correlationId: deferredEnvelope.correlationId,
+          remotePeerId: envelope.senderPeerId,
+          direction: "outbound",
+          latencyMs,
+          protocol: ENVOY_MESSAGE_PROTOCOL,
+          outcome: "record",
+          summary: `Sent pairing defer notice for ${payload.requestId}.`,
+          createdAt: deferredEnvelope.createdAt,
+        }),
+      );
+    }
+    return;
+  }
+
+  if (envelope.intent === "device.pair.approve") {
+    const payload = parseDevicePairApprovePayload(envelope.payload);
+    const cert = payload.deviceCertificate;
+    if (
+      cert.deviceId !== profile.device.deviceId ||
+      cert.ownerId !== profile.owner.ownerId ||
+      !verifyDeviceCertificate(cert, profile.owner.publicKeyPem)
+    ) {
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.rejected",
+          intent: "device.pair.approve",
+          messageId: envelope.messageId,
+          correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "rejected",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "deny",
+          summary: "Rejected device.pair.approve: certificate mismatch or invalid signature.",
+          createdAt: envelope.createdAt,
+        }),
+      );
+      return;
+    }
+
+    await saveNodeProfile(args.profileDir, { ...profile, deviceCertificate: cert });
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "message.verified",
+        intent: "device.pair.approve",
+        messageId: envelope.messageId,
+        correlationId,
+        remotePeerId,
+        direction: "inbound",
+        verificationStatus: "verified",
+        latencyMs: Date.now() - receivedAt,
+        outcome: "allow",
+        summary: `Applied paired device certificate for request ${payload.requestId}.`,
+        createdAt: envelope.createdAt,
+      }),
+    );
+    console.log(`[pairing approved] request=${payload.requestId}`);
+    return;
+  }
+
+  if (envelope.intent === "device.pair.deferred") {
+    const payload = parseDevicePairDeferredPayload(envelope.payload);
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "message.verified",
+        intent: "device.pair.deferred",
+        messageId: envelope.messageId,
+        correlationId,
+        remotePeerId,
+        direction: "inbound",
+        verificationStatus: "verified",
+        latencyMs: Date.now() - receivedAt,
+        outcome: "record",
+        summary: `Pairing request ${payload.requestId} deferred: ${payload.reason}`,
+        createdAt: envelope.createdAt,
+      }),
+    );
     return;
   }
 
@@ -353,6 +582,13 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
       }),
     );
     await applyTaskRuntimeAfterHandled({ decision: taskDecision, envelope, store: taskRuntimeStore });
+    await relayTaskCancelIfNeeded({
+      envelope,
+      taskDecision,
+      mesh,
+      profile,
+      taskStore,
+    });
     console.log(
       `[task ${taskDecision.state}] ${taskDecision.intent} task=${taskDecision.taskId} event=${taskDecision.journalEntry.eventId}`,
     );
@@ -391,6 +627,13 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
     }),
   );
   console.log(`[verified message] ${envelope.intent} from ${envelope.senderPeerId}`);
+});
+
+installEnvoyDataTransferReceiver({
+  mesh,
+  peerDirectoryStore,
+  taskStore,
+  vaultDir: vaultDirForNode,
 });
 
 await mesh.start();
@@ -489,6 +732,46 @@ for (const outbound of buildOutboundCliEnvelopes(resolvedArgs, profile)) {
   console.log(`[sent ${outbound.label}] target ${outbound.target}`);
 }
 
+if (resolvedArgs.dataSendTarget && resolvedArgs.dataRelativePath) {
+  const relativePath = resolvedArgs.dataRelativePath.replace(/\\/g, "/");
+  const filePath = join(vaultDirForNode, relativePath);
+  const content = await readFile(filePath);
+  const hash = createHash("sha256").update(content).digest("base64url");
+  const unsignedVoucher = createUnsignedDataTransferVoucher({
+    issuerPeerId: mesh.peerId,
+    issuerOwnerId: profile.owner.ownerId,
+    issuerDeviceId: profile.device.deviceId,
+    relativePath,
+    totalBytes: content.byteLength,
+    contentHash: hash,
+  });
+  const voucher = createSignedDataTransferVoucher({
+    unsigned: unsignedVoucher,
+    devicePrivateKeyPem: profile.device.privateKeyPem,
+  });
+  const voucherUtf8 = voucherJsonBytesFromObject(voucher);
+  const chunkSize = 64 * 1024;
+  const chunks: Uint8Array[] = [];
+  for (let offset = 0; offset < content.length; offset += chunkSize) {
+    chunks.push(content.subarray(offset, Math.min(offset + chunkSize, content.length)));
+  }
+  const latencyMs = await mesh.sendDataTransfer(resolvedArgs.dataSendTarget, voucherUtf8, chunks);
+  await taskStore.appendAuditEvent(
+    createAuditEvent({
+      type: "message.sent",
+      intent: "sync.state",
+      remotePeerId: resolvedArgs.dataSendTarget,
+      direction: "outbound",
+      latencyMs,
+      protocol: ENVOY_DATA_PROTOCOL,
+      outcome: "record",
+      summary: `Sent data transfer ${relativePath} (${content.byteLength} bytes).`,
+      createdAt: new Date().toISOString(),
+    }),
+  );
+  console.log(`[sent data transfer] target ${resolvedArgs.dataSendTarget} path ${relativePath}`);
+}
+
 console.log("Press Ctrl+C to stop.");
 
 async function shutdown(): Promise<void> {
@@ -503,6 +786,70 @@ process.on("SIGINT", () => {
 process.on("SIGTERM", () => {
   void shutdown();
 });
+
+async function relayTaskCancelIfNeeded(input: {
+  envelope: EnvoyEnvelope;
+  taskDecision: DispatcherDecision;
+  mesh: EnvoyMesh;
+  profile: Awaited<ReturnType<typeof loadOrCreateNodeProfile>>;
+  taskStore: ReturnType<typeof createLocalTaskStore>;
+}): Promise<void> {
+  const { envelope, taskDecision, mesh, profile, taskStore } = input;
+  if (taskDecision.intent !== "task.cancel") {
+    return;
+  }
+
+  try {
+    const cancelPayload = parseTaskCancelPayload(envelope.payload);
+    const hops = cancelPayload.relayRemainingHops ?? 0;
+    const forwards = cancelPayload.forwardToPeerIds ?? [];
+    if (forwards.length === 0 || hops <= 0) {
+      return;
+    }
+
+    const nextHops = hops - 1;
+    const nextPayload = createTaskCancelPayload({
+      taskId: cancelPayload.taskId,
+      mandateId: cancelPayload.mandateId,
+      reason: cancelPayload.reason,
+      cancelledBy: cancelPayload.cancelledBy,
+      forwardToPeerIds: nextHops > 0 ? forwards : undefined,
+      relayRemainingHops: nextHops > 0 ? nextHops : undefined,
+    });
+
+    for (const targetPeer of forwards) {
+      const signed = signUnsignedEnvelope(
+        createUnsignedEnvelope({
+          senderPeerId: derivePeerId(profile.device.publicKeyPem),
+          senderPublicKey: profile.device.publicKeyPem,
+          recipientPeerId: targetPeer,
+          intent: "task.cancel",
+          payload: nextPayload,
+          correlationId: envelope.correlationId,
+        }),
+        profile.device.privateKeyPem,
+      );
+      const latencyMs = await mesh.send(targetPeer, signed);
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.sent",
+          intent: "task.cancel",
+          messageId: signed.messageId,
+          correlationId: signed.correlationId,
+          remotePeerId: targetPeer,
+          direction: "outbound",
+          latencyMs,
+          protocol: ENVOY_MESSAGE_PROTOCOL,
+          outcome: "record",
+          summary: `Relayed task.cancel (hops remaining after send: ${nextHops}).`,
+          createdAt: signed.createdAt,
+        }),
+      );
+    }
+  } catch {
+    // ignore malformed cancel relay metadata
+  }
+}
 
 async function appendP2pTrace(event: P2pDebugEvent): Promise<void> {
   const summaryParts = [`p2p ${event.kind}`];

@@ -94,6 +94,7 @@ Defines **all EMP message contracts**: `EnvoyEnvelopeSchema`, mandate and task p
 | `bond.challenge.response` | `BondChallengeResponsePayloadSchema` · `parseBondChallengeResponsePayload` · `createBondChallengeResponsePayload` |
 | `discovery.request` | `DiscoveryRequestPayloadSchema` · `parseDiscoveryRequestPayload` · `createDiscoveryRequestPayload` |
 | `discovery.response` | `DiscoveryResponsePayloadSchema` · `parseDiscoveryResponsePayload` · `createDiscoveryResponsePayload` |
+| `chat.message` | `ChatMessagePayloadSchema` · `parseChatMessagePayload` · `createChatMessagePayload` |
 | `knowledge.query` | `KnowledgeQueryPayloadSchema` · `parseKnowledgeQueryPayload` · `createKnowledgeQueryPayload` |
 | `knowledge.response` | No intent-specific payload schema. |
 | `task.mandate` | `TaskMandatePayloadSchema` · `parseTaskMandatePayload` |
@@ -352,7 +353,7 @@ The sandbox should be designed so the Brain can answer from provided context wit
 
 ### Persistence and audit (`@envoymesh/local-store`)
 
-**Today:** append-only **JSONL** files under the profile directory — `task-journal.jsonl`, `audit-events.jsonl`, `approval-queue.jsonl`, `trust-records.json`, plus **`task-runtime-state.json`** for broadcast-termination metadata. Types include audit fields such as `correlationId`, `direction`, `verificationStatus`, `latencyMs`, `protocol`, and `p2p.trace` when enabled.
+**Today:** append-only **JSONL** files under the profile directory — `task-journal.jsonl`, `audit-events.jsonl`, `approval-queue.jsonl`, `trust-records.json`, `peer-directory.json` (owner-id to recent peer-id mapping from verified `system.signal`), plus **`task-runtime-state.json`** for broadcast-termination metadata. Types include audit fields such as `correlationId`, `direction`, `verificationStatus`, `latencyMs`, `protocol`, and `p2p.trace` when enabled.
 
 **Future:** optional **SQLite** (or similar) if query volume or indexing needs exceed JSONL; see implementation plan open questions.
 

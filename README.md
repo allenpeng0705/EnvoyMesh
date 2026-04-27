@@ -77,6 +77,65 @@ npm run desktop:dev
 
 See [QuickStart](QuickStart.md) for the full build and run guide.
 
+## Multi-Machine Test Flow
+
+Use two terminals on two machines in the same LAN (or reachable via known multiaddrs).
+
+1. Start receiver:
+
+```bash
+npm run node:dev -- --profile ./data/receiver --listen /ip4/0.0.0.0/tcp/0 --p2p-debug
+```
+
+2. Start sender:
+
+```bash
+npm run node:dev -- --profile ./data/sender --listen /ip4/0.0.0.0/tcp/0 --p2p-debug
+```
+
+3. Exchange signed signal and ping:
+
+```bash
+npm run node:dev -- --profile ./data/sender --signal "<receiver-multiaddr>" --correlation-id "sig-1"
+npm run node:dev -- --profile ./data/receiver --ping "<sender-multiaddr>" --correlation-id "ping-1"
+```
+
+4. Exercise chat/task/data paths:
+
+```bash
+npm run node:dev -- --profile ./data/sender --chat "<receiver-multiaddr>" --chat-text "hello" --correlation-id "chat-1"
+npm run node:dev -- --profile ./data/sender --task-propose "<receiver-multiaddr>" --task-id task-1 --objective "Find notes" --requested-result "One summary" --correlation-id "task-1"
+npm run node:dev -- --profile ./data/sender --data-send "<receiver-multiaddr>" --data-relative-path notes.md
+```
+
+5. Verify from CLI:
+
+```bash
+npm run cli -w @envoymesh/node -- audit --profile ./data/receiver --limit 40 --include-p2p-trace
+npm run cli -w @envoymesh/node -- tasks --profile ./data/receiver --limit 40
+npm run cli -w @envoymesh/node -- pairing list --profile ./data/receiver
+```
+
+6. Verify from dashboard (both machines or either profile):
+
+```bash
+ENVOYMESH_PROFILE=./data/receiver ENVOYMESH_VAULT=./shared_vault npm run desktop:dev
+```
+
+Generate a reusable checklist with auto-correlation IDs:
+
+```bash
+npm run smoke:multimachine:guide
+```
+
+Run a same-machine rehearsal smoke test (two in-process local meshes):
+
+```bash
+npm run smoke:local
+```
+
+PRs now run the same rehearsal in CI via `.github/workflows/ci-smoke-local.yml`.
+
 ## Workspace
 
 - `apps/node`: local Envoy node runtime, P2P messaging, CLI, and live connectivity smoke scripts.

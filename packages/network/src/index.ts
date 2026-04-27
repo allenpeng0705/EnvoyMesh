@@ -13,9 +13,17 @@ import { byteStream } from "@libp2p/utils";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { multiaddr } from "@multiformats/multiaddr";
 import { createLibp2p, type Libp2p } from "libp2p";
+import type { Uint8ArrayList } from "uint8arraylist";
 import { decodeEnvelope, encodeEnvelope } from "./codec.js";
+import {
+  encodeDataTransferBody,
+  MAX_DATA_INBOUND_BYTES,
+  parseInboundDataTransferBody,
+  parseVoucherJsonObject,
+} from "./data-framing.js";
 
 export const ENVOY_MESSAGE_PROTOCOL = "/envoymesh/message/0.1.0";
+export const ENVOY_DATA_PROTOCOL = "/envoymesh/data/0.1.0";
 
 export interface InboundMeshMessage {
   envelope: EnvoyEnvelope;
@@ -30,6 +38,15 @@ export interface DiscoveredMeshPeer {
 }
 
 export type MeshPeerDiscoveryHandler = (peer: DiscoveredMeshPeer) => void | Promise<void>;
+
+export interface InboundDataTransfer {
+  remotePeerId: string;
+  voucher: unknown;
+  voucherUtf8: Uint8Array;
+  chunks: Uint8Array[];
+}
+
+export type MeshDataTransferHandler = (message: InboundDataTransfer) => Promise<void> | void;
 
 export interface EnvoyMeshOptions {
   listen?: string[];
@@ -65,6 +82,7 @@ export interface EnvoyMeshPeerDiscoveryService {
 
 export class EnvoyMesh {
   private readonly handlers = new Set<MeshMessageHandler>();
+  private readonly dataHandlers = new Set<MeshDataTransferHandler>();
   private readonly peerDiscoveryHandlers = new Set<MeshPeerDiscoveryHandler>();
   private node?: Libp2p;
 
@@ -148,6 +166,41 @@ export class EnvoyMesh {
       }
     });
 
+    await this.node.handle(ENVOY_DATA_PROTOCOL, async (stream: any, connection: any) => {
+      const remotePeerId = connection.remotePeer.toString();
+      this.emitP2pDebug({
+        kind: "stream:open",
+        remotePeerId,
+        protocol: ENVOY_DATA_PROTOCOL,
+        direction: "inbound",
+      });
+
+      try {
+        const raw = await byteStream(stream).read();
+        if (raw === null || raw.byteLength === 0 || raw.byteLength > MAX_DATA_INBOUND_BYTES) {
+          return;
+        }
+        const bytes = raw instanceof Uint8Array ? raw : (raw as Uint8ArrayList).subarray();
+        const { voucherUtf8, chunks } = parseInboundDataTransferBody(bytes);
+        const voucher = parseVoucherJsonObject(voucherUtf8);
+        await this.dispatchData({
+          remotePeerId,
+          voucher,
+          voucherUtf8,
+          chunks,
+        });
+      } catch (error) {
+        console.error("EnvoyMesh inbound data stream failed", error);
+      } finally {
+        this.emitP2pDebug({
+          kind: "stream:close",
+          remotePeerId,
+          protocol: ENVOY_DATA_PROTOCOL,
+          direction: "inbound",
+        });
+      }
+    });
+
     await this.node.start();
     this.attachP2pDebug(this.node);
   }
@@ -189,6 +242,11 @@ export class EnvoyMesh {
     return () => this.handlers.delete(handler);
   }
 
+  onDataTransfer(handler: MeshDataTransferHandler): () => void {
+    this.dataHandlers.add(handler);
+    return () => this.dataHandlers.delete(handler);
+  }
+
   onPeerDiscovered(handler: MeshPeerDiscoveryHandler): () => void {
     this.peerDiscoveryHandlers.add(handler);
     return () => this.peerDiscoveryHandlers.delete(handler);
@@ -219,6 +277,38 @@ export class EnvoyMesh {
         kind: "stream:close",
         remotePeerId,
         protocol: ENVOY_MESSAGE_PROTOCOL,
+        direction: "outbound",
+      });
+    }
+    return Date.now() - startedAt;
+  }
+
+  async sendDataTransfer(target: string, voucherUtf8: Uint8Array, chunks: Uint8Array[]): Promise<number> {
+    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    const startedAt = Date.now();
+    const stream: any = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_DATA_PROTOCOL);
+    const remotePeerId = stream.connection?.remotePeer?.toString();
+    if (remotePeerId) {
+      this.emitP2pDebug({
+        kind: "stream:open",
+        remotePeerId,
+        protocol: ENVOY_DATA_PROTOCOL,
+        direction: "outbound",
+      });
+    }
+    if (stream.writeStatus !== "writable") {
+      throw new Error(
+        `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}`,
+      );
+    }
+    const body = encodeDataTransferBody(voucherUtf8, chunks);
+    await byteStream(stream).write(body);
+    await stream.close();
+    if (remotePeerId) {
+      this.emitP2pDebug({
+        kind: "stream:close",
+        remotePeerId,
+        protocol: ENVOY_DATA_PROTOCOL,
         direction: "outbound",
       });
     }
@@ -262,6 +352,10 @@ export class EnvoyMesh {
 
   private async dispatch(message: InboundMeshMessage): Promise<void> {
     await Promise.all([...this.handlers].map((handler) => handler(message)));
+  }
+
+  private async dispatchData(message: InboundDataTransfer): Promise<void> {
+    await Promise.all([...this.dataHandlers].map((handler) => handler(message)));
   }
 
   private async dispatchPeerDiscovery(peer: DiscoveredMeshPeer): Promise<void> {
@@ -359,3 +453,4 @@ export class EnvoyMesh {
 
 export { collectStreamBytes } from "./codec.js";
 export { decodeEnvelope, encodeEnvelope };
+export { voucherJsonBytesFromObject } from "./data-framing.js";

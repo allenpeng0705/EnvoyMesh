@@ -65,6 +65,19 @@ DCUtR needs two peers behind NAT plus a reachable relay. The practical proof is:
 
 The smoke script verifies that the local advanced stack starts correctly and can discover peers. A dedicated two-machine DCUtR proof should be added once we have a stable relay peer to target.
 
+## 5. Desktop Distribution And Data-Path Smoke
+
+After building the desktop app for your platform, launch it once with a fresh profile directory and confirm the dashboard loads approvals, trust, vault search, and the chat/task panels without errors.
+
+For a two-machine check of the `/envoymesh/data/0.1.0` path (voucher + chunked file):
+
+1. Exchange `system.signal` between nodes so each peer directory record includes the sender device public key (required for voucher verification).
+2. Place a small file under `ENVOYMESH_VAULT` (or `./shared_vault`) on the sender.
+3. On the sender, run the node with outbound flags, for example `--data-send <remote-peer-id> --data-relative-path <file-relative-to-vault>`.
+4. On the receiver, confirm the file appears under the same relative path in its vault directory and that an inbound audit row references the data transfer.
+
+For `task.cancel` relay fan-out, send `--task-cancel` with `--cancel-forward-peer` (repeatable) and `--cancel-relay-hops` from the developer or packaged CLI, then confirm each listed peer receives a handled cancel and optional downstream relay while hops remain.
+
 ## Notes
 
 - Use longer timeouts on slow networks, for example `--timeout-ms 120000`.

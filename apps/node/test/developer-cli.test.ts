@@ -1,10 +1,13 @@
 import { createTaskJournalEntry } from "@envoymesh/protocol";
 import {
+  createDiscoveryEvent,
+  createLocalPeerDirectoryStore,
   createApprovalRequest,
   createAuditEvent,
   createLocalTaskStore,
+  createLocalTrustStore,
 } from "@envoymesh/local-store";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -45,6 +48,32 @@ describe("developer CLI", () => {
       vaultDir: "./shared_vault",
       query: "distributed systems",
       limit: 5,
+    });
+  });
+
+  it("parses pairing and smoke-checklist commands", () => {
+    expect(parseDeveloperCliArgs(["pairing", "retry", "12D3KooWPeer"])).toMatchObject({
+      command: "pairing",
+      pairingAction: "retry",
+      pairingIdOrPeer: "12D3KooWPeer",
+    });
+    expect(parseDeveloperCliArgs(["smoke-checklist", "--machine-a", "alpha", "--machine-b", "beta"])).toMatchObject({
+      command: "smoke-checklist",
+      machineAName: "alpha",
+      machineBName: "beta",
+    });
+    expect(parseDeveloperCliArgs(["pairing", "timeline", "--format", "json"])).toMatchObject({
+      command: "pairing",
+      pairingAction: "timeline",
+      outputFormat: "json",
+    });
+    expect(
+      parseDeveloperCliArgs(["pairing", "timeline", "--status", "deferred", "--query", "peer-a"]),
+    ).toMatchObject({
+      command: "pairing",
+      pairingAction: "timeline",
+      pairingStatusFilter: "deferred",
+      pairingQuery: "peer-a",
     });
   });
 
@@ -186,6 +215,65 @@ describe("developer CLI", () => {
     expect(approved.lines.join("\n")).toContain("approval-1 status=approved");
   });
 
+  it("lists pairing approvals and provides retry hint", async () => {
+    const store = createLocalTaskStore(profileDir);
+    await store.appendApprovalRequest(
+      createApprovalRequest({
+        approvalId: "approval-pair-1",
+        ownerId: "owner-1",
+        taskId: "pairing:pair-1",
+        requestedAction: "device.sync",
+        reason: "Pairing request from satellite",
+        status: "pending",
+        createdAt: "2026-04-27T10:01:00.000Z",
+      }),
+    );
+    await store.appendAuditEvent(
+      createAuditEvent({
+        type: "message.verified",
+        intent: "device.pair.deferred",
+        remotePeerId: "12D3KooWPeer",
+        outcome: "record",
+        summary: "Pairing request pair-1 deferred: Primary unavailable",
+        createdAt: "2026-04-27T10:02:00.000Z",
+      }),
+    );
+
+    const listed = await runDeveloperCli(["pairing", "list", "--profile", profileDir]);
+    expect(listed.lines[0]).toContain("Pairing approvals (1)");
+    expect(listed.lines.join("\n")).toContain("approval-pair-1");
+
+    const retry = await runDeveloperCli(["pairing", "retry", "12D3KooWPeer", "--profile", profileDir]);
+    expect(retry.lines[0]).toContain("Pairing retry hint");
+    expect(retry.lines.join("\n")).toContain("--pair-request");
+
+    const timeline = await runDeveloperCli(["pairing", "timeline", "--profile", profileDir]);
+    expect(timeline.lines[0]).toContain("Pairing timeline");
+    expect(timeline.lines.join("\n")).toContain("status=");
+
+    const timelineJson = await runDeveloperCli([
+      "pairing",
+      "timeline",
+      "--profile",
+      profileDir,
+      "--format",
+      "json",
+    ]);
+    expect(() => JSON.parse(timelineJson.lines.join("\n"))).not.toThrow();
+
+    const timelineFiltered = await runDeveloperCli([
+      "pairing",
+      "timeline",
+      "--profile",
+      profileDir,
+      "--status",
+      "deferred",
+      "--query",
+      "Primary unavailable",
+    ]);
+    expect(timelineFiltered.lines[0]).toContain("Pairing timeline (1)");
+  });
+
   it("indexes and searches the shared vault", async () => {
     await writeFile(
       join(vaultDir, "notes.md"),
@@ -205,6 +293,24 @@ describe("developer CLI", () => {
     expect(index.lines.join("\n")).toContain("notes.md");
     expect(search.lines).toContain("Vault search results (1)");
     expect(search.lines.join("\n")).toContain("notes.md#0");
+  });
+
+  it("writes a vault content manifest", async () => {
+    await writeFile(join(vaultDir, "notes.md"), "Manifest test content.");
+    const outputPath = join(vaultDir, "manifest.json");
+
+    const result = await runDeveloperCli([
+      "vault-manifest",
+      "--vault",
+      vaultDir,
+      "--output",
+      outputPath,
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.lines.join("\n")).toContain("Wrote manifest");
+    const manifest = JSON.parse(await readFile(outputPath, "utf8")) as { documents: Array<{ relativePath: string }> };
+    expect(manifest.documents.some((doc) => doc.relativePath === "notes.md")).toBe(true);
   });
 
   it("sets, lists, and removes trust records", async () => {
@@ -235,5 +341,66 @@ describe("developer CLI", () => {
     expect(listed.lines).toContain("Trust records (1)");
     expect(listed.lines.join("\n")).toContain("envoy:owner:alice");
     expect(removed.lines).toContain("Trust record removed");
+  });
+
+  it("builds a ranked morning report", async () => {
+    const taskStore = createLocalTaskStore(profileDir);
+    const trustStore = createLocalTrustStore(profileDir);
+    const peerStore = createLocalPeerDirectoryStore(profileDir);
+    await trustStore.setTrustRecord({ peerOwnerId: "envoy:owner:alice", level: "direct" });
+    await peerStore.upsertPeerFromSignal({
+      peerId: "peer-a",
+      payload: {
+        ownerId: "envoy:owner:alice",
+        ownerPublicKeyPem: "owner-pem",
+        deviceId: "envoy:device:alice",
+        deviceCertificate: {
+          version: "0.1",
+          certificateId: "cert-1",
+          ownerId: "envoy:owner:alice",
+          deviceId: "envoy:device:alice",
+          devicePublicKeyPem: "device-key",
+          deviceProfile: "primary",
+          capabilities: ["mesh.discovery"],
+          issuedAt: "2026-04-27T10:00:00.000Z",
+          expiresAt: null,
+          signature: "sig",
+        },
+        deviceProfile: "primary",
+        capabilities: ["mesh.discovery"],
+        supportedProtocolVersions: ["emp/0.1"],
+        listenAddrs: [],
+        publicTopics: [],
+        status: "online",
+      },
+    });
+    await taskStore.appendDiscoveryEvent(
+      createDiscoveryEvent({
+        direction: "inbound",
+        intent: "discovery.response",
+        ownerId: "envoy:owner:alice",
+        matchCount: 2,
+        outcome: "record",
+        summary: "matches",
+      }),
+    );
+
+    const report = await runDeveloperCli(["morning-report", "--profile", profileDir]);
+    expect(report.lines[0]).toBe("Morning report (1)");
+    expect(report.lines.join("\n")).toContain("owner=envoy:owner:alice");
+  });
+
+  it("generates smoke checklist and can write output file", async () => {
+    const outputPath = join(vaultDir, "smoke-checklist.md");
+    const printed = await runDeveloperCli(["smoke-checklist", "--machine-a", "alpha", "--machine-b", "beta"]);
+    expect(printed.lines[0]).toBe("# EnvoyMesh Multi-Machine Smoke Checklist");
+    expect(printed.lines.join("\n")).toContain("On alpha");
+    expect(printed.lines.join("\n")).toContain("auto-generated correlation IDs");
+    expect(printed.lines.join("\n")).toContain("--correlation-id");
+
+    const written = await runDeveloperCli(["smoke-checklist", "--output", outputPath]);
+    expect(written.lines[0]).toContain("Wrote smoke checklist");
+    const file = await readFile(outputPath, "utf8");
+    expect(file).toContain("EnvoyMesh Multi-Machine Smoke Checklist");
   });
 });

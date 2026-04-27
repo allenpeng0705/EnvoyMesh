@@ -27,6 +27,8 @@ export interface NodeArgs {
   discoveryTagHashes?: string[];
   discoveryCapabilities?: string[];
   discoveryMaxResults?: number;
+  chatTarget?: string;
+  chatText?: string;
   taskMandateTarget?: string;
   taskProposeTarget?: string;
   taskCancelTarget?: string;
@@ -42,6 +44,13 @@ export interface NodeArgs {
   mandateExpiresAt?: string;
   taskExpiresAt?: string;
   closeOnFirstCompletedResult?: boolean;
+  collectCompletedResults?: number;
+  cancelForwardPeers?: string[];
+  cancelRelayHops?: number;
+  dataSendTarget?: string;
+  dataRelativePath?: string;
+  pairRequestTarget?: string;
+  pairNote?: string;
 }
 
 export function parseNodeArgs(argv: string[]): NodeArgs {
@@ -117,6 +126,10 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.discoveryCapabilities?.push(readValue(argv, ++index, arg));
     } else if (arg === "--discovery-max-results") {
       args.discoveryMaxResults = parsePositiveInteger(readValue(argv, ++index, arg), arg);
+    } else if (arg === "--chat") {
+      args.chatTarget = readValue(argv, ++index, arg);
+    } else if (arg === "--chat-text") {
+      args.chatText = readValue(argv, ++index, arg);
     } else if (arg === "--task-mandate") {
       args.taskMandateTarget = readValue(argv, ++index, arg);
     } else if (arg === "--task-propose") {
@@ -147,6 +160,23 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.taskExpiresAt = readValue(argv, ++index, arg);
     } else if (arg === "--close-on-first-completed-result") {
       args.closeOnFirstCompletedResult = true;
+    } else if (arg === "--collect-completed-results") {
+      args.collectCompletedResults = parsePositiveInteger(readValue(argv, ++index, arg), arg);
+    } else if (arg === "--cancel-forward-peer") {
+      if (!args.cancelForwardPeers) {
+        args.cancelForwardPeers = [];
+      }
+      args.cancelForwardPeers.push(readValue(argv, ++index, arg));
+    } else if (arg === "--cancel-relay-hops") {
+      args.cancelRelayHops = parsePositiveInteger(readValue(argv, ++index, arg), arg);
+    } else if (arg === "--data-send") {
+      args.dataSendTarget = readValue(argv, ++index, arg);
+    } else if (arg === "--data-relative-path") {
+      args.dataRelativePath = readValue(argv, ++index, arg);
+    } else if (arg === "--pair-request") {
+      args.pairRequestTarget = readValue(argv, ++index, arg);
+    } else if (arg === "--pair-note") {
+      args.pairNote = readValue(argv, ++index, arg);
     } else if (arg === "--message") {
       args.pingMessage = readValue(argv, ++index, arg);
     } else if (arg === "--help" || arg === "-h") {
@@ -194,6 +224,8 @@ Options:
   --discovery-tag-hash <hash>    Request matches for a hashed discovery topic. Repeatable.
   --discovery-capability <cap>   Request matches by capability string. Repeatable.
   --discovery-max-results <n>    Cap response matches to n (1..20). Default: 5.
+  --chat <target>                Send signed chat.message. Target supports envoy:owner:...
+  --chat-text <text>             Message body for chat.message.
   --task-mandate <target>   Send a signed task.mandate.
   --task-propose <target>   Send a task.propose with device Proof of Intent.
   --task-cancel <target>    Send a task.cancel.
@@ -209,6 +241,13 @@ Options:
   --mandate-expires-at <iso>  Wall-clock mandate expiry (ISO 8601). Default: 24h from creation.
   --task-expires-at <iso>     Optional task.propose-only expiry (ISO 8601).
   --close-on-first-completed-result  Mandate flag: close task after first completed task.result.
+  --collect-completed-results <n>   Mandate flag: require n completed task.result (2..32) before closing (ignored if --close-on-first-completed-result).
+  --cancel-forward-peer <peerId>  With --task-cancel: relay cancel to this libp2p peer after handling. Repeatable.
+  --cancel-relay-hops <n>           With --task-cancel: remaining relay hops (1..16). Required when using --cancel-forward-peer.
+  --data-send <target>              After start, send a signed /envoymesh/data/0.1.0 transfer (requires --data-relative-path).
+  --data-relative-path <path>     Vault-relative path for --data-send (file must exist under ENVOYMESH_VAULT or ./shared_vault).
+  --pair-request <target>         Send a device.pair.request to target peer.
+  --pair-note <text>              Optional note for device pairing request.
 `);
 }
 

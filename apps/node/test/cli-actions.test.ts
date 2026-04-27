@@ -3,6 +3,8 @@ import { createDeviceCertificate } from "@envoymesh/identity";
 import type { NodeProfile } from "@envoymesh/local-store";
 import {
   parseBondRequestPayload,
+  parseChatMessagePayload,
+  parseDevicePairRequestPayload,
   parseDiscoveryRequestPayload,
   parseKnowledgeQueryPayload,
   parseReportCreatePayload,
@@ -82,6 +84,45 @@ describe("cli actions", () => {
     expect(payload.requestedTagHashes).toEqual(["hash:books"]);
     expect(payload.requestedCapabilities).toEqual(["task.execute"]);
     expect(payload.maxResults).toBe(4);
+  });
+
+  it("builds a signed chat.message envelope", () => {
+    const profile = testProfile();
+    const [outbound] = buildOutboundCliEnvelopes(
+      {
+        profileDir: "./data/test",
+        listen: [],
+        enableMdns: false,
+        chatTarget: "peer-chat",
+        chatText: "hi from cli",
+      },
+      profile,
+    );
+    expect(outbound.envelope.intent).toBe("chat.message");
+    const payload = parseChatMessagePayload(outbound.envelope.payload);
+    expect(payload.senderOwnerId).toBe(profile.owner.ownerId);
+    expect(payload.text).toBe("hi from cli");
+  });
+
+  it("builds a signed device.pair.request envelope", () => {
+    const profile = testProfile();
+    const [outbound] = buildOutboundCliEnvelopes(
+      {
+        profileDir: "./data/test",
+        listen: [],
+        enableMdns: false,
+        pairRequestTarget: "peer-primary",
+        pairNote: "Please pair this device.",
+      },
+      profile,
+    );
+
+    expect(outbound.envelope.intent).toBe("device.pair.request");
+    const payload = parseDevicePairRequestPayload(outbound.envelope.payload);
+    expect(payload.requesterOwnerId).toBe(profile.owner.ownerId);
+    expect(payload.requesterDeviceId).toBe(profile.device.deviceId);
+    expect(payload.requesterDevicePublicKeyPem).toBe(profile.device.publicKeyPem);
+    expect(payload.note).toBe("Please pair this device.");
   });
 
   it("builds a signed task mandate envelope", () => {

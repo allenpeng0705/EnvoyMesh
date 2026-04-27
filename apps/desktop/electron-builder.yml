@@ -1,0 +1,28 @@
+appId: dev.envoymesh.desktop
+productName: EnvoyMesh
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+asar: true
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
+    - deb
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+publish:
+  provider: github

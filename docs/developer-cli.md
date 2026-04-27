@@ -75,6 +75,12 @@ npm run cli -w @envoymesh/node -- trust remove envoy:owner:alice
 
 Lists, sets, or removes local trust records from `trust-records.json`. Supported levels are `direct`, `referred`, `public`, and `blocked`.
 
+```bash
+npm run cli -w @envoymesh/node -- morning-report --profile ./data/default --limit 10
+```
+
+Builds a ranked discovery digest from structured discovery events, trust levels, and owner-to-peer LAN directory recency.
+
 ## Options
 
 - `--profile <dir>`: Profile directory. Default: `./data/default`.

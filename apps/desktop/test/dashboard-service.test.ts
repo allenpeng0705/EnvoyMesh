@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  exportPairingTimeline,
   getDashboardSnapshot,
   searchSharedVault,
   setTrustRecord,
@@ -100,5 +101,41 @@ describe("dashboard service", () => {
         relativePath: "notes.md",
       },
     ]);
+  });
+
+  it("keeps pairing approval pending when response delivery fails", async () => {
+    const context = Buffer.from(
+      JSON.stringify({
+        requestId: "pair-1",
+        requesterPeerId: "not-a-dialable-target",
+        requesterOwnerId: "envoy:owner:peer",
+        requesterDeviceId: "envoy:device:peer",
+        requesterDevicePublicKeyPem: "peer-public-key",
+        requestedDeviceProfile: "satellite",
+        requestedCapabilities: ["ui.channel", "message.send"],
+      }),
+      "utf8",
+    ).toString("base64url");
+
+    await createLocalTaskStore(config.profileDir).appendApprovalRequest(
+      createApprovalRequest({
+        approvalId: "approval-pair-1",
+        ownerId: "owner-1",
+        taskId: "pairing:pair-1",
+        requestedAction: "device.sync",
+        reason: `Pairing request\nPAIRING_CONTEXT:${context}`,
+      }),
+    );
+
+    await updateApprovalStatus(config, "approval-pair-1", "approved");
+    const approvals = await createLocalTaskStore(config.profileDir).readApprovalRequests();
+    const updated = approvals.find((approval) => approval.approvalId === "approval-pair-1");
+    expect(updated?.status).toBe("pending");
+  });
+
+  it("exports pairing timeline json", async () => {
+    const outputPath = join(rootDir, "pairing-timeline.json");
+    const writtenPath = await exportPairingTimeline(config, outputPath);
+    expect(writtenPath).toBe(outputPath);
   });
 });

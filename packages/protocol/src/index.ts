@@ -13,6 +13,7 @@ export const EnvoyIntentSchema = z.enum([
   "bond.challenge.response",
   "discovery.request",
   "discovery.response",
+  "chat.message",
   "knowledge.query",
   "knowledge.response",
   "task.mandate",
@@ -25,6 +26,9 @@ export const EnvoyIntentSchema = z.enum([
   "task.result",
   "report.create",
   "sync.state",
+  "device.pair.request",
+  "device.pair.approve",
+  "device.pair.deferred",
 ]);
 
 export const SensitivitySchema = z.enum(["public", "friends", "trusted", "private"]);
@@ -123,6 +127,33 @@ export const SystemSignalPayloadSchema = z.object({
   listenAddrs: z.array(z.string().min(1)).default([]),
   publicTopics: z.array(z.string().min(1)).default([]),
   status: z.enum(["online", "away", "busy"]).default("online"),
+});
+
+
+
+export const DevicePairRequestPayloadSchema = z.object({
+  requestId: z.string().min(1),
+  requesterOwnerId: z.string().min(1),
+  requesterDeviceId: z.string().min(1),
+  requesterDevicePublicKeyPem: z.string().min(1),
+  requestedDeviceProfile: DeviceProfileSchema.default("satellite"),
+  requestedCapabilities: z.array(CapabilitySchema).default(["ui.channel", "message.send"]),
+  note: z.string().min(1).max(1000).optional(),
+  createdAt: z.string().datetime(),
+});
+
+export const DevicePairApprovePayloadSchema = z.object({
+  requestId: z.string().min(1),
+  approvalId: z.string().min(1).optional(),
+  deviceCertificate: DeviceCertificateSchema,
+  approvedAt: z.string().datetime(),
+});
+
+export const DevicePairDeferredPayloadSchema = z.object({
+  requestId: z.string().min(1),
+  reason: z.string().min(1).max(1000),
+  deferredByDeviceId: z.string().min(1).optional(),
+  createdAt: z.string().datetime(),
 });
 
 export const AuthChallengePayloadSchema = z.object({
@@ -238,6 +269,11 @@ export const DiscoveryResponsePayloadSchema = z.object({
   truncated: z.boolean().default(false),
 });
 
+export const ChatMessagePayloadSchema = z.object({
+  senderOwnerId: z.string().min(1),
+  text: z.string().min(1).max(4000),
+});
+
 export const MandateActionSchema = z.enum([
   "discover",
   "query",
@@ -248,6 +284,7 @@ export const MandateActionSchema = z.enum([
   "share.private_data",
   "send.raw_files",
   "raw_contact_exchange",
+  "device.sync",
 ]);
 
 export const MandatePeerScopeSchema = z.enum(["self", "direct", "referred", "public"]);
@@ -271,6 +308,8 @@ export const UnsignedMandateSchema = z.object({
   maxCost: MandateCostLimitSchema,
   expiresAt: z.string().datetime(),
   closeOnFirstCompletedResult: z.boolean().default(false),
+  /** When set (2–32), task stays open until this many completed task.result payloads arrive. Ignored if closeOnFirstCompletedResult is true. */
+  collectCompletedResults: z.number().int().min(2).max(32).optional(),
   requiresApprovalFor: z.array(MandateActionSchema).default([]),
 });
 
@@ -380,6 +419,26 @@ export const TaskCancelPayloadSchema = z.object({
   reason: z.string().min(1).max(2000),
   cancelledBy: z.enum(["owner", "device", "peer", "policy"]),
   createdAt: z.string().datetime(),
+  /** Optional fan-out: after handling locally, relay cancel to these libp2p peer ids while relayRemainingHops > 0. */
+  forwardToPeerIds: z.array(z.string().min(1)).max(16).optional(),
+  relayRemainingHops: z.number().int().min(0).max(16).optional(),
+});
+
+export const UnsignedDataTransferVoucherSchema = z.object({
+  version: z.literal("0.1"),
+  transferId: z.string().min(1),
+  issuerPeerId: z.string().min(1),
+  issuerOwnerId: z.string().min(1),
+  issuerDeviceId: z.string().min(1),
+  relativePath: z.string().min(1).max(2048),
+  totalBytes: z.number().int().nonnegative(),
+  contentHash: z.string().min(1).max(128),
+  issuedAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
+});
+
+export const DataTransferVoucherSchema = UnsignedDataTransferVoucherSchema.extend({
+  signature: z.string().min(1),
 });
 
 export const TaskHeartbeatPayloadSchema = z.object({
@@ -460,6 +519,9 @@ export type UnsignedDeviceRevocationRecord = z.infer<
 export type DeviceRevocationRecord = z.infer<typeof DeviceRevocationRecordSchema>;
 export type SystemPingPayload = z.infer<typeof SystemPingPayloadSchema>;
 export type SystemSignalPayload = z.infer<typeof SystemSignalPayloadSchema>;
+export type DevicePairRequestPayload = z.infer<typeof DevicePairRequestPayloadSchema>;
+export type DevicePairApprovePayload = z.infer<typeof DevicePairApprovePayloadSchema>;
+export type DevicePairDeferredPayload = z.infer<typeof DevicePairDeferredPayloadSchema>;
 export type AuthChallengePayload = z.infer<typeof AuthChallengePayloadSchema>;
 export type AuthChallengeProof = z.infer<typeof AuthChallengeProofSchema>;
 export type AuthChallengeResponsePayload = z.infer<typeof AuthChallengeResponsePayloadSchema>;
@@ -475,6 +537,7 @@ export type BondChallengeResponsePayload = z.infer<typeof BondChallengeResponseP
 export type DiscoveryRequestPayload = z.infer<typeof DiscoveryRequestPayloadSchema>;
 export type DiscoveryMatch = z.infer<typeof DiscoveryMatchSchema>;
 export type DiscoveryResponsePayload = z.infer<typeof DiscoveryResponsePayloadSchema>;
+export type ChatMessagePayload = z.infer<typeof ChatMessagePayloadSchema>;
 export type MandateAction = z.infer<typeof MandateActionSchema>;
 export type MandatePeerScope = z.infer<typeof MandatePeerScopeSchema>;
 export type MandateCostLimit = z.infer<typeof MandateCostLimitSchema>;
@@ -491,6 +554,8 @@ export type TaskNegotiatePayload = z.infer<typeof TaskNegotiatePayloadSchema>;
 export type TaskAcceptPayload = z.infer<typeof TaskAcceptPayloadSchema>;
 export type TaskRejectPayload = z.infer<typeof TaskRejectPayloadSchema>;
 export type TaskCancelPayload = z.infer<typeof TaskCancelPayloadSchema>;
+export type UnsignedDataTransferVoucher = z.infer<typeof UnsignedDataTransferVoucherSchema>;
+export type DataTransferVoucher = z.infer<typeof DataTransferVoucherSchema>;
 export type TaskHeartbeatPayload = z.infer<typeof TaskHeartbeatPayloadSchema>;
 export type TaskResultPayload = z.infer<typeof TaskResultPayloadSchema>;
 export type ReportingMode = z.infer<typeof ReportingModeSchema>;
@@ -553,6 +618,18 @@ export function parseSystemSignalPayload(input: unknown): SystemSignalPayload {
   return SystemSignalPayloadSchema.parse(input);
 }
 
+export function parseDevicePairRequestPayload(input: unknown): DevicePairRequestPayload {
+  return DevicePairRequestPayloadSchema.parse(input);
+}
+
+export function parseDevicePairApprovePayload(input: unknown): DevicePairApprovePayload {
+  return DevicePairApprovePayloadSchema.parse(input);
+}
+
+export function parseDevicePairDeferredPayload(input: unknown): DevicePairDeferredPayload {
+  return DevicePairDeferredPayloadSchema.parse(input);
+}
+
 export function parseAuthChallengePayload(input: unknown): AuthChallengePayload {
   return AuthChallengePayloadSchema.parse(input);
 }
@@ -599,6 +676,10 @@ export function parseDiscoveryResponsePayload(input: unknown): DiscoveryResponse
   return DiscoveryResponsePayloadSchema.parse(input);
 }
 
+export function parseChatMessagePayload(input: unknown): ChatMessagePayload {
+  return ChatMessagePayloadSchema.parse(input);
+}
+
 export function parseMandate(input: unknown): Mandate {
   return MandateSchema.parse(input);
 }
@@ -633,6 +714,15 @@ export function parseTaskRejectPayload(input: unknown): TaskRejectPayload {
 
 export function parseTaskCancelPayload(input: unknown): TaskCancelPayload {
   return TaskCancelPayloadSchema.parse(input);
+}
+
+export function parseDataTransferVoucher(input: unknown): DataTransferVoucher {
+  return DataTransferVoucherSchema.parse(input);
+}
+
+export function dataTransferVoucherForSigning(voucher: DataTransferVoucher): UnsignedDataTransferVoucher {
+  const { signature: _signature, ...unsigned } = voucher;
+  return unsigned;
 }
 
 export function parseTaskHeartbeatPayload(input: unknown): TaskHeartbeatPayload {
@@ -788,6 +878,18 @@ export function createDiscoveryResponsePayload(
   });
 }
 
+export interface CreateChatMessagePayloadInput {
+  senderOwnerId: string;
+  text: string;
+}
+
+export function createChatMessagePayload(input: CreateChatMessagePayloadInput): ChatMessagePayload {
+  return ChatMessagePayloadSchema.parse({
+    senderOwnerId: input.senderOwnerId,
+    text: input.text,
+  });
+}
+
 export interface CreateUnsignedDeviceRevocationRecordInput {
   ownerId: string;
   deviceId: string;
@@ -935,6 +1037,7 @@ export interface CreateUnsignedMandateInput {
   maxCost?: MandateCostLimit;
   expiresAt?: string;
   closeOnFirstCompletedResult?: boolean;
+  collectCompletedResults?: number;
   requiresApprovalFor?: MandateAction[];
   mandateId?: string;
 }
@@ -958,7 +1061,83 @@ export function createUnsignedMandate(input: CreateUnsignedMandateInput): Unsign
     maxCost: input.maxCost ?? { amount: 0, currency: "USD" },
     expiresAt: input.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     closeOnFirstCompletedResult: input.closeOnFirstCompletedResult ?? false,
+    collectCompletedResults: input.collectCompletedResults,
     requiresApprovalFor: input.requiresApprovalFor ?? ["purchase", "raw_contact_exchange"],
+  });
+}
+
+
+export interface CreateDevicePairRequestPayloadInput {
+  requesterOwnerId: string;
+  requesterDeviceId: string;
+  requesterDevicePublicKeyPem: string;
+  requestedDeviceProfile?: DeviceProfile;
+  requestedCapabilities?: Capability[];
+  note?: string;
+  requestId?: string;
+  createdAt?: string;
+}
+
+export function createDevicePairRequestPayload(
+  input: CreateDevicePairRequestPayloadInput,
+): DevicePairRequestPayload {
+  return DevicePairRequestPayloadSchema.parse({
+    requestId: input.requestId ?? `pair_req_${randomUUID()}`,
+    requesterOwnerId: input.requesterOwnerId,
+    requesterDeviceId: input.requesterDeviceId,
+    requesterDevicePublicKeyPem: input.requesterDevicePublicKeyPem,
+    requestedDeviceProfile: input.requestedDeviceProfile,
+    requestedCapabilities: input.requestedCapabilities,
+    note: input.note,
+    createdAt: input.createdAt ?? new Date().toISOString(),
+  });
+}
+
+export function createDevicePairApprovePayload(
+  input: Omit<DevicePairApprovePayload, "approvedAt"> & { approvedAt?: string },
+): DevicePairApprovePayload {
+  return DevicePairApprovePayloadSchema.parse({
+    ...input,
+    approvedAt: input.approvedAt ?? new Date().toISOString(),
+  });
+}
+
+export function createDevicePairDeferredPayload(
+  input: Omit<DevicePairDeferredPayload, "createdAt"> & { createdAt?: string },
+): DevicePairDeferredPayload {
+  return DevicePairDeferredPayloadSchema.parse({
+    ...input,
+    createdAt: input.createdAt ?? new Date().toISOString(),
+  });
+}
+
+export interface CreateUnsignedDataTransferVoucherInput {
+  issuerPeerId: string;
+  issuerOwnerId: string;
+  issuerDeviceId: string;
+  relativePath: string;
+  totalBytes: number;
+  contentHash: string;
+  issuedAt?: string;
+  expiresAt?: string;
+  transferId?: string;
+}
+
+export function createUnsignedDataTransferVoucher(
+  input: CreateUnsignedDataTransferVoucherInput,
+): UnsignedDataTransferVoucher {
+  const issuedAt = input.issuedAt ?? new Date().toISOString();
+  return UnsignedDataTransferVoucherSchema.parse({
+    version: "0.1",
+    transferId: input.transferId ?? `xfer_${randomUUID()}`,
+    issuerPeerId: input.issuerPeerId,
+    issuerOwnerId: input.issuerOwnerId,
+    issuerDeviceId: input.issuerDeviceId,
+    relativePath: input.relativePath,
+    totalBytes: input.totalBytes,
+    contentHash: input.contentHash,
+    issuedAt,
+    expiresAt: input.expiresAt ?? new Date(Date.now() + 15 * 60 * 1000).toISOString(),
   });
 }
 

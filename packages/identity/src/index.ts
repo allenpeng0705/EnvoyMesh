@@ -22,6 +22,9 @@ import {
   type UnsignedDeviceCertificate,
   type UnsignedDeviceRevocationRecord,
   type UnsignedEnvoyEnvelope,
+  type UnsignedDataTransferVoucher,
+  type DataTransferVoucher,
+  dataTransferVoucherForSigning,
 } from "@envoymesh/protocol";
 import {
   createHash,
@@ -441,6 +444,27 @@ export function verifyCanonicalPayload(
 ): boolean {
   const payload = Buffer.from(canonicalJson(input), "utf8");
   return cryptoVerify(null, payload, publicKeyPem, Buffer.from(signature, "base64url"));
+}
+
+export function createSignedDataTransferVoucher(input: {
+  unsigned: UnsignedDataTransferVoucher;
+  devicePrivateKeyPem: string;
+}): DataTransferVoucher {
+  return {
+    ...input.unsigned,
+    signature: signCanonicalPayload(input.unsigned, input.devicePrivateKeyPem),
+  };
+}
+
+export function verifyDataTransferVoucher(
+  voucher: DataTransferVoucher,
+  devicePublicKeyPem: string,
+): boolean {
+  return verifyCanonicalPayload(
+    dataTransferVoucherForSigning(voucher),
+    voucher.signature,
+    devicePublicKeyPem,
+  );
 }
 
 function randomCertificateId(): string {

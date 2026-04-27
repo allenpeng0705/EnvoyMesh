@@ -1,7 +1,12 @@
 import {
   createDashboardConfig,
+  exportPairingTimeline,
   getDashboardSnapshot,
   removeTrustRecord,
+  sendChatMessage,
+  sendPairingRequest,
+  sendTaskNegotiate,
+  sendTaskProposal,
   searchSharedVault,
   setTrustRecord,
   updateApprovalStatus,
@@ -10,7 +15,7 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import { join } from "node:path";
 import type { SetTrustRecordRequest } from "../shared/dashboard.js";
 
-const config = createDashboardConfig();
+let config = createDashboardConfig();
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -31,6 +36,8 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  applyPackagedDefaults();
+  config = createDashboardConfig();
   registerIpcHandlers();
   createWindow();
 
@@ -40,6 +47,20 @@ app.whenReady().then(() => {
     }
   });
 });
+
+function applyPackagedDefaults(): void {
+  if (!app.isPackaged) {
+    return;
+  }
+
+  if (!process.env.ENVOYMESH_PROFILE) {
+    process.env.ENVOYMESH_PROFILE = join(app.getPath("userData"), "profile");
+  }
+
+  if (!process.env.ENVOYMESH_VAULT) {
+    process.env.ENVOYMESH_VAULT = join(app.getPath("userData"), "shared_vault");
+  }
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
@@ -64,5 +85,20 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle("dashboard:search-vault", async (_event, query: string) =>
     searchSharedVault(config, query),
+  );
+  ipcMain.handle("dashboard:send-chat-message", async (_event, request) =>
+    sendChatMessage(config, request),
+  );
+  ipcMain.handle("dashboard:send-task-proposal", async (_event, request) =>
+    sendTaskProposal(config, request),
+  );
+  ipcMain.handle("dashboard:send-task-negotiate", async (_event, request) =>
+    sendTaskNegotiate(config, request),
+  );
+  ipcMain.handle("dashboard:send-pairing-request", async (_event, request) =>
+    sendPairingRequest(config, request),
+  );
+  ipcMain.handle("dashboard:export-pairing-timeline", async (_event, outputPath: string) =>
+    exportPairingTimeline(config, outputPath),
   );
 }

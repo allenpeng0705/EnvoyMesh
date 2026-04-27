@@ -49,6 +49,7 @@ select {
 
 h1,
 h2,
+h3,
 p {
   margin-top: 0;
 }
@@ -202,6 +203,19 @@ small {
   margin-bottom: 10px;
 }
 
+.pairing-timeline-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.pairing-timeline-toolbar input[type="text"] {
+  flex: 1;
+  min-width: 220px;
+}
+
 .audit-toolbar input[type="text"] {
   flex: 1;
   min-width: 220px;
@@ -221,6 +235,103 @@ small {
   width: auto;
 }
 
+.compose-section {
+  border-top: 1px solid #e3eaf3;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.compose-section:first-of-type {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.form-grid-compose {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-grid-compose button {
+  justify-self: flex-start;
+}
+
+.chat-thread-layout {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr 1.2fr;
+  margin: 12px 0;
+}
+
+.thread-button {
+  align-items: flex-start;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  justify-content: space-between;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.row-active {
+  border-color: #8caef6;
+}
+
+.status-chip {
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 4px 8px;
+  text-transform: uppercase;
+}
+
+.status-chip-neutral {
+  background: #e9eef7;
+  color: #3a4a62;
+}
+
+.status-chip-sent {
+  background: #dbe8ff;
+  color: #2047ad;
+}
+
+.status-chip-received {
+  background: #d9f5e6;
+  color: #1c7a45;
+}
+
+.status-chip-deferred {
+  background: #fff1d6;
+  color: #9a6700;
+}
+
+.status-chip-rejected {
+  background: #ffe3e3;
+  color: #a31818;
+}
+
+.wizard-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.wizard-hint {
+  grid-column: span 2;
+  margin: 0;
+}
+
+.composer-review {
+  background: #f8fafc;
+  border: 1px dashed #cfd9ea;
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+}
+
 @media (max-width: 980px) {
   .cards,
   .two {
@@ -234,5 +345,9 @@ small {
   .hero {
     flex-direction: column;
     gap: 16px;
+  }
+
+  .chat-thread-layout {
+    grid-template-columns: 1fr;
   }
 }

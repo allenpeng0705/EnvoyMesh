@@ -14,6 +14,12 @@ Build it with:
 npm run desktop:build
 ```
 
+Build installable artifacts with:
+
+```bash
+npm run desktop:dist
+```
+
 ## Local State
 
 By default, the dashboard reads:
@@ -45,8 +51,13 @@ The first dashboard slice includes:
 - Observed peers derived from audit events.
 - Recent task journal and audit event panels (audit supports correlation/task id filtering and optional `p2p.trace` visibility).
 - Shared vault document summary and search.
+- Live P2P visualization panel driven by recent `p2p.trace` activity.
+- Chat/task composition panel for signed `chat.message` and `task.propose` sends.
+- Morning report panel with ranked discovery digest candidates.
 
 `p2p.trace` audit rows are only produced when the Envoy node is started with `--p2p-debug`.
+
+For packaged desktop builds, profile and vault defaults switch to the Electron user-data directory unless `ENVOYMESH_PROFILE` / `ENVOYMESH_VAULT` are explicitly set.
 
 ## Security Shape
 

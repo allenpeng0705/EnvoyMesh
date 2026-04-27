@@ -7,7 +7,9 @@ import {
 import type { NodeProfile } from "@envoymesh/local-store";
 import {
   createBondRequestPayload,
+  createChatMessagePayload,
   createDiscoveryRequestPayload,
+  createDevicePairRequestPayload,
   createKnowledgeQueryPayload,
   createReport,
   createReportCreatePayload,
@@ -67,6 +69,46 @@ export function buildOutboundCliEnvelopes(
           requestedTagHashes: args.discoveryTagHashes,
           requestedCapabilities: args.discoveryCapabilities,
           maxResults: args.discoveryMaxResults,
+        }),
+      ),
+    });
+  }
+
+  if (args.chatTarget) {
+    const text = args.chatText?.trim();
+    if (!text) {
+      throw new Error("Missing --chat-text for --chat");
+    }
+    envelopes.push({
+      target: args.chatTarget,
+      label: "chat.message",
+      envelope: signedEnvelope(
+        args,
+        profile,
+        args.chatTarget,
+        "chat.message",
+        createChatMessagePayload({
+          senderOwnerId: profile.owner.ownerId,
+          text,
+        }),
+      ),
+    });
+  }
+
+  if (args.pairRequestTarget) {
+    envelopes.push({
+      target: args.pairRequestTarget,
+      label: "device.pair.request",
+      envelope: signedEnvelope(
+        args,
+        profile,
+        args.pairRequestTarget,
+        "device.pair.request",
+        createDevicePairRequestPayload({
+          requesterOwnerId: profile.owner.ownerId,
+          requesterDeviceId: profile.device.deviceId,
+          requesterDevicePublicKeyPem: profile.device.publicKeyPem,
+          note: args.pairNote,
         }),
       ),
     });
@@ -135,6 +177,9 @@ export function buildOutboundCliEnvelopes(
 
   if (args.taskCancelTarget) {
     const taskId = requiredTaskId(args);
+    if (args.cancelForwardPeers?.length && args.cancelRelayHops === undefined) {
+      throw new Error("Missing --cancel-relay-hops when using --cancel-forward-peer");
+    }
     envelopes.push({
       target: args.taskCancelTarget,
       label: `task.cancel task=${taskId}`,
@@ -148,6 +193,8 @@ export function buildOutboundCliEnvelopes(
           mandateId: args.mandateId,
           reason: args.reason ?? "Owner cancelled the task.",
           cancelledBy: "owner",
+          forwardToPeerIds: args.cancelForwardPeers?.length ? args.cancelForwardPeers : undefined,
+          relayRemainingHops: args.cancelRelayHops,
         }),
       ),
     });
@@ -191,6 +238,7 @@ function createSignedMandate(args: NodeArgs, profile: NodeProfile): Mandate {
       mandateId: args.mandateId,
       expiresAt: args.mandateExpiresAt,
       closeOnFirstCompletedResult: args.closeOnFirstCompletedResult,
+      collectCompletedResults: args.collectCompletedResults,
     }),
   });
 }

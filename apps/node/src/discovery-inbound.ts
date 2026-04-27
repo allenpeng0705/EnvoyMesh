@@ -1,5 +1,6 @@
 import { derivePeerId } from "@envoymesh/identity";
 import {
+  createDiscoveryEvent,
   createAuditEvent,
   type LocalTaskStore,
   type LocalTrustStore,
@@ -86,6 +87,25 @@ export async function handleInboundDiscoveryIntent(input: {
           createdAt: envelope.createdAt,
         }),
       );
+      await taskStore.appendDiscoveryEvent(
+        createDiscoveryEvent({
+          direction: "inbound",
+          intent: "discovery.request",
+          ownerId: payload.requesterOwnerId,
+          remotePeerId,
+          correlationId,
+          requestMessageId: envelope.messageId,
+          requestedTagHashes: payload.requestedTagHashes,
+          requestedCapabilities: payload.requestedCapabilities,
+          matchedTagHashes: matches.flatMap((match) => match.matchedTagHashes),
+          matchedCapabilities: matches.flatMap((match) => match.matchedCapabilities),
+          matchCount: matches.length,
+          trustLevel,
+          outcome: "allow",
+          summary: `discovery.request accepted with ${matches.length} candidate(s)`,
+          createdAt: envelope.createdAt,
+        }),
+      );
 
       return { ok: true, responsePayload };
     }
@@ -104,6 +124,22 @@ export async function handleInboundDiscoveryIntent(input: {
           latencyMs: Date.now() - receivedAt,
           outcome: "record",
           summary: `discovery.response for request=${payload.requestMessageId} matches=${payload.matches.length} truncated=${payload.truncated}`,
+          createdAt: envelope.createdAt,
+        }),
+      );
+      await taskStore.appendDiscoveryEvent(
+        createDiscoveryEvent({
+          direction: "inbound",
+          intent: "discovery.response",
+          ownerId: payload.responderOwnerId,
+          remotePeerId,
+          correlationId,
+          requestMessageId: payload.requestMessageId,
+          matchedTagHashes: payload.matches.flatMap((match) => match.matchedTagHashes),
+          matchedCapabilities: payload.matches.flatMap((match) => match.matchedCapabilities),
+          matchCount: payload.matches.length,
+          outcome: "record",
+          summary: `discovery.response received with ${payload.matches.length} match(es)`,
           createdAt: envelope.createdAt,
         }),
       );
