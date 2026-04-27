@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { parseNodeArgs } from "../src/args.js";
 
 describe("node args", () => {
@@ -184,11 +187,101 @@ describe("node args", () => {
     }
   });
 
+  it("reads discovery settings from yaml config file", () => {
+    const configPath = writeTempConfig(`
+profile: ./data/yaml-profile
+listen:
+  - /ip4/0.0.0.0/tcp/4444
+discovery:
+  profile: wan-default
+  connectivityStrict: true
+  bootstrapPresets:
+    - public-libp2p
+  bootstrapPeers:
+    - /ip4/127.0.0.1/tcp/4101/p2p/peer-a
+  p2pDebug: true
+`);
+    try {
+      const args = parseNodeArgs(["--config", configPath]);
+      expect(args).toMatchObject({
+        configPath,
+        profileDir: "./data/yaml-profile",
+        listen: ["/ip4/0.0.0.0/tcp/4444"],
+        discoveryProfile: "wan-default",
+        connectivityStrict: true,
+        p2pDebug: true,
+      });
+      expect(args.bootstrapPeers).toContain("/ip4/127.0.0.1/tcp/4101/p2p/peer-a");
+      expect(args.bootstrapPeers.some((peer) => peer.includes("bootstrap.libp2p.io"))).toBe(true);
+    } finally {
+      cleanupTempConfig(configPath);
+    }
+  });
+
+  it("uses env vars over yaml config values", () => {
+    const configPath = writeTempConfig(`
+discovery:
+  profile: lan-fast
+`);
+    const original = process.env.ENVOYMESH_DISCOVERY_PROFILE;
+    process.env.ENVOYMESH_DISCOVERY_PROFILE = "wan-default";
+    try {
+      expect(parseNodeArgs(["--config", configPath]).discoveryProfile).toBe("wan-default");
+    } finally {
+      process.env.ENVOYMESH_DISCOVERY_PROFILE = original;
+      cleanupTempConfig(configPath);
+    }
+  });
+
+  it("uses CLI flags over env and yaml config values", () => {
+    const configPath = writeTempConfig(`
+discovery:
+  profile: lan-fast
+`);
+    const original = process.env.ENVOYMESH_DISCOVERY_PROFILE;
+    process.env.ENVOYMESH_DISCOVERY_PROFILE = "wan-default";
+    try {
+      expect(
+        parseNodeArgs(["--config", configPath, "--discovery-profile", "lan-fast"]).discoveryProfile,
+      ).toBe("lan-fast");
+    } finally {
+      process.env.ENVOYMESH_DISCOVERY_PROFILE = original;
+      cleanupTempConfig(configPath);
+    }
+  });
+
+  it("fails when yaml config discovery profile is invalid", () => {
+    const configPath = writeTempConfig(`
+discovery:
+  profile: invalid
+`);
+    try {
+      expect(() => parseNodeArgs(["--config", configPath])).toThrow("discovery.profile");
+    } finally {
+      cleanupTempConfig(configPath);
+    }
+  });
+
   it("applies public bootstrap preset", () => {
     const args = parseNodeArgs(["--bootstrap-preset", "public-libp2p"]);
-    expect(args.bootstrapPreset).toBe("public-libp2p");
+    expect(args.bootstrapPresets).toEqual(["public-libp2p"]);
     expect(args.bootstrapPeers.length).toBeGreaterThanOrEqual(4);
     expect(args.bootstrapPeers.some((peer) => peer.includes("bootstrap.libp2p.io"))).toBe(true);
+  });
+
+  it("supports multiple bootstrap presets", () => {
+    const args = parseNodeArgs([
+      "--bootstrap-preset",
+      "public-libp2p",
+      "--bootstrap-preset",
+      "public-libp2p-am6",
+      "--bootstrap-preset",
+      "public-libp2p-am7",
+    ]);
+    expect(args.bootstrapPresets).toEqual(["public-libp2p", "public-libp2p-am6", "public-libp2p-am7"]);
+    expect(args.bootstrapPeers.length).toBeGreaterThanOrEqual(4);
+    expect(args.bootstrapPeers.some((peer) => peer.includes("am6.bootstrap.libp2p.io"))).toBe(true);
+    expect(args.bootstrapPeers.some((peer) => peer.includes("am7.bootstrap.libp2p.io"))).toBe(true);
   });
 
   it("rejects invalid report mode", () => {
@@ -258,3 +351,14 @@ describe("node args", () => {
     });
   });
 });
+
+function writeTempConfig(contents: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "envoymesh-node-args-"));
+  const configPath = join(dir, "envoymesh.node.yaml");
+  writeFileSync(configPath, contents.trimStart(), "utf8");
+  return configPath;
+}
+
+function cleanupTempConfig(configPath: string): void {
+  rmSync(dirname(configPath), { recursive: true, force: true });
+}

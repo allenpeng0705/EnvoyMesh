@@ -1,0 +1,41 @@
+# EnvoyMesh node config example
+# Run with:
+#   npm run node:dev -- --config ./envoymesh.node.example.yaml
+#
+# Precedence:
+#   defaults < YAML config < env vars < CLI flags
+
+profile: ./data/primary
+
+listen:
+  - /ip4/0.0.0.0/tcp/0
+
+discovery:
+  # lan-fast or wan-default
+  profile: wan-default
+
+  # When true, startup fails if all bootstrap probes fail in wan-default mode.
+  connectivityStrict: true
+
+  # Discovery transport toggles
+  mdns: true
+  dht: true
+  dhtClientMode: true
+  relay: true
+  relayServer: false
+  autonat: true
+  dcutr: true
+
+  # Emit p2p.trace lifecycle telemetry into audit logs
+  p2pDebug: true
+
+  # Managed bootstrap preset list (supports multiple entries)
+  bootstrapPresets:
+    - public-libp2p
+    - public-libp2p-am6
+    - public-libp2p-am7
+
+  # Optional additional explicit bootstrap peers
+  # bootstrapPeers:
+  #   - /dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN
+  #   - /dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa

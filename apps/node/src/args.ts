@@ -1,10 +1,12 @@
 import type { Sensitivity } from "@envoymesh/protocol";
+import { loadNodeYamlConfig } from "./node-config.js";
 
 export interface NodeArgs {
+  configPath?: string;
   profileDir: string;
   discoveryProfile: "lan-fast" | "wan-default";
   connectivityStrict: boolean;
-  bootstrapPreset?: "public-libp2p";
+  bootstrapPresets: BootstrapPreset[];
   listen: string[];
   enableMdns: boolean;
   enableDht: boolean;
@@ -57,21 +59,15 @@ export interface NodeArgs {
 }
 
 export function parseNodeArgs(argv: string[]): NodeArgs {
-  const envBootstrapPeers = (process.env.ENVOYMESH_BOOTSTRAP_PEERS ?? "")
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  const envDiscoveryProfile = (process.env.ENVOYMESH_DISCOVERY_PROFILE ?? "").trim();
-  const envBootstrapPreset = (process.env.ENVOYMESH_BOOTSTRAP_PRESET ?? "").trim();
   const args: NodeArgs = {
     profileDir: "./data/default",
-    discoveryProfile: envDiscoveryProfile === "wan-default" ? "wan-default" : "lan-fast",
+    discoveryProfile: "lan-fast",
     connectivityStrict: false,
-    bootstrapPreset: envBootstrapPreset === "public-libp2p" ? "public-libp2p" : undefined,
+    bootstrapPresets: [],
     listen: ["/ip4/0.0.0.0/tcp/0"],
     enableMdns: true,
     enableDht: false,
-    bootstrapPeers: envBootstrapPeers,
+    bootstrapPeers: [],
     enableRelay: false,
     enableRelayServer: false,
     enableAutoNat: false,
@@ -80,18 +76,23 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     discoveryTagHashes: [],
     discoveryCapabilities: [],
   };
+  applyConfigFileArgs(args, argv);
+  applyEnvironmentArgs(args);
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
 
-    if (arg === "--profile") {
+    if (arg === "--config") {
+      index += 1;
+      continue;
+    } else if (arg === "--profile") {
       args.profileDir = readValue(argv, ++index, arg);
     } else if (arg === "--discovery-profile") {
       args.discoveryProfile = parseDiscoveryProfile(readValue(argv, ++index, arg));
     } else if (arg === "--connectivity-strict") {
       args.connectivityStrict = true;
     } else if (arg === "--bootstrap-preset") {
-      args.bootstrapPreset = parseBootstrapPreset(readValue(argv, ++index, arg));
+      args.bootstrapPresets.push(parseBootstrapPreset(readValue(argv, ++index, arg)));
     } else if (arg === "--listen") {
       args.listen = [readValue(argv, ++index, arg)];
     } else if (arg === "--no-mdns") {
@@ -217,6 +218,7 @@ Usage:
   npm run node:dev -- [options]
 
 Options:
+  --config <path>      Load node options from YAML config file.
   --profile <dir>       Profile directory for Envoy identity. Default: ./data/default
   --discovery-profile <p>  Discovery defaults: lan-fast|wan-default. Env: ENVOYMESH_DISCOVERY_PROFILE
   --connectivity-strict    Fail startup when wan-default bootstrap connectivity cannot be established. Env: ENVOYMESH_CONNECTIVITY_STRICT=1
@@ -227,8 +229,8 @@ Options:
   --dht-server          Enable DHT in server-capable mode.
   --bootstrap <addr>    Add a bootstrap peer multiaddr. Repeatable.
                          Env: ENVOYMESH_BOOTSTRAP_PEERS (comma-separated)
-  --bootstrap-preset <p> Add managed bootstrap set. Supported: public-libp2p
-                         Env: ENVOYMESH_BOOTSTRAP_PRESET
+  --bootstrap-preset <p> Add managed bootstrap set. Supported: public-libp2p, public-libp2p-am6, public-libp2p-am7
+                         Repeatable. Env: ENVOYMESH_BOOTSTRAP_PRESETS (comma-separated)
   --relay               Enable circuit relay transport.
   --relay-server        Enable this node as a circuit relay server.
   --autonat             Enable AutoNAT service.
@@ -325,16 +327,18 @@ function parseDiscoveryProfile(value: string): NodeArgs["discoveryProfile"] {
   throw new Error(`Invalid discovery profile: ${value}`);
 }
 
-function parseBootstrapPreset(value: string): NodeArgs["bootstrapPreset"] {
-  if (value === "public-libp2p") {
+type BootstrapPreset = "public-libp2p" | "public-libp2p-am6" | "public-libp2p-am7";
+
+function parseBootstrapPreset(value: string): BootstrapPreset {
+  if (value === "public-libp2p" || value === "public-libp2p-am6" || value === "public-libp2p-am7") {
     return value;
   }
   throw new Error(`Invalid bootstrap preset: ${value}`);
 }
 
 function applyDiscoveryProfileDefaults(args: NodeArgs): void {
-  if (args.bootstrapPreset === "public-libp2p") {
-    args.bootstrapPeers = dedupePeers([...args.bootstrapPeers, ...publicLibp2pBootstrapPeers()]);
+  for (const preset of args.bootstrapPresets) {
+    args.bootstrapPeers = dedupePeers([...args.bootstrapPeers, ...bootstrapPeersForPreset(preset)]);
   }
   if (args.discoveryProfile === "lan-fast") {
     return;
@@ -349,6 +353,91 @@ function applyDiscoveryProfileDefaults(args: NodeArgs): void {
   }
 }
 
+function applyConfigFileArgs(args: NodeArgs, argv: string[]): void {
+  const configPath = readConfigPath(argv);
+  if (!configPath) {
+    return;
+  }
+  const config = loadNodeYamlConfig(configPath);
+  args.configPath = configPath;
+  if (config.profile) {
+    args.profileDir = config.profile;
+  }
+  if (config.listen && config.listen.length > 0) {
+    args.listen = config.listen;
+  }
+  if (!config.discovery) {
+    return;
+  }
+  if (config.discovery.profile) {
+    args.discoveryProfile = config.discovery.profile;
+  }
+  if (typeof config.discovery.connectivityStrict === "boolean") {
+    args.connectivityStrict = config.discovery.connectivityStrict;
+  }
+  if (typeof config.discovery.mdns === "boolean") {
+    args.enableMdns = config.discovery.mdns;
+  }
+  if (typeof config.discovery.dht === "boolean") {
+    args.enableDht = config.discovery.dht;
+  }
+  if (typeof config.discovery.dhtClientMode === "boolean") {
+    args.dhtClientMode = config.discovery.dhtClientMode;
+  }
+  if (config.discovery.bootstrapPresets) {
+    args.bootstrapPresets.push(...config.discovery.bootstrapPresets);
+  }
+  if (config.discovery.bootstrapPeers) {
+    args.bootstrapPeers.push(...config.discovery.bootstrapPeers);
+  }
+  if (typeof config.discovery.relay === "boolean") {
+    args.enableRelay = config.discovery.relay;
+  }
+  if (typeof config.discovery.relayServer === "boolean") {
+    args.enableRelayServer = config.discovery.relayServer;
+  }
+  if (typeof config.discovery.autonat === "boolean") {
+    args.enableAutoNat = config.discovery.autonat;
+  }
+  if (typeof config.discovery.dcutr === "boolean") {
+    args.enableDcutr = config.discovery.dcutr;
+  }
+  if (typeof config.discovery.p2pDebug === "boolean") {
+    args.p2pDebug = config.discovery.p2pDebug;
+  }
+}
+
+function applyEnvironmentArgs(args: NodeArgs): void {
+  const envBootstrapPeers = (process.env.ENVOYMESH_BOOTSTRAP_PEERS ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const envBootstrapPresets = (process.env.ENVOYMESH_BOOTSTRAP_PRESETS ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => parseBootstrapPreset(entry));
+  const envDiscoveryProfile = (process.env.ENVOYMESH_DISCOVERY_PROFILE ?? "").trim();
+
+  if (envDiscoveryProfile === "wan-default") {
+    args.discoveryProfile = envDiscoveryProfile;
+  } else if (envDiscoveryProfile === "lan-fast") {
+    args.discoveryProfile = envDiscoveryProfile;
+  }
+  args.bootstrapPresets.push(...envBootstrapPresets);
+  args.bootstrapPeers.push(...envBootstrapPeers);
+}
+
+function readConfigPath(argv: string[]): string | undefined {
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--config") {
+      return readValue(argv, ++index, arg);
+    }
+  }
+  return undefined;
+}
+
 function dedupePeers(peers: string[]): string[] {
   return [...new Set(peers)];
 }
@@ -360,4 +449,14 @@ function publicLibp2pBootstrapPeers(): string[] {
     "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq",
     "/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf",
   ];
+}
+
+function bootstrapPeersForPreset(preset: BootstrapPreset): string[] {
+  if (preset === "public-libp2p") {
+    return publicLibp2pBootstrapPeers();
+  }
+  if (preset === "public-libp2p-am6") {
+    return ["/dnsaddr/am6.bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq"];
+  }
+  return ["/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf"];
 }

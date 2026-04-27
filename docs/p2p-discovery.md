@@ -42,6 +42,13 @@ Or environment variable:
 ENVOYMESH_DISCOVERY_PROFILE=wan-default
 ```
 
+Or node config YAML:
+
+```yaml
+discovery:
+  profile: wan-default
+```
+
 ## Bootstrap Peers And Presets
 
 WAN discovery needs at least one reachable bootstrap/relay source.
@@ -56,16 +63,37 @@ Or use managed presets:
 
 ```bash
 --bootstrap-preset public-libp2p
+--bootstrap-preset public-libp2p-am6
+--bootstrap-preset public-libp2p-am7
 ```
 
 Or environment variables:
 
 ```bash
 ENVOYMESH_BOOTSTRAP_PEERS="<addr1>,<addr2>"
-ENVOYMESH_BOOTSTRAP_PRESET=public-libp2p
+ENVOYMESH_BOOTSTRAP_PRESETS="public-libp2p,public-libp2p-am6,public-libp2p-am7"
+```
+
+Or node config YAML:
+
+```yaml
+discovery:
+  bootstrapPresets:
+    - public-libp2p
+    - public-libp2p-am6
+    - public-libp2p-am7
+  bootstrapPeers:
+    - "<addr1>"
+    - "<addr2>"
 ```
 
 EnvoyMesh deduplicates peers when combining env values, repeated flags, and presets.
+
+Built-in preset names:
+
+- `public-libp2p`
+- `public-libp2p-am6`
+- `public-libp2p-am7`
 
 ## Known-Good Seed Persistence (Phase D Start)
 
@@ -94,6 +122,13 @@ Env override:
 
 ```bash
 ENVOYMESH_CONNECTIVITY_STRICT=1
+```
+
+Or node config YAML:
+
+```yaml
+discovery:
+  connectivityStrict: true
 ```
 
 ## Runtime Discovery Signals

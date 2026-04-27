@@ -92,6 +92,32 @@ Use managed WAN defaults (recommended for non-LAN testing):
 npm run node:dev -- --profile ./data/primary --discovery-profile wan-default --bootstrap-preset public-libp2p --connectivity-strict --p2p-debug
 ```
 
+Use a YAML config file instead of passing every flag or environment variable:
+
+```bash
+npm run node:dev -- --config ./envoymesh.node.yaml
+```
+
+Example `envoymesh.node.yaml`:
+
+```yaml
+profile: ./data/primary
+listen:
+  - /ip4/0.0.0.0/tcp/0
+discovery:
+  profile: wan-default
+  connectivityStrict: true
+  bootstrapPresets:
+    - public-libp2p
+    - public-libp2p-am6
+    - public-libp2p-am7
+  bootstrapPeers:
+    - /dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN
+  p2pDebug: true
+```
+
+Configuration precedence is: defaults, then YAML config file, then environment variables, then CLI flags.
+
 Correlate outbound probes and A2A sends (optional `correlationId` on the wire envelope):
 
 ```bash

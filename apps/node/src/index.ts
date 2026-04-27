@@ -779,6 +779,9 @@ setTimeout(() => {
 }, 15_000);
 
 console.log("Envoy node started");
+if (args.configPath) {
+  console.log(`Config file: ${args.configPath}`);
+}
 console.log(`Owner ID: ${profile.owner.ownerId}`);
 console.log(`Device ID: ${profile.device.deviceId}`);
 console.log(`libp2p Peer ID: ${mesh.peerId}`);

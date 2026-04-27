@@ -1,0 +1,25 @@
+# EnvoyMesh LAN-first node config example
+# Run with:
+#   npm run node:dev -- --config ./envoymesh.node.lan.example.yaml
+
+profile: ./data/lan
+
+listen:
+  - /ip4/0.0.0.0/tcp/0
+
+discovery:
+  # Fast local-network discovery via mDNS.
+  profile: lan-fast
+
+  # Keep startup permissive for local tests.
+  connectivityStrict: false
+
+  # LAN defaults
+  mdns: true
+  dht: false
+  relay: false
+  autonat: false
+  dcutr: false
+
+  # Optional trace rows in audit log.
+  p2pDebug: true
