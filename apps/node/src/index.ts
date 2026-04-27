@@ -58,6 +58,7 @@ import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "
 import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
 import { installEnvoyDataTransferReceiver } from "./data-transfer-inbound.js";
 import { evaluateInboundEnvelopeRolePolicy } from "./role-policy.js";
+import { createDiscoverySeedStore } from "./discovery-seed-store.js";
 
 const args = parseNodeArgs(process.argv.slice(2));
 const profile = await loadOrCreateNodeProfile(args.profileDir);
@@ -65,16 +66,25 @@ const taskDispatcher = createTaskDispatcher();
 const taskStore = createLocalTaskStore(args.profileDir);
 const trustStore = createLocalTrustStore(args.profileDir);
 const peerDirectoryStore = createLocalPeerDirectoryStore(args.profileDir);
+const discoverySeedStore = createDiscoverySeedStore(args.profileDir);
 const taskRuntimeStore = createTaskRuntimeStateStore(args.profileDir);
 const resolvedArgs = await resolveNodeArgsTargetsByOwnerId(args, peerDirectoryStore);
 const inboundGuard = createInboundMessageGuard();
 const vaultDirForNode = process.env.ENVOYMESH_VAULT ?? join(process.cwd(), "shared_vault");
+const peerDirectoryRecords = await peerDirectoryStore.listPeerRecords();
+const peerDirectorySeedAddrs = peerDirectoryRecords.flatMap((record) => record.listenAddrs);
+const persistedSeedAddrs = await discoverySeedStore.listSeedAddrs();
+const effectiveBootstrapPeers = dedupeAddrs([
+  ...args.bootstrapPeers,
+  ...peerDirectorySeedAddrs,
+  ...persistedSeedAddrs,
+]);
 const mesh = new EnvoyMesh({
   listen: args.listen,
   enableMdns: args.enableMdns,
   enableDht: args.enableDht,
   dhtClientMode: args.dhtClientMode,
-  bootstrapPeers: args.bootstrapPeers,
+  bootstrapPeers: effectiveBootstrapPeers,
   enableRelay: args.enableRelay,
   enableRelayServer: args.enableRelayServer,
   enableAutoNat: args.enableAutoNat,
@@ -83,6 +93,36 @@ const mesh = new EnvoyMesh({
   onP2pDebug: (event) => {
     void appendP2pTrace(event);
   },
+});
+const connectivityWarnings: string[] = [];
+const bootstrapProbeResults: Array<{ peer: string; ok: boolean; latencyMs?: number; error?: string }> = [];
+const MAX_BOOTSTRAP_PROBE_RESULTS = 512;
+const BOOTSTRAP_REPROBE_INTERVAL_MS = 60_000;
+const BOOTSTRAP_REPROBE_JITTER_MS = 15_000;
+let bootstrapReprobeTimer: ReturnType<typeof setTimeout> | undefined;
+let bootstrapReprobeCursor = 0;
+
+if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length === 0) {
+  connectivityWarnings.push(
+    "wan-default selected without bootstrap peers; DHT/relay are enabled but discovery may be limited. Configure --bootstrap or ENVOYMESH_BOOTSTRAP_PEERS.",
+  );
+}
+
+mesh.onPeerDiscovered(async (peer) => {
+  const source = peer.multiaddrs.some((addr) => addr.includes("/p2p-circuit")) ? "relay" : "unknown";
+  await taskStore.appendAuditEvent(
+    createAuditEvent({
+      type: "p2p.trace",
+      remotePeerId: peer.peerId,
+      direction: "inbound",
+      protocol: "peer.discovery",
+      outcome: "record",
+      summary: `discovery peer=${peer.peerId} source=${source} addrs=${peer.multiaddrs.length}`,
+    }),
+  );
+  if (peer.multiaddrs.length > 0) {
+    await discoverySeedStore.upsertMany(peer.multiaddrs, "peer.discovery");
+  }
 });
 
 mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
@@ -660,6 +700,84 @@ installEnvoyDataTransferReceiver({
 
 await mesh.start();
 
+if (args.bootstrapPeers.length > 0) {
+  await discoverySeedStore.upsertMany(args.bootstrapPeers, "manual-bootstrap");
+}
+
+await taskStore.appendAuditEvent(
+  createAuditEvent({
+    type: "p2p.trace",
+    direction: "outbound",
+    protocol: "connectivity.profile",
+    outcome: "record",
+    summary: `connectivity profile=${args.discoveryProfile} mdns=${args.enableMdns} dht=${args.enableDht} relay=${args.enableRelay} autonat=${args.enableAutoNat} dcutr=${args.enableDcutr} bootstrap=${effectiveBootstrapPeers.length} seeds(peer-dir=${peerDirectorySeedAddrs.length}, persisted=${persistedSeedAddrs.length})`,
+  }),
+);
+for (const warning of connectivityWarnings) {
+  console.warn(`[connectivity warning] ${warning}`);
+  await taskStore.appendAuditEvent(
+    createAuditEvent({
+      type: "p2p.trace",
+      direction: "outbound",
+      protocol: "connectivity.warning",
+      outcome: "record",
+      summary: warning,
+    }),
+  );
+}
+if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length > 0) {
+  const orderedBootstrapPeers = rotatePeers(effectiveBootstrapPeers);
+  for (const peer of orderedBootstrapPeers) {
+    try {
+      const latencyMs = await mesh.probePeer(peer);
+      pushBootstrapProbeResult({ peer, ok: true, latencyMs });
+      await discoverySeedStore.upsertSuccess(peer, "bootstrap-probe");
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "p2p.trace",
+          direction: "outbound",
+          protocol: "connectivity.bootstrap.ok",
+          remotePeerId: peer,
+          latencyMs,
+          outcome: "record",
+          summary: `bootstrap probe ok peer=${peer} latencyMs=${latencyMs}`,
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      pushBootstrapProbeResult({ peer, ok: false, error: message });
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "p2p.trace",
+          direction: "outbound",
+          protocol: "connectivity.bootstrap.fail",
+          remotePeerId: peer,
+          outcome: "record",
+          summary: `bootstrap probe failed peer=${peer} error=${message}`,
+        }),
+      );
+    }
+  }
+  const succeeded = bootstrapProbeResults.some((item) => item.ok);
+  if (!succeeded && args.connectivityStrict) {
+    throw new Error(
+      "connectivity-strict enabled: all bootstrap probes failed in wan-default profile.",
+    );
+  }
+  scheduleBootstrapReprobe(effectiveBootstrapPeers);
+}
+setTimeout(() => {
+  void taskStore.appendAuditEvent(
+    createAuditEvent({
+      type: "p2p.trace",
+      direction: "outbound",
+      protocol: "connectivity.health",
+      outcome: "record",
+      summary: "connectivity health checkpoint: if no peers discovered yet, verify bootstrap peers/firewall/subnet and retry signal.",
+    }),
+  );
+}, 15_000);
+
 console.log("Envoy node started");
 console.log(`Owner ID: ${profile.owner.ownerId}`);
 console.log(`Device ID: ${profile.device.deviceId}`);
@@ -802,6 +920,10 @@ if (resolvedArgs.dataSendTarget && resolvedArgs.dataRelativePath) {
 console.log("Press Ctrl+C to stop.");
 
 async function shutdown(): Promise<void> {
+  if (bootstrapReprobeTimer) {
+    clearTimeout(bootstrapReprobeTimer);
+    bootstrapReprobeTimer = undefined;
+  }
   await mesh.stop();
   process.exit(0);
 }
@@ -897,4 +1019,79 @@ async function appendP2pTrace(event: P2pDebugEvent): Promise<void> {
       summary: summaryParts.join(" "),
     }),
   );
+}
+
+function rotatePeers(peers: string[]): string[] {
+  if (peers.length <= 1) {
+    return peers;
+  }
+  const offset = Date.now() % peers.length;
+  return peers.slice(offset).concat(peers.slice(0, offset));
+}
+
+function dedupeAddrs(addrs: string[]): string[] {
+  return [...new Set(addrs.map((addr) => addr.trim()).filter(Boolean))];
+}
+
+function pushBootstrapProbeResult(entry: {
+  peer: string;
+  ok: boolean;
+  latencyMs?: number;
+  error?: string;
+}): void {
+  bootstrapProbeResults.push(entry);
+  if (bootstrapProbeResults.length > MAX_BOOTSTRAP_PROBE_RESULTS) {
+    bootstrapProbeResults.splice(0, bootstrapProbeResults.length - MAX_BOOTSTRAP_PROBE_RESULTS);
+  }
+}
+
+function scheduleBootstrapReprobe(peers: string[]): void {
+  if (peers.length === 0) {
+    return;
+  }
+  const jitterMs = Math.floor(Math.random() * BOOTSTRAP_REPROBE_JITTER_MS);
+  bootstrapReprobeTimer = setTimeout(() => {
+    void runBootstrapReprobe(peers);
+  }, BOOTSTRAP_REPROBE_INTERVAL_MS + jitterMs);
+}
+
+async function runBootstrapReprobe(peers: string[]): Promise<void> {
+  if (peers.length === 0) {
+    return;
+  }
+
+  const peer = peers[bootstrapReprobeCursor % peers.length];
+  bootstrapReprobeCursor = (bootstrapReprobeCursor + 1) % peers.length;
+
+  try {
+    const latencyMs = await mesh.probePeer(peer);
+    pushBootstrapProbeResult({ peer, ok: true, latencyMs });
+    await discoverySeedStore.upsertSuccess(peer, "bootstrap-probe");
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        direction: "outbound",
+        protocol: "connectivity.reprobe.ok",
+        remotePeerId: peer,
+        latencyMs,
+        outcome: "record",
+        summary: `bootstrap reprobe ok peer=${peer} latencyMs=${latencyMs}`,
+      }),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    pushBootstrapProbeResult({ peer, ok: false, error: message });
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        direction: "outbound",
+        protocol: "connectivity.reprobe.fail",
+        remotePeerId: peer,
+        outcome: "record",
+        summary: `bootstrap reprobe failed peer=${peer} error=${message}`,
+      }),
+    );
+  } finally {
+    scheduleBootstrapReprobe(peers);
+  }
 }

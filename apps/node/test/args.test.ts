@@ -152,8 +152,55 @@ describe("node args", () => {
     });
   });
 
+  it("applies wan-default discovery profile defaults", () => {
+    expect(parseNodeArgs(["--discovery-profile", "wan-default"])).toMatchObject({
+      discoveryProfile: "wan-default",
+      enableDht: true,
+      dhtClientMode: true,
+      enableRelay: true,
+      enableAutoNat: true,
+      enableDcutr: true,
+    });
+  });
+
+  it("parses connectivity-strict flag", () => {
+    expect(parseNodeArgs(["--discovery-profile", "wan-default", "--connectivity-strict"])).toMatchObject({
+      discoveryProfile: "wan-default",
+      connectivityStrict: true,
+    });
+  });
+
+  it("reads bootstrap peers from env", () => {
+    const original = process.env.ENVOYMESH_BOOTSTRAP_PEERS;
+    process.env.ENVOYMESH_BOOTSTRAP_PEERS =
+      "/ip4/127.0.0.1/tcp/4101/p2p/peer-a,/ip4/127.0.0.1/tcp/4102/p2p/peer-b";
+    try {
+      expect(parseNodeArgs([]).bootstrapPeers).toEqual([
+        "/ip4/127.0.0.1/tcp/4101/p2p/peer-a",
+        "/ip4/127.0.0.1/tcp/4102/p2p/peer-b",
+      ]);
+    } finally {
+      process.env.ENVOYMESH_BOOTSTRAP_PEERS = original;
+    }
+  });
+
+  it("applies public bootstrap preset", () => {
+    const args = parseNodeArgs(["--bootstrap-preset", "public-libp2p"]);
+    expect(args.bootstrapPreset).toBe("public-libp2p");
+    expect(args.bootstrapPeers.length).toBeGreaterThanOrEqual(4);
+    expect(args.bootstrapPeers.some((peer) => peer.includes("bootstrap.libp2p.io"))).toBe(true);
+  });
+
   it("rejects invalid report mode", () => {
     expect(() => parseNodeArgs(["--report-mode", "later"])).toThrow("Invalid report mode");
+  });
+
+  it("rejects invalid discovery profile", () => {
+    expect(() => parseNodeArgs(["--discovery-profile", "wan"])).toThrow("Invalid discovery profile");
+  });
+
+  it("rejects invalid bootstrap preset", () => {
+    expect(() => parseNodeArgs(["--bootstrap-preset", "public"])).toThrow("Invalid bootstrap preset");
   });
 
   it("parses task termination flags", () => {

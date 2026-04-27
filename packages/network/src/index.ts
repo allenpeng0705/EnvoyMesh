@@ -295,6 +295,14 @@ export class EnvoyMesh {
     return Date.now() - startedAt;
   }
 
+  async probePeer(target: string): Promise<number> {
+    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    const startedAt = Date.now();
+    const connection = await this.requireNode().dial(dialTarget as any);
+    await connection.close();
+    return Date.now() - startedAt;
+  }
+
   /**
    * Sends raw bytes on the EnvoyMesh message protocol stream without encoding an envelope.
    * Intended for adversarial probes and resilience testing (not for normal application traffic).

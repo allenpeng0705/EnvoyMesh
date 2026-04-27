@@ -122,6 +122,28 @@ npm run cli -w @envoymesh/node -- pairing list --profile ./data/receiver
 ENVOYMESH_PROFILE=./data/receiver ENVOYMESH_VAULT=./shared_vault npm run desktop:dev
 ```
 
+### Cross-Network (Mac + Windows) Bootstrap Preset
+
+For non-LAN trials, run both nodes with `wan-default` and the managed public preset:
+
+Mac (primary):
+
+```bash
+npm run node:dev -- --profile "/Users/<you>/EnvoyMesh/data/primary" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap-preset public-libp2p --connectivity-strict --p2p-debug
+```
+
+Windows (satellite):
+
+```bash
+npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap-preset public-libp2p --connectivity-strict --p2p-debug
+```
+
+Check health on each machine:
+
+```bash
+npm run cli -w @envoymesh/node -- connectivity-status --profile "<profile-path>"
+```
+
 Generate a reusable checklist with auto-correlation IDs:
 
 ```bash
@@ -177,6 +199,7 @@ Python, Rust, Go, or native binaries can still be used where they are strongest.
 - [High-Level Design](docs/high-level-design.md)
 - [Detailed Design](docs/detailed-design.md)
 - [Implementation Plan](docs/implementation-plan.md)
+- [P2P Discovery Guide](docs/p2p-discovery.md)
 - [EnvoyMesh Protocol](docs/protocol-standard.md)
 - [Developer CLI](docs/developer-cli.md)
 - [Desktop Dashboard](docs/desktop-dashboard.md)

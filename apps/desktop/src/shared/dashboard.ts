@@ -34,6 +34,18 @@ export interface LiveP2pSnapshot {
   traces: P2pTraceSummary[];
 }
 
+export interface ConnectivityHealthSnapshot {
+  discoveryProfile: "lan-fast" | "wan-default" | "unknown";
+  bootstrapPeerCount: number;
+  discoveredPeerCount: number;
+  relayDiscoveryCount: number;
+  bootstrapProbeSuccessCount: number;
+  bootstrapProbeFailureCount: number;
+  warningCount: number;
+  warnings: string[];
+  lastCheckpointAt?: string;
+}
+
 export interface VaultDocumentSummary {
   documentId: string;
   relativePath: string;
@@ -77,6 +89,7 @@ export interface DashboardSnapshot {
   taskJournalEntries: TaskJournalEntry[];
   observedPeers: ObservedPeerSummary[];
   liveP2p: LiveP2pSnapshot;
+  connectivityHealth: ConnectivityHealthSnapshot;
   morningReport: MorningReportEntry[];
   vault: VaultSummary;
 }

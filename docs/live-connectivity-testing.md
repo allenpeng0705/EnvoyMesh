@@ -78,6 +78,45 @@ For a two-machine check of the `/envoymesh/data/0.1.0` path (voucher + chunked f
 
 For `task.cancel` relay fan-out, send `--task-cancel` with `--cancel-forward-peer` (repeatable) and `--cancel-relay-hops` from the developer or packaged CLI, then confirm each listed peer receives a handled cancel and optional downstream relay while hops remain.
 
+## 6. Non-LAN Fallback (WAN-First Profile)
+
+When mDNS is unreliable or unavailable, use `wan-default` profile defaults and bootstrap peers:
+
+```bash
+npm run node:dev -- --profile ./data/primary --discovery-profile wan-default --bootstrap-preset public-libp2p --bootstrap "<bootstrap-multiaddr>" --p2p-debug
+```
+
+`wan-default` enables DHT client mode, relay transport, AutoNAT, and DCUtR. `--bootstrap-preset public-libp2p` adds a managed public bootstrap set, and `--bootstrap` can append your own peers. If no bootstrap peers are configured, node startup continues but emits a connectivity warning in logs/audit.
+
+For stricter rollout environments, require successful bootstrap probes at startup:
+
+```bash
+npm run node:dev -- --profile ./data/primary --discovery-profile wan-default --bootstrap-preset public-libp2p --bootstrap "<bootstrap-multiaddr>" --connectivity-strict
+```
+
+With `--connectivity-strict`, startup fails when all bootstrap probes fail.
+
+Inspect connectivity diagnostics:
+
+```bash
+npm run cli -w @envoymesh/node -- connectivity-status --profile ./data/primary
+```
+
+Expected output includes:
+
+- active discovery profile (`lan-fast` or `wan-default`)
+- bootstrap peer count
+- discovered peer count
+- relay-discovery count
+- recent connectivity warnings and checkpoint hints
+
+If discovered peers stay at zero:
+
+1. verify at least one reachable bootstrap peer is configured;
+2. check local firewall and NAT restrictions;
+3. retry with direct `system.signal` once to seed peer directory mapping;
+4. confirm `connectivity-status` warnings clear after configuration fixes.
+
 ## Notes
 
 - Use longer timeouts on slow networks, for example `--timeout-ms 120000`.

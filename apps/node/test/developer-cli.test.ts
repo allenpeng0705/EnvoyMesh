@@ -75,6 +75,10 @@ describe("developer CLI", () => {
       pairingStatusFilter: "deferred",
       pairingQuery: "peer-a",
     });
+    expect(parseDeveloperCliArgs(["connectivity-status", "--profile", "./data/alice"])).toMatchObject({
+      command: "connectivity-status",
+      profileDir: "./data/alice",
+    });
   });
 
   it("parses audit filtering flags", () => {
@@ -163,6 +167,68 @@ describe("developer CLI", () => {
     ]);
     expect(correlationFilter.lines).toContain("Audit events (1 of 3)");
     expect(correlationFilter.lines.join("\n")).toContain("task.propose");
+  });
+
+  it("shows connectivity status diagnostics", async () => {
+    const store = createLocalTaskStore(profileDir);
+    await store.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        protocol: "connectivity.profile",
+        outcome: "record",
+        summary: "connectivity profile=wan-default mdns=true dht=true relay=true autonat=true dcutr=true bootstrap=2",
+        createdAt: "2026-04-27T10:00:00.000Z",
+      }),
+    );
+    await store.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        protocol: "peer.discovery",
+        remotePeerId: "peer-a",
+        outcome: "record",
+        summary: "discovery peer=peer-a source=relay addrs=1",
+        createdAt: "2026-04-27T10:00:01.000Z",
+      }),
+    );
+    await store.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        protocol: "connectivity.warning",
+        outcome: "record",
+        summary: "wan-default selected without bootstrap peers",
+        createdAt: "2026-04-27T10:00:02.000Z",
+      }),
+    );
+    await store.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        protocol: "connectivity.bootstrap.fail",
+        remotePeerId: "peer-b",
+        outcome: "record",
+        summary: "bootstrap probe failed peer=peer-b error=timeout",
+        createdAt: "2026-04-27T10:00:03.000Z",
+      }),
+    );
+    await store.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        protocol: "connectivity.reprobe.fail",
+        remotePeerId: "peer-c",
+        outcome: "record",
+        summary: "bootstrap reprobe failed peer=peer-c error=timeout",
+        createdAt: "2026-04-27T10:00:04.000Z",
+      }),
+    );
+    const result = await runDeveloperCli(["connectivity-status", "--profile", profileDir]);
+    expect(result.exitCode).toBe(0);
+    expect(result.lines[0]).toBe("Connectivity status");
+    expect(result.lines[1]).toContain("profile=wan-default");
+    expect(result.lines[1]).toContain("discoveredPeers=1");
+    expect(result.lines[1]).toContain("bootstrapFail=1");
+    expect(result.lines[1]).toContain("reprobeFail=1");
+    expect(result.lines.join("\n")).toContain("warning 2026-04-27T10:00:02.000Z");
+    expect(result.lines.join("\n")).toContain("bootstrapFail 2026-04-27T10:00:03.000Z");
+    expect(result.lines.join("\n")).toContain("reprobeFail 2026-04-27T10:00:04.000Z");
   });
 
   it("lists tasks and pending approvals", async () => {

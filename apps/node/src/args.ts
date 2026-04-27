@@ -2,6 +2,9 @@ import type { Sensitivity } from "@envoymesh/protocol";
 
 export interface NodeArgs {
   profileDir: string;
+  discoveryProfile: "lan-fast" | "wan-default";
+  connectivityStrict: boolean;
+  bootstrapPreset?: "public-libp2p";
   listen: string[];
   enableMdns: boolean;
   enableDht: boolean;
@@ -54,12 +57,21 @@ export interface NodeArgs {
 }
 
 export function parseNodeArgs(argv: string[]): NodeArgs {
+  const envBootstrapPeers = (process.env.ENVOYMESH_BOOTSTRAP_PEERS ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const envDiscoveryProfile = (process.env.ENVOYMESH_DISCOVERY_PROFILE ?? "").trim();
+  const envBootstrapPreset = (process.env.ENVOYMESH_BOOTSTRAP_PRESET ?? "").trim();
   const args: NodeArgs = {
     profileDir: "./data/default",
+    discoveryProfile: envDiscoveryProfile === "wan-default" ? "wan-default" : "lan-fast",
+    connectivityStrict: false,
+    bootstrapPreset: envBootstrapPreset === "public-libp2p" ? "public-libp2p" : undefined,
     listen: ["/ip4/0.0.0.0/tcp/0"],
     enableMdns: true,
     enableDht: false,
-    bootstrapPeers: [],
+    bootstrapPeers: envBootstrapPeers,
     enableRelay: false,
     enableRelayServer: false,
     enableAutoNat: false,
@@ -74,6 +86,12 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
 
     if (arg === "--profile") {
       args.profileDir = readValue(argv, ++index, arg);
+    } else if (arg === "--discovery-profile") {
+      args.discoveryProfile = parseDiscoveryProfile(readValue(argv, ++index, arg));
+    } else if (arg === "--connectivity-strict") {
+      args.connectivityStrict = true;
+    } else if (arg === "--bootstrap-preset") {
+      args.bootstrapPreset = parseBootstrapPreset(readValue(argv, ++index, arg));
     } else if (arg === "--listen") {
       args.listen = [readValue(argv, ++index, arg)];
     } else if (arg === "--no-mdns") {
@@ -187,6 +205,8 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     }
   }
 
+  applyDiscoveryProfileDefaults(args);
+
   return args;
 }
 
@@ -198,12 +218,17 @@ Usage:
 
 Options:
   --profile <dir>       Profile directory for Envoy identity. Default: ./data/default
+  --discovery-profile <p>  Discovery defaults: lan-fast|wan-default. Env: ENVOYMESH_DISCOVERY_PROFILE
+  --connectivity-strict    Fail startup when wan-default bootstrap connectivity cannot be established. Env: ENVOYMESH_CONNECTIVITY_STRICT=1
   --listen <multiaddr>  Listen multiaddr. Default: /ip4/0.0.0.0/tcp/0
   --no-mdns             Disable local mDNS discovery.
   --dht                 Enable DHT discovery.
   --dht-client          Enable DHT in client mode.
   --dht-server          Enable DHT in server-capable mode.
   --bootstrap <addr>    Add a bootstrap peer multiaddr. Repeatable.
+                         Env: ENVOYMESH_BOOTSTRAP_PEERS (comma-separated)
+  --bootstrap-preset <p> Add managed bootstrap set. Supported: public-libp2p
+                         Env: ENVOYMESH_BOOTSTRAP_PRESET
   --relay               Enable circuit relay transport.
   --relay-server        Enable this node as a circuit relay server.
   --autonat             Enable AutoNAT service.
@@ -291,4 +316,48 @@ function parsePositiveInteger(value: string, flag: string): number {
     throw new Error(`${flag} must be a positive integer`);
   }
   return parsed;
+}
+
+function parseDiscoveryProfile(value: string): NodeArgs["discoveryProfile"] {
+  if (value === "lan-fast" || value === "wan-default") {
+    return value;
+  }
+  throw new Error(`Invalid discovery profile: ${value}`);
+}
+
+function parseBootstrapPreset(value: string): NodeArgs["bootstrapPreset"] {
+  if (value === "public-libp2p") {
+    return value;
+  }
+  throw new Error(`Invalid bootstrap preset: ${value}`);
+}
+
+function applyDiscoveryProfileDefaults(args: NodeArgs): void {
+  if (args.bootstrapPreset === "public-libp2p") {
+    args.bootstrapPeers = dedupePeers([...args.bootstrapPeers, ...publicLibp2pBootstrapPeers()]);
+  }
+  if (args.discoveryProfile === "lan-fast") {
+    return;
+  }
+  args.enableDht = true;
+  args.dhtClientMode = true;
+  args.enableRelay = true;
+  args.enableAutoNat = true;
+  args.enableDcutr = true;
+  if ((process.env.ENVOYMESH_CONNECTIVITY_STRICT ?? "").trim() === "1") {
+    args.connectivityStrict = true;
+  }
+}
+
+function dedupePeers(peers: string[]): string[] {
+  return [...new Set(peers)];
+}
+
+function publicLibp2pBootstrapPeers(): string[] {
+  return [
+    "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
+    "/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
+    "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq",
+    "/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf",
+  ];
 }

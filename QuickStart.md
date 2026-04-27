@@ -86,6 +86,12 @@ Enable advanced P2P options:
 npm run node:dev -- --dht-client --bootstrap "<bootstrap-multiaddr>" --relay --autonat --dcutr
 ```
 
+Use managed WAN defaults (recommended for non-LAN testing):
+
+```bash
+npm run node:dev -- --profile ./data/primary --discovery-profile wan-default --bootstrap-preset public-libp2p --connectivity-strict --p2p-debug
+```
+
 Correlate outbound probes and A2A sends (optional `correlationId` on the wire envelope):
 
 ```bash
@@ -314,6 +320,146 @@ Machine A verifies in both CLI and dashboard:
 npm run cli -w @envoymesh/node -- audit --profile ./data/primary --limit 60 --include-p2p-trace
 npm run cli -w @envoymesh/node -- tasks --profile ./data/primary --limit 40
 ```
+
+## Cross-Network Command Matrix (Mac + Windows)
+
+Use this flow when devices are not on the same LAN.
+
+### 1) Start long-running nodes (both machines)
+
+Mac (primary):
+
+```bash
+npm run node:dev -- --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap-preset public-libp2p --connectivity-strict --p2p-debug
+```
+
+Windows (satellite):
+
+```bash
+npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap-preset public-libp2p --connectivity-strict --p2p-debug
+```
+
+### 2) Verify discovery health before app traffic
+
+Run on both machines:
+
+```bash
+npm run cli -w @envoymesh/node -- connectivity-status --profile "<profile-path>"
+```
+
+Expect non-zero bootstrap peer count and no persistent startup warnings.
+
+### 3) Exercise signal / ping / chat / task / data
+
+Windows -> Mac:
+
+```bash
+npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --signal "<mac-multiaddr>" --correlation-id "sig-w2m-1"
+npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --ping "<mac-multiaddr>" --correlation-id "ping-w2m-1"
+npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --chat "<mac-multiaddr>" --chat-text "hello from windows" --correlation-id "chat-w2m-1"
+npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --task-propose "<mac-multiaddr>" --task-id task-w2m-1 --objective "Summarize notes" --requested-result "One bullet summary" --correlation-id "task-w2m-1"
+npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --data-send "<mac-multiaddr>" --data-relative-path notes.md
+```
+
+### 4) Verify in CLI + Dashboard
+
+Mac CLI:
+
+```bash
+npm run cli -w @envoymesh/node -- audit --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" --limit 80 --include-p2p-trace
+npm run cli -w @envoymesh/node -- tasks --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" --limit 40
+```
+
+Mac dashboard:
+
+```bash
+ENVOYMESH_PROFILE="/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" ENVOYMESH_VAULT="/Users/<you>/Documents/mygithub/EnvoyMesh/shared_vault" npm run desktop:dev
+```
+
+## WAN Discovery Troubleshooting (Short)
+
+If non-LAN discovery is unstable, check these first:
+
+1. **Bootstrap availability**
+   - Run `connectivity-status` and confirm bootstrap peer count is non-zero.
+   - Add at least one known-good relay/bootstrap with `--bootstrap "<multiaddr>"` in addition to `--bootstrap-preset public-libp2p`.
+
+2. **Strict mode startup failures**
+   - `--connectivity-strict` intentionally fails startup when all bootstrap probes fail.
+   - For diagnosis, temporarily remove `--connectivity-strict`, collect `p2p.trace`, then restore it.
+
+3. **Firewall/NAT restrictions**
+   - Ensure outbound TCP is allowed on both machines.
+   - If possible, allow inbound on the selected node port or retry with a fixed listen port.
+
+4. **Wrong profile path / split state**
+   - Verify the same absolute profile path is used for node, CLI, and dashboard commands.
+   - Mismatched paths make dashboard and CLI appear empty even when traffic exists.
+
+5. **Stale peer address**
+   - If a node restarts, recopy the latest printed `Listening on:` multiaddr.
+   - Dynamic ports change; old multiaddrs will fail.
+
+## End-to-End Verification Checklist (Line By Line)
+
+Run in order. Replace placeholders before executing.
+
+1) Start Mac primary node:
+
+```bash
+npm run node:dev -- --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap-preset public-libp2p --connectivity-strict --p2p-debug
+```
+
+2) Start Windows satellite node:
+
+```bash
+npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap-preset public-libp2p --connectivity-strict --p2p-debug
+```
+
+3) Health check on Mac:
+
+```bash
+npm run cli -w @envoymesh/node -- connectivity-status --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary"
+```
+
+4) Health check on Windows:
+
+```bash
+npm run cli -w @envoymesh/node -- connectivity-status --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite"
+```
+
+5) Windows send signed signal to Mac:
+
+```bash
+npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --signal "<mac-multiaddr>" --correlation-id "sig-w2m-1"
+```
+
+6) Windows send ping/chat/task/data to Mac:
+
+```bash
+npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --ping "<mac-multiaddr>" --correlation-id "ping-w2m-1"
+npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --chat "<mac-multiaddr>" --chat-text "hello from windows" --correlation-id "chat-w2m-1"
+npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --task-propose "<mac-multiaddr>" --task-id task-w2m-1 --objective "Summarize notes" --requested-result "One bullet summary" --correlation-id "task-w2m-1"
+npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --data-send "<mac-multiaddr>" --data-relative-path notes.md
+```
+
+7) Verify Mac audit + tasks:
+
+```bash
+npm run cli -w @envoymesh/node -- audit --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" --limit 100 --include-p2p-trace
+npm run cli -w @envoymesh/node -- tasks --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" --limit 40
+```
+
+8) Open Mac dashboard on same profile:
+
+```bash
+ENVOYMESH_PROFILE="/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" ENVOYMESH_VAULT="/Users/<you>/Documents/mygithub/EnvoyMesh/shared_vault" npm run desktop:dev
+```
+
+9) Confirm dashboard shows:
+- Recent Audit rows for `system.signal`, `system.ping`, `chat.message`, `task.propose`, and data transfer events.
+- Chat thread entries and task updates for `task-w2m-1`.
+- Discovery Health metrics with bootstrap counts and warnings.
 
 ## Live Connectivity Smoke Tests
 

@@ -541,6 +541,37 @@ function App() {
         </div>
       </Panel>
 
+      <Panel title="Discovery Health">
+        <div className="grid cards">
+          <Metric label="Bootstrap Peers" value={snapshot.connectivityHealth.bootstrapPeerCount} />
+          <Metric label="Peers Discovered" value={snapshot.connectivityHealth.discoveredPeerCount} />
+          <Metric label="Relay Discoveries" value={snapshot.connectivityHealth.relayDiscoveryCount} />
+          <Metric label="Bootstrap Probe OK" value={snapshot.connectivityHealth.bootstrapProbeSuccessCount} />
+          <Metric label="Bootstrap Probe Fail" value={snapshot.connectivityHealth.bootstrapProbeFailureCount} />
+          <Metric label="Warnings" value={snapshot.connectivityHealth.warningCount} />
+        </div>
+        <p className="muted">
+          discoveryProfile={snapshot.connectivityHealth.discoveryProfile}
+          {snapshot.connectivityHealth.lastCheckpointAt
+            ? ` · lastCheckpoint=${snapshot.connectivityHealth.lastCheckpointAt}`
+            : ""}
+        </p>
+        {snapshot.connectivityHealth.warnings.length === 0 ? (
+          <p className="muted">No connectivity warnings recorded.</p>
+        ) : (
+          <div className="list">
+            {snapshot.connectivityHealth.warnings.map((warning) => (
+              <article key={warning} className="row compact">
+                <div>
+                  <strong>Warning</strong>
+                  <small>{warning}</small>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </Panel>
+
       <section className="grid two">
         <Panel title="Profile">
           <dl className="facts">

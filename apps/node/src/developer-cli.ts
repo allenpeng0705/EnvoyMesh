@@ -28,6 +28,7 @@ export type DeveloperCliCommand =
   | "audit"
   | "tasks"
   | "approvals"
+  | "connectivity-status"
   | "morning-report"
   | "pairing"
   | "smoke-checklist";
@@ -80,6 +81,10 @@ export async function runDeveloperCli(argv: string[]): Promise<DeveloperCliResul
 
   if (args.command === "approvals") {
     return handleApprovals(args);
+  }
+
+  if (args.command === "connectivity-status") {
+    return showConnectivityStatus(args);
   }
 
   if (args.command === "pairing") {
@@ -212,6 +217,7 @@ Commands:
   audit          Inspect audit events.
   tasks          Inspect task journal entries.
   approvals      Inspect or update owner approval queue.
+  connectivity-status Show discovery/connectivity diagnostics from audit traces.
   pairing        Pairing-focused queue/actions (list/approve/reject/retry/timeline).
   morning-report Show ranked discovery digest.
   smoke-checklist Generate a multi-machine validation checklist.
@@ -447,6 +453,41 @@ async function listObservedPeers(args: DeveloperCliArgs): Promise<DeveloperCliRe
   ]);
 }
 
+async function showConnectivityStatus(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
+  const events = await createLocalTaskStore(args.profileDir).readAuditEvents();
+  const traces = events.filter((event) => event.type === "p2p.trace");
+  const profileEvent = [...traces]
+    .reverse()
+    .find((event) => event.protocol === "connectivity.profile");
+  const warningEvents = traces.filter((event) => event.protocol === "connectivity.warning");
+  const discoveredEvents = traces.filter((event) => event.protocol === "peer.discovery");
+  const relayDiscovered = discoveredEvents.filter((event) => event.summary.includes("source=relay"));
+  const bootstrapOk = traces.filter((event) => event.protocol === "connectivity.bootstrap.ok");
+  const bootstrapFail = traces.filter((event) => event.protocol === "connectivity.bootstrap.fail");
+  const reprobeOk = traces.filter((event) => event.protocol === "connectivity.reprobe.ok");
+  const reprobeFail = traces.filter((event) => event.protocol === "connectivity.reprobe.fail");
+  const checkpointEvent = [...traces]
+    .reverse()
+    .find((event) => event.protocol === "connectivity.health");
+
+  const profileMatch = profileEvent?.summary.match(/profile=(lan-fast|wan-default)/);
+  const bootstrapMatch = profileEvent?.summary.match(/bootstrap=(\d+)/);
+  const profile = profileMatch?.[1] ?? "unknown";
+  const bootstrapPeers = bootstrapMatch ? Number.parseInt(bootstrapMatch[1], 10) : 0;
+
+  return ok([
+    "Connectivity status",
+    `profile=${profile} bootstrapPeers=${bootstrapPeers} discoveredPeers=${discoveredEvents.length} relayDiscoveries=${relayDiscovered.length} bootstrapOk=${bootstrapOk.length} bootstrapFail=${bootstrapFail.length} reprobeOk=${reprobeOk.length} reprobeFail=${reprobeFail.length} warnings=${warningEvents.length}`,
+    checkpointEvent ? `lastCheckpoint=${checkpointEvent.createdAt}` : "lastCheckpoint=none",
+    ...last(bootstrapFail, 5).map((event) => `bootstrapFail ${event.createdAt} ${event.summary}`),
+    ...last(reprobeFail, 5).map((event) => `reprobeFail ${event.createdAt} ${event.summary}`),
+    ...last(warningEvents, 5).map((event) => `warning ${event.createdAt} ${event.summary}`),
+    discoveredEvents.length === 0
+      ? "hint: no peers discovered yet; verify subnet/firewall and add --bootstrap peers for wan-default."
+      : "hint: peers discovered; validate end-to-end by signal/ping/chat/task/data flows.",
+  ]);
+}
+
 async function showVaultIndex(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
   const index = await buildVaultIndexForCli(args);
 
@@ -646,6 +687,7 @@ function parseDeveloperCliCommand(value: string): DeveloperCliCommand {
     value === "audit" ||
     value === "tasks" ||
     value === "approvals" ||
+    value === "connectivity-status" ||
     value === "pairing" ||
     value === "morning-report" ||
     value === "smoke-checklist"
