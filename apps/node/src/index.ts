@@ -19,6 +19,7 @@ import {
   verifyDeviceCertificate,
 } from "@envoymesh/identity";
 import {
+  ENVOY_CHAT_PROTOCOL,
   ENVOY_DATA_PROTOCOL,
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
@@ -56,6 +57,7 @@ import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
 import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
 import { installEnvoyDataTransferReceiver } from "./data-transfer-inbound.js";
+import { evaluateInboundEnvelopeRolePolicy } from "./role-policy.js";
 
 const args = parseNodeArgs(process.argv.slice(2));
 const profile = await loadOrCreateNodeProfile(args.profileDir);
@@ -111,6 +113,26 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
 
   const envelope = guardDecision.envelope;
   const correlationId = deriveCorrelationIdFromEnvelope(envelope);
+  const rolePolicyDecision = evaluateInboundEnvelopeRolePolicy(envelope);
+  if (!rolePolicyDecision.ok) {
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "message.rejected",
+        intent: envelope.intent,
+        messageId: envelope.messageId,
+        correlationId,
+        remotePeerId,
+        direction: "inbound",
+        verificationStatus: "rejected",
+        latencyMs: Date.now() - receivedAt,
+        outcome: "deny",
+        summary: `Rejected by role policy: ${rolePolicyDecision.reason}.`,
+        createdAt: envelope.createdAt,
+      }),
+    );
+    console.warn(`[rejected role policy] ${envelope.intent}: ${rolePolicyDecision.reason}`);
+    return;
+  }
 
   if (envelope.intent === "system.signal") {
     const payload = parseSystemSignalPayload(envelope.payload);
@@ -652,6 +674,7 @@ if (resolvedArgs.pingTarget) {
   const unsignedEnvelope = createUnsignedEnvelope({
     senderPeerId: derivePeerId(profile.device.publicKeyPem),
     senderPublicKey: profile.device.publicKeyPem,
+    senderRole: "system",
     recipientPeerId: resolvedArgs.pingTarget,
     intent: "system.ping",
     payload: createSystemPingPayload(args.pingMessage ?? "hello from EnvoyMesh"),
@@ -682,6 +705,7 @@ if (resolvedArgs.signalTarget) {
   const unsignedEnvelope = createUnsignedEnvelope({
     senderPeerId: derivePeerId(profile.device.publicKeyPem),
     senderPublicKey: profile.device.publicKeyPem,
+    senderRole: "system",
     recipientPeerId: resolvedArgs.signalTarget,
     intent: "system.signal",
     payload: createSystemSignalPayload({
@@ -713,7 +737,10 @@ if (resolvedArgs.signalTarget) {
 }
 
 for (const outbound of buildOutboundCliEnvelopes(resolvedArgs, profile)) {
-  const latencyMs = await mesh.send(outbound.target, outbound.envelope);
+  const isChat = outbound.envelope.intent === "chat.message";
+  const latencyMs = isChat
+    ? await mesh.sendChat(outbound.target, outbound.envelope)
+    : await mesh.send(outbound.target, outbound.envelope);
   await taskStore.appendAuditEvent(
     createAuditEvent({
       type: "message.sent",
@@ -723,7 +750,7 @@ for (const outbound of buildOutboundCliEnvelopes(resolvedArgs, profile)) {
       remotePeerId: outbound.target,
       direction: "outbound",
       latencyMs,
-      protocol: ENVOY_MESSAGE_PROTOCOL,
+      protocol: isChat ? ENVOY_CHAT_PROTOCOL : ENVOY_MESSAGE_PROTOCOL,
       outcome: "record",
       summary: `Sent ${outbound.label}.`,
       createdAt: outbound.envelope.createdAt,

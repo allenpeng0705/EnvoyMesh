@@ -59,7 +59,7 @@ Product-level **user stories and epics** (discovery, broadcast termination, comm
 
 **North-star steps (all bootstrapped at high level; depth = open `[ ]` in phases below):** `[x]` protocol and trust boundaries · `[x]` local signed node · `[x]` P2P discovery/transport · `[x]` shared vault + policy · `[x]` model routing behind policy.
 
-**Prioritization:** **Parked for now** — satellite / **thin mobile UI** product path and phone-centric UX (no mobile app milestone). **Active next** — Phase **4E** discovery, Phase **4B** Batch 6 bonds on wire, Phase **6** semantic firewall depth, Phase **4** LAN identity match, Phase **5** vault CA/export, Phase **7** morning report (desktop/CLI). Phase **4A** still tracks **device pairing** and **primary-offline defer** for desktop-class multi-device; thin-mobile checkbox stays documented but not scheduled ahead of those.
+**Prioritization:** **Parked for now** — satellite / **thin mobile UI** product path and phone-centric UX (no mobile app milestone). **Active next** — post-LAN **real P2P network** readiness: default WAN profile (DHT/relay/DCUtR/AutoNAT), bootstrap + relay strategy, cross-network smoke/docs, and connectivity diagnostics UX. In parallel: Phase **4D** fan-out termination on wire (TTL/gossip cancel/correlation-only cancel) and Phase **5** vault CA/export controls. Phase **4A** pairing + primary-offline defer baseline is shipped; thin-mobile checkbox stays documented but not scheduled ahead of those.
 
 ## User story traceability
 
@@ -71,9 +71,9 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 | Blind discovery (Scenario 2) | 4, **4E** | `[x]` Transport discovery (mDNS, optional DHT/relay/DCUtR), Agent Card types, signed `discovery.request/response`, trust+rate-gated inbound handling, ranked digest baseline (`morning-report`) · `[ ]` richer narrative ranking/UX iteration |
 | Broadcast & kill (Scenario 3) | 4B, **4D** | `[x]` Local mandate/propose expiry, cancel / satisfied, first completed result + `closeOnFirstCompletedResult`, `correlationId`, audits · `[ ]` Hop TTL / gossip-wide cancel / collect-N (`Phase 4D` “not in this slice”) |
 | Social handshake (Scenario 4) | 2, 4B, 7 | `[x]` Trust store, bonds/policy, approvals, mandates, A2A tasks, **EMP `bond.*` payloads + inbound bond path + CLI `bond.request`** · `[ ]` Rich referral / owner queue UX beyond audit |
-| Intent-based file share (Scenario 5) | 5, Scenario 6 pick | `[x]` Shared vault, indexing, search, policy hooks, audit · `[ ]` Voucher + verified P2P chunk stream (Scenario **6** vertical pick) |
-| Communication matrix (Scenario 6) | Scenario 6 pick, Open questions | `[x]` Signed task + system traffic on `/envoymesh/message/0.1.0` · `[ ]` Roles on envelopes; `/chat` `/agent` `/data` split; H2A as distinct channel |
-| **Story A** (multi-device collaborator) | 4A, 5, 6, 7 | `[x]` Primary/Satellite **protocol** profiles, P2P, vault-backed tasks · `[ ]` Pairing + primary-offline defer (`Phase 4A`) · *Thin mobile / satellite app **parked*** |
+| Intent-based file share (Scenario 5) | 5, Scenario 6 pick | `[x]` Shared vault, indexing, search, policy hooks, audit · `[x]` Voucher + verified P2P chunk stream (`/envoymesh/data/0.1.0`) |
+| Communication matrix (Scenario 6) | Scenario 6 pick, Open questions | `[x]` Required envelope roles (`senderRole`/`recipientRole`), strict role-policy enforcement, and hard split for `/envoymesh/chat/0.1.0` vs `/envoymesh/message/0.1.0` (plus `/envoymesh/data/0.1.0`) · `[ ]` Broader H2A product semantics beyond current strict role/channel policy |
+| **Story A** (multi-device collaborator) | 4A, 5, 6, 7 | `[x]` Primary/Satellite **protocol** profiles, P2P, vault-backed tasks, pairing + primary-offline defer baseline (`Phase 4A`) · `[ ]` Thin mobile / satellite app **parked** |
 | **Stories B–C** (recruiter, researcher) | 4E, 2, 6, 7 | `[x]` Policy, approvals, audit, model path scaffolding · `[ ]` Discovery UX (**4E**), H2A wire path (**6**), morning report (**7**) |
 | **Stories D–E** (multi-hop, deals) | Backlog | `[ ]` Multi-hop / commerce / receipts — add phased work when scenarios + EMP economics are scoped |
 | **Story F** (crisis / LAN) | 4, 4C | `[x]` mDNS, local TCP, correlated audits, optional P2P debug, owner-id LAN target resolution (`system.signal` owner→peer map) · `[ ]` live proofs outside CI (`Phase 4` `[!]`) |
@@ -373,11 +373,11 @@ Exit criteria:
 
 - `[x]` Operator can inspect profile, peers, trust, vault index, audits, approvals, and tasks from CLI and/or desktop dashboard.
 - `[x]` Installable / signed desktop release pipeline baseline (CI workflow and signing/notarization secret wiring in place; credentials required in release environment).
-- `[ ]` Rich chat + multi-step task composition UX (checkbox above).
+- `[x]` Rich chat + multi-step task composition UX (thread grouping/status chips + wizard composer with presets/validation/persisted drafts).
 
 ## Current Milestone
 
-Milestone: **Phase 7** first operator console slice remains the default product target. **User story traceability** (table above) and **Phase 4C–4D** work tie narrative requirements to shipped behavior; **Phase 4E** is the next story-shaped epic for discovery.
+Milestone: **Phase 7** operator console baseline is now feature-complete for this slice (dashboard + CLI + rich composition UX + pairing + discovery digest). Immediate next milestone (after same-LAN verification) is **real cross-network P2P readiness**: WAN-capable defaults + bootstrap/relay path + diagnostics and smoke tests on non-LAN topologies.
 
 ### Archive (historical snapshot — do not use for status)
 
@@ -394,7 +394,9 @@ Milestone: **Phase 7** first operator console slice remains the default product 
 - `[~]` Broadcast / fan-out **termination** — **Phase 4D shipped locally**: mandate / propose expiry, `task.cancel` / satisfied lifecycle, `closeOnFirstCompletedResult`, correlation in envelopes + audit. Still **open**: hop TTL, gossip-wide cancel, collect-N, correlation-only cancel on the wire.
 - `[x]` **Phase 4E** semantic **discovery** (signed `discovery.request/response`, trust+rate-gated inbound handling, Scenario 2, Story B baseline).
 - `[x]` **Phase 4A** (**non-mobile**): device pairing + primary-offline defer / owner surface baseline. *Thin-mobile channel checkbox **parked** (satellite app out of scope for now).*
-- `[ ]` **Scenario 6 pick**: either **H2H chat** sub-protocol (`/envoymesh/chat/…`) **or** **voucher + chunked data** (`/envoymesh/data/…`) — first vertical to narrow the communication matrix gap.
+- `[x]` **Scenario 6 pick (first vertical):** voucher + chunked data path (`/envoymesh/data/0.1.0`) shipped with signed vouchers, verification, and inbound write guards.
+- `[x]` **Scenario 6 follow-on (strict baseline):** required envelope roles + hard channel split for `/chat` vs `/message` + runtime rejection semantics for violations.
+- `[ ]` **Cross-network P2P readiness (post-LAN gate):** WAN defaults/profile, bootstrap + relay fleet strategy, non-LAN smoke checklist, and dashboard connectivity diagnostics.
 - `[x]` **Semantic firewall** (US-F5) — first slice shipped in `@envoymesh/models` (`routeModelRequest`); extend with trust/redaction/tool gates later.
 
 ## Coverage vs UserStory and design docs
@@ -408,8 +410,8 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | Scenario 3 — **local expiry / cancel / first result / correlation** | Phase **4D** + 4C | CLI + `task-runtime-state` + audits. | `[x]` |
 | Scenario 4 — **bond + proof-of-context on wire** | Phase **4B** Batch 6 + 2 / 4A | Batch 6 **`[x]`**; trust/approvals + policy today. | `[x]` |
 | Scenario 5 — **vault path** | Phase 5 | Indexing, policy, audit. | `[x]` |
-| Scenario 5 — **voucher + verified P2P chunk stream** | Phase 5 + Scenario 6 pick | Data sub-protocol not chosen. | `[ ]` |
-| Scenario 6 — **roles, `/chat` `/agent` `/data`** | Scenario 6 pick + **Open questions** | Single stream today. | `[ ]` |
+| Scenario 5 — **voucher + verified P2P chunk stream** | Phase 5 + Scenario 6 pick | `/envoymesh/data/0.1.0` voucher + chunk stream shipped. | `[x]` |
+| Scenario 6 — **roles, `/chat` `/agent` `/data`** | Scenario 6 pick + **Open questions** | Strict roles + `/chat`/`/message`/`/data` split baseline shipped; broader H2A product semantics remain open. | `[~]` |
 | Story A — **pairing (+ thin mobile parked)** | Phase **4A** | Pairing + offline defer baseline **`[x]`**; thin mobile **`[ ]`** *parked*. | `[~]` |
 | Story A — **offline primary, defer / notify** | Phase **4A** | Baseline defer + owner surface in approval/audit path; richer notify/retry UX later. | `[~]` |
 | Story B — **morning report / ranked discovery UX** | Phase **7** | Morning report digest baseline in dashboard + CLI. | `[x]` |
@@ -449,14 +451,17 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | `[ ]` | **Cloud model providers (first)** | Vendor keys, compliance, rate limits | `packages/models` is pluggable; product default unset. |
 | `[ ]` | **Default policy for redacted / non-public context to cloud** | Story C and semantic firewall | Tied to approvals + redaction pipeline; not normative in EMP yet. |
 | `[ ]` | **Broadcast termination on the wire** — hop TTL, **network-wide** cancel propagation, **collect-N** (`k > 1`), correlation-only cancel | Scenario 3, US-C2/US-C3 | Phase 4D is **per-receiver local** only; fan-out EMP/gossip shape TBD. |
-| `[ ]` | **Sender / receiver role** (human vs agent) **without breaking signing** | Scenario 6, UserStory header sketch | Options: optional EMP fields + version bump, parallel sub-protocol, or intent family; see [alignment-review](./alignment-review.md) recommendation. |
+| `[x]` | **Sender / receiver role** (human vs agent) | Scenario 6, UserStory header sketch | Required envelope roles and strict validation shipped with channel split (`/chat` vs `/message`); violations are rejected in schema/runtime/network send paths. |
 | `[ ]` | **Live mDNS / DHT / relay proofs outside CI** | Story F, wide-area connectivity | Blocked on environment; [live-connectivity-testing.md](./live-connectivity-testing.md). |
+| `[ ]` | **WAN bootstrap/relay operating model** | Real cross-network P2P (not LAN-only) | Need managed bootstrap peers, relay policy, and default config for desktop/node startup. |
 
 ### Backlog (track in scenarios / phases, not as single-line Q&A)
 
 - `[x]` **Phase 4E** — semantic discovery baseline (Scenario 2, Story B, US-B1).
 - `[~]` **Phase 4A** — device pairing; primary-offline defer / owner surface baseline shipped. *Thin mobile channel: **parked** (see Prioritization).*
-- `[ ]` **Scenario 6 vertical** — H2H chat **or** voucher + `/envoymesh/data` (matrix, Scenario 5).
+- `[x]` **Scenario 6 vertical (first)** — voucher + `/envoymesh/data` shipped (matrix, Scenario 5).
+- `[x]` **Scenario 6 vertical (next baseline)** — explicit role fields + strict `/chat` vs `/message` split with rejection semantics.
+- `[ ]` **Cross-network P2P rollout** — WAN-first profile, bootstrap/relay strategy, diagnostics, and non-LAN smoke.
 - `[ ]` **Stories D / E** — multi-hop discovery, commerce, receipts (no dedicated phase yet; add when scenarios are scoped).
 - `[ ]` **Optional vault** — content-addressing, IPFS/Filecoin paths (Phase 5 open items).
 
@@ -474,3 +479,5 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | 2026-04-27 | **Phase 4E baseline:** signed EMP `discovery.request` / `discovery.response` payloads + node inbound trust-tier/rate-limit gate + correlated audit + CLI `--discovery-request`; tests + docs. |
 | 2026-04-27 | **Phase 4 LAN identity match baseline:** persist owner→peer mappings from verified `system.signal` and allow owner-id targets (`envoy:owner:...`) for outbound CLI sends by resolving to libp2p peer IDs. |
 | 2026-04-27 | **Phase 7 items 367-370 baseline:** desktop packaging/signing/installer scaffolding (`electron-builder` + workflow), live P2P panel, dashboard/CLI composition (`chat.message`, task proposal), structured discovery ledger + ranked morning report in dashboard and CLI. |
+| 2026-04-27 | **Phase 7 rich composition UX:** chat threads (grouping/status chips/metadata timeline), multi-step task wizard (presets/validation), persisted composer drafts + reset action; Scenario 6 first vertical (`/envoymesh/data`) marked shipped in this plan. |
+| 2026-04-27 | **Scenario 6 strict split baseline:** required envelope roles (`senderRole`/`recipientRole`), hard `/envoymesh/chat/0.1.0` vs `/envoymesh/message/0.1.0` routing, and explicit rejection semantics; added post-LAN cross-network P2P readiness workstream (WAN defaults + bootstrap/relay + diagnostics + smoke). |

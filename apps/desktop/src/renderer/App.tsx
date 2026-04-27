@@ -19,6 +19,17 @@ type LoadState =
   | { status: "error"; message: string };
 
 const TASK_COMPOSER_STEPS = ["Objective", "Constraints", "Mandate Controls", "Routing", "Review & Send"] as const;
+const TASK_COMPOSER_PERSIST_KEY = "envoymesh.dashboard.taskComposer.v1";
+const INITIAL_TASK_COMPOSE_FORM: SendTaskProposalRequest & { collectCompletedResultsText: string } = {
+  target: "",
+  taskId: "",
+  mandateId: "",
+  objective: "",
+  requestedResult: "",
+  correlationId: "",
+  closeOnFirstCompletedResult: false,
+  collectCompletedResultsText: "",
+};
 
 const TASK_COMPOSER_PRESETS: Array<{
   id: string;
@@ -89,18 +100,9 @@ function App() {
     note: "",
     requestedDeviceProfile: "satellite",
   });
-  const [taskComposeForm, setTaskComposeForm] = useState<
-    SendTaskProposalRequest & { collectCompletedResultsText: string }
-  >({
-    target: "",
-    taskId: "",
-    mandateId: "",
-    objective: "",
-    requestedResult: "",
-    correlationId: "",
-    closeOnFirstCompletedResult: false,
-    collectCompletedResultsText: "",
-  });
+  const [taskComposeForm, setTaskComposeForm] = useState<SendTaskProposalRequest & { collectCompletedResultsText: string }>(
+    INITIAL_TASK_COMPOSE_FORM,
+  );
   const [negotiateForm, setNegotiateForm] = useState({
     target: "",
     taskId: "",
@@ -110,6 +112,68 @@ function App() {
     negotiationId: "",
     correlationId: "",
   });
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(TASK_COMPOSER_PERSIST_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as {
+        presetId?: string;
+        step?: number;
+        target?: string;
+        taskId?: string;
+        mandateId?: string;
+        objective?: string;
+        requestedResult?: string;
+        correlationId?: string;
+        closeOnFirstCompletedResult?: boolean;
+        collectCompletedResultsText?: string;
+      };
+      if (parsed.presetId && (parsed.presetId === "none" || TASK_COMPOSER_PRESETS.some((item) => item.id === parsed.presetId))) {
+        setTaskPresetId(parsed.presetId);
+      }
+      if (typeof parsed.step === "number" && parsed.step >= 0 && parsed.step < TASK_COMPOSER_STEPS.length) {
+        setTaskComposerStep(parsed.step);
+      }
+      setTaskComposeForm((previous) => ({
+        ...previous,
+        taskId: parsed.taskId ?? previous.taskId,
+        objective: parsed.objective ?? previous.objective,
+        requestedResult: parsed.requestedResult ?? previous.requestedResult,
+        target: parsed.target ?? previous.target,
+        mandateId: parsed.mandateId ?? previous.mandateId,
+        correlationId: parsed.correlationId ?? previous.correlationId,
+        closeOnFirstCompletedResult: parsed.closeOnFirstCompletedResult ?? previous.closeOnFirstCompletedResult,
+        collectCompletedResultsText: parsed.collectCompletedResultsText ?? previous.collectCompletedResultsText,
+      }));
+    } catch {
+      // Ignore corrupt local dashboard preferences.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        TASK_COMPOSER_PERSIST_KEY,
+        JSON.stringify({
+          presetId: taskPresetId,
+          step: taskComposerStep,
+          taskId: taskComposeForm.taskId,
+          objective: taskComposeForm.objective,
+          requestedResult: taskComposeForm.requestedResult,
+          target: taskComposeForm.target,
+          mandateId: taskComposeForm.mandateId,
+          correlationId: taskComposeForm.correlationId,
+          closeOnFirstCompletedResult: taskComposeForm.closeOnFirstCompletedResult,
+          collectCompletedResultsText: taskComposeForm.collectCompletedResultsText,
+        }),
+      );
+    } catch {
+      // Ignore browser storage errors.
+    }
+  }, [taskComposeForm, taskComposerStep, taskPresetId]);
 
   async function refresh() {
     try {
@@ -346,6 +410,17 @@ function App() {
     setTaskComposeForm((previous) => ({ ...previous, correlationId: "" }));
     setTaskComposerStep(0);
     await refresh();
+  }
+
+  function resetTaskComposerState() {
+    setTaskPresetId("none");
+    setTaskComposerStep(0);
+    setTaskComposeForm(INITIAL_TASK_COMPOSE_FORM);
+    try {
+      window.localStorage.removeItem(TASK_COMPOSER_PERSIST_KEY);
+    } catch {
+      // Ignore browser storage errors.
+    }
   }
 
   async function sendTaskNegotiate() {
@@ -1032,6 +1107,9 @@ function App() {
                   onClick={() => setTaskComposerStep((step) => Math.min(4, step + 1))}
                 >
                   Next
+                </button>
+                <button className="secondary" type="button" onClick={resetTaskComposerState}>
+                  Reset Composer State
                 </button>
               </div>
               <button

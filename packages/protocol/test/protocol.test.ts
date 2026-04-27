@@ -181,6 +181,53 @@ describe("protocol", () => {
     expect(envelope.version).toBe("0.1");
     expect(envelope.intent).toBe("system.ping");
     expect(envelope.messageId).toBeTruthy();
+    expect(envelope.senderRole).toBe("system");
+    expect(envelope.recipientRole).toBe("agent");
+  });
+
+  it("rejects role-intent mismatches for task and chat intents", () => {
+    expect(() =>
+      createUnsignedEnvelope({
+        senderPeerId: "peer-a",
+        senderPublicKey: "public-key",
+        senderRole: "human",
+        recipientPeerId: "peer-b",
+        recipientRole: "agent",
+        intent: "task.propose",
+        payload: {
+          taskId: "task-1",
+          mandateId: "mandate-1",
+          proofOfIntent: {
+            version: "0.1",
+            mandateId: "mandate-1",
+            mandateHash: "hash-1",
+            taskId: "task-1",
+            requestIntent: "task.propose",
+            nonce: "nonce",
+            deviceId: "device",
+            proof: "proof",
+          },
+          objective: "objective",
+          requestedResult: "result",
+          constraints: [],
+        },
+      }),
+    ).toThrow(/senderRole=agent/);
+
+    expect(() =>
+      createUnsignedEnvelope({
+        senderPeerId: "peer-a",
+        senderPublicKey: "public-key",
+        senderRole: "agent",
+        recipientPeerId: "peer-b",
+        recipientRole: "human",
+        intent: "chat.message",
+        payload: {
+          senderOwnerId: "envoy:owner:a",
+          text: "hello",
+        },
+      }),
+    ).toThrow(/chat\.message requires senderRole=human/);
   });
 
   it("defaults mandate closeOnFirstCompletedResult to false", () => {
@@ -257,6 +304,8 @@ describe("protocol", () => {
       createdAt: "2026-04-26T09:20:00.000Z",
       senderPeerId: "peer-a",
       senderPublicKey: "public-key",
+      senderRole: "system",
+      recipientRole: "agent",
       intent: "system.ping",
       payload: {},
       signature: "signature",

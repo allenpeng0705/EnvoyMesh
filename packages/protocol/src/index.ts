@@ -34,6 +34,7 @@ export const EnvoyIntentSchema = z.enum([
 export const SensitivitySchema = z.enum(["public", "friends", "trusted", "private"]);
 
 export const DeviceProfileSchema = z.enum(["primary", "satellite", "full", "relay"]);
+export const EnvoyActorRoleSchema = z.enum(["human", "agent", "system"]);
 
 export const CapabilitySchema = z.enum([
   "mesh.listen",
@@ -94,21 +95,43 @@ export const DeviceRevocationRecordSchema = UnsignedDeviceRevocationRecordSchema
   signature: z.string().min(1),
 });
 
-export const EnvoyEnvelopeSchema = z.object({
+const EnvoyEnvelopeObjectSchema = z.object({
   version: z.literal("0.1"),
   messageId: z.string().min(1),
   correlationId: z.string().min(1).optional(),
   createdAt: z.string().datetime(),
   senderPeerId: z.string().min(1),
   senderPublicKey: z.string().min(1),
+  senderRole: EnvoyActorRoleSchema,
   recipientPeerId: z.string().min(1).optional(),
+  recipientRole: EnvoyActorRoleSchema,
   intent: EnvoyIntentSchema,
   payload: z.unknown(),
   signature: z.string().min(1),
 });
 
-export const UnsignedEnvoyEnvelopeSchema = EnvoyEnvelopeSchema.omit({
+export const EnvoyEnvelopeSchema = EnvoyEnvelopeObjectSchema.superRefine((value, context) => {
+  const decision = evaluateEnvelopeRolePolicy(value.intent, value.senderRole, value.recipientRole);
+  if (!decision.ok) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: decision.reason,
+      path: ["senderRole"],
+    });
+  }
+});
+
+export const UnsignedEnvoyEnvelopeSchema = EnvoyEnvelopeObjectSchema.omit({
   signature: true,
+}).superRefine((value, context) => {
+  const decision = evaluateEnvelopeRolePolicy(value.intent, value.senderRole, value.recipientRole);
+  if (!decision.ok) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: decision.reason,
+      path: ["senderRole"],
+    });
+  }
 });
 
 export const SystemPingPayloadSchema = z.object({
@@ -508,6 +531,7 @@ export const ReportCreatePayloadSchema = z.object({
 export type EnvoyIntent = z.infer<typeof EnvoyIntentSchema>;
 export type Sensitivity = z.infer<typeof SensitivitySchema>;
 export type DeviceProfile = z.infer<typeof DeviceProfileSchema>;
+export type EnvoyActorRole = z.infer<typeof EnvoyActorRoleSchema>;
 export type Capability = z.infer<typeof CapabilitySchema>;
 export type PublicIdentity = z.infer<typeof PublicIdentitySchema>;
 export type UnsignedDeviceCertificate = z.infer<typeof UnsignedDeviceCertificateSchema>;
@@ -578,7 +602,9 @@ export type UnsignedEnvoyEnvelope<TPayload = unknown> = Omit<
 export interface CreateEnvelopeInput<TPayload> {
   senderPeerId: string;
   senderPublicKey: string;
+  senderRole?: EnvoyActorRole;
   recipientPeerId?: string;
+  recipientRole?: EnvoyActorRole;
   intent: EnvoyIntent;
   payload: TPayload;
   createdAt?: string;
@@ -589,17 +615,25 @@ export interface CreateEnvelopeInput<TPayload> {
 export function createUnsignedEnvelope<TPayload>(
   input: CreateEnvelopeInput<TPayload>,
 ): UnsignedEnvoyEnvelope<TPayload> {
-  return {
+  const defaultRoles =
+    input.intent === "chat.message"
+      ? { senderRole: "human" as const, recipientRole: "human" as const }
+      : input.intent.startsWith("system.")
+        ? { senderRole: "system" as const, recipientRole: "agent" as const }
+        : { senderRole: "agent" as const, recipientRole: "agent" as const };
+  return UnsignedEnvoyEnvelopeSchema.parse({
     version: "0.1",
     messageId: input.messageId ?? randomUUID(),
     correlationId: input.correlationId,
     createdAt: input.createdAt ?? new Date().toISOString(),
     senderPeerId: input.senderPeerId,
     senderPublicKey: input.senderPublicKey,
+    senderRole: input.senderRole ?? defaultRoles.senderRole,
     recipientPeerId: input.recipientPeerId,
+    recipientRole: input.recipientRole ?? defaultRoles.recipientRole,
     intent: input.intent,
     payload: input.payload,
-  };
+  }) as UnsignedEnvoyEnvelope<TPayload>;
 }
 
 export function parseEnvelope(input: unknown): EnvoyEnvelope {
@@ -1340,4 +1374,37 @@ function sortForCanonicalJson(input: unknown): unknown {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, value]) => [key, sortForCanonicalJson(value)]),
   );
+}
+
+function evaluateEnvelopeRolePolicy(
+  intent: EnvoyIntent,
+  senderRole: EnvoyActorRole,
+  recipientRole: EnvoyActorRole,
+): { ok: true } | { ok: false; reason: string } {
+  if (intent === "chat.message") {
+    if (senderRole !== "human" || recipientRole !== "human") {
+      return {
+        ok: false,
+        reason: "chat.message requires senderRole=human and recipientRole=human",
+      };
+    }
+    return { ok: true };
+  }
+
+  if (intent.startsWith("task.") || intent === "report.create") {
+    if (senderRole !== "agent") {
+      return {
+        ok: false,
+        reason: `${intent} requires senderRole=agent`,
+      };
+    }
+    if (recipientRole !== "agent") {
+      return {
+        ok: false,
+        reason: `${intent} requires recipientRole=agent`,
+      };
+    }
+  }
+
+  return { ok: true };
 }

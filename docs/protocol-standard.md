@@ -493,14 +493,14 @@ Purpose:
 
 ### `chat.message`
 
-Sends a signed human-readable chat payload between peers.
+Sends a signed human-readable chat payload between peers on **`/envoymesh/chat/0.1.0`** only.
 
 Executable payload shape: **`ChatMessagePayloadSchema`** in `@envoymesh/protocol` (includes **`senderOwnerId`**, **`text`**).
 
 Purpose:
 
 - Support direct conversational handoff between trusted peers.
-- Provide correlation-friendly conversational traffic without introducing a separate channel protocol yet.
+- Provide correlation-friendly conversational traffic on a dedicated channel split from task/control traffic.
 
 ### `bond.update`
 
@@ -657,7 +657,19 @@ Every EMP message must include:
 - Mandate reference or Proof of Intent when delegated work is involved.
 - Signature.
 
-The first implementation already has a smaller envelope. It should evolve toward this structure as multi-device identity is added.
+Normative role requirements in current implementation:
+
+- Envelope fields **`senderRole`** and **`recipientRole`** are required.
+- **`chat.message`** requires `senderRole=human` and `recipientRole=human`.
+- **`task.*`** and **`report.create`** require `senderRole=agent` and `recipientRole=agent`.
+- Violations are rejected during schema validation and are also rejected at runtime if received.
+
+Protocol/channel split (hard enforcement):
+
+- **`/envoymesh/chat/0.1.0`** accepts only `chat.message`.
+- **`/envoymesh/message/0.1.0`** rejects `chat.message` and carries system/task/control intents.
+- **`/envoymesh/data/0.1.0`** carries voucher + chunked transfer bodies only.
+- Sending on the wrong channel is rejected before send; inbound violations are rejected with audit `message.rejected` records.
 
 ## Discovery
 

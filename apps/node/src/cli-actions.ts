@@ -250,11 +250,15 @@ function signedEnvelope(
   intent: EnvoyIntent,
   payload: unknown,
 ): EnvoyEnvelope {
+  const senderRole = intent === "chat.message" ? "human" : intent.startsWith("system.") ? "system" : "agent";
+  const recipientRole = intent === "chat.message" ? "human" : "agent";
   return signUnsignedEnvelope(
     createUnsignedEnvelope({
       senderPeerId: derivePeerId(profile.device.publicKeyPem),
       senderPublicKey: profile.device.publicKeyPem,
+      senderRole,
       recipientPeerId: target,
+      recipientRole,
       intent,
       payload,
       correlationId: args.correlationId ?? undefined,

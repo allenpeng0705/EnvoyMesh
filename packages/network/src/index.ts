@@ -23,11 +23,13 @@ import {
 } from "./data-framing.js";
 
 export const ENVOY_MESSAGE_PROTOCOL = "/envoymesh/message/0.1.0";
+export const ENVOY_CHAT_PROTOCOL = "/envoymesh/chat/0.1.0";
 export const ENVOY_DATA_PROTOCOL = "/envoymesh/data/0.1.0";
 
 export interface InboundMeshMessage {
   envelope: EnvoyEnvelope;
   remotePeerId: string;
+  protocol: string;
 }
 
 export type MeshMessageHandler = (message: InboundMeshMessage) => Promise<void>;
@@ -128,43 +130,8 @@ export class EnvoyMesh {
 
     this.attachPeerDiscovery(this.node);
 
-    await this.node.handle(ENVOY_MESSAGE_PROTOCOL, async (stream: any, connection: any) => {
-      const remotePeerId = connection.remotePeer.toString();
-      this.emitP2pDebug({
-        kind: "stream:open",
-        remotePeerId,
-        protocol: ENVOY_MESSAGE_PROTOCOL,
-        direction: "inbound",
-      });
-
-      try {
-        const bytes = await byteStream(stream).read();
-
-        if (bytes !== null) {
-          let envelope: EnvoyEnvelope;
-          try {
-            envelope = decodeEnvelope(bytes.subarray());
-          } catch (error) {
-            console.error("EnvoyMesh inbound envelope decode failed", error);
-            return;
-          }
-
-          await this.dispatch({
-            envelope,
-            remotePeerId,
-          });
-        }
-      } catch (error) {
-        console.error("EnvoyMesh inbound stream failed", error);
-      } finally {
-        this.emitP2pDebug({
-          kind: "stream:close",
-          remotePeerId,
-          protocol: ENVOY_MESSAGE_PROTOCOL,
-          direction: "inbound",
-        });
-      }
-    });
+    await this.installEnvelopeInboundHandler(ENVOY_MESSAGE_PROTOCOL);
+    await this.installEnvelopeInboundHandler(ENVOY_CHAT_PROTOCOL);
 
     await this.node.handle(ENVOY_DATA_PROTOCOL, async (stream: any, connection: any) => {
       const remotePeerId = connection.remotePeer.toString();
@@ -253,15 +220,28 @@ export class EnvoyMesh {
   }
 
   async send(target: string, envelope: EnvoyEnvelope): Promise<number> {
+    return this.sendEnvelopeOnProtocol(target, envelope, ENVOY_MESSAGE_PROTOCOL);
+  }
+
+  async sendChat(target: string, envelope: EnvoyEnvelope): Promise<number> {
+    return this.sendEnvelopeOnProtocol(target, envelope, ENVOY_CHAT_PROTOCOL);
+  }
+
+  private async sendEnvelopeOnProtocol(
+    target: string,
+    envelope: EnvoyEnvelope,
+    protocol: string,
+  ): Promise<number> {
+    validateEnvelopeProtocol(protocol, envelope);
     const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
     const startedAt = Date.now();
-    const stream: any = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_MESSAGE_PROTOCOL);
+    const stream: any = await this.requireNode().dialProtocol(dialTarget as any, protocol);
     const remotePeerId = stream.connection?.remotePeer?.toString();
     if (remotePeerId) {
       this.emitP2pDebug({
         kind: "stream:open",
         remotePeerId,
-        protocol: ENVOY_MESSAGE_PROTOCOL,
+        protocol,
         direction: "outbound",
       });
     }
@@ -276,7 +256,7 @@ export class EnvoyMesh {
       this.emitP2pDebug({
         kind: "stream:close",
         remotePeerId,
-        protocol: ENVOY_MESSAGE_PROTOCOL,
+        protocol,
         direction: "outbound",
       });
     }
@@ -352,6 +332,48 @@ export class EnvoyMesh {
 
   private async dispatch(message: InboundMeshMessage): Promise<void> {
     await Promise.all([...this.handlers].map((handler) => handler(message)));
+  }
+
+  private async installEnvelopeInboundHandler(protocol: string): Promise<void> {
+    await this.requireNode().handle(protocol, async (stream: any, connection: any) => {
+      const remotePeerId = connection.remotePeer.toString();
+      this.emitP2pDebug({
+        kind: "stream:open",
+        remotePeerId,
+        protocol,
+        direction: "inbound",
+      });
+
+      try {
+        const bytes = await byteStream(stream).read();
+
+        if (bytes !== null) {
+          let envelope: EnvoyEnvelope;
+          try {
+            envelope = decodeEnvelope(bytes.subarray());
+            validateEnvelopeProtocol(protocol, envelope);
+          } catch (error) {
+            console.error("EnvoyMesh inbound envelope decode failed", error);
+            return;
+          }
+
+          await this.dispatch({
+            envelope,
+            remotePeerId,
+            protocol,
+          });
+        }
+      } catch (error) {
+        console.error("EnvoyMesh inbound stream failed", error);
+      } finally {
+        this.emitP2pDebug({
+          kind: "stream:close",
+          remotePeerId,
+          protocol,
+          direction: "inbound",
+        });
+      }
+    });
   }
 
   private async dispatchData(message: InboundDataTransfer): Promise<void> {
@@ -454,3 +476,12 @@ export class EnvoyMesh {
 export { collectStreamBytes } from "./codec.js";
 export { decodeEnvelope, encodeEnvelope };
 export { voucherJsonBytesFromObject } from "./data-framing.js";
+
+function validateEnvelopeProtocol(protocol: string, envelope: EnvoyEnvelope): void {
+  if (protocol === ENVOY_CHAT_PROTOCOL && envelope.intent !== "chat.message") {
+    throw new Error(`invalid intent ${envelope.intent} on chat protocol`);
+  }
+  if (protocol === ENVOY_MESSAGE_PROTOCOL && envelope.intent === "chat.message") {
+    throw new Error("chat.message must be sent on chat protocol");
+  }
+}

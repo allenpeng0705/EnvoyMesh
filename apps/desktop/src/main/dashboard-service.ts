@@ -16,7 +16,7 @@ import {
   signMandate,
   signUnsignedEnvelope,
 } from "@envoymesh/identity";
-import { ENVOY_MESSAGE_PROTOCOL, EnvoyMesh } from "@envoymesh/network";
+import { ENVOY_CHAT_PROTOCOL, ENVOY_MESSAGE_PROTOCOL, EnvoyMesh } from "@envoymesh/network";
 import {
   createChatMessagePayload,
   createDevicePairApprovePayload,
@@ -364,7 +364,9 @@ export async function sendChatMessage(
     createUnsignedEnvelope({
       senderPeerId: derivePeerId(profile.device.publicKeyPem),
       senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "human",
       recipientPeerId: request.target,
+      recipientRole: "human",
       intent: "chat.message",
       payload: createChatMessagePayload({
         senderOwnerId: profile.owner.ownerId,
@@ -384,7 +386,7 @@ export async function sendChatMessage(
       remotePeerId: request.target,
       direction: "outbound",
       latencyMs,
-      protocol: ENVOY_MESSAGE_PROTOCOL,
+      protocol: ENVOY_CHAT_PROTOCOL,
       outcome: "record",
       summary: "Sent chat.message from desktop dashboard.",
       createdAt: envelope.createdAt,
@@ -725,7 +727,9 @@ async function sendSingleEnvelope(target: string, envelope: Parameters<EnvoyMesh
   });
   await mesh.start();
   try {
-    return await mesh.send(target, envelope);
+    return envelope.intent === "chat.message"
+      ? await mesh.sendChat(target, envelope)
+      : await mesh.send(target, envelope);
   } finally {
     await mesh.stop();
   }

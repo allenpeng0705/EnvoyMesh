@@ -8,8 +8,8 @@
     "packages/*"
   ],
   "scripts": {
-    "node:dev": "npm run dev -w @envoymesh/node",
-    "desktop:dev": "npm run dev -w @envoymesh/desktop",
+    "node:dev": "npm run dev -w @envoymesh/node --",
+    "desktop:dev": "npm run dev -w @envoymesh/desktop --",
     "desktop:build": "npm run build -w @envoymesh/desktop",
     "desktop:dist": "npm run dist -w @envoymesh/desktop",
     "test": "vitest run",
