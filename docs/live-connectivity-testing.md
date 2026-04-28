@@ -86,6 +86,8 @@ When mDNS is unreliable or unavailable, use `wan-default` profile defaults and b
 npm run node:dev -- --profile ./data/primary --discovery-profile wan-default --bootstrap-preset public-libp2p --bootstrap "<bootstrap-multiaddr>" --p2p-debug
 ```
 
+On Windows use a dedicated profile folder, for example **`%USERPROFILE%\envoymesh\win_profile`** (PowerShell: `"$env:USERPROFILE\envoymesh\win_profile"`).
+
 `wan-default` enables DHT client mode, relay transport, AutoNAT, and DCUtR. `--bootstrap-preset public-libp2p` adds a managed public bootstrap set, and `--bootstrap` can append your own peers. If no bootstrap peers are configured, node startup continues but emits a connectivity warning in logs/audit.
 
 For stricter rollout environments, require successful bootstrap probes at startup:

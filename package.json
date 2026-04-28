@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "scripts": {
-    "node:dev": "npm run dev -w @envoymesh/node --",
+    "node:dev": "npm exec -w @envoymesh/node -- tsx src/index.ts",
     "desktop:dev": "npm run dev -w @envoymesh/desktop --",
     "desktop:build": "npm run build -w @envoymesh/desktop",
     "desktop:dist": "npm run dist -w @envoymesh/desktop",

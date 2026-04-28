@@ -712,6 +712,18 @@ if (args.bootstrapPeers.length > 0) {
   await discoverySeedStore.upsertMany(args.bootstrapPeers, "manual-bootstrap");
 }
 
+console.log("Envoy node started");
+if (args.configPath) {
+  console.log(`Config file: ${args.configPath}`);
+}
+console.log(`Owner ID: ${profile.owner.ownerId}`);
+console.log(`Device ID: ${profile.device.deviceId}`);
+console.log(`libp2p Peer ID: ${mesh.peerId}`);
+console.log("Listening on:");
+for (const addr of mesh.multiaddrs) {
+  console.log(`  ${addr}`);
+}
+
 await taskStore.appendAuditEvent(
   createAuditEvent({
     type: "p2p.trace",
@@ -734,6 +746,9 @@ for (const warning of connectivityWarnings) {
   );
 }
 if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length > 0) {
+  console.log(
+    `[connectivity] probing ${effectiveBootstrapPeers.length} bootstrap peer(s) for wan-default (may take a while if peers are unreachable)…`,
+  );
   const orderedBootstrapPeers = rotatePeers(effectiveBootstrapPeers);
   for (const peer of orderedBootstrapPeers) {
     try {
@@ -789,19 +804,6 @@ setTimeout(() => {
     }),
   );
 }, 15_000);
-
-console.log("Envoy node started");
-if (args.configPath) {
-  console.log(`Config file: ${args.configPath}`);
-}
-console.log(`Owner ID: ${profile.owner.ownerId}`);
-console.log(`Device ID: ${profile.device.deviceId}`);
-console.log(`libp2p Peer ID: ${mesh.peerId}`);
-console.log("Listening on:");
-
-for (const addr of mesh.multiaddrs) {
-  console.log(`  ${addr}`);
-}
 
 if (resolvedArgs.pingTarget) {
   const unsignedEnvelope = createUnsignedEnvelope({

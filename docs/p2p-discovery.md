@@ -312,6 +312,37 @@ These traces power:
 
 ## Recommended Startup Commands
 
+### Profile directories (cross-platform)
+
+Use separate profile directories per machine so keys and persisted discovery seeds stay isolated:
+
+| OS | Example `--profile` path |
+| --- | --- |
+| macOS / Linux | `$HOME/envoymesh/mac_profile` |
+| Windows (PowerShell) | `$env:USERPROFILE\envoymesh\win_profile` |
+| Windows (cmd) | `%USERPROFILE%\envoymesh\win_profile` |
+
+WAN example on Windows (PowerShell); line continuation is backtick (`` ` ``), not `\`:
+
+```powershell
+npm run node:dev -- `
+  --profile "$env:USERPROFILE\envoymesh\win_profile" `
+  --listen "/ip4/0.0.0.0/tcp/4002" `
+  --discovery-profile wan-default `
+  --bootstrap "/ip4/<bootstrap-host>/tcp/4001/p2p/<BOOTSTRAP_PEER_ID>" `
+  --bootstrap-preset public-libp2p `
+  --p2p-debug
+```
+
+If `tsx src/index.ts` logs **unknown argument `C:\...\win_profile`** (values without `--profile` prefixes), npm/cmd dropped the flags: **`npm run node:dev`** is now wired with a single `npm exec` layer so forwarded flags should propagate. If it still happens, set the profile via env and pass the rest on the command line:
+
+```powershell
+$env:ENVOYMESH_PROFILE = "$env:USERPROFILE\envoymesh\win_profile"
+npm run node:dev -- --listen "/ip4/0.0.0.0/tcp/4002" --discovery-profile wan-default --bootstrap "/ip4/<host>/tcp/4001/p2p/<peer>" --bootstrap-preset public-libp2p --p2p-debug
+```
+
+(`--profile` from argv still overrides `ENVOYMESH_PROFILE` when both are set.)
+
 LAN-focused:
 
 ```bash

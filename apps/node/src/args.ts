@@ -236,7 +236,7 @@ Usage:
 
 Options:
   --config <path>      Load node options from YAML config file.
-  --profile <dir>       Profile directory for Envoy identity. Default: ./data/default
+  --profile <dir>       Profile directory for Envoy identity. Default: ./data/default (env: ENVOYMESH_PROFILE; useful on Windows if npm eats --flags)
   --discovery-profile <p>  Discovery defaults: lan-fast|wan-default. Env: ENVOYMESH_DISCOVERY_PROFILE
   --connectivity-strict    Fail startup when wan-default bootstrap connectivity cannot be established. Env: ENVOYMESH_CONNECTIVITY_STRICT=1
   --listen <multiaddr>  Listen multiaddr. Default: /ip4/0.0.0.0/tcp/0
@@ -435,6 +435,11 @@ function applyConfigFileArgs(args: NodeArgs, argv: string[]): void {
 }
 
 function applyEnvironmentArgs(args: NodeArgs): void {
+  const envProfile = (process.env.ENVOYMESH_PROFILE ?? "").trim();
+  if (envProfile) {
+    args.profileDir = envProfile;
+  }
+
   const envBootstrapPeers = (process.env.ENVOYMESH_BOOTSTRAP_PEERS ?? "")
     .split(",")
     .map((entry) => entry.trim())
