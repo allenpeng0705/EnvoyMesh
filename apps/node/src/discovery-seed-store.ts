@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 const DISCOVERY_SEED_FILE = "discovery-seeds.json";
@@ -76,13 +76,61 @@ export function createDiscoverySeedStore(profileDir: string): DiscoverySeedStore
 }
 
 async function readDiscoverySeedFile(path: string): Promise<DiscoverySeedFile> {
+  let raw: string;
   try {
-    return JSON.parse(await readFile(path, "utf8")) as DiscoverySeedFile;
+    raw = await readFile(path, "utf8");
   } catch (error) {
     if (isMissingFileError(error)) {
       return { version: "0.1", records: [] };
     }
     throw error;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isValidDiscoverySeedFile(parsed)) {
+      throw new Error("invalid discovery-seeds.json shape");
+    }
+    return parsed;
+  } catch (cause) {
+    await quarantineCorruptDiscoverySeedFile(path, raw, cause);
+    return { version: "0.1", records: [] };
+  }
+}
+
+function isValidDiscoverySeedFile(value: unknown): value is DiscoverySeedFile {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const file = value as Record<string, unknown>;
+  if (file.version !== "0.1" || !Array.isArray(file.records)) {
+    return false;
+  }
+  return file.records.every(
+    (rec) =>
+      rec !== null &&
+      typeof rec === "object" &&
+      typeof (rec as Record<string, unknown>).addr === "string" &&
+      typeof (rec as Record<string, unknown>).source === "string" &&
+      typeof (rec as Record<string, unknown>).lastSuccessAt === "string",
+  );
+}
+
+async function quarantineCorruptDiscoverySeedFile(path: string, raw: string, cause: unknown): Promise<void> {
+  const reason = cause instanceof Error ? cause.message : String(cause);
+  console.warn(
+    `[discovery-seeds] ${path} is unreadable (${reason}). Quarantining to a .bak file and starting with an empty seed list.`,
+  );
+  const backupPath = `${path}.corrupt.${Date.now()}.bak`;
+  try {
+    await writeFile(backupPath, raw, { mode: 0o600 });
+  } catch {
+    // best effort
+  }
+  try {
+    await unlink(path);
+  } catch {
+    // next write may still overwrite
   }
 }
 

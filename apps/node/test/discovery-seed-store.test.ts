@@ -1,7 +1,7 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDiscoverySeedStore } from "../src/discovery-seed-store.js";
 
 let profileDir: string;
@@ -36,5 +36,26 @@ describe("discovery seed store", () => {
     await store.upsertMany(["", "   ", "/ip4/3.3.3.3/tcp/4001/p2p/peer-c"], "peer.discovery", "2026-04-27T10:00:00.000Z");
     const addrs = await store.listSeedAddrs();
     expect(addrs).toEqual(["/ip4/3.3.3.3/tcp/4001/p2p/peer-c"]);
+  });
+
+  it("recovers from corrupt discovery-seeds.json and writes a backup", async () => {
+    await writeFile(
+      join(profileDir, "discovery-seeds.json"),
+      '{"version":"0.1","records":[{"addr":"/ip4/x","source":"manual-bootstrap","lastSuccessAt":"2026-04-01T00:00:00.000Z"}]}\n]\n}',
+      "utf8",
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const store = createDiscoverySeedStore(profileDir);
+    await store.upsertSuccess("/ip4/9.9.9.9/tcp/4001/p2p/peer-recover", "peer.discovery");
+
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+    expect(await store.listSeedAddrs()).toEqual(["/ip4/9.9.9.9/tcp/4001/p2p/peer-recover"]);
+    const raw = JSON.parse(await readFile(join(profileDir, "discovery-seeds.json"), "utf8"));
+    expect(raw.records.some((r: { addr: string }) => r.addr === "/ip4/9.9.9.9/tcp/4001/p2p/peer-recover")).toBe(true);
+
+    const files = await readdir(profileDir);
+    expect(files.some((f) => f.startsWith("discovery-seeds.json.corrupt.") && f.endsWith(".bak"))).toBe(true);
   });
 });
