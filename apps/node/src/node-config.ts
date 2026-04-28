@@ -15,14 +15,17 @@ export interface NodeYamlConfig {
     relayServer?: boolean;
     autonat?: boolean;
     dcutr?: boolean;
+    /** When true, enable QUIC transport alongside TCP (additive). */
+    quic?: boolean;
     p2pDebug?: boolean;
-    bootstrapPresets?: Array<"public-libp2p" | "public-libp2p-am6" | "public-libp2p-am7">;
+    bootstrapPresets?: string[];
     bootstrapPeers?: string[];
+    bootstrapPresetsFiles?: string[];
   };
 }
 
 export function loadNodeYamlConfig(configPath: string): NodeYamlConfig {
-  const resolvedPath = resolveConfigPath(configPath);
+  const resolvedPath = resolveEnvoyMeshPath(configPath);
   let raw: string;
   try {
     raw = readFileSync(resolvedPath, "utf8");
@@ -74,21 +77,24 @@ function parseDiscoveryConfig(parsed: Record<string, unknown>, configPath: strin
   }
 
   if (parsed.bootstrapPresets !== undefined) {
-    const presets = parseStringArray(parsed.bootstrapPresets, configPath, "discovery.bootstrapPresets");
-    for (const preset of presets) {
-      if (preset !== "public-libp2p" && preset !== "public-libp2p-am6" && preset !== "public-libp2p-am7") {
-        throw new Error(
-          `Invalid node config at ${configPath}: discovery.bootstrapPresets values must be public-libp2p, public-libp2p-am6, or public-libp2p-am7`,
-        );
+    output.bootstrapPresets = parseStringArray(parsed.bootstrapPresets, configPath, "discovery.bootstrapPresets");
+    for (const preset of output.bootstrapPresets) {
+      if (!isValidBootstrapPresetToken(preset)) {
+        throw new Error(`Invalid node config at ${configPath}: invalid discovery.bootstrapPresets entry: ${preset}`);
       }
     }
-    output.bootstrapPresets = presets.map(
-      (preset) => preset as "public-libp2p" | "public-libp2p-am6" | "public-libp2p-am7",
-    );
   }
 
   if (parsed.bootstrapPeers !== undefined) {
     output.bootstrapPeers = parseStringArray(parsed.bootstrapPeers, configPath, "discovery.bootstrapPeers");
+  }
+
+  if (parsed.bootstrapPresetsFiles !== undefined) {
+    output.bootstrapPresetsFiles = parseStringOrStringArray(
+      parsed.bootstrapPresetsFiles,
+      configPath,
+      "discovery.bootstrapPresetsFiles",
+    );
   }
 
   output.connectivityStrict = parseBoolean(parsed.connectivityStrict, configPath, "discovery.connectivityStrict");
@@ -99,6 +105,7 @@ function parseDiscoveryConfig(parsed: Record<string, unknown>, configPath: strin
   output.relayServer = parseBoolean(parsed.relayServer, configPath, "discovery.relayServer");
   output.autonat = parseBoolean(parsed.autonat, configPath, "discovery.autonat");
   output.dcutr = parseBoolean(parsed.dcutr, configPath, "discovery.dcutr");
+  output.quic = parseBoolean(parsed.quic, configPath, "discovery.quic");
   output.p2pDebug = parseBoolean(parsed.p2pDebug, configPath, "discovery.p2pDebug");
 
   return output;
@@ -123,6 +130,17 @@ function parseStringArray(value: unknown, configPath: string, key: string): stri
   return value.map((entry) => entry.trim()).filter(Boolean);
 }
 
+function parseStringOrStringArray(value: unknown, configPath: string, key: string): string[] {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new Error(`Invalid node config at ${configPath}: ${key} must be a non-empty string`);
+    }
+    return [trimmed];
+  }
+  return parseStringArray(value, configPath, key);
+}
+
 function parseBoolean(value: unknown, configPath: string, key: string): boolean | undefined {
   if (value === undefined) {
     return undefined;
@@ -137,7 +155,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function resolveConfigPath(configPath: string): string {
+export function resolveEnvoyMeshPath(configPath: string): string {
   if (isAbsolute(configPath)) {
     return configPath;
   }
@@ -153,4 +171,8 @@ function resolveConfigPath(configPath: string): string {
     }
   }
   return cwdPath;
+}
+
+function isValidBootstrapPresetToken(value: string): boolean {
+  return /^[a-zA-Z0-9._-]{1,64}$/.test(value);
 }

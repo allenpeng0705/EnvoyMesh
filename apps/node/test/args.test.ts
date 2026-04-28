@@ -155,6 +155,26 @@ describe("node args", () => {
     });
   });
 
+  it("parses QUIC flags", () => {
+    expect(parseNodeArgs(["--quic"]).enableQuic).toBe(true);
+    expect(parseNodeArgs(["--quic", "--no-quic"]).enableQuic).toBe(false);
+  });
+
+  it("reads QUIC from yaml and allows env override", () => {
+    const configPath = writeTempConfig(`
+discovery:
+  quic: false
+`);
+    const originalQuic = process.env.ENVOYMESH_QUIC;
+    process.env.ENVOYMESH_QUIC = "1";
+    try {
+      expect(parseNodeArgs(["--config", configPath]).enableQuic).toBe(true);
+    } finally {
+      process.env.ENVOYMESH_QUIC = originalQuic;
+      cleanupTempConfig(configPath);
+    }
+  });
+
   it("applies wan-default discovery profile defaults", () => {
     expect(parseNodeArgs(["--discovery-profile", "wan-default"])).toMatchObject({
       discoveryProfile: "wan-default",
@@ -314,7 +334,47 @@ discovery:
   });
 
   it("rejects invalid bootstrap preset", () => {
-    expect(() => parseNodeArgs(["--bootstrap-preset", "public"])).toThrow("Invalid bootstrap preset");
+    expect(() => parseNodeArgs(["--bootstrap-preset", "bad preset"])).toThrow("Invalid bootstrap preset");
+  });
+
+  it("loads custom bootstrap presets from yaml file", () => {
+    const presetsPath = writeTempConfig(`
+my-org:
+  - /ip4/10.0.0.1/tcp/4001/p2p/peer-a
+  - /ip4/10.0.0.2/tcp/4001/p2p/peer-b
+`);
+    try {
+      const args = parseNodeArgs([
+        "--bootstrap-presets-file",
+        presetsPath,
+        "--bootstrap-preset",
+        "my-org",
+      ]);
+      expect(args.bootstrapPeers).toContain("/ip4/10.0.0.1/tcp/4001/p2p/peer-a");
+      expect(args.bootstrapPeers).toContain("/ip4/10.0.0.2/tcp/4001/p2p/peer-b");
+    } finally {
+      cleanupTempConfig(presetsPath);
+    }
+  });
+
+  it("rejects unknown bootstrap preset without custom registry", () => {
+    expect(() => parseNodeArgs(["--bootstrap-preset", "unknown-preset"])).toThrow("Unknown bootstrap preset");
+  });
+
+  it("applies join-invite token", () => {
+    const token = Buffer.from(
+      JSON.stringify({
+        v: 1,
+        createdAt: "2026-04-28T00:00:00.000Z",
+        bootstrapPeers: ["/ip4/10.0.0.3/tcp/5001/p2p/peer-c"],
+        bootstrapPresets: ["public-libp2p-am6"],
+      }),
+      "utf8",
+    ).toString("base64url");
+
+    const args = parseNodeArgs(["--join-invite", token]);
+    expect(args.bootstrapPeers).toContain("/ip4/10.0.0.3/tcp/5001/p2p/peer-c");
+    expect(args.bootstrapPeers.some((peer) => peer.includes("am6.bootstrap.libp2p.io"))).toBe(true);
   });
 
   it("parses task termination flags", () => {

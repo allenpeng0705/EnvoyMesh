@@ -89,6 +89,7 @@ const mesh = new EnvoyMesh({
   enableRelayServer: args.enableRelayServer,
   enableAutoNat: args.enableAutoNat,
   enableDcutr: args.enableDcutr,
+  enableQuic: args.enableQuic,
   enableP2pDebug: args.p2pDebug,
   onP2pDebug: (event) => {
     void appendP2pTrace(event);
@@ -99,14 +100,21 @@ const bootstrapProbeResults: Array<{ peer: string; ok: boolean; latencyMs?: numb
 const MAX_BOOTSTRAP_PROBE_RESULTS = 512;
 const BOOTSTRAP_REPROBE_INTERVAL_MS = 60_000;
 const BOOTSTRAP_REPROBE_JITTER_MS = 15_000;
+const CAPABILITY_DISCOVERY_INTERVAL_MS = 90_000;
+const CAPABILITY_DISCOVERY_JITTER_MS = 20_000;
+const CAPABILITY_DISCOVERY_QUERY_TIMEOUT_MS = 6_000;
+const CAPABILITY_DISCOVERY_MAX_PROVIDERS = 32;
 let bootstrapReprobeTimer: ReturnType<typeof setTimeout> | undefined;
 let bootstrapReprobeCursor = 0;
+let capabilityDiscoveryTimer: ReturnType<typeof setTimeout> | undefined;
 
 if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length === 0) {
   connectivityWarnings.push(
     "wan-default selected without bootstrap peers; DHT/relay are enabled but discovery may be limited. Configure --bootstrap or ENVOYMESH_BOOTSTRAP_PEERS.",
   );
 }
+
+const autoCapabilityTopics = buildAutoCapabilityTopics(profile.deviceCertificate.capabilities);
 
 mesh.onPeerDiscovered(async (peer) => {
   const source = peer.multiaddrs.some((addr) => addr.includes("/p2p-circuit")) ? "relay" : "unknown";
@@ -766,6 +774,10 @@ if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length > 
   }
   scheduleBootstrapReprobe(effectiveBootstrapPeers);
 }
+if (args.enableDht && autoCapabilityTopics.length > 0) {
+  await runCapabilityDiscoveryCycle("startup");
+  scheduleCapabilityDiscovery();
+}
 setTimeout(() => {
   void taskStore.appendAuditEvent(
     createAuditEvent({
@@ -927,8 +939,118 @@ async function shutdown(): Promise<void> {
     clearTimeout(bootstrapReprobeTimer);
     bootstrapReprobeTimer = undefined;
   }
+  if (capabilityDiscoveryTimer) {
+    clearTimeout(capabilityDiscoveryTimer);
+    capabilityDiscoveryTimer = undefined;
+  }
   await mesh.stop();
   process.exit(0);
+}
+
+function buildAutoCapabilityTopics(capabilities: readonly string[]): string[] {
+  const normalized = capabilities
+    .map((capability) => capability.trim())
+    .filter(Boolean)
+    .map((capability) => `capability:${capability}`);
+  return [...new Set(normalized)];
+}
+
+function scheduleCapabilityDiscovery(): void {
+  if (!args.enableDht || autoCapabilityTopics.length === 0) {
+    return;
+  }
+  const jitter = Math.floor(Math.random() * CAPABILITY_DISCOVERY_JITTER_MS);
+  capabilityDiscoveryTimer = setTimeout(() => {
+    void runCapabilityDiscoveryCycle("periodic")
+      .catch(async (error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "p2p.trace",
+            direction: "outbound",
+            protocol: "discovery.capability.cycle.fail",
+            outcome: "record",
+            summary: `capability discovery cycle failed: ${message}`,
+          }),
+        );
+      })
+      .finally(() => {
+        scheduleCapabilityDiscovery();
+      });
+  }, CAPABILITY_DISCOVERY_INTERVAL_MS + jitter);
+}
+
+async function runCapabilityDiscoveryCycle(source: "startup" | "periodic"): Promise<void> {
+  if (!args.enableDht || autoCapabilityTopics.length === 0) {
+    return;
+  }
+
+  for (const topic of autoCapabilityTopics) {
+    try {
+      await mesh.provideCapabilityTopic(topic);
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "p2p.trace",
+          direction: "outbound",
+          protocol: "discovery.capability.provide.ok",
+          outcome: "record",
+          summary: `capability provide ok topic=${topic} source=${source}`,
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "p2p.trace",
+          direction: "outbound",
+          protocol: "discovery.capability.provide.fail",
+          outcome: "record",
+          summary: `capability provide failed topic=${topic} source=${source} error=${message}`,
+        }),
+      );
+      continue;
+    }
+
+    let providers:
+      | Array<{
+          peerId: string;
+          multiaddrs: string[];
+        }>
+      | undefined;
+    try {
+      providers = await mesh.findCapabilityTopicProviders(topic, {
+        queryTimeoutMs: CAPABILITY_DISCOVERY_QUERY_TIMEOUT_MS,
+        limit: CAPABILITY_DISCOVERY_MAX_PROVIDERS,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "p2p.trace",
+          direction: "outbound",
+          protocol: "discovery.capability.find.fail",
+          outcome: "record",
+          summary: `capability find failed topic=${topic} source=${source} error=${message}`,
+        }),
+      );
+      continue;
+    }
+
+    const remoteProviders = providers.filter((provider) => provider.peerId !== mesh.peerId);
+    const discoveredAddrs = dedupeAddrs(remoteProviders.flatMap((provider) => provider.multiaddrs));
+    if (discoveredAddrs.length > 0) {
+      await discoverySeedStore.upsertMany(discoveredAddrs, "capability-topic");
+    }
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        direction: "outbound",
+        protocol: "discovery.capability.find.ok",
+        outcome: "record",
+        summary: `capability find ok topic=${topic} source=${source} providers=${providers.length} remote=${remoteProviders.length} addrs=${discoveredAddrs.length}`,
+      }),
+    );
+  }
 }
 
 process.on("SIGINT", () => {

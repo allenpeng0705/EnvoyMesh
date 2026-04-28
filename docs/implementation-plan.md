@@ -32,6 +32,8 @@ Use these prefixes on **every phased work item** and on **exit criteria** below 
 - [Phase 2 — Bond and policy engine](#phase-2-bond-and-policy-engine)
 - [Phase 3 — Local node without P2P](#phase-3-local-node-without-p2p)
 - [Phase 4 — P2P local network](#phase-4-p2p-local-network)
+- [Phase 4 (WAN follow-on): Rendezvous, Relay, And NAT Traversal](#phase-4-wan-follow-on-rendezvous-relay-and-nat-traversal)
+- [Phase 4F — WAN capability topics and transport hardening](#phase-4f-wan-capability-topics-and-transport-hardening)
 - [Phase 4A — Multi-device protocol](#phase-4a-multi-device-protocol)
 - [Phase 4B — A2A ambassador protocol](#phase-4b-a2a-ambassador-protocol)
 - [Phase 4C — Observability and multi-peer traceability](#phase-4c-observability-and-multi-peer-traceability)
@@ -68,7 +70,7 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 | Theme ([UserStory.md](./UserStory.md)) | Primary phases | Shipped (`[x]`) · still missing (`[ ]`) |
 |----------------------------------------|-----------------|----------------------------------------|
 | Identity birth (Scenario 1) | 1, 4A | `[x]` Signed envelopes, owner/device split, device certs · `[ ]` DID as first-class product (beyond directional docs) |
-| Blind discovery (Scenario 2) | 4, **4E** | `[x]` Transport discovery (mDNS, optional DHT/relay/DCUtR), Agent Card types, signed `discovery.request/response`, trust+rate-gated inbound handling, ranked digest baseline (`morning-report`) · `[ ]` richer narrative ranking/UX iteration |
+| Blind discovery (Scenario 2) | 4, **4E**, **WAN follow-on**, **4F** | `[x]` Transport discovery (mDNS, optional DHT/relay/DCUtR), Agent Card types, signed `discovery.request/response`, trust+rate-gated inbound handling, ranked digest baseline (`morning-report`) · `[ ]` global DHT capability “topic/provider” advertisement path (distinct from `discovery.request`); QUIC preference; richer narrative ranking/UX iteration |
 | Broadcast & kill (Scenario 3) | 4B, **4D** | `[x]` Local mandate/propose expiry, cancel / satisfied, first completed result + `closeOnFirstCompletedResult`, `correlationId`, audits · `[ ]` Hop TTL / gossip-wide cancel / collect-N (`Phase 4D` “not in this slice”) |
 | Social handshake (Scenario 4) | 2, 4B, 7 | `[x]` Trust store, bonds/policy, approvals, mandates, A2A tasks, **EMP `bond.*` payloads + inbound bond path + CLI `bond.request`** · `[ ]` Rich referral / owner queue UX beyond audit |
 | Intent-based file share (Scenario 5) | 5, Scenario 6 pick | `[x]` Shared vault, indexing, search, policy hooks, audit · `[x]` Voucher + verified P2P chunk stream (`/envoymesh/data/0.1.0`) |
@@ -199,6 +201,64 @@ Exit criteria:
 
 - `[x]` Two nodes can exchange signed application messages over `/envoymesh/message/0.1.0` in CI and local dev.
 - `[ ]` Live mDNS and wide-area connectivity proofs completed per `docs/live-connectivity-testing.md` on target OSes and configured peers (blocked items: Phase 4 `[!]`).
+
+## Phase 4 (WAN follow-on): Rendezvous, Relay, And NAT Traversal
+
+Goal: make EnvoyMesh **WAN-first** behind NAT by shipping the standard “coordination + encryption” architecture: reachable bootstrap/relay fleet, relayed connectivity when needed, hole punching where possible, and a first-class cold-start rendezvous story.
+
+This is intentionally separate from “LAN fast path” work: WAN reliability is dominated by **rendezvous and published dialable addresses**, not multicast convenience.
+
+- `[ ]` Define an **operator bootstrap + relay fleet** baseline (2–3 regions) with stable DNS multiaddrs and documented key rotation expectations.
+- `[ ]` Ship **defaults + operator presets** as a product concern (not “only code”): documented hosted preset names, rotation/runbook, and a supported path for org-owned bootstraps + relays (so production does not implicitly depend on random public community relays).
+- `[ ]` Ship a **default org preset** story (signed/governed preset list or documented operator injection path) so production installs do not depend solely on public community bootstraps.
+- `[ ]` Validate **circuit relay v2** end-to-end: reservation, `/p2p-circuit` multiaddrs observed, relayed dials succeed under symmetric NAT / strict outbound-only networks.
+- `[ ]` Validate **DCUtR** upgrade path where supported (relay-coordinated punch) and document expected failure modes when punch is impossible.
+- `[ ]` Validate **AutoNAT / observed address** publishing path so peers learn externally meaningful multiaddrs (not only loopback/LAN-only).
+- `[ ]` Add **WAN cold-start rendezvous UX** (invite link / QR / deep link) that seeds bootstrap peers + target peer identity for first contact, then hands off to persisted seeds + DHT maintenance.
+- `[ ]` Extend connectivity diagnostics to classify WAN states (bootstrap reachability vs relay availability vs punch vs policy blocks) beyond aggregate counters.
+
+Exit criteria:
+
+- `[ ]` Two nodes on different home networks (NAT) can establish **relay-mediated** connectivity using only the shipped operator defaults + invite/pairing cold start (no manual per-message multiaddr copying).
+- `[ ]` Live WAN proof captured in `docs/live-connectivity-testing.md` with repeatable commands and expected audit `p2p.trace` signatures.
+
+## Phase 4F: WAN Capability Topics And Transport Hardening
+
+Goal: separate **three** concerns that are easy to conflate in “discovery” work:
+
+1. **Semantic / story discovery** (`discovery.request/response`) — conversation after you can target a peer (or resolve a policy-scoped intent).
+2. **Global rendezvous metadata** — DHT-backed “topic/provider” records for arbitrary capability advertisements (often small, TTL’d pointers).
+3. **Transport choice** — QUIC as an additive path parallel to TCP, then “prefer QUIC”.
+
+### 4F.A — DHT capability topics (distinct from `discovery.request`)
+
+- `[~]` Define record schema: topic string → hashed keying strategy, TTL/freshness, signature binding publisher peer id, optional scope tags (org/network/version). *(Partial: deterministic topic→CID mapping shipped in `@envoymesh/network`; signed record envelope + freshness fields still open.)*
+- `[ ]` Define interaction model with EMP: records are **hints**, richer negotiation still happens over `/envoymesh/*` once a candidate peer is known.
+- `[~]` Implementation: publish + query provider records under the chosen libp2p discovery API (and document limitations vs ideal “perfect global index”). *(Partial: `provideCapabilityTopic` / `findCapabilityTopicProviders` APIs shipped with bounded query timeout; WAN multi-node proof remains open.)*
+
+Exit criteria:
+
+- `[ ]` Two WAN nodes can discover at least one candidate peer id for a test topic without requiring a prior direct multiaddr (assuming fleet + bootstrap health).
+
+### 4F.B — “Ghost” discovery signals: signing + abuse policy + tests
+
+- `[ ]` Threat-model doc: Sybil identities, replay, flooding, stale records, coordinated noise, partial connectivity.
+- `[ ]` Product policy controls: rate limits + trust tiers + freshness windows + “known good” operator keys + audit correlation expectations.
+- `[ ]` Vitest-style cases for inbound guards (not “signing exists” smoke only).
+
+Exit criteria:
+
+- `[ ]` A malicious fast publisher cannot trivially dominate local discovery UX (bounded work + auditable rejects) in the shipped defaults.
+
+### 4F.C — QUIC additive transport (parallel to TCP, then prefer QUIC)
+
+- `[x]` Wire **`@chainsafe/libp2p-quic`** alongside TCP in `packages/network` (`enableQuic` / companion UDP listeners) with CLI (`--quic` / `--no-quic`), YAML (`discovery.quic`), and env (`ENVOYMESH_QUIC`).
+- `[ ]` Dial selection policy: prefer QUIC multiaddrs when present; fall back to TCP cleanly; log/trace enough to debug “why not QUIC”.
+- `[ ]` Smoke matrix doc update: macOS / Windows / Linux + common corporate VPN / UDP-blocked networks (expected degrade path).
+
+Exit criteria:
+
+- `[~]` Same-machine vitest proves **system.ping** over a QUIC dial path when UDP is allowed; TCP-only remains the default when QUIC is off; **WAN** matrix + prefer-QUIC sorting still **`[ ]`**.
 
 ## Phase 4A: Multi-Device Protocol
 
@@ -405,7 +465,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 
 | Pressure (source) | In plan today? | Gap / where to track | Shipped (`[x]`) · missing (`[ ]`) |
 |-------------------|----------------|----------------------|----------------------------------|
-| Scenario 2 / Story B — **hashed or tag-scoped discovery** | Phase **4E** | EMP discovery intents (`discovery.request` / `discovery.response`) + node trust/rate gating + audit correlation shipped as baseline. | `[x]` |
+| Scenario 2 / Story B — **hashed or tag-scoped discovery** | Phase **4E** + **WAN follow-on** + **4F** | EMP `discovery.request/response` + inbound gates shipped (**`[x]`**). Global DHT capability topic/provider advertisements + QUIC preference remain **`[ ]`** (tracked explicitly to avoid conflating protocols). | `[~]` |
 | Scenario 3 / US-C2 — **hop TTL, gossip cancel, collect-N** | Phase **4D** “not in slice” + **Open questions** | Two **`[ ]`** lines under Phase 4D; EMP fan-out TBD. | `[ ]` |
 | Scenario 3 — **local expiry / cancel / first result / correlation** | Phase **4D** + 4C | CLI + `task-runtime-state` + audits. | `[x]` |
 | Scenario 4 — **bond + proof-of-context on wire** | Phase **4B** Batch 6 + 2 / 4A | Batch 6 **`[x]`**; trust/approvals + policy today. | `[x]` |
@@ -453,7 +513,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | `[ ]` | **Broadcast termination on the wire** — hop TTL, **network-wide** cancel propagation, **collect-N** (`k > 1`), correlation-only cancel | Scenario 3, US-C2/US-C3 | Phase 4D is **per-receiver local** only; fan-out EMP/gossip shape TBD. |
 | `[x]` | **Sender / receiver role** (human vs agent) | Scenario 6, UserStory header sketch | Required envelope roles and strict validation shipped with channel split (`/chat` vs `/message`); violations are rejected in schema/runtime/network send paths. |
 | `[ ]` | **Live mDNS / DHT / relay proofs outside CI** | Story F, wide-area connectivity | Blocked on environment; [live-connectivity-testing.md](./live-connectivity-testing.md). |
-| `[ ]` | **WAN bootstrap/relay operating model** | Real cross-network P2P (not LAN-only) | Need managed bootstrap peers, relay policy, and default config for desktop/node startup. |
+| `[ ]` | **WAN bootstrap/relay operating model** | Real cross-network P2P (not LAN-only) | Tracked as Phase 4 WAN follow-on + **Phase 4F** in this plan: operator fleet + org presets as defaults, relay/DCUtR/AutoNAT validation, DHT topic/provider capability advertisements (distinct from `discovery.request`), QUIC additive transport, cold-start invite/pairing rendezvous, and WAN diagnostics beyond public presets. |
 
 ### Backlog (track in scenarios / phases, not as single-line Q&A)
 
@@ -486,3 +546,9 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | 2026-04-27 | **WAN fallback Phase C baseline:** managed bootstrap preset support (`--bootstrap-preset <name>` repeatable / `ENVOYMESH_BOOTSTRAP_PRESETS`) with parser validation, peer dedupe, and updated non-LAN runbook commands. |
 | 2026-04-27 | **WAN fallback Phase D (item 1) baseline:** persisted discovery seeds (`discovery-seeds.json`) from manual bootstrap, successful probes, and peer discovery events; startup now auto-reseeds effective bootstrap peers from persisted seeds plus peer-directory listen addrs. |
 | 2026-04-27 | **WAN fallback Phase D (item 2) baseline:** periodic jittered bootstrap reprobe loop with rotating targets, persisted success updates, bounded in-memory probe history, and new connectivity telemetry (`connectivity.reprobe.ok/fail`) surfaced by `connectivity-status`. |
+| 2026-04-28 | **WAN rendezvous architecture:** documented production WAN + NAT model (bootstrap/relay fleet, relay-first under strict NAT, DCUtR upgrade, AutoNAT/observed addrs, cold-start invite/pairing) in `docs/p2p-discovery.md`; added Phase 4 WAN follow-on milestone block in this plan for operator fleet + relay/DCUtR/AutoNAT validation + invite-link rendezvous + richer WAN diagnostics. |
+| 2026-04-28 | **WAN cold-start tooling (v1):** operator-defined bootstrap preset YAML files (`--bootstrap-presets-file` / `discovery.bootstrapPresetsFiles` / `ENVOYMESH_BOOTSTRAP_PRESETS_FILES`) + unsigned WAN join-invite tokens (`--join-invite`, `npm run cli -w @envoymesh/node -- invite encode|decode`) with tests and `docs/p2p-discovery.md` runbook updates. |
+| 2026-04-28 | **WAN roadmap framing:** added **Phase 4F** to track DHT “topic/provider” capability advertisements (distinct from semantic `discovery.request/response`), explicit ghost/abuse policy + tests beyond signing, operator presets-as-defaults posture, and QUIC as additive transport with “prefer QUIC” follow-on. Expanded **WAN follow-on** checklist + Scenario 2 traceability accordingly. |
+| 2026-04-28 | **Phase 4F.C (partial):** additive QUIC via `@chainsafe/libp2p-quic`, companion `/udp/.../quic-v1` listeners, node flags + YAML + `ENVOYMESH_QUIC`, `packages/network` integration test for signed ping over QUIC; documented libp2p “listen multiaddr already includes `/p2p/self`” dial caveat in `docs/p2p-discovery.md`. |
+| 2026-04-28 | **Phase 4F.A (partial):** capability-topic scaffolding in `@envoymesh/network` (`cidForCapabilityTopic`, `provideCapabilityTopic`, `findCapabilityTopicProviders`, bounded query timeout handling); QUIC transport load moved to lazy import so non-QUIC environments can still import/run network tests. |
+| 2026-04-28 | **Auto-discovery focus (WAN):** node runtime now auto-publishes and periodically queries capability topics when DHT is enabled; discovered provider multiaddrs are persisted into discovery seeds (`capability-topic`) to improve cold-start convergence. |

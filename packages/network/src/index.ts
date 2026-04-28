@@ -10,8 +10,10 @@ import { mdns } from "@libp2p/mdns";
 import { ping } from "@libp2p/ping";
 import { tcp } from "@libp2p/tcp";
 import { byteStream } from "@libp2p/utils";
+import type { RoutingOptions } from "@libp2p/interface";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { multiaddr } from "@multiformats/multiaddr";
+import type { CID } from "multiformats/cid";
 import { createLibp2p, type Libp2p } from "libp2p";
 import type { Uint8ArrayList } from "uint8arraylist";
 import { decodeEnvelope, encodeEnvelope } from "./codec.js";
@@ -21,6 +23,8 @@ import {
   parseInboundDataTransferBody,
   parseVoucherJsonObject,
 } from "./data-framing.js";
+import { cidForCapabilityTopic } from "./capability-topic.js";
+import { expandListenAddressesWithQuic } from "./quic-listen.js";
 
 export const ENVOY_MESSAGE_PROTOCOL = "/envoymesh/message/0.1.0";
 export const ENVOY_CHAT_PROTOCOL = "/envoymesh/chat/0.1.0";
@@ -63,8 +67,16 @@ export interface EnvoyMeshOptions {
   enableRelayServer?: boolean;
   enableAutoNat?: boolean;
   enableDcutr?: boolean;
+  /** When true, register the QUIC transport and add matching `/udp/.../quic-v1` listeners for each TCP listen address. */
+  enableQuic?: boolean;
   enableP2pDebug?: boolean;
   onP2pDebug?: (event: P2pDebugEvent) => void;
+}
+
+export interface CapabilityTopicProviderRecord {
+  peerId: string;
+  multiaddrs: string[];
+  routing?: string;
 }
 
 export type P2pDebugEvent =
@@ -97,13 +109,20 @@ export class EnvoyMesh {
 
     const advancedConnectivityEnabled = this.isAdvancedConnectivityEnabled();
 
+    const baseListen = this.options.listen ?? ["/ip4/0.0.0.0/tcp/0"];
+    const listenAddrs =
+      this.options.enableQuic === true ? expandListenAddressesWithQuic(baseListen) : baseListen;
+
+    const quicTransportFactory = this.options.enableQuic ? await this.loadQuicTransport() : undefined;
+
     this.node = await createLibp2p({
       addresses: {
-        listen: this.options.listen ?? ["/ip4/0.0.0.0/tcp/0"],
+        listen: listenAddrs,
       },
       transports: [
         tcp(),
         ...(this.options.enableRelay ? [circuitRelayTransport()] : []),
+        ...(quicTransportFactory ? [quicTransportFactory()] : []),
       ],
       connectionEncrypters: [noise()],
       streamMuxers: [yamux()],
@@ -191,6 +210,69 @@ export class EnvoyMesh {
       .map((addr) => addr.toString());
   }
 
+  /**
+   * Derives the libp2p provider CID for a capability topic (same mapping as {@link provideCapabilityTopic}).
+   */
+  async capabilityTopicCid(topic: string): Promise<CID> {
+    return cidForCapabilityTopic(topic);
+  }
+
+  /**
+   * Announce this node as a provider for `topic` on the DHT (requires {@link EnvoyMeshOptions.enableDht}).
+   * Uses IPFS-style provider records; `topic` is hashed to a CID per `docs/p2p-discovery.md`.
+   */
+  async provideCapabilityTopic(topic: string, options?: RoutingOptions): Promise<void> {
+    this.requireDhtForCapabilityTopics();
+    const cid = await cidForCapabilityTopic(topic);
+    await this.requireNode().contentRouting.provide(cid, options);
+  }
+
+  async cancelCapabilityTopicReprovide(topic: string, options?: RoutingOptions): Promise<void> {
+    this.requireDhtForCapabilityTopics();
+    const cid = await cidForCapabilityTopic(topic);
+    await this.requireNode().contentRouting.cancelReprovide(cid, options);
+  }
+
+  /**
+   * Query the DHT for peers that have called {@link provideCapabilityTopic} for the same topic string.
+   * libp2p {@link ContentRouting.findProviders} streams until aborted; unless `signal` is passed, this
+   * method uses {@link AbortSignal.timeout} (`queryTimeoutMs`, default 20s) so the promise always settles.
+   */
+  async findCapabilityTopicProviders(
+    topic: string,
+    options?: RoutingOptions & { limit?: number; queryTimeoutMs?: number },
+  ): Promise<CapabilityTopicProviderRecord[]> {
+    this.requireDhtForCapabilityTopics();
+    const cid = await cidForCapabilityTopic(topic);
+    const merged = { limit: 32, queryTimeoutMs: 20_000, ...options };
+    const { limit, queryTimeoutMs, ...routingOpts } = merged;
+    const signal = routingOpts.signal ?? AbortSignal.timeout(queryTimeoutMs);
+    const out: CapabilityTopicProviderRecord[] = [];
+    try {
+      for await (const provider of this.requireNode().contentRouting.findProviders(cid, {
+        ...routingOpts,
+        signal,
+      })) {
+        out.push({
+          peerId: provider.id.toString(),
+          multiaddrs: provider.multiaddrs.map((ma) => ma.toString()),
+          routing: provider.routing,
+        });
+        if (out.length >= limit) {
+          break;
+        }
+      }
+    } catch (error) {
+      const name = error instanceof Error ? error.name : "";
+      const aborted = signal.aborted || name === "AbortError" || name === "TimeoutError";
+      if (aborted) {
+        return out;
+      }
+      throw error;
+    }
+    return out;
+  }
+
   get enabledFeatures(): string[] {
     return [
       ...(this.options.enableMdns === false ? [] : ["mdns"]),
@@ -200,6 +282,7 @@ export class EnvoyMesh {
       ...(this.options.enableRelayServer ? ["relay-server"] : []),
       ...(this.options.enableAutoNat ? ["autonat"] : []),
       ...(this.options.enableDcutr ? ["dcutr"] : []),
+      ...(this.options.enableQuic ? ["quic"] : []),
       ...(this.options.enableP2pDebug ? ["p2p-debug"] : []),
     ];
   }
@@ -472,6 +555,22 @@ export class EnvoyMesh {
     );
   }
 
+  private async loadQuicTransport(): Promise<() => any> {
+    try {
+      const module = (await import("@chainsafe/libp2p-quic")) as { quic: () => any };
+      return module.quic;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`enableQuic requested but QUIC transport could not initialize: ${message}`);
+    }
+  }
+
+  private requireDhtForCapabilityTopics(): void {
+    if (!this.options.enableDht) {
+      throw new Error("capability topic provider APIs require DHT (enableDht: true)");
+    }
+  }
+
   private requireNode(): Libp2p {
     if (!this.node) {
       throw new Error("EnvoyMesh has not been started");
@@ -484,6 +583,8 @@ export class EnvoyMesh {
 export { collectStreamBytes } from "./codec.js";
 export { decodeEnvelope, encodeEnvelope };
 export { voucherJsonBytesFromObject } from "./data-framing.js";
+export { CAPABILITY_TOPIC_NAMESPACE, cidForCapabilityTopic } from "./capability-topic.js";
+export { expandListenAddressesWithQuic, quicListenFromTcpListen } from "./quic-listen.js";
 
 function validateEnvelopeProtocol(protocol: string, envelope: EnvoyEnvelope): void {
   if (protocol === ENVOY_CHAT_PROTOCOL && envelope.intent !== "chat.message") {

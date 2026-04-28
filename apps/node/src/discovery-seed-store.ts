@@ -4,7 +4,11 @@ import { dirname, join } from "node:path";
 const DISCOVERY_SEED_FILE = "discovery-seeds.json";
 const MAX_DISCOVERY_SEEDS = 256;
 
-export type DiscoverySeedSource = "bootstrap-probe" | "peer.discovery" | "manual-bootstrap";
+export type DiscoverySeedSource =
+  | "bootstrap-probe"
+  | "peer.discovery"
+  | "manual-bootstrap"
+  | "capability-topic";
 
 export interface DiscoverySeedRecord {
   addr: string;

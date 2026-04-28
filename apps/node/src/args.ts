@@ -1,12 +1,15 @@
 import type { Sensitivity } from "@envoymesh/protocol";
+import { mergeBootstrapPresetYamlFiles, type BootstrapPresetRegistry } from "./bootstrap-presets-file.js";
 import { loadNodeYamlConfig } from "./node-config.js";
+import { applyJoinInviteToNodeArgs } from "./wan-invite.js";
 
 export interface NodeArgs {
   configPath?: string;
   profileDir: string;
   discoveryProfile: "lan-fast" | "wan-default";
   connectivityStrict: boolean;
-  bootstrapPresets: BootstrapPreset[];
+  bootstrapPresets: string[];
+  bootstrapPresetsFiles: string[];
   listen: string[];
   enableMdns: boolean;
   enableDht: boolean;
@@ -16,6 +19,7 @@ export interface NodeArgs {
   enableRelayServer: boolean;
   enableAutoNat: boolean;
   enableDcutr: boolean;
+  enableQuic: boolean;
   p2pDebug: boolean;
   correlationId?: string;
   pingTarget?: string;
@@ -64,6 +68,7 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     discoveryProfile: "lan-fast",
     connectivityStrict: false,
     bootstrapPresets: [],
+    bootstrapPresetsFiles: [],
     listen: ["/ip4/0.0.0.0/tcp/0"],
     enableMdns: true,
     enableDht: false,
@@ -72,6 +77,7 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     enableRelayServer: false,
     enableAutoNat: false,
     enableDcutr: false,
+    enableQuic: false,
     p2pDebug: false,
     discoveryTagHashes: [],
     discoveryCapabilities: [],
@@ -85,6 +91,9 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     if (arg === "--config") {
       index += 1;
       continue;
+    } else if (arg === "--join-invite") {
+      applyJoinInviteToNodeArgs(args, readValue(argv, ++index, arg));
+      continue;
     } else if (arg === "--profile") {
       args.profileDir = readValue(argv, ++index, arg);
     } else if (arg === "--discovery-profile") {
@@ -92,7 +101,9 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     } else if (arg === "--connectivity-strict") {
       args.connectivityStrict = true;
     } else if (arg === "--bootstrap-preset") {
-      args.bootstrapPresets.push(parseBootstrapPreset(readValue(argv, ++index, arg)));
+      args.bootstrapPresets.push(parseBootstrapPresetName(readValue(argv, ++index, arg)));
+    } else if (arg === "--bootstrap-presets-file") {
+      args.bootstrapPresetsFiles.push(readValue(argv, ++index, arg));
     } else if (arg === "--listen") {
       args.listen = [readValue(argv, ++index, arg)];
     } else if (arg === "--no-mdns") {
@@ -115,6 +126,10 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.enableAutoNat = true;
     } else if (arg === "--dcutr") {
       args.enableDcutr = true;
+    } else if (arg === "--quic") {
+      args.enableQuic = true;
+    } else if (arg === "--no-quic") {
+      args.enableQuic = false;
     } else if (arg === "--p2p-debug") {
       args.p2pDebug = true;
     } else if (arg === "--correlation-id") {
@@ -206,7 +221,9 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     }
   }
 
-  applyDiscoveryProfileDefaults(args);
+  const customPresetRegistry = new Map<string, string[]>();
+  mergeBootstrapPresetYamlFiles(args.bootstrapPresetsFiles, customPresetRegistry);
+  applyDiscoveryProfileDefaults(args, customPresetRegistry);
 
   return args;
 }
@@ -231,10 +248,15 @@ Options:
                          Env: ENVOYMESH_BOOTSTRAP_PEERS (comma-separated)
   --bootstrap-preset <p> Add managed bootstrap set. Supported: public-libp2p, public-libp2p-am6, public-libp2p-am7
                          Repeatable. Env: ENVOYMESH_BOOTSTRAP_PRESETS (comma-separated)
+  --bootstrap-presets-file <path> Load custom bootstrap preset definitions from YAML. Repeatable.
+                         Env: ENVOYMESH_BOOTSTRAP_PRESETS_FILES (comma-separated)
+  --join-invite <token> Apply a WAN join-invite token (adds bootstrap peers/presets). See: npm run cli -w @envoymesh/node -- invite
   --relay               Enable circuit relay transport.
   --relay-server        Enable this node as a circuit relay server.
   --autonat             Enable AutoNAT service.
   --dcutr               Enable DCUtR hole punching service.
+  --quic                Enable QUIC transport alongside TCP (adds matching /udp/.../quic-v1 listeners). Env: ENVOYMESH_QUIC (1/true/yes or 0/false/no).
+  --no-quic             Disable QUIC when set from config or env.
   --p2p-debug           Log libp2p connection lifecycle events to audit as p2p.trace.
   --correlation-id <id> Optional correlation id for outbound ping/signal/A2A envelopes.
   --ping <target>       Send signed system.ping to peer ID, /ip4/.../p2p/... multiaddr, or envoy:owner:... (resolved from LAN peer directory).
@@ -327,18 +349,17 @@ function parseDiscoveryProfile(value: string): NodeArgs["discoveryProfile"] {
   throw new Error(`Invalid discovery profile: ${value}`);
 }
 
-type BootstrapPreset = "public-libp2p" | "public-libp2p-am6" | "public-libp2p-am7";
-
-function parseBootstrapPreset(value: string): BootstrapPreset {
-  if (value === "public-libp2p" || value === "public-libp2p-am6" || value === "public-libp2p-am7") {
-    return value;
+function parseBootstrapPresetName(value: string): string {
+  const trimmed = value.trim();
+  if (!/^[-A-Za-z0-9._]{1,64}$/.test(trimmed)) {
+    throw new Error(`Invalid bootstrap preset: ${value}`);
   }
-  throw new Error(`Invalid bootstrap preset: ${value}`);
+  return trimmed;
 }
 
-function applyDiscoveryProfileDefaults(args: NodeArgs): void {
+function applyDiscoveryProfileDefaults(args: NodeArgs, customPresetRegistry: BootstrapPresetRegistry): void {
   for (const preset of args.bootstrapPresets) {
-    args.bootstrapPeers = dedupePeers([...args.bootstrapPeers, ...bootstrapPeersForPreset(preset)]);
+    args.bootstrapPeers = dedupePeers([...args.bootstrapPeers, ...bootstrapPeersForPreset(preset, customPresetRegistry)]);
   }
   if (args.discoveryProfile === "lan-fast") {
     return;
@@ -387,6 +408,9 @@ function applyConfigFileArgs(args: NodeArgs, argv: string[]): void {
   if (config.discovery.bootstrapPresets) {
     args.bootstrapPresets.push(...config.discovery.bootstrapPresets);
   }
+  if (config.discovery.bootstrapPresetsFiles) {
+    args.bootstrapPresetsFiles.push(...config.discovery.bootstrapPresetsFiles);
+  }
   if (config.discovery.bootstrapPeers) {
     args.bootstrapPeers.push(...config.discovery.bootstrapPeers);
   }
@@ -402,6 +426,9 @@ function applyConfigFileArgs(args: NodeArgs, argv: string[]): void {
   if (typeof config.discovery.dcutr === "boolean") {
     args.enableDcutr = config.discovery.dcutr;
   }
+  if (typeof config.discovery.quic === "boolean") {
+    args.enableQuic = config.discovery.quic;
+  }
   if (typeof config.discovery.p2pDebug === "boolean") {
     args.p2pDebug = config.discovery.p2pDebug;
   }
@@ -416,7 +443,11 @@ function applyEnvironmentArgs(args: NodeArgs): void {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean)
-    .map((entry) => parseBootstrapPreset(entry));
+    .map((entry) => parseBootstrapPresetName(entry));
+  const envBootstrapPresetsFiles = (process.env.ENVOYMESH_BOOTSTRAP_PRESETS_FILES ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
   const envDiscoveryProfile = (process.env.ENVOYMESH_DISCOVERY_PROFILE ?? "").trim();
 
   if (envDiscoveryProfile === "wan-default") {
@@ -425,7 +456,15 @@ function applyEnvironmentArgs(args: NodeArgs): void {
     args.discoveryProfile = envDiscoveryProfile;
   }
   args.bootstrapPresets.push(...envBootstrapPresets);
+  args.bootstrapPresetsFiles.push(...envBootstrapPresetsFiles);
   args.bootstrapPeers.push(...envBootstrapPeers);
+
+  const envQuic = (process.env.ENVOYMESH_QUIC ?? "").trim().toLowerCase();
+  if (envQuic === "1" || envQuic === "true" || envQuic === "yes") {
+    args.enableQuic = true;
+  } else if (envQuic === "0" || envQuic === "false" || envQuic === "no") {
+    args.enableQuic = false;
+  }
 }
 
 function readConfigPath(argv: string[]): string | undefined {
@@ -451,12 +490,19 @@ function publicLibp2pBootstrapPeers(): string[] {
   ];
 }
 
-function bootstrapPeersForPreset(preset: BootstrapPreset): string[] {
+function bootstrapPeersForPreset(preset: string, customPresetRegistry: BootstrapPresetRegistry): string[] {
+  const custom = customPresetRegistry.get(preset);
+  if (custom && custom.length > 0) {
+    return custom;
+  }
   if (preset === "public-libp2p") {
     return publicLibp2pBootstrapPeers();
   }
   if (preset === "public-libp2p-am6") {
     return ["/dnsaddr/am6.bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq"];
   }
-  return ["/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf"];
+  if (preset === "public-libp2p-am7") {
+    return ["/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf"];
+  }
+  throw new Error(`Unknown bootstrap preset: ${preset}`);
 }

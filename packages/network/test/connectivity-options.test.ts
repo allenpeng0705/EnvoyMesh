@@ -11,6 +11,7 @@ describe("EnvoyMesh connectivity options", () => {
       enableRelayServer: true,
       enableAutoNat: true,
       enableDcutr: true,
+      enableQuic: true,
       enableP2pDebug: true,
     });
 
@@ -22,6 +23,7 @@ describe("EnvoyMesh connectivity options", () => {
       "relay-server",
       "autonat",
       "dcutr",
+      "quic",
       "p2p-debug",
     ]);
   });

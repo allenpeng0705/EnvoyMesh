@@ -17,6 +17,7 @@ import {
   type VaultIndex,
 } from "@envoymesh/vault";
 import { resolve } from "node:path";
+import { decodeWanJoinInviteV1, encodeWanJoinInviteV1, type WanJoinInviteV1 } from "./wan-invite.js";
 
 export type DeveloperCliCommand =
   | "profile"
@@ -31,7 +32,8 @@ export type DeveloperCliCommand =
   | "connectivity-status"
   | "morning-report"
   | "pairing"
-  | "smoke-checklist";
+  | "smoke-checklist"
+  | "invite";
 
 export interface DeveloperCliArgs {
   command: DeveloperCliCommand;
@@ -57,6 +59,14 @@ export interface DeveloperCliArgs {
   outputFormat?: "text" | "json";
   pairingStatusFilter?: "pending" | "approved" | "rejected" | "deferred" | "approved_remote";
   pairingQuery?: string;
+  inviteAction?: "encode" | "decode";
+  inviteBootstrapPeers?: string[];
+  inviteBootstrapPresets?: string[];
+  inviteTargetPeerId?: string;
+  inviteTargetMultiaddrs?: string[];
+  inviteExpiresAt?: string;
+  inviteNote?: string;
+  inviteToken?: string;
 }
 
 export interface DeveloperCliResult {
@@ -119,6 +129,10 @@ export async function runDeveloperCli(argv: string[]): Promise<DeveloperCliResul
     return generateSmokeChecklist(args);
   }
 
+  if (args.command === "invite") {
+    return handleInvite(args);
+  }
+
   throw new Error(`Unhandled command: ${args.command}`);
 }
 
@@ -176,6 +190,29 @@ export function parseDeveloperCliArgs(argv: string[]): DeveloperCliArgs {
       args.machineAName = readValue(argv, ++index, arg);
     } else if (arg === "--machine-b") {
       args.machineBName = readValue(argv, ++index, arg);
+    } else if (arg === "--bootstrap-peer") {
+      if (!args.inviteBootstrapPeers) {
+        args.inviteBootstrapPeers = [];
+      }
+      args.inviteBootstrapPeers.push(readValue(argv, ++index, arg));
+    } else if (arg === "--invite-bootstrap-preset") {
+      if (!args.inviteBootstrapPresets) {
+        args.inviteBootstrapPresets = [];
+      }
+      args.inviteBootstrapPresets.push(readValue(argv, ++index, arg));
+    } else if (arg === "--invite-target-peer") {
+      args.inviteTargetPeerId = readValue(argv, ++index, arg);
+    } else if (arg === "--invite-target-multiaddr") {
+      if (!args.inviteTargetMultiaddrs) {
+        args.inviteTargetMultiaddrs = [];
+      }
+      args.inviteTargetMultiaddrs.push(readValue(argv, ++index, arg));
+    } else if (arg === "--invite-expires-at") {
+      args.inviteExpiresAt = readValue(argv, ++index, arg);
+    } else if (arg === "--invite-note") {
+      args.inviteNote = readValue(argv, ++index, arg);
+    } else if (arg === "--invite-token") {
+      args.inviteToken = readValue(argv, ++index, arg);
     } else if (arg === "--help" || arg === "-h") {
       printDeveloperCliHelp();
       process.exit(0);
@@ -193,6 +230,10 @@ export function parseDeveloperCliArgs(argv: string[]): DeveloperCliArgs {
       args.trustAction = parseTrustAction(arg);
     } else if (!arg.startsWith("--") && args.command === "trust" && !args.peerOwnerId) {
       args.peerOwnerId = arg;
+    } else if (!arg.startsWith("--") && args.command === "invite" && !args.inviteAction) {
+      args.inviteAction = parseInviteAction(arg);
+    } else if (!arg.startsWith("--") && args.command === "invite" && args.inviteAction === "decode" && !args.inviteToken) {
+      args.inviteToken = arg;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -221,6 +262,7 @@ Commands:
   pairing        Pairing-focused queue/actions (list/approve/reject/retry/timeline).
   morning-report Show ranked discovery digest.
   smoke-checklist Generate a multi-machine validation checklist.
+  invite         WAN join-invite helpers (encode/decode).
 
 Options:
   --profile <dir>   Profile directory. Default: ./data/default
@@ -238,7 +280,57 @@ Options:
   --format <text|json> Output format (currently used by pairing timeline).
   --machine-a <name> Machine A label for smoke-checklist. Default: machine-a
   --machine-b <name> Machine B label for smoke-checklist. Default: machine-b
+
+Invite (command: invite encode|decode):
+  --bootstrap-peer <multiaddr>           Repeatable. Required for encode.
+  --invite-bootstrap-preset <name>       Repeatable. Optional preset names for encode.
+  --invite-target-peer <peerId>        Optional libp2p peer id for encode.
+  --invite-target-multiaddr <multiaddr>  Repeatable. Optional dial hints for encode.
+  --invite-expires-at <iso>              Optional ISO-8601 expiry for encode.
+  --invite-note <text>                   Optional note for encode.
+  --invite-token <token>                 Required for decode (unless token is passed as sole positional arg).
 `);
+}
+
+async function handleInvite(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
+  if (!args.inviteAction) {
+    throw new Error("invite requires encode|decode");
+  }
+
+  if (args.inviteAction === "encode") {
+    const peers = args.inviteBootstrapPeers ?? [];
+    if (peers.length === 0) {
+      throw new Error("invite encode requires at least one --bootstrap-peer <multiaddr>");
+    }
+
+    const invite: WanJoinInviteV1 = {
+      v: 1,
+      createdAt: new Date().toISOString(),
+      expiresAt: args.inviteExpiresAt,
+      note: args.inviteNote,
+      targetPeerId: args.inviteTargetPeerId,
+      targetMultiaddrs: args.inviteTargetMultiaddrs,
+      bootstrapPeers: peers,
+      bootstrapPresets: args.inviteBootstrapPresets ?? [],
+    };
+
+    const token = encodeWanJoinInviteV1(invite);
+    return ok([
+      "WAN join-invite (v1)",
+      `token=${token}`,
+      "",
+      "Start a node with:",
+      `  npm run dev -w @envoymesh/node -- --join-invite "${token}"`,
+    ]);
+  }
+
+  const token = args.inviteToken?.trim();
+  if (!token) {
+    throw new Error("invite decode requires --invite-token <token>");
+  }
+
+  const decoded = decodeWanJoinInviteV1(token);
+  return ok(["WAN join-invite (decoded)", JSON.stringify(decoded, null, 2)]);
 }
 
 async function showProfile(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
@@ -690,12 +782,20 @@ function parseDeveloperCliCommand(value: string): DeveloperCliCommand {
     value === "connectivity-status" ||
     value === "pairing" ||
     value === "morning-report" ||
-    value === "smoke-checklist"
+    value === "smoke-checklist" ||
+    value === "invite"
   ) {
     return value;
   }
 
   throw new Error(`Unknown command: ${value}`);
+}
+
+function parseInviteAction(value: string): "encode" | "decode" {
+  if (value === "encode" || value === "decode") {
+    return value;
+  }
+  throw new Error(`Unknown invite action: ${value}`);
 }
 
 function parseApprovalAction(value: string): DeveloperCliArgs["approvalAction"] {

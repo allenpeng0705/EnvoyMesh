@@ -469,4 +469,29 @@ describe("developer CLI", () => {
     const file = await readFile(outputPath, "utf8");
     expect(file).toContain("EnvoyMesh Multi-Machine Smoke Checklist");
   });
+
+  it("encodes and decodes WAN join invites", async () => {
+    const encoded = await runDeveloperCli([
+      "invite",
+      "encode",
+      "--bootstrap-peer",
+      "/ip4/10.0.0.1/tcp/4001/p2p/peer-a",
+      "--invite-bootstrap-preset",
+      "public-libp2p-am6",
+      "--invite-target-peer",
+      "12D3KooWPeer",
+    ]);
+    expect(encoded.exitCode).toBe(0);
+    const tokenLine = encoded.lines.find((line) => line.startsWith("token="));
+    expect(tokenLine).toBeTruthy();
+    const token = tokenLine!.slice("token=".length);
+
+    const decodedPositional = await runDeveloperCli(["invite", "decode", token]);
+    expect(decodedPositional.exitCode).toBe(0);
+    expect(decodedPositional.lines.join("\n")).toContain("\"bootstrapPeers\"");
+
+    const decodedFlag = await runDeveloperCli(["invite", "decode", "--invite-token", token]);
+    expect(decodedFlag.exitCode).toBe(0);
+    expect(decodedFlag.lines.join("\n")).toContain("\"bootstrapPresets\"");
+  });
 });

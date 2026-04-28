@@ -13,6 +13,96 @@ EnvoyMesh discovery is layered:
 
 The goal is resilience: local networks should connect quickly, while non-LAN environments should still converge through the WAN stack.
 
+## WAN + NAT: Rendezvous Model (Production Reality)
+
+Across the public internet, **“automatic discovery” still depends on rendezvous**: a small set of well-known, reachable coordination points plus a way to publish and learn **dialable** multiaddrs.
+
+EnvoyMesh’s WAN posture (`wan-default`) enables the standard libp2p building blocks:
+
+- **Bootstrap peers** join the wider network and discover relays/peers.
+- **DHT (client mode)** helps discover peers/addresses once the node is connected well enough to participate.
+- **Circuit relay (`/p2p-circuit`)** provides a path when both sides are behind strict NATs; relay is a coordination transport, not an application data bypass (streams remain encrypted at the libp2p layer).
+- **AutoNAT** helps the node learn what it looks like from the outside (observed addresses).
+- **DCUtR** attempts to upgrade relay-mediated connectivity to a direct path when possible.
+
+### What `wan-default` does *not* guarantee
+
+`wan-default` is **not** a promise that two arbitrary nodes will spontaneously learn each other’s current addresses with zero configuration.
+
+It is a **connectivity posture**: it turns on the WAN-capable mechanisms so a node *can* converge when at least one rendezvous path exists (public bootstrap/relay fleet, explicit bootstrap multiaddrs, or an out-of-band invite that seeds dialable information).
+
+### “Guaranteed rendezvous” for EnvoyMesh (recommended product shape)
+
+For WAN-first deployments, treat these as first-class requirements:
+
+1. **Operate a small bootstrap + relay fleet** (2–3 regions) with stable DNS names and operator-owned keys.
+2. **Cold start pairing** (invite link / QR / copied multiaddr) that carries enough information for the first dial (often includes a relay circuit template or rendezvous token).
+3. **Persistence + reprobe** so rediscovery survives IP changes (EnvoyMesh already persists discovery seeds; pairing should refresh seeds when needed).
+4. **Operator diagnostics** (`connectivity-status`, `p2p.trace`, dashboard health) that distinguish:
+   - cannot reach bootstrap
+   - can reach bootstrap but cannot obtain relay addresses
+   - relay works but direct upgrade fails (still OK)
+   - direct upgrade succeeds (best)
+
+This is the same practical architecture used by mature P2P systems: **coordination is allowed**, while **application payloads remain owner-controlled and signed** at the EnvoyMesh protocol layer.
+
+## Roadmap: DHT “Topics” (Capability Advertisements) — Not The Same As `discovery.request`
+
+EnvoyMesh already has a **protocol-level** discovery path for “ask a specific peer for matches” via signed `discovery.request` / `discovery.response` (story-driven / policy-gated).
+
+A **global** “topic” system is a different layer: a way to **publish and find** capability records in the wide area without already knowing a dialable multiaddr.
+
+**Target design (directional)**
+
+- Represent a capability topic as a stable string (often hashed), for example `capability:envoymesh.file_provider`.
+- Publish **small records** to the DHT under that topic key (typically “provider records”), containing:
+  - publisher **peer id**
+  - **freshness** (`createdAt`, TTL)
+  - **proof-of-control** references (signature over record; optional stake/reputation later)
+  - pointers to richer metadata (often still fetched via EMP `discovery.*` after you learn a candidate peer)
+
+**Why this is separate from `discovery.request`**
+
+- `discovery.request` is an **application conversation** after you have a peer target (or can resolve one).
+- DHT topics are **rendezvous metadata** to discover who might be worth contacting.
+
+**Prod dependency**
+
+This only becomes reliable with an operator **bootstrap + relay fleet** (your Lighthouse nodes), because home users cannot depend on overloaded public relays or flaky community bootstraps.
+
+**Shipped (scaffolding):** `@envoymesh/network` now includes deterministic topic hashing (`cidForCapabilityTopic`) plus helper APIs to publish/query provider records (`provideCapabilityTopic`, `findCapabilityTopicProviders`). Query calls are bounded with a timeout by default so they settle instead of streaming forever in sparse networks.
+
+## Roadmap: “Ghost” Discovery Signals — Signing Is Necessary, Not Sufficient
+
+At the transport layer, libp2p connections are encrypted (Noise in this repo’s mesh setup).
+
+At the EnvoyMesh protocol layer, discovery-ish intents must still be treated as **untrusted input** until policy says otherwise:
+
+- **Signing** prevents trivial spoofing and ties statements to keys/certs (`system.signal` participates in identity continuity).
+- **Policy + rate limits + trust tiers** prevent flooding and “truthy noise” even from valid signatures.
+
+Threat-model implications to document explicitly:
+
+- Sybil identities can still sign messages.
+- Capability advertisements must include **freshness**, **scopes**, and **intent-specific limits**.
+- Abuse controls belong in inbound guards + audits (correlation), not “crypto alone”.
+
+## Roadmap: QUIC As Additive Transport (Parallel To TCP)
+
+QUIC is a strong modern default for WAN resilience (better loss behavior than TCP-only stacks in many environments; connection migration is valuable on laptops switching networks).
+
+For EnvoyMesh, QUIC should land as:
+
+- **additive**: TCP remains supported for compatibility and debugging
+- **preference policy**: prefer QUIC multiaddrs when present, fall back cleanly *(not wired into dial sorting yet — today QUIC is parallel; TCP-first dials still behave as before)*
+- **release gates**: macOS / Windows / Linux smoke matrix + firewall/VPN adversarial notes
+
+**Shipped (opt-in):** `@chainsafe/libp2p-quic` is registered alongside TCP when enabled; each TCP listen address gets a companion `/udp/.../quic-v1` listener. Enable with **`--quic`** / **`--no-quic`**, YAML `discovery.quic`, or **`ENVOYMESH_QUIC=1`**. *(Native QUIC bindings are platform-specific; CI covers the integration test where the runner matches a published `@chainsafe/libp2p-quic-*` binary.)*
+
+When reading **`EnvoyMesh.multiaddrs`**, libp2p typically appends **`/p2p/<self>`** on each announced address. **Do not** concatenate an extra `/p2p/<peer>` when reusing those strings as a dial target, or transports will see a malformed “double `/p2p/`” multiaddr.
+
+Implementation notes are intentionally tracked in [`docs/implementation-plan.md`](./implementation-plan.md#phase-4f-wan-capability-topics-and-transport-hardening) (**Phase 4F**) because this touches `packages/network` transport wiring and operational testing burden.
+
 ## Discovery Profiles
 
 EnvoyMesh supports profile-level defaults:
@@ -48,6 +138,14 @@ Or node config YAML:
 discovery:
   profile: wan-default
 ```
+
+When DHT is enabled, the node now also runs an **automatic capability-topic cycle**:
+
+- derives topics from local device capabilities (`capability:<name>`)
+- publishes provider records on startup and periodically
+- queries provider records on a bounded timeout and persists discovered multiaddrs as discovery seeds
+
+This improves WAN auto-discovery convergence without requiring manual `discovery.request` CLI calls for every cold start.
 
 ## Bootstrap Peers And Presets
 
@@ -94,6 +192,60 @@ Built-in preset names:
 - `public-libp2p`
 - `public-libp2p-am6`
 - `public-libp2p-am7`
+
+### Operator-defined bootstrap presets (YAML)
+
+For WAN-first deployments, you should maintain your own small preset registry (your bootstrap + relay fleet), and reference preset names from node config / flags.
+
+YAML file shape (map of preset name → list of multiaddrs):
+
+```yaml
+my-org:
+  - /dns4/bootstrap.example.com/tcp/443/wss/p2p/12D3KooWExample
+  - /dns4/relay.example.com/tcp/443/wss/p2p/12D3KooWRelay
+```
+
+Wire it in:
+
+```bash
+npm run node:dev -- --bootstrap-presets-file ./bootstrap-presets.yaml --bootstrap-preset my-org
+```
+
+Or node config YAML:
+
+```yaml
+discovery:
+  bootstrapPresetsFiles:
+    - ./bootstrap-presets.yaml
+  bootstrapPresets:
+    - my-org
+```
+
+Env:
+
+```bash
+ENVOYMESH_BOOTSTRAP_PRESETS_FILES="./bootstrap-presets.yaml"
+```
+
+### WAN cold start: join-invite tokens
+
+For strict NAT / no multicast environments, use a one-time **join-invite** payload to seed bootstrap peers and optional preset names.
+
+Generate:
+
+```bash
+npm run cli -w @envoymesh/node -- invite encode --bootstrap-peer "<multiaddr>" --invite-bootstrap-preset public-libp2p-am6
+```
+
+Join (receiver):
+
+```bash
+npm run node:dev -- --join-invite "<token-from-invite-encode>"
+```
+
+Notes:
+
+- Invite tokens are **unsigned** in v1 (tamperable). Treat them like a join URL: short-lived, sent over a trusted channel, and rotate if leaked.
 
 ## Known-Good Seed Persistence (Phase D Start)
 
@@ -169,8 +321,10 @@ npm run node:dev -- --profile ./data/primary --listen /ip4/0.0.0.0/tcp/0 --p2p-d
 WAN-focused:
 
 ```bash
-npm run node:dev -- --profile ./data/primary --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap-preset public-libp2p --connectivity-strict --p2p-debug
+npm run node:dev -- --profile ./data/primary --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap-preset public-libp2p --bootstrap-preset public-libp2p-am6 --bootstrap-preset public-libp2p-am7 --connectivity-strict --p2p-debug
 ```
+
+For WAN-first testing, prefer **explicit org bootstrap/relay multiaddrs** in addition to public presets. Public presets are convenient for development, but production WAN reliability should not depend on them alone.
 
 ## Common Failure Modes
 

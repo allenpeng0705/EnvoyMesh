@@ -26,6 +26,9 @@ discovery:
   autonat: true
   dcutr: true
 
+  # Optional: QUIC transport alongside TCP (adds matching /udp/.../quic-v1 listeners). Env: ENVOYMESH_QUIC=1
+  # quic: true
+
   # Emit p2p.trace lifecycle telemetry into audit logs
   p2pDebug: true
 
