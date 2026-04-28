@@ -63,6 +63,7 @@ export interface NodeArgs {
 }
 
 export function parseNodeArgs(argv: string[]): NodeArgs {
+  argv = normalizeWin32NpmArgv(argv);
   const args: NodeArgs = {
     profileDir: "./data/default",
     discoveryProfile: "lan-fast",
@@ -355,6 +356,56 @@ function parseBootstrapPresetName(value: string): string {
     throw new Error(`Invalid bootstrap preset: ${value}`);
   }
   return trimmed;
+}
+
+/**
+ * On Windows, PowerShell/npm often strip `--long-flag` prefixes so only bare values reach `tsx`
+ * (e.g. profile path first, multiaddrs second). If argv has no `--` tokens but starts with a
+ * Windows absolute path, reconstruct the flag form so `parseNodeArgs` works.
+ */
+export function normalizeWin32NpmArgv(argv: string[]): string[] {
+  if (argv.length === 0) {
+    return argv;
+  }
+  if (argv.some((a) => a.startsWith("--"))) {
+    return argv;
+  }
+  const first = argv[0];
+  if (!first || !/^[A-Za-z]:[/\\]|^\\\\/.test(first)) {
+    return argv;
+  }
+  const out: string[] = ["--profile", first];
+  let i = 1;
+
+  if (i < argv.length && argv[i].startsWith("/")) {
+    out.push("--listen", argv[i]);
+    i += 1;
+  }
+  if (i < argv.length && (argv[i] === "wan-default" || argv[i] === "lan-fast")) {
+    out.push("--discovery-profile", argv[i]);
+    i += 1;
+  }
+  while (i < argv.length && argv[i].startsWith("/")) {
+    out.push("--bootstrap", argv[i]);
+    i += 1;
+  }
+  while (i < argv.length) {
+    const a = argv[i];
+    if (a === "p2p-debug") {
+      out.push("--p2p-debug");
+      i += 1;
+      continue;
+    }
+    try {
+      parseBootstrapPresetName(a);
+      out.push("--bootstrap-preset", a);
+      i += 1;
+    } catch {
+      out.push(a);
+      i += 1;
+    }
+  }
+  return out;
 }
 
 function applyDiscoveryProfileDefaults(args: NodeArgs, customPresetRegistry: BootstrapPresetRegistry): void {

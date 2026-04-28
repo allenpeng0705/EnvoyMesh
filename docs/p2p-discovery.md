@@ -334,7 +334,11 @@ npm run node:dev -- `
   --p2p-debug
 ```
 
-If `tsx src/index.ts` logs **unknown argument `C:\...\win_profile`** (values without `--profile` prefixes), npm/cmd dropped the flags: **`npm run node:dev`** is now wired with a single `npm exec` layer so forwarded flags should propagate. If it still happens, set the profile via env and pass the rest on the command line:
+If `tsx src/index.ts` logs **unknown argument `C:\...\win_profile`** (values without `--profile` prefixes), PowerShell/npm on Windows stripped the `--…` tokens before Node saw them.
+
+The **`parseNodeArgs`** path includes a small **positional fallback** when every token is bare values starting with a Windows absolute path (`C:\…`): it restores `--profile`, `--listen`, `--discovery-profile`, `--bootstrap`, `--bootstrap-preset`, and a trailing positional `p2p-debug`.
+
+If that fallback does not fit your invocation, set the profile via env and keep the remaining flags minimal:
 
 ```powershell
 $env:ENVOYMESH_PROFILE = "$env:USERPROFILE\envoymesh\win_profile"

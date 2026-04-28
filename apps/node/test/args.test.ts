@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { parseNodeArgs } from "../src/args.js";
+import { normalizeWin32NpmArgv, parseNodeArgs } from "../src/args.js";
 
 describe("node args", () => {
   it("parses bond.request flags", () => {
@@ -158,6 +158,40 @@ describe("node args", () => {
   it("parses QUIC flags", () => {
     expect(parseNodeArgs(["--quic"]).enableQuic).toBe(true);
     expect(parseNodeArgs(["--quic", "--no-quic"]).enableQuic).toBe(false);
+  });
+
+  it("normalizeWin32NpmArgv preserves argv when any --flag is present", () => {
+    expect(normalizeWin32NpmArgv(["--profile", "C:\\a", "/ip4/x"])).toEqual(["--profile", "C:\\a", "/ip4/x"]);
+  });
+
+  it("reconstructs Windows/npm-stripped positional argv (PowerShell) into flags", () => {
+    const parsed = parseNodeArgs([
+      "C:\\Users\\PS\\envoymesh\\win_profile",
+      "/ip4/0.0.0.0/tcp/4002",
+      "wan-default",
+      "/ip4/172.20.10.3/tcp/4001/p2p/12D3KooWPaa7vGktiUztBoJ1WWdfRJWJzDnu9iBNmoMRv2Kzcgbq",
+      "public-libp2p",
+    ]);
+    expect(parsed.profileDir).toBe("C:\\Users\\PS\\envoymesh\\win_profile");
+    expect(parsed.listen).toEqual(["/ip4/0.0.0.0/tcp/4002"]);
+    expect(parsed.discoveryProfile).toBe("wan-default");
+    expect(parsed.bootstrapPeers).toContain(
+      "/ip4/172.20.10.3/tcp/4001/p2p/12D3KooWPaa7vGktiUztBoJ1WWdfRJWJzDnu9iBNmoMRv2Kzcgbq",
+    );
+    expect(parsed.bootstrapPresets).toContain("public-libp2p");
+  });
+
+  it("reconstructs npm-stripped argv with positional p2p-debug token", () => {
+    expect(
+      parseNodeArgs([
+        "C:\\Users\\TEST\\profile",
+        "/ip4/0.0.0.0/tcp/4002",
+        "wan-default",
+        "/ip4/10.0.0.2/tcp/4001/p2p/12D3KooWTEST",
+        "public-libp2p",
+        "p2p-debug",
+      ]).p2pDebug,
+    ).toBe(true);
   });
 
   it("reads QUIC from yaml and allows env override", () => {
