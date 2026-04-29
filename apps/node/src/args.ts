@@ -219,6 +219,8 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.pairNote = readValue(argv, ++index, arg);
     } else if (arg === "--relay-peers-query") {
       args.relayPeersQueryTarget = readValue(argv, ++index, arg);
+    } else if (arg === "--auto-relay-peers-query") {
+      // No-op: handled directly in discovery-dashboard.ts parseArgs
     } else if (arg === "--message") {
       args.pingMessage = readValue(argv, ++index, arg);
     } else if (arg === "--help" || arg === "-h") {
