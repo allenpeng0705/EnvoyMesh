@@ -176,7 +176,38 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMes
   }
 }
 
+/**
+ * Windows npm sometimes forwards `npm run ... -- --mode mdns --timeout-ms 20000` as bare
+ * `mdns 20000`, which would otherwise throw "Unknown argument". Accept that shorthand.
+ */
+function normalizeSmokeArgv(argv: string[]): string[] {
+  if (argv.length === 0) {
+    return argv;
+  }
+
+  const head = argv[0];
+  if (head.startsWith("-")) {
+    return argv;
+  }
+
+  if (head !== "mdns" && head !== "advanced") {
+    return argv;
+  }
+
+  const normalized: string[] = ["--mode", head];
+  let restStart = 1;
+
+  if (argv.length >= 2 && /^\d+$/.test(argv[1])) {
+    normalized.push("--timeout-ms", argv[1]);
+    restStart = 2;
+  }
+
+  return [...normalized, ...argv.slice(restStart)];
+}
+
 function parseSmokeArgs(argv: string[]): SmokeArgs {
+  argv = normalizeSmokeArgv(argv);
+
   const args: SmokeArgs = {
     mode: "mdns",
     timeoutMs: 15000,
@@ -239,10 +270,13 @@ Usage:
 
 Options:
   --mode <mdns|advanced>       Smoke mode. Default: mdns
+  Shorthand (after npm mangling): mdns [<timeoutMs>] or advanced [<timeoutMs>] ...
   --listen <multiaddr>         Listen address. Default: /ip4/0.0.0.0/tcp/0
   --timeout-ms <ms>            Timeout. Default: 15000
   --mdns-interval-ms <ms>      mDNS query interval for mdns mode. Default: 500
   --bootstrap <multiaddr>      Bootstrap peer for advanced mode. Repeatable.
   --expect-relay-address       Require a /p2p-circuit address in advanced mode.
+
+Windows: if npm drops --flags, run npm run poc:discovery:mdns -w @envoymesh/node (see apps/node/package.json).
 `);
 }

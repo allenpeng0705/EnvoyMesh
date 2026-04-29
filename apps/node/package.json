@@ -12,6 +12,7 @@
     "cli": "tsx src/cli.ts",
     "connectivity:smoke": "tsx src/connectivity-smoke.ts",
     "poc:discovery": "tsx src/connectivity-smoke.ts",
+    "poc:discovery:mdns": "tsx src/connectivity-smoke.ts --mode mdns --timeout-ms 20000",
     "social:challenge": "tsx src/social-challenge.ts",
     "smoke:local-two-node": "tsx src/local-two-node-smoke.ts"
   },

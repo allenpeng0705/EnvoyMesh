@@ -43,6 +43,12 @@ If npm reports **`Missing script: "poc:discovery"`**, your tree is older than th
 npm run connectivity:smoke -w @envoymesh/node -- --mode mdns --timeout-ms 20000
 ```
 
+**Windows:** some npm versions collapse `--mode` / `--timeout-ms` into positional args (`tsx ... mdns 20000`). The smoke script accepts that shorthand after our fix—rerun the same command—or avoid npm argument forwarding entirely:
+
+```bash
+npm run poc:discovery:mdns -w @envoymesh/node
+```
+
 Or run the smoke entry directly from `apps/node` (no workspace script needed):
 
 ```bash
