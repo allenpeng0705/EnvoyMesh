@@ -179,6 +179,8 @@ export async function handleInboundRelayPeersIntent(input: {
           multiaddrs: [], // Relay doesn't track per-peer multiaddrs; requester can discover via DHT
         }));
 
+      console.log(`[relay-tracked] relay.peers.request from ${remotePeerId}, returning ${otherPeers.length} peers: ${otherPeers.map(p => p.peerId).join(", ")}`);
+
       const { createRelayPeersResponsePayload } = await import("@envoymesh/protocol");
       const responsePayload = createRelayPeersResponsePayload({
         requestMessageId: envelope.messageId,

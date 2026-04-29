@@ -538,11 +538,13 @@ export class EnvoyMesh {
       typedNode.addEventListener("peer:connect", (event: any) => {
         const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
         this.relayConnectedPeers.add(remotePeerId);
+        console.log(`[relay-tracked] peer:connect ${remotePeerId} (total: ${this.relayConnectedPeers.size})`);
       });
 
       typedNode.addEventListener("peer:disconnect", (event: any) => {
         const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
         this.relayConnectedPeers.delete(remotePeerId);
+        console.log(`[relay-tracked] peer:disconnect ${remotePeerId} (total: ${this.relayConnectedPeers.size})`);
       });
     }
 

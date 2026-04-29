@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { loadOrCreateNodeProfile } from "@envoymesh/local-store";
-import { derivePeerId } from "@envoymesh/identity";
+import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import { EnvoyMesh, type DiscoveredMeshPeer } from "@envoymesh/network";
+import { createUnsignedEnvelope } from "@envoymesh/protocol";
 import { parseNodeArgs, printHelp } from "./args.js";
 
 const CLEAR = "\x1b[2J\x1b[H";
@@ -39,6 +40,7 @@ function parseArgs(argv: string[]): {
   enableAutoNat: boolean;
   enableDcutr: boolean;
   p2pDebug: boolean;
+  autoRelayPeersQuery: boolean;
 } {
   const nodeArgs = parseNodeArgs(argv);
 
@@ -52,6 +54,7 @@ function parseArgs(argv: string[]): {
     enableAutoNat: nodeArgs.enableAutoNat,
     enableDcutr: nodeArgs.enableDcutr,
     p2pDebug: nodeArgs.p2pDebug,
+    autoRelayPeersQuery: argv.includes("--auto-relay-peers-query"),
   };
 }
 
@@ -122,6 +125,25 @@ Examples:
     lastEventAt = Date.now();
   });
 
+  // Handle relay.peers.response - add peers from relay query
+  mesh.onMessage(async ({ envelope }) => {
+    if (envelope.intent === "relay.peers.response") {
+      const { parseRelayPeersResponsePayload } = await import("@envoymesh/protocol");
+      const payload = parseRelayPeersResponsePayload(envelope.payload);
+      console.log(`[auto-relay-query] received relay.peers.response with ${payload.peers.length} peers`);
+      for (const relayPeer of payload.peers) {
+        peers.set(relayPeer.peerId, {
+          peerId: relayPeer.peerId,
+          addrs: relayPeer.multiaddrs,
+          discoveredAt: Date.now(),
+          relayed: true, // These are relay-discovered peers
+        });
+        relayCount++;
+        lastEventAt = Date.now();
+      }
+    }
+  });
+
   await mesh.start();
   startedAt = Date.now();
 
@@ -141,6 +163,29 @@ Examples:
 
   // Initial render
   renderDashboard({ mesh, peers, relayCount, lastEventAt, startedAt, selfMultiaddrs, hasRelay, hasDht, args });
+
+  // Auto query relay for peers if enabled
+  if (args.autoRelayPeersQuery && args.bootstrapPeers.length > 0) {
+    setInterval(async () => {
+      for (const bootstrapPeer of args.bootstrapPeers) {
+        try {
+          const unsignedEnvelope = createUnsignedEnvelope({
+            senderPeerId: mesh.peerId,
+            senderPublicKey: profile.device.publicKeyPem,
+            senderRole: "system",
+            recipientPeerId: bootstrapPeer.startsWith("/") ? bootstrapPeer : undefined,
+            intent: "relay.peers.request",
+            payload: {},
+          });
+          const signedEnvelope = signUnsignedEnvelope(unsignedEnvelope, profile.device.privateKeyPem);
+          await mesh.send(bootstrapPeer, signedEnvelope);
+          console.log(`[auto-relay-query] sent relay.peers.request to ${bootstrapPeer}`);
+        } catch (err) {
+          // Ignore errors, just retry next interval
+        }
+      }
+    }, 10_000); // Query every 10 seconds
+  }
 
   // Update every 2 seconds
   const interval = setInterval(() => {
