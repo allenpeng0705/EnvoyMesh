@@ -145,13 +145,30 @@ async function quarantineCorruptDiscoverySeedFile(path: string, raw: string, cau
   }
 }
 
+/**
+ * Replace `path` with the fully written `tmp`. On Windows, `rename(tmp, path)` often
+ * returns EPERM when `path` already exists; delete the destination first (portable pattern).
+ */
+async function renameTempToPath(tmp: string, path: string): Promise<void> {
+  if (process.platform === "win32") {
+    try {
+      await unlink(path);
+    } catch (error) {
+      if (!isMissingFileError(error)) {
+        throw error;
+      }
+    }
+  }
+  await rename(tmp, path);
+}
+
 async function writeDiscoverySeedFile(path: string, file: DiscoverySeedFile): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const payload = JSON.stringify(file, null, 2);
   const tmp = join(dirname(path), `.discovery-seeds.${randomUUID()}.tmp`);
   try {
     await writeFile(tmp, payload, { mode: 0o600 });
-    await rename(tmp, path);
+    await renameTempToPath(tmp, path);
   } catch (error) {
     try {
       await unlink(tmp);
