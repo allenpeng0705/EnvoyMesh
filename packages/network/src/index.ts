@@ -98,6 +98,8 @@ export class EnvoyMesh {
   private readonly handlers = new Set<MeshMessageHandler>();
   private readonly dataHandlers = new Set<MeshDataTransferHandler>();
   private readonly peerDiscoveryHandlers = new Set<MeshPeerDiscoveryHandler>();
+  /** Peer IDs of clients connected via this relay server (when enableRelayServer is true). */
+  private readonly relayConnectedPeers = new Set<string>();
   private node?: Libp2p;
 
   constructor(private readonly options: EnvoyMeshOptions = {}) {}
@@ -214,6 +216,14 @@ export class EnvoyMesh {
     return this.requireNode()
       .getMultiaddrs()
       .map((addr) => addr.toString());
+  }
+
+  /**
+   * Returns the list of peer IDs currently connected via this relay server.
+   * Only populated when enableRelayServer is true.
+   */
+  getConnectedRelayPeerIds(): string[] {
+    return [...this.relayConnectedPeers];
   }
 
   /**
@@ -515,15 +525,28 @@ export class EnvoyMesh {
   }
 
   private attachP2pDebug(node: Libp2p): void {
-    if (!this.options.enableP2pDebug) {
-      return;
-    }
-
     const typedNode = node as Libp2p & {
       addEventListener?: (type: string, handler: (event: any) => void) => void;
     };
 
     if (typeof typedNode.addEventListener !== "function") {
+      return;
+    }
+
+    // Track relay-connected peers when relay server is enabled
+    if (this.options.enableRelayServer) {
+      typedNode.addEventListener("peer:connect", (event: any) => {
+        const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
+        this.relayConnectedPeers.add(remotePeerId);
+      });
+
+      typedNode.addEventListener("peer:disconnect", (event: any) => {
+        const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
+        this.relayConnectedPeers.delete(remotePeerId);
+      });
+    }
+
+    if (!this.options.enableP2pDebug) {
       return;
     }
 

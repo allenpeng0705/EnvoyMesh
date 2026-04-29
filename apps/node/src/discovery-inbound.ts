@@ -18,6 +18,10 @@ export type DiscoveryInboundResult =
   | { ok: true; responsePayload?: DiscoveryResponsePayload }
   | { ok: false; reason: string };
 
+export type RelayPeersInboundResult =
+  | { ok: true; responsePayload?: import("@envoymesh/protocol").RelayPeersResponsePayload }
+  | { ok: false; reason: string };
+
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 10;
 const discoveryRequestRate = new Map<string, number[]>();
@@ -150,6 +154,81 @@ export async function handleInboundDiscoveryIntent(input: {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, reason: `invalid discovery payload: ${message}` };
+  }
+}
+
+export async function handleInboundRelayPeersIntent(input: {
+  envelope: EnvoyEnvelope;
+  profile: NodeProfile;
+  remotePeerId: string;
+  receivedAt: number;
+  correlationId: string | undefined;
+  taskStore: LocalTaskStore;
+  relayPeerIds: string[];
+}): Promise<RelayPeersInboundResult> {
+  const { envelope, profile, remotePeerId, receivedAt, correlationId, taskStore, relayPeerIds } = input;
+
+  try {
+    if (envelope.intent === "relay.peers.request") {
+      // Build list of other peers connected via this relay (exclude the requester)
+      const otherPeers = relayPeerIds
+        .filter((pid) => pid !== remotePeerId)
+        .map((peerId) => ({
+          peerId,
+          ownerId: "unknown", // Relay doesn't track ownerId; requester should query DHT or send signal
+          multiaddrs: [], // Relay doesn't track per-peer multiaddrs; requester can discover via DHT
+        }));
+
+      const { createRelayPeersResponsePayload } = await import("@envoymesh/protocol");
+      const responsePayload = createRelayPeersResponsePayload({
+        requestMessageId: envelope.messageId,
+        peers: otherPeers,
+      });
+
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.verified",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "verified",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "allow",
+          summary: `relay.peers.request: returning ${otherPeers.length} relay-connected peer(s)`,
+          createdAt: envelope.createdAt,
+        }),
+      );
+
+      return { ok: true, responsePayload };
+    }
+
+    if (envelope.intent === "relay.peers.response") {
+      const { parseRelayPeersResponsePayload } = await import("@envoymesh/protocol");
+      const payload = parseRelayPeersResponsePayload(envelope.payload);
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.verified",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "verified",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "record",
+          summary: `relay.peers.response: received ${payload.peers.length} relay peer(s)`,
+          createdAt: envelope.createdAt,
+        }),
+      );
+      return { ok: true };
+    }
+
+    return { ok: false, reason: "not a relay.peers intent" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, reason: `invalid relay.peers payload: ${message}` };
   }
 }
 

@@ -1,0 +1,29 @@
+{
+  "owner": {
+    "ownerId": "envoy:owner:BdhQJKyIBP-qbczc1EMbiy1mxxIIKqkJQNzt80JxVo8",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAe14RORaFcvw7dqDJ2C/VEMzJajzUZZ1K7RqRWTgC6sg=\n-----END PUBLIC KEY-----\n",
+    "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIGWKmonB0Mae7ylaeE65+ehwvfzHelObJqyWO9RyI2Dq\n-----END PRIVATE KEY-----\n"
+  },
+  "device": {
+    "deviceId": "envoy:device:TEoJsJmrNrHG7qMLajwvYeupndATDRk8qOesuuItXtI",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAmJRzDiaenP8UVmUDMHOYsnWeNIP7GGBlQABrBGnYsXA=\n-----END PUBLIC KEY-----\n",
+    "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEILIgZDMgCKrf2ajkzWHe5Fa/Lpj2NgZtF2o6Zs+BF+5L\n-----END PRIVATE KEY-----\n"
+  },
+  "deviceCertificate": {
+    "version": "0.1",
+    "certificateId": "cert_06a6da3d-2d05-44f4-b2d7-4e3826008acf",
+    "ownerId": "envoy:owner:BdhQJKyIBP-qbczc1EMbiy1mxxIIKqkJQNzt80JxVo8",
+    "deviceId": "envoy:device:TEoJsJmrNrHG7qMLajwvYeupndATDRk8qOesuuItXtI",
+    "devicePublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAmJRzDiaenP8UVmUDMHOYsnWeNIP7GGBlQABrBGnYsXA=\n-----END PUBLIC KEY-----\n",
+    "deviceProfile": "primary",
+    "capabilities": [
+      "mesh.listen",
+      "mesh.discovery",
+      "message.send",
+      "device.sync"
+    ],
+    "issuedAt": "2026-04-29T15:36:51.531Z",
+    "expiresAt": null,
+    "signature": "kO9UAUSejzBeSJpdD2aBGAT_3Xsshc-UT3jJz-lzy2Rlyh-hFZoBhZvwhwxNWv-F2M8ScPO-RbEtstjVWkiGAA"
+  }
+}

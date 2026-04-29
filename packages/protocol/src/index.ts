@@ -13,6 +13,8 @@ export const EnvoyIntentSchema = z.enum([
   "bond.challenge.response",
   "discovery.request",
   "discovery.response",
+  "relay.peers.request",
+  "relay.peers.response",
   "chat.message",
   "knowledge.query",
   "knowledge.response",
@@ -292,6 +294,23 @@ export const DiscoveryResponsePayloadSchema = z.object({
   truncated: z.boolean().default(false),
 });
 
+/** `relay.peers.request` — ask a relay server for peers connected via this relay. */
+export const RelayPeersRequestPayloadSchema = z.object({});
+
+/** Info about a peer connected via a relay, returned in `relay.peers.response`. */
+export const RelayPeerInfoSchema = z.object({
+  peerId: z.string().min(1),
+  ownerId: z.string().min(1),
+  /** Typically /p2p-circuit addresses allowing dial through the relay. */
+  multiaddrs: z.array(z.string().min(1)).default([]),
+});
+
+/** `relay.peers.response` — list of peers connected to the same relay as the queried relay. */
+export const RelayPeersResponsePayloadSchema = z.object({
+  requestMessageId: z.string().min(1),
+  peers: z.array(RelayPeerInfoSchema).default([]),
+});
+
 export const ChatMessagePayloadSchema = z.object({
   senderOwnerId: z.string().min(1),
   text: z.string().min(1).max(4000),
@@ -561,6 +580,9 @@ export type BondChallengeResponsePayload = z.infer<typeof BondChallengeResponseP
 export type DiscoveryRequestPayload = z.infer<typeof DiscoveryRequestPayloadSchema>;
 export type DiscoveryMatch = z.infer<typeof DiscoveryMatchSchema>;
 export type DiscoveryResponsePayload = z.infer<typeof DiscoveryResponsePayloadSchema>;
+export type RelayPeersRequestPayload = z.infer<typeof RelayPeersRequestPayloadSchema>;
+export type RelayPeerInfo = z.infer<typeof RelayPeerInfoSchema>;
+export type RelayPeersResponsePayload = z.infer<typeof RelayPeersResponsePayloadSchema>;
 export type ChatMessagePayload = z.infer<typeof ChatMessagePayloadSchema>;
 export type MandateAction = z.infer<typeof MandateActionSchema>;
 export type MandatePeerScope = z.infer<typeof MandatePeerScopeSchema>;
@@ -708,6 +730,14 @@ export function parseDiscoveryRequestPayload(input: unknown): DiscoveryRequestPa
 
 export function parseDiscoveryResponsePayload(input: unknown): DiscoveryResponsePayload {
   return DiscoveryResponsePayloadSchema.parse(input);
+}
+
+export function parseRelayPeersRequestPayload(input: unknown): RelayPeersRequestPayload {
+  return RelayPeersRequestPayloadSchema.parse(input);
+}
+
+export function parseRelayPeersResponsePayload(input: unknown): RelayPeersResponsePayload {
+  return RelayPeersResponsePayloadSchema.parse(input);
 }
 
 export function parseChatMessagePayload(input: unknown): ChatMessagePayload {
@@ -909,6 +939,20 @@ export function createDiscoveryResponsePayload(
     responderOwnerId: input.responderOwnerId,
     matches: input.matches ?? [],
     truncated: input.truncated ?? false,
+  });
+}
+
+export interface CreateRelayPeersResponsePayloadInput {
+  requestMessageId: string;
+  peers?: RelayPeerInfo[];
+}
+
+export function createRelayPeersResponsePayload(
+  input: CreateRelayPeersResponsePayloadInput,
+): RelayPeersResponsePayload {
+  return RelayPeersResponsePayloadSchema.parse({
+    requestMessageId: input.requestMessageId,
+    peers: input.peers ?? [],
   });
 }
 

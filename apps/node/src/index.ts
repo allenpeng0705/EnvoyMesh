@@ -51,7 +51,7 @@ import { parseNodeArgs } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
-import { handleInboundDiscoveryIntent } from "./discovery-inbound.js";
+import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent } from "./discovery-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
@@ -393,6 +393,67 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
         outcome: "record",
         summary: `Sent discovery.response with ${discovery.responsePayload.matches.length} match(es).`,
       });
+    }
+    return;
+  }
+
+  if (envelope.intent === "relay.peers.request" || envelope.intent === "relay.peers.response") {
+    const relayPeerIds = mesh.getConnectedRelayPeerIds();
+    const relayPeers = await handleInboundRelayPeersIntent({
+      envelope,
+      profile,
+      remotePeerId,
+      receivedAt,
+      correlationId,
+      taskStore,
+      relayPeerIds,
+    });
+    if (!relayPeers.ok) {
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.rejected",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "rejected",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "deny",
+          summary: `Rejected ${envelope.intent}: ${relayPeers.reason}.`,
+          createdAt: envelope.createdAt,
+        }),
+      );
+      console.warn(`[rejected relay.peers] ${envelope.intent}: ${relayPeers.reason}`);
+      return;
+    }
+
+    if (envelope.intent === "relay.peers.request" && relayPeers.responsePayload) {
+      const unsignedResponse = createUnsignedEnvelope({
+        senderPeerId: derivePeerId(profile.device.publicKeyPem),
+        senderPublicKey: profile.device.publicKeyPem,
+        recipientPeerId: envelope.senderPeerId,
+        intent: "relay.peers.response",
+        payload: relayPeers.responsePayload,
+        correlationId,
+      });
+      const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
+      const latencyMs = await mesh.send(envelope.senderPeerId, signedResponse);
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.sent",
+          intent: signedResponse.intent,
+          messageId: signedResponse.messageId,
+          correlationId: signedResponse.correlationId,
+          remotePeerId: envelope.senderPeerId,
+          direction: "outbound",
+          latencyMs,
+          protocol: ENVOY_MESSAGE_PROTOCOL,
+          outcome: "record",
+          summary: `Sent relay.peers.response with ${relayPeers.responsePayload.peers.length} peer(s).`,
+          createdAt: signedResponse.createdAt,
+        }),
+      );
     }
     return;
   }
@@ -872,6 +933,37 @@ if (resolvedArgs.signalTarget) {
     }),
   );
   console.log(`[sent signal] target ${resolvedArgs.signalTarget}`);
+}
+
+if (resolvedArgs.relayPeersQueryTarget) {
+  const unsignedEnvelope = createUnsignedEnvelope({
+    senderPeerId: derivePeerId(profile.device.publicKeyPem),
+    senderPublicKey: profile.device.publicKeyPem,
+    senderRole: "system",
+    recipientPeerId: resolvedArgs.relayPeersQueryTarget,
+    intent: "relay.peers.request",
+    payload: {},
+    correlationId: resolvedArgs.correlationId,
+  });
+  const signedEnvelope = signUnsignedEnvelope(unsignedEnvelope, profile.device.privateKeyPem);
+
+  const latencyMs = await mesh.send(resolvedArgs.relayPeersQueryTarget, signedEnvelope);
+  await taskStore.appendAuditEvent(
+    createAuditEvent({
+      type: "message.sent",
+      intent: signedEnvelope.intent,
+      messageId: signedEnvelope.messageId,
+      correlationId: signedEnvelope.correlationId,
+      remotePeerId: resolvedArgs.relayPeersQueryTarget,
+      direction: "outbound",
+      latencyMs,
+      protocol: ENVOY_MESSAGE_PROTOCOL,
+      outcome: "record",
+      summary: "Sent relay.peers.request.",
+      createdAt: signedEnvelope.createdAt,
+    }),
+  );
+  console.log(`[sent relay.peers.request] target ${resolvedArgs.relayPeersQueryTarget}`);
 }
 
 for (const outbound of buildOutboundCliEnvelopes(resolvedArgs, profile)) {

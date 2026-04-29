@@ -61,6 +61,7 @@ export interface NodeArgs {
   dataRelativePath?: string;
   pairRequestTarget?: string;
   pairNote?: string;
+  relayPeersQueryTarget?: string;
 }
 
 export function parseNodeArgs(argv: string[]): NodeArgs {
@@ -216,6 +217,8 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.pairRequestTarget = readValue(argv, ++index, arg);
     } else if (arg === "--pair-note") {
       args.pairNote = readValue(argv, ++index, arg);
+    } else if (arg === "--relay-peers-query") {
+      args.relayPeersQueryTarget = readValue(argv, ++index, arg);
     } else if (arg === "--message") {
       args.pingMessage = readValue(argv, ++index, arg);
     } else if (arg === "--help" || arg === "-h") {
