@@ -80,31 +80,140 @@ If Stage A passes on Mac but never on Windows (same LAN expectations later), ens
 
 ## Stage B — Bootstrap + DHT peer discovery
 
-Proves attachment to the overlay: **one** node process connects to configured bootstrap peers and observes **at least one discovered peer** via the discovery pipeline (not necessarily a full dial to that peer in this script).
+### What this proves
 
-```bash
-npm run poc:discovery -w @envoymesh/node -- --mode advanced --bootstrap "<bootstrap-multiaddr>" --timeout-ms 60000
-```
+**One** Node process starts EnvoyMesh with the **WAN-style stack** (DHT client mode, relay transport, AutoNAT, DCUtR — same as `runAdvancedConnectivitySmoke` in `connectivity-smoke.ts`). It dials at least one **bootstrap** peer, joins ongoing overlay activity, and your node reports **`peer:discovery`** with **at least one remote peer id**.
 
-**Expected:**
+This does **not** guarantee a stable dial to a specific friend; it proves **cold-start overlay attachment**. For production you still maintain your own bootstrap/relay fleet — see [p2p-discovery](./p2p-discovery.md).
+
+### Prerequisites
+
+1. **Outbound internet** allowed from the machine (no proxy blocking arbitrary TCP to bootstrap hosts unless you configure one).
+2. **Firewall** allows Node/`tsx` outbound (Windows: Private network profile is usually enough).
+3. **VPN off** if it breaks UDP/DHT path to public bootstrappers (same guidance as Stage A when possible).
+
+### Bootstrap multiaddr
+
+You must pass a full libp2p **multiaddr** that includes `/p2p/<PeerId>`.
+
+The EnvoyMesh node preset **`public-libp2p`** uses the same pool as `publicLibp2pBootstrapPeers()` in [`apps/node/src/args.ts`](../apps/node/src/args.ts). **Example** (first entry from that preset — usable for Stage B):
 
 ```text
+/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN
+```
+
+You may repeat `--bootstrap` with additional peers from that list if one hostname is flaky.
+
+### Commands
+
+**Easiest (preset baked into npm — macOS, Linux, Windows):**
+
+From repo root:
+
+```bash
+npm run poc:discovery:advanced-public -w @envoymesh/node
+```
+
+This runs Stage B against the multiaddr above with `--timeout-ms 60000`.
+
+**Explicit bootstrap (same preset peer):**
+
+```bash
+npm run connectivity:smoke -w @envoymesh/node -- --mode advanced --bootstrap "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN" --timeout-ms 60000
+```
+
+**Windows:** If `--mode` / `--bootstrap` disappear again, run without npm mangling:
+
+```powershell
+cd apps\node
+npx tsx src/connectivity-smoke.ts --mode advanced --bootstrap /dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN --timeout-ms 60000
+```
+
+Or use **`npm run poc:discovery:advanced-public -w @envoymesh/node`** after pulling (flags are fully inside the script).
+
+**Your own VPS bootstrap:** replace the `--bootstrap` value with the multiaddr your operator published (must include `/p2p/<PeerId>`).
+
+### Success criteria
+
+Console prints lines similar to:
+
+```text
+[advanced] peer=<your-local-peer-id>
+[advanced] enabled=...
+[advanced] listening:
+  ...
+[advanced] discovered peer=<remote-peer-id> addrs=...
 [advanced] success: advanced connectivity stack started and discovered at least one peer
 ```
 
-Use a bootstrap multiaddr your operator trusts (project presets, public libp2p bootstrappers, or your VPS—document which you used).
+If discovery never fires:
+
+1. Increase `--timeout-ms` (for example `120000`).
+2. Try another bootstrap from the same `public-libp2p` list in `args.ts`.
+3. Confirm corporate firewall/DNS does not block `bootstrap.libp2p.io`.
 
 ---
 
 ## Stage C — Relay address observation
 
-Confirms relay transport + observed relay addressing (still single-process smoke; not full two-WAN NAT proof):
+### What this proves
+
+Same **advanced** stack as Stage B, plus **`--expect-relay-address`**: the smoke runner waits until your node advertises at least one **`/p2p-circuit`** multiaddr — meaning Circuit Relay v2 reservation succeeded via paths reachable from your bootstrap/DHT picture.
+
+EnvoyMesh adds **`/p2p-circuit`** to libp2p **`addresses.listen`** whenever **`enableRelay`** is true so reservations can appear in **`getMultiaddrs()`** (relay transport alone only enables *dialing* through relays).
+
+This confirms **relay-aware addressing**, not full **two-NAT hole punching** between two EnvoyMesh peers (that remains a manual two-machine check — see [live-connectivity-testing](./live-connectivity-testing.md) §4).
+
+### Prerequisites
+
+Everything from Stage B, plus patience: relay reservation can take longer than plain peer discovery — default timeout below is **90s**.
+
+### Bootstrap peer
+
+Stage C uses the **same example bootstrap** as Stage B (`public-libp2p` first entry). Public libp2p bootstrap nodes participate in relay topology so this usually works when outbound connectivity is healthy.
+
+### Commands
+
+**Easiest (flags baked into npm — macOS, Linux, Windows):**
+
+From repo root:
 
 ```bash
-npm run poc:discovery -w @envoymesh/node -- --mode advanced --bootstrap "<relay-capable-multiaddr>" --expect-relay-address --timeout-ms 90000
+npm run poc:discovery:relay-public -w @envoymesh/node
 ```
 
-**Expected:** includes both advanced success lines from [live-connectivity-testing](./live-connectivity-testing.md) §3.
+**Explicit (same bootstrap + `--expect-relay-address`):**
+
+```bash
+npm run connectivity:smoke -w @envoymesh/node -- --mode advanced --bootstrap "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN" --expect-relay-address --timeout-ms 90000
+```
+
+**Windows:** If npm strips flags again:
+
+```powershell
+cd apps\node
+npx tsx src/connectivity-smoke.ts --mode advanced --bootstrap /dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN --expect-relay-address --timeout-ms 90000
+```
+
+**Your own relay-capable bootstrap:** replace `--bootstrap` with a multiaddr whose peer offers Circuit Relay v2 compatible with js-libp2p.
+
+### Success criteria
+
+You should see Stage B-style discovery logs, then **both**:
+
+```text
+[advanced] success: advanced connectivity stack started and discovered at least one peer
+[advanced] success: relay address observed
+```
+
+Listening addresses printed earlier should include a **`/p2p-circuit/`** segment.
+
+### If relay never appears
+
+1. Increase `--timeout-ms` (for example `120000`).
+2. Retry Stage B first — if B fails, C will not pass.
+3. Try another bootstrap from [`publicLibp2pBootstrapPeers()`](../apps/node/src/args.ts) as a second `--bootstrap` (explicit command only).
+4. Strict firewalls can block relay negotiation — try another network briefly to isolate policy.
 
 ---
 

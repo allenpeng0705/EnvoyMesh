@@ -110,8 +110,14 @@ export class EnvoyMesh {
     const advancedConnectivityEnabled = this.isAdvancedConnectivityEnabled();
 
     const baseListen = this.options.listen ?? ["/ip4/0.0.0.0/tcp/0"];
-    const listenAddrs =
-      this.options.enableQuic === true ? expandListenAddressesWithQuic(baseListen) : baseListen;
+    let listenAddrs =
+      this.options.enableQuic === true ? expandListenAddressesWithQuic(baseListen) : [...baseListen];
+
+    // Relay reservations only advertise `/p2p-circuit` multiaddrs when we explicitly listen on it.
+    // See libp2p circuit-relay examples; relay-transport alone only enables dialing through relays.
+    if (this.options.enableRelay === true && !listenAddrs.includes("/p2p-circuit")) {
+      listenAddrs = [...listenAddrs, "/p2p-circuit"];
+    }
 
     const quicTransportFactory = this.options.enableQuic ? await this.loadQuicTransport() : undefined;
 

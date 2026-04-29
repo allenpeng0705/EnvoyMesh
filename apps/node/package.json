@@ -13,6 +13,8 @@
     "connectivity:smoke": "tsx src/connectivity-smoke.ts",
     "poc:discovery": "tsx src/connectivity-smoke.ts",
     "poc:discovery:mdns": "tsx src/connectivity-smoke.ts --mode mdns --timeout-ms 20000",
+    "poc:discovery:advanced-public": "tsx src/connectivity-smoke.ts --mode advanced --bootstrap /dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN --timeout-ms 60000",
+    "poc:discovery:relay-public": "tsx src/connectivity-smoke.ts --mode advanced --bootstrap /dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN --expect-relay-address --timeout-ms 90000",
     "social:challenge": "tsx src/social-challenge.ts",
     "smoke:local-two-node": "tsx src/local-two-node-smoke.ts"
   },
