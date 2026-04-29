@@ -1,6 +1,6 @@
 # Live Connectivity Testing
 
-For the **minimal POC ordering** (LAN mDNS → WAN bootstrap/DHT → relay observation → optional full node), start with [poc-discovery-connectivity](./poc-discovery-connectivity.md). This page keeps **detailed procedures** and extended proofs.
+For the **stages A–D POC** (what each step tests — single reference), see [poc-discovery-connectivity](./poc-discovery-connectivity.md). This page keeps **additional** procedures (desktop smoke, DCUtR notes, data-path checks).
 
 These checks prove the Phase 4 network behavior that cannot be reliably tested in the current runner. Run them on a real machine after disabling VPN/firewall rules that block LAN multicast or inbound TCP.
 

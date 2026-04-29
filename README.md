@@ -37,7 +37,7 @@ EnvoyMesh is a working TypeScript prototype **under active architectural refinem
 - Signed EMP messages and Ed25519 owner/device identities.
 - Local policy, trust records, approval queue, task journal, and audit logs.
 - A libp2p-based node with TCP, Noise, Yamux, mDNS, and opt-in DHT/relay/AutoNAT/DCUtR configuration.
-- **Transport POC:** ordered LAN → WAN bootstrap/DHT → relay smoke sequence — [docs/poc-discovery-connectivity.md](./docs/poc-discovery-connectivity.md) (`npm run poc:discovery -w @envoymesh/node`).
+- **Transport POC:** Stages **A–D** (LAN → WAN bootstrap/DHT → relay → full node) — [docs/poc-discovery-connectivity.md](./docs/poc-discovery-connectivity.md).
 - A restricted shared vault index/search package for `.txt`, `.md`, and `.json` files.
 - A model router with mock, LiteLLM-compatible, and Ollama-through-LiteLLM providers.
 - A developer CLI for local profile, trust, approval, audit, task, peer, and vault inspection.
