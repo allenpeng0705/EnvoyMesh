@@ -234,6 +234,34 @@ describe("developer CLI", () => {
     expect(result.lines.join("\n")).toContain("discovery-seeds.json");
   });
 
+  it("connectivity-status --rich prepends ascii Stage D panel", async () => {
+    const store = createLocalTaskStore(profileDir);
+    await store.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        protocol: "connectivity.profile",
+        outcome: "record",
+        summary: "connectivity profile=wan-default mdns=true dht=true relay=true autonat=true dcutr=true bootstrap=2",
+        createdAt: "2026-04-27T10:00:00.000Z",
+      }),
+    );
+    await store.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        protocol: "peer.discovery",
+        remotePeerId: "peer-a",
+        outcome: "record",
+        summary: "discovery peer=peer-a source=relay addrs=1",
+        createdAt: "2026-04-27T10:00:01.000Z",
+      }),
+    );
+    const result = await runDeveloperCli(["connectivity-status", "--profile", profileDir, "--rich"]);
+    expect(result.exitCode).toBe(0);
+    expect(result.lines.some((line) => line.startsWith("+---"))).toBe(true);
+    expect(result.lines.some((line) => line.includes("Stage D connectivity snapshot"))).toBe(true);
+    expect(result.lines).toContain("Connectivity status");
+  });
+
   it("lists tasks and pending approvals", async () => {
     const store = createLocalTaskStore(profileDir);
     await store.appendTaskJournalEntry(

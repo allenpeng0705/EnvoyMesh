@@ -373,6 +373,8 @@ Run on both machines:
 npm run cli -w @envoymesh/node -- connectivity-status --profile "<profile-path>"
 ```
 
+Optional: append **`--rich`** for an ASCII snapshot panel (overall badge + counters). The desktop dashboard shows the same heuristic as a colored banner above Discovery Health metrics.
+
 Expect non-zero bootstrap peer count and no persistent startup warnings.
 
 ### 3) Exercise signal / ping / chat / task / data

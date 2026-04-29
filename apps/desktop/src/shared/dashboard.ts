@@ -1,6 +1,7 @@
 import type {
   ApprovalRequest,
   AuditEvent,
+  ConnectivityStageDBadge,
   MorningReportEntry,
   NodeProfile,
   TrustRecord,
@@ -44,6 +45,8 @@ export interface ConnectivityHealthSnapshot {
   warningCount: number;
   warnings: string[];
   lastCheckpointAt?: string;
+  stageDBadge: ConnectivityStageDBadge;
+  stageDExplanation: string;
 }
 
 export interface VaultDocumentSummary {

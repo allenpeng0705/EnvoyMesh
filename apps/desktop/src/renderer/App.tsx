@@ -65,6 +65,19 @@ const TASK_COMPOSER_PRESETS: Array<{
   },
 ];
 
+function discoveryBannerTitle(badge: DashboardSnapshot["connectivityHealth"]["stageDBadge"]): string {
+  switch (badge) {
+    case "ok":
+      return "Connectivity looks healthy";
+    case "warn":
+      return "Connectivity needs attention";
+    case "starting":
+      return "Connectivity warming up";
+    default:
+      return "Connectivity status unknown";
+  }
+}
+
 function App() {
   const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
   const [vaultQuery, setVaultQuery] = useState("");
@@ -542,6 +555,10 @@ function App() {
       </Panel>
 
       <Panel title="Discovery Health">
+        <div className={`connectivity-stage-banner connectivity-stage-${snapshot.connectivityHealth.stageDBadge}`}>
+          <div className="connectivity-stage-banner-title">{discoveryBannerTitle(snapshot.connectivityHealth.stageDBadge)}</div>
+          <p className="connectivity-stage-banner-body">{snapshot.connectivityHealth.stageDExplanation}</p>
+        </div>
         <div className="grid cards">
           <Metric label="Bootstrap Peers" value={snapshot.connectivityHealth.bootstrapPeerCount} />
           <Metric label="Peers Discovered" value={snapshot.connectivityHealth.discoveredPeerCount} />

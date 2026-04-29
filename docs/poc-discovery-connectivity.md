@@ -216,9 +216,40 @@ npm run cli -w @envoymesh/node -- connectivity-status --profile ./data/primary
 
 On Windows, prefer a dedicated profile dir, e.g. `%USERPROFILE%\envoymesh\win_profile`.
 
+### Minimal step-by-step (two terminals)
+
+1. **Choose a profile directory** (persisted identity + stores). Examples: `./data/primary` (macOS/Linux) or `D:\mygithub\EnvoyMesh\data\win_profile` / `%USERPROFILE%\envoymesh\win_profile` (Windows). Create the folder if needed; first launch initializes profile state.
+2. **Terminal A — start the node** with WAN defaults and public bootstrap presets (same peers conceptually as Stage B):
+
+   ```bash
+   npm run node:dev -- --profile ./data/primary --discovery-profile wan-default --bootstrap-preset public-libp2p --p2p-debug
+   ```
+
+   `--bootstrap-preset public-libp2p` expands to managed bootstraps from [`apps/node/src/args.ts`](../apps/node/src/args.ts); append **`--bootstrap "<multiaddr>"`** if you want an extra peer. Omit **`--connectivity-strict`** on first try so the node still starts if probes are flaky; add **`--connectivity-strict`** once you want fail-fast bootstrap health.
+
+3. **Terminal B — diagnostics** (while Terminal A keeps running):
+
+   ```bash
+   npm run cli -w @envoymesh/node -- connectivity-status --profile ./data/primary
+   ```
+
+   Repeat after ~30–60s if discovery is still warming up.
+
+4. **Interpret**: See [live-connectivity-testing](./live-connectivity-testing.md) §6 for expected fields (discovery profile, bootstrap counts, discovered peers, relay hints, warnings).
+
+5. **Two machines**: Repeat steps 1–3 on **Mac** and **Windows** with **different profile paths** so keys/stores do not collide; compare **`connectivity-status`** on each side once both nodes have run long enough to probe bootstrap/DHT paths.
+
 ### Success criteria (interpretation)
 
 From **`connectivity-status`** you expect meaningful **bootstrap peer count**, non-empty discovery signals where the network allows, and **clearing** of connectivity warnings after healthy configuration—details in [live-connectivity-testing](./live-connectivity-testing.md) §6.
+
+**Easier reading:** run **`connectivity-status --rich`** for an ASCII **Stage D snapshot** panel (overall badge + aligned counters) above the usual audit-derived lines:
+
+```bash
+npm run cli -w @envoymesh/node -- connectivity-status --profile ./data/primary --rich
+```
+
+The **Electron dashboard** shows the same heuristic as a **Discovery Health** banner (green / amber / blue / neutral) above the metric tiles when you refresh.
 
 Stage D is where **two machines** (Mac + Windows) usually validate **real** Envoy workloads once A–C passed on each OS separately.
 

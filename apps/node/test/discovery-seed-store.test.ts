@@ -58,4 +58,20 @@ describe("discovery seed store", () => {
     const files = await readdir(profileDir);
     expect(files.some((f) => f.startsWith("discovery-seeds.json.corrupt.") && f.endsWith(".bak"))).toBe(true);
   });
+
+  it("serializes concurrent upserts so every distinct addr is persisted", async () => {
+    const store = createDiscoverySeedStore(profileDir);
+    await Promise.all(
+      Array.from({ length: 24 }, (_, i) =>
+        store.upsertSuccess(
+          `/ip4/10.0.${Math.floor(i / 16)}.${i % 256}/tcp/4001/p2p/p-${i}`,
+          "peer.discovery",
+          `2026-04-27T${String(i).padStart(2, "0")}:00:00.000Z`,
+        ),
+      ),
+    );
+    const addrs = await store.listSeedAddrs();
+    expect(addrs).toHaveLength(24);
+    expect(new Set(addrs).size).toBe(24);
+  });
 });

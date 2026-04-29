@@ -1,4 +1,5 @@
 import {
+  analyzeConnectivityStageD,
   buildMorningReportDigest,
   createLocalPeerDirectoryStore,
   createLocalTaskStore,
@@ -722,35 +723,19 @@ function summarizeLiveP2p(events: AuditEvent[]): LiveP2pSnapshot {
 }
 
 function summarizeConnectivityHealth(events: AuditEvent[]) {
-  const traces = events.filter((event) => event.type === "p2p.trace");
-  const warnings = traces.filter((event) => event.protocol === "connectivity.warning");
-  const profileEvent = [...traces]
-    .reverse()
-    .find((event) => event.protocol === "connectivity.profile");
-  const checkpointEvent = [...traces]
-    .reverse()
-    .find((event) => event.protocol === "connectivity.health");
-  const discovered = traces.filter((event) => event.protocol === "peer.discovery");
-  const relayDiscovered = discovered.filter((event) => event.summary.includes("source=relay"));
-  const bootstrapProbeSuccess = traces.filter((event) => event.protocol === "connectivity.bootstrap.ok");
-  const bootstrapProbeFailure = traces.filter((event) => event.protocol === "connectivity.bootstrap.fail");
-
-  const profileMatch = profileEvent?.summary.match(/profile=(lan-fast|wan-default)/);
-  const bootstrapMatch = profileEvent?.summary.match(/bootstrap=(\d+)/);
-  const discoveryProfile: "lan-fast" | "wan-default" | "unknown" =
-    profileMatch?.[1] === "wan-default" || profileMatch?.[1] === "lan-fast"
-      ? profileMatch[1]
-      : "unknown";
+  const analysis = analyzeConnectivityStageD(events);
   return {
-    discoveryProfile,
-    bootstrapPeerCount: bootstrapMatch ? Number.parseInt(bootstrapMatch[1], 10) : 0,
-    discoveredPeerCount: discovered.length,
-    relayDiscoveryCount: relayDiscovered.length,
-    bootstrapProbeSuccessCount: bootstrapProbeSuccess.length,
-    bootstrapProbeFailureCount: bootstrapProbeFailure.length,
-    warningCount: warnings.length,
-    warnings: warnings.slice(-5).map((event) => event.summary),
-    lastCheckpointAt: checkpointEvent?.createdAt,
+    discoveryProfile: analysis.discoveryProfile,
+    bootstrapPeerCount: analysis.bootstrapPeerCount,
+    discoveredPeerCount: analysis.discoveredPeerCount,
+    relayDiscoveryCount: analysis.relayDiscoveryCount,
+    bootstrapProbeSuccessCount: analysis.bootstrapProbeSuccessCount,
+    bootstrapProbeFailureCount: analysis.bootstrapProbeFailureCount,
+    warningCount: analysis.warningCount,
+    warnings: analysis.warnings,
+    lastCheckpointAt: analysis.lastCheckpointAt,
+    stageDBadge: analysis.badge,
+    stageDExplanation: analysis.badgeExplanation,
   };
 }
 

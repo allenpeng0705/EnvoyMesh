@@ -1,4 +1,5 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 const DISCOVERY_SEED_FILE = "discovery-seeds.json";
@@ -30,6 +31,14 @@ export interface DiscoverySeedStore {
 
 export function createDiscoverySeedStore(profileDir: string): DiscoverySeedStore {
   const path = join(profileDir, DISCOVERY_SEED_FILE);
+  /** Serialize read-modify-write so concurrent upserts cannot interleave torn truncates. */
+  let writeChain = Promise.resolve<void>();
+
+  function enqueueWrite(fn: () => Promise<void>): Promise<void> {
+    const next = writeChain.then(fn);
+    writeChain = next.catch(() => {});
+    return next;
+  }
 
   return {
     async listSeedRecords() {
@@ -48,23 +57,25 @@ export function createDiscoverySeedStore(profileDir: string): DiscoverySeedStore
         return;
       }
 
-      const now = at ?? new Date().toISOString();
-      const file = await readDiscoverySeedFile(path);
-      const existing = file.records.find((record) => record.addr === trimmed);
-      if (existing) {
-        existing.lastSuccessAt = now;
-        existing.source = source;
-      } else {
-        file.records.push({
-          addr: trimmed,
-          source,
-          lastSuccessAt: now,
-        });
-      }
-      file.records = file.records
-        .sort((left, right) => right.lastSuccessAt.localeCompare(left.lastSuccessAt))
-        .slice(0, MAX_DISCOVERY_SEEDS);
-      await writeDiscoverySeedFile(path, file);
+      await enqueueWrite(async () => {
+        const now = at ?? new Date().toISOString();
+        const file = await readDiscoverySeedFile(path);
+        const existing = file.records.find((record) => record.addr === trimmed);
+        if (existing) {
+          existing.lastSuccessAt = now;
+          existing.source = source;
+        } else {
+          file.records.push({
+            addr: trimmed,
+            source,
+            lastSuccessAt: now,
+          });
+        }
+        file.records = file.records
+          .sort((left, right) => right.lastSuccessAt.localeCompare(left.lastSuccessAt))
+          .slice(0, MAX_DISCOVERY_SEEDS);
+        await writeDiscoverySeedFile(path, file);
+      });
     },
 
     async upsertMany(addrs, source, at) {
@@ -136,7 +147,19 @@ async function quarantineCorruptDiscoverySeedFile(path: string, raw: string, cau
 
 async function writeDiscoverySeedFile(path: string, file: DiscoverySeedFile): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(file, null, 2), { mode: 0o600 });
+  const payload = JSON.stringify(file, null, 2);
+  const tmp = join(dirname(path), `.discovery-seeds.${randomUUID()}.tmp`);
+  try {
+    await writeFile(tmp, payload, { mode: 0o600 });
+    await rename(tmp, path);
+  } catch (error) {
+    try {
+      await unlink(tmp);
+    } catch {
+      // best effort cleanup of orphaned temp
+    }
+    throw error;
+  }
 }
 
 function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {

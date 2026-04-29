@@ -1,4 +1,5 @@
 import {
+  analyzeConnectivityStageD,
   buildMorningReportDigest,
   createLocalTaskStore,
   createLocalPeerDirectoryStore,
@@ -24,6 +25,7 @@ import {
   formatDiscoverySeedRows,
   formatPeerDiscoveryRows,
 } from "./discovery-report.js";
+import { formatConnectivityRichPanel } from "./connectivity-status-rich.js";
 
 export type DeveloperCliCommand =
   | "profile"
@@ -73,6 +75,8 @@ export interface DeveloperCliArgs {
   inviteExpiresAt?: string;
   inviteNote?: string;
   inviteToken?: string;
+  /** connectivity-status only: prepend ASCII Stage D snapshot panel */
+  connectivityRich?: boolean;
 }
 
 export interface DeveloperCliResult {
@@ -192,6 +196,8 @@ export function parseDeveloperCliArgs(argv: string[]): DeveloperCliArgs {
       args.manifestOutputPath = readValue(argv, ++index, arg);
     } else if (arg === "--format") {
       args.outputFormat = parseOutputFormat(readValue(argv, ++index, arg));
+    } else if (arg === "--rich") {
+      args.connectivityRich = true;
     } else if (arg === "--machine-a") {
       args.machineAName = readValue(argv, ++index, arg);
     } else if (arg === "--machine-b") {
@@ -285,6 +291,7 @@ Options:
   --note <text>     Note for trust records.
   --output <path>   Output file path (required for vault-manifest; optional for pairing timeline / smoke-checklist).
   --format <text|json> Output format (currently used by pairing timeline).
+  --rich           connectivity-status only: print ASCII Stage D snapshot panel above the usual summary.
   --machine-a <name> Machine A label for smoke-checklist. Default: machine-a
   --machine-b <name> Machine B label for smoke-checklist. Default: machine-b
 
@@ -554,41 +561,35 @@ async function listObservedPeers(args: DeveloperCliArgs): Promise<DeveloperCliRe
 
 async function showConnectivityStatus(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
   const events = await createLocalTaskStore(args.profileDir).readAuditEvents();
+  const analysis = analyzeConnectivityStageD(events);
   const traces = events.filter((event) => event.type === "p2p.trace");
-  const profileEvent = [...traces]
-    .reverse()
-    .find((event) => event.protocol === "connectivity.profile");
   const warningEvents = traces.filter((event) => event.protocol === "connectivity.warning");
   const discoveredEvents = traces.filter((event) => event.protocol === "peer.discovery");
-  const relayDiscovered = discoveredEvents.filter((event) => event.summary.includes("source=relay"));
-  const bootstrapOk = traces.filter((event) => event.protocol === "connectivity.bootstrap.ok");
   const bootstrapFail = traces.filter((event) => event.protocol === "connectivity.bootstrap.fail");
-  const reprobeOk = traces.filter((event) => event.protocol === "connectivity.reprobe.ok");
   const reprobeFail = traces.filter((event) => event.protocol === "connectivity.reprobe.fail");
-  const checkpointEvent = [...traces]
-    .reverse()
-    .find((event) => event.protocol === "connectivity.health");
-
-  const profileMatch = profileEvent?.summary.match(/profile=(lan-fast|wan-default)/);
-  const bootstrapMatch = profileEvent?.summary.match(/bootstrap=(\d+)/);
-  const profile = profileMatch?.[1] ?? "unknown";
-  const bootstrapPeers = bootstrapMatch ? Number.parseInt(bootstrapMatch[1], 10) : 0;
 
   const peerRows = formatPeerDiscoveryRows(events, 25);
   const capabilityRows = formatCapabilityDiscoveryRows(events, 12);
   const seedRecords = await createDiscoverySeedStore(args.profileDir).listSeedRecords();
 
-  const sections: string[] = [
+  const denseLine = `profile=${analysis.discoveryProfile} bootstrapPeers=${analysis.bootstrapPeerCount} discoveredPeers=${analysis.discoveredPeerCount} relayDiscoveries=${analysis.relayDiscoveryCount} bootstrapOk=${analysis.bootstrapProbeSuccessCount} bootstrapFail=${analysis.bootstrapProbeFailureCount} reprobeOk=${analysis.reprobeOkCount} reprobeFail=${analysis.reprobeFailCount} warnings=${analysis.warningCount}`;
+
+  const sections: string[] = [];
+  if (args.connectivityRich) {
+    sections.push(...formatConnectivityRichPanel(analysis), "");
+  }
+
+  sections.push(
     "Connectivity status",
-    `profile=${profile} bootstrapPeers=${bootstrapPeers} discoveredPeers=${discoveredEvents.length} relayDiscoveries=${relayDiscovered.length} bootstrapOk=${bootstrapOk.length} bootstrapFail=${bootstrapFail.length} reprobeOk=${reprobeOk.length} reprobeFail=${reprobeFail.length} warnings=${warningEvents.length}`,
-    checkpointEvent ? `lastCheckpoint=${checkpointEvent.createdAt}` : "lastCheckpoint=none",
+    denseLine,
+    analysis.lastCheckpointAt ? `lastCheckpoint=${analysis.lastCheckpointAt}` : "lastCheckpoint=none",
     ...last(bootstrapFail, 5).map((event) => `bootstrapFail ${event.createdAt} ${event.summary}`),
     ...last(reprobeFail, 5).map((event) => `reprobeFail ${event.createdAt} ${event.summary}`),
     ...last(warningEvents, 5).map((event) => `warning ${event.createdAt} ${event.summary}`),
     "",
     "Libp2p peers reported in audit (latest event per peer id):",
     ...(peerRows.length > 0 ? peerRows : ["  (none yet)"]),
-  ];
+  );
 
   if (capabilityRows.length > 0) {
     sections.push("", "Capability / topic discovery traces:", ...capabilityRows);
