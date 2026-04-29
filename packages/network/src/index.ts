@@ -221,9 +221,40 @@ export class EnvoyMesh {
   /**
    * Returns the list of peer IDs currently connected via this relay server.
    * Only populated when enableRelayServer is true.
+   *
+   * Note: When using circuit relay transport (enableRelay), peers connect through
+   * this relay but peer:connect only fires for direct connections. This method
+   * also queries the connection manager for peers with relayed connections.
    */
   getConnectedRelayPeerIds(): string[] {
-    return [...this.relayConnectedPeers];
+    const relayPeers = new Set<string>([...this.relayConnectedPeers]);
+
+    // Also check libp2p connection manager for peers with relayed connections
+    // (peer:connect may not fire for circuit relay connections)
+    if (this.node) {
+      try {
+        const connections = (this.node as any).connectionManager?.connections;
+        if (connections) {
+          for (const [, conns] of connections) {
+            for (const conn of conns) {
+              const remotePeerId = conn?.remotePeer?.toString?.();
+              if (remotePeerId && conn.stat?.direction === "inbound") {
+                // Check if this connection goes through our relay transport
+                // by looking at the multiaddr protocol names
+                const remoteAddr = conn?.remoteAddr?.toString?.() ?? "";
+                if (remoteAddr.includes("/p2p-circuit")) {
+                  relayPeers.add(remotePeerId);
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // Connection manager API may vary between libp2p versions
+      }
+    }
+
+    return [...relayPeers];
   }
 
   /**
@@ -533,8 +564,9 @@ export class EnvoyMesh {
       return;
     }
 
-    // Track relay-connected peers when relay server is enabled
-    if (this.options.enableRelayServer) {
+    // Track relay-connected peers when relay transport is enabled
+    // (both relay server and clients use circuit relay transport)
+    if (this.options.enableRelay) {
       typedNode.addEventListener("peer:connect", (event: any) => {
         const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
         this.relayConnectedPeers.add(remotePeerId);
