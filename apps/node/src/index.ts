@@ -118,6 +118,9 @@ const autoCapabilityTopics = buildAutoCapabilityTopics(profile.deviceCertificate
 
 mesh.onPeerDiscovered(async (peer) => {
   const source = peer.multiaddrs.some((addr) => addr.includes("/p2p-circuit")) ? "relay" : "unknown";
+  if (args.peerDiscoveryLog) {
+    console.log(`[peer-discovery] peer=${peer.peerId} source=${source} addrs=${peer.multiaddrs.length}`);
+  }
   await taskStore.appendAuditEvent(
     createAuditEvent({
       type: "p2p.trace",

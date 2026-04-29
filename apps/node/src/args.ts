@@ -21,6 +21,7 @@ export interface NodeArgs {
   enableDcutr: boolean;
   enableQuic: boolean;
   p2pDebug: boolean;
+  peerDiscoveryLog: boolean;
   correlationId?: string;
   pingTarget?: string;
   pingMessage?: string;
@@ -80,6 +81,7 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     enableDcutr: false,
     enableQuic: false,
     p2pDebug: false,
+    peerDiscoveryLog: false,
     discoveryTagHashes: [],
     discoveryCapabilities: [],
   };
@@ -131,6 +133,8 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.enableQuic = true;
     } else if (arg === "--no-quic") {
       args.enableQuic = false;
+    } else if (arg === "--peer-discovery-log") {
+      args.peerDiscoveryLog = true;
     } else if (arg === "--p2p-debug") {
       args.p2pDebug = true;
     } else if (arg === "--correlation-id") {
@@ -258,6 +262,7 @@ Options:
   --dcutr               Enable DCUtR hole punching service.
   --quic                Enable QUIC transport alongside TCP (adds matching /udp/.../quic-v1 listeners). Env: ENVOYMESH_QUIC (1/true/yes or 0/false/no).
   --no-quic             Disable QUIC when set from config or env.
+  --peer-discovery-log  Print each libp2p peer discovery to the console ([peer-discovery]). Env: ENVOYMESH_PEER_DISCOVERY_LOG=1
   --p2p-debug           Log libp2p connection lifecycle events to audit as p2p.trace.
   --correlation-id <id> Optional correlation id for outbound ping/signal/A2A envelopes.
   --ping <target>       Send signed system.ping to peer ID, /ip4/.../p2p/... multiaddr, or envoy:owner:... (resolved from LAN peer directory).
@@ -520,6 +525,11 @@ function applyEnvironmentArgs(args: NodeArgs): void {
     args.enableQuic = true;
   } else if (envQuic === "0" || envQuic === "false" || envQuic === "no") {
     args.enableQuic = false;
+  }
+
+  const envPeerDiscoveryLog = (process.env.ENVOYMESH_PEER_DISCOVERY_LOG ?? "").trim().toLowerCase();
+  if (envPeerDiscoveryLog === "1" || envPeerDiscoveryLog === "true" || envPeerDiscoveryLog === "yes") {
+    args.peerDiscoveryLog = true;
   }
 }
 

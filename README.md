@@ -8,12 +8,14 @@ EnvoyMesh is an owner-controlled, peer-to-peer social agent network.
 
 The core idea is simple: each person runs an AI agent, called an Envoy, on their own devices. The Envoy stands for its owner in a distributed mesh. It can discover trusted peers, exchange signed messages, answer from an explicitly shared vault, and coordinate asynchronous tasks without depending on a central application server.
 
-EnvoyMesh is designed around three priorities:
+EnvoyMesh is designed around these priorities:
 
-- **No central control plane**: communication should happen directly between peers whenever possible.
+- **Peer-first traffic**: communicate directly between Envoys whenever possible; **optional** HTTPS/Matrix signaling may assist coordination when mesh hints alone are insufficient ([hybrid architecture](./docs/architecture-hybrid-planes.md)).
 - **Owner-controlled privacy**: an Envoy must only access explicitly shared data, not the whole computer.
 - **Model flexibility**: an Envoy may use local models, cloud models, or peer-provided compute when policy allows it.
 - **Agent-native social workflows**: trust, discovery, introductions, and task negotiation can be handled by agents over time.
+
+Early-stage development intentionally allows **breaking redesigns** when they advance the documented architecture—see [redesign strategy](./docs/redesign-strategy.md).
 
 ## Why Build It
 
@@ -30,11 +32,12 @@ The result should be cheaper to operate, more resilient, and more aligned with p
 
 ## Current Status
 
-EnvoyMesh is now a working TypeScript prototype with:
+EnvoyMesh is a working TypeScript prototype **under active architectural refinement** toward a **dual-plane** model (libp2p data plane + optional Matrix/HTTPS control-plane signaling). Current capabilities include:
 
 - Signed EMP messages and Ed25519 owner/device identities.
 - Local policy, trust records, approval queue, task journal, and audit logs.
 - A libp2p-based node with TCP, Noise, Yamux, mDNS, and opt-in DHT/relay/AutoNAT/DCUtR configuration.
+- **Transport POC:** ordered LAN → WAN bootstrap/DHT → relay smoke sequence — [docs/poc-discovery-connectivity.md](./docs/poc-discovery-connectivity.md) (`npm run poc:discovery -w @envoymesh/node`).
 - A restricted shared vault index/search package for `.txt`, `.md`, and `.json` files.
 - A model router with mock, LiteLLM-compatible, and Ollama-through-LiteLLM providers.
 - A developer CLI for local profile, trust, approval, audit, task, peer, and vault inspection.

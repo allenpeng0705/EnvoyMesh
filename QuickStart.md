@@ -489,16 +489,18 @@ ENVOYMESH_PROFILE="/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" ENVOY
 
 ## Live Connectivity Smoke Tests
 
+Ordered POC steps (LAN → WAN bootstrap → relay) are summarized in [docs/poc-discovery-connectivity.md](./docs/poc-discovery-connectivity.md). You can use `npm run poc:discovery -w @envoymesh/node` as an alias for the smoke script.
+
 Prove local mDNS discovery on a real machine:
 
 ```bash
-npm run connectivity:smoke -w @envoymesh/node -- --mode mdns --timeout-ms 20000
+npm run poc:discovery -w @envoymesh/node -- --mode mdns --timeout-ms 20000
 ```
 
 Prove advanced connectivity against a reachable bootstrap or relay peer:
 
 ```bash
-npm run connectivity:smoke -w @envoymesh/node -- --mode advanced --bootstrap "<bootstrap-multiaddr>" --timeout-ms 60000
+npm run poc:discovery -w @envoymesh/node -- --mode advanced --bootstrap "<bootstrap-multiaddr>" --timeout-ms 60000
 ```
 
 ## Useful Commands

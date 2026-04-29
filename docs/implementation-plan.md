@@ -2,7 +2,7 @@
 
 This is the living plan for EnvoyMesh. Update it whenever scope changes, decisions are made, or milestones are completed.
 
-**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · [EMP](./protocol-standard.md) · [QuickStart](../QuickStart.md)
+**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · [EMP](./protocol-standard.md) · [QuickStart](../QuickStart.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · [Hybrid planes (Matrix + libp2p)](./architecture-hybrid-planes.md) · [User stories vs hybrid evaluation](./user-stories-hybrid-evaluation.md) · **[Redesign strategy](./redesign-strategy.md)**
 
 ## Status Legend
 
@@ -34,6 +34,7 @@ Use these prefixes on **every phased work item** and on **exit criteria** below 
 - [Phase 4 — P2P local network](#phase-4-p2p-local-network)
 - [Phase 4 (WAN follow-on): Rendezvous, Relay, And NAT Traversal](#phase-4-wan-follow-on-rendezvous-relay-and-nat-traversal)
 - [Phase 4F — WAN capability topics and transport hardening](#phase-4f-wan-capability-topics-and-transport-hardening)
+- [Phase 4G — Optional control-plane signaling (hybrid)](#phase-4g-optional-control-plane-signaling-hybrid)
 - [Phase 4A — Multi-device protocol](#phase-4a-multi-device-protocol)
 - [Phase 4B — A2A ambassador protocol](#phase-4b-a2a-ambassador-protocol)
 - [Phase 4C — Observability and multi-peer traceability](#phase-4c-observability-and-multi-peer-traceability)
@@ -61,7 +62,9 @@ Product-level **user stories and epics** (discovery, broadcast termination, comm
 
 **North-star steps (all bootstrapped at high level; depth = open `[ ]` in phases below):** `[x]` protocol and trust boundaries · `[x]` local signed node · `[x]` P2P discovery/transport · `[x]` shared vault + policy · `[x]` model routing behind policy.
 
-**Prioritization:** **Parked for now** — satellite / **thin mobile UI** product path and phone-centric UX (no mobile app milestone). **Active next** — post-LAN **real P2P network** readiness: default WAN profile (DHT/relay/DCUtR/AutoNAT), bootstrap + relay strategy, cross-network smoke/docs, and connectivity diagnostics UX. In parallel: Phase **4D** fan-out termination on wire (TTL/gossip cancel/correlation-only cancel) and Phase **5** vault CA/export controls. Phase **4A** pairing + primary-offline defer baseline is shipped; thin-mobile checkbox stays documented but not scheduled ahead of those.
+**Prioritization:** **Parked for now** — satellite / **thin mobile UI** product path and phone-centric UX (no mobile app milestone). **Active next** — post-LAN **real P2P network** readiness: default WAN profile (DHT/relay/DCUtR/AutoNAT), bootstrap + relay strategy, cross-network smoke/docs, and connectivity diagnostics UX. **First POC:** ordered discovery/connectivity proofs — [poc-discovery-connectivity.md](./poc-discovery-connectivity.md) (scripts: `npm run poc:discovery -w @envoymesh/node`). **Parallel optional track** — **[Phase 4G](#phase-4g-optional-control-plane-signaling-hybrid)** (HTTPS/Matrix control-plane signaling for bond-scoped dial hints) proceeds **after** native WAN/bootstrap validation and **does not** replace libp2p-first discovery; thin PoC gates deeper Matrix integration. In parallel: Phase **4D** fan-out termination on wire (TTL/gossip cancel/correlation-only cancel) and Phase **5** vault CA/export controls. Phase **4A** pairing + primary-offline defer baseline is shipped; thin-mobile checkbox stays documented but not scheduled ahead of those.
+
+**Hybrid replanning:** Treat Matrix (or any HTTPS rendezvous) as an **optional control plane** layered on the existing data plane ([architecture](./architecture-hybrid-planes.md)). Native **WAN follow-on**, **4F** capability topics, bonds/policy, and vault semantics remain authoritative; hybrid work **extends** coordination where DHT/bootstrap hints are insufficient—see [user-story stress test](./user-stories-hybrid-evaluation.md). **Early-stage charter:** deliberate breaks and doc cleanup rules live in **[redesign-strategy.md](./redesign-strategy.md)**.
 
 ## User story traceability
 
@@ -79,6 +82,7 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 | **Stories B–C** (recruiter, researcher) | 4E, 2, 6, 7 | `[x]` Policy, approvals, audit, model path scaffolding · `[ ]` Discovery UX (**4E**), H2A wire path (**6**), morning report (**7**) |
 | **Stories D–E** (multi-hop, deals) | Backlog | `[ ]` Multi-hop / commerce / receipts — add phased work when scenarios + EMP economics are scoped |
 | **Story F** (crisis / LAN) | 4, 4C | `[x]` mDNS, local TCP, correlated audits, optional P2P debug, owner-id LAN target resolution (`system.signal` owner→peer map) · `[ ]` live proofs outside CI (`Phase 4` `[!]`) |
+| **Hybrid signaling** (optional WAN coordination) | **[4G](#phase-4g-optional-control-plane-signaling-hybrid)** | `[~]` Architecture + user-story evaluation shipped (`[x]` docs) · `[ ]` Thin PoC + schema + bond-gated hints (`[ ]`) |
 
 ## Key Decisions
 
@@ -95,6 +99,7 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 - `[x]` Sandbox direction: Wasm/WASI isolation later, with process boundaries first.
 - `[x]` Distributed state direction: evaluate `loro` and `yjs` when shared social/task state is ready.
 - `[x]` Decentralized identity direction: Ed25519 first, DIDKit/DIDs later.
+- `[ ]` Optional **Matrix / HTTPS control-plane signaling** for bond-scoped dial hints and offline-visible coordination events — **[Phase 4G](#phase-4g-optional-control-plane-signaling-hybrid)**; gated by thin PoC metrics ([architecture](./architecture-hybrid-planes.md)).
 - `[x]` Mobile v1 direction: Thin UI Mode only; phone acts as secure UI/control channel to Primary Envoy.
 - `[ ]` Storage: start with files for config, then add SQLite for records and audit.
 - `[x]` P2P transport: start with local libp2p/mDNS after core schemas are stable.
@@ -259,6 +264,28 @@ Exit criteria:
 Exit criteria:
 
 - `[~]` Same-machine vitest proves **system.ping** over a QUIC dial path when UDP is allowed; TCP-only remains the default when QUIC is off; **WAN** matrix + prefer-QUIC sorting still **`[ ]`**.
+
+## Phase 4G: Optional Control-Plane Signaling (Hybrid)
+
+Goal: add an **optional HTTPS/Matrix control plane** for **bond-scoped dial hints** and **offline-visible coordination** without replacing libp2p-first discovery or EMP authority. Architecture narrative and stress-test against user stories: [architecture-hybrid-planes.md](./architecture-hybrid-planes.md), [user-stories-hybrid-evaluation.md](./user-stories-hybrid-evaluation.md).
+
+**Principles**
+
+- Native mesh remains default: bootstrap, DHT, relay, seeds, capability topics (**WAN follow-on**, **4F**).
+- Matrix (or equivalent) is **hint transport + optional buffer**, not the sole identity or bulk data path.
+- Expand integration only after **thin PoC** proves measurable uplift.
+
+**Work items**
+
+- `[x]` Document modular workflows (Map → Handshake → Intent → Cargo) and evaluation vs agent user stories (links above).
+- `[ ]` **Thin PoC:** headless Matrix client (minimal SDK usage); two accounts; **one bond-scoped room**; publish compact `{ peer_id, multiaddrs[] }` on timer or connect; **merge** into existing dial/hint path (`discovery-seeds` / dial ordering); compare dial success vs bootstrap-only baseline on constrained WAN (same VPS/Mac/Windows trio pattern).
+- `[ ]` Define versioned signaling payload schema (e.g. state event `org.envoymesh.node_info` or timeline equivalent) + rotation/version policy.
+- `[ ]` Tie publishing/subscribing to **bond/trust** records — no acting on stranger hints without policy gate + audit (`p2p.trace`).
+- `[ ]` *(Follow-on)* Optional **EMP-shaped fallback** delivery via Matrix timeline when libp2p unavailable — reconciliation by `correlationId`; explicit threat model for metadata.
+
+Exit criteria:
+
+- `[ ]` PoC proves **measurable** improvement in hint freshness or pairwise dial rate **or** documented decision to defer scope based on metrics / ops cost.
 
 ## Phase 4A: Multi-Device Protocol
 
@@ -437,7 +464,7 @@ Exit criteria:
 
 ## Current Milestone
 
-Milestone: **Phase 7** operator console baseline is now feature-complete for this slice (dashboard + CLI + rich composition UX + pairing + discovery digest). Immediate next milestone (after same-LAN verification) is **real cross-network P2P readiness**: WAN-capable defaults + bootstrap/relay path + diagnostics and smoke tests on non-LAN topologies.
+Milestone: **Phase 7** operator console baseline is now feature-complete for this slice (dashboard + CLI + rich composition UX + pairing + discovery digest). Immediate next milestone is **real cross-network P2P readiness** (WAN defaults + bootstrap/relay + diagnostics + smoke). **Optional adjunct:** **[Phase 4G](./architecture-hybrid-planes.md)** (HTTPS/Matrix bond-scoped signaling) is planned **after** native WAN validation and gated by thin PoC metrics.
 
 ### Archive (historical snapshot — do not use for status)
 
@@ -457,6 +484,7 @@ Milestone: **Phase 7** operator console baseline is now feature-complete for thi
 - `[x]` **Scenario 6 pick (first vertical):** voucher + chunked data path (`/envoymesh/data/0.1.0`) shipped with signed vouchers, verification, and inbound write guards.
 - `[x]` **Scenario 6 follow-on (strict baseline):** required envelope roles + hard channel split for `/chat` vs `/message` + runtime rejection semantics for violations.
 - `[ ]` **Cross-network P2P readiness (post-LAN gate):** WAN defaults/profile, bootstrap + relay fleet strategy, non-LAN smoke checklist, and dashboard connectivity diagnostics.
+- `[ ]` **[Phase 4G](./architecture-hybrid-planes.md)** — thin PoC for optional HTTPS/Matrix bond-scoped signaling → merged dial hints; schema + bond gates before broader hybrid scope.
 - `[x]` **Semantic firewall** (US-F5) — first slice shipped in `@envoymesh/models` (`routeModelRequest`); extend with trust/redaction/tool gates later.
 
 ## Coverage vs UserStory and design docs
@@ -476,7 +504,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | Story A — **offline primary, defer / notify** | Phase **4A** | Baseline defer + owner surface in approval/audit path; richer notify/retry UX later. | `[~]` |
 | Story B — **morning report / ranked discovery UX** | Phase **7** | Morning report digest baseline in dashboard + CLI. | `[x]` |
 | Story C — **H2A as distinct channel** | Scenario 6 pick | Same as matrix. | `[ ]` |
-| Stories D / E — **multi-hop, payments** | **Backlog** | No phase block yet. | `[ ]` |
+| Agent stories — **interest/book/stranger/E2EE buffer** ([evaluation](./user-stories-hybrid-evaluation.md)) | Phase **4G** + bonds/policy | Docs **`[x]`** stress-test vs hybrid plane · **`[ ]`** transport/policy features beyond signaling PoC | `[~]` |
 | Story F — **DID-targeted LAN discovery** | Phase **4** | LAN identity match by owner-id target resolution **`[x]`**; live proofs **`[!]`** | `[~]` |
 | **Semantic firewall** (UserStory + US-F5) | Phase **6** | `evaluateSemanticFirewall` + `routeModelRequest` integration. | `[x]` |
 | **`knowledge.query` handler** | Phase 3 | Inbound mock + CLI; EMP payload schema in protocol. | `[x]` |
@@ -521,7 +549,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 - `[~]` **Phase 4A** — device pairing; primary-offline defer / owner surface baseline shipped. *Thin mobile channel: **parked** (see Prioritization).*
 - `[x]` **Scenario 6 vertical (first)** — voucher + `/envoymesh/data` shipped (matrix, Scenario 5).
 - `[x]` **Scenario 6 vertical (next baseline)** — explicit role fields + strict `/chat` vs `/message` split with rejection semantics.
-- `[ ]` **Cross-network P2P rollout** — WAN-first profile, bootstrap/relay strategy, diagnostics, and non-LAN smoke.
+- `[ ]` **Cross-network P2P rollout** — WAN-first profile, bootstrap/relay strategy, diagnostics, non-LAN smoke; optional **[Phase 4G](./architecture-hybrid-planes.md)** signaling adjunct after native WAN baseline.
 - `[ ]` **Stories D / E** — multi-hop discovery, commerce, receipts (no dedicated phase yet; add when scenarios are scoped).
 - `[ ]` **Optional vault** — content-addressing, IPFS/Filecoin paths (Phase 5 open items).
 
@@ -551,4 +579,5 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | 2026-04-28 | **WAN roadmap framing:** added **Phase 4F** to track DHT “topic/provider” capability advertisements (distinct from semantic `discovery.request/response`), explicit ghost/abuse policy + tests beyond signing, operator presets-as-defaults posture, and QUIC as additive transport with “prefer QUIC” follow-on. Expanded **WAN follow-on** checklist + Scenario 2 traceability accordingly. |
 | 2026-04-28 | **Phase 4F.C (partial):** additive QUIC via `@chainsafe/libp2p-quic`, companion `/udp/.../quic-v1` listeners, node flags + YAML + `ENVOYMESH_QUIC`, `packages/network` integration test for signed ping over QUIC; documented libp2p “listen multiaddr already includes `/p2p/self`” dial caveat in `docs/p2p-discovery.md`. |
 | 2026-04-28 | **Phase 4F.A (partial):** capability-topic scaffolding in `@envoymesh/network` (`cidForCapabilityTopic`, `provideCapabilityTopic`, `findCapabilityTopicProviders`, bounded query timeout handling); QUIC transport load moved to lazy import so non-QUIC environments can still import/run network tests. |
-| 2026-04-28 | **Auto-discovery focus (WAN):** node runtime now auto-publishes and periodically queries capability topics when DHT is enabled; discovered provider multiaddrs are persisted into discovery seeds (`capability-topic`) to improve cold-start convergence. |
+| 2026-04-29 | **Discovery/connectivity POC playbook:** added [poc-discovery-connectivity.md](./poc-discovery-connectivity.md); `@envoymesh/node` script alias `poc:discovery`; cross-links from prioritization, live-connectivity-testing, p2p-discovery, redesign-strategy doc map. |
+| 2026-04-28 | **Hybrid replanning:** introduced **[Phase 4G](#phase-4g-optional-control-plane-signaling-hybrid)** (optional Matrix/HTTPS control-plane signaling); updated Prioritization, Key Decisions, traceability + coverage rows; linked [architecture-hybrid-planes.md](./architecture-hybrid-planes.md) and [user-stories-hybrid-evaluation.md](./user-stories-hybrid-evaluation.md). |

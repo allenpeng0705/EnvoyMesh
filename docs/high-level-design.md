@@ -21,6 +21,8 @@ EnvoyMesh is a distributed network of personal AI agents. Each agent, called an 
 - Forbid cloud models entirely; they are allowed when policy permits them.
 - Solve global-scale public discovery in the first version.
 
+Early-stage products may **redesign transports and coordination** deliberately—see [redesign strategy](./redesign-strategy.md).
+
 For **user stories, epics, and prioritization** (discovery, broadcast termination, communication matrix, file sharing, and so on), see:
 
 - [EnvoyMesh scenarios](./scenarios.md) — structured backlog and acceptance.
@@ -29,7 +31,7 @@ For **user stories, epics, and prioritization** (discovery, broadcast terminatio
 - [Implementation plan](./implementation-plan.md) — phased delivery and traceability table.
 - [Detailed design](./detailed-design.md) — packages, runtime flow, and definition of **EMP fields**.
 
-This high-level design stays **stable**; when user stories and code diverge, update the **alignment review** and the **implementation plan** first, then reflect any lasting architecture change here.
+This high-level design is **living** during early development; major architecture moves are summarized in [redesign strategy](./redesign-strategy.md). When user stories and code diverge, update the **alignment review** and the **implementation plan** first, then reflect lasting architecture changes here.
 
 ## Story-driven product themes
 

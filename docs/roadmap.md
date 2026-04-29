@@ -1,5 +1,7 @@
 # Roadmap
 
+> **Note:** Phase numbering and shipped status live in the **[implementation plan](./implementation-plan.md)**. **[Redesign strategy](./redesign-strategy.md)** governs early-stage breaking changes. This file keeps a **historical sketch** of early roadmap thinking—prefer the implementation plan for current truth.
+
 This roadmap favors a small working mesh before advanced AI behavior.
 
 ## Phase 0: Project Foundation

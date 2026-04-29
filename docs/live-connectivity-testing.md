@@ -1,5 +1,7 @@
 # Live Connectivity Testing
 
+For the **minimal POC ordering** (LAN mDNS → WAN bootstrap/DHT → relay observation → optional full node), start with [poc-discovery-connectivity](./poc-discovery-connectivity.md). This page keeps **detailed procedures** and extended proofs.
+
 These checks prove the Phase 4 network behavior that cannot be reliably tested in the current runner. Run them on a real machine after disabling VPN/firewall rules that block LAN multicast or inbound TCP.
 
 The smoke script is intentionally opt-in. It is not part of `npm test` because mDNS, DHT, relay, AutoNAT, and DCUtR depend on real network interfaces and peer reachability.

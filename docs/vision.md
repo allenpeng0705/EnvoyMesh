@@ -27,7 +27,7 @@ Model execution is flexible. The Envoy may use local models, cloud models, or tr
 
 ### P2P First
 
-Peers should communicate directly when possible. Discovery, routing, gossip, and synchronization should use distributed protocols rather than a central API server.
+Peers should communicate directly when possible. Discovery, routing, gossip, and synchronization should prefer distributed protocols over a central API server. **Optional** HTTPS-based signaling (for example Matrix in bond-scoped rooms) may coordinate dial hints when WAN discovery alone is insufficient—see [redesign strategy](./redesign-strategy.md).
 
 ### Privacy By Default
 

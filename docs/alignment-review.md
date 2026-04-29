@@ -4,6 +4,8 @@ This document records how **narrative requirements** ([UserStory.md](./UserStory
 
 **Purpose:** Confirm alignment, name gaps honestly, and avoid treating aspirational user text as shipped product.
 
+**Major redesign:** When architecture shifts meaningfully (for example hybrid control-plane milestones), refresh this review and bump the snapshot date — see [redesign strategy](./redesign-strategy.md).
+
 **Review snapshot:** 2026-04-26 (update when major milestones land).
 
 ---

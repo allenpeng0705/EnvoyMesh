@@ -1,6 +1,10 @@
 # EnvoyMesh Node Discovery Guide
 
-This document explains how EnvoyMesh nodes discover each other, what "healthy" discovery looks like, and how to debug failures.
+This document explains how EnvoyMesh nodes discover each other on **native libp2p paths** (LAN and WAN), what “healthy” discovery looks like, and how to debug failures.
+
+**Scope:** Describes bootstrap, DHT, relay, seeds, and observability **without requiring Matrix**. Optional HTTPS/Matrix control-plane signaling is documented in [architecture-hybrid-planes](./architecture-hybrid-planes.md) and [redesign-strategy](./redesign-strategy.md); it **complements**—rather than replaces—the posture below unless product explicitly adopts Phase 4G defaults.
+
+**POC entry:** ordered proof sequence for transport discovery + connectivity (LAN → bootstrap/DHT → relay observation) lives in [poc-discovery-connectivity](./poc-discovery-connectivity.md).
 
 ## Discovery Model At A Glance
 
@@ -297,7 +301,8 @@ At runtime, EnvoyMesh writes connectivity telemetry to audit as `p2p.trace` even
 These traces power:
 
 - CLI:
-  - `npm run cli -w @envoymesh/node -- connectivity-status --profile "<profile>"`
+  - `npm run cli -w @envoymesh/node -- connectivity-status --profile "<profile>"` — prints aggregate counters **plus** the latest **`peer.discovery`** row per libp2p peer id, recent **`discovery.capability.*`** traces when present, and **`discovery-seeds.json`** rows (with `source`: `peer.discovery`, `capability-topic`, `bootstrap-probe`, …).
+  - Running node with **`--peer-discovery-log`** or **`ENVOYMESH_PEER_DISCOVERY_LOG=1`** prints **`[peer-discovery]`** lines to the console whenever libp2p reports a newly discovered peer (supplements audit).
 - Dashboard:
   - Discovery Health panel (bootstrap/discovered/relay/warnings/checkpoint fields)
 
@@ -394,6 +399,7 @@ For WAN-first testing, prefer **explicit org bootstrap/relay multiaddrs** in add
 
 ## Related Docs
 
+- [Hybrid planes (discovery → connection → communication → data)](./architecture-hybrid-planes.md)
 - [QuickStart](../QuickStart.md)
 - [Live Connectivity Testing](./live-connectivity-testing.md)
 - [Developer CLI](./developer-cli.md)

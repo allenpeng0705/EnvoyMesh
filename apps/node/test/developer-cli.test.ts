@@ -229,6 +229,9 @@ describe("developer CLI", () => {
     expect(result.lines.join("\n")).toContain("warning 2026-04-27T10:00:02.000Z");
     expect(result.lines.join("\n")).toContain("bootstrapFail 2026-04-27T10:00:03.000Z");
     expect(result.lines.join("\n")).toContain("reprobeFail 2026-04-27T10:00:04.000Z");
+    expect(result.lines.join("\n")).toContain("Libp2p peers reported");
+    expect(result.lines.join("\n")).toContain("peer=peer-a");
+    expect(result.lines.join("\n")).toContain("discovery-seeds.json");
   });
 
   it("lists tasks and pending approvals", async () => {

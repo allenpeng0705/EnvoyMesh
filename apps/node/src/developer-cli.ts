@@ -18,6 +18,12 @@ import {
 } from "@envoymesh/vault";
 import { resolve } from "node:path";
 import { decodeWanJoinInviteV1, encodeWanJoinInviteV1, type WanJoinInviteV1 } from "./wan-invite.js";
+import { createDiscoverySeedStore } from "./discovery-seed-store.js";
+import {
+  formatCapabilityDiscoveryRows,
+  formatDiscoverySeedRows,
+  formatPeerDiscoveryRows,
+} from "./discovery-report.js";
 
 export type DeveloperCliCommand =
   | "profile"
@@ -258,7 +264,8 @@ Commands:
   audit          Inspect audit events.
   tasks          Inspect task journal entries.
   approvals      Inspect or update owner approval queue.
-  connectivity-status Show discovery/connectivity diagnostics from audit traces.
+  connectivity-status Show discovery/connectivity diagnostics: audit summaries plus discovered peer ids,
+                         capability-topic traces, and persisted discovery-seeds.json rows.
   pairing        Pairing-focused queue/actions (list/approve/reject/retry/timeline).
   morning-report Show ranked discovery digest.
   smoke-checklist Generate a multi-machine validation checklist.
@@ -567,17 +574,37 @@ async function showConnectivityStatus(args: DeveloperCliArgs): Promise<Developer
   const profile = profileMatch?.[1] ?? "unknown";
   const bootstrapPeers = bootstrapMatch ? Number.parseInt(bootstrapMatch[1], 10) : 0;
 
-  return ok([
+  const peerRows = formatPeerDiscoveryRows(events, 25);
+  const capabilityRows = formatCapabilityDiscoveryRows(events, 12);
+  const seedRecords = await createDiscoverySeedStore(args.profileDir).listSeedRecords();
+
+  const sections: string[] = [
     "Connectivity status",
     `profile=${profile} bootstrapPeers=${bootstrapPeers} discoveredPeers=${discoveredEvents.length} relayDiscoveries=${relayDiscovered.length} bootstrapOk=${bootstrapOk.length} bootstrapFail=${bootstrapFail.length} reprobeOk=${reprobeOk.length} reprobeFail=${reprobeFail.length} warnings=${warningEvents.length}`,
     checkpointEvent ? `lastCheckpoint=${checkpointEvent.createdAt}` : "lastCheckpoint=none",
     ...last(bootstrapFail, 5).map((event) => `bootstrapFail ${event.createdAt} ${event.summary}`),
     ...last(reprobeFail, 5).map((event) => `reprobeFail ${event.createdAt} ${event.summary}`),
     ...last(warningEvents, 5).map((event) => `warning ${event.createdAt} ${event.summary}`),
+    "",
+    "Libp2p peers reported in audit (latest event per peer id):",
+    ...(peerRows.length > 0 ? peerRows : ["  (none yet)"]),
+  ];
+
+  if (capabilityRows.length > 0) {
+    sections.push("", "Capability / topic discovery traces:", ...capabilityRows);
+  }
+
+  sections.push(
+    "",
+    "Persisted discovery seeds (discovery-seeds.json):",
+    ...formatDiscoverySeedRows(seedRecords, 15),
+    "",
     discoveredEvents.length === 0
       ? "hint: no peers discovered yet; verify subnet/firewall and add --bootstrap peers for wan-default."
-      : "hint: peers discovered; validate end-to-end by signal/ping/chat/task/data flows.",
-  ]);
+      : "hint: validate end-to-end with signal/ping/chat once you recognize peer ids above.",
+  );
+
+  return ok(sections);
 }
 
 async function showVaultIndex(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
