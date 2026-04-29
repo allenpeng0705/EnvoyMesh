@@ -84,6 +84,44 @@ export interface DeveloperCliResult {
   lines: string[];
 }
 
+/**
+ * Windows often runs npm lifecycle scripts via `cmd.exe`, which can drop `--foo` flags before they reach Node.
+ * Common mangling: `connectivity-status --profile C:\\path --rich` becomes `connectivity-status C:\\path`.
+ * Recover stable `--profile` / `--rich` tokens when we see unmistakable patterns.
+ */
+export function normalizeDeveloperCliArgv(argv: string[]): string[] {
+  if (argv.length === 0 || argv[0] !== "connectivity-status") {
+    return argv;
+  }
+
+  let a = [...argv];
+
+  const looksLikeProfileDir = (token: string): boolean => {
+    if (token === "rich") return false;
+    if (/^[a-zA-Z]:[\\/]/.test(token)) return true;
+    if (token.includes("\\") || token.includes("/")) return true;
+    if (token.startsWith(".")) return true;
+    return false;
+  };
+
+  // connectivity-status [bare profile path]
+  if (a.length >= 2 && !a[1].startsWith("-")) {
+    if (a[1] === "rich") {
+      a.splice(1, 1, "--rich");
+    } else if (looksLikeProfileDir(a[1])) {
+      a.splice(1, 0, "--profile");
+    }
+  }
+
+  const profileIdx = a.indexOf("--profile");
+  if (profileIdx >= 0 && profileIdx + 2 < a.length && a[profileIdx + 2] === "rich") {
+    a = [...a];
+    a[profileIdx + 2] = "--rich";
+  }
+
+  return a;
+}
+
 export async function runDeveloperCli(argv: string[]): Promise<DeveloperCliResult> {
   const args = parseDeveloperCliArgs(argv);
 
@@ -146,7 +184,8 @@ export async function runDeveloperCli(argv: string[]): Promise<DeveloperCliResul
   throw new Error(`Unhandled command: ${args.command}`);
 }
 
-export function parseDeveloperCliArgs(argv: string[]): DeveloperCliArgs {
+export function parseDeveloperCliArgs(rawArgv: string[]): DeveloperCliArgs {
+  const argv = normalizeDeveloperCliArgv(rawArgv);
   const args: DeveloperCliArgs = {
     command: "profile",
     profileDir: "./data/default",
@@ -259,6 +298,8 @@ export function printDeveloperCliHelp(): void {
 
 Usage:
   npm run cli -w @envoymesh/node -- <command> [options]
+
+Windows/cmd.exe note: npm may strip "--profile" before tsx sees args — put the profile directory immediately after connectivity-status as a bare path. If "--rich" vanishes but --profile survives, a trailing token rich after the profile path is treated as --rich.
 
 Commands:
   profile        Show owner/device identity summary.

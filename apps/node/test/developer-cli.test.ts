@@ -11,7 +11,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parseDeveloperCliArgs, runDeveloperCli } from "../src/developer-cli.js";
+import { normalizeDeveloperCliArgv, parseDeveloperCliArgs, runDeveloperCli } from "../src/developer-cli.js";
 
 let profileDir: string;
 let vaultDir: string;
@@ -79,6 +79,20 @@ describe("developer CLI", () => {
       command: "connectivity-status",
       profileDir: "./data/alice",
     });
+    expect(
+      parseDeveloperCliArgs(["connectivity-status", "C:\\Users\\PS\\envoymesh\\win_profile"]),
+    ).toMatchObject({
+      command: "connectivity-status",
+      profileDir: "C:\\Users\\PS\\envoymesh\\win_profile",
+    });
+    expect(
+      parseDeveloperCliArgs(["connectivity-status", "--profile", "C:\\Users\\PS\\envoymesh\\win_profile", "rich"]),
+    ).toMatchObject({
+      command: "connectivity-status",
+      profileDir: "C:\\Users\\PS\\envoymesh\\win_profile",
+      connectivityRich: true,
+    });
+    expect(normalizeDeveloperCliArgv(["audit", "--profile", "./x"])).toEqual(["audit", "--profile", "./x"]);
   });
 
   it("parses audit filtering flags", () => {
