@@ -164,11 +164,30 @@ Examples:
   // Initial render
   renderDashboard({ mesh, peers, relayCount, lastEventAt, startedAt, selfMultiaddrs, hasRelay, hasDht, args });
 
+  // Make explicit circuit relay connections to bootstrap peers
+  // This ensures we have relay reservations and can discover peers via relay.peers.request
+  if (args.enableRelay && args.bootstrapPeers.length > 0) {
+    setTimeout(async () => {
+      for (const bootstrapPeer of args.bootstrapPeers) {
+        try {
+          // Transform /ip4/x/tcp/y/p2p/PEERID to /ip4/x/tcp/y/p2p-circuit/p2p/PEERID
+          const circuitAddr = bootstrapPeer.replace("/p2p/", "/p2p-circuit/p2p/");
+          console.log(`[relay-dial] dialing circuit address: ${circuitAddr}`);
+          await mesh.dial(circuitAddr);
+          console.log(`[relay-dial] successfully connected via circuit relay`);
+        } catch (err) {
+          console.log(`[relay-dial] failed: ${err}`);
+        }
+      }
+    }, 5000); // Wait 5 seconds for initial bootstrap to complete
+  }
+
   // Auto query relay for peers if enabled
   if (args.autoRelayPeersQuery && args.bootstrapPeers.length > 0) {
     setInterval(async () => {
       for (const bootstrapPeer of args.bootstrapPeers) {
         try {
+          console.log(`[auto-relay-query] attempting to send relay.peers.request to ${bootstrapPeer}`);
           const unsignedEnvelope = createUnsignedEnvelope({
             senderPeerId: mesh.peerId,
             senderPublicKey: profile.device.publicKeyPem,
@@ -181,7 +200,7 @@ Examples:
           await mesh.send(bootstrapPeer, signedEnvelope);
           console.log(`[auto-relay-query] sent relay.peers.request to ${bootstrapPeer}`);
         } catch (err) {
-          // Ignore errors, just retry next interval
+          console.log(`[auto-relay-query] ERROR: ${err}`);
         }
       }
     }, 10_000); // Query every 10 seconds

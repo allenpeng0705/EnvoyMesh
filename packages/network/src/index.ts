@@ -423,6 +423,11 @@ export class EnvoyMesh {
     return Date.now() - startedAt;
   }
 
+  async dial(target: string): Promise<any> {
+    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    return this.requireNode().dial(dialTarget as any);
+  }
+
   async probePeer(target: string): Promise<number> {
     const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
     const startedAt = Date.now();
@@ -562,9 +567,9 @@ export class EnvoyMesh {
       return;
     }
 
-    // Track relay-connected peers when relay transport is enabled
-    // (both relay server and clients use circuit relay transport)
-    if (this.options.enableRelay) {
+    // Track relay-connected peers when relay transport or relay server is enabled
+    const relayTrackingEnabled = this.options.enableRelay || this.options.enableRelayServer;
+    if (relayTrackingEnabled) {
       typedNode.addEventListener("peer:connect", (event: any) => {
         const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
         this.relayConnectedPeers.add(remotePeerId);
@@ -582,16 +587,28 @@ export class EnvoyMesh {
         setInterval(() => {
           try {
             const cmap = (this.node as any).connectionManager;
+            let relayCount = 0;
+            let totalCount = 0;
+            let peersList: string[] = [];
             if (cmap?.connections) {
-              for (const [peerIdStr, conns] of cmap.connections) {
-                for (const conn of conns) {
-                  const remoteAddr = conn?.remoteAddr?.toString?.() ?? "";
-                  if (remoteAddr.includes("/p2p-circuit")) {
-                    this.relayConnectedPeers.add(peerIdStr);
+              // connections is a Map-like structure
+              try {
+                for (const [peerIdStr, conns] of cmap.connections) {
+                  peersList.push(String(peerIdStr));
+                  totalCount += conns.length;
+                  for (const conn of conns) {
+                    const remoteAddr = conn?.remoteAddr?.toString?.() ?? "";
+                    if (remoteAddr.includes("/p2p-circuit")) {
+                      this.relayConnectedPeers.add(String(peerIdStr));
+                      relayCount++;
+                    }
                   }
                 }
+              } catch (e) {
+                console.log(`[relay-debug] connectionManager iteration failed: ${e}`);
               }
             }
+            console.log(`[relay-debug] peers=${peersList.join(",")} total=${totalCount} relay=${relayCount} tracked=${this.relayConnectedPeers.size}`);
           } catch {
             // Ignore errors
           }
