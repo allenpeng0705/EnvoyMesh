@@ -107,8 +107,10 @@ Examples:
 
   const peers = new Map<string, PeerInfo>();
   let relayCount = 0;
-  let relayCheckinSent = 0;
-  let relayLookupSent = 0;
+  let relayCheckinOk = 0;
+  let relayCheckinFail = 0;
+  let relayLookupOk = 0;
+  let relayLookupFail = 0;
   let relayLookupResponses = 0;
   let relayCandidates = 0;
   let relayDialOk = 0;
@@ -149,7 +151,13 @@ Examples:
   // Handle relay.lookup.response from EnvoyMesh relay nodes and dial returned /p2p-circuit candidates.
   mesh.onMessage(async ({ envelope }) => {
     if (envelope.intent === "relay.lookup.response") {
-      const payload = parseRelayLookupResponsePayload(envelope.payload);
+      let payload;
+      try {
+        payload = parseRelayLookupResponsePayload(envelope.payload);
+      } catch (error) {
+        console.log(`[auto-relay-query] relay.lookup.response parse failed error=${error}`);
+        return;
+      }
       relayLookupResponses++;
       relayCandidates += payload.peers.length;
       console.log(
@@ -211,8 +219,10 @@ Examples:
     hasDht,
     args,
     relayStats: () => ({
-      relayCheckinSent,
-      relayLookupSent,
+      relayCheckinOk,
+      relayCheckinFail,
+      relayLookupOk,
+      relayLookupFail,
       relayLookupResponses,
       relayCandidates,
       relayDialOk,
@@ -238,19 +248,21 @@ Examples:
       relayCount,
       lastEventAt,
       startedAt,
-    selfMultiaddrs: mesh.multiaddrs.map((a) => a.toString()),
+      selfMultiaddrs: mesh.multiaddrs.map((a) => a.toString()),
       hasDht,
       args,
-    relayStats: () => ({
-      relayCheckinSent,
-      relayLookupSent,
-      relayLookupResponses,
-      relayCandidates,
-      relayDialOk,
-      relayDialFailed,
-      bootstrapDialOk,
-      bootstrapDialFailed,
-    }),
+      relayStats: () => ({
+        relayCheckinOk,
+        relayCheckinFail,
+        relayLookupOk,
+        relayLookupFail,
+        relayLookupResponses,
+        relayCandidates,
+        relayDialOk,
+        relayDialFailed,
+        bootstrapDialOk,
+        bootstrapDialFailed,
+      }),
     });
   }, 2000);
 
@@ -266,10 +278,12 @@ Examples:
       const result = await dialBootstrapRelays(mesh, args.bootstrapPeers);
       bootstrapDialOk += result.ok;
       bootstrapDialFailed += result.failed;
-      await sendRelayCheckin({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
-      relayCheckinSent += args.bootstrapPeers.length;
-      await queryRelayLookup({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
-      relayLookupSent += args.bootstrapPeers.length;
+      const checkins = await sendRelayCheckin({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
+      relayCheckinOk += checkins.ok;
+      relayCheckinFail += checkins.failed;
+      const lookups = await queryRelayLookup({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
+      relayLookupOk += lookups.ok;
+      relayLookupFail += lookups.failed;
     } finally {
       relayDiscoveryCycleRunning = false;
     }
@@ -280,8 +294,10 @@ async function sendRelayCheckin(input: {
   mesh: EnvoyMesh;
   profile: Awaited<ReturnType<typeof loadOrCreateNodeProfile>>;
   bootstrapPeers: string[];
-}): Promise<void> {
+}): Promise<{ ok: number; failed: number }> {
   const { mesh, profile, bootstrapPeers } = input;
+  let ok = 0;
+  let failed = 0;
   const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
   const capabilities = relayCheckinCapabilities(profile.deviceCertificate.capabilities);
   const payload = createRelayCheckinPayload({
@@ -312,11 +328,14 @@ async function sendRelayCheckin(input: {
         profile.device.privateKeyPem,
       );
       await mesh.send(bootstrapPeer, signedEnvelope);
+      ok++;
       console.log(`[auto-relay-query] sent relay.checkin to ${bootstrapPeer}`);
     } catch (err) {
+      failed++;
       console.log(`[auto-relay-query] relay.checkin ERROR target=${bootstrapPeer} error=${err}`);
     }
   }
+  return { ok, failed };
 }
 
 function relayCheckinCapabilities(capabilities: readonly string[]): string[] {
@@ -327,8 +346,10 @@ async function queryRelayLookup(input: {
   mesh: EnvoyMesh;
   profile: Awaited<ReturnType<typeof loadOrCreateNodeProfile>>;
   bootstrapPeers: string[];
-}): Promise<void> {
+}): Promise<{ ok: number; failed: number }> {
   const { mesh, profile, bootstrapPeers } = input;
+  let ok = 0;
+  let failed = 0;
   for (const bootstrapPeer of bootstrapPeers) {
     try {
       const payload = createRelayLookupPayload({
@@ -353,11 +374,14 @@ async function queryRelayLookup(input: {
         profile.device.privateKeyPem,
       );
       await mesh.send(bootstrapPeer, signedEnvelope);
+      ok++;
       console.log(`[auto-relay-query] sent relay.lookup query=${payload.queryId} to ${bootstrapPeer}`);
     } catch (err) {
+      failed++;
       console.log(`[auto-relay-query] relay.lookup ERROR target=${bootstrapPeer} error=${err}`);
     }
   }
+  return { ok, failed };
 }
 
 async function dialBootstrapRelays(mesh: EnvoyMesh, bootstrapPeers: string[]): Promise<{ ok: number; failed: number }> {
@@ -395,8 +419,10 @@ function renderDashboard(ctx: {
   hasDht: boolean;
   args: ReturnType<typeof parseArgs>;
   relayStats: () => {
-    relayCheckinSent: number;
-    relayLookupSent: number;
+    relayCheckinOk: number;
+    relayCheckinFail: number;
+    relayLookupOk: number;
+    relayLookupFail: number;
     relayLookupResponses: number;
     relayCandidates: number;
     relayDialOk: number;
@@ -419,16 +445,22 @@ function renderDashboard(ctx: {
     ? { text: "YES", cls: "ok" as const }
     : { text: "NO", cls: "warn" as const };
 
-  const relayApiBadge =
-    !ctx.args.autoRelayPeersQuery
-      ? { text: "OFF", cls: "warn" as const }
-      : relayStats.relayLookupResponses > 0 && relayStats.relayCandidates > 0
-        ? { text: "FOUND", cls: "ok" as const }
-        : relayStats.relayLookupResponses > 0
-          ? { text: "NO-CANDIDATES", cls: "warn" as const }
-          : relayStats.relayLookupSent > 0
-            ? { text: "WAITING", cls: "start" as const }
-            : { text: "STARTING", cls: "start" as const };
+  let relayApiBadge: { text: string; cls: "ok" | "warn" | "start" | "err" };
+  if (!ctx.args.autoRelayPeersQuery) {
+    relayApiBadge = { text: "OFF", cls: "warn" };
+  } else if (relayStats.relayLookupFail > 0 && relayStats.relayLookupOk === 0) {
+    relayApiBadge = { text: "LOOKUP-FAIL", cls: "err" };
+  } else if (relayStats.relayCheckinFail > 0 && relayStats.relayCheckinOk === 0) {
+    relayApiBadge = { text: "CHECKIN-FAIL", cls: "err" };
+  } else if (relayStats.relayLookupResponses > 0 && relayStats.relayCandidates > 0) {
+    relayApiBadge = { text: "FOUND", cls: "ok" };
+  } else if (relayStats.relayLookupResponses > 0) {
+    relayApiBadge = { text: "NO-CANDIDATES", cls: "warn" };
+  } else if (relayStats.relayLookupOk > 0) {
+    relayApiBadge = { text: "WAITING", cls: "start" };
+  } else {
+    relayApiBadge = { text: "STARTING", cls: "start" };
+  }
 
   const dhtBadge = ctx.hasDht
     ? { text: "ON", cls: "ok" as const }
@@ -454,7 +486,7 @@ function renderDashboard(ctx: {
   lines.push(`  ${BOLD}Circuit Addr:${RESET} ${relayBadge.cls === "ok" ? GREEN : YELLOW}[${relayBadge.text}]${RESET}  ${BOLD}Peers:${RESET} ${peerBadge.cls === "ok" ? GREEN : CYAN}[${peerBadge.text}]${RESET}`);
   if (ctx.args.autoRelayPeersQuery) {
     lines.push(
-      `  ${BOLD}Relay API:${RESET} ${color(relayApiBadge.cls)}[${relayApiBadge.text}]${RESET} bootstrapDialOk=${relayStats.bootstrapDialOk} bootstrapDialFail=${relayStats.bootstrapDialFailed} checkins=${relayStats.relayCheckinSent} lookups=${relayStats.relayLookupSent} responses=${relayStats.relayLookupResponses} candidates=${relayStats.relayCandidates} dialOk=${relayStats.relayDialOk} dialFail=${relayStats.relayDialFailed}`,
+      `  ${BOLD}Relay API:${RESET} ${color(relayApiBadge.cls)}[${relayApiBadge.text}]${RESET} bootstrapDialOk=${relayStats.bootstrapDialOk} bootstrapDialFail=${relayStats.bootstrapDialFailed} checkinOk=${relayStats.relayCheckinOk} checkinFail=${relayStats.relayCheckinFail} lookupOk=${relayStats.relayLookupOk} lookupFail=${relayStats.relayLookupFail} responses=${relayStats.relayLookupResponses} candidates=${relayStats.relayCandidates} dialOk=${relayStats.relayDialOk} dialFail=${relayStats.relayDialFailed}`,
     );
   }
   lines.push("");
