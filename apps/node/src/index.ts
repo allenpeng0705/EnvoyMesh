@@ -135,6 +135,11 @@ const mesh = new EnvoyMesh({
     void appendP2pTrace(event);
   },
 });
+if (args.p2pDebug) {
+  console.log(
+    `[p2p-debug] relay periodic SUMMARY logs: ${args.relayDebugSummary ? "on" : "off"} (enable with --relay-debug-summary or ENVOYMESH_RELAY_DEBUG_SUMMARY=1)`,
+  );
+}
 const connectivityWarnings: string[] = [];
 const bootstrapProbeResults: Array<{ peer: string; ok: boolean; latencyMs?: number; error?: string }> = [];
 const MAX_BOOTSTRAP_PROBE_RESULTS = 512;
