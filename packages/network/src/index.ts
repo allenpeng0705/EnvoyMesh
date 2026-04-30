@@ -37,6 +37,11 @@ export interface InboundMeshMessage {
   envelope: EnvoyEnvelope;
   remotePeerId: string;
   protocol: string;
+  /**
+   * Inbound control streams only: send one signed reply on the same libp2p stream (required for
+   * NAT clients that are not dialable for reverse opens after the client closes its write half).
+   */
+  replyWithEnvelope?: (envelope: EnvoyEnvelope) => Promise<void>;
 }
 
 export type MeshMessageHandler = (message: InboundMeshMessage) => Promise<void>;
@@ -377,6 +382,91 @@ export class EnvoyMesh {
     return this.sendEnvelopeOnProtocol(target, envelope, ENVOY_MESSAGE_PROTOCOL);
   }
 
+  /**
+   * Send one envelope on `/envoymesh/message/0.1.0`, then read a single reply envelope on the same stream.
+   * Peers must respond with {@link InboundMeshMessage.replyWithEnvelope} from their inbound handler
+   * (relay control responses) — not with a separate {@link send} (often fails for NAT’d clients).
+   */
+  async sendExpectReply(
+    target: string,
+    envelope: EnvoyEnvelope,
+    options?: { timeoutMs?: number },
+  ): Promise<EnvoyEnvelope> {
+    validateEnvelopeProtocol(ENVOY_MESSAGE_PROTOCOL, envelope);
+    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    const timeoutMs = options?.timeoutMs ?? 30_000;
+    const stream: any = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_MESSAGE_PROTOCOL);
+    const remotePeerId = stream.connection?.remotePeer?.toString();
+    if (remotePeerId) {
+      this.emitP2pDebug({
+        kind: "stream:open",
+        remotePeerId,
+        protocol: ENVOY_MESSAGE_PROTOCOL,
+        direction: "outbound",
+      });
+    }
+    if (stream.writeStatus !== "writable") {
+      throw new Error(
+        `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}`,
+      );
+    }
+    /** One instance per stream: multiple `byteStream(stream)` calls register duplicate listeners. */
+    const streamIo = byteStream(stream);
+    await streamIo.write(encodeEnvelope(envelope));
+    const readPromise = streamIo.read() as Promise<Uint8Array | null>;
+    let replyBytes: Uint8Array | null;
+    try {
+      replyBytes = await new Promise<Uint8Array | null>((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error(`sendExpectReply timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+        void readPromise
+          .then((b) => {
+            clearTimeout(timer);
+            resolve(b);
+          })
+          .catch((err: unknown) => {
+            clearTimeout(timer);
+            reject(err);
+          });
+      });
+    } catch (error) {
+      try {
+        if (typeof stream.abort === "function") {
+          await stream.abort();
+        }
+      } catch {
+        /* ignore */
+      }
+      try {
+        await stream.close();
+      } catch {
+        /* ignore */
+      }
+      throw error;
+    }
+    try {
+      await stream.close();
+    } catch {
+      /* ignore */
+    }
+    if (remotePeerId) {
+      this.emitP2pDebug({
+        kind: "stream:close",
+        remotePeerId,
+        protocol: ENVOY_MESSAGE_PROTOCOL,
+        direction: "outbound",
+      });
+    }
+    if (replyBytes === null) {
+      throw new Error("sendExpectReply: peer closed stream without a reply");
+    }
+    const reply = decodeEnvelope(replyBytes.subarray());
+    validateEnvelopeProtocol(ENVOY_MESSAGE_PROTOCOL, reply);
+    return reply;
+  }
+
   async sendChat(target: string, envelope: EnvoyEnvelope): Promise<number> {
     return this.sendEnvelopeOnProtocol(target, envelope, ENVOY_CHAT_PROTOCOL);
   }
@@ -511,8 +601,23 @@ export class EnvoyMesh {
         direction: "inbound",
       });
 
+      let replyConsumed = false;
+      const streamIo = byteStream(stream);
+      const replyWithEnvelope =
+        protocol === ENVOY_MESSAGE_PROTOCOL
+          ? async (env: EnvoyEnvelope) => {
+              if (replyConsumed) {
+                throw new Error("EnvoyMesh replyWithEnvelope: duplicate reply");
+              }
+              replyConsumed = true;
+              validateEnvelopeProtocol(protocol, env);
+              await streamIo.write(encodeEnvelope(env));
+              await stream.close();
+            }
+          : undefined;
+
       try {
-        const bytes = await byteStream(stream).read();
+        const bytes = await streamIo.read();
 
         if (bytes !== null) {
           let envelope: EnvoyEnvelope;
@@ -528,11 +633,19 @@ export class EnvoyMesh {
             envelope,
             remotePeerId,
             protocol,
+            ...(replyWithEnvelope ? { replyWithEnvelope } : {}),
           });
         }
       } catch (error) {
         console.error("EnvoyMesh inbound stream failed", error);
       } finally {
+        if (!replyConsumed) {
+          try {
+            await stream.close();
+          } catch {
+            /* ignore */
+          }
+        }
         this.emitP2pDebug({
           kind: "stream:close",
           remotePeerId,

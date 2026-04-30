@@ -157,9 +157,12 @@ const RELAY_PEERS_QUERY_INTERVAL_MS = 30_000;
 const RELAY_PEERS_QUERY_JITTER_MS = 7_500;
 const RELAY_CHECKIN_INTERVAL_MS = 30_000;
 const RELAY_LOOKUP_INTERVAL_MS = 30_000;
+/** Client relay.lookup uses same-stream reply; allow slow paths. */
+const RELAY_LOOKUP_REPLY_TIMEOUT_MS = 30_000;
 const RELAY_SUMMARY_INTERVAL_MS = 60_000;
 const RELAY_CONTROL_TTL_MS = 90_000;
-const RELAY_FORWARD_LOOKUP_TIMEOUT_MS = 2_500;
+/** Child relay relay.lookup forward: read reply on same stream (per-hop). */
+const RELAY_FORWARD_LOOKUP_REPLY_MS = 12_000;
 const RELAY_MANAGER_SNAPSHOT_INTERVAL_MS = 30_000;
 const RELAY_HEALTH_INTERVAL_MS = 30_000;
 let bootstrapReprobeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -186,15 +189,6 @@ const relayClientState = createRelayClientState(effectiveBootstrapPeers.map(rela
 const relayLookupRouter = createRelayLookupRouter();
 let relayHealthState: RelayHealthState = createInitialRelayHealthState();
 let relayHealthSnapshot: RelayHealthSnapshot | undefined;
-const pendingRelayLookupResponses = new Map<
-  string,
-  {
-    expected: number;
-    responses: Array<{ payload: RelayLookupResponsePayload; remotePeerId: string }>;
-    resolve: () => void;
-    timeout: ReturnType<typeof setTimeout>;
-  }
->();
 
 mesh.onPeerDiscovered(async (peer) => {
   const source = peer.multiaddrs.some((addr) => addr.includes("/p2p-circuit")) ? "relay" : "unknown";
@@ -216,7 +210,7 @@ mesh.onPeerDiscovered(async (peer) => {
   }
 });
 
-mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
+mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelope }) => {
   const receivedAt = Date.now();
   const guardDecision = inboundGuard.inspect(inboundEnvelope);
 
@@ -492,6 +486,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
       remotePeerId,
       receivedAt,
       correlationId,
+      replyWithEnvelope,
     });
     return;
   }
@@ -1722,13 +1717,53 @@ async function runRelayLookupCycle(source: "startup" | "periodic"): Promise<void
       profile.device.privateKeyPem,
     );
     try {
-      const latencyMs = await mesh.send(target, signedEnvelope);
+      const startedAt = Date.now();
+      const reply = await mesh.sendExpectReply(target, signedEnvelope, { timeoutMs: RELAY_LOOKUP_REPLY_TIMEOUT_MS });
+      const latencyMs = Date.now() - startedAt;
+      const guardDecision = inboundGuard.inspect(reply);
+      if (guardDecision.action === "reject") {
+        noteRelayFailure(relayClientState, relayHintFromAddr(target));
+        await appendRelayTrace(
+          "relay.lookup.fail",
+          target,
+          `relay lookup reply rejected source=${source} target=${target} reason=${guardDecision.reason}`,
+        );
+        continue;
+      }
+      const env = guardDecision.envelope;
+      if (env.intent !== "relay.lookup.response") {
+        noteRelayFailure(relayClientState, relayHintFromAddr(target));
+        await appendRelayTrace(
+          "relay.lookup.fail",
+          target,
+          `relay lookup unexpected intent source=${source} target=${target} intent=${env.intent}`,
+        );
+        continue;
+      }
+      const responsePayload = parseRelayLookupResponsePayload(env.payload);
+      await processRelayLookupResponse(responsePayload);
       noteRelaySuccess(relayClientState, relayHintFromAddr(target));
       await appendRelayTrace("relay.lookup.ok", target, `relay lookup ok source=${source} target=${target}`, latencyMs);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      noteRelayFailure(relayClientState, relayHintFromAddr(target));
-      await appendRelayTrace("relay.lookup.fail", target, `relay lookup failed source=${source} target=${target} error=${message}`);
+      try {
+        const latencyMs = await mesh.send(target, signedEnvelope);
+        noteRelaySuccess(relayClientState, relayHintFromAddr(target));
+        await appendRelayTrace(
+          "relay.lookup.ok",
+          target,
+          `relay lookup ok (legacy send after expectReply: ${message}) source=${source} target=${target}`,
+          latencyMs,
+        );
+      } catch (fallbackError) {
+        const fb = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        noteRelayFailure(relayClientState, relayHintFromAddr(target));
+        await appendRelayTrace(
+          "relay.lookup.fail",
+          target,
+          `relay lookup failed source=${source} target=${target} expectReply=${message} legacySend=${fb}`,
+        );
+      }
     }
   }
 }
@@ -1738,8 +1773,9 @@ async function handleRelayControlEnvelope(input: {
   remotePeerId: string;
   receivedAt: number;
   correlationId: string | undefined;
+  replyWithEnvelope?: (envelope: EnvoyEnvelope) => Promise<void>;
 }): Promise<void> {
-  const { envelope, remotePeerId, receivedAt, correlationId } = input;
+  const { envelope, remotePeerId, receivedAt, correlationId, replyWithEnvelope } = input;
   try {
     if (envelope.intent === "relay.checkin") {
       const payload = parseRelayCheckinPayload(envelope.payload);
@@ -1759,6 +1795,20 @@ async function handleRelayControlEnvelope(input: {
       const payload = parseRelayLookupPayload(envelope.payload);
       if (!relayLookupRouter.markSeen(payload.queryId)) {
         await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.lookup duplicate dropped query=${payload.queryId}`);
+        await sendRelayControlResponse(
+          envelope,
+          remotePeerId,
+          "relay.lookup.response",
+          createRelayLookupResponsePayload({
+            queryId: payload.queryId,
+            peers: [],
+            relayHints: [],
+            truncated: false,
+            expiresAt: payload.expiresAt,
+          }),
+          correlationId,
+          replyWithEnvelope,
+        );
         return;
       }
       const circuitBases = relayDialMultiaddrsForCircuitRelay(mesh, args.advertiseAddrs);
@@ -1786,7 +1836,14 @@ async function handleRelayControlEnvelope(input: {
       const responsePayload = createRelayLookupResponsePayload(
         mergeRelayLookupResponses(payload, [localResponse, ...forwardedResponses.map((item) => item.payload)]),
       );
-      await sendRelayControlResponse(envelope, remotePeerId, "relay.lookup.response", responsePayload, correlationId);
+      await sendRelayControlResponse(
+        envelope,
+        remotePeerId,
+        "relay.lookup.response",
+        responsePayload,
+        correlationId,
+        replyWithEnvelope,
+      );
       if (args.enableRelayServer && localResponse.peers.length === 0) {
         const others = relayRoster.entries().filter((e) => e.peerId !== remotePeerId);
         if (others.length > 0) {
@@ -1816,17 +1873,14 @@ async function handleRelayControlEnvelope(input: {
 
     if (envelope.intent === "relay.lookup.response") {
       const payload = parseRelayLookupResponsePayload(envelope.payload);
-      const pending = pendingRelayLookupResponses.get(payload.queryId);
-      if (pending) {
-        pending.responses.push({ payload, remotePeerId });
-        if (pending.responses.length >= pending.expected) {
-          pending.resolve();
-        }
-        await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.lookup.response collected peers=${payload.peers.length}`);
-        return;
-      }
       await processRelayLookupResponse(payload);
-      await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.lookup.response peers=${payload.peers.length}`);
+      await appendRelayInboundAudit(
+        envelope,
+        remotePeerId,
+        receivedAt,
+        correlationId,
+        `relay.lookup.response peers=${payload.peers.length}`,
+      );
       return;
     }
 
@@ -1837,7 +1891,14 @@ async function handleRelayControlEnvelope(input: {
         truncated: false,
         expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
       });
-      await sendRelayControlResponse(envelope, remotePeerId, "relay.hints.response", responsePayload, correlationId);
+      await sendRelayControlResponse(
+        envelope,
+        remotePeerId,
+        "relay.hints.response",
+        responsePayload,
+        correlationId,
+        replyWithEnvelope,
+      );
       await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.hints.request reason=${payload.reason}`);
       return;
     }
@@ -1868,7 +1929,14 @@ async function handleRelayControlEnvelope(input: {
         childLimit: 20,
         expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
       });
-      await sendRelayControlResponse(envelope, remotePeerId, "relay.join.response", responsePayload, correlationId);
+      await sendRelayControlResponse(
+        envelope,
+        remotePeerId,
+        "relay.join.response",
+        responsePayload,
+        correlationId,
+        replyWithEnvelope,
+      );
       await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.join.request accepted relay=${payload.relay.relayId}`);
       return;
     }
@@ -1890,7 +1958,14 @@ async function handleRelayControlEnvelope(input: {
         state: "verified",
         expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
       });
-      await sendRelayControlResponse(envelope, remotePeerId, "relay.register.response", responsePayload, correlationId);
+      await sendRelayControlResponse(
+        envelope,
+        remotePeerId,
+        "relay.register.response",
+        responsePayload,
+        correlationId,
+        replyWithEnvelope,
+      );
       await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.register accepted relay=${payload.relay.relayId}`);
       return;
     }
@@ -1941,81 +2016,87 @@ async function forwardRelayLookup(input: {
     return [];
   }
 
-  let sent = 0;
-  let resolvePending!: () => void;
-  const pending = {
-    expected: targets.length,
-    responses: [] as Array<{ payload: RelayLookupResponsePayload; remotePeerId: string }>,
-    resolve: () => resolvePending(),
-    timeout: setTimeout(() => resolvePending(), RELAY_FORWARD_LOOKUP_TIMEOUT_MS),
-  };
-  const done = new Promise<void>((resolve) => {
-    resolvePending = resolve;
-  });
-  pendingRelayLookupResponses.set(payload.queryId, pending);
-
-  try {
-    for (const target of targets) {
-      const targetAddress = relayTargetAddress(target);
-      if (!targetAddress) {
-        continue;
-      }
-      const forwardedPayload = createRelayLookupPayload({
-        ...payload,
-        maxHops: payload.maxHops - 1,
+  const out: Array<{ payload: RelayLookupResponsePayload; remotePeerId: string }> = [];
+  for (const target of targets) {
+    const targetAddress = relayTargetAddress(target);
+    if (!targetAddress) {
+      continue;
+    }
+    const forwardedPayload = createRelayLookupPayload({
+      ...payload,
+      maxHops: payload.maxHops - 1,
+    });
+    const signedEnvelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        senderPeerId: derivePeerId(profile.device.publicKeyPem),
+        senderPublicKey: profile.device.publicKeyPem,
+        senderRole: "system",
+        recipientPeerId: targetAddress.startsWith("/") ? undefined : target.relayId,
+        intent: "relay.lookup",
+        payload: forwardedPayload,
+        correlationId,
+      }),
+      profile.device.privateKeyPem,
+    );
+    const remote = target.relayId || targetAddress;
+    try {
+      relayLookupRouter.recordForwardedLookup();
+      const startedAt = Date.now();
+      const reply = await mesh.sendExpectReply(targetAddress, signedEnvelope, {
+        timeoutMs: RELAY_FORWARD_LOOKUP_REPLY_MS,
       });
-      const signedEnvelope = signUnsignedEnvelope(
-        createUnsignedEnvelope({
-          senderPeerId: derivePeerId(profile.device.publicKeyPem),
-          senderPublicKey: profile.device.publicKeyPem,
-          senderRole: "system",
-          recipientPeerId: targetAddress.startsWith("/") ? undefined : target.relayId,
-          intent: "relay.lookup",
-          payload: forwardedPayload,
-          correlationId,
-        }),
-        profile.device.privateKeyPem,
-      );
-      try {
-        sent += 1;
-        relayLookupRouter.recordForwardedLookup();
-        const latencyMs = await mesh.send(targetAddress, signedEnvelope);
-        await appendRelayTrace(
-          "relay.lookup.forward.ok",
-          target.relayId || targetAddress,
-          `relay lookup forward ok target=${target.relayId || targetAddress} nextHops=${forwardedPayload.maxHops}`,
-          latencyMs,
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+      const latencyMs = Date.now() - startedAt;
+      const guardDecision = inboundGuard.inspect(reply);
+      if (guardDecision.action === "reject") {
         relayLookupRouter.recordFailedForward();
         if (target.relayId) {
           relayLookupRouter.recordNegative(payload, target.relayId);
         }
         await appendRelayTrace(
           "relay.lookup.forward.fail",
-          target.relayId || targetAddress,
-          `relay lookup forward failed target=${target.relayId || targetAddress} error=${message}`,
+          remote,
+          `relay lookup forward rejected reply: ${guardDecision.reason}`,
         );
+        continue;
       }
-    }
-
-    pending.expected = sent;
-    if (sent === 0 || pending.responses.length >= sent) {
-      pending.resolve();
-    }
-    await done;
-    relayLookupRouter.recordCollectedForwardResponse(pending.responses.length);
-    for (const response of pending.responses) {
-      if (response.payload.peers.length === 0) {
-        relayLookupRouter.recordNegative(payload, response.remotePeerId);
+      const env = guardDecision.envelope;
+      if (env.intent !== "relay.lookup.response") {
+        relayLookupRouter.recordFailedForward();
+        await appendRelayTrace(
+          "relay.lookup.forward.fail",
+          remote,
+          `relay lookup forward unexpected intent ${env.intent}`,
+        );
+        continue;
       }
+      const responsePayload = parseRelayLookupResponsePayload(env.payload);
+      out.push({ payload: responsePayload, remotePeerId: remote });
+      await appendRelayTrace(
+        "relay.lookup.forward.ok",
+        remote,
+        `relay lookup forward ok target=${remote} nextHops=${forwardedPayload.maxHops}`,
+        latencyMs,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      relayLookupRouter.recordFailedForward();
+      if (target.relayId) {
+        relayLookupRouter.recordNegative(payload, target.relayId);
+      }
+      await appendRelayTrace(
+        "relay.lookup.forward.fail",
+        remote,
+        `relay lookup forward failed target=${remote} error=${message}`,
+      );
     }
-    return pending.responses;
-  } finally {
-    clearTimeout(pending.timeout);
-    pendingRelayLookupResponses.delete(payload.queryId);
   }
+  relayLookupRouter.recordCollectedForwardResponse(out.length);
+  for (const response of out) {
+    if (response.payload.peers.length === 0) {
+      relayLookupRouter.recordNegative(payload, response.remotePeerId);
+    }
+  }
+  return out;
 }
 
 function mergeRelayLookupResponses(payload: RelayLookupPayload, responses: RelayLookupResponsePayload[]): RelayLookupResponsePayload {
@@ -2090,6 +2171,7 @@ async function sendRelayControlResponse(
   intent: "relay.lookup.response" | "relay.hints.response" | "relay.join.response" | "relay.register.response",
   payload: unknown,
   correlationId: string | undefined,
+  replyWithEnvelope?: (envelope: EnvoyEnvelope) => Promise<void>,
 ): Promise<void> {
   const signedEnvelope = signUnsignedEnvelope(
     createUnsignedEnvelope({
@@ -2103,6 +2185,17 @@ async function sendRelayControlResponse(
     }),
     profile.device.privateKeyPem,
   );
+  if (replyWithEnvelope) {
+    try {
+      await replyWithEnvelope(signedEnvelope);
+      return;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[relay-server] same-stream control reply failed (${detail}); falling back to mesh.send to requester`,
+      );
+    }
+  }
   await mesh.send(libp2pRecipientPeerId, signedEnvelope);
 }
 

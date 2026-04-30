@@ -8,12 +8,14 @@ import {
   createRelayLookupPayload,
   createUnsignedEnvelope,
   parseRelayLookupResponsePayload,
+  type EnvoyEnvelope,
 } from "@envoymesh/protocol";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { parseNodeArgs, printHelp } from "./args.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
+import { createInboundMessageGuard } from "./inbound-guard.js";
 import { logRelayReachableAddrsForCheckin, logClientRelayLookupResponse, describeMultiaddrReachability } from "./relay-checkin-log.js";
 
 const CLEAR = "\x1b[2J\x1b[H";
@@ -26,6 +28,7 @@ const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 const RELAY_CONTROL_TTL_MS = 90_000;
 const RELAY_LOOKUP_INTERVAL_MS = 10_000;
+const RELAY_LOOKUP_REPLY_TIMEOUT_MS = 30_000;
 
 function color(badge: "ok" | "warn" | "start" | "err"): string {
   switch (badge) {
@@ -107,6 +110,7 @@ Examples:
   const args = parseArgs(argv);
   const profile = await loadOrCreateNodeProfile(args.profileDir);
   const discoverySeedStore = createDiscoverySeedStore(args.profileDir);
+  const inboundGuard = createInboundMessageGuard();
 
   const peers = new Map<string, PeerInfo>();
   let relayCount = 0;
@@ -152,61 +156,70 @@ Examples:
     lastEventAt = Date.now();
   });
 
-  // Handle relay.lookup.response from EnvoyMesh relay nodes and dial returned /p2p-circuit candidates.
+  async function dispatchRelayLookupResponse(envelope: EnvoyEnvelope): Promise<void> {
+    let payload;
+    try {
+      payload = parseRelayLookupResponsePayload(envelope.payload);
+    } catch (error) {
+      console.log(`[auto-relay-query] relay.lookup.response parse failed error=${error}`);
+      return;
+    }
+    relayLookupResponses++;
+    relayCandidates += payload.peers.length;
+    console.log(
+      `[auto-relay-query] received relay.lookup.response query=${payload.queryId} peers=${payload.peers.length} hints=${payload.relayHints.length}`,
+    );
+    logClientRelayLookupResponse({
+      queryId: payload.queryId,
+      peerCount: payload.peers.length,
+      multiaddrs: dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs)),
+    });
+    for (const relayPeer of payload.peers) {
+      const alreadyKnown = peers.has(relayPeer.peerId);
+      peers.set(relayPeer.peerId, {
+        peerId: relayPeer.peerId,
+        addrs: relayPeer.multiaddrs,
+        discoveredAt: Date.now(),
+        relayed: true,
+      });
+      if (!alreadyKnown) relayCount++;
+      lastEventAt = Date.now();
+    }
+
+    const relayedAddrs = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
+    if (relayedAddrs.length > 0) {
+      await discoverySeedStore.upsertMany(relayedAddrs, "relay-peers");
+    }
+    for (const addr of relayedAddrs) {
+      const candidates = expandCircuitDialCandidates(addr, args.bootstrapPeers);
+      let dialOkForAddr = false;
+      for (const cand of candidates) {
+        try {
+          console.log(`[auto-relay-query] dialing [${describeMultiaddrReachability(cand)}] ${cand}`);
+          await mesh.dial(cand);
+          relayDialOk++;
+          dialOkForAddr = true;
+          console.log(`[auto-relay-query] relay.lookup candidate dial ok: ${cand}`);
+          break;
+        } catch (err) {
+          console.log(`[auto-relay-query] relay.lookup candidate dial failed: ${cand} error=${err}`);
+        }
+      }
+      if (!dialOkForAddr) {
+        relayDialFailed++;
+      }
+    }
+  }
+
+  // Handle relay.lookup.response from older relays that still push replies on a separate stream.
   mesh.onMessage(async ({ envelope }) => {
     if (envelope.intent === "relay.lookup.response") {
-      let payload;
-      try {
-        payload = parseRelayLookupResponsePayload(envelope.payload);
-      } catch (error) {
-        console.log(`[auto-relay-query] relay.lookup.response parse failed error=${error}`);
+      const guardDecision = inboundGuard.inspect(envelope);
+      if (guardDecision.action === "reject") {
+        console.log(`[auto-relay-query] rejected relay.lookup.response: ${guardDecision.reason}`);
         return;
       }
-      relayLookupResponses++;
-      relayCandidates += payload.peers.length;
-      console.log(
-        `[auto-relay-query] received relay.lookup.response query=${payload.queryId} peers=${payload.peers.length} hints=${payload.relayHints.length}`,
-      );
-      logClientRelayLookupResponse({
-        queryId: payload.queryId,
-        peerCount: payload.peers.length,
-        multiaddrs: dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs)),
-      });
-      for (const relayPeer of payload.peers) {
-        const alreadyKnown = peers.has(relayPeer.peerId);
-        peers.set(relayPeer.peerId, {
-          peerId: relayPeer.peerId,
-          addrs: relayPeer.multiaddrs,
-          discoveredAt: Date.now(),
-          relayed: true,
-        });
-        if (!alreadyKnown) relayCount++;
-        lastEventAt = Date.now();
-      }
-
-      const relayedAddrs = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
-      if (relayedAddrs.length > 0) {
-        await discoverySeedStore.upsertMany(relayedAddrs, "relay-peers");
-      }
-      for (const addr of relayedAddrs) {
-        const candidates = expandCircuitDialCandidates(addr, args.bootstrapPeers);
-        let dialOkForAddr = false;
-        for (const cand of candidates) {
-          try {
-            console.log(`[auto-relay-query] dialing [${describeMultiaddrReachability(cand)}] ${cand}`);
-            await mesh.dial(cand);
-            relayDialOk++;
-            dialOkForAddr = true;
-            console.log(`[auto-relay-query] relay.lookup candidate dial ok: ${cand}`);
-            break;
-          } catch (err) {
-            console.log(`[auto-relay-query] relay.lookup candidate dial failed: ${cand} error=${err}`);
-          }
-        }
-        if (!dialOkForAddr) {
-          relayDialFailed++;
-        }
-      }
+      await dispatchRelayLookupResponse(guardDecision.envelope);
     }
   });
 
@@ -298,7 +311,13 @@ Examples:
       const checkins = await sendRelayCheckin({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
       relayCheckinOk += checkins.ok;
       relayCheckinFail += checkins.failed;
-      const lookups = await queryRelayLookup({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
+      const lookups = await queryRelayLookup({
+        mesh,
+        profile,
+        bootstrapPeers: args.bootstrapPeers,
+        inboundGuard,
+        applyLookupResponse: dispatchRelayLookupResponse,
+      });
       relayLookupOk += lookups.ok;
       relayLookupFail += lookups.failed;
     } finally {
@@ -370,11 +389,14 @@ async function queryRelayLookup(input: {
   mesh: EnvoyMesh;
   profile: Awaited<ReturnType<typeof loadOrCreateNodeProfile>>;
   bootstrapPeers: string[];
+  inboundGuard: ReturnType<typeof createInboundMessageGuard>;
+  applyLookupResponse: (envelope: EnvoyEnvelope) => Promise<void>;
 }): Promise<{ ok: number; failed: number }> {
-  const { mesh, profile, bootstrapPeers } = input;
+  const { mesh, profile, bootstrapPeers, inboundGuard, applyLookupResponse } = input;
   let ok = 0;
   let failed = 0;
   for (const bootstrapPeer of bootstrapPeers) {
+    let signedEnvelope: ReturnType<typeof signUnsignedEnvelope> | undefined;
     try {
       const payload = createRelayLookupPayload({
         queryId: `dashboard_relay_lookup_${randomUUID()}`,
@@ -385,8 +407,8 @@ async function queryRelayLookup(input: {
         visibilityScope: "public",
         expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
       });
-      console.log(`[auto-relay-query] sending relay.lookup query=${payload.queryId} to ${bootstrapPeer}`);
-      const signedEnvelope = signUnsignedEnvelope(
+      console.log(`[auto-relay-query] relay.lookup (expect reply) query=${payload.queryId} to ${bootstrapPeer}`);
+      signedEnvelope = signUnsignedEnvelope(
         createUnsignedEnvelope({
           senderPeerId: derivePeerId(profile.device.publicKeyPem),
           senderPublicKey: profile.device.publicKeyPem,
@@ -397,12 +419,45 @@ async function queryRelayLookup(input: {
         }),
         profile.device.privateKeyPem,
       );
-      await mesh.send(bootstrapPeer, signedEnvelope);
+      const reply = await mesh.sendExpectReply(bootstrapPeer, signedEnvelope, {
+        timeoutMs: RELAY_LOOKUP_REPLY_TIMEOUT_MS,
+      });
+      const guardDecision = inboundGuard.inspect(reply);
+      if (guardDecision.action === "reject") {
+        failed++;
+        console.log(
+          `[auto-relay-query] relay.lookup reply rejected target=${bootstrapPeer} reason=${guardDecision.reason}`,
+        );
+        continue;
+      }
+      const env = guardDecision.envelope;
+      if (env.intent !== "relay.lookup.response") {
+        failed++;
+        console.log(`[auto-relay-query] relay.lookup unexpected intent ${env.intent} target=${bootstrapPeer}`);
+        continue;
+      }
       ok++;
-      console.log(`[auto-relay-query] sent relay.lookup query=${payload.queryId} to ${bootstrapPeer}`);
+      await applyLookupResponse(env);
     } catch (err) {
-      failed++;
-      console.log(`[auto-relay-query] relay.lookup ERROR target=${bootstrapPeer} error=${err}`);
+      const detail = err instanceof Error ? err.message : String(err);
+      if (!signedEnvelope) {
+        failed++;
+        console.log(`[auto-relay-query] relay.lookup ERROR target=${bootstrapPeer} error=${detail}`);
+        continue;
+      }
+      try {
+        console.log(
+          `[auto-relay-query] relay.lookup legacy send (after expectReply failed) target=${bootstrapPeer} error=${detail}`,
+        );
+        await mesh.send(bootstrapPeer, signedEnvelope);
+        ok++;
+      } catch (legacyErr) {
+        failed++;
+        const legacy = legacyErr instanceof Error ? legacyErr.message : String(legacyErr);
+        console.log(
+          `[auto-relay-query] relay.lookup ERROR target=${bootstrapPeer} expectReply=${detail} legacySend=${legacy}`,
+        );
+      }
     }
   }
   return { ok, failed };
