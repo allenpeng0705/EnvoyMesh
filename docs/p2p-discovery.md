@@ -6,6 +6,8 @@ This document explains how EnvoyMesh nodes discover each other on **native libp2
 
 **POC entry:** ordered proof sequence for transport discovery + connectivity (LAN → bootstrap/DHT → relay observation) lives in [poc-discovery-connectivity](./poc-discovery-connectivity.md).
 
+**Relay network design:** proposed layered relay-node topology, address-switching behavior, multi-relay failover, and growth controls live in [layered-relay-network](./layered-relay-network.md).
+
 ## Discovery Model At A Glance
 
 EnvoyMesh discovery is layered:

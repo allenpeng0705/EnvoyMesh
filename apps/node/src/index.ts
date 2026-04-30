@@ -119,6 +119,7 @@ if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length ==
 }
 
 const autoCapabilityTopics = buildAutoCapabilityTopics(profile.deviceCertificate.capabilities);
+const observedRelayPeerIds = new Set<string>();
 
 mesh.onPeerDiscovered(async (peer) => {
   const source = peer.multiaddrs.some((addr) => addr.includes("/p2p-circuit")) ? "relay" : "unknown";
@@ -402,8 +403,13 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
   }
 
   if (envelope.intent === "relay.peers.request" || envelope.intent === "relay.peers.response") {
-    const relayPeerIds = mesh.getConnectedRelayPeerIds();
-    console.log(`[mac-relay] received ${envelope.intent} from ${remotePeerId}, relayPeerIds=${JSON.stringify(relayPeerIds)}`);
+    if (envelope.intent === "relay.peers.request") {
+      observedRelayPeerIds.add(remotePeerId);
+    }
+    const relayPeerIds = dedupeAddrs([...mesh.getConnectedRelayPeerIds(), ...observedRelayPeerIds]);
+    console.log(
+      `[mac-relay] received ${envelope.intent} from ${remotePeerId}, relayPeerIds=${JSON.stringify(relayPeerIds)}`,
+    );
     const relayPeers = await handleInboundRelayPeersIntent({
       envelope,
       profile,
