@@ -18,6 +18,16 @@ import {
   createKnowledgeQueryPayload,
   createReport,
   createReportCreatePayload,
+  createRelayCheckinPayload,
+  createRelayHintsRequestPayload,
+  createRelayHintsResponsePayload,
+  createRelayJoinRequestPayload,
+  createRelayJoinResponsePayload,
+  createRelayLookupPayload,
+  createRelayLookupResponsePayload,
+  createRelayRegisterPayload,
+  createRelayRegisterResponsePayload,
+  createRelaySummaryPayload,
   createUnsignedDeviceRevocationRecord,
   createTaskAcceptPayload,
   createTaskCancelPayload,
@@ -55,6 +65,16 @@ import {
   parseDeviceRevocationRecord,
   parseMandate,
   parseReportCreatePayload,
+  parseRelayCheckinPayload,
+  parseRelayHintsRequestPayload,
+  parseRelayHintsResponsePayload,
+  parseRelayJoinRequestPayload,
+  parseRelayJoinResponsePayload,
+  parseRelayLookupPayload,
+  parseRelayLookupResponsePayload,
+  parseRelayRegisterPayload,
+  parseRelayRegisterResponsePayload,
+  parseRelaySummaryPayload,
   parseTaskAcceptPayload,
   parseTaskCancelPayload,
   parseTaskHeartbeatPayload,
@@ -125,6 +145,113 @@ describe("protocol", () => {
       ],
     });
     expect(parseDiscoveryResponsePayload(response)).toEqual(response);
+  });
+
+  it("roundtrips relay checkin and lookup payloads", () => {
+    const expiresAt = "2026-04-27T10:05:00.000Z";
+    const checkin = createRelayCheckinPayload({
+      peerId: "peer-a",
+      ownerId: "envoy:owner:alice",
+      relayReachableAddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay/p2p-circuit/p2p/peer-a"],
+      capabilities: ["mesh.discovery"],
+      advertisements: [{ capability: "mesh.discovery", visibility: "public", expiresAt }],
+      relayHints: [{ relayId: "relay-1", multiaddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-1"] }],
+      expiresAt,
+    });
+    expect(parseRelayCheckinPayload(checkin)).toEqual(checkin);
+
+    const lookup = createRelayLookupPayload({
+      queryId: "query-1",
+      capability: "mesh.discovery",
+      maxResults: 5,
+      maxHops: 2,
+      maxFanout: 2,
+      visibilityScope: "public",
+      expiresAt,
+    });
+    expect(parseRelayLookupPayload(lookup)).toEqual(lookup);
+
+    const response = createRelayLookupResponsePayload({
+      queryId: lookup.queryId,
+      peers: [
+        {
+          peerId: "peer-b",
+          ownerId: "envoy:owner:bob",
+          multiaddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay/p2p-circuit/p2p/peer-b"],
+          viaRelayId: "relay-1",
+          capabilities: ["mesh.discovery"],
+          visibility: "public",
+          expiresAt,
+        },
+      ],
+      relayHints: [{ relayId: "relay-2", multiaddrs: ["/ip4/127.0.0.1/tcp/4002/p2p/relay-2"] }],
+      truncated: false,
+      expiresAt,
+    });
+    expect(parseRelayLookupResponsePayload(response)).toEqual(response);
+  });
+
+  it("roundtrips relay hints, join, register, and summary payloads", () => {
+    const expiresAt = "2026-04-27T10:05:00.000Z";
+    const hintsRequest = createRelayHintsRequestPayload({
+      reason: "lookup-failed",
+      maxResults: 3,
+      expiresAt,
+    });
+    expect(parseRelayHintsRequestPayload(hintsRequest)).toEqual(hintsRequest);
+
+    const hintsResponse = createRelayHintsResponsePayload({
+      relayHints: [{ relayId: "relay-2", level: 2, multiaddrs: ["/ip4/127.0.0.1/tcp/4002/p2p/relay-2"] }],
+      expiresAt,
+    });
+    expect(parseRelayHintsResponsePayload(hintsResponse)).toEqual(hintsResponse);
+
+    const relay = {
+      relayId: "relay-1",
+      level: 2,
+      region: "local",
+      publicAddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-1"],
+      capacity: 20,
+      expiresAt,
+    };
+    const join = createRelayJoinRequestPayload({
+      relay,
+      desiredLevel: 2,
+    });
+    expect(parseRelayJoinRequestPayload(join)).toEqual(join);
+
+    const joinResponse = createRelayJoinResponsePayload({
+      accepted: true,
+      acceptedLevel: 2,
+      parents: [{ relayId: "relay-root", level: 1, multiaddrs: ["/ip4/127.0.0.1/tcp/4000/p2p/root"] }],
+      childLimit: 20,
+      expiresAt,
+    });
+    expect(parseRelayJoinResponsePayload(joinResponse)).toEqual(joinResponse);
+
+    const registration = createRelayRegisterPayload({
+      relay,
+      requestedRelation: "child",
+    });
+    expect(parseRelayRegisterPayload(registration)).toEqual(registration);
+
+    const registerResponse = createRelayRegisterResponsePayload({
+      accepted: true,
+      relation: "child",
+      state: "verified",
+      expiresAt,
+    });
+    expect(parseRelayRegisterResponsePayload(registerResponse)).toEqual(registerResponse);
+
+    const summary = createRelaySummaryPayload({
+      relayId: "relay-1",
+      level: 2,
+      livePeerCount: 5,
+      childRelayCount: 1,
+      topicBuckets: ["capability:mesh.discovery"],
+      expiresAt,
+    });
+    expect(parseRelaySummaryPayload(summary)).toEqual(summary);
   });
 
   it("roundtrips device pairing payloads", () => {

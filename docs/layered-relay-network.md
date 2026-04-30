@@ -29,7 +29,7 @@ A normal node is a leaf in the graph.
 
 Responsibilities:
 
-- connect to 1-3 active relays
+- connect to at least 1 relay for bootstrap, and target 2-3 active relays for healthy WAN mode
 - check in periodically
 - query relays for peer candidates
 - dial returned `/p2p-circuit` addresses
@@ -173,7 +173,8 @@ Hard rules:
 - only trusted config or certificate can create `L0`
 - `L1` is accepted by `L0`
 - `L2` is accepted by `L1`
-- child level must be parent level plus one
+- child level must be assigning parent level plus one
+- ancestor links are backup/routing links, not level-assignment authority
 - max depth is fixed, for example 3-4 relay levels
 - each relay has `maxChildren`
 - overloaded parents redirect new relay candidates
@@ -226,11 +227,12 @@ peerRoster: peerId -> {
   ownerId?,
   capabilities?,
   lastSeenAt,
+  reservationFreshUntil,
   expiresAt
 }
 ```
 
-`relayBook` is longer-lived but bounded. `peerRoster` is short-lived and refreshed by check-ins.
+`relayBook` is longer-lived but bounded. `peerRoster` is short-lived and refreshed by check-ins. A relay should only return `/p2p-circuit` addresses for peers whose check-in and relay reservation are still fresh.
 
 Suggested caps:
 
@@ -240,6 +242,80 @@ Suggested caps:
 - children: capacity-based, often 20-100
 - candidates: temporary cap, for example 100
 - normal-node roster: capacity-based with TTL and LRU
+
+## Relay Protocol Primitives
+
+Do not use one broad “give me peers” request as the long-term protocol. Split relay behavior into explicit messages so implementation can enforce TTL, caps, and policy at each step.
+
+| Intent | Sender | Purpose |
+| --- | --- | --- |
+| `relay.checkin` | normal node → relay | Refresh leaf presence, relay reservation freshness, optional capabilities, and relay hints. |
+| `relay.lookup` | normal node or relay → relay | Ask for bounded peer candidates by peer ID, owner ID, capability, or topic. |
+| `relay.hints.request` | normal node → relay | Ask for alternative relay candidates when lookup or dial fails. |
+| `relay.join.request` | relay → relay | Ask to join the relay graph as a relay node. |
+| `relay.register` | relay → assigned neighbor | Establish parent, ancestor, sibling, or child relation. |
+| `relay.summary` | relay → relay | Exchange bounded routing summaries, not full normal-node rosters. |
+
+`relay.peers.request` can remain a development/debug shortcut, but production discovery should move to `relay.checkin` plus `relay.lookup`.
+
+### Check-In Contract
+
+`relay.checkin` should include:
+
+```ts
+{
+  peerId,
+  ownerId?,
+  relayReachableAddrs,
+  capabilities?,
+  relayHints?,
+  expiresAt,
+  signature
+}
+```
+
+The relay must verify:
+
+- the message is signed by the checking-in peer
+- the peer can be reached through this relay, or has a fresh relay reservation
+- `expiresAt` is within allowed TTL
+- advertised capabilities are acceptable under local policy
+
+The relay should not return a normal node in lookup results after `expiresAt` or `reservationFreshUntil`.
+
+### Lookup Contract
+
+`relay.lookup` should be filter-based and bounded:
+
+```ts
+{
+  queryId,
+  targetPeerId?,
+  targetOwnerId?,
+  capability?,
+  topicHash?,
+  maxResults,
+  maxHops,
+  visibilityScope,
+  expiresAt,
+  signature
+}
+```
+
+Responses should include:
+
+```ts
+{
+  queryId,
+  peers,
+  relayHints,
+  truncated,
+  policy,
+  expiresAt
+}
+```
+
+Every response must be capped, deduped, and policy-filtered before returning to the requester.
 
 ## New Relay Join Flow
 
@@ -281,6 +357,64 @@ The contacted seed or parent returns assigned neighbors:
 - graph epoch or version
 
 The new relay probes returned relays and only promotes verified relays into `relayBook`.
+
+## Relay Routing Summaries
+
+Relay-to-relay lookup cannot depend on flooding the whole graph, and root relays should not store every normal node. Relays need compact routing summaries.
+
+Each relay periodically advertises a `relay.summary` to selected neighbors:
+
+```ts
+{
+  relayId,
+  level,
+  region,
+  childRelayCount,
+  livePeerCount,
+  capabilityBloom?,
+  topicBuckets?,
+  graphEpoch,
+  expiresAt,
+  signature
+}
+```
+
+Summaries are hints for routing, not authoritative peer records. A relay may use them to choose which neighbor to ask next, but the relay that owns the fresh `peerRoster` must produce the final peer candidate. Relay summaries must not include owner-derived buckets in the base protocol; owner-based lookup should use direct, policy-authorized lookup paths rather than global owner summaries.
+
+Routing rules:
+
+- prefer local roster first
+- prefer sibling or nearby relays for same-region queries
+- climb to parent or ancestor when local and sibling routes do not match
+- descend only through relays whose summary suggests likely matches
+- never forward without decrementing `maxHops`
+- never forward to more than `maxFanout` neighbors per hop
+- cache negative results briefly to avoid repeated misses
+- dedupe by `queryId` to avoid loops
+
+This keeps “connect to one relay and discover the graph” possible without turning every lookup into global broadcast.
+
+Implemented routing behavior:
+
+- `apps/node/src/relay-lookup-router.ts` makes relay-to-relay forwarding decisions from the local relay book plus fresh `relay.summary` state.
+- Local roster lookup is always attempted before forwarding.
+- Forwarding is bounded by `maxHops` and `maxFanout`; forwarded requests preserve `queryId` and decrement `maxHops`.
+- Router selection prefers summaries that match `capability` or `topicHash`, then falls back to nearby/sibling, parent/ancestor, child, and candidate relations.
+- Relays keep an in-memory seen-query cache to suppress duplicate `queryId` loops and a short negative cache to avoid repeatedly forwarding the same miss to the same neighbor.
+- Responses from selected neighbors are merged, deduped, capped by `maxResults`, and returned with relay hints.
+
+Future hardening remains focused on graph-health diagnostics, signed summary verification policy, richer region scoring, and heavier multi-process libp2p smoke tests.
+
+## Relay Manager Interface
+
+Each relay should expose a local operator management surface separate from the public relay graph protocol. The first implemented manager surface is read-only and local by default:
+
+- the relay runtime periodically writes a `relay.manager.snapshot` audit trace into the local profile
+- `relay-status` in the developer CLI reads the latest snapshot and can print text or JSON
+- the desktop dashboard includes a Relay Manager panel backed by the same snapshot
+- the manager shows relay identity, listen addresses, roster counts, relay-book neighbors, summaries, routing metrics, recent relay traces, and warnings
+
+This is intentionally not a public admin API. A future live admin endpoint should bind to `127.0.0.1` or OS-local IPC, require explicit enablement, and use an operator token or signed owner/admin envelope before allowing actions such as probe, mark-stale, or graph repair.
 
 ## Normal Node Relay Strategy
 
@@ -345,11 +479,11 @@ sequenceDiagram
   participant RelayB1
   participant NodeB
 
-  NodeA->>RelayA1: relay.peers.request
-  RelayA1-->>NodeA: local peers, relay hints
-  NodeA->>RelayA1: lookup target or capability
-  RelayA1->>RelayRoot: bounded lookup maxHops
-  RelayRoot->>RelayB1: routed lookup
+  NodeA->>RelayA1: relay.checkin
+  RelayA1-->>NodeA: checkin accepted
+  NodeA->>RelayA1: relay.lookup target or capability
+  RelayA1->>RelayRoot: relay.lookup maxHops
+  RelayRoot->>RelayB1: routed lookup by summary
   RelayB1-->>RelayRoot: NodeB relay address
   RelayRoot-->>RelayA1: NodeB relay address
   RelayA1-->>NodeA: NodeB via RelayB1
@@ -366,6 +500,40 @@ Lookup must be bounded:
 - rate limit per requester
 
 Relays should not broadcast every query to the whole graph.
+
+## Visibility And Privacy Policy
+
+Policy is part of discovery from Phase 1, not a later add-on. A relay must decide whether a requester is allowed to see each candidate before returning it.
+
+Suggested visibility levels:
+
+- `public`: visible to any requester allowed by abuse controls
+- `capability`: visible only for specific capability/topic queries
+- `bonded`: visible only to paired/trusted owners or devices
+- `private`: not returned by relay lookup; only reachable by explicit invite or direct address
+
+Check-in should declare intended visibility per capability or advertisement. Relay policy may further restrict it.
+
+Examples:
+
+```ts
+{
+  defaultVisibility: "bonded",
+  advertisements: [
+    { capability: "mesh.discovery", visibility: "public" },
+    { capability: "file.search", visibility: "capability" }
+  ]
+}
+```
+
+Minimum policy rules:
+
+- never return blocked peers
+- do not return private advertisements
+- apply trust or owner filters before returning bonded candidates
+- cap public/capability results aggressively
+- avoid returning stable owner identity for anonymous or exploratory queries
+- log policy denials as audit/debug events without leaking denied candidates to the requester
 
 ## Auto-Discovery And Communication Evaluation
 
@@ -392,10 +560,10 @@ The relay graph is the reachability substrate for global search, not the whole p
 
 Early global search:
 
-- nodes check in with coarse capabilities
-- relays keep short-lived capability hints
-- requester asks for matching candidates
-- relay returns bounded relay addresses
+- nodes check in with scoped, visibility-limited capability advertisements
+- relays keep short-lived capability hints and compact routing summaries
+- requester sends bounded `relay.lookup` with capability or topic filters
+- relay returns policy-filtered relay addresses and relay hints
 - detailed matching happens peer-to-peer with signed `discovery.request` / `discovery.response`
 
 Privacy-preserving matching should add:
@@ -421,7 +589,7 @@ The layered design can isolate nodes if relays are misconfigured or under-connec
 
 For real deployments, the target should be:
 
-- normal node minimum active relays: 2
+- normal node minimum active relays: 1 for bootstrap, 2 for healthy WAN mode
 - normal node target active relays: 3
 - relay sibling links: 3-8
 - relay ancestor links: 1-2
@@ -457,9 +625,11 @@ Relays should rate limit:
 
 ### Phase 1: Local Relay Roster
 
+- Add `relay.checkin` with TTL, visibility, and relay reservation freshness.
 - Relay tracks checked-in normal nodes with TTL.
-- Relay returns `/p2p-circuit` addresses for local roster peers.
-- Normal nodes periodically query configured relays.
+- Add bounded local `relay.lookup` for local roster peers.
+- Relay returns `/p2p-circuit` addresses only for fresh reservations visible to the requester.
+- Normal nodes periodically check in to and query configured relays.
 - Normal nodes persist and dial returned relay addresses.
 - Address books are TTL/LRU bounded.
 
@@ -468,7 +638,7 @@ This solves the immediate “two Windows nodes only discover Mac” problem.
 ### Phase 2: Multi-Relay Client Behavior
 
 - Normal nodes support multiple active relays.
-- Relay responses include relay hints.
+- Relay responses include `relayHints`.
 - Normal nodes fail over and promote relay candidates.
 - Discovery status reports active, candidate, and failed relays.
 
@@ -480,13 +650,15 @@ This improves reliability when one relay cannot find the desired peer.
 - Add signed relay metadata.
 - Add parent/sibling/ancestor assignment.
 - Add bounded `relayBook` with verification state.
+- Add `relay.summary` between verified relay neighbors.
 
 This lets the relay network grow beyond presets.
 
 ### Phase 4: Bounded Relay-To-Relay Lookup
 
 - Add forwarded lookup with `maxHops`, `maxFanout`, query ID, and TTL.
-- Return peer candidates from remote relay rosters.
+- Route using `relay.summary`, not full remote peer rosters.
+- Return peer candidates from the relay that owns fresh roster records.
 - Add relay graph health and partition diagnostics.
 
 This enables graph-wide discovery without full-mesh relay knowledge.
@@ -503,4 +675,4 @@ This moves from reachability toward global search and anonymous matching.
 
 Adopt a layered relay graph where normal nodes are leaves and relay nodes form a bounded, double-linked hierarchy. Start with local relay roster exchange, then add multi-relay client behavior, then relay join and relay-to-relay lookup.
 
-This design is practical for the current EnvoyMesh codebase because it builds on existing libp2p relay transport, signed EnvoyMesh messages, persisted discovery seeds, and the current `relay.peers.*` direction. It avoids infinite address-book growth by making every table TTL-based, capped, and role-specific.
+This design is practical for the current EnvoyMesh codebase because it builds on existing libp2p relay transport, signed EnvoyMesh messages, persisted discovery seeds, and the current relay peer-exchange direction. It avoids infinite address-book growth by making every table TTL-based, capped, and role-specific.

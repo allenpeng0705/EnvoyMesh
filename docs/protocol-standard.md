@@ -158,14 +158,32 @@ A Relay Envoy helps with connectivity but should not own private data.
 
 Responsibilities:
 
-- Relay encrypted messages.
-- Help offline delivery.
-- Help peers behind NAT.
+- Relay encrypted libp2p streams and help peers behind NAT.
+- Accept short-lived `relay.checkin` presence from normal nodes.
+- Answer bounded `relay.lookup` requests from local roster records.
+- Exchange `relay.summary` with relay neighbors for graph routing hints.
+- Maintain a bounded relay book and avoid unbounded global address-book growth.
+- Expose local operator visibility through `relay.manager.snapshot`, CLI `relay-status`, and the desktop Relay Manager panel.
 
 Recommended capabilities:
 
 - `mesh.relay`
 - `message.store_encrypted`
+
+Relay protocol intents currently include:
+
+- `relay.checkin`
+- `relay.lookup`
+- `relay.lookup.response`
+- `relay.hints.request`
+- `relay.hints.response`
+- `relay.join.request`
+- `relay.join.response`
+- `relay.register`
+- `relay.register.response`
+- `relay.summary`
+
+The debug-oriented `relay.peers.request` / `relay.peers.response` shortcut can remain for development, but production discovery should use check-in, lookup, and summary-guided routing.
 
 ## Mobile Modes
 

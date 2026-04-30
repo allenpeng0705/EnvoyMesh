@@ -81,6 +81,13 @@ npm run cli -w @envoymesh/node -- morning-report --profile ./data/default --limi
 
 Builds a ranked discovery digest from structured discovery events, trust levels, and owner-to-peer LAN directory recency.
 
+```bash
+npm run cli -w @envoymesh/node -- relay-status --profile ./data/relay
+npm run cli -w @envoymesh/node -- relay-status --profile ./data/relay --format json
+```
+
+Reads the latest local `relay.manager.snapshot` audit row and prints relay identity, roster counts, relay-book neighbors, summary freshness, routing metrics, recent relay traces, and warnings. This is a local operator view; it does not expose a public relay admin API.
+
 ## Options
 
 - `--profile <dir>`: Profile directory. Default: `./data/default`.
@@ -93,3 +100,4 @@ Builds a ranked discovery digest from structured discovery events, trust levels,
 - `--level <direct|referred|public|blocked>`: Trust level for `trust set`.
 - `--name <text>`: Optional display name for a trust record.
 - `--note <text>`: Optional note for a trust record.
+- `--format <text|json>`: Output format for supported commands such as `relay-status` and pairing timeline export.

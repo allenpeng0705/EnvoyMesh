@@ -37,11 +37,12 @@ EnvoyMesh is a working TypeScript prototype **under active architectural refinem
 - Signed EMP messages and Ed25519 owner/device identities.
 - Local policy, trust records, approval queue, task journal, and audit logs.
 - A libp2p-based node with TCP, Noise, Yamux, mDNS, and opt-in DHT/relay/AutoNAT/DCUtR configuration.
+- Relay-node discovery primitives: `relay.checkin`, bounded `relay.lookup`, relay summaries, summary-guided relay graph routing, and local Relay Manager snapshots.
 - **Transport POC:** Stages **A–D** (LAN → WAN bootstrap/DHT → relay → full node) — [docs/poc-discovery-connectivity.md](./docs/poc-discovery-connectivity.md).
 - A restricted shared vault index/search package for `.txt`, `.md`, and `.json` files.
 - A model router with mock, LiteLLM-compatible, and Ollama-through-LiteLLM providers.
-- A developer CLI for local profile, trust, approval, audit, task, peer, and vault inspection.
-- An Electron desktop dashboard for the first operator console.
+- A developer CLI for local profile, trust, approval, audit, task, peer, vault, connectivity, and relay-status inspection.
+- An Electron desktop dashboard for the first operator console, including Discovery Health and Relay Manager panels.
 
 ## Quick Start
 
@@ -70,6 +71,7 @@ Use the developer CLI:
 npm run cli -w @envoymesh/node -- profile
 npm run cli -w @envoymesh/node -- trust
 npm run cli -w @envoymesh/node -- vault-index --vault ./shared_vault
+npm run cli -w @envoymesh/node -- relay-status --profile ./data/default
 ```
 
 Run the desktop dashboard:
@@ -125,27 +127,35 @@ npm run cli -w @envoymesh/node -- pairing list --profile ./data/receiver
 ENVOYMESH_PROFILE=./data/receiver ENVOYMESH_VAULT=./shared_vault npm run desktop:dev
 ```
 
-### Cross-Network (Mac + Windows) Bootstrap Preset
+### Cross-Network Relay Check (Mac Relay + Two Windows)
 
-For non-LAN trials, run both nodes with `wan-default` and the managed public preset:
+For the original “two Windows nodes can discover the Mac relay but not each other” scenario, run the Mac as a relay server and use its printed multiaddr as the bootstrap peer for both Windows nodes.
 
-Mac (primary):
-
-```bash
-npm run node:dev -- --profile "/Users/<you>/EnvoyMesh/data/primary" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap-preset public-libp2p --connectivity-strict --p2p-debug
-```
-
-Windows (satellite):
+Mac relay:
 
 ```bash
-npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap-preset public-libp2p --connectivity-strict --p2p-debug
+npm run node:dev -- --profile "/Users/<you>/EnvoyMesh/data/mac-relay" --listen /ip4/0.0.0.0/tcp/4001 --discovery-profile wan-default --relay --relay-server --p2p-debug
 ```
 
-Check health on each machine:
+Windows A:
+
+```powershell
+npm run node:dev -- --profile "$env:USERPROFILE\envoymesh\win_a" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap "<mac-relay-multiaddr>" --relay --autonat --dcutr --p2p-debug
+```
+
+Windows B:
+
+```powershell
+npm run node:dev -- --profile "$env:USERPROFILE\envoymesh\win_b" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap "<mac-relay-multiaddr>" --relay --autonat --dcutr --p2p-debug
+```
+
+Confirm the relay has both Windows nodes checked in:
 
 ```bash
-npm run cli -w @envoymesh/node -- connectivity-status --profile "<profile-path>"
+npm run cli -w @envoymesh/node -- relay-status --profile "/Users/<you>/EnvoyMesh/data/mac-relay"
 ```
+
+Expected: `roster total=2 fresh=2 stale=0`. Each Windows profile should also show relay traces with `connectivity-status` and receive `/p2p-circuit` peer candidates from `relay.lookup`.
 
 Generate a reusable checklist with auto-correlation IDs:
 
@@ -184,7 +194,7 @@ Current stack:
 - **Runtime**: Node.js 22+.
 - **P2P networking**: `js-libp2p`.
 - **Transport**: TCP with Noise encryption and Yamux stream muxing.
-- **Discovery/connectivity**: mDNS locally, plus configurable Kademlia DHT, bootstrap peers, Circuit Relay v2, AutoNAT, and DCUtR.
+- **Discovery/connectivity**: mDNS locally, plus configurable Kademlia DHT, bootstrap peers, Circuit Relay v2, AutoNAT, DCUtR, and EnvoyMesh relay check-in/lookup routing.
 - **Message validation**: `zod`.
 - **Identity**: Ed25519 keys first; DIDs and verifiable credentials later.
 - **Model routing**: policy-gated local, cloud, and peer providers, with LiteLLM/Ollama support.
@@ -203,6 +213,7 @@ Python, Rust, Go, or native binaries can still be used where they are strongest.
 - [Detailed Design](docs/detailed-design.md)
 - [Implementation Plan](docs/implementation-plan.md)
 - [P2P Discovery Guide](docs/p2p-discovery.md)
+- [Layered Relay Network](docs/layered-relay-network.md)
 - [EnvoyMesh Protocol](docs/protocol-standard.md)
 - [Developer CLI](docs/developer-cli.md)
 - [Desktop Dashboard](docs/desktop-dashboard.md)

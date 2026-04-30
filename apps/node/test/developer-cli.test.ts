@@ -6,6 +6,8 @@ import {
   createAuditEvent,
   createLocalTaskStore,
   createLocalTrustStore,
+  buildRelayManagerSnapshot,
+  serializeRelayManagerSnapshot,
 } from "@envoymesh/local-store";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -93,6 +95,11 @@ describe("developer CLI", () => {
       connectivityRich: true,
     });
     expect(normalizeDeveloperCliArgv(["audit", "--profile", "./x"])).toEqual(["audit", "--profile", "./x"]);
+    expect(parseDeveloperCliArgs(["relay-status", "--profile", "./data/relay", "--format", "json"])).toMatchObject({
+      command: "relay-status",
+      profileDir: "./data/relay",
+      outputFormat: "json",
+    });
   });
 
   it("parses audit filtering flags", () => {
@@ -274,6 +281,57 @@ describe("developer CLI", () => {
     expect(result.lines.some((line) => line.startsWith("+---"))).toBe(true);
     expect(result.lines.some((line) => line.includes("Stage D connectivity snapshot"))).toBe(true);
     expect(result.lines).toContain("Connectivity status");
+  });
+
+  it("shows relay manager status from snapshot audit events", async () => {
+    const store = createLocalTaskStore(profileDir);
+    const snapshot = buildRelayManagerSnapshot({
+      runtime: {
+        enabled: true,
+        relayServerEnabled: true,
+        peerId: "relay-a",
+        listenAddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-a"],
+        rosterEntries: [],
+        relayBook: [
+          {
+            relayId: "relay-b",
+            relation: "sibling",
+            state: "verified",
+            addrs: ["/ip4/127.0.0.1/tcp/4002/p2p/relay-b"],
+            lastVerifiedAt: Date.parse("2026-04-27T10:00:00.000Z"),
+            expiresAt: Date.parse("2026-04-27T10:05:00.000Z"),
+            failureCount: 0,
+          },
+        ],
+        summaries: [],
+        routing: {
+          forwardedLookupCount: 3,
+          duplicateQueryDropCount: 1,
+          negativeCacheSize: 0,
+          selectedForwardTargetCount: 3,
+          failedForwardCount: 0,
+          collectedForwardResponseCount: 2,
+        },
+      },
+      now: () => Date.parse("2026-04-27T10:01:00.000Z"),
+    });
+    await store.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        protocol: "relay.manager.snapshot",
+        outcome: "record",
+        summary: serializeRelayManagerSnapshot(snapshot),
+        createdAt: "2026-04-27T10:01:00.000Z",
+      }),
+    );
+
+    const text = await runDeveloperCli(["relay-status", "--profile", profileDir]);
+    expect(text.lines).toContain("Relay manager status");
+    expect(text.lines.join("\n")).toContain("relayBook total=1");
+    expect(text.lines.join("\n")).toContain("forwarded=3");
+
+    const json = await runDeveloperCli(["relay-status", "--profile", profileDir, "--format", "json"]);
+    expect(JSON.parse(json.lines.join("\n")).relay.peerId).toBe("relay-a");
   });
 
   it("lists tasks and pending approvals", async () => {

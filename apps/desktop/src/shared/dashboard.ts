@@ -4,6 +4,7 @@ import type {
   ConnectivityStageDBadge,
   MorningReportEntry,
   NodeProfile,
+  RelayManagerSnapshot,
   TrustRecord,
 } from "@envoymesh/local-store";
 
@@ -93,6 +94,7 @@ export interface DashboardSnapshot {
   observedPeers: ObservedPeerSummary[];
   liveP2p: LiveP2pSnapshot;
   connectivityHealth: ConnectivityHealthSnapshot;
+  relayManager: RelayManagerSnapshot;
   morningReport: MorningReportEntry[];
   vault: VaultSummary;
 }

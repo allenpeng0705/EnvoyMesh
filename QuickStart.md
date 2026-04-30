@@ -1,6 +1,6 @@
 # EnvoyMesh QuickStart
 
-This guide shows how to install, build, verify, run the node, use the CLI, and launch the desktop dashboard.
+This guide shows how to install, build, verify, run the node, use the CLI, validate relay discovery, and launch the desktop dashboard.
 
 Requirements narrative: [docs/UserStory.md](docs/UserStory.md). Scenario backlog: [docs/scenarios.md](docs/scenarios.md). Design vs code: [docs/alignment-review.md](docs/alignment-review.md).
 
@@ -118,6 +118,20 @@ discovery:
 
 Configuration precedence is: defaults, then YAML config file, then environment variables, then CLI flags.
 
+Run a relay server:
+
+```bash
+npm run node:dev -- --profile ./data/relay --listen /ip4/0.0.0.0/tcp/4001 --discovery-profile wan-default --relay --relay-server --p2p-debug
+```
+
+Normal nodes can use that relay as a bootstrap/check-in target:
+
+```bash
+npm run node:dev -- --profile ./data/node-a --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap "<relay-multiaddr>" --relay --autonat --dcutr --p2p-debug
+```
+
+The relay stores short-lived `relay.checkin` rows, answers bounded `relay.lookup` requests, and can forward lookups across selected relay neighbors using summaries, `maxHops`, `maxFanout`, query IDs, and negative caching.
+
 Correlate outbound probes and A2A sends (optional `correlationId` on the wire envelope):
 
 ```bash
@@ -213,6 +227,15 @@ Show ranked morning discovery digest:
 npm run cli -w @envoymesh/node -- morning-report --profile ./data/default --limit 10
 ```
 
+Inspect relay-node state:
+
+```bash
+npm run cli -w @envoymesh/node -- relay-status --profile ./data/relay
+npm run cli -w @envoymesh/node -- relay-status --profile ./data/relay --format json
+```
+
+`relay-status` reads the local `relay.manager.snapshot` audit row and reports relay identity, roster freshness, relay-book neighbors, summaries, routing metrics, recent relay traces, and warnings.
+
 Index and search the shared vault:
 
 ```bash
@@ -285,6 +308,7 @@ The dashboard shows:
 - Recent tasks and audit events.
 - Shared vault summary and search.
 - Pairing request composer and pairing queue (approve/reject + deferred-peer retry).
+- Discovery Health and Relay Manager panels for WAN/relay diagnostics.
 
 ## Two-Machine End-To-End Walkthrough (CLI + Dashboard)
 
@@ -347,61 +371,82 @@ npm run cli -w @envoymesh/node -- audit --profile ./data/primary --limit 60 --in
 npm run cli -w @envoymesh/node -- tasks --profile ./data/primary --limit 40
 ```
 
-## Cross-Network Command Matrix (Mac + Windows)
+## Cross-Network Relay Walkthrough (Mac Relay + Two Windows)
 
-Use this flow when devices are not on the same LAN.
+Use this flow when two Windows nodes can discover a Mac node but cannot discover each other directly. The Mac runs as the relay/address switcher; both Windows nodes check in, then use `relay.lookup` to learn `/p2p-circuit` addresses for each other.
 
-### 1) Start long-running nodes (both machines)
+### 1) Start the Mac relay
 
-Mac (primary):
+Mac:
 
 ```bash
-npm run node:dev -- --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap-preset public-libp2p --connectivity-strict --p2p-debug
+npm run node:dev -- --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/mac-relay" --listen /ip4/0.0.0.0/tcp/4001 --discovery-profile wan-default --relay --relay-server --p2p-debug
 ```
 
-Windows (satellite):
+Copy the Mac `Listening on:` multiaddr that ends with `/p2p/<mac-peer-id>`.
 
-```bash
-npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap-preset public-libp2p --connectivity-strict --p2p-debug
+### 2) Start both Windows nodes
+
+Windows A:
+
+```powershell
+npm run node:dev -- --profile "$env:USERPROFILE\envoymesh\win_a" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap "<mac-relay-multiaddr>" --relay --autonat --dcutr --p2p-debug
 ```
 
-### 2) Verify discovery health before app traffic
+Windows B:
 
-Run on both machines:
+```powershell
+npm run node:dev -- --profile "$env:USERPROFILE\envoymesh\win_b" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap "<mac-relay-multiaddr>" --relay --autonat --dcutr --p2p-debug
+```
+
+Wait 30-60 seconds for check-in and lookup cycles.
+
+### 3) Verify relay health before app traffic
+
+Run on Mac:
 
 ```bash
+npm run cli -w @envoymesh/node -- relay-status --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/mac-relay"
+```
+
+Expected:
+
+```text
+roster total=2 fresh=2 stale=0
+```
+
+Run on both Windows machines:
+
+```powershell
 npm run cli -w @envoymesh/node -- connectivity-status --profile "<profile-path>"
 ```
 
-Optional: append **`--rich`** for an ASCII snapshot panel (overall badge + counters). The desktop dashboard shows the same heuristic as a colored banner above Discovery Health metrics.
+Optional: append **`--rich`** for an ASCII snapshot panel. The desktop dashboard shows the same heuristic as a colored banner above Discovery Health metrics and includes the Relay Manager panel for the Mac relay profile.
 
-Expect non-zero bootstrap peer count and no persistent startup warnings.
+Expect relay traces such as `relay.checkin.ok`, `relay.lookup.ok`, `relay.lookup.response`, and relay peer candidates using `/p2p-circuit/p2p/<other-windows-peer-id>`.
 
-### 3) Exercise signal / ping / chat / task / data
+### 4) Exercise signal / ping / chat / task / data
 
-Windows -> Mac:
+After a Windows node learns the other Windows node's relay candidate address, use that address as the target for ping/chat/task/data. You can also first validate Windows -> Mac:
 
-```bash
-npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --signal "<mac-multiaddr>" --correlation-id "sig-w2m-1"
-npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --ping "<mac-multiaddr>" --correlation-id "ping-w2m-1"
-npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --chat "<mac-multiaddr>" --chat-text "hello from windows" --correlation-id "chat-w2m-1"
-npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --task-propose "<mac-multiaddr>" --task-id task-w2m-1 --objective "Summarize notes" --requested-result "One bullet summary" --correlation-id "task-w2m-1"
-npm run node:dev -- --profile "D:\\mygithub\\EnvoyMesh\\data\\satellite" --data-send "<mac-multiaddr>" --data-relative-path notes.md
+```powershell
+npm run node:dev -- --profile "$env:USERPROFILE\envoymesh\win_a" --ping "<win-b-relay-circuit-multiaddr>" --correlation-id "ping-wina-winb-1"
+npm run node:dev -- --profile "$env:USERPROFILE\envoymesh\win_a" --chat "<win-b-relay-circuit-multiaddr>" --chat-text "hello through mac relay" --correlation-id "chat-wina-winb-1"
 ```
 
-### 4) Verify in CLI + Dashboard
+### 5) Verify in CLI + Dashboard
 
 Mac CLI:
 
 ```bash
-npm run cli -w @envoymesh/node -- audit --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" --limit 80 --include-p2p-trace
-npm run cli -w @envoymesh/node -- tasks --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" --limit 40
+npm run cli -w @envoymesh/node -- audit --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/mac-relay" --limit 80 --include-p2p-trace
+npm run cli -w @envoymesh/node -- relay-status --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/mac-relay"
 ```
 
 Mac dashboard:
 
 ```bash
-ENVOYMESH_PROFILE="/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" ENVOYMESH_VAULT="/Users/<you>/Documents/mygithub/EnvoyMesh/shared_vault" npm run desktop:dev
+ENVOYMESH_PROFILE="/Users/<you>/Documents/mygithub/EnvoyMesh/data/mac-relay" ENVOYMESH_VAULT="/Users/<you>/Documents/mygithub/EnvoyMesh/shared_vault" npm run desktop:dev
 ```
 
 ## WAN Discovery Troubleshooting (Short)
@@ -411,6 +456,7 @@ If non-LAN discovery is unstable, check these first:
 1. **Bootstrap availability**
    - Run `connectivity-status` and confirm bootstrap peer count is non-zero.
    - Add at least one known-good relay/bootstrap with `--bootstrap "<multiaddr>"` in addition to `--bootstrap-preset public-libp2p`.
+   - For the Mac relay flow, both Windows nodes should bootstrap to the Mac relay's current printed multiaddr.
 
 2. **Strict mode startup failures**
    - `--connectivity-strict` intentionally fails startup when all bootstrap probes fail.
@@ -427,6 +473,10 @@ If non-LAN discovery is unstable, check these first:
 5. **Stale peer address**
    - If a node restarts, recopy the latest printed `Listening on:` multiaddr.
    - Dynamic ports change; old multiaddrs will fail.
+
+6. **Relay roster is empty**
+   - Run `relay-status` on the relay profile.
+   - If `roster total=0`, verify the Windows nodes were started with `--relay`, `--bootstrap "<mac-relay-multiaddr>"`, and are using the intended profile paths.
 
 ## End-to-End Verification Checklist (Line By Line)
 
@@ -514,4 +564,5 @@ npm run node:dev
 npm run desktop:dev
 npm run desktop:build
 npm run cli -w @envoymesh/node -- --help
+npm run cli -w @envoymesh/node -- relay-status --profile ./data/relay
 ```

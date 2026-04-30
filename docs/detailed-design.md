@@ -26,14 +26,14 @@ Rules of thumb:
 ```text
 EnvoyMesh/
   apps/
-    node/                 # libp2p node, inbound guard, task dispatcher, task runtime guard, developer CLI
+    node/                 # libp2p node, relay roster/router, inbound guard, task dispatcher, task runtime guard, developer CLI
     desktop/              # Electron operator console (IPC to local-store / vault)
   packages/
     protocol/             # EMP: Zod schemas, intents, payloads, helpers
     identity/             # Keys, signing, verification, mandates, device certs
     bonds/                # Policy evaluation (bond level × sensitivity × intent)
     network/              # js-libp2p: TCP, Noise, Yamux, optional DHT/relay/DCUtR, /envoymesh/message/0.1.0
-    local-store/          # Profile, task journal JSONL, audit JSONL, approvals, trust store, task-runtime-state.json
+    local-store/          # Profile, task journal JSONL, audit JSONL, approvals, trust store, relay manager snapshots, task-runtime-state.json
     vault/                # shared_vault indexing, chunking, search, vault audit helpers
     models/               # Model router and provider adapters
   docs/
@@ -158,7 +158,7 @@ Initial libp2p modules:
 - `@chainsafe/libp2p-noise`
 - `@chainsafe/libp2p-yamux`
 
-**Also available in-repo (optional flags):** DHT (`kad-dht`), bootstrap, circuit relay transport and relay server, AutoNAT, DCUtR, identify — see `packages/network` and node CLI. **Still future for EMP-level discovery:** WebRTC transport, GossipSub-based **semantic** discovery (see implementation plan Phase 4E).
+**Also available in-repo (optional flags):** DHT (`kad-dht`), bootstrap, circuit relay transport and relay server, AutoNAT, DCUtR, identify — see `packages/network` and node CLI. The node runtime now layers EMP-level relay control on top of this transport stack: `relay.checkin`, bounded `relay.lookup`, relay hints, relay join/register, and compact `relay.summary` messages.
 
 Responsibilities:
 
@@ -176,6 +176,16 @@ Protocol name:
 ```
 
 The `EnvoyMesh` class (`packages/network`) exposes a small API: `start` / `stop`, `send(target, envelope)` → **`Promise<number>`** (round-trip latency ms), `sendRawBytes` for probes, `onMessage`, optional `onPeerDiscovered`, and `enabledFeatures` (includes `p2p-debug` when enabled).
+
+### Relay graph modules
+
+Relay-node behavior is split into testable state and routing helpers under `apps/node/src`:
+
+- `relay-roster.ts` stores short-lived normal-node check-ins, relay-book entries, relay summaries, and client-side active/candidate/failed relay state.
+- `relay-lookup-router.ts` selects relay neighbors for forwarded lookup using fresh summaries, relation fallback, `maxHops`, `maxFanout`, seen-query loop suppression, and a short negative cache.
+- `index.ts` wires the relay protocol intents into the node runtime, emits routing traces, and periodically writes local `relay.manager.snapshot` audit rows.
+
+The local manager read model lives in `@envoymesh/local-store` so both `relay-status` and the desktop dashboard can render the same relay roster/book/summary/routing view without opening a public admin API.
 
 ### `packages/bonds`
 

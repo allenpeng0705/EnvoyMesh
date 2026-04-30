@@ -5,6 +5,9 @@ import type {
   DeviceProfile,
   EnvoyIntent,
   MandateAction,
+  RelayBookState,
+  RelayRelation,
+  RelayVisibility,
   SystemSignalPayload,
   TaskJournalEntry,
   TaskLifecycleState,
@@ -21,6 +24,7 @@ import {
 } from "@envoymesh/protocol";
 import {
   createDeviceCertificate,
+  derivePeerId,
   generateDeviceIdentity,
   generateOwnerIdentity,
   type DeviceIdentity,
@@ -139,6 +143,260 @@ export interface CreateAuditEventInput {
   summary: string;
   createdAt?: string;
   eventId?: string;
+}
+
+export interface RelayManagerRosterRuntimeEntry {
+  peerId: string;
+  ownerId?: string;
+  capabilities: string[];
+  advertisements: Array<{ visibility: RelayVisibility; capability?: string; topicHash?: string }>;
+  lastSeenAt: number;
+  expiresAt: number;
+  reservationFreshUntil: number;
+}
+
+export interface RelayManagerRelayBookRuntimeEntry {
+  relayId: string;
+  level?: number;
+  region?: string;
+  addrs: string[];
+  relation: RelayRelation;
+  state: RelayBookState;
+  lastVerifiedAt: number;
+  expiresAt: number;
+  failureCount: number;
+}
+
+export interface RelayManagerSummaryRuntimeEntry {
+  relayId: string;
+  level: number;
+  region?: string;
+  livePeerCount: number;
+  childRelayCount: number;
+  topicBuckets: string[];
+  lastSeenAt: number;
+  expiresAt: number;
+}
+
+export interface RelayManagerRoutingMetrics {
+  forwardedLookupCount: number;
+  duplicateQueryDropCount: number;
+  negativeCacheSize: number;
+  selectedForwardTargetCount: number;
+  failedForwardCount: number;
+  collectedForwardResponseCount: number;
+}
+
+export interface RelayManagerRuntimeState {
+  enabled: boolean;
+  relayServerEnabled: boolean;
+  peerId: string;
+  listenAddrs: string[];
+  uptimeMs?: number;
+  rosterEntries: RelayManagerRosterRuntimeEntry[];
+  relayBook: RelayManagerRelayBookRuntimeEntry[];
+  summaries: RelayManagerSummaryRuntimeEntry[];
+  routing: RelayManagerRoutingMetrics;
+}
+
+export interface RelayManagerSnapshot {
+  generatedAt: string;
+  source: "runtime" | "audit" | "empty";
+  relay: {
+    peerId?: string;
+    enabled: boolean;
+    relayServerEnabled: boolean;
+    listenAddrs: string[];
+    uptimeMs?: number;
+  };
+  roster: {
+    total: number;
+    fresh: number;
+    stale: number;
+    visibilityCounts: Record<string, number>;
+    topCapabilities: Array<{ capability: string; count: number }>;
+    topTopics: Array<{ topicHash: string; count: number }>;
+  };
+  relayBook: {
+    total: number;
+    byRelation: Record<string, number>;
+    byState: Record<string, number>;
+    neighbors: RelayManagerRelayBookRuntimeEntry[];
+  };
+  summaries: {
+    total: number;
+    fresh: number;
+    stale: number;
+    entries: RelayManagerSummaryRuntimeEntry[];
+  };
+  routing: RelayManagerRoutingMetrics & {
+    recentTraces: Array<{
+      createdAt: string;
+      protocol?: string;
+      remotePeerId?: string;
+      summary: string;
+    }>;
+  };
+  warnings: string[];
+}
+
+export interface BuildRelayManagerSnapshotInput {
+  profile?: NodeProfile;
+  auditEvents?: AuditEvent[];
+  runtime?: RelayManagerRuntimeState;
+  now?: () => number;
+}
+
+export const RELAY_MANAGER_SNAPSHOT_PROTOCOL = "relay.manager.snapshot";
+
+export function buildRelayManagerSnapshot(input: BuildRelayManagerSnapshotInput): RelayManagerSnapshot {
+  const now = input.now ?? Date.now;
+  const generatedAt = new Date(now()).toISOString();
+  if (input.runtime) {
+    return snapshotFromRuntime(input.runtime, input.auditEvents ?? [], generatedAt, now());
+  }
+
+  const latest = lastRelayManagerSnapshot(input.auditEvents ?? []);
+  if (latest) {
+    return latest;
+  }
+
+  return emptyRelayManagerSnapshot(generatedAt, input.profile);
+}
+
+export function serializeRelayManagerSnapshot(snapshot: RelayManagerSnapshot): string {
+  return `relay manager snapshot json=${JSON.stringify(snapshot)}`;
+}
+
+function snapshotFromRuntime(
+  runtime: RelayManagerRuntimeState,
+  auditEvents: AuditEvent[],
+  generatedAt: string,
+  current: number,
+): RelayManagerSnapshot {
+  const freshRoster = runtime.rosterEntries.filter((entry) => entry.expiresAt > current && entry.reservationFreshUntil > current);
+  const freshSummaries = runtime.summaries.filter((entry) => entry.expiresAt > current);
+  const routingTraces = auditEvents
+    .filter((event) => event.type === "p2p.trace" && event.protocol?.startsWith("relay."))
+    .slice(-12)
+    .map((event) => ({
+      createdAt: event.createdAt,
+      protocol: event.protocol,
+      remotePeerId: event.remotePeerId,
+      summary: event.summary,
+    }));
+
+  return {
+    generatedAt,
+    source: "runtime",
+    relay: {
+      peerId: runtime.peerId,
+      enabled: runtime.enabled,
+      relayServerEnabled: runtime.relayServerEnabled,
+      listenAddrs: runtime.listenAddrs,
+      uptimeMs: runtime.uptimeMs,
+    },
+    roster: {
+      total: runtime.rosterEntries.length,
+      fresh: freshRoster.length,
+      stale: runtime.rosterEntries.length - freshRoster.length,
+      visibilityCounts: countVisibility(runtime.rosterEntries),
+      topCapabilities: topCounts(runtime.rosterEntries.flatMap((entry) => entry.capabilities), "capability"),
+      topTopics: topCounts(runtime.rosterEntries.flatMap((entry) => entry.advertisements.flatMap((ad) => (ad.topicHash ? [ad.topicHash] : []))), "topicHash"),
+    },
+    relayBook: {
+      total: runtime.relayBook.length,
+      byRelation: countBy(runtime.relayBook.map((entry) => entry.relation)),
+      byState: countBy(runtime.relayBook.map((entry) => entry.state)),
+      neighbors: runtime.relayBook,
+    },
+    summaries: {
+      total: runtime.summaries.length,
+      fresh: freshSummaries.length,
+      stale: runtime.summaries.length - freshSummaries.length,
+      entries: runtime.summaries,
+    },
+    routing: {
+      ...runtime.routing,
+      recentTraces: routingTraces,
+    },
+    warnings: auditEvents
+      .filter((event) => event.protocol === "connectivity.warning" || event.protocol === "relay.manager.warning")
+      .slice(-8)
+      .map((event) => event.summary),
+  };
+}
+
+function emptyRelayManagerSnapshot(generatedAt: string, profile: NodeProfile | undefined): RelayManagerSnapshot {
+  return {
+    generatedAt,
+    source: "empty",
+    relay: {
+      peerId: profile ? derivePeerId(profile.device.publicKeyPem) : undefined,
+      enabled: false,
+      relayServerEnabled: false,
+      listenAddrs: [],
+    },
+    roster: { total: 0, fresh: 0, stale: 0, visibilityCounts: {}, topCapabilities: [], topTopics: [] },
+    relayBook: { total: 0, byRelation: {}, byState: {}, neighbors: [] },
+    summaries: { total: 0, fresh: 0, stale: 0, entries: [] },
+    routing: {
+      forwardedLookupCount: 0,
+      duplicateQueryDropCount: 0,
+      negativeCacheSize: 0,
+      selectedForwardTargetCount: 0,
+      failedForwardCount: 0,
+      collectedForwardResponseCount: 0,
+      recentTraces: [],
+    },
+    warnings: [],
+  };
+}
+
+function lastRelayManagerSnapshot(events: AuditEvent[]): RelayManagerSnapshot | undefined {
+  for (const event of [...events].reverse()) {
+    if (event.protocol !== RELAY_MANAGER_SNAPSHOT_PROTOCOL) {
+      continue;
+    }
+    const marker = "json=";
+    const index = event.summary.indexOf(marker);
+    if (index < 0) {
+      continue;
+    }
+    try {
+      return {
+        ...(JSON.parse(event.summary.slice(index + marker.length)) as RelayManagerSnapshot),
+        source: "audit",
+      };
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
+function countVisibility(entries: RelayManagerRosterRuntimeEntry[]): Record<string, number> {
+  return countBy(entries.flatMap((entry) => entry.advertisements.map((advertisement) => advertisement.visibility)));
+}
+
+function countBy(values: string[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const value of values) {
+    counts[value] = (counts[value] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function topCounts<T extends "capability" | "topicHash">(
+  values: string[],
+  key: T,
+): Array<T extends "capability" ? { capability: string; count: number } : { topicHash: string; count: number }> {
+  return Object.entries(countBy(values))
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, 8)
+    .map(([value, count]) => ({ [key]: value, count })) as Array<
+      T extends "capability" ? { capability: string; count: number } : { topicHash: string; count: number }
+    >;
 }
 
 export type ApprovalRequestStatus = "pending" | "approved" | "rejected";

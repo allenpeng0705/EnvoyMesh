@@ -1,5 +1,6 @@
 import {
   analyzeConnectivityStageD,
+  buildRelayManagerSnapshot,
   buildMorningReportDigest,
   createLocalTaskStore,
   createLocalPeerDirectoryStore,
@@ -38,6 +39,7 @@ export type DeveloperCliCommand =
   | "tasks"
   | "approvals"
   | "connectivity-status"
+  | "relay-status"
   | "morning-report"
   | "pairing"
   | "smoke-checklist"
@@ -143,6 +145,10 @@ export async function runDeveloperCli(argv: string[]): Promise<DeveloperCliResul
 
   if (args.command === "connectivity-status") {
     return showConnectivityStatus(args);
+  }
+
+  if (args.command === "relay-status") {
+    return showRelayStatus(args);
   }
 
   if (args.command === "pairing") {
@@ -314,6 +320,7 @@ Commands:
   connectivity-status Show discovery/connectivity diagnostics: audit summaries plus discovered peer ids,
                          capability-topic traces, and persisted discovery-seeds.json rows.
   pairing        Pairing-focused queue/actions (list/approve/reject/retry/timeline).
+  relay-status   Show local relay manager snapshot from runtime audit events.
   morning-report Show ranked discovery digest.
   smoke-checklist Generate a multi-machine validation checklist.
   invite         WAN join-invite helpers (encode/decode).
@@ -331,7 +338,7 @@ Options:
   --name <text>     Display name for trust records.
   --note <text>     Note for trust records.
   --output <path>   Output file path (required for vault-manifest; optional for pairing timeline / smoke-checklist).
-  --format <text|json> Output format (currently used by pairing timeline).
+  --format <text|json> Output format (pairing timeline and relay-status).
   --rich           connectivity-status only: print ASCII Stage D snapshot panel above the usual summary.
   --machine-a <name> Machine A label for smoke-checklist. Default: machine-a
   --machine-b <name> Machine B label for smoke-checklist. Default: machine-b
@@ -649,6 +656,44 @@ async function showConnectivityStatus(args: DeveloperCliArgs): Promise<Developer
   return ok(sections);
 }
 
+async function showRelayStatus(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
+  const [profile, events] = await Promise.all([
+    loadOrCreateNodeProfile(args.profileDir),
+    createLocalTaskStore(args.profileDir).readAuditEvents(),
+  ]);
+  const snapshot = buildRelayManagerSnapshot({ profile, auditEvents: events });
+  if (args.outputFormat === "json") {
+    return ok([JSON.stringify(snapshot, null, 2)]);
+  }
+
+  return ok([
+    "Relay manager status",
+    `source=${snapshot.source} generatedAt=${snapshot.generatedAt}`,
+    `peerId=${snapshot.relay.peerId ?? "-"} relay=${snapshot.relay.enabled} relayServer=${snapshot.relay.relayServerEnabled} listenAddrs=${snapshot.relay.listenAddrs.length}`,
+    `roster total=${snapshot.roster.total} fresh=${snapshot.roster.fresh} stale=${snapshot.roster.stale}`,
+    `relayBook total=${snapshot.relayBook.total} relations=${formatCounts(snapshot.relayBook.byRelation)} states=${formatCounts(snapshot.relayBook.byState)}`,
+    `summaries total=${snapshot.summaries.total} fresh=${snapshot.summaries.fresh} stale=${snapshot.summaries.stale}`,
+    `routing forwarded=${snapshot.routing.forwardedLookupCount} duplicates=${snapshot.routing.duplicateQueryDropCount} negativeCache=${snapshot.routing.negativeCacheSize} selectedTargets=${snapshot.routing.selectedForwardTargetCount} failedForwards=${snapshot.routing.failedForwardCount} collectedResponses=${snapshot.routing.collectedForwardResponseCount}`,
+    `topCapabilities=${snapshot.roster.topCapabilities.map((item) => `${item.capability}:${item.count}`).join(",") || "-"}`,
+    `topTopics=${snapshot.roster.topTopics.map((item) => `${item.topicHash}:${item.count}`).join(",") || "-"}`,
+    "",
+    "Relay neighbors:",
+    ...(snapshot.relayBook.neighbors.length > 0
+      ? snapshot.relayBook.neighbors
+          .slice(0, args.limit)
+          .map((entry) => `${entry.relayId} relation=${entry.relation} state=${entry.state} addrs=${entry.addrs.length} failures=${entry.failureCount}`)
+      : ["  (none yet)"]),
+    "",
+    "Recent relay traces:",
+    ...(snapshot.routing.recentTraces.length > 0
+      ? snapshot.routing.recentTraces
+          .slice(-args.limit)
+          .map((trace) => `${trace.createdAt} ${trace.protocol ?? "relay"} ${trace.remotePeerId ?? "-"} ${trace.summary}`)
+      : ["  (none yet)"]),
+    ...snapshot.warnings.map((warning) => `warning ${warning}`),
+  ]);
+}
+
 async function showVaultIndex(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
   const index = await buildVaultIndexForCli(args);
 
@@ -837,6 +882,11 @@ function ok(lines: string[]): DeveloperCliResult {
   };
 }
 
+function formatCounts(counts: Record<string, number>): string {
+  const entries = Object.entries(counts);
+  return entries.length > 0 ? entries.map(([key, value]) => `${key}:${value}`).join(",") : "-";
+}
+
 function parseDeveloperCliCommand(value: string): DeveloperCliCommand {
   if (
     value === "profile" ||
@@ -849,6 +899,7 @@ function parseDeveloperCliCommand(value: string): DeveloperCliCommand {
     value === "tasks" ||
     value === "approvals" ||
     value === "connectivity-status" ||
+    value === "relay-status" ||
     value === "pairing" ||
     value === "morning-report" ||
     value === "smoke-checklist" ||

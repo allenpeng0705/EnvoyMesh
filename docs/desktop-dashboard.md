@@ -52,6 +52,7 @@ The first dashboard slice includes:
 - Recent task journal and audit event panels (audit supports correlation/task id filtering and optional `p2p.trace` visibility).
 - Shared vault document summary and search.
 - Live P2P visualization panel driven by recent `p2p.trace` activity.
+- Relay Manager panel driven by local `relay.manager.snapshot` audit rows for relay roster, relay book, summary, and routing health.
 - Chat/task composition panel for signed `chat.message` and `task.propose` sends.
 - Morning report panel with ranked discovery digest candidates.
 
@@ -64,3 +65,5 @@ For packaged desktop builds, profile and vault defaults switch to the Electron u
 The renderer does not receive direct filesystem or Node access. Electron main owns local file access and exposes specific methods through the preload bridge with `contextIsolation` enabled and `nodeIntegration` disabled.
 
 The dashboard is local-only. It does not expose a public HTTP server or replace the P2P node runtime.
+
+Relay management follows the same rule: the current panel is read-only and local-profile based. Future relay actions should require explicit local admin enablement and signed operator authorization.

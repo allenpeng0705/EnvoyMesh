@@ -464,7 +464,7 @@ Exit criteria:
 
 ## Current Milestone
 
-Milestone: **Phase 7** operator console baseline is now feature-complete for this slice (dashboard + CLI + rich composition UX + pairing + discovery digest). Immediate next milestone is **real cross-network P2P readiness** (WAN defaults + bootstrap/relay + diagnostics + smoke). **Optional adjunct:** **[Phase 4G](./architecture-hybrid-planes.md)** (HTTPS/Matrix bond-scoped signaling) is planned **after** native WAN validation and gated by thin PoC metrics.
+Milestone: **Phase 7** operator console baseline is now feature-complete for this slice (dashboard + CLI + rich composition UX + pairing + discovery digest + Relay Manager panel). Cross-network P2P readiness has a shipped relay-control baseline (`relay.checkin`, bounded `relay.lookup`, relay summaries, summary-guided relay graph routing, and `relay-status` diagnostics), while live multi-machine WAN smoke remains an external validation gate. **Optional adjunct:** **[Phase 4G](./architecture-hybrid-planes.md)** (HTTPS/Matrix bond-scoped signaling) is planned **after** native WAN validation and gated by thin PoC metrics.
 
 ### Archive (historical snapshot — do not use for status)
 
@@ -483,7 +483,7 @@ Milestone: **Phase 7** operator console baseline is now feature-complete for thi
 - `[x]` **Phase 4A** (**non-mobile**): device pairing + primary-offline defer / owner surface baseline. *Thin-mobile channel checkbox **parked** (satellite app out of scope for now).*
 - `[x]` **Scenario 6 pick (first vertical):** voucher + chunked data path (`/envoymesh/data/0.1.0`) shipped with signed vouchers, verification, and inbound write guards.
 - `[x]` **Scenario 6 follow-on (strict baseline):** required envelope roles + hard channel split for `/chat` vs `/message` + runtime rejection semantics for violations.
-- `[ ]` **Cross-network P2P readiness (post-LAN gate):** WAN defaults/profile, bootstrap + relay fleet strategy, non-LAN smoke checklist, and dashboard connectivity diagnostics.
+- `[~]` **Cross-network P2P readiness (post-LAN gate):** WAN defaults/profile, bootstrap + relay fleet strategy, relay check-in/lookup/routing baseline, non-LAN smoke checklist, and dashboard/CLI diagnostics. Remaining gap: live multi-machine relay/DCUtR validation outside CI.
 - `[ ]` **[Phase 4G](./architecture-hybrid-planes.md)** — thin PoC for optional HTTPS/Matrix bond-scoped signaling → merged dial hints; schema + bond gates before broader hybrid scope.
 - `[x]` **Semantic firewall** (US-F5) — first slice shipped in `@envoymesh/models` (`routeModelRequest`); extend with trust/redaction/tool gates later.
 
@@ -502,7 +502,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | Scenario 6 — **roles, `/chat` `/agent` `/data`** | Scenario 6 pick + **Open questions** | Strict roles + `/chat`/`/message`/`/data` split baseline shipped; WAN fallback diagnostics/profile baseline shipped (`wan-default`, connectivity telemetry + CLI/dashboard visibility); broader H2A product semantics remain open. | `[~]` |
 | Story A — **pairing (+ thin mobile parked)** | Phase **4A** | Pairing + offline defer baseline **`[x]`**; thin mobile **`[ ]`** *parked*. | `[~]` |
 | Story A — **offline primary, defer / notify** | Phase **4A** | Baseline defer + owner surface in approval/audit path; richer notify/retry UX later. | `[~]` |
-| Story B — **morning report / ranked discovery UX** | Phase **7** | Morning report digest baseline in dashboard + CLI. | `[x]` |
+| Story B — **morning report / ranked discovery UX** | Phase **7** | Morning report digest baseline in dashboard + CLI. Relay graph routing now supplies bounded relay-reachability lookup beneath higher-level discovery. | `[x]` |
 | Story C — **H2A as distinct channel** | Scenario 6 pick | Same as matrix. | `[ ]` |
 | Agent stories — **interest/book/stranger/E2EE buffer** ([evaluation](./user-stories-hybrid-evaluation.md)) | Phase **4G** + bonds/policy | Docs **`[x]`** stress-test vs hybrid plane · **`[ ]`** transport/policy features beyond signaling PoC | `[~]` |
 | Story F — **DID-targeted LAN discovery** | Phase **4** | LAN identity match by owner-id target resolution **`[x]`**; live proofs **`[!]`** | `[~]` |
@@ -541,7 +541,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | `[ ]` | **Broadcast termination on the wire** — hop TTL, **network-wide** cancel propagation, **collect-N** (`k > 1`), correlation-only cancel | Scenario 3, US-C2/US-C3 | Phase 4D is **per-receiver local** only; fan-out EMP/gossip shape TBD. |
 | `[x]` | **Sender / receiver role** (human vs agent) | Scenario 6, UserStory header sketch | Required envelope roles and strict validation shipped with channel split (`/chat` vs `/message`); violations are rejected in schema/runtime/network send paths. |
 | `[ ]` | **Live mDNS / DHT / relay proofs outside CI** | Story F, wide-area connectivity | Blocked on environment; [live-connectivity-testing.md](./live-connectivity-testing.md). |
-| `[ ]` | **WAN bootstrap/relay operating model** | Real cross-network P2P (not LAN-only) | Tracked as Phase 4 WAN follow-on + **Phase 4F** in this plan: operator fleet + org presets as defaults, relay/DCUtR/AutoNAT validation, DHT topic/provider capability advertisements (distinct from `discovery.request`), QUIC additive transport, cold-start invite/pairing rendezvous, and WAN diagnostics beyond public presets. |
+| `[~]` | **WAN bootstrap/relay operating model** | Real cross-network P2P (not LAN-only) | Relay protocol/runtime baseline shipped: local relay roster, relay book, relay summaries, summary-guided forwarding, loop/negative-cache controls, `relay-status`, and dashboard Relay Manager. Still open: live relay/DCUtR/AutoNAT validation, operator fleet defaults, and heavier multi-process smoke. |
 
 ### Backlog (track in scenarios / phases, not as single-line Q&A)
 
@@ -549,7 +549,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 - `[~]` **Phase 4A** — device pairing; primary-offline defer / owner surface baseline shipped. *Thin mobile channel: **parked** (see Prioritization).*
 - `[x]` **Scenario 6 vertical (first)** — voucher + `/envoymesh/data` shipped (matrix, Scenario 5).
 - `[x]` **Scenario 6 vertical (next baseline)** — explicit role fields + strict `/chat` vs `/message` split with rejection semantics.
-- `[ ]` **Cross-network P2P rollout** — WAN-first profile, bootstrap/relay strategy, diagnostics, non-LAN smoke; optional **[Phase 4G](./architecture-hybrid-planes.md)** signaling adjunct after native WAN baseline.
+- `[~]` **Cross-network P2P rollout** — WAN-first profile, bootstrap/relay strategy, relay graph routing, diagnostics, non-LAN smoke; optional **[Phase 4G](./architecture-hybrid-planes.md)** signaling adjunct after native WAN baseline.
 - `[ ]` **Stories D / E** — multi-hop discovery, commerce, receipts (no dedicated phase yet; add when scenarios are scoped).
 - `[ ]` **Optional vault** — content-addressing, IPFS/Filecoin paths (Phase 5 open items).
 
@@ -581,3 +581,4 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | 2026-04-28 | **Phase 4F.A (partial):** capability-topic scaffolding in `@envoymesh/network` (`cidForCapabilityTopic`, `provideCapabilityTopic`, `findCapabilityTopicProviders`, bounded query timeout handling); QUIC transport load moved to lazy import so non-QUIC environments can still import/run network tests. |
 | 2026-04-29 | **Discovery/connectivity POC playbook:** added [poc-discovery-connectivity.md](./poc-discovery-connectivity.md); `@envoymesh/node` script alias `poc:discovery`; cross-links from prioritization, live-connectivity-testing, p2p-discovery, redesign-strategy doc map. |
 | 2026-04-28 | **Hybrid replanning:** introduced **[Phase 4G](#phase-4g-optional-control-plane-signaling-hybrid)** (optional Matrix/HTTPS control-plane signaling); updated Prioritization, Key Decisions, traceability + coverage rows; linked [architecture-hybrid-planes.md](./architecture-hybrid-planes.md) and [user-stories-hybrid-evaluation.md](./user-stories-hybrid-evaluation.md). |
+| 2026-04-30 | **Relay graph + manager baseline:** added typed relay protocol primitives, in-memory relay roster/book/summary state, summary-guided bounded relay lookup routing, loop/negative-cache controls, `relay.manager.snapshot`, `relay-status`, desktop Relay Manager panel, tests, and docs. |

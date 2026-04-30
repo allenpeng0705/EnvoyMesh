@@ -96,7 +96,9 @@ Recommended tools:
 - Relay and hole punching for difficult NAT environments.
 - Noise or libp2p-native secure channels for encrypted transport.
 
-The first prototype should use mDNS and direct streams on a local network. DHT, relay, and WebRTC can be added after the local protocol is stable.
+The first prototype used mDNS and direct streams on a local network. The current WAN direction adds bootstrap peers, DHT client mode, circuit relay, AutoNAT/DCUtR, and a layered relay graph. Relay nodes keep short-lived normal-node rosters, a bounded relay book, compact `relay.summary` routing hints, and a local Relay Manager surface for operator visibility.
+
+Relay-to-relay lookup is bounded: a relay tries local roster first, then forwards `relay.lookup` to selected neighbors only while `maxHops` and `maxFanout` allow it. Query IDs suppress loops, and short negative caching prevents repeated misses from becoming storms.
 
 ### 2. Identity Layer
 

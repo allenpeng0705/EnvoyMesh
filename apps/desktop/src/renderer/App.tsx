@@ -589,6 +589,94 @@ function App() {
         )}
       </Panel>
 
+      <Panel title="Relay Manager">
+        <div className="grid cards">
+          <Metric label="Roster Peers" value={snapshot.relayManager.roster.total} />
+          <Metric label="Fresh Peers" value={snapshot.relayManager.roster.fresh} />
+          <Metric label="Relay Neighbors" value={snapshot.relayManager.relayBook.total} />
+          <Metric label="Summaries" value={snapshot.relayManager.summaries.total} />
+        </div>
+        <p className="muted">
+          source={snapshot.relayManager.source} · peer={snapshot.relayManager.relay.peerId ?? "-"} · relay=
+          {String(snapshot.relayManager.relay.enabled)} · relayServer=
+          {String(snapshot.relayManager.relay.relayServerEnabled)}
+        </p>
+        <div className="grid two">
+          <div>
+            <h3>Routing</h3>
+            <dl className="facts">
+              <dt>Forwarded</dt>
+              <dd>{snapshot.relayManager.routing.forwardedLookupCount}</dd>
+              <dt>Duplicates</dt>
+              <dd>{snapshot.relayManager.routing.duplicateQueryDropCount}</dd>
+              <dt>Negative Cache</dt>
+              <dd>{snapshot.relayManager.routing.negativeCacheSize}</dd>
+              <dt>Failed Forwards</dt>
+              <dd>{snapshot.relayManager.routing.failedForwardCount}</dd>
+            </dl>
+          </div>
+          <div>
+            <h3>Top Capabilities</h3>
+            {snapshot.relayManager.roster.topCapabilities.length === 0 ? (
+              <p className="muted">No relay roster capabilities yet.</p>
+            ) : (
+              <div className="list">
+                {snapshot.relayManager.roster.topCapabilities.map((item) => (
+                  <article key={item.capability} className="row compact">
+                    <div>
+                      <strong>{item.capability}</strong>
+                      <small>peers={item.count}</small>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="grid two">
+          <div>
+            <h3>Relay Neighbors</h3>
+            {snapshot.relayManager.relayBook.neighbors.length === 0 ? (
+              <p className="muted">No relay neighbors recorded yet.</p>
+            ) : (
+              <div className="list">
+                {snapshot.relayManager.relayBook.neighbors.slice(0, 8).map((entry) => (
+                  <article key={entry.relayId} className="row compact">
+                    <div>
+                      <strong>{entry.relayId}</strong>
+                      <small>
+                        {entry.relation} · {entry.state} · addrs={entry.addrs.length} · failures=
+                        {entry.failureCount}
+                      </small>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <h3>Recent Relay Traces</h3>
+            {snapshot.relayManager.routing.recentTraces.length === 0 ? (
+              <p className="muted">No relay routing traces yet.</p>
+            ) : (
+              <div className="list">
+                {snapshot.relayManager.routing.recentTraces.slice(-8).map((trace, index) => (
+                  <article key={`${trace.createdAt}-${index}`} className="row compact">
+                    <div>
+                      <strong>{trace.protocol ?? "relay"}</strong>
+                      <small>
+                        {trace.createdAt} · {trace.remotePeerId ?? "-"} · {trace.summary}
+                      </small>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <p className="muted">Management is local/read-only in this pass; no public relay admin API is exposed.</p>
+      </Panel>
+
       <section className="grid two">
         <Panel title="Profile">
           <dl className="facts">

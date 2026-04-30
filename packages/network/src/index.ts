@@ -100,6 +100,7 @@ export class EnvoyMesh {
   private readonly peerDiscoveryHandlers = new Set<MeshPeerDiscoveryHandler>();
   /** Peer IDs of clients connected via this relay server (when enableRelayServer is true). */
   private readonly relayConnectedPeers = new Set<string>();
+  private relayDebugTimer?: ReturnType<typeof setInterval>;
   private node?: Libp2p;
 
   constructor(private readonly options: EnvoyMeshOptions = {}) {}
@@ -202,6 +203,10 @@ export class EnvoyMesh {
       return;
     }
 
+    if (this.relayDebugTimer) {
+      clearInterval(this.relayDebugTimer);
+      this.relayDebugTimer = undefined;
+    }
     await this.node.stop();
     this.node = undefined;
   }
@@ -217,41 +222,24 @@ export class EnvoyMesh {
   }
 
   /**
-   * Returns the list of peer IDs currently connected via this relay server.
-   * Uses peerStore to get all known peers.
+   * Returns peer IDs observed on relay/circuit connections.
    */
   getConnectedRelayPeerIds(): string[] {
-    // Return all peers from peerStore that have connections
-    // This ensures we don't miss any peers even if peer:connect didn't fire
     const allPeers = new Set<string>();
 
-    // First add from relayConnectedPeers set
     for (const peerId of this.relayConnectedPeers) {
       allPeers.add(peerId);
     }
 
-    // Also query peerStore for all peers
     if (this.node) {
-      try {
-        const peerStore = (this.node as any).peerStore;
-        if (peerStore?.peers) {
-          for (const peer of peerStore.peers) {
-            const peerId = peer?.id?.toString?.();
-            if (peerId) {
-              allPeers.add(peerId);
-            }
-          }
-        }
-      } catch {
-        // PeerStore API may vary
-      }
-
-      // Also check connectionManager
       try {
         const connections = (this.node as any).connectionManager?.connections;
         if (connections) {
           for (const [peerIdStr, conns] of connections) {
-            if (conns && conns.length > 0) {
+            const hasRelayConnection = Array.isArray(conns)
+              ? conns.some((conn) => (conn?.remoteAddr?.toString?.() ?? "").includes("/p2p-circuit"))
+              : false;
+            if (hasRelayConnection) {
               allPeers.add(String(peerIdStr));
             }
           }
@@ -262,7 +250,9 @@ export class EnvoyMesh {
     }
 
     const result = [...allPeers];
-    console.log(`[relay-tracked] getConnectedRelayPeerIds returning: ${JSON.stringify(result)}`);
+    if (this.options.enableP2pDebug) {
+      console.log(`[relay-tracked] getConnectedRelayPeerIds returning: ${JSON.stringify(result)}`);
+    }
     return result;
   }
 
@@ -584,18 +574,22 @@ export class EnvoyMesh {
       typedNode.addEventListener("peer:connect", (event: any) => {
         const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
         this.relayConnectedPeers.add(remotePeerId);
-        console.log(`[relay-tracked] peer:connect ${remotePeerId} (total: ${this.relayConnectedPeers.size})`);
+        if (this.options.enableP2pDebug) {
+          console.log(`[relay-tracked] peer:connect ${remotePeerId} (total: ${this.relayConnectedPeers.size})`);
+        }
       });
 
       typedNode.addEventListener("peer:disconnect", (event: any) => {
         const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
         this.relayConnectedPeers.delete(remotePeerId);
-        console.log(`[relay-tracked] peer:disconnect ${remotePeerId} (total: ${this.relayConnectedPeers.size})`);
+        if (this.options.enableP2pDebug) {
+          console.log(`[relay-tracked] peer:disconnect ${remotePeerId} (total: ${this.relayConnectedPeers.size})`);
+        }
       });
 
       // Also track using connectionManager for relay connections which may not fire peer:connect
       if (this.node) {
-        setInterval(() => {
+        this.relayDebugTimer = setInterval(() => {
           try {
             const cmap = (this.node as any).connectionManager;
             let relayCount = 0;
@@ -614,16 +608,24 @@ export class EnvoyMesh {
                       this.relayConnectedPeers.add(String(peerIdStr));
                       relayCount++;
                     }
-                    console.log(`[relay-debug] conn peer=${peerIdStr} dir=${connDir} addr=${remoteAddr}`);
+                    if (this.options.enableP2pDebug) {
+                      console.log(`[relay-debug] conn peer=${peerIdStr} dir=${connDir} addr=${remoteAddr}`);
+                    }
                   }
                 }
               } catch (e) {
-                console.log(`[relay-debug] connectionManager iteration failed: ${e}`);
+                if (this.options.enableP2pDebug) {
+                  console.log(`[relay-debug] connectionManager iteration failed: ${e}`);
+                }
               }
             }
-            console.log(`[relay-debug] SUMMARY: peers=${peersList.join(",")} total=${totalCount} relay=${relayCount} tracked=${this.relayConnectedPeers.size}`);
+            if (this.options.enableP2pDebug) {
+              console.log(`[relay-debug] SUMMARY: peers=${peersList.join(",")} total=${totalCount} relay=${relayCount} tracked=${this.relayConnectedPeers.size}`);
+            }
           } catch (e) {
-            console.log(`[relay-debug] error: ${e}`);
+            if (this.options.enableP2pDebug) {
+              console.log(`[relay-debug] error: ${e}`);
+            }
           }
         }, 5000);
       }

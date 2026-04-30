@@ -6,7 +6,7 @@ This document explains how EnvoyMesh nodes discover each other on **native libp2
 
 **POC entry:** ordered proof sequence for transport discovery + connectivity (LAN → bootstrap/DHT → relay observation) lives in [poc-discovery-connectivity](./poc-discovery-connectivity.md).
 
-**Relay network design:** proposed layered relay-node topology, address-switching behavior, multi-relay failover, and growth controls live in [layered-relay-network](./layered-relay-network.md).
+**Relay network design:** layered relay-node topology, address-switching behavior, summary-guided relay graph routing, multi-relay failover, relay manager surfaces, and growth controls live in [layered-relay-network](./layered-relay-network.md).
 
 ## Discovery Model At A Glance
 
@@ -299,14 +299,17 @@ At runtime, EnvoyMesh writes connectivity telemetry to audit as `p2p.trace` even
 - bootstrap probe success/failure
 - periodic bootstrap reprobe success/failure (`connectivity.reprobe.ok` / `connectivity.reprobe.fail`)
 - periodic health checkpoints
+- relay control events such as `relay.checkin`, `relay.lookup`, `relay.summary`, forwarded lookup traces, and local `relay.manager.snapshot` rows
 
 These traces power:
 
 - CLI:
   - `npm run cli -w @envoymesh/node -- connectivity-status --profile "<profile>"` — prints aggregate counters **plus** the latest **`peer.discovery`** row per libp2p peer id, recent **`discovery.capability.*`** traces when present, and **`discovery-seeds.json`** rows (with `source`: `peer.discovery`, `capability-topic`, `bootstrap-probe`, …).
+  - `npm run cli -w @envoymesh/node -- relay-status --profile "<profile>"` — prints the local relay manager snapshot: roster counts, relay-book neighbors, summary freshness, routing metrics, recent relay traces, and warnings.
   - Running node with **`--peer-discovery-log`** or **`ENVOYMESH_PEER_DISCOVERY_LOG=1`** prints **`[peer-discovery]`** lines to the console whenever libp2p reports a newly discovered peer (supplements audit).
 - Dashboard:
   - Discovery Health panel (bootstrap/discovered/relay/warnings/checkpoint fields)
+  - Relay Manager panel (local/read-only relay roster, relay graph, and routing snapshot)
 
 ## End-To-End Discovery Flow
 
@@ -314,8 +317,9 @@ These traces power:
 2. Discovery modules initialize (mDNS and/or WAN stack).
 3. Node attempts peer discovery through active mechanisms.
 4. For `wan-default`, bootstrap probes are executed and recorded.
-5. A discovered peer becomes dialable and traffic can flow (`system.signal`, `system.ping`, chat/task/data).
-6. Verified `system.signal` helps stabilize addressing by owner identity over time.
+5. Relay clients periodically send `relay.checkin`; relay nodes answer bounded `relay.lookup` queries from their local roster first and then selected relay neighbors when `maxHops` allows it.
+6. A discovered peer becomes dialable and traffic can flow (`system.signal`, `system.ping`, chat/task/data).
+7. Verified `system.signal` helps stabilize addressing by owner identity over time.
 
 ## Recommended Startup Commands
 

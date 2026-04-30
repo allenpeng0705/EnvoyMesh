@@ -1,5 +1,6 @@
 import {
   analyzeConnectivityStageD,
+  buildRelayManagerSnapshot,
   buildMorningReportDigest,
   createLocalPeerDirectoryStore,
   createLocalTaskStore,
@@ -149,6 +150,7 @@ export async function getDashboardSnapshot(config: DashboardConfig): Promise<Das
     observedPeers: summarizeObservedPeers(auditEvents),
     liveP2p: summarizeLiveP2p(auditEvents),
     connectivityHealth: summarizeConnectivityHealth(auditEvents),
+    relayManager: buildRelayManagerSnapshot({ profile, auditEvents }),
     morningReport: buildMorningReportDigest({
       trustRecords,
       peerDirectoryRecords: await createLocalPeerDirectoryStore(config.profileDir).listPeerRecords(),

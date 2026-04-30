@@ -1,6 +1,7 @@
 import { evaluateCapability } from "@envoymesh/bonds";
 import {
   auditEventForDispatcherDecision,
+  buildRelayManagerSnapshot,
   createApprovalRequest,
   createAuditEvent,
   createLocalPeerDirectoryStore,
@@ -9,7 +10,10 @@ import {
   createTaskRuntimeStateStore,
   deriveCorrelationIdFromEnvelope,
   loadOrCreateNodeProfile,
+  RELAY_MANAGER_SNAPSHOT_PROTOCOL,
   saveNodeProfile,
+  serializeRelayManagerSnapshot,
+  type RelayManagerRuntimeState,
 } from "@envoymesh/local-store";
 import {
   createSignedDataTransferVoucher,
@@ -30,13 +34,28 @@ import {
   createDiscoveryResponsePayload,
   createDevicePairApprovePayload,
   createDevicePairDeferredPayload,
+  createRelayCheckinPayload,
+  createRelayHintsResponsePayload,
+  createRelayJoinResponsePayload,
+  createRelayLookupPayload,
+  createRelayLookupResponsePayload,
+  createRelayRegisterResponsePayload,
+  createRelaySummaryPayload,
   createTaskCancelPayload,
   createUnsignedDataTransferVoucher,
   parseDevicePairApprovePayload,
   parseDevicePairDeferredPayload,
   parseDevicePairRequestPayload,
   parseChatMessagePayload,
+  parseRelayCheckinPayload,
+  parseRelayHintsRequestPayload,
+  parseRelayHintsResponsePayload,
+  parseRelayJoinRequestPayload,
+  parseRelayLookupPayload,
+  parseRelayLookupResponsePayload,
   parseRelayPeersResponsePayload,
+  parseRelayRegisterPayload,
+  parseRelaySummaryPayload,
   createSystemPingPayload,
   createSystemSignalPayload,
   createUnsignedEnvelope,
@@ -44,8 +63,12 @@ import {
   parseSystemSignalPayload,
   parseTaskCancelPayload,
   type EnvoyEnvelope,
+  type RelayHint,
+  type RelayLookupPayload,
+  type RelayLookupResponsePayload,
+  type RelayPeerCandidate,
 } from "@envoymesh/protocol";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseNodeArgs } from "./args.js";
@@ -60,6 +83,14 @@ import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-ru
 import { installEnvoyDataTransferReceiver } from "./data-transfer-inbound.js";
 import { evaluateInboundEnvelopeRolePolicy } from "./role-policy.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
+import {
+  addRelayCandidates,
+  createRelayClientState,
+  createRelayRoster,
+  noteRelayFailure,
+  noteRelaySuccess,
+} from "./relay-roster.js";
+import { createRelayLookupRouter } from "./relay-lookup-router.js";
 
 const args = parseNodeArgs(process.argv.slice(2));
 const profile = await loadOrCreateNodeProfile(args.profileDir);
@@ -107,10 +138,21 @@ const CAPABILITY_DISCOVERY_QUERY_TIMEOUT_MS = 6_000;
 const CAPABILITY_DISCOVERY_MAX_PROVIDERS = 32;
 const RELAY_PEERS_QUERY_INTERVAL_MS = 30_000;
 const RELAY_PEERS_QUERY_JITTER_MS = 7_500;
+const RELAY_CHECKIN_INTERVAL_MS = 30_000;
+const RELAY_LOOKUP_INTERVAL_MS = 30_000;
+const RELAY_SUMMARY_INTERVAL_MS = 60_000;
+const RELAY_CONTROL_TTL_MS = 90_000;
+const RELAY_FORWARD_LOOKUP_TIMEOUT_MS = 2_500;
+const RELAY_MANAGER_SNAPSHOT_INTERVAL_MS = 30_000;
 let bootstrapReprobeTimer: ReturnType<typeof setTimeout> | undefined;
 let bootstrapReprobeCursor = 0;
 let capabilityDiscoveryTimer: ReturnType<typeof setTimeout> | undefined;
 let relayPeersQueryTimer: ReturnType<typeof setTimeout> | undefined;
+let relayCheckinTimer: ReturnType<typeof setTimeout> | undefined;
+let relayLookupTimer: ReturnType<typeof setTimeout> | undefined;
+let relaySummaryTimer: ReturnType<typeof setTimeout> | undefined;
+let relayManagerSnapshotTimer: ReturnType<typeof setTimeout> | undefined;
+const processStartedAt = Date.now();
 
 if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length === 0) {
   connectivityWarnings.push(
@@ -120,6 +162,18 @@ if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length ==
 
 const autoCapabilityTopics = buildAutoCapabilityTopics(profile.deviceCertificate.capabilities);
 const observedRelayPeerIds = new Set<string>();
+const relayRoster = createRelayRoster();
+const relayClientState = createRelayClientState(effectiveBootstrapPeers.map(relayHintFromAddr));
+const relayLookupRouter = createRelayLookupRouter();
+const pendingRelayLookupResponses = new Map<
+  string,
+  {
+    expected: number;
+    responses: Array<{ payload: RelayLookupResponsePayload; remotePeerId: string }>;
+    resolve: () => void;
+    timeout: ReturnType<typeof setTimeout>;
+  }
+>();
 
 mesh.onPeerDiscovered(async (peer) => {
   const source = peer.multiaddrs.some((addr) => addr.includes("/p2p-circuit")) ? "relay" : "unknown";
@@ -399,6 +453,25 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
         summary: `Sent discovery.response with ${discovery.responsePayload.matches.length} match(es).`,
       });
     }
+    return;
+  }
+
+  if (
+    envelope.intent === "relay.checkin" ||
+    envelope.intent === "relay.lookup" ||
+    envelope.intent === "relay.lookup.response" ||
+    envelope.intent === "relay.hints.request" ||
+    envelope.intent === "relay.hints.response" ||
+    envelope.intent === "relay.join.request" ||
+    envelope.intent === "relay.register" ||
+    envelope.intent === "relay.summary"
+  ) {
+    await handleRelayControlEnvelope({
+      envelope,
+      remotePeerId,
+      receivedAt,
+      correlationId,
+    });
     return;
   }
 
@@ -904,9 +977,23 @@ if (args.enableDht && autoCapabilityTopics.length > 0) {
   await runCapabilityDiscoveryCycle("startup");
   scheduleCapabilityDiscovery();
 }
+if (args.enableRelay && effectiveBootstrapPeers.length > 0) {
+  await runRelayCheckinCycle("startup");
+  scheduleRelayCheckin();
+  await runRelayLookupCycle("startup");
+  scheduleRelayLookup();
+}
+if (args.enableRelayServer && effectiveBootstrapPeers.length > 0) {
+  await runRelaySummaryCycle("startup");
+  scheduleRelaySummary();
+}
 if (args.autoRelayPeersQuery && args.enableRelay && effectiveBootstrapPeers.length > 0) {
   await runRelayPeersQueryCycle("startup");
   scheduleRelayPeersQuery(effectiveBootstrapPeers);
+}
+if (args.enableRelay || args.enableRelayServer) {
+  await runRelayManagerSnapshotCycle("startup");
+  scheduleRelayManagerSnapshot();
 }
 setTimeout(() => {
   void taskStore.appendAuditEvent(
@@ -1095,6 +1182,22 @@ async function shutdown(): Promise<void> {
     clearTimeout(relayPeersQueryTimer);
     relayPeersQueryTimer = undefined;
   }
+  if (relayCheckinTimer) {
+    clearTimeout(relayCheckinTimer);
+    relayCheckinTimer = undefined;
+  }
+  if (relayLookupTimer) {
+    clearTimeout(relayLookupTimer);
+    relayLookupTimer = undefined;
+  }
+  if (relaySummaryTimer) {
+    clearTimeout(relaySummaryTimer);
+    relaySummaryTimer = undefined;
+  }
+  if (relayManagerSnapshotTimer) {
+    clearTimeout(relayManagerSnapshotTimer);
+    relayManagerSnapshotTimer = undefined;
+  }
   await mesh.stop();
   process.exit(0);
 }
@@ -1272,6 +1375,524 @@ async function runRelayPeersQueryCycle(source: "startup" | "periodic"): Promise<
   }
 }
 
+function scheduleRelayCheckin(): void {
+  if (!args.enableRelay || effectiveBootstrapPeers.length === 0) {
+    return;
+  }
+  relayCheckinTimer = setTimeout(() => {
+    void runRelayCheckinCycle("periodic").finally(() => scheduleRelayCheckin());
+  }, RELAY_CHECKIN_INTERVAL_MS);
+}
+
+async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<void> {
+  const targets = relayControlTargets();
+  const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
+  for (const target of targets) {
+    const payload = createRelayCheckinPayload({
+      peerId: mesh.peerId,
+      ownerId: profile.owner.ownerId,
+      relayReachableAddrs: mesh.multiaddrs,
+      capabilities: profile.deviceCertificate.capabilities,
+      advertisements: profile.deviceCertificate.capabilities.map((capability) => ({
+        capability,
+        visibility: capability === "mesh.discovery" ? "public" : "bonded",
+        expiresAt,
+      })),
+      relayHints: relayClientState.activeRelays,
+      expiresAt,
+    });
+    const signedEnvelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        senderPeerId: derivePeerId(profile.device.publicKeyPem),
+        senderPublicKey: profile.device.publicKeyPem,
+        senderRole: "system",
+        recipientPeerId: target.startsWith("/") ? undefined : target,
+        intent: "relay.checkin",
+        payload,
+      }),
+      profile.device.privateKeyPem,
+    );
+    try {
+      const latencyMs = await mesh.send(target, signedEnvelope);
+      noteRelaySuccess(relayClientState, relayHintFromAddr(target));
+      await appendRelayTrace("relay.checkin.ok", target, `relay checkin ok source=${source} target=${target}`, latencyMs);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      noteRelayFailure(relayClientState, relayHintFromAddr(target));
+      await appendRelayTrace("relay.checkin.fail", target, `relay checkin failed source=${source} target=${target} error=${message}`);
+    }
+  }
+}
+
+function scheduleRelayLookup(): void {
+  if (!args.enableRelay || effectiveBootstrapPeers.length === 0) {
+    return;
+  }
+  relayLookupTimer = setTimeout(() => {
+    void runRelayLookupCycle("periodic").finally(() => scheduleRelayLookup());
+  }, RELAY_LOOKUP_INTERVAL_MS);
+}
+
+function scheduleRelaySummary(): void {
+  if (!args.enableRelayServer || effectiveBootstrapPeers.length === 0) {
+    return;
+  }
+  relaySummaryTimer = setTimeout(() => {
+    void runRelaySummaryCycle("periodic").finally(() => scheduleRelaySummary());
+  }, RELAY_SUMMARY_INTERVAL_MS);
+}
+
+function scheduleRelayManagerSnapshot(): void {
+  if (!args.enableRelay && !args.enableRelayServer) {
+    return;
+  }
+  relayManagerSnapshotTimer = setTimeout(() => {
+    void runRelayManagerSnapshotCycle("periodic").finally(() => scheduleRelayManagerSnapshot());
+  }, RELAY_MANAGER_SNAPSHOT_INTERVAL_MS);
+}
+
+async function runRelayManagerSnapshotCycle(source: "startup" | "periodic"): Promise<void> {
+  const auditEvents = await taskStore.readAuditEvents();
+  const snapshot = buildRelayManagerSnapshot({
+    auditEvents,
+    runtime: buildRelayManagerRuntimeState(),
+  });
+  await taskStore.appendAuditEvent(
+    createAuditEvent({
+      type: "p2p.trace",
+      direction: "outbound",
+      protocol: RELAY_MANAGER_SNAPSHOT_PROTOCOL,
+      outcome: "record",
+      summary: serializeRelayManagerSnapshot(snapshot),
+    }),
+  );
+  await appendRelayTrace(
+    "relay.manager.snapshot.ok",
+    mesh.peerId,
+    `relay manager snapshot ok source=${source} roster=${snapshot.roster.total} relays=${snapshot.relayBook.total} summaries=${snapshot.summaries.total}`,
+  );
+}
+
+async function runRelaySummaryCycle(source: "startup" | "periodic"): Promise<void> {
+  const targets = relayControlTargets();
+  const payload = createRelaySummaryPayload(
+    relayRoster.summary({
+      relayId: mesh.peerId,
+      level: args.enableRelayServer ? 2 : 3,
+      expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
+    }),
+  );
+  for (const target of targets) {
+    const signedEnvelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        senderPeerId: derivePeerId(profile.device.publicKeyPem),
+        senderPublicKey: profile.device.publicKeyPem,
+        senderRole: "system",
+        recipientPeerId: target.startsWith("/") ? undefined : target,
+        intent: "relay.summary",
+        payload,
+      }),
+      profile.device.privateKeyPem,
+    );
+    try {
+      const latencyMs = await mesh.send(target, signedEnvelope);
+      await appendRelayTrace("relay.summary.ok", target, `relay summary ok source=${source} target=${target}`, latencyMs);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await appendRelayTrace("relay.summary.fail", target, `relay summary failed source=${source} target=${target} error=${message}`);
+    }
+  }
+}
+
+async function runRelayLookupCycle(source: "startup" | "periodic"): Promise<void> {
+  const targets = relayControlTargets();
+  for (const target of targets) {
+    const payload = createRelayLookupPayload({
+      queryId: `relay_lookup_${randomUUID()}`,
+      capability: "mesh.discovery",
+      maxResults: 32,
+      maxHops: 0,
+      maxFanout: 2,
+      visibilityScope: "public",
+      expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
+    });
+    const signedEnvelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        senderPeerId: derivePeerId(profile.device.publicKeyPem),
+        senderPublicKey: profile.device.publicKeyPem,
+        senderRole: "system",
+        recipientPeerId: target.startsWith("/") ? undefined : target,
+        intent: "relay.lookup",
+        payload,
+      }),
+      profile.device.privateKeyPem,
+    );
+    try {
+      const latencyMs = await mesh.send(target, signedEnvelope);
+      noteRelaySuccess(relayClientState, relayHintFromAddr(target));
+      await appendRelayTrace("relay.lookup.ok", target, `relay lookup ok source=${source} target=${target}`, latencyMs);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      noteRelayFailure(relayClientState, relayHintFromAddr(target));
+      await appendRelayTrace("relay.lookup.fail", target, `relay lookup failed source=${source} target=${target} error=${message}`);
+    }
+  }
+}
+
+async function handleRelayControlEnvelope(input: {
+  envelope: EnvoyEnvelope;
+  remotePeerId: string;
+  receivedAt: number;
+  correlationId: string | undefined;
+}): Promise<void> {
+  const { envelope, remotePeerId, receivedAt, correlationId } = input;
+  try {
+    if (envelope.intent === "relay.checkin") {
+      const payload = parseRelayCheckinPayload(envelope.payload);
+      relayRoster.checkin(payload, remotePeerId);
+      await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.checkin accepted peer=${payload.peerId}`);
+      return;
+    }
+
+    if (envelope.intent === "relay.lookup") {
+      const payload = parseRelayLookupPayload(envelope.payload);
+      if (!relayLookupRouter.markSeen(payload.queryId)) {
+        await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.lookup duplicate dropped query=${payload.queryId}`);
+        return;
+      }
+      const localResponse = relayRoster.lookup({
+        payload,
+        requesterPeerId: remotePeerId,
+        relayMultiaddrs: mesh.multiaddrs,
+        relayPeerId: mesh.peerId,
+      });
+      const routeDecision = relayLookupRouter.selectForwardTargets({
+        payload,
+        relayBook: relayRoster.relayBook(),
+        summaries: relayRoster.summaries(),
+        selfRelayId: mesh.peerId,
+      });
+      const forwardedResponses =
+        localResponse.peers.length < payload.maxResults
+          ? await forwardRelayLookup({
+              request: envelope,
+              payload,
+              targets: routeDecision.forwardTargets,
+              correlationId,
+            })
+          : [];
+      const responsePayload = createRelayLookupResponsePayload(
+        mergeRelayLookupResponses(payload, [localResponse, ...forwardedResponses.map((item) => item.payload)]),
+      );
+      await sendRelayControlResponse(envelope, "relay.lookup.response", responsePayload, correlationId);
+      await appendRelayInboundAudit(
+        envelope,
+        remotePeerId,
+        receivedAt,
+        correlationId,
+        `relay.lookup returned peers=${responsePayload.peers.length} hints=${responsePayload.relayHints.length} forwards=${routeDecision.forwardTargets.length}`,
+      );
+      return;
+    }
+
+    if (envelope.intent === "relay.lookup.response") {
+      const payload = parseRelayLookupResponsePayload(envelope.payload);
+      const pending = pendingRelayLookupResponses.get(payload.queryId);
+      if (pending) {
+        pending.responses.push({ payload, remotePeerId });
+        if (pending.responses.length >= pending.expected) {
+          pending.resolve();
+        }
+        await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.lookup.response collected peers=${payload.peers.length}`);
+        return;
+      }
+      await processRelayLookupResponse(payload);
+      await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.lookup.response peers=${payload.peers.length}`);
+      return;
+    }
+
+    if (envelope.intent === "relay.hints.request") {
+      const payload = parseRelayHintsRequestPayload(envelope.payload);
+      const responsePayload = createRelayHintsResponsePayload({
+        relayHints: relayRoster.relayHints(payload.maxResults),
+        truncated: false,
+        expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
+      });
+      await sendRelayControlResponse(envelope, "relay.hints.response", responsePayload, correlationId);
+      await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.hints.request reason=${payload.reason}`);
+      return;
+    }
+
+    if (envelope.intent === "relay.hints.response") {
+      const payload = parseRelayHintsResponsePayload(envelope.payload);
+      addRelayCandidates(relayClientState, payload.relayHints);
+      await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.hints.response hints=${payload.relayHints.length}`);
+      return;
+    }
+
+    if (envelope.intent === "relay.join.request") {
+      const payload = parseRelayJoinRequestPayload(envelope.payload);
+      relayRoster.registerRelay({
+        relayId: payload.relay.relayId,
+        addrs: payload.relay.publicAddrs,
+        relation: "candidate",
+        state: "verified",
+        level: payload.relay.level,
+        region: payload.relay.region,
+        expiresAt: payload.relay.expiresAt,
+      });
+      const responsePayload = createRelayJoinResponsePayload({
+        accepted: true,
+        acceptedLevel: payload.desiredLevel ?? payload.relay.level,
+        parents: relayRoster.relayHints(2),
+        siblings: relayRoster.relayHints(4),
+        childLimit: 20,
+        expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
+      });
+      await sendRelayControlResponse(envelope, "relay.join.response", responsePayload, correlationId);
+      await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.join.request accepted relay=${payload.relay.relayId}`);
+      return;
+    }
+
+    if (envelope.intent === "relay.register") {
+      const payload = parseRelayRegisterPayload(envelope.payload);
+      relayRoster.registerRelay({
+        relayId: payload.relay.relayId,
+        addrs: payload.relay.publicAddrs,
+        relation: payload.requestedRelation,
+        state: "verified",
+        level: payload.relay.level,
+        region: payload.relay.region,
+        expiresAt: payload.relay.expiresAt,
+      });
+      const responsePayload = createRelayRegisterResponsePayload({
+        accepted: true,
+        relation: payload.requestedRelation,
+        state: "verified",
+        expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
+      });
+      await sendRelayControlResponse(envelope, "relay.register.response", responsePayload, correlationId);
+      await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.register accepted relay=${payload.relay.relayId}`);
+      return;
+    }
+
+    if (envelope.intent === "relay.summary") {
+      const payload = parseRelaySummaryPayload(envelope.payload);
+      relayRoster.registerSummary(payload);
+      relayRoster.registerRelay({
+        relayId: payload.relayId,
+        addrs: [],
+        relation: "sibling",
+        state: "verified",
+        level: payload.level,
+        region: payload.region,
+        expiresAt: payload.expiresAt,
+      });
+      await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.summary relay=${payload.relayId} peers=${payload.livePeerCount}`);
+      return;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "message.rejected",
+        intent: envelope.intent,
+        messageId: envelope.messageId,
+        correlationId,
+        remotePeerId,
+        direction: "inbound",
+        verificationStatus: "rejected",
+        latencyMs: Date.now() - receivedAt,
+        outcome: "deny",
+        summary: `Rejected ${envelope.intent}: ${message}`,
+        createdAt: envelope.createdAt,
+      }),
+    );
+  }
+}
+
+async function forwardRelayLookup(input: {
+  request: EnvoyEnvelope;
+  payload: RelayLookupPayload;
+  targets: RelayHint[];
+  correlationId: string | undefined;
+}): Promise<Array<{ payload: RelayLookupResponsePayload; remotePeerId: string }>> {
+  const { payload, targets, correlationId } = input;
+  if (payload.maxHops <= 0 || targets.length === 0) {
+    return [];
+  }
+
+  let sent = 0;
+  let resolvePending!: () => void;
+  const pending = {
+    expected: targets.length,
+    responses: [] as Array<{ payload: RelayLookupResponsePayload; remotePeerId: string }>,
+    resolve: () => resolvePending(),
+    timeout: setTimeout(() => resolvePending(), RELAY_FORWARD_LOOKUP_TIMEOUT_MS),
+  };
+  const done = new Promise<void>((resolve) => {
+    resolvePending = resolve;
+  });
+  pendingRelayLookupResponses.set(payload.queryId, pending);
+
+  try {
+    for (const target of targets) {
+      const targetAddress = relayTargetAddress(target);
+      if (!targetAddress) {
+        continue;
+      }
+      const forwardedPayload = createRelayLookupPayload({
+        ...payload,
+        maxHops: payload.maxHops - 1,
+      });
+      const signedEnvelope = signUnsignedEnvelope(
+        createUnsignedEnvelope({
+          senderPeerId: derivePeerId(profile.device.publicKeyPem),
+          senderPublicKey: profile.device.publicKeyPem,
+          senderRole: "system",
+          recipientPeerId: targetAddress.startsWith("/") ? undefined : target.relayId,
+          intent: "relay.lookup",
+          payload: forwardedPayload,
+          correlationId,
+        }),
+        profile.device.privateKeyPem,
+      );
+      try {
+        sent += 1;
+        relayLookupRouter.recordForwardedLookup();
+        const latencyMs = await mesh.send(targetAddress, signedEnvelope);
+        await appendRelayTrace(
+          "relay.lookup.forward.ok",
+          target.relayId || targetAddress,
+          `relay lookup forward ok target=${target.relayId || targetAddress} nextHops=${forwardedPayload.maxHops}`,
+          latencyMs,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        relayLookupRouter.recordFailedForward();
+        if (target.relayId) {
+          relayLookupRouter.recordNegative(payload, target.relayId);
+        }
+        await appendRelayTrace(
+          "relay.lookup.forward.fail",
+          target.relayId || targetAddress,
+          `relay lookup forward failed target=${target.relayId || targetAddress} error=${message}`,
+        );
+      }
+    }
+
+    pending.expected = sent;
+    if (sent === 0 || pending.responses.length >= sent) {
+      pending.resolve();
+    }
+    await done;
+    relayLookupRouter.recordCollectedForwardResponse(pending.responses.length);
+    for (const response of pending.responses) {
+      if (response.payload.peers.length === 0) {
+        relayLookupRouter.recordNegative(payload, response.remotePeerId);
+      }
+    }
+    return pending.responses;
+  } finally {
+    clearTimeout(pending.timeout);
+    pendingRelayLookupResponses.delete(payload.queryId);
+  }
+}
+
+function mergeRelayLookupResponses(payload: RelayLookupPayload, responses: RelayLookupResponsePayload[]): RelayLookupResponsePayload {
+  const peers = new Map<string, RelayPeerCandidate>();
+  const hints = new Map<string, RelayHint>();
+  let truncated = false;
+  for (const response of responses) {
+    truncated = truncated || response.truncated;
+    for (const peer of response.peers) {
+      const key = peer.peerId || peer.multiaddrs.join(",");
+      if (!peers.has(key)) {
+        peers.set(key, peer);
+      }
+    }
+    for (const hint of response.relayHints) {
+      const key = hint.relayId || hint.multiaddrs.join(",");
+      if (key && !hints.has(key)) {
+        hints.set(key, {
+          ...hint,
+          multiaddrs: dedupeAddrs(hint.multiaddrs),
+        });
+      }
+    }
+  }
+  const cappedPeers = [...peers.values()].slice(0, payload.maxResults);
+  return {
+    queryId: payload.queryId,
+    peers: cappedPeers,
+    relayHints: [...hints.values()].slice(0, payload.maxResults),
+    truncated: truncated || peers.size > cappedPeers.length,
+    expiresAt: payload.expiresAt,
+  };
+}
+
+async function processRelayLookupResponse(payload: RelayLookupResponsePayload): Promise<void> {
+  addRelayCandidates(relayClientState, payload.relayHints);
+  const relayedAddrs = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
+  if (relayedAddrs.length > 0) {
+    await discoverySeedStore.upsertMany(relayedAddrs, "relay-peers");
+  }
+  for (const addr of relayedAddrs) {
+    try {
+      const latencyMs = await mesh.probePeer(addr);
+      await appendRelayTrace("relay.lookup.dial.ok", addr, `relay lookup candidate dial ok addr=${addr}`, latencyMs);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await appendRelayTrace("relay.lookup.dial.fail", addr, `relay lookup candidate dial failed addr=${addr} error=${message}`);
+    }
+  }
+}
+
+async function sendRelayControlResponse(
+  request: EnvoyEnvelope,
+  intent: "relay.lookup.response" | "relay.hints.response" | "relay.join.response" | "relay.register.response",
+  payload: unknown,
+  correlationId: string | undefined,
+): Promise<void> {
+  const signedEnvelope = signUnsignedEnvelope(
+    createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "system",
+      recipientPeerId: request.senderPeerId,
+      intent,
+      payload,
+      correlationId,
+    }),
+    profile.device.privateKeyPem,
+  );
+  await mesh.send(request.senderPeerId, signedEnvelope);
+}
+
+async function appendRelayInboundAudit(
+  envelope: EnvoyEnvelope,
+  remotePeerId: string,
+  receivedAt: number,
+  correlationId: string | undefined,
+  summary: string,
+): Promise<void> {
+  await taskStore.appendAuditEvent(
+    createAuditEvent({
+      type: "message.verified",
+      intent: envelope.intent,
+      messageId: envelope.messageId,
+      correlationId,
+      remotePeerId,
+      direction: "inbound",
+      verificationStatus: "verified",
+      latencyMs: Date.now() - receivedAt,
+      outcome: "allow",
+      summary,
+      createdAt: envelope.createdAt,
+    }),
+  );
+}
+
 process.on("SIGINT", () => {
   void shutdown();
 });
@@ -1375,6 +1996,83 @@ function rotatePeers(peers: string[]): string[] {
 
 function dedupeAddrs(addrs: string[]): string[] {
   return [...new Set(addrs.map((addr) => addr.trim()).filter(Boolean))];
+}
+
+function relayControlTargets(): string[] {
+  return dedupeAddrs([
+    ...relayClientState.activeRelays.flatMap((relay) => relay.multiaddrs),
+    ...effectiveBootstrapPeers,
+  ]);
+}
+
+function buildRelayManagerRuntimeState(): RelayManagerRuntimeState {
+  return {
+    enabled: args.enableRelay,
+    relayServerEnabled: args.enableRelayServer,
+    peerId: mesh.peerId,
+    listenAddrs: mesh.multiaddrs,
+    uptimeMs: Date.now() - processStartedAt,
+    rosterEntries: relayRoster.entries().map((entry) => ({
+      peerId: entry.peerId,
+      ownerId: entry.ownerId,
+      capabilities: entry.capabilities,
+      advertisements: entry.advertisements,
+      lastSeenAt: entry.lastSeenAt,
+      expiresAt: entry.expiresAt,
+      reservationFreshUntil: entry.reservationFreshUntil,
+    })),
+    relayBook: relayRoster.relayBook(),
+    summaries: relayRoster.summaries().map((entry) => ({
+      relayId: entry.relayId,
+      level: entry.summary.level,
+      region: entry.summary.region,
+      livePeerCount: entry.summary.livePeerCount,
+      childRelayCount: entry.summary.childRelayCount,
+      topicBuckets: entry.summary.topicBuckets,
+      lastSeenAt: entry.lastSeenAt,
+      expiresAt: entry.expiresAt,
+    })),
+    routing: relayLookupRouter.metrics(),
+  };
+}
+
+function relayHintFromAddr(addr: string): RelayHint {
+  return {
+    relayId: relayIdFromAddr(addr),
+    multiaddrs: [addr],
+  };
+}
+
+function relayTargetAddress(hint: RelayHint): string | undefined {
+  return hint.multiaddrs[0] ?? hint.relayId;
+}
+
+function relayIdFromAddr(addr: string): string {
+  const match = addr.match(/\/p2p\/([^/]+)$/);
+  return match?.[1] ?? addr;
+}
+
+function expiresAtFromNow(ms: number): string {
+  return new Date(Date.now() + ms).toISOString();
+}
+
+async function appendRelayTrace(
+  protocol: string,
+  remotePeerId: string,
+  summary: string,
+  latencyMs?: number,
+): Promise<void> {
+  await taskStore.appendAuditEvent(
+    createAuditEvent({
+      type: "p2p.trace",
+      direction: "outbound",
+      protocol,
+      remotePeerId,
+      latencyMs,
+      outcome: "record",
+      summary,
+    }),
+  );
 }
 
 function pushBootstrapProbeResult(entry: {

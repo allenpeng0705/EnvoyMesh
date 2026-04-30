@@ -211,10 +211,10 @@ Primary implementation:
 - SQLite or local files for early storage.
 - A model router that can select local, cloud, or peer providers behind policy.
 
-Later additions:
+Available or emerging additions:
 
 - WebRTC for browser/mobile connectivity.
-- DHT, relay, and hole punching for wider mesh discovery.
+- DHT, circuit relay, AutoNAT/DCUtR, and summary-guided relay graph routing for wider mesh discovery.
 - DID support for portable identity.
 - CRDTs for replicated shared state.
 - `node-llama-cpp`, Ollama, LM Studio, cloud model adapters, or external model workers.
@@ -236,7 +236,9 @@ Phone:
   approve requests
 ```
 
-No cloud backend is required for the local prototype. Later, optional bootstrap or relay nodes may improve connectivity, but they should not own user data or social state.
+No cloud backend is required for the local prototype. For WAN deployments, operator-owned bootstrap and relay nodes improve connectivity, but they should not own user data or social state. Relay nodes act as address switchers and routing hints: normal nodes check in with short TTLs, relays answer bounded `relay.lookup` requests, and relay-to-relay forwarding is constrained by summaries, `maxHops`, `maxFanout`, query IDs, and negative caching.
+
+Relay nodes also have local operator surfaces: `relay-status` in the developer CLI and the desktop Relay Manager panel. These surfaces read local snapshots and do not expose public administration by default.
 
 ## First Milestone
 

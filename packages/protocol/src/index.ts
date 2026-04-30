@@ -15,6 +15,16 @@ export const EnvoyIntentSchema = z.enum([
   "discovery.response",
   "relay.peers.request",
   "relay.peers.response",
+  "relay.checkin",
+  "relay.lookup",
+  "relay.lookup.response",
+  "relay.hints.request",
+  "relay.hints.response",
+  "relay.join.request",
+  "relay.join.response",
+  "relay.register",
+  "relay.register.response",
+  "relay.summary",
   "chat.message",
   "knowledge.query",
   "knowledge.response",
@@ -311,6 +321,146 @@ export const RelayPeersResponsePayloadSchema = z.object({
   peers: z.array(RelayPeerInfoSchema).default([]),
 });
 
+export const RelayVisibilitySchema = z.enum(["public", "capability", "bonded", "private"]);
+
+export const RelayAdvertisementSchema = z.object({
+  capability: z.string().min(1).optional(),
+  topicHash: z.string().min(1).optional(),
+  visibility: RelayVisibilitySchema.default("bonded"),
+  expiresAt: z.string().datetime().optional(),
+}).refine(
+  (value) => Boolean(value.capability || value.topicHash),
+  "relay advertisement requires capability or topicHash",
+);
+
+export const RelayHintSchema = z.object({
+  relayId: z.string().min(1),
+  level: z.number().int().min(0).max(8).optional(),
+  region: z.string().min(1).optional(),
+  multiaddrs: z.array(z.string().min(1)).default([]),
+  scoreHint: z.number().finite().optional(),
+  expiresAt: z.string().datetime().optional(),
+});
+
+export const RelayPeerCandidateSchema = z.object({
+  peerId: z.string().min(1),
+  ownerId: z.string().min(1).optional(),
+  multiaddrs: z.array(z.string().min(1)).default([]),
+  viaRelayId: z.string().min(1).optional(),
+  capabilities: z.array(z.string().min(1)).default([]),
+  visibility: RelayVisibilitySchema.default("public"),
+  expiresAt: z.string().datetime().optional(),
+});
+
+export const RelayCheckinPayloadSchema = z.object({
+  peerId: z.string().min(1),
+  ownerId: z.string().min(1).optional(),
+  relayReachableAddrs: z.array(z.string().min(1)).default([]),
+  capabilities: z.array(z.string().min(1)).default([]),
+  advertisements: z.array(RelayAdvertisementSchema).default([]),
+  relayHints: z.array(RelayHintSchema).default([]),
+  expiresAt: z.string().datetime(),
+});
+
+export const RelayLookupPayloadSchema = z
+  .object({
+    queryId: z.string().min(1),
+    targetPeerId: z.string().min(1).optional(),
+    targetOwnerId: z.string().min(1).optional(),
+    capability: z.string().min(1).optional(),
+    topicHash: z.string().min(1).optional(),
+    maxResults: z.number().int().min(1).max(100).default(20),
+    maxHops: z.number().int().min(0).max(8).default(0),
+    maxFanout: z.number().int().min(1).max(8).default(2),
+    visibilityScope: RelayVisibilitySchema.default("public"),
+    expiresAt: z.string().datetime(),
+  })
+  .refine(
+    (value) => Boolean(value.targetPeerId || value.targetOwnerId || value.capability || value.topicHash),
+    "relay.lookup requires targetPeerId, targetOwnerId, capability, or topicHash",
+  );
+
+export const RelayLookupResponsePayloadSchema = z.object({
+  queryId: z.string().min(1),
+  peers: z.array(RelayPeerCandidateSchema).default([]),
+  relayHints: z.array(RelayHintSchema).default([]),
+  truncated: z.boolean().default(false),
+  policy: z.string().min(1).optional(),
+  expiresAt: z.string().datetime(),
+});
+
+export const RelayHintsRequestPayloadSchema = z.object({
+  reason: z.enum(["lookup-failed", "dial-failed", "bootstrap", "refresh"]).default("refresh"),
+  region: z.string().min(1).optional(),
+  maxResults: z.number().int().min(1).max(50).default(10),
+  expiresAt: z.string().datetime(),
+});
+
+export const RelayHintsResponsePayloadSchema = z.object({
+  relayHints: z.array(RelayHintSchema).default([]),
+  truncated: z.boolean().default(false),
+  expiresAt: z.string().datetime(),
+});
+
+export const RelayRelationSchema = z.enum(["parent", "ancestor", "sibling", "child", "candidate"]);
+export const RelayBookStateSchema = z.enum(["seed", "candidate", "probing", "verified", "active", "stale", "removed"]);
+
+export const RelayMetadataSchema = z.object({
+  relayId: z.string().min(1),
+  level: z.number().int().min(0).max(8),
+  region: z.string().min(1).optional(),
+  publicAddrs: z.array(z.string().min(1)).default([]),
+  capacity: z.number().int().positive().optional(),
+  relation: RelayRelationSchema.optional(),
+  state: RelayBookStateSchema.optional(),
+  expiresAt: z.string().datetime(),
+});
+
+export const RelayJoinRequestPayloadSchema = z.object({
+  relay: RelayMetadataSchema,
+  desiredLevel: z.number().int().min(0).max(8).optional(),
+  knownRelays: z.array(RelayHintSchema).default([]),
+});
+
+export const RelayJoinResponsePayloadSchema = z.object({
+  accepted: z.boolean(),
+  acceptedLevel: z.number().int().min(0).max(8).optional(),
+  parents: z.array(RelayHintSchema).default([]),
+  ancestors: z.array(RelayHintSchema).default([]),
+  siblings: z.array(RelayHintSchema).default([]),
+  candidateRelays: z.array(RelayHintSchema).default([]),
+  childLimit: z.number().int().min(0).optional(),
+  graphEpoch: z.string().min(1).optional(),
+  reason: z.string().min(1).optional(),
+  expiresAt: z.string().datetime(),
+});
+
+export const RelayRegisterPayloadSchema = z.object({
+  relay: RelayMetadataSchema,
+  requestedRelation: RelayRelationSchema,
+  graphEpoch: z.string().min(1).optional(),
+});
+
+export const RelayRegisterResponsePayloadSchema = z.object({
+  accepted: z.boolean(),
+  relation: RelayRelationSchema.optional(),
+  state: RelayBookStateSchema.default("verified"),
+  reason: z.string().min(1).optional(),
+  expiresAt: z.string().datetime(),
+});
+
+export const RelaySummaryPayloadSchema = z.object({
+  relayId: z.string().min(1),
+  level: z.number().int().min(0).max(8),
+  region: z.string().min(1).optional(),
+  childRelayCount: z.number().int().min(0).default(0),
+  livePeerCount: z.number().int().min(0).default(0),
+  capabilityBloom: z.string().min(1).optional(),
+  topicBuckets: z.array(z.string().min(1)).default([]),
+  graphEpoch: z.string().min(1).optional(),
+  expiresAt: z.string().datetime(),
+});
+
 export const ChatMessagePayloadSchema = z.object({
   senderOwnerId: z.string().min(1),
   text: z.string().min(1).max(4000),
@@ -583,6 +733,23 @@ export type DiscoveryResponsePayload = z.infer<typeof DiscoveryResponsePayloadSc
 export type RelayPeersRequestPayload = z.infer<typeof RelayPeersRequestPayloadSchema>;
 export type RelayPeerInfo = z.infer<typeof RelayPeerInfoSchema>;
 export type RelayPeersResponsePayload = z.infer<typeof RelayPeersResponsePayloadSchema>;
+export type RelayVisibility = z.infer<typeof RelayVisibilitySchema>;
+export type RelayAdvertisement = z.infer<typeof RelayAdvertisementSchema>;
+export type RelayHint = z.infer<typeof RelayHintSchema>;
+export type RelayPeerCandidate = z.infer<typeof RelayPeerCandidateSchema>;
+export type RelayCheckinPayload = z.infer<typeof RelayCheckinPayloadSchema>;
+export type RelayLookupPayload = z.infer<typeof RelayLookupPayloadSchema>;
+export type RelayLookupResponsePayload = z.infer<typeof RelayLookupResponsePayloadSchema>;
+export type RelayHintsRequestPayload = z.infer<typeof RelayHintsRequestPayloadSchema>;
+export type RelayHintsResponsePayload = z.infer<typeof RelayHintsResponsePayloadSchema>;
+export type RelayRelation = z.infer<typeof RelayRelationSchema>;
+export type RelayBookState = z.infer<typeof RelayBookStateSchema>;
+export type RelayMetadata = z.infer<typeof RelayMetadataSchema>;
+export type RelayJoinRequestPayload = z.infer<typeof RelayJoinRequestPayloadSchema>;
+export type RelayJoinResponsePayload = z.infer<typeof RelayJoinResponsePayloadSchema>;
+export type RelayRegisterPayload = z.infer<typeof RelayRegisterPayloadSchema>;
+export type RelayRegisterResponsePayload = z.infer<typeof RelayRegisterResponsePayloadSchema>;
+export type RelaySummaryPayload = z.infer<typeof RelaySummaryPayloadSchema>;
 export type ChatMessagePayload = z.infer<typeof ChatMessagePayloadSchema>;
 export type MandateAction = z.infer<typeof MandateActionSchema>;
 export type MandatePeerScope = z.infer<typeof MandatePeerScopeSchema>;
@@ -738,6 +905,46 @@ export function parseRelayPeersRequestPayload(input: unknown): RelayPeersRequest
 
 export function parseRelayPeersResponsePayload(input: unknown): RelayPeersResponsePayload {
   return RelayPeersResponsePayloadSchema.parse(input);
+}
+
+export function parseRelayCheckinPayload(input: unknown): RelayCheckinPayload {
+  return RelayCheckinPayloadSchema.parse(input);
+}
+
+export function parseRelayLookupPayload(input: unknown): RelayLookupPayload {
+  return RelayLookupPayloadSchema.parse(input);
+}
+
+export function parseRelayLookupResponsePayload(input: unknown): RelayLookupResponsePayload {
+  return RelayLookupResponsePayloadSchema.parse(input);
+}
+
+export function parseRelayHintsRequestPayload(input: unknown): RelayHintsRequestPayload {
+  return RelayHintsRequestPayloadSchema.parse(input);
+}
+
+export function parseRelayHintsResponsePayload(input: unknown): RelayHintsResponsePayload {
+  return RelayHintsResponsePayloadSchema.parse(input);
+}
+
+export function parseRelayJoinRequestPayload(input: unknown): RelayJoinRequestPayload {
+  return RelayJoinRequestPayloadSchema.parse(input);
+}
+
+export function parseRelayJoinResponsePayload(input: unknown): RelayJoinResponsePayload {
+  return RelayJoinResponsePayloadSchema.parse(input);
+}
+
+export function parseRelayRegisterPayload(input: unknown): RelayRegisterPayload {
+  return RelayRegisterPayloadSchema.parse(input);
+}
+
+export function parseRelayRegisterResponsePayload(input: unknown): RelayRegisterResponsePayload {
+  return RelayRegisterResponsePayloadSchema.parse(input);
+}
+
+export function parseRelaySummaryPayload(input: unknown): RelaySummaryPayload {
+  return RelaySummaryPayloadSchema.parse(input);
 }
 
 export function parseChatMessagePayload(input: unknown): ChatMessagePayload {
@@ -954,6 +1161,62 @@ export function createRelayPeersResponsePayload(
     requestMessageId: input.requestMessageId,
     peers: input.peers ?? [],
   });
+}
+
+export type CreateRelayCheckinPayloadInput = z.input<typeof RelayCheckinPayloadSchema>;
+export function createRelayCheckinPayload(input: CreateRelayCheckinPayloadInput): RelayCheckinPayload {
+  return RelayCheckinPayloadSchema.parse(input);
+}
+
+export type CreateRelayLookupPayloadInput = z.input<typeof RelayLookupPayloadSchema>;
+export function createRelayLookupPayload(input: CreateRelayLookupPayloadInput): RelayLookupPayload {
+  return RelayLookupPayloadSchema.parse(input);
+}
+
+export type CreateRelayLookupResponsePayloadInput = z.input<typeof RelayLookupResponsePayloadSchema>;
+export function createRelayLookupResponsePayload(
+  input: CreateRelayLookupResponsePayloadInput,
+): RelayLookupResponsePayload {
+  return RelayLookupResponsePayloadSchema.parse(input);
+}
+
+export type CreateRelayHintsRequestPayloadInput = z.input<typeof RelayHintsRequestPayloadSchema>;
+export function createRelayHintsRequestPayload(input: CreateRelayHintsRequestPayloadInput): RelayHintsRequestPayload {
+  return RelayHintsRequestPayloadSchema.parse(input);
+}
+
+export type CreateRelayHintsResponsePayloadInput = z.input<typeof RelayHintsResponsePayloadSchema>;
+export function createRelayHintsResponsePayload(
+  input: CreateRelayHintsResponsePayloadInput,
+): RelayHintsResponsePayload {
+  return RelayHintsResponsePayloadSchema.parse(input);
+}
+
+export type CreateRelayJoinRequestPayloadInput = z.input<typeof RelayJoinRequestPayloadSchema>;
+export function createRelayJoinRequestPayload(input: CreateRelayJoinRequestPayloadInput): RelayJoinRequestPayload {
+  return RelayJoinRequestPayloadSchema.parse(input);
+}
+
+export type CreateRelayJoinResponsePayloadInput = z.input<typeof RelayJoinResponsePayloadSchema>;
+export function createRelayJoinResponsePayload(input: CreateRelayJoinResponsePayloadInput): RelayJoinResponsePayload {
+  return RelayJoinResponsePayloadSchema.parse(input);
+}
+
+export type CreateRelayRegisterPayloadInput = z.input<typeof RelayRegisterPayloadSchema>;
+export function createRelayRegisterPayload(input: CreateRelayRegisterPayloadInput): RelayRegisterPayload {
+  return RelayRegisterPayloadSchema.parse(input);
+}
+
+export type CreateRelayRegisterResponsePayloadInput = z.input<typeof RelayRegisterResponsePayloadSchema>;
+export function createRelayRegisterResponsePayload(
+  input: CreateRelayRegisterResponsePayloadInput,
+): RelayRegisterResponsePayload {
+  return RelayRegisterResponsePayloadSchema.parse(input);
+}
+
+export type CreateRelaySummaryPayloadInput = z.input<typeof RelaySummaryPayloadSchema>;
+export function createRelaySummaryPayload(input: CreateRelaySummaryPayloadInput): RelaySummaryPayload {
+  return RelaySummaryPayloadSchema.parse(input);
 }
 
 export interface CreateChatMessagePayloadInput {

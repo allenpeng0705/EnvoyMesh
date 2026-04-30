@@ -69,6 +69,8 @@ describe("dashboard service", () => {
     expect(snapshot.approvals).toHaveLength(1);
     expect(snapshot.trustRecords).toHaveLength(1);
     expect(snapshot.observedPeers).toMatchObject([{ peerId: "peer-a", messageCount: 1 }]);
+    expect(snapshot.relayManager.source).toBe("empty");
+    expect(snapshot.relayManager.roster.total).toBe(0);
     expect(snapshot.vault).toMatchObject({ documentCount: 1, chunkCount: 1 });
   });
 
