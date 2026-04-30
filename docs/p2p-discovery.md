@@ -321,6 +321,48 @@ These traces power:
 6. A discovered peer becomes dialable and traffic can flow (`system.signal`, `system.ping`, chat/task/data).
 7. Verified `system.signal` helps stabilize addressing by owner identity over time.
 
+## Relay server: dialable addresses for `relay.lookup` circuit paths
+
+When a node runs with **`--relay-server`**, it answers **`relay.lookup`** by returning peer candidates whose multiaddrs are **relay circuit paths**. A client must dial a multiaddr of the form:
+
+```text
+<relay-base>/p2p/<relay-libp2p-id>/p2p-circuit/p2p/<target-libp2p-id>
+```
+
+The **`relay-base`** list is derived from:
+
+1. **`--advertise-addr`** values (repeatable), if any; else  
+2. **`getMultiaddrs()`**, with loopback-style bases removed.
+
+On cloud VMs and many home gateways, **`getMultiaddrs()`** may only include **loopback** (127.0.0.1) and **private NIC** addresses (for example `172.16.x.x`). Clients on a **different** network cannot dial those bases, so they may connect to the relay as a bootstrap peer (using a **public** DNS/IP multiaddr you gave them) but **never complete a circuit** to another leaf peer—even when the relay roster shows both clients.
+
+**Fix:** publish at least one **client-reachable** base multiaddr, **same TCP port** as `--listen`, with security group / firewall allowing inbound TCP:
+
+```bash
+--advertise-addr /ip4/<public-ip>/tcp/4001
+# or
+--advertise-addr /dns4/relay.example.com/tcp/4001
+```
+
+Environment variable (comma-separated):
+
+```bash
+export ENVOYMESH_ADVERTISE_ADDRS=/ip4/<public-ip>/tcp/4001
+```
+
+If the address does not already end with `/p2p/<relay-libp2p-id>`, the node appends it from the running relay’s libp2p peer id.
+
+With **`wan-default`** and **`--relay-server`**, startup logs a **connectivity warning** when no `--advertise-addr` is set, as a reminder for cross-network deployments.
+
+Step-by-step validation (two Windows nodes + relay) lives in [live-connectivity-testing](./live-connectivity-testing.md#4-prove-envoymesh-relay-address-switching).
+
+### Envoy logical peer id vs libp2p peer id (signing and delivery)
+
+EMP envelopes use **`senderPeerId` = `derivePeerId(devicePublicKeyPem)`** (the `envoy_…` stable application id from `@envoymesh/identity`). That is **not** the same string as **`libp2p`’s `PeerId`** (`12D3Koo…`).
+
+- **Verification** (`verifyEnvelope`) ties the signature to the device key and expects `senderPeerId` to match that derivation. Tools that sign with the profile key but set `senderPeerId` to **`mesh.peerId`** will see **`invalid signature`** on the relay—even though the bytes are signed correctly.
+- **Transport delivery**: when the relay (or any node) sends a reply on an **existing libp2p connection**, **`mesh.send`** must target the **`remotePeerId`** of that connection (libp2p id or dialable multiaddr), not the Envoy `senderPeerId` of the inbound envelope.
+
 ## Recommended Startup Commands
 
 ### Profile directories (cross-platform)
@@ -393,6 +435,16 @@ For WAN-first testing, prefer **explicit org bootstrap/relay multiaddrs** in add
 5. **mDNS-only expectation in non-LAN environments**
    - Symptom: works on LAN, fails across networks.
    - Fix: switch to `wan-default` + bootstrap/relay strategy.
+
+6. **Relay roster OK but leaf peers never connect (circuit dials fail)**
+   - Symptom: both clients check in (`relay-status` shows roster ≥ 2); `relay.lookup` returns peers but **`relay lookup candidate dial fail`** or discovery dashboard shows **`dialFail`** increasing; clients only “see” the relay at the libp2p layer.
+   - Cause: **`relay.lookup`** embedded **unreachable** relay bases (private loopback/NIC only).
+   - Fix: set **`--advertise-addr`** / **`ENVOYMESH_ADVERTISE_ADDRS`** on the relay server to a **public or DNS** multiaddr clients actually use (see [Relay server: dialable addresses](#relay-server-dialable-addresses-for-relaylookup-circuit-paths)).
+
+7. **`invalid signature` on `relay.checkin` / `relay.lookup` at the relay**
+   - Symptom: relay logs reject with **`invalid signature`**.
+   - Cause: envelope **`senderPeerId`** set to **`mesh.peerId` (libp2p)** instead of **`derivePeerId(devicePublicKeyPem)`** while signing with the device key.
+   - Fix: use the same signing pattern as the main node (`apps/node/src/index.ts`); discovery dashboard and any custom tooling must align.
 
 ## Validation Checklist
 

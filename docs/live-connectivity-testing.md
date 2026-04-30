@@ -58,11 +58,15 @@ This proves the local node observed a `/p2p-circuit` relay address. It does not 
 
 ## 4. Prove EnvoyMesh Relay Address Switching
 
-Use this procedure for the common non-LAN case where two Windows nodes can discover a Mac relay but cannot discover each other directly. The Mac runs as a relay server and address switcher. Both Windows nodes check in with `relay.checkin`, then query the relay with `relay.lookup` to learn `/p2p-circuit` addresses for each other.
+Use this procedure for the common non-LAN case where two Windows nodes can reach a **relay** but cannot discover each other directly. The relay runs with **`--relay-server`** (address switcher). Both Windows nodes check in with **`relay.checkin`**, then query with **`relay.lookup`** to learn **`/p2p-circuit`** paths to each other.
 
-### 4.1 Start the Mac relay
+Background and failure modes (advertised addresses, signing, libp2p vs Envoy peer ids): [p2p-discovery](./p2p-discovery.md#relay-server-dialable-addresses-for-relaylookup-circuit-paths).
 
-On the Mac:
+### 4.1 Start the relay (Mac, Linux, or cloud VM)
+
+Use a dedicated profile for the relay. Enable **`--relay-server`** so the node accepts **`relay.checkin`** and answers **`relay.lookup`** from its local roster.
+
+**Same LAN as all clients (typical Mac / home lab):**
 
 ```bash
 npm run node:dev -- \
@@ -74,13 +78,42 @@ npm run node:dev -- \
   --p2p-debug
 ```
 
-Copy the printed `Listening on:` multiaddr that ends with `/p2p/<mac-peer-id>`, for example:
+**Linux service or cloud VM (clients reach you on a public IP or DNS name):** the relay must **advertise** a dialable base address for **`relay.lookup`** circuit paths. Otherwise `getMultiaddrs()` may list only loopback and private VPC IPs (for example `172.16.x.x`), and remote clients can connect to the relay but **cannot** complete `/p2p-circuit/` dials to each other. Set **`--advertise-addr`** to the same TCP port clients use (and open that port in the security group / firewall):
+
+```bash
+npm run node:dev -- \
+  --profile /var/lib/envoymesh/relay \
+  --listen /ip4/0.0.0.0/tcp/4001 \
+  --discovery-profile wan-default \
+  --relay \
+  --relay-server \
+  --p2p-debug \
+  --advertise-addr /ip4/<YOUR_PUBLIC_IP>/tcp/4001
+```
+
+Or DNS:
+
+```bash
+  --advertise-addr /dns4/relay.example.com/tcp/4001
+```
+
+Or environment:
+
+```bash
+export ENVOYMESH_ADVERTISE_ADDRS=/ip4/<YOUR_PUBLIC_IP>/tcp/4001
+```
+
+See [p2p-discovery: Relay server dialable addresses](./p2p-discovery.md#relay-server-dialable-addresses-for-relaylookup-circuit-paths) for details.
+
+Copy the printed `Listening on:` multiaddr that ends with `/p2p/<relay-peer-id>`, for example:
 
 ```text
 /ip4/192.168.1.10/tcp/4001/p2p/12D3KooWMacRelayPeerId
 ```
 
-For the commands below, replace `<mac-relay-multiaddr>` with that full multiaddr. If the Windows machines are not on the same LAN as the Mac, use the Mac's reachable IP/DNS address and make sure inbound TCP `4001` is allowed.
+For the commands below, replace `<relay-multiaddr>` with a multiaddr **each client can dial** (for cross-network, use public IP/DNS + port, not an unreachable private VPC address).
+
+If the Windows machines are not on the same LAN as the relay, use the relay's reachable IP/DNS address and make sure inbound TCP `4001` is allowed.
 
 ### 4.2 Start Windows normal node A
 
@@ -88,12 +121,12 @@ PowerShell:
 
 ```powershell
 $env:ENVOYMESH_DISCOVERY_PROFILE = "wan-default"
-$env:ENVOYMESH_BOOTSTRAP_PEERS = "<mac-relay-multiaddr>"
+$env:ENVOYMESH_BOOTSTRAP_PEERS = "<relay-multiaddr>"
 npm run node:dev -- `
   --profile "$env:USERPROFILE\envoymesh\win_a" `
   --listen /ip4/0.0.0.0/tcp/0 `
   --discovery-profile wan-default `
-  --bootstrap "<mac-relay-multiaddr>" `
+  --bootstrap "<relay-multiaddr>" `
   --relay `
   --autonat `
   --dcutr `
@@ -106,12 +139,12 @@ PowerShell:
 
 ```powershell
 $env:ENVOYMESH_DISCOVERY_PROFILE = "wan-default"
-$env:ENVOYMESH_BOOTSTRAP_PEERS = "<mac-relay-multiaddr>"
+$env:ENVOYMESH_BOOTSTRAP_PEERS = "<relay-multiaddr>"
 npm run node:dev -- `
   --profile "$env:USERPROFILE\envoymesh\win_b" `
   --listen /ip4/0.0.0.0/tcp/0 `
   --discovery-profile wan-default `
-  --bootstrap "<mac-relay-multiaddr>" `
+  --bootstrap "<relay-multiaddr>" `
   --relay `
   --autonat `
   --dcutr `
@@ -122,7 +155,7 @@ Keep all three processes running for 30-60 seconds so the periodic check-in and 
 
 ### 4.4 Confirm both Windows nodes checked in
 
-On the Mac:
+On the **relay** host:
 
 ```bash
 npm run cli -w @envoymesh/node -- relay-status --profile "$HOME/envoymesh/mac_relay"
@@ -137,10 +170,11 @@ roster total=2 fresh=2 stale=0
 
 If `roster total=0` or only one peer appears, verify both Windows commands used:
 
-- `--relay`
-- `--bootstrap "<mac-relay-multiaddr>"`
-- the intended profile directory
-- a Mac relay multiaddr reachable from both Windows machines
+- **`--relay`**
+- **`--bootstrap` with a `<relay-multiaddr>` reachable from that Windows host** (LAN IP vs public/DNS + port as appropriate)
+- **`ENVOYMESH_BOOTSTRAP_PEERS`** matches if you set it
+- the intended **`--profile`** directory
+- On **cloud / cross-network relays**, the relay runs with **`--advertise-addr`** (or **`ENVOYMESH_ADVERTISE_ADDRS`**) so **`relay.lookup`** returns circuit paths clients can dial (see [p2p-discovery](./p2p-discovery.md#relay-server-dialable-addresses-for-relaylookup-circuit-paths)).
 
 ### 4.5 Confirm relay lookup traces on Windows
 
@@ -177,7 +211,7 @@ PowerShell for Windows B:
 
 ```powershell
 $env:ENVOYMESH_DISCOVERY_PROFILE = "wan-default"
-$env:ENVOYMESH_BOOTSTRAP_PEERS = "<mac-relay-multiaddr>"
+$env:ENVOYMESH_BOOTSTRAP_PEERS = "<relay-multiaddr>"
 npx tsx src/discovery-dashboard.ts `
   --profile "$env:USERPROFILE\envoymesh\win_b" `
   --no-mdns `
@@ -187,20 +221,26 @@ npx tsx src/discovery-dashboard.ts `
 PowerShell one-line form:
 
 ```powershell
-$env:ENVOYMESH_DISCOVERY_PROFILE="wan-default";$env:ENVOYMESH_BOOTSTRAP_PEERS="<mac-relay-multiaddr>"; npx tsx src/discovery-dashboard.ts --profile "$env:USERPROFILE\envoymesh\win_b" --no-mdns --auto-relay-peers-query
+$env:ENVOYMESH_DISCOVERY_PROFILE="wan-default";$env:ENVOYMESH_BOOTSTRAP_PEERS="<relay-multiaddr>"; npx tsx src/discovery-dashboard.ts --profile "$env:USERPROFILE\envoymesh\win_b" --no-mdns --auto-relay-peers-query
 ```
 
-Expected dashboard counters:
+Expected dashboard **Relay API** line includes successful sends and responses (names may vary slightly by build):
 
 ```text
-Relay API: checkins>0 lookups>0 responses>0 candidates>0
+lookupOk>0 responses>0 candidates>0 dialOk>0   # ideal
 ```
 
-If responses stay at `0`, verify the Mac relay is running the main node runtime with `--relay-server` and that the Mac `relay-status` roster includes the Windows profile. If candidates stay at `0`, start both Windows dashboards/nodes and wait for both to check in.
+If **`lookupOk>0`** but **`responses` stays `0`**, the relay accepted lookups but the client never received a **`relay.lookup.response`** (confirm relay runs a build that replies on the **libp2p `remotePeerId`**, not the Envoy `senderPeerId`).
 
-### 4.7 Optional: open the Mac Relay Manager dashboard
+If **`responses>0`** and **`candidates>0`** but **`dialFail`** climbs, inspect circuit multiaddrs: cloud relays usually need **`--advertise-addr`** / **`ENVOYMESH_ADVERTISE_ADDRS`** so bases are **public or DNS**, not only VPC-private **`getMultiaddrs()`** values.
 
-On the Mac:
+If **`checkinFail`** or **`lookupFail`** increase, check relay logs for **`invalid signature`**: envelopes must use **`senderPeerId: derivePeerId(devicePublicKeyPem)`**, not **`mesh.peerId`**. See [p2p-discovery](./p2p-discovery.md#envoy-logical-peer-id-vs-libp2p-peer-id-signing-and-delivery).
+
+If the roster on the relay is healthy but responses stay zero, verify both Windows clients use the **same reachable `<relay-multiaddr>`** and **`--auto-relay-peers-query`** (dashboard) or the full node’s relay client timers.
+
+### 4.7 Optional: open the Relay Manager desktop dashboard
+
+On the **relay** machine:
 
 ```bash
 ENVOYMESH_PROFILE="$HOME/envoymesh/mac_relay" \
@@ -216,13 +256,13 @@ Open the Relay Manager panel and confirm:
 
 ### 4.8 Troubleshooting this scenario
 
-If both Windows nodes discover the Mac but not each other:
+If both Windows nodes only see the **relay** at the libp2p layer and not each other:
 
-1. Run `relay-status` on the Mac and confirm the roster has both Windows nodes fresh.
-2. If the roster is empty, the Windows nodes are not sending `relay.checkin`; check `--relay`, bootstrap address, profile paths, and Mac reachability.
-3. If the roster has both nodes but Windows audit has no `relay.lookup.response`, check that the Windows processes stayed alive long enough for lookup cycles.
-4. If lookup responses exist but dial fails, inspect the returned `/p2p-circuit` multiaddr and confirm the Mac relay process is still running and reachable.
-5. If using dynamic Mac ports, recopy the latest `Listening on:` multiaddr after every Mac relay restart.
+1. **`relay-status` on the relay** — confirm **`roster total≥2`** and entries are fresh. If not, clients are not **`relay.checkin`** successfully: **`--relay`**, bootstrap multiaddr, profile path, and reachability.
+2. **`invalid signature`** on the relay for **`relay.checkin`** / **`relay.lookup`** — tooling must sign with the device key and set **`senderPeerId`** to **`derivePeerId(devicePublicKeyPem)`**, not **`mesh.peerId`**. See [p2p-discovery](./p2p-discovery.md#envoy-logical-peer-id-vs-libp2p-peer-id-signing-and-delivery).
+3. **Roster OK but no `relay.lookup.response` on clients** — use a relay build that sends control replies with **`mesh.send(<libp2p-remote-peer-id>, …)`** (connection peer), not the Envoy logical id.
+4. **Responses arrive but `relay lookup candidate dial fail`** — circuit multiaddrs probably use **unreachable** relay bases (loopback or VPC-only IP). On the relay, set **`--advertise-addr`** / **`ENVOYMESH_ADVERTISE_ADDRS`** to the **public or DNS** address and port clients use. See [p2p-discovery: Relay server dialable addresses](./p2p-discovery.md#relay-server-dialable-addresses-for-relaylookup-circuit-paths).
+5. **Dynamic listen ports** — if the relay used ephemeral ports, recopy the current **`Listening on:`** multiaddr after every restart (fixed **`--listen …/tcp/4001`** is easier).
 
 ## 5. Prove DCUtR Hole Punching
 
