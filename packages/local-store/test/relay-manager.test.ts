@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildRelayManagerSnapshot,
   createAuditEvent,
+  RELAY_MANAGER_SNAPSHOT_PROTOCOL,
   serializeRelayManagerSnapshot,
   type RelayManagerRuntimeState,
 } from "../src/index.js";
@@ -103,6 +104,94 @@ describe("relay manager snapshot", () => {
     expect(snapshot.health.recoveryCounters.softRepair).toBe(1);
     expect(snapshot.routing.recentTraces[0]?.protocol).toBe("relay.lookup.forward.ok");
     expect(snapshot.warnings).toEqual(["warning"]);
+  });
+
+  it("omits relay.manager.snapshot from routing recentTraces to avoid recursive snapshot bloat", () => {
+    const runtime: RelayManagerRuntimeState = {
+      enabled: true,
+      relayServerEnabled: true,
+      peerId: "relay-a",
+      listenAddrs: [],
+      uptimeMs: 0,
+      rosterEntries: [],
+      relayBook: [],
+      summaries: [],
+      routing: {
+        forwardedLookupCount: 0,
+        duplicateQueryDropCount: 0,
+        negativeCacheSize: 0,
+        selectedForwardTargetCount: 0,
+        failedForwardCount: 0,
+        collectedForwardResponseCount: 0,
+      },
+    };
+    const prior = buildRelayManagerSnapshot({
+      runtime,
+      now: () => Date.parse("2026-04-27T10:00:00.000Z"),
+      auditEvents: [],
+    });
+    const snapshot = buildRelayManagerSnapshot({
+      runtime,
+      now: () => Date.parse("2026-04-27T10:01:00.000Z"),
+      auditEvents: [
+        createAuditEvent({
+          type: "p2p.trace",
+          protocol: RELAY_MANAGER_SNAPSHOT_PROTOCOL,
+          outcome: "record",
+          summary: serializeRelayManagerSnapshot(prior),
+          createdAt: "2026-04-27T10:00:30.000Z",
+        }),
+        createAuditEvent({
+          type: "p2p.trace",
+          protocol: "relay.lookup.ok",
+          remotePeerId: "relay-b",
+          outcome: "record",
+          summary: "lookup ok",
+          createdAt: "2026-04-27T10:00:45.000Z",
+        }),
+      ],
+    });
+
+    expect(snapshot.routing.recentTraces.map((t) => t.protocol)).toEqual(["relay.lookup.ok"]);
+  });
+
+  it("truncates long summaries embedded in recentTraces", () => {
+    const long = "x".repeat(9000);
+    const runtime: RelayManagerRuntimeState = {
+      enabled: true,
+      relayServerEnabled: false,
+      peerId: "relay-a",
+      listenAddrs: [],
+      uptimeMs: 0,
+      rosterEntries: [],
+      relayBook: [],
+      summaries: [],
+      routing: {
+        forwardedLookupCount: 0,
+        duplicateQueryDropCount: 0,
+        negativeCacheSize: 0,
+        selectedForwardTargetCount: 0,
+        failedForwardCount: 0,
+        collectedForwardResponseCount: 0,
+      },
+    };
+    const snapshot = buildRelayManagerSnapshot({
+      runtime,
+      now: () => Date.parse("2026-04-27T10:01:00.000Z"),
+      auditEvents: [
+        createAuditEvent({
+          type: "p2p.trace",
+          protocol: "relay.lookup.ok",
+          remotePeerId: "r",
+          outcome: "record",
+          summary: long,
+          createdAt: "2026-04-27T10:00:45.000Z",
+        }),
+      ],
+    });
+    const embedded = snapshot.routing.recentTraces[0]!.summary;
+    expect(embedded.length).toBeLessThanOrEqual(4096);
+    expect(embedded.endsWith("…")).toBe(true);
   });
 
   it("rehydrates the latest serialized snapshot from audit events", () => {

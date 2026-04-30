@@ -1027,23 +1027,47 @@ if (args.enableDht && autoCapabilityTopics.length > 0) {
   scheduleCapabilityDiscovery();
 }
 if (args.enableRelay && effectiveBootstrapPeers.length > 0) {
-  await runRelayCheckinCycle("startup");
+  try {
+    await runRelayCheckinCycle("startup");
+  } catch (error) {
+    reportRelayBackgroundError("relay.checkin.startup", error);
+  }
   scheduleRelayCheckin();
-  await runRelayLookupCycle("startup");
+  try {
+    await runRelayLookupCycle("startup");
+  } catch (error) {
+    reportRelayBackgroundError("relay.lookup.startup", error);
+  }
   scheduleRelayLookup();
 }
 if (args.enableRelayServer && effectiveBootstrapPeers.length > 0) {
-  await runRelaySummaryCycle("startup");
+  try {
+    await runRelaySummaryCycle("startup");
+  } catch (error) {
+    reportRelayBackgroundError("relay.summary.startup", error);
+  }
   scheduleRelaySummary();
 }
 if (args.autoRelayPeersQuery && args.enableRelay && effectiveBootstrapPeers.length > 0) {
-  await runRelayPeersQueryCycle("startup");
+  try {
+    await runRelayPeersQueryCycle("startup");
+  } catch (error) {
+    reportRelayBackgroundError("relay.peers.query.startup", error);
+  }
   scheduleRelayPeersQuery(effectiveBootstrapPeers);
 }
 if (args.enableRelay || args.enableRelayServer) {
-  await runRelayHealthCycle("startup");
+  try {
+    await runRelayHealthCycle("startup");
+  } catch (error) {
+    reportRelayBackgroundError("relay.health.startup", error);
+  }
   scheduleRelayHealth();
-  await runRelayManagerSnapshotCycle("startup");
+  try {
+    await runRelayManagerSnapshotCycle("startup");
+  } catch (error) {
+    reportRelayBackgroundError("relay.manager.snapshot.startup", error);
+  }
   scheduleRelayManagerSnapshot();
 }
 setTimeout(() => {
@@ -1435,7 +1459,11 @@ function scheduleRelayCheckin(): void {
     return;
   }
   relayCheckinTimer = setTimeout(() => {
-    void runRelayCheckinCycle("periodic").finally(() => scheduleRelayCheckin());
+    void runRelayCheckinCycle("periodic")
+      .catch((error) => {
+        reportRelayBackgroundError("relay.checkin.periodic", error);
+      })
+      .finally(() => scheduleRelayCheckin());
   }, RELAY_CHECKIN_INTERVAL_MS);
 }
 
@@ -1489,7 +1517,11 @@ function scheduleRelayLookup(): void {
     return;
   }
   relayLookupTimer = setTimeout(() => {
-    void runRelayLookupCycle("periodic").finally(() => scheduleRelayLookup());
+    void runRelayLookupCycle("periodic")
+      .catch((error) => {
+        reportRelayBackgroundError("relay.lookup.periodic", error);
+      })
+      .finally(() => scheduleRelayLookup());
   }, RELAY_LOOKUP_INTERVAL_MS);
 }
 
@@ -1498,7 +1530,11 @@ function scheduleRelaySummary(): void {
     return;
   }
   relaySummaryTimer = setTimeout(() => {
-    void runRelaySummaryCycle("periodic").finally(() => scheduleRelaySummary());
+    void runRelaySummaryCycle("periodic")
+      .catch((error) => {
+        reportRelayBackgroundError("relay.summary.periodic", error);
+      })
+      .finally(() => scheduleRelaySummary());
   }, RELAY_SUMMARY_INTERVAL_MS);
 }
 
@@ -1507,7 +1543,11 @@ function scheduleRelayManagerSnapshot(): void {
     return;
   }
   relayManagerSnapshotTimer = setTimeout(() => {
-    void runRelayManagerSnapshotCycle("periodic").finally(() => scheduleRelayManagerSnapshot());
+    void runRelayManagerSnapshotCycle("periodic")
+      .catch((error) => {
+        reportRelayBackgroundError("relay.manager.snapshot.periodic", error);
+      })
+      .finally(() => scheduleRelayManagerSnapshot());
   }, RELAY_MANAGER_SNAPSHOT_INTERVAL_MS);
 }
 
@@ -1516,7 +1556,11 @@ function scheduleRelayHealth(): void {
     return;
   }
   relayHealthTimer = setTimeout(() => {
-    void runRelayHealthCycle("periodic").finally(() => scheduleRelayHealth());
+    void runRelayHealthCycle("periodic")
+      .catch((error) => {
+        reportRelayBackgroundError("relay.health.periodic", error);
+      })
+      .finally(() => scheduleRelayHealth());
   }, RELAY_HEALTH_INTERVAL_MS);
 }
 
@@ -2235,23 +2279,47 @@ function expiresAtFromNow(ms: number): string {
   return new Date(Date.now() + ms).toISOString();
 }
 
+/** Log and audit background relay failures without throwing (keeps timers alive; avoids unhandledRejection). */
+function reportRelayBackgroundError(cycle: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`[relay-cycle] ${cycle} failed: ${message}`);
+  void taskStore
+    .appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        direction: "outbound",
+        protocol: "relay.cycle.fail",
+        outcome: "record",
+        summary: `cycle=${cycle} error=${message}`,
+      }),
+    )
+    .catch((auditError) => {
+      console.error(`[relay-cycle] could not append relay.cycle.fail audit: ${auditError}`);
+    });
+}
+
 async function appendRelayTrace(
   protocol: string,
   remotePeerId: string,
   summary: string,
   latencyMs?: number,
 ): Promise<void> {
-  await taskStore.appendAuditEvent(
-    createAuditEvent({
-      type: "p2p.trace",
-      direction: "outbound",
-      protocol,
-      remotePeerId,
-      latencyMs,
-      outcome: "record",
-      summary,
-    }),
-  );
+  try {
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        direction: "outbound",
+        protocol,
+        remotePeerId,
+        latencyMs,
+        outcome: "record",
+        summary,
+      }),
+    );
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`[relay-trace] append failed protocol=${protocol} remotePeerId=${remotePeerId} error=${detail}`);
+  }
 }
 
 function pushBootstrapProbeResult(entry: {

@@ -32,7 +32,7 @@ import {
 } from "@envoymesh/identity";
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 const PROFILE_FILE = "profile.json";
 const TASK_JOURNAL_FILE = "task-journal.jsonl";
@@ -41,6 +41,37 @@ const APPROVAL_QUEUE_FILE = "approval-queue.jsonl";
 const TRUST_STORE_FILE = "trust-records.json";
 const PEER_DIRECTORY_FILE = "peer-directory.json";
 const DISCOVERY_EVENTS_FILE = "discovery-events.jsonl";
+
+/** Skip JSONL lines larger than this to avoid OOM when a single record is pathological or corrupted. */
+const MAX_JSONL_LINE_CHARS = 12 * 1024 * 1024;
+/** Cap text copied from audit events into relay manager snapshots (recentTraces, warnings). */
+const MAX_SNAPSHOT_EMBEDDED_CHARS = 4096;
+
+function truncateForSnapshotEmbed(text: string, maxChars: number): string {
+  if (text.length <= maxChars) {
+    return text;
+  }
+  if (maxChars <= 1) {
+    return "";
+  }
+  return `${text.slice(0, maxChars - 1)}…`;
+}
+
+/**
+ * Serialize appends to a JSONL file so concurrent audit/journal writes cannot interleave bytes
+ * and produce a corrupted line (two JSON objects sharing one line fragment).
+ */
+function createSerialJsonlAppender(path: string): (value: unknown) => Promise<void> {
+  let tail: Promise<unknown> = Promise.resolve();
+  return (value: unknown) => {
+    const done = tail.then(() => appendJsonLine(path, value));
+    tail = done.then(
+      () => {},
+      () => {},
+    );
+    return done;
+  };
+}
 
 export interface NodeProfile {
   owner: OwnerIdentity;
@@ -304,13 +335,18 @@ function snapshotFromRuntime(
   const freshRoster = runtime.rosterEntries.filter((entry) => entry.expiresAt > current && entry.reservationFreshUntil > current);
   const freshSummaries = runtime.summaries.filter((entry) => entry.expiresAt > current);
   const routingTraces = auditEvents
-    .filter((event) => event.type === "p2p.trace" && event.protocol?.startsWith("relay."))
+    .filter(
+      (event) =>
+        event.type === "p2p.trace" &&
+        event.protocol?.startsWith("relay.") &&
+        event.protocol !== RELAY_MANAGER_SNAPSHOT_PROTOCOL,
+    )
     .slice(-12)
     .map((event) => ({
       createdAt: event.createdAt,
       protocol: event.protocol,
       remotePeerId: event.remotePeerId,
-      summary: event.summary,
+      summary: truncateForSnapshotEmbed(event.summary, MAX_SNAPSHOT_EMBEDDED_CHARS),
     }));
 
   return {
@@ -351,7 +387,7 @@ function snapshotFromRuntime(
     warnings: auditEvents
       .filter((event) => event.protocol === "connectivity.warning" || event.protocol === "relay.manager.warning")
       .slice(-8)
-      .map((event) => event.summary),
+      .map((event) => truncateForSnapshotEmbed(event.summary, MAX_SNAPSHOT_EMBEDDED_CHARS)),
   };
 }
 
@@ -580,9 +616,23 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
   const approvalQueuePath = join(profileDir, APPROVAL_QUEUE_FILE);
   const discoveryEventsPath = join(profileDir, DISCOVERY_EVENTS_FILE);
 
+  const appendTaskJournalQueued = createSerialJsonlAppender(taskJournalPath);
+  const appendAuditQueued = createSerialJsonlAppender(auditEventsPath);
+  const appendDiscoveryQueued = createSerialJsonlAppender(discoveryEventsPath);
+
+  let approvalFileTail: Promise<unknown> = Promise.resolve();
+  const runApprovalFileOp = <T>(fn: () => Promise<T>): Promise<T> => {
+    const done = approvalFileTail.then(() => fn());
+    approvalFileTail = done.then(
+      () => {},
+      () => {},
+    );
+    return done;
+  };
+
   return {
     async appendTaskJournalEntry(entry) {
-      await appendJsonLine(taskJournalPath, entry);
+      await appendTaskJournalQueued(entry);
     },
 
     async readTaskJournalEntries() {
@@ -590,7 +640,7 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     },
 
     async appendAuditEvent(event) {
-      await appendJsonLine(auditEventsPath, event);
+      await appendAuditQueued(event);
     },
 
     async readAuditEvents() {
@@ -598,7 +648,7 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     },
 
     async appendDiscoveryEvent(event) {
-      await appendJsonLine(discoveryEventsPath, event);
+      await appendDiscoveryQueued(event);
     },
 
     async readDiscoveryEvents() {
@@ -606,7 +656,7 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     },
 
     async appendApprovalRequest(request) {
-      await appendJsonLine(approvalQueuePath, request);
+      await runApprovalFileOp(() => appendJsonLine(approvalQueuePath, request));
     },
 
     async readApprovalRequests() {
@@ -614,16 +664,18 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     },
 
     async updateApprovalRequestStatus(approvalId, status) {
-      const requests = await readJsonLines<ApprovalRequest>(approvalQueuePath);
-      const request = requests.find((candidate) => candidate.approvalId === approvalId);
+      return runApprovalFileOp(async () => {
+        const requests = await readJsonLines<ApprovalRequest>(approvalQueuePath);
+        const request = requests.find((candidate) => candidate.approvalId === approvalId);
 
-      if (!request) {
-        throw new Error(`Approval request not found: ${approvalId}`);
-      }
+        if (!request) {
+          throw new Error(`Approval request not found: ${approvalId}`);
+        }
 
-      request.status = status;
-      await writeJsonLines(approvalQueuePath, requests);
-      return request;
+        request.status = status;
+        await writeJsonLines(approvalQueuePath, requests);
+        return request;
+      });
     },
   };
 }
@@ -1028,7 +1080,13 @@ export function parseTrustLevel(value: string): TrustRecord["level"] {
 
 async function appendJsonLine(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await appendFile(path, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+  const line = `${JSON.stringify(value)}\n`;
+  if (line.length > MAX_JSONL_LINE_CHARS) {
+    throw new Error(
+      `JSONL record exceeds MAX_JSONL_LINE_CHARS (${MAX_JSONL_LINE_CHARS}): ${basename(path)} (${line.length} chars)`,
+    );
+  }
+  await appendFile(path, line, { mode: 0o600 });
 }
 
 async function writeJsonLines(path: string, values: unknown[]): Promise<void> {
@@ -1051,10 +1109,32 @@ async function readJsonLines<T>(path: string): Promise<T[]> {
     throw error;
   }
 
-  return contents
-    .split("\n")
-    .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as T);
+  const lines = contents.split("\n").filter((line) => line.trim().length > 0);
+  const parsed: T[] = [];
+  let skippedInvalid = 0;
+  let skippedOversized = 0;
+  for (const line of lines) {
+    if (line.length > MAX_JSONL_LINE_CHARS) {
+      skippedOversized += 1;
+      continue;
+    }
+    try {
+      parsed.push(JSON.parse(line) as T);
+    } catch {
+      skippedInvalid += 1;
+    }
+  }
+  if (skippedInvalid > 0 || skippedOversized > 0) {
+    const parts: string[] = [];
+    if (skippedInvalid > 0) {
+      parts.push(`${skippedInvalid} invalid JSON`);
+    }
+    if (skippedOversized > 0) {
+      parts.push(`${skippedOversized} oversized (>${MAX_JSONL_LINE_CHARS} chars)`);
+    }
+    console.warn(`[local-store] skipped ${parts.join(", ")} line(s) in ${basename(path)}`);
+  }
+  return parsed;
 }
 
 async function readTrustStoreFile(path: string): Promise<TrustStoreFile> {
