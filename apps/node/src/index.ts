@@ -508,7 +508,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
       correlationId,
       taskStore,
       relayPeerIds,
-      relayMultiaddrs: mesh.multiaddrs,
+      relayMultiaddrs: relayDialMultiaddrsForCircuitRelay(mesh, args.advertiseAddrs),
     });
     if (!relayPeers.ok) {
       await taskStore.appendAuditEvent(
@@ -929,6 +929,11 @@ if (args.listen.some((addr) => addr.includes("/ip4/0.0.0.0/") || addr.includes("
 console.log("Listening on (libp2p getMultiaddrs):");
 for (const addr of mesh.multiaddrs) {
   console.log(`  ${addr}`);
+}
+if (args.enableRelayServer && args.discoveryProfile === "wan-default" && args.advertiseAddrs.length === 0) {
+  console.warn(
+    "[connectivity warning] relay-server on wan-default without --advertise-addr: relay.lookup /p2p-circuit/ paths use getMultiaddrs only. Clients outside this machine's subnets (e.g. home Windows → cloud VM private 172.x) cannot dial those addresses—peers see each other in the roster but circuit dials fail. Set --advertise-addr /ip4/<public-or-dns>/tcp/<port> (port must match what clients use, security group open). Env: ENVOYMESH_ADVERTISE_ADDRS (comma-separated).",
+  );
 }
 
 await taskStore.appendAuditEvent(
@@ -1677,7 +1682,7 @@ async function handleRelayControlEnvelope(input: {
       const localResponse = relayRoster.lookup({
         payload,
         requesterPeerId: remotePeerId,
-        relayMultiaddrs: mesh.multiaddrs,
+        relayMultiaddrs: relayDialMultiaddrsForCircuitRelay(mesh, args.advertiseAddrs),
         relayPeerId: mesh.peerId,
       });
       const routeDecision = relayLookupRouter.selectForwardTargets({
@@ -2111,6 +2116,33 @@ function rotatePeers(peers: string[]): string[] {
 
 function dedupeAddrs(addrs: string[]): string[] {
   return [...new Set(addrs.map((addr) => addr.trim()).filter(Boolean))];
+}
+
+function appendRelayP2pComponentIfMissing(addr: string, relayPeerId: string): string {
+  const a = addr.trim();
+  if (!a) return "";
+  if (/\/p2p\/[^/]+$/.test(a)) return a;
+  const base = a.replace(/\/$/, "");
+  return `${base}/p2p/${relayPeerId}`;
+}
+
+function isLoopbackListenMultiaddr(addr: string): boolean {
+  return (
+    addr.includes("/ip4/127.0.0.1/") ||
+    addr.includes("/ip6/::1/") ||
+    addr.includes("/ip4/0.0.0.0/")
+  );
+}
+
+/** Base multiaddrs relay clients must dial for /p2p-circuit/... paths in relay.lookup / relay.peers (public or same-LAN). */
+function relayDialMultiaddrsForCircuitRelay(mesh: EnvoyMesh, advertiseAddrs: string[]): string[] {
+  const relayPeerId = mesh.peerId;
+  const rawBases = advertiseAddrs.length > 0 ? advertiseAddrs : mesh.multiaddrs;
+  return dedupeAddrs(
+    rawBases
+      .map((base) => appendRelayP2pComponentIfMissing(base, relayPeerId))
+      .filter((addr) => addr.length > 0 && !isLoopbackListenMultiaddr(addr)),
+  );
 }
 
 function relayControlTargets(): string[] {

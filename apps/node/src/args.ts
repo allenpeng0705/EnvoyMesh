@@ -11,6 +11,8 @@ export interface NodeArgs {
   bootstrapPresets: string[];
   bootstrapPresetsFiles: string[];
   listen: string[];
+  /** Extra dialable base multiaddrs for relay.lookup / relay.peers circuit paths (public IP/DNS). `/p2p/<relayId>` appended if missing. */
+  advertiseAddrs: string[];
   enableMdns: boolean;
   enableDht: boolean;
   dhtClientMode?: boolean;
@@ -75,6 +77,7 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     bootstrapPresets: [],
     bootstrapPresetsFiles: [],
     listen: ["/ip4/0.0.0.0/tcp/0"],
+    advertiseAddrs: [],
     enableMdns: true,
     enableDht: false,
     bootstrapPeers: [],
@@ -114,6 +117,8 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.bootstrapPresetsFiles.push(readValue(argv, ++index, arg));
     } else if (arg === "--listen") {
       args.listen = [readValue(argv, ++index, arg)];
+    } else if (arg === "--advertise-addr") {
+      args.advertiseAddrs.push(readValue(argv, ++index, arg));
     } else if (arg === "--no-mdns") {
       args.enableMdns = false;
     } else if (arg === "--dht") {
@@ -256,6 +261,7 @@ Options:
   --discovery-profile <p>  Discovery defaults: lan-fast|wan-default. Env: ENVOYMESH_DISCOVERY_PROFILE
   --connectivity-strict    Fail startup when wan-default bootstrap connectivity cannot be established. Env: ENVOYMESH_CONNECTIVITY_STRICT=1
   --listen <multiaddr>  Listen multiaddr. Default: /ip4/0.0.0.0/tcp/0
+  --advertise-addr <multiaddr>  Reachable relay base address for relay.lookup /p2p-circuit/ paths (public IP or DNS, same TCP port as clients use). Repeatable. Env: ENVOYMESH_ADVERTISE_ADDRS (comma-separated). Strongly recommended for --relay-server on WAN/cloud.
   --no-mdns             Disable local mDNS discovery.
   --dht                 Enable DHT discovery.
   --dht-client          Enable DHT in client mode.
@@ -550,6 +556,12 @@ function applyEnvironmentArgs(args: NodeArgs): void {
   if (envRelayDebugSummary === "1" || envRelayDebugSummary === "true" || envRelayDebugSummary === "yes") {
     args.relayDebugSummary = true;
   }
+
+  const envAdvertiseAddrs = (process.env.ENVOYMESH_ADVERTISE_ADDRS ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  args.advertiseAddrs.push(...envAdvertiseAddrs);
 }
 
 function readConfigPath(argv: string[]): string | undefined {

@@ -160,6 +160,13 @@ describe("node args", () => {
     expect(parseNodeArgs(["--quic", "--no-quic"]).enableQuic).toBe(false);
   });
 
+  it("parses --advertise-addr (repeatable)", () => {
+    const a1 = "/ip4/1.2.3.4/tcp/4001";
+    const a2 = "/dns4/relay.example.com/tcp/4001";
+    expect(parseNodeArgs(["--advertise-addr", a1]).advertiseAddrs).toEqual([a1]);
+    expect(parseNodeArgs(["--advertise-addr", a1, "--advertise-addr", a2]).advertiseAddrs).toEqual([a1, a2]);
+  });
+
   it("normalizeWin32NpmArgv preserves argv when any --flag is present", () => {
     expect(normalizeWin32NpmArgv(["--profile", "C:\\a", "/ip4/x"])).toEqual(["--profile", "C:\\a", "/ip4/x"]);
   });
