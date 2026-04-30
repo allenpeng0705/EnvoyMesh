@@ -70,6 +70,11 @@ export interface EnvoyMeshOptions {
   /** When true, register the QUIC transport and add matching `/udp/.../quic-v1` listeners for each TCP listen address. */
   enableQuic?: boolean;
   enableP2pDebug?: boolean;
+  /**
+   * When true with enableP2pDebug, periodically print `[relay-debug] SUMMARY: ...` from the relay connection scan.
+   * Defaults false because the summary is very chatty during idle relays.
+   */
+  enableRelayDebugSummary?: boolean;
   onP2pDebug?: (event: P2pDebugEvent) => void;
 }
 
@@ -619,7 +624,7 @@ export class EnvoyMesh {
                 }
               }
             }
-            if (this.options.enableP2pDebug) {
+            if (this.options.enableP2pDebug && this.options.enableRelayDebugSummary) {
               console.log(`[relay-debug] SUMMARY: peers=${peersList.join(",")} total=${totalCount} relay=${relayCount} tracked=${this.relayConnectedPeers.size}`);
             }
           } catch (e) {

@@ -130,6 +130,7 @@ const mesh = new EnvoyMesh({
   enableDcutr: args.enableDcutr,
   enableQuic: args.enableQuic,
   enableP2pDebug: args.p2pDebug,
+  enableRelayDebugSummary: args.relayDebugSummary,
   onP2pDebug: (event) => {
     void appendP2pTrace(event);
   },

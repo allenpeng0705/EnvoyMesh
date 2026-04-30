@@ -21,6 +21,7 @@ export interface NodeArgs {
   enableDcutr: boolean;
   enableQuic: boolean;
   p2pDebug: boolean;
+  relayDebugSummary: boolean;
   peerDiscoveryLog: boolean;
   correlationId?: string;
   pingTarget?: string;
@@ -83,6 +84,7 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     enableDcutr: false,
     enableQuic: false,
     p2pDebug: false,
+    relayDebugSummary: false,
     peerDiscoveryLog: false,
     discoveryTagHashes: [],
     discoveryCapabilities: [],
@@ -140,6 +142,8 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.peerDiscoveryLog = true;
     } else if (arg === "--p2p-debug") {
       args.p2pDebug = true;
+    } else if (arg === "--relay-debug-summary") {
+      args.relayDebugSummary = true;
     } else if (arg === "--correlation-id") {
       args.correlationId = readValue(argv, ++index, arg);
     } else if (arg === "--ping") {
@@ -271,6 +275,7 @@ Options:
   --no-quic             Disable QUIC when set from config or env.
   --peer-discovery-log  Print each libp2p peer discovery to the console ([peer-discovery]). Env: ENVOYMESH_PEER_DISCOVERY_LOG=1
   --p2p-debug           Log libp2p connection lifecycle events to audit as p2p.trace.
+  --relay-debug-summary When used with --p2p-debug, print periodic relay connection manager summaries (very chatty). Env: ENVOYMESH_RELAY_DEBUG_SUMMARY=1
   --correlation-id <id> Optional correlation id for outbound ping/signal/A2A envelopes.
   --ping <target>       Send signed system.ping to peer ID, /ip4/.../p2p/... multiaddr, or envoy:owner:... (resolved from LAN peer directory).
   --signal <target>     Send signed certified system.signal to peer ID, multiaddr, or envoy:owner:... (resolved from LAN peer directory).
@@ -539,6 +544,11 @@ function applyEnvironmentArgs(args: NodeArgs): void {
   const envPeerDiscoveryLog = (process.env.ENVOYMESH_PEER_DISCOVERY_LOG ?? "").trim().toLowerCase();
   if (envPeerDiscoveryLog === "1" || envPeerDiscoveryLog === "true" || envPeerDiscoveryLog === "yes") {
     args.peerDiscoveryLog = true;
+  }
+
+  const envRelayDebugSummary = (process.env.ENVOYMESH_RELAY_DEBUG_SUMMARY ?? "").trim().toLowerCase();
+  if (envRelayDebugSummary === "1" || envRelayDebugSummary === "true" || envRelayDebugSummary === "yes") {
+    args.relayDebugSummary = true;
   }
 }
 
