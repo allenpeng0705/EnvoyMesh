@@ -2,8 +2,9 @@
 import { loadOrCreateNodeProfile } from "@envoymesh/local-store";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import { EnvoyMesh, type DiscoveredMeshPeer } from "@envoymesh/network";
-import { createUnsignedEnvelope } from "@envoymesh/protocol";
+import { createUnsignedEnvelope, parseRelayPeersResponsePayload } from "@envoymesh/protocol";
 import { parseNodeArgs, printHelp } from "./args.js";
+import { createDiscoverySeedStore } from "./discovery-seed-store.js";
 
 const CLEAR = "\x1b[2J\x1b[H";
 const BOLD = "\x1b[1m";
@@ -54,7 +55,7 @@ function parseArgs(argv: string[]): {
     enableAutoNat: nodeArgs.enableAutoNat,
     enableDcutr: nodeArgs.enableDcutr,
     p2pDebug: nodeArgs.p2pDebug,
-    autoRelayPeersQuery: argv.includes("--auto-relay-peers-query"),
+    autoRelayPeersQuery: nodeArgs.autoRelayPeersQuery,
   };
 }
 
@@ -92,6 +93,7 @@ Examples:
 
   const args = parseArgs(argv);
   const profile = await loadOrCreateNodeProfile(args.profileDir);
+  const discoverySeedStore = createDiscoverySeedStore(args.profileDir);
 
   const peers = new Map<string, PeerInfo>();
   let relayCount = 0;
@@ -128,18 +130,32 @@ Examples:
   // Handle relay.peers.response - add peers from relay query
   mesh.onMessage(async ({ envelope }) => {
     if (envelope.intent === "relay.peers.response") {
-      const { parseRelayPeersResponsePayload } = await import("@envoymesh/protocol");
       const payload = parseRelayPeersResponsePayload(envelope.payload);
       console.log(`[auto-relay-query] received relay.peers.response with ${payload.peers.length} peers`);
       for (const relayPeer of payload.peers) {
+        const alreadyKnown = peers.has(relayPeer.peerId);
         peers.set(relayPeer.peerId, {
           peerId: relayPeer.peerId,
           addrs: relayPeer.multiaddrs,
           discoveredAt: Date.now(),
           relayed: true, // These are relay-discovered peers
         });
-        relayCount++;
+        if (!alreadyKnown) relayCount++;
         lastEventAt = Date.now();
+      }
+
+      const relayedAddrs = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
+      if (relayedAddrs.length > 0) {
+        await discoverySeedStore.upsertMany(relayedAddrs, "relay-peers");
+      }
+      for (const addr of relayedAddrs) {
+        try {
+          console.log(`[auto-relay-query] dialing relay peer address: ${addr}`);
+          await mesh.dial(addr);
+          console.log(`[auto-relay-query] relay peer dial ok: ${addr}`);
+        } catch (err) {
+          console.log(`[auto-relay-query] relay peer dial failed: ${addr} error=${err}`);
+        }
       }
     }
   });
@@ -164,18 +180,15 @@ Examples:
   // Initial render
   renderDashboard({ mesh, peers, relayCount, lastEventAt, startedAt, selfMultiaddrs, hasRelay, hasDht, args });
 
-  // Make explicit circuit relay connections to bootstrap peers
-  // This ensures we have relay reservations and can discover peers via relay.peers.request
+  // Keep a direct connection to bootstrap/relay peers before querying them.
   if (args.enableRelay && args.bootstrapPeers.length > 0) {
     setTimeout(async () => {
-      console.log(`[relay-dial] starting relay dial attempts...`);
+      console.log(`[relay-dial] starting bootstrap relay dial attempts...`);
       for (const bootstrapPeer of args.bootstrapPeers) {
         try {
-          // Transform /ip4/x/tcp/y/p2p/PEERID to /ip4/x/tcp/y/p2p-circuit/p2p/PEERID
-          const circuitAddr = bootstrapPeer.replace("/p2p/", "/p2p-circuit/p2p/");
-          console.log(`[relay-dial] dialing circuit address: ${circuitAddr}`);
-          const conn = await mesh.dial(circuitAddr);
-          console.log(`[relay-dial] successfully connected via circuit relay: ${conn}`);
+          console.log(`[relay-dial] dialing bootstrap relay: ${bootstrapPeer}`);
+          await mesh.dial(bootstrapPeer);
+          console.log(`[relay-dial] bootstrap relay dial ok`);
         } catch (err: any) {
           console.error(`[relay-dial] failed: ${err?.message ?? err}`);
         }
@@ -185,25 +198,9 @@ Examples:
 
   // Auto query relay for peers if enabled
   if (args.autoRelayPeersQuery && args.bootstrapPeers.length > 0) {
+    await queryRelayPeers({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
     setInterval(async () => {
-      for (const bootstrapPeer of args.bootstrapPeers) {
-        try {
-          console.log(`[auto-relay-query] attempting to send relay.peers.request to ${bootstrapPeer}`);
-          const unsignedEnvelope = createUnsignedEnvelope({
-            senderPeerId: mesh.peerId,
-            senderPublicKey: profile.device.publicKeyPem,
-            senderRole: "system",
-            recipientPeerId: bootstrapPeer.startsWith("/") ? bootstrapPeer : undefined,
-            intent: "relay.peers.request",
-            payload: {},
-          });
-          const signedEnvelope = signUnsignedEnvelope(unsignedEnvelope, profile.device.privateKeyPem);
-          await mesh.send(bootstrapPeer, signedEnvelope);
-          console.log(`[auto-relay-query] sent relay.peers.request to ${bootstrapPeer}`);
-        } catch (err) {
-          console.log(`[auto-relay-query] ERROR: ${err}`);
-        }
-      }
+      await queryRelayPeers({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
     }, 10_000); // Query every 10 seconds
   }
 
@@ -214,6 +211,36 @@ Examples:
 
   // Keep process alive
   await new Promise(() => {});
+}
+
+async function queryRelayPeers(input: {
+  mesh: EnvoyMesh;
+  profile: Awaited<ReturnType<typeof loadOrCreateNodeProfile>>;
+  bootstrapPeers: string[];
+}): Promise<void> {
+  const { mesh, profile, bootstrapPeers } = input;
+  for (const bootstrapPeer of bootstrapPeers) {
+    try {
+      console.log(`[auto-relay-query] attempting to send relay.peers.request to ${bootstrapPeer}`);
+      const unsignedEnvelope = createUnsignedEnvelope({
+        senderPeerId: mesh.peerId,
+        senderPublicKey: profile.device.publicKeyPem,
+        senderRole: "system",
+        recipientPeerId: bootstrapPeer.startsWith("/") ? undefined : bootstrapPeer,
+        intent: "relay.peers.request",
+        payload: {},
+      });
+      const signedEnvelope = signUnsignedEnvelope(unsignedEnvelope, profile.device.privateKeyPem);
+      await mesh.send(bootstrapPeer, signedEnvelope);
+      console.log(`[auto-relay-query] sent relay.peers.request to ${bootstrapPeer}`);
+    } catch (err) {
+      console.log(`[auto-relay-query] ERROR: ${err}`);
+    }
+  }
+}
+
+function dedupeAddrs(addrs: string[]): string[] {
+  return [...new Set(addrs.map((addr) => addr.trim()).filter(Boolean))];
 }
 
 function renderDashboard(ctx: {
