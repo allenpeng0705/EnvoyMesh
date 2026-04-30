@@ -168,15 +168,16 @@ Examples:
   // This ensures we have relay reservations and can discover peers via relay.peers.request
   if (args.enableRelay && args.bootstrapPeers.length > 0) {
     setTimeout(async () => {
+      console.log(`[relay-dial] starting relay dial attempts...`);
       for (const bootstrapPeer of args.bootstrapPeers) {
         try {
           // Transform /ip4/x/tcp/y/p2p/PEERID to /ip4/x/tcp/y/p2p-circuit/p2p/PEERID
           const circuitAddr = bootstrapPeer.replace("/p2p/", "/p2p-circuit/p2p/");
           console.log(`[relay-dial] dialing circuit address: ${circuitAddr}`);
-          await mesh.dial(circuitAddr);
-          console.log(`[relay-dial] successfully connected via circuit relay`);
-        } catch (err) {
-          console.log(`[relay-dial] failed: ${err}`);
+          const conn = await mesh.dial(circuitAddr);
+          console.log(`[relay-dial] successfully connected via circuit relay: ${conn}`);
+        } catch (err: any) {
+          console.error(`[relay-dial] failed: ${err?.message ?? err}`);
         }
       }
     }, 5000); // Wait 5 seconds for initial bootstrap to complete
