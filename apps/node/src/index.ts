@@ -93,6 +93,7 @@ import {
   noteRelaySuccess,
 } from "./relay-roster.js";
 import { createRelayLookupRouter } from "./relay-lookup-router.js";
+import { logRelayReachableAddrsForCheckin, logRelayServerCheckinAccepted, logRelayServerLookupResponse, logClientRelayLookupResponse, describeMultiaddrReachability } from "./relay-checkin-log.js";
 import {
   createInitialRelayHealthState,
   evaluateRelayHealth,
@@ -1471,6 +1472,15 @@ async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<voi
   const targets = relayControlTargets();
   const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
   const capabilities = relayCheckinCapabilities(profile.deviceCertificate.capabilities);
+  if (targets.length > 0) {
+    logRelayReachableAddrsForCheckin({
+      prefix: "[relay-checkin]",
+      source,
+      peerId: mesh.peerId,
+      ownerId: profile.owner.ownerId,
+      addrs: mesh.multiaddrs,
+    });
+  }
   for (const target of targets) {
     const payload = createRelayCheckinPayload({
       peerId: mesh.peerId,
@@ -1735,6 +1745,13 @@ async function handleRelayControlEnvelope(input: {
       const payload = parseRelayCheckinPayload(envelope.payload);
       relayRoster.checkin(payload, remotePeerId);
       await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.checkin accepted peer=${payload.peerId}`);
+      if (args.enableRelayServer) {
+        logRelayServerCheckinAccepted({
+          remoteLibp2pPeerId: remotePeerId,
+          payload,
+          rosterSize: relayRoster.entries().length,
+        });
+      }
       return;
     }
 
@@ -1744,10 +1761,11 @@ async function handleRelayControlEnvelope(input: {
         await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.lookup duplicate dropped query=${payload.queryId}`);
         return;
       }
+      const circuitBases = relayDialMultiaddrsForCircuitRelay(mesh, args.advertiseAddrs);
       const localResponse = relayRoster.lookup({
         payload,
         requesterPeerId: remotePeerId,
-        relayMultiaddrs: relayDialMultiaddrsForCircuitRelay(mesh, args.advertiseAddrs),
+        relayMultiaddrs: circuitBases,
         relayPeerId: mesh.peerId,
       });
       const routeDecision = relayLookupRouter.selectForwardTargets({
@@ -1769,6 +1787,15 @@ async function handleRelayControlEnvelope(input: {
         mergeRelayLookupResponses(payload, [localResponse, ...forwardedResponses.map((item) => item.payload)]),
       );
       await sendRelayControlResponse(envelope, remotePeerId, "relay.lookup.response", responsePayload, correlationId);
+      if (args.enableRelayServer) {
+        logRelayServerLookupResponse({
+          requesterLibp2pPeerId: remotePeerId,
+          queryId: responsePayload.queryId,
+          peersReturned: responsePayload.peers.length,
+          circuitBases,
+          peerMultiaddrs: responsePayload.peers.flatMap((p) => p.multiaddrs),
+        });
+      }
       await appendRelayInboundAudit(
         envelope,
         remotePeerId,
@@ -2016,8 +2043,14 @@ function mergeRelayLookupResponses(payload: RelayLookupPayload, responses: Relay
 }
 
 async function processRelayLookupResponse(payload: RelayLookupResponsePayload): Promise<void> {
+  const flat = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
+  logClientRelayLookupResponse({
+    queryId: payload.queryId,
+    peerCount: payload.peers.length,
+    multiaddrs: flat,
+  });
   addRelayCandidates(relayClientState, payload.relayHints);
-  const relayedAddrs = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
+  const relayedAddrs = flat;
   if (relayedAddrs.length > 0) {
     await discoverySeedStore.upsertMany(relayedAddrs, "relay-peers");
   }
@@ -2026,6 +2059,7 @@ async function processRelayLookupResponse(payload: RelayLookupResponsePayload): 
     let dialOk = false;
     for (const cand of candidates) {
       try {
+        console.log(`[relay-discovery] probe [${describeMultiaddrReachability(cand)}] ${cand}`);
         const latencyMs = await mesh.probePeer(cand);
         await appendRelayTrace("relay.lookup.dial.ok", cand, `relay lookup candidate dial ok addr=${cand}`, latencyMs);
         dialOk = true;

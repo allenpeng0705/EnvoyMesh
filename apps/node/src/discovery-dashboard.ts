@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { parseNodeArgs, printHelp } from "./args.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
+import { logRelayReachableAddrsForCheckin, logClientRelayLookupResponse, describeMultiaddrReachability } from "./relay-checkin-log.js";
 
 const CLEAR = "\x1b[2J\x1b[H";
 const BOLD = "\x1b[1m";
@@ -166,6 +167,11 @@ Examples:
       console.log(
         `[auto-relay-query] received relay.lookup.response query=${payload.queryId} peers=${payload.peers.length} hints=${payload.relayHints.length}`,
       );
+      logClientRelayLookupResponse({
+        queryId: payload.queryId,
+        peerCount: payload.peers.length,
+        multiaddrs: dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs)),
+      });
       for (const relayPeer of payload.peers) {
         const alreadyKnown = peers.has(relayPeer.peerId);
         peers.set(relayPeer.peerId, {
@@ -187,7 +193,7 @@ Examples:
         let dialOkForAddr = false;
         for (const cand of candidates) {
           try {
-            console.log(`[auto-relay-query] dialing relay.lookup candidate: ${cand}`);
+            console.log(`[auto-relay-query] dialing [${describeMultiaddrReachability(cand)}] ${cand}`);
             await mesh.dial(cand);
             relayDialOk++;
             dialOkForAddr = true;
@@ -323,6 +329,13 @@ async function sendRelayCheckin(input: {
       expiresAt,
     })),
     expiresAt,
+  });
+  logRelayReachableAddrsForCheckin({
+    prefix: "[auto-relay-query]",
+    source: "dashboard",
+    peerId: mesh.peerId,
+    ownerId: profile.owner.ownerId,
+    addrs: payload.relayReachableAddrs,
   });
   for (const bootstrapPeer of bootstrapPeers) {
     try {
