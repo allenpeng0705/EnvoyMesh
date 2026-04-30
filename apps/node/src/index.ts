@@ -433,14 +433,14 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
         correlationId,
       });
       const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
-      const latencyMs = await mesh.send(envelope.senderPeerId, signedResponse);
+      const latencyMs = await mesh.send(remotePeerId, signedResponse);
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.sent",
           intent: signedResponse.intent,
           messageId: signedResponse.messageId,
           correlationId: signedResponse.correlationId,
-          remotePeerId: envelope.senderPeerId,
+          remotePeerId,
           direction: "outbound",
           latencyMs,
           protocol: ENVOY_MESSAGE_PROTOCOL,
@@ -456,7 +456,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
         direction: "outbound",
         intent: "discovery.response",
         ownerId: profile.owner.ownerId,
-        remotePeerId: envelope.senderPeerId,
+        remotePeerId,
         correlationId: signedResponse.correlationId,
         requestMessageId: envelope.messageId,
         matchCount: discovery.responsePayload.matches.length,
@@ -575,14 +575,14 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
         correlationId,
       });
       const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
-      const latencyMs = await mesh.send(envelope.senderPeerId, signedResponse);
+      const latencyMs = await mesh.send(remotePeerId, signedResponse);
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.sent",
           intent: signedResponse.intent,
           messageId: signedResponse.messageId,
           correlationId: signedResponse.correlationId,
-          remotePeerId: envelope.senderPeerId,
+          remotePeerId,
           direction: "outbound",
           latencyMs,
           protocol: ENVOY_MESSAGE_PROTOCOL,
@@ -693,14 +693,14 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
         }),
         profile.device.privateKeyPem,
       );
-      const latencyMs = await mesh.send(envelope.senderPeerId, deferredEnvelope);
+      const latencyMs = await mesh.send(remotePeerId, deferredEnvelope);
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.sent",
           intent: "device.pair.deferred",
           messageId: deferredEnvelope.messageId,
           correlationId: deferredEnvelope.correlationId,
-          remotePeerId: envelope.senderPeerId,
+          remotePeerId,
           direction: "outbound",
           latencyMs,
           protocol: ENVOY_MESSAGE_PROTOCOL,
@@ -1698,7 +1698,7 @@ async function handleRelayControlEnvelope(input: {
       const responsePayload = createRelayLookupResponsePayload(
         mergeRelayLookupResponses(payload, [localResponse, ...forwardedResponses.map((item) => item.payload)]),
       );
-      await sendRelayControlResponse(envelope, "relay.lookup.response", responsePayload, correlationId);
+      await sendRelayControlResponse(envelope, remotePeerId, "relay.lookup.response", responsePayload, correlationId);
       await appendRelayInboundAudit(
         envelope,
         remotePeerId,
@@ -1732,7 +1732,7 @@ async function handleRelayControlEnvelope(input: {
         truncated: false,
         expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
       });
-      await sendRelayControlResponse(envelope, "relay.hints.response", responsePayload, correlationId);
+      await sendRelayControlResponse(envelope, remotePeerId, "relay.hints.response", responsePayload, correlationId);
       await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.hints.request reason=${payload.reason}`);
       return;
     }
@@ -1763,7 +1763,7 @@ async function handleRelayControlEnvelope(input: {
         childLimit: 20,
         expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
       });
-      await sendRelayControlResponse(envelope, "relay.join.response", responsePayload, correlationId);
+      await sendRelayControlResponse(envelope, remotePeerId, "relay.join.response", responsePayload, correlationId);
       await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.join.request accepted relay=${payload.relay.relayId}`);
       return;
     }
@@ -1785,7 +1785,7 @@ async function handleRelayControlEnvelope(input: {
         state: "verified",
         expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
       });
-      await sendRelayControlResponse(envelope, "relay.register.response", responsePayload, correlationId);
+      await sendRelayControlResponse(envelope, remotePeerId, "relay.register.response", responsePayload, correlationId);
       await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.register accepted relay=${payload.relay.relayId}`);
       return;
     }
@@ -1964,6 +1964,7 @@ async function processRelayLookupResponse(payload: RelayLookupResponsePayload): 
 
 async function sendRelayControlResponse(
   request: EnvoyEnvelope,
+  libp2pRecipientPeerId: string,
   intent: "relay.lookup.response" | "relay.hints.response" | "relay.join.response" | "relay.register.response",
   payload: unknown,
   correlationId: string | undefined,
@@ -1980,7 +1981,7 @@ async function sendRelayControlResponse(
     }),
     profile.device.privateKeyPem,
   );
-  await mesh.send(request.senderPeerId, signedEnvelope);
+  await mesh.send(libp2pRecipientPeerId, signedEnvelope);
 }
 
 async function appendRelayInboundAudit(

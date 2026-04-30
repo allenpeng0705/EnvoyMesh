@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import "./dom-event-polyfill.js";
 import { loadOrCreateNodeProfile } from "@envoymesh/local-store";
-import { signUnsignedEnvelope } from "@envoymesh/identity";
+import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import { EnvoyMesh, type DiscoveredMeshPeer } from "@envoymesh/network";
 import {
   createRelayCheckinPayload,
@@ -318,7 +318,7 @@ async function sendRelayCheckin(input: {
       console.log(`[auto-relay-query] sending relay.checkin to ${bootstrapPeer}`);
       const signedEnvelope = signUnsignedEnvelope(
         createUnsignedEnvelope({
-          senderPeerId: mesh.peerId,
+          senderPeerId: derivePeerId(profile.device.publicKeyPem),
           senderPublicKey: profile.device.publicKeyPem,
           senderRole: "system",
           recipientPeerId: bootstrapPeer.startsWith("/") ? undefined : bootstrapPeer,
@@ -364,7 +364,7 @@ async function queryRelayLookup(input: {
       console.log(`[auto-relay-query] sending relay.lookup query=${payload.queryId} to ${bootstrapPeer}`);
       const signedEnvelope = signUnsignedEnvelope(
         createUnsignedEnvelope({
-          senderPeerId: mesh.peerId,
+          senderPeerId: derivePeerId(profile.device.publicKeyPem),
           senderPublicKey: profile.device.publicKeyPem,
           senderRole: "system",
           recipientPeerId: bootstrapPeer.startsWith("/") ? undefined : bootstrapPeer,
