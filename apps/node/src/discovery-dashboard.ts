@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { parseNodeArgs, printHelp } from "./args.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
+import { expandCircuitDialCandidates } from "./discovery-inbound.js";
 
 const CLEAR = "\x1b[2J\x1b[H";
 const BOLD = "\x1b[1m";
@@ -182,14 +183,22 @@ Examples:
         await discoverySeedStore.upsertMany(relayedAddrs, "relay-peers");
       }
       for (const addr of relayedAddrs) {
-        try {
-          console.log(`[auto-relay-query] dialing relay.lookup candidate: ${addr}`);
-          await mesh.dial(addr);
-          relayDialOk++;
-          console.log(`[auto-relay-query] relay.lookup candidate dial ok: ${addr}`);
-        } catch (err) {
+        const candidates = expandCircuitDialCandidates(addr, args.bootstrapPeers);
+        let dialOkForAddr = false;
+        for (const cand of candidates) {
+          try {
+            console.log(`[auto-relay-query] dialing relay.lookup candidate: ${cand}`);
+            await mesh.dial(cand);
+            relayDialOk++;
+            dialOkForAddr = true;
+            console.log(`[auto-relay-query] relay.lookup candidate dial ok: ${cand}`);
+            break;
+          } catch (err) {
+            console.log(`[auto-relay-query] relay.lookup candidate dial failed: ${cand} error=${err}`);
+          }
+        }
+        if (!dialOkForAddr) {
           relayDialFailed++;
-          console.log(`[auto-relay-query] relay.lookup candidate dial failed: ${addr} error=${err}`);
         }
       }
     }

@@ -373,6 +373,8 @@ export ENVOYMESH_ADVERTISE_ADDRS=/ip4/<public-ip>/tcp/4001
 
 If the address does not already end with `/p2p/<relay-libp2p-id>`, the node appends it from the running relay’s libp2p peer id.
 
+**Client-side fallback:** leaf nodes **rewrite** each returned `/p2p-circuit/` multiaddr using any **`--bootstrap`** / **`ENVOYMESH_BOOTSTRAP_PEERS`** entry that ends with the **same relay `/p2p/<id>`**, and try those dial candidates **first**. So if the relay embeds a private IP in the circuit path but you bootstrap via **`<public-ip>/tcp/4001/p2p/<same-relay>`**, Windows peers can still open the circuit without `--advertise-addr` on the relay (though advertising public bases on the relay remains the cleanest fix).
+
 With **`wan-default`** and **`--relay-server`**, startup logs a **connectivity warning** when no `--advertise-addr` is set, as a reminder for cross-network deployments.
 
 Step-by-step validation (two Windows nodes + relay) lives in [live-connectivity-testing](./live-connectivity-testing.md#4-prove-envoymesh-relay-address-switching).

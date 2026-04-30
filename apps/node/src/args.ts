@@ -261,7 +261,7 @@ Options:
   --discovery-profile <p>  Discovery defaults: lan-fast|wan-default. Env: ENVOYMESH_DISCOVERY_PROFILE
   --connectivity-strict    Fail startup when wan-default bootstrap connectivity cannot be established. Env: ENVOYMESH_CONNECTIVITY_STRICT=1
   --listen <multiaddr>  Listen multiaddr. Default: /ip4/0.0.0.0/tcp/0
-  --advertise-addr <multiaddr>  Reachable relay base address for relay.lookup /p2p-circuit/ paths (public IP or DNS, same TCP port as clients use). Repeatable. Env: ENVOYMESH_ADVERTISE_ADDRS (comma-separated). Strongly recommended for --relay-server on WAN/cloud.
+  --advertise-addr <multiaddr>  Reachable relay base address for relay.lookup /p2p-circuit/ paths (public IP or DNS, same TCP port as clients use). Repeatable. Env: ENVOYMESH_ADVERTISE_ADDRS (comma-separated). YAML: discovery.advertiseAddrs. Strongly recommended for --relay-server on WAN/cloud.
   --no-mdns             Disable local mDNS discovery.
   --dht                 Enable DHT discovery.
   --dht-client          Enable DHT in client mode.
@@ -489,6 +489,9 @@ function applyConfigFileArgs(args: NodeArgs, argv: string[]): void {
   }
   if (config.discovery.bootstrapPeers) {
     args.bootstrapPeers.push(...config.discovery.bootstrapPeers);
+  }
+  if (config.discovery.advertiseAddrs) {
+    args.advertiseAddrs.push(...config.discovery.advertiseAddrs);
   }
   if (typeof config.discovery.relay === "boolean") {
     args.enableRelay = config.discovery.relay;

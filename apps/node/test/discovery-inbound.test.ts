@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildRelayCircuitMultiaddrs,
+  expandCircuitDialCandidates,
   handleInboundDiscoveryIntent,
   handleInboundRelayPeersIntent,
 } from "../src/discovery-inbound.js";
@@ -164,5 +165,32 @@ describe("buildRelayCircuitMultiaddrs", () => {
         "peer-b",
       ),
     ).toEqual(["/ip4/192.0.2.10/tcp/4001/p2p/relay-peer/p2p-circuit/p2p/peer-b"]);
+  });
+});
+
+describe("expandCircuitDialCandidates", () => {
+  it("prepends bootstrap-matched relay bases before the original circuit addr", () => {
+    const circuit =
+      "/ip4/10.0.0.1/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWTarget";
+    const publicBootstrap = "/ip4/203.0.113.50/tcp/4001/p2p/12D3KooWRelay";
+    expect(expandCircuitDialCandidates(circuit, [publicBootstrap])).toEqual([
+      "/ip4/203.0.113.50/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWTarget",
+      circuit,
+    ]);
+  });
+
+  it("returns only the original addr when no seed matches the relay id", () => {
+    const circuit =
+      "/ip4/10.0.0.1/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWTarget";
+    expect(
+      expandCircuitDialCandidates(circuit, ["/ip4/203.0.113.50/tcp/4001/p2p/12D3KooWOther"]),
+    ).toEqual([circuit]);
+  });
+
+  it("dedupes when bootstrap produces the same addr as relay response", () => {
+    const circuit =
+      "/ip4/203.0.113.50/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWTarget";
+    const seed = "/ip4/203.0.113.50/tcp/4001/p2p/12D3KooWRelay";
+    expect(expandCircuitDialCandidates(circuit, [seed])).toEqual([circuit]);
   });
 });

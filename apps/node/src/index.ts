@@ -77,7 +77,7 @@ import { parseNodeArgs } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
-import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent } from "./discovery-inbound.js";
+import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates } from "./discovery-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
@@ -934,9 +934,26 @@ console.log("Listening on (libp2p getMultiaddrs):");
 for (const addr of mesh.multiaddrs) {
   console.log(`  ${addr}`);
 }
+if (args.enableRelayServer) {
+  const circuitBases = relayDialMultiaddrsForCircuitRelay(mesh, args.advertiseAddrs);
+  const advertiseSource =
+    args.advertiseAddrs.length > 0
+      ? `from ${args.advertiseAddrs.length} advertised base(s) (--advertise-addr, YAML discovery.advertiseAddrs, ENVOYMESH_ADVERTISE_ADDRS)`
+      : "fallback: libp2p getMultiaddrs only (non-loopback); no --advertise-addr / advertiseAddrs / env";
+  console.log(`Relay circuit bases for relay.lookup / relay.peers (${advertiseSource}):`);
+  if (circuitBases.length === 0) {
+    console.warn(
+      "  (none usable after filtering loopback — set --advertise-addr / discovery.advertiseAddrs / ENVOYMESH_ADVERTISE_ADDRS with a reachable base)",
+    );
+  } else {
+    for (const b of circuitBases) {
+      console.log(`  ${b}`);
+    }
+  }
+}
 if (args.enableRelayServer && args.discoveryProfile === "wan-default" && args.advertiseAddrs.length === 0) {
   console.warn(
-    "[connectivity warning] relay-server on wan-default without --advertise-addr: relay.lookup /p2p-circuit/ paths use getMultiaddrs only. Clients outside this machine's subnets (e.g. home Windows → cloud VM private 172.x) cannot dial those addresses—peers see each other in the roster but circuit dials fail. Set --advertise-addr /ip4/<public-or-dns>/tcp/<port> (port must match what clients use, security group open). Env: ENVOYMESH_ADVERTISE_ADDRS (comma-separated).",
+    "[connectivity warning] relay-server on wan-default without advertised bases: relay.lookup /p2p-circuit/ paths use getMultiaddrs only. Clients outside this machine's subnets (e.g. home Windows → cloud VM private 172.x) may not dial those addresses. Set --advertise-addr, YAML discovery.advertiseAddrs, or ENVOYMESH_ADVERTISE_ADDRS (comma-separated). Port must match what clients use; open the security group / firewall.",
   );
 }
 
@@ -1961,12 +1978,22 @@ async function processRelayLookupResponse(payload: RelayLookupResponsePayload): 
     await discoverySeedStore.upsertMany(relayedAddrs, "relay-peers");
   }
   for (const addr of relayedAddrs) {
-    try {
-      const latencyMs = await mesh.probePeer(addr);
-      await appendRelayTrace("relay.lookup.dial.ok", addr, `relay lookup candidate dial ok addr=${addr}`, latencyMs);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await appendRelayTrace("relay.lookup.dial.fail", addr, `relay lookup candidate dial failed addr=${addr} error=${message}`);
+    const candidates = expandCircuitDialCandidates(addr, effectiveBootstrapPeers);
+    let dialOk = false;
+    for (const cand of candidates) {
+      try {
+        const latencyMs = await mesh.probePeer(cand);
+        await appendRelayTrace("relay.lookup.dial.ok", cand, `relay lookup candidate dial ok addr=${cand}`, latencyMs);
+        dialOk = true;
+        break;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await appendRelayTrace(
+          "relay.lookup.dial.fail",
+          cand,
+          `relay lookup candidate dial failed addr=${cand} error=${message}`,
+        );
+      }
     }
   }
 }

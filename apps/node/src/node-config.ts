@@ -21,6 +21,8 @@ export interface NodeYamlConfig {
     bootstrapPresets?: string[];
     bootstrapPeers?: string[];
     bootstrapPresetsFiles?: string[];
+    /** Reachable relay bases for relay.lookup /p2p-circuit/ paths (public IP or DNS). Same as --advertise-addr. */
+    advertiseAddrs?: string[];
   };
 }
 
@@ -87,6 +89,10 @@ function parseDiscoveryConfig(parsed: Record<string, unknown>, configPath: strin
 
   if (parsed.bootstrapPeers !== undefined) {
     output.bootstrapPeers = parseStringArray(parsed.bootstrapPeers, configPath, "discovery.bootstrapPeers");
+  }
+
+  if (parsed.advertiseAddrs !== undefined) {
+    output.advertiseAddrs = parseStringArray(parsed.advertiseAddrs, configPath, "discovery.advertiseAddrs");
   }
 
   if (parsed.bootstrapPresetsFiles !== undefined) {

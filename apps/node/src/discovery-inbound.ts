@@ -247,6 +247,54 @@ export function buildRelayCircuitMultiaddrs(relayMultiaddrs: string[], targetPee
   return [...new Set(circuitAddrs)];
 }
 
+/**
+ * Relay lookup returns `/p2p-circuit/` multiaddrs built from the relay's advertised/listen bases.
+ * Those may be private (VPC) or loopback while clients actually reach the relay via a **public**
+ * bootstrap multiaddr. Produce dial candidates: for each known seed that targets the same relay
+ * id, `seed + /p2p-circuit/p2p/<target>`, then the original addr (deduped). Prefer trying seeds first.
+ */
+export function expandCircuitDialCandidates(circuitAddr: string, relaySeedMultiaddrs: string[]): string[] {
+  const trimmed = circuitAddr.trim();
+  if (!trimmed || relaySeedMultiaddrs.length === 0 || !trimmed.includes("/p2p-circuit/p2p/")) {
+    return dedupeCircuitAddrs([trimmed].filter(Boolean));
+  }
+
+  const parts = trimmed.split("/p2p-circuit/p2p/");
+  if (parts.length < 2 || !parts[1]) {
+    return dedupeCircuitAddrs([trimmed]);
+  }
+
+  const relayBase = parts[0]!;
+  const targetPeerId = parts[1]!.split("/")[0]!.trim();
+  if (!targetPeerId) {
+    return dedupeCircuitAddrs([trimmed]);
+  }
+
+  const relayIdMatch = relayBase.match(/\/p2p\/([^/]+)$/);
+  const relayId = relayIdMatch?.[1];
+  if (!relayId) {
+    return dedupeCircuitAddrs([trimmed]);
+  }
+
+  const alternates: string[] = [];
+  for (const raw of relaySeedMultiaddrs) {
+    const seed = raw.trim().replace(/\/$/, "");
+    if (!seed || seed.includes("/p2p-circuit")) {
+      continue;
+    }
+    if (!seed.includes(`/p2p/${relayId}`)) {
+      continue;
+    }
+    alternates.push(`${seed}/p2p-circuit/p2p/${targetPeerId}`);
+  }
+
+  return dedupeCircuitAddrs([...alternates, trimmed]);
+}
+
+function dedupeCircuitAddrs(addrs: string[]): string[] {
+  return [...new Set(addrs.map((a) => a.trim()).filter(Boolean))];
+}
+
 function allowRequest(requesterOwnerId: string, receivedAt: number): boolean {
   const windowStart = receivedAt - RATE_LIMIT_WINDOW_MS;
   const history = discoveryRequestRate.get(requesterOwnerId) ?? [];
