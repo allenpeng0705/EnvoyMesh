@@ -129,9 +129,13 @@ export class EnvoyMesh {
     let listenAddrs =
       this.options.enableQuic === true ? expandListenAddressesWithQuic(baseListen) : [...baseListen];
 
-    // Note: /p2p-circuit listen address is NOT added here manually.
-    // When circuitRelayServer() service is enabled, it automatically reserves /p2p-circuit
-    // addresses and they appear in getMultiaddrs() after startup.
+    // Circuit relay v2 clients must advertise `/p2p-circuit` in listen addrs so libp2p can obtain
+    // reservations on relays we dial (e.g. bootstrap). Without this, other peers cannot complete
+    // inbound dials via `/…/p2p-circuit/p2p/<ourPeerId>` even if EMP relay.checkin/lookup work.
+    // Servers use `circuitRelayServer()` and do not need this when only acting as the hop.
+    if (this.options.enableRelay && !this.options.enableRelayServer && !listenAddrs.includes("/p2p-circuit")) {
+      listenAddrs = [...listenAddrs, "/p2p-circuit"];
+    }
 
     const quicTransportFactory = this.options.enableQuic ? await this.loadQuicTransport() : undefined;
 
