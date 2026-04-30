@@ -1,3 +1,4 @@
+import "./dom-event-polyfill.js";
 import { derivePeerId, generateIdentity, signUnsignedEnvelope } from "@envoymesh/identity";
 import { loadOrCreateNodeProfile } from "@envoymesh/local-store";
 import { EnvoyMesh } from "@envoymesh/network";

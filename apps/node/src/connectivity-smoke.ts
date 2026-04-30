@@ -1,3 +1,4 @@
+import "./dom-event-polyfill.js";
 import { generateIdentity, signUnsignedEnvelope, verifyEnvelope } from "@envoymesh/identity";
 import { EnvoyMesh, type DiscoveredMeshPeer } from "@envoymesh/network";
 import { createSystemPingPayload, createUnsignedEnvelope } from "@envoymesh/protocol";

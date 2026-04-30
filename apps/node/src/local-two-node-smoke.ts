@@ -1,3 +1,4 @@
+import "./dom-event-polyfill.js";
 import {
   createProofOfIntent,
   createDeviceCertificate,

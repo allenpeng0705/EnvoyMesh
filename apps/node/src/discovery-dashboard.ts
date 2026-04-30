@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./dom-event-polyfill.js";
 import { loadOrCreateNodeProfile } from "@envoymesh/local-store";
 import { signUnsignedEnvelope } from "@envoymesh/identity";
 import { EnvoyMesh, type DiscoveredMeshPeer } from "@envoymesh/network";
