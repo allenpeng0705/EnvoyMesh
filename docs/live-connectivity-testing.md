@@ -56,7 +56,146 @@ Expected success line:
 
 This proves the local node observed a `/p2p-circuit` relay address. It does not by itself prove end-to-end relay dialing from another network; that should be tested next with two machines.
 
-## 4. Prove DCUtR Hole Punching
+## 4. Prove EnvoyMesh Relay Address Switching
+
+Use this procedure for the common non-LAN case where two Windows nodes can discover a Mac relay but cannot discover each other directly. The Mac runs as a relay server and address switcher. Both Windows nodes check in with `relay.checkin`, then query the relay with `relay.lookup` to learn `/p2p-circuit` addresses for each other.
+
+### 4.1 Start the Mac relay
+
+On the Mac:
+
+```bash
+npm run node:dev -- \
+  --profile "$HOME/envoymesh/mac_relay" \
+  --listen /ip4/0.0.0.0/tcp/4001 \
+  --discovery-profile wan-default \
+  --relay \
+  --relay-server \
+  --p2p-debug
+```
+
+Copy the printed `Listening on:` multiaddr that ends with `/p2p/<mac-peer-id>`, for example:
+
+```text
+/ip4/192.168.1.10/tcp/4001/p2p/12D3KooWMacRelayPeerId
+```
+
+For the commands below, replace `<mac-relay-multiaddr>` with that full multiaddr. If the Windows machines are not on the same LAN as the Mac, use the Mac's reachable IP/DNS address and make sure inbound TCP `4001` is allowed.
+
+### 4.2 Start Windows normal node A
+
+PowerShell:
+
+```powershell
+$env:ENVOYMESH_DISCOVERY_PROFILE = "wan-default"
+$env:ENVOYMESH_BOOTSTRAP_PEERS = "<mac-relay-multiaddr>"
+npm run node:dev -- `
+  --profile "$env:USERPROFILE\envoymesh\win_a" `
+  --listen /ip4/0.0.0.0/tcp/0 `
+  --discovery-profile wan-default `
+  --bootstrap "<mac-relay-multiaddr>" `
+  --relay `
+  --autonat `
+  --dcutr `
+  --p2p-debug
+```
+
+### 4.3 Start Windows normal node B
+
+PowerShell:
+
+```powershell
+$env:ENVOYMESH_DISCOVERY_PROFILE = "wan-default"
+$env:ENVOYMESH_BOOTSTRAP_PEERS = "<mac-relay-multiaddr>"
+npm run node:dev -- `
+  --profile "$env:USERPROFILE\envoymesh\win_b" `
+  --listen /ip4/0.0.0.0/tcp/0 `
+  --discovery-profile wan-default `
+  --bootstrap "<mac-relay-multiaddr>" `
+  --relay `
+  --autonat `
+  --dcutr `
+  --p2p-debug
+```
+
+Keep all three processes running for 30-60 seconds so the periodic check-in and lookup cycles can run.
+
+### 4.4 Confirm both Windows nodes checked in
+
+On the Mac:
+
+```bash
+npm run cli -w @envoymesh/node -- relay-status --profile "$HOME/envoymesh/mac_relay"
+```
+
+Expected output should include:
+
+```text
+Relay manager status
+roster total=2 fresh=2 stale=0
+```
+
+If `roster total=0` or only one peer appears, verify both Windows commands used:
+
+- `--relay`
+- `--bootstrap "<mac-relay-multiaddr>"`
+- the intended profile directory
+- a Mac relay multiaddr reachable from both Windows machines
+
+### 4.5 Confirm relay lookup traces on Windows
+
+On Windows A:
+
+```powershell
+npm run cli -w @envoymesh/node -- connectivity-status --profile "$env:USERPROFILE\envoymesh\win_a"
+npm run cli -w @envoymesh/node -- audit --profile "$env:USERPROFILE\envoymesh\win_a" --limit 80 --include-p2p-trace
+```
+
+On Windows B:
+
+```powershell
+npm run cli -w @envoymesh/node -- connectivity-status --profile "$env:USERPROFILE\envoymesh\win_b"
+npm run cli -w @envoymesh/node -- audit --profile "$env:USERPROFILE\envoymesh\win_b" --limit 80 --include-p2p-trace
+```
+
+Expected traces include:
+
+```text
+relay.checkin.ok
+relay.lookup.ok
+relay.lookup.response
+relay lookup candidate dial ok
+```
+
+You should also see discovered or persisted relay peer candidates that contain `/p2p-circuit/p2p/<other-windows-peer-id>`.
+
+### 4.6 Optional: open the Mac Relay Manager dashboard
+
+On the Mac:
+
+```bash
+ENVOYMESH_PROFILE="$HOME/envoymesh/mac_relay" \
+ENVOYMESH_VAULT="$PWD/shared_vault" \
+npm run desktop:dev
+```
+
+Open the Relay Manager panel and confirm:
+
+- roster peers: `2`
+- relay neighbors/summaries as available
+- recent relay traces for check-in, lookup, and manager snapshots
+
+### 4.7 Troubleshooting this scenario
+
+If both Windows nodes discover the Mac but not each other:
+
+1. Run `relay-status` on the Mac and confirm the roster has both Windows nodes fresh.
+2. If the roster is empty, the Windows nodes are not sending `relay.checkin`; check `--relay`, bootstrap address, profile paths, and Mac reachability.
+3. If the roster has both nodes but Windows audit has no `relay.lookup.response`, check that the Windows processes stayed alive long enough for lookup cycles.
+4. If lookup responses exist but dial fails, inspect the returned `/p2p-circuit` multiaddr and confirm the Mac relay process is still running and reachable.
+5. If using dynamic Mac ports, recopy the latest `Listening on:` multiaddr after every Mac relay restart.
+
+## 5. Prove DCUtR Hole Punching
 
 DCUtR needs two peers behind NAT plus a reachable relay. The practical proof is:
 
@@ -67,7 +206,7 @@ DCUtR needs two peers behind NAT plus a reachable relay. The practical proof is:
 
 The smoke script verifies that the local advanced stack starts correctly and can discover peers. A dedicated two-machine DCUtR proof should be added once we have a stable relay peer to target.
 
-## 5. Desktop Distribution And Data-Path Smoke
+## 6. Desktop Distribution And Data-Path Smoke
 
 After building the desktop app for your platform, launch it once with a fresh profile directory and confirm the dashboard loads approvals, trust, vault search, and the chat/task panels without errors.
 
@@ -80,7 +219,7 @@ For a two-machine check of the `/envoymesh/data/0.1.0` path (voucher + chunked f
 
 For `task.cancel` relay fan-out, send `--task-cancel` with `--cancel-forward-peer` (repeatable) and `--cancel-relay-hops` from the developer or packaged CLI, then confirm each listed peer receives a handled cancel and optional downstream relay while hops remain.
 
-## 6. Non-LAN Fallback (WAN-First Profile)
+## 7. Non-LAN Fallback (WAN-First Profile)
 
 When mDNS is unreliable or unavailable, use `wan-default` profile defaults and bootstrap peers:
 
