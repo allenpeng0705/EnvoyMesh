@@ -914,7 +914,13 @@ if (args.configPath) {
 console.log(`Owner ID: ${profile.owner.ownerId}`);
 console.log(`Device ID: ${profile.device.deviceId}`);
 console.log(`libp2p Peer ID: ${mesh.peerId}`);
-console.log("Listening on:");
+console.log(`Configured --listen: ${args.listen.join(", ")}`);
+if (args.listen.some((addr) => addr.includes("/ip4/0.0.0.0/") || addr.includes("/ip6/::/"))) {
+  console.log(
+    "Note: libp2p reports concrete interface addresses below, not 0.0.0.0. WAN clients still dial your public IP/DNS on the same TCP port (cloud NAT maps it to this host).",
+  );
+}
+console.log("Listening on (libp2p getMultiaddrs):");
 for (const addr of mesh.multiaddrs) {
   console.log(`  ${addr}`);
 }
