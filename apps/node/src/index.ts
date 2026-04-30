@@ -1787,6 +1787,14 @@ async function handleRelayControlEnvelope(input: {
         mergeRelayLookupResponses(payload, [localResponse, ...forwardedResponses.map((item) => item.payload)]),
       );
       await sendRelayControlResponse(envelope, remotePeerId, "relay.lookup.response", responsePayload, correlationId);
+      if (args.enableRelayServer && localResponse.peers.length === 0) {
+        const others = relayRoster.entries().filter((e) => e.peerId !== remotePeerId);
+        if (others.length > 0) {
+          console.warn(
+            `[relay-server] relay.lookup query=${payload.queryId} returned 0 local peers but roster has ${others.length} other entr(y/ies); requester=${remotePeerId}. Check lookup visibility, capability filter, or relay.lookup stream errors on clients.`,
+          );
+        }
+      }
       if (args.enableRelayServer) {
         logRelayServerLookupResponse({
           requesterLibp2pPeerId: remotePeerId,

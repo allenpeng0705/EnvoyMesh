@@ -301,7 +301,14 @@ function visibilityFor(entry: RelayRosterEntry, payload: RelayLookupPayload): Re
       (payload.capability && ad.capability === payload.capability) ||
       (payload.topicHash && ad.topicHash === payload.topicHash),
   );
-  return scoped?.visibility ?? "bonded";
+  if (scoped) {
+    return scoped.visibility;
+  }
+  /** Check-ins may list `mesh.discovery` in capabilities but omit a matching `advertisements[]` row; treat as discoverable for public lookups. */
+  if (payload.capability && entry.capabilities.includes(payload.capability)) {
+    return payload.visibilityScope === "bonded" ? "bonded" : "public";
+  }
+  return "bonded";
 }
 
 function isVisible(candidate: RelayVisibility, requested: RelayVisibility): boolean {
