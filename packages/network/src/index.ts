@@ -115,11 +115,9 @@ export class EnvoyMesh {
     let listenAddrs =
       this.options.enableQuic === true ? expandListenAddressesWithQuic(baseListen) : [...baseListen];
 
-    // Relay reservations only advertise `/p2p-circuit` multiaddrs when we explicitly listen on it.
-    // See libp2p circuit-relay examples; relay-transport alone only enables dialing through relays.
-    if (this.options.enableRelay === true && !listenAddrs.includes("/p2p-circuit")) {
-      listenAddrs = [...listenAddrs, "/p2p-circuit"];
-    }
+    // Note: /p2p-circuit listen address is NOT added here manually.
+    // When circuitRelayServer() service is enabled, it automatically reserves /p2p-circuit
+    // addresses and they appear in getMultiaddrs() after startup.
 
     const quicTransportFactory = this.options.enableQuic ? await this.loadQuicTransport() : undefined;
 
@@ -129,7 +127,7 @@ export class EnvoyMesh {
       },
       transports: [
         tcp(),
-        ...(this.options.enableRelay ? [circuitRelayTransport()] : []),
+        ...(this.options.enableRelay || this.options.enableRelayServer ? [circuitRelayTransport()] : []),
         ...(quicTransportFactory ? [quicTransportFactory()] : []),
       ],
       connectionEncrypters: [noise()],
@@ -578,6 +576,27 @@ export class EnvoyMesh {
         this.relayConnectedPeers.delete(remotePeerId);
         console.log(`[relay-tracked] peer:disconnect ${remotePeerId} (total: ${this.relayConnectedPeers.size})`);
       });
+
+      // Also track using connectionManager for relay connections which may not fire peer:connect
+      if (this.node) {
+        setInterval(() => {
+          try {
+            const cmap = (this.node as any).connectionManager;
+            if (cmap?.connections) {
+              for (const [peerIdStr, conns] of cmap.connections) {
+                for (const conn of conns) {
+                  const remoteAddr = conn?.remoteAddr?.toString?.() ?? "";
+                  if (remoteAddr.includes("/p2p-circuit")) {
+                    this.relayConnectedPeers.add(peerIdStr);
+                  }
+                }
+              }
+            }
+          } catch {
+            // Ignore errors
+          }
+        }, 5000);
+      }
     }
 
     if (!this.options.enableP2pDebug) {
