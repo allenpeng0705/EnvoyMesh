@@ -187,6 +187,31 @@ export interface RelayManagerRoutingMetrics {
   collectedForwardResponseCount: number;
 }
 
+export type RelayHealthStatus = "healthy" | "degraded" | "unhealthy" | "critical";
+export type RelayHealthAction =
+  | "none"
+  | "reprobe-neighbors"
+  | "refresh-relay-summary"
+  | "restart-libp2p"
+  | "exit-for-supervisor";
+
+export interface RelayHealthSnapshot {
+  status: RelayHealthStatus;
+  checkedAt: string;
+  lastHealthyAt?: string;
+  reasons: string[];
+  actions: RelayHealthAction[];
+  recoveryCounters: {
+    healthChecks: number;
+    degraded: number;
+    unhealthy: number;
+    critical: number;
+    softRepair: number;
+    restartRequested: number;
+    exitRequested: number;
+  };
+}
+
 export interface RelayManagerRuntimeState {
   enabled: boolean;
   relayServerEnabled: boolean;
@@ -197,6 +222,7 @@ export interface RelayManagerRuntimeState {
   relayBook: RelayManagerRelayBookRuntimeEntry[];
   summaries: RelayManagerSummaryRuntimeEntry[];
   routing: RelayManagerRoutingMetrics;
+  health?: RelayHealthSnapshot;
 }
 
 export interface RelayManagerSnapshot {
@@ -237,6 +263,7 @@ export interface RelayManagerSnapshot {
       summary: string;
     }>;
   };
+  health: RelayHealthSnapshot;
   warnings: string[];
 }
 
@@ -320,6 +347,7 @@ function snapshotFromRuntime(
       ...runtime.routing,
       recentTraces: routingTraces,
     },
+    health: runtime.health ?? emptyRelayHealthSnapshot(generatedAt),
     warnings: auditEvents
       .filter((event) => event.protocol === "connectivity.warning" || event.protocol === "relay.manager.warning")
       .slice(-8)
@@ -349,7 +377,27 @@ function emptyRelayManagerSnapshot(generatedAt: string, profile: NodeProfile | u
       collectedForwardResponseCount: 0,
       recentTraces: [],
     },
+    health: emptyRelayHealthSnapshot(generatedAt),
     warnings: [],
+  };
+}
+
+function emptyRelayHealthSnapshot(generatedAt: string): RelayHealthSnapshot {
+  return {
+    status: "healthy",
+    checkedAt: generatedAt,
+    lastHealthyAt: generatedAt,
+    reasons: [],
+    actions: ["none"],
+    recoveryCounters: {
+      healthChecks: 0,
+      degraded: 0,
+      unhealthy: 0,
+      critical: 0,
+      softRepair: 0,
+      restartRequested: 0,
+      exitRequested: 0,
+    },
   };
 }
 
@@ -364,15 +412,36 @@ function lastRelayManagerSnapshot(events: AuditEvent[]): RelayManagerSnapshot | 
       continue;
     }
     try {
-      return {
-        ...(JSON.parse(event.summary.slice(index + marker.length)) as RelayManagerSnapshot),
-        source: "audit",
-      };
+      return normalizeRelayManagerSnapshot(JSON.parse(event.summary.slice(index + marker.length)), "audit", event.createdAt);
     } catch {
       continue;
     }
   }
   return undefined;
+}
+
+function normalizeRelayManagerSnapshot(input: unknown, source: RelayManagerSnapshot["source"], fallbackGeneratedAt: string): RelayManagerSnapshot {
+  const snapshot = input as Partial<RelayManagerSnapshot>;
+  const generatedAt = snapshot.generatedAt ?? fallbackGeneratedAt;
+  return {
+    generatedAt,
+    source,
+    relay: snapshot.relay ?? { enabled: false, relayServerEnabled: false, listenAddrs: [] },
+    roster: snapshot.roster ?? { total: 0, fresh: 0, stale: 0, visibilityCounts: {}, topCapabilities: [], topTopics: [] },
+    relayBook: snapshot.relayBook ?? { total: 0, byRelation: {}, byState: {}, neighbors: [] },
+    summaries: snapshot.summaries ?? { total: 0, fresh: 0, stale: 0, entries: [] },
+    routing: {
+      forwardedLookupCount: snapshot.routing?.forwardedLookupCount ?? 0,
+      duplicateQueryDropCount: snapshot.routing?.duplicateQueryDropCount ?? 0,
+      negativeCacheSize: snapshot.routing?.negativeCacheSize ?? 0,
+      selectedForwardTargetCount: snapshot.routing?.selectedForwardTargetCount ?? 0,
+      failedForwardCount: snapshot.routing?.failedForwardCount ?? 0,
+      collectedForwardResponseCount: snapshot.routing?.collectedForwardResponseCount ?? 0,
+      recentTraces: snapshot.routing?.recentTraces ?? [],
+    },
+    health: snapshot.health ?? emptyRelayHealthSnapshot(generatedAt),
+    warnings: snapshot.warnings ?? [],
+  };
 }
 
 function countVisibility(entries: RelayManagerRosterRuntimeEntry[]): Record<string, number> {

@@ -412,9 +412,11 @@ Each relay should expose a local operator management surface separate from the p
 - the relay runtime periodically writes a `relay.manager.snapshot` audit trace into the local profile
 - `relay-status` in the developer CLI reads the latest snapshot and can print text or JSON
 - the desktop dashboard includes a Relay Manager panel backed by the same snapshot
-- the manager shows relay identity, listen addresses, roster counts, relay-book neighbors, summaries, routing metrics, recent relay traces, and warnings
+- the manager shows relay identity, listen addresses, roster counts, relay-book neighbors, summaries, health status, recovery counters, routing metrics, recent relay traces, and warnings
 
 This is intentionally not a public admin API. A future live admin endpoint should bind to `127.0.0.1` or OS-local IPC, require explicit enablement, and use an operator token or signed owner/admin envelope before allowing actions such as probe, mark-stale, or graph repair.
+
+Relay health is layered with external supervision. The node emits `relay.health.*` audit traces, attempts bounded soft repairs such as neighbor reprobes and summary refresh, records unhealthy restart requests, and exits non-zero only for critical states that should be handled by `launchd`, `systemd`, Windows service managers, Docker, or Kubernetes. Production supervisor examples live in [relay-supervisor-recipes](./relay-supervisor-recipes.md).
 
 ## Normal Node Relay Strategy
 

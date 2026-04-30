@@ -669,10 +669,17 @@ async function showRelayStatus(args: DeveloperCliArgs): Promise<DeveloperCliResu
   return ok([
     "Relay manager status",
     `source=${snapshot.source} generatedAt=${snapshot.generatedAt}`,
+    ...(snapshot.source === "empty"
+      ? [
+          "hint: no relay.manager.snapshot found in this profile; start the relay with this same --profile and --relay --relay-server, then wait a few seconds.",
+        ]
+      : []),
     `peerId=${snapshot.relay.peerId ?? "-"} relay=${snapshot.relay.enabled} relayServer=${snapshot.relay.relayServerEnabled} listenAddrs=${snapshot.relay.listenAddrs.length}`,
     `roster total=${snapshot.roster.total} fresh=${snapshot.roster.fresh} stale=${snapshot.roster.stale}`,
     `relayBook total=${snapshot.relayBook.total} relations=${formatCounts(snapshot.relayBook.byRelation)} states=${formatCounts(snapshot.relayBook.byState)}`,
     `summaries total=${snapshot.summaries.total} fresh=${snapshot.summaries.fresh} stale=${snapshot.summaries.stale}`,
+    `health status=${snapshot.health.status} checks=${snapshot.health.recoveryCounters.healthChecks} degraded=${snapshot.health.recoveryCounters.degraded} unhealthy=${snapshot.health.recoveryCounters.unhealthy} critical=${snapshot.health.recoveryCounters.critical} actions=${snapshot.health.actions.join(",") || "-"}`,
+    ...(snapshot.health.reasons.length > 0 ? snapshot.health.reasons.map((reason) => `healthReason ${reason}`) : []),
     `routing forwarded=${snapshot.routing.forwardedLookupCount} duplicates=${snapshot.routing.duplicateQueryDropCount} negativeCache=${snapshot.routing.negativeCacheSize} selectedTargets=${snapshot.routing.selectedForwardTargetCount} failedForwards=${snapshot.routing.failedForwardCount} collectedResponses=${snapshot.routing.collectedForwardResponseCount}`,
     `topCapabilities=${snapshot.roster.topCapabilities.map((item) => `${item.capability}:${item.count}`).join(",") || "-"}`,
     `topTopics=${snapshot.roster.topTopics.map((item) => `${item.topicHash}:${item.count}`).join(",") || "-"}`,

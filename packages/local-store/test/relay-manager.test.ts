@@ -54,6 +54,22 @@ describe("relay manager snapshot", () => {
         failedForwardCount: 0,
         collectedForwardResponseCount: 1,
       },
+      health: {
+        status: "degraded",
+        checkedAt: "2026-04-27T10:01:00.000Z",
+        lastHealthyAt: "2026-04-27T10:00:00.000Z",
+        reasons: ["relay neighbors with repeated failures=1"],
+        actions: ["reprobe-neighbors"],
+        recoveryCounters: {
+          healthChecks: 2,
+          degraded: 1,
+          unhealthy: 0,
+          critical: 0,
+          softRepair: 1,
+          restartRequested: 0,
+          exitRequested: 0,
+        },
+      },
     };
 
     const snapshot = buildRelayManagerSnapshot({
@@ -83,6 +99,8 @@ describe("relay manager snapshot", () => {
     expect(snapshot.roster.topCapabilities).toEqual([{ capability: "mesh.discovery", count: 1 }]);
     expect(snapshot.relayBook.byRelation).toEqual({ sibling: 1 });
     expect(snapshot.summaries).toMatchObject({ total: 1, fresh: 1, stale: 0 });
+    expect(snapshot.health.status).toBe("degraded");
+    expect(snapshot.health.recoveryCounters.softRepair).toBe(1);
     expect(snapshot.routing.recentTraces[0]?.protocol).toBe("relay.lookup.forward.ok");
     expect(snapshot.warnings).toEqual(["warning"]);
   });
@@ -122,5 +140,49 @@ describe("relay manager snapshot", () => {
 
     expect(rehydrated.source).toBe("audit");
     expect(rehydrated.relay.peerId).toBe("relay-a");
+    expect(rehydrated.health.status).toBe("healthy");
+  });
+
+  it("normalizes older serialized snapshots without relay health fields", () => {
+    const legacySnapshot = {
+      generatedAt: "2026-04-27T10:00:00.000Z",
+      source: "runtime",
+      relay: {
+        peerId: "relay-a",
+        enabled: true,
+        relayServerEnabled: true,
+        listenAddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-a"],
+      },
+      roster: { total: 0, fresh: 0, stale: 0, visibilityCounts: {}, topCapabilities: [], topTopics: [] },
+      relayBook: { total: 0, byRelation: {}, byState: {}, neighbors: [] },
+      summaries: { total: 0, fresh: 0, stale: 0, entries: [] },
+      routing: {
+        forwardedLookupCount: 0,
+        duplicateQueryDropCount: 0,
+        negativeCacheSize: 0,
+        selectedForwardTargetCount: 0,
+        failedForwardCount: 0,
+        collectedForwardResponseCount: 0,
+        recentTraces: [],
+      },
+      warnings: [],
+    };
+
+    const rehydrated = buildRelayManagerSnapshot({
+      auditEvents: [
+        createAuditEvent({
+          type: "p2p.trace",
+          protocol: "relay.manager.snapshot",
+          outcome: "record",
+          summary: `relay manager snapshot json=${JSON.stringify(legacySnapshot)}`,
+          createdAt: "2026-04-27T10:00:01.000Z",
+        }),
+      ],
+    });
+
+    expect(rehydrated.source).toBe("audit");
+    expect(rehydrated.relay.peerId).toBe("relay-a");
+    expect(rehydrated.health.status).toBe("healthy");
+    expect(rehydrated.health.actions).toEqual(["none"]);
   });
 });

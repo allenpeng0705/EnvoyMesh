@@ -78,6 +78,18 @@ function discoveryBannerTitle(badge: DashboardSnapshot["connectivityHealth"]["st
   }
 }
 
+function relayHealthBadge(status: DashboardSnapshot["relayManager"]["health"]["status"]) {
+  switch (status) {
+    case "healthy":
+      return "ok";
+    case "degraded":
+      return "warn";
+    case "unhealthy":
+    case "critical":
+      return "warn";
+  }
+}
+
 function App() {
   const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
   const [vaultQuery, setVaultQuery] = useState("");
@@ -595,12 +607,33 @@ function App() {
           <Metric label="Fresh Peers" value={snapshot.relayManager.roster.fresh} />
           <Metric label="Relay Neighbors" value={snapshot.relayManager.relayBook.total} />
           <Metric label="Summaries" value={snapshot.relayManager.summaries.total} />
+          <Metric label="Health Checks" value={snapshot.relayManager.health.recoveryCounters.healthChecks} />
+          <Metric label="Soft Repairs" value={snapshot.relayManager.health.recoveryCounters.softRepair} />
         </div>
         <p className="muted">
           source={snapshot.relayManager.source} · peer={snapshot.relayManager.relay.peerId ?? "-"} · relay=
           {String(snapshot.relayManager.relay.enabled)} · relayServer=
           {String(snapshot.relayManager.relay.relayServerEnabled)}
         </p>
+        <div className={`connectivity-stage-banner connectivity-stage-${relayHealthBadge(snapshot.relayManager.health.status)}`}>
+          <div className="connectivity-stage-banner-title">Relay health: {snapshot.relayManager.health.status}</div>
+          <p className="connectivity-stage-banner-body">
+            checked={snapshot.relayManager.health.checkedAt} · actions=
+            {snapshot.relayManager.health.actions.join(",") || "none"}
+          </p>
+        </div>
+        {snapshot.relayManager.health.reasons.length > 0 ? (
+          <div className="list">
+            {snapshot.relayManager.health.reasons.map((reason) => (
+              <article key={reason} className="row compact">
+                <div>
+                  <strong>Health reason</strong>
+                  <small>{reason}</small>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
         <div className="grid two">
           <div>
             <h3>Routing</h3>

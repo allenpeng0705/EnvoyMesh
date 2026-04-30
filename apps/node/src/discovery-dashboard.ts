@@ -1,8 +1,14 @@
 #!/usr/bin/env node
 import { loadOrCreateNodeProfile } from "@envoymesh/local-store";
-import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
+import { signUnsignedEnvelope } from "@envoymesh/identity";
 import { EnvoyMesh, type DiscoveredMeshPeer } from "@envoymesh/network";
-import { createUnsignedEnvelope, parseRelayPeersResponsePayload } from "@envoymesh/protocol";
+import {
+  createRelayCheckinPayload,
+  createRelayLookupPayload,
+  createUnsignedEnvelope,
+  parseRelayLookupResponsePayload,
+} from "@envoymesh/protocol";
+import { randomUUID } from "node:crypto";
 import { parseNodeArgs, printHelp } from "./args.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
 
@@ -14,6 +20,8 @@ const RED = "\x1b[31m";
 const CYAN = "\x1b[36m";
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
+const RELAY_CONTROL_TTL_MS = 90_000;
+const RELAY_LOOKUP_INTERVAL_MS = 10_000;
 
 function color(badge: "ok" | "warn" | "start" | "err"): string {
   switch (badge) {
@@ -73,6 +81,7 @@ Options:
   --bootstrap <multiaddr>      Add bootstrap peer. Repeatable.
   --bootstrap-preset <preset>  Use bootstrap preset (public-libp2p, public-libp2p-am6, public-libp2p-am7)
   --no-mdns                    Disable mDNS discovery
+  --auto-relay-peers-query     Periodically send relay.checkin and relay.lookup to bootstrap relays
   --p2p-debug                  Enable P2P debug tracing
 
 Examples:
@@ -97,6 +106,14 @@ Examples:
 
   const peers = new Map<string, PeerInfo>();
   let relayCount = 0;
+  let relayCheckinSent = 0;
+  let relayLookupSent = 0;
+  let relayLookupResponses = 0;
+  let relayCandidates = 0;
+  let relayDialOk = 0;
+  let relayDialFailed = 0;
+  let bootstrapDialOk = 0;
+  let bootstrapDialFailed = 0;
   let lastEventAt = Date.now();
   let startedAt = Date.now();
 
@@ -127,18 +144,22 @@ Examples:
     lastEventAt = Date.now();
   });
 
-  // Handle relay.peers.response - add peers from relay query
+  // Handle relay.lookup.response from EnvoyMesh relay nodes and dial returned /p2p-circuit candidates.
   mesh.onMessage(async ({ envelope }) => {
-    if (envelope.intent === "relay.peers.response") {
-      const payload = parseRelayPeersResponsePayload(envelope.payload);
-      console.log(`[auto-relay-query] received relay.peers.response with ${payload.peers.length} peers`);
+    if (envelope.intent === "relay.lookup.response") {
+      const payload = parseRelayLookupResponsePayload(envelope.payload);
+      relayLookupResponses++;
+      relayCandidates += payload.peers.length;
+      console.log(
+        `[auto-relay-query] received relay.lookup.response query=${payload.queryId} peers=${payload.peers.length} hints=${payload.relayHints.length}`,
+      );
       for (const relayPeer of payload.peers) {
         const alreadyKnown = peers.has(relayPeer.peerId);
         peers.set(relayPeer.peerId, {
           peerId: relayPeer.peerId,
           addrs: relayPeer.multiaddrs,
           discoveredAt: Date.now(),
-          relayed: true, // These are relay-discovered peers
+          relayed: true,
         });
         if (!alreadyKnown) relayCount++;
         lastEventAt = Date.now();
@@ -150,11 +171,13 @@ Examples:
       }
       for (const addr of relayedAddrs) {
         try {
-          console.log(`[auto-relay-query] dialing relay peer address: ${addr}`);
+          console.log(`[auto-relay-query] dialing relay.lookup candidate: ${addr}`);
           await mesh.dial(addr);
-          console.log(`[auto-relay-query] relay peer dial ok: ${addr}`);
+          relayDialOk++;
+          console.log(`[auto-relay-query] relay.lookup candidate dial ok: ${addr}`);
         } catch (err) {
-          console.log(`[auto-relay-query] relay peer dial failed: ${addr} error=${err}`);
+          relayDialFailed++;
+          console.log(`[auto-relay-query] relay.lookup candidate dial failed: ${addr} error=${err}`);
         }
       }
     }
@@ -163,8 +186,6 @@ Examples:
   await mesh.start();
   startedAt = Date.now();
 
-  const selfMultiaddrs = mesh.multiaddrs.map((a) => a.toString());
-  const hasRelay = selfMultiaddrs.some((a) => a.includes("/p2p-circuit"));
   const hasDht = args.enableDht;
 
   // Handle Ctrl+C gracefully
@@ -178,42 +199,124 @@ Examples:
   });
 
   // Initial render
-  renderDashboard({ mesh, peers, relayCount, lastEventAt, startedAt, selfMultiaddrs, hasRelay, hasDht, args });
+  renderDashboard({
+    mesh,
+    peers,
+    relayCount,
+    lastEventAt,
+    startedAt,
+    selfMultiaddrs: mesh.multiaddrs.map((a) => a.toString()),
+    hasDht,
+    args,
+    relayStats: () => ({
+      relayCheckinSent,
+      relayLookupSent,
+      relayLookupResponses,
+      relayCandidates,
+      relayDialOk,
+      relayDialFailed,
+      bootstrapDialOk,
+      bootstrapDialFailed,
+    }),
+  });
 
   // Keep a direct connection to bootstrap/relay peers before querying them.
   if (args.enableRelay && args.bootstrapPeers.length > 0) {
     setTimeout(async () => {
-      console.log(`[relay-dial] starting bootstrap relay dial attempts...`);
-      for (const bootstrapPeer of args.bootstrapPeers) {
-        try {
-          console.log(`[relay-dial] dialing bootstrap relay: ${bootstrapPeer}`);
-          await mesh.dial(bootstrapPeer);
-          console.log(`[relay-dial] bootstrap relay dial ok`);
-        } catch (err: any) {
-          console.error(`[relay-dial] failed: ${err?.message ?? err}`);
-        }
-      }
+      const result = await dialBootstrapRelays(mesh, args.bootstrapPeers);
+      bootstrapDialOk += result.ok;
+      bootstrapDialFailed += result.failed;
     }, 5000); // Wait 5 seconds for initial bootstrap to complete
   }
 
-  // Auto query relay for peers if enabled
+  // Auto check in with relay nodes and query for relay-discoverable peers if enabled.
   if (args.autoRelayPeersQuery && args.bootstrapPeers.length > 0) {
-    await queryRelayPeers({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
+    await runRelayDiscoveryCycle();
     setInterval(async () => {
-      await queryRelayPeers({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
-    }, 10_000); // Query every 10 seconds
+      await runRelayDiscoveryCycle();
+    }, RELAY_LOOKUP_INTERVAL_MS);
   }
 
   // Update every 2 seconds
   const interval = setInterval(() => {
-    renderDashboard({ mesh, peers, relayCount, lastEventAt, startedAt, selfMultiaddrs, hasRelay, hasDht, args });
+    renderDashboard({
+      mesh,
+      peers,
+      relayCount,
+      lastEventAt,
+      startedAt,
+    selfMultiaddrs: mesh.multiaddrs.map((a) => a.toString()),
+      hasDht,
+      args,
+    relayStats: () => ({
+      relayCheckinSent,
+      relayLookupSent,
+      relayLookupResponses,
+      relayCandidates,
+      relayDialOk,
+      relayDialFailed,
+      bootstrapDialOk,
+      bootstrapDialFailed,
+    }),
+    });
   }, 2000);
 
   // Keep process alive
   await new Promise(() => {});
+  async function runRelayDiscoveryCycle(): Promise<void> {
+    const result = await dialBootstrapRelays(mesh, args.bootstrapPeers);
+    bootstrapDialOk += result.ok;
+    bootstrapDialFailed += result.failed;
+    await sendRelayCheckin({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
+    relayCheckinSent += args.bootstrapPeers.length;
+    await queryRelayLookup({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
+    relayLookupSent += args.bootstrapPeers.length;
+  }
 }
 
-async function queryRelayPeers(input: {
+async function sendRelayCheckin(input: {
+  mesh: EnvoyMesh;
+  profile: Awaited<ReturnType<typeof loadOrCreateNodeProfile>>;
+  bootstrapPeers: string[];
+}): Promise<void> {
+  const { mesh, profile, bootstrapPeers } = input;
+  const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
+  const payload = createRelayCheckinPayload({
+    peerId: mesh.peerId,
+    ownerId: profile.owner.ownerId,
+    relayReachableAddrs: mesh.multiaddrs,
+    capabilities: profile.deviceCertificate.capabilities,
+    advertisements: [{ capability: "mesh.discovery", visibility: "public", expiresAt }],
+    relayHints: bootstrapPeers.map((addr) => ({
+      relayId: relayIdFromAddr(addr),
+      multiaddrs: [addr],
+      expiresAt,
+    })),
+    expiresAt,
+  });
+  for (const bootstrapPeer of bootstrapPeers) {
+    try {
+      console.log(`[auto-relay-query] sending relay.checkin to ${bootstrapPeer}`);
+      const signedEnvelope = signUnsignedEnvelope(
+        createUnsignedEnvelope({
+          senderPeerId: mesh.peerId,
+          senderPublicKey: profile.device.publicKeyPem,
+          senderRole: "system",
+          recipientPeerId: bootstrapPeer.startsWith("/") ? undefined : bootstrapPeer,
+          intent: "relay.checkin",
+          payload,
+        }),
+        profile.device.privateKeyPem,
+      );
+      await mesh.send(bootstrapPeer, signedEnvelope);
+      console.log(`[auto-relay-query] sent relay.checkin to ${bootstrapPeer}`);
+    } catch (err) {
+      console.log(`[auto-relay-query] relay.checkin ERROR target=${bootstrapPeer} error=${err}`);
+    }
+  }
+}
+
+async function queryRelayLookup(input: {
   mesh: EnvoyMesh;
   profile: Awaited<ReturnType<typeof loadOrCreateNodeProfile>>;
   bootstrapPeers: string[];
@@ -221,22 +324,54 @@ async function queryRelayPeers(input: {
   const { mesh, profile, bootstrapPeers } = input;
   for (const bootstrapPeer of bootstrapPeers) {
     try {
-      console.log(`[auto-relay-query] attempting to send relay.peers.request to ${bootstrapPeer}`);
-      const unsignedEnvelope = createUnsignedEnvelope({
-        senderPeerId: mesh.peerId,
-        senderPublicKey: profile.device.publicKeyPem,
-        senderRole: "system",
-        recipientPeerId: bootstrapPeer.startsWith("/") ? undefined : bootstrapPeer,
-        intent: "relay.peers.request",
-        payload: {},
+      const payload = createRelayLookupPayload({
+        queryId: `dashboard_relay_lookup_${randomUUID()}`,
+        capability: "mesh.discovery",
+        maxResults: 32,
+        maxHops: 2,
+        maxFanout: 2,
+        visibilityScope: "public",
+        expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
       });
-      const signedEnvelope = signUnsignedEnvelope(unsignedEnvelope, profile.device.privateKeyPem);
+      console.log(`[auto-relay-query] sending relay.lookup query=${payload.queryId} to ${bootstrapPeer}`);
+      const signedEnvelope = signUnsignedEnvelope(
+        createUnsignedEnvelope({
+          senderPeerId: mesh.peerId,
+          senderPublicKey: profile.device.publicKeyPem,
+          senderRole: "system",
+          recipientPeerId: bootstrapPeer.startsWith("/") ? undefined : bootstrapPeer,
+          intent: "relay.lookup",
+          payload,
+        }),
+        profile.device.privateKeyPem,
+      );
       await mesh.send(bootstrapPeer, signedEnvelope);
-      console.log(`[auto-relay-query] sent relay.peers.request to ${bootstrapPeer}`);
+      console.log(`[auto-relay-query] sent relay.lookup query=${payload.queryId} to ${bootstrapPeer}`);
     } catch (err) {
-      console.log(`[auto-relay-query] ERROR: ${err}`);
+      console.log(`[auto-relay-query] relay.lookup ERROR target=${bootstrapPeer} error=${err}`);
     }
   }
+}
+
+async function dialBootstrapRelays(mesh: EnvoyMesh, bootstrapPeers: string[]): Promise<{ ok: number; failed: number }> {
+  let ok = 0;
+  let failed = 0;
+  if (bootstrapPeers.length === 0) {
+    return { ok, failed };
+  }
+  console.log(`[relay-dial] checking bootstrap relay reachability...`);
+  for (const bootstrapPeer of bootstrapPeers) {
+    try {
+      console.log(`[relay-dial] dialing bootstrap relay: ${bootstrapPeer}`);
+      await mesh.dial(bootstrapPeer);
+      ok++;
+      console.log(`[relay-dial] bootstrap relay dial ok`);
+    } catch (err) {
+      failed++;
+      console.error(`[relay-dial] failed target=${bootstrapPeer} error=${err}`);
+    }
+  }
+  return { ok, failed };
 }
 
 function dedupeAddrs(addrs: string[]): string[] {
@@ -250,21 +385,43 @@ function renderDashboard(ctx: {
   lastEventAt: number;
   startedAt: number;
   selfMultiaddrs: string[];
-  hasRelay: boolean;
   hasDht: boolean;
   args: ReturnType<typeof parseArgs>;
+  relayStats: () => {
+    relayCheckinSent: number;
+    relayLookupSent: number;
+    relayLookupResponses: number;
+    relayCandidates: number;
+    relayDialOk: number;
+    relayDialFailed: number;
+    bootstrapDialOk: number;
+    bootstrapDialFailed: number;
+  };
 }): void {
   const peerList = Array.from(ctx.peers.values());
+  const relayStats = ctx.relayStats();
   const upSec = Math.floor((Date.now() - ctx.startedAt) / 1000);
   const idleSec = Math.floor((Date.now() - ctx.lastEventAt) / 1000);
+  const hasCircuitListenAddr = ctx.selfMultiaddrs.some((addr) => addr.includes("/p2p-circuit"));
 
   const peerBadge = peerList.length === 0
     ? { text: "0", cls: "start" as const }
     : { text: String(peerList.length), cls: "ok" as const };
 
-  const relayBadge = ctx.hasRelay
+  const relayBadge = hasCircuitListenAddr
     ? { text: "YES", cls: "ok" as const }
     : { text: "NO", cls: "warn" as const };
+
+  const relayApiBadge =
+    !ctx.args.autoRelayPeersQuery
+      ? { text: "OFF", cls: "warn" as const }
+      : relayStats.relayLookupResponses > 0 && relayStats.relayCandidates > 0
+        ? { text: "FOUND", cls: "ok" as const }
+        : relayStats.relayLookupResponses > 0
+          ? { text: "NO-CANDIDATES", cls: "warn" as const }
+          : relayStats.relayLookupSent > 0
+            ? { text: "WAITING", cls: "start" as const }
+            : { text: "STARTING", cls: "start" as const };
 
   const dhtBadge = ctx.hasDht
     ? { text: "ON", cls: "ok" as const }
@@ -287,7 +444,12 @@ function renderDashboard(ctx: {
   lines.push(`  ${BOLD}Uptime:${RESET}    ${upSec}s`);
   lines.push("");
   lines.push(`  ${BOLD}Discovery:${RESET}  ${dhtBadge.cls === "ok" ? GREEN : YELLOW}[DHT ${dhtBadge.text}]${RESET}  ${ctx.args.enableMdns ? GREEN : DIM}[mDNS]${RESET}`);
-  lines.push(`  ${BOLD}Relay:${RESET}     ${relayBadge.cls === "ok" ? GREEN : YELLOW}[${relayBadge.text}]${RESET}  ${BOLD}Peers:${RESET} ${peerBadge.cls === "ok" ? GREEN : CYAN}[${peerBadge.text}]${RESET}`);
+  lines.push(`  ${BOLD}Circuit Addr:${RESET} ${relayBadge.cls === "ok" ? GREEN : YELLOW}[${relayBadge.text}]${RESET}  ${BOLD}Peers:${RESET} ${peerBadge.cls === "ok" ? GREEN : CYAN}[${peerBadge.text}]${RESET}`);
+  if (ctx.args.autoRelayPeersQuery) {
+    lines.push(
+      `  ${BOLD}Relay API:${RESET} ${color(relayApiBadge.cls)}[${relayApiBadge.text}]${RESET} bootstrapDialOk=${relayStats.bootstrapDialOk} bootstrapDialFail=${relayStats.bootstrapDialFailed} checkins=${relayStats.relayCheckinSent} lookups=${relayStats.relayLookupSent} responses=${relayStats.relayLookupResponses} candidates=${relayStats.relayCandidates} dialOk=${relayStats.relayDialOk} dialFail=${relayStats.relayDialFailed}`,
+    );
+  }
   lines.push("");
   lines.push(`${BOLD}  My PeerID:${RESET} ${GREEN}${ctx.mesh.peerId}${RESET}`);
   lines.push(`${BOLD}  Listen:${RESET}`);
@@ -325,3 +487,12 @@ main(process.argv.slice(2)).catch((err) => {
   console.error(`Fatal: ${err.message}`);
   process.exit(1);
 });
+
+function expiresAtFromNow(ms: number): string {
+  return new Date(Date.now() + ms).toISOString();
+}
+
+function relayIdFromAddr(addr: string): string {
+  const match = addr.match(/\/p2p\/([^/]+)$/);
+  return match?.[1] ?? addr;
+}

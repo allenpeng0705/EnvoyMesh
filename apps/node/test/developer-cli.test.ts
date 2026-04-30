@@ -312,6 +312,21 @@ describe("developer CLI", () => {
           failedForwardCount: 0,
           collectedForwardResponseCount: 2,
         },
+        health: {
+          status: "degraded",
+          checkedAt: "2026-04-27T10:01:00.000Z",
+          reasons: ["recent bootstrap probes all failed"],
+          actions: ["reprobe-neighbors"],
+          recoveryCounters: {
+            healthChecks: 2,
+            degraded: 1,
+            unhealthy: 0,
+            critical: 0,
+            softRepair: 1,
+            restartRequested: 0,
+            exitRequested: 0,
+          },
+        },
       },
       now: () => Date.parse("2026-04-27T10:01:00.000Z"),
     });
@@ -328,10 +343,20 @@ describe("developer CLI", () => {
     const text = await runDeveloperCli(["relay-status", "--profile", profileDir]);
     expect(text.lines).toContain("Relay manager status");
     expect(text.lines.join("\n")).toContain("relayBook total=1");
+    expect(text.lines.join("\n")).toContain("health status=degraded");
+    expect(text.lines.join("\n")).toContain("healthReason recent bootstrap probes all failed");
     expect(text.lines.join("\n")).toContain("forwarded=3");
 
     const json = await runDeveloperCli(["relay-status", "--profile", profileDir, "--format", "json"]);
     expect(JSON.parse(json.lines.join("\n")).relay.peerId).toBe("relay-a");
+    expect(JSON.parse(json.lines.join("\n")).health.status).toBe("degraded");
+  });
+
+  it("shows a helpful relay-status hint when no snapshot exists", async () => {
+    const result = await runDeveloperCli(["relay-status", "--profile", profileDir]);
+
+    expect(result.lines.join("\n")).toContain("source=empty");
+    expect(result.lines.join("\n")).toContain("no relay.manager.snapshot found");
   });
 
   it("lists tasks and pending approvals", async () => {

@@ -169,7 +169,36 @@ relay lookup candidate dial ok
 
 You should also see discovered or persisted relay peer candidates that contain `/p2p-circuit/p2p/<other-windows-peer-id>`.
 
-### 4.6 Optional: open the Mac Relay Manager dashboard
+### 4.6 Optional: use the discovery dashboard command on Windows
+
+If you want a live terminal dashboard instead of the full node command, run `discovery-dashboard.ts` from `apps/node`. It now uses the current EnvoyMesh relay control flow: periodic `relay.checkin` plus periodic `relay.lookup`.
+
+PowerShell for Windows B:
+
+```powershell
+$env:ENVOYMESH_DISCOVERY_PROFILE = "wan-default"
+$env:ENVOYMESH_BOOTSTRAP_PEERS = "<mac-relay-multiaddr>"
+npx tsx src/discovery-dashboard.ts `
+  --profile "$env:USERPROFILE\envoymesh\win_b" `
+  --no-mdns `
+  --auto-relay-peers-query
+```
+
+PowerShell one-line form:
+
+```powershell
+$env:ENVOYMESH_DISCOVERY_PROFILE="wan-default";$env:ENVOYMESH_BOOTSTRAP_PEERS="<mac-relay-multiaddr>"; npx tsx src/discovery-dashboard.ts --profile "$env:USERPROFILE\envoymesh\win_b" --no-mdns --auto-relay-peers-query
+```
+
+Expected dashboard counters:
+
+```text
+Relay API: checkins>0 lookups>0 responses>0 candidates>0
+```
+
+If responses stay at `0`, verify the Mac relay is running the main node runtime with `--relay-server` and that the Mac `relay-status` roster includes the Windows profile. If candidates stay at `0`, start both Windows dashboards/nodes and wait for both to check in.
+
+### 4.7 Optional: open the Mac Relay Manager dashboard
 
 On the Mac:
 
@@ -185,7 +214,7 @@ Open the Relay Manager panel and confirm:
 - relay neighbors/summaries as available
 - recent relay traces for check-in, lookup, and manager snapshots
 
-### 4.7 Troubleshooting this scenario
+### 4.8 Troubleshooting this scenario
 
 If both Windows nodes discover the Mac but not each other:
 

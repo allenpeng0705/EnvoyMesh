@@ -464,7 +464,7 @@ Exit criteria:
 
 ## Current Milestone
 
-Milestone: **Phase 7** operator console baseline is now feature-complete for this slice (dashboard + CLI + rich composition UX + pairing + discovery digest + Relay Manager panel). Cross-network P2P readiness has a shipped relay-control baseline (`relay.checkin`, bounded `relay.lookup`, relay summaries, summary-guided relay graph routing, and `relay-status` diagnostics), while live multi-machine WAN smoke remains an external validation gate. **Optional adjunct:** **[Phase 4G](./architecture-hybrid-planes.md)** (HTTPS/Matrix bond-scoped signaling) is planned **after** native WAN validation and gated by thin PoC metrics.
+Milestone: **Phase 7** operator console baseline is now feature-complete for this slice (dashboard + CLI + rich composition UX + pairing + discovery digest + Relay Manager panel). Cross-network P2P readiness has a shipped relay-control baseline (`relay.checkin`, bounded `relay.lookup`, relay summaries, summary-guided relay graph routing, `relay-status` diagnostics, and relay health/recovery snapshots), while live multi-machine WAN smoke remains an external validation gate. **Optional adjunct:** **[Phase 4G](./architecture-hybrid-planes.md)** (HTTPS/Matrix bond-scoped signaling) is planned **after** native WAN validation and gated by thin PoC metrics.
 
 ### Archive (historical snapshot — do not use for status)
 
@@ -541,7 +541,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | `[ ]` | **Broadcast termination on the wire** — hop TTL, **network-wide** cancel propagation, **collect-N** (`k > 1`), correlation-only cancel | Scenario 3, US-C2/US-C3 | Phase 4D is **per-receiver local** only; fan-out EMP/gossip shape TBD. |
 | `[x]` | **Sender / receiver role** (human vs agent) | Scenario 6, UserStory header sketch | Required envelope roles and strict validation shipped with channel split (`/chat` vs `/message`); violations are rejected in schema/runtime/network send paths. |
 | `[ ]` | **Live mDNS / DHT / relay proofs outside CI** | Story F, wide-area connectivity | Blocked on environment; [live-connectivity-testing.md](./live-connectivity-testing.md). |
-| `[~]` | **WAN bootstrap/relay operating model** | Real cross-network P2P (not LAN-only) | Relay protocol/runtime baseline shipped: local relay roster, relay book, relay summaries, summary-guided forwarding, loop/negative-cache controls, `relay-status`, and dashboard Relay Manager. Still open: live relay/DCUtR/AutoNAT validation, operator fleet defaults, and heavier multi-process smoke. |
+| `[~]` | **WAN bootstrap/relay operating model** | Real cross-network P2P (not LAN-only) | Relay protocol/runtime baseline shipped: local relay roster, relay book, relay summaries, summary-guided forwarding, loop/negative-cache controls, relay health checks, supervisor recipes, `relay-status`, and dashboard Relay Manager. Still open: live relay/DCUtR/AutoNAT validation, operator fleet defaults, and heavier multi-process smoke. |
 
 ### Backlog (track in scenarios / phases, not as single-line Q&A)
 
@@ -582,3 +582,4 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | 2026-04-29 | **Discovery/connectivity POC playbook:** added [poc-discovery-connectivity.md](./poc-discovery-connectivity.md); `@envoymesh/node` script alias `poc:discovery`; cross-links from prioritization, live-connectivity-testing, p2p-discovery, redesign-strategy doc map. |
 | 2026-04-28 | **Hybrid replanning:** introduced **[Phase 4G](#phase-4g-optional-control-plane-signaling-hybrid)** (optional Matrix/HTTPS control-plane signaling); updated Prioritization, Key Decisions, traceability + coverage rows; linked [architecture-hybrid-planes.md](./architecture-hybrid-planes.md) and [user-stories-hybrid-evaluation.md](./user-stories-hybrid-evaluation.md). |
 | 2026-04-30 | **Relay graph + manager baseline:** added typed relay protocol primitives, in-memory relay roster/book/summary state, summary-guided bounded relay lookup routing, loop/negative-cache controls, `relay.manager.snapshot`, `relay-status`, desktop Relay Manager panel, tests, and docs. |
+| 2026-04-30 | **Relay stability baseline:** added relay health scoring, local health audit traces, bounded soft-repair actions, health fields in Relay Manager snapshots/CLI/dashboard, and supervisor recipes for macOS, Linux, Windows, Docker, and Kubernetes. |

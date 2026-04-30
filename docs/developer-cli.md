@@ -86,7 +86,7 @@ npm run cli -w @envoymesh/node -- relay-status --profile ./data/relay
 npm run cli -w @envoymesh/node -- relay-status --profile ./data/relay --format json
 ```
 
-Reads the latest local `relay.manager.snapshot` audit row and prints relay identity, roster counts, relay-book neighbors, summary freshness, routing metrics, recent relay traces, and warnings. This is a local operator view; it does not expose a public relay admin API.
+Reads the latest local `relay.manager.snapshot` audit row and prints relay identity, roster counts, relay-book neighbors, summary freshness, health status, recovery counters, routing metrics, recent relay traces, and warnings. This is a local operator view; it does not expose a public relay admin API.
 
 ## Options
 

@@ -91,6 +91,12 @@ import {
   noteRelaySuccess,
 } from "./relay-roster.js";
 import { createRelayLookupRouter } from "./relay-lookup-router.js";
+import {
+  createInitialRelayHealthState,
+  evaluateRelayHealth,
+  type RelayHealthSnapshot,
+  type RelayHealthState,
+} from "./relay-health.js";
 
 const args = parseNodeArgs(process.argv.slice(2));
 const profile = await loadOrCreateNodeProfile(args.profileDir);
@@ -144,6 +150,7 @@ const RELAY_SUMMARY_INTERVAL_MS = 60_000;
 const RELAY_CONTROL_TTL_MS = 90_000;
 const RELAY_FORWARD_LOOKUP_TIMEOUT_MS = 2_500;
 const RELAY_MANAGER_SNAPSHOT_INTERVAL_MS = 30_000;
+const RELAY_HEALTH_INTERVAL_MS = 30_000;
 let bootstrapReprobeTimer: ReturnType<typeof setTimeout> | undefined;
 let bootstrapReprobeCursor = 0;
 let capabilityDiscoveryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -152,6 +159,7 @@ let relayCheckinTimer: ReturnType<typeof setTimeout> | undefined;
 let relayLookupTimer: ReturnType<typeof setTimeout> | undefined;
 let relaySummaryTimer: ReturnType<typeof setTimeout> | undefined;
 let relayManagerSnapshotTimer: ReturnType<typeof setTimeout> | undefined;
+let relayHealthTimer: ReturnType<typeof setTimeout> | undefined;
 const processStartedAt = Date.now();
 
 if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length === 0) {
@@ -165,6 +173,8 @@ const observedRelayPeerIds = new Set<string>();
 const relayRoster = createRelayRoster();
 const relayClientState = createRelayClientState(effectiveBootstrapPeers.map(relayHintFromAddr));
 const relayLookupRouter = createRelayLookupRouter();
+let relayHealthState: RelayHealthState = createInitialRelayHealthState();
+let relayHealthSnapshot: RelayHealthSnapshot | undefined;
 const pendingRelayLookupResponses = new Map<
   string,
   {
@@ -992,6 +1002,8 @@ if (args.autoRelayPeersQuery && args.enableRelay && effectiveBootstrapPeers.leng
   scheduleRelayPeersQuery(effectiveBootstrapPeers);
 }
 if (args.enableRelay || args.enableRelayServer) {
+  await runRelayHealthCycle("startup");
+  scheduleRelayHealth();
   await runRelayManagerSnapshotCycle("startup");
   scheduleRelayManagerSnapshot();
 }
@@ -1197,6 +1209,10 @@ async function shutdown(): Promise<void> {
   if (relayManagerSnapshotTimer) {
     clearTimeout(relayManagerSnapshotTimer);
     relayManagerSnapshotTimer = undefined;
+  }
+  if (relayHealthTimer) {
+    clearTimeout(relayHealthTimer);
+    relayHealthTimer = undefined;
   }
   await mesh.stop();
   process.exit(0);
@@ -1449,6 +1465,86 @@ function scheduleRelayManagerSnapshot(): void {
   relayManagerSnapshotTimer = setTimeout(() => {
     void runRelayManagerSnapshotCycle("periodic").finally(() => scheduleRelayManagerSnapshot());
   }, RELAY_MANAGER_SNAPSHOT_INTERVAL_MS);
+}
+
+function scheduleRelayHealth(): void {
+  if (!args.enableRelay && !args.enableRelayServer) {
+    return;
+  }
+  relayHealthTimer = setTimeout(() => {
+    void runRelayHealthCycle("periodic").finally(() => scheduleRelayHealth());
+  }, RELAY_HEALTH_INTERVAL_MS);
+}
+
+async function runRelayHealthCycle(source: "startup" | "periodic"): Promise<void> {
+  const result = evaluateRelayHealth({
+    relayEnabled: args.enableRelay,
+    relayServerEnabled: args.enableRelayServer,
+    listenAddrs: mesh.multiaddrs,
+    bootstrapProbeResults,
+    relayBook: relayRoster.relayBook(),
+    rosterEntries: relayRoster.entries(),
+    summaries: relayRoster.summaries(),
+    routing: relayLookupRouter.metrics(),
+    previous: relayHealthState,
+    rssBytes: process.memoryUsage().rss,
+  });
+  relayHealthState = result.state;
+  relayHealthSnapshot = result.snapshot;
+
+  const protocol = relayHealthProtocol(result.snapshot.status);
+  await appendRelayTrace(
+    protocol,
+    mesh.peerId,
+    `relay health ${result.snapshot.status} source=${source} actions=${result.snapshot.actions.join(",")} reasons=${result.snapshot.reasons.join(";") || "-"}`,
+  );
+
+  if (result.snapshot.actions.includes("reprobe-neighbors")) {
+    await runRelayHealthReprobe();
+  }
+  if (result.snapshot.actions.includes("refresh-relay-summary")) {
+    await runRelaySummaryCycle("periodic");
+  }
+  if (result.snapshot.actions.includes("restart-libp2p")) {
+    await appendRelayTrace(
+      "relay.health.repair",
+      mesh.peerId,
+      "relay health requested libp2p restart; current runtime records repair request for supervisor-aware follow-up",
+    );
+  }
+  if (result.snapshot.actions.includes("exit-for-supervisor")) {
+    await appendRelayTrace("relay.health.critical", mesh.peerId, "relay health critical; exiting for external supervisor restart");
+    await mesh.stop();
+    process.exit(2);
+  }
+}
+
+async function runRelayHealthReprobe(): Promise<void> {
+  const targets = [...new Set([...effectiveBootstrapPeers, ...relayControlTargets()])].slice(0, 8);
+  for (const target of targets) {
+    try {
+      const latencyMs = await mesh.probePeer(target);
+      pushBootstrapProbeResult({ peer: target, ok: true, latencyMs });
+      await appendRelayTrace("relay.health.repair", target, `relay health reprobe ok target=${target}`, latencyMs);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      pushBootstrapProbeResult({ peer: target, ok: false, error: message });
+      await appendRelayTrace("relay.health.repair", target, `relay health reprobe failed target=${target} error=${message}`);
+    }
+  }
+}
+
+function relayHealthProtocol(status: RelayHealthSnapshot["status"]): string {
+  switch (status) {
+    case "healthy":
+      return "relay.health.ok";
+    case "degraded":
+      return "relay.health.warn";
+    case "unhealthy":
+      return "relay.health.fail";
+    case "critical":
+      return "relay.health.critical";
+  }
 }
 
 async function runRelayManagerSnapshotCycle(source: "startup" | "periodic"): Promise<void> {
@@ -2033,6 +2129,7 @@ function buildRelayManagerRuntimeState(): RelayManagerRuntimeState {
       expiresAt: entry.expiresAt,
     })),
     routing: relayLookupRouter.metrics(),
+    health: relayHealthSnapshot,
   };
 }
 
