@@ -218,41 +218,52 @@ export class EnvoyMesh {
 
   /**
    * Returns the list of peer IDs currently connected via this relay server.
-   * Only populated when enableRelayServer is true.
-   *
-   * Note: When using circuit relay transport (enableRelay), peers connect through
-   * this relay but peer:connect only fires for direct connections. This method
-   * also queries the connection manager for peers with relayed connections.
+   * Uses peerStore to get all known peers.
    */
   getConnectedRelayPeerIds(): string[] {
-    const relayPeers = new Set<string>([...this.relayConnectedPeers]);
+    // Return all peers from peerStore that have connections
+    // This ensures we don't miss any peers even if peer:connect didn't fire
+    const allPeers = new Set<string>();
 
-    // Also check libp2p connection manager for peers with relayed connections
-    // (peer:connect may not fire for circuit relay connections)
+    // First add from relayConnectedPeers set
+    for (const peerId of this.relayConnectedPeers) {
+      allPeers.add(peerId);
+    }
+
+    // Also query peerStore for all peers
     if (this.node) {
       try {
-        const connections = (this.node as any).connectionManager?.connections;
-        if (connections) {
-          for (const [, conns] of connections) {
-            for (const conn of conns) {
-              const remotePeerId = conn?.remotePeer?.toString?.();
-              if (remotePeerId && conn.stat?.direction === "inbound") {
-                // Check if this connection goes through our relay transport
-                // by looking at the multiaddr protocol names
-                const remoteAddr = conn?.remoteAddr?.toString?.() ?? "";
-                if (remoteAddr.includes("/p2p-circuit")) {
-                  relayPeers.add(remotePeerId);
-                }
-              }
+        const peerStore = (this.node as any).peerStore;
+        if (peerStore?.peers) {
+          for (const peer of peerStore.peers) {
+            const peerId = peer?.id?.toString?.();
+            if (peerId) {
+              allPeers.add(peerId);
             }
           }
         }
       } catch {
-        // Connection manager API may vary between libp2p versions
+        // PeerStore API may vary
+      }
+
+      // Also check connectionManager
+      try {
+        const connections = (this.node as any).connectionManager?.connections;
+        if (connections) {
+          for (const [peerIdStr, conns] of connections) {
+            if (conns && conns.length > 0) {
+              allPeers.add(String(peerIdStr));
+            }
+          }
+        }
+      } catch {
+        // Connection manager API may vary
       }
     }
 
-    return [...relayPeers];
+    const result = [...allPeers];
+    console.log(`[relay-tracked] getConnectedRelayPeerIds returning: ${JSON.stringify(result)}`);
+    return result;
   }
 
   /**
@@ -598,19 +609,21 @@ export class EnvoyMesh {
                   totalCount += conns.length;
                   for (const conn of conns) {
                     const remoteAddr = conn?.remoteAddr?.toString?.() ?? "";
+                    const connDir = conn?.stat?.direction ?? "unknown";
                     if (remoteAddr.includes("/p2p-circuit")) {
                       this.relayConnectedPeers.add(String(peerIdStr));
                       relayCount++;
                     }
+                    console.log(`[relay-debug] conn peer=${peerIdStr} dir=${connDir} addr=${remoteAddr}`);
                   }
                 }
               } catch (e) {
                 console.log(`[relay-debug] connectionManager iteration failed: ${e}`);
               }
             }
-            console.log(`[relay-debug] peers=${peersList.join(",")} total=${totalCount} relay=${relayCount} tracked=${this.relayConnectedPeers.size}`);
-          } catch {
-            // Ignore errors
+            console.log(`[relay-debug] SUMMARY: peers=${peersList.join(",")} total=${totalCount} relay=${relayCount} tracked=${this.relayConnectedPeers.size}`);
+          } catch (e) {
+            console.log(`[relay-debug] error: ${e}`);
           }
         }, 5000);
       }

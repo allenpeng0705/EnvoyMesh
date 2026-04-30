@@ -399,6 +399,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
 
   if (envelope.intent === "relay.peers.request" || envelope.intent === "relay.peers.response") {
     const relayPeerIds = mesh.getConnectedRelayPeerIds();
+    console.log(`[mac-relay] received ${envelope.intent} from ${remotePeerId}, relayPeerIds=${JSON.stringify(relayPeerIds)}`);
     const relayPeers = await handleInboundRelayPeersIntent({
       envelope,
       profile,
