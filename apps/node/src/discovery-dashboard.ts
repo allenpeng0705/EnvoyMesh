@@ -114,6 +114,7 @@ Examples:
   let relayDialFailed = 0;
   let bootstrapDialOk = 0;
   let bootstrapDialFailed = 0;
+  let relayDiscoveryCycleRunning = false;
   let lastEventAt = Date.now();
   let startedAt = Date.now();
 
@@ -220,15 +221,6 @@ Examples:
     }),
   });
 
-  // Keep a direct connection to bootstrap/relay peers before querying them.
-  if (args.enableRelay && args.bootstrapPeers.length > 0) {
-    setTimeout(async () => {
-      const result = await dialBootstrapRelays(mesh, args.bootstrapPeers);
-      bootstrapDialOk += result.ok;
-      bootstrapDialFailed += result.failed;
-    }, 5000); // Wait 5 seconds for initial bootstrap to complete
-  }
-
   // Auto check in with relay nodes and query for relay-discoverable peers if enabled.
   if (args.autoRelayPeersQuery && args.bootstrapPeers.length > 0) {
     await runRelayDiscoveryCycle();
@@ -264,13 +256,22 @@ Examples:
   // Keep process alive
   await new Promise(() => {});
   async function runRelayDiscoveryCycle(): Promise<void> {
-    const result = await dialBootstrapRelays(mesh, args.bootstrapPeers);
-    bootstrapDialOk += result.ok;
-    bootstrapDialFailed += result.failed;
-    await sendRelayCheckin({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
-    relayCheckinSent += args.bootstrapPeers.length;
-    await queryRelayLookup({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
-    relayLookupSent += args.bootstrapPeers.length;
+    if (relayDiscoveryCycleRunning) {
+      console.log("[auto-relay-query] previous relay discovery cycle still running; skipping this tick");
+      return;
+    }
+    relayDiscoveryCycleRunning = true;
+    try {
+      const result = await dialBootstrapRelays(mesh, args.bootstrapPeers);
+      bootstrapDialOk += result.ok;
+      bootstrapDialFailed += result.failed;
+      await sendRelayCheckin({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
+      relayCheckinSent += args.bootstrapPeers.length;
+      await queryRelayLookup({ mesh, profile, bootstrapPeers: args.bootstrapPeers });
+      relayLookupSent += args.bootstrapPeers.length;
+    } finally {
+      relayDiscoveryCycleRunning = false;
+    }
   }
 }
 
@@ -281,11 +282,12 @@ async function sendRelayCheckin(input: {
 }): Promise<void> {
   const { mesh, profile, bootstrapPeers } = input;
   const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
+  const capabilities = relayCheckinCapabilities(profile.deviceCertificate.capabilities);
   const payload = createRelayCheckinPayload({
     peerId: mesh.peerId,
     ownerId: profile.owner.ownerId,
     relayReachableAddrs: mesh.multiaddrs,
-    capabilities: profile.deviceCertificate.capabilities,
+    capabilities,
     advertisements: [{ capability: "mesh.discovery", visibility: "public", expiresAt }],
     relayHints: bootstrapPeers.map((addr) => ({
       relayId: relayIdFromAddr(addr),
@@ -314,6 +316,10 @@ async function sendRelayCheckin(input: {
       console.log(`[auto-relay-query] relay.checkin ERROR target=${bootstrapPeer} error=${err}`);
     }
   }
+}
+
+function relayCheckinCapabilities(capabilities: readonly string[]): string[] {
+  return [...new Set(["mesh.discovery", ...capabilities])];
 }
 
 async function queryRelayLookup(input: {

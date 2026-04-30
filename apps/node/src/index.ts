@@ -1403,13 +1403,14 @@ function scheduleRelayCheckin(): void {
 async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<void> {
   const targets = relayControlTargets();
   const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
+  const capabilities = relayCheckinCapabilities(profile.deviceCertificate.capabilities);
   for (const target of targets) {
     const payload = createRelayCheckinPayload({
       peerId: mesh.peerId,
       ownerId: profile.owner.ownerId,
       relayReachableAddrs: mesh.multiaddrs,
-      capabilities: profile.deviceCertificate.capabilities,
-      advertisements: profile.deviceCertificate.capabilities.map((capability) => ({
+      capabilities,
+      advertisements: capabilities.map((capability) => ({
         capability,
         visibility: capability === "mesh.discovery" ? "public" : "bonded",
         expiresAt,
@@ -1438,6 +1439,10 @@ async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<voi
       await appendRelayTrace("relay.checkin.fail", target, `relay checkin failed source=${source} target=${target} error=${message}`);
     }
   }
+}
+
+function relayCheckinCapabilities(capabilities: readonly string[]): string[] {
+  return [...new Set(["mesh.discovery", ...capabilities])];
 }
 
 function scheduleRelayLookup(): void {
