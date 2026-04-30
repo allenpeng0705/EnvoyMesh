@@ -36,6 +36,7 @@ import {
   parseDevicePairDeferredPayload,
   parseDevicePairRequestPayload,
   parseChatMessagePayload,
+  parseRelayPeersResponsePayload,
   createSystemPingPayload,
   createSystemSignalPayload,
   createUnsignedEnvelope,
@@ -104,9 +105,12 @@ const CAPABILITY_DISCOVERY_INTERVAL_MS = 90_000;
 const CAPABILITY_DISCOVERY_JITTER_MS = 20_000;
 const CAPABILITY_DISCOVERY_QUERY_TIMEOUT_MS = 6_000;
 const CAPABILITY_DISCOVERY_MAX_PROVIDERS = 32;
+const RELAY_PEERS_QUERY_INTERVAL_MS = 30_000;
+const RELAY_PEERS_QUERY_JITTER_MS = 7_500;
 let bootstrapReprobeTimer: ReturnType<typeof setTimeout> | undefined;
 let bootstrapReprobeCursor = 0;
 let capabilityDiscoveryTimer: ReturnType<typeof setTimeout> | undefined;
+let relayPeersQueryTimer: ReturnType<typeof setTimeout> | undefined;
 
 if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length === 0) {
   connectivityWarnings.push(
@@ -408,6 +412,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
       correlationId,
       taskStore,
       relayPeerIds,
+      relayMultiaddrs: mesh.multiaddrs,
     });
     if (!relayPeers.ok) {
       await taskStore.appendAuditEvent(
@@ -427,6 +432,41 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId }) => {
       );
       console.warn(`[rejected relay.peers] ${envelope.intent}: ${relayPeers.reason}`);
       return;
+    }
+
+    if (envelope.intent === "relay.peers.response") {
+      const payload = parseRelayPeersResponsePayload(envelope.payload);
+      const relayedAddrs = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
+      if (relayedAddrs.length > 0) {
+        await discoverySeedStore.upsertMany(relayedAddrs, "relay-peers");
+        for (const addr of relayedAddrs) {
+          try {
+            await mesh.dial(addr);
+            await taskStore.appendAuditEvent(
+              createAuditEvent({
+                type: "p2p.trace",
+                direction: "outbound",
+                protocol: "relay.peers.dial.ok",
+                remotePeerId: addr,
+                outcome: "record",
+                summary: `relay peer dial ok addr=${addr}`,
+              }),
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            await taskStore.appendAuditEvent(
+              createAuditEvent({
+                type: "p2p.trace",
+                direction: "outbound",
+                protocol: "relay.peers.dial.fail",
+                remotePeerId: addr,
+                outcome: "record",
+                summary: `relay peer dial failed addr=${addr} error=${message}`,
+              }),
+            );
+          }
+        }
+      }
     }
 
     if (envelope.intent === "relay.peers.request" && relayPeers.responsePayload) {
@@ -858,6 +898,10 @@ if (args.enableDht && autoCapabilityTopics.length > 0) {
   await runCapabilityDiscoveryCycle("startup");
   scheduleCapabilityDiscovery();
 }
+if (args.autoRelayPeersQuery && args.enableRelay && effectiveBootstrapPeers.length > 0) {
+  await runRelayPeersQueryCycle("startup");
+  scheduleRelayPeersQuery(effectiveBootstrapPeers);
+}
 setTimeout(() => {
   void taskStore.appendAuditEvent(
     createAuditEvent({
@@ -1041,6 +1085,10 @@ async function shutdown(): Promise<void> {
     clearTimeout(capabilityDiscoveryTimer);
     capabilityDiscoveryTimer = undefined;
   }
+  if (relayPeersQueryTimer) {
+    clearTimeout(relayPeersQueryTimer);
+    relayPeersQueryTimer = undefined;
+  }
   await mesh.stop();
   process.exit(0);
 }
@@ -1148,6 +1196,73 @@ async function runCapabilityDiscoveryCycle(source: "startup" | "periodic"): Prom
         summary: `capability find ok topic=${topic} source=${source} providers=${providers.length} remote=${remoteProviders.length} addrs=${discoveredAddrs.length}`,
       }),
     );
+  }
+}
+
+function scheduleRelayPeersQuery(peers: string[]): void {
+  if (!args.autoRelayPeersQuery || !args.enableRelay || peers.length === 0) {
+    return;
+  }
+  const jitter = Math.floor(Math.random() * RELAY_PEERS_QUERY_JITTER_MS);
+  relayPeersQueryTimer = setTimeout(() => {
+    void runRelayPeersQueryCycle("periodic")
+      .catch(async (error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "p2p.trace",
+            direction: "outbound",
+            protocol: "relay.peers.query.fail",
+            outcome: "record",
+            summary: `relay peers query cycle failed error=${message}`,
+          }),
+        );
+      })
+      .finally(() => scheduleRelayPeersQuery(peers));
+  }, RELAY_PEERS_QUERY_INTERVAL_MS + jitter);
+}
+
+async function runRelayPeersQueryCycle(source: "startup" | "periodic"): Promise<void> {
+  const targets = dedupeAddrs(effectiveBootstrapPeers);
+  for (const target of targets) {
+    const signedEnvelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        senderPeerId: derivePeerId(profile.device.publicKeyPem),
+        senderPublicKey: profile.device.publicKeyPem,
+        senderRole: "system",
+        recipientPeerId: target.startsWith("/") ? undefined : target,
+        intent: "relay.peers.request",
+        payload: {},
+      }),
+      profile.device.privateKeyPem,
+    );
+
+    try {
+      const latencyMs = await mesh.send(target, signedEnvelope);
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "p2p.trace",
+          direction: "outbound",
+          protocol: "relay.peers.query.ok",
+          remotePeerId: target,
+          latencyMs,
+          outcome: "record",
+          summary: `relay peers query ok source=${source} target=${target}`,
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "p2p.trace",
+          direction: "outbound",
+          protocol: "relay.peers.query.fail",
+          remotePeerId: target,
+          outcome: "record",
+          summary: `relay peers query failed source=${source} target=${target} error=${message}`,
+        }),
+      );
+    }
   }
 }
 

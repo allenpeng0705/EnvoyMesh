@@ -10,7 +10,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { handleInboundDiscoveryIntent } from "../src/discovery-inbound.js";
+import {
+  buildRelayCircuitMultiaddrs,
+  handleInboundDiscoveryIntent,
+  handleInboundRelayPeersIntent,
+} from "../src/discovery-inbound.js";
 
 let profileDir: string;
 
@@ -111,5 +115,54 @@ describe("handleInboundDiscoveryIntent", () => {
       ok: false,
       reason: "discovery.request requires referred/direct trust (got public)",
     });
+  });
+});
+
+describe("handleInboundRelayPeersIntent", () => {
+  it("returns dialable circuit relay addresses for other relay-connected peers", async () => {
+    const profile = testProfile();
+    const taskStore = createLocalTaskStore(profileDir);
+    const envelope = signedEnvelope(profile, "relay.peers.request", {});
+
+    const result = await handleInboundRelayPeersIntent({
+      envelope,
+      profile,
+      remotePeerId: "peer-a",
+      receivedAt: Date.now(),
+      correlationId: undefined,
+      taskStore,
+      relayPeerIds: ["peer-a", "peer-b"],
+      relayMultiaddrs: [
+        "/ip4/192.0.2.10/tcp/4001/p2p/relay-peer",
+        "/ip4/192.0.2.10/tcp/4001/p2p/relay-peer/p2p-circuit",
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload?.peers).toEqual([
+        {
+          peerId: "peer-b",
+          ownerId: "unknown",
+          multiaddrs: ["/ip4/192.0.2.10/tcp/4001/p2p/relay-peer/p2p-circuit/p2p/peer-b"],
+        },
+      ]);
+    }
+  });
+});
+
+describe("buildRelayCircuitMultiaddrs", () => {
+  it("deduplicates relay bases and skips existing circuit addresses", () => {
+    expect(
+      buildRelayCircuitMultiaddrs(
+        [
+          "/ip4/192.0.2.10/tcp/4001/p2p/relay-peer",
+          "/ip4/192.0.2.10/tcp/4001/p2p/relay-peer",
+          "/ip4/192.0.2.10/tcp/4001/p2p/relay-peer/p2p-circuit/p2p/peer-a",
+          "/ip4/192.0.2.11/tcp/4001",
+        ],
+        "peer-b",
+      ),
+    ).toEqual(["/ip4/192.0.2.10/tcp/4001/p2p/relay-peer/p2p-circuit/p2p/peer-b"]);
   });
 });

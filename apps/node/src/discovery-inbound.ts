@@ -12,6 +12,7 @@ import {
   parseDiscoveryResponsePayload,
   type DiscoveryResponsePayload,
   type EnvoyEnvelope,
+  type RelayPeerInfo,
 } from "@envoymesh/protocol";
 
 export type DiscoveryInboundResult =
@@ -165,18 +166,20 @@ export async function handleInboundRelayPeersIntent(input: {
   correlationId: string | undefined;
   taskStore: LocalTaskStore;
   relayPeerIds: string[];
+  relayMultiaddrs: string[];
 }): Promise<RelayPeersInboundResult> {
-  const { envelope, profile, remotePeerId, receivedAt, correlationId, taskStore, relayPeerIds } = input;
+  const { envelope, profile, remotePeerId, receivedAt, correlationId, taskStore, relayPeerIds, relayMultiaddrs } =
+    input;
 
   try {
     if (envelope.intent === "relay.peers.request") {
       // Build list of other peers connected via this relay (exclude the requester)
       const otherPeers = relayPeerIds
         .filter((pid) => pid !== remotePeerId)
-        .map((peerId) => ({
+        .map<RelayPeerInfo>((peerId) => ({
           peerId,
           ownerId: "unknown", // Relay doesn't track ownerId; requester should query DHT or send signal
-          multiaddrs: [], // Relay doesn't track per-peer multiaddrs; requester can discover via DHT
+          multiaddrs: buildRelayCircuitMultiaddrs(relayMultiaddrs, peerId),
         }));
 
       console.log(`[relay-tracked] relay.peers.request from ${remotePeerId}, returning ${otherPeers.length} peers: ${otherPeers.map(p => p.peerId).join(", ")}`);
@@ -232,6 +235,16 @@ export async function handleInboundRelayPeersIntent(input: {
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, reason: `invalid relay.peers payload: ${message}` };
   }
+}
+
+export function buildRelayCircuitMultiaddrs(relayMultiaddrs: string[], targetPeerId: string): string[] {
+  const circuitAddrs = relayMultiaddrs
+    .map((addr) => addr.trim())
+    .filter((addr) => addr.length > 0 && !addr.includes("/p2p-circuit"))
+    .filter((addr) => addr.includes("/p2p/"))
+    .map((addr) => `${addr}/p2p-circuit/p2p/${targetPeerId}`);
+
+  return [...new Set(circuitAddrs)];
 }
 
 function allowRequest(requesterOwnerId: string, receivedAt: number): boolean {

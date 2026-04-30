@@ -62,6 +62,7 @@ export interface NodeArgs {
   pairRequestTarget?: string;
   pairNote?: string;
   relayPeersQueryTarget?: string;
+  autoRelayPeersQuery: boolean;
 }
 
 export function parseNodeArgs(argv: string[]): NodeArgs {
@@ -85,6 +86,7 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     peerDiscoveryLog: false,
     discoveryTagHashes: [],
     discoveryCapabilities: [],
+    autoRelayPeersQuery: false,
   };
   applyConfigFileArgs(args, argv);
   applyEnvironmentArgs(args);
@@ -220,7 +222,7 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     } else if (arg === "--relay-peers-query") {
       args.relayPeersQueryTarget = readValue(argv, ++index, arg);
     } else if (arg === "--auto-relay-peers-query") {
-      // No-op: handled directly in discovery-dashboard.ts parseArgs
+      args.autoRelayPeersQuery = true;
     } else if (arg === "--message") {
       args.pingMessage = readValue(argv, ++index, arg);
     } else if (arg === "--help" || arg === "-h") {
@@ -308,6 +310,8 @@ Options:
   --data-relative-path <path>     Vault-relative path for --data-send (file must exist under ENVOYMESH_VAULT or ./shared_vault).
   --pair-request <target>         Send a device.pair.request to target peer.
   --pair-note <text>              Optional note for device pairing request.
+  --relay-peers-query <target>    Ask an EnvoyMesh relay for peers connected through it.
+  --auto-relay-peers-query        Periodically query bootstrap peers for relay-connected peers.
 `);
 }
 

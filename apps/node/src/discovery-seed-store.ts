@@ -9,7 +9,8 @@ export type DiscoverySeedSource =
   | "bootstrap-probe"
   | "peer.discovery"
   | "manual-bootstrap"
-  | "capability-topic";
+  | "capability-topic"
+  | "relay-peers";
 
 export interface DiscoverySeedRecord {
   addr: string;
@@ -32,7 +33,7 @@ export interface DiscoverySeedStore {
 export function createDiscoverySeedStore(profileDir: string): DiscoverySeedStore {
   const path = join(profileDir, DISCOVERY_SEED_FILE);
   /** Serialize read-modify-write so concurrent upserts cannot interleave torn truncates. */
-  let writeChain = Promise.resolve<void>();
+  let writeChain = Promise.resolve<void>(undefined);
 
   function enqueueWrite(fn: () => Promise<void>): Promise<void> {
     const next = writeChain.then(fn);
