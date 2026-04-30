@@ -24,6 +24,7 @@ import {
   verifyDeviceCertificate,
 } from "@envoymesh/identity";
 import {
+  DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME,
   ENVOY_CHAT_PROTOCOL,
   ENVOY_DATA_PROTOCOL,
   ENVOY_MESSAGE_PROTOCOL,
@@ -118,6 +119,7 @@ const effectiveBootstrapPeers = dedupeAddrs([
   ...peerDirectorySeedAddrs,
   ...persistedSeedAddrs,
 ]);
+const libp2pPrivateKeyPath = join(args.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME);
 const mesh = new EnvoyMesh({
   listen: args.listen,
   enableMdns: args.enableMdns,
@@ -131,6 +133,7 @@ const mesh = new EnvoyMesh({
   enableQuic: args.enableQuic,
   enableP2pDebug: args.p2pDebug,
   enableRelayDebugSummary: args.relayDebugSummary,
+  libp2pPrivateKeyPath,
   onP2pDebug: (event) => {
     void appendP2pTrace(event);
   },
@@ -920,6 +923,7 @@ if (args.configPath) {
 console.log(`Owner ID: ${profile.owner.ownerId}`);
 console.log(`Device ID: ${profile.device.deviceId}`);
 console.log(`libp2p Peer ID: ${mesh.peerId}`);
+console.log(`libp2p key file (stable Peer ID across restarts): ${libp2pPrivateKeyPath}`);
 console.log(`Configured --listen: ${args.listen.join(", ")}`);
 if (args.listen.some((addr) => addr.includes("/ip4/0.0.0.0/") || addr.includes("/ip6/::/"))) {
   console.log(

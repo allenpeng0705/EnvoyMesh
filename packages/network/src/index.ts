@@ -25,6 +25,9 @@ import {
 } from "./data-framing.js";
 import { cidForCapabilityTopic } from "./capability-topic.js";
 import { expandListenAddressesWithQuic } from "./quic-listen.js";
+import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key.js";
+
+export { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, loadOrCreateLibp2pPrivateKey } from "./libp2p-key.js";
 
 export const ENVOY_MESSAGE_PROTOCOL = "/envoymesh/message/0.1.0";
 export const ENVOY_CHAT_PROTOCOL = "/envoymesh/chat/0.1.0";
@@ -76,6 +79,11 @@ export interface EnvoyMeshOptions {
    */
   enableRelayDebugSummary?: boolean;
   onP2pDebug?: (event: P2pDebugEvent) => void;
+  /**
+   * Path to a protobuf-serialized libp2p Ed25519 private key. If the file is missing, it is created on first {@link EnvoyMesh.start}.
+   * When omitted, libp2p generates a new ephemeral identity each process start (Peer ID changes every restart).
+   */
+  libp2pPrivateKeyPath?: string;
 }
 
 export interface CapabilityTopicProviderRecord {
@@ -127,7 +135,15 @@ export class EnvoyMesh {
 
     const quicTransportFactory = this.options.enableQuic ? await this.loadQuicTransport() : undefined;
 
+    const libp2pPrivateKey = this.options.libp2pPrivateKeyPath
+      ? await loadOrCreateLibp2pPrivateKey(this.options.libp2pPrivateKeyPath)
+      : undefined;
+    if (libp2pPrivateKey && this.options.enableP2pDebug) {
+      console.log(`[p2p] libp2p private key file: ${this.options.libp2pPrivateKeyPath}`);
+    }
+
     this.node = await createLibp2p({
+      ...(libp2pPrivateKey != null ? { privateKey: libp2pPrivateKey } : {}),
       addresses: {
         listen: listenAddrs,
       },

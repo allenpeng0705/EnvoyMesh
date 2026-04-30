@@ -153,6 +153,27 @@ When DHT is enabled, the node now also runs an **automatic capability-topic cycl
 
 This improves WAN auto-discovery convergence without requiring manual `discovery.request` CLI calls for every cold start.
 
+### Stable libp2p Peer ID
+
+The **`/p2p/<peerId>`** segment in multiaddrs comes from libp2p’s transport identity (`12D3Koo…`), not from the Envoy EMP device id (`envoy_…`).
+
+By default, if no key is supplied, **js-libp2p generates a new key on every process start**, so the Peer ID **changes on every restart**. That breaks any bookmarked bootstrap multiaddrs, relay `--advertise-addr` lines you composed by hand, and peers’ stored addresses—**even when the TCP IP and port stay the same**.
+
+The EnvoyMesh node stores a **per-profile** libp2p key next to `profile.json`:
+
+- **File:** `<profileDir>/libp2p-private.key` (protobuf; create-on-first-start; mode `0o600` where supported)
+
+The main `apps/node` runtime and **`discovery-dashboard`** pass this path automatically from **`--profile`**.
+
+This is **independent** of the Envoy EMP **device key** in `profile.json` (used for `senderPeerId` / `derivePeerId(...)`). You will still see two different identifiers:
+
+- **Envoy / EMP** logical id: `envoy_…` (signing identity)
+- **libp2p** transport id: `12D3Koo…` (dial / Noise / DHT)
+
+Back up **`libp2p-private.key`** with the profile when you care about stable addresses. If you delete it, the next start generates a **new** libp2p Peer ID (one-time rotation).
+
+For programmatic or custom embedders, pass **`libp2pPrivateKeyPath`** into **`EnvoyMesh`**. Omit it only for throwaway or single-session meshes.
+
 ## Bootstrap Peers And Presets
 
 WAN discovery needs at least one reachable bootstrap/relay source.

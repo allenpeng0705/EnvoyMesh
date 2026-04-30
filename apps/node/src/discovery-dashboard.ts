@@ -2,7 +2,7 @@
 import "./dom-event-polyfill.js";
 import { loadOrCreateNodeProfile } from "@envoymesh/local-store";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
-import { EnvoyMesh, type DiscoveredMeshPeer } from "@envoymesh/network";
+import { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, EnvoyMesh, type DiscoveredMeshPeer } from "@envoymesh/network";
 import {
   createRelayCheckinPayload,
   createRelayLookupPayload,
@@ -10,6 +10,7 @@ import {
   parseRelayLookupResponsePayload,
 } from "@envoymesh/protocol";
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { parseNodeArgs, printHelp } from "./args.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
 
@@ -131,6 +132,7 @@ Examples:
     enableAutoNat: args.enableAutoNat || args.discoveryProfile === "wan-default",
     enableDcutr: args.enableDcutr || args.discoveryProfile === "wan-default",
     enableP2pDebug: args.p2pDebug,
+    libp2pPrivateKeyPath: join(args.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME),
     onP2pDebug: (event) => {
       // Suppress debug output to keep dashboard clean
     },

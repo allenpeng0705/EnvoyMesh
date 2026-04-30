@@ -105,6 +105,8 @@ export ENVOYMESH_ADVERTISE_ADDRS=/ip4/<YOUR_PUBLIC_IP>/tcp/4001
 
 See [p2p-discovery: Relay server dialable addresses](./p2p-discovery.md#relay-server-dialable-addresses-for-relaylookup-circuit-paths) for details.
 
+See [p2p-discovery](./p2p-discovery.md#stable-libp2p-peer-id) for **stable libp2p Peer ID**: the node keeps `<profileDir>/libp2p-private.key` so restarts reuse the same `12D3Koo…` and your bootstrap / `--advertise-addr` lines stay valid.
+
 Copy the printed `Listening on:` multiaddr that ends with `/p2p/<relay-peer-id>`, for example:
 
 ```text
