@@ -6,6 +6,7 @@
 set -e
 
 RELAY_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROFILE_DIR="${ENVOYMESH_PROFILE:-./data/relay}"
 LISTEN_PORT="${RELAY_PORT:-4001}"
 ADVERTISE_ADDR=""
@@ -56,10 +57,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Build relay if not exists
-if [ ! -f "$RELAY_DIR/apps/relay/dist/index.js" ]; then
+if [ ! -f "$PROJECT_ROOT/apps/relay/dist/index.js" ]; then
     echo "Building relay server..."
-    cd "$RELAY_DIR"
+    cd "$PROJECT_ROOT"
     npm run relay:build
+    cd - > /dev/null
 fi
 
 # Create profile directory
@@ -69,7 +71,7 @@ mkdir -p "$PROFILE_DIR"
 LISTEN_ADDR="/ip4/0.0.0.0/tcp/$LISTEN_PORT"
 
 # Build command
-CMD="node $RELAY_DIR/apps/relay/dist/index.js --profile $PROFILE_DIR --listen $LISTEN_ADDR"
+CMD="node $PROJECT_ROOT/apps/relay/dist/index.js --profile $PROFILE_DIR --listen $LISTEN_ADDR"
 
 # Add advertise address if provided
 if [ -n "$ADVERTISE_ADDR" ]; then
