@@ -243,6 +243,57 @@ export const AgentCardResponsePayloadSchema = z.object({
   card: AgentCardSchema,
 });
 
+/**
+ * Human profile fields that can be updated after initial setup.
+ * Signed by the owner key so recipients can verify authenticity.
+ */
+export const HumanProfilePayloadSchema = z.object({
+  version: z.literal("0.1"),
+  ownerId: z.string().min(1),
+  displayName: z.string().min(1).max(120).optional(),
+  bio: z.string().max(500).optional(),
+  gender: z.string().max(40).optional(),
+  hobbies: z.array(z.string().min(1).max(50)).max(20).optional(),
+  knowledge: z.array(z.string().min(1).max(100)).max(50).optional(),
+  updatedAt: z.string().datetime(),
+  signature: z.string().min(1),
+});
+
+export type HumanProfilePayload = z.infer<typeof HumanProfilePayloadSchema>;
+
+export interface CreateHumanProfilePayloadInput {
+  ownerId: string;
+  displayName?: string;
+  bio?: string;
+  gender?: string;
+  hobbies?: string[];
+  knowledge?: string[];
+  ownerPrivateKeyPem: string;
+}
+
+export function createHumanProfilePayload(input: CreateHumanProfilePayloadInput): HumanProfilePayload {
+  const { ownerPrivateKeyPem, ...rest } = input;
+  const unsigned: Omit<HumanProfilePayload, "signature"> = {
+    version: "0.1",
+    ownerId: input.ownerId,
+    displayName: input.displayName,
+    bio: input.bio,
+    gender: input.gender,
+    hobbies: input.hobbies,
+    knowledge: input.knowledge,
+    updatedAt: new Date().toISOString(),
+  };
+  return {
+    ...unsigned,
+    signature: "", // placeholder; caller must sign and replace
+  };
+}
+
+export function humanProfileForSigning(payload: HumanProfilePayload): Omit<HumanProfilePayload, "signature"> {
+  const { signature: _signature, ...unsigned } = payload;
+  return unsigned;
+}
+
 /** First-class EMP payload for `knowledge.query` (vault-backed retrieval is still mock/offline in node). */
 export const KnowledgeQueryPayloadSchema = z.object({
   query: z.string().min(1).max(4096),

@@ -66,6 +66,12 @@ export interface NodeArgs {
   pairNote?: string;
   relayPeersQueryTarget?: string;
   autoRelayPeersQuery: boolean;
+  humanProfileDisplayName?: string;
+  humanProfileBio?: string;
+  humanProfileGender?: string;
+  humanProfileHobbies: string[];
+  humanProfileKnowledge: string[];
+  humanProfileUpdate: boolean;
 }
 
 export function parseNodeArgs(argv: string[]): NodeArgs {
@@ -92,6 +98,9 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     discoveryTagHashes: [],
     discoveryCapabilities: [],
     autoRelayPeersQuery: false,
+    humanProfileHobbies: [],
+    humanProfileKnowledge: [],
+    humanProfileUpdate: false,
   };
   applyConfigFileArgs(args, argv);
   applyEnvironmentArgs(args);
@@ -232,6 +241,18 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.relayPeersQueryTarget = readValue(argv, ++index, arg);
     } else if (arg === "--auto-relay-peers-query") {
       args.autoRelayPeersQuery = true;
+    } else if (arg === "--human-profile-update") {
+      args.humanProfileUpdate = true;
+    } else if (arg === "--human-profile-display-name") {
+      args.humanProfileDisplayName = readValue(argv, ++index, arg);
+    } else if (arg === "--human-profile-bio") {
+      args.humanProfileBio = readValue(argv, ++index, arg);
+    } else if (arg === "--human-profile-gender") {
+      args.humanProfileGender = readValue(argv, ++index, arg);
+    } else if (arg === "--human-profile-hobby") {
+      args.humanProfileHobbies.push(readValue(argv, ++index, arg));
+    } else if (arg === "--human-profile-knowledge") {
+      args.humanProfileKnowledge.push(readValue(argv, ++index, arg));
     } else if (arg === "--message") {
       args.pingMessage = readValue(argv, ++index, arg);
     } else if (arg === "--help" || arg === "-h") {
@@ -323,6 +344,12 @@ Options:
   --pair-note <text>              Optional note for device pairing request.
   --relay-peers-query <target>    Ask an EnvoyMesh relay for peers connected through it.
   --auto-relay-peers-query        Periodically query bootstrap peers for relay-connected peers.
+  --human-profile-update          Update the human profile (requires at least one --human-profile-* flag).
+  --human-profile-display-name <name>  Display name for human profile (max 120 chars).
+  --human-profile-bio <text>      Short bio (max 500 chars).
+  --human-profile-gender <text>  Gender (max 40 chars).
+  --human-profile-hobby <text>   Hobbies/interests. Repeatable (max 20).
+  --human-profile-knowledge <text> Knowledge areas. Repeatable (max 50).
 `);
 }
 

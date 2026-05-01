@@ -4,6 +4,7 @@ import type {
   DeviceCertificate,
   DeviceProfile,
   EnvoyIntent,
+  HumanProfilePayload,
   MandateAction,
   RelayBookState,
   RelayRelation,
@@ -43,6 +44,7 @@ const PEER_DIRECTORY_FILE = "peer-directory.json";
 const DISCOVERY_EVENTS_FILE = "discovery-events.jsonl";
 const RELAY_BOOK_FILE = "relay-book.json";
 const RELAY_SUMMARIES_FILE = "relay-summaries.json";
+const HUMAN_PROFILE_FILE = "human-profile.json";
 
 /** Skip JSONL lines larger than this to avoid OOM when a single record is pathological or corrupted. */
 const MAX_JSONL_LINE_CHARS = 12 * 1024 * 1024;
@@ -1263,6 +1265,33 @@ async function readPeerDirectoryFile(path: string): Promise<PeerDirectoryFile> {
 async function writePeerDirectoryFile(path: string, file: PeerDirectoryFile): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+}
+
+export interface HumanProfileStore {
+  loadHumanProfile(): Promise<HumanProfilePayload | undefined>;
+  saveHumanProfile(profile: HumanProfilePayload): Promise<void>;
+}
+
+export function createHumanProfileStore(profileDir: string): HumanProfileStore {
+  const path = join(profileDir, HUMAN_PROFILE_FILE);
+
+  return {
+    async loadHumanProfile(): Promise<HumanProfilePayload | undefined> {
+      try {
+        return JSON.parse(await readFile(path, "utf8")) as HumanProfilePayload;
+      } catch (error) {
+        if (isMissingFileError(error)) {
+          return undefined;
+        }
+        throw error;
+      }
+    },
+
+    async saveHumanProfile(profile: HumanProfilePayload): Promise<void> {
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, `${JSON.stringify(profile, null, 2)}\n`, { mode: 0o600 });
+    },
+  };
 }
 
 function isMissingFileError(error: unknown): boolean {

@@ -25,6 +25,8 @@ import {
   type UnsignedDataTransferVoucher,
   type DataTransferVoucher,
   dataTransferVoucherForSigning,
+  humanProfileForSigning,
+  type HumanProfilePayload,
 } from "@envoymesh/protocol";
 import {
   createHash,
@@ -465,6 +467,26 @@ export function verifyDataTransferVoucher(
     voucher.signature,
     devicePublicKeyPem,
   );
+}
+
+export function signHumanProfile(
+  payload: Omit<HumanProfilePayload, "signature">,
+  ownerPrivateKeyPem: string,
+): HumanProfilePayload {
+  return {
+    ...payload,
+    signature: signCanonicalPayload(payload, ownerPrivateKeyPem),
+  };
+}
+
+export function verifyHumanProfile(
+  profile: HumanProfilePayload,
+  ownerPublicKeyPem: string,
+): boolean {
+  if (deriveOwnerId(ownerPublicKeyPem) !== profile.ownerId) {
+    return false;
+  }
+  return verifyCanonicalPayload(humanProfileForSigning(profile), profile.signature, ownerPublicKeyPem);
 }
 
 function randomCertificateId(): string {

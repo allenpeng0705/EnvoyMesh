@@ -5,6 +5,7 @@ import {
   buildRelayManagerSnapshot,
   createApprovalRequest,
   createAuditEvent,
+  createHumanProfileStore,
   createLocalPeerDirectoryStore,
   createLocalTaskStore,
   createLocalTrustStore,
@@ -22,9 +23,11 @@ import {
 import {
   createSignedDataTransferVoucher,
   derivePeerId,
+  signHumanProfile,
   signUnsignedEnvelope,
   verifyAuthorizedDeviceEnvelope,
   verifyDeviceCertificate,
+  verifyHumanProfile,
 } from "@envoymesh/identity";
 import {
   DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME,
@@ -64,6 +67,8 @@ import {
   createSystemPingPayload,
   createSystemSignalPayload,
   createUnsignedEnvelope,
+  createHumanProfilePayload,
+  humanProfileForSigning,
   parseSystemPingPayload,
   parseSystemSignalPayload,
   parseTaskCancelPayload,
@@ -72,6 +77,7 @@ import {
   type RelayLookupPayload,
   type RelayLookupResponsePayload,
   type RelayPeerCandidate,
+  type HumanProfilePayload,
 } from "@envoymesh/protocol";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -1265,6 +1271,39 @@ if (resolvedArgs.dataSendTarget && resolvedArgs.dataRelativePath) {
     }),
   );
   console.log(`[sent data transfer] target ${resolvedArgs.dataSendTarget} path ${relativePath}`);
+}
+
+if (resolvedArgs.humanProfileUpdate) {
+  const humanProfileStore = createHumanProfileStore(args.profileDir);
+  const existingProfile = await humanProfileStore.loadHumanProfile();
+  const hasUpdates =
+    resolvedArgs.humanProfileDisplayName !== undefined ||
+    resolvedArgs.humanProfileBio !== undefined ||
+    resolvedArgs.humanProfileGender !== undefined ||
+    resolvedArgs.humanProfileHobbies.length > 0 ||
+    resolvedArgs.humanProfileKnowledge.length > 0;
+
+  if (!hasUpdates) {
+    console.log("[human-profile] --human-profile-update requires at least one --human-profile-* flag");
+  } else {
+    const unsignedPayload = createHumanProfilePayload({
+      ownerId: profile.owner.ownerId,
+      displayName: resolvedArgs.humanProfileDisplayName ?? existingProfile?.displayName,
+      bio: resolvedArgs.humanProfileBio ?? existingProfile?.bio,
+      gender: resolvedArgs.humanProfileGender ?? existingProfile?.gender,
+      hobbies: resolvedArgs.humanProfileHobbies.length > 0 ? resolvedArgs.humanProfileHobbies : existingProfile?.hobbies,
+      knowledge: resolvedArgs.humanProfileKnowledge.length > 0 ? resolvedArgs.humanProfileKnowledge : existingProfile?.knowledge,
+      ownerPrivateKeyPem: profile.owner.privateKeyPem,
+    });
+
+    const signedProfile = signHumanProfile(
+      humanProfileForSigning(unsignedPayload),
+      profile.owner.privateKeyPem,
+    );
+
+    await humanProfileStore.saveHumanProfile(signedProfile);
+    console.log(`[human-profile] updated and saved to ${args.profileDir}/human-profile.json`);
+  }
 }
 
 console.log("Press Ctrl+C to stop.");
