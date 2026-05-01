@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "allowJs": true,
+    "noEmit": true
+  },
+  "references": [
+    { "path": "../../packages/api" }
+  ],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.css"]
+}

@@ -7,6 +7,7 @@ import type {
   DeviceIdentity,
   OwnerIdentity,
 } from "@envoymesh/identity";
+import type { NodeConfig, RelayConfig } from "./ws-protocol.js";
 
 // ============================================
 // Identity Types
@@ -286,6 +287,33 @@ export interface NodeService {
    * Decline incoming file share
    */
   declineShare(shareId: string): Promise<void>;
+
+  // ----- Node Configuration -----
+
+  /**
+   * Get current node configuration
+   */
+  getNodeConfig(): Promise<NodeConfig>;
+
+  /**
+   * Update node configuration
+   */
+  updateNodeConfig(config: Partial<NodeConfig>): Promise<void>;
+
+  /**
+   * List configured relays
+   */
+  listRelays(): Promise<RelayConfig[]>;
+
+  /**
+   * Add a relay
+   */
+  addRelay(addr: string, level?: number, region?: string): Promise<RelayConfig>;
+
+  /**
+   * Remove a relay
+   */
+  removeRelay(relayId: string): Promise<void>;
 
   // ----- Event Subscription -----
 

@@ -29,9 +29,11 @@
     "@envoymesh/network": "0.1.0",
     "@envoymesh/protocol": "0.1.0",
     "@envoymesh/vault": "0.1.0",
+    "ws": "^8.20.0",
     "yaml": "^2.8.1"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "tsx": "^4.21.0"
   }
 }

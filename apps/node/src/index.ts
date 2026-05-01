@@ -92,6 +92,8 @@ import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
 import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
 import { installEnvoyDataTransferReceiver } from "./data-transfer-inbound.js";
+import { createNodeService } from "./node-service-impl.js";
+import { WsServer } from "./ws-server.js";
 import { evaluateInboundEnvelopeRolePolicy } from "./role-policy.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
 import {
@@ -121,6 +123,9 @@ const taskRuntimeStore = createTaskRuntimeStateStore(args.profileDir);
 const resolvedArgs = await resolveNodeArgsTargetsByOwnerId(args, peerDirectoryStore);
 const inboundGuard = createInboundMessageGuard();
 const vaultDirForNode = process.env.ENVOYMESH_VAULT ?? join(process.cwd(), "shared_vault");
+
+// WebSocket server reference for event emission
+let wsServerForEvents: WsServer | null = null;
 const peerDirectoryRecords = await peerDirectoryStore.listPeerRecords();
 const peerDirectorySeedAddrs = peerDirectoryRecords.flatMap((record) => record.listenAddrs);
 const persistedSeedAddrs = await discoverySeedStore.listSeedAddrs();
@@ -647,6 +652,32 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       }),
     );
     console.log(`[chat.message] ${payload.senderOwnerId}: ${payload.text}`);
+
+    // Emit chat:message event to connected apps via WebSocket
+    if (wsServerForEvents) {
+      // Look up sender's displayName from peer directory
+      const senderPeer = (await peerDirectoryStore.listPeerRecords()).find(
+        (r) => r.ownerId === payload.senderOwnerId,
+      );
+      wsServerForEvents.emitEvent("chat:message", {
+        messageId: envelope.messageId,
+        sender: {
+          nodeId: envelope.senderPeerId,
+          displayName: senderPeer?.ownerId ?? payload.senderOwnerId,
+        },
+        recipient: {
+          nodeId: mesh.peerId,
+        },
+        content: {
+          text: payload.text,
+        },
+        metadata: {
+          timestamp: envelope.createdAt,
+          deliveryReceipt: "delivered" as const,
+        },
+        signature: envelope.signature,
+      });
+    }
     return;
   }
 
@@ -948,6 +979,18 @@ if (args.bootstrapPeers.length > 0) {
 }
 
 console.log("Envoy node started");
+const nodeService = createNodeService(mesh, args, profile, trustStore, peerDirectoryStore);
+
+// Start WebSocket server for app connections
+const wsServer = new WsServer(3030, "/ws");
+wsServer.start(nodeService);
+wsServerForEvents = wsServer;
+
+// Wire NodeService events to WebSocket server
+nodeService.on("hello:request", (data) => wsServer.emitEvent("hello:request", data));
+nodeService.on("hello:response", (data) => wsServer.emitEvent("hello:response", data));
+nodeService.on("chat:message", (data) => wsServer.emitEvent("chat:message", data));
+nodeService.on("bond:established", (data) => wsServer.emitEvent("bond:established", data));
 if (args.configPath) {
   console.log(`Config file: ${args.configPath}`);
 }
@@ -1309,6 +1352,7 @@ if (resolvedArgs.humanProfileUpdate) {
 console.log("Press Ctrl+C to stop.");
 
 async function shutdown(): Promise<void> {
+  wsServer.stop();
   if (bootstrapReprobeTimer) {
     clearTimeout(bootstrapReprobeTimer);
     bootstrapReprobeTimer = undefined;
