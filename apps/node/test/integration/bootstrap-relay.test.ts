@@ -113,8 +113,8 @@ describe("Relay Bootstrap Integration Tests", () => {
       await waitForPeerConnected(node2, relayAddr, 15000);
 
       // Both should be connected to relay
-      const peerIds1 = await node1.getConnectedPeerIds();
-      const peerIds2 = await node2.getConnectedPeerIds();
+      const peerIds1 = node1.getConnectedRelayPeerIds();
+      const peerIds2 = node2.getConnectedRelayPeerIds();
 
       expect(peerIds1.length).toBeGreaterThan(0);
       expect(peerIds2.length).toBeGreaterThan(0);
