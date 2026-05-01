@@ -145,6 +145,45 @@ ENVOYMESH_BOOTSTRAP=/ip4/1.2.3.4/tcp/4001/p2p/QmExistingRelay ./scripts/run-rela
 
 ---
 
+## When to Use Advertise Address
+
+The `--advertise` parameter specifies the **public IP address** that external clients use to connect to your relay. It's only needed in certain scenarios:
+
+| Scenario | Advertise Needed? | Reason |
+|----------|-------------------|--------|
+| Local machine testing | No | Clients on same machine use `127.0.0.1` |
+| Same LAN network | No | Clients use local IP (e.g., `192.168.1.x`) |
+| Cloud/VPS with public IP | **Yes** | External clients must know the public IP |
+| Behind NAT | Recommended | Helps NAT traversal for peer discovery |
+
+### Local Testing (No Advertise)
+
+```bash
+# Run relay locally - no advertise needed
+./scripts/run-relay.sh
+
+# Clients can connect via localhost
+# /ip4/127.0.0.1/tcp/4001/p2p/PEER_ID
+```
+
+### Cloud Deployment (Advertise Required)
+
+```bash
+# On a cloud server with public IP 123.45.67.89
+./scripts/run-relay.sh --advertise 123.45.67.89
+
+# External clients connect using the public IP
+# /ip4/123.45.67.89/tcp/4001/p2p/PEER_ID
+```
+
+### How It Works
+
+When advertise is set, the relay announces its address to peers as `/ip4/<advertise>/tcp/<port>/p2p/<peer_id>` instead of using the detected local IP. This allows clients outside the local network to connect.
+
+If no advertise is set, the relay uses its detected local addresses, which work for local/LAN clients but not for external internet clients.
+
+---
+
 ## Script Options
 
 | Option | Description | Default |
