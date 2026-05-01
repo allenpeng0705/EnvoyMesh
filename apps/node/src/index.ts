@@ -8,12 +8,15 @@ import {
   createLocalPeerDirectoryStore,
   createLocalTaskStore,
   createLocalTrustStore,
+  createRelayStateStore,
   createTaskRuntimeStateStore,
   deriveCorrelationIdFromEnvelope,
   loadOrCreateNodeProfile,
   RELAY_MANAGER_SNAPSHOT_PROTOCOL,
   saveNodeProfile,
   serializeRelayManagerSnapshot,
+  type PersistedRelayBookEntry,
+  type PersistedRelaySummaryEntry,
   type RelayManagerRuntimeState,
 } from "@envoymesh/local-store";
 import {
@@ -184,7 +187,33 @@ if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length ==
 
 const autoCapabilityTopics = buildAutoCapabilityTopics(profile.deviceCertificate.capabilities);
 const observedRelayPeerIds = new Set<string>();
-const relayRoster = createRelayRoster();
+const relayStateStore = createRelayStateStore(args.profileDir);
+const [persistedRelayBook, persistedSummaries] = await Promise.all([
+  relayStateStore.loadRelayBook(),
+  relayStateStore.loadRelaySummaries(),
+]);
+if (persistedRelayBook.length > 0 || persistedSummaries.length > 0) {
+  console.log(
+    `[relay-state] restored relay_book=${persistedRelayBook.length} summaries=${persistedSummaries.length}`,
+  );
+}
+const relayRoster = createRelayRoster({
+  persistedRelayBook,
+  persistedSummaries: persistedSummaries.map((e) => ({
+    relayId: e.relayId,
+    summary: {
+      relayId: e.relayId,
+      level: e.level,
+      region: e.region,
+      childRelayCount: e.childRelayCount,
+      livePeerCount: e.livePeerCount,
+      topicBuckets: e.topicBuckets,
+      expiresAt: new Date(e.expiresAt).toISOString(),
+    },
+    lastSeenAt: e.lastSeenAt,
+    expiresAt: e.expiresAt,
+  })),
+});
 const relayClientState = createRelayClientState(effectiveBootstrapPeers.map(relayHintFromAddr));
 const relayLookupRouter = createRelayLookupRouter();
 let relayHealthState: RelayHealthState = createInitialRelayHealthState();
@@ -1655,6 +1684,29 @@ async function runRelayManagerSnapshotCycle(source: "startup" | "periodic"): Pro
       summary: serializeRelayManagerSnapshot(snapshot),
     }),
   );
+  // Persist relay book and summaries so they survive restarts
+  const currentRelayBook = relayRoster.relayBook();
+  const currentSummaries = relayRoster.summaries();
+  if (currentRelayBook.length > 0 || currentSummaries.length > 0) {
+    await Promise.all([
+      relayStateStore.saveRelayBook(currentRelayBook),
+      relayStateStore.saveRelaySummaries(currentSummaries.map((e) => ({
+        relayId: e.relayId,
+        level: e.summary.level,
+        region: e.summary.region,
+        livePeerCount: e.summary.livePeerCount,
+        childRelayCount: e.summary.childRelayCount,
+        topicBuckets: e.summary.topicBuckets,
+        lastSeenAt: e.lastSeenAt,
+        expiresAt: e.expiresAt,
+      }))),
+    ]);
+    await appendRelayTrace(
+      "relay.state.persist.ok",
+      mesh.peerId,
+      `persisted relay_book=${currentRelayBook.length} summaries=${currentSummaries.length}`,
+    );
+  }
   await appendRelayTrace(
     "relay.manager.snapshot.ok",
     mesh.peerId,
@@ -1779,13 +1831,37 @@ async function handleRelayControlEnvelope(input: {
   try {
     if (envelope.intent === "relay.checkin") {
       const payload = parseRelayCheckinPayload(envelope.payload);
-      relayRoster.checkin(payload, remotePeerId);
-      await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, `relay.checkin accepted peer=${payload.peerId}`);
+      const { entry, addrChanged, reconnect } = relayRoster.checkin(payload, remotePeerId);
+      const checkinNote =
+        addrChanged && reconnect
+          ? `relay.checkin accepted peer=${payload.peerId} addr_changed reconnect`
+          : addrChanged
+            ? `relay.checkin accepted peer=${payload.peerId} addr_changed`
+            : reconnect
+              ? `relay.checkin accepted peer=${payload.peerId} reconnect`
+              : `relay.checkin accepted peer=${payload.peerId}`;
+      await appendRelayInboundAudit(envelope, remotePeerId, receivedAt, correlationId, checkinNote);
+      if (addrChanged) {
+        await appendRelayTrace(
+          "relay.checkin.addr_changed",
+          payload.peerId,
+          `peer=${payload.peerId} new_addrs=${entry.relayReachableAddrs.length}`,
+        );
+      }
+      if (reconnect) {
+        await appendRelayTrace(
+          "relay.checkin.reconnect",
+          payload.peerId,
+          `peer=${payload.peerId} returned_after_offline`,
+        );
+      }
       if (args.enableRelayServer) {
         logRelayServerCheckinAccepted({
           remoteLibp2pPeerId: remotePeerId,
           payload,
           rosterSize: relayRoster.entries().length,
+          addrChanged,
+          reconnect,
         });
       }
       return;

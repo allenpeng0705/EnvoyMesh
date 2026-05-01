@@ -16,6 +16,12 @@ export interface RelayRosterEntry {
   peerId: string;
   ownerId?: string;
   relayReachableAddrs: string[];
+  /** Set when peer reconnects with a different address than previously stored. */
+  addrChangedAt?: number;
+  /** Set when peer had no entry in the roster and is connecting for the first time. */
+  firstSeenAt: number;
+  /** Set when peer returns after being offline (> 60s gap). */
+  lastReconnectedAt?: number;
   capabilities: string[];
   advertisements: RelayCheckinPayload["advertisements"];
   relayHints: RelayHint[];
@@ -47,6 +53,10 @@ export interface RelayRosterOptions {
   rosterTtlMs?: number;
   maxRosterEntries?: number;
   maxRelayHints?: number;
+  /** Pre-loaded relay book entries from a previous run (loaded from disk on startup). */
+  persistedRelayBook?: RelayBookEntry[];
+  /** Pre-loaded relay summaries from a previous run (loaded from disk on startup). */
+  persistedSummaries?: RelaySummaryEntry[];
 }
 
 const DEFAULT_ROSTER_TTL_MS = 120_000;
@@ -59,8 +69,12 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
   const maxRosterEntries = options.maxRosterEntries ?? DEFAULT_MAX_ROSTER_ENTRIES;
   const maxRelayHints = options.maxRelayHints ?? DEFAULT_MAX_RELAY_HINTS;
   const entries = new Map<string, RelayRosterEntry>();
-  const relayBook = new Map<string, RelayBookEntry>();
-  const relaySummaries = new Map<string, RelaySummaryEntry>();
+  const relayBook = new Map<string, RelayBookEntry>(
+    (options.persistedRelayBook ?? []).map((e) => [e.relayId, e]),
+  );
+  const relaySummaries = new Map<string, RelaySummaryEntry>(
+    (options.persistedSummaries ?? []).map((e) => [e.relayId, e]),
+  );
 
   function pruneExpired(): void {
     const current = now();
@@ -96,7 +110,7 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
   }
 
   return {
-    checkin(payload: RelayCheckinPayload, fallbackPeerId?: string): RelayRosterEntry {
+    checkin(payload: RelayCheckinPayload, fallbackPeerId?: string): { entry: RelayRosterEntry; addrChanged: boolean; reconnect: boolean } {
       pruneExpired();
       const peerId = payload.peerId || fallbackPeerId;
       if (!peerId) {
@@ -104,10 +118,19 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
       }
       const current = now();
       const expiresAt = Math.min(Date.parse(payload.expiresAt), current + rosterTtlMs);
+      const newAddrs = dedupe(payload.relayReachableAddrs);
+      const existing = entries.get(peerId);
+      const reconnect = existing !== undefined && existing.lastSeenAt < current - 60_000;
+      const addrChanged =
+        existing !== undefined &&
+        JSON.stringify([...existing.relayReachableAddrs].sort()) !== JSON.stringify(newAddrs.sort());
       const entry: RelayRosterEntry = {
         peerId,
         ownerId: payload.ownerId,
-        relayReachableAddrs: dedupe(payload.relayReachableAddrs),
+        relayReachableAddrs: newAddrs,
+        addrChangedAt: addrChanged ? current : existing?.addrChangedAt,
+        firstSeenAt: existing?.firstSeenAt ?? current,
+        lastReconnectedAt: reconnect ? current : existing?.lastReconnectedAt,
         capabilities: dedupe(payload.capabilities),
         advertisements: payload.advertisements,
         relayHints: payload.relayHints.slice(0, maxRelayHints),
@@ -117,7 +140,7 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
       };
       entries.set(peerId, entry);
       pruneExpired();
-      return entry;
+      return { entry, addrChanged, reconnect };
     },
 
     lookup(input: {

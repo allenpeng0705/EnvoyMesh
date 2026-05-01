@@ -67,11 +67,14 @@ export function logRelayServerCheckinAccepted(input: {
   remoteLibp2pPeerId: string;
   payload: RelayCheckinPayload;
   rosterSize: number;
+  addrChanged?: boolean;
+  reconnect?: boolean;
 }): void {
-  const { remoteLibp2pPeerId, payload, rosterSize } = input;
+  const { remoteLibp2pPeerId, payload, rosterSize, addrChanged, reconnect } = input;
   const addrs = payload.relayReachableAddrs;
+  const flags = [addrChanged ? "ADDR_CHANGED" : null, reconnect ? "RECONNECT" : null].filter(Boolean).join(" ");
   console.log(
-    `[relay-server] checkin accepted libp2pConn=${remoteLibp2pPeerId} payload.peerId=${payload.peerId} ownerId=${payload.ownerId ?? "-"} addrs=${addrs.length} rosterEntries=${rosterSize}`,
+    `[relay-server] checkin accepted libp2pConn=${remoteLibp2pPeerId} payload.peerId=${payload.peerId} ownerId=${payload.ownerId ?? "-"} addrs=${addrs.length} rosterEntries=${rosterSize}${flags ? ` (${flags})` : ""}`,
   );
   const cap = 8;
   for (let i = 0; i < Math.min(addrs.length, cap); i++) {

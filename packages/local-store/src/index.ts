@@ -41,6 +41,8 @@ const APPROVAL_QUEUE_FILE = "approval-queue.jsonl";
 const TRUST_STORE_FILE = "trust-records.json";
 const PEER_DIRECTORY_FILE = "peer-directory.json";
 const DISCOVERY_EVENTS_FILE = "discovery-events.jsonl";
+const RELAY_BOOK_FILE = "relay-book.json";
+const RELAY_SUMMARIES_FILE = "relay-summaries.json";
 
 /** Skip JSONL lines larger than this to avoid OOM when a single record is pathological or corrupted. */
 const MAX_JSONL_LINE_CHARS = 12 * 1024 * 1024;
@@ -964,6 +966,93 @@ export interface LocalPeerDirectoryStore {
 interface PeerDirectoryFile {
   version: "0.1";
   records: PeerDirectoryRecord[];
+}
+
+/**
+ * Persisted relay book entry — represents a neighbor relay the local relay has registered.
+ * This is loaded on startup so the relay graph structure survives restarts.
+ */
+export interface PersistedRelayBookEntry {
+  relayId: string;
+  level?: number;
+  region?: string;
+  addrs: string[];
+  relation: RelayRelation;
+  state: RelayBookState;
+  lastVerifiedAt: number;
+  expiresAt: number;
+  failureCount: number;
+}
+
+/**
+ * Persisted relay summary — represents a summary received from a neighbor relay.
+ * Loaded on startup so relay-to-relay routing state survives restarts.
+ */
+export interface PersistedRelaySummaryEntry {
+  relayId: string;
+  level: number;
+  region?: string;
+  livePeerCount: number;
+  childRelayCount: number;
+  topicBuckets: string[];
+  lastSeenAt: number;
+  expiresAt: number;
+}
+
+interface RelayBookFile {
+  version: "0.1";
+  entries: PersistedRelayBookEntry[];
+}
+
+interface RelaySummariesFile {
+  version: "0.1";
+  entries: PersistedRelaySummaryEntry[];
+}
+
+export interface RelayStateStore {
+  loadRelayBook(): Promise<PersistedRelayBookEntry[]>;
+  saveRelayBook(entries: PersistedRelayBookEntry[]): Promise<void>;
+  loadRelaySummaries(): Promise<PersistedRelaySummaryEntry[]>;
+  saveRelaySummaries(entries: PersistedRelaySummaryEntry[]): Promise<void>;
+}
+
+export function createRelayStateStore(profileDir: string): RelayStateStore {
+  const relayBookPath = join(profileDir, RELAY_BOOK_FILE);
+  const relaySummariesPath = join(profileDir, RELAY_SUMMARIES_FILE);
+
+  return {
+    async loadRelayBook() {
+      try {
+        const file: RelayBookFile = JSON.parse(await readFile(relayBookPath, "utf8"));
+        const now = Date.now();
+        return file.entries.filter((entry) => entry.expiresAt > now && entry.state !== "removed");
+      } catch {
+        return [];
+      }
+    },
+
+    async saveRelayBook(entries) {
+      const file: RelayBookFile = { version: "0.1", entries };
+      await mkdir(dirname(relayBookPath), { recursive: true });
+      await writeFile(relayBookPath, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+    },
+
+    async loadRelaySummaries() {
+      try {
+        const file: RelaySummariesFile = JSON.parse(await readFile(relaySummariesPath, "utf8"));
+        const now = Date.now();
+        return file.entries.filter((entry) => entry.expiresAt > now);
+      } catch {
+        return [];
+      }
+    },
+
+    async saveRelaySummaries(entries) {
+      const file: RelaySummariesFile = { version: "0.1", entries };
+      await mkdir(dirname(relaySummariesPath), { recursive: true });
+      await writeFile(relaySummariesPath, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+    },
+  };
 }
 
 export function createLocalTrustStore(profileDir: string): LocalTrustStore {
