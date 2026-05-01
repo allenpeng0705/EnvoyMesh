@@ -82,20 +82,24 @@ export function NodeServiceProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
+    let connected = false;
+
     const wsClient = createWsClient();
     const nodeService: NodeServiceClient = {
+      get isConnected() {
+        return connected;
+      },
+
       async connect() {
         await wsClient.connect();
+        connected = true;
         setConnected(true);
       },
 
       disconnect() {
         wsClient.disconnect();
+        connected = false;
         setConnected(false);
-      },
-
-      get isConnected() {
-        return connected;
       },
 
       async getProfile() {
@@ -198,7 +202,7 @@ export function NodeServiceProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <NodeServiceContext.Provider value={client}>
+    <NodeServiceContext.Provider value={{ ...client, isConnected: connected }}>
       {children}
     </NodeServiceContext.Provider>
   );
@@ -230,6 +234,8 @@ export function useBonds() {
   const [bonds, setBonds] = useState<BondRecord[]>([]);
 
   useEffect(() => {
+    if (!client.isConnected) return;
+
     // Initial load
     client.getBonds().then(setBonds).catch(console.error);
 
@@ -255,6 +261,8 @@ export function useHelloRequests() {
   const [requests, setRequests] = useState<HelloRequest[]>([]);
 
   useEffect(() => {
+    if (!client.isConnected) return;
+
     const unsub = client.on("hello:request", (data) => {
       setRequests((prev) => [...prev, data as HelloRequest]);
     });
@@ -280,7 +288,7 @@ export function useChatMessages(peerOwnerId: string | null) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   useEffect(() => {
-    if (!peerOwnerId) return;
+    if (!peerOwnerId || !client.isConnected) return;
 
     const unsub = client.on("chat:message", (data) => {
       const msg = data as ChatMessage;

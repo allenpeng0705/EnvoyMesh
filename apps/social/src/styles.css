@@ -598,6 +598,40 @@ body {
   background: var(--color-primary);
 }
 
+/* Settings View */
+.settings-view {
+  padding: 1.5rem;
+  max-width: 480px;
+}
+
+.settings-view h2 {
+  margin-bottom: 1rem;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.settings-tabs button {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: transparent;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.settings-tabs button:hover {
+  background: var(--color-bg);
+}
+
+.settings-tabs button.active {
+  background: var(--color-primary);
+  color: white;
+}
+
 /* Settings - Node Control */
 .settings-section h3 {
   font-size: 0.875rem;

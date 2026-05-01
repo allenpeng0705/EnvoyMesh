@@ -23,11 +23,29 @@ import {
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
-import type { EnvoyMesh } from "@envoymesh/network";
-import type { NodeArgs } from "./args.js";
-import type { LocalTrustStore, LocalPeerDirectoryStore } from "@envoymesh/local-store";
+import {
+  createLocalTaskStore,
+  createLocalTrustStore,
+  createLocalPeerDirectoryStore,
+  createTaskRuntimeStateStore,
+  createRelayStateStore,
+  loadOrCreateNodeProfile,
+  type LocalTaskStore,
+  type LocalTrustStore,
+  type LocalPeerDirectoryStore,
+  type TaskRuntimeStateStore,
+  type RelayStateStore,
+} from "@envoymesh/local-store";
 import { createNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
-import { loadOrCreateNodeProfile } from "@envoymesh/local-store";
+import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
+import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
+import { createTaskDispatcher } from "./task-dispatcher.js";
+import {
+  EnvoyMesh,
+  DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME,
+  type EnvoyMeshOptions,
+} from "@envoymesh/network";
+import { join } from "node:path";
 
 /**
  * NodeServiceImpl implements the NodeService interface.
@@ -38,11 +56,19 @@ import { loadOrCreateNodeProfile } from "@envoymesh/local-store";
  */
 class NodeServiceImpl implements NodeService {
   private _mesh: EnvoyMesh | undefined;
-  private readonly _args: NodeArgs;
   private _profile: NodeProfile | undefined;
   private readonly _trustStore: LocalTrustStore;
   private readonly _peerDirectoryStore: LocalPeerDirectoryStore;
   private readonly _configStore: ReturnType<typeof createNodeConfigStore>;
+  private readonly _profileDir: string;
+
+  // App-managed mode stores
+  private _taskStore: LocalTaskStore | undefined;
+  private _relayStateStore: RelayStateStore | undefined;
+  private _discoverySeedStore: DiscoverySeedStore | undefined;
+  private _taskRuntimeStore: TaskRuntimeStateStore | undefined;
+  private _inboundGuard: InboundMessageGuard | undefined;
+  private _taskDispatcher: ReturnType<typeof createTaskDispatcher> | undefined;
 
   private _nodeStatus: NodeStatus = "offline";
 
@@ -51,19 +77,19 @@ class NodeServiceImpl implements NodeService {
 
   constructor(
     mesh: EnvoyMesh | undefined,
-    args: NodeArgs,
-    profile: NodeProfile | undefined,
     trustStore: LocalTrustStore,
     peerDirectoryStore: LocalPeerDirectoryStore,
+    profileDir: string,
+    profile?: NodeProfile,
   ) {
     this._mesh = mesh;
-    this._args = args;
-    this._profile = profile;
     this._trustStore = trustStore;
     this._peerDirectoryStore = peerDirectoryStore;
-    this._configStore = createNodeConfigStore(args.profileDir);
+    this._profileDir = profileDir;
+    this._configStore = createNodeConfigStore(profileDir);
     if (mesh) {
       this._nodeStatus = "running";
+      this._profile = profile;
     }
   }
 
@@ -324,26 +350,26 @@ class NodeServiceImpl implements NodeService {
       };
     }
     return {
-      profileDir: this._args.profileDir,
-      discoveryProfile: this._args.discoveryProfile as "lan-fast" | "wan-default",
-      relayEnabled: this._args.enableRelay,
-      relayServerEnabled: this._args.enableRelayServer,
+      profileDir: this._profileDir,
+      discoveryProfile: "wan-default" as const,
+      relayEnabled: false,
+      relayServerEnabled: false,
       configuredRelays: [],
-      advertiseAddrs: this._args.advertiseAddrs,
-      bootstrapPeers: this._args.bootstrapPeers,
+      advertiseAddrs: [],
+      bootstrapPeers: [],
     };
   }
 
   async updateNodeConfig(config: Partial<NodeConfig>): Promise<void> {
     const current = (await this._configStore.load()) ?? {
       version: "0.1" as const,
-      profileDir: this._args.profileDir,
-      discoveryProfile: this._args.discoveryProfile as "lan-fast" | "wan-default",
-      relayEnabled: this._args.enableRelay,
-      relayServerEnabled: this._args.enableRelayServer,
-      advertiseAddrs: this._args.advertiseAddrs,
-      bootstrapPeers: this._args.bootstrapPeers,
-      bootstrapPresets: [],
+      profileDir: this._profileDir,
+      discoveryProfile: "wan-default" as const,
+      relayEnabled: false,
+      relayServerEnabled: false,
+      advertiseAddrs: [] as string[],
+      bootstrapPeers: [] as string[],
+      bootstrapPresets: [] as string[],
       configuredRelays: [],
       updatedAt: new Date().toISOString(),
     };
@@ -373,13 +399,13 @@ class NodeServiceImpl implements NodeService {
   async addRelay(addr: string, level?: number, region?: string): Promise<RelayConfig> {
     const config = (await this._configStore.load()) ?? {
       version: "0.1" as const,
-      profileDir: this._args.profileDir,
-      discoveryProfile: this._args.discoveryProfile as "lan-fast" | "wan-default",
-      relayEnabled: this._args.enableRelay,
-      relayServerEnabled: this._args.enableRelayServer,
-      advertiseAddrs: this._args.advertiseAddrs,
-      bootstrapPeers: this._args.bootstrapPeers,
-      bootstrapPresets: [],
+      profileDir: this._profileDir,
+      discoveryProfile: "wan-default" as const,
+      relayEnabled: false,
+      relayServerEnabled: false,
+      advertiseAddrs: [] as string[],
+      bootstrapPeers: [] as string[],
+      bootstrapPresets: [] as string[],
       configuredRelays: [],
       updatedAt: new Date().toISOString(),
     };
@@ -451,7 +477,6 @@ class NodeServiceImpl implements NodeService {
 
   async startNode(): Promise<void> {
     if (this._nodeStatus === "running") {
-      // Already running, no-op
       return;
     }
 
@@ -471,15 +496,110 @@ class NodeServiceImpl implements NodeService {
       // Load or create profile
       this._profile = await loadOrCreateNodeProfile(config.profileDir);
 
-      // Create mesh from config - Note: this is a simplified version
-      // In a full implementation, we would create the actual EnvoyMesh here
-      // For now, this throws since EnvoyMesh requires many dependencies
-      throw new Error("startNode: Full mesh creation not yet implemented in NodeService. Use CLI to start the node.");
+      // Create app-managed stores
+      this._taskStore = createLocalTaskStore(config.profileDir);
+      this._relayStateStore = createRelayStateStore(config.profileDir);
+      this._discoverySeedStore = createDiscoverySeedStore(config.profileDir);
+      this._taskRuntimeStore = createTaskRuntimeStateStore(config.profileDir);
+      this._inboundGuard = createInboundMessageGuard();
+      this._taskDispatcher = createTaskDispatcher();
+
+      // Compute effective bootstrap peers
+      const peerRecords = await this._peerDirectoryStore.listPeerRecords();
+      const peerDirAddrs = peerRecords.flatMap((r) => r.listenAddrs);
+      const seedAddrs = await this._discoverySeedStore.listSeedAddrs();
+      const bootstrapPeers = [...new Set([...config.bootstrapPeers, ...peerDirAddrs, ...seedAddrs])];
+
+      // Create EnvoyMesh
+      this._mesh = new EnvoyMesh({
+        listen: ["/ip4/0.0.0.0/tcp/0"],
+        enableMdns: config.discoveryProfile === "lan-fast",
+        enableDht: config.discoveryProfile === "wan-default",
+        dhtClientMode: true,
+        bootstrapPeers,
+        enableRelay: config.relayEnabled,
+        enableRelayServer: config.relayServerEnabled,
+        enableAutoNat: true,
+        enableDcutr: true,
+        libp2pPrivateKeyPath: join(config.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME),
+      } as EnvoyMeshOptions);
+
+      // Wire mesh events
+      this._wireMeshEvents();
+
+      // Start mesh
+      await this._mesh.start();
+
+      this._nodeStatus = "running";
+      this.emit("node:status", { status: this._nodeStatus, peerId: this._mesh.peerId });
     } catch (error) {
       this._nodeStatus = "offline";
       this.emit("node:status", { status: this._nodeStatus });
       throw error;
     }
+  }
+
+  private _wireMeshEvents(): void {
+    const mesh = this._mesh!;
+    const profile = this._profile!;
+
+    mesh.onMessage(async ({ envelope, remotePeerId }) => {
+      const guardDecision = this._inboundGuard!.inspect(envelope);
+      if (guardDecision.action === "reject") return;
+
+      const { intent } = envelope;
+
+      if (intent === "bond.request") {
+        // Store discovered peer
+        const existing = await this._peerDirectoryStore.getPeerByOwnerId(remotePeerId);
+        if (!existing) {
+          await this._peerDirectoryStore.upsertPeerFromSignal({
+            peerId: remotePeerId,
+            payload: envelope.payload as any,
+          });
+        }
+
+        // Emit hello:request event for the app to show notification
+        const { parseBondRequestPayload } = await import("@envoymesh/protocol");
+        const payload = parseBondRequestPayload(envelope.payload);
+        this.emit("hello:request", {
+          messageId: envelope.messageId,
+          sender: {
+            nodeId: remotePeerId,
+            ownerId: payload.requesterOwnerId,
+            displayName: payload.requesterDisplayName ?? remotePeerId,
+          },
+          profile: {
+            displayName: payload.requesterDisplayName ?? remotePeerId,
+            bio: "",
+            interests: [],
+            whatShares: [],
+          },
+          message: payload.message ?? "",
+          timestamp: envelope.createdAt,
+        });
+      } else if (intent === "chat.message") {
+        const payload = parseChatMessagePayload(envelope.payload);
+        this.emit("chat:message", {
+          messageId: envelope.messageId,
+          sender: { nodeId: remotePeerId, displayName: payload.senderOwnerId },
+          recipient: { nodeId: profile.owner.ownerId },
+          content: { text: payload.text },
+          metadata: { timestamp: envelope.createdAt, deliveryReceipt: "delivered" },
+          signature: envelope.signature,
+        });
+      }
+    });
+
+    mesh.onPeerDiscovered(async ({ peerId, multiaddrs }) => {
+      const existing = await this._peerDirectoryStore.getPeerByOwnerId(peerId);
+      if (!existing) {
+        await this._peerDirectoryStore.upsertPeerFromSignal({
+          peerId,
+          payload: { type: "system.signal", version: "1.0", senderPublicKey: "", signal: "peer.discovered" } as any,
+        });
+      }
+    });
   }
 
   async stopNode(): Promise<void> {
@@ -565,12 +685,12 @@ class NodeServiceImpl implements NodeService {
  */
 export function createNodeService(
   mesh: EnvoyMesh | undefined,
-  args: NodeArgs,
-  profile: NodeProfile | undefined,
   trustStore: LocalTrustStore,
   peerDirectoryStore: LocalPeerDirectoryStore,
+  profileDir: string,
+  profile?: NodeProfile,
 ): NodeService {
-  return new NodeServiceImpl(mesh, args, profile, trustStore, peerDirectoryStore);
+  return new NodeServiceImpl(mesh, trustStore, peerDirectoryStore, profileDir, profile);
 }
 
 // Export the class for testing

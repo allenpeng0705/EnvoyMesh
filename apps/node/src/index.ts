@@ -979,7 +979,7 @@ if (args.bootstrapPeers.length > 0) {
 }
 
 console.log("Envoy node started");
-const nodeService = createNodeService(mesh, args, profile, trustStore, peerDirectoryStore);
+const nodeService = createNodeService(mesh, trustStore, peerDirectoryStore, args.profileDir, profile);
 
 // Start WebSocket server for app connections
 const wsServer = new WsServer(3030, "/ws");

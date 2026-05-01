@@ -54,12 +54,22 @@ function App() {
   const [setupDiscoveryProfile, setSetupDiscoveryProfile] = useState<"lan-fast" | "wan-default">("wan-default");
   const [setupBootstrapPeers, setSetupBootstrapPeers] = useState("");
   const [isInitializing, setIsInitializing] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [peerId, setPeerId] = useState<string>("");
 
   const messages = useChatMessages(selectedContact);
 
+  // Track connection state
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIsConnected(nodeService.isConnected);
+    }, 100);
+    return () => clearInterval(interval);
+  }, [nodeService]);
+
   // Load node status and config on mount
   useEffect(() => {
-    if (!nodeService.isConnected) return;
+    if (!isConnected) return;
 
     nodeService.getNodeStatus()
       .then((result) => {
@@ -72,20 +82,31 @@ function App() {
 
     nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
     nodeService.listRelays().then(setRelays).catch(console.error);
-  }, [nodeService, nodeService.isConnected]);
+
+    // Fetch profile for peer ID
+    nodeService.getProfile().then((profile: any) => {
+      if (profile?.owner?.ownerId) {
+        setPeerId(profile.owner.ownerId);
+      }
+    }).catch(() => {});
+  }, [nodeService, isConnected]);
 
   // Listen for node status changes
   useEffect(() => {
+    if (!isConnected) return;
     const unsubscribe = nodeService.on("node:status", (data) => {
       setNodeStatus(data.status);
       setShowSetup(data.status === "offline");
+      if (data.peerId) {
+        setPeerId(data.peerId);
+      }
     });
     return unsubscribe;
   }, [nodeService]);
 
   const connectionInfo = {
-    online: nodeService.isConnected && nodeStatus === "running",
-    peerId: "QmLoading...", // Will be fetched from getProfile
+    online: isConnected && nodeStatus === "running",
+    peerId: peerId || "QmLoading...",
     multiaddrs: [] as string[],
     connectedRelays: [] as string[],
     bondedPeers: bonds.length,
@@ -180,7 +201,7 @@ function App() {
     }
   };
 
-  if (!nodeService.isConnected) {
+  if (!isConnected) {
     return (
       <div className="app">
         <div className="loading">Connecting to Envoy...</div>

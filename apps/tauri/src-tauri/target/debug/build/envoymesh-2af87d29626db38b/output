@@ -1,0 +1,13 @@
+cargo:rerun-if-env-changed=TAURI_CONFIG
+cargo:rustc-check-cfg=cfg(desktop)
+cargo:rustc-cfg=desktop
+cargo:rustc-check-cfg=cfg(mobile)
+cargo:rerun-if-changed=/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/tauri/src-tauri/tauri.conf.json
+cargo:rustc-env=TAURI_ANDROID_PACKAGE_NAME_APP_NAME=app
+cargo:rustc-env=TAURI_ANDROID_PACKAGE_NAME_PREFIX=dev_envoymesh
+cargo:rustc-check-cfg=cfg(dev)
+cargo:PERMISSION_FILES_PATH=/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/tauri/src-tauri/target/debug/build/envoymesh-2af87d29626db38b/out/app-manifest/__app__-permission-files
+cargo:rerun-if-changed=capabilities
+cargo:rerun-if-env-changed=REMOVE_UNUSED_COMMANDS
+cargo:rustc-env=TAURI_ENV_TARGET_TRIPLE=aarch64-apple-darwin
+cargo:rustc-env=MACOSX_DEPLOYMENT_TARGET=10.13

@@ -1,0 +1,16 @@
+{
+  "name": "@envoymesh/tauri",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:mac": "tauri build --target aarch64-apple-darwin",
+    "build:win": "tauri build --target x86_64-pc-windows-msvc",
+    "build:linux": "tauri build --target x86_64-unknown-linux-gnu"
+  },
+  "dependencies": {
+    "@tauri-apps/cli": "^2.11.0"
+  }
+}
