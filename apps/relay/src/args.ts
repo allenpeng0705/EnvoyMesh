@@ -17,7 +17,7 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     bootstrapPeers: [],
     enableDht: true,
     dhtClientMode: true,
-    httpPort: null,
+    httpPort: 15432,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -115,7 +115,7 @@ Options:
                          to get full multiaddr with peer ID.
                          Env: ENVOYMESH_BOOTSTRAP_PEERS (comma-separated)
   --no-dht              Disable DHT discovery.
-  --http-port <port>    Enable HTTP info endpoint on this port (optional).
+  --http-port <port>    HTTP info endpoint port. Default: 15432 (optional).
                          Returns {peerId, addrs} at /info and OK at /health
   --help, -h            Show this help.
 

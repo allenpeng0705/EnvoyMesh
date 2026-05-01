@@ -65,7 +65,7 @@ describe("Relay Bootstrap Integration Tests", () => {
       // Wait for connection to relay
       await waitForPeerConnected(node, relayAddr, 15000);
 
-      const peerIds = await node.getConnectedPeerIds();
+      const peerIds = node.getConnectedRelayPeerIds();
       expect(peerIds.length).toBeGreaterThan(0);
 
       if (TEST_CONFIG.verbose) {
@@ -228,7 +228,7 @@ describe("Relay Bootstrap Integration Tests", () => {
 
       await waitForPeerConnected(node, relayAddr, 15000);
 
-      const peerIds = await node.getConnectedPeerIds();
+      const peerIds = node.getConnectedRelayPeerIds();
       expect(peerIds.length).toBeGreaterThan(0);
 
       // Should have relay connection
@@ -296,7 +296,8 @@ describe("Relay Bootstrap Integration Tests", () => {
 
   describe("Error Handling", () => {
     it("should handle invalid relay address gracefully", async () => {
-      const invalidAddr = "/ip4/127.0.0.1/tcp/9999/p2p/12D3KooWHogeueWgeue";
+      // Use a valid-format peer ID but unreachable address
+      const invalidAddr = "/ip4/10.255.255.1/tcp/59999/p2p/12D3KooWSHXmS7N94yFj1fqoH4anmbNXW6rZBcsGWrW95vEVjZ3Q";
 
       const node = await createTestNode({
         bootstrapPeers: [invalidAddr],
@@ -306,7 +307,7 @@ describe("Relay Bootstrap Integration Tests", () => {
       // Should not throw, but also should not connect
       await new Promise((resolve) => setTimeout(resolve, 3000));
 
-      const peerIds = await node.getConnectedPeerIds();
+      const peerIds = node.getConnectedRelayPeerIds();
       // May have 0 connections if invalid address can't be reached
       expect(Array.isArray(peerIds)).toBe(true);
     });

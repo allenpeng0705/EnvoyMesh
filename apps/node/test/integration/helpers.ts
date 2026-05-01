@@ -318,8 +318,8 @@ export function getRelayAddress(): string {
     }
   }
 
-  // Default for local testing
-  return "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWHdDnsG8eGVfiNwiwJUt5JTHt3D2KTzD3Z8M9x7yQmTm";
+  // Default for local testing - replace with your actual relay peer ID
+  return "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWJNFm9sPAcC1xKjJEqe7N3KKH7tM8hT4Z3s8X9vR2qLmK";
 }
 
 /**
