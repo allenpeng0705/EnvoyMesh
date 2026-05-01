@@ -227,12 +227,17 @@ peerRoster: peerId -> {
   ownerId?,
   capabilities?,
   lastSeenAt,
+  addrChangedAt?,     // set when peer reconnects with different addresses
+  firstSeenAt,        // first check-in time (never resets)
+  lastReconnectedAt?, // set when peer returns after >60s offline
   reservationFreshUntil,
   expiresAt
 }
 ```
 
-`relayBook` is longer-lived but bounded. `peerRoster` is short-lived and refreshed by check-ins. A relay should only return `/p2p-circuit` addresses for peers whose check-in and relay reservation are still fresh.
+- `relayBook` is **persisted** to `relay-book.json` and survives relay restarts. Summaries are persisted to `relay-summaries.json`.
+- `peerRoster` is **ephemeral** — rebuilt from `relay.checkin` after restart. Peers reconnect and refresh their entries.
+- A relay should only return `/p2p-circuit` addresses for peers whose check-in and relay reservation are still fresh.
 
 Suggested caps:
 
@@ -417,6 +422,15 @@ Each relay should expose a local operator management surface separate from the p
 This is intentionally not a public admin API. A future live admin endpoint should bind to `127.0.0.1` or OS-local IPC, require explicit enablement, and use an operator token or signed owner/admin envelope before allowing actions such as probe, mark-stale, or graph repair.
 
 Relay health is layered with external supervision. The node emits `relay.health.*` audit traces, attempts bounded soft repairs such as neighbor reprobes and summary refresh, records unhealthy restart requests, and exits non-zero only for critical states that should be handled by `launchd`, `systemd`, Windows service managers, Docker, or Kubernetes. Production supervisor examples live in [relay-supervisor-recipes](./relay-supervisor-recipes.md).
+
+### Relay State Persistence
+
+Relay book and summaries are persisted to the profile directory so the relay graph structure survives restarts:
+
+- `relay-book.json` — neighbor relay records (addresses, level, relation, state, failure count)
+- `relay-summaries.json` — received relay summaries (level, region, peer counts, topic buckets)
+
+Both are loaded on startup so relay-to-relail routing state is restored. Peer roster entries are **not** persisted (ephemeral by design — peers re-checkin on startup).
 
 ## Normal Node Relay Strategy
 

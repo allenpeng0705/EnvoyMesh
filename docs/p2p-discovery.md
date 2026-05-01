@@ -469,6 +469,11 @@ For WAN-first testing, prefer **explicit org bootstrap/relay multiaddrs** in add
    - Cause: envelope **`senderPeerId`** set to **`mesh.peerId` (libp2p)** instead of **`derivePeerId(devicePublicKeyPem)`** while signing with the device key.
    - Fix: use the same signing pattern as the main node (`apps/node/src/index.ts`); discovery dashboard and any custom tooling must align.
 
+8. **Relay restarts lose relay graph state**
+   - Symptom: relay-to-relay lookups fail after relay restart even though peers have re-checked in.
+   - Cause: relay book and summaries were in-memory only and were lost on restart.
+   - Fix: relay book and summaries are now persisted to `relay-book.json` and `relay-summaries.json` in the profile directory and restored on startup. Peer roster entries are intentionally ephemeral and rebuilt from `relay.checkin`.
+
 ## Validation Checklist
 
 1. Start both nodes with intended discovery profile.
