@@ -22,6 +22,7 @@
     "discovery:dashboard:wan": "tsx src/discovery-dashboard.ts --profile ./data/default --discovery-profile wan-default --bootstrap-preset public-libp2p --p2p-debug"
   },
   "dependencies": {
+    "@envoymesh/api": "0.1.0",
     "@envoymesh/bonds": "0.1.0",
     "@envoymesh/identity": "0.1.0",
     "@envoymesh/local-store": "0.1.0",

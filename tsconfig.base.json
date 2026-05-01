@@ -12,7 +12,8 @@
       "@envoymesh/network": ["./packages/network/src/index.ts"],
       "@envoymesh/vault": ["./packages/vault/src/index.ts"],
       "@envoymesh/models": ["./packages/models/src/index.ts"],
-      "@envoymesh/local-store": ["./packages/local-store/src/index.ts"]
+      "@envoymesh/local-store": ["./packages/local-store/src/index.ts"],
+      "@envoymesh/api": ["./packages/api/src/index.ts"]
     },
     "strict": true,
     "declaration": true,

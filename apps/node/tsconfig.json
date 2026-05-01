@@ -12,6 +12,7 @@
     { "path": "../../packages/bonds" },
     { "path": "../../packages/network" },
     { "path": "../../packages/vault" },
-    { "path": "../../packages/local-store" }
+    { "path": "../../packages/local-store" },
+    { "path": "../../packages/api" }
   ]
 }
