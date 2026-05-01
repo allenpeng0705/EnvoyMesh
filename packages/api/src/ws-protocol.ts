@@ -96,6 +96,11 @@ export type RpcMethods =
   | "listRelays"
   | "addRelay"
   | "removeRelay"
+  // Node Lifecycle
+  | "initNode"
+  | "getNodeStatus"
+  | "startNode"
+  | "stopNode"
   // Event subscription
   | "on"
   | "off";
@@ -124,11 +129,44 @@ export interface NodeConfig {
 
 export type DiscoveryProfile = "lan-fast" | "wan-default";
 
+export type NodeStatus = "offline" | "starting" | "running" | "stopping";
+
+// ============================================
+// Init Result Types
+// ============================================
+
+export interface InitNodeOptions {
+  discoveryProfile?: DiscoveryProfile;
+  relayEnabled?: boolean;
+  relayServerEnabled?: boolean;
+  advertiseAddrs?: string[];
+  bootstrapPeers?: string[];
+  bootstrapPresets?: string[];
+}
+
+export interface NodeInitResult {
+  profileDir: string;
+  peerId: string;
+  ownerId: string;
+  deviceId: string;
+}
+
 // ============================================
 // Method Parameters (TypeScript types)
 // ============================================
 
 export interface GetProfileParams {}
+
+export interface InitNodeParams {
+  profileDir: string;
+  options?: InitNodeOptions;
+}
+
+export interface GetNodeStatusParams {}
+
+export interface StartNodeParams {}
+
+export interface StopNodeParams {}
 
 export interface GetHumanProfileParams {}
 

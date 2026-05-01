@@ -40,6 +40,7 @@ export class WsServer {
       nodeServiceImpl.on("hello:response", (data: unknown) => this.emitEvent("hello:response", data));
       nodeServiceImpl.on("chat:message", (data: unknown) => this.emitEvent("chat:message", data));
       nodeServiceImpl.on("bond:established", (data: unknown) => this.emitEvent("bond:established", data));
+      nodeServiceImpl.on("node:status", (data: unknown) => this.emitEvent("node:status", data));
     }
 
     this.wss.on("connection", (ws: WebSocket) => {
@@ -172,61 +173,28 @@ export class WsServer {
       case "getConnectionStatus":
         return ns.getConnectionStatus();
       case "getNodeConfig":
-        return this.getNodeConfig();
+        return ns.getNodeConfig();
       case "updateNodeConfig":
-        return this.updateNodeConfig(params as any);
+        return ns.updateNodeConfig(params as any);
       case "listRelays":
-        return this.listRelays();
+        return ns.listRelays();
       case "addRelay":
-        return this.addRelay(params as any);
+        return ns.addRelay(params.addr as string, params.level as number | undefined, params.region as string | undefined);
       case "removeRelay":
-        return this.removeRelay(params as any);
+        return ns.removeRelay(params.relayId as string);
+      case "initNode":
+        return ns.initNode(params.profileDir as string, params.options as any);
+      case "getNodeStatus":
+        return { status: ns.getNodeStatus() };
+      case "startNode":
+        await ns.startNode();
+        return { success: true };
+      case "stopNode":
+        await ns.stopNode();
+        return { success: true };
       default:
         throw new Error(`Unknown method: ${method}`);
     }
-  }
-
-  // ============================================
-  // Node Configuration (placeholder implementations)
-  // ============================================
-
-  private getNodeConfig() {
-    // Would return current node configuration
-    return {
-      profileDir: "",
-      discoveryProfile: "wan-default",
-      relayEnabled: true,
-      relayServerEnabled: false,
-      configuredRelays: [],
-      advertiseAddrs: [],
-      bootstrapPeers: [],
-    };
-  }
-
-  private updateNodeConfig(_params: {
-    discoveryProfile?: string;
-    relayEnabled?: boolean;
-    relayServerEnabled?: boolean;
-    advertiseAddrs?: string[];
-    bootstrapPeers?: string[];
-  }) {
-    // Would update node configuration
-    return { success: true };
-  }
-
-  private listRelays() {
-    // Would return configured relays
-    return [];
-  }
-
-  private addRelay(_params: { addr: string; level?: number; region?: string }) {
-    // Would add a relay
-    return { success: true, relayId: randomUUID() };
-  }
-
-  private removeRelay(_params: { relayId: string }) {
-    // Would remove a relay
-    return { success: true };
   }
 
   // ============================================

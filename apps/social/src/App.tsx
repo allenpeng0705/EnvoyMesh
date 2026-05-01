@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNodeService, useHelloRequests, useBonds, useChatMessages } from "./hooks/useNodeService.js";
-import type { PeerSearchResult, HelloProfile, NodeConfig, RelayConfig } from "@envoymesh/api";
+import type { PeerSearchResult, HelloProfile, NodeConfig, RelayConfig, NodeStatus } from "@envoymesh/api";
 
 // App-level settings
 interface AppSettings {
@@ -47,20 +47,87 @@ function App() {
   const [appSettings, setAppSettings] = useState<AppSettings>(loadAppSettings);
   const [settingsTab, setSettingsTab] = useState<"node" | "app">("node");
 
+  // Node status and setup
+  const [nodeStatus, setNodeStatus] = useState<NodeStatus>("offline");
+  const [showSetup, setShowSetup] = useState(false);
+  const [setupProfileDir, setSetupProfileDir] = useState("./data/default");
+  const [setupDiscoveryProfile, setSetupDiscoveryProfile] = useState<"lan-fast" | "wan-default">("wan-default");
+  const [setupBootstrapPeers, setSetupBootstrapPeers] = useState("");
+  const [isInitializing, setIsInitializing] = useState(false);
+
   const messages = useChatMessages(selectedContact);
 
-  // Load node config on mount
+  // Load node status and config on mount
   useEffect(() => {
+    if (!nodeService.isConnected) return;
+
+    nodeService.getNodeStatus()
+      .then((result) => {
+        setNodeStatus(result.status);
+        setShowSetup(result.status === "offline");
+      })
+      .catch(() => {
+        setShowSetup(true);
+      });
+
     nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
     nodeService.listRelays().then(setRelays).catch(console.error);
+  }, [nodeService, nodeService.isConnected]);
+
+  // Listen for node status changes
+  useEffect(() => {
+    const unsubscribe = nodeService.on("node:status", (data) => {
+      setNodeStatus(data.status);
+      setShowSetup(data.status === "offline");
+    });
+    return unsubscribe;
   }, [nodeService]);
 
   const connectionInfo = {
-    online: nodeService.isConnected,
+    online: nodeService.isConnected && nodeStatus === "running",
     peerId: "QmLoading...", // Will be fetched from getProfile
     multiaddrs: [] as string[],
     connectedRelays: [] as string[],
     bondedPeers: bonds.length,
+  };
+
+  const handleInitializeNode = async () => {
+    if (!setupProfileDir.trim()) return;
+    setIsInitializing(true);
+    try {
+      const bootstrapPeers = setupBootstrapPeers
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      await nodeService.initNode(setupProfileDir, {
+        discoveryProfile: setupDiscoveryProfile,
+        bootstrapPeers,
+      });
+      setShowSetup(false);
+      // Start the node
+      await nodeService.startNode();
+    } catch (error) {
+      console.error("Failed to initialize node:", error);
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  const handleStartNode = async () => {
+    try {
+      await nodeService.startNode();
+    } catch (error) {
+      console.error("Failed to start node:", error);
+    }
+  };
+
+  const handleStopNode = async () => {
+    try {
+      await nodeService.stopNode();
+    } catch (error) {
+      console.error("Failed to stop node:", error);
+    }
   };
 
   const handleSendMessage = async () => {
@@ -116,7 +183,61 @@ function App() {
   if (!nodeService.isConnected) {
     return (
       <div className="app">
-        <div className="loading">Connecting to EnvoyMesh...</div>
+        <div className="loading">Connecting to Envoy...</div>
+      </div>
+    );
+  }
+
+  if (showSetup || nodeStatus === "offline") {
+    return (
+      <div className="app">
+        <div className="setup-view">
+          <h1>Welcome to Envoy</h1>
+          <p className="muted">Set up your Envoy node to join the network</p>
+
+          <div className="setup-form">
+            <div className="form-group">
+              <label>Profile Directory</label>
+              <input
+                type="text"
+                value={setupProfileDir}
+                onChange={(e) => setSetupProfileDir(e.target.value)}
+                placeholder="./data/default"
+              />
+              <small>Where your identity and data will be stored</small>
+            </div>
+
+            <div className="form-group">
+              <label>Discovery Profile</label>
+              <select
+                value={setupDiscoveryProfile}
+                onChange={(e) => setSetupDiscoveryProfile(e.target.value as "lan-fast" | "wan-default")}
+              >
+                <option value="lan-fast">LAN Fast (local network only)</option>
+                <option value="wan-default">WAN Default (connect to wider network)</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Bootstrap Peers (optional)</label>
+              <input
+                type="text"
+                value={setupBootstrapPeers}
+                onChange={(e) => setSetupBootstrapPeers(e.target.value)}
+                placeholder="/ip4/1.2.3.4/tcp/4001/p2p/Qm..., /dnsaddr/example.com/..."
+              />
+              <small>Comma-separated list of peer addresses to connect to</small>
+            </div>
+
+            <button
+              className="primary"
+              onClick={handleInitializeNode}
+              disabled={isInitializing || !setupProfileDir.trim()}
+            >
+              {isInitializing ? "Initializing..." : "Initialize Node"}
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -125,7 +246,7 @@ function App() {
     <div className="app">
       <header className="header">
         <div className="header-left">
-          <h1>EnvoyMesh</h1>
+          <h1>Envoy</h1>
         </div>
         <nav className="header-nav">
           <button
@@ -160,7 +281,8 @@ function App() {
           </button>
         </nav>
         <div className="header-right">
-          <span className="status-dot online" />
+          <span className={`status-dot ${nodeStatus === "running" ? "online" : nodeStatus === "starting" ? "starting" : "offline"}`} />
+          <span className="node-status">{nodeStatus}</span>
           <span className="peer-id">{connectionInfo.peerId.slice(0, 12)}...</span>
         </div>
       </header>
@@ -316,6 +438,35 @@ function App() {
 
             {settingsTab === "node" && (
               <>
+                <section className="settings-section">
+                  <h3>Node Control</h3>
+                  <dl className="settings-list">
+                    <dt>Status</dt>
+                    <dd className={`status-${nodeStatus}`}>
+                      <span className={`status-dot ${nodeStatus === "running" ? "online" : nodeStatus === "starting" ? "starting" : "offline"}`} />
+                      {nodeStatus.charAt(0).toUpperCase() + nodeStatus.slice(1)}
+                    </dd>
+
+                    <dt>Profile Directory</dt>
+                    <dd>{nodeConfig?.profileDir ?? "Loading..."}</dd>
+
+                    <dt>Peer ID</dt>
+                    <dd><code>{connectionInfo.peerId || "Not connected"}</code></dd>
+                  </dl>
+
+                  <div className="node-controls">
+                    {nodeStatus === "running" ? (
+                      <button onClick={handleStopNode}>
+                        Stop Node
+                      </button>
+                    ) : (
+                      <button onClick={handleStartNode}>
+                        Start Node
+                      </button>
+                    )}
+                  </div>
+                </section>
+
                 <section className="settings-section">
                   <h3>Relay Configuration</h3>
                   <dl className="settings-list">

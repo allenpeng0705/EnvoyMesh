@@ -14,7 +14,24 @@ import type {
   PeerSearchResult,
   RelayConfig,
   SearchQuery,
+  NodeStatus,
 } from "@envoymesh/api";
+
+type InitNodeOptions = {
+  discoveryProfile?: "lan-fast" | "wan-default";
+  relayEnabled?: boolean;
+  relayServerEnabled?: boolean;
+  advertiseAddrs?: string[];
+  bootstrapPeers?: string[];
+  bootstrapPresets?: string[];
+};
+
+type NodeInitResult = {
+  profileDir: string;
+  peerId: string;
+  ownerId: string;
+  deviceId: string;
+};
 
 interface NodeServiceClient {
   // Connection
@@ -47,6 +64,12 @@ interface NodeServiceClient {
   listRelays(): Promise<RelayConfig[]>;
   addRelay(addr: string, level?: number, region?: string): Promise<RelayConfig>;
   removeRelay(relayId: string): Promise<void>;
+
+  // Node Lifecycle
+  initNode(profileDir: string, options?: InitNodeOptions): Promise<NodeInitResult>;
+  getNodeStatus(): Promise<{ status: NodeStatus }>;
+  startNode(): Promise<void>;
+  stopNode(): Promise<void>;
 
   // Events
   on<K extends keyof NodeServiceEvents>(event: K, handler: (data: NodeServiceEvents[K]) => void): () => void;
@@ -137,6 +160,22 @@ export function NodeServiceProvider({ children }: { children: ReactNode }) {
 
       async removeRelay(relayId) {
         return wsClient.rpc("removeRelay", { relayId });
+      },
+
+      async initNode(profileDir, options) {
+        return wsClient.rpc("initNode", { profileDir, options });
+      },
+
+      async getNodeStatus() {
+        return wsClient.rpc("getNodeStatus");
+      },
+
+      async startNode() {
+        return wsClient.rpc("startNode");
+      },
+
+      async stopNode() {
+        return wsClient.rpc("stopNode");
       },
 
       on(event, handler) {

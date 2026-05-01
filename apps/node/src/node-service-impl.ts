@@ -14,6 +14,7 @@ import type {
   RelayConfig,
   SearchQuery,
 } from "@envoymesh/api";
+import type { NodeStatus, InitNodeOptions, NodeInitResult } from "@envoymesh/api";
 
 import {
   createChatMessagePayload,
@@ -25,38 +26,69 @@ import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import type { EnvoyMesh } from "@envoymesh/network";
 import type { NodeArgs } from "./args.js";
 import type { LocalTrustStore, LocalPeerDirectoryStore } from "@envoymesh/local-store";
+import { createNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
+import { loadOrCreateNodeProfile } from "@envoymesh/local-store";
 
 /**
  * NodeServiceImpl implements the NodeService interface.
  *
- * This is a STUB implementation - the actual implementation will wire up
- * to the mesh's libp2p/relay infrastructure in a follow-up.
- *
- * The interface (NodeService) is the important part - it defines the contract
- * between the application layer and the transport layer.
+ * Supports two modes:
+ * 1. Traditional (mesh pre-created by index.ts): mesh is passed in constructor
+ * 2. Envoy-managed: Envoy calls initNode/startNode/stopNode to manage lifecycle
  */
 class NodeServiceImpl implements NodeService {
-  private readonly mesh: EnvoyMesh;
+  private _mesh: EnvoyMesh | undefined;
   private readonly _args: NodeArgs;
-  private readonly _profile: NodeProfile;
+  private _profile: NodeProfile | undefined;
   private readonly _trustStore: LocalTrustStore;
   private readonly _peerDirectoryStore: LocalPeerDirectoryStore;
+  private readonly _configStore: ReturnType<typeof createNodeConfigStore>;
+
+  private _nodeStatus: NodeStatus = "offline";
 
   // Event listeners - stored for later emission
   private readonly listeners = new Map<keyof NodeServiceEvents, Set<(...args: any[]) => void>>();
 
   constructor(
-    mesh: EnvoyMesh,
+    mesh: EnvoyMesh | undefined,
     args: NodeArgs,
-    profile: NodeProfile,
+    profile: NodeProfile | undefined,
     trustStore: LocalTrustStore,
     peerDirectoryStore: LocalPeerDirectoryStore,
   ) {
-    this.mesh = mesh;
+    this._mesh = mesh;
     this._args = args;
     this._profile = profile;
     this._trustStore = trustStore;
     this._peerDirectoryStore = peerDirectoryStore;
+    this._configStore = createNodeConfigStore(args.profileDir);
+    if (mesh) {
+      this._nodeStatus = "running";
+    }
+  }
+
+  // ============================================
+  // Internal helpers
+  // ============================================
+
+  private _requireMesh(): EnvoyMesh {
+    if (!this._mesh) {
+      throw new Error("Node is not running. Call startNode() first.");
+    }
+    return this._mesh;
+  }
+
+  private _requireProfile(): NodeProfile {
+    if (!this._profile) {
+      throw new Error("Node is not initialized. Call initNode() first.");
+    }
+    return this._profile;
+  }
+
+  private _assertOnline(): void {
+    if (this._nodeStatus !== "running") {
+      throw new Error(`Node is ${this._nodeStatus}. Start the node first.`);
+    }
   }
 
   // ============================================
@@ -64,7 +96,7 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   getProfile(): NodeProfile {
-    return this._profile;
+    return this._requireProfile();
   }
 
   async getHumanProfile(): Promise<HumanProfile | undefined> {
@@ -80,6 +112,10 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   async sendHello(targetOwnerId: string, profile: HelloProfile, message: string): Promise<HelloResponse> {
+    this._assertOnline();
+    const mesh = this._requireMesh();
+    const selfProfile = this._requireProfile();
+
     // Find the target peer's peerId
     const peerRecords = await this._peerDirectoryStore.listPeerRecords();
     const targetPeer = peerRecords.find((r) => r.ownerId === targetOwnerId);
@@ -94,22 +130,22 @@ class NodeServiceImpl implements NodeService {
     const { createBondRequestPayload } = await import("@envoymesh/protocol");
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({
-        senderPeerId: derivePeerId(this._profile.device.publicKeyPem),
-        senderPublicKey: this._profile.device.publicKeyPem,
+        senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
+        senderPublicKey: selfProfile.device.publicKeyPem,
         recipientPeerId: targetPeer.peerId,
         intent: "bond.request",
         payload: createBondRequestPayload({
-          requesterOwnerId: this._profile.owner.ownerId,
+          requesterOwnerId: selfProfile.owner.ownerId,
           requesterDisplayName: profile.displayName,
           message: `[HELLO] ${message}`,
           proofOfContext: `displayName:${profile.displayName}`,
           requestedLevel: "direct",
         }),
       }),
-      this._profile.device.privateKeyPem,
+      selfProfile.device.privateKeyPem,
     );
 
-    await this.mesh.send(targetPeer.peerId, envelope);
+    await mesh.send(targetPeer.peerId, envelope);
 
     return {
       messageId,
@@ -174,6 +210,10 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   async sendChat(targetOwnerId: string, text: string): Promise<void> {
+    this._assertOnline();
+    const mesh = this._requireMesh();
+    const selfProfile = this._requireProfile();
+
     // Look up peer's peerId by ownerId
     const peerRecords = await this._peerDirectoryStore.listPeerRecords();
     const targetPeer = peerRecords.find((r) => r.ownerId === targetOwnerId);
@@ -185,26 +225,26 @@ class NodeServiceImpl implements NodeService {
     const recipientPeerId = targetPeer.peerId;
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({
-        senderPeerId: derivePeerId(this._profile.device.publicKeyPem),
-        senderPublicKey: this._profile.device.publicKeyPem,
+        senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
+        senderPublicKey: selfProfile.device.publicKeyPem,
         recipientPeerId: recipientPeerId,
         intent: "chat.message",
         payload: createChatMessagePayload({
-          senderOwnerId: this._profile.owner.ownerId,
+          senderOwnerId: selfProfile.owner.ownerId,
           text,
         }),
       }),
-      this._profile.device.privateKeyPem,
+      selfProfile.device.privateKeyPem,
     );
 
-    await this.mesh.sendChat(recipientPeerId, envelope);
+    await mesh.sendChat(recipientPeerId, envelope);
 
     // Emit the sent message as a local event
     this.emit("chat:message", {
       messageId: envelope.messageId,
       sender: {
-        nodeId: this.mesh.peerId,
-        displayName: this._profile.owner.ownerId,
+        nodeId: mesh.peerId,
+        displayName: selfProfile.owner.ownerId,
       },
       recipient: {
         nodeId: recipientPeerId,
@@ -271,6 +311,18 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   async getNodeConfig(): Promise<NodeConfig> {
+    const config = await this._configStore.load();
+    if (config) {
+      return {
+        profileDir: config.profileDir,
+        discoveryProfile: config.discoveryProfile,
+        relayEnabled: config.relayEnabled,
+        relayServerEnabled: config.relayServerEnabled,
+        configuredRelays: config.configuredRelays,
+        advertiseAddrs: config.advertiseAddrs,
+        bootstrapPeers: config.bootstrapPeers,
+      };
+    }
     return {
       profileDir: this._args.profileDir,
       discoveryProfile: this._args.discoveryProfile as "lan-fast" | "wan-default",
@@ -282,26 +334,173 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
-  async updateNodeConfig(_config: Partial<NodeConfig>): Promise<void> {
-    throw new Error("Not yet implemented - runtime config updates require node restart");
+  async updateNodeConfig(config: Partial<NodeConfig>): Promise<void> {
+    const current = (await this._configStore.load()) ?? {
+      version: "0.1" as const,
+      profileDir: this._args.profileDir,
+      discoveryProfile: this._args.discoveryProfile as "lan-fast" | "wan-default",
+      relayEnabled: this._args.enableRelay,
+      relayServerEnabled: this._args.enableRelayServer,
+      advertiseAddrs: this._args.advertiseAddrs,
+      bootstrapPeers: this._args.bootstrapPeers,
+      bootstrapPresets: [],
+      configuredRelays: [],
+      updatedAt: new Date().toISOString(),
+    };
+
+    const updated: PersistedNodeConfig = {
+      ...current,
+      ...(config.discoveryProfile && { discoveryProfile: config.discoveryProfile }),
+      ...(config.relayEnabled !== undefined && { relayEnabled: config.relayEnabled }),
+      ...(config.relayServerEnabled !== undefined && { relayServerEnabled: config.relayServerEnabled }),
+      ...(config.advertiseAddrs && { advertiseAddrs: config.advertiseAddrs }),
+      ...(config.bootstrapPeers && { bootstrapPeers: config.bootstrapPeers }),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this._configStore.save(updated);
+    this.emit("node:status", {
+      status: this._nodeStatus,
+      peerId: this._mesh?.peerId,
+    });
   }
 
   async listRelays(): Promise<RelayConfig[]> {
-    return [];
+    const config = await this._configStore.load();
+    return config?.configuredRelays ?? [];
   }
 
   async addRelay(addr: string, level?: number, region?: string): Promise<RelayConfig> {
+    const config = (await this._configStore.load()) ?? {
+      version: "0.1" as const,
+      profileDir: this._args.profileDir,
+      discoveryProfile: this._args.discoveryProfile as "lan-fast" | "wan-default",
+      relayEnabled: this._args.enableRelay,
+      relayServerEnabled: this._args.enableRelayServer,
+      advertiseAddrs: this._args.advertiseAddrs,
+      bootstrapPeers: this._args.bootstrapPeers,
+      bootstrapPresets: [],
+      configuredRelays: [],
+      updatedAt: new Date().toISOString(),
+    };
+
+    const relayId = `relay_${Date.now()}`;
+    const newRelay: RelayConfig = { relayId, addr, level, region, enabled: true };
+
+    const updated: PersistedNodeConfig = {
+      ...config,
+      configuredRelays: [...config.configuredRelays, newRelay],
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this._configStore.save(updated);
+    return newRelay;
+  }
+
+  async removeRelay(relayId: string): Promise<void> {
+    const config = await this._configStore.load();
+    if (!config) {
+      return;
+    }
+
+    const updated: PersistedNodeConfig = {
+      ...config,
+      configuredRelays: config.configuredRelays.filter((r) => r.relayId !== relayId),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this._configStore.save(updated);
+  }
+
+  // ============================================
+  // Node Lifecycle
+  // ============================================
+
+  async initNode(profileDir: string, options?: InitNodeOptions): Promise<NodeInitResult> {
+    // Create profile directory structure
+    const profile = await loadOrCreateNodeProfile(profileDir);
+
+    // Write persisted config
+    const config: PersistedNodeConfig = {
+      version: "0.1",
+      profileDir,
+      discoveryProfile: options?.discoveryProfile ?? "wan-default",
+      relayEnabled: options?.relayEnabled ?? true,
+      relayServerEnabled: options?.relayServerEnabled ?? false,
+      advertiseAddrs: options?.advertiseAddrs ?? [],
+      bootstrapPeers: options?.bootstrapPeers ?? [],
+      bootstrapPresets: options?.bootstrapPresets ?? [],
+      configuredRelays: [],
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this._configStore.save(config);
+    this._profile = profile;
+
     return {
-      relayId: `relay_${Date.now()}`,
-      addr,
-      level,
-      region,
-      enabled: true,
+      profileDir,
+      peerId: derivePeerId(profile.device.publicKeyPem),
+      ownerId: profile.owner.ownerId,
+      deviceId: profile.device.deviceId,
     };
   }
 
-  async removeRelay(_relayId: string): Promise<void> {
-    // Future: remove from configured relays
+  getNodeStatus(): NodeStatus {
+    return this._nodeStatus;
+  }
+
+  async startNode(): Promise<void> {
+    if (this._nodeStatus === "running") {
+      // Already running, no-op
+      return;
+    }
+
+    if (this._nodeStatus === "starting") {
+      throw new Error("Node is already starting");
+    }
+
+    this._nodeStatus = "starting";
+    this.emit("node:status", { status: this._nodeStatus });
+
+    try {
+      const config = await this._configStore.load();
+      if (!config) {
+        throw new Error("No node config found. Call initNode() first.");
+      }
+
+      // Load or create profile
+      this._profile = await loadOrCreateNodeProfile(config.profileDir);
+
+      // Create mesh from config - Note: this is a simplified version
+      // In a full implementation, we would create the actual EnvoyMesh here
+      // For now, this throws since EnvoyMesh requires many dependencies
+      throw new Error("startNode: Full mesh creation not yet implemented in NodeService. Use CLI to start the node.");
+    } catch (error) {
+      this._nodeStatus = "offline";
+      this.emit("node:status", { status: this._nodeStatus });
+      throw error;
+    }
+  }
+
+  async stopNode(): Promise<void> {
+    if (this._nodeStatus === "offline") {
+      return;
+    }
+
+    this._nodeStatus = "stopping";
+    this.emit("node:status", { status: this._nodeStatus });
+
+    try {
+      if (this._mesh) {
+        await this._mesh.stop();
+        this._mesh = undefined;
+      }
+    } catch (error) {
+      console.error("[node-service] Error stopping mesh:", error);
+    }
+
+    this._nodeStatus = "offline";
+    this.emit("node:status", { status: this._nodeStatus });
   }
 
   // ============================================
@@ -329,11 +528,19 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   getConnectionStatus(): ConnectionStatus {
-    // Note: actual implementation would check if libp2p node has started
+    if (!this._mesh || this._nodeStatus !== "running") {
+      return {
+        online: false,
+        peerId: "",
+        multiaddrs: [],
+        connectedRelays: [],
+        bondedPeers: 0,
+      };
+    }
     return {
       online: true,
-      peerId: this.mesh.peerId,
-      multiaddrs: this.mesh.multiaddrs,
+      peerId: this._mesh.peerId,
+      multiaddrs: this._mesh.multiaddrs,
       connectedRelays: [],
       bondedPeers: 0,
     };
@@ -357,9 +564,9 @@ class NodeServiceImpl implements NodeService {
  * Creates a NodeService instance.
  */
 export function createNodeService(
-  mesh: EnvoyMesh,
+  mesh: EnvoyMesh | undefined,
   args: NodeArgs,
-  profile: NodeProfile,
+  profile: NodeProfile | undefined,
   trustStore: LocalTrustStore,
   peerDirectoryStore: LocalPeerDirectoryStore,
 ): NodeService {

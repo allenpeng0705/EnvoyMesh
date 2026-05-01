@@ -486,3 +486,161 @@ body {
   color: var(--color-text-muted);
   font-size: 0.875rem;
 }
+
+/* Status dots */
+.status-dot.offline {
+  background: var(--color-text-muted);
+}
+
+.status-dot.starting {
+  background: #f59e0b;
+}
+
+.status-dot.online {
+  background: var(--color-success);
+}
+
+/* Node status in header */
+.node-status {
+  text-transform: capitalize;
+  padding: 0.125rem 0.5rem;
+  background: var(--color-bg);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+}
+
+/* Setup View */
+.setup-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 2rem;
+}
+
+.setup-view h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.setup-view .muted {
+  margin-bottom: 2rem;
+}
+
+.setup-form {
+  width: 100%;
+  max-width: 480px;
+  background: var(--color-surface);
+  padding: 2rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-group label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 0.375rem;
+  font-size: 0.875rem;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  background: var(--color-bg);
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+}
+
+.form-group small {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.setup-form button {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 0.375rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.setup-form button:hover:not(:disabled) {
+  background: #4338ca;
+}
+
+.setup-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.setup-form button.primary {
+  background: var(--color-primary);
+}
+
+/* Settings - Node Control */
+.settings-section h3 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: var(--color-text);
+}
+
+.settings-list dt {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  margin-bottom: 0.125rem;
+}
+
+.settings-list dd {
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+
+.node-controls {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.node-controls button {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.node-controls button:hover {
+  background: var(--color-bg);
+}
+
+.settings-list .status-running,
+.settings-list .status-starting,
+.settings-list .status-offline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}

@@ -7,7 +7,7 @@ import type {
   DeviceIdentity,
   OwnerIdentity,
 } from "@envoymesh/identity";
-import type { NodeConfig, RelayConfig } from "./ws-protocol.js";
+import type { NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult } from "./ws-protocol.js";
 
 // ============================================
 // Identity Types
@@ -192,6 +192,7 @@ export interface NodeServiceEvents {
   // Connection state
   "node:online": { peerId: string; multiaddrs: string[] };
   "node:offline": { peerId: string };
+  "node:status": { status: NodeStatus; peerId?: string };
 }
 
 export interface NodeService {
@@ -314,6 +315,28 @@ export interface NodeService {
    * Remove a relay
    */
   removeRelay(relayId: string): Promise<void>;
+
+  // ----- Node Lifecycle -----
+
+  /**
+   * Initialize a new node (first-run setup)
+   */
+  initNode(profileDir: string, options?: InitNodeOptions): Promise<NodeInitResult>;
+
+  /**
+   * Get current node status
+   */
+  getNodeStatus(): NodeStatus;
+
+  /**
+   * Start the node with saved configuration
+   */
+  startNode(): Promise<void>;
+
+  /**
+   * Stop the running node
+   */
+  stopNode(): Promise<void>;
 
   // ----- Event Subscription -----
 
