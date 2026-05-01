@@ -125,6 +125,7 @@ export interface NodeConfig {
   configuredRelays: RelayConfig[];
   advertiseAddrs: string[];
   bootstrapPeers: string[];
+  bootstrapPresets: string[];
 }
 
 export type DiscoveryProfile = "lan-fast" | "wan-default";

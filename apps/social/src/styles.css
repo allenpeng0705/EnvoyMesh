@@ -678,3 +678,93 @@ body {
   align-items: center;
   gap: 0.375rem;
 }
+
+/* Network Mode Selector */
+.network-mode-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.network-mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.network-mode-option:hover {
+  background: var(--color-bg);
+}
+
+.network-mode-option.selected {
+  border-color: var(--color-primary);
+  background: rgba(79, 70, 229, 0.05);
+}
+
+.network-mode-option input[type="radio"] {
+  margin-top: 0.25rem;
+}
+
+.network-mode-option .mode-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.network-mode-option .mode-desc {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-top: 0.125rem;
+}
+
+/* Bootstrap Presets */
+.bootstrap-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.preset-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.preset-checkbox:hover {
+  background: var(--color-bg);
+}
+
+.preset-checkbox input[type="checkbox"] {
+  margin-top: 0.2rem;
+}
+
+.preset-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.preset-info strong {
+  font-size: 0.875rem;
+  font-family: monospace;
+}
+
+.preset-desc {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+/* Section description */
+.section-desc {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-bottom: 0.75rem;
+}

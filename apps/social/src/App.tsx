@@ -47,6 +47,11 @@ function App() {
   const [appSettings, setAppSettings] = useState<AppSettings>(loadAppSettings);
   const [settingsTab, setSettingsTab] = useState<"node" | "app">("node");
 
+  // Network mode: public (libp2p only), private (relays only), hybrid (both)
+  const [networkMode, setNetworkMode] = useState<"public" | "private" | "hybrid">("private");
+  // Bootstrap presets for public network (when mode is public or hybrid)
+  const [bootstrapPresets, setBootstrapPresets] = useState<string[]>([]);
+
   // Node status and setup
   const [nodeStatus, setNodeStatus] = useState<NodeStatus>("offline");
   const [showSetup, setShowSetup] = useState(false);
@@ -80,7 +85,20 @@ function App() {
         setShowSetup(true);
       });
 
-    nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+    nodeService.getNodeConfig().then((config) => {
+      setNodeConfig(config);
+      // Determine network mode based on config
+      if (config.bootstrapPresets && config.bootstrapPresets.length > 0 && config.configuredRelays && config.configuredRelays.length > 0) {
+        setNetworkMode("hybrid");
+        setBootstrapPresets(config.bootstrapPresets);
+      } else if (config.bootstrapPresets && config.bootstrapPresets.length > 0) {
+        setNetworkMode("public");
+        setBootstrapPresets(config.bootstrapPresets);
+      } else {
+        setNetworkMode("private");
+        setBootstrapPresets([]);
+      }
+    }).catch(console.error);
     nodeService.listRelays().then(setRelays).catch(console.error);
 
     // Fetch profile for peer ID
@@ -489,32 +507,76 @@ function App() {
                 </section>
 
                 <section className="settings-section">
-                  <h3>Relay Configuration</h3>
-                  <dl className="settings-list">
-                    <dt>Discovery Profile</dt>
-                    <dd>{nodeConfig?.discoveryProfile ?? "Loading..."}</dd>
-
-                    <dt>Relay Enabled</dt>
-                    <dd>{nodeConfig?.relayEnabled ? "Yes" : "No"}</dd>
-
-                    <dt>Relay Server Enabled</dt>
-                    <dd>{nodeConfig?.relayServerEnabled ? "Yes" : "No"}</dd>
-
-                    <dt>Advertised Addresses</dt>
-                    <dd>
-                      {nodeConfig?.advertiseAddrs.length ? (
-                        <ul>{nodeConfig.advertiseAddrs.map((addr, i) => <li key={i}><code>{addr}</code></li>)}</ul>
-                      ) : "None"}
-                    </dd>
-
-                    <dt>Bootstrap Peers</dt>
-                    <dd>
-                      {nodeConfig?.bootstrapPeers.length ? (
-                        <ul>{nodeConfig.bootstrapPeers.map((peer, i) => <li key={i}><code>{peer}</code></li>)}</ul>
-                      ) : "None"}
-                    </dd>
-                  </dl>
+                  <h3>Network Mode</h3>
+                  <div className="network-mode-selector">
+                    <label className={`network-mode-option ${networkMode === "public" ? "selected" : ""}`}>
+                      <input
+                        type="radio"
+                        name="networkMode"
+                        value="public"
+                        checked={networkMode === "public"}
+                        onChange={() => setNetworkMode("public")}
+                      />
+                      <span className="mode-title">Public</span>
+                      <span className="mode-desc">Connect to libp2p public network only</span>
+                    </label>
+                    <label className={`network-mode-option ${networkMode === "private" ? "selected" : ""}`}>
+                      <input
+                        type="radio"
+                        name="networkMode"
+                        value="private"
+                        checked={networkMode === "private"}
+                        onChange={() => setNetworkMode("private")}
+                      />
+                      <span className="mode-title">Private</span>
+                      <span className="mode-desc">Connect via your own relay servers only</span>
+                    </label>
+                    <label className={`network-mode-option ${networkMode === "hybrid" ? "selected" : ""}`}>
+                      <input
+                        type="radio"
+                        name="networkMode"
+                        value="hybrid"
+                        checked={networkMode === "hybrid"}
+                        onChange={() => setNetworkMode("hybrid")}
+                      />
+                      <span className="mode-title">Hybrid</span>
+                      <span className="mode-desc">Connect to both public and private networks</span>
+                    </label>
+                  </div>
                 </section>
+
+                {(networkMode === "public" || networkMode === "hybrid") && (
+                  <section className="settings-section">
+                    <h3>Public Network (libp2p)</h3>
+                    <p className="section-desc">Select bootstrap presets to discover public peers:</p>
+                    <div className="bootstrap-presets">
+                      {[
+                        { id: "public-libp2p", label: "public-libp2p", desc: "4 bootstrap servers" },
+                        { id: "public-libp2p-am6", label: "public-libp2p-am6", desc: "1 server (AM6)" },
+                        { id: "public-libp2p-am7", label: "public-libp2p-am7", desc: "1 server (AM7)" },
+                      ].map((preset) => (
+                        <label key={preset.id} className="preset-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={bootstrapPresets.includes(preset.id)}
+                            onChange={async () => {
+                              const updated = bootstrapPresets.includes(preset.id)
+                                ? bootstrapPresets.filter(p => p !== preset.id)
+                                : [...bootstrapPresets, preset.id];
+                              setBootstrapPresets(updated);
+                              await nodeService.updateNodeConfig({ bootstrapPresets: updated });
+                              nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                            }}
+                          />
+                          <span className="preset-info">
+                            <strong>{preset.label}</strong>
+                            <span className="preset-desc">{preset.desc}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </section>
+                )}
 
                 <section className="settings-section">
                   <h3>Configured Relays</h3>

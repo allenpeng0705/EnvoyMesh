@@ -97,8 +97,8 @@ This creates the full multiaddr: `/ip4/123.45.67.89/tcp/4001/p2p/PEER_ID`
 ### Example 3: Cloud Server with HTTP Info Endpoint
 
 ```bash
-# Enable HTTP /info endpoint on port 8080 for relay discovery
-./scripts/run-relay.sh --advertise 123.45.67.89 --http-port 8080
+# Enable HTTP /info endpoint on port 15432 for relay discovery
+./scripts/run-relay.sh --advertise 123.45.67.89 --http-port 15432
 ```
 
 Users can now discover this relay using domain name (e.g., `relay.example.com`) instead of full multiaddr.

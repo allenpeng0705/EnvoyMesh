@@ -348,6 +348,7 @@ class NodeServiceImpl implements NodeService {
         configuredRelays: config.configuredRelays,
         advertiseAddrs: config.advertiseAddrs,
         bootstrapPeers: config.bootstrapPeers,
+        bootstrapPresets: config.bootstrapPresets,
       };
     }
     return {
@@ -358,6 +359,7 @@ class NodeServiceImpl implements NodeService {
       configuredRelays: [],
       advertiseAddrs: [],
       bootstrapPeers: [],
+      bootstrapPresets: [],
     };
   }
 
@@ -382,6 +384,7 @@ class NodeServiceImpl implements NodeService {
       ...(config.relayServerEnabled !== undefined && { relayServerEnabled: config.relayServerEnabled }),
       ...(config.advertiseAddrs && { advertiseAddrs: config.advertiseAddrs }),
       ...(config.bootstrapPeers && { bootstrapPeers: config.bootstrapPeers }),
+      ...(config.bootstrapPresets && { bootstrapPresets: config.bootstrapPresets }),
       ...(config.configuredRelays && { configuredRelays: config.configuredRelays }),
       updatedAt: new Date().toISOString(),
     };
