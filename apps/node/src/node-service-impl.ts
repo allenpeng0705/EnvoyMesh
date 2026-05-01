@@ -38,6 +38,7 @@ import {
 } from "@envoymesh/local-store";
 import { createNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
+import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
 import { createTaskDispatcher } from "./task-dispatcher.js";
 import {
@@ -381,6 +382,7 @@ class NodeServiceImpl implements NodeService {
       ...(config.relayServerEnabled !== undefined && { relayServerEnabled: config.relayServerEnabled }),
       ...(config.advertiseAddrs && { advertiseAddrs: config.advertiseAddrs }),
       ...(config.bootstrapPeers && { bootstrapPeers: config.bootstrapPeers }),
+      ...(config.configuredRelays && { configuredRelays: config.configuredRelays }),
       updatedAt: new Date().toISOString(),
     };
 
@@ -413,14 +415,25 @@ class NodeServiceImpl implements NodeService {
     const relayId = `relay_${Date.now()}`;
     const newRelay: RelayConfig = { relayId, addr, level, region, enabled: true };
 
+    // If address looks like a domain, try to resolve it to a multiaddr with peer ID
+    let resolvedAddr = addr;
+    if (looksLikeDomain(addr)) {
+      console.log(`[node-service] Resolving relay domain: ${addr}`);
+      const results = await resolveBootstrapAddresses([addr]);
+      if (results.length > 0 && results[0].resolved.length > 0) {
+        resolvedAddr = results[0].resolved[0];
+        console.log(`[node-service] Resolved ${addr} to ${resolvedAddr}`);
+      }
+    }
+
     const updated: PersistedNodeConfig = {
       ...config,
-      configuredRelays: [...config.configuredRelays, newRelay],
+      configuredRelays: [...config.configuredRelays, { ...newRelay, addr: resolvedAddr }],
       updatedAt: new Date().toISOString(),
     };
 
     await this._configStore.save(updated);
-    return newRelay;
+    return { ...newRelay, addr: resolvedAddr };
   }
 
   async removeRelay(relayId: string): Promise<void> {

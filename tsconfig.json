@@ -10,7 +10,7 @@
     { "path": "./packages/local-store" },
     { "path": "./packages/api" },
     { "path": "./apps/node" },
-    { "path": "./apps/desktop" },
+    { "path": "./apps/relay" },
     { "path": "./apps/social" }
   ]
 }

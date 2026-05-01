@@ -524,11 +524,26 @@ function App() {
                     <ul className="relay-list">
                       {relays.map((relay) => (
                         <li key={relay.relayId} className="relay-item">
-                          <span className="relay-info">
-                            <strong>{relay.addr}</strong>
-                            {relay.level !== undefined && <span className="relay-level">Level {relay.level}</span>}
-                            {relay.region && <span className="relay-region">{relay.region}</span>}
-                          </span>
+                          <label className="relay-toggle">
+                            <input
+                              type="checkbox"
+                              checked={relay.enabled}
+                              onChange={async () => {
+                                const updatedRelays = relays.map(r =>
+                                  r.relayId === relay.relayId
+                                    ? { ...r, enabled: !r.enabled }
+                                    : r
+                                );
+                                await nodeService.updateNodeConfig({ configuredRelays: updatedRelays });
+                                setRelays(updatedRelays);
+                              }}
+                            />
+                            <span className="relay-info">
+                              <strong>{relay.addr}</strong>
+                              {relay.level !== undefined && <span className="relay-level">Level {relay.level}</span>}
+                              {relay.region && <span className="relay-region">{relay.region}</span>}
+                            </span>
+                          </label>
                           <button
                             className="remove-relay"
                             onClick={async () => {

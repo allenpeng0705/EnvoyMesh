@@ -96,6 +96,7 @@ import { createNodeService } from "./node-service-impl.js";
 import { WsServer } from "./ws-server.js";
 import { evaluateInboundEnvelopeRolePolicy } from "./role-policy.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
+import { resolveBootstrapAddresses } from "./bootstrap-resolver.js";
 import {
   addRelayCandidates,
   createRelayClientState,
@@ -129,8 +130,13 @@ let wsServerForEvents: WsServer | null = null;
 const peerDirectoryRecords = await peerDirectoryStore.listPeerRecords();
 const peerDirectorySeedAddrs = peerDirectoryRecords.flatMap((record) => record.listenAddrs);
 const persistedSeedAddrs = await discoverySeedStore.listSeedAddrs();
+
+// Resolve domain-based bootstrap addresses to multiaddrs
+const resolvedBootstrapResults = await resolveBootstrapAddresses(args.bootstrapPeers);
+const resolvedBootstrapPeers = resolvedBootstrapResults.flatMap((r) => r.resolved);
+
 const effectiveBootstrapPeers = dedupeAddrs([
-  ...args.bootstrapPeers,
+  ...resolvedBootstrapPeers,
   ...peerDirectorySeedAddrs,
   ...persistedSeedAddrs,
 ]);
