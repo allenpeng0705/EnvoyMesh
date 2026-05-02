@@ -545,8 +545,12 @@ class NodeServiceImpl implements NodeService {
     }
 
     // Filter out self from results (don't show yourself in search results)
+    // Check against both ownerId AND peerId since DHT discovery returns peer IDs
     const selfOwnerId = this._profile?.owner.ownerId;
-    const filteredResults = results.filter((r) => r.nodeId !== selfOwnerId);
+    const selfPeerId = this._mesh?.peerId;
+    const filteredResults = results.filter((r) =>
+      r.nodeId !== selfOwnerId && r.nodeId !== selfPeerId
+    );
 
     return filteredResults.slice(0, maxResults);
   }
