@@ -141,6 +141,10 @@ function App() {
   const [connectionStatus, setConnectionStatus] = useState<any>(null);
   const [isPublicNetwork, setIsPublicNetwork] = useState(false);
 
+  // Discovered peers (mDNS / DHT found but not bonded)
+  const [discoveredPeers, setDiscoveredPeers] = useState<Array<{ peerId: string; displayName?: string; lastSeen?: string }>>([]);
+  const [showAroundMe, setShowAroundMe] = useState(false);
+
   const messages = useChatMessages(selectedContact);
 
   // Track connection state
@@ -218,6 +222,25 @@ function App() {
     });
     return unsubscribe;
   }, [nodeService]);
+
+  // Listen for discovered peers (mDNS / DHT found)
+  useEffect(() => {
+    if (!isConnected) return;
+    const unsubscribe = nodeService.on("peer:discovered", (data) => {
+      setDiscoveredPeers((prev) => {
+        // Don't add if already bonded
+        if (bonds.some((b) => b.peerOwnerId === data.ownerId)) return prev;
+        // Don't add duplicates
+        if (prev.some((p) => p.peerId === data.nodeId)) return prev;
+        return [...prev, {
+          peerId: data.nodeId,
+          displayName: data.displayName,
+          lastSeen: new Date().toISOString(),
+        }];
+      });
+    });
+    return unsubscribe;
+  }, [nodeService, bonds]);
 
   const connectionInfo = {
     online: isConnected && nodeStatus === "running",
@@ -580,9 +603,47 @@ function App() {
 
         {currentView === "contacts" && (
           <div className="contacts-view">
-            <h2>Your Contacts</h2>
-            {bonds.length === 0 ? (
-              <p className="empty">No contacts yet. Use Search to find people!</p>
+            <div className="contacts-header">
+              <h2>Your Contacts</h2>
+              <div className="around-me-toggle">
+                <button
+                  className={`around-me-btn ${showAroundMe ? 'active' : ''}`}
+                  onClick={() => setShowAroundMe(!showAroundMe)}
+                >
+                  Around Me {discoveredPeers.length > 0 && <span className="badge">{discoveredPeers.length}</span>}
+                </button>
+              </div>
+            </div>
+
+            {showAroundMe && (
+              <div className="around-me-section">
+                <h3>Discovered Peers</h3>
+                {discoveredPeers.length === 0 ? (
+                  <p className="empty">No peers discovered yet. Keep your node running to discover nearby peers.</p>
+                ) : (
+                  <ul className="around-me-list">
+                    {discoveredPeers.map((peer) => (
+                      <li key={peer.peerId} className="around-me-item">
+                        <span className="avatar">{peer.displayName?.[0] ?? "?"}</span>
+                        <div className="peer-info">
+                          <strong>{peer.displayName || "Unknown Peer"}</strong>
+                          <span className="peer-id">{peer.peerId.slice(0, 12)}...</span>
+                        </div>
+                        <button
+                          className="say-hello-btn"
+                          onClick={() => handleSayHello(peer.peerId)}
+                        >
+                          Say Hello
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {bonds.length === 0 && !showAroundMe ? (
+              <p className="empty">No contacts yet. Use Search to find people, or check Around Me for discovered peers.</p>
             ) : (
               <ul className="contact-cards">
                 {bonds.map((contact) => (
@@ -1222,7 +1283,8 @@ function App() {
             )}
           </div>
         )}
-      </main>
+
+              </main>
 
       {pendingHellOs.length > 0 && (
         <aside className="hello-requests">

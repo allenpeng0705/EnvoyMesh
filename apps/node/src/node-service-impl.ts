@@ -1082,6 +1082,16 @@ class NodeServiceImpl implements NodeService {
           payload: { type: "system.signal", version: "1.0", senderPublicKey: "", signal: "peer.discovered" } as any,
         });
       }
+      // Emit peer:discovered so the UI can show "Around Me" section
+      this.emit("peer:discovered", {
+        nodeId: peerId,
+        ownerId: peerId,
+        displayName: `Peer ${peerId.slice(0, 8)}`,
+        username: undefined,
+        bio: undefined,
+        interests: [],
+        profileVisibility: "public" as const,
+      });
     });
   }
 
