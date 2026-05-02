@@ -477,7 +477,12 @@ export class EnvoyMesh {
     protocol: string,
   ): Promise<number> {
     validateEnvelopeProtocol(protocol, envelope);
-    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    // Convert peer ID to proper multiaddr format if needed
+    let dialTarget = target;
+    if (!target.startsWith("/")) {
+      // It's a peer ID - convert to /p2p/Qm... format
+      dialTarget = `/p2p/${target}`;
+    }
     const startedAt = Date.now();
     const stream: any = await this.requireNode().dialProtocol(dialTarget as any, protocol);
     const remotePeerId = stream.connection?.remotePeer?.toString();
@@ -540,7 +545,11 @@ export class EnvoyMesh {
   }
 
   async dial(target: string): Promise<any> {
-    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    // Convert peer ID to proper multiaddr format if needed
+    let dialTarget = target;
+    if (!target.startsWith("/")) {
+      dialTarget = `/p2p/${target}`;
+    }
     return this.requireNode().dial(dialTarget as any);
   }
 
