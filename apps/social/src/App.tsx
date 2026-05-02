@@ -509,7 +509,7 @@ function App() {
             </div>
           )}
           <span className="node-status">{nodeStatus}</span>
-          <span className="peer-id">{connectionInfo.peerId.slice(0, 12)}...</span>
+          <span className="node-name" title={connectionInfo.peerId}>{humanProfile?.displayName || humanProfile?.username || connectionInfo.peerId.slice(0, 8) + "..."}</span>
           {connectionStatus?.bondedPeers > 0 && (
             <span className="peer-count">{connectionStatus.bondedPeers} peers</span>
           )}

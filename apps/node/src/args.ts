@@ -79,9 +79,9 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
   argv = normalizeWin32NpmArgv(argv);
   const args: NodeArgs = {
     profileDir: "./data/default",
-    discoveryProfile: "lan-fast",
+    discoveryProfile: "wan-default",
     connectivityStrict: false,
-    bootstrapPresets: [],
+    bootstrapPresets: ["public-libp2p"],
     bootstrapPresetsFiles: [],
     listen: ["/ip4/0.0.0.0/tcp/0"],
     advertiseAddrs: [],

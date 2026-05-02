@@ -122,10 +122,14 @@ body {
   font-weight: 500;
 }
 
-.peer-id {
-  font-family: monospace;
-  font-size: 0.6875rem;
-  color: var(--color-text-muted);
+.node-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-dot {
@@ -138,8 +142,9 @@ body {
   background: var(--color-success);
 }
 
-.peer-id {
-  font-family: monospace;
+.node-name,
+.node-status {
+  display: none;
 }
 
 /* Main */
@@ -1763,7 +1768,7 @@ button:disabled {
     font-size: 0.75rem;
   }
 
-  .peer-id,
+  .node-name,
   .node-status {
     display: none;
   }
