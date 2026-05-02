@@ -320,13 +320,22 @@ class NodeServiceImpl implements NodeService {
     const mesh = this._requireMesh();
     const selfProfile = this._requireProfile();
 
-    // Find the target peer's peerId
+    // Find the target peer's peerId - first check peer directory, then try direct peerId
     const peerRecords = await this._peerDirectoryStore.listPeerRecords();
-    const targetPeer = peerRecords.find((r) => r.ownerId === targetOwnerId);
+    let targetPeerId = peerRecords.find((r) => r.ownerId === targetOwnerId)?.peerId;
 
-    if (!targetPeer) {
-      throw new Error(`Peer not found for owner: ${targetOwnerId}`);
+    // If not found in peer directory, maybe targetOwnerId IS a peerId (for DHT discovered peers)
+    if (!targetPeerId) {
+      // Check if it looks like a valid peerId
+      if (targetOwnerId.startsWith("Qm") || targetOwnerId.startsWith("12D3")) {
+        targetPeerId = targetOwnerId;
+        console.log(`[node-service] Sending hello to DHT-discovered peer: ${targetPeerId}`);
+      } else {
+        throw new Error(`Peer not found for owner: ${targetOwnerId}`);
+      }
     }
+
+    console.log(`[node-service] sendHello to ${targetPeerId} (message: ${message})`);
 
     const messageId = `hello_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
@@ -336,7 +345,7 @@ class NodeServiceImpl implements NodeService {
       createUnsignedEnvelope({
         senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
         senderPublicKey: selfProfile.device.publicKeyPem,
-        recipientPeerId: targetPeer.peerId,
+        recipientPeerId: targetPeerId,
         intent: "bond.request",
         payload: createBondRequestPayload({
           requesterOwnerId: selfProfile.owner.ownerId,
@@ -349,7 +358,7 @@ class NodeServiceImpl implements NodeService {
       selfProfile.device.privateKeyPem,
     );
 
-    await mesh.send(targetPeer.peerId, envelope);
+    await mesh.send(targetPeerId, envelope);
 
     return {
       messageId,
@@ -535,7 +544,11 @@ class NodeServiceImpl implements NodeService {
       return this.searchLocalPeers(query, maxResults);
     }
 
-    return results.slice(0, maxResults);
+    // Filter out self from results (don't show yourself in search results)
+    const selfOwnerId = this._profile?.owner.ownerId;
+    const filteredResults = results.filter((r) => r.nodeId !== selfOwnerId);
+
+    return filteredResults.slice(0, maxResults);
   }
 
   private async searchByPeerId(peerId: string, maxResults: number): Promise<PeerSearchResult[]> {

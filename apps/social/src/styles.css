@@ -1521,6 +1521,66 @@ body {
   border-color: var(--color-primary);
 }
 
+/* Removable Interest Tags */
+.interests-input-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  min-height: 44px;
+  align-items: center;
+}
+
+.interests-input-container:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.interest-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+  border-radius: var(--radius-full);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.interest-tag .remove-interest {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 0.125rem;
+  font-size: 1rem;
+  line-height: 1;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.interest-tag .remove-interest:hover {
+  opacity: 1;
+}
+
+.interests-text-input {
+  flex: 1;
+  min-width: 120px;
+  border: none;
+  background: transparent;
+  padding: 0.25rem;
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.interests-text-input::placeholder {
+  color: var(--color-text-muted);
+}
+
 /* Capability Selection */
 .capability-groups {
   display: flex;

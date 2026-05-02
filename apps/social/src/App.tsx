@@ -406,8 +406,9 @@ function App() {
   const handleSayHello = async (targetOwnerId: string) => {
     try {
       const profile: HelloProfile = {
-        displayName: "Your Name", // TODO: get from human profile
-        interests: [],
+        displayName: humanProfile?.displayName || "Envoy User",
+        bio: humanProfile?.bio || "",
+        interests: (humanProfile?.hobbies || []).concat(humanProfile?.knowledge || []),
         whatShares: [],
       };
       await nodeService.sendHello(targetOwnerId, profile, "Hello!");
@@ -758,7 +759,7 @@ function App() {
                         <span className="interests">{result.interests.join(", ")}</span>
                       )}
                     </div>
-                    <button onClick={() => handleSayHello(result.ownerId)}>
+                    <button onClick={() => handleSayHello(result.nodeId)}>
                       Say Hello
                     </button>
                   </li>
@@ -885,14 +886,33 @@ function App() {
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Interests (comma separated)</label>
-                  <input
-                    type="text"
-                    value={profileEditForm.hobbies}
-                    onChange={(e) => setProfileEditForm({ ...profileEditForm, hobbies: e.target.value })}
-                    placeholder="music, tech, art, travel"
-                  />
-                  <small>These help others discover you. Comma separated.</small>
+                  <label>Interests</label>
+                  <div className="interests-input-container">
+                    {profileEditForm.hobbies.split(",").map(s => s.trim()).filter(Boolean).map((interest, i) => (
+                      <span key={i} className="interest-tag removable">
+                        {interest}
+                        <button
+                          type="button"
+                          className="remove-interest"
+                          onClick={() => {
+                            const current = profileEditForm.hobbies.split(",").map(s => s.trim()).filter(Boolean);
+                            current.splice(i, 1);
+                            setProfileEditForm({ ...profileEditForm, hobbies: current.join(", ") });
+                          }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                    <input
+                      type="text"
+                      value={profileEditForm.hobbies}
+                      onChange={(e) => setProfileEditForm({ ...profileEditForm, hobbies: e.target.value })}
+                      placeholder="Add interests..."
+                      className="interests-text-input"
+                    />
+                  </div>
+                  <small>Press Enter or comma to add. Click × to remove.</small>
                   <div className="suggested-interests">
                     <span className="suggested-label">Suggestions:</span>
                     <div className="interest-chips">
