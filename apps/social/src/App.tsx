@@ -326,12 +326,12 @@ function App() {
       if (searchMode === "peerId") {
         console.log(`[search] Looking up peer ID: ${query}`);
         results = await nodeService.searchPeers({ peerId: query });
-      } else if (/^[a-zA-Z0-9_]{3,30}$/.test(query)) {
-        // Looks like a username - search by username
-        console.log(`[search] Searching by username: ${query}`);
-        results = await nodeService.searchPeers({ username: query.toLowerCase() });
+      } else if (searchMode === "interest") {
+        // Always search by interest when in interest mode
+        console.log(`[search] Searching by interest: ${query}`);
+        results = await nodeService.searchPeers({ interests: [query.toLowerCase()] });
       } else {
-        // Default: search by interest
+        // Default: treat as interest
         console.log(`[search] Searching by interest: ${query}`);
         results = await nodeService.searchPeers({ interests: [query.toLowerCase()] });
       }

@@ -197,7 +197,7 @@ class NodeServiceImpl implements NodeService {
    * Advertise interests and username as DHT topics for peer discovery
    */
   private async _advertiseInterests(interests: string[], username: string): Promise<void> {
-    // Helper to run with timeout
+    // Helper to run with timeout - DHT operations can take up to 30s on public network
     const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
       return Promise.race([
         promise,
@@ -214,7 +214,7 @@ class NodeServiceImpl implements NodeService {
       try {
         await withTimeout(
           this._mesh!.provideCapabilityTopic(interest.toLowerCase()),
-          5000,
+          30000, // 30 seconds - DHT operations on public network can be slow
           interest
         );
         console.log(`[node-service] Advertised topic: ${interest.toLowerCase()}`);
@@ -229,7 +229,7 @@ class NodeServiceImpl implements NodeService {
     try {
       await withTimeout(
         this._mesh!.provideCapabilityTopic(`username:${username.toLowerCase()}`),
-        5000,
+        30000, // 30 seconds
         `username:${username}`
       );
       console.log(`[node-service] Advertised username: ${username.toLowerCase()}`);
