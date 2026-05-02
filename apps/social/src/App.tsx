@@ -39,6 +39,7 @@ function App() {
   const [selectedContact, setSelectedContact] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PeerSearchResult[]>([]);
+  const [searchMode, setSearchMode] = useState<"interest" | "peerId" | "topic">("interest");
   const [chatInput, setChatInput] = useState("");
   const [currentView, setCurrentView] = useState<"chat" | "contacts" | "search" | "profile" | "settings">("chat");
   const [nodeConfig, setNodeConfig] = useState<NodeConfig | null>(null);
@@ -187,7 +188,14 @@ function App() {
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     try {
-      const results = await nodeService.searchPeers({ interests: [searchQuery] });
+      let results: PeerSearchResult[] = [];
+      if (searchMode === "peerId") {
+        results = await nodeService.searchPeers({ peerId: searchQuery.trim() });
+      } else if (searchMode === "topic") {
+        results = await nodeService.searchPeers({ topic: searchQuery.trim() });
+      } else {
+        results = await nodeService.searchPeers({ interests: [searchQuery] });
+      }
       setSearchResults(results);
     } catch (error) {
       console.error("Failed to search:", error);
@@ -402,10 +410,36 @@ function App() {
         {currentView === "search" && (
           <div className="search-view">
             <h2>Find People</h2>
+            <div className="search-mode-tabs">
+              <button
+                className={searchMode === "interest" ? "active" : ""}
+                onClick={() => setSearchMode("interest")}
+              >
+                By Interest
+              </button>
+              <button
+                className={searchMode === "peerId" ? "active" : ""}
+                onClick={() => setSearchMode("peerId")}
+              >
+                By Peer ID
+              </button>
+              <button
+                className={searchMode === "topic" ? "active" : ""}
+                onClick={() => setSearchMode("topic")}
+              >
+                By Topic
+              </button>
+            </div>
             <div className="search-bar">
               <input
                 type="text"
-                placeholder="Search by interests (e.g., blues, jazz)..."
+                placeholder={
+                  searchMode === "peerId"
+                    ? "Enter Peer ID (e.g., 12D3KooWSHXmS7N94yFj1...)"
+                    : searchMode === "topic"
+                    ? "Enter topic (e.g., music, tech, art)"
+                    : "Search by interests (e.g., blues, jazz)"
+                }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}

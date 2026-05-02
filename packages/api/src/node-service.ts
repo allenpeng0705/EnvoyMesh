@@ -130,8 +130,13 @@ export interface PeerSearchResult {
 }
 
 export interface SearchQuery {
-  interests?: string[];
+  /** Direct peer ID lookup (e.g., "12D3KooWSHXmS7N94yFj1fqoH4anmbNXW6rZBcsGWrW95vEVjZ3Q") */
+  peerId?: string;
+  /** DHT topic-based discovery - peers advertising this topic will be found */
+  topic?: string;
+  /** Text search in display name/bio/interests (not used when peerId or topic is set) */
   queryText?: string;
+  interests?: string[];
   maxResults?: number;
 }
 

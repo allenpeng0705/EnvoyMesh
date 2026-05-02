@@ -296,22 +296,152 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   async searchPeers(query: SearchQuery): Promise<PeerSearchResult[]> {
-    const peerRecords = await this._peerDirectoryStore.listPeerRecords();
     const maxResults = query.maxResults ?? 20;
 
-    // Filter by ownerId (since PeerDirectoryRecord doesn't have displayName/bio/interests)
-    let results = peerRecords.map((record) => ({
-      nodeId: record.peerId,
-      ownerId: record.ownerId,
-      displayName: record.ownerId,
-      interests: [] as string[],
-      profileVisibility: "public" as const,
-    }));
+    // 1. Direct peer ID lookup via DHT (if peerId is specified)
+    if (query.peerId) {
+      return this.searchByPeerId(query.peerId, maxResults);
+    }
 
-    // Filter by query text (ownerId match)
-    if (query.queryText) {
-      const lowerQuery = query.queryText.toLowerCase();
-      results = results.filter((r) => r.ownerId.toLowerCase().includes(lowerQuery));
+    // 2. DHT topic-based discovery (if topic is specified)
+    if (query.topic) {
+      return this.searchByTopic(query.topic, maxResults);
+    }
+
+    // 3. Fall back to local bonded peers with text/interest filtering
+    return this.searchLocalPeers(query, maxResults);
+  }
+
+  private async searchByPeerId(peerId: string, maxResults: number): Promise<PeerSearchResult[]> {
+    const mesh = this._mesh;
+    if (!mesh) {
+      console.warn("[searchPeers] Node not initialized");
+      return [];
+    }
+
+    try {
+      // Try to find the peer via DHT first (if enabled)
+      const node = (mesh as any).node;
+      if (node?.peerRouting) {
+        const peer = await node.peerRouting.findPeer(peerId, { timeout: 10000 });
+        return [{
+          nodeId: peer.id.toString(),
+          ownerId: peer.id.toString(),
+          displayName: peer.id.toString().slice(0, 12) + "...",
+          interests: [],
+          profileVisibility: "public",
+        }];
+      }
+      // Direct dial attempt
+      await mesh.dial(`/p2p/${peerId}`);
+      return [{
+        nodeId: peerId,
+        ownerId: peerId,
+        displayName: peerId.slice(0, 12) + "...",
+        interests: [],
+        profileVisibility: "public",
+      }];
+    } catch (err) {
+      console.log(`[searchPeers] Peer ${peerId} not found via DHT or direct dial:`, err instanceof Error ? err.message : err);
+      return [];
+    }
+  }
+
+  private async searchByTopic(topic: string, maxResults: number): Promise<PeerSearchResult[]> {
+    const mesh = this._mesh;
+    if (!mesh) {
+      console.warn("[searchPeers] Node not initialized");
+      return [];
+    }
+
+    try {
+      const providers = await mesh.findCapabilityTopicProviders(topic, { limit: maxResults });
+      return providers.map((provider: { peerId: string }) => ({
+        nodeId: provider.peerId,
+        ownerId: provider.peerId,
+        displayName: provider.peerId.slice(0, 12) + "...",
+        interests: [],
+        profileVisibility: "public" as const,
+      }));
+    } catch (err) {
+      console.log(`[searchPeers] Topic "${topic}" query failed:`, err instanceof Error ? err.message : err);
+      return [];
+    }
+  }
+
+  private async searchLocalPeers(query: SearchQuery, maxResults: number): Promise<PeerSearchResult[]> {
+    const peerRecords = await this._peerDirectoryStore.listPeerRecords();
+    const trustRecords = await this._trustStore.listTrustRecords();
+
+    // Build a map of ownerId -> displayName from trust records
+    const displayNameByOwner = new Map<string, string>();
+    for (const record of trustRecords) {
+      if (record.displayName) {
+        displayNameByOwner.set(record.peerOwnerId, record.displayName);
+      }
+    }
+
+    // Get bonded peers (trust level exists and is not "blocked")
+    const bondedOwnerIds = new Set<string>();
+    for (const record of trustRecords) {
+      if (record.level !== "blocked") {
+        bondedOwnerIds.add(record.peerOwnerId);
+      }
+    }
+
+    let results: PeerSearchResult[] = [];
+
+    // Build results from peer records
+    for (const record of peerRecords) {
+      // Skip if not bonded (unless text search covers it)
+      // Include all records if they match query text
+      const displayName = displayNameByOwner.get(record.ownerId) ?? record.ownerId;
+      const isBonded = bondedOwnerIds.has(record.ownerId);
+
+      const result: PeerSearchResult = {
+        nodeId: record.peerId,
+        ownerId: record.ownerId,
+        displayName,
+        interests: [],
+        profileVisibility: "public",
+      };
+
+      // Filter: if query text is provided, match against ownerId or displayName
+      if (query.queryText) {
+        const lowerQuery = query.queryText.toLowerCase();
+        const matches = result.ownerId.toLowerCase().includes(lowerQuery) ||
+          result.displayName.toLowerCase().includes(lowerQuery);
+        if (!matches) continue;
+        results.push(result);
+      } else if (isBonded) {
+        // No query text - show only bonded peers
+        results.push(result);
+      }
+    }
+
+    // Also search by interests (text match on any interest)
+    if (query.interests && query.interests.length > 0) {
+      const interestMatches = peerRecords.filter((record) => {
+        const displayName = displayNameByOwner.get(record.ownerId) ?? "";
+        // Note: peerRecords don't have interests field, so we just match by ownerId/displayName
+        const lowerInterests = query.interests!.map((i) => i.toLowerCase());
+        return lowerInterests.some((interest) =>
+          record.ownerId.toLowerCase().includes(interest) ||
+          displayName.toLowerCase().includes(interest),
+        );
+      });
+      for (const record of interestMatches) {
+        const displayName = displayNameByOwner.get(record.ownerId) ?? record.ownerId;
+        if (!results.some((r) => r.nodeId === record.peerId)) {
+          results.push({
+            nodeId: record.peerId,
+            ownerId: record.ownerId,
+            displayName,
+            interests: [],
+            profileVisibility: "public",
+          });
+        }
+      }
     }
 
     return results.slice(0, maxResults);

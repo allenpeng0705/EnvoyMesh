@@ -54,10 +54,6 @@ export class WsClient {
         this.ws.onmessage = (event) => {
           this.handleMessage(event.data);
         };
-
-        this.ws.on("pong", () => {
-          this.lastPong = Date.now();
-        });
       } catch (error) {
         reject(error);
       }
