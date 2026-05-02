@@ -74,17 +74,20 @@ export interface NodeProfile {
 
 export interface HumanProfile {
   ownerId: string;
-  displayName?: string;
+  displayName: string;           // Required - shown in UI
+  username: string;             // Required - used for DHT discovery (3-30 chars, alphanumeric + underscore)
   bio?: string;
   gender?: string;
   hobbies?: string[];
   knowledge?: string[];
+  profileVisibility: "public" | "private";  // "public" advertises to DHT for discovery
   updatedAt: string;
   signature: string;
 }
 
 export interface HelloProfile {
-  displayName: string;
+  displayName: string;        // Required - who you are
+  username: string;          // Required - used for DHT discovery
   bio?: string;
   interests: string[];
   whatShares: string[];
@@ -152,13 +155,16 @@ export interface PeerSearchResult {
   nodeId: string;
   ownerId: string;
   displayName: string;
+  username?: string;           // If set, can be discovered via DHT username search
   bio?: string;
   interests: string[];
-  profileVisibility: "public" | "contacts" | "private";
+  profileVisibility: "public" | "private";
 }
 
 export interface SearchQuery {
-  interests?: string[];
+  peerId?: string;              // Direct peer ID lookup
+  interests?: string[];         // DHT topic-based discovery
+  username?: string;            // Username-based discovery (DHT topic: username:<name>)
   queryText?: string;
   maxResults?: number;
 }

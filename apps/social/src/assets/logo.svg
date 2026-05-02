@@ -1,0 +1,16 @@
+<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Chip E - processor style -->
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#a5b4fc"/>
+    </linearGradient>
+  </defs>
+  <!-- Chip body -->
+  <rect x="12" y="12" width="40" height="40" rx="4" stroke="url(#grad)" stroke-width="3" fill="none"/>
+  <!-- E cut into chip -->
+  <path d="M44 20H26C24 20 22 22 22 24V28C22 30 24 32 26 32H40V36H26C24 36 22 38 22 40V44C22 46 24 48 26 48H44" stroke="url(#grad)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Chip pins -->
+  <path d="M20 8V16M28 8V16M36 8V16M44 8V16M20 56V64M28 56V64M36 56V64M44 56V64" stroke="url(#grad)" stroke-width="2" stroke-linecap="round"/>
+  <path d="M8 20H16M8 28H16M8 36H16M8 44H16M56 20H64M56 28H64M56 36H64M56 44H64" stroke="url(#grad)" stroke-width="2" stroke-linecap="round"/>
+</svg>
