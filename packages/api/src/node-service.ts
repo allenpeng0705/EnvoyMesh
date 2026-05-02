@@ -2,6 +2,7 @@ import type {
   AgentCard,
   DeviceCertificate,
   HumanProfilePayload,
+  CapabilityUnion,
 } from "@envoymesh/protocol";
 import type {
   DeviceIdentity,
@@ -28,11 +29,14 @@ export interface HumanProfile extends HumanProfilePayload {
 }
 
 export interface CreateHumanProfileInput {
-  displayName?: string;
+  displayName: string;
+  username: string;
   bio?: string;
   gender?: string;
   hobbies?: string[];
   knowledge?: string[];
+  profileVisibility?: "public" | "private";
+  capabilities?: CapabilityUnion[];
 }
 
 // ============================================
@@ -124,6 +128,7 @@ export interface PeerSearchResult {
   nodeId: string;
   ownerId: string;
   displayName: string;
+  username?: string;
   bio?: string;
   interests: string[];
   profileVisibility: ProfileVisibility;
@@ -136,6 +141,8 @@ export interface SearchQuery {
   topic?: string;
   /** Text search in display name/bio/interests (not used when peerId or topic is set) */
   queryText?: string;
+  /** Username search - when query matches username pattern */
+  username?: string;
   interests?: string[];
   maxResults?: number;
 }

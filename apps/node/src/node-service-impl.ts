@@ -18,25 +18,29 @@ import type { NodeStatus, InitNodeOptions, NodeInitResult } from "@envoymesh/api
 
 import {
   createChatMessagePayload,
+  createHumanProfilePayload,
   createUnsignedEnvelope,
   parseChatMessagePayload,
+  type HumanProfilePayload,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
-import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
+import { derivePeerId, signHumanProfile, signUnsignedEnvelope } from "@envoymesh/identity";
 import {
   createLocalTaskStore,
   createLocalTrustStore,
   createLocalPeerDirectoryStore,
+  createHumanProfileStore,
   createTaskRuntimeStateStore,
   createRelayStateStore,
   loadOrCreateNodeProfile,
   type LocalTaskStore,
   type LocalTrustStore,
   type LocalPeerDirectoryStore,
+  type HumanProfileStore,
   type TaskRuntimeStateStore,
   type RelayStateStore,
 } from "@envoymesh/local-store";
-import { createNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
+import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
@@ -60,6 +64,7 @@ class NodeServiceImpl implements NodeService {
   private _profile: NodeProfile | undefined;
   private readonly _trustStore: LocalTrustStore;
   private readonly _peerDirectoryStore: LocalPeerDirectoryStore;
+  private readonly _humanProfileStore: HumanProfileStore;
   private readonly _configStore: ReturnType<typeof createNodeConfigStore>;
   private readonly _profileDir: string;
 
@@ -80,14 +85,16 @@ class NodeServiceImpl implements NodeService {
     mesh: EnvoyMesh | undefined,
     trustStore: LocalTrustStore,
     peerDirectoryStore: LocalPeerDirectoryStore,
-    profileDir: string,
+    humanProfileStore: HumanProfileStore,
+    profileDir: string | undefined,
     profile?: NodeProfile,
   ) {
     this._mesh = mesh;
     this._trustStore = trustStore;
     this._peerDirectoryStore = peerDirectoryStore;
-    this._profileDir = profileDir;
-    this._configStore = createNodeConfigStore(profileDir);
+    this._humanProfileStore = humanProfileStore;
+    this._profileDir = profileDir ?? "/tmp/unknown";
+    this._configStore = profileDir ? createNodeConfigStore(profileDir) : createStubNodeConfigStore();
     if (mesh) {
       this._nodeStatus = "running";
       this._profile = profile;
@@ -127,11 +134,71 @@ class NodeServiceImpl implements NodeService {
   }
 
   async getHumanProfile(): Promise<HumanProfile | undefined> {
-    return undefined;
+    const profile = await this._humanProfileStore.loadHumanProfile();
+    return profile as HumanProfile | undefined;
   }
 
-  async updateHumanProfile(_input: CreateHumanProfileInput): Promise<HumanProfile> {
-    throw new Error("Not yet implemented");
+  async updateHumanProfile(input: CreateHumanProfileInput): Promise<HumanProfile> {
+    this._assertOnline();
+    const selfProfile = this._requireProfile();
+
+    // Validate required fields
+    if (!input.displayName || !input.displayName.trim()) {
+      throw new Error("displayName is required");
+    }
+    if (!input.username || !/^[a-zA-Z0-9_]{3,30}$/.test(input.username)) {
+      throw new Error("username must be 3-30 characters, letters, numbers, underscore only");
+    }
+
+    // Load existing profile
+    const existing = await this._humanProfileStore.loadHumanProfile();
+
+    // Merge updates
+    const updatedPayload: Omit<HumanProfilePayload, "signature"> = {
+      version: "0.1",
+      ownerId: selfProfile.owner.ownerId,
+      displayName: input.displayName.trim(),
+      username: input.username.trim(),
+      bio: input.bio ?? existing?.bio,
+      gender: input.gender ?? existing?.gender,
+      hobbies: input.hobbies ?? existing?.hobbies,
+      knowledge: input.knowledge ?? existing?.knowledge,
+      profileVisibility: input.profileVisibility ?? existing?.profileVisibility ?? "private",
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Sign the profile
+    const signedProfile = signHumanProfile(updatedPayload, selfProfile.device.privateKeyPem);
+
+    // Save
+    await this._humanProfileStore.saveHumanProfile(signedProfile);
+
+    // Handle DHT advertising based on visibility
+    const config = await this._configStore.load();
+    const isPublicNetwork = config?.bootstrapPresets && config.bootstrapPresets.length > 0;
+
+    // If profile is public AND we're on public network, advertise interests as DHT topics
+    if (updatedPayload.profileVisibility === "public" && isPublicNetwork) {
+      const interests = [...(updatedPayload.hobbies ?? []), ...(updatedPayload.knowledge ?? [])];
+      for (const interest of interests) {
+        try {
+          await this._mesh!.provideCapabilityTopic(interest.toLowerCase());
+          console.log(`[node-service] Advertised topic: ${interest.toLowerCase()}`);
+        } catch (err) {
+          console.warn(`[node-service] Failed to advertise topic ${interest}:`, err);
+        }
+      }
+
+      // Advertise username as a special DHT topic for username-based discovery
+      try {
+        await this._mesh!.provideCapabilityTopic(`username:${updatedPayload.username.toLowerCase()}`);
+        console.log(`[node-service] Advertised username: ${updatedPayload.username.toLowerCase()}`);
+      } catch (err) {
+        console.warn(`[node-service] Failed to advertise username ${updatedPayload.username}:`, err);
+      }
+    }
+
+    return signedProfile as HumanProfile;
   }
 
   // ============================================
@@ -303,13 +370,62 @@ class NodeServiceImpl implements NodeService {
       return this.searchByPeerId(query.peerId, maxResults);
     }
 
-    // 2. DHT topic-based discovery (if topic is specified)
-    if (query.topic) {
-      return this.searchByTopic(query.topic, maxResults);
+    // 2. Determine search mode based on network configuration
+    const config = await this._configStore.load();
+    const isPublicNetwork = config?.bootstrapPresets && config.bootstrapPresets.length > 0;
+    const isPrivateRelay = config?.relayEnabled && config?.configuredRelays && config.configuredRelays.length > 0;
+
+    const results: PeerSearchResult[] = [];
+
+    // 3. Username-based discovery: search DHT for username:xxx topic
+    if (isPublicNetwork && query.username) {
+      const usernameResults = await this.searchByTopic(`username:${query.username.toLowerCase()}`, maxResults);
+      for (const r of usernameResults) {
+        if (!results.some((existing) => existing.nodeId === r.nodeId)) {
+          results.push({ ...r, username: query.username });
+        }
+      }
     }
 
-    // 3. Fall back to local bonded peers with text/interest filtering
-    return this.searchLocalPeers(query, maxResults);
+    // 4. Public libp2p network: search by interest as DHT topic
+    if (isPublicNetwork && query.interests && query.interests.length > 0) {
+      for (const interest of query.interests) {
+        const topicResults = await this.searchByTopic(interest.toLowerCase(), maxResults);
+        for (const r of topicResults) {
+          if (!results.some((existing) => existing.nodeId === r.nodeId)) {
+            results.push(r);
+          }
+        }
+      }
+    }
+
+    // 5. Hybrid mode by default when public network is enabled: also search locally for better discovery
+    // Even without configured relays, local search helps find peers that haven't advertised yet
+    if (isPublicNetwork && query.interests && query.interests.length > 0) {
+      const localResults = await this.searchLocalPeers(query, maxResults);
+      for (const r of localResults) {
+        if (!results.some((existing) => existing.nodeId === r.nodeId)) {
+          results.push(r);
+        }
+      }
+    }
+
+    // 6. Private relay network: additional search via relay (hybrid with relays)
+    if (isPrivateRelay && query.interests && query.interests.length > 0) {
+      const relayResults = await this.searchLocalPeers(query, maxResults);
+      for (const r of relayResults) {
+        if (!results.some((existing) => existing.nodeId === r.nodeId)) {
+          results.push(r);
+        }
+      }
+    }
+
+    // 7. If neither public network nor relays configured, do local search only
+    if (!isPublicNetwork && !isPrivateRelay) {
+      return this.searchLocalPeers(query, maxResults);
+    }
+
+    return results.slice(0, maxResults);
   }
 
   private async searchByPeerId(peerId: string, maxResults: number): Promise<PeerSearchResult[]> {
@@ -881,10 +997,11 @@ export function createNodeService(
   mesh: EnvoyMesh | undefined,
   trustStore: LocalTrustStore,
   peerDirectoryStore: LocalPeerDirectoryStore,
+  humanProfileStore: HumanProfileStore,
   profileDir: string,
   profile?: NodeProfile,
 ): NodeService {
-  return new NodeServiceImpl(mesh, trustStore, peerDirectoryStore, profileDir, profile);
+  return new NodeServiceImpl(mesh, trustStore, peerDirectoryStore, humanProfileStore, profileDir, profile);
 }
 
 // Export the class for testing

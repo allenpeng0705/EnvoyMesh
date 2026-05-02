@@ -1,8 +1,8 @@
 /**
  * EnvoyMesh Standalone Relay Server
  *
- * A minimal P2P circuit relay server with no application logic.
- * Handles only relay traffic routing between peers.
+ * A minimal P2P circuit relay server with optional rendezvous capability registry.
+ * Handles relay traffic routing between peers and optionally registers peer capabilities.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
@@ -11,6 +11,13 @@ import { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME } from "@envoymesh/network";
 import { join } from "path";
 import { mkdirSync } from "fs";
 import { parseRelayArgs } from "./args.js";
+import { CapabilityRegistry } from "./capability-registry.js";
+import {
+  parseRendezvousRegisterPayload,
+  parseRendezvousQueryPayload,
+  createRendezvousResponsePayload,
+  type EnvoyEnvelope,
+} from "@envoymesh/protocol";
 
 const args = parseRelayArgs(process.argv.slice(2));
 
@@ -23,6 +30,7 @@ console.log(`[relay] Starting EnvoyMesh Relay Server`);
 console.log(`[relay] Profile: ${args.profileDir}`);
 console.log(`[relay] Listen: ${args.listen.join(", ")}`);
 console.log(`[relay] DHT: ${args.enableDht ? (args.dhtClientMode ? "client mode" : "server mode") : "disabled"}`);
+console.log(`[relay] Rendezvous: ${args.enableRendezvous ? "enabled" : "disabled"}`);
 if (args.httpPort) {
   console.log(`[relay] HTTP info endpoint: enabled (port ${args.httpPort})`);
 } else {
@@ -102,11 +110,63 @@ try {
 
   // Log connected peers periodically
   setInterval(() => {
-    const relayPeers = mesh.getConnectedRelayPeerIds();
-    if (relayPeers.length > 0) {
-      console.log(`[relay] Relay connections: ${relayPeers.length} (${relayPeers.join(", ")})`);
+    const relays = mesh.getConnectedRelayPeerIds();
+    if (relays.length > 0) {
+      console.log(`[relay] Relay connections: ${relays.length} (${relays.join(", ")})`);
+    }
+    if (capabilityRegistry) {
+      const stats = capabilityRegistry.stats();
+      console.log(`[relay] Registry stats: ${stats.totalEntries} entries, ${stats.tagIndexSize} tags, ${stats.typeIndexSize} types`);
     }
   }, 60_000);
+
+  // Start rendezvous capability registry if enabled
+  let capabilityRegistry: CapabilityRegistry | undefined;
+  if (args.enableRendezvous) {
+    capabilityRegistry = new CapabilityRegistry();
+    capabilityRegistry.startSweeper();
+
+    // Register message handler for rendezvous intents
+    mesh.onMessage(async (message) => {
+      const intent = message.envelope.intent;
+
+      if (intent === "rendezvous.register") {
+        try {
+          const payload = parseRendezvousRegisterPayload(message.envelope.payload);
+          capabilityRegistry!.register(payload);
+          console.log(`[relay] Registered capabilities for ${payload.peerId}`);
+        } catch (error) {
+          console.error("[relay] Failed to parse rendezvous.register:", error);
+        }
+      } else if (intent === "rendezvous.query") {
+        try {
+          const queryPayload = parseRendezvousQueryPayload(message.envelope.payload);
+          const matches = capabilityRegistry!.query(queryPayload);
+          const responsePayload = createRendezvousResponsePayload({ matches });
+
+          if (message.replyWithEnvelope) {
+            await message.replyWithEnvelope({
+              version: "0.1",
+              messageId: crypto.randomUUID(),
+              createdAt: new Date().toISOString(),
+              senderPeerId: mesh.peerId,
+              senderPublicKey: "",
+              senderRole: "agent",
+              recipientPeerId: message.envelope.senderPeerId,
+              recipientRole: "agent",
+              intent: "rendezvous.response",
+              signature: "",
+              payload: responsePayload,
+            } as EnvoyEnvelope);
+          }
+        } catch (error) {
+          console.error("[relay] Failed to parse rendezvous.query:", error);
+        }
+      }
+    });
+
+    console.log("[relay] Rendezvous capability registry enabled");
+  }
 
 } catch (error) {
   console.error(`[relay] Failed to start:`, error);

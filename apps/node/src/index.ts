@@ -119,6 +119,7 @@ const taskDispatcher = createTaskDispatcher();
 const taskStore = createLocalTaskStore(args.profileDir);
 const trustStore = createLocalTrustStore(args.profileDir);
 const peerDirectoryStore = createLocalPeerDirectoryStore(args.profileDir);
+const humanProfileStore = createHumanProfileStore(args.profileDir);
 const discoverySeedStore = createDiscoverySeedStore(args.profileDir);
 const taskRuntimeStore = createTaskRuntimeStateStore(args.profileDir);
 const resolvedArgs = await resolveNodeArgsTargetsByOwnerId(args, peerDirectoryStore);
@@ -985,7 +986,7 @@ if (args.bootstrapPeers.length > 0) {
 }
 
 console.log("Envoy node started");
-const nodeService = createNodeService(mesh, trustStore, peerDirectoryStore, args.profileDir, profile);
+const nodeService = createNodeService(mesh, trustStore, peerDirectoryStore, humanProfileStore, args.profileDir, profile);
 
 // Start WebSocket server for app connections
 const wsServer = new WsServer(3030, "/ws");
@@ -1335,9 +1336,17 @@ if (resolvedArgs.humanProfileUpdate) {
   if (!hasUpdates) {
     console.log("[human-profile] --human-profile-update requires at least one --human-profile-* flag");
   } else {
+    const displayName = resolvedArgs.humanProfileDisplayName ?? existingProfile?.displayName;
+    const username = resolvedArgs.humanProfileUsername ?? existingProfile?.username;
+    if (!displayName || !username) {
+      console.error("[human-profile] Both displayName and username are required");
+      process.exit(1);
+    }
+
     const unsignedPayload = createHumanProfilePayload({
       ownerId: profile.owner.ownerId,
-      displayName: resolvedArgs.humanProfileDisplayName ?? existingProfile?.displayName,
+      displayName,
+      username,
       bio: resolvedArgs.humanProfileBio ?? existingProfile?.bio,
       gender: resolvedArgs.humanProfileGender ?? existingProfile?.gender,
       hobbies: resolvedArgs.humanProfileHobbies.length > 0 ? resolvedArgs.humanProfileHobbies : existingProfile?.hobbies,

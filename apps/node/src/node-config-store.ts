@@ -109,3 +109,20 @@ function isMissingFileError(error: unknown): boolean {
   }
   return false;
 }
+
+/**
+ * Creates a stub config store for testing when no profile directory is available
+ */
+export function createStubNodeConfigStore(): NodeConfigStore {
+  return {
+    async load() {
+      return undefined;
+    },
+    async save() {
+      // no-op
+    },
+    async exists() {
+      return false;
+    },
+  };
+}

@@ -67,6 +67,7 @@ export interface NodeArgs {
   relayPeersQueryTarget?: string;
   autoRelayPeersQuery: boolean;
   humanProfileDisplayName?: string;
+  humanProfileUsername?: string;
   humanProfileBio?: string;
   humanProfileGender?: string;
   humanProfileHobbies: string[];
@@ -245,6 +246,8 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.humanProfileUpdate = true;
     } else if (arg === "--human-profile-display-name") {
       args.humanProfileDisplayName = readValue(argv, ++index, arg);
+    } else if (arg === "--human-profile-username") {
+      args.humanProfileUsername = readValue(argv, ++index, arg);
     } else if (arg === "--human-profile-bio") {
       args.humanProfileBio = readValue(argv, ++index, arg);
     } else if (arg === "--human-profile-gender") {

@@ -31,6 +31,59 @@ function saveAppSettings(settings: AppSettings): void {
   localStorage.setItem("envoymesh:app-settings", JSON.stringify(settings));
 }
 
+// Preset capabilities for rendezvous discovery
+type CapabilityTag = { tag: string };
+type CapabilityType = { type: string; params?: Record<string, unknown>; confidence?: number };
+type CapabilityDescriptor = { descriptor: string };
+type Capability = CapabilityTag | CapabilityType | CapabilityDescriptor;
+
+interface PresetCapabilityGroup {
+  label: string;
+  capabilities: Array<{ tag: string; label: string; description?: string }>;
+}
+
+const PRESET_CAPABILITY_GROUPS: PresetCapabilityGroup[] = [
+  {
+    label: "Services",
+    capabilities: [
+      { tag: "document-search", label: "Document Search", description: "Can search and retrieve documents" },
+      { tag: "coding-help", label: "Coding Help", description: "Assists with programming tasks" },
+      { tag: "translation", label: "Translation", description: "Language translation service" },
+      { tag: "data-analysis", label: "Data Analysis", description: "Analyzes and visualizes data" },
+    ],
+  },
+  {
+    label: "Languages",
+    capabilities: [
+      { tag: "lang:en", label: "English", description: "English language proficiency" },
+      { tag: "lang:zh", label: "Chinese", description: "Chinese language proficiency" },
+      { tag: "lang:es", label: "Spanish", description: "Spanish language proficiency" },
+      { tag: "lang:fr", label: "French", description: "French language proficiency" },
+      { tag: "lang:de", label: "German", description: "German language proficiency" },
+      { tag: "lang:ja", label: "Japanese", description: "Japanese language proficiency" },
+    ],
+  },
+  {
+    label: "Expertise",
+    capabilities: [
+      { tag: "expertise:python", label: "Python", description: "Python programming" },
+      { tag: "expertise:javascript", label: "JavaScript", description: "JavaScript/TypeScript programming" },
+      { tag: "expertise:typescript", label: "TypeScript", description: "TypeScript programming" },
+      { tag: "expertise:rust", label: "Rust", description: "Rust programming" },
+      { tag: "expertise:go", label: "Go", description: "Go programming" },
+      { tag: "expertise:ai", label: "AI/ML", description: "Artificial intelligence and machine learning" },
+    ],
+  },
+  {
+    label: "Resources",
+    capabilities: [
+      { tag: "vault-access:finance", label: "Finance Vault", description: "Access to financial documents" },
+      { tag: "vault-access:legal", label: "Legal Vault", description: "Access to legal documents" },
+      { tag: "compute-gpu", label: "GPU Compute", description: "GPU-accelerated computing" },
+    ],
+  },
+];
+
 function App() {
   const nodeService = useNodeService();
   const bonds = useBonds();
@@ -52,14 +105,18 @@ function App() {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileEditForm, setProfileEditForm] = useState({
     displayName: "",
+    username: "",
     bio: "",
     gender: "",
     hobbies: "",
     knowledge: "",
+    profileVisibility: "public" as "public" | "private",
   });
   const [advertisedTopics, setAdvertisedTopics] = useState<string[]>([]);
   const [newTopic, setNewTopic] = useState("");
-  const [searchTopic, setSearchTopic] = useState("");
+
+  // Selected capabilities for rendezvous discovery
+  const [selectedCapabilities, setSelectedCapabilities] = useState<Capability[]>([]);
 
   // Common topics for discovery
   const suggestedTopics = [
@@ -133,11 +190,17 @@ function App() {
         setHumanProfile(profile);
         setProfileEditForm({
           displayName: profile.displayName || "",
+          username: profile.username || "",
           bio: profile.bio || "",
           gender: profile.gender || "",
           hobbies: (profile.hobbies || []).join(", "),
           knowledge: (profile.knowledge || []).join(", "),
+          profileVisibility: profile.profileVisibility || "private",
         });
+        // Load capabilities from profile
+        if (profile.capabilities && Array.isArray(profile.capabilities)) {
+          setSelectedCapabilities(profile.capabilities);
+        }
       }
     }).catch(() => {});
   }, [nodeService, isConnected]);
@@ -234,15 +297,19 @@ function App() {
     setSearchResults([]);
     try {
       let results: PeerSearchResult[] = [];
+      const query = searchQuery.trim();
+
       if (searchMode === "peerId") {
-        console.log(`[search] Looking up peer ID: ${searchQuery.trim()}`);
-        results = await nodeService.searchPeers({ peerId: searchQuery.trim() });
-      } else if (searchMode === "topic") {
-        console.log(`[search] Querying DHT topic: ${searchQuery.trim()}`);
-        results = await nodeService.searchPeers({ topic: searchQuery.trim() });
+        console.log(`[search] Looking up peer ID: ${query}`);
+        results = await nodeService.searchPeers({ peerId: query });
+      } else if (/^[a-zA-Z0-9_]{3,30}$/.test(query)) {
+        // Looks like a username - search by username
+        console.log(`[search] Searching by username: ${query}`);
+        results = await nodeService.searchPeers({ username: query.toLowerCase() });
       } else {
-        console.log(`[search] Searching local peers by interest: ${searchQuery}`);
-        results = await nodeService.searchPeers({ interests: [searchQuery] });
+        // Default: search by interest
+        console.log(`[search] Searching by interest: ${query}`);
+        results = await nodeService.searchPeers({ interests: [query.toLowerCase()] });
       }
       console.log(`[search] Found ${results.length} results`);
       setSearchResults(results);
@@ -255,20 +322,35 @@ function App() {
   };
 
   const handleSaveProfile = async () => {
+    // Validation
+    if (!profileEditForm.displayName.trim()) {
+      alert("Display name is required");
+      return;
+    }
+    if (!profileEditForm.username.trim() || !/^[a-zA-Z0-9_]{3,30}$/.test(profileEditForm.username.trim())) {
+      alert("Username is required. 3-30 characters, letters, numbers, underscore only.");
+      return;
+    }
+
     try {
-      const hobbies = profileEditForm.hobbies.split(",").map((s) => s.trim()).filter(Boolean);
-      const knowledge = profileEditForm.knowledge.split(",").map((s) => s.trim()).filter(Boolean);
+      const interests = profileEditForm.hobbies.split(",").map((s) => s.trim()).filter(Boolean);
       const updated = await nodeService.updateHumanProfile({
-        displayName: profileEditForm.displayName,
+        displayName: profileEditForm.displayName.trim(),
+        username: profileEditForm.username.trim(),
         bio: profileEditForm.bio,
         gender: profileEditForm.gender,
-        hobbies,
-        knowledge,
+        hobbies: interests,
+        knowledge: interests,
+        profileVisibility: profileEditForm.profileVisibility,
+        capabilities: selectedCapabilities,
       });
+
       setHumanProfile(updated);
       setIsEditingProfile(false);
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to update profile";
       console.error("Failed to update profile:", error);
+      alert(message);
     }
   };
 
@@ -374,7 +456,8 @@ function App() {
     <div className="app">
       <header className="header">
         <div className="header-left">
-          <h1>Envoy</h1>
+          <img src="/assets/logo.svg" alt="Envoy" className="logo" />
+          <span className="logo-text">Envoy</span>
         </div>
         <nav className="header-nav">
           <button
@@ -529,12 +612,6 @@ function App() {
               >
                 By Peer ID
               </button>
-              <button
-                className={searchMode === "topic" ? "active" : ""}
-                onClick={() => setSearchMode("topic")}
-              >
-                By Topic
-              </button>
             </div>
             <div className="search-bar">
               <input
@@ -542,9 +619,7 @@ function App() {
                 placeholder={
                   searchMode === "peerId"
                     ? "Enter Peer ID (e.g., 12D3KooWSHXmS7N94yFj1...)"
-                    : searchMode === "topic"
-                    ? "Enter topic (e.g., music, tech, art)"
-                    : "Search by interests (e.g., blues, jazz)"
+                    : "Search by username or interest (e.g., johndoe, music, tech)"
                 }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -567,8 +642,8 @@ function App() {
                 <div className="search-status-content">
                   <span className="search-status-icon">🔍</span>
                   <div>
-                    <strong>Searching DHT for "{searchQuery}"</strong>
-                    <p>Looking for peers advertising this topic...</p>
+                    <strong>Searching for "{searchQuery}"</strong>
+                    <p>Looking for peers with this interest...</p>
                   </div>
                 </div>
                 <div className="search-status-progress">
@@ -580,37 +655,9 @@ function App() {
               </div>
             )}
 
-            {searchMode === "topic" && (
-              <div className="topic-advertise">
-                <h3>Advertise Your Topics</h3>
-                <p className="topic-hint">Advertise topics so others can discover you when searching by topic</p>
-                <div className="topic-input-row">
-                  <input
-                    type="text"
-                    value={newTopic}
-                    onChange={(e) => setNewTopic(e.target.value)}
-                    placeholder="Enter topic (e.g., music, tech)"
-                    onKeyDown={(e) => e.key === "Enter" && handleAdvertiseTopic()}
-                  />
-                  <button onClick={handleAdvertiseTopic}>Advertise</button>
-                </div>
-                {advertisedTopics.length > 0 && (
-                  <div className="advertised-topics">
-                    <span className="advertised-label">Your topics:</span>
-                    {advertisedTopics.map((topic) => (
-                      <span key={topic} className="topic-tag">
-                        {topic}
-                        <button onClick={() => handleStopAdvertiseTopic(topic)} className="topic-remove">×</button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {searchMode === "topic" && !searchQuery && (
+            {searchMode === "interest" && !searchQuery && (
               <div className="topic-suggestions">
-                <h4>Suggested Topics</h4>
+                <h4>Suggested Interests</h4>
                 <div className="topic-chips">
                   {suggestedTopics.map((topic) => (
                     <button
@@ -618,7 +665,6 @@ function App() {
                       className="topic-chip"
                       onClick={() => {
                         setSearchQuery(topic);
-                        setSearchTopic(topic);
                         // Trigger search after setting query
                         setTimeout(() => handleSearch(), 0);
                       }}
@@ -633,7 +679,7 @@ function App() {
             {isSearching ? (
               <div className="search-loading">
                 <div className="spinner"></div>
-                <p>Searching {searchMode === "topic" ? "DHT topic..." : searchMode === "peerId" ? "peer ID..." : "local peers..."}</p>
+                <p>Searching {searchMode === "peerId" ? "peer ID..." : "by interest..."}</p>
               </div>
             ) : searchResults.length > 0 ? (
               <ul className="search-results">
@@ -642,6 +688,7 @@ function App() {
                     <span className="avatar">{result.displayName[0]}</span>
                     <div className="result-info">
                       <strong>{result.displayName}</strong>
+                      {result.username && <span className="result-username">@{result.username}</span>}
                       {result.bio && <p>{result.bio}</p>}
                       {result.interests.length > 0 && (
                         <span className="interests">{result.interests.join(", ")}</span>
@@ -657,15 +704,13 @@ function App() {
               <div className="search-empty">
                 <p>No peers found for "{searchQuery}"</p>
                 <small>
-                  {searchMode === "topic"
-                    ? "Try advertising a topic first. Peers must be advertising the same topic via DHT."
-                    : searchMode === "peerId"
+                  {searchMode === "peerId"
                     ? "Check if the peer ID is correct. You may need to be connected to them first."
-                    : "You may not have any bonded peers yet. Try saying hello to someone!"}
+                    : "Try a different interest or check your connection to the network."}
                 </small>
               </div>
             ) : (
-              <p className="empty">Enter a {searchMode === "topic" ? "topic" : searchMode === "peerId" ? "peer ID" : "search term"} to find people</p>
+              <p className="empty">Enter an interest to find people</p>
             )}
           </div>
         )}
@@ -675,50 +720,201 @@ function App() {
             {isEditingProfile ? (
               <div className="profile-edit">
                 <h2>Edit Your Profile</h2>
+                <div className="form-group avatar-upload">
+                  <label>Photo</label>
+                  <div className="avatar-preview">
+                    <div className="profile-avatar large">
+                      {humanProfile?.displayName?.[0] ?? connectionInfo.peerId?.[0] ?? "?"}
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          // For now, just show a preview - actual upload would need backend
+                          const reader = new FileReader();
+                          reader.onload = (ev) => {
+                            // Could store base64 or blob URL for preview
+                            console.log("Avatar selected:", file.name);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      id="avatar-input"
+                      style={{ display: "none" }}
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => document.getElementById("avatar-input")?.click()}
+                    >
+                      Choose Photo
+                    </button>
+                  </div>
+                </div>
                 <div className="form-group">
-                  <label>Display Name</label>
+                  <label>Display Name <span className="required">*</span></label>
                   <input
                     type="text"
                     value={profileEditForm.displayName}
                     onChange={(e) => setProfileEditForm({ ...profileEditForm, displayName: e.target.value })}
                     placeholder="Your name"
+                    required
                   />
                 </div>
                 <div className="form-group">
-                  <label>Bio</label>
+                  <label>Username <span className="required">*</span></label>
+                  <input
+                    type="text"
+                    value={profileEditForm.username}
+                    onChange={(e) => setProfileEditForm({ ...profileEditForm, username: e.target.value })}
+                    placeholder="johndoe"
+                    required
+                    pattern="^[a-zA-Z0-9_]{3,30}$"
+                  />
+                  <small>Used for DHT discovery. 3-30 characters, letters, numbers, underscore only.</small>
+                </div>
+                <div className="form-group">
+                  <label>Introduction</label>
                   <textarea
                     value={profileEditForm.bio}
                     onChange={(e) => setProfileEditForm({ ...profileEditForm, bio: e.target.value })}
-                    placeholder="Tell us about yourself"
+                    placeholder="Hi! I'm into music and coding. Always happy to chat about tech..."
                     rows={3}
                   />
                 </div>
                 <div className="form-group">
                   <label>Gender</label>
-                  <input
-                    type="text"
+                  <select
                     value={profileEditForm.gender}
                     onChange={(e) => setProfileEditForm({ ...profileEditForm, gender: e.target.value })}
-                    placeholder="Optional"
-                  />
+                  >
+                    <option value="">Prefer not to say</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Non-binary">Non-binary</option>
+                    <option value="Other">Other</option>
+                  </select>
                 </div>
                 <div className="form-group">
-                  <label>Hobbies (comma separated)</label>
+                  <label>Discovery</label>
+                  <div className="visibility-toggle">
+                    <button
+                      type="button"
+                      className={profileEditForm.profileVisibility === "public" ? "active public" : ""}
+                      onClick={() => setProfileEditForm({ ...profileEditForm, profileVisibility: "public" })}
+                    >
+                      <span className="visibility-icon">🌐</span>
+                      <span className="visibility-label">Public</span>
+                      <small>Advertise to network for discovery</small>
+                    </button>
+                    <button
+                      type="button"
+                      className={profileEditForm.profileVisibility === "private" ? "active private" : ""}
+                      onClick={() => setProfileEditForm({ ...profileEditForm, profileVisibility: "private" })}
+                    >
+                      <span className="visibility-icon">🔒</span>
+                      <span className="visibility-label">Private</span>
+                      <small>Only visible to bonded peers</small>
+                    </button>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Interests (comma separated)</label>
                   <input
                     type="text"
                     value={profileEditForm.hobbies}
                     onChange={(e) => setProfileEditForm({ ...profileEditForm, hobbies: e.target.value })}
-                    placeholder="music, travel, cooking"
+                    placeholder="music, tech, art, travel"
                   />
+                  <small>These help others discover you. Comma separated.</small>
+                  <div className="suggested-interests">
+                    <span className="suggested-label">Suggestions:</span>
+                    <div className="interest-chips">
+                      {suggestedTopics.map((topic) => (
+                        <button
+                          key={topic}
+                          type="button"
+                          className="interest-chip"
+                          onClick={() => {
+                            const current = profileEditForm.hobbies.split(",").map(s => s.trim()).filter(Boolean);
+                            if (!current.includes(topic)) {
+                              setProfileEditForm({
+                                ...profileEditForm,
+                                hobbies: [...current, topic].join(", ")
+                              });
+                            }
+                          }}
+                        >
+                          {topic}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 <div className="form-group">
-                  <label>Knowledge (comma separated)</label>
-                  <input
-                    type="text"
-                    value={profileEditForm.knowledge}
-                    onChange={(e) => setProfileEditForm({ ...profileEditForm, knowledge: e.target.value })}
-                    placeholder="music, tech, art"
-                  />
+                  <label>Capabilities for Discovery</label>
+                  <p className="field-description">Select capabilities to advertise on the rendezvous network for peer discovery.</p>
+                  <div className="capability-groups">
+                    {PRESET_CAPABILITY_GROUPS.map((group) => (
+                      <div key={group.label} className="capability-group">
+                        <h4>{group.label}</h4>
+                        <div className="capability-chips">
+                          {group.capabilities.map((cap) => {
+                            const isSelected = selectedCapabilities.some(
+                              (sc) => "tag" in sc && sc.tag === cap.tag
+                            );
+                            return (
+                              <button
+                                key={cap.tag}
+                                type="button"
+                                className={`capability-chip ${isSelected ? "selected" : ""}`}
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setSelectedCapabilities(
+                                      selectedCapabilities.filter(
+                                        (sc) => !("tag" in sc) || sc.tag !== cap.tag
+                                      )
+                                    );
+                                  } else {
+                                    setSelectedCapabilities([
+                                      ...selectedCapabilities,
+                                      { tag: cap.tag },
+                                    ]);
+                                  }
+                                }}
+                                title={cap.description}
+                              >
+                                {cap.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {selectedCapabilities.length > 0 && (
+                    <div className="selected-capabilities">
+                      <span className="selected-label">Selected:</span>
+                      {selectedCapabilities.map((cap, i) => (
+                        <span key={i} className="selected-cap-tag">
+                          {"tag" in cap ? cap.tag : "type" in cap ? cap.type : cap.descriptor}
+                          <button
+                            type="button"
+                            className="remove-cap"
+                            onClick={() => {
+                              setSelectedCapabilities(
+                                selectedCapabilities.filter((_, j) => j !== i)
+                              );
+                            }}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="profile-edit-actions">
                   <button onClick={handleSaveProfile} className="btn-primary">Save</button>
@@ -729,15 +925,26 @@ function App() {
               <div className="profile-display">
                 <div className="profile-header">
                   <div className="profile-avatar">
-                    {humanProfile?.displayName?.[0] ?? connectionInfo.peerId?.[0] ?? "?"}
+                    {humanProfile?.displayName?.[0] ?? humanProfile?.username?.[0] ?? connectionInfo.peerId?.[0] ?? "?"}
                   </div>
                   <div className="profile-header-info">
-                    <h2>{humanProfile?.displayName || "Unnamed Peer"}</h2>
-                    <p className="profile-owner-id">{connectionInfo.peerId}</p>
+                    <h2>{humanProfile?.displayName || humanProfile?.username || "Unnamed Peer"}</h2>
+                    {humanProfile?.username && (
+                      <p className="profile-username">@{humanProfile.username}</p>
+                    )}
+                    <p className="profile-owner-id">
+                      <button
+                        className="copy-id-btn"
+                        onClick={() => navigator.clipboard.writeText(connectionInfo.peerId)}
+                        title="Click to copy Peer ID"
+                      >
+                        {connectionInfo.peerId.slice(0, 12)}... (click to copy)
+                      </button>
+                    </p>
                   </div>
                 </div>
                 <div className="profile-actions">
-                  <button onClick={() => setIsEditingProfile(true)} className="btn-secondary">
+                  <button onClick={() => setIsEditingProfile(true)} className="btn-primary">
                     Edit Profile
                   </button>
                 </div>
@@ -751,23 +958,34 @@ function App() {
                     <p>{humanProfile.gender}</p>
                   </div>
                 )}
-                {humanProfile?.hobbies?.length > 0 && (
+                {(humanProfile?.hobbies?.length > 0 || humanProfile?.knowledge?.length > 0 || advertisedTopics.length > 0) && (
                   <div className="profile-section">
-                    <h3>Hobbies</h3>
+                    <h3>Interests</h3>
+                    <p className="profile-hint">Your interests help others discover you in search. Dashed tags are advertised for DHT discovery.</p>
                     <div className="profile-tags">
-                      {humanProfile.hobbies.map((h: string, i: number) => (
-                        <span key={i} className="tag">{h}</span>
+                      {humanProfile?.hobbies?.map((h: string, i: number) => (
+                        <span key={`h-${i}`} className="tag">{h}</span>
+                      ))}
+                      {humanProfile?.knowledge?.map((k: string, i: number) => (
+                        <span key={`k-${i}`} className="tag knowledge">{k}</span>
+                      ))}
+                      {advertisedTopics.map((topic, i) => (
+                        <span key={`t-${i}`} className="tag advertised">{topic}</span>
                       ))}
                     </div>
                   </div>
                 )}
-                {humanProfile?.knowledge?.length > 0 && (
+                {(humanProfile?.capabilities?.length > 0 || selectedCapabilities.length > 0) && (
                   <div className="profile-section">
-                    <h3>Knowledge</h3>
+                    <h3>Capabilities</h3>
+                    <p className="profile-hint">Your advertised capabilities for rendezvous-based peer discovery.</p>
                     <div className="profile-tags">
-                      {humanProfile.knowledge.map((k: string, i: number) => (
-                        <span key={i} className="tag knowledge">{k}</span>
-                      ))}
+                      {(humanProfile?.capabilities || selectedCapabilities).map((cap: Capability, i: number) => {
+                        const label = "tag" in cap ? cap.tag : "type" in cap ? cap.type : "descriptor" in cap ? cap.descriptor : "";
+                        return (
+                          <span key={`cap-${i}`} className="tag capability">{label}</span>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

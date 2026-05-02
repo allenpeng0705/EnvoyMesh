@@ -179,6 +179,8 @@ export interface UpdateHumanProfileParams {
   gender?: string;
   hobbies?: string[];
   knowledge?: string[];
+  profileVisibility?: "public" | "private";
+  capabilities?: Array<{ tag: string } | { type: string; params?: Record<string, unknown>; confidence?: number } | { descriptor: string }>;
 }
 
 export interface SendHelloParams {

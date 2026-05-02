@@ -28,6 +28,9 @@ import {
   createRelayRegisterPayload,
   createRelayRegisterResponsePayload,
   createRelaySummaryPayload,
+  createRendezvousRegisterPayload,
+  createRendezvousQueryPayload,
+  createRendezvousResponsePayload,
   createUnsignedDeviceRevocationRecord,
   createTaskAcceptPayload,
   createTaskCancelPayload,
@@ -87,6 +90,16 @@ import {
   parseSystemPingPayload,
   parseSystemSignalPayload,
   type ProofOfIntent,
+  HumanProfilePayloadSchema,
+  createHumanProfilePayload,
+  humanProfileForSigning,
+  SimpleTagCapabilitySchema,
+  StructuredCapabilitySchema,
+  DescriptorCapabilitySchema,
+  RendezvousRegisterPayloadSchema,
+  RendezvousQueryPayloadSchema,
+  RendezvousMatchSchema,
+  RendezvousResponsePayloadSchema,
 } from "../src/index.js";
 
 describe("protocol", () => {
@@ -695,5 +708,619 @@ describe("protocol", () => {
     expect(policy.approvalRequiredFor).toContain("send.raw_files");
     expect(parseReportCreatePayload(payload)).toEqual(payload);
     expect(report.reportId).toMatch(/^report_/);
+  });
+});
+
+describe("HumanProfilePayload", () => {
+  it("validates a complete human profile", () => {
+    const profile = {
+      version: "0.1" as const,
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "alice123",
+      bio: "Hello I am Alice",
+      gender: "Female",
+      hobbies: ["music", "coding"],
+      knowledge: ["distributed systems"],
+      profileVisibility: "public" as const,
+      updatedAt: "2026-04-27T10:00:00.000Z",
+      signature: "signature123",
+    };
+
+    expect(HumanProfilePayloadSchema.parse(profile)).toEqual(profile);
+  });
+
+  it("accepts profile with minimal required fields", () => {
+    const profile = {
+      version: "0.1" as const,
+      ownerId: "envoy:owner:bob",
+      displayName: "Bob",
+      username: "bob42",
+      updatedAt: "2026-04-27T10:00:00.000Z",
+      signature: "signature456",
+    };
+
+    const parsed = HumanProfilePayloadSchema.parse(profile);
+    expect(parsed.displayName).toBe("Bob");
+    expect(parsed.ownerId).toBe("envoy:owner:bob");
+    expect(parsed.username).toBe("bob42");
+    expect(parsed.profileVisibility).toBe("private");
+  });
+
+  it("rejects profile without displayName", () => {
+    const profile = {
+      version: "0.1" as const,
+      ownerId: "envoy:owner:alice",
+      username: "alice123",
+      updatedAt: "2026-04-27T10:00:00.000Z",
+      signature: "signature123",
+    };
+
+    const result = HumanProfilePayloadSchema.safeParse(profile);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects profile without username", () => {
+    const profile = {
+      version: "0.1" as const,
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      updatedAt: "2026-04-27T10:00:00.000Z",
+      signature: "signature123",
+    };
+
+    const result = HumanProfilePayloadSchema.safeParse(profile);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects username with invalid characters", () => {
+    const invalidUsernames = ["al ice", "alice@home", "alice!", "alice-one", "al"];
+
+    for (const username of invalidUsernames) {
+      const profile = {
+        version: "0.1" as const,
+        ownerId: "envoy:owner:alice",
+        displayName: "Alice",
+        username,
+        updatedAt: "2026-04-27T10:00:00.000Z",
+        signature: "signature123",
+      };
+
+      const result = HumanProfilePayloadSchema.safeParse(profile);
+      expect(result.success).toBe(false);
+    }
+  });
+
+  it("rejects username shorter than 3 characters", () => {
+    const profile = {
+      version: "0.1" as const,
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "ab",
+      updatedAt: "2026-04-27T10:00:00.000Z",
+      signature: "signature123",
+    };
+
+    const result = HumanProfilePayloadSchema.safeParse(profile);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects username longer than 30 characters", () => {
+    const profile = {
+      version: "0.1" as const,
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "a".repeat(31),
+      updatedAt: "2026-04-27T10:00:00.000Z",
+      signature: "signature123",
+    };
+
+    const result = HumanProfilePayloadSchema.safeParse(profile);
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts valid usernames with underscores and numbers", () => {
+    const validUsernames = ["alice", "Alice123", "alice_test", "test_user_123", "a".repeat(30)];
+
+    for (const username of validUsernames) {
+      const profile = {
+        version: "0.1" as const,
+        ownerId: "envoy:owner:alice",
+        displayName: "Alice",
+        username,
+        updatedAt: "2026-04-27T10:00:00.000Z",
+        signature: "signature123",
+      };
+
+      const parsed = HumanProfilePayloadSchema.parse(profile);
+      expect(parsed.username).toBe(username);
+      expect(parsed.profileVisibility).toBe("private"); // default
+    }
+  });
+
+  it("defaults profileVisibility to private", () => {
+    const profile = {
+      version: "0.1" as const,
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "alice123",
+      updatedAt: "2026-04-27T10:00:00.000Z",
+      signature: "signature123",
+    };
+
+    const parsed = HumanProfilePayloadSchema.parse(profile);
+    expect(parsed.profileVisibility).toBe("private");
+  });
+
+  it("rejects invalid profileVisibility", () => {
+    const profile = {
+      version: "0.1" as const,
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "alice123",
+      profileVisibility: "invalid" as any,
+      updatedAt: "2026-04-27T10:00:00.000Z",
+      signature: "signature123",
+    };
+
+    const result = HumanProfilePayloadSchema.safeParse(profile);
+    expect(result.success).toBe(false);
+  });
+
+  it("limits hobbies to 20 items", () => {
+    const hobbies = Array.from({ length: 21 }, (_, i) => `hobby${i}`);
+    const profile = {
+      version: "0.1" as const,
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "alice123",
+      hobbies,
+      updatedAt: "2026-04-27T10:00:00.000Z",
+      signature: "signature123",
+    };
+
+    const result = HumanProfilePayloadSchema.safeParse(profile);
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts exactly 20 hobbies", () => {
+    const hobbies = Array.from({ length: 20 }, (_, i) => `hobby${i}`);
+    const profile = {
+      version: "0.1" as const,
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "alice123",
+      hobbies,
+      updatedAt: "2026-04-27T10:00:00.000Z",
+      signature: "signature123",
+    };
+
+    const result = HumanProfilePayloadSchema.safeParse(profile);
+    expect(result.success).toBe(true);
+  });
+
+  it("limits knowledge to 50 items", () => {
+    const knowledge = Array.from({ length: 51 }, (_, i) => `knowledge${i}`);
+    const profile = {
+      version: "0.1" as const,
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "alice123",
+      knowledge,
+      updatedAt: "2026-04-27T10:00:00.000Z",
+      signature: "signature123",
+    };
+
+    const result = HumanProfilePayloadSchema.safeParse(profile);
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("createHumanProfilePayload", () => {
+  it("creates a valid human profile payload with required fields", () => {
+    const payload = createHumanProfilePayload({
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "alice123",
+      ownerPrivateKeyPem: "private-key",
+    });
+
+    expect(payload.version).toBe("0.1");
+    expect(payload.ownerId).toBe("envoy:owner:alice");
+    expect(payload.displayName).toBe("Alice");
+    expect(payload.username).toBe("alice123");
+    expect(payload.signature).toBe("");
+    expect(payload.updatedAt).toBeTruthy();
+  });
+
+  it("trims displayName and username", () => {
+    const payload = createHumanProfilePayload({
+      ownerId: "envoy:owner:alice",
+      displayName: "  Alice  ",
+      username: "  alice123  ",
+      ownerPrivateKeyPem: "private-key",
+    });
+
+    expect(payload.displayName).toBe("Alice");
+    expect(payload.username).toBe("alice123");
+  });
+
+  it("includes optional fields when provided", () => {
+    const payload = createHumanProfilePayload({
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "alice123",
+      bio: "Hello world",
+      gender: "Female",
+      hobbies: ["music"],
+      knowledge: ["coding"],
+      profileVisibility: "public",
+      ownerPrivateKeyPem: "private-key",
+    });
+
+    expect(payload.bio).toBe("Hello world");
+    expect(payload.gender).toBe("Female");
+    expect(payload.hobbies).toEqual(["music"]);
+    expect(payload.knowledge).toEqual(["coding"]);
+    expect(payload.profileVisibility).toBe("public");
+  });
+
+  it("defaults profileVisibility to private", () => {
+    const payload = createHumanProfilePayload({
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "alice123",
+      ownerPrivateKeyPem: "private-key",
+    });
+
+    expect(payload.profileVisibility).toBe("private");
+  });
+
+  it("provides a placeholder empty signature", () => {
+    const payload = createHumanProfilePayload({
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "alice123",
+      ownerPrivateKeyPem: "private-key",
+    });
+
+    expect(payload.signature).toBe("");
+  });
+});
+
+describe("humanProfileForSigning", () => {
+  it("removes signature from payload", () => {
+    const payload = {
+      version: "0.1" as const,
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "alice123",
+      profileVisibility: "private" as const,
+      updatedAt: "2026-04-27T10:00:00.000Z",
+      signature: "real-signature",
+    };
+
+    const forSigning = humanProfileForSigning(payload);
+
+    expect(forSigning).not.toHaveProperty("signature");
+    expect(forSigning.displayName).toBe("Alice");
+    expect(forSigning.username).toBe("alice123");
+  });
+});
+
+describe("Rendezvous Capability Schemas", () => {
+  describe("SimpleTagCapabilitySchema", () => {
+    it("accepts valid tag capability", () => {
+      const cap = { tag: "coding-help" };
+      const result = SimpleTagCapabilitySchema.safeParse(cap);
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects empty tag", () => {
+      const cap = { tag: "" };
+      const result = SimpleTagCapabilitySchema.safeParse(cap);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("StructuredCapabilitySchema", () => {
+    it("accepts type with params", () => {
+      const cap = { type: "translation", params: { from: "en", to: "zh" } };
+      const result = StructuredCapabilitySchema.safeParse(cap);
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts type without params", () => {
+      const cap = { type: "document-search" };
+      const result = StructuredCapabilitySchema.safeParse(cap);
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts type with confidence", () => {
+      const cap = { type: "translation", params: { from: "en" }, confidence: 0.9 };
+      const result = StructuredCapabilitySchema.safeParse(cap);
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects negative confidence", () => {
+      const cap = { type: "translation", confidence: -0.1 };
+      const result = StructuredCapabilitySchema.safeParse(cap);
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects confidence over 1", () => {
+      const cap = { type: "translation", confidence: 1.5 };
+      const result = StructuredCapabilitySchema.safeParse(cap);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("DescriptorCapabilitySchema", () => {
+    it("accepts valid descriptor", () => {
+      const cap = { descriptor: "I can translate English to Chinese with 90% accuracy" };
+      const result = DescriptorCapabilitySchema.safeParse(cap);
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects empty descriptor", () => {
+      const cap = { descriptor: "" };
+      const result = DescriptorCapabilitySchema.safeParse(cap);
+      expect(result.success).toBe(false);
+    });
+  });
+});
+
+describe("RendezvousRegisterPayloadSchema", () => {
+  it("accepts valid registration payload", () => {
+    const payload = {
+      peerId: "QmXfz9z",
+      multiaddr: "/ip4/1.2.3.4/tcp/4001/p2p/QmXfz9z",
+      capabilities: [
+        { tag: "coding-help" },
+        { type: "translation", params: { from: "en", to: "zh" } },
+      ],
+      ttlSeconds: 3600,
+    };
+
+    const result = RendezvousRegisterPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts tag-only capability", () => {
+    const payload = {
+      peerId: "QmXfz9z",
+      multiaddr: "/ip4/1.2.3.4/tcp/4001/p2p/QmXfz9z",
+      capabilities: [{ tag: "document-search" }],
+    };
+
+    const result = RendezvousRegisterPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts descriptor capability", () => {
+    const payload = {
+      peerId: "QmXfz9z",
+      multiaddr: "/ip4/1.2.3.4/tcp/4001/p2p/QmXfz9z",
+      capabilities: [{ descriptor: "I can translate English to Chinese" }],
+    };
+
+    const result = RendezvousRegisterPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(true);
+  });
+
+  it("defaults ttlSeconds to 3600", () => {
+    const payload = {
+      peerId: "QmXfz9z",
+      multiaddr: "/ip4/1.2.3.4/tcp/4001/p2p/QmXfz9z",
+      capabilities: [{ tag: "coding-help" }],
+    };
+
+    const result = RendezvousRegisterPayloadSchema.parse(payload);
+    expect(result.ttlSeconds).toBe(3600);
+  });
+
+  it("rejects ttlSeconds below 60", () => {
+    const payload = {
+      peerId: "QmXfz9z",
+      multiaddr: "/ip4/1.2.3.4/tcp/4001/p2p/QmXfz9z",
+      capabilities: [{ tag: "coding-help" }],
+      ttlSeconds: 30,
+    };
+
+    const result = RendezvousRegisterPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects ttlSeconds above 86400", () => {
+    const payload = {
+      peerId: "QmXfz9z",
+      multiaddr: "/ip4/1.2.3.4/tcp/4001/p2p/QmXfz9z",
+      capabilities: [{ tag: "coding-help" }],
+      ttlSeconds: 100000,
+    };
+
+    const result = RendezvousRegisterPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects empty peerId", () => {
+    const payload = {
+      peerId: "",
+      multiaddr: "/ip4/1.2.3.4/tcp/4001/p2p/QmXfz9z",
+      capabilities: [{ tag: "coding-help" }],
+    };
+
+    const result = RendezvousRegisterPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("RendezvousQueryPayloadSchema", () => {
+  it("accepts tag-based query", () => {
+    const payload = {
+      match: { tag: "coding-help" },
+      maxResults: 10,
+    };
+
+    const result = RendezvousQueryPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts type-based query with params", () => {
+    const payload = {
+      match: { type: "translation", params: { from: "en" } },
+      maxResults: 5,
+    };
+
+    const result = RendezvousQueryPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts type-based query without params (wildcard)", () => {
+    const payload = {
+      match: { type: "translation" },
+    };
+
+    const result = RendezvousQueryPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(true);
+  });
+
+  it("defaults maxResults to 10", () => {
+    const payload = {
+      match: { tag: "coding-help" },
+    };
+
+    const result = RendezvousQueryPayloadSchema.parse(payload);
+    expect(result.maxResults).toBe(10);
+  });
+
+  it("rejects maxResults below 1", () => {
+    const payload = {
+      match: { tag: "coding-help" },
+      maxResults: 0,
+    };
+
+    const result = RendezvousQueryPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects maxResults above 100", () => {
+    const payload = {
+      match: { tag: "coding-help" },
+      maxResults: 200,
+    };
+
+    const result = RendezvousQueryPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("RendezvousMatchSchema", () => {
+  it("accepts valid match with multiple capabilities", () => {
+    const match = {
+      peerId: "QmXfz9z",
+      multiaddr: "/ip4/1.2.3.4/tcp/4001/p2p/QmXfz9z",
+      capabilities: [
+        { tag: "coding-help" },
+        { type: "translation", params: { from: "en", to: "zh" } },
+      ],
+    };
+
+    const result = RendezvousMatchSchema.safeParse(match);
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("RendezvousResponsePayloadSchema", () => {
+  it("accepts response with matches", () => {
+    const payload = {
+      matches: [
+        {
+          peerId: "QmXfz9z",
+          multiaddr: "/ip4/1.2.3.4/tcp/4001/p2p/QmXfz9z",
+          capabilities: [{ tag: "coding-help" }],
+        },
+        {
+          peerId: "QmAabc1",
+          multiaddr: "/ip4/5.6.7.8/tcp/4002/p2p/QmAabc1",
+          capabilities: [{ type: "translation", params: { from: "en", to: "fr" } }],
+        },
+      ],
+    };
+
+    const result = RendezvousResponsePayloadSchema.safeParse(payload);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts empty matches array", () => {
+    const payload = { matches: [] };
+    const result = RendezvousResponsePayloadSchema.safeParse(payload);
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("createRendezvousRegisterPayload", () => {
+  it("creates valid registration payload", () => {
+    const payload = createRendezvousRegisterPayload({
+      peerId: "QmXfz9z",
+      multiaddr: "/ip4/1.2.3.4/tcp/4001/p2p/QmXfz9z",
+      capabilities: [
+        { tag: "coding-help" },
+        { type: "translation", params: { from: "en", to: "zh" } },
+      ],
+      ttlSeconds: 7200,
+    });
+
+    expect(payload.peerId).toBe("QmXfz9z");
+    expect(payload.capabilities).toHaveLength(2);
+    expect(payload.ttlSeconds).toBe(7200);
+  });
+
+  it("defaults ttlSeconds to 3600", () => {
+    const payload = createRendezvousRegisterPayload({
+      peerId: "QmXfz9z",
+      multiaddr: "/ip4/1.2.3.4/tcp/4001/p2p/QmXfz9z",
+      capabilities: [{ tag: "document-search" }],
+    });
+
+    expect(payload.ttlSeconds).toBe(3600);
+  });
+});
+
+describe("createRendezvousQueryPayload", () => {
+  it("creates tag-based query", () => {
+    const payload = createRendezvousQueryPayload({
+      match: { tag: "coding-help" },
+      maxResults: 5,
+    });
+
+    expect(payload.match).toEqual({ tag: "coding-help" });
+    expect(payload.maxResults).toBe(5);
+  });
+
+  it("creates type-based query", () => {
+    const payload = createRendezvousQueryPayload({
+      match: { type: "translation", params: { from: "en" } },
+    });
+
+    expect(payload.match).toEqual({ type: "translation", params: { from: "en" } });
+    expect(payload.maxResults).toBe(10);
+  });
+});
+
+describe("createRendezvousResponsePayload", () => {
+  it("creates valid response with matches", () => {
+    const payload = createRendezvousResponsePayload({
+      matches: [
+        {
+          peerId: "QmXfz9z",
+          multiaddr: "/ip4/1.2.3.4/tcp/4001/p2p/QmXfz9z",
+          capabilities: [{ tag: "coding-help" }],
+        },
+      ],
+    });
+
+    expect(payload.matches).toHaveLength(1);
+    expect(payload.matches[0].peerId).toBe("QmXfz9z");
   });
 });

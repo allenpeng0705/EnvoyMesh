@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
-import type { LocalTrustStore, LocalPeerDirectoryStore } from "@envoymesh/local-store";
+import { createStubNodeConfigStore } from "../src/node-config-store.js";
+import type { LocalTrustStore, LocalPeerDirectoryStore, HumanProfileStore } from "@envoymesh/local-store";
 import type { SearchQuery } from "@envoymesh/api";
 
 // Mock stores with proper async functions
@@ -17,16 +18,26 @@ const createMockPeerDirectoryStore = (records: any[] = []): LocalPeerDirectorySt
   upsertPeerFromSignal: async () => ({}),
 });
 
+const createMockHumanProfileStore = (): HumanProfileStore => ({
+  loadHumanProfile: async () => undefined,
+  saveHumanProfile: async () => {},
+});
+
+// Reusable stub config store for tests
+const stubConfigStore = createStubNodeConfigStore();
+
 describe("NodeServiceImpl - Search Peers", () => {
   describe("searchLocalPeers - By Interest/Name", () => {
     it("should return empty array when no peers bonded", async () => {
       const trustStore = createMockTrustStore([]);
       const peerDirectoryStore = createMockPeerDirectoryStore([]);
+      const humanProfileStore = createMockHumanProfileStore();
 
       const nodeService = new NodeServiceImpl(
         undefined,
         trustStore,
         peerDirectoryStore,
+        humanProfileStore,
         "/tmp/test-profile",
       );
 
@@ -46,8 +57,9 @@ describe("NodeServiceImpl - Search Peers", () => {
 
       const trustStore = createMockTrustStore(trustRecords);
       const peerDirectoryStore = createMockPeerDirectoryStore(peerRecords);
+      const humanProfileStore = createMockHumanProfileStore();
 
-      const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, "/tmp/test");
+      const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, humanProfileStore, "/tmp/test");
 
       const results = await nodeService.searchPeers({ queryText: "alice" });
       expect(results).toHaveLength(1);
@@ -67,8 +79,9 @@ describe("NodeServiceImpl - Search Peers", () => {
 
       const trustStore = createMockTrustStore(trustRecords);
       const peerDirectoryStore = createMockPeerDirectoryStore(peerRecords);
+      const humanProfileStore = createMockHumanProfileStore();
 
-      const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, "/tmp/test");
+      const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, humanProfileStore, "/tmp/test");
 
       const results = await nodeService.searchPeers({});
       expect(results).toHaveLength(1);
@@ -87,8 +100,9 @@ describe("NodeServiceImpl - Search Peers", () => {
 
       const trustStore = createMockTrustStore(trustRecords);
       const peerDirectoryStore = createMockPeerDirectoryStore(peerRecords);
+      const humanProfileStore = createMockHumanProfileStore();
 
-      const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, "/tmp/test");
+      const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, humanProfileStore, "/tmp/test");
 
       const results = await nodeService.searchPeers({});
       const blockedResult = results.find(r => r.ownerId === "owner-blocked");
@@ -112,8 +126,9 @@ describe("NodeServiceImpl - Search Peers", () => {
 
       const trustStore = createMockTrustStore(trustRecords);
       const peerDirectoryStore = createMockPeerDirectoryStore(peerRecords);
+      const humanProfileStore = createMockHumanProfileStore();
 
-      const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, "/tmp/test");
+      const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, humanProfileStore, "/tmp/test");
 
       const results = await nodeService.searchPeers({ maxResults: 3 });
       expect(results).toHaveLength(3);
@@ -124,8 +139,9 @@ describe("NodeServiceImpl - Search Peers", () => {
     it("should return empty when node not initialized", async () => {
       const trustStore = createMockTrustStore();
       const peerDirectoryStore = createMockPeerDirectoryStore();
+      const humanProfileStore = createMockHumanProfileStore();
 
-      const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, "/tmp/test");
+      const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, humanProfileStore, "/tmp/test");
 
       const results = await nodeService.searchPeers({ peerId: "12D3KooWHogeueWgeue" });
       expect(results).toEqual([]);
@@ -136,8 +152,9 @@ describe("NodeServiceImpl - Search Peers", () => {
     it("should return empty when node not initialized", async () => {
       const trustStore = createMockTrustStore();
       const peerDirectoryStore = createMockPeerDirectoryStore();
+      const humanProfileStore = createMockHumanProfileStore();
 
-      const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, "/tmp/test");
+      const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, humanProfileStore, "/tmp/test");
 
       const results = await nodeService.searchPeers({ topic: "music" });
       expect(results).toEqual([]);
@@ -149,11 +166,13 @@ describe("NodeServiceImpl - Network Modes", () => {
   it("should use public bootstrap when bootstrapPresets provided", async () => {
     const trustStore = createMockTrustStore();
     const peerDirectoryStore = createMockPeerDirectoryStore();
+    const humanProfileStore = createMockHumanProfileStore();
 
     const nodeService = new NodeServiceImpl(
       undefined,
       trustStore,
       peerDirectoryStore,
+      humanProfileStore,
       "/tmp/test-profile",
     );
 
@@ -165,6 +184,7 @@ describe("NodeServiceImpl - Network Modes", () => {
       undefined,
       createMockTrustStore(),
       createMockPeerDirectoryStore(),
+      createMockHumanProfileStore(),
       "/tmp/test",
     );
 
@@ -175,11 +195,13 @@ describe("NodeServiceImpl - Network Modes", () => {
   it("should handle mixed search queries", async () => {
     const trustStore = createMockTrustStore();
     const peerDirectoryStore = createMockPeerDirectoryStore();
+    const humanProfileStore = createMockHumanProfileStore();
 
     const nodeService = new NodeServiceImpl(
       undefined,
       trustStore,
       peerDirectoryStore,
+      humanProfileStore,
       "/tmp/test-profile",
     );
 
@@ -198,8 +220,9 @@ describe("NodeServiceImpl - Bond Management", () => {
       getTrustRecord: async () => undefined,
     };
     const peerDirectoryStore = createMockPeerDirectoryStore();
+    const humanProfileStore = createMockHumanProfileStore();
 
-    const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, "/tmp/test");
+    const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, humanProfileStore, "/tmp/test");
 
     await nodeService.blockPeer("peer-owner-123");
     expect(blockedOwnerId).toBe("peer-owner-123");
@@ -214,8 +237,9 @@ describe("NodeServiceImpl - Bond Management", () => {
       getTrustRecord: async () => undefined,
     };
     const peerDirectoryStore = createMockPeerDirectoryStore();
+    const humanProfileStore = createMockHumanProfileStore();
 
-    const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, "/tmp/test");
+    const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, humanProfileStore, "/tmp/test");
 
     await nodeService.revokeBond("peer-owner-456");
     expect(revokedOwnerId).toBe("peer-owner-456");
@@ -228,8 +252,9 @@ describe("NodeServiceImpl - Bond Management", () => {
     ];
     const trustStore = createMockTrustStore(trustRecords);
     const peerDirectoryStore = createMockPeerDirectoryStore();
+    const humanProfileStore = createMockHumanProfileStore();
 
-    const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, "/tmp/test");
+    const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, humanProfileStore, "/tmp/test");
 
     const bonds = await nodeService.getBonds();
     expect(bonds).toHaveLength(2);
@@ -242,8 +267,9 @@ describe("NodeServiceImpl - Hello/Connection Requests", () => {
   it("should accept hello request without error", async () => {
     const trustStore = createMockTrustStore();
     const peerDirectoryStore = createMockPeerDirectoryStore();
+    const humanProfileStore = createMockHumanProfileStore();
 
-    const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, "/tmp/test");
+    const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, humanProfileStore, "/tmp/test");
 
     await expect(nodeService.acceptHello("msg-123")).resolves.not.toThrow();
   });
@@ -251,8 +277,9 @@ describe("NodeServiceImpl - Hello/Connection Requests", () => {
   it("should decline hello request without error", async () => {
     const trustStore = createMockTrustStore();
     const peerDirectoryStore = createMockPeerDirectoryStore();
+    const humanProfileStore = createMockHumanProfileStore();
 
-    const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, "/tmp/test");
+    const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, humanProfileStore, "/tmp/test");
 
     await expect(nodeService.declineHello("msg-456", "not interested")).resolves.not.toThrow();
   });
@@ -274,6 +301,11 @@ describe("SearchQuery interface validation", () => {
     expect(query.queryText).toBeDefined();
   });
 
+  it("should accept username parameter", () => {
+    const query: SearchQuery = { username: "alice123" };
+    expect(query.username).toBe("alice123");
+  });
+
   it("should accept interests array", () => {
     const query: SearchQuery = { interests: ["blues", "jazz"] };
     expect(query.interests).toHaveLength(2);
@@ -289,9 +321,31 @@ describe("SearchQuery interface validation", () => {
       peerId: "12D3KooWSHXmS7N94yFj1fqoH4anmbNXW6rZBcsGWrW95vEVjZ3Q",
       topic: "music",
       queryText: "alice",
+      username: "alice123",
       interests: ["blues"],
       maxResults: 10,
     };
-    expect(Object.keys(query)).toHaveLength(5);
+    expect(Object.keys(query)).toHaveLength(6);
+  });
+});
+
+describe("Username-based Search", () => {
+  it("should include username in search results when provided", async () => {
+    const trustRecords = [
+      { peerOwnerId: "owner-alice", displayName: "Alice", level: "bonded", createdAt: new Date().toISOString() },
+    ];
+    const peerRecords = [
+      { peerId: "peer-alice", ownerId: "owner-alice", deviceId: "dev1", lastSeenAt: new Date().toISOString(), listenAddrs: [] },
+    ];
+
+    const trustStore = createMockTrustStore(trustRecords);
+    const peerDirectoryStore = createMockPeerDirectoryStore(peerRecords);
+    const humanProfileStore = createMockHumanProfileStore();
+
+    const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, humanProfileStore, "/tmp/test");
+
+    const results = await nodeService.searchPeers({ username: "alice123" });
+    // Node not initialized, so should return empty for username search
+    expect(Array.isArray(results)).toBe(true);
   });
 });

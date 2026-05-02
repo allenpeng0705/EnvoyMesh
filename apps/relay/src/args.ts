@@ -6,6 +6,7 @@ export interface RelayArgs {
   enableDht: boolean;
   dhtClientMode: boolean;
   httpPort: number | null;
+  enableRendezvous: boolean;
 }
 
 export function parseRelayArgs(argv: string[]): RelayArgs {
@@ -18,6 +19,7 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     enableDht: true,
     dhtClientMode: true,
     httpPort: 15432,
+    enableRendezvous: true,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -33,6 +35,8 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
       args.bootstrapPeers.push(getValue(argv, ++i, arg));
     } else if (arg === "--no-dht") {
       args.enableDht = false;
+    } else if (arg === "--no-rendezvous") {
+      args.enableRendezvous = false;
     } else if (arg === "--http-port") {
       const port = parseInt(getValue(argv, ++i, arg), 10);
       if (isNaN(port) || port < 1 || port > 65535) {
@@ -115,6 +119,7 @@ Options:
                          to get full multiaddr with peer ID.
                          Env: ENVOYMESH_BOOTSTRAP_PEERS (comma-separated)
   --no-dht              Disable DHT discovery.
+  --no-rendezvous       Disable rendezvous capability registry.
   --http-port <port>    HTTP info endpoint port. Default: 15432 (optional).
                          Returns {peerId, addrs} at /info and OK at /health
   --help, -h            Show this help.

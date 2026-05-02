@@ -41,6 +41,9 @@ export const EnvoyIntentSchema = z.enum([
   "device.pair.request",
   "device.pair.approve",
   "device.pair.deferred",
+  "rendezvous.register",
+  "rendezvous.query",
+  "rendezvous.response",
 ]);
 
 export const SensitivitySchema = z.enum(["public", "friends", "trusted", "private"]);
@@ -243,6 +246,44 @@ export const AgentCardResponsePayloadSchema = z.object({
   card: AgentCardSchema,
 });
 
+// ============================================
+// Rendezvous Capability Schemas (used by HumanProfile)
+// ============================================
+
+/**
+ * Simple tag capability - just a string identifier
+ */
+export const SimpleTagCapabilitySchema = z.object({
+  tag: z.string().min(1),
+});
+
+/**
+ * Structured capability with type and optional params
+ */
+export const StructuredCapabilitySchema = z.object({
+  type: z.string().min(1),
+  params: z.record(z.string(), z.unknown()).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+});
+
+/**
+ * Descriptor capability for future semantic matching
+ */
+export const DescriptorCapabilitySchema = z.object({
+  descriptor: z.string().min(1),
+});
+
+/**
+ * Union of all capability types for registry
+ */
+export const CapabilityUnionSchema = z.union([
+  SimpleTagCapabilitySchema,
+  StructuredCapabilitySchema,
+  DescriptorCapabilitySchema,
+]);
+
+export type CapabilityUnion = z.infer<typeof CapabilityUnionSchema>;
+
 /**
  * Human profile fields that can be updated after initial setup.
  * Signed by the owner key so recipients can verify authenticity.
@@ -250,11 +291,15 @@ export const AgentCardResponsePayloadSchema = z.object({
 export const HumanProfilePayloadSchema = z.object({
   version: z.literal("0.1"),
   ownerId: z.string().min(1),
-  displayName: z.string().min(1).max(120).optional(),
+  displayName: z.string().min(1).max(120),
+  username: z.string().min(3).max(30).regex(/^[a-zA-Z0-9_]+$/),
   bio: z.string().max(500).optional(),
   gender: z.string().max(40).optional(),
   hobbies: z.array(z.string().min(1).max(50)).max(20).optional(),
   knowledge: z.array(z.string().min(1).max(100)).max(50).optional(),
+  profileVisibility: z.enum(["public", "private"]).default("private"),
+  // Rendezvous capabilities for peer discovery
+  capabilities: z.array(CapabilityUnionSchema).max(20).optional(),
   updatedAt: z.string().datetime(),
   signature: z.string().min(1),
 });
@@ -263,11 +308,14 @@ export type HumanProfilePayload = z.infer<typeof HumanProfilePayloadSchema>;
 
 export interface CreateHumanProfilePayloadInput {
   ownerId: string;
-  displayName?: string;
+  displayName: string;
+  username: string;
   bio?: string;
   gender?: string;
   hobbies?: string[];
   knowledge?: string[];
+  profileVisibility?: "public" | "private";
+  capabilities?: Array<{ tag: string } | { type: string; params?: Record<string, unknown>; confidence?: number } | { descriptor: string }>;
   ownerPrivateKeyPem: string;
 }
 
@@ -276,11 +324,14 @@ export function createHumanProfilePayload(input: CreateHumanProfilePayloadInput)
   const unsigned: Omit<HumanProfilePayload, "signature"> = {
     version: "0.1",
     ownerId: input.ownerId,
-    displayName: input.displayName,
-    bio: input.bio,
-    gender: input.gender,
+    displayName: input.displayName.trim(),
+    username: input.username.trim(),
+    bio: input.bio?.trim(),
+    gender: input.gender?.trim(),
     hobbies: input.hobbies,
     knowledge: input.knowledge,
+    profileVisibility: input.profileVisibility ?? "private",
+    capabilities: input.capabilities,
     updatedAt: new Date().toISOString(),
   };
   return {
@@ -510,6 +561,51 @@ export const RelaySummaryPayloadSchema = z.object({
   topicBuckets: z.array(z.string().min(1)).default([]),
   graphEpoch: z.string().min(1).optional(),
   expiresAt: z.string().datetime(),
+});
+
+/**
+ * Rendezvous Registration Payload
+ * Peers send this to register their capabilities with the rendezvous server
+ */
+export const RendezvousRegisterPayloadSchema = z.object({
+  peerId: z.string().min(1),
+  multiaddr: z.string().min(1),
+  capabilities: z.array(CapabilityUnionSchema),
+  ttlSeconds: z.number().int().min(60).max(86400).default(3600),
+});
+
+/**
+ * Rendezvous Query Payload
+ * Peers send this to find other peers with matching capabilities
+ */
+export const RendezvousQueryPayloadSchema = z.object({
+  match: z.union([
+    z.object({
+      tag: z.string().min(1),
+    }),
+    z.object({
+      type: z.string().min(1),
+      params: z.record(z.string(), z.unknown()).optional(),
+    }),
+  ]),
+  maxResults: z.number().int().min(1).max(100).default(10),
+});
+
+/**
+ * A single match result from a rendezvous query
+ */
+export const RendezvousMatchSchema = z.object({
+  peerId: z.string().min(1),
+  multiaddr: z.string().min(1),
+  capabilities: z.array(CapabilityUnionSchema),
+});
+
+/**
+ * Rendezvous Response Payload
+ * Server returns matching peers
+ */
+export const RendezvousResponsePayloadSchema = z.object({
+  matches: z.array(RendezvousMatchSchema),
 });
 
 export const ChatMessagePayloadSchema = z.object({
@@ -801,6 +897,10 @@ export type RelayJoinResponsePayload = z.infer<typeof RelayJoinResponsePayloadSc
 export type RelayRegisterPayload = z.infer<typeof RelayRegisterPayloadSchema>;
 export type RelayRegisterResponsePayload = z.infer<typeof RelayRegisterResponsePayloadSchema>;
 export type RelaySummaryPayload = z.infer<typeof RelaySummaryPayloadSchema>;
+export type RendezvousRegisterPayload = z.infer<typeof RendezvousRegisterPayloadSchema>;
+export type RendezvousQueryPayload = z.infer<typeof RendezvousQueryPayloadSchema>;
+export type RendezvousMatch = z.infer<typeof RendezvousMatchSchema>;
+export type RendezvousResponsePayload = z.infer<typeof RendezvousResponsePayloadSchema>;
 export type ChatMessagePayload = z.infer<typeof ChatMessagePayloadSchema>;
 export type MandateAction = z.infer<typeof MandateActionSchema>;
 export type MandatePeerScope = z.infer<typeof MandatePeerScopeSchema>;
@@ -996,6 +1096,14 @@ export function parseRelayRegisterResponsePayload(input: unknown): RelayRegister
 
 export function parseRelaySummaryPayload(input: unknown): RelaySummaryPayload {
   return RelaySummaryPayloadSchema.parse(input);
+}
+
+export function parseRendezvousRegisterPayload(input: unknown): RendezvousRegisterPayload {
+  return RendezvousRegisterPayloadSchema.parse(input);
+}
+
+export function parseRendezvousQueryPayload(input: unknown): RendezvousQueryPayload {
+  return RendezvousQueryPayloadSchema.parse(input);
 }
 
 export function parseChatMessagePayload(input: unknown): ChatMessagePayload {
@@ -1268,6 +1376,68 @@ export function createRelayRegisterResponsePayload(
 export type CreateRelaySummaryPayloadInput = z.input<typeof RelaySummaryPayloadSchema>;
 export function createRelaySummaryPayload(input: CreateRelaySummaryPayloadInput): RelaySummaryPayload {
   return RelaySummaryPayloadSchema.parse(input);
+}
+
+export interface CreateRendezvousRegisterPayloadInput {
+  peerId: string;
+  multiaddr: string;
+  capabilities: Array<
+    | { tag: string }
+    | { type: string; params?: Record<string, unknown>; confidence?: number }
+    | { descriptor: string }
+  >;
+  ttlSeconds?: number;
+}
+
+export function createRendezvousRegisterPayload(
+  input: CreateRendezvousRegisterPayloadInput,
+): RendezvousRegisterPayload {
+  return RendezvousRegisterPayloadSchema.parse({
+    peerId: input.peerId,
+    multiaddr: input.multiaddr,
+    capabilities: input.capabilities,
+    ttlSeconds: input.ttlSeconds ?? 3600,
+  });
+}
+
+export interface CreateRendezvousQueryPayloadInput {
+  match:
+    | { tag: string }
+    | { type: string; params?: Record<string, unknown> };
+  maxResults?: number;
+}
+
+export function createRendezvousQueryPayload(input: CreateRendezvousQueryPayloadInput): RendezvousQueryPayload {
+  return RendezvousQueryPayloadSchema.parse({
+    match: input.match,
+    maxResults: input.maxResults ?? 10,
+  });
+}
+
+export interface CreateRendezvousMatchInput {
+  peerId: string;
+  multiaddr: string;
+  capabilities: Array<
+    | { tag: string }
+    | { type: string; params?: Record<string, unknown>; confidence?: number }
+    | { descriptor: string }
+  >;
+}
+
+export function createRendezvousMatch(input: CreateRendezvousMatchInput): RendezvousMatch {
+  return RendezvousMatchSchema.parse(input);
+}
+
+export interface CreateRendezvousResponsePayloadInput {
+  matches: CreateRendezvousMatchInput[];
+}
+
+export function createRendezvousResponsePayload(
+  input: CreateRendezvousResponsePayloadInput,
+): RendezvousResponsePayload {
+  return RendezvousResponsePayloadSchema.parse({
+    matches: input.matches.map((m) => createRendezvousMatch(m)),
+  });
 }
 
 export interface CreateChatMessagePayloadInput {
