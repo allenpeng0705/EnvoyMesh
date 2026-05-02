@@ -77,6 +77,7 @@ interface NodeServiceClient {
   getNodeStatus(): Promise<{ status: NodeStatus }>;
   startNode(): Promise<void>;
   stopNode(): Promise<void>;
+  waitForConnection(timeoutMs?: number): Promise<void>;
 
   // Events
   on<K extends keyof NodeServiceEvents>(event: K, handler: (data: NodeServiceEvents[K]) => void): () => void;
@@ -212,6 +213,10 @@ export function NodeServiceProvider({ children }: { children: ReactNode }) {
 
       async stopNode() {
         return wsClient.rpc("stopNode");
+      },
+
+      async waitForConnection(timeoutMs?: number) {
+        return wsClient.waitForConnection(timeoutMs);
       },
 
       on(event, handler) {

@@ -38,6 +38,11 @@ export class WsClient {
         this.ws.onopen = () => {
           console.log("[ws-client] Connected");
           this.reconnectAttempts = 0;
+          // Notify waitForConnection handlers
+          const handlers = this.handlers.get("connected");
+          if (handlers) {
+            handlers.forEach((h) => (h as () => void)());
+          }
           resolve();
         };
 
@@ -73,6 +78,37 @@ export class WsClient {
       this.ws = null;
     }
     this.reconnectAttempts = 0;
+  }
+
+  /**
+   * Wait for the WebSocket to be connected
+   */
+  async waitForConnection(timeoutMs: number = 10000): Promise<void> {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return;
+    }
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.handlers.delete("connected");
+        reject(new Error("Connection timeout"));
+      }, timeoutMs);
+
+      const onConnected = () => {
+        clearTimeout(timeout);
+        this.handlers.delete("connected");
+        resolve();
+      };
+
+      if (!this.handlers.has("connected")) {
+        this.handlers.set("connected", new Set());
+      }
+      this.handlers.get("connected")!.add(onConnected);
+
+      // Trigger connection if not already trying
+      if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
+        void this.connect();
+      }
+    });
   }
 
   /**

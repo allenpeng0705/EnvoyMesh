@@ -1086,6 +1086,8 @@ function App() {
                               // Restart node to apply new bootstrap presets (enables DHT)
                               try {
                                 await nodeService.stopNode();
+                                // Wait for reconnection after stop
+                                await nodeService.waitForConnection(10000);
                                 await nodeService.startNode();
                               } catch (e) {
                                 console.error("[app] Failed to restart node:", e);
