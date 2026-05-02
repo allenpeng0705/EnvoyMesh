@@ -11,6 +11,7 @@ PROFILE_DIR="${ENVOYMESH_PROFILE:-./data/relay}"
 LISTEN_PORT="${RELAY_PORT:-4001}"
 ADVERTISE_ADDR=""
 HTTP_PORT=""
+FORCE_REBUILD=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -31,6 +32,10 @@ while [[ $# -gt 0 ]]; do
             HTTP_PORT="$2"
             shift 2
             ;;
+        --rebuild)
+            FORCE_REBUILD=true
+            shift
+            ;;
         --help|-h)
             echo "EnvoyMesh Relay Server"
             echo ""
@@ -41,6 +46,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --port <port>      Listen port (default: 4001)"
             echo "  --advertise <IP>   Public IP for advertise address"
             echo "  --http-port <port> HTTP port for /info endpoint (optional)"
+            echo "  --rebuild          Force rebuild of all packages"
             echo "  --help, -h         Show this help"
             echo ""
             echo "Environment variables:"
@@ -56,12 +62,22 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Build relay if not exists
-if [ ! -f "$PROJECT_ROOT/apps/relay/dist/index.js" ]; then
+# Build all packages if needed
+if [ "$FORCE_REBUILD" = true ] || [ ! -f "$PROJECT_ROOT/apps/relay/dist/index.js" ]; then
+    if [ "$FORCE_REBUILD" = true ]; then
+        echo "Force rebuild requested..."
+    else
+        echo "Build not found, building..."
+    fi
+    echo "Building protocol package..."
+    cd "$PROJECT_ROOT/packages/protocol"
+    npx tsc -p tsconfig.json
+    echo "Building api package..."
+    cd "$PROJECT_ROOT/packages/api"
+    npx tsc -p tsconfig.json
     echo "Building relay server..."
     cd "$PROJECT_ROOT"
     npm run relay:build
-    cd - > /dev/null
 fi
 
 # Create profile directory
