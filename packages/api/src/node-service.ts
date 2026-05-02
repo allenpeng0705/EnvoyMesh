@@ -200,6 +200,7 @@ export interface NodeServiceEvents {
   // Peer discovery
   "peer:discovered": PeerSearchResult;
   "peer:lost": { nodeId: string };
+  "discovery:advertising-complete": { topics: string[]; success: boolean };
 
   // Connection state
   "node:online": { peerId: string; multiaddrs: string[] };
