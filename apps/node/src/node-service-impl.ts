@@ -527,10 +527,12 @@ class NodeServiceImpl implements NodeService {
       const bootstrapPeers = [...new Set([...config.bootstrapPeers, ...peerDirAddrs, ...seedAddrs])];
 
       // Create EnvoyMesh
+      // DHT is enabled when using public network (bootstrapPresets) or when discoveryProfile is wan-default
+      const usePublicNetwork = config.bootstrapPresets && config.bootstrapPresets.length > 0;
       this._mesh = new EnvoyMesh({
         listen: ["/ip4/0.0.0.0/tcp/0"],
         enableMdns: config.discoveryProfile === "lan-fast",
-        enableDht: config.discoveryProfile === "wan-default",
+        enableDht: usePublicNetwork || config.discoveryProfile === "wan-default",
         dhtClientMode: true,
         bootstrapPeers,
         enableRelay: config.relayEnabled,

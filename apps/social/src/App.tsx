@@ -47,9 +47,7 @@ function App() {
   const [appSettings, setAppSettings] = useState<AppSettings>(loadAppSettings);
   const [settingsTab, setSettingsTab] = useState<"node" | "app">("node");
 
-  // Network mode: public (libp2p only), private (relays only), hybrid (both)
-  const [networkMode, setNetworkMode] = useState<"public" | "private" | "hybrid">("private");
-  // Bootstrap presets for public network (when mode is public or hybrid)
+  // Bootstrap presets for public network (libp2p)
   const [bootstrapPresets, setBootstrapPresets] = useState<string[]>([]);
 
   // Node status and setup
@@ -87,17 +85,8 @@ function App() {
 
     nodeService.getNodeConfig().then((config) => {
       setNodeConfig(config);
-      // Determine network mode based on config
-      if (config.bootstrapPresets && config.bootstrapPresets.length > 0 && config.configuredRelays && config.configuredRelays.length > 0) {
-        setNetworkMode("hybrid");
-        setBootstrapPresets(config.bootstrapPresets);
-      } else if (config.bootstrapPresets && config.bootstrapPresets.length > 0) {
-        setNetworkMode("public");
-        setBootstrapPresets(config.bootstrapPresets);
-      } else {
-        setNetworkMode("private");
-        setBootstrapPresets([]);
-      }
+      // Set bootstrap presets from config
+      setBootstrapPresets(config.bootstrapPresets || []);
     }).catch(console.error);
     nodeService.listRelays().then(setRelays).catch(console.error);
 
@@ -507,63 +496,12 @@ function App() {
                 </section>
 
                 <section className="settings-section">
-                  <h3>Network Mode</h3>
-                  <div className="network-mode-selector">
-                    <label className={`network-mode-option ${networkMode === "public" ? "selected" : ""}`}>
-                      <input
-                        type="radio"
-                        name="networkMode"
-                        value="public"
-                        checked={networkMode === "public"}
-                        onChange={async () => {
-                          setNetworkMode("public");
-                          // Clear relays when switching to public-only mode
-                          if (relays.length > 0) {
-                            await nodeService.updateNodeConfig({ configuredRelays: [] });
-                            setRelays([]);
-                          }
-                        }}
-                      />
-                      <span className="mode-title">Public</span>
-                      <span className="mode-desc">Connect to libp2p public network only</span>
-                    </label>
-                    <label className={`network-mode-option ${networkMode === "private" ? "selected" : ""}`}>
-                      <input
-                        type="radio"
-                        name="networkMode"
-                        value="private"
-                        checked={networkMode === "private"}
-                        onChange={async () => {
-                          setNetworkMode("private");
-                          // Clear presets when switching to private-only mode
-                          if (bootstrapPresets.length > 0) {
-                            await nodeService.updateNodeConfig({ bootstrapPresets: [] });
-                            setBootstrapPresets([]);
-                          }
-                        }}
-                      />
-                      <span className="mode-title">Private</span>
-                      <span className="mode-desc">Connect via your own relay servers only</span>
-                    </label>
-                    <label className={`network-mode-option ${networkMode === "hybrid" ? "selected" : ""}`}>
-                      <input
-                        type="radio"
-                        name="networkMode"
-                        value="hybrid"
-                        checked={networkMode === "hybrid"}
-                        onChange={() => setNetworkMode("hybrid")}
-                      />
-                      <span className="mode-title">Hybrid</span>
-                      <span className="mode-desc">Connect to both public and private networks</span>
-                    </label>
-                  </div>
-                </section>
-
-                {(networkMode === "public" || networkMode === "hybrid") && (
-                  <section className="settings-section">
-                    <h3>Public Network (libp2p)</h3>
-                    <p className="section-desc">Select bootstrap presets to discover public peers:</p>
-                    <div className="bootstrap-presets">
+                  <h3>Public Network (libp2p)</h3>
+                  <p className="section-desc">
+                    Enable to connect to the public libp2p network and discover peers globally.
+                    Disable to use only your private relay servers.
+                  </p>
+                  <div className="bootstrap-presets">
                       {[
                         { id: "public-libp2p", label: "public-libp2p", desc: "4 bootstrap servers" },
                         { id: "public-libp2p-am6", label: "public-libp2p-am6", desc: "1 server (AM6)" },
@@ -590,7 +528,6 @@ function App() {
                       ))}
                     </div>
                   </section>
-                )}
 
                 <section className="settings-section">
                   <h3>Configured Relays</h3>
