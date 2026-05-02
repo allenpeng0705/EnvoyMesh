@@ -680,6 +680,7 @@ class NodeServiceImpl implements NodeService {
     const updated: PersistedNodeConfig = {
       ...current,
       ...(config.discoveryProfile && { discoveryProfile: config.discoveryProfile }),
+      ...(config.enableMdns !== undefined && { enableMdns: config.enableMdns }),
       ...(config.relayEnabled !== undefined && { relayEnabled: config.relayEnabled }),
       ...(config.relayServerEnabled !== undefined && { relayServerEnabled: config.relayServerEnabled }),
       ...(config.advertiseAddrs && { advertiseAddrs: config.advertiseAddrs }),
@@ -846,7 +847,7 @@ class NodeServiceImpl implements NodeService {
 
       const meshOptions: EnvoyMeshOptions = {
         listen: ["/ip4/0.0.0.0/tcp/0"],
-        enableMdns: config.discoveryProfile === "lan-fast",
+        enableMdns: config.enableMdns ?? true, // mDNS for local discovery (default true, can be disabled for testing)
         enableDht: true, // Always enable DHT for topic-based discovery
         dhtClientMode: true,
         bootstrapPeers,

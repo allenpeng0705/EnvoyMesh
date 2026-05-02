@@ -342,7 +342,6 @@ function App() {
         bio: profileEditForm.bio,
         gender: profileEditForm.gender,
         hobbies: interests,
-        knowledge: interests,
         profileVisibility: profileEditForm.profileVisibility,
         capabilities: selectedCapabilities,
       });

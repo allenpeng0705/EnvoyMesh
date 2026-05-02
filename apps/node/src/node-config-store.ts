@@ -8,6 +8,7 @@ export interface PersistedNodeConfig {
   version: "0.1";
   profileDir: string;
   discoveryProfile: DiscoveryProfile;
+  enableMdns?: boolean; // Optional, defaults to true if not set
   relayEnabled: boolean;
   relayServerEnabled: boolean;
   advertiseAddrs: string[];

@@ -122,6 +122,7 @@ export interface RelayConfig {
 export interface NodeConfig {
   profileDir: string;
   discoveryProfile: "lan-fast" | "wan-default";
+  enableMdns?: boolean; // mDNS for local discovery (default true)
   relayEnabled: boolean;
   relayServerEnabled: boolean;
   configuredRelays: RelayConfig[];
