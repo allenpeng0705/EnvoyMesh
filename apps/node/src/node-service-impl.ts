@@ -358,7 +358,13 @@ class NodeServiceImpl implements NodeService {
       selfProfile.device.privateKeyPem,
     );
 
-    await mesh.send(targetPeerId, envelope);
+    try {
+      await mesh.send(targetPeerId, envelope);
+      console.log(`[node-service] Hello sent successfully to ${targetPeerId}`);
+    } catch (err) {
+      console.error(`[node-service] Failed to send hello to ${targetPeerId}:`, err);
+      throw new Error(`Failed to send hello: ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     return {
       messageId,
@@ -1050,8 +1056,24 @@ class NodeServiceImpl implements NodeService {
       const { intent } = envelope;
 
       if (intent === "bond.request") {
-        // Store discovered peer
-        const existing = await this._peerDirectoryStore.getPeerByOwnerId(remotePeerId);
+        // Parse the bond request payload
+        const { parseBondRequestPayload } = await import("@envoymesh/protocol");
+        const payload = parseBondRequestPayload(envelope.payload);
+
+        // Auto-accept bond requests for now (future: user approval)
+        console.log(`[node-service] Auto-accepting bond request from ${payload.requesterOwnerId} (${payload.requesterDisplayName})`);
+
+        // Store the bond in trust store (accept the connection)
+        await this._trustStore.setTrustRecord({
+          peerOwnerId: payload.requesterOwnerId,
+          displayName: payload.requesterDisplayName,
+          level: payload.requestedLevel as any ?? "direct",
+          note: payload.message ?? undefined,
+          now: new Date().toISOString(),
+        });
+
+        // Store peer info if not already stored
+        const existing = await this._peerDirectoryStore.getPeerByOwnerId(payload.requesterOwnerId);
         if (!existing) {
           await this._peerDirectoryStore.upsertPeerFromSignal({
             peerId: remotePeerId,
@@ -1059,9 +1081,13 @@ class NodeServiceImpl implements NodeService {
           });
         }
 
-        // Emit hello:request event for the app to show notification
-        const { parseBondRequestPayload } = await import("@envoymesh/protocol");
-        const payload = parseBondRequestPayload(envelope.payload);
+        // Emit bond:established event so the UI updates
+        this.emit("bond:established", {
+          peerOwnerId: payload.requesterOwnerId,
+          displayName: payload.requesterDisplayName,
+        });
+
+        // Emit hello:request notification for the UI to show
         this.emit("hello:request", {
           messageId: envelope.messageId,
           sender: {
