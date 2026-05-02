@@ -260,6 +260,7 @@ export interface UpdateNodeConfigParams {
   relayServerEnabled?: boolean;
   advertiseAddrs?: string[];
   bootstrapPeers?: string[];
+  enableMdns?: boolean;
 }
 
 export interface ListRelaysParams {}

@@ -1122,6 +1122,40 @@ function App() {
                 </section>
 
                 <section className="settings-section">
+                  <h3>Discovery Settings</h3>
+                  <p className="section-desc">
+                    Configure how your node discovers other peers on the network.
+                  </p>
+
+                  <div className="settings-toggle-row">
+                    <div className="toggle-info">
+                      <strong>mDNS Discovery</strong>
+                      <span className="toggle-desc">Discover peers on local network via multicast DNS</span>
+                    </div>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={nodeConfig?.enableMdns ?? true}
+                        onChange={async (e) => {
+                          const newValue = e.target.checked;
+                          await nodeService.updateNodeConfig({ enableMdns: newValue } as any);
+                          // Restart node to apply changes
+                          try {
+                            await nodeService.stopNode();
+                            await nodeService.waitForConnection(10000);
+                            await nodeService.startNode();
+                          } catch (err) {
+                            console.error("[app] Failed to restart node:", err);
+                          }
+                          nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                        }}
+                      />
+                      <span className="toggle-slider" />
+                    </label>
+                  </div>
+                </section>
+
+                <section className="settings-section">
                   <h3>Public Network (libp2p)</h3>
                   <p className="section-desc">
                     Enable to connect to the public libp2p network and discover peers globally.
