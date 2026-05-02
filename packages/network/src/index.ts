@@ -484,8 +484,10 @@ export class EnvoyMesh {
       dialTarget = `/p2p/${target}`;
     }
     const startedAt = Date.now();
-    const stream: any = await this.requireNode().dialProtocol(dialTarget as any, protocol);
-    const remotePeerId = stream.connection?.remotePeer?.toString();
+    // Use dial (which handles peer ID lookup better) then upgrade to protocol
+    const connection = await this.requireNode().dial(dialTarget as any);
+    const stream = await connection.newStream([protocol]);
+    const remotePeerId = connection.remotePeer?.toString();
     if (remotePeerId) {
       this.emitP2pDebug({
         kind: "stream:open",
