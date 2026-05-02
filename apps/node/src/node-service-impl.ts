@@ -164,6 +164,7 @@ class NodeServiceImpl implements NodeService {
       hobbies: input.hobbies ?? existing?.hobbies,
       knowledge: input.knowledge ?? existing?.knowledge,
       profileVisibility: input.profileVisibility ?? existing?.profileVisibility ?? "private",
+      capabilities: input.capabilities ?? existing?.capabilities,
       updatedAt: new Date().toISOString(),
     };
 
@@ -173,29 +174,53 @@ class NodeServiceImpl implements NodeService {
     // Save
     await this._humanProfileStore.saveHumanProfile(signedProfile);
 
-    // Handle DHT advertising based on visibility
+    // Handle DHT advertising based on visibility (run in background with timeout)
     const config = await this._configStore.load();
     const isPublicNetwork = config?.bootstrapPresets && config.bootstrapPresets.length > 0;
 
     // If profile is public AND we're on public network, advertise interests as DHT topics
+    // Run DHT operations in background to avoid blocking the response
     if (updatedPayload.profileVisibility === "public" && isPublicNetwork) {
       const interests = [...(updatedPayload.hobbies ?? []), ...(updatedPayload.knowledge ?? [])];
-      for (const interest of interests) {
-        try {
-          await this._mesh!.provideCapabilityTopic(interest.toLowerCase());
-          console.log(`[node-service] Advertised topic: ${interest.toLowerCase()}`);
-        } catch (err) {
-          console.warn(`[node-service] Failed to advertise topic ${interest}:`, err);
-        }
-      }
+      const username = updatedPayload.username;
 
-      // Advertise username as a special DHT topic for username-based discovery
-      try {
-        await this._mesh!.provideCapabilityTopic(`username:${updatedPayload.username.toLowerCase()}`);
-        console.log(`[node-service] Advertised username: ${updatedPayload.username.toLowerCase()}`);
-      } catch (err) {
-        console.warn(`[node-service] Failed to advertise username ${updatedPayload.username}:`, err);
-      }
+      // Helper to run with timeout
+      const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+        return Promise.race([
+          promise,
+          new Promise<T>((_, reject) =>
+            setTimeout(() => reject(new Error(`DHT operation "${label}" timed out after ${ms}ms`)), ms)
+          ),
+        ]);
+      };
+
+      // Advertise in background (don't await)
+      void (async () => {
+        for (const interest of interests) {
+          try {
+            await withTimeout(
+              this._mesh!.provideCapabilityTopic(interest.toLowerCase()),
+              5000,
+              interest
+            );
+            console.log(`[node-service] Advertised topic: ${interest.toLowerCase()}`);
+          } catch (err) {
+            console.warn(`[node-service] Failed to advertise topic ${interest}:`, err);
+          }
+        }
+
+        // Advertise username as a special DHT topic for username-based discovery
+        try {
+          await withTimeout(
+            this._mesh!.provideCapabilityTopic(`username:${username.toLowerCase()}`),
+            5000,
+            `username:${username}`
+          );
+          console.log(`[node-service] Advertised username: ${username.toLowerCase()}`);
+        } catch (err) {
+          console.warn(`[node-service] Failed to advertise username ${username}:`, err);
+        }
+      })();
     }
 
     return signedProfile as HumanProfile;

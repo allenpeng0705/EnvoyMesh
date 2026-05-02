@@ -135,6 +135,7 @@ function App() {
   const [setupDiscoveryProfile, setSetupDiscoveryProfile] = useState<"lan-fast" | "wan-default">("wan-default");
   const [setupBootstrapPeers, setSetupBootstrapPeers] = useState("");
   const [isInitializing, setIsInitializing] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [peerId, setPeerId] = useState<string>("");
   const [connectionStatus, setConnectionStatus] = useState<any>(null);
@@ -332,6 +333,7 @@ function App() {
       return;
     }
 
+    setIsSavingProfile(true);
     try {
       const interests = profileEditForm.hobbies.split(",").map((s) => s.trim()).filter(Boolean);
       const updated = await nodeService.updateHumanProfile({
@@ -351,6 +353,8 @@ function App() {
       const message = error instanceof Error ? error.message : "Failed to update profile";
       console.error("Failed to update profile:", error);
       alert(message);
+    } finally {
+      setIsSavingProfile(false);
     }
   };
 
@@ -917,7 +921,9 @@ function App() {
                   )}
                 </div>
                 <div className="profile-edit-actions">
-                  <button onClick={handleSaveProfile} className="btn-primary">Save</button>
+                  <button onClick={handleSaveProfile} className="btn-primary" disabled={isSavingProfile}>
+                    {isSavingProfile ? "Saving..." : "Save"}
+                  </button>
                   <button onClick={() => setIsEditingProfile(false)} className="btn-secondary">Cancel</button>
                 </div>
               </div>
