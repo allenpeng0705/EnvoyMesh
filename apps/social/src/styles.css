@@ -142,11 +142,6 @@ body {
   background: var(--color-success);
 }
 
-.node-name,
-.node-status {
-  display: none;
-}
-
 /* Main */
 .main {
   flex: 1;
