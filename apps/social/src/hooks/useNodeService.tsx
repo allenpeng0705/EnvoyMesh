@@ -38,6 +38,8 @@ interface NodeServiceClient {
   connect(): Promise<void>;
   disconnect(): void;
   isConnected: boolean;
+  isReady: boolean;
+  reconnectAttempts: number;
 
   // Identity
   getProfile(): Promise<{ owner: any; device: any; deviceCertificate: any }>;
@@ -80,14 +82,25 @@ const NodeServiceContext = createContext<NodeServiceClient | null>(null);
 export function NodeServiceProvider({ children }: { children: ReactNode }) {
   const [client, setClient] = useState<NodeServiceClient | null>(null);
   const [connected, setConnected] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
 
   useEffect(() => {
     let connected = false;
+    let readyReceived = false;
 
     const wsClient = createWsClient();
     const nodeService: NodeServiceClient = {
       get isConnected() {
         return connected;
+      },
+
+      get isReady() {
+        return readyReceived;
+      },
+
+      get reconnectAttempts() {
+        return wsClient.getReconnectAttempts();
       },
 
       async connect() {
@@ -99,7 +112,9 @@ export function NodeServiceProvider({ children }: { children: ReactNode }) {
       disconnect() {
         wsClient.disconnect();
         connected = false;
+        readyReceived = false;
         setConnected(false);
+        setReady(false);
       },
 
       async getProfile() {
@@ -190,9 +205,21 @@ export function NodeServiceProvider({ children }: { children: ReactNode }) {
     // Auto-connect on mount
     nodeService.connect().catch(console.error);
 
+    // Subscribe to node:ready event
+    wsClient.on("node:ready", () => {
+      readyReceived = true;
+      setReady(true);
+    });
+
+    // Update reconnect attempts periodically
+    const reconnectInterval = setInterval(() => {
+      setReconnectAttempts(wsClient.getReconnectAttempts());
+    }, 1000);
+
     setClient(nodeService);
 
     return () => {
+      clearInterval(reconnectInterval);
       nodeService.disconnect();
     };
   }, []);
@@ -202,7 +229,7 @@ export function NodeServiceProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <NodeServiceContext.Provider value={{ ...client, isConnected: connected }}>
+    <NodeServiceContext.Provider value={{ ...client, isConnected: connected, isReady: ready, reconnectAttempts }}>
       {children}
     </NodeServiceContext.Provider>
   );

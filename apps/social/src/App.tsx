@@ -515,7 +515,14 @@ function App() {
                         name="networkMode"
                         value="public"
                         checked={networkMode === "public"}
-                        onChange={() => setNetworkMode("public")}
+                        onChange={async () => {
+                          setNetworkMode("public");
+                          // Clear relays when switching to public-only mode
+                          if (relays.length > 0) {
+                            await nodeService.updateNodeConfig({ configuredRelays: [] });
+                            setRelays([]);
+                          }
+                        }}
                       />
                       <span className="mode-title">Public</span>
                       <span className="mode-desc">Connect to libp2p public network only</span>
@@ -526,7 +533,14 @@ function App() {
                         name="networkMode"
                         value="private"
                         checked={networkMode === "private"}
-                        onChange={() => setNetworkMode("private")}
+                        onChange={async () => {
+                          setNetworkMode("private");
+                          // Clear presets when switching to private-only mode
+                          if (bootstrapPresets.length > 0) {
+                            await nodeService.updateNodeConfig({ bootstrapPresets: [] });
+                            setBootstrapPresets([]);
+                          }
+                        }}
                       />
                       <span className="mode-title">Private</span>
                       <span className="mode-desc">Connect via your own relay servers only</span>

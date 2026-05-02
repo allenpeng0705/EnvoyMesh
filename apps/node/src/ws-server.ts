@@ -22,6 +22,8 @@ export class WsServer {
   private nodeService!: NodeService;
   private readonly subscriptions = new Map<string, Set<WebSocket>>();
   private readonly clientSubscriptions = new Map<WebSocket, Set<string>>();
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private readonly heartbeatIntervalMs = 30000; // 30 seconds
 
   constructor(private readonly port: number = 3030, private readonly path: string = "/ws") {
   }
@@ -51,12 +53,33 @@ export class WsServer {
     this.wss.on("listening", () => {
       console.log(`[ws-server] Listening on ws://localhost:${this.port}${this.path}`);
     });
+
+    // Start heartbeat
+    this.startHeartbeat();
+  }
+
+  private startHeartbeat(): void {
+    this.heartbeatInterval = setInterval(() => {
+      this.wss.clients.forEach((ws) => {
+        if ((ws as any).isAlive === false) {
+          console.log("[ws-server] Terminating inactive client");
+          ws.terminate();
+          return;
+        }
+        (ws as any).isAlive = false;
+        ws.ping();
+      });
+    }, this.heartbeatIntervalMs);
   }
 
   /**
    * Stop the WebSocket server
    */
   stop(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
     this.wss.close();
   }
 
@@ -95,12 +118,23 @@ export class WsServer {
       console.error(`[ws-server] Client ${clientId} error:`, error);
     });
 
+    // Track client for heartbeat
+    (ws as any).isAlive = true;
+    ws.on("pong", () => {
+      (ws as any).isAlive = true;
+    });
+
     // Send connected event
     const status = this.nodeService.getConnectionStatus();
     this.sendEvent(ws, "connected", {
       peerId: status.peerId,
       multiaddrs: status.multiaddrs,
     });
+
+    // Send node:ready after a short delay to indicate node is fully initialized
+    setTimeout(() => {
+      this.sendEvent(ws, "node:ready", { timestamp: Date.now() });
+    }, 1000);
   }
 
   private async handleMessage(ws: WebSocket, message: JsonRpcRequest): Promise<void> {

@@ -19,6 +19,9 @@ export class WsClient {
   }>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly url: string;
+  private reconnectAttempts = 0;
+  private readonly maxReconnectDelay = 60000; // 1 minute max
+  private lastPong = 0;
 
   constructor(url: string = "ws://localhost:3030/ws") {
     this.url = url;
@@ -34,6 +37,7 @@ export class WsClient {
 
         this.ws.onopen = () => {
           console.log("[ws-client] Connected");
+          this.reconnectAttempts = 0;
           resolve();
         };
 
@@ -50,6 +54,10 @@ export class WsClient {
         this.ws.onmessage = (event) => {
           this.handleMessage(event.data);
         };
+
+        this.ws.on("pong", () => {
+          this.lastPong = Date.now();
+        });
       } catch (error) {
         reject(error);
       }
@@ -68,6 +76,7 @@ export class WsClient {
       this.ws.close();
       this.ws = null;
     }
+    this.reconnectAttempts = 0;
   }
 
   /**
@@ -127,6 +136,21 @@ export class WsClient {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
+  /**
+   * Get reconnection attempts count
+   */
+  getReconnectAttempts(): number {
+    return this.reconnectAttempts;
+  }
+
+  /**
+   * Check if heartbeat is healthy (received pong recently)
+   */
+  isHeartbeatHealthy(): boolean {
+    if (this.lastPong === 0) return true; // No ping expected yet
+    return Date.now() - this.lastPong < 60000; // 60 second timeout
+  }
+
   private handleMessage(data: string): void {
     try {
       const message = JSON.parse(data);
@@ -168,11 +192,18 @@ export class WsClient {
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return;
 
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 60s (cap)
+    const delay = Math.min(
+      1000 * Math.pow(2, this.reconnectAttempts),
+      this.maxReconnectDelay
+    );
+    this.reconnectAttempts++;
+
+    console.log(`[ws-client] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})...`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      console.log("[ws-client] Attempting to reconnect...");
       void this.connect();
-    }, 5000);
+    }, delay);
   }
 }
 
