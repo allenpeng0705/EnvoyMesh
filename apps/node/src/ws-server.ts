@@ -226,6 +226,12 @@ export class WsServer {
       case "stopNode":
         await ns.stopNode();
         return { success: true };
+      case "advertiseTopic":
+        await ns.advertiseTopic(params.topic as string);
+        return { success: true };
+      case "stopAdvertiseTopic":
+        await ns.stopAdvertiseTopic(params.topic as string);
+        return { success: true };
       default:
         throw new Error(`Unknown method: ${method}`);
     }

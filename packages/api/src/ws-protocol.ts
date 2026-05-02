@@ -84,6 +84,8 @@ export type RpcMethods =
   | "markRead"
   // Search
   | "searchPeers"
+  | "advertiseTopic"
+  | "stopAdvertiseTopic"
   // File Sharing
   | "shareFile"
   | "acceptShare"

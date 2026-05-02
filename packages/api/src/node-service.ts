@@ -274,6 +274,18 @@ export interface NodeService {
    */
   searchPeers(query: SearchQuery): Promise<PeerSearchResult[]>;
 
+  /**
+   * Advertise a topic on the DHT so other peers can discover you
+   * @param topic The topic string to advertise (e.g., "music", "tech")
+   */
+  advertiseTopic(topic: string): Promise<void>;
+
+  /**
+   * Stop advertising a topic on the DHT
+   * @param topic The topic string to stop advertising
+   */
+  stopAdvertiseTopic(topic: string): Promise<void>;
+
   // ----- File Sharing -----
 
   /**

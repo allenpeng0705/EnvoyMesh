@@ -59,6 +59,11 @@ interface NodeServiceClient {
 
   // Search
   searchPeers(query: SearchQuery): Promise<PeerSearchResult[]>;
+  advertiseTopic(topic: string): Promise<void>;
+  stopAdvertiseTopic(topic: string): Promise<void>;
+
+  // Connection Status
+  getConnectionStatus(): Promise<{ online: boolean; peerId: string; multiaddrs: string[]; connectedRelays: string[]; bondedPeers: number }>;
 
   // Node Configuration
   getNodeConfig(): Promise<NodeConfig>;
@@ -163,6 +168,18 @@ export function NodeServiceProvider({ children }: { children: ReactNode }) {
 
       async getNodeConfig() {
         return wsClient.rpc("getNodeConfig");
+      },
+
+      async getConnectionStatus() {
+        return wsClient.rpc("getConnectionStatus");
+      },
+
+      async advertiseTopic(topic: string) {
+        return wsClient.rpc("advertiseTopic", { topic });
+      },
+
+      async stopAdvertiseTopic(topic: string) {
+        return wsClient.rpc("stopAdvertiseTopic", { topic });
       },
 
       async updateNodeConfig(config) {

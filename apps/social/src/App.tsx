@@ -40,6 +40,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PeerSearchResult[]>([]);
   const [searchMode, setSearchMode] = useState<"interest" | "peerId" | "topic">("interest");
+  const [isSearching, setIsSearching] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [currentView, setCurrentView] = useState<"chat" | "contacts" | "search" | "profile" | "settings">("chat");
   const [nodeConfig, setNodeConfig] = useState<NodeConfig | null>(null);
@@ -47,6 +48,25 @@ function App() {
   const [newRelayAddr, setNewRelayAddr] = useState("");
   const [appSettings, setAppSettings] = useState<AppSettings>(loadAppSettings);
   const [settingsTab, setSettingsTab] = useState<"node" | "app">("node");
+  const [humanProfile, setHumanProfile] = useState<any>(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileEditForm, setProfileEditForm] = useState({
+    displayName: "",
+    bio: "",
+    gender: "",
+    hobbies: "",
+    knowledge: "",
+  });
+  const [advertisedTopics, setAdvertisedTopics] = useState<string[]>([]);
+  const [newTopic, setNewTopic] = useState("");
+  const [searchTopic, setSearchTopic] = useState("");
+
+  // Common topics for discovery
+  const suggestedTopics = [
+    "music", "tech", "art", "science", "gaming",
+    "movies", "books", "travel", "food", "fitness",
+    "news", "sports", "fashion", "photography", "coding"
+  ];
 
   // Bootstrap presets for public network (libp2p)
   const [bootstrapPresets, setBootstrapPresets] = useState<string[]>([]);
@@ -60,6 +80,8 @@ function App() {
   const [isInitializing, setIsInitializing] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [peerId, setPeerId] = useState<string>("");
+  const [connectionStatus, setConnectionStatus] = useState<any>(null);
+  const [isPublicNetwork, setIsPublicNetwork] = useState(false);
 
   const messages = useChatMessages(selectedContact);
 
@@ -87,14 +109,35 @@ function App() {
     nodeService.getNodeConfig().then((config) => {
       setNodeConfig(config);
       // Set bootstrap presets from config
-      setBootstrapPresets(config.bootstrapPresets || []);
+      const presets = config.bootstrapPresets || [];
+      setBootstrapPresets(presets);
+      setIsPublicNetwork(presets.length > 0);
     }).catch(console.error);
     nodeService.listRelays().then(setRelays).catch(console.error);
+
+    // Fetch connection status
+    nodeService.getConnectionStatus().then((status) => {
+      setConnectionStatus(status);
+    }).catch(() => {});
 
     // Fetch profile for peer ID
     nodeService.getProfile().then((profile: any) => {
       if (profile?.owner?.ownerId) {
         setPeerId(profile.owner.ownerId);
+      }
+    }).catch(() => {});
+
+    // Fetch human profile
+    nodeService.getHumanProfile().then((profile) => {
+      if (profile) {
+        setHumanProfile(profile);
+        setProfileEditForm({
+          displayName: profile.displayName || "",
+          bio: profile.bio || "",
+          gender: profile.gender || "",
+          hobbies: (profile.hobbies || []).join(", "),
+          knowledge: (profile.knowledge || []).join(", "),
+        });
       }
     }).catch(() => {});
   }, [nodeService, isConnected]);
@@ -187,19 +230,68 @@ function App() {
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
+    setIsSearching(true);
+    setSearchResults([]);
     try {
       let results: PeerSearchResult[] = [];
       if (searchMode === "peerId") {
+        console.log(`[search] Looking up peer ID: ${searchQuery.trim()}`);
         results = await nodeService.searchPeers({ peerId: searchQuery.trim() });
       } else if (searchMode === "topic") {
+        console.log(`[search] Querying DHT topic: ${searchQuery.trim()}`);
         results = await nodeService.searchPeers({ topic: searchQuery.trim() });
       } else {
+        console.log(`[search] Searching local peers by interest: ${searchQuery}`);
         results = await nodeService.searchPeers({ interests: [searchQuery] });
       }
+      console.log(`[search] Found ${results.length} results`);
       setSearchResults(results);
     } catch (error) {
-      console.error("Failed to search:", error);
+      console.error("[search] Failed:", error);
       setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      const hobbies = profileEditForm.hobbies.split(",").map((s) => s.trim()).filter(Boolean);
+      const knowledge = profileEditForm.knowledge.split(",").map((s) => s.trim()).filter(Boolean);
+      const updated = await nodeService.updateHumanProfile({
+        displayName: profileEditForm.displayName,
+        bio: profileEditForm.bio,
+        gender: profileEditForm.gender,
+        hobbies,
+        knowledge,
+      });
+      setHumanProfile(updated);
+      setIsEditingProfile(false);
+    } catch (error) {
+      console.error("Failed to update profile:", error);
+    }
+  };
+
+  const handleAdvertiseTopic = async () => {
+    const topic = newTopic.trim();
+    if (!topic) return;
+    try {
+      await nodeService.advertiseTopic(topic);
+      setAdvertisedTopics((prev) => [...prev, topic]);
+      setNewTopic("");
+      console.log(`[app] Advertised topic: ${topic}`);
+    } catch (error) {
+      console.error("[app] Failed to advertise topic:", error);
+    }
+  };
+
+  const handleStopAdvertiseTopic = async (topic: string) => {
+    try {
+      await nodeService.stopAdvertiseTopic(topic);
+      setAdvertisedTopics((prev) => prev.filter((t) => t !== topic));
+      console.log(`[app] Stopped advertising topic: ${topic}`);
+    } catch (error) {
+      console.error("[app] Failed to stop advertising topic:", error);
     }
   };
 
@@ -317,9 +409,23 @@ function App() {
           </button>
         </nav>
         <div className="header-right">
-          <span className={`status-dot ${nodeStatus === "running" ? "online" : nodeStatus === "starting" ? "starting" : "offline"}`} />
+          {isPublicNetwork && (
+            <div className={`network-status ${connectionStatus?.online ? 'public' : 'checking'}`}>
+              <span className="status-indicator" />
+              <span>{connectionStatus?.online ? 'Public Network' : 'Connecting...'}</span>
+            </div>
+          )}
+          {!isPublicNetwork && (
+            <div className="network-status private">
+              <span className="status-indicator" />
+              <span>Private</span>
+            </div>
+          )}
           <span className="node-status">{nodeStatus}</span>
           <span className="peer-id">{connectionInfo.peerId.slice(0, 12)}...</span>
+          {connectionStatus?.bondedPeers > 0 && (
+            <span className="peer-count">{connectionStatus.bondedPeers} peers</span>
+          )}
         </div>
       </header>
 
@@ -444,9 +550,92 @@ function App() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}
               />
-              <button onClick={handleSearch}>Search</button>
+              <button onClick={handleSearch} disabled={isSearching} className="search-btn">
+                {isSearching ? (
+                  <>
+                    <span className="search-spinner" />
+                    Searching...
+                  </>
+                ) : (
+                  "Search"
+                )}
+              </button>
             </div>
-            {searchResults.length > 0 ? (
+
+            {isSearching && (
+              <div className="search-status">
+                <div className="search-status-content">
+                  <span className="search-status-icon">🔍</span>
+                  <div>
+                    <strong>Searching DHT for "{searchQuery}"</strong>
+                    <p>Looking for peers advertising this topic...</p>
+                  </div>
+                </div>
+                <div className="search-status-progress">
+                  <div className="progress-bar">
+                    <div className="progress-bar-fill" />
+                  </div>
+                  <span className="progress-text">Querying network...</span>
+                </div>
+              </div>
+            )}
+
+            {searchMode === "topic" && (
+              <div className="topic-advertise">
+                <h3>Advertise Your Topics</h3>
+                <p className="topic-hint">Advertise topics so others can discover you when searching by topic</p>
+                <div className="topic-input-row">
+                  <input
+                    type="text"
+                    value={newTopic}
+                    onChange={(e) => setNewTopic(e.target.value)}
+                    placeholder="Enter topic (e.g., music, tech)"
+                    onKeyDown={(e) => e.key === "Enter" && handleAdvertiseTopic()}
+                  />
+                  <button onClick={handleAdvertiseTopic}>Advertise</button>
+                </div>
+                {advertisedTopics.length > 0 && (
+                  <div className="advertised-topics">
+                    <span className="advertised-label">Your topics:</span>
+                    {advertisedTopics.map((topic) => (
+                      <span key={topic} className="topic-tag">
+                        {topic}
+                        <button onClick={() => handleStopAdvertiseTopic(topic)} className="topic-remove">×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {searchMode === "topic" && !searchQuery && (
+              <div className="topic-suggestions">
+                <h4>Suggested Topics</h4>
+                <div className="topic-chips">
+                  {suggestedTopics.map((topic) => (
+                    <button
+                      key={topic}
+                      className="topic-chip"
+                      onClick={() => {
+                        setSearchQuery(topic);
+                        setSearchTopic(topic);
+                        // Trigger search after setting query
+                        setTimeout(() => handleSearch(), 0);
+                      }}
+                    >
+                      {topic}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {isSearching ? (
+              <div className="search-loading">
+                <div className="spinner"></div>
+                <p>Searching {searchMode === "topic" ? "DHT topic..." : searchMode === "peerId" ? "peer ID..." : "local peers..."}</p>
+              </div>
+            ) : searchResults.length > 0 ? (
               <ul className="search-results">
                 {searchResults.map((result) => (
                   <li key={result.nodeId} className="search-result">
@@ -454,7 +643,9 @@ function App() {
                     <div className="result-info">
                       <strong>{result.displayName}</strong>
                       {result.bio && <p>{result.bio}</p>}
-                      <span className="interests">{result.interests.join(", ")}</span>
+                      {result.interests.length > 0 && (
+                        <span className="interests">{result.interests.join(", ")}</span>
+                      )}
                     </div>
                     <button onClick={() => handleSayHello(result.ownerId)}>
                       Say Hello
@@ -462,20 +653,137 @@ function App() {
                   </li>
                 ))}
               </ul>
+            ) : searchQuery.trim() ? (
+              <div className="search-empty">
+                <p>No peers found for "{searchQuery}"</p>
+                <small>
+                  {searchMode === "topic"
+                    ? "Try advertising a topic first. Peers must be advertising the same topic via DHT."
+                    : searchMode === "peerId"
+                    ? "Check if the peer ID is correct. You may need to be connected to them first."
+                    : "You may not have any bonded peers yet. Try saying hello to someone!"}
+                </small>
+              </div>
             ) : (
-              <p className="empty">Search for people by their interests</p>
+              <p className="empty">Enter a {searchMode === "topic" ? "topic" : searchMode === "peerId" ? "peer ID" : "search term"} to find people</p>
             )}
           </div>
         )}
 
         {currentView === "profile" && (
           <div className="profile-view">
-            <h2>Your Profile</h2>
-            <p className="muted">Profile editing coming soon</p>
-            <dl className="profile-info">
-              <dt>Your Peer ID</dt>
-              <dd><code>{connectionInfo.peerId}</code></dd>
-            </dl>
+            {isEditingProfile ? (
+              <div className="profile-edit">
+                <h2>Edit Your Profile</h2>
+                <div className="form-group">
+                  <label>Display Name</label>
+                  <input
+                    type="text"
+                    value={profileEditForm.displayName}
+                    onChange={(e) => setProfileEditForm({ ...profileEditForm, displayName: e.target.value })}
+                    placeholder="Your name"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Bio</label>
+                  <textarea
+                    value={profileEditForm.bio}
+                    onChange={(e) => setProfileEditForm({ ...profileEditForm, bio: e.target.value })}
+                    placeholder="Tell us about yourself"
+                    rows={3}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Gender</label>
+                  <input
+                    type="text"
+                    value={profileEditForm.gender}
+                    onChange={(e) => setProfileEditForm({ ...profileEditForm, gender: e.target.value })}
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Hobbies (comma separated)</label>
+                  <input
+                    type="text"
+                    value={profileEditForm.hobbies}
+                    onChange={(e) => setProfileEditForm({ ...profileEditForm, hobbies: e.target.value })}
+                    placeholder="music, travel, cooking"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Knowledge (comma separated)</label>
+                  <input
+                    type="text"
+                    value={profileEditForm.knowledge}
+                    onChange={(e) => setProfileEditForm({ ...profileEditForm, knowledge: e.target.value })}
+                    placeholder="music, tech, art"
+                  />
+                </div>
+                <div className="profile-edit-actions">
+                  <button onClick={handleSaveProfile} className="btn-primary">Save</button>
+                  <button onClick={() => setIsEditingProfile(false)} className="btn-secondary">Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div className="profile-display">
+                <div className="profile-header">
+                  <div className="profile-avatar">
+                    {humanProfile?.displayName?.[0] ?? connectionInfo.peerId?.[0] ?? "?"}
+                  </div>
+                  <div className="profile-header-info">
+                    <h2>{humanProfile?.displayName || "Unnamed Peer"}</h2>
+                    <p className="profile-owner-id">{connectionInfo.peerId}</p>
+                  </div>
+                </div>
+                <div className="profile-actions">
+                  <button onClick={() => setIsEditingProfile(true)} className="btn-secondary">
+                    Edit Profile
+                  </button>
+                </div>
+                <div className="profile-section">
+                  <h3>About</h3>
+                  <p className="profile-bio">{humanProfile?.bio || "No bio yet"}</p>
+                </div>
+                {humanProfile?.gender && (
+                  <div className="profile-section">
+                    <h3>Gender</h3>
+                    <p>{humanProfile.gender}</p>
+                  </div>
+                )}
+                {humanProfile?.hobbies?.length > 0 && (
+                  <div className="profile-section">
+                    <h3>Hobbies</h3>
+                    <div className="profile-tags">
+                      {humanProfile.hobbies.map((h: string, i: number) => (
+                        <span key={i} className="tag">{h}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {humanProfile?.knowledge?.length > 0 && (
+                  <div className="profile-section">
+                    <h3>Knowledge</h3>
+                    <div className="profile-tags">
+                      {humanProfile.knowledge.map((k: string, i: number) => (
+                        <span key={i} className="tag knowledge">{k}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="profile-section">
+                  <h3>Connection Info</h3>
+                  <dl className="profile-info">
+                    <dt>Peer ID</dt>
+                    <dd><code className="peer-id-display">{connectionInfo.peerId}</code></dd>
+                    <dt>Node Status</dt>
+                    <dd>{nodeStatus}</dd>
+                    <dt>Connected Peers</dt>
+                    <dd>{bonds.length}</dd>
+                  </dl>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -551,6 +859,13 @@ function App() {
                                 : [...bootstrapPresets, preset.id];
                               setBootstrapPresets(updated);
                               await nodeService.updateNodeConfig({ bootstrapPresets: updated });
+                              // Restart node to apply new bootstrap presets (enables DHT)
+                              try {
+                                await nodeService.stopNode();
+                                await nodeService.startNode();
+                              } catch (e) {
+                                console.error("[app] Failed to restart node:", e);
+                              }
                               nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                             }}
                           />

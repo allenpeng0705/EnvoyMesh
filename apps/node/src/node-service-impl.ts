@@ -350,7 +350,7 @@ class NodeServiceImpl implements NodeService {
   private async searchByTopic(topic: string, maxResults: number): Promise<PeerSearchResult[]> {
     const mesh = this._mesh;
     if (!mesh) {
-      console.warn("[searchPeers] Node not initialized");
+      console.warn("[searchPeers] Node not initialized for topic search");
       return [];
     }
 
@@ -445,6 +445,35 @@ class NodeServiceImpl implements NodeService {
     }
 
     return results.slice(0, maxResults);
+  }
+
+  async advertiseTopic(topic: string): Promise<void> {
+    const mesh = this._mesh;
+    if (!mesh) {
+      throw new Error("Node not initialized");
+    }
+    try {
+      console.log(`[node-service] Advertising topic: "${topic}" on DHT`);
+      await mesh.provideCapabilityTopic(topic);
+      console.log(`[node-service] Successfully advertised topic: ${topic}`);
+    } catch (err) {
+      console.error(`[node-service] Failed to advertise topic ${topic}:`, err);
+      throw err;
+    }
+  }
+
+  async stopAdvertiseTopic(topic: string): Promise<void> {
+    const mesh = this._mesh;
+    if (!mesh) {
+      throw new Error("Node not initialized");
+    }
+    try {
+      await mesh.cancelCapabilityTopicReprovide(topic);
+      console.log(`[node-service] Stopped advertising topic: ${topic}`);
+    } catch (err) {
+      console.error(`[node-service] Failed to stop advertising topic ${topic}:`, err);
+      throw err;
+    }
   }
 
   // ============================================
@@ -656,13 +685,28 @@ class NodeServiceImpl implements NodeService {
       const seedAddrs = await this._discoverySeedStore.listSeedAddrs();
       const bootstrapPeers = [...new Set([...config.bootstrapPeers, ...peerDirAddrs, ...seedAddrs])];
 
+      console.log(`[node-service] Bootstrap peers resolved: ${bootstrapPeers.length} addresses`);
+      for (const bp of bootstrapPeers) {
+        console.log(`  - ${bp}`);
+      }
+
       // Create EnvoyMesh
-      // DHT is enabled when using public network (bootstrapPresets) or when discoveryProfile is wan-default
-      const usePublicNetwork = config.bootstrapPresets && config.bootstrapPresets.length > 0;
-      this._mesh = new EnvoyMesh({
+      // DHT is always enabled when using wan-default discovery profile (for topic-based peer discovery)
+      // Bootstrap presets affect peer connectivity, not DHT availability
+      console.log(`[node-service] DHT configuration: discoveryProfile=${config.discoveryProfile}, bootstrapPresets=${config.bootstrapPresets?.length ?? 0}`);
+      console.log(`[node-service] Creating EnvoyMesh with enableDht=true`);
+      console.log(`[node-service] config object:`, JSON.stringify({
+        discoveryProfile: config.discoveryProfile,
+        relayEnabled: config.relayEnabled,
+        relayServerEnabled: config.relayServerEnabled,
+        bootstrapPeers: config.bootstrapPeers,
+        bootstrapPresets: config.bootstrapPresets,
+      }));
+
+      const meshOptions: EnvoyMeshOptions = {
         listen: ["/ip4/0.0.0.0/tcp/0"],
         enableMdns: config.discoveryProfile === "lan-fast",
-        enableDht: usePublicNetwork || config.discoveryProfile === "wan-default",
+        enableDht: true, // Always enable DHT for topic-based discovery
         dhtClientMode: true,
         bootstrapPeers,
         enableRelay: config.relayEnabled,
@@ -670,7 +714,9 @@ class NodeServiceImpl implements NodeService {
         enableAutoNat: true,
         enableDcutr: true,
         libp2pPrivateKeyPath: join(config.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME),
-      } as EnvoyMeshOptions);
+      };
+
+      this._mesh = new EnvoyMesh(meshOptions);
 
       // Wire mesh events
       this._wireMeshEvents();

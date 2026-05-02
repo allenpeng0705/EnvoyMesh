@@ -144,8 +144,8 @@ const libp2pPrivateKeyPath = join(args.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BA
 const mesh = new EnvoyMesh({
   listen: args.listen,
   enableMdns: args.enableMdns,
-  enableDht: args.enableDht,
-  dhtClientMode: args.dhtClientMode,
+  enableDht: true, // Always enable DHT for topic-based discovery (wan-default always uses DHT)
+  dhtClientMode: args.dhtClientMode ?? true,
   bootstrapPeers: effectiveBootstrapPeers,
   enableRelay: args.enableRelay,
   enableRelayServer: args.enableRelayServer,
