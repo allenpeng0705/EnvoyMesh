@@ -21,6 +21,9 @@ import {
   createHumanProfilePayload,
   createUnsignedEnvelope,
   parseChatMessagePayload,
+  createRendezvousRegisterPayload,
+  createRendezvousQueryPayload,
+  RendezvousResponsePayloadSchema,
   type HumanProfilePayload,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
@@ -241,7 +244,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
-   * Re-advertise interests on DHT (called on node start/restart)
+   * Re-advertise interests on DHT and rendezvous servers (called on node start/restart)
    */
   private async _advertiseInterestsIfPublic(): Promise<void> {
     const config = await this._configStore.load();
@@ -251,7 +254,60 @@ class NodeServiceImpl implements NodeService {
     const isPublicNetwork = config.bootstrapPresets && config.bootstrapPresets.length > 0;
     if (profile.profileVisibility === "public" && isPublicNetwork) {
       const interests = [...(profile.hobbies ?? []), ...(profile.knowledge ?? [])];
+
+      // Advertise on DHT
       await this._advertiseInterests(interests, profile.username);
+
+      // Also register with rendezvous servers if configured
+      if (config.configuredRelays && config.configuredRelays.length > 0) {
+        void this._registerWithRendezvousServers(interests, profile.username);
+      }
+    }
+  }
+
+  /**
+   * Register our capabilities with configured rendezvous servers
+   */
+  private async _registerWithRendezvousServers(interests: string[], username: string): Promise<void> {
+    const config = await this._configStore.load();
+    if (!config?.configuredRelays || config.configuredRelays.length === 0) return;
+
+    const mesh = this._requireMesh();
+    const selfProfile = this._requireProfile();
+
+    // Build capabilities list from interests (as tags)
+    const capabilities = interests.map(interest => ({ tag: interest.toLowerCase() }));
+    // Also add username as a special capability
+    capabilities.push({ tag: `username:${username.toLowerCase()}` });
+
+    for (const relay of config.configuredRelays) {
+      if (!relay.enabled) continue;
+
+      try {
+        console.log(`[node-service] Registering with rendezvous server: ${relay.addr}`);
+
+        const envelope = signUnsignedEnvelope(
+          createUnsignedEnvelope({
+            senderPeerId: mesh.peerId,
+            senderPublicKey: selfProfile.device.publicKeyPem,
+            recipientPeerId: relay.addr, // Will be resolved by relay
+            intent: "rendezvous.register",
+            payload: createRendezvousRegisterPayload({
+              peerId: mesh.peerId,
+              multiaddr: mesh.multiaddrs[0] ?? `/p2p/${mesh.peerId}`,
+              capabilities,
+              ttlSeconds: 3600,
+            }),
+          }),
+          selfProfile.device.privateKeyPem,
+        );
+
+        // Send to relay and wait for response
+        const response = await mesh.sendExpectReply(relay.addr, envelope, { timeoutMs: 10000 });
+        console.log(`[node-service] Rendezvous registration response for ${relay.addr}:`, response);
+      } catch (err) {
+        console.warn(`[node-service] Failed to register with rendezvous server ${relay.addr}:`, err);
+      }
     }
   }
 
@@ -464,10 +520,10 @@ class NodeServiceImpl implements NodeService {
       }
     }
 
-    // 6. Private relay network: additional search via relay (hybrid with relays)
+    // 6. Private relay network: search via rendezvous servers
     if (isPrivateRelay && query.interests && query.interests.length > 0) {
-      const relayResults = await this.searchLocalPeers(query, maxResults);
-      for (const r of relayResults) {
+      const rendezvousResults = await this.searchByRendezvous(query.interests);
+      for (const r of rendezvousResults) {
         if (!results.some((existing) => existing.nodeId === r.nodeId)) {
           results.push(r);
         }
@@ -617,6 +673,63 @@ class NodeServiceImpl implements NodeService {
     }
 
     return results.slice(0, maxResults);
+  }
+
+  /**
+   * Search for peers via rendezvous servers (relay-based discovery)
+   */
+  private async searchByRendezvous(interests: string[]): Promise<PeerSearchResult[]> {
+    const config = await this._configStore.load();
+    if (!config?.configuredRelays || config.configuredRelays.length === 0) {
+      return [];
+    }
+
+    const mesh = this._requireMesh();
+    const selfProfile = this._requireProfile();
+    const results: PeerSearchResult[] = [];
+
+    for (const relay of config.configuredRelays) {
+      if (!relay.enabled) continue;
+
+      try {
+        console.log(`[node-service] Searching rendezvous server ${relay.addr} for interests: ${interests.join(", ")}`);
+
+        // Build query for each interest (as tag matches)
+        const queryPayload = {
+          match: interests.map(interest => ({ tag: interest.toLowerCase() })) as any,
+        };
+
+        const envelope = signUnsignedEnvelope(
+          createUnsignedEnvelope({
+            senderPeerId: mesh.peerId,
+            senderPublicKey: selfProfile.device.publicKeyPem,
+            recipientPeerId: relay.addr,
+            intent: "rendezvous.query",
+            payload: queryPayload,
+          }),
+          selfProfile.device.privateKeyPem,
+        );
+
+        const response = await mesh.sendExpectReply(relay.addr, envelope, { timeoutMs: 15000 });
+        const responsePayload = RendezvousResponsePayloadSchema.parse(response.payload);
+
+        console.log(`[node-service] Rendezvous query returned ${responsePayload.matches.length} matches from ${relay.addr}`);
+
+        for (const match of responsePayload.matches) {
+          results.push({
+            nodeId: match.peerId,
+            ownerId: match.peerId,
+            displayName: match.peerId.slice(0, 12) + "...",
+            interests: match.capabilities?.map((c: any) => "tag" in c ? c.tag : "") .filter(Boolean) ?? [],
+            profileVisibility: "public",
+          });
+        }
+      } catch (err) {
+        console.warn(`[node-service] Rendezvous query failed for ${relay.addr}:`, err);
+      }
+    }
+
+    return results;
   }
 
   async advertiseTopic(topic: string): Promise<void> {
