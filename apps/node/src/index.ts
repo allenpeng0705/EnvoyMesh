@@ -880,8 +880,12 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       },
       async (bondData) => {
         // Emit bond:established via wsServer if available
+        console.log(`[bond:established callback] intent=${envelope.intent}, emitting bond:established for peerOwnerId=${bondData.peerOwnerId}`);
         if (wsServerForEvents) {
+          console.log(`[bond:established callback] calling wsServer.emitEvent with peerOwnerId=${bondData.peerOwnerId}`);
           wsServerForEvents.emitEvent("bond:established", bondData);
+        } else {
+          console.log(`[bond:established callback] wsServerForEvents is null!`);
         }
         // Also store peer info in peer directory so sendChat can find them
         if (envelope.intent === "bond.request") {
@@ -1062,7 +1066,10 @@ wsServerForEvents = wsServer;
 nodeService.on("hello:request", (data) => wsServer.emitEvent("hello:request", data));
 nodeService.on("hello:response", (data) => wsServer.emitEvent("hello:response", data));
 nodeService.on("chat:message", (data) => wsServer.emitEvent("chat:message", data));
-nodeService.on("bond:established", (data) => wsServer.emitEvent("bond:established", data));
+nodeService.on("bond:established", (data) => {
+  console.log(`[index.ts] nodeService bond:established event fired, peerOwnerId=${data.peerOwnerId}`);
+  wsServer.emitEvent("bond:established", data);
+});
 if (args.configPath) {
   console.log(`Config file: ${args.configPath}`);
 }
