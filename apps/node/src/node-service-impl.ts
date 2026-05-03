@@ -195,53 +195,38 @@ class NodeServiceImpl implements NodeService {
 
   /**
    * Advertise interests and username as DHT topics for peer discovery
-   * Uses retry with exponential backoff and longer timeouts to handle sparse DHT connectivity
+   * Runs continuously in background with periodic retries (like system topics)
    */
+  private _advertiseInterestsTimer?: ReturnType<typeof setInterval>;
+
   private async _advertiseInterests(interests: string[], username: string): Promise<void> {
-    // Retry configuration - exponential backoff
-    const MAX_RETRIES = 3;
-    const BASE_TIMEOUT_MS = 30000; // 30 seconds base
-    const BACKOFF_MULTIPLIER = 2;
-
-    /**
-     * Attempt to advertise a topic with retry and exponential backoff
-     */
-    const advertiseWithRetry = async (topic: string): Promise<boolean> => {
-      let lastError: Error | undefined;
-
-      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        const timeout = BASE_TIMEOUT_MS * Math.pow(BACKOFF_MULTIPLIER, attempt);
-        const attemptLabel = attempt === 0 ? "" : ` (attempt ${attempt + 1}/${MAX_RETRIES}, timeout ${timeout}ms)`;
-        console.log(`[node-service] Advertising topic "${topic}"${attemptLabel}`);
-
-        try {
-          await this._mesh!.provideCapabilityTopic(topic);
-          console.log(`[node-service] Successfully advertised topic: ${topic}`);
-          return true;
-        } catch (err) {
-          lastError = err instanceof Error ? err : new Error(String(err));
-          console.warn(`[node-service] Failed to advertise topic "${topic}" (attempt ${attempt + 1}/${MAX_RETRIES}):`, lastError.message);
-
-          if (attempt < MAX_RETRIES - 1) {
-            // Wait before retry with exponential backoff
-            const backoffMs = Math.min(timeout, 60000); // Cap at 60 seconds
-            console.log(`[node-service] Retrying "${topic}" in ${backoffMs}ms...`);
-            await new Promise((resolve) => setTimeout(resolve, backoffMs));
-          }
-        }
-      }
-
-      console.warn(`[node-service] All ${MAX_RETRIES} attempts failed for topic "${topic}": ${lastError?.message}`);
-      return false;
-    };
+    // Stop any existing advertising timer
+    if (this._advertiseInterestsTimer) {
+      clearInterval(this._advertiseInterestsTimer);
+    }
 
     const advertisedTopics: string[] = [];
     let allSuccess = true;
 
-    // Advertise all interests with retry
+    /**
+     * Attempt to advertise a single topic (no retry - just one attempt)
+     */
+    const advertiseOnce = async (topic: string): Promise<boolean> => {
+      try {
+        await this._mesh!.provideCapabilityTopic(topic);
+        console.log(`[node-service] Successfully advertised topic: ${topic}`);
+        return true;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[node-service] Failed to advertise topic "${topic}": ${msg}`);
+        return false;
+      }
+    };
+
+    // Advertise all interests once (initial attempt)
     for (const interest of interests) {
       const topic = interest.toLowerCase();
-      const success = await advertiseWithRetry(topic);
+      const success = await advertiseOnce(topic);
       if (success) {
         advertisedTopics.push(topic);
       } else {
@@ -249,19 +234,38 @@ class NodeServiceImpl implements NodeService {
       }
     }
 
-    // Advertise username as a special DHT topic for username-based discovery (with retry)
+    // Advertise username as a special DHT topic for username-based discovery
     const usernameTopic = `username:${username.toLowerCase()}`;
-    const usernameSuccess = await advertiseWithRetry(usernameTopic);
+    const usernameSuccess = await advertiseOnce(usernameTopic);
     if (usernameSuccess) {
       advertisedTopics.push(usernameTopic);
       console.log(`[node-service] Advertised username: ${usernameTopic}`);
     } else {
       allSuccess = false;
-      console.warn(`[node-service] Failed to advertise username topic: ${usernameTopic}`);
     }
 
-    // Emit event with results
+    // Emit initial result
     this.emit("discovery:advertising-complete", { topics: advertisedTopics, success: allSuccess });
+
+    // Set up periodic retry - keep trying every 5 minutes like system topics do
+    // This ensures we eventually advertise successfully even with poor DHT connectivity
+    this._advertiseInterestsTimer = setInterval(async () => {
+      console.log(`[node-service] Periodic re-advertisement for ${interests.length + 1} topics...`);
+      let retrySuccess = true;
+
+      for (const interest of interests) {
+        const topic = interest.toLowerCase();
+        const success = await advertiseOnce(topic);
+        if (!success) retrySuccess = false;
+      }
+
+      const usernameSuccess = await advertiseOnce(usernameTopic);
+      if (!usernameSuccess) retrySuccess = false;
+
+      if (retrySuccess) {
+        console.log(`[node-service] All topics successfully advertised on retry`);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
   }
 
   /**
@@ -1259,6 +1263,43 @@ class NodeServiceImpl implements NodeService {
           message: payload.message ?? "",
           timestamp: envelope.createdAt,
         });
+      } else if (intent === "bond.accept") {
+        // When we receive bond.accept, it means our hello/bond request was accepted
+        const { parseBondAcceptPayload } = await import("@envoymesh/protocol");
+        const payload = parseBondAcceptPayload(envelope.payload);
+
+        console.log(`[node-service] Received bond.accept from ${payload.responderOwnerId}`);
+
+        // Store the bond in trust store since the other party accepted our request
+        await this._trustStore.setTrustRecord({
+          peerOwnerId: payload.responderOwnerId,
+          displayName: payload.responderOwnerId, // Will be updated when profile is exchanged
+          level: "direct",
+          note: payload.message ?? undefined,
+          now: new Date().toISOString(),
+        });
+
+        // Store peer info if not already stored
+        const existing = await this._peerDirectoryStore.getPeerByOwnerId(payload.responderOwnerId);
+        if (!existing) {
+          await this._peerDirectoryStore.upsertPeerFromSignal({
+            peerId: remotePeerId,
+            payload: {
+              type: "bond.accept.received",
+              version: "1.0",
+              ownerId: payload.responderOwnerId,
+              deviceId: "unknown",
+              deviceCertificate: { devicePublicKeyPem: "" },
+              listenAddrs: [],
+            } as any,
+          });
+        }
+
+        // Emit bond:established so UI updates
+        this.emit("bond:established", {
+          peerOwnerId: payload.responderOwnerId,
+          displayName: payload.responderOwnerId,
+        });
       } else if (intent === "chat.message") {
         const payload = parseChatMessagePayload(envelope.payload);
         this.emit("chat:message", {
@@ -1317,6 +1358,11 @@ class NodeServiceImpl implements NodeService {
       if (this._mesh) {
         await this._mesh.stop();
         this._mesh = undefined;
+      }
+      // Clear periodic re-advertisement timer
+      if (this._advertiseInterestsTimer) {
+        clearInterval(this._advertiseInterestsTimer);
+        this._advertiseInterestsTimer = undefined;
       }
     } catch (error) {
       console.error("[node-service] Error stopping mesh:", error);
