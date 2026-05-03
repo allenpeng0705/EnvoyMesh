@@ -95,7 +95,7 @@ function App() {
   const [searchMode, setSearchMode] = useState<"interest" | "peerId" | "topic">("interest");
   const [isSearching, setIsSearching] = useState(false);
   const [chatInput, setChatInput] = useState("");
-  const [currentView, setCurrentView] = useState<"chat" | "contacts" | "search" | "profile" | "settings">("chat");
+  const [currentView, setCurrentView] = useState<"chat" | "contacts" | "search" | "profile" | "settings" | "inbox">("chat");
   const [nodeConfig, setNodeConfig] = useState<NodeConfig | null>(null);
   const [relays, setRelays] = useState<RelayConfig[]>([]);
   const [newRelayAddr, setNewRelayAddr] = useState("");
@@ -144,6 +144,11 @@ function App() {
   // Discovered peers (mDNS / DHT found but not bonded)
   const [discoveredPeers, setDiscoveredPeers] = useState<Array<{ peerId: string; displayName?: string; lastSeen?: string }>>([]);
   const [showAroundMe, setShowAroundMe] = useState(false);
+
+  // Inbox: pending hello requests and notifications
+  const [inboxRequests, setInboxRequests] = useState<any[]>([]);
+  const [pendingMessages, setPendingMessages] = useState<any[]>([]);
+  const [showInbox, setShowInbox] = useState(false);
 
   const messages = useChatMessages(selectedContact);
 
@@ -238,6 +243,38 @@ function App() {
           lastSeen: new Date().toISOString(),
         }];
       });
+    });
+    return unsubscribe;
+  }, [nodeService, bonds]);
+
+  // Listen for hello:request events (inbox)
+  useEffect(() => {
+    if (!isConnected) return;
+    const unsubscribe = nodeService.on("hello:request", (data) => {
+      setInboxRequests((prev) => {
+        // Don't add duplicates
+        if (prev.some((r) => r.messageId === data.messageId)) return prev;
+        return [...prev, data];
+      });
+      setShowInbox(true);
+    });
+    return unsubscribe;
+  }, [nodeService]);
+
+  // Listen for pending messages (before bond is established)
+  useEffect(() => {
+    if (!isConnected) return;
+    const unsubscribe = nodeService.on("chat:message", (data) => {
+      const msg = data as any;
+      // Check if this peer is NOT already bonded
+      const isBonded = bonds.some((b) => b.peerOwnerId === msg.sender.nodeId || b.peerOwnerId === msg.sender.ownerId);
+      if (!isBonded) {
+        setPendingMessages((prev) => {
+          // Don't add duplicates
+          if (prev.some((m) => m.messageId === msg.messageId)) return prev;
+          return [...prev, msg];
+        });
+      }
     });
     return unsubscribe;
   }, [nodeService, bonds]);
@@ -488,10 +525,10 @@ function App() {
         </div>
         <nav className="header-nav">
           <button
-            className={currentView === "chat" ? "active" : ""}
+            className={`${currentView === "chat" ? "active" : ""} ${inboxRequests.length > 0 ? "has-inbox" : ""}`}
             onClick={() => setCurrentView("chat")}
           >
-            Chat
+            Chat {inboxRequests.length > 0 && <span className="inbox-badge">{inboxRequests.length}</span>}
           </button>
           <button
             className={currentView === "contacts" ? "active" : ""}
@@ -543,8 +580,67 @@ function App() {
         {currentView === "chat" && (
           <div className="chat-view">
             <aside className="contact-list">
-              <h3>Contacts</h3>
-              {bonds.length === 0 ? (
+              <div className="contact-list-header">
+                <h3>Contacts</h3>
+                {inboxRequests.length > 0 && (
+                  <span className="inbox-count">{inboxRequests.length} pending</span>
+                )}
+              </div>
+              {inboxRequests.length > 0 && (
+                <div className="inbox-section">
+                  <h4>Inbox</h4>
+                  {inboxRequests.map((request) => (
+                    <div key={request.messageId} className="inbox-mini-card">
+                      <span className="avatar small">{request.profile.displayName[0]}</span>
+                      <div className="inbox-mini-info">
+                        <strong>{request.profile.displayName}</strong>
+                        <span className="owner-id">{request.sender.ownerId.slice(0, 12)}...</span>
+                      </div>
+                      <div className="inbox-mini-actions">
+                        <button
+                          className="accept small"
+                          onClick={() => {
+                            handleAcceptHello(request.messageId);
+                            setInboxRequests((prev) => prev.filter((r) => r.messageId !== request.messageId));
+                          }}
+                        >
+                          ✓
+                        </button>
+                        <button
+                          className="decline small"
+                          onClick={() => {
+                            handleDeclineHello(request.messageId);
+                            setInboxRequests((prev) => prev.filter((r) => r.messageId !== request.messageId));
+                          }}
+                        >
+                          ✗
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {pendingMessages.length > 0 && (
+                <div className="pending-messages-section">
+                  <h4>Pending Messages</h4>
+                  {pendingMessages.map((msg) => (
+                    <div key={msg.messageId} className="pending-message-card">
+                      <span className="avatar small">{msg.sender.displayName?.[0] ?? "?"}</span>
+                      <div className="pending-message-info">
+                        <strong>{msg.sender.displayName ?? msg.sender.nodeId}</strong>
+                        <span className="message-preview">{msg.content?.text?.slice(0, 30)}...</span>
+                      </div>
+                      <button
+                        className="say-hello-btn small"
+                        onClick={() => handleSayHello(msg.sender.nodeId)}
+                      >
+                        Say Hello
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {bonds.length === 0 && inboxRequests.length === 0 && pendingMessages.length === 0 ? (
                 <p className="empty">No contacts yet. Search to find people!</p>
               ) : (
                 bonds.map((contact) => (
@@ -1340,11 +1436,76 @@ function App() {
 
               </main>
 
-      {pendingHellOs.length > 0 && (
-        <aside className="hello-requests">
-          <h3>Hello Requests ({pendingHellOs.length})</h3>
-          {pendingHellOs.map((request) => (
-            <div key={request.messageId} className="hello-card">
+        {currentView === "inbox" && (
+          <div className="inbox-view">
+            <div className="inbox-header">
+              <h2>Inbox</h2>
+              {inboxRequests.length > 0 && (
+                <button
+                  className="clear-inbox"
+                  onClick={() => setInboxRequests([])}
+                >
+                  Clear All
+                </button>
+              )}
+            </div>
+            {inboxRequests.length === 0 ? (
+              <div className="inbox-empty">
+                <p>No pending requests</p>
+                <small>Hello requests from other users will appear here</small>
+              </div>
+            ) : (
+              <ul className="inbox-list">
+                {inboxRequests.map((request) => (
+                  <li key={request.messageId} className="inbox-item">
+                    <div className="inbox-sender">
+                      <span className="avatar large">{request.profile.displayName[0]}</span>
+                      <div className="inbox-sender-info">
+                        <strong>{request.profile.displayName}</strong>
+                        <span className="owner-id">{request.sender.ownerId}</span>
+                      </div>
+                    </div>
+                    {request.profile.bio && (
+                      <p className="inbox-bio">{request.profile.bio}</p>
+                    )}
+                    {request.profile.interests.length > 0 && (
+                      <span className="interests">{request.profile.interests.join(", ")}</span>
+                    )}
+                    {request.message && (
+                      <p className="inbox-message">"{request.message}"</p>
+                    )}
+                    <div className="inbox-actions">
+                      <button
+                        className="accept"
+                        onClick={() => {
+                          handleAcceptHello(request.messageId);
+                          setInboxRequests((prev) => prev.filter((r) => r.messageId !== request.messageId));
+                        }}
+                      >
+                        Accept
+                      </button>
+                      <button
+                        className="decline"
+                        onClick={() => {
+                          handleDeclineHello(request.messageId);
+                          setInboxRequests((prev) => prev.filter((r) => r.messageId !== request.messageId));
+                        }}
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {!showInbox && pendingHellOs.length > 0 && (
+          <aside className="hello-requests">
+            <h3>Hello Requests ({pendingHellOs.length})</h3>
+            {pendingHellOs.map((request) => (
+              <div key={request.messageId} className="hello-card">
               <span className="avatar">{request.profile.displayName[0]}</span>
               <div className="hello-info">
                 <strong>{request.profile.displayName}</strong>

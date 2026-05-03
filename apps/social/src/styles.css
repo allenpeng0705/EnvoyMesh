@@ -902,6 +902,321 @@ body {
   border: 1px solid var(--color-border);
 }
 
+/* Chat tab has-inbox indicator */
+.has-inbox {
+  position: relative;
+}
+
+.has-inbox .inbox-badge {
+  position: absolute;
+  top: -4px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 0.25rem;
+  background: var(--color-danger);
+  color: white;
+  border-radius: var(--radius-full);
+  font-size: 0.625rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Inbox mini card in contact list */
+.inbox-section {
+  padding: 0.75rem;
+  background: var(--color-primary-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 0.75rem;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.inbox-section h4 {
+  font-size: 0.75rem;
+  color: var(--color-primary);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.inbox-mini-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.375rem;
+  border: 1px solid var(--color-border);
+}
+
+.inbox-mini-card:last-child {
+  margin-bottom: 0;
+}
+
+.inbox-mini-card .avatar.small {
+  width: 28px;
+  height: 28px;
+  font-size: 0.75rem;
+}
+
+.inbox-mini-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.inbox-mini-info strong {
+  display: block;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inbox-mini-info .owner-id {
+  font-size: 0.625rem;
+  color: var(--color-text-muted);
+  font-family: monospace;
+}
+
+.inbox-mini-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.inbox-mini-actions button.small {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inbox-mini-actions button.accept.small {
+  background: var(--color-success);
+  color: white;
+}
+
+.inbox-mini-actions button.decline.small {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+
+.contact-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.inbox-count {
+  font-size: 0.6875rem;
+  color: var(--color-primary);
+  background: var(--color-primary-subtle);
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--radius-full);
+}
+
+/* Pending Messages Section */
+.pending-messages-section {
+  padding: 0.75rem;
+  background: rgba(245, 158, 11, 0.1);
+  border-radius: var(--radius-md);
+  margin-bottom: 0.75rem;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.pending-messages-section h4 {
+  font-size: 0.75rem;
+  color: var(--color-warning);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pending-message-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.375rem;
+  border: 1px solid var(--color-border);
+}
+
+.pending-message-card:last-child {
+  margin-bottom: 0;
+}
+
+.pending-message-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.pending-message-info strong {
+  display: block;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pending-message-info .message-preview {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.say-hello-btn.small {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+}
+
+/* Inbox View */
+.inbox-view {
+  padding: 1.5rem;
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.inbox-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.inbox-header h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.clear-inbox {
+  padding: 0.375rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.clear-inbox:hover {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.inbox-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--color-text-muted);
+}
+
+.inbox-empty p {
+  font-size: 1.125rem;
+  margin-bottom: 0.5rem;
+}
+
+.inbox-empty small {
+  font-size: 0.875rem;
+  color: var(--color-text-subtle);
+}
+
+.inbox-list {
+  list-style: none;
+}
+
+.inbox-item {
+  padding: 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.inbox-sender {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.inbox-sender-info strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.inbox-sender-info .owner-id {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-family: monospace;
+}
+
+.inbox-bio {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.inbox-message {
+  font-size: 0.875rem;
+  font-style: italic;
+  color: var(--color-text);
+  padding: 0.5rem;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  margin: 0.75rem 0;
+}
+
+.inbox-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.inbox-actions button {
+  flex: 1;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.inbox-actions .accept {
+  background: var(--color-success);
+  color: white;
+}
+
+.inbox-actions .accept:hover {
+  background: #0d9668;
+}
+
+.inbox-actions .decline {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+
+.inbox-actions .decline:hover {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
 /* Utility */
 .empty {
   color: var(--color-text-muted);
