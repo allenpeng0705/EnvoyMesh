@@ -44,6 +44,7 @@ export class WsServer {
       nodeServiceImpl.on("hello:response", (data: unknown) => this.emitEvent("hello:response", data));
       nodeServiceImpl.on("chat:message", (data: unknown) => this.emitEvent("chat:message", data));
       nodeServiceImpl.on("bond:established", (data: unknown) => this.emitEvent("bond:established", data));
+      nodeServiceImpl.on("bond:revoked", (data: unknown) => this.emitEvent("bond:revoked", data));
       nodeServiceImpl.on("node:status", (data: unknown) => this.emitEvent("node:status", data));
     } else {
       console.log(`[ws-server] ERROR: nodeServiceImpl.on is not a function!`);
