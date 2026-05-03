@@ -233,7 +233,9 @@ export async function handleInboundBondIntent(
     }
 
     if (envelope.intent === "bond.accept") {
+      console.log(`[bond-inbound] handling bond.accept from ${remotePeerId}`);
       const payload = parseBondAcceptPayload(envelope.payload);
+      console.log(`[bond-inbound] bond.accept payload: responderOwnerId=${payload.responderOwnerId}, requesterOwnerId=${payload.requesterOwnerId}`);
 
       // Store the bond (the sender is accepting our bond request, so we are the requester)
       await trustStore.setTrustRecord({
