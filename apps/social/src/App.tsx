@@ -344,7 +344,11 @@ function App() {
   };
 
   const handleSendMessage = async () => {
-    if (!chatInput.trim() || !selectedContact) return;
+    console.log(`[handleSendMessage] selectedContact=${selectedContact}, chatInput=${chatInput}`);
+    if (!chatInput.trim() || !selectedContact) {
+      console.log(`[handleSendMessage] early return - missing contact or empty input`);
+      return;
+    }
     try {
       await nodeService.sendChat(selectedContact, chatInput);
       setChatInput("");
