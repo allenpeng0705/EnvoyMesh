@@ -857,6 +857,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
 
   if (
     envelope.intent === "bond.request" ||
+    envelope.intent === "bond.accept" ||
     envelope.intent === "bond.challenge" ||
     envelope.intent === "bond.challenge.response"
   ) {

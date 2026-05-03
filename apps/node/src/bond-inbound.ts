@@ -6,6 +6,7 @@ import {
   type NodeProfile,
 } from "@envoymesh/local-store";
 import {
+  parseBondAcceptPayload,
   parseBondChallengePayload,
   parseBondChallengeResponsePayload,
   parseBondRequestPayload,
@@ -228,6 +229,29 @@ export async function handleInboundBondIntent(
       } else {
         console.log(`[bond.challenge.response] ${summary}`);
       }
+      return { ok: true };
+    }
+
+    if (envelope.intent === "bond.accept") {
+      const payload = parseBondAcceptPayload(envelope.payload);
+
+      // Store the bond (the sender is accepting our bond request, so we are the requester)
+      await trustStore.setTrustRecord({
+        peerOwnerId: payload.responderOwnerId,
+        displayName: payload.responderOwnerId, // Will be updated with actual display name from UI
+        level: "direct",
+        note: payload.message ?? undefined,
+        now: new Date().toISOString(),
+      });
+
+      // Emit bond:established to notify UI to refresh contacts
+      if (emitBondEstablished) {
+        emitBondEstablished({
+          peerOwnerId: payload.responderOwnerId,
+          displayName: payload.responderOwnerId,
+        });
+      }
+
       return { ok: true };
     }
 

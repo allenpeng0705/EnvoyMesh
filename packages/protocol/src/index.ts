@@ -9,6 +9,7 @@ export const EnvoyIntentSchema = z.enum([
   "auth.challenge",
   "auth.challenge.response",
   "bond.request",
+  "bond.accept",
   "bond.challenge",
   "bond.challenge.response",
   "discovery.request",
@@ -379,6 +380,33 @@ export const BondChallengeResponsePayloadSchema = z.object({
   proofOfContext: z.string().max(4096).optional(),
   note: z.string().max(512).optional(),
 });
+
+/** `bond.accept` — confirmation that the receiver accepted a bond request */
+export const BondAcceptPayloadSchema = z.object({
+  responderOwnerId: z.string().min(1),
+  requesterOwnerId: z.string().min(1),
+  message: z.string().max(1024).optional(),
+});
+
+export type BondAcceptPayload = z.infer<typeof BondAcceptPayloadSchema>;
+
+export interface CreateBondAcceptPayloadInput {
+  responderOwnerId: string;
+  requesterOwnerId: string;
+  message?: string;
+}
+
+export function createBondAcceptPayload(input: CreateBondAcceptPayloadInput): BondAcceptPayload {
+  return BondAcceptPayloadSchema.parse({
+    responderOwnerId: input.responderOwnerId,
+    requesterOwnerId: input.requesterOwnerId,
+    message: input.message,
+  });
+}
+
+export function parseBondAcceptPayload(input: unknown): BondAcceptPayload {
+  return BondAcceptPayloadSchema.parse(input);
+}
 
 export const DiscoveryRequestPayloadSchema = z
   .object({

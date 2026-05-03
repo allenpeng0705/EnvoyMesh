@@ -1087,7 +1087,7 @@ class NodeServiceImpl implements NodeService {
 
       if (intent === "bond.request") {
         // Parse the bond request payload
-        const { parseBondRequestPayload } = await import("@envoymesh/protocol");
+        const { parseBondRequestPayload, createBondAcceptPayload, signUnsignedEnvelope, createUnsignedEnvelope } = await import("@envoymesh/protocol");
         const payload = parseBondRequestPayload(envelope.payload);
 
         // Auto-accept bond requests for now (future: user approval)
@@ -1110,6 +1110,24 @@ class NodeServiceImpl implements NodeService {
             payload: envelope.payload as any,
           });
         }
+
+        // Send bond.accept back to the requester so they know we accepted
+        console.log(`[node-service] Sending bond.accept to ${payload.requesterOwnerId} at peerId ${remotePeerId}`);
+        const acceptEnvelope = signUnsignedEnvelope(
+          createUnsignedEnvelope({
+            senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
+            senderPublicKey: selfProfile.device.publicKeyPem,
+            recipientPeerId: remotePeerId,
+            intent: "bond.accept",
+            payload: createBondAcceptPayload({
+              responderOwnerId: selfProfile.owner.ownerId,
+              requesterOwnerId: payload.requesterOwnerId,
+              message: `Hello from ${profile.displayName ?? selfProfile.owner.ownerId}!`,
+            }),
+          }),
+          selfProfile.device.privateKeyPem,
+        );
+        await mesh.send(remotePeerId, acceptEnvelope);
 
         // Emit bond:established event so the UI updates
         this.emit("bond:established", {
