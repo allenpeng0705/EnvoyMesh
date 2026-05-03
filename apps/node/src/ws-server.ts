@@ -124,6 +124,23 @@ export class WsServer {
       (ws as any).isAlive = true;
     });
 
+    // Auto-subscribe to all events for this client (push all events without explicit "on" subscription)
+    const allEvents = [
+      "hello:request",
+      "hello:response",
+      "chat:message",
+      "bond:established",
+      "bond:revoked",
+      "node:status",
+      "node:online",
+      "node:offline",
+      "peer:discovered",
+      "peer:lost",
+    ];
+    for (const event of allEvents) {
+      this.subscribe(ws, event);
+    }
+
     // Send connected event
     const status = this.nodeService.getConnectionStatus();
     this.sendEvent(ws, "connected", {

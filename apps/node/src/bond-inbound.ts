@@ -14,6 +14,19 @@ import {
 
 export type BondInboundResult = { ok: true } | { ok: false; reason: string };
 
+/**
+ * Event types for bond inbound events
+ */
+export type BondInboundEvents = {
+  "hello:request": (data: {
+    messageId: string;
+    sender: { nodeId: string; ownerId: string; displayName: string };
+    profile: { displayName: string; bio: string; interests: string[]; whatShares: string[] };
+    message: string;
+    timestamp: string;
+  }) => void;
+};
+
 async function trustBondLevel(
   trustStore: LocalTrustStore,
   peerOwnerId: string,
@@ -49,16 +62,21 @@ function policySummaryText(
 /**
  * Inbound `bond.*` handling: validate EMP payload, run [`evaluatePolicy`](@envoymesh/bonds), write audit.
  * Does not mutate trust store (owner / CLI approves bonds separately).
+ *
+ * @param emitHelloRequest - optional callback to emit hello:request event after bond request is accepted
  */
-export async function handleInboundBondIntent(input: {
-  envelope: EnvoyEnvelope;
-  profile: NodeProfile;
-  remotePeerId: string;
-  receivedAt: number;
-  correlationId: string | undefined;
-  taskStore: LocalTaskStore;
-  trustStore: LocalTrustStore;
-}): Promise<BondInboundResult> {
+export async function handleInboundBondIntent(
+  input: {
+    envelope: EnvoyEnvelope;
+    profile: NodeProfile;
+    remotePeerId: string;
+    receivedAt: number;
+    correlationId: string | undefined;
+    taskStore: LocalTaskStore;
+    trustStore: LocalTrustStore;
+  },
+  emitHelloRequest?: BondInboundEvents["hello:request"],
+): Promise<BondInboundResult> {
   const { envelope, profile, remotePeerId, receivedAt, correlationId, taskStore, trustStore } = input;
 
   try {
@@ -96,6 +114,36 @@ export async function handleInboundBondIntent(input: {
         console.warn(`[bond.request] denied: ${summary}`);
       } else {
         console.log(`[bond.request] ${summary}`);
+
+        // Emit hello:request event if callback provided
+        if (emitHelloRequest && outcome === "record") {
+          emitHelloRequest({
+            messageId: envelope.messageId,
+            sender: {
+              nodeId: remotePeerId,
+              ownerId: payload.requesterOwnerId,
+              displayName: payload.requesterDisplayName ?? remotePeerId,
+            },
+            profile: {
+              displayName: payload.requesterDisplayName ?? remotePeerId,
+              bio: "",
+              interests: [],
+              whatShares: [],
+            },
+            message: payload.message ?? "",
+            timestamp: envelope.createdAt,
+          });
+        }
+
+        // Auto-accept: store the bond in trust store after challenge policy evaluation
+        // Note: "self" level should not occur for other peers, so we cast to Exclude
+        await trustStore.setTrustRecord({
+          peerOwnerId: payload.requesterOwnerId,
+          displayName: payload.requesterDisplayName ?? remotePeerId,
+          level: (payload.requestedLevel as Exclude<BondLevel, "self">) ?? "direct",
+          note: payload.message ?? undefined,
+          now: new Date().toISOString(),
+        });
       }
       return { ok: true };
     }

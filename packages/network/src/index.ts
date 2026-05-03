@@ -477,15 +477,18 @@ export class EnvoyMesh {
     protocol: string,
   ): Promise<number> {
     validateEnvelopeProtocol(protocol, envelope);
-    // Convert peer ID to proper multiaddr format if needed
-    let dialTarget = target;
-    if (!target.startsWith("/")) {
-      // It's a peer ID - convert to /p2p/Qm... format
-      dialTarget = `/p2p/${target}`;
+    // Convert peer ID or string to proper Multiaddr
+    let dialTarget: Multiaddr;
+    if (target.startsWith("/")) {
+      // Already a multiaddr string, convert to Multiaddr object
+      dialTarget = multiaddr(target);
+    } else {
+      // It's a peer ID - convert to /p2p/Qm... format Multiaddr
+      dialTarget = multiaddr(`/p2p/${target}`);
     }
     const startedAt = Date.now();
     // Use dial (which handles peer ID lookup better) then upgrade to protocol
-    const connection = await this.requireNode().dial(dialTarget as any);
+    const connection = await this.requireNode().dial(dialTarget);
     const stream = await connection.newStream([protocol]);
     const remotePeerId = connection.remotePeer?.toString();
     if (remotePeerId) {

@@ -856,15 +856,23 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     envelope.intent === "bond.challenge" ||
     envelope.intent === "bond.challenge.response"
   ) {
-    const bond = await handleInboundBondIntent({
-      envelope,
-      profile,
-      remotePeerId,
-      receivedAt,
-      correlationId,
-      taskStore,
-      trustStore,
-    });
+    const bond = await handleInboundBondIntent(
+      {
+        envelope,
+        profile,
+        remotePeerId,
+        receivedAt,
+        correlationId,
+        taskStore,
+        trustStore,
+      },
+      (helloData) => {
+        // Emit hello:request via wsServer if available
+        if (wsServerForEvents) {
+          wsServerForEvents.emitEvent("hello:request", helloData);
+        }
+      },
+    );
     if (!bond.ok) {
       await taskStore.appendAuditEvent(
         createAuditEvent({

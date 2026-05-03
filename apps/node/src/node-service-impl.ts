@@ -363,7 +363,12 @@ class NodeServiceImpl implements NodeService {
       console.log(`[node-service] Hello sent successfully to ${targetPeerId}`);
     } catch (err) {
       console.error(`[node-service] Failed to send hello to ${targetPeerId}:`, err);
-      throw new Error(`Failed to send hello: ${err instanceof Error ? err.message : String(err)}`);
+      // Provide a more helpful error message
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      if (errorMsg.includes("getComponents") || errorMsg.includes("connection failed") || errorMsg.includes("timeout")) {
+        throw new Error(`Cannot reach peer ${targetPeerId.slice(0, 12)}... - peer may be behind NAT/firewall. Try configuring a relay server.`);
+      }
+      throw new Error(`Failed to send hello: ${errorMsg}`);
     }
 
     return {
