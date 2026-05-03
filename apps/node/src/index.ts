@@ -904,6 +904,28 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           } catch (err) {
             console.error(`[bond:established] failed to store peer in directory:`, err);
           }
+        } else if (envelope.intent === "bond.accept") {
+          // When receiving bond.accept, store the responder (the one who accepted our request)
+          try {
+            const { parseBondAcceptPayload } = await import("@envoymesh/protocol");
+            const payload = parseBondAcceptPayload(envelope.payload);
+            const existing = await peerDirectoryStore.getPeerByOwnerId(payload.responderOwnerId);
+            if (!existing) {
+              await peerDirectoryStore.upsertPeerFromSignal({
+                peerId: remotePeerId,
+                payload: {
+                  type: "bond.accept",
+                  version: "1.0",
+                  ownerId: payload.responderOwnerId,
+                  deviceId: "unknown",
+                  deviceCertificate: { devicePublicKeyPem: "" },
+                  listenAddrs: [],
+                } as any,
+              });
+            }
+          } catch (err) {
+            console.error(`[bond:established] failed to store peer from bond.accept:`, err);
+          }
         }
       },
     );

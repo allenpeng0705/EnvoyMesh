@@ -501,7 +501,7 @@ class NodeServiceImpl implements NodeService {
       },
       metadata: {
         timestamp: envelope.createdAt,
-        deliveryReceipt: "sent",
+        deliveryReceipt: "sent" as const,
       },
       signature: envelope.signature,
     };
@@ -1087,7 +1087,8 @@ class NodeServiceImpl implements NodeService {
 
       if (intent === "bond.request") {
         // Parse the bond request payload
-        const { parseBondRequestPayload, createBondAcceptPayload, signUnsignedEnvelope, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+        const { parseBondRequestPayload, createBondAcceptPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+        const { signUnsignedEnvelope } = await import("@envoymesh/identity");
         const payload = parseBondRequestPayload(envelope.payload);
 
         // Auto-accept bond requests for now (future: user approval)
@@ -1113,19 +1114,21 @@ class NodeServiceImpl implements NodeService {
 
         // Send bond.accept back to the requester so they know we accepted
         console.log(`[node-service] Sending bond.accept to ${payload.requesterOwnerId} at peerId ${remotePeerId}`);
+        const humanProfile = await this._humanProfileStore.loadHumanProfile();
+        const displayName = humanProfile?.displayName ?? profile.owner.ownerId;
         const acceptEnvelope = signUnsignedEnvelope(
           createUnsignedEnvelope({
-            senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
-            senderPublicKey: selfProfile.device.publicKeyPem,
+            senderPeerId: derivePeerId(profile.device.publicKeyPem),
+            senderPublicKey: profile.device.publicKeyPem,
             recipientPeerId: remotePeerId,
             intent: "bond.accept",
             payload: createBondAcceptPayload({
-              responderOwnerId: selfProfile.owner.ownerId,
+              responderOwnerId: profile.owner.ownerId,
               requesterOwnerId: payload.requesterOwnerId,
-              message: `Hello from ${profile.displayName ?? selfProfile.owner.ownerId}!`,
+              message: `Hello from ${displayName}!`,
             }),
           }),
-          selfProfile.device.privateKeyPem,
+          profile.device.privateKeyPem,
         );
         await mesh.send(remotePeerId, acceptEnvelope);
 
