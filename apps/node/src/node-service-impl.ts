@@ -195,48 +195,69 @@ class NodeServiceImpl implements NodeService {
 
   /**
    * Advertise interests and username as DHT topics for peer discovery
+   * Uses retry with exponential backoff and longer timeouts to handle sparse DHT connectivity
    */
   private async _advertiseInterests(interests: string[], username: string): Promise<void> {
-    // Helper to run with timeout - DHT operations can take up to 30s on public network
-    const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
-      return Promise.race([
-        promise,
-        new Promise<T>((_, reject) =>
-          setTimeout(() => reject(new Error(`DHT operation "${label}" timed out after ${ms}ms`)), ms)
-        ),
-      ]);
+    // Retry configuration - exponential backoff
+    const MAX_RETRIES = 3;
+    const BASE_TIMEOUT_MS = 30000; // 30 seconds base
+    const BACKOFF_MULTIPLIER = 2;
+
+    /**
+     * Attempt to advertise a topic with retry and exponential backoff
+     */
+    const advertiseWithRetry = async (topic: string): Promise<boolean> => {
+      let lastError: Error | undefined;
+
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        const timeout = BASE_TIMEOUT_MS * Math.pow(BACKOFF_MULTIPLIER, attempt);
+        const attemptLabel = attempt === 0 ? "" : ` (attempt ${attempt + 1}/${MAX_RETRIES}, timeout ${timeout}ms)`;
+        console.log(`[node-service] Advertising topic "${topic}"${attemptLabel}`);
+
+        try {
+          await this._mesh!.provideCapabilityTopic(topic);
+          console.log(`[node-service] Successfully advertised topic: ${topic}`);
+          return true;
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          console.warn(`[node-service] Failed to advertise topic "${topic}" (attempt ${attempt + 1}/${MAX_RETRIES}):`, lastError.message);
+
+          if (attempt < MAX_RETRIES - 1) {
+            // Wait before retry with exponential backoff
+            const backoffMs = Math.min(timeout, 60000); // Cap at 60 seconds
+            console.log(`[node-service] Retrying "${topic}" in ${backoffMs}ms...`);
+            await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          }
+        }
+      }
+
+      console.warn(`[node-service] All ${MAX_RETRIES} attempts failed for topic "${topic}": ${lastError?.message}`);
+      return false;
     };
 
     const advertisedTopics: string[] = [];
     let allSuccess = true;
 
+    // Advertise all interests with retry
     for (const interest of interests) {
-      try {
-        await withTimeout(
-          this._mesh!.provideCapabilityTopic(interest.toLowerCase()),
-          30000, // 30 seconds - DHT operations on public network can be slow
-          interest
-        );
-        console.log(`[node-service] Advertised topic: ${interest.toLowerCase()}`);
-        advertisedTopics.push(interest.toLowerCase());
-      } catch (err) {
-        console.warn(`[node-service] Failed to advertise topic ${interest}:`, err);
+      const topic = interest.toLowerCase();
+      const success = await advertiseWithRetry(topic);
+      if (success) {
+        advertisedTopics.push(topic);
+      } else {
         allSuccess = false;
       }
     }
 
-    // Advertise username as a special DHT topic for username-based discovery
-    try {
-      await withTimeout(
-        this._mesh!.provideCapabilityTopic(`username:${username.toLowerCase()}`),
-        30000, // 30 seconds
-        `username:${username}`
-      );
-      console.log(`[node-service] Advertised username: ${username.toLowerCase()}`);
-      advertisedTopics.push(`username:${username.toLowerCase()}`);
-    } catch (err) {
-      console.warn(`[node-service] Failed to advertise username ${username}:`, err);
+    // Advertise username as a special DHT topic for username-based discovery (with retry)
+    const usernameTopic = `username:${username.toLowerCase()}`;
+    const usernameSuccess = await advertiseWithRetry(usernameTopic);
+    if (usernameSuccess) {
+      advertisedTopics.push(usernameTopic);
+      console.log(`[node-service] Advertised username: ${usernameTopic}`);
+    } else {
       allSuccess = false;
+      console.warn(`[node-service] Failed to advertise username topic: ${usernameTopic}`);
     }
 
     // Emit event with results
@@ -255,23 +276,21 @@ class NodeServiceImpl implements NodeService {
     if (profile.profileVisibility === "public" && isPublicNetwork) {
       const interests = [...(profile.hobbies ?? []), ...(profile.knowledge ?? [])];
 
-      // Advertise on DHT
+      // Advertise on DHT (with retry and exponential backoff)
       await this._advertiseInterests(interests, profile.username);
 
-      // Also register with rendezvous servers if configured
-      if (config.configuredRelays && config.configuredRelays.length > 0) {
-        void this._registerWithRendezvousServers(interests, profile.username);
-      }
+      // Also register with rendezvous servers and relay peers as fallback
+      // This runs in parallel with DHT advertising and uses relay-based discovery
+      void this._registerWithRendezvousServers(interests, profile.username);
     }
   }
 
   /**
-   * Register our capabilities with configured rendezvous servers
+   * Register our capabilities with configured rendezvous servers and bootstrap relay peers
+   * This is a fallback when DHT provide fails, using relay-based discovery instead
    */
   private async _registerWithRendezvousServers(interests: string[], username: string): Promise<void> {
     const config = await this._configStore.load();
-    if (!config?.configuredRelays || config.configuredRelays.length === 0) return;
-
     const mesh = this._requireMesh();
     const selfProfile = this._requireProfile();
 
@@ -280,33 +299,92 @@ class NodeServiceImpl implements NodeService {
     // Also add username as a special capability
     capabilities.push({ tag: `username:${username.toLowerCase()}` });
 
-    for (const relay of config.configuredRelays) {
-      if (!relay.enabled) continue;
+    // Collect all relay addresses to register with
+    const relayAddrs: string[] = [];
 
-      try {
-        console.log(`[node-service] Registering with rendezvous server: ${relay.addr}`);
+    // Add configured relays (manually added via addRelay)
+    if (config?.configuredRelays) {
+      for (const relay of config.configuredRelays) {
+        if (relay.enabled && relay.addr) {
+          relayAddrs.push(relay.addr);
+        }
+      }
+    }
 
-        const envelope = signUnsignedEnvelope(
-          createUnsignedEnvelope({
-            senderPeerId: mesh.peerId,
-            senderPublicKey: selfProfile.device.publicKeyPem,
-            recipientPeerId: relay.addr, // Will be resolved by relay
-            intent: "rendezvous.register",
-            payload: createRendezvousRegisterPayload({
-              peerId: mesh.peerId,
-              multiaddr: mesh.multiaddrs[0] ?? `/p2p/${mesh.peerId}`,
-              capabilities,
-              ttlSeconds: 3600,
+    // Add bootstrap preset relays (like cn-relay) if they look like relay addresses
+    if (config?.bootstrapPresets) {
+      for (const preset of config.bootstrapPresets) {
+        // cn-relay is a known relay preset
+        if (preset === "cn-relay") {
+          relayAddrs.push("/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo");
+        }
+      }
+    }
+
+    // Add manually configured bootstrap peers if they look like relays
+    if (config?.bootstrapPeers) {
+      for (const peer of config.bootstrapPeers) {
+        // If it contains /p2p/ it's a full multiaddr with peer ID - likely a relay
+        if (peer.includes("/p2p/") && !relayAddrs.includes(peer)) {
+          relayAddrs.push(peer);
+        }
+      }
+    }
+
+    if (relayAddrs.length === 0) {
+      console.log("[node-service] No relays configured for rendezvous registration");
+      return;
+    }
+
+    console.log(`[node-service] Registering capabilities with ${relayAddrs.length} relay(s)`);
+
+    // Retry configuration for relay registration
+    const MAX_RETRIES = 3;
+    const BASE_TIMEOUT_MS = 15000;
+
+    for (const relayAddr of relayAddrs) {
+      let success = false;
+      let lastError: Error | undefined;
+
+      for (let attempt = 0; attempt < MAX_RETRIES && !success; attempt++) {
+        try {
+          console.log(`[node-service] Registering with rendezvous server: ${relayAddr} (attempt ${attempt + 1}/${MAX_RETRIES})`);
+
+          const envelope = signUnsignedEnvelope(
+            createUnsignedEnvelope({
+              senderPeerId: mesh.peerId,
+              senderPublicKey: selfProfile.device.publicKeyPem,
+              recipientPeerId: relayAddr,
+              intent: "rendezvous.register",
+              payload: createRendezvousRegisterPayload({
+                peerId: mesh.peerId,
+                multiaddr: mesh.multiaddrs[0] ?? `/p2p/${mesh.peerId}`,
+                capabilities,
+                ttlSeconds: 3600,
+              }),
             }),
-          }),
-          selfProfile.device.privateKeyPem,
-        );
+            selfProfile.device.privateKeyPem,
+          );
 
-        // Send to relay and wait for response
-        const response = await mesh.sendExpectReply(relay.addr, envelope, { timeoutMs: 10000 });
-        console.log(`[node-service] Rendezvous registration response for ${relay.addr}:`, response);
-      } catch (err) {
-        console.warn(`[node-service] Failed to register with rendezvous server ${relay.addr}:`, err);
+          // Send to relay and wait for response with retry
+          const response = await mesh.sendExpectReply(relayAddr, envelope, {
+            timeoutMs: BASE_TIMEOUT_MS * Math.pow(2, attempt)
+          });
+          console.log(`[node-service] Successfully registered with relay ${relayAddr}`);
+          success = true;
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          console.warn(`[node-service] Failed to register with relay ${relayAddr} (attempt ${attempt + 1}/${MAX_RETRIES}):`, lastError.message);
+
+          if (!success && attempt < MAX_RETRIES - 1) {
+            // Wait before retry
+            await new Promise((resolve) => setTimeout(resolve, BASE_TIMEOUT_MS * Math.pow(2, attempt)));
+          }
+        }
+      }
+
+      if (!success) {
+        console.warn(`[node-service] All ${MAX_RETRIES} attempts failed for relay ${relayAddr}: ${lastError?.message}`);
       }
     }
   }
@@ -1088,11 +1166,11 @@ class NodeServiceImpl implements NodeService {
       this._nodeStatus = "running";
       this.emit("node:status", { status: this._nodeStatus, peerId: this._mesh.peerId });
 
-      // Wait a moment for DHT to connect to bootstrap peers, then advertise
-      // This prevents premature advertise attempts that timeout
+      // Wait longer for DHT to connect to bootstrap peers and stabilize routing table
+      // DHT provide operations require the routing table to be populated
       setTimeout(() => {
         void this._advertiseInterestsIfPublic();
-      }, 5000);
+      }, 15000);
     } catch (error) {
       console.error("[node-service] startNode failed:", error);
       this._nodeStatus = "offline";
