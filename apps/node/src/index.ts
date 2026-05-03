@@ -876,10 +876,22 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           wsServerForEvents.emitEvent("hello:request", helloData);
         }
       },
-      (bondData) => {
+      async (bondData) => {
         // Emit bond:established via wsServer if available
         if (wsServerForEvents) {
           wsServerForEvents.emitEvent("bond:established", bondData);
+        }
+        // Also store peer info in peer directory so sendChat can find them
+        if (envelope.intent === "bond.request") {
+          const { parseBondRequestPayload } = await import("@envoymesh/protocol");
+          const payload = parseBondRequestPayload(envelope.payload);
+          const existing = await peerDirectoryStore.getPeerByOwnerId(payload.requesterOwnerId);
+          if (!existing) {
+            await peerDirectoryStore.upsertPeerFromSignal({
+              peerId: remotePeerId,
+              payload: envelope.payload as any,
+            });
+          }
         }
       },
     );
