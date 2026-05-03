@@ -438,8 +438,11 @@ class NodeServiceImpl implements NodeService {
     const mesh = this._requireMesh();
     const selfProfile = this._requireProfile();
 
+    console.log(`[sendChat] targetOwnerId=${targetOwnerId}, text=${text}`);
+
     // Look up peer's peerId by ownerId
     const peerRecords = await this._peerDirectoryStore.listPeerRecords();
+    console.log(`[sendChat] peerRecords count=${peerRecords.length}`, peerRecords.map(r => r.ownerId));
     const targetPeer = peerRecords.find((r) => r.ownerId === targetOwnerId);
 
     if (!targetPeer) {
@@ -447,6 +450,7 @@ class NodeServiceImpl implements NodeService {
     }
 
     const recipientPeerId = targetPeer.peerId;
+    console.log(`[sendChat] sending to recipientPeerId=${recipientPeerId}`);
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({
         senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
@@ -463,8 +467,7 @@ class NodeServiceImpl implements NodeService {
 
     await mesh.sendChat(recipientPeerId, envelope);
 
-    // Emit the sent message as a local event
-    this.emit("chat:message", {
+    const emittedMsg = {
       messageId: envelope.messageId,
       sender: {
         nodeId: mesh.peerId,
@@ -473,6 +476,8 @@ class NodeServiceImpl implements NodeService {
       },
       recipient: {
         nodeId: recipientPeerId,
+        ownerId: targetOwnerId,
+        displayName: targetOwnerId,
       },
       content: {
         text,
@@ -482,7 +487,9 @@ class NodeServiceImpl implements NodeService {
         deliveryReceipt: "sent",
       },
       signature: envelope.signature,
-    });
+    };
+    console.log(`[sendChat] Emitting chat:message locally:`, emittedMsg);
+    this.emit("chat:message", emittedMsg);
   }
 
   async markRead(_targetOwnerId: string, _upToMessageId?: string): Promise<void> {

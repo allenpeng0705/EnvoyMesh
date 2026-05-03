@@ -341,16 +341,12 @@ export function useChatMessages(peerOwnerId: string | null) {
 
     const unsub = client.on("chat:message", (data) => {
       const msg = data as ChatMessage;
-      // Filter messages for this peer - check both nodeId and ownerId since sendChat uses different IDs
-      if (
-        msg.sender.nodeId === peerOwnerId ||
-        msg.sender.ownerId === peerOwnerId ||
-        msg.sender.displayName === peerOwnerId ||
-        msg.recipient.nodeId === peerOwnerId ||
-        msg.recipient.ownerId === peerOwnerId
-      ) {
-        setMessages((prev) => [...prev, msg]);
-      }
+      console.log(`[useChatMessages] received:`, msg);
+      // For now, add all messages - filtering happens at display time
+      setMessages((prev) => {
+        if (prev.some((m) => m.messageId === msg.messageId)) return prev;
+        return [...prev, msg];
+      });
     });
 
     return unsub;

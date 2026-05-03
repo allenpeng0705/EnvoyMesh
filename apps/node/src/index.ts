@@ -661,6 +661,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     console.log(`[chat.message] ${payload.senderOwnerId}: ${payload.text}`);
 
     // Emit chat:message event to connected apps via WebSocket
+    console.log(`[chat.message] wsServerForEvents is ${wsServerForEvents ? "set" : "null"}`);
     if (wsServerForEvents) {
       // Look up sender's displayName from peer directory
       const senderPeer = (await peerDirectoryStore.listPeerRecords()).find(
@@ -675,6 +676,8 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         },
         recipient: {
           nodeId: mesh.peerId,
+          ownerId: profile.owner.ownerId,
+          displayName: profile.owner.ownerId,
         },
         content: {
           text: payload.text,
