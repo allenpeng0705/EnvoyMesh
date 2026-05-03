@@ -138,7 +138,7 @@ function App() {
   const [showSetup, setShowSetup] = useState(false);
   const [setupProfileDir, setSetupProfileDir] = useState("./data/default");
   const [setupDiscoveryProfile, setSetupDiscoveryProfile] = useState<"lan-fast" | "wan-default">("wan-default");
-  const [setupBootstrapPeers, setSetupBootstrapPeers] = useState("");
+  const [setupBootstrapPeers, setSetupBootstrapPeers] = useState("/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo");
   const [isInitializing, setIsInitializing] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -323,9 +323,23 @@ function App() {
         bootstrapPeers,
         bootstrapPresets,
       });
-      setShowSetup(false);
       // Start the node
       await nodeService.startNode();
+      // Refresh connection status and profiles after node starts
+      nodeService.getConnectionStatus().then((status) => {
+        setConnectionStatus(status);
+      }).catch(() => {});
+      nodeService.getProfile().then((profile: any) => {
+        if (profile?.owner?.ownerId) {
+          setPeerId(profile.owner.ownerId);
+        }
+      }).catch(() => {});
+      nodeService.getHumanProfile().then((profile) => {
+        if (profile) {
+          setHumanProfile(profile);
+        }
+      }).catch(() => {});
+      setShowSetup(false);
     } catch (error) {
       console.error("Failed to initialize node:", error);
     } finally {
