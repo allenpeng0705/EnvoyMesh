@@ -1192,31 +1192,35 @@ class NodeServiceImpl implements NodeService {
     });
 
     mesh.onPeerDiscovered(async ({ peerId, multiaddrs }) => {
-      const existing = await this._peerDirectoryStore.getPeerByOwnerId(peerId);
-      if (!existing) {
-        await this._peerDirectoryStore.upsertPeerFromSignal({
-          peerId,
-          payload: {
-            type: "peer.discovered",
-            version: "1.0",
-            ownerId: peerId,
-            deviceId: "unknown",
-            deviceCertificate: { devicePublicKeyPem: "" },
-            listenAddrs: multiaddrs,
-            signal: "peer.discovered",
-          } as any,
+      try {
+        const existing = await this._peerDirectoryStore.getPeerByOwnerId(peerId);
+        if (!existing) {
+          await this._peerDirectoryStore.upsertPeerFromSignal({
+            peerId,
+            payload: {
+              type: "peer.discovered",
+              version: "1.0",
+              ownerId: peerId,
+              deviceId: "unknown",
+              deviceCertificate: { devicePublicKeyPem: "" },
+              listenAddrs: multiaddrs,
+              signal: "peer.discovered",
+            } as any,
+          });
+        }
+        // Emit peer:discovered so the UI can show "Around Me" section
+        this.emit("peer:discovered", {
+          nodeId: peerId,
+          ownerId: peerId,
+          displayName: `Peer ${peerId.slice(0, 8)}`,
+          username: undefined,
+          bio: undefined,
+          interests: [],
+          profileVisibility: "public" as const,
         });
+      } catch (err) {
+        console.warn(`[node-service] Failed to process peer discovery for ${peerId}:`, err);
       }
-      // Emit peer:discovered so the UI can show "Around Me" section
-      this.emit("peer:discovered", {
-        nodeId: peerId,
-        ownerId: peerId,
-        displayName: `Peer ${peerId.slice(0, 8)}`,
-        username: undefined,
-        bio: undefined,
-        interests: [],
-        profileVisibility: "public" as const,
-      });
     });
   }
 
