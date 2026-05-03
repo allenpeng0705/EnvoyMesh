@@ -1108,6 +1108,27 @@ body {
   font-size: 0.6875rem;
 }
 
+.clear-btn {
+  background: var(--color-text-subtle);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.5rem;
+  font-size: 0.625rem;
+  cursor: pointer;
+  margin-left: 0.5rem;
+}
+
+.clear-btn:hover {
+  background: var(--color-text-muted);
+}
+
+.inbox-section h4,
+.pending-messages-section h4 {
+  display: flex;
+  align-items: center;
+}
+
 /* Inbox View */
 .inbox-view {
   padding: 1.5rem;

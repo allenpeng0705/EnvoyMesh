@@ -626,7 +626,7 @@ function App() {
                 <span className="inbox-count">{inboxRequests.length} pending</span>
               </div>
               <div className="inbox-section">
-                <h4>Inbox</h4>
+                <h4>Inbox <button className="clear-btn small" onClick={() => setInboxRequests([])}>Clear All</button></h4>
                 {inboxRequests.length === 0 ? (
                   <p className="empty inbox-empty-text">No pending requests</p>
                 ) : (
@@ -663,7 +663,7 @@ function App() {
               </div>
               {pendingMessages.length > 0 && (
                 <div className="pending-messages-section">
-                  <h4>Pending Messages</h4>
+                  <h4>Pending Messages <button className="clear-btn small" onClick={() => setPendingMessages([])}>Clear All</button></h4>
                   {pendingMessages.map((msg) => (
                     <div key={msg.messageId} className="pending-message-card">
                       <span className="avatar small">{msg.sender.displayName?.[0] ?? "?"}</span>

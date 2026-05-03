@@ -361,6 +361,23 @@ class NodeServiceImpl implements NodeService {
     try {
       await mesh.send(targetPeerId, envelope);
       console.log(`[node-service] Hello sent successfully to ${targetPeerId}`);
+
+      // Store peer info locally so we can send messages later
+      // This is needed because the receiver doesn't send back a bond confirmation
+      const existingTarget = await this._peerDirectoryStore.getPeerByOwnerId(targetOwnerId);
+      if (!existingTarget) {
+        await this._peerDirectoryStore.upsertPeerFromSignal({
+          peerId: targetPeerId,
+          payload: {
+            type: "bond.request.sent",
+            version: "1.0",
+            ownerId: targetOwnerId,
+            deviceId: "unknown",
+            deviceCertificate: { devicePublicKeyPem: "" },
+            listenAddrs: [],
+          } as any,
+        });
+      }
     } catch (err) {
       console.error(`[node-service] Failed to send hello to ${targetPeerId}:`, err);
       // Provide a more helpful error message
