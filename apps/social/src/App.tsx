@@ -192,14 +192,7 @@ function App() {
       setConnectionStatus(status);
     }).catch(() => {});
 
-    // Fetch profile for peer ID
-    nodeService.getProfile().then((profile: any) => {
-      if (profile?.owner?.ownerId) {
-        setPeerId(profile.owner.ownerId);
-      }
-    }).catch(() => {});
-
-    // Fetch human profile
+    // Fetch human profile (don't overwrite peerId from nodeStatus event)
     nodeService.getHumanProfile().then((profile) => {
       if (profile) {
         setHumanProfile(profile);
@@ -328,10 +321,9 @@ function App() {
       // Refresh connection status and profiles after node starts
       nodeService.getConnectionStatus().then((status) => {
         setConnectionStatus(status);
-      }).catch(() => {});
-      nodeService.getProfile().then((profile: any) => {
-        if (profile?.owner?.ownerId) {
-          setPeerId(profile.owner.ownerId);
+        // Use libp2p peerId (12D3Koo...) not owner ID (envoy:owner:...)
+        if (status.peerId) {
+          setPeerId(status.peerId);
         }
       }).catch(() => {});
       nodeService.getHumanProfile().then((profile) => {
