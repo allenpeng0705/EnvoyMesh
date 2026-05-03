@@ -872,6 +872,12 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           wsServerForEvents.emitEvent("hello:request", helloData);
         }
       },
+      (bondData) => {
+        // Emit bond:established via wsServer if available
+        if (wsServerForEvents) {
+          wsServerForEvents.emitEvent("bond:established", bondData);
+        }
+      },
     );
     if (!bond.ok) {
       await taskStore.appendAuditEvent(

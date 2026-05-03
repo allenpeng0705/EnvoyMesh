@@ -25,6 +25,7 @@ export type BondInboundEvents = {
     message: string;
     timestamp: string;
   }) => void;
+  "bond:established": (data: { peerOwnerId: string; displayName?: string }) => void;
 };
 
 async function trustBondLevel(
@@ -64,6 +65,7 @@ function policySummaryText(
  * Does not mutate trust store (owner / CLI approves bonds separately).
  *
  * @param emitHelloRequest - optional callback to emit hello:request event after bond request is accepted
+ * @param emitBondEstablished - optional callback to emit bond:established event after bond is stored
  */
 export async function handleInboundBondIntent(
   input: {
@@ -76,6 +78,7 @@ export async function handleInboundBondIntent(
     trustStore: LocalTrustStore;
   },
   emitHelloRequest?: BondInboundEvents["hello:request"],
+  emitBondEstablished?: BondInboundEvents["bond:established"],
 ): Promise<BondInboundResult> {
   const { envelope, profile, remotePeerId, receivedAt, correlationId, taskStore, trustStore } = input;
 
@@ -135,7 +138,7 @@ export async function handleInboundBondIntent(
           });
         }
 
-        // Auto-accept: store the bond in trust store after challenge policy evaluation
+        // Emit bond:established event so the UI updates
         // Note: "self" level should not occur for other peers, so we cast to Exclude
         await trustStore.setTrustRecord({
           peerOwnerId: payload.requesterOwnerId,
@@ -144,6 +147,14 @@ export async function handleInboundBondIntent(
           note: payload.message ?? undefined,
           now: new Date().toISOString(),
         });
+
+        // Emit bond:established to notify UI to refresh contacts
+        if (emitBondEstablished) {
+          emitBondEstablished({
+            peerOwnerId: payload.requesterOwnerId,
+            displayName: payload.requesterDisplayName ?? remotePeerId,
+          });
+        }
       }
       return { ok: true };
     }

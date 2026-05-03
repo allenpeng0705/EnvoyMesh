@@ -925,12 +925,11 @@ body {
 }
 
 /* Inbox mini card in contact list */
-.inbox-section {
-  padding: 0.75rem;
-  background: var(--color-primary-subtle);
-  border-radius: var(--radius-md);
-  margin-bottom: 0.75rem;
-  border: 1px solid rgba(99, 102, 241, 0.2);
+.inbox-empty-text {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: 0.5rem;
 }
 
 .inbox-section h4 {

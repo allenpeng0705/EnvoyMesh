@@ -582,14 +582,14 @@ function App() {
             <aside className="contact-list">
               <div className="contact-list-header">
                 <h3>Contacts</h3>
-                {inboxRequests.length > 0 && (
-                  <span className="inbox-count">{inboxRequests.length} pending</span>
-                )}
+                <span className="inbox-count">{inboxRequests.length} pending</span>
               </div>
-              {inboxRequests.length > 0 && (
-                <div className="inbox-section">
-                  <h4>Inbox</h4>
-                  {inboxRequests.map((request) => (
+              <div className="inbox-section">
+                <h4>Inbox</h4>
+                {inboxRequests.length === 0 ? (
+                  <p className="empty inbox-empty-text">No pending requests</p>
+                ) : (
+                  inboxRequests.map((request) => (
                     <div key={request.messageId} className="inbox-mini-card">
                       <span className="avatar small">{request.profile.displayName[0]}</span>
                       <div className="inbox-mini-info">
@@ -617,9 +617,9 @@ function App() {
                         </button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                  ))
+                )}
+              </div>
               {pendingMessages.length > 0 && (
                 <div className="pending-messages-section">
                   <h4>Pending Messages</h4>
