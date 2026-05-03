@@ -1350,6 +1350,7 @@ function App() {
                         { id: "public-libp2p", label: "public-libp2p", desc: "4 bootstrap servers" },
                         { id: "public-libp2p-am6", label: "public-libp2p-am6", desc: "1 server (AM6)" },
                         { id: "public-libp2p-am7", label: "public-libp2p-am7", desc: "1 server (AM7)" },
+                        { id: "cn-relay", label: "CN Relay (47.93.11.212)", desc: "China relay server" },
                       ].map((preset) => (
                         <label key={preset.id} className="preset-checkbox">
                           <input

@@ -634,5 +634,8 @@ function bootstrapPeersForPreset(preset: string, customPresetRegistry: Bootstrap
   if (preset === "public-libp2p-am7") {
     return ["/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf"];
   }
+  if (preset === "cn-relay") {
+    return ["/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo"];
+  }
   throw new Error(`Unknown bootstrap preset: ${preset}`);
 }
