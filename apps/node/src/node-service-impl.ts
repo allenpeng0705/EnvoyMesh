@@ -1019,10 +1019,23 @@ class NodeServiceImpl implements NodeService {
       this._taskDispatcher = createTaskDispatcher();
 
       // Compute effective bootstrap peers
+      // Must resolve bootstrapPresets to actual multiaddresses for mesh connectivity
       const peerRecords = await this._peerDirectoryStore.listPeerRecords();
       const peerDirAddrs = peerRecords.flatMap((r) => r.listenAddrs);
       const seedAddrs = await this._discoverySeedStore.listSeedAddrs();
-      const bootstrapPeers = [...new Set([...config.bootstrapPeers, ...peerDirAddrs, ...seedAddrs])];
+
+      // Resolve bootstrap presets to actual multiaddresses
+      const resolvedPresetAddrs: string[] = [];
+      if (config.bootstrapPresets && config.bootstrapPresets.length > 0) {
+        console.log(`[node-service] Resolving ${config.bootstrapPresets.length} bootstrap presets...`);
+        const resolvedResults = await resolveBootstrapAddresses(config.bootstrapPresets);
+        for (const result of resolvedResults) {
+          resolvedPresetAddrs.push(...result.resolved);
+          console.log(`[node-service] Preset ${result.original} → ${result.resolved.length} addresses`);
+        }
+      }
+
+      const bootstrapPeers = [...new Set([...config.bootstrapPeers, ...resolvedPresetAddrs, ...peerDirAddrs, ...seedAddrs])];
 
       console.log(`[node-service] Bootstrap peers resolved: ${bootstrapPeers.length} addresses`);
       for (const bp of bootstrapPeers) {
