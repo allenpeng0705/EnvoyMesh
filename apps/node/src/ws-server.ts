@@ -37,12 +37,16 @@ export class WsServer {
 
     // Wire up nodeService events to WebSocket broadcasts
     const nodeServiceImpl = nodeService as NodeServiceImpl;
+    console.log(`[ws-server] start: nodeServiceImpl has 'on' method?`, typeof nodeServiceImpl.on);
     if (nodeServiceImpl.on) {
+      console.log(`[ws-server] wiring up event handlers`);
       nodeServiceImpl.on("hello:request", (data: unknown) => this.emitEvent("hello:request", data));
       nodeServiceImpl.on("hello:response", (data: unknown) => this.emitEvent("hello:response", data));
       nodeServiceImpl.on("chat:message", (data: unknown) => this.emitEvent("chat:message", data));
       nodeServiceImpl.on("bond:established", (data: unknown) => this.emitEvent("bond:established", data));
       nodeServiceImpl.on("node:status", (data: unknown) => this.emitEvent("node:status", data));
+    } else {
+      console.log(`[ws-server] ERROR: nodeServiceImpl.on is not a function!`);
     }
 
     this.wss.on("connection", (ws: WebSocket) => {
@@ -293,9 +297,14 @@ export class WsServer {
     if (listeners) {
       for (const ws of listeners) {
         if (ws.readyState === WebSocket.OPEN) {
+          console.log(`[ws-server] sending event ${event} to a client, readyState=${ws.readyState}`);
           this.sendEvent(ws, event, data);
+        } else {
+          console.log(`[ws-server] skipping client - not OPEN, readyState=${ws.readyState}`);
         }
       }
+    } else {
+      console.log(`[ws-server] no listeners for ${event}!`);
     }
   }
 

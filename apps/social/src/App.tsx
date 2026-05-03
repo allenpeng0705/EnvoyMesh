@@ -344,16 +344,19 @@ function App() {
   };
 
   const handleSendMessage = async () => {
-    console.log(`[handleSendMessage] selectedContact=${selectedContact}, chatInput=${chatInput}`);
+    console.log(`[handleSendMessage] called, selectedContact=${selectedContact}, chatInput=${chatInput}, trimmed=${chatInput.trim()}`);
     if (!chatInput.trim() || !selectedContact) {
       console.log(`[handleSendMessage] early return - missing contact or empty input`);
+      console.log(`  - chatInput.trim() = ${chatInput.trim()}, !selectedContact = ${!selectedContact}`);
       return;
     }
     try {
+      console.log(`[handleSendMessage] calling sendChat...`);
       await nodeService.sendChat(selectedContact, chatInput);
+      console.log(`[handleSendMessage] sendChat succeeded, clearing input`);
       setChatInput("");
     } catch (error) {
-      console.error("Failed to send message:", error);
+      console.error("[handleSendMessage] sendChat failed:", error);
     }
   };
 
