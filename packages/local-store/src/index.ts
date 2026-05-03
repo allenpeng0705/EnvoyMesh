@@ -32,7 +32,7 @@ import {
   type OwnerIdentity,
 } from "@envoymesh/identity";
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 const PROFILE_FILE = "profile.json";
@@ -1258,13 +1258,60 @@ async function readPeerDirectoryFile(path: string): Promise<PeerDirectoryFile> {
         records: [],
       };
     }
-    throw error;
+    // File exists but is corrupted - try to recover
+    console.warn(`[peer-directory] corrupted file at ${path}, attempting recovery: ${error instanceof Error ? error.message : String(error)}`);
+    try {
+      // Read raw content and try to extract just the valid JSON portion
+      const raw = await readFile(path, "utf8");
+      // Find the last valid closing brace that ends a record or the records array
+      const lastValidMatch = raw.match(/^[\s\S]*\{\s*"version"\s*:\s*"0\.1"\s*,\s*"records"\s*:\s*\[(\s*\])/);
+      if (lastValidMatch && lastValidMatch[1] === " ]") {
+        // File ends with empty records array - it's valid
+        return { version: "0.1", records: [] };
+      }
+      // Try to find a record array that ends properly
+      const arrayEndMatch = raw.match(/(\[\s*\{[\s\S]*?\}\s*\])/);
+      if (arrayEndMatch) {
+        try {
+          const jsonStart = raw.indexOf('"records"');
+          if (jsonStart >= 0) {
+            const trial = '{"version":"0.1","records":' + arrayEndMatch[1] + '}';
+            return JSON.parse(trial);
+          }
+        } catch {
+          // Fall through to reset
+        }
+      }
+    } catch (recoveryError) {
+      console.warn(`[peer-directory] recovery attempt failed: ${recoveryError instanceof Error ? recoveryError.message : String(recoveryError)}`);
+    }
+    // Backup corrupted file and return minimal valid structure
+    const backupPath = `${path}.corrupted.${Date.now()}`;
+    try {
+      await rename(path, backupPath);
+      console.warn(`[peer-directory] backed up corrupted file to ${backupPath}`);
+    } catch {
+      // Rename failed, try copy
+      try {
+        await writeFile(`${path}.backup`, await readFile(path));
+        console.warn(`[peer-directory] copied corrupted file to ${path}.backup`);
+      } catch {
+        // Give up
+      }
+    }
+    return {
+      version: "0.1",
+      records: [],
+    };
   }
 }
 
 async function writePeerDirectoryFile(path: string, file: PeerDirectoryFile): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+  const content = JSON.stringify(file, null, 2) + "\n";
+  // Verify the content is valid JSON before writing
+  JSON.parse(content);
+  await writeFile(path, content, { mode: 0o600 });
 }
 
 export interface HumanProfileStore {
