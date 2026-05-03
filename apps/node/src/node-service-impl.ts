@@ -81,6 +81,16 @@ class NodeServiceImpl implements NodeService {
 
   private _nodeStatus: NodeStatus = "offline";
 
+  // Pending hello requests (messageId -> info) awaiting user acceptance
+  private readonly _pendingHelloRequests = new Map<string, {
+    remotePeerId: string;
+    requesterOwnerId: string;
+    requesterDisplayName: string;
+    message: string;
+    requestedLevel: string;
+    createdAt: string;
+  }>();
+
   // Event listeners - stored for later emission
   private readonly listeners = new Map<keyof NodeServiceEvents, Set<(...args: any[]) => void>>();
 
@@ -1195,23 +1205,12 @@ class NodeServiceImpl implements NodeService {
 
       if (intent === "bond.request") {
         // Parse the bond request payload
-        const { parseBondRequestPayload, createBondAcceptPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-        const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+        const { parseBondRequestPayload } = await import("@envoymesh/protocol");
         const payload = parseBondRequestPayload(envelope.payload);
 
-        // Auto-accept bond requests for now (future: user approval)
-        console.log(`[node-service] Auto-accepting bond request from ${payload.requesterOwnerId} (${payload.requesterDisplayName})`);
+        console.log(`[node-service] Received bond request from ${payload.requesterOwnerId} (${payload.requesterDisplayName})`);
 
-        // Store the bond in trust store (accept the connection)
-        await this._trustStore.setTrustRecord({
-          peerOwnerId: payload.requesterOwnerId,
-          displayName: payload.requesterDisplayName,
-          level: payload.requestedLevel as any ?? "direct",
-          note: payload.message ?? undefined,
-          now: new Date().toISOString(),
-        });
-
-        // Store peer info if not already stored
+        // Store peer info if not already stored (for later communication)
         const existing = await this._peerDirectoryStore.getPeerByOwnerId(payload.requesterOwnerId);
         if (!existing) {
           await this._peerDirectoryStore.upsertPeerFromSignal({
@@ -1220,33 +1219,7 @@ class NodeServiceImpl implements NodeService {
           });
         }
 
-        // Send bond.accept back to the requester so they know we accepted
-        console.log(`[node-service] Sending bond.accept to ${payload.requesterOwnerId} at peerId ${remotePeerId}`);
-        const humanProfile = await this._humanProfileStore.loadHumanProfile();
-        const displayName = humanProfile?.displayName ?? profile.owner.ownerId;
-        const acceptEnvelope = signUnsignedEnvelope(
-          createUnsignedEnvelope({
-            senderPeerId: derivePeerId(profile.device.publicKeyPem),
-            senderPublicKey: profile.device.publicKeyPem,
-            recipientPeerId: remotePeerId,
-            intent: "bond.accept",
-            payload: createBondAcceptPayload({
-              responderOwnerId: profile.owner.ownerId,
-              requesterOwnerId: payload.requesterOwnerId,
-              message: `Hello from ${displayName}!`,
-            }),
-          }),
-          profile.device.privateKeyPem,
-        );
-        await mesh.send(remotePeerId, acceptEnvelope);
-
-        // Emit bond:established event so the UI updates
-        this.emit("bond:established", {
-          peerOwnerId: payload.requesterOwnerId,
-          displayName: payload.requesterDisplayName,
-        });
-
-        // Emit hello:request notification for the UI to show
+        // Emit hello:request notification for the UI to show (user will accept/decline)
         this.emit("hello:request", {
           messageId: envelope.messageId,
           sender: {
