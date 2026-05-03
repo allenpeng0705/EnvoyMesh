@@ -1173,7 +1173,15 @@ class NodeServiceImpl implements NodeService {
       if (!existing) {
         await this._peerDirectoryStore.upsertPeerFromSignal({
           peerId,
-          payload: { type: "system.signal", version: "1.0", senderPublicKey: "", signal: "peer.discovered" } as any,
+          payload: {
+            type: "peer.discovered",
+            version: "1.0",
+            ownerId: peerId,
+            deviceId: "unknown",
+            deviceCertificate: { devicePublicKeyPem: "" },
+            listenAddrs: multiaddrs,
+            signal: "peer.discovered",
+          } as any,
         });
       }
       // Emit peer:discovered so the UI can show "Around Me" section
