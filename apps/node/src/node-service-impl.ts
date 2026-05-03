@@ -1088,8 +1088,11 @@ class NodeServiceImpl implements NodeService {
       this._nodeStatus = "running";
       this.emit("node:status", { status: this._nodeStatus, peerId: this._mesh.peerId });
 
-      // Re-advertise interests on DHT when node starts (in case we restarted)
-      void this._advertiseInterestsIfPublic();
+      // Wait a moment for DHT to connect to bootstrap peers, then advertise
+      // This prevents premature advertise attempts that timeout
+      setTimeout(() => {
+        void this._advertiseInterestsIfPublic();
+      }, 5000);
     } catch (error) {
       console.error("[node-service] startNode failed:", error);
       this._nodeStatus = "offline";
