@@ -1120,6 +1120,9 @@ export function createLocalTrustStore(profileDir: string): LocalTrustStore {
 export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDirectoryStore {
   const directoryPath = join(profileDir, PEER_DIRECTORY_FILE);
 
+  // Simple file lock to prevent concurrent writes
+  let writeInProgress: Promise<void> | null = null;
+
   return {
     async listPeerRecords() {
       return (await readPeerDirectoryFile(directoryPath)).records.sort((left, right) =>
@@ -1132,6 +1135,11 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
     },
 
     async upsertPeerFromSignal(input) {
+      // Wait for any pending write to complete
+      if (writeInProgress) {
+        await writeInProgress;
+      }
+
       const file = await readPeerDirectoryFile(directoryPath);
       const seenAt = input.seenAt ?? new Date().toISOString();
       const existing = file.records.find((record) => record.ownerId === input.payload.ownerId);
@@ -1141,7 +1149,10 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         existing.devicePublicKeyPem = input.payload.deviceCertificate.devicePublicKeyPem;
         existing.lastSeenAt = seenAt;
         existing.listenAddrs = input.payload.listenAddrs;
-        await writePeerDirectoryFile(directoryPath, file);
+        // Use atomic write: write to temp file then rename
+        writeInProgress = writePeerDirectoryFileAtomic(directoryPath, file);
+        await writeInProgress;
+        writeInProgress = null;
         return existing;
       }
 
@@ -1155,7 +1166,9 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         listenAddrs: input.payload.listenAddrs,
       };
       file.records.push(created);
-      await writePeerDirectoryFile(directoryPath, file);
+      writeInProgress = writePeerDirectoryFileAtomic(directoryPath, file);
+      await writeInProgress;
+      writeInProgress = null;
       return created;
     },
   };
@@ -1312,6 +1325,20 @@ async function writePeerDirectoryFile(path: string, file: PeerDirectoryFile): Pr
   // Verify the content is valid JSON before writing
   JSON.parse(content);
   await writeFile(path, content, { mode: 0o600 });
+}
+
+/**
+ * Atomic write: writes to temp file then renames to target.
+ * This prevents corruption if multiple processes write simultaneously.
+ */
+async function writePeerDirectoryFileAtomic(path: string, file: PeerDirectoryFile): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const content = JSON.stringify(file, null, 2) + "\n";
+  // Verify the content is valid JSON before writing
+  JSON.parse(content);
+  const tmpPath = `${path}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+  await writeFile(tmpPath, content, { mode: 0o600 });
+  await rename(tmpPath, path);
 }
 
 export interface HumanProfileStore {
