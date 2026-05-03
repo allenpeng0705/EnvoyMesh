@@ -267,7 +267,12 @@ function App() {
     const unsubscribe = nodeService.on("chat:message", (data) => {
       const msg = data as any;
       // Check if this peer is NOT already bonded
-      const isBonded = bonds.some((b) => b.peerOwnerId === msg.sender.nodeId || b.peerOwnerId === msg.sender.ownerId);
+      const isBonded = bonds.some(
+        (b) =>
+          b.peerOwnerId === msg.sender.nodeId ||
+          b.peerOwnerId === msg.sender.ownerId ||
+          b.peerOwnerId === msg.sender.displayName,
+      );
       if (!isBonded) {
         setPendingMessages((prev) => {
           // Don't add duplicates
@@ -278,6 +283,18 @@ function App() {
     });
     return unsubscribe;
   }, [nodeService, bonds]);
+
+  // When a bond is established, remove any pending messages from that peer since they'll now use normal chat
+  useEffect(() => {
+    if (!isConnected) return;
+    const unsubscribe = nodeService.on("bond:established", (data) => {
+      const { peerOwnerId } = data as { peerOwnerId: string };
+      setPendingMessages((prev) =>
+        prev.filter((m) => m.sender.ownerId !== peerOwnerId && m.sender.nodeId !== peerOwnerId && m.sender.displayName !== peerOwnerId),
+      );
+    });
+    return unsubscribe;
+  }, [nodeService]);
 
   const connectionInfo = {
     online: isConnected && nodeStatus === "running",
@@ -336,6 +353,18 @@ function App() {
     }
   };
 
+  const handleRevokeBond = async (peerOwnerId: string) => {
+    if (!confirm("Are you sure you want to remove this contact?")) return;
+    try {
+      await nodeService.revokeBond(peerOwnerId);
+      if (selectedContact === peerOwnerId) {
+        setSelectedContact(null);
+      }
+    } catch (error) {
+      console.error("Failed to revoke bond:", error);
+    }
+  };
+
   const handleAcceptHello = async (messageId: string) => {
     try {
       await accept(messageId);
@@ -366,7 +395,12 @@ function App() {
       } else if (searchMode === "interest") {
         // Always search by interest when in interest mode
         console.log(`[search] Searching by interest: ${query}`);
-        results = await nodeService.searchPeers({ interests: [query.toLowerCase()] });
+        // Also search by username if query looks like a username (single word, no spaces)
+        const searchQuery2 = query.toLowerCase();
+        results = await nodeService.searchPeers({
+          interests: [searchQuery2],
+          username: searchQuery2,
+        });
       } else {
         // Default: treat as interest
         console.log(`[search] Searching by interest: ${query}`);
@@ -750,6 +784,13 @@ function App() {
                       <strong>{contact.displayName ?? contact.peerOwnerId}</strong>
                       <span className="bond-level">{contact.level}</span>
                     </div>
+                    <button
+                      className="remove-contact"
+                      onClick={() => handleRevokeBond(contact.peerOwnerId)}
+                      title="Remove contact"
+                    >
+                      ×
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -780,7 +821,7 @@ function App() {
                 placeholder={
                   searchMode === "peerId"
                     ? "Enter Peer ID (e.g., 12D3KooWSHXmS7N94yFj1...)"
-                    : "Search by username or interest (e.g., johndoe, music, tech)"
+                    : "Enter username or interest (e.g., alice, music)"
                 }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}

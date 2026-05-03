@@ -341,8 +341,14 @@ export function useChatMessages(peerOwnerId: string | null) {
 
     const unsub = client.on("chat:message", (data) => {
       const msg = data as ChatMessage;
-      // Filter messages for this peer
-      if (msg.sender.nodeId === peerOwnerId || msg.recipient.nodeId === peerOwnerId) {
+      // Filter messages for this peer - check both nodeId and ownerId since sendChat uses different IDs
+      if (
+        msg.sender.nodeId === peerOwnerId ||
+        msg.sender.ownerId === peerOwnerId ||
+        msg.sender.displayName === peerOwnerId ||
+        msg.recipient.nodeId === peerOwnerId ||
+        msg.recipient.ownerId === peerOwnerId
+      ) {
         setMessages((prev) => [...prev, msg]);
       }
     });

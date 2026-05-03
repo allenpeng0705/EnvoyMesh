@@ -670,6 +670,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         messageId: envelope.messageId,
         sender: {
           nodeId: envelope.senderPeerId,
+          ownerId: payload.senderOwnerId,
           displayName: senderPeer?.ownerId ?? payload.senderOwnerId,
         },
         recipient: {

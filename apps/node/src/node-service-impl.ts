@@ -468,6 +468,7 @@ class NodeServiceImpl implements NodeService {
       messageId: envelope.messageId,
       sender: {
         nodeId: mesh.peerId,
+        ownerId: selfProfile.owner.ownerId,
         displayName: selfProfile.owner.ownerId,
       },
       recipient: {

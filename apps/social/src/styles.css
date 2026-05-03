@@ -551,6 +551,32 @@ body {
   color: var(--color-text-muted);
 }
 
+.contact-card .remove-contact {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 1.25rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.2s ease;
+}
+
+.contact-card:hover .remove-contact {
+  opacity: 1;
+}
+
+.contact-card .remove-contact:hover {
+  background: var(--color-danger);
+  color: white;
+}
+
 /* Search View */
 .search-view {
   padding: 1.5rem;
