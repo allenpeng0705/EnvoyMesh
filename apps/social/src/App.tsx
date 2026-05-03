@@ -126,7 +126,12 @@ function App() {
   ];
 
   // Bootstrap presets for public network (libp2p)
-  const [bootstrapPresets, setBootstrapPresets] = useState<string[]>([]);
+  // Default to all public libp2p servers for hybrid mode
+  const [bootstrapPresets, setBootstrapPresets] = useState<string[]>([
+    "public-libp2p",
+    "public-libp2p-am6",
+    "public-libp2p-am7",
+  ]);
 
   // Node status and setup
   const [nodeStatus, setNodeStatus] = useState<NodeStatus>("offline");
@@ -316,6 +321,7 @@ function App() {
       await nodeService.initNode(setupProfileDir, {
         discoveryProfile: setupDiscoveryProfile,
         bootstrapPeers,
+        bootstrapPresets,
       });
       setShowSetup(false);
       // Start the node
