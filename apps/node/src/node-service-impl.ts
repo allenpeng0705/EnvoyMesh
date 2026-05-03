@@ -1040,7 +1040,11 @@ class NodeServiceImpl implements NodeService {
       }
 
       const allBootstrapAddrs = [...config.bootstrapPeers, ...resolvedPresetAddrs, ...peerDirAddrs, ...seedAddrs];
-      const bootstrapPeers = [...new Set(allBootstrapAddrs)];
+      // Filter out any undefined, empty, or invalid multiaddr strings
+      const validBootstrapPeers = allBootstrapAddrs.filter((addr): addr is string => {
+        return typeof addr === "string" && addr.trim().length > 0 && addr.startsWith("/");
+      });
+      const bootstrapPeers = [...new Set(validBootstrapPeers)];
 
       console.log(`[node-service] Bootstrap peers resolved: ${bootstrapPeers.length} addresses`);
       for (const bp of bootstrapPeers) {

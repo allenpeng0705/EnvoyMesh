@@ -79,11 +79,42 @@ export async function resolveDomainToMultiaddrs(domain: string): Promise<string[
 
 /**
  * Resolve all bootstrap addresses, handling domains via HTTP lookup
+ * Also handles known bootstrap preset names (public-libp2p, public-libp2p-am6, etc.)
  */
 export async function resolveBootstrapAddresses(addresses: string[]): Promise<ResolvedBootstrapAddr[]> {
   const results: ResolvedBootstrapAddr[] = [];
 
+  // Known bootstrap preset names and their resolved multiaddresses
+  const KNOWN_PRESETS: Record<string, string[]> = {
+    "public-libp2p": [
+      "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
+      "/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
+      "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq",
+      "/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf",
+    ],
+    "public-libp2p-am6": [
+      "/dnsaddr/am6.bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq",
+    ],
+    "public-libp2p-am7": [
+      "/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf",
+    ],
+    "cn-relay": [
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo",
+    ],
+  };
+
   for (const addr of addresses) {
+    // Check if it's a known preset name
+    const presetPeers = KNOWN_PRESETS[addr];
+    if (presetPeers) {
+      results.push({
+        original: addr,
+        resolved: presetPeers,
+        success: true,
+      });
+      continue;
+    }
+
     if (looksLikeDomain(addr)) {
       // Try to resolve domain
       const resolved = await resolveDomainToMultiaddrs(addr);
