@@ -957,6 +957,7 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   async initNode(profileDir: string, options?: InitNodeOptions): Promise<NodeInitResult> {
+    console.log(`[node-service] initNode called: profileDir=${profileDir}, options=`, options);
     // Create profile directory structure
     const profile = await loadOrCreateNodeProfile(profileDir);
 
@@ -1027,15 +1028,19 @@ class NodeServiceImpl implements NodeService {
       // Resolve bootstrap presets to actual multiaddresses
       const resolvedPresetAddrs: string[] = [];
       if (config.bootstrapPresets && config.bootstrapPresets.length > 0) {
-        console.log(`[node-service] Resolving ${config.bootstrapPresets.length} bootstrap presets...`);
+        console.log(`[node-service] Resolving ${config.bootstrapPresets.length} bootstrap presets: ${config.bootstrapPresets.join(", ")}`);
         const resolvedResults = await resolveBootstrapAddresses(config.bootstrapPresets);
         for (const result of resolvedResults) {
           resolvedPresetAddrs.push(...result.resolved);
-          console.log(`[node-service] Preset ${result.original} → ${result.resolved.length} addresses`);
+          if (result.resolved.length === 0) {
+            console.warn(`[node-service] WARNING: Preset ${result.original} resolved to 0 addresses (using as-is)`);
+          }
+          console.log(`[node-service] Preset ${result.original} → ${result.resolved.length} addresses: ${result.resolved.join(", ")}`);
         }
       }
 
-      const bootstrapPeers = [...new Set([...config.bootstrapPeers, ...resolvedPresetAddrs, ...peerDirAddrs, ...seedAddrs])];
+      const allBootstrapAddrs = [...config.bootstrapPeers, ...resolvedPresetAddrs, ...peerDirAddrs, ...seedAddrs];
+      const bootstrapPeers = [...new Set(allBootstrapAddrs)];
 
       console.log(`[node-service] Bootstrap peers resolved: ${bootstrapPeers.length} addresses`);
       for (const bp of bootstrapPeers) {
@@ -1082,6 +1087,7 @@ class NodeServiceImpl implements NodeService {
       // Re-advertise interests on DHT when node starts (in case we restarted)
       void this._advertiseInterestsIfPublic();
     } catch (error) {
+      console.error("[node-service] startNode failed:", error);
       this._nodeStatus = "offline";
       this.emit("node:status", { status: this._nodeStatus });
       throw error;

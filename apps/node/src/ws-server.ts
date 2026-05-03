@@ -239,7 +239,7 @@ export class WsServer {
       case "removeRelay":
         return ns.removeRelay(params.relayId as string);
       case "initNode":
-        return ns.initNode(params.profileDir as string, params.options as any);
+        return await ns.initNode(params.profileDir as string, params.options as any);
       case "getNodeStatus":
         return { status: ns.getNodeStatus() };
       case "startNode":
