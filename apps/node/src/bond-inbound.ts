@@ -84,7 +84,6 @@ export async function handleInboundBondIntent(
   const { envelope, profile, remotePeerId, receivedAt, correlationId, taskStore, trustStore } = input;
 
   try {
-    console.log(`[bond-inbound] handling intent=${envelope.intent} from=${remotePeerId}`);
     if (envelope.intent === "bond.request") {
       const payload = parseBondRequestPayload(envelope.payload);
       if (payload.requesterOwnerId === profile.owner.ownerId) {
@@ -234,20 +233,16 @@ export async function handleInboundBondIntent(
     }
 
     if (envelope.intent === "bond.accept") {
-      console.log(`[bond-inbound] received bond.accept from ${remotePeerId}`);
       const payload = parseBondAcceptPayload(envelope.payload);
-      console.log(`[bond-inbound] bond.accept payload:`, payload);
 
       // Store the bond (the sender is accepting our bond request, so we are the requester)
       await trustStore.setTrustRecord({
         peerOwnerId: payload.responderOwnerId,
-        displayName: payload.responderOwnerId, // Will be updated with actual display name from UI
+        displayName: payload.responderOwnerId,
         level: "direct",
         note: payload.message ?? undefined,
         now: new Date().toISOString(),
       });
-
-      console.log(`[bond-inbound] stored trust record for ${payload.responderOwnerId}, emitting bond:established`);
 
       // Emit bond:established to notify UI to refresh contacts
       if (emitBondEstablished) {
