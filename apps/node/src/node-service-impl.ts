@@ -512,7 +512,9 @@ class NodeServiceImpl implements NodeService {
     const { createBondAcceptPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
     const { signUnsignedEnvelope } = await import("@envoymesh/identity");
     const humanProfile = await this._humanProfileStore.loadHumanProfile();
+    console.log(`[node-service] acceptHello: humanProfile loaded:`, humanProfile);
     const displayName = humanProfile?.displayName ?? selfProfile.owner.ownerId;
+    console.log(`[node-service] acceptHello: using displayName="${displayName}" (humanProfile.displayName=${humanProfile?.displayName}, fallback=${selfProfile.owner.ownerId})`);
 
     console.log(`[node-service] Sending bond.accept to ${pending.requesterOwnerId} at peerId ${pending.remotePeerId}`);
     const acceptEnvelope = signUnsignedEnvelope(
@@ -1314,20 +1316,11 @@ class NodeServiceImpl implements NodeService {
 
         console.log(`[node-service] Received bond.accept from ${payload.responderOwnerId} (my requesterOwnerId was ${payload.requesterOwnerId})`);
 
-        // Extract display name from the message (format: "Hello from {displayName}!")
-        let displayName = payload.responderOwnerId;
-        if (payload.message) {
-          const match = payload.message.match(/^Hello from (.+)!$/);
-          if (match && match[1]) {
-            displayName = match[1];
-          }
-        }
-
         // Store the bond in trust store since the other party accepted our request
-        console.log(`[node-service] About to setTrustRecord for ${payload.responderOwnerId} with displayName=${displayName}`);
+        console.log(`[node-service] About to setTrustRecord for ${payload.responderOwnerId}`);
         await this._trustStore.setTrustRecord({
           peerOwnerId: payload.responderOwnerId,
-          displayName: displayName,
+          displayName: payload.responderOwnerId, // Will be updated when profile is exchanged
           level: "direct",
           note: payload.message ?? undefined,
           now: new Date().toISOString(),
