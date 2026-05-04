@@ -116,11 +116,32 @@ export async function handleInboundBondIntent(
 
       if (outcome === "deny") {
         console.warn(`[bond.request] denied: ${summary}`);
-      } else {
-        console.log(`[bond.request] ${summary}`);
+      } else if (outcome === "allow") {
+        // Auto-accept: bond is allowed without user interaction
+        console.log(`[bond.request] ${summary} - auto accepting`);
 
-        // Emit hello:request event if callback provided
-        if (emitHelloRequest && outcome === "record") {
+        // Store the bond in trust store
+        await trustStore.setTrustRecord({
+          peerOwnerId: payload.requesterOwnerId,
+          displayName: payload.requesterDisplayName ?? remotePeerId,
+          level: (payload.requestedLevel as Exclude<BondLevel, "self">) ?? "direct",
+          note: payload.message ?? undefined,
+          now: new Date().toISOString(),
+        });
+
+        // Emit bond:established to notify UI to refresh contacts
+        if (emitBondEstablished) {
+          emitBondEstablished({
+            peerOwnerId: payload.requesterOwnerId,
+            displayName: payload.requesterDisplayName ?? remotePeerId,
+          });
+        }
+      } else {
+        // outcome === "record" - manual approval needed
+        console.log(`[bond.request] ${summary} - manual approval required`);
+
+        // Emit hello:request event for user to accept/decline
+        if (emitHelloRequest) {
           emitHelloRequest({
             messageId: envelope.messageId,
             sender: {
@@ -138,24 +159,7 @@ export async function handleInboundBondIntent(
             timestamp: envelope.createdAt,
           });
         }
-
-        // Emit bond:established event so the UI updates
-        // Note: "self" level should not occur for other peers, so we cast to Exclude
-        await trustStore.setTrustRecord({
-          peerOwnerId: payload.requesterOwnerId,
-          displayName: payload.requesterDisplayName ?? remotePeerId,
-          level: (payload.requestedLevel as Exclude<BondLevel, "self">) ?? "direct",
-          note: payload.message ?? undefined,
-          now: new Date().toISOString(),
-        });
-
-        // Emit bond:established to notify UI to refresh contacts
-        if (emitBondEstablished) {
-          emitBondEstablished({
-            peerOwnerId: payload.requesterOwnerId,
-            displayName: payload.requesterDisplayName ?? remotePeerId,
-          });
-        }
+        // Do NOT store bond or emit bond:established yet - wait for user acceptance
       }
       return { ok: true };
     }
@@ -237,10 +241,20 @@ export async function handleInboundBondIntent(
       const payload = parseBondAcceptPayload(envelope.payload);
       console.log(`[bond-inbound] bond.accept payload: responderOwnerId=${payload.responderOwnerId}, requesterOwnerId=${payload.requesterOwnerId}`);
 
+      // Extract display name from the message (format: "Hello from {displayName}!")
+      let displayName = payload.responderOwnerId;
+      if (payload.message) {
+        const match = payload.message.match(/^Hello from (.+)!$/);
+        if (match && match[1]) {
+          displayName = match[1];
+          console.log(`[bond-inbound] extracted displayName="${displayName}" from message`);
+        }
+      }
+
       // Store the bond (the sender is accepting our bond request, so we are the requester)
       await trustStore.setTrustRecord({
         peerOwnerId: payload.responderOwnerId,
-        displayName: payload.responderOwnerId,
+        displayName: displayName,
         level: "direct",
         note: payload.message ?? undefined,
         now: new Date().toISOString(),
@@ -250,7 +264,7 @@ export async function handleInboundBondIntent(
       if (emitBondEstablished) {
         emitBondEstablished({
           peerOwnerId: payload.responderOwnerId,
-          displayName: payload.responderOwnerId,
+          displayName: displayName,
         });
       }
 
