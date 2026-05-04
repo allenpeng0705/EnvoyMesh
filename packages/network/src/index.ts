@@ -501,12 +501,38 @@ export class EnvoyMesh {
     try {
       stream = await connection.newStream([protocol]);
     } catch (streamError) {
-      console.error(`[network] sendEnvelopeOnProtocol: newStream failed on connection to ${target}: ${streamError instanceof Error ? streamError.message : String(streamError)}`);
-      // Close the connection since it's likely broken
-      try {
-        await connection.close();
-      } catch {}
-      throw streamError;
+      const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
+      console.error(`[network] sendEnvelopeOnProtocol: newStream failed on connection to ${target}: ${errorMsg}`);
+
+      // Check if it's a "limited connection" error - try once more with a fresh connection
+      if (errorMsg.includes("limited connection") || errorMsg.includes("Cannot open protocol stream")) {
+        console.log(`[network] Retrying with fresh connection to ${target}...`);
+        try {
+          await connection.close();
+        } catch {}
+
+        // Dial again for a fresh connection
+        const newConnection = await this.requireNode().dial(dialTarget);
+        console.log(`[network] New connection established to ${newConnection.remotePeer?.toString()}`);
+
+        try {
+          stream = await newConnection.newStream([protocol]);
+          console.log(`[network] Retry successful with new connection`);
+        } catch (retryError) {
+          const retryMsg = retryError instanceof Error ? retryError.message : String(retryError);
+          console.error(`[network] sendEnvelopeOnProtocol: retry newStream also failed: ${retryMsg}`);
+          try {
+            await newConnection.close();
+          } catch {}
+          throw retryError;
+        }
+      } else {
+        // Close the connection since it's likely broken
+        try {
+          await connection.close();
+        } catch {}
+        throw streamError;
+      }
     }
     const remotePeerId = connection.remotePeer?.toString();
     if (remotePeerId) {
