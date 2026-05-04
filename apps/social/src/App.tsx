@@ -284,7 +284,7 @@ function App() {
       }
     });
     return unsubscribe;
-  }, [nodeService, bonds]);
+  }, [nodeService, bonds, peerId]);
 
   // When a bond is established, remove any pending messages from that peer since they'll now use normal chat
   useEffect(() => {
