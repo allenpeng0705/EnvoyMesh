@@ -1304,9 +1304,10 @@ class NodeServiceImpl implements NodeService {
         const { parseBondAcceptPayload } = await import("@envoymesh/protocol");
         const payload = parseBondAcceptPayload(envelope.payload);
 
-        console.log(`[node-service] Received bond.accept from ${payload.responderOwnerId}`);
+        console.log(`[node-service] Received bond.accept from ${payload.responderOwnerId} (my requesterOwnerId was ${payload.requesterOwnerId})`);
 
         // Store the bond in trust store since the other party accepted our request
+        console.log(`[node-service] About to setTrustRecord for ${payload.responderOwnerId}`);
         await this._trustStore.setTrustRecord({
           peerOwnerId: payload.responderOwnerId,
           displayName: payload.responderOwnerId, // Will be updated when profile is exchanged
@@ -1314,10 +1315,13 @@ class NodeServiceImpl implements NodeService {
           note: payload.message ?? undefined,
           now: new Date().toISOString(),
         });
+        console.log(`[node-service] setTrustRecord completed`);
 
         // Store peer info if not already stored
+        console.log(`[node-service] Checking peer directory for ${payload.responderOwnerId}`);
         const existing = await this._peerDirectoryStore.getPeerByOwnerId(payload.responderOwnerId);
         if (!existing) {
+          console.log(`[node-service] upsertPeerFromSignal for ${payload.responderOwnerId}`);
           await this._peerDirectoryStore.upsertPeerFromSignal({
             peerId: remotePeerId,
             payload: {
@@ -1329,13 +1333,17 @@ class NodeServiceImpl implements NodeService {
               listenAddrs: [],
             } as any,
           });
+        } else {
+          console.log(`[node-service] Peer already exists in directory: ${existing.ownerId}`);
         }
 
         // Emit bond:established so UI updates
+        console.log(`[node-service] Emitting bond:established for ${payload.responderOwnerId}`);
         this.emit("bond:established", {
           peerOwnerId: payload.responderOwnerId,
           displayName: payload.responderOwnerId,
         });
+        console.log(`[node-service] bond.accept handling complete`);
       } else if (intent === "chat.message") {
         const payload = parseChatMessagePayload(envelope.payload);
         this.emit("chat:message", {
