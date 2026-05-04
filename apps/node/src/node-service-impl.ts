@@ -1308,22 +1308,12 @@ class NodeServiceImpl implements NodeService {
 
     mesh.onPeerDiscovered(async ({ peerId, multiaddrs }) => {
       try {
-        const existing = await this._peerDirectoryStore.getPeerByOwnerId(peerId);
-        if (!existing) {
-          await this._peerDirectoryStore.upsertPeerFromSignal({
-            peerId,
-            payload: {
-              type: "peer.discovered",
-              version: "1.0",
-              ownerId: peerId,
-              deviceId: "unknown",
-              deviceCertificate: { devicePublicKeyPem: "" },
-              listenAddrs: multiaddrs,
-              signal: "peer.discovered",
-            } as any,
-          });
-        }
-        // Emit peer:discovered so the UI can show "Around Me" section
+        // Note: Do NOT create peer directory records here from mDNS discovery.
+        // mDNS only provides peerId + multiaddrs, not owner identity.
+        // Peer directory records should only be created when we receive actual identity
+        // info via system.signal, bond.request, or bond.accept handlers.
+        // Creating a record here with ownerId=peerId would corrupt the directory because
+        // later lookups by real ownerId wouldn't find the existing record.
         this.emit("peer:discovered", {
           nodeId: peerId,
           ownerId: peerId,
