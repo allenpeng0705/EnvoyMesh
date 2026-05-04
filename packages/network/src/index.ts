@@ -393,7 +393,7 @@ export class EnvoyMesh {
     options?: { timeoutMs?: number },
   ): Promise<EnvoyEnvelope> {
     validateEnvelopeProtocol(ENVOY_MESSAGE_PROTOCOL, envelope);
-    const dialTarget = target.startsWith("/") ? target : `/p2p/${target}`;
+    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
     const timeoutMs = options?.timeoutMs ?? 30_000;
     const stream: any = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_MESSAGE_PROTOCOL);
     const remotePeerId = stream.connection?.remotePeer?.toString();
@@ -477,18 +477,12 @@ export class EnvoyMesh {
     protocol: string,
   ): Promise<number> {
     validateEnvelopeProtocol(protocol, envelope);
-    // Convert peer ID to proper multiaddr format if needed
-    let dialTarget: string;
-    if (target.startsWith("/")) {
-      dialTarget = target;
-    } else {
-      dialTarget = `/p2p/${target}`;
-    }
+    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
     const startedAt = Date.now();
 
     // Use dialProtocol - it handles connection + stream setup in one step,
     // which is more reliable than separate dial() + newStream() calls
-    console.log(`[network] sendEnvelopeOnProtocol: dialing ${target} -> ${dialTarget} with protocol ${protocol}`);
+    console.log(`[network] sendEnvelopeOnProtocol: dialing ${target} with protocol ${protocol}`);
     let stream: any;
     try {
       stream = await this.requireNode().dialProtocol(dialTarget as any, protocol);
@@ -609,7 +603,7 @@ export class EnvoyMesh {
    * Intended for adversarial probes and resilience testing (not for normal application traffic).
    */
   async sendRawBytes(target: string, bytes: Uint8Array): Promise<number> {
-    const dialTarget = target.startsWith("/") ? target : `/p2p/${target}`;
+    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
     const startedAt = Date.now();
     const stream: any = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_MESSAGE_PROTOCOL);
     const remotePeerId = stream.connection?.remotePeer?.toString();
