@@ -239,6 +239,17 @@ export interface NodeService {
   acceptHello(messageId: string): Promise<void>;
 
   /**
+   * Store pending hello request from inbound bond.inbound.
+   * Called by index.ts to enable acceptHello to find the pending request later.
+   */
+  storePendingHelloRequest(data: {
+    messageId: string;
+    sender: { nodeId: string; ownerId: string; displayName: string };
+    message: string;
+    timestamp: string;
+  }): void;
+
+  /**
    * Decline a pending hello request
    */
   declineHello(messageId: string, reason?: string): Promise<void>;

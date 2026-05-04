@@ -873,6 +873,8 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         trustStore,
       },
       (helloData) => {
+        // Store pending request in nodeService so acceptHello() can find it later
+        nodeService.storePendingHelloRequest(helloData);
         // Emit hello:request via wsServer if available
         if (wsServerForEvents) {
           wsServerForEvents.emitEvent("hello:request", helloData);

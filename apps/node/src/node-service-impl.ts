@@ -94,6 +94,30 @@ class NodeServiceImpl implements NodeService {
   // Event listeners - stored for later emission
   private readonly listeners = new Map<keyof NodeServiceEvents, Set<(...args: any[]) => void>>();
 
+  /**
+   * Called by index.ts when hello:request is received from bond-inbound.ts.
+   * This stores the pending request so acceptHello() can find it later.
+   */
+  storePendingHelloRequest(data: {
+    messageId: string;
+    sender: { nodeId: string; ownerId: string; displayName: string };
+    message: string;
+    timestamp: string;
+  }): void {
+    const existing = this._pendingHelloRequests.get(data.messageId);
+    if (!existing) {
+      this._pendingHelloRequests.set(data.messageId, {
+        remotePeerId: data.sender.nodeId,
+        requesterOwnerId: data.sender.ownerId,
+        requesterDisplayName: data.sender.displayName ?? data.sender.ownerId,
+        message: data.message,
+        requestedLevel: "direct",
+        createdAt: data.timestamp,
+      });
+      console.log(`[node-service] stored pending hello request: messageId=${data.messageId}, from=${data.sender.ownerId}`);
+    }
+  }
+
   constructor(
     mesh: EnvoyMesh | undefined,
     trustStore: LocalTrustStore,
@@ -1266,95 +1290,10 @@ class NodeServiceImpl implements NodeService {
 
       const { intent } = envelope;
 
-      if (intent === "bond.request") {
-        // Parse the bond request payload
-        const { parseBondRequestPayload } = await import("@envoymesh/protocol");
-        const payload = parseBondRequestPayload(envelope.payload);
+      // Note: bond.* messages are handled by index.ts via bond-inbound.ts
+      // This handler only processes chat.message and other non-bond messages
 
-        console.log(`[node-service] Received bond request from ${payload.requesterOwnerId} (${payload.requesterDisplayName})`);
-
-        // Store peer info if not already stored (for later communication)
-        const existing = await this._peerDirectoryStore.getPeerByOwnerId(payload.requesterOwnerId);
-        if (!existing) {
-          await this._peerDirectoryStore.upsertPeerFromSignal({
-            peerId: remotePeerId,
-            payload: envelope.payload as any,
-          });
-        }
-
-        // Store pending hello request for later acceptance
-        this._pendingHelloRequests.set(envelope.messageId, {
-          remotePeerId,
-          requesterOwnerId: payload.requesterOwnerId,
-          requesterDisplayName: payload.requesterDisplayName ?? remotePeerId,
-          message: payload.message ?? "",
-          requestedLevel: payload.requestedLevel ?? "direct",
-          createdAt: envelope.createdAt,
-        });
-
-        // Emit hello:request notification for the UI to show (user will accept/decline)
-        this.emit("hello:request", {
-          messageId: envelope.messageId,
-          sender: {
-            nodeId: remotePeerId,
-            ownerId: payload.requesterOwnerId,
-            displayName: payload.requesterDisplayName ?? remotePeerId,
-          },
-          profile: {
-            displayName: payload.requesterDisplayName ?? remotePeerId,
-            bio: "",
-            interests: [],
-            whatShares: [],
-          },
-          message: payload.message ?? "",
-          timestamp: envelope.createdAt,
-        });
-      } else if (intent === "bond.accept") {
-        // When we receive bond.accept, it means our hello/bond request was accepted
-        const { parseBondAcceptPayload } = await import("@envoymesh/protocol");
-        const payload = parseBondAcceptPayload(envelope.payload);
-
-        console.log(`[node-service] Received bond.accept from ${payload.responderOwnerId} (my requesterOwnerId was ${payload.requesterOwnerId})`);
-
-        // Store the bond in trust store since the other party accepted our request
-        console.log(`[node-service] About to setTrustRecord for ${payload.responderOwnerId}`);
-        await this._trustStore.setTrustRecord({
-          peerOwnerId: payload.responderOwnerId,
-          displayName: payload.responderOwnerId, // Will be updated when profile is exchanged
-          level: "direct",
-          note: payload.message ?? undefined,
-          now: new Date().toISOString(),
-        });
-        console.log(`[node-service] setTrustRecord completed`);
-
-        // Store peer info if not already stored
-        console.log(`[node-service] Checking peer directory for ${payload.responderOwnerId}`);
-        const existing = await this._peerDirectoryStore.getPeerByOwnerId(payload.responderOwnerId);
-        if (!existing) {
-          console.log(`[node-service] upsertPeerFromSignal for ${payload.responderOwnerId}`);
-          await this._peerDirectoryStore.upsertPeerFromSignal({
-            peerId: remotePeerId,
-            payload: {
-              type: "bond.accept.received",
-              version: "1.0",
-              ownerId: payload.responderOwnerId,
-              deviceId: "unknown",
-              deviceCertificate: { devicePublicKeyPem: "" },
-              listenAddrs: [],
-            } as any,
-          });
-        } else {
-          console.log(`[node-service] Peer already exists in directory: ${existing.ownerId}`);
-        }
-
-        // Emit bond:established so UI updates
-        console.log(`[node-service] Emitting bond:established for ${payload.responderOwnerId}`);
-        this.emit("bond:established", {
-          peerOwnerId: payload.responderOwnerId,
-          displayName: payload.responderOwnerId,
-        });
-        console.log(`[node-service] bond.accept handling complete`);
-      } else if (intent === "chat.message") {
+      if (intent === "chat.message") {
         const payload = parseChatMessagePayload(envelope.payload);
         this.emit("chat:message", {
           messageId: envelope.messageId,
