@@ -1314,11 +1314,20 @@ class NodeServiceImpl implements NodeService {
 
         console.log(`[node-service] Received bond.accept from ${payload.responderOwnerId} (my requesterOwnerId was ${payload.requesterOwnerId})`);
 
+        // Extract display name from the message (format: "Hello from {displayName}!")
+        let displayName = payload.responderOwnerId;
+        if (payload.message) {
+          const match = payload.message.match(/^Hello from (.+)!$/);
+          if (match && match[1]) {
+            displayName = match[1];
+          }
+        }
+
         // Store the bond in trust store since the other party accepted our request
-        console.log(`[node-service] About to setTrustRecord for ${payload.responderOwnerId}`);
+        console.log(`[node-service] About to setTrustRecord for ${payload.responderOwnerId} with displayName=${displayName}`);
         await this._trustStore.setTrustRecord({
           peerOwnerId: payload.responderOwnerId,
-          displayName: payload.responderOwnerId, // Will be updated when profile is exchanged
+          displayName: displayName,
           level: "direct",
           note: payload.message ?? undefined,
           now: new Date().toISOString(),
