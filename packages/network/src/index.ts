@@ -477,12 +477,12 @@ export class EnvoyMesh {
     protocol: string,
   ): Promise<number> {
     validateEnvelopeProtocol(protocol, envelope);
-    // Build proper multiaddr: if target already starts with /, use as-is, otherwise wrap peerId in /p2p/
-    let dialTarget: string;
+    // Convert to proper multiaddr - wrap peerId in /p2p/ if not already a multiaddr
+    let dialTarget: ReturnType<typeof multiaddr>;
     if (target.startsWith("/")) {
-      dialTarget = target;
+      dialTarget = multiaddr(target);
     } else {
-      dialTarget = `/p2p/${target}`;
+      dialTarget = multiaddr(`/p2p/${target}`);
     }
     const startedAt = Date.now();
 
