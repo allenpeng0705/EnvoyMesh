@@ -489,9 +489,25 @@ export class EnvoyMesh {
     const startedAt = Date.now();
     console.log(`[network] sendEnvelopeOnProtocol: dialing ${target} (converted to ${dialTarget})`);
     // Use dial (which handles peer ID lookup better) then upgrade to protocol
-    const connection = await this.requireNode().dial(dialTarget);
-    console.log(`[network] sendEnvelopeOnProtocol: connection established to ${connection.remotePeer?.toString()}`);
-    const stream = await connection.newStream([protocol]);
+    let connection;
+    try {
+      connection = await this.requireNode().dial(dialTarget);
+      console.log(`[network] sendEnvelopeOnProtocol: connection established to ${connection.remotePeer?.toString()}`);
+    } catch (dialError) {
+      console.error(`[network] sendEnvelopeOnProtocol: dial failed to ${target}: ${dialError instanceof Error ? dialError.message : String(dialError)}`);
+      throw dialError;
+    }
+    let stream;
+    try {
+      stream = await connection.newStream([protocol]);
+    } catch (streamError) {
+      console.error(`[network] sendEnvelopeOnProtocol: newStream failed on connection to ${target}: ${streamError instanceof Error ? streamError.message : String(streamError)}`);
+      // Close the connection since it's likely broken
+      try {
+        await connection.close();
+      } catch {}
+      throw streamError;
+    }
     const remotePeerId = connection.remotePeer?.toString();
     if (remotePeerId) {
       this.emitP2pDebug({
@@ -610,6 +626,7 @@ export class EnvoyMesh {
   private async installEnvelopeInboundHandler(protocol: string): Promise<void> {
     await this.requireNode().handle(protocol, async (stream: any, connection: any) => {
       const remotePeerId = connection.remotePeer.toString();
+      console.log(`[network] INBOUND STREAM: protocol=${protocol}, remotePeerId=${remotePeerId}`);
       this.emitP2pDebug({
         kind: "stream:open",
         remotePeerId,

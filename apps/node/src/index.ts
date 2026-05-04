@@ -861,7 +861,8 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     envelope.intent === "bond.challenge" ||
     envelope.intent === "bond.challenge.response"
   ) {
-    console.log(`[inbound] bond intent: ${envelope.intent} from=${remotePeerId}`);
+    console.log(`[inbound] bond intent: ${envelope.intent} from=${remotePeerId}, messageId=${envelope.messageId}`);
+    console.log(`[inbound] calling handleInboundBondIntent for ${envelope.intent}...`);
     const bond = await handleInboundBondIntent(
       {
         envelope,

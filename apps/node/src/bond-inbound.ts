@@ -239,7 +239,7 @@ export async function handleInboundBondIntent(
     if (envelope.intent === "bond.accept") {
       console.log(`[bond-inbound] handling bond.accept from ${remotePeerId}`);
       const payload = parseBondAcceptPayload(envelope.payload);
-      console.log(`[bond-inbound] bond.accept payload: responderOwnerId=${payload.responderOwnerId}, requesterOwnerId=${payload.requesterOwnerId}`);
+      console.log(`[bond-inbound] bond.accept payload: responderOwnerId=${payload.responderOwnerId}, requesterOwnerId=${payload.requesterOwnerId}, message=${payload.message}`);
 
       // Extract display name from the message (format: "Hello from {displayName}!")
       let displayName = payload.responderOwnerId;
