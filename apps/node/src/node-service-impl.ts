@@ -488,17 +488,70 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
-  async acceptHello(_messageId: string): Promise<void> {
-    // In the current protocol, bond.request is auto-accepted/denied based on policy.
-    // This method is a no-op stub. In a future protocol version with explicit accept/decline,
-    // this would be called after the user approves the hello request.
+  async acceptHello(messageId: string): Promise<void> {
+    // Find the pending hello request
+    const pending = this._pendingHelloRequests.get(messageId);
+    if (!pending) {
+      console.warn(`[node-service] acceptHello: no pending request found for messageId=${messageId}`);
+      return;
+    }
+
+    const mesh = this._requireMesh();
+    const selfProfile = this._requireProfile();
+
+    // Store the bond in trust store (accept the connection)
+    await this._trustStore.setTrustRecord({
+      peerOwnerId: pending.requesterOwnerId,
+      displayName: pending.requesterDisplayName,
+      level: pending.requestedLevel as any ?? "direct",
+      note: pending.message || undefined,
+      now: new Date().toISOString(),
+    });
+
+    // Send bond.accept back to the requester
+    const { createBondAcceptPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+    const humanProfile = await this._humanProfileStore.loadHumanProfile();
+    const displayName = humanProfile?.displayName ?? selfProfile.owner.ownerId;
+
+    console.log(`[node-service] Sending bond.accept to ${pending.requesterOwnerId} at peerId ${pending.remotePeerId}`);
+    const acceptEnvelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
+        senderPublicKey: selfProfile.device.publicKeyPem,
+        recipientPeerId: pending.remotePeerId,
+        intent: "bond.accept",
+        payload: createBondAcceptPayload({
+          responderOwnerId: selfProfile.owner.ownerId,
+          requesterOwnerId: pending.requesterOwnerId,
+          message: `Hello from ${displayName}!`,
+        }),
+      }),
+      selfProfile.device.privateKeyPem,
+    );
+    await mesh.send(pending.remotePeerId, acceptEnvelope);
+
+    // Emit bond:established event so the UI updates
+    this.emit("bond:established", {
+      peerOwnerId: pending.requesterOwnerId,
+      displayName: pending.requesterDisplayName,
+    });
+
+    // Remove from pending requests
+    this._pendingHelloRequests.delete(messageId);
+
+    console.log(`[node-service] Successfully accepted hello from ${pending.requesterOwnerId}`);
   }
 
-  async declineHello(_messageId: string, reason?: string): Promise<void> {
-    // In the current protocol, bond.request is auto-accepted/denied based on policy.
-    // This method is a no-op stub. In a future protocol version with explicit accept/decline,
-    // this would send a bond.response to reject the request.
-    console.log(`[node-service] declineHello called (stub): ${reason ?? "no reason"}`);
+  async declineHello(messageId: string, reason?: string): Promise<void> {
+    // Find and remove the pending hello request
+    const pending = this._pendingHelloRequests.get(messageId);
+    if (pending) {
+      console.log(`[node-service] Declining hello from ${pending.requesterOwnerId}: ${reason ?? "no reason"}`);
+      this._pendingHelloRequests.delete(messageId);
+    } else {
+      console.warn(`[node-service] declineHello: no pending request found for messageId=${messageId}`);
+    }
   }
 
   async blockPeer(peerOwnerId: string): Promise<void> {
@@ -1218,6 +1271,16 @@ class NodeServiceImpl implements NodeService {
             payload: envelope.payload as any,
           });
         }
+
+        // Store pending hello request for later acceptance
+        this._pendingHelloRequests.set(envelope.messageId, {
+          remotePeerId,
+          requesterOwnerId: payload.requesterOwnerId,
+          requesterDisplayName: payload.requesterDisplayName ?? remotePeerId,
+          message: payload.message ?? "",
+          requestedLevel: payload.requestedLevel ?? "direct",
+          createdAt: envelope.createdAt,
+        });
 
         // Emit hello:request notification for the UI to show (user will accept/decline)
         this.emit("hello:request", {
