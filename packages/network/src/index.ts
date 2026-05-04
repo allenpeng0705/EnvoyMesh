@@ -477,7 +477,13 @@ export class EnvoyMesh {
     protocol: string,
   ): Promise<number> {
     validateEnvelopeProtocol(protocol, envelope);
-    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    // Build proper multiaddr: if target already starts with /, use as-is, otherwise wrap peerId in /p2p/
+    let dialTarget: string;
+    if (target.startsWith("/")) {
+      dialTarget = target;
+    } else {
+      dialTarget = `/p2p/${target}`;
+    }
     const startedAt = Date.now();
 
     // Use dialProtocol - it handles connection + stream setup in one step,
