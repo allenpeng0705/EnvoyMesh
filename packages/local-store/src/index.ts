@@ -1120,8 +1120,32 @@ export function createLocalTrustStore(profileDir: string): LocalTrustStore {
 export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDirectoryStore {
   const directoryPath = join(profileDir, PEER_DIRECTORY_FILE);
 
-  // Simple file lock to prevent concurrent writes
-  let writeInProgress: Promise<void> | null = null;
+  // Write queue to serialize all writes and prevent EPERM on Windows
+  let writeQueue = Promise.resolve<void>();
+
+  async function serializedWrite(file: PeerDirectoryFile): Promise<void> {
+    const currentQueue = writeQueue;
+    writeQueue = (async () => {
+      await currentQueue;
+      try {
+        await writePeerDirectoryFileAtomic(directoryPath, file);
+      } catch (error) {
+        if (error instanceof Error && error.code === "EPERM") {
+          // On Windows, EPERM often means file is still being written by another process
+          // Retry once after a short delay
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          try {
+            await writePeerDirectoryFileAtomic(directoryPath, file);
+          } catch (retryError) {
+            console.warn(`[peer-directory] atomic write failed twice: ${retryError}`);
+          }
+        } else {
+          throw error;
+        }
+      }
+    })();
+    await writeQueue;
+  }
 
   return {
     async listPeerRecords() {
@@ -1135,13 +1159,8 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
     },
 
     async upsertPeerFromSignal(input) {
-      // Wait for any pending write to complete
-      if (writeInProgress) {
-        await writeInProgress;
-      }
-
-      const file = await readPeerDirectoryFile(directoryPath);
       const seenAt = input.seenAt ?? new Date().toISOString();
+      const file = await readPeerDirectoryFile(directoryPath);
       const existing = file.records.find((record) => record.ownerId === input.payload.ownerId);
       if (existing) {
         existing.peerId = input.peerId;
@@ -1149,10 +1168,7 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         existing.devicePublicKeyPem = input.payload.deviceCertificate.devicePublicKeyPem;
         existing.lastSeenAt = seenAt;
         existing.listenAddrs = input.payload.listenAddrs;
-        // Use atomic write: write to temp file then rename
-        writeInProgress = writePeerDirectoryFileAtomic(directoryPath, file);
-        await writeInProgress;
-        writeInProgress = null;
+        await serializedWrite(file);
         return existing;
       }
 
@@ -1166,9 +1182,7 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         listenAddrs: input.payload.listenAddrs,
       };
       file.records.push(created);
-      writeInProgress = writePeerDirectoryFileAtomic(directoryPath, file);
-      await writeInProgress;
-      writeInProgress = null;
+      await serializedWrite(file);
       return created;
     },
   };
