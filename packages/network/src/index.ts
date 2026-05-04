@@ -542,8 +542,14 @@ export class EnvoyMesh {
         `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}`,
       );
     }
-    await byteStream(stream).write(encodeEnvelope(envelope));
+    const bytes = encodeEnvelope(envelope);
+    console.log(`[network] sendEnvelopeOnProtocol: writing ${bytes.byteLength} bytes to stream ${stream.id}`);
+    await byteStream(stream).write(bytes);
+    console.log(`[network] sendEnvelopeOnProtocol: write complete, closing stream ${stream.id}`);
+    // Close the stream to signal we're done sending
+    // Use closeWrite() to signal we're done writing, then wait for close to complete
     await stream.close();
+    console.log(`[network] sendEnvelopeOnProtocol: stream ${stream.id} closed successfully`);
     if (remotePeerId) {
       this.emitP2pDebug({
         kind: "stream:close",
