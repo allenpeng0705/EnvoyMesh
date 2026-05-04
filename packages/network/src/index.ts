@@ -487,8 +487,10 @@ export class EnvoyMesh {
       dialTarget = multiaddr(`/p2p/${target}`);
     }
     const startedAt = Date.now();
+    console.log(`[network] sendEnvelopeOnProtocol: dialing ${target} (converted to ${dialTarget})`);
     // Use dial (which handles peer ID lookup better) then upgrade to protocol
     const connection = await this.requireNode().dial(dialTarget);
+    console.log(`[network] sendEnvelopeOnProtocol: connection established to ${connection.remotePeer?.toString()}`);
     const stream = await connection.newStream([protocol]);
     const remotePeerId = connection.remotePeer?.toString();
     if (remotePeerId) {
