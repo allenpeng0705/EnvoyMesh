@@ -1149,9 +1149,28 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
   }): Promise<PeerDirectoryRecord> {
     return withDirectory(async (file) => {
       const seenAt = input.seenAt ?? new Date().toISOString();
-      const existing = file.records.find((record) => record.ownerId === input.payload.ownerId);
+      // First try to find by correct ownerId
+      let existing = file.records.find((record) => record.ownerId === input.payload.ownerId);
       if (existing) {
         existing.peerId = input.peerId;
+        existing.deviceId = input.payload.deviceId;
+        existing.devicePublicKeyPem = input.payload.deviceCertificate.devicePublicKeyPem;
+        existing.lastSeenAt = seenAt;
+        existing.listenAddrs = input.payload.listenAddrs;
+        await writePeerDirectoryFileAtomic(directoryPath, file);
+        return existing;
+      }
+
+      // Also check if there's a corrupted record with the same peerId but wrong ownerId
+      // (ownerId stored as peerId from buggy mDNS peer.discovered handler)
+      existing = file.records.find(
+        (record) => record.peerId === input.peerId && record.ownerId !== input.payload.ownerId,
+      );
+      if (existing) {
+        console.warn(
+          `[peer-directory] fixing corrupted record: ownerId was "${existing.ownerId}", updating to "${input.payload.ownerId}" for peerId=${input.peerId}`,
+        );
+        existing.ownerId = input.payload.ownerId;
         existing.deviceId = input.payload.deviceId;
         existing.devicePublicKeyPem = input.payload.deviceCertificate.devicePublicKeyPem;
         existing.lastSeenAt = seenAt;
