@@ -393,7 +393,7 @@ export class EnvoyMesh {
     options?: { timeoutMs?: number },
   ): Promise<EnvoyEnvelope> {
     validateEnvelopeProtocol(ENVOY_MESSAGE_PROTOCOL, envelope);
-    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    const dialTarget = target.startsWith("/") ? target : `/p2p/${target}`;
     const timeoutMs = options?.timeoutMs ?? 30_000;
     const stream: any = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_MESSAGE_PROTOCOL);
     const remotePeerId = stream.connection?.remotePeer?.toString();
@@ -609,7 +609,7 @@ export class EnvoyMesh {
    * Intended for adversarial probes and resilience testing (not for normal application traffic).
    */
   async sendRawBytes(target: string, bytes: Uint8Array): Promise<number> {
-    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    const dialTarget = target.startsWith("/") ? target : `/p2p/${target}`;
     const startedAt = Date.now();
     const stream: any = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_MESSAGE_PROTOCOL);
     const remotePeerId = stream.connection?.remotePeer?.toString();
