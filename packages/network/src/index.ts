@@ -477,64 +477,52 @@ export class EnvoyMesh {
     protocol: string,
   ): Promise<number> {
     validateEnvelopeProtocol(protocol, envelope);
-    // Convert peer ID or string to proper Multiaddr
-    let dialTarget: Multiaddr;
-    if (target.startsWith("/")) {
-      // Already a multiaddr string, convert to Multiaddr object
-      dialTarget = multiaddr(target);
-    } else {
-      // It's a peer ID - convert to /p2p/Qm... format Multiaddr
-      dialTarget = multiaddr(`/p2p/${target}`);
-    }
+    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
     const startedAt = Date.now();
-    console.log(`[network] sendEnvelopeOnProtocol: dialing ${target} (converted to ${dialTarget})`);
-    // Use dial (which handles peer ID lookup better) then upgrade to protocol
-    let connection;
+
+    // Use dialProtocol - it handles connection + stream setup in one step,
+    // which is more reliable than separate dial() + newStream() calls
+    console.log(`[network] sendEnvelopeOnProtocol: dialing ${target} with protocol ${protocol}`);
+    let stream: any;
     try {
-      connection = await this.requireNode().dial(dialTarget);
-      console.log(`[network] sendEnvelopeOnProtocol: connection established to ${connection.remotePeer?.toString()}`);
+      stream = await this.requireNode().dialProtocol(dialTarget as any, protocol);
+      console.log(`[network] sendEnvelopeOnProtocol: stream opened to ${target}`);
     } catch (dialError) {
-      console.error(`[network] sendEnvelopeOnProtocol: dial failed to ${target}: ${dialError instanceof Error ? dialError.message : String(dialError)}`);
-      throw dialError;
-    }
-    let stream;
-    try {
-      stream = await connection.newStream([protocol]);
-    } catch (streamError) {
-      const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
-      console.error(`[network] sendEnvelopeOnProtocol: newStream failed on connection to ${target}: ${errorMsg}`);
+      const errorMsg = dialError instanceof Error ? dialError.message : String(dialError);
+      console.error(`[network] sendEnvelopeOnProtocol: dialProtocol failed to ${target}: ${errorMsg}`);
 
-      // Check if it's a "limited connection" error - try once more with a fresh connection
-      if (errorMsg.includes("limited connection") || errorMsg.includes("Cannot open protocol stream")) {
-        console.log(`[network] Retrying with fresh connection to ${target}...`);
-        try {
-          await connection.close();
-        } catch {}
-
-        // Dial again for a fresh connection
-        const newConnection = await this.requireNode().dial(dialTarget);
-        console.log(`[network] New connection established to ${newConnection.remotePeer?.toString()}`);
-
-        try {
-          stream = await newConnection.newStream([protocol]);
-          console.log(`[network] Retry successful with new connection`);
-        } catch (retryError) {
-          const retryMsg = retryError instanceof Error ? retryError.message : String(retryError);
-          console.error(`[network] sendEnvelopeOnProtocol: retry newStream also failed: ${retryMsg}`);
-          try {
-            await newConnection.close();
-          } catch {}
-          throw retryError;
+      // Try one more time with a fresh approach - close any existing connection first
+      try {
+        const node = this.requireNode();
+        // Get all connections and close them to force fresh dial
+        const cmap = (node as any).connectionManager?.connections;
+        if (cmap) {
+          for (const [peerIdStr, conns] of cmap) {
+            if (Array.isArray(conns)) {
+              for (const conn of conns) {
+                try {
+                  await conn.close();
+                } catch {}
+              }
+            }
+          }
         }
-      } else {
-        // Close the connection since it's likely broken
-        try {
-          await connection.close();
-        } catch {}
-        throw streamError;
+      } catch {}
+
+      // Retry dialProtocol once
+      console.log(`[network] Retrying dialProtocol to ${target}...`);
+      try {
+        stream = await this.requireNode().dialProtocol(dialTarget as any, protocol);
+        console.log(`[network] sendEnvelopeOnProtocol: retry successful`);
+      } catch (retryError) {
+        const retryMsg = retryError instanceof Error ? retryError.message : String(retryError);
+        console.error(`[network] sendEnvelopeOnProtocol: retry dialProtocol also failed: ${retryMsg}`);
+        throw retryError;
       }
     }
-    const remotePeerId = connection.remotePeer?.toString();
+
+    const connection = stream.connection;
+    const remotePeerId = connection?.remotePeer?.toString();
     if (remotePeerId) {
       this.emitP2pDebug({
         kind: "stream:open",
