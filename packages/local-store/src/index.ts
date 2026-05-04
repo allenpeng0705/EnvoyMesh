@@ -1120,47 +1120,35 @@ export function createLocalTrustStore(profileDir: string): LocalTrustStore {
 export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDirectoryStore {
   const directoryPath = join(profileDir, PEER_DIRECTORY_FILE);
 
-  // Write queue to serialize all writes and prevent EPERM on Windows
-  let writeQueue = Promise.resolve<void>();
+  // Serialize ALL peer directory operations (reads and writes) to prevent
+  // EPERM errors on Windows where concurrent file access causes lock violations.
+  // Single mutex ensures read-modify-write cycles are atomic.
+  let directoryMutex = Promise.resolve<PeerDirectoryFile | null>(null);
 
-  async function serializedWrite(file: PeerDirectoryFile): Promise<void> {
-    const currentQueue = writeQueue;
-    writeQueue = (async () => {
-      await currentQueue;
+  async function withDirectory<T>(fn: (file: PeerDirectoryFile) => Promise<T>): Promise<T> {
+    const mutexSnapshot = directoryMutex;
+    const result = mutexSnapshot.then(async () => {
+      let file: PeerDirectoryFile;
       try {
-        await writePeerDirectoryFileAtomic(directoryPath, file);
-      } catch (error) {
-        if (error instanceof Error && error.code === "EPERM") {
-          // On Windows, EPERM often means file is still being written by another process
-          // Retry once after a short delay
-          await new Promise((resolve) => setTimeout(resolve, 100));
-          try {
-            await writePeerDirectoryFileAtomic(directoryPath, file);
-          } catch (retryError) {
-            console.warn(`[peer-directory] atomic write failed twice: ${retryError}`);
-          }
-        } else {
-          throw error;
-        }
+        file = await readPeerDirectoryFile(directoryPath);
+      } catch {
+        // read failed or returned null — start with empty state
+        file = { version: "0.1", records: [] };
       }
-    })();
-    await writeQueue;
+      return fn(file);
+    });
+    // Store completion state for next operation, ignoring the return value of fn
+    directoryMutex = result.then(() => null as PeerDirectoryFile | null).catch(() => null as PeerDirectoryFile | null);
+    return result;
   }
 
-  return {
-    async listPeerRecords() {
-      return (await readPeerDirectoryFile(directoryPath)).records.sort((left, right) =>
-        right.lastSeenAt.localeCompare(left.lastSeenAt),
-      );
-    },
-
-    async getPeerByOwnerId(ownerId) {
-      return (await readPeerDirectoryFile(directoryPath)).records.find((record) => record.ownerId === ownerId);
-    },
-
-    async upsertPeerFromSignal(input) {
+  async function upsertPeerFromSignalSerialized(input: {
+    peerId: string;
+    payload: SystemSignalPayload;
+    seenAt?: string;
+  }): Promise<PeerDirectoryRecord> {
+    return withDirectory(async (file) => {
       const seenAt = input.seenAt ?? new Date().toISOString();
-      const file = await readPeerDirectoryFile(directoryPath);
       const existing = file.records.find((record) => record.ownerId === input.payload.ownerId);
       if (existing) {
         existing.peerId = input.peerId;
@@ -1168,7 +1156,7 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         existing.devicePublicKeyPem = input.payload.deviceCertificate.devicePublicKeyPem;
         existing.lastSeenAt = seenAt;
         existing.listenAddrs = input.payload.listenAddrs;
-        await serializedWrite(file);
+        await writePeerDirectoryFileAtomic(directoryPath, file);
         return existing;
       }
 
@@ -1182,8 +1170,24 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         listenAddrs: input.payload.listenAddrs,
       };
       file.records.push(created);
-      await serializedWrite(file);
+      await writePeerDirectoryFileAtomic(directoryPath, file);
       return created;
+    });
+  }
+
+  return {
+    async listPeerRecords() {
+      return withDirectory((file) =>
+        Promise.resolve(file.records.sort((left, right) => right.lastSeenAt.localeCompare(left.lastSeenAt))),
+      );
+    },
+
+    async getPeerByOwnerId(ownerId) {
+      return withDirectory((file) => Promise.resolve(file.records.find((record) => record.ownerId === ownerId)));
+    },
+
+    async upsertPeerFromSignal(input) {
+      return upsertPeerFromSignalSerialized(input);
     },
   };
 }
@@ -1276,61 +1280,149 @@ async function writeTrustStoreFile(path: string, file: TrustStoreFile): Promise<
 }
 
 async function readPeerDirectoryFile(path: string): Promise<PeerDirectoryFile> {
-  try {
-    return JSON.parse(await readFile(path, "utf8")) as PeerDirectoryFile;
-  } catch (error) {
-    if (isMissingFileError(error)) {
-      return {
-        version: "0.1",
-        records: [],
-      };
-    }
-    // File exists but is corrupted - try to recover
-    console.warn(`[peer-directory] corrupted file at ${path}, attempting recovery: ${error instanceof Error ? error.message : String(error)}`);
+  // On Windows, EPERM during read often means the file is locked by another process.
+  // Retry with backoff before assuming the file is missing or corrupted.
+  const maxAttempts = 3;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      // Read raw content and try to extract just the valid JSON portion
-      const raw = await readFile(path, "utf8");
-      // Find the last valid closing brace that ends a record or the records array
-      const lastValidMatch = raw.match(/^[\s\S]*\{\s*"version"\s*:\s*"0\.1"\s*,\s*"records"\s*:\s*\[(\s*\])/);
-      if (lastValidMatch && lastValidMatch[1] === " ]") {
-        // File ends with empty records array - it's valid
-        return { version: "0.1", records: [] };
+      return JSON.parse(await readFile(path, "utf8")) as PeerDirectoryFile;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      // Check if it's an EPERM (file locked) error that we should retry
+      if ((lastError as any).code === "EPERM" && attempt < maxAttempts - 1) {
+        const delay = 50 * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
       }
-      // Try to find a record array that ends properly
-      const arrayEndMatch = raw.match(/(\[\s*\{[\s\S]*?\}\s*\])/);
-      if (arrayEndMatch) {
-        try {
-          const jsonStart = raw.indexOf('"records"');
-          if (jsonStart >= 0) {
-            const trial = '{"version":"0.1","records":' + arrayEndMatch[1] + '}';
-            return JSON.parse(trial);
-          }
-        } catch {
-          // Fall through to reset
-        }
-      }
-    } catch (recoveryError) {
-      console.warn(`[peer-directory] recovery attempt failed: ${recoveryError instanceof Error ? recoveryError.message : String(recoveryError)}`);
+
+      // Not EPERM or out of retries — break to recovery logic
+      break;
     }
-    // Backup corrupted file and return minimal valid structure
-    const backupPath = `${path}.corrupted.${Date.now()}`;
-    try {
-      await rename(path, backupPath);
-      console.warn(`[peer-directory] backed up corrupted file to ${backupPath}`);
-    } catch {
-      // Rename failed, try copy
-      try {
-        await writeFile(`${path}.backup`, await readFile(path));
-        console.warn(`[peer-directory] copied corrupted file to ${path}.backup`);
-      } catch {
-        // Give up
-      }
-    }
-    return {
-      version: "0.1",
-      records: [],
-    };
   }
+
+  // File read failed (EPERM after retries or other error) — try recovery
+  const err = lastError!;
+  if ((err as any).code !== "ENOENT") {
+    console.warn(`[peer-directory] read failed (${(err as any).code}), attempting recovery: ${err.message}`);
+  }
+
+  // Attempt recovery from corrupted file
+  const recoveryResult = await tryRecoverPeerDirectory(path);
+  if (recoveryResult) {
+    return recoveryResult;
+  }
+
+  // Could not recover — return empty directory rather than losing data in memory
+  // The file on disk is either missing or unrecoverable; next write will recreate it
+  console.warn(`[peer-directory] could not recover, returning empty directory`);
+  return {
+    version: "0.1",
+    records: [],
+  };
+}
+
+/**
+ * Attempt to recover a corrupted peer directory by reading raw content
+ * and extracting as many valid records as possible.
+ */
+async function tryRecoverPeerDirectory(path: string): Promise<PeerDirectoryFile | null> {
+  try {
+    const raw = await readFile(path, "utf8");
+    if (!raw.trim()) {
+      return { version: "0.1", records: [] };
+    }
+
+    // First, try a simple parse — maybe it's just malformed at the end
+    try {
+      const parsed = JSON.parse(raw) as PeerDirectoryFile;
+      if (parsed && Array.isArray(parsed.records)) {
+        return parsed;
+      }
+    } catch {
+      // Not a simple parse — continue with recovery
+    }
+
+    // Recovery: try to find a valid records array in the raw content
+    // Look for the pattern: {"version":"0.1","records":[...valid json array...]}
+    const recordsMatch = raw.match(/"records"\s*:\s*\[([\s\S]*)\]/);
+    if (recordsMatch) {
+      const recordsStr = recordsMatch[1];
+      // Try to extract individual records from the array
+      const extractedRecords = extractRecordsFromRawArray(recordsStr);
+      if (extractedRecords.length > 0) {
+        console.warn(`[peer-directory] recovered ${extractedRecords.length} records from corrupted file`);
+        return { version: "0.1", records: extractedRecords };
+      }
+    }
+
+    // Last resort: look for any individual record objects in the file
+    const allRecords = extractAllRecordObjects(raw);
+    if (allRecords.length > 0) {
+      console.warn(`[peer-directory] extracted ${allRecords.length} records by scanning for objects`);
+      return { version: "0.1", records: allRecords };
+    }
+
+    return null;
+  } catch (recoveryError) {
+    console.warn(`[peer-directory] recovery attempt failed: ${recoveryError instanceof Error ? recoveryError.message : String(recoveryError)}`);
+    return null;
+  }
+}
+
+/**
+ * Try to extract valid record objects from a potentially truncated JSON array string.
+ */
+function extractRecordsFromRawArray(arrayContent: string): PeerDirectoryRecord[] {
+  const records: PeerDirectoryRecord[] = [];
+
+  // Match individual record objects: {"version":"0.1","ownerId":"...","peerId":"...",...}
+  const recordPattern = /\{[^{}]*"version"\s*:\s*"0\.1"[^{}]*\}/g;
+  let match;
+
+  while ((match = recordPattern.exec(arrayContent)) !== null) {
+    try {
+      const parsed = JSON.parse(match[0]) as PeerDirectoryRecord;
+      if (parsed.ownerId && parsed.peerId) {
+        records.push(parsed);
+      }
+    } catch {
+      // Not a valid record, skip
+    }
+  }
+
+  return records;
+}
+
+/**
+ * Scan raw content for any record-like objects and try to parse them.
+ */
+function extractAllRecordObjects(raw: string): PeerDirectoryRecord[] {
+  const records: PeerDirectoryRecord[] = [];
+  const seen = new Set<string>();
+
+  // Match any object that has ownerId and peerId fields
+  const objectPattern = /\{[^{}]*"ownerId"[^{}]*"peerId"[^{}]*\}/g;
+  let match;
+
+  while ((match = objectPattern.exec(raw)) !== null) {
+    const objStr = match[0];
+    if (seen.has(objStr)) continue;
+    seen.add(objStr);
+
+    try {
+      const parsed = JSON.parse(objStr) as PeerDirectoryRecord;
+      if (parsed.ownerId && parsed.peerId) {
+        records.push(parsed);
+      }
+    } catch {
+      // Not a valid record, skip
+    }
+  }
+
+  return records;
 }
 
 async function writePeerDirectoryFile(path: string, file: PeerDirectoryFile): Promise<void> {
@@ -1363,7 +1455,7 @@ async function writePeerDirectoryFileAtomic(path: string, file: PeerDirectoryFil
       return; // Success
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      if (lastError.code === "EPERM" && attempt < maxAttempts - 1) {
+      if ((lastError as any).code === "EPERM" && attempt < maxAttempts - 1) {
         // On Windows EPERM, wait with exponential backoff before retry
         const delay = 50 * Math.pow(2, attempt);
         await new Promise((resolve) => setTimeout(resolve, delay));
@@ -1375,8 +1467,8 @@ async function writePeerDirectoryFileAtomic(path: string, file: PeerDirectoryFil
   }
 
   // Fallback: direct write if atomic rename keeps failing (accepts small corruption risk)
-  if (lastError?.code === "EPERM") {
-    console.warn(`[peer-directory] atomic write failed, falling back to direct write: ${lastError.message}`);
+  if ((lastError as any)?.code === "EPERM") {
+    console.warn(`[peer-directory] atomic write failed, falling back to direct write: ${lastError?.message ?? "unknown error"}`);
     try {
       await writeFile(path, content, { mode: 0o600 });
       return;
