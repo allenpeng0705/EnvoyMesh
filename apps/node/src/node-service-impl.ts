@@ -529,7 +529,13 @@ class NodeServiceImpl implements NodeService {
       }),
       selfProfile.device.privateKeyPem,
     );
-    await mesh.send(pending.remotePeerId, acceptEnvelope);
+    try {
+      await mesh.send(pending.remotePeerId, acceptEnvelope);
+      console.log(`[node-service] bond.accept sent successfully`);
+    } catch (sendError) {
+      console.error(`[node-service] Failed to send bond.accept: ${sendError instanceof Error ? sendError.message : String(sendError)}`);
+      // Don't throw - still update UI and clean up
+    }
 
     // Emit bond:established event so the UI updates
     this.emit("bond:established", {

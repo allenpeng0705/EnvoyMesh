@@ -1,3 +1,18 @@
+---
+description: 
+alwaysApply: true
+---
+
+---
+description: 
+alwaysApply: true
+---
+
+---
+description: 
+alwaysApply: true
+---
+
 # EnvoyMesh — CLAUDE.md
 
 ## Project Overview

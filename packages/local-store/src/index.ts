@@ -1343,16 +1343,50 @@ async function writePeerDirectoryFile(path: string, file: PeerDirectoryFile): Pr
 
 /**
  * Atomic write: writes to temp file then renames to target.
- * This prevents corruption if multiple processes write simultaneously.
+ * On Windows EPERM, retries with backoff then falls back to direct write.
  */
 async function writePeerDirectoryFileAtomic(path: string, file: PeerDirectoryFile): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const content = JSON.stringify(file, null, 2) + "\n";
   // Verify the content is valid JSON before writing
   JSON.parse(content);
-  const tmpPath = `${path}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
-  await writeFile(tmpPath, content, { mode: 0o600 });
-  await rename(tmpPath, path);
+
+  // Try atomic write with multiple retries and exponential backoff
+  const maxAttempts = 5;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const tmpPath = `${path}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+    try {
+      await writeFile(tmpPath, content, { mode: 0o600 });
+      await rename(tmpPath, path);
+      return; // Success
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (lastError.code === "EPERM" && attempt < maxAttempts - 1) {
+        // On Windows EPERM, wait with exponential backoff before retry
+        const delay = 50 * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      // If not EPERM or out of retries, fall through to fallback
+      break;
+    }
+  }
+
+  // Fallback: direct write if atomic rename keeps failing (accepts small corruption risk)
+  if (lastError?.code === "EPERM") {
+    console.warn(`[peer-directory] atomic write failed, falling back to direct write: ${lastError.message}`);
+    try {
+      await writeFile(path, content, { mode: 0o600 });
+      return;
+    } catch (fallbackError) {
+      console.warn(`[peer-directory] direct write also failed: ${fallbackError}`);
+    }
+  }
+
+  // Re-throw original error if we couldn't fall back
+  throw lastError;
 }
 
 export interface HumanProfileStore {
