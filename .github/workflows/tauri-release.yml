@@ -1,0 +1,54 @@
+name: tauri-release
+
+# Native installers for apps/tauri (Social UI + spawned Node runtime). Electron-era apps/desktop removed.
+on:
+  push:
+    tags:
+      - "tauri-v*"
+      - "desktop-v*"
+  workflow_dispatch:
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Apt dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Build Node + Social (Tauri prerequisites)
+        run: |
+          npm run social:build
+          npm run node:build
+
+      - name: Tauri bundle
+        run: npm run build -w @envoymesh/tauri
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload bundle artifacts (unsigned)
+        uses: actions/upload-artifact@v4
+        with:
+          name: envoymesh-${{ matrix.os }}-bundle
+          path: apps/tauri/src-tauri/target/release/bundle/

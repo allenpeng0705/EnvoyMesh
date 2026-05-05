@@ -446,12 +446,12 @@ Goal: make the system usable.
 - `[x]` Add audit inspection command.
 - `[x]` Add owner approval workflow.
 - `[x]` Extract reusable local state into `@envoymesh/local-store`.
-- `[x]` Add Electron desktop dashboard shell.
+- `[x]` Add Electron desktop dashboard shell *(retired; native shell is Tauri + Social).* 
 - `[x]` Add secure preload bridge with typed dashboard IPC.
 - `[x]` Add dashboard profile, approval, trust, peer, task, audit, and vault panels.
 - `[x]` Add dashboard actions for approving/rejecting requests and setting/removing trust records.
 - `[x]` Add desktop dashboard documentation.
-- `[x]` Add dashboard packaging, signing, and installer flow baseline (`electron-builder` config + release workflow + packaged data-path defaults).
+- `[x]` Add dashboard packaging/signing baseline *(was electron-builder CI; **`tauri-release.yml`** + Tauri bundles now).* 
 - `[x]` Add live P2P visualization baseline (dashboard panel from `p2p.trace` with live refresh).
 - `[x]` Add chat/task composition flows baseline (dashboard composer + CLI `--chat`; signed `chat.message` / `task.propose` send path).
 - `[x]` **Morning report** / ranked discovery digest UX baseline (CLI `morning-report` + dashboard ranking panel backed by structured discovery events).

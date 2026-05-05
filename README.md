@@ -42,7 +42,7 @@ EnvoyMesh is a working TypeScript prototype **under active architectural refinem
 - A restricted shared vault index/search package for `.txt`, `.md`, and `.json` files.
 - A model router with mock, LiteLLM-compatible, and Ollama-through-LiteLLM providers.
 - A developer CLI for local profile, trust, approval, audit, task, peer, vault, connectivity, and relay-status inspection.
-- An Electron desktop dashboard for the first operator console, including Discovery Health and Relay Manager panels.
+- A **Tauri** desktop shell for end users: a native window that loads the **Social** web UI (built static assets) and spawns the Node runtime—no separate Electron app.
 
 ## Quick Start
 
@@ -74,10 +74,20 @@ npm run cli -w @envoymesh/node -- vault-index --vault ./shared_vault
 npm run cli -w @envoymesh/node -- relay-status --profile ./data/default
 ```
 
-Run the desktop dashboard:
+Run the **Social** UI (pick one):
+
+**Native app (end users):** Tauri wraps the same web UI as a desktop window.
 
 ```bash
-npm run desktop:dev
+npm run tauri:dev
+```
+
+**Browser (developers, or when you need `ENVOYMESH_PROFILE` / CLI flags on the node):** start the node, then the Vite dev server.
+
+```bash
+npm run node:dev
+# other terminal:
+npm run social:dev
 ```
 
 See [QuickStart](QuickStart.md) for the full build and run guide.
@@ -174,7 +184,7 @@ PRs now run the same rehearsal in CI via `.github/workflows/ci-smoke-local.yml`.
 ## Workspace
 
 - `apps/node`: local Envoy node runtime, P2P messaging, CLI, and live connectivity smoke scripts.
-- `apps/desktop`: Electron + React desktop operator console.
+- `apps/tauri`: Tauri shell that bundles Social UI + spawned Node (`apps/node`); **Electron-era `apps/desktop` has been removed.**
 - `packages/protocol`: EnvoyMesh Protocol schemas and helpers.
 - `packages/identity`: owner/device identity, signing, verification, certificates, mandates, and revocation helpers.
 - `packages/bonds`: trust, capability, and mandate policy evaluation.
@@ -199,7 +209,7 @@ Current stack:
 - **Identity**: Ed25519 keys first; DIDs and verifiable credentials later.
 - **Model routing**: policy-gated local, cloud, and peer providers, with LiteLLM/Ollama support.
 - **Local data**: file-backed profile, trust, approval, audit, task, and shared vault state.
-- **Desktop surface**: Electron + React.
+- **Desktop surface**: Tauri + Social (React); Electron operator console retired.
 - **Shared state**: CRDTs such as `loro` or `yjs` for replicated social/task data.
 - **Sandboxing**: OS sandboxing and WebAssembly/WASI for restricted execution.
 

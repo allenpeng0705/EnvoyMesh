@@ -145,7 +145,7 @@ Goals:
 Potential tools:
 
 - React or Next.js for local dashboard.
-- Tauri or Electron for desktop packaging.
+- Tauri for desktop packaging (Electron path removed).
 - Capacitor or React Native for thin mobile UI exploration.
 
 Success criteria:

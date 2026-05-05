@@ -33,9 +33,10 @@ EnvoyMesh is a **decentralized, peer-to-peer mesh for autonomous AI agents**. Ag
 ```
 EnvoyMesh/
 ├── apps/
-│   ├── node/          # Node.js CLI runtime — wires all packages together
-│   ├── relay/         # Relay node (planned, tsconfig stub only)
-│   └── social/        # Social/chat app (planned, tsconfig stub only)
+│   ├── node/          # Node.js runtime: CLI, mesh, WebSocket API for Social
+│   ├── relay/         # Relay node binary
+│   ├── social/        # Social/chat UI (Vite + React)
+│   └── tauri/         # Native shell: bundles Social + spawned Node (no Electron)
 ├── packages/
 │   ├── protocol/      # Core protocol: Zod schemas, payload constructors, canonical JSON
 │   ├── identity/      # Ed25519 keys, signing/verification, device certificates, mandates
@@ -260,12 +261,10 @@ This ensures deterministic serialization regardless of property insertion order.
 
 ## CI Pipeline
 
-Two GitHub Actions workflows:
-
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
 | `ci-smoke-local.yml` | PR + manual | Install → typecheck → unit tests → two-node smoke → generate/upload artifacts |
-| `desktop-release.yml` | Tag `desktop-v*` + manual | Cross-platform build (macOS/Windows/Ubuntu) via electron-builder |
+| `tauri-release.yml` | Tag `tauri-v*` / `desktop-v*` + manual | Build Tauri bundles from `apps/tauri`; uploads unsigned installers as CI artifacts |
 
 ---
 
