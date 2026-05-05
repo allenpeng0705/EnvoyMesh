@@ -26,6 +26,8 @@ EnvoyMesh is a **decentralized, peer-to-peer mesh for autonomous AI agents**. Ag
 - Semantic consistency — typed intents agents can reason about, not opaque bytes
 - Observability — JSONL audit with correlation IDs stitching multi-peer flows
 
+**Active milestone: Phase 8A** — replacing the mock `knowledge.query` handler with a policy-gated vault + model router + signed `knowledge.response` path. See `docs/implementation-plan.md` for full roadmap (8A–8L).
+
 ---
 
 ## Repository Structure
@@ -153,6 +155,21 @@ The **Diplomat → Bond Engine → Brain → Vault** pipeline:
 - Exceeds 48K chars → reject
 - Contains disallowed control characters (code < 32 except tab/newline/CR, or DEL) → reject
 - Collapses excessive newline runs (>50 consecutive) to prevent log spam
+
+### Agentic Topology (Phase 8)
+
+**Relay nodes stay lean** — they handle connectivity, relay check-in/lookup, and routing hints. They do not run LLMs, read payloads, execute agents, or store private knowledge.
+
+**Normal nodes are intelligent edges** — they run LLMs, vault RAG, tools, agents, and policy checks.
+
+**External agents (OpenClaw/HomeClaw) must not call libp2p directly** — they must use Envoy local tools (`mesh.findCapability()`, `mesh.requestKnowledge()`). EnvoyMesh is the secure network extension of the local agent, not a raw socket handed to the agent.
+
+**Ordering rule for agentic work:**
+1. Direct bonded-contact workflows first (`knowledge.query`, chat assist)
+2. Contact-scoped discovery and sharing second
+3. Tool/agent boundaries third
+4. Stronger sandbox before anonymous discovery or broadcast
+5. Broad autonomy last
 
 ---
 
