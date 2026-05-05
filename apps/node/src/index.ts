@@ -92,6 +92,7 @@ import { join } from "node:path";
 import { parseNodeArgs } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
+import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates } from "./discovery-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
@@ -1026,9 +1027,14 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       const signedAccept = signUnsignedEnvelope(unsignedAccept, profile.device.privateKeyPem);
       const requesterDir = await peerDirectoryStore.getPeerByOwnerId(requesterOwnerId);
       try {
-        const latencyMs = await mesh.send(requesterPeerId, signedAccept, {
-          dialHints: requesterDir?.listenAddrs ?? [],
+        const dialHints = await buildOutboundDialHints({
+          recipientPeerId: requesterPeerId,
+          peerListenAddrs: requesterDir?.listenAddrs,
+          discoverySeedStore,
+          config: undefined,
+          cliBootstrapPeers: effectiveBootstrapPeers,
         });
+        const latencyMs = await mesh.send(requesterPeerId, signedAccept, { dialHints });
         await taskStore.appendAuditEvent(
           createAuditEvent({
             type: "message.sent",

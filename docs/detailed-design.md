@@ -27,7 +27,9 @@ Rules of thumb:
 EnvoyMesh/
   apps/
     node/                 # libp2p node, relay roster/router, inbound guard, task dispatcher, task runtime guard, developer CLI
-    desktop/              # Electron operator console (IPC to local-store / vault)
+    social/               # Social web UI (Vite + React)
+    tauri/                # Native shell: WebView loads built Social; spawns Node
+    relay/                # Standalone relay binary
   packages/
     protocol/             # EMP: Zod schemas, intents, payloads, helpers
     identity/             # Keys, signing, verification, mandates, device certs
@@ -422,7 +424,7 @@ Real payloads must satisfy `TaskProposePayloadSchema` (proof of intent, mandate 
 
 ## First prototype scope (status)
 
-**Done (high level):** monorepo, protocol + tests, identity split, signed P2P ping/signal, mDNS + optional advanced connectivity, A2A task intents with journal + audits, trust store + approvals, shared vault indexing/search, model router scaffolding, Electron dashboard shell, correlated audit + optional `p2p-debug`, local task termination slice (Phase 4D).
+**Done (high level):** monorepo, protocol + tests, identity split, signed P2P ping/signal, mDNS + optional advanced connectivity, A2A task intents with journal + audits, trust store + approvals, shared vault indexing/search, model router scaffolding, Social UI + optional Tauri native wrapper (Electron-era desktop retired), correlated audit + optional `p2p-debug`, local task termination slice (Phase 4D).
 
 **Next (story-aligned):** semantic discovery (Phase 4E), device pairing / thin mobile (Phase 4A), chat **or** data sub-protocol (Scenario 6), semantic firewall before LLM on untrusted text.
 
@@ -468,5 +470,5 @@ Product- and protocol-level Q&A with **resolved vs open** status lives in [imple
 - **SQLite vs JSONL:** JSONL + JSON files for local-store today; SQLite when query/reporting needs justify it.
 - **Canonical signing:** current stack uses protocol helpers + `@noble/ed25519` paths in identity; keep documented in EMP.
 - **libp2p PeerID vs Envoy keys:** still open — whether to derive or explicitly map (implementation plan).
-- **UI:** developer CLI + Electron dashboard exist; web dashboard remains optional.
+- **UI:** developer CLI + **Social** (browser or Tauri-wrapped web) for the graphical surface.
 - **Model providers:** interface exists in `packages/models`; expand providers as policy stories harden.

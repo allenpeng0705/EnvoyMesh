@@ -518,19 +518,48 @@ export class EnvoyMesh {
       return { stream, remotePeerId: existing.remotePeer.toString() };
     }
 
-    const dialTarget = target.startsWith("/") ? multiaddr(target) : multiaddr(`/p2p/${target}`);
-    try {
-      const stream = await node.dialProtocol(dialTarget as any, protocol);
+    const hintsRaw = sendOptions?.dialHints ?? [];
+    const routableHints = preferNonLoopbackDialHints(hintsRaw);
+    /** True when hints include at least one non-loopback circuit/LAN/WAN addr — try before bare `/p2p/id` dial (peerstore may prioritize remote loopback → ECONNREFUSED here). */
+    const hasRoutableHint = routableHints.some((h) => !isLoopbackOrUnspecifiedDialHint(h));
+    const barePeerDial = !target.trim().startsWith("/");
+
+    const dialOnce = async (addr: ReturnType<typeof multiaddr>): Promise<{ stream: any; remotePeerId?: string }> => {
+      const stream = await node.dialProtocol(addr as any, protocol);
       const s = stream as { connection?: { remotePeer?: { toString(): string } } };
       return { stream, remotePeerId: s.connection?.remotePeer?.toString() };
-    } catch (firstError) {
-      const hints = sortDialHints(sendOptions?.dialHints ?? []);
-      let lastError: unknown = firstError;
-      for (const ma of dialHintsToMultiaddrs(hints, peerIdStr)) {
+    };
+
+    let lastError: unknown = new Error("no outbound dial attempted");
+
+    if (barePeerDial && hasRoutableHint) {
+      for (const ma of dialHintsToMultiaddrs(sortDialHints(routableHints), peerIdStr)) {
         try {
-          const stream = await node.dialProtocol(ma as any, protocol);
-          const s = stream as { connection?: { remotePeer?: { toString(): string } } };
-          return { stream, remotePeerId: s.connection?.remotePeer?.toString() };
+          return await dialOnce(ma);
+        } catch (e) {
+          lastError = e;
+        }
+      }
+    }
+
+    const dialTarget = target.startsWith("/") ? multiaddr(target) : multiaddr(`/p2p/${target}`);
+    try {
+      return await dialOnce(dialTarget);
+    } catch (firstError) {
+      lastError = firstError;
+      const hints = preferNonLoopbackDialHints(sendOptions?.dialHints ?? []);
+      for (const ma of dialHintsToMultiaddrs(sortDialHints(hints), peerIdStr)) {
+        try {
+          return await dialOnce(ma);
+        } catch (e) {
+          lastError = e;
+        }
+      }
+      /** Last resort: retry any loopback hints only if bare + routable passes failed */
+      const loopOnly = hintsRaw.filter((h) => isLoopbackOrUnspecifiedDialHint(h));
+      for (const ma of dialHintsToMultiaddrs(sortDialHints(loopOnly), peerIdStr)) {
+        try {
+          return await dialOnce(ma);
         } catch (e) {
           lastError = e;
         }
@@ -953,7 +982,7 @@ function parsePeerIdFromDialTarget(target: string): string {
   return id;
 }
 
-function loopbackOrUnspecifiedHint(addr: string): boolean {
+export function isLoopbackOrUnspecifiedDialHint(addr: string): boolean {
   return (
     addr.includes("/ip4/127.") ||
     addr.includes("/ip4/0.0.0.0/") ||
@@ -962,10 +991,19 @@ function loopbackOrUnspecifiedHint(addr: string): boolean {
   );
 }
 
+/** Prefer non-loopback multiaddrs first; omit loopback whenever any usable hint exists. */
+export function preferNonLoopbackDialHints(hints: string[]): string[] {
+  const non = hints.filter((h) => !isLoopbackOrUnspecifiedDialHint(h));
+  if (non.length > 0) {
+    return sortDialHints(non);
+  }
+  return sortDialHints(hints);
+}
+
 /** Prefer routable LAN/WAN hints; try loopback last (often useless for cross-machine dials). */
 function sortDialHints(hints: string[]): string[] {
   return [...hints].sort(
-    (a, b) => Number(loopbackOrUnspecifiedHint(a)) - Number(loopbackOrUnspecifiedHint(b)),
+    (a, b) => Number(isLoopbackOrUnspecifiedDialHint(a)) - Number(isLoopbackOrUnspecifiedDialHint(b)),
   );
 }
 

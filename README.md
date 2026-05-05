@@ -184,7 +184,7 @@ PRs now run the same rehearsal in CI via `.github/workflows/ci-smoke-local.yml`.
 ## Workspace
 
 - `apps/node`: local Envoy node runtime, P2P messaging, CLI, and live connectivity smoke scripts.
-- `apps/tauri`: Tauri shell that bundles Social UI + spawned Node (`apps/node`); **Electron-era `apps/desktop` has been removed.**
+- `apps/tauri`: **Native wrapper** around the Social web UI (built static assets in the WebView) + spawns **`apps/node`**; Electron-era **`apps/desktop`** removed.
 - `packages/protocol`: EnvoyMesh Protocol schemas and helpers.
 - `packages/identity`: owner/device identity, signing, verification, certificates, mandates, and revocation helpers.
 - `packages/bonds`: trust, capability, and mandate policy evaluation.

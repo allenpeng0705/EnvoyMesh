@@ -17,9 +17,12 @@ import type {
 import type { NodeStatus, InitNodeOptions, NodeInitResult } from "@envoymesh/api";
 
 import {
+  createBondAcceptPayload,
   createChatMessagePayload,
   createHumanProfilePayload,
   createUnsignedEnvelope,
+  parseBondAcceptPayload,
+  parseBondRequestPayload,
   parseChatMessagePayload,
   createRendezvousRegisterPayload,
   createRendezvousQueryPayload,
@@ -29,6 +32,8 @@ import {
 } from "@envoymesh/protocol";
 import { derivePeerId, signHumanProfile, signUnsignedEnvelope } from "@envoymesh/identity";
 import {
+  createAuditEvent,
+  deriveCorrelationIdFromEnvelope,
   createLocalTaskStore,
   createLocalTrustStore,
   createLocalPeerDirectoryStore,
@@ -49,12 +54,14 @@ import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
 import { createTaskDispatcher } from "./task-dispatcher.js";
 import {
+  ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
   DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME,
   type EnvoyMeshOptions,
 } from "@envoymesh/network";
 import { join } from "node:path";
-import { expandCircuitDialCandidates } from "./discovery-inbound.js";
+import { buildOutboundDialHints } from "./outbound-dial-hints.js";
+import { handleInboundBondIntent } from "./bond-inbound.js";
 
 /** Unblocks when an underlying `fs.readFile` or mutex never settles (seen on some Windows setups). */
 function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -480,9 +487,6 @@ class NodeServiceImpl implements NodeService {
 
     console.log(`[node-service] sendHello to ${targetPeerId} (message: ${message})`);
 
-    const messageId = `hello_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-
-    // Send a bond.request via mesh
     const { createBondRequestPayload } = await import("@envoymesh/protocol");
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({
@@ -502,7 +506,9 @@ class NodeServiceImpl implements NodeService {
     );
 
     try {
-      await mesh.send(targetPeerId, envelope, { dialHints: matchedRecord?.listenAddrs ?? [] });
+      const dialHints = await this._dialHintsForChat(targetPeerId, matchedRecord?.listenAddrs);
+      console.log(`[node-service] sendHello dialHints count=${dialHints.length}`);
+      await mesh.send(targetPeerId, envelope, { dialHints });
       console.log(`[node-service] Hello sent successfully to ${targetPeerId}`);
 
       // Always record owner ↔ peerId after a successful bond.request (refresh if already present).
@@ -526,7 +532,7 @@ class NodeServiceImpl implements NodeService {
     }
 
     return {
-      messageId,
+      messageId: envelope.messageId,
       inReplyTo: "",
       decision: "accept", // Optimistic - actual response comes async via mesh
       timestamp: new Date().toISOString(),
@@ -590,10 +596,12 @@ class NodeServiceImpl implements NodeService {
     );
     console.log(`[node-service] bond.accept envelope created: intent=${acceptEnvelope.intent}, recipientPeerId=${acceptEnvelope.recipientPeerId}, senderPeerId=${acceptEnvelope.senderPeerId}`);
     try {
-      console.log(`[node-service] Attempting to send bond.accept to ${pending.remotePeerId} via mesh.send...`);
+      console.log(`[node-service] Attempting to send bond.accept to ${pending.remotePeerId} dialHints merged…`);
       const requesterDir = await this._peerDirectoryStore.getPeerByOwnerId(pending.requesterOwnerId);
+      const acceptDialHints = await this._dialHintsForChat(pending.remotePeerId, requesterDir?.listenAddrs);
+      console.log(`[node-service] bond.accept dialHints count=${acceptDialHints.length}`);
       await mesh.send(pending.remotePeerId, acceptEnvelope, {
-        dialHints: requesterDir?.listenAddrs ?? [],
+        dialHints: acceptDialHints,
       });
       console.log(`[node-service] bond.accept sent successfully to ${pending.remotePeerId}`);
     } catch (sendError) {
@@ -680,55 +688,14 @@ class NodeServiceImpl implements NodeService {
    * chat fails across NAT for one direction.
    */
   private async _dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]> {
-    const out: string[] = [...(peerListenAddrs ?? [])];
-    if (!this._discoverySeedStore) {
-      return dedupeDialHints(out);
-    }
-
     const config = await this._configStore.load();
-    const seeds = await this._discoverySeedStore.listSeedAddrs();
-    const envBootstrap =
-      process.env.ENVOYMESH_BOOTSTRAP_PEERS?.split(/[,]+/)
-        .map((s) => s.trim())
-        .filter(Boolean) ?? [];
-    const extraRelays: string[] = [
-      ...this._cliBootstrapPeers,
-      ...envBootstrap,
-      ...(config?.bootstrapPeers ?? []),
-      ...(config?.configuredRelays?.filter((r) => r.enabled && r.addr).map((r) => r.addr) ?? []),
-    ];
-    if (config?.bootstrapPresets?.includes("cn-relay")) {
-      extraRelays.push(
-        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo",
-      );
-    }
-
-    const relayPool = dedupeDialHints([...seeds, ...extraRelays]);
-
-    for (const addr of seeds) {
-      if (!addr.includes(recipientPeerId)) {
-        continue;
-      }
-      out.push(addr);
-      if (addr.includes("/p2p-circuit/")) {
-        out.push(...expandCircuitDialCandidates(addr, relayPool));
-      }
-    }
-
-    let synthetic = 0;
-    const maxSynthetic = 32;
-    for (const base of relayPool) {
-      if (synthetic >= maxSynthetic) {
-        break;
-      }
-      const c = relayCircuitToPeer(base, recipientPeerId);
-      if (c) {
-        out.push(c);
-        synthetic++;
-      }
-    }
-
-    return dedupeDialHints(out);
+    return buildOutboundDialHints({
+      recipientPeerId,
+      peerListenAddrs,
+      discoverySeedStore: this._discoverySeedStore,
+      config,
+      cliBootstrapPeers: this._cliBootstrapPeers,
+    });
   }
 
   async sendChat(targetOwnerId: string, text: string): Promise<void> {
@@ -1443,15 +1410,134 @@ class NodeServiceImpl implements NodeService {
   private _wireMeshEvents(): void {
     const mesh = this._mesh!;
     const profile = this._profile!;
+    const taskStore = this._taskStore!;
 
-    mesh.onMessage(async ({ envelope, remotePeerId }) => {
+    mesh.onMessage(async ({ envelope, remotePeerId, remoteAddr }) => {
       const guardDecision = this._inboundGuard!.inspect(envelope);
       if (guardDecision.action === "reject") return;
 
       const { intent } = envelope;
 
-      // Note: bond.* messages are handled by index.ts via bond-inbound.ts
-      // This handler only processes chat.message and other non-bond messages
+      if (
+        intent === "bond.request" ||
+        intent === "bond.accept" ||
+        intent === "bond.challenge" ||
+        intent === "bond.challenge.response"
+      ) {
+        const receivedAt = Date.now();
+        const correlationId = deriveCorrelationIdFromEnvelope(envelope);
+        const bond = await handleInboundBondIntent(
+          {
+            envelope,
+            profile,
+            remotePeerId,
+            receivedAt,
+            correlationId,
+            taskStore,
+            trustStore: this._trustStore,
+          },
+          (helloData) => {
+            this.storePendingHelloRequest(helloData);
+            this.emit("hello:request", helloData);
+          },
+          async (bondData) => {
+            this.emit("bond:established", bondData);
+            if (envelope.intent === "bond.request") {
+              try {
+                const payload = parseBondRequestPayload(envelope.payload);
+                await this._peerDirectoryStore.ensurePeerFromInboundChat({
+                  ownerId: payload.requesterOwnerId,
+                  peerId: remotePeerId,
+                  listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
+                });
+              } catch (err) {
+                console.error(`[bond:established] failed to store peer in directory:`, err);
+              }
+            } else if (envelope.intent === "bond.accept") {
+              try {
+                const payload = parseBondAcceptPayload(envelope.payload);
+                await this._peerDirectoryStore.ensurePeerFromInboundChat({
+                  ownerId: payload.responderOwnerId,
+                  peerId: remotePeerId,
+                  listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
+                });
+              } catch (err) {
+                console.error(`[bond:established] failed to store peer from bond.accept:`, err);
+              }
+            }
+          },
+        );
+        if (!bond.ok) {
+          await taskStore.appendAuditEvent(
+            createAuditEvent({
+              type: "message.rejected",
+              intent: envelope.intent,
+              messageId: envelope.messageId,
+              correlationId,
+              remotePeerId,
+              direction: "inbound",
+              verificationStatus: "rejected",
+              latencyMs: Date.now() - receivedAt,
+              outcome: "deny",
+              summary: `Rejected bond message: ${bond.reason}.`,
+              createdAt: envelope.createdAt,
+            }),
+          );
+          console.warn(`[rejected bond] ${envelope.intent}: ${bond.reason}`);
+          return;
+        }
+
+        if (bond.bondAcceptToRequester) {
+          const { requesterPeerId, requesterOwnerId } = bond.bondAcceptToRequester;
+          const humanProfile = await this._humanProfileStore.loadHumanProfile();
+          const displayName = humanProfile?.displayName ?? profile.owner.ownerId;
+          const unsignedAccept = createUnsignedEnvelope({
+            senderPeerId: derivePeerId(profile.device.publicKeyPem),
+            senderPublicKey: profile.device.publicKeyPem,
+            recipientPeerId: requesterPeerId,
+            intent: "bond.accept",
+            payload: createBondAcceptPayload({
+              responderOwnerId: profile.owner.ownerId,
+              requesterOwnerId,
+              message: `Hello from ${displayName}!`,
+            }),
+            correlationId,
+          });
+          const signedAccept = signUnsignedEnvelope(unsignedAccept, profile.device.privateKeyPem);
+          const requesterDir = await this._peerDirectoryStore.getPeerByOwnerId(requesterOwnerId);
+          try {
+            const autoHints = await buildOutboundDialHints({
+              recipientPeerId: requesterPeerId,
+              peerListenAddrs: requesterDir?.listenAddrs,
+              discoverySeedStore: this._discoverySeedStore,
+              config: await this._configStore.load(),
+              cliBootstrapPeers: this._cliBootstrapPeers,
+            });
+            const latencyMs = await mesh.send(requesterPeerId, signedAccept, { dialHints: autoHints });
+            await taskStore.appendAuditEvent(
+              createAuditEvent({
+                type: "message.sent",
+                intent: signedAccept.intent,
+                messageId: signedAccept.messageId,
+                correlationId: signedAccept.correlationId,
+                remotePeerId: requesterPeerId,
+                direction: "outbound",
+                latencyMs,
+                protocol: ENVOY_MESSAGE_PROTOCOL,
+                outcome: "record",
+                summary: "Sent bond.accept to requester after auto-accept.",
+                createdAt: signedAccept.createdAt,
+              }),
+            );
+          } catch (err) {
+            console.error(
+              `[bond.request] auto-accept: failed to send bond.accept to requester ${requesterPeerId}:`,
+              err instanceof Error ? err.message : err,
+            );
+          }
+        }
+        return;
+      }
 
       if (intent === "chat.message") {
         const payload = parseChatMessagePayload(envelope.payload);
@@ -1580,34 +1666,6 @@ class NodeServiceImpl implements NodeService {
       }
     }
   }
-}
-
-/** Build `/relay/p2p-circuit/p2p/<target>` when `relayBase` is a relay listen multiaddr (terminal `/p2p/<relayId>`). */
-function relayCircuitToPeer(relayBaseMultiaddr: string, targetPeerId: string): string | undefined {
-  const s = relayBaseMultiaddr.trim().replace(/\/$/, "");
-  if (!s || !s.includes("/p2p/") || s.includes("/p2p-circuit/")) {
-    return undefined;
-  }
-  const m = s.match(/\/p2p\/([^/]+)$/);
-  const lastPeer = m?.[1];
-  if (!lastPeer || lastPeer === targetPeerId) {
-    return undefined;
-  }
-  return `${s}/p2p-circuit/p2p/${targetPeerId}`;
-}
-
-function dedupeDialHints(addrs: string[]): string[] {
-  const seen = new Set<string>();
-  const ordered: string[] = [];
-  for (const a of addrs) {
-    const t = a.trim();
-    if (!t || seen.has(t)) {
-      continue;
-    }
-    seen.add(t);
-    ordered.push(t);
-  }
-  return ordered;
 }
 
 /**

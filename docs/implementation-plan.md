@@ -472,7 +472,7 @@ Milestone: **Phase 7** operator console baseline is now feature-complete for thi
 
 - `[x]` **Docs:** `docs/scenarios.md`, `docs/UserStory.md`, `docs/alignment-review.md` in place as story / alignment spine.
 - `[x]` **Monorepo bootstrap:** npm workspaces, `packages/protocol`, `packages/identity`, `packages/bonds`, `packages/network`, `apps/node` entry, first tests, two-node signed ping.
-- `[x]` **Runtime slice:** EMP owner/device split, certified `system.signal`, Agent Card + mandate schemas, CLI (profile, audit, tasks, approvals, peers, vault), persisted trust store, `@envoymesh/local-store`, Electron dashboard shell + panels; `npm run typecheck`, `npm test`, `npm run desktop:build` clean.
+- `[x]` **Runtime slice:** EMP owner/device split, certified `system.signal`, Agent Card + mandate schemas, CLI (profile, audit, tasks, approvals, peers, vault), persisted trust store, `@envoymesh/local-store`, Social + Tauri (Electron retired); `npm run typecheck`, `npm test`, `npm run social:build && npm run node:build && npm run tauri:build` for native bundles.
 - `[x]` **Observability / termination slice:** Phase 4C (correlation, audit enrichment, optional `p2p.trace`, probes, dashboard audit UX); Phase 4D (mandate/propose expiry, cancel / satisfied / `closeOnFirstCompletedResult`, `task-runtime-state`, CLI flags).
 - `[!]` **Live connectivity proofs** outside the default CI runner (mDNS / DHT / relay / DCUtR) — same as Phase 4 `[!]` items and [live-connectivity-testing.md](./live-connectivity-testing.md).
 
