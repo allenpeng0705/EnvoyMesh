@@ -4,32 +4,29 @@ EnvoyMesh supports different deployment scenarios for different use cases.
 
 ---
 
-## Scenario 1: Personal Desktop App
+## Scenario 1: End-user desktop (Tauri + Social web UI)
 
-**Use case:** End user running EnvoyMesh on their computer.
+**Use case:** Someone runs EnvoyMesh like a normal desktop app. **Tauri is only a native wrapper** around the same **Social** frontend (HTML/CSS/JS) you can also open in a browser during development; the bundled app also spawns the Node process.
 
 ```
 ┌─────────────────────────────────────────┐
 │  Your Desktop                            │
 │  ┌─────────────────────────────────┐    │
-│  │  EnvoyMesh App (Tauri)           │    │
-│  │  ├── Social UI (React)           │    │
-│  │  ├── Node (libp2p + app logic)   │    │
-│  │  └── Relay Client + Server       │    │
+│  │  Tauri window (WebView)          │    │
+│  │    → Social UI (React SPA)      │    │
+│  │  + child: Node (libp2p, WS API)  │    │
 │  └─────────────────────────────────┘    │
 └─────────────────────────────────────────┘
 ```
 
 **Characteristics:**
-- Social node + relay server combined
-- May be behind NAT (limited relay server capability)
-- Runs only when app is open
-- Uses relays from cloud VPS or public relays
+- User-facing surface is the **web** Social app; Tauri provides the window, menus, and lifecycle.
+- Node + relay behavior matches other scenarios; profile for the packaged app is under the OS app-data path (see `apps/tauri/src-tauri/src/main.rs`).
 
 **How to run:**
 ```bash
-npm run tauri:dev          # Development
-npm run tauri:build        # Production build
+npm run tauri:dev          # Development (native window)
+npm run tauri:build        # Production bundle (after social:build + node:build)
 ```
 
 ---

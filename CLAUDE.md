@@ -36,7 +36,7 @@ EnvoyMesh/
 │   ├── node/          # Node.js runtime: CLI, mesh, WebSocket API for Social
 │   ├── relay/         # Relay node binary
 │   ├── social/        # Social/chat UI (Vite + React)
-│   └── tauri/         # Native shell: bundles Social + spawned Node (no Electron)
+│   └── tauri/         # End-user native wrapper: WebView loads Social web UI + spawns Node (no Electron)
 ├── packages/
 │   ├── protocol/      # Core protocol: Zod schemas, payload constructors, canonical JSON
 │   ├── identity/      # Ed25519 keys, signing/verification, device certificates, mandates

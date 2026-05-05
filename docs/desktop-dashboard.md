@@ -1,10 +1,10 @@
-# Desktop dashboard (Electron path — retired)
+# Desktop UI: Tauri wraps the Social web app
 
-The previous **Electron + Vite operator console** under `apps/desktop` has been removed. Day-to-day UI is the **Social** app (`apps/social`), with an optional native shell:
+End users normally run **`apps/tauri`**: a **native window whose content is the same Social frontend** (`apps/social`) you develop in the browser—HTML/CSS/JS loaded from built static assets. Tauri also **spawns the Node** runtime (`apps/node`) so mesh + WebSocket API are local to the machine.
 
-- **Browser + Node**: run `npm run node:dev` (WebSocket on `:3030`) and `npm run social:dev`, then open the Vite URL.
-- **Native shell**: `apps/tauri` loads the built Social UI (`npm run social:build`) and spawns the compiled Node entrypoint (`npm run node:build`). See root `npm run tauri:dev` / `npm run tauri:build`.
+Two ways to work:
 
-Tauri resolves profile data under its app-data directory (`ENVOYMESH_PROFILE` override is still respected when spawning Node—see `apps/tauri/src-tauri/src/main.rs`).
+- **Production-like / end users**: `npm run tauri:dev` / `npm run tauri:build`. Profile for the spawned node defaults under OS app-data (see `apps/tauri/src-tauri/src/main.rs`).
+- **Developers**: `npm run node:dev` (`--profile` / env as needed) plus `npm run social:dev` to hit the WebSocket API from the Vite dev server.
 
-The old Electron-specific preload / IPC assumptions do not apply. For parity features (relay panels, dashboards), prefer extending Social + Node over reviving Electron.
+The retired **Electron** operator app (`apps/desktop`) is gone; extend **Social** for new graphical features instead of rebuilding a second desktop stack.

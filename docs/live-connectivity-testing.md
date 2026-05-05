@@ -240,21 +240,15 @@ If **`checkinFail`** or **`lookupFail`** increase, check relay logs for **`inval
 
 If the roster on the relay is healthy but responses stay zero, verify both Windows clients use the **same reachable `<relay-multiaddr>`** and **`--auto-relay-peers-query`** (dashboard) or the full node’s relay client timers.
 
-### 4.7 Optional: open the Relay Manager desktop dashboard
+### 4.7 Optional: inspect relay state in **Social** + CLI
 
-On the **relay** machine:
+On the **relay** machine (node already running for the relay profile), open the UI:
 
 ```bash
-ENVOYMESH_PROFILE="$HOME/envoymesh/mac_relay" \
-ENVOYMESH_VAULT="$PWD/shared_vault" \
-npm run desktop:dev
+npm run social:dev
 ```
 
-Open the Relay Manager panel and confirm:
-
-- roster peers: `2`
-- relay neighbors/summaries as available
-- recent relay traces for check-in, lookup, and manager snapshots
+Use Social for high-level visibility; use **`relay-status`** and audit/trace flags on the CLI for definitive relay roster and snapshots.
 
 ### 4.8 Troubleshooting this scenario
 

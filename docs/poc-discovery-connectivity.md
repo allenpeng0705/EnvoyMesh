@@ -249,7 +249,7 @@ From **`connectivity-status`** you expect meaningful **bootstrap peer count**, n
 npm run cli -w @envoymesh/node -- connectivity-status --profile ./data/primary --rich
 ```
 
-The **Electron dashboard** shows the same heuristic as a **Discovery Health** banner (green / amber / blue / neutral) above the metric tiles when you refresh.
+The **Social** app can surface similar discovery health cues; **`connectivity-status --rich`** remains the authoritative text snapshot.
 
 Stage D is where **two machines** (Mac + Windows) usually validate **real** Envoy workloads once A–C passed on each OS separately.
 

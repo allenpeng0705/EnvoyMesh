@@ -1,6 +1,6 @@
 # EnvoyMesh QuickStart
 
-This guide shows how to install, build, verify, run the node, use the CLI, validate relay discovery, and launch the desktop dashboard.
+This guide shows how to install, build, verify, run the node, use the CLI, validate relay discovery, and launch the **Social** UI (browser or **Tauri** native wrapper).
 
 Requirements narrative: [docs/UserStory.md](docs/UserStory.md). Scenario backlog: [docs/scenarios.md](docs/scenarios.md). Design vs code: [docs/alignment-review.md](docs/alignment-review.md).
 
@@ -32,16 +32,17 @@ Run the test suite:
 npm test
 ```
 
-Build the Electron dashboard:
+Build what the **Tauri** app embeds (Social static UI + Node entrypoint):
 
 ```bash
-npm run desktop:build
+npm run social:build
+npm run node:build
 ```
 
-Build desktop installers/artifacts:
+Create a native installer / bundle:
 
 ```bash
-npm run desktop:dist
+npm run tauri:build
 ```
 
 ## Local Data Layout
@@ -279,38 +280,27 @@ This script dials a victim multiaddr and sends a small set of intentionally host
 npm run social:challenge -w @envoymesh/node -- --target "<victim-multiaddr>" --scenario all
 ```
 
-## Run The Desktop Dashboard
+## Run the Social UI (Tauri or browser)
 
-Launch the Electron dashboard:
-
-```bash
-npm run desktop:dev
-```
-
-Use custom profile and vault paths:
+**Tauri (end-user style):** native window loading the same web UI as production.
 
 ```bash
-ENVOYMESH_PROFILE=./data/alice ENVOYMESH_VAULT=./shared_vault npm run desktop:dev
+npm run tauri:dev
 ```
 
-Pin the repository root explicitly if needed:
+The packaged app stores profile data under the Tauri app-data directory and sets `ENVOYMESH_PROFILE` for the spawned Node process (see `apps/tauri/src-tauri/src/main.rs`).
+
+**Browser (full control of profile flags):** run the node with your profile, then open the Vite dev server.
 
 ```bash
-ENVOYMESH_WORKSPACE=/path/to/EnvoyMesh npm run desktop:dev
+ENVOYMESH_PROFILE=./data/alice ENVOYMESH_VAULT=./shared_vault npm run node:dev
+# other terminal:
+npm run social:dev
 ```
 
-The dashboard shows:
+If the repo root is ambiguous to tooling, set `ENVOYMESH_WORKSPACE=/path/to/EnvoyMesh` where supported.
 
-- Owner and device profile.
-- Approval queue with approve/reject actions.
-- Trust records with set/remove actions.
-- Observed peers from audit events.
-- Recent tasks and audit events.
-- Shared vault summary and search.
-- Pairing request composer and pairing queue (approve/reject + deferred-peer retry).
-- Discovery Health and Relay Manager panels for WAN/relay diagnostics.
-
-## Two-Machine End-To-End Walkthrough (CLI + Dashboard)
+The **Social** app is the primary graphical surface (contacts, chat, discovery flows). Older Electron-only panels are not in this repo.
 
 Use machine A as `primary`, machine B as `satellite`.
 
@@ -338,14 +328,16 @@ Machine B sends pairing request:
 npm run node:dev -- --profile ./data/satellite --pair-request "<primary-multiaddr>" --pair-note "Request satellite pairing"
 ```
 
-Machine A opens dashboard and approves:
+Machine A opens Social and approves (node must run with `./data/primary`):
 
 ```bash
-ENVOYMESH_PROFILE=./data/primary ENVOYMESH_VAULT=./shared_vault npm run desktop:dev
+ENVOYMESH_PROFILE=./data/primary ENVOYMESH_VAULT=./shared_vault npm run node:dev
+# second terminal:
+npm run social:dev
 ```
 
-In dashboard:
-- Open **Pairing Queue**.
+In Social:
+- Open **Pairing Queue** (or equivalent flow in the current UI).
 - Approve the pending `pairing:*` request.
 
 Machine B verifies in audit:
@@ -421,7 +413,7 @@ Run on both Windows machines:
 npm run cli -w @envoymesh/node -- connectivity-status --profile "<profile-path>"
 ```
 
-Optional: append **`--rich`** for an ASCII snapshot panel. The desktop dashboard shows the same heuristic as a colored banner above Discovery Health metrics and includes the Relay Manager panel for the Mac relay profile.
+Optional: append **`--rich`** for an ASCII snapshot panel. The **Social** app may surface similar connectivity context; deep relay diagnostics are also available via CLI (`relay-status`, audit with `--include-p2p-trace`).
 
 Expect relay traces such as `relay.checkin.ok`, `relay.lookup.ok`, `relay.lookup.response`, and relay peer candidates using `/p2p-circuit/p2p/<other-windows-peer-id>`.
 
@@ -434,7 +426,7 @@ npm run node:dev -- --profile "$env:USERPROFILE\envoymesh\win_a" --ping "<win-b-
 npm run node:dev -- --profile "$env:USERPROFILE\envoymesh\win_a" --chat "<win-b-relay-circuit-multiaddr>" --chat-text "hello through mac relay" --correlation-id "chat-wina-winb-1"
 ```
 
-### 5) Verify in CLI + Dashboard
+### 5) Verify in CLI + Social
 
 Mac CLI:
 
@@ -443,10 +435,10 @@ npm run cli -w @envoymesh/node -- audit --profile "/Users/<you>/Documents/mygith
 npm run cli -w @envoymesh/node -- relay-status --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/mac-relay"
 ```
 
-Mac dashboard:
+Mac Social (browser): with the node already running for this profile, use a second terminal:
 
 ```bash
-ENVOYMESH_PROFILE="/Users/<you>/Documents/mygithub/EnvoyMesh/data/mac-relay" ENVOYMESH_VAULT="/Users/<you>/Documents/mygithub/EnvoyMesh/shared_vault" npm run desktop:dev
+npm run social:dev
 ```
 
 ## WAN Discovery Troubleshooting (Short)
@@ -528,16 +520,16 @@ npm run cli -w @envoymesh/node -- audit --profile "/Users/<you>/Documents/mygith
 npm run cli -w @envoymesh/node -- tasks --profile "/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" --limit 40
 ```
 
-8) Open Mac dashboard on same profile:
+8) Open **Social** on Mac for the same profile (node already running from step 1):
 
 ```bash
-ENVOYMESH_PROFILE="/Users/<you>/Documents/mygithub/EnvoyMesh/data/primary" ENVOYMESH_VAULT="/Users/<you>/Documents/mygithub/EnvoyMesh/shared_vault" npm run desktop:dev
+npm run social:dev
 ```
 
-9) Confirm dashboard shows:
-- Recent Audit rows for `system.signal`, `system.ping`, `chat.message`, `task.propose`, and data transfer events.
+9) Confirm the UI shows:
+- Recent Audit rows for `system.signal`, `system.ping`, `chat.message`, `task.propose`, and data transfer events (and/or use CLI `audit` for full detail).
 - Chat thread entries and task updates for `task-w2m-1`.
-- Discovery Health metrics with bootstrap counts and warnings.
+- Connectivity / discovery indicators as implemented in Social (use CLI `connectivity-status --rich` for the full text panel).
 
 ## Live Connectivity Smoke Tests
 
@@ -561,8 +553,8 @@ npm run poc:discovery -w @envoymesh/node -- --mode advanced --bootstrap "<bootst
 npm run typecheck
 npm test
 npm run node:dev
-npm run desktop:dev
-npm run desktop:build
+npm run social:dev
+npm run tauri:dev
 npm run cli -w @envoymesh/node -- --help
 npm run cli -w @envoymesh/node -- relay-status --profile ./data/relay
 ```

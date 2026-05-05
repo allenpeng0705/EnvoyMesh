@@ -131,10 +131,10 @@ npm run cli -w @envoymesh/node -- tasks --profile ./data/receiver --limit 40
 npm run cli -w @envoymesh/node -- pairing list --profile ./data/receiver
 ```
 
-6. Verify from dashboard (both machines or either profile):
+6. Verify in the **Social** UI (with the node already running for `./data/receiver`):
 
 ```bash
-ENVOYMESH_PROFILE=./data/receiver ENVOYMESH_VAULT=./shared_vault npm run desktop:dev
+npm run social:dev
 ```
 
 ### Cross-Network Relay Check (Mac Relay + Two Windows)
@@ -226,7 +226,7 @@ Python, Rust, Go, or native binaries can still be used where they are strongest.
 - [Layered Relay Network](docs/layered-relay-network.md)
 - [EnvoyMesh Protocol](docs/protocol-standard.md)
 - [Developer CLI](docs/developer-cli.md)
-- [Desktop Dashboard](docs/desktop-dashboard.md)
+- [Social UI + Tauri shell](docs/desktop-dashboard.md)
 - [Architecture](docs/architecture.md)
 - [Model Strategy](docs/model-strategy.md)
 - [Security Model](docs/security.md)
