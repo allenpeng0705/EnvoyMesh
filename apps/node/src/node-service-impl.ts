@@ -175,9 +175,11 @@ class NodeServiceImpl implements NodeService {
     if (profileDir && profileDir !== "/tmp/unknown") {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
     }
+    if (profile !== undefined) {
+      this._profile = profile;
+    }
     if (mesh) {
       this._nodeStatus = "running";
-      this._profile = profile;
     }
   }
 

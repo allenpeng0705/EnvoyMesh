@@ -386,11 +386,12 @@ function appendChatToThreads(
   if (list.some((m) => m.messageId === msg.messageId)) {
     return prev;
   }
-  const nextList = [...list, msg].sort(
-    (a, b) =>
-      new Date(a.metadata.timestamp).getTime() -
-      new Date(b.metadata.timestamp).getTime(),
-  );
+  const ts = (m: ChatMessage) => {
+    const raw = m.metadata?.timestamp;
+    const n = typeof raw === "string" ? new Date(raw).getTime() : NaN;
+    return Number.isFinite(n) ? n : 0;
+  };
+  const nextList = [...list, msg].sort((a, b) => ts(a) - ts(b));
   return { ...prev, [key]: nextList };
 }
 
@@ -442,8 +443,9 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
     void client
       .listChatHistory(selectedContactOwnerId)
       .then((history) => {
-        if (cancelled || history.length === 0) return;
-        const self = selfIds;
+        if (cancelled || !Array.isArray(history) || history.length === 0) return;
+        const self = selfIdsRef.current;
+        if (!self?.ownerId) return;
         setThreads((prev) => {
           let next = prev;
           for (const msg of history) {
@@ -457,7 +459,7 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [client, client.isConnected, selectedContactOwnerId, selfIds]);
+  }, [client, client.isConnected, selectedContactOwnerId, selfIds?.ownerId]);
 
   useEffect(() => {
     if (!selfIds?.ownerId) return;
