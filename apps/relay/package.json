@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx src/index.ts",
+    "prebuild": "tsc -p ../../packages/network/tsconfig.json",
     "build": "tsc",
     "start": "node dist/index.js"
   },

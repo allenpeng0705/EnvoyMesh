@@ -10,7 +10,7 @@
   "scripts": {
     "node:dev": "npm exec -w @envoymesh/node -- tsx src/index.ts",
     "relay:dev": "npm exec -w @envoymesh/relay -- tsx src/index.ts",
-    "relay:build": "npm exec -w @envoymesh/relay -- tsc -p tsconfig.json",
+    "relay:build": "npm run build -w @envoymesh/relay",
     "tauri:dev": "npm run dev -w @envoymesh/tauri --",
     "tauri:build": "npm run build -w @envoymesh/tauri --",
     "tauri:build:mac": "npm run build:mac -w @envoymesh/tauri --",
