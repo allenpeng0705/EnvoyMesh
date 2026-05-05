@@ -54,6 +54,7 @@ import {
   type EnvoyMeshOptions,
 } from "@envoymesh/network";
 import { join } from "node:path";
+import { expandCircuitDialCandidates } from "./discovery-inbound.js";
 
 /**
  * NodeServiceImpl implements the NodeService interface.
@@ -132,6 +133,9 @@ class NodeServiceImpl implements NodeService {
     this._humanProfileStore = humanProfileStore;
     this._profileDir = profileDir ?? "/tmp/unknown";
     this._configStore = profileDir ? createNodeConfigStore(profileDir) : createStubNodeConfigStore();
+    if (profileDir && profileDir !== "/tmp/unknown") {
+      this._discoverySeedStore = createDiscoverySeedStore(profileDir);
+    }
     if (mesh) {
       this._nodeStatus = "running";
       this._profile = profile;
@@ -635,6 +639,57 @@ class NodeServiceImpl implements NodeService {
   // Messaging
   // ============================================
 
+  /**
+   * Merge peer-directory listen addrs with discovery seeds and synthetic relay circuit paths.
+   * Contacts from bond/hello often store empty listenAddrs; without `/p2p-circuit/...` hints, outbound
+   * chat fails across NAT for one direction.
+   */
+  private async _dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]> {
+    const out: string[] = [...(peerListenAddrs ?? [])];
+    if (!this._discoverySeedStore) {
+      return dedupeDialHints(out);
+    }
+
+    const config = await this._configStore.load();
+    const seeds = await this._discoverySeedStore.listSeedAddrs();
+    const extraRelays: string[] = [
+      ...(config?.bootstrapPeers ?? []),
+      ...(config?.configuredRelays?.filter((r) => r.enabled && r.addr).map((r) => r.addr) ?? []),
+    ];
+    if (config?.bootstrapPresets?.includes("cn-relay")) {
+      extraRelays.push(
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo",
+      );
+    }
+
+    const relayPool = dedupeDialHints([...seeds, ...extraRelays]);
+
+    for (const addr of seeds) {
+      if (!addr.includes(recipientPeerId)) {
+        continue;
+      }
+      out.push(addr);
+      if (addr.includes("/p2p-circuit/")) {
+        out.push(...expandCircuitDialCandidates(addr, relayPool));
+      }
+    }
+
+    let synthetic = 0;
+    const maxSynthetic = 32;
+    for (const base of relayPool) {
+      if (synthetic >= maxSynthetic) {
+        break;
+      }
+      const c = relayCircuitToPeer(base, recipientPeerId);
+      if (c) {
+        out.push(c);
+        synthetic++;
+      }
+    }
+
+    return dedupeDialHints(out);
+  }
+
   async sendChat(targetOwnerId: string, text: string): Promise<void> {
     this._assertOnline();
     const mesh = this._requireMesh();
@@ -642,17 +697,17 @@ class NodeServiceImpl implements NodeService {
 
     console.log(`[sendChat] targetOwnerId=${targetOwnerId}, text=${text}`);
 
-    // Look up peer's peerId by ownerId
-    const peerRecords = await this._peerDirectoryStore.listPeerRecords();
-    console.log(`[sendChat] peerRecords count=${peerRecords.length}`, peerRecords.map(r => r.ownerId));
-    const targetPeer = peerRecords.find((r) => r.ownerId === targetOwnerId);
+    const targetPeer = await this._peerDirectoryStore.getPeerByOwnerId(targetOwnerId);
 
     if (!targetPeer) {
       throw new Error(`Peer not found for owner: ${targetOwnerId}`);
     }
 
     const recipientPeerId = targetPeer.peerId;
-    console.log(`[sendChat] sending to recipientPeerId=${recipientPeerId}`);
+    const dialHints = await this._dialHintsForChat(recipientPeerId, targetPeer.listenAddrs);
+    console.log(
+      `[sendChat] recipientPeerId=${recipientPeerId} storedListenAddrs=${(targetPeer.listenAddrs ?? []).length} dialHints=${dialHints.length}`,
+    );
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({
         senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
@@ -668,7 +723,7 @@ class NodeServiceImpl implements NodeService {
     );
 
     await mesh.sendChat(recipientPeerId, envelope, {
-      dialHints: targetPeer.listenAddrs ?? [],
+      dialHints,
     });
 
     const emittedMsg = {
@@ -1201,7 +1256,7 @@ class NodeServiceImpl implements NodeService {
       // Create app-managed stores
       this._taskStore = createLocalTaskStore(config.profileDir);
       this._relayStateStore = createRelayStateStore(config.profileDir);
-      this._discoverySeedStore = createDiscoverySeedStore(config.profileDir);
+      this._discoverySeedStore = this._discoverySeedStore ?? createDiscoverySeedStore(config.profileDir);
       this._taskRuntimeStore = createTaskRuntimeStateStore(config.profileDir);
       this._inboundGuard = createInboundMessageGuard();
       this._taskDispatcher = createTaskDispatcher();
@@ -1419,6 +1474,34 @@ class NodeServiceImpl implements NodeService {
       }
     }
   }
+}
+
+/** Build `/relay/p2p-circuit/p2p/<target>` when `relayBase` is a relay listen multiaddr (terminal `/p2p/<relayId>`). */
+function relayCircuitToPeer(relayBaseMultiaddr: string, targetPeerId: string): string | undefined {
+  const s = relayBaseMultiaddr.trim().replace(/\/$/, "");
+  if (!s || !s.includes("/p2p/") || s.includes("/p2p-circuit/")) {
+    return undefined;
+  }
+  const m = s.match(/\/p2p\/([^/]+)$/);
+  const lastPeer = m?.[1];
+  if (!lastPeer || lastPeer === targetPeerId) {
+    return undefined;
+  }
+  return `${s}/p2p-circuit/p2p/${targetPeerId}`;
+}
+
+function dedupeDialHints(addrs: string[]): string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const a of addrs) {
+    const t = a.trim();
+    if (!t || seen.has(t)) {
+      continue;
+    }
+    seen.add(t);
+    ordered.push(t);
+  }
+  return ordered;
 }
 
 /**

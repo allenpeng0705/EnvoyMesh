@@ -1202,7 +1202,18 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
     },
 
     async getPeerByOwnerId(ownerId) {
-      return withDirectory((file) => Promise.resolve(file.records.find((record) => record.ownerId === ownerId)));
+      return withDirectory((file) => {
+        const matches = file.records.filter((record) => record.ownerId === ownerId);
+        if (matches.length === 0) {
+          return Promise.resolve(undefined);
+        }
+        if (matches.length === 1) {
+          return Promise.resolve(matches[0]);
+        }
+        return Promise.resolve(
+          matches.reduce((a, b) => (a.lastSeenAt >= b.lastSeenAt ? a : b)),
+        );
+      });
     },
 
     async upsertPeerFromSignal(input) {
