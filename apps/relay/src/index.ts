@@ -15,6 +15,8 @@ import {
   parseRendezvousRegisterPayload,
   parseRendezvousQueryPayload,
   createRendezvousResponsePayload,
+  RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
+  RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
 
@@ -161,12 +163,12 @@ try {
         messageId: randomUUID(),
         createdAt: new Date().toISOString(),
         senderPeerId: mesh.peerId,
-        senderPublicKey: "",
+        senderPublicKey: RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
         senderRole: "agent",
         recipientPeerId: message.envelope.senderPeerId,
         recipientRole: "agent",
         intent: "rendezvous.response",
-        signature: "",
+        signature: RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
         payload: responsePayload,
       } as EnvoyEnvelope);
     };

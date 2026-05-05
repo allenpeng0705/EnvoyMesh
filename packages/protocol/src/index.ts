@@ -592,6 +592,13 @@ export const RelaySummaryPayloadSchema = z.object({
 });
 
 /**
+ * Relay/node `rendezvous.response` replies use these strings so {@link EnvoyEnvelopeSchema} passes;
+ * they are not Ed25519 device signatures and clients must not treat them as authenticated.
+ */
+export const RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY = "relay:rendezvous-response/unsigned-placeholder";
+export const RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE = "relay:rendezvous-response/unsigned-placeholder";
+
+/**
  * Rendezvous Registration Payload
  * Peers send this to register their capabilities with the rendezvous server
  */
