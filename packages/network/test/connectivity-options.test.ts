@@ -36,4 +36,17 @@ describe("EnvoyMesh connectivity options", () => {
 
     expect(mesh.enabledFeatures).toEqual(["dht"]);
   });
+
+  it("lists reachability-log when dedicated reachability console logging is on", () => {
+    const mesh = new EnvoyMesh({
+      enableMdns: false,
+      enableReachabilityLog: true,
+      enableRelay: false,
+      enableRelayServer: false,
+      enableDht: false,
+    });
+
+    expect(mesh.enabledFeatures).toContain("reachability-log");
+    expect(mesh.enabledFeatures).not.toContain("mdns");
+  });
 });

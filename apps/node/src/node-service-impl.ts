@@ -98,6 +98,8 @@ function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Pro
  */
 class NodeServiceImpl implements NodeService {
   private _mesh: EnvoyMesh | undefined;
+  /** When libp2p is started by `index.ts` (CLI) with `createNodeService(undefined, …)`, this points at that stack for reachability tagging. */
+  private _externalMesh?: EnvoyMesh;
   private _profile: NodeProfile | undefined;
   private readonly _trustStore: LocalTrustStore;
   private readonly _peerDirectoryStore: LocalPeerDirectoryStore;
@@ -192,6 +194,63 @@ class NodeServiceImpl implements NodeService {
       throw new Error("Node is not running. Call startNode() first.");
     }
     return this._mesh;
+  }
+
+  /**
+   * CLI path: the running `EnvoyMesh` from `index.ts` so bond/chat/block paths can set libp2p KEEP_ALIVE-style tags
+   * (reconnect queue redials automatically after disconnect).
+   */
+  bindExternalMesh(mesh: EnvoyMesh): void {
+    this._externalMesh = mesh;
+  }
+
+  /** Re-apply contact reachability tags from the trust store (after cold start or mesh restart). */
+  async resyncBondedContactReachabilityTags(): Promise<void> {
+    await this._resyncBondedContactReachabilityTags();
+  }
+
+  private _reachableMesh(): EnvoyMesh | undefined {
+    return this._mesh ?? this._externalMesh;
+  }
+
+  private async _tagBondedContactReachability(libp2pPeerId: string): Promise<void> {
+    const mesh = this._reachableMesh();
+    if (!mesh) return;
+    try {
+      await mesh.tagContactForPersistentReachability(libp2pPeerId);
+    } catch (e) {
+      console.warn(`[reachability] tag failed for ${libp2pPeerId.slice(0, 12)}…:`, e);
+    }
+  }
+
+  private async _untagReachabilityForOwner(peerOwnerId: string): Promise<void> {
+    const mesh = this._reachableMesh();
+    if (!mesh) return;
+    try {
+      const rec = await this._peerDirectoryStore.getPeerByOwnerId(peerOwnerId);
+      if (rec?.peerId) {
+        await mesh.untagContactForPersistentReachability(rec.peerId);
+      }
+    } catch (e) {
+      console.warn(`[reachability] untag failed for owner ${peerOwnerId}:`, e);
+    }
+  }
+
+  private async _resyncBondedContactReachabilityTags(): Promise<void> {
+    const mesh = this._reachableMesh();
+    if (!mesh) return;
+    try {
+      const trust = await this._trustStore.listTrustRecords();
+      for (const r of trust) {
+        if (r.level === "blocked") continue;
+        const dir = await this._peerDirectoryStore.getPeerByOwnerId(r.peerOwnerId);
+        if (dir?.peerId) {
+          await mesh.tagContactForPersistentReachability(dir.peerId);
+        }
+      }
+    } catch (e) {
+      console.warn(`[reachability] resync tags failed:`, e);
+    }
   }
 
   private _requireProfile(): NodeProfile {
@@ -539,6 +598,7 @@ class NodeServiceImpl implements NodeService {
       } catch (err) {
         console.warn(`[peer-directory] sendHello ensurePeerFromInboundChat:`, err);
       }
+      void this._tagBondedContactReachability(targetPeerId);
     } catch (err) {
       console.error(`[node-service] Failed to send hello to ${targetPeerId}:`, err);
       // Provide a more helpful error message
@@ -633,6 +693,8 @@ class NodeServiceImpl implements NodeService {
       displayName: pending.requesterDisplayName,
     });
 
+    void this._tagBondedContactReachability(pending.remotePeerId);
+
     // Remove from pending requests
     this._pendingHelloRequests.delete(messageId);
 
@@ -656,6 +718,7 @@ class NodeServiceImpl implements NodeService {
       level: "blocked",
       now: new Date().toISOString(),
     });
+    await this._untagReachabilityForOwner(peerOwnerId);
   }
 
   async unblockPeer(peerOwnerId: string): Promise<void> {
@@ -672,6 +735,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async revokeBond(peerOwnerId: string): Promise<void> {
+    await this._untagReachabilityForOwner(peerOwnerId);
     await this._trustStore.removeTrustRecord(peerOwnerId);
     this.emit("bond:revoked", { peerOwnerId });
   }
@@ -813,6 +877,7 @@ class NodeServiceImpl implements NodeService {
     await mesh.sendChat(transportPeerId, envelope, {
       dialHints,
     });
+    void this._tagBondedContactReachability(transportPeerId);
 
     const emittedMsg = {
       messageId: envelope.messageId,
@@ -1423,6 +1488,8 @@ class NodeServiceImpl implements NodeService {
       // Start mesh
       await this._mesh.start();
 
+      void this._resyncBondedContactReachabilityTags();
+
       this._nodeStatus = "running";
       this.emit("node:status", { status: this._nodeStatus, peerId: this._mesh.peerId });
 
@@ -1497,6 +1564,7 @@ class NodeServiceImpl implements NodeService {
                 console.error(`[bond:established] failed to store peer from bond.accept:`, err);
               }
             }
+            void this._tagBondedContactReachability(remotePeerId);
           },
         );
         if (!bond.ok) {
@@ -1561,6 +1629,7 @@ class NodeServiceImpl implements NodeService {
                 createdAt: signedAccept.createdAt,
               }),
             );
+            void this._tagBondedContactReachability(requesterPeerId);
           } catch (err) {
             console.error(
               `[bond.request] auto-accept: failed to send bond.accept to requester ${requesterPeerId}:`,
@@ -1593,6 +1662,9 @@ class NodeServiceImpl implements NodeService {
         };
         this._persistChatMessage(payload.senderOwnerId, incomingMsg);
         this.emit("chat:message", incomingMsg);
+        if (senderTrust && senderTrust.level !== "blocked") {
+          void this._tagBondedContactReachability(remotePeerId);
+        }
       }
     });
 

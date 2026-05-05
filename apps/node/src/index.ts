@@ -101,7 +101,7 @@ import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
 import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
 import { installEnvoyDataTransferReceiver } from "./data-transfer-inbound.js";
-import { createNodeService } from "./node-service-impl.js";
+import { createNodeService, NodeServiceImpl } from "./node-service-impl.js";
 import { WsServer } from "./ws-server.js";
 import { evaluateInboundEnvelopeRolePolicy } from "./role-policy.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
@@ -708,6 +708,12 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
 
   if (envelope.intent === "chat.message") {
     const payload = parseChatMessagePayload(envelope.payload);
+    const senderTrustForReach = await trustStore.getTrustRecord(payload.senderOwnerId);
+    if (senderTrustForReach && senderTrustForReach.level !== "blocked") {
+      void mesh.tagContactForPersistentReachability(remotePeerId).catch((err) =>
+        console.warn(`[reachability] inbound chat tag failed:`, err),
+      );
+    }
     void peerDirectoryStore
       .ensurePeerFromInboundChat({
         ownerId: payload.senderOwnerId,
@@ -992,6 +998,9 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
             console.error(`[bond:established] failed to store peer from bond.accept:`, err);
           }
         }
+        void mesh.tagContactForPersistentReachability(remotePeerId).catch((err) =>
+          console.warn(`[reachability] bond tag failed:`, err),
+        );
       },
     );
     if (!bond.ok) {
@@ -1055,6 +1064,9 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
             summary: "Sent bond.accept to requester after auto-accept.",
             createdAt: signedAccept.createdAt,
           }),
+        );
+        void mesh.tagContactForPersistentReachability(requesterPeerId).catch((err) =>
+          console.warn(`[reachability] auto bond.accept tag failed:`, err),
         );
       } catch (err) {
         console.error(
@@ -1180,6 +1192,10 @@ const nodeService = createNodeService(
   profile,
   effectiveBootstrapPeers,
 );
+if (nodeService instanceof NodeServiceImpl) {
+  nodeService.bindExternalMesh(mesh);
+  void nodeService.resyncBondedContactReachabilityTags();
+}
 
 // Start WebSocket server for app connections
 const wsServer = new WsServer(3030, "/ws");
@@ -1461,6 +1477,11 @@ for (const outbound of buildOutboundCliEnvelopes(resolvedArgs, profile)) {
   const latencyMs = isChat
     ? await mesh.sendChat(outbound.target, outbound.envelope)
     : await mesh.send(outbound.target, outbound.envelope);
+  if (isChat) {
+    void mesh.tagContactForPersistentReachability(outbound.target).catch((err) =>
+      console.warn(`[reachability] CLI outbound chat tag failed:`, err),
+    );
+  }
   await taskStore.appendAuditEvent(
     createAuditEvent({
       type: "message.sent",

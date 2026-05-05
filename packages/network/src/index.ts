@@ -10,7 +10,8 @@ import { mdns } from "@libp2p/mdns";
 import { ping } from "@libp2p/ping";
 import { tcp } from "@libp2p/tcp";
 import { byteStream } from "@libp2p/utils";
-import type { RoutingOptions } from "@libp2p/interface";
+import { KEEP_ALIVE, type RoutingOptions } from "@libp2p/interface";
+import { peerIdFromString } from "@libp2p/peer-id";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { multiaddr } from "@multiformats/multiaddr";
 import type { CID } from "multiformats/cid";
@@ -33,9 +34,31 @@ export const ENVOY_MESSAGE_PROTOCOL = "/envoymesh/message/0.1.0";
 export const ENVOY_CHAT_PROTOCOL = "/envoymesh/chat/0.1.0";
 export const ENVOY_DATA_PROTOCOL = "/envoymesh/data/0.1.0";
 
+/** Prefix `keep-alive-*` triggers libp2p reconnect-on-disconnect queue for bonded contacts */
+const CONTACT_KEEP_ALIVE_PEER_TAG = `${KEEP_ALIVE}-envoymesh-contact`;
+
+/** True when reconnect-queue schedules redials after disconnect (any peer-store tag prefixed with KEEP_ALIVE, same rule as libp2p reconnect queue). */
+export function peerTagsTriggerReconnectQueue(tagNames: Iterable<string>): boolean {
+  for (const name of tagNames) {
+    if (typeof name === "string" && name.startsWith(KEEP_ALIVE)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Envoy tag name merged by {@link EnvoyMesh.tagContactForPersistentReachability}. */
+export function getEnvoyContactKeepAlivePeerTagName(): string {
+  return CONTACT_KEEP_ALIVE_PEER_TAG;
+}
+
 /**
  * When libp2p still reports a connection as open, `newStream` can hang or fail after NAT sleep,
  * idle TCP half-open state, or relay path expiry (often seen on Windows). We time out and force a fresh dial.
+ *
+ * Relay `/p2p-circuit` connections often carry `connection.limits` (Circuit Relay v2 "limited" conns).
+ * `newStream()` throws `LimitedConnectionError` on those unless opting into `runOnLimitedConnection`.
+ * Reusing them for Envoy app protocols is wrong — we only reuse **unlimited** connections and otherwise dial fresh.
  */
 const NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS = 15_000;
 
@@ -118,6 +141,11 @@ export interface EnvoyMeshOptions {
   enableQuic?: boolean;
   enableP2pDebug?: boolean;
   /**
+   * Log `[reachability] …` on `peer:disconnect` (peer store tags, reconnect-queue eligibility) and
+   * `peer:reconnect-failure` when libp2p exhausts KEEP_ALIVE redials. Does not imply full {@link enableP2pDebug}.
+   */
+  enableReachabilityLog?: boolean;
+  /**
    * When true with enableP2pDebug, periodically print `[relay-debug] SUMMARY: ...` from the relay connection scan.
    * Defaults false because the summary is very chatty during idle relays.
    */
@@ -159,6 +187,10 @@ export class EnvoyMesh {
   private readonly relayConnectedPeers = new Set<string>();
   private relayDebugTimer?: ReturnType<typeof setInterval>;
   private node?: Libp2p;
+  private reachabilityLogHandlers?: {
+    disconnect: (event: unknown) => void;
+    reconnectFailure?: (event: unknown) => void;
+  };
 
   constructor(private readonly options: EnvoyMeshOptions = {}) {}
 
@@ -207,6 +239,18 @@ export class EnvoyMesh {
 
     this.node = await createLibp2p({
       ...(libp2pPrivateKey != null ? { privateKey: libp2pPrivateKey } : {}),
+      connectionMonitor: {
+        pingInterval: 6000,
+        abortConnectionOnPingFailure: true,
+      },
+      connectionManager: {
+        reconnectRetries: 10,
+        reconnectRetryInterval: 2000,
+        reconnectBackoffFactor: 1.5,
+        maxParallelReconnects: 10,
+        dialTimeout: 15_000,
+        addressDialTimeout: 10_000,
+      },
       addresses: {
         listen: listenAddrs,
         ...(appendAnnounce.length > 0 ? { appendAnnounce } : {}),
@@ -281,6 +325,7 @@ export class EnvoyMesh {
 
     await this.node.start();
     this.attachP2pDebug(this.node);
+    this.attachReachabilityObservability(this.node);
   }
 
   async stop(): Promise<void> {
@@ -292,6 +337,7 @@ export class EnvoyMesh {
       clearInterval(this.relayDebugTimer);
       this.relayDebugTimer = undefined;
     }
+    this.detachReachabilityObservability();
     await this.node.stop();
     this.node = undefined;
   }
@@ -304,6 +350,27 @@ export class EnvoyMesh {
     return this.requireNode()
       .getMultiaddrs()
       .map((addr) => addr.toString());
+  }
+
+  /**
+   * Mark a bonded contact's libp2p dial id for persistent reachability (libp2p KEEP_ALIVE + reconnect-queue).
+   * Call when bonds settle and after outbound chat so NAT/relay idle drops trigger automatic redials.
+   */
+  async tagContactForPersistentReachability(libp2pPeerId: string): Promise<void> {
+    const idStr = libp2pPeerId.trim();
+    if (!idStr || idStr.startsWith("envoy_")) return;
+    await this.requireNode().peerStore.merge(peerIdFromString(idStr), {
+      tags: { [CONTACT_KEEP_ALIVE_PEER_TAG]: { value: 100 } },
+    });
+  }
+
+  /** Undo {@link tagContactForPersistentReachability} (bond revoked/blocked). */
+  async untagContactForPersistentReachability(libp2pPeerId: string): Promise<void> {
+    const idStr = libp2pPeerId.trim();
+    if (!idStr || idStr.startsWith("envoy_")) return;
+    await this.requireNode().peerStore.merge(peerIdFromString(idStr), {
+      tags: { [CONTACT_KEEP_ALIVE_PEER_TAG]: undefined },
+    });
   }
 
   /**
@@ -415,6 +482,7 @@ export class EnvoyMesh {
       ...(this.options.enableDcutr ? ["dcutr"] : []),
       ...(this.options.enableQuic ? ["quic"] : []),
       ...(this.options.enableP2pDebug ? ["p2p-debug"] : []),
+      ...(this.options.enableReachabilityLog ? ["reachability-log"] : []),
     ];
   }
 
@@ -556,6 +624,23 @@ export class EnvoyMesh {
       }
     }
 
+    const limitedExisting = this.findLimitedConnectionToPeer(node, peerIdStr);
+    if (limitedExisting) {
+      try {
+        const stream = await promiseWithTimeout(
+          limitedExisting.newStream([protocol], { runOnLimitedConnection: true }),
+          NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS,
+          `newStream(limited relay) ${protocol}`,
+        );
+        return { stream, remotePeerId: limitedExisting.remotePeer.toString() };
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        console.warn(
+          `[network] limited relay stream open failed for ${peerIdStr.slice(0, 12)}… (${detail}); trying fresh dial`,
+        );
+      }
+    }
+
     return this.dialOpenStreamViaHints(node, peerIdStr, target, protocol, sendOptions);
   }
 
@@ -619,7 +704,29 @@ export class EnvoyMesh {
   private findOpenConnectionToPeer(node: Libp2p, peerIdStr: string): any | undefined {
     const open = node
       .getConnections()
-      .filter((c) => c.remotePeer.toString() === peerIdStr && c.status === "open");
+      .filter(
+        (c) =>
+          c.remotePeer.toString() === peerIdStr &&
+          c.status === "open" &&
+          // Align with libp2p `findExistingConnection`: limited relay conns cannot open app streams here.
+          (c as { limits?: unknown }).limits == null,
+      );
+    if (open.length === 0) {
+      return undefined;
+    }
+    const direct = open.find((c) => !(c.remoteAddr?.toString() ?? "").includes("/p2p-circuit"));
+    return direct ?? open[0];
+  }
+
+  private findLimitedConnectionToPeer(node: Libp2p, peerIdStr: string): any | undefined {
+    const open = node
+      .getConnections()
+      .filter(
+        (c) =>
+          c.remotePeer.toString() === peerIdStr &&
+          c.status === "open" &&
+          (c as { limits?: unknown }).limits != null,
+      );
     if (open.length === 0) {
       return undefined;
     }
@@ -870,6 +977,125 @@ export class EnvoyMesh {
     }
 
     this.options.onP2pDebug?.(event);
+  }
+
+  private reachabilityPeerIdForLog(detail: unknown): string {
+    if (detail != null && typeof (detail as { toString?: () => string }).toString === "function") {
+      try {
+        const s = (detail as { toString: () => string }).toString().trim();
+        if (s) return s.length <= 14 ? s : `${s.slice(0, 12)}…`;
+      } catch {
+        /* fall through */
+      }
+    }
+    const s = String(detail ?? "?").trim();
+    return s.length <= 14 ? s : `${s.slice(0, 12)}…`;
+  }
+
+  private detachReachabilityObservability(): void {
+    const node = this.node;
+    const handlers = this.reachabilityLogHandlers;
+    this.reachabilityLogHandlers = undefined;
+    if (!node || !handlers) {
+      return;
+    }
+    const typed = node as Libp2p & {
+      removeEventListener?: (type: string, handler: (event: unknown) => void) => void;
+    };
+    if (typeof typed.removeEventListener !== "function") {
+      return;
+    }
+    typed.removeEventListener("peer:disconnect", handlers.disconnect);
+    if (handlers.reconnectFailure) {
+      typed.removeEventListener("peer:reconnect-failure", handlers.reconnectFailure);
+    }
+  }
+
+  /** Console + peer-store introspection around libp2p KEEP_ALIVE reconnect behavior. */
+  private attachReachabilityObservability(node: Libp2p): void {
+    this.detachReachabilityObservability();
+
+    const fullLog = Boolean(this.options.enableReachabilityLog);
+    const peekTaggedOnly = Boolean(this.options.enableP2pDebug && !fullLog);
+
+    if (!fullLog && !peekTaggedOnly) {
+      return;
+    }
+
+    const typedNode = node as Libp2p & {
+      addEventListener?: (type: string, handler: (event: unknown) => void) => void;
+      removeEventListener?: (type: string, handler: (event: unknown) => void) => void;
+    };
+    if (typeof typedNode.addEventListener !== "function") {
+      return;
+    }
+
+    const onDisconnect = (event: unknown) => {
+      const detail = (event as { detail?: unknown }).detail;
+      const remotePeerId =
+        typeof detail === "object" && detail !== null && "toString" in detail
+          ? (detail as { toString(): string }).toString()
+          : typeof detail === "string"
+            ? detail
+            : String(detail);
+      void this.logReachabilityDisconnect(remotePeerId, fullLog, peekTaggedOnly);
+    };
+
+    typedNode.addEventListener("peer:disconnect", onDisconnect);
+
+    const handlers: {
+      disconnect: (event: unknown) => void;
+      reconnectFailure?: (event: unknown) => void;
+    } = { disconnect: onDisconnect };
+
+    if (fullLog) {
+      const onReconnectFailure = (event: unknown) => {
+        const detail = (event as { detail?: unknown }).detail;
+        console.log(
+          `[reachability] reconnect-failure peer=${this.reachabilityPeerIdForLog(detail)} (libp2p exhausted KEEP_ALIVE retries for this peer; KEEP_ALIVE-style tags cleared)`,
+        );
+      };
+      typedNode.addEventListener("peer:reconnect-failure", onReconnectFailure);
+      handlers.reconnectFailure = onReconnectFailure;
+    }
+
+    this.reachabilityLogHandlers = handlers;
+  }
+
+  /** After disconnect; reads peer-store tags so logs stay accurate vs libp2p reconnect queue rules. */
+  private async logReachabilityDisconnect(
+    remotePeerIdRaw: string,
+    verbose: boolean,
+    peekTaggedOnly: boolean,
+  ): Promise<void> {
+    const node = this.node;
+    let tagNames: string[] = [];
+    const idStr = remotePeerIdRaw.trim();
+    if (idStr && node) {
+      try {
+        const peerData = await node.peerStore.get(peerIdFromString(idStr));
+        tagNames = [...peerData.tags.keys()];
+      } catch {
+        tagNames = [];
+      }
+    }
+
+    const hasReconnect = peerTagsTriggerReconnectQueue(tagNames);
+    const hasEnvoyContact = tagNames.includes(CONTACT_KEEP_ALIVE_PEER_TAG);
+    const short = idStr.length <= 14 ? idStr || "?" : `${idStr.slice(0, 12)}…`;
+
+    if (verbose) {
+      const maxShown = 8;
+      const head = tagNames.slice(0, maxShown).join(",");
+      const suffix = tagNames.length > maxShown ? `,+${tagNames.length - maxShown}more` : "";
+      console.log(
+        `[reachability] disconnect peer=${short} reconnectQueueEligible=${hasReconnect} envoyBondTag=${hasEnvoyContact} tags=[${head}${suffix}]`,
+      );
+    } else if (peekTaggedOnly && hasReconnect) {
+      console.log(
+        `[reachability] disconnect peer=${short} reconnectQueueEligible=true envoyBondTag=${hasEnvoyContact}`,
+      );
+    }
   }
 
   private attachP2pDebug(node: Libp2p): void {
