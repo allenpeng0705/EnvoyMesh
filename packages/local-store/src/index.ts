@@ -1643,3 +1643,4 @@ function isMissingFileError(error: unknown): boolean {
 
 export * from "./task-runtime-state.js";
 export * from "./connectivity-stage-d.js";
+export * from "./chat-log-store.js";

@@ -81,6 +81,7 @@ export type RpcMethods =
   | "getBonds"
   // Messaging
   | "sendChat"
+  | "listChatHistory"
   | "markRead"
   // Search
   | "searchPeers"

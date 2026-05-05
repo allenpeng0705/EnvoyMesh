@@ -56,6 +56,7 @@ interface NodeServiceClient {
 
   // Messaging
   sendChat(targetOwnerId: string, text: string): Promise<void>;
+  listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
 
   // Search
   searchPeers(query: SearchQuery): Promise<PeerSearchResult[]>;
@@ -161,6 +162,10 @@ export function NodeServiceProvider({ children }: { children: ReactNode }) {
 
       async sendChat(targetOwnerId, text) {
         return wsClient.rpc("sendChat", { targetOwnerId, text });
+      },
+
+      async listChatHistory(peerOwnerId, limit) {
+        return wsClient.rpc("listChatHistory", { peerOwnerId, limit }) as Promise<ChatMessage[]>;
       },
 
       async searchPeers(query) {
@@ -430,6 +435,29 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
 
     return unsub;
   }, [client, client.isConnected]);
+
+  useEffect(() => {
+    if (!client.isConnected || !selectedContactOwnerId || !selfIds?.ownerId) return;
+    let cancelled = false;
+    void client
+      .listChatHistory(selectedContactOwnerId)
+      .then((history) => {
+        if (cancelled || history.length === 0) return;
+        const self = selfIds;
+        setThreads((prev) => {
+          let next = prev;
+          for (const msg of history) {
+            const n = appendChatToThreads(next, msg, self);
+            if (n) next = n;
+          }
+          return next;
+        });
+      })
+      .catch(console.error);
+    return () => {
+      cancelled = true;
+    };
+  }, [client, client.isConnected, selectedContactOwnerId, selfIds]);
 
   useEffect(() => {
     if (!selfIds?.ownerId) return;

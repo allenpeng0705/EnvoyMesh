@@ -288,6 +288,11 @@ export interface NodeService {
   sendChat(targetOwnerId: string, text: string): Promise<void>;
 
   /**
+   * Human chat transcripts persisted under the profile (`chat-messages.jsonl`).
+   */
+  listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
+
+  /**
    * Mark messages as read
    */
   markRead(targetOwnerId: string, upToMessageId?: string): Promise<void>;

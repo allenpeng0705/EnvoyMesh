@@ -1,5 +1,6 @@
 import type {
   BondRecord,
+  ChatMessage,
   ConnectionStatus,
   CreateHumanProfileInput,
   HelloProfile,
@@ -44,12 +45,14 @@ import {
   createLocalTrustStore,
   createLocalPeerDirectoryStore,
   createHumanProfileStore,
+  createLocalChatLogStore,
   createTaskRuntimeStateStore,
   createRelayStateStore,
   loadOrCreateNodeProfile,
   type LocalTaskStore,
   type LocalTrustStore,
   type LocalPeerDirectoryStore,
+  type LocalChatLogStore,
   type HumanProfileStore,
   type TaskRuntimeStateStore,
   type RelayStateStore,
@@ -99,6 +102,7 @@ class NodeServiceImpl implements NodeService {
   private readonly _trustStore: LocalTrustStore;
   private readonly _peerDirectoryStore: LocalPeerDirectoryStore;
   private readonly _humanProfileStore: HumanProfileStore;
+  private readonly _chatLogStore: LocalChatLogStore | null;
   private readonly _configStore: ReturnType<typeof createNodeConfigStore>;
   private readonly _profileDir: string;
   private readonly _cliBootstrapPeers: readonly string[];
@@ -166,6 +170,8 @@ class NodeServiceImpl implements NodeService {
     this._profileDir = profileDir ?? "/tmp/unknown";
     this._cliBootstrapPeers = cliBootstrapPeers;
     this._configStore = profileDir ? createNodeConfigStore(profileDir) : createStubNodeConfigStore();
+    this._chatLogStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createLocalChatLogStore(profileDir) : null;
     if (profileDir && profileDir !== "/tmp/unknown") {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
     }
@@ -708,6 +714,13 @@ class NodeServiceImpl implements NodeService {
     });
   }
 
+  private _persistChatMessage(threadPeerOwnerId: string, msg: ChatMessage): void {
+    if (!this._chatLogStore) return;
+    void this._chatLogStore.append(threadPeerOwnerId, msg).catch((err) =>
+      console.warn(`[chat-log] append failed for thread=${threadPeerOwnerId}:`, err),
+    );
+  }
+
   async sendChat(targetOwnerId: string, text: string): Promise<void> {
     this._assertOnline();
     const mesh = this._requireMesh();
@@ -821,7 +834,14 @@ class NodeServiceImpl implements NodeService {
       signature: envelope.signature,
     };
     console.log(`[sendChat] Emitting chat:message locally:`, emittedMsg);
+    this._persistChatMessage(targetOwnerId, emittedMsg);
     this.emit("chat:message", emittedMsg);
+  }
+
+  async listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]> {
+    if (!this._chatLogStore) return [];
+    const rows = await this._chatLogStore.listThread(peerOwnerId.trim(), limit);
+    return rows as ChatMessage[];
   }
 
   async markRead(_targetOwnerId: string, _upToMessageId?: string): Promise<void> {
@@ -1553,7 +1573,7 @@ class NodeServiceImpl implements NodeService {
         const payload = parseChatMessagePayload(envelope.payload);
         const senderTrust = await this._trustStore.getTrustRecord(payload.senderOwnerId);
         const selfHuman = await this._humanProfileStore.loadHumanProfile();
-        this.emit("chat:message", {
+        const incomingMsg: ChatMessage = {
           messageId: envelope.messageId,
           sender: {
             nodeId: remotePeerId,
@@ -1568,7 +1588,9 @@ class NodeServiceImpl implements NodeService {
           content: { text: payload.text },
           metadata: { timestamp: envelope.createdAt, deliveryReceipt: "delivered" },
           signature: envelope.signature,
-        });
+        };
+        this._persistChatMessage(payload.senderOwnerId, incomingMsg);
+        this.emit("chat:message", incomingMsg);
       }
     });
 

@@ -6,6 +6,7 @@ import {
   createApprovalRequest,
   createAuditEvent,
   createHumanProfileStore,
+  createLocalChatLogStore,
   createLocalPeerDirectoryStore,
   createLocalTaskStore,
   createLocalTrustStore,
@@ -128,6 +129,7 @@ const taskStore = createLocalTaskStore(args.profileDir);
 const trustStore = createLocalTrustStore(args.profileDir);
 const peerDirectoryStore = createLocalPeerDirectoryStore(args.profileDir);
 const humanProfileStore = createHumanProfileStore(args.profileDir);
+const chatLogStore = createLocalChatLogStore(args.profileDir);
 const discoverySeedStore = createDiscoverySeedStore(args.profileDir);
 const taskRuntimeStore = createTaskRuntimeStateStore(args.profileDir);
 const resolvedArgs = await resolveNodeArgsTargetsByOwnerId(args, peerDirectoryStore);
@@ -737,7 +739,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         trustStore.getTrustRecord(payload.senderOwnerId),
         humanProfileStore.loadHumanProfile(),
       ]);
-      wsServerForEvents.emitEvent("chat:message", {
+      const chatMsg = {
         messageId: envelope.messageId,
         sender: {
           nodeId: remotePeerId,
@@ -757,7 +759,11 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           deliveryReceipt: "delivered" as const,
         },
         signature: envelope.signature,
-      });
+      };
+      void chatLogStore.append(payload.senderOwnerId, chatMsg).catch((err) =>
+        console.warn(`[chat.message] chat log append failed:`, err),
+      );
+      wsServerForEvents.emitEvent("chat:message", chatMsg);
     }
     return;
   }

@@ -216,6 +216,8 @@ export class WsServer {
         return ns.getBonds();
       case "sendChat":
         return ns.sendChat(params.targetOwnerId as string, params.text as string);
+      case "listChatHistory":
+        return ns.listChatHistory(params.peerOwnerId as string, params.limit as number | undefined);
       case "markRead":
         return ns.markRead(params.targetOwnerId as string, params.upToMessageId as string | undefined);
       case "searchPeers":
