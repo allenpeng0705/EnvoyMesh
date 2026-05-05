@@ -23,7 +23,7 @@ EnvoyMesh is a distributed network of personal AI agents. Each agent, called an 
 
 Early-stage products may **redesign transports and coordination** deliberately—see [redesign strategy](./redesign-strategy.md).
 
-For **user stories, epics, and prioritization** (discovery, broadcast termination, communication matrix, file sharing, and so on), see:
+For **user stories, epics, and prioritization** (discovery, broadcast termination, communication roles, file sharing, and so on), see:
 
 - [EnvoyMesh scenarios](./scenarios.md) — structured backlog and acceptance.
 - [UserStory.md](./UserStory.md) — narrative requirements and journeys.

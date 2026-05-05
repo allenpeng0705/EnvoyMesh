@@ -11,11 +11,11 @@ EnvoyMesh is an **early-stage product**. When a clearer architecture serves the 
 | Principle | Implication |
 | --- | --- |
 | **North star over nostalgia** | APIs, package layout, CLI flags, and persistence formats may **break** across minor versions if the new design is documented and migration path is stated (or explicitly “fresh start” for alpha users). |
-| **Dual-plane architecture** | **Data plane:** libp2p + Noise + EMP for throughput and cryptographic intent. **Control plane (optional):** HTTPS-based signaling (e.g. Matrix) for bond-scoped dial hints, offline-visible coordination—see [architecture-hybrid-planes](./architecture-hybrid-planes.md). Neither plane replaces owner policy, bonds, or vault semantics. |
+| **Libp2p-first mesh** | EnvoyMesh uses libp2p + Noise + EMP for transport, cryptographic intent, discovery, relay lookup, DHT/provider hints, and direct data exchange. Relay nodes stay lean; normal nodes own LLM/agent behavior. |
 | **No mandatory big-company backend** | A **homeserver or relay** is **not** “the product”—it is **replaceable infrastructure** for operators who opt in. Core story: direct peer traffic when possible; **no** single vendor as the sole identity or message authority. |
-| **LLM-native, owner-supervised** | Envoys negotiate and report; humans retain interrupt, policy, and approval—unchanged intent, clearer product stories in [user-stories-hybrid-evaluation](./user-stories-hybrid-evaluation.md). |
+| **LLM-native, owner-supervised** | Envoys negotiate and report; humans retain interrupt, policy, approval, and the kill switch. Agentic design details live in [Agentic next step](./next-step.md). |
 
-**Explicit non-goals for this charter:** freezing the current repository layout forever; pretending `wan-default` alone solves every WAN scenario; treating Matrix as required for MVP (it is **[Phase 4G](./implementation-plan.md#phase-4g-optional-control-plane-signaling-hybrid)** optional until PoC proves value).
+**Explicit non-goals for this charter:** freezing the current repository layout forever; pretending `wan-default` alone solves every WAN scenario; adding an external signaling network as a product dependency.
 
 ---
 
@@ -23,7 +23,6 @@ EnvoyMesh is an **early-stage product**. When a clearer architecture serves the 
 
 - **Networking stack wiring** — dial ordering, seed merge rules, QUIC defaults, bootstrap preset strategy.
 - **Discovery surfaces** — CLI/dashboard commands, audit `p2p.trace` shapes, seed file format **with migration** or one-time wipe for alpha cohorts.
-- **Optional Matrix integration** — new workspace package (`@envoymesh/matrix-signaling` or similar) isolated from core protocol packages until stable.
 - **Documentation** — supersede contradictory pages; archive or replace “stable” wording in high-level docs that block honest iteration.
 
 **What stays semantically stable unless EMP version bumps:** envelope signing, owner/device separation, bond levels as a *concept*, vault as owner-scoped boundary (implementation may still change).
@@ -38,21 +37,19 @@ Use this table to **prioritize rewrites**. Status is **intent** until a PR flips
 | --- | --- | --- |
 | [implementation-plan.md](./implementation-plan.md) | Phases, traceability | **Source of truth** — keep updated each scope change |
 | [redesign-strategy.md](./redesign-strategy.md) (this file) | Early-stage charter | **Active** |
-| [architecture-hybrid-planes.md](./architecture-hybrid-planes.md) | Dual-plane workflows | **Active** |
-| [user-stories-hybrid-evaluation.md](./user-stories-hybrid-evaluation.md) | Stress-test hybrid vs stories | **Active** |
-| [p2p-discovery.md](./p2p-discovery.md) | Native WAN/LAN discovery | **Keep**; scope note: complements hybrid doc, not competitor |
-| [poc-discovery-connectivity.md](./poc-discovery-connectivity.md) | Stages A–D POC (single doc) | **Active** — canonical entry before hybrid/Matrix investment |
-| [vision.md](./vision.md) | Product vision | **Partial refresh** — hybrid signaling note under P2P First; broader narrative pass optional |
-| [high-level-design.md](./high-level-design.md) | Architecture overview | **Partial refresh** — living-doc stance; dual-plane diagram still optional |
+| [p2p-discovery.md](./p2p-discovery.md) | Native WAN/LAN discovery | **Keep**; canonical discovery and relay posture |
+| [poc-discovery-connectivity.md](./poc-discovery-connectivity.md) | Stages A–D POC (single doc) | **Active** — canonical transport proof entry |
+| [vision.md](./vision.md) | Product vision | **Partial refresh** — keep aligned with libp2p-first, agentic normal-node direction |
+| [high-level-design.md](./high-level-design.md) | Architecture overview | **Partial refresh** — living-doc stance |
 | [detailed-design.md](./detailed-design.md) | EMP, packages | **Living** — update when protocol refactors |
 | [protocol-standard.md](./protocol-standard.md) | EMP normative | **Version** with breaking changes explicitly |
-| [scenarios.md](./scenarios.md), [UserStory.md](./UserStory.md) | Backlog narratives | **Reconcile** with hybrid + agent stories periodically |
+| [scenarios.md](./scenarios.md), [UserStory.md](./UserStory.md) | Backlog narratives | **Reconcile** with agent stories periodically |
 | [alignment-review.md](./alignment-review.md) | Code vs doc | **Update** after each major redesign wave |
 | [roadmap.md](./roadmap.md) | Historical phases | **Banner** → point to implementation-plan (avoid duplicate truth) |
 | [live-connectivity-testing.md](./live-connectivity-testing.md) | Smoke runbook | **Living** — extended proofs; POC ordering in [poc-discovery-connectivity](./poc-discovery-connectivity.md) |
 | [developer-cli.md](./developer-cli.md), [desktop-dashboard.md](./desktop-dashboard.md) | UX | **Update** when CLI/dashboard change |
-| [security.md](./security.md), [model-strategy.md](./model-strategy.md) | Policies | **Refresh** when Matrix metadata / LLM routing shifts |
-| Root [README](../README.md) | First impression | **Align** opening principles with dual-plane |
+| [security.md](./security.md), [model-strategy.md](./model-strategy.md) | Policies | **Refresh** when LLM routing, sandboxing, or egress rules shift |
+| Root [README](../README.md) | First impression | **Align** opening principles with libp2p-first + agentic normal node direction |
 
 **Delete policy:** Prefer **replacing** content in place with a short “Historical note” subsection over deleting files (preserves links). True removal only when nothing references the path—track in git.
 
@@ -60,10 +57,10 @@ Use this table to **prioritize rewrites**. Status is **intent** until a PR flips
 
 ## 4. Implementation order (recommended)
 
-1. **Lock native WAN + observability** — bootstrap, relay, seeds, `connectivity-status` (baseline for comparison).
-2. **Phase 4G thin PoC** — Matrix (or stub HTTP) bond room → merged hints → measure dial uplift ([implementation plan](./implementation-plan.md)).
-3. **Refactor packaging** — isolate signaling in a leaf package so core EMP/libp2p tests stay fast.
-4. **Reconcile scenarios and UserStory** with stress-test table; cut or defer stories that require economics/regulated domains until scoped.
+1. **Lock native WAN + observability** — bootstrap, relay, seeds, relay lookup, DHT/provider hints, `connectivity-status`.
+2. **Implement Phase 8A** — real `knowledge.query` through policy, vault, model router, signed response, and audit.
+3. **Add agentic normal-node slices** — chat assist, capability manifest, tool registry, anonymous discovery toggle, broadcast, sandbox, and reputation in that order.
+4. **Reconcile scenarios and UserStory** with the Phase 8 roadmap; cut or defer stories that require economics/regulated domains until scoped.
 5. **Broad doc pass** — work through the table above in order of reader impact (README → vision → high-level-design → alignment-review).
 
 ---
@@ -71,7 +68,7 @@ Use this table to **prioritize rewrites**. Status is **intent** until a PR flips
 ## 5. How to propose a breaking change
 
 1. Describe the **user-visible or operator-visible** delta.
-2. Link to **north star** section in this doc or hybrid architecture.
+2. Link to **north star** section in this doc or the Phase 8 agentic design.
 3. Add migration notes (script, one-time migration, or “alpha wipe”).
 4. Update **implementation plan** changelog + **alignment review** after merge.
 
@@ -79,7 +76,7 @@ Use this table to **prioritize rewrites**. Status is **intent** until a PR flips
 
 ## Related
 
-- [Implementation plan](./implementation-plan.md) — **Phase 4G**, prioritization
-- [POC: discovery + connectivity](./poc-discovery-connectivity.md) — ordered smoke proofs before hybrid investment
-- [Hybrid planes](./architecture-hybrid-planes.md)
-- [User stories vs hybrid](./user-stories-hybrid-evaluation.md)
+- [Implementation plan](./implementation-plan.md) — phase tracking and prioritization
+- [Agentic next step](./next-step.md) — LLM/agent normal-node design
+- [POC: discovery + connectivity](./poc-discovery-connectivity.md) — ordered smoke proofs
+- [P2P discovery](./p2p-discovery.md) — native WAN/LAN discovery posture

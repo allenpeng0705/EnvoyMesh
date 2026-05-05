@@ -19,7 +19,7 @@ For phased delivery and user-story traceability, see [implementation plan](./imp
 Rules of thumb:
 
 - If a property is **not** in the Zod schema for that artifact, it is **not** an EMP field yet (even if user stories talk about it).
-- New cross-cutting headers (e.g. **sender/receiver role** from the [communication matrix](./UserStory.md#scenario-6--communication-matrix-who-talks-to-whom)) become EMP fields only after a **protocol version** bump and updated **canonical signing** (`envelopeForSigning`, etc.).
+- New cross-cutting headers (e.g. **sender/receiver role** from [communication roles](./UserStory.md#scenario-6--communication-roles-who-talks-to-whom)) become EMP fields only after a **protocol version** bump and updated **canonical signing** (`envelopeForSigning`, etc.).
 
 ## Repository layout (current)
 

@@ -4,7 +4,7 @@ This document records how **narrative requirements** ([UserStory.md](./UserStory
 
 **Purpose:** Confirm alignment, name gaps honestly, and avoid treating aspirational user text as shipped product.
 
-**Major redesign:** When architecture shifts meaningfully (for example hybrid control-plane milestones), refresh this review and bump the snapshot date — see [redesign strategy](./redesign-strategy.md).
+**Major redesign:** When architecture shifts meaningfully, refresh this review and bump the snapshot date — see [redesign strategy](./redesign-strategy.md).
 
 **Review snapshot:** 2026-04-26 (update when major milestones land).
 
@@ -19,11 +19,11 @@ This document records how **narrative requirements** ([UserStory.md](./UserStory
 | **A2A tasks, mandates, journal, approvals, audits + correlation** | **Strong partial** — matches negotiation, policy, and observability stories for **two-party structured work**. |
 | **Broadcast & kill (full narrative)** | **Partial** — local expiry, cancel closure, first **completed** result closure, and correlation in audits exist; **hop TTL**, **network-wide cancel**, **collect-N**, and **gossip fan-out** do not. |
 | **Semantic / capability discovery** | **Weak** — design assumes gossip or DHT **topic** discovery + agent-card matching; code has **plumbing and schemas**, not the full **product flow**. |
-| **Communication matrix (roles, chat vs agent vs data streams)** | **Weak** — design assumes separate sub-protocols and role-tagged traffic; runtime today centers on **`/envoymesh/message/0.1.0`** plus task/ping/signal paths. |
+| **Communication roles (chat vs agent vs data streams)** | **Weak** — design assumes separate sub-protocols and role-tagged traffic; runtime today centers on **`/envoymesh/message/0.1.0`** plus task/ping/signal paths. |
 | **Voucher + verifiable chunked file transfer** | **Weak** — shared vault + search + policy direction match the *intent*; **voucher protocol** and **P2P verified chunk stream** are not implemented. |
 | **Semantic firewall, Wasm agent, smart inbox / morning report** | **Weak / future** — envelope guard + audits exist; **LLM injection middleware**, **Wasm isolation**, and **consumer-grade inbox** are largely ahead of code. |
 
-**Bottom line:** Implementation **aligns well** with the vision of a **local-first, signed, mandate-bound agent mesh with trust, vault, and correlated auditing**. It **does not yet align** with the most **differentiating mesh layers** in the user stories (scaled discovery, full broadcast semantics on the wire, role matrix, commerce, multi-hop anonymity).
+**Bottom line:** Implementation **aligns well** with the vision of a **local-first, signed, mandate-bound agent mesh with trust, vault, and correlated auditing**. It **does not yet align** with the most **differentiating mesh layers** in the user stories (scaled discovery, full broadcast semantics on the wire, complete role-mode coverage, commerce, multi-hop anonymity).
 
 ---
 
@@ -36,7 +36,7 @@ This document records how **narrative requirements** ([UserStory.md](./UserStory
 | **3 Broadcast & kill** | Hop TTL, expiry, correlation cancel, thresholds | Mandate `expiresAt`; optional `task.propose` `expiresAt`; `correlationId` + rich audit; `task-runtime-state.json` (cancel / satisfied / `closeOnFirstCompletedResult`); CLI flags — see Phase 4D in implementation plan | **Partial** |
 | **4 Social handshake** | Bond + proof of context; policy; defer to owner | Trust store, bonds/policy for sensitive actions, approval queue, dashboard; **no** full bond-request + referral **protocol** as a dedicated flow | **Partial** |
 | **5 Intent-based file share** | Voucher; virtual view; CID-like chunks over P2P | `shared_vault`, indexing/search, vault audit, policy hooks | **Directionally aligned**; **not** voucher + verified **transfer** protocol |
-| **6 Communication matrix** | Roles; `/chat`, `/agent`, `/data` style split | Single primary message protocol; tasks + system intents | **Not aligned yet** — explicit **EMP / roadmap** choice needed |
+| **6 Communication roles** | Roles; `/chat`, `/agent`, `/data` style split | Single primary message protocol; tasks + system intents | **Not aligned yet** — explicit **EMP / roadmap** choice needed |
 
 ---
 
@@ -59,7 +59,7 @@ This document records how **narrative requirements** ([UserStory.md](./UserStory
 |------|---------|-------------|
 | **P0** | US-A1, US-C1, US-G1, US-D2 | **Strong** — identity, correlation, audits, inbound rejects align with shipped work. |
 | **P1** | US-C2, US-D1, US-F2 | **Mixed** — US-C2 **partially** shipped (local termination slice); US-D1 / rich A2A “shadow” still **partial**. |
-| **P2** | US-E1–E2, US-F1, US-F3–F4 | **Early** — vault/dashboard help; file **transfer** protocol and chat/matrix **not** there. |
+| **P2** | US-E1–E2, US-F1, US-F3–F4 | **Early** — vault/dashboard help; file **transfer** protocol and full chat/agent role split **not** there. |
 | **P3** | US-B1–B2, US-F5, US-A2 | **Mostly future** — discovery at scale, LLM firewall, multi-device UX. |
 
 ---

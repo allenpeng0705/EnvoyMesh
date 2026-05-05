@@ -10,7 +10,7 @@ The core idea is simple: each person runs an AI agent, called an Envoy, on their
 
 EnvoyMesh is designed around these priorities:
 
-- **Peer-first traffic**: communicate directly between Envoys whenever possible; **optional** HTTPS/Matrix signaling may assist coordination when mesh hints alone are insufficient ([hybrid architecture](./docs/architecture-hybrid-planes.md)).
+- **Peer-first traffic**: communicate directly between Envoys whenever possible, using libp2p discovery, relay lookup, DHT hints, and owner-approved invite/bootstrap paths.
 - **Owner-controlled privacy**: an Envoy must only access explicitly shared data, not the whole computer.
 - **Model flexibility**: an Envoy may use local models, cloud models, or peer-provided compute when policy allows it.
 - **Agent-native social workflows**: trust, discovery, introductions, and task negotiation can be handled by agents over time.
@@ -32,7 +32,7 @@ The result should be cheaper to operate, more resilient, and more aligned with p
 
 ## Current Status
 
-EnvoyMesh is a working TypeScript prototype **under active architectural refinement** toward a **dual-plane** model (libp2p data plane + optional Matrix/HTTPS control-plane signaling). Current capabilities include:
+EnvoyMesh is a working TypeScript prototype **under active architectural refinement** around a libp2p-first mesh with lean relay nodes and intelligent normal nodes. Current capabilities include:
 
 - Signed EMP messages and Ed25519 owner/device identities.
 - Local policy, trust records, approval queue, task journal, and audit logs.

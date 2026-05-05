@@ -2,7 +2,7 @@
 
 This is the living plan for EnvoyMesh. Update it whenever scope changes, decisions are made, or milestones are completed.
 
-**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · [EMP](./protocol-standard.md) · [QuickStart](../QuickStart.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · [Hybrid planes (Matrix + libp2p)](./architecture-hybrid-planes.md) · [User stories vs hybrid evaluation](./user-stories-hybrid-evaluation.md) · **[Redesign strategy](./redesign-strategy.md)**
+**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · [EMP](./protocol-standard.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Redesign strategy](./redesign-strategy.md)**
 
 ## Status Legend
 
@@ -12,6 +12,8 @@ This is the living plan for EnvoyMesh. Update it whenever scope changes, decisio
 - `[!]` Blocked or needs a decision
 
 Use these prefixes on **every phased work item** and on **exit criteria** below so merges show what moved. **`[~]`** is optional in **traceability** and **coverage** summary cells when both shipped and missing parts apply. **Open questions**: the first table column is **`[x]`** once settled or **`[ ]`** while open—flip it and move the row when answered.
+
+Maintenance rule: keep this file as the source of truth for **done / left / next small step**. When a task ships, flip its checkbox, update the matching exit criterion, refresh **Current Milestone**, and add one changelog row. Keep broad design narrative in linked docs such as [Agentic next step](./next-step.md); keep executable tracking here.
 
 ## On this page
 
@@ -34,7 +36,6 @@ Use these prefixes on **every phased work item** and on **exit criteria** below 
 - [Phase 4 — P2P local network](#phase-4-p2p-local-network)
 - [Phase 4 (WAN follow-on): Rendezvous, Relay, And NAT Traversal](#phase-4-wan-follow-on-rendezvous-relay-and-nat-traversal)
 - [Phase 4F — WAN capability topics and transport hardening](#phase-4f-wan-capability-topics-and-transport-hardening)
-- [Phase 4G — Optional control-plane signaling (hybrid)](#phase-4g-optional-control-plane-signaling-hybrid)
 - [Phase 4A — Multi-device protocol](#phase-4a-multi-device-protocol)
 - [Phase 4B — A2A ambassador protocol](#phase-4b-a2a-ambassador-protocol)
 - [Phase 4C — Observability and multi-peer traceability](#phase-4c-observability-and-multi-peer-traceability)
@@ -43,28 +44,34 @@ Use these prefixes on **every phased work item** and on **exit criteria** below 
 - [Phase 5 — Shared vault](#phase-5-shared-vault)
 - [Phase 6 — Model router](#phase-6-model-router)
 - [Phase 7 — Product surface](#phase-7-product-surface)
+- [Phase 8 — Agentic normal node, LLM first](#phase-8-agentic-normal-node-llm-first)
 
 ## Current Direction
 
-EnvoyMesh will be implemented as a TypeScript-first, owner-controlled, peer-to-peer agent network.
+EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
-The project should start small:
+The foundation is now broad enough to start the next product step: make the **normal node** actually use an LLM/agent path while keeping relays lean.
 
-1. Define the protocol and trust boundaries.
-2. Build a local TypeScript node that can exchange signed messages.
-3. Add P2P discovery and transport.
-4. Add the shared vault and policy checks.
-5. Add model routing after the security path is stable.
+Already shipped foundation:
 
-Product-level **user stories and epics** (discovery, broadcast termination, communication matrix, and so on) live in [EnvoyMesh scenarios](./scenarios.md). Narrative journeys live in [UserStory.md](./UserStory.md). Periodically reconcile both with code via [alignment-review.md](./alignment-review.md). Use those files to prioritize; keep this plan aligned when scope or shipped work changes.
+1. Signed EMP envelopes, owner/device identity, and inbound verification.
+2. libp2p transport, mDNS, optional DHT/relay/DCUtR/AutoNAT, and relay check-in/lookup graph basics.
+3. Bond/hello, trust records, approvals, chat, task intents, data transfer, vault indexing/search, model router, semantic firewall, and audit logs.
+
+Active next direction:
+
+1. Replace mock `knowledge.query` handling with a policy-gated vault + model + signed `knowledge.response` path.
+2. Add LLM assistance for chat and task handling in draft/approval-first modes.
+3. Add capability manifests and contact-scoped matching before anonymous discovery.
+4. Add anonymous discovery, broadcast, stronger sandboxing, reputation, and autonomous user-representation only after the direct contact workflows are verified.
+
+Product-level **user stories and epics** (discovery, broadcast termination, communication roles, and so on) live in [EnvoyMesh scenarios](./scenarios.md). Narrative journeys live in [UserStory.md](./UserStory.md). Periodically reconcile both with code via [alignment-review.md](./alignment-review.md). Use those files to prioritize; keep this plan aligned when scope or shipped work changes.
 
 **Story-driven principle:** Implementation phases stay anchored to **testable** entries in `scenarios.md`. Narrative text in `UserStory.md` becomes plan items only when it gains acceptance criteria and (usually) a scenario id.
 
-**North-star steps (all bootstrapped at high level; depth = open `[ ]` in phases below):** `[x]` protocol and trust boundaries · `[x]` local signed node · `[x]` P2P discovery/transport · `[x]` shared vault + policy · `[x]` model routing behind policy.
+**North-star steps:** `[x]` protocol and trust boundaries · `[x]` local signed node · `[x]` P2P discovery/transport · `[x]` shared vault + policy · `[x]` model routing package behind policy · `[ ]` node runtime uses model router for real `knowledge.query` · `[ ]` agent/tool orchestration behind sandbox · `[ ]` safe discovery/broadcast at scale.
 
-**Prioritization:** **Parked for now** — satellite / **thin mobile UI** product path and phone-centric UX (no mobile app milestone). **Active next** — post-LAN **real P2P network** readiness: default WAN profile (DHT/relay/DCUtR/AutoNAT), bootstrap + relay strategy, cross-network smoke/docs, and connectivity diagnostics UX. **First POC:** ordered discovery/connectivity proofs — [poc-discovery-connectivity.md](./poc-discovery-connectivity.md) (scripts: `npm run poc:discovery -w @envoymesh/node`). **Parallel optional track** — **[Phase 4G](#phase-4g-optional-control-plane-signaling-hybrid)** (HTTPS/Matrix control-plane signaling for bond-scoped dial hints) proceeds **after** native WAN/bootstrap validation and **does not** replace libp2p-first discovery; thin PoC gates deeper Matrix integration. In parallel: Phase **4D** fan-out termination on wire (TTL/gossip cancel/correlation-only cancel) and Phase **5** vault CA/export controls. Phase **4A** pairing + primary-offline defer baseline is shipped; thin-mobile checkbox stays documented but not scheduled ahead of those.
-
-**Hybrid replanning:** Treat Matrix (or any HTTPS rendezvous) as an **optional control plane** layered on the existing data plane ([architecture](./architecture-hybrid-planes.md)). Native **WAN follow-on**, **4F** capability topics, bonds/policy, and vault semantics remain authoritative; hybrid work **extends** coordination where DHT/bootstrap hints are insufficient—see [user-story stress test](./user-stories-hybrid-evaluation.md). **Early-stage charter:** deliberate breaks and doc cleanup rules live in **[redesign-strategy.md](./redesign-strategy.md)**.
+**Prioritization:** **Active next** — [Phase 8A](#8a-real-knowledgequery-with-model-router-and-vault) real `knowledge.query` with vault + model router + signed response. **Still important but not blocking Phase 8A:** live multi-machine WAN relay/DCUtR validation, operator relay defaults, and connectivity diagnostics. **Parked for now:** satellite / thin mobile UI product path, commerce, global reputation ledger, and broad anonymous broadcast. EnvoyMesh will stay libp2p/relay-first for discovery and coordination; no external signaling track is planned.
 
 ## User story traceability
 
@@ -77,12 +84,11 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 | Broadcast & kill (Scenario 3) | 4B, **4D** | `[x]` Local mandate/propose expiry, cancel / satisfied, first completed result + `closeOnFirstCompletedResult`, `correlationId`, audits · `[ ]` Hop TTL / gossip-wide cancel / collect-N (`Phase 4D` “not in this slice”) |
 | Social handshake (Scenario 4) | 2, 4B, 7 | `[x]` Trust store, bonds/policy, approvals, mandates, A2A tasks, **EMP `bond.*` payloads + inbound bond path + CLI `bond.request`** · `[ ]` Rich referral / owner queue UX beyond audit |
 | Intent-based file share (Scenario 5) | 5, Scenario 6 pick | `[x]` Shared vault, indexing, search, policy hooks, audit · `[x]` Voucher + verified P2P chunk stream (`/envoymesh/data/0.1.0`) |
-| Communication matrix (Scenario 6) | Scenario 6 pick, Open questions | `[x]` Required envelope roles (`senderRole`/`recipientRole`), strict role-policy enforcement, and hard split for `/envoymesh/chat/0.1.0` vs `/envoymesh/message/0.1.0` (plus `/envoymesh/data/0.1.0`) · `[ ]` Broader H2A product semantics beyond current strict role/channel policy |
+| Communication roles (Scenario 6) | Scenario 6 pick, Open questions | `[x]` Required envelope roles (`senderRole`/`recipientRole`), strict role-policy enforcement, and hard split for `/envoymesh/chat/0.1.0` vs `/envoymesh/message/0.1.0` (plus `/envoymesh/data/0.1.0`) · `[ ]` Broader H2A product semantics beyond current strict role/channel policy |
 | **Story A** (multi-device collaborator) | 4A, 5, 6, 7 | `[x]` Primary/Satellite **protocol** profiles, P2P, vault-backed tasks, pairing + primary-offline defer baseline (`Phase 4A`) · `[ ]` Thin mobile / satellite app **parked** |
 | **Stories B–C** (recruiter, researcher) | 4E, 2, 6, 7 | `[x]` Policy, approvals, audit, model path scaffolding · `[ ]` Discovery UX (**4E**), H2A wire path (**6**), morning report (**7**) |
 | **Stories D–E** (multi-hop, deals) | Backlog | `[ ]` Multi-hop / commerce / receipts — add phased work when scenarios + EMP economics are scoped |
 | **Story F** (crisis / LAN) | 4, 4C | `[x]` mDNS, local TCP, correlated audits, optional P2P debug, owner-id LAN target resolution (`system.signal` owner→peer map) · `[ ]` live proofs outside CI (`Phase 4` `[!]`) |
-| **Hybrid signaling** (optional WAN coordination) | **[4G](#phase-4g-optional-control-plane-signaling-hybrid)** | `[~]` Architecture + user-story evaluation shipped (`[x]` docs) · `[ ]` Thin PoC + schema + bond-gated hints (`[ ]`) |
 
 ## Key Decisions
 
@@ -90,6 +96,8 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 - `[x]` Architecture style: P2P-first, no central social backend.
 - `[x]` Privacy model: owner-controlled data and explicit shared vault.
 - `[x]` Model strategy: local, cloud, and peer models are all allowed through policy.
+- `[x]` Agentic topology: relay nodes stay lean; LLMs, vault RAG, tools, and agents run only on normal nodes.
+- `[x]` Agentic protocol direction: reuse signed EMP intents (`knowledge.*`, `task.*`, `discovery.*`, `agent.card.*`, `bond.*`) instead of introducing a parallel JSON-RPC protocol.
 - `[x]` Initial identity: Ed25519 signatures before DIDs.
 - `[x]` Protocol standard: define EMP with owner identity, device identity, device certificates, node profiles, and core verbs.
 - `[x]` A2A direction: Envoys act through signed mandates, Agent Cards, structured negotiation, and autonomous reporting.
@@ -99,7 +107,6 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 - `[x]` Sandbox direction: Wasm/WASI isolation later, with process boundaries first.
 - `[x]` Distributed state direction: evaluate `loro` and `yjs` when shared social/task state is ready.
 - `[x]` Decentralized identity direction: Ed25519 first, DIDKit/DIDs later.
-- `[ ]` Optional **Matrix / HTTPS control-plane signaling** for bond-scoped dial hints and offline-visible coordination events — **[Phase 4G](#phase-4g-optional-control-plane-signaling-hybrid)**; gated by thin PoC metrics ([architecture](./architecture-hybrid-planes.md)).
 - `[x]` Mobile v1 direction: Thin UI Mode only; phone acts as secure UI/control channel to Primary Envoy.
 - `[ ]` Storage: start with files for config, then add SQLite for records and audit.
 - `[x]` P2P transport: start with local libp2p/mDNS after core schemas are stable.
@@ -259,33 +266,11 @@ Exit criteria:
 
 - `[x]` Wire **`@chainsafe/libp2p-quic`** alongside TCP in `packages/network` (`enableQuic` / companion UDP listeners) with CLI (`--quic` / `--no-quic`), YAML (`discovery.quic`), and env (`ENVOYMESH_QUIC`).
 - `[ ]` Dial selection policy: prefer QUIC multiaddrs when present; fall back to TCP cleanly; log/trace enough to debug “why not QUIC”.
-- `[ ]` Smoke matrix doc update: macOS / Windows / Linux + common corporate VPN / UDP-blocked networks (expected degrade path).
+- `[ ]` Smoke coverage doc update: macOS / Windows / Linux + common corporate VPN / UDP-blocked networks (expected degrade path).
 
 Exit criteria:
 
-- `[~]` Same-machine vitest proves **system.ping** over a QUIC dial path when UDP is allowed; TCP-only remains the default when QUIC is off; **WAN** matrix + prefer-QUIC sorting still **`[ ]`**.
-
-## Phase 4G: Optional Control-Plane Signaling (Hybrid)
-
-Goal: add an **optional HTTPS/Matrix control plane** for **bond-scoped dial hints** and **offline-visible coordination** without replacing libp2p-first discovery or EMP authority. Architecture narrative and stress-test against user stories: [architecture-hybrid-planes.md](./architecture-hybrid-planes.md), [user-stories-hybrid-evaluation.md](./user-stories-hybrid-evaluation.md).
-
-**Principles**
-
-- Native mesh remains default: bootstrap, DHT, relay, seeds, capability topics (**WAN follow-on**, **4F**).
-- Matrix (or equivalent) is **hint transport + optional buffer**, not the sole identity or bulk data path.
-- Expand integration only after **thin PoC** proves measurable uplift.
-
-**Work items**
-
-- `[x]` Document modular workflows (Map → Handshake → Intent → Cargo) and evaluation vs agent user stories (links above).
-- `[ ]` **Thin PoC:** headless Matrix client (minimal SDK usage); two accounts; **one bond-scoped room**; publish compact `{ peer_id, multiaddrs[] }` on timer or connect; **merge** into existing dial/hint path (`discovery-seeds` / dial ordering); compare dial success vs bootstrap-only baseline on constrained WAN (same VPS/Mac/Windows trio pattern).
-- `[ ]` Define versioned signaling payload schema (e.g. state event `org.envoymesh.node_info` or timeline equivalent) + rotation/version policy.
-- `[ ]` Tie publishing/subscribing to **bond/trust** records — no acting on stranger hints without policy gate + audit (`p2p.trace`).
-- `[ ]` *(Follow-on)* Optional **EMP-shaped fallback** delivery via Matrix timeline when libp2p unavailable — reconciliation by `correlationId`; explicit threat model for metadata.
-
-Exit criteria:
-
-- `[ ]` PoC proves **measurable** improvement in hint freshness or pairwise dial rate **or** documented decision to defer scope based on metrics / ops cost.
+- `[~]` Same-machine vitest proves **system.ping** over a QUIC dial path when UDP is allowed; TCP-only remains the default when QUIC is off; **WAN** coverage + prefer-QUIC sorting still **`[ ]`**.
 
 ## Phase 4A: Multi-Device Protocol
 
@@ -386,7 +371,7 @@ Exit criteria (local slice):
 
 Goal: support **UserStory** Scenario 2 and Story B — find peers or capabilities **without** publishing a full biography, using signed, policy-bound discovery.
 
-- `[x]` Design discovery transport: start with direct signed request/response over EMP; keep gossipsub/DHT hybrid as later extension; document privacy properties (hashed vs cleartext tags).
+- `[x]` Design discovery transport: start with direct signed request/response over EMP; keep gossipsub or DHT provider records as later extensions; document privacy properties (hashed vs cleartext tags).
 - `[x]` Wire signed **discovery request / response** intents aligned with Agent Card metadata.
 - `[x]` Enforce trust tier and rate limits on discovery traffic.
 
@@ -462,13 +447,245 @@ Exit criteria:
 - `[x]` Installable / signed desktop release pipeline baseline (CI workflow and signing/notarization secret wiring in place; credentials required in release environment).
 - `[x]` Rich chat + multi-step task composition UX (thread grouping/status chips + wizard composer with presets/validation/persisted drafts).
 
+## Phase 8: Agentic Normal Node, LLM First
+
+Goal: make normal nodes use LLMs and local agents safely while relay nodes remain lean. This phase turns the current scaffolding (`knowledge.query`, vault, model router, semantic firewall, bonds, approvals, audit) into testable user-facing intelligence.
+
+Design reference: [Agentic next step](./next-step.md).
+
+### Phase 8 status summary
+
+- Current milestone: **8A — real `knowledge.query` with model router and vault**.
+- Next small step: define the exact `knowledge.response` runtime path and tests before adding anonymous discovery, OpenClaw/HomeClaw, or broadcast.
+- Success bar for this phase: every LLM/agent action is policy-gated, auditable, and independently testable with mock providers before any real model is required.
+- Ordering rule: direct bonded-contact workflows first; contact-scoped discovery and sharing second; tool/agent boundaries third; stronger sandbox before anonymous discovery or broadcast; broad autonomy last.
+
+### 8A: Real `knowledge.query` with model router and vault
+
+Goal: replace the mock inbound knowledge handler with a signed, policy-gated, auditable response path.
+
+Scope boundary: 8A may use a mock or local default provider factory so tests can pass without external services. Full user-facing provider configuration is 8B.
+
+Tasks:
+
+- `[ ]` Define the exact response behavior for `knowledge.query`: no response, deny/approval audit only, or signed `knowledge.response`.
+- `[ ]` Verify existing `KnowledgeQueryPayload` and `KnowledgeResponsePayload` fields are sufficient; add protocol fields only if needed for citations, match score, sensitivity, or refusal reason.
+- `[ ]` Wire `apps/node/src/knowledge-query-inbound.ts` to trust lookup and `evaluatePolicy` before vault/model access.
+- `[ ]` Search the configured vault with `searchVault()` and read only selected, path-safe snippets.
+- `[ ]` Build a minimal prompt template that includes the requester query, allowed snippets, sensitivity, and instruction to answer only from provided context.
+- `[ ]` Route the prompt through `routeModelRequest()` with mock/default local provider support first.
+- `[ ]` Send a signed `knowledge.response` when policy and model routing allow.
+- `[ ]` Audit policy decision, vault search/read, model route decision, egress decision, and outbound response.
+- `[ ]` Add unit tests for policy-denied, blocked, malformed, model-denied, no-match, and successful mock-model paths.
+- `[ ]` Add a two-node smoke path using `--knowledge-query` that verifies response and audit rows.
+- `[ ]` Document how to run mock-provider and optional Ollama/LiteLLM manual tests.
+
+Exit criteria:
+
+- `[ ]` A bonded contact can send `knowledge.query` and receive signed `knowledge.response`.
+- `[ ]` Blocked/public peers do not reach vault/model paths unless policy explicitly allows public sensitivity.
+- `[ ]` Mock provider tests pass without external services.
+- `[ ]` Optional local model runbook exists for Ollama/LiteLLM.
+
+### 8B: Model provider configuration in the normal node
+
+Goal: make model usage configurable without hardcoding provider decisions inside handlers.
+
+Tasks:
+
+- `[ ]` Add node config for model provider mode: `mock`, `ollama`, `litellm`, or disabled.
+- `[ ]` Add provider endpoint/model/env parsing with safe defaults.
+- `[ ]` Add CLI or config inspection for current model policy.
+- `[ ]` Ensure cloud or external providers require policy approval for non-public sensitivity.
+- `[ ]` Write config precedence tests matching existing config patterns.
+
+Exit criteria:
+
+- `[ ]` Node can run with model disabled, mock model, or configured local endpoint.
+- `[ ]` Sensitive context cannot be routed to cloud without owner approval.
+
+### 8C: LLM-assisted chat, draft first
+
+Goal: let the normal node help the owner reply to chats without silently impersonating the owner.
+
+Tasks:
+
+- `[ ]` Add a draft-only model path for inbound `chat.message`.
+- `[ ]` Store generated drafts separately from sent chat messages.
+- `[ ]` Surface drafts through Social or CLI without sending automatically.
+- `[ ]` Add user setting to enable/disable chat assist.
+- `[ ]` Audit prompt, routing decision, and draft creation without logging private full content unless policy allows.
+
+Exit criteria:
+
+- `[ ]` Incoming chat can produce a local draft.
+- `[ ]` No auto-send occurs when draft mode is enabled.
+- `[ ]` Disabling chat assist prevents model calls.
+
+### 8D: Capability manifest for contact-scoped matching
+
+Goal: give each normal node an owner-approved list of what it is willing to answer or do.
+
+Tasks:
+
+- `[ ]` Define a local capability manifest schema with `id`, `version`, `visibility`, `sensitivityCeiling`, keywords, and owner approval timestamp.
+- `[ ]` Store the manifest in the profile directory with atomic writes.
+- `[ ]` Add CLI and/or Social inspection.
+- `[ ]` Use the manifest for contact-scoped `discovery.request` matching before any LLM call.
+- `[ ]` Audit match/no-match decisions.
+
+Exit criteria:
+
+- `[ ]` A contact can ask for a capability and receive a signed `discovery.response` from a matching node.
+- `[ ]` Non-matching capability requests do not call the LLM.
+
+### 8E: Safe match-to-share workflow
+
+Goal: connect discovery to direct, consented sharing.
+
+Tasks:
+
+- `[ ]` Define preview/accept/share semantics using existing EMP intents where possible.
+- `[ ]` Send safe preview text before sending full answers or files.
+- `[ ]` Require approval for raw file transfer or sensitivity above policy ceiling.
+- `[ ]` Use `/envoymesh/data/0.1.0` only after policy and approval pass.
+- `[ ]` Add audit correlation across discovery, preview, accept, and share.
+
+Exit criteria:
+
+- `[ ]` Broadcast/discovery match does not directly leak raw vault content.
+- `[ ]` Full share happens only after accept and policy approval.
+
+### 8F: Local agent tool registry
+
+Goal: let the orchestrator call safe local tools before integrating larger agents.
+
+Tasks:
+
+- `[ ]` Define a local tool descriptor schema: name, input schema, output schema, sensitivity, approval requirement.
+- `[ ]` Add first Envoy-owned tools: vault search, peer/contact lookup, draft message, task summary.
+- `[ ]` Route tool calls through policy and audit.
+- `[ ]` Ensure tools cannot send libp2p messages directly; outbound network remains Envoy-controlled.
+- `[ ]` Add tests for allowed, denied, and malformed tool calls.
+
+Exit criteria:
+
+- `[ ]` A model/orchestrator can call a local tool in a controlled test.
+- `[ ]` Unauthorized tool calls are denied before execution.
+
+### 8G: OpenClaw/HomeClaw adapter boundary
+
+Goal: let external agents use EnvoyMesh as a secure extension without giving them raw network or filesystem access.
+
+Tasks:
+
+- `[ ]` Define adapter contract for external agents to request mesh capabilities.
+- `[ ]` Add an Envoy-owned API such as `mesh.findCapability()` and `mesh.requestKnowledge()` for local agents.
+- `[ ]` Require policy checks before any external-agent request becomes an EMP message.
+- `[ ]` Return only approved, redacted peer results to the external agent.
+- `[ ]` Add a mock external-agent test before real OpenClaw/HomeClaw integration.
+
+Exit criteria:
+
+- `[ ]` Mock agent can ask EnvoyMesh for help through a constrained adapter.
+- `[ ]` Mock agent cannot bypass Envoy policy to send raw libp2p messages.
+
+### 8H: Stronger sandbox and egress hardening
+
+Goal: harden LLM/agent execution before unknown-peer, broadcast, or broad autonomous behavior.
+
+Tasks:
+
+- `[ ]` Add egress scanning for obvious secrets and private-key material.
+- `[ ]` Add per-tool filesystem allowlists and execution budgets.
+- `[ ]` Add model/provider cost and sensitivity budgets.
+- `[ ]` Add approval thresholds for high-risk actions.
+- `[ ]` Add prompt-injection regression tests around vault/tool access.
+
+Exit criteria:
+
+- `[ ]` Prompt injection cannot read outside allowed vault/tool paths in tests.
+- `[ ]` Private-key-like output is blocked before egress.
+- `[ ]` High-risk action creates an approval request instead of executing.
+
+### 8I: Anonymous discovery toggle and fast path
+
+Goal: allow public discovery only when configured, and keep it cheap enough not to block normal node features.
+
+Tasks:
+
+- `[ ]` Add `anonymousDiscoveryMode`: `off`, `contacts-only`, `public-preview`, or `public-auto-answer`.
+- `[ ]` Add anonymous intent allowlist and requested-sensitivity ceiling.
+- `[ ]` Add low-priority queue for anonymous discovery/query work.
+- `[ ]` Add per-peer/per-address rate limits.
+- `[ ]` Match anonymous requests against public manifest metadata before any LLM call.
+- `[ ]` Add load tests or synthetic spam tests proving non-matches do not call the model.
+
+Exit criteria:
+
+- `[ ]` With anonymous discovery off, unknown discovery/query traffic is dropped or ignored.
+- `[ ]` With public preview enabled, matching anonymous requests get only safe previews.
+- `[ ]` Spam/non-matching traffic cannot starve chat, contact, relay, or active task handling.
+
+### 8J: Broadcast substrate
+
+Goal: support one-to-many "need/have" messages after direct and contact-scoped flows are stable.
+
+Tasks:
+
+- `[ ]` Choose first substrate: contact fanout, relay-assisted fanout, DHT provider records, or gossipsub.
+- `[ ]` Define TTL, query ID, dedup, max fanout, max responses, and cancellation.
+- `[ ]` Keep broadcast traffic lower priority than direct contact traffic.
+- `[ ]` Add three-node smoke test for need → match → direct response.
+
+Exit criteria:
+
+- `[ ]` Three nodes can participate in a bounded broadcast test.
+- `[ ]` Only matching nodes respond.
+- `[ ]` Broadcast stops after timeout, enough results, or cancel.
+
+### 8K: Reputation and official credentials
+
+Goal: prioritize reliable peers and identify official feature nodes without creating a global trust dependency.
+
+Tasks:
+
+- `[ ]` Add local peer scoring based on task success/failure, latency, usefulness, and abuse.
+- `[ ]` Add signed task feedback records.
+- `[ ]` Add official feature-node credential verification for configured trust anchors.
+- `[ ]` Use local score for queue priority and matching order without bypassing policy.
+
+Exit criteria:
+
+- `[ ]` Failed tasks reduce local score.
+- `[ ]` Successful tasks improve local score.
+- `[ ]` Official node credential verifies cryptographically.
+- `[ ]` Local score affects prioritization but does not bypass policy.
+
+### 8L: Autonomous user representative
+
+Goal: let the node stand for the user in bounded domains after direct, discovery, tool, sandbox, and scoring foundations are verified.
+
+Tasks:
+
+- `[ ]` Add user-configured autonomous policies by domain: social, knowledge, home, research.
+- `[ ]` Add human approval thresholds for sensitive actions.
+- `[ ]` Add daily/weekly audit digest for autonomous decisions.
+- `[ ]` Add owner kill switch to pause all autonomous actions.
+
+Exit criteria:
+
+- `[ ]` Node handles explicitly low-risk requests automatically.
+- `[ ]` Node asks for approval on sensitive requests.
+- `[ ]` Owner can pause autonomous actions immediately.
+
 ## Current Milestone
 
-Milestone: **Phase 7** operator console baseline is now feature-complete for this slice (dashboard + CLI + rich composition UX + pairing + discovery digest + Relay Manager panel). Cross-network P2P readiness has a shipped relay-control baseline (`relay.checkin`, bounded `relay.lookup`, relay summaries, summary-guided relay graph routing, `relay-status` diagnostics, and relay health/recovery snapshots), while live multi-machine WAN smoke remains an external validation gate. **Optional adjunct:** **[Phase 4G](./architecture-hybrid-planes.md)** (HTTPS/Matrix bond-scoped signaling) is planned **after** native WAN validation and gated by thin PoC metrics.
+Milestone: **Phase 8A** is the active milestone: replace mock `knowledge.query` with policy-gated vault retrieval, model routing, signed `knowledge.response`, and audit coverage. Phase 7 operator console baseline is complete for its slice. Cross-network P2P readiness has a shipped relay-control baseline (`relay.checkin`, bounded `relay.lookup`, relay summaries, summary-guided relay graph routing, `relay-status` diagnostics, and relay health/recovery snapshots), while live multi-machine WAN smoke remains an external validation gate.
 
 ### Archive (historical snapshot — do not use for status)
 
-**Source of truth** for shipped vs open work is the **phase checklists** above (`Phase 0`–`Phase 7`, **Open questions**, **Coverage**). This block is a compact merge of the old “Recently completed” + “Immediate tasks” lists so we do not maintain duplicate checklines.
+**Source of truth** for shipped vs open work is the **phase checklists** above (`Phase 0`–`Phase 8`, **Open questions**, **Coverage**). This block is a compact merge of the old “Recently completed” + “Immediate tasks” lists so we do not maintain duplicate checklines.
 
 - `[x]` **Docs:** `docs/scenarios.md`, `docs/UserStory.md`, `docs/alignment-review.md` in place as story / alignment spine.
 - `[x]` **Monorepo bootstrap:** npm workspaces, `packages/protocol`, `packages/identity`, `packages/bonds`, `packages/network`, `apps/node` entry, first tests, two-node signed ping.
@@ -478,14 +695,15 @@ Milestone: **Phase 7** operator console baseline is now feature-complete for thi
 
 ### Next planning pulls (from [scenarios](./scenarios.md), [UserStory](./UserStory.md); [alignment](./alignment-review.md))
 
-- `[~]` Broadcast / fan-out **termination** — **Phase 4D shipped locally**: mandate / propose expiry, `task.cancel` / satisfied lifecycle, `closeOnFirstCompletedResult`, correlation in envelopes + audit. Still **open**: hop TTL, gossip-wide cancel, collect-N, correlation-only cancel on the wire.
-- `[x]` **Phase 4E** semantic **discovery** (signed `discovery.request/response`, trust+rate-gated inbound handling, Scenario 2, Story B baseline).
-- `[x]` **Phase 4A** (**non-mobile**): device pairing + primary-offline defer / owner surface baseline. *Thin-mobile channel checkbox **parked** (satellite app out of scope for now).*
-- `[x]` **Scenario 6 pick (first vertical):** voucher + chunked data path (`/envoymesh/data/0.1.0`) shipped with signed vouchers, verification, and inbound write guards.
-- `[x]` **Scenario 6 follow-on (strict baseline):** required envelope roles + hard channel split for `/chat` vs `/message` + runtime rejection semantics for violations.
-- `[~]` **Cross-network P2P readiness (post-LAN gate):** WAN defaults/profile, bootstrap + relay fleet strategy, relay check-in/lookup/routing baseline, non-LAN smoke checklist, and dashboard/CLI diagnostics. Remaining gap: live multi-machine relay/DCUtR validation outside CI.
-- `[ ]` **[Phase 4G](./architecture-hybrid-planes.md)** — thin PoC for optional HTTPS/Matrix bond-scoped signaling → merged dial hints; schema + bond gates before broader hybrid scope.
-- `[x]` **Semantic firewall** (US-F5) — first slice shipped in `@envoymesh/models` (`routeModelRequest`); extend with trust/redaction/tool gates later.
+- `[ ]` **Phase 8A** — real `knowledge.query`: policy gate → vault search/read → model router → signed `knowledge.response` → audit.
+- `[ ]` **Phase 8B** — model provider config in the normal node; mock/local first, cloud behind approval.
+- `[ ]` **Phase 8C** — LLM-assisted chat as draft-only before any auto-send behavior.
+- `[ ]` **Phase 8D–8E** — capability manifest, contact-scoped matching, safe preview, and direct sharing after match.
+- `[ ]` **Phase 8F–8G** — local tool registry and constrained OpenClaw/HomeClaw adapter boundary.
+- `[ ]` **Phase 8H** — stronger sandbox and egress hardening before public/anonymous traffic grows.
+- `[ ]` **Phase 8I–8J** — anonymous discovery toggle, fast path, and bounded broadcast only after direct/contact flows and sandbox gates are verified.
+- `[ ]` **Phase 8K–8L** — local reputation, official credentials, bounded autonomy, digests, and kill switch.
+- `[~]` **Cross-network P2P readiness (post-LAN gate):** relay graph baseline is shipped; live multi-machine relay/DCUtR validation and operator defaults remain open but do not block Phase 8A.
 
 ## Coverage vs UserStory and design docs
 
@@ -503,11 +721,12 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | Story A — **pairing (+ thin mobile parked)** | Phase **4A** | Pairing + offline defer baseline **`[x]`**; thin mobile **`[ ]`** *parked*. | `[~]` |
 | Story A — **offline primary, defer / notify** | Phase **4A** | Baseline defer + owner surface in approval/audit path; richer notify/retry UX later. | `[~]` |
 | Story B — **morning report / ranked discovery UX** | Phase **7** | Morning report digest baseline in dashboard + CLI. Relay graph routing now supplies bounded relay-reachability lookup beneath higher-level discovery. | `[x]` |
-| Story C — **H2A as distinct channel** | Scenario 6 pick | Same as matrix. | `[ ]` |
-| Agent stories — **interest/book/stranger/E2EE buffer** ([evaluation](./user-stories-hybrid-evaluation.md)) | Phase **4G** + bonds/policy | Docs **`[x]`** stress-test vs hybrid plane · **`[ ]`** transport/policy features beyond signaling PoC | `[~]` |
+| Story C — **H2A as distinct channel** | Scenario 6 pick + Phase 8 | Same communication-role gap; Phase 8A starts the real H2A-style `knowledge.query` path. | `[ ]` |
+| Agent stories — **interest/book/stranger/E2EE buffer** | Phase 8 + bonds/policy | Agentic next-step design **`[x]`** · direct/contact LLM workflows **`[ ]`** · anonymous discovery/broadcast later **`[ ]`** | `[~]` |
 | Story F — **DID-targeted LAN discovery** | Phase **4** | LAN identity match by owner-id target resolution **`[x]`**; live proofs **`[!]`** | `[~]` |
 | **Semantic firewall** (UserStory + US-F5) | Phase **6** | `evaluateSemanticFirewall` + `routeModelRequest` integration. | `[x]` |
-| **`knowledge.query` handler** | Phase 3 | Inbound mock + CLI; EMP payload schema in protocol. | `[x]` |
+| **`knowledge.query` handler** | Phase 3 + **Phase 8A** | Inbound mock + CLI; EMP payload schema in protocol **`[x]`** · real policy-gated vault + model + signed `knowledge.response` path **`[ ]`**. | `[~]` |
+| **Agentic normal node / LLM first** | **Phase 8** | Design captured in [Agentic next step](./next-step.md); implementation starts with direct contact `knowledge.query`, then chat assist, capability matching, tool registry, sandbox hardening, anonymous discovery, broadcast, reputation, and bounded autonomy. | `[ ]` |
 | **Distributed state (`loro` / `yjs`)** | Key Decisions | Direction only; no build checkbox. | `[ ]` |
 | Tooling / persistence | Key Decisions + detailed-design | SQLite Key Decision **`[ ]`**. | `[~]` |
 
@@ -526,6 +745,8 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | `[x]` | **SQLite vs “Phase 1”** | **SQLite not part of Phase 1 protocol/identity**; **local-store is JSONL + JSON files** until query/reporting needs justify SQLite | Key Decisions (storage line), [detailed-design.md](./detailed-design.md) (open implementation decisions) |
 | `[x]` | **Local “when do we stop work on a task?”** | Mandate + propose **wall-clock expiry**, **`task.cancel`**, **satisfied** after first **completed** `task.result` when `closeOnFirstCompletedResult`, persisted **`task-runtime-state.json`**, **`correlationId`** in envelopes and audit | Phase **4D**, [scenarios.md](./scenarios.md) US-C2 / US-C3 partial |
 | `[x]` | AI runtime local default | `node-llama-cpp` direction for local models | Key Decisions |
+| `[x]` | Agentic topology | Relay nodes remain lean; normal nodes host LLM, vault, tools, OpenClaw/HomeClaw adapters, policy, approvals, and audit | Key Decisions, [Agentic next step](./next-step.md) |
+| `[x]` | Agentic protocol shape | Reuse signed EMP envelopes/intents; do not introduce a separate JSON-RPC base protocol for node-to-node agent traffic | Key Decisions, [Agentic next step](./next-step.md) |
 | `[x]` | Mobile v1 | Thin UI Mode; explicit deferral of full mesh on phone | Key Decisions, Phase 4A |
 | `[x]` | First operator UI | Developer CLI + Electron dashboard shell | Phase 7 |
 
@@ -538,6 +759,11 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | `[ ]` | **libp2p `PeerID` vs Envoy cryptographic identity** | Discovery logs, multi-key stories, DID mapping | Still open in [detailed-design.md](./detailed-design.md); affects addressing docs. |
 | `[ ]` | **Cloud model providers (first)** | Vendor keys, compliance, rate limits | `packages/models` is pluggable; product default unset. |
 | `[ ]` | **Default policy for redacted / non-public context to cloud** | Story C and semantic firewall | Tied to approvals + redaction pipeline; not normative in EMP yet. |
+| `[ ]` | **First real model provider default** | Phase 8A/8B needs a predictable dev path | Mock provider for tests is clear; product default among Ollama/LiteLLM/node-llama-cpp still needs a decision. |
+| `[ ]` | **Anonymous discovery default** | Determines whether strangers can reach normal-node matching at all | Phase 8H proposes `off`, `contacts-only`, `public-preview`, `public-auto-answer`; default should likely be conservative. |
+| `[ ]` | **First broadcast substrate** | Broadcasting can be contact fanout, relay-assisted fanout, DHT provider records, or gossipsub | Defer until Phase 8I after direct/contact flows are verified. |
+| `[ ]` | **External agent adapter contract** | OpenClaw/HomeClaw should extend EnvoyMesh without bypassing policy | Phase 8G should define local API boundary before real integration. |
+| `[ ]` | **Official feature-node credential format** | Needed for official relays/domain experts without central accounts | Phase 8K; likely signed credentials from configured trust anchors. |
 | `[ ]` | **Broadcast termination on the wire** — hop TTL, **network-wide** cancel propagation, **collect-N** (`k > 1`), correlation-only cancel | Scenario 3, US-C2/US-C3 | Phase 4D is **per-receiver local** only; fan-out EMP/gossip shape TBD. |
 | `[x]` | **Sender / receiver role** (human vs agent) | Scenario 6, UserStory header sketch | Required envelope roles and strict validation shipped with channel split (`/chat` vs `/message`); violations are rejected in schema/runtime/network send paths. |
 | `[ ]` | **Live mDNS / DHT / relay proofs outside CI** | Story F, wide-area connectivity | Blocked on environment; [live-connectivity-testing.md](./live-connectivity-testing.md). |
@@ -547,9 +773,10 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 
 - `[x]` **Phase 4E** — semantic discovery baseline (Scenario 2, Story B, US-B1).
 - `[~]` **Phase 4A** — device pairing; primary-offline defer / owner surface baseline shipped. *Thin mobile channel: **parked** (see Prioritization).*
-- `[x]` **Scenario 6 vertical (first)** — voucher + `/envoymesh/data` shipped (matrix, Scenario 5).
+- `[x]` **Scenario 6 vertical (first)** — voucher + `/envoymesh/data` shipped (Scenario 5).
 - `[x]` **Scenario 6 vertical (next baseline)** — explicit role fields + strict `/chat` vs `/message` split with rejection semantics.
-- `[~]` **Cross-network P2P rollout** — WAN-first profile, bootstrap/relay strategy, relay graph routing, diagnostics, non-LAN smoke; optional **[Phase 4G](./architecture-hybrid-planes.md)** signaling adjunct after native WAN baseline.
+- `[ ]` **Phase 8** — agentic normal node roadmap: real `knowledge.query`, chat assist, capability manifest, local tool registry, sandbox, anonymous discovery, broadcast, reputation, official credentials, bounded autonomy.
+- `[~]` **Cross-network P2P rollout** — WAN-first profile, bootstrap/relay strategy, relay graph routing, diagnostics, and non-LAN smoke.
 - `[ ]` **Stories D / E** — multi-hop discovery, commerce, receipts (no dedicated phase yet; add when scenarios are scoped).
 - `[ ]` **Optional vault** — content-addressing, IPFS/Filecoin paths (Phase 5 open items).
 
@@ -559,6 +786,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 
 | Date | Change |
 |------|--------|
+| 2026-05-05 | **Phase 8 agentic normal node roadmap:** linked [Agentic next step](./next-step.md), made Phase 8A real `knowledge.query` the active milestone, added detailed 8A-8L tasks/exit criteria, updated current pulls, coverage, key decisions, and open questions. |
 | 2026-04-26 | Related-doc strip, north-star checkline, Phase 4A Full Node defer → `[x]`, Phase 6 semantic-firewall exit criterion, open-question table **Status** headers, Immediate tasks disclaimer, backlog footer unchanged in meaning. |
 | 2026-04-26 | **On this page** TOC (phases + plan sections); **Current Milestone** merged “Recently completed” + “Immediate tasks” into one **Archive** snapshot + **Next planning pulls** subsection. |
 | 2026-04-26 | **Phase 3:** `knowledge.query` EMP payload (`KnowledgeQueryPayloadSchema`), inbound mock handler, CLI flags, tests; docs (EMP, detailed-design, QuickStart). |
@@ -580,6 +808,6 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | 2026-04-28 | **Phase 4F.C (partial):** additive QUIC via `@chainsafe/libp2p-quic`, companion `/udp/.../quic-v1` listeners, node flags + YAML + `ENVOYMESH_QUIC`, `packages/network` integration test for signed ping over QUIC; documented libp2p “listen multiaddr already includes `/p2p/self`” dial caveat in `docs/p2p-discovery.md`. |
 | 2026-04-28 | **Phase 4F.A (partial):** capability-topic scaffolding in `@envoymesh/network` (`cidForCapabilityTopic`, `provideCapabilityTopic`, `findCapabilityTopicProviders`, bounded query timeout handling); QUIC transport load moved to lazy import so non-QUIC environments can still import/run network tests. |
 | 2026-04-29 | **Discovery/connectivity POC playbook:** added [poc-discovery-connectivity.md](./poc-discovery-connectivity.md); `@envoymesh/node` script alias `poc:discovery`; cross-links from prioritization, live-connectivity-testing, p2p-discovery, redesign-strategy doc map. |
-| 2026-04-28 | **Hybrid replanning:** introduced **[Phase 4G](#phase-4g-optional-control-plane-signaling-hybrid)** (optional Matrix/HTTPS control-plane signaling); updated Prioritization, Key Decisions, traceability + coverage rows; linked [architecture-hybrid-planes.md](./architecture-hybrid-planes.md) and [user-stories-hybrid-evaluation.md](./user-stories-hybrid-evaluation.md). |
+| 2026-05-05 | **Removed external signaling plan:** kept coordination on native libp2p, DHT/provider hints, relay lookup, seeds, and invite/bootstrap paths. |
 | 2026-04-30 | **Relay graph + manager baseline:** added typed relay protocol primitives, in-memory relay roster/book/summary state, summary-guided bounded relay lookup routing, loop/negative-cache controls, `relay.manager.snapshot`, `relay-status`, desktop Relay Manager panel, tests, and docs. |
 | 2026-04-30 | **Relay stability baseline:** added relay health scoring, local health audit traces, bounded soft-repair actions, health fields in Relay Manager snapshots/CLI/dashboard, and supervisor recipes for macOS, Linux, Windows, Docker, and Kubernetes. |

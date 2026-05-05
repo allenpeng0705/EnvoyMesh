@@ -2,7 +2,7 @@
 
 This document is the **single reference** for the EnvoyMesh transport POC: **Stage A** (LAN) through **Stage D** (full node / WAN-first). It explains **what each stage tests**, **what it does not prove**, and **how to run it**.
 
-For hybrid Matrix signaling (optional, later), see [architecture-hybrid-planes](./architecture-hybrid-planes.md). For WAN architecture (bootstrap vs relay vs NAT), see [p2p-discovery](./p2p-discovery.md). Extended runbooks beyond these stages live in [live-connectivity-testing](./live-connectivity-testing.md).
+For WAN architecture (bootstrap vs relay vs NAT), see [p2p-discovery](./p2p-discovery.md). Extended runbooks beyond these stages live in [live-connectivity-testing](./live-connectivity-testing.md).
 
 ---
 
@@ -192,7 +192,7 @@ Increase `--timeout-ms` (e.g. `120000`); confirm Stage B passes; try extra `--bo
 ### What it does **not** test (by itself)
 
 - Automated assertion like A–C success strings—you validate **CLI output** and logs.
-- Matrix / HTTPS signaling ([Phase 4G](./implementation-plan.md#phase-4g-optional-control-plane-signaling-hybrid)).
+- External signaling networks; EnvoyMesh discovery is tracked through native libp2p, DHT/provider hints, relay lookup, seeds, and invite/bootstrap paths.
 
 ### Typical commands
 
@@ -259,7 +259,6 @@ Stage D is where **two machines** (Mac + Windows) usually validate **real** Envo
 
 | Topic | Where it belongs |
 |-------|------------------|
-| Matrix / bond-scoped HTTPS signaling | [Phase 4G](./implementation-plan.md#phase-4g-optional-control-plane-signaling-hybrid), [architecture-hybrid-planes](./architecture-hybrid-planes.md) |
 | EMP **`discovery.request`** / Agent Card semantics | Phase 4E, [implementation-plan](./implementation-plan.md) |
 | Full **DCUtR** proof between two NAT’d laptops | Manual procedure [live-connectivity-testing](./live-connectivity-testing.md) §4 |
 | Desktop UI / vault / task flows | §5–7 same doc |

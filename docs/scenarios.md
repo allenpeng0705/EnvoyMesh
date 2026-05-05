@@ -167,7 +167,7 @@ This document is the **scenario backlog** for EnvoyMesh: short, testable user st
 
 ---
 
-## Epic F — Communication matrix (human ↔ agent)
+## Epic F — Communication roles (human ↔ agent)
 
 Stories use **sender role** and **receiver role** to avoid ambiguous “chat.”
 

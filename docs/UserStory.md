@@ -7,6 +7,7 @@ Use it alongside:
 - [Alignment review](./alignment-review.md) — design vs implementation snapshot (update after major milestones).
 - [EnvoyMesh scenarios](./scenarios.md) — structured epic/story backlog with acceptance and status.
 - [Implementation plan](./implementation-plan.md) — phased delivery.
+- [Agentic next step](./next-step.md) — design rationale for LLM and agentic normal nodes.
 - [EnvoyMesh Protocol](./protocol-standard.md) (EMP) — normative contracts.
 
 When a story becomes buildable, add or refine a matching entry in `scenarios.md` with testable acceptance criteria.
@@ -26,7 +27,7 @@ Legend: **Aligned** = behavior matches the story in a meaningful way today. **Pa
 | 3 Broadcast & kill | **Partial** | Local expiry, cancel / satisfied / first completed result, `correlationId` + audits; no hop TTL / gossip cancel / collect-N. |
 | 4 Social handshake | **Partial** | Trust store, approvals, policy; full bond + proof-of-context **flow** not first-class. |
 | 5 Intent-based file share | **Partial** | Shared vault + search + audit; no voucher + verified P2P chunk **protocol**. |
-| 6 Communication matrix | **Planned** | Single message stream today; roles + `/chat` `/agent` `/data` split is design target. |
+| 6 Communication roles | **Planned** | Single message stream today; roles + `/chat` `/agent` `/data` split is design target. |
 
 ### Narrative journeys (this document)
 
@@ -38,6 +39,12 @@ Legend: **Aligned** = behavior matches the story in a meaningful way today. **Pa
 | D Multi-hop talent scout | **Planned** | Recursive / anonymous forwarding not implemented. |
 | E Deal-maker | **Planned** | Payments / atomic swap / receipts not implemented. |
 | F Crisis Envoy | **Partial** | mDNS + local TCP work; DID-targeted “find peer on LAN” not a dedicated feature. |
+| G Personal knowledge proxy | **Planned** | `knowledge.query` exists as mock; Phase 8A turns it into policy-gated vault + model response. |
+| H Agent-assisted chat | **Planned** | Chat exists; LLM draft/suggestion path is not built. |
+| I Capability matchmaker | **Planned** | `discovery.request/response` exists; owner-approved manifest + match-to-share workflow not built. |
+| J Agent capability extender | **Planned** | OpenClaw/HomeClaw adapter boundary not built. |
+| K Public expert with safe preview | **Planned** | Anonymous discovery toggle, fast path, and public preview not built. |
+| L Bounded autonomous representative | **Planned** | Sandbox, reputation, official credentials, autonomy policy, digest, and kill switch not built. |
 
 For a longer narrative of gaps and strengths, see [alignment-review.md](./alignment-review.md).
 
@@ -128,7 +135,7 @@ These scenarios define how EnvoyMesh differs from a generic P2P stack.
 
 ---
 
-### Scenario 6 — Communication matrix (who talks to whom)
+### Scenario 6 — Communication roles (who talks to whom)
 
 After a connection exists, traffic is not all “chat.” Modes (with **sender role** and **receiver role** on each message):
 
@@ -282,6 +289,103 @@ interface EnvoyMessage {
 
 ---
 
+## Agentic normal node stories
+
+These stories describe the next product step: relays stay lean, while normal nodes become policy-gated LLM/agent hosts. Implementation tracking lives in [Phase 8](./implementation-plan.md#phase-8-agentic-normal-node-llm-first).
+
+### Story G — Personal knowledge proxy (first real Brain)
+
+**Persona:** Bob, engineer with a local vault of notes; **goal:** let a trusted contact ask his Envoy a question while Bob is busy.
+
+**Journey:**
+
+1. Alice, a bonded contact, sends Bob's Envoy a signed `knowledge.query`.
+2. Bob's Envoy verifies the envelope, checks trust, applies sensitivity policy, and searches only the approved vault.
+3. The LLM receives only the allowed snippets, not Bob's full filesystem.
+4. Bob's Envoy returns a signed `knowledge.response` with a concise answer or a refusal.
+5. Bob can later inspect audit rows showing policy, vault, model, and response decisions.
+
+**Features implied:** Phase 8A; policy-gated vault RAG, model router in the node runtime, signed response, audit trail.
+
+---
+
+### Story H — Agent-assisted chat (draft before impersonation)
+
+**Persona:** Bob; **goal:** reply faster without letting the LLM secretly speak as him.
+
+**Journey:**
+
+1. Alice sends a normal `chat.message`.
+2. Bob's Envoy optionally asks the local model for a suggested reply.
+3. The suggestion is shown as a draft in the UI, separate from the real chat log.
+4. Bob edits, sends, ignores, or disables suggestions.
+
+**Features implied:** Phase 8C; draft storage, user setting, audit of model usage, no default auto-send.
+
+---
+
+### Story I — Capability matchmaker (selective exposure)
+
+**Persona:** Sarah, looking for someone who knows a niche topic; **goal:** discover helpful Envoys without everyone publishing private biographies.
+
+**Journey:**
+
+1. Bob configures an owner-approved capability manifest such as "can answer public EnvoyMesh/libp2p questions."
+2. Sarah's Envoy sends a contact-scoped `discovery.request`.
+3. Bob's Envoy checks the manifest and replies only if there is a match.
+4. If Sarah accepts the preview, the two Envoys move to direct sharing under policy.
+
+**Features implied:** Phase 8D-8E; capability manifest, cheap matching before LLM, safe preview, accept/share workflow.
+
+---
+
+### Story J — Agent capability extender (OpenClaw/HomeClaw through Envoy)
+
+**Persona:** Bob using HomeClaw or OpenClaw; **goal:** let a local specialist agent ask the mesh for help without giving it raw network access.
+
+**Journey:**
+
+1. Bob asks HomeClaw/OpenClaw to complete a task.
+2. The local agent realizes it needs external knowledge or a peer capability.
+3. It calls a constrained Envoy tool such as `mesh.requestKnowledge()` or `mesh.findCapability()`.
+4. Envoy applies owner policy, signs EMP messages, talks to peers, filters results, and returns only approved data to the local agent.
+
+**Features implied:** Phase 8F-8G; local tool registry, adapter boundary, no direct libp2p access for external agents.
+
+---
+
+### Story K — Public expert with safe preview (anonymous discovery)
+
+**Persona:** A stranger looking for help; **goal:** ask the mesh whether anyone can help without becoming a contact first.
+
+**Journey:**
+
+1. Bob enables anonymous discovery in a conservative mode such as `public-preview`.
+2. A stranger sends a public-sensitivity query.
+3. Bob's Envoy checks configuration, rate limits, capability manifest, and egress rules before any LLM call.
+4. If there is a match, Bob's Envoy returns a safe preview or asks the stranger to start a `bond.request`.
+5. Raw data and private context remain unavailable.
+
+**Features implied:** Phase 8H-8I; sandbox/egress first, anonymous toggle, fast path, low-priority queue, public preview.
+
+---
+
+### Story L — Bounded autonomous representative
+
+**Persona:** Bob; **goal:** let his Envoy stand for him in low-risk domains while preserving final control.
+
+**Journey:**
+
+1. Bob defines autonomy policies by domain: social, knowledge, home, research.
+2. Bob's Envoy automatically handles explicitly low-risk requests.
+3. Higher-risk actions create approval prompts, not silent execution.
+4. The Envoy summarizes autonomous decisions in a digest.
+5. Bob can pause autonomy immediately with a kill switch.
+
+**Features implied:** Phase 8K-8L; local reputation, official credentials, autonomy policy, approval thresholds, digest, kill switch.
+
+---
+
 ## Advanced stories → protocol features (traceability)
 
 | Story | Feature pressure | Why it matters |
@@ -289,6 +393,10 @@ interface EnvoyMessage {
 | Talent scout | Recursive gossip / forwarded discovery | Reach beyond first hop safely. |
 | Deal-maker | Conditional mandates, receipts | Autonomous commerce under caps. |
 | Crisis Envoy | Local discovery (mDNS), LAN-first | Mesh works when the internet does not. |
+| Personal knowledge proxy | `knowledge.query` → vault → model → signed response | First real LLM workflow for normal nodes. |
+| Agent capability extender | Local tool registry + constrained external-agent adapter | Lets OpenClaw/HomeClaw use the mesh without bypassing Envoy policy. |
+| Public expert | Anonymous mode + fast match + safe preview | Allows public discovery without waking the LLM for every stranger request. |
+| Autonomous representative | Sandbox, reputation, approvals, digest, kill switch | Lets the Envoy stand for the owner without becoming unbounded. |
 
 ---
 
@@ -299,6 +407,7 @@ interface EnvoyMessage {
 3. **Security by isolation** — agent logic constrained (process today; Wasm directionally).
 4. **Semantic consistency** — **intents** agents can reason about, not only opaque bytes.
 5. **Observability** — audit JSONL with **correlation** to stitch multi-peer flows.
+6. **Lean core, intelligent edge** — relay nodes route and match; normal nodes run LLMs, tools, vault access, and owner policy.
 
 ---
 
@@ -320,3 +429,4 @@ Track concrete fields in `protocol-standard.md`; track delivery in `implementati
 |------|--------|
 | 2026-04-26 | Initial `UserStory.md` from product narrative and journey-style stories. |
 | 2026-04-26 | Added implementation snapshot table; linked `alignment-review.md`. |
+| 2026-05-05 | Added agentic normal node stories G-L aligned with Phase 8 and `next-step.md`. |

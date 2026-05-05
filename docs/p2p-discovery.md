@@ -2,7 +2,7 @@
 
 This document explains how EnvoyMesh nodes discover each other on **native libp2p paths** (LAN and WAN), what “healthy” discovery looks like, and how to debug failures.
 
-**Scope:** Describes bootstrap, DHT, relay, seeds, and observability **without requiring Matrix**. Optional HTTPS/Matrix control-plane signaling is documented in [architecture-hybrid-planes](./architecture-hybrid-planes.md) and [redesign-strategy](./redesign-strategy.md); it **complements**—rather than replaces—the posture below unless product explicitly adopts Phase 4G defaults.
+**Scope:** Describes bootstrap, DHT, relay, seeds, and observability for EnvoyMesh's native libp2p-first discovery posture. No external signaling network is planned for discovery.
 
 **POC entry:** ordered proof sequence for transport discovery + connectivity (LAN → bootstrap/DHT → relay observation) lives in [poc-discovery-connectivity](./poc-discovery-connectivity.md).
 
@@ -101,7 +101,7 @@ For EnvoyMesh, QUIC should land as:
 
 - **additive**: TCP remains supported for compatibility and debugging
 - **preference policy**: prefer QUIC multiaddrs when present, fall back cleanly *(not wired into dial sorting yet — today QUIC is parallel; TCP-first dials still behave as before)*
-- **release gates**: macOS / Windows / Linux smoke matrix + firewall/VPN adversarial notes
+- **release gates**: macOS / Windows / Linux smoke coverage + firewall/VPN adversarial notes
 
 **Shipped (opt-in):** `@chainsafe/libp2p-quic` is registered alongside TCP when enabled; each TCP listen address gets a companion `/udp/.../quic-v1` listener. Enable with **`--quic`** / **`--no-quic`**, YAML `discovery.quic`, or **`ENVOYMESH_QUIC=1`**. *(Native QUIC bindings are platform-specific; CI covers the integration test where the runner matches a published `@chainsafe/libp2p-quic-*` binary.)*
 
@@ -485,7 +485,6 @@ For WAN-first testing, prefer **explicit org bootstrap/relay multiaddrs** in add
 
 ## Related Docs
 
-- [Hybrid planes (discovery → connection → communication → data)](./architecture-hybrid-planes.md)
 - [QuickStart](../QuickStart.md)
 - [Live Connectivity Testing](./live-connectivity-testing.md)
 - [Developer CLI](./developer-cli.md)
