@@ -62,6 +62,15 @@ export interface InboundDataTransfer {
 
 export type MeshDataTransferHandler = (message: InboundDataTransfer) => Promise<void> | void;
 
+/** Options for {@link EnvoyMesh.send}, {@link EnvoyMesh.sendChat}, and other outbound envelope sends. */
+export interface MeshOutboundOptions {
+  /**
+   * Extra multiaddrs to try (e.g. from `system.signal` in the peer directory) when a bare `/p2p/…`
+   * dial does not succeed.
+   */
+  dialHints?: string[];
+}
+
 export interface EnvoyMeshOptions {
   listen?: string[];
   enableMdns?: boolean;
@@ -378,8 +387,8 @@ export class EnvoyMesh {
     return () => this.peerDiscoveryHandlers.delete(handler);
   }
 
-  async send(target: string, envelope: EnvoyEnvelope): Promise<number> {
-    return this.sendEnvelopeOnProtocol(target, envelope, ENVOY_MESSAGE_PROTOCOL);
+  async send(target: string, envelope: EnvoyEnvelope, sendOptions?: MeshOutboundOptions): Promise<number> {
+    return this.sendEnvelopeOnProtocol(target, envelope, ENVOY_MESSAGE_PROTOCOL, sendOptions);
   }
 
   /**
@@ -467,64 +476,73 @@ export class EnvoyMesh {
     return reply;
   }
 
-  async sendChat(target: string, envelope: EnvoyEnvelope): Promise<number> {
-    return this.sendEnvelopeOnProtocol(target, envelope, ENVOY_CHAT_PROTOCOL);
+  async sendChat(target: string, envelope: EnvoyEnvelope, sendOptions?: MeshOutboundOptions): Promise<number> {
+    return this.sendEnvelopeOnProtocol(target, envelope, ENVOY_CHAT_PROTOCOL, sendOptions);
+  }
+
+  private async openOutboundStream(
+    target: string,
+    protocol: string,
+    sendOptions?: MeshOutboundOptions,
+  ): Promise<{ stream: any; remotePeerId?: string }> {
+    const node = this.requireNode();
+    const peerIdStr = parsePeerIdFromDialTarget(target);
+
+    const existing = this.findOpenConnectionToPeer(node, peerIdStr);
+    if (existing) {
+      const stream = await existing.newStream(protocol);
+      return { stream, remotePeerId: existing.remotePeer.toString() };
+    }
+
+    const dialTarget = target.startsWith("/") ? multiaddr(target) : multiaddr(`/p2p/${target}`);
+    try {
+      const stream = await node.dialProtocol(dialTarget as any, protocol);
+      const s = stream as { connection?: { remotePeer?: { toString(): string } } };
+      return { stream, remotePeerId: s.connection?.remotePeer?.toString() };
+    } catch (firstError) {
+      const hints = sortDialHints(sendOptions?.dialHints ?? []);
+      let lastError: unknown = firstError;
+      for (const ma of dialHintsToMultiaddrs(hints, peerIdStr)) {
+        try {
+          const stream = await node.dialProtocol(ma as any, protocol);
+          const s = stream as { connection?: { remotePeer?: { toString(): string } } };
+          return { stream, remotePeerId: s.connection?.remotePeer?.toString() };
+        } catch (e) {
+          lastError = e;
+        }
+      }
+      throw lastError instanceof Error ? lastError : new Error(String(lastError));
+    }
+  }
+
+  private findOpenConnectionToPeer(node: Libp2p, peerIdStr: string): any | undefined {
+    const open = node
+      .getConnections()
+      .filter((c) => c.remotePeer.toString() === peerIdStr && c.status === "open");
+    if (open.length === 0) {
+      return undefined;
+    }
+    const direct = open.find((c) => !(c.remoteAddr?.toString() ?? "").includes("/p2p-circuit"));
+    return direct ?? open[0];
   }
 
   private async sendEnvelopeOnProtocol(
     target: string,
     envelope: EnvoyEnvelope,
     protocol: string,
+    sendOptions?: MeshOutboundOptions,
   ): Promise<number> {
     validateEnvelopeProtocol(protocol, envelope);
-    // Convert to proper multiaddr - wrap peerId in /p2p/ if not already a multiaddr
-    let dialTarget: ReturnType<typeof multiaddr>;
-    if (target.startsWith("/")) {
-      dialTarget = multiaddr(target);
-    } else {
-      dialTarget = multiaddr(`/p2p/${target}`);
-    }
     const startedAt = Date.now();
 
-    // Use dialProtocol - it handles connection + stream setup in one step,
-    // which is more reliable than separate dial() + newStream() calls
-    console.log(`[network] sendEnvelopeOnProtocol: dialing ${target} with protocol ${protocol}`);
     let stream: any;
     try {
-      stream = await this.requireNode().dialProtocol(dialTarget as any, protocol);
-      console.log(`[network] sendEnvelopeOnProtocol: stream opened to ${target}`);
+      const opened = await this.openOutboundStream(target, protocol, sendOptions);
+      stream = opened.stream;
     } catch (dialError) {
       const errorMsg = dialError instanceof Error ? dialError.message : String(dialError);
-      console.error(`[network] sendEnvelopeOnProtocol: dialProtocol failed to ${target}: ${errorMsg}`);
-
-      // Try one more time with a fresh approach - close any existing connection first
-      try {
-        const node = this.requireNode();
-        // Get all connections and close them to force fresh dial
-        const cmap = (node as any).connectionManager?.connections;
-        if (cmap) {
-          for (const [peerIdStr, conns] of cmap) {
-            if (Array.isArray(conns)) {
-              for (const conn of conns) {
-                try {
-                  await conn.close();
-                } catch {}
-              }
-            }
-          }
-        }
-      } catch {}
-
-      // Retry dialProtocol once
-      console.log(`[network] Retrying dialProtocol to ${target}...`);
-      try {
-        stream = await this.requireNode().dialProtocol(dialTarget as any, protocol);
-        console.log(`[network] sendEnvelopeOnProtocol: retry successful`);
-      } catch (retryError) {
-        const retryMsg = retryError instanceof Error ? retryError.message : String(retryError);
-        console.error(`[network] sendEnvelopeOnProtocol: retry dialProtocol also failed: ${retryMsg}`);
-        throw retryError;
-      }
+      console.error(`[network] outbound ${protocol} dial failed for ${target}: ${errorMsg}`);
+      throw dialError;
     }
 
     const connection = stream.connection;
@@ -543,13 +561,9 @@ export class EnvoyMesh {
       );
     }
     const bytes = encodeEnvelope(envelope);
-    console.log(`[network] sendEnvelopeOnProtocol: writing ${bytes.byteLength} bytes to stream ${stream.id}`);
-    await byteStream(stream).write(bytes);
-    console.log(`[network] sendEnvelopeOnProtocol: write complete, closing stream ${stream.id}`);
-    // Close the stream to signal we're done sending
-    // Use closeWrite() to signal we're done writing, then wait for close to complete
+    const streamIo = byteStream(stream);
+    await streamIo.write(bytes);
     await stream.close();
-    console.log(`[network] sendEnvelopeOnProtocol: stream ${stream.id} closed successfully`);
     if (remotePeerId) {
       this.emitP2pDebug({
         kind: "stream:close",
@@ -896,6 +910,59 @@ export { decodeEnvelope, encodeEnvelope };
 export { voucherJsonBytesFromObject } from "./data-framing.js";
 export { CAPABILITY_TOPIC_NAMESPACE, cidForCapabilityTopic } from "./capability-topic.js";
 export { expandListenAddressesWithQuic, quicListenFromTcpListen } from "./quic-listen.js";
+
+function parsePeerIdFromDialTarget(target: string): string {
+  const trimmed = target.trim();
+  if (!trimmed.includes("/")) {
+    return trimmed;
+  }
+  const p = trimmed.lastIndexOf("/p2p/");
+  if (p < 0) {
+    throw new Error(`Cannot parse peer id from dial target: ${target}`);
+  }
+  const id = trimmed.slice(p + "/p2p/".length).split("/")[0]?.trim();
+  if (!id) {
+    throw new Error(`Cannot parse peer id from dial target: ${target}`);
+  }
+  return id;
+}
+
+function loopbackOrUnspecifiedHint(addr: string): boolean {
+  return (
+    addr.includes("/ip4/127.") ||
+    addr.includes("/ip4/0.0.0.0/") ||
+    addr.includes("/ip6/::1/") ||
+    addr.endsWith("/ip6/::1")
+  );
+}
+
+/** Prefer routable LAN/WAN hints; try loopback last (often useless for cross-machine dials). */
+function sortDialHints(hints: string[]): string[] {
+  return [...hints].sort(
+    (a, b) => Number(loopbackOrUnspecifiedHint(a)) - Number(loopbackOrUnspecifiedHint(b)),
+  );
+}
+
+function dialHintsToMultiaddrs(
+  hints: string[],
+  peerIdStr: string,
+): Array<ReturnType<typeof multiaddr>> {
+  const out: Array<ReturnType<typeof multiaddr>> = [];
+  for (const h of hints) {
+    const a = h.trim();
+    if (!a.startsWith("/")) continue;
+    try {
+      if (a.includes("/p2p/")) {
+        out.push(multiaddr(a));
+      } else {
+        out.push(multiaddr(`${a}/p2p/${peerIdStr}`));
+      }
+    } catch {
+      /* skip unusable addr string */
+    }
+  }
+  return out;
+}
 
 function validateEnvelopeProtocol(protocol: string, envelope: EnvoyEnvelope): void {
   if (protocol === ENVOY_CHAT_PROTOCOL && envelope.intent !== "chat.message") {

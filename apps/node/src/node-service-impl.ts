@@ -438,7 +438,10 @@ class NodeServiceImpl implements NodeService {
 
     // Find the target peer's peerId - first check peer directory, then try direct peerId
     const peerRecords = await this._peerDirectoryStore.listPeerRecords();
-    let targetPeerId = peerRecords.find((r) => r.ownerId === targetOwnerId)?.peerId;
+    const matchedRecord =
+      peerRecords.find((r) => r.ownerId === targetOwnerId) ??
+      peerRecords.find((r) => r.peerId === targetOwnerId);
+    let targetPeerId = matchedRecord?.peerId;
 
     // If not found in peer directory, maybe targetOwnerId IS a peerId (for DHT discovered peers)
     if (!targetPeerId) {
@@ -475,7 +478,7 @@ class NodeServiceImpl implements NodeService {
     );
 
     try {
-      await mesh.send(targetPeerId, envelope);
+      await mesh.send(targetPeerId, envelope, { dialHints: matchedRecord?.listenAddrs ?? [] });
       console.log(`[node-service] Hello sent successfully to ${targetPeerId}`);
 
       // Store peer info locally so we can send messages later
@@ -558,7 +561,10 @@ class NodeServiceImpl implements NodeService {
     console.log(`[node-service] bond.accept envelope created: intent=${acceptEnvelope.intent}, recipientPeerId=${acceptEnvelope.recipientPeerId}, senderPeerId=${acceptEnvelope.senderPeerId}`);
     try {
       console.log(`[node-service] Attempting to send bond.accept to ${pending.remotePeerId} via mesh.send...`);
-      await mesh.send(pending.remotePeerId, acceptEnvelope);
+      const requesterDir = await this._peerDirectoryStore.getPeerByOwnerId(pending.requesterOwnerId);
+      await mesh.send(pending.remotePeerId, acceptEnvelope, {
+        dialHints: requesterDir?.listenAddrs ?? [],
+      });
       console.log(`[node-service] bond.accept sent successfully to ${pending.remotePeerId}`);
     } catch (sendError) {
       console.error(`[node-service] Failed to send bond.accept to ${pending.remotePeerId}: ${sendError instanceof Error ? sendError.message : String(sendError)}`);
@@ -661,7 +667,9 @@ class NodeServiceImpl implements NodeService {
       selfProfile.device.privateKeyPem,
     );
 
-    await mesh.sendChat(recipientPeerId, envelope);
+    await mesh.sendChat(recipientPeerId, envelope, {
+      dialHints: targetPeer.listenAddrs ?? [],
+    });
 
     const emittedMsg = {
       messageId: envelope.messageId,

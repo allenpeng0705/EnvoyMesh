@@ -67,6 +67,7 @@ import {
   createSystemPingPayload,
   createSystemSignalPayload,
   createUnsignedEnvelope,
+  createBondAcceptPayload,
   createHumanProfilePayload,
   humanProfileForSigning,
   parseSystemPingPayload,
@@ -955,6 +956,51 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       );
       console.warn(`[rejected bond] ${envelope.intent}: ${bond.reason}`);
       return;
+    }
+
+    if (bond.ok && bond.bondAcceptToRequester) {
+      const { requesterPeerId, requesterOwnerId } = bond.bondAcceptToRequester;
+      const humanProfile = await humanProfileStore.loadHumanProfile();
+      const displayName = humanProfile?.displayName ?? profile.owner.ownerId;
+      const unsignedAccept = createUnsignedEnvelope({
+        senderPeerId: derivePeerId(profile.device.publicKeyPem),
+        senderPublicKey: profile.device.publicKeyPem,
+        recipientPeerId: requesterPeerId,
+        intent: "bond.accept",
+        payload: createBondAcceptPayload({
+          responderOwnerId: profile.owner.ownerId,
+          requesterOwnerId,
+          message: `Hello from ${displayName}!`,
+        }),
+        correlationId,
+      });
+      const signedAccept = signUnsignedEnvelope(unsignedAccept, profile.device.privateKeyPem);
+      const requesterDir = await peerDirectoryStore.getPeerByOwnerId(requesterOwnerId);
+      try {
+        const latencyMs = await mesh.send(requesterPeerId, signedAccept, {
+          dialHints: requesterDir?.listenAddrs ?? [],
+        });
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "message.sent",
+            intent: signedAccept.intent,
+            messageId: signedAccept.messageId,
+            correlationId: signedAccept.correlationId,
+            remotePeerId: requesterPeerId,
+            direction: "outbound",
+            latencyMs,
+            protocol: ENVOY_MESSAGE_PROTOCOL,
+            outcome: "record",
+            summary: "Sent bond.accept to requester after auto-accept.",
+            createdAt: signedAccept.createdAt,
+          }),
+        );
+      } catch (err) {
+        console.error(
+          `[bond.request] auto-accept: failed to send bond.accept to requester ${requesterPeerId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     }
     return;
   }

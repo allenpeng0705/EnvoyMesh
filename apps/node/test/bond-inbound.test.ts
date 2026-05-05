@@ -80,6 +80,71 @@ describe("handleInboundBondIntent", () => {
     expect(audits[0].summary).toContain("bond.request from");
   });
 
+  it("returns bondAcceptToRequester when bond.request is policy auto-accepted (referred)", async () => {
+    const profile = testProfile();
+    const taskStore = createLocalTaskStore(profileDir);
+    const trustStore = createLocalTrustStore(profileDir);
+    await trustStore.setTrustRecord({
+      peerOwnerId: "envoy:owner:stranger",
+      level: "referred",
+      now: new Date().toISOString(),
+    });
+
+    const envelope = signedEnvelope(profile, "bond.request", {
+      requesterOwnerId: "envoy:owner:stranger",
+      requesterDisplayName: "Stranger",
+      message: "Hi",
+      proofOfContext: "Same book club.",
+      requestedLevel: "direct",
+    });
+
+    const result = await handleInboundBondIntent({
+      envelope,
+      profile,
+      remotePeerId: "libp2p-mac-peer",
+      receivedAt: Date.now(),
+      correlationId: "c-auto",
+      taskStore,
+      trustStore,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      bondAcceptToRequester: {
+        requesterPeerId: "libp2p-mac-peer",
+        requesterOwnerId: "envoy:owner:stranger",
+      },
+    });
+    const record = await trustStore.getTrustRecord("envoy:owner:stranger");
+    expect(record?.level).toBe("direct");
+  });
+
+  it("rejects bond.accept when requesterOwnerId does not match local owner", async () => {
+    const profile = testProfile();
+    const taskStore = createLocalTaskStore(profileDir);
+    const trustStore = createLocalTrustStore(profileDir);
+    const envelope = signedEnvelope(profile, "bond.accept", {
+      responderOwnerId: "envoy:owner:win",
+      requesterOwnerId: "envoy:owner:someone-else",
+      message: "Hello from Win!",
+    });
+
+    const result = await handleInboundBondIntent({
+      envelope,
+      profile,
+      remotePeerId: "libp2p-win",
+      receivedAt: Date.now(),
+      correlationId: undefined,
+      taskStore,
+      trustStore,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("requesterOwnerId");
+    }
+  });
+
   it("rejects bond.challenge when targetOwnerId does not match local owner", async () => {
     const profile = testProfile();
     const taskStore = createLocalTaskStore(profileDir);

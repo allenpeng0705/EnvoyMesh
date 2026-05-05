@@ -13,7 +13,9 @@ import {
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
 
-export type BondInboundResult = { ok: true } | { ok: false; reason: string };
+export type BondInboundResult =
+  | { ok: true; bondAcceptToRequester?: { requesterPeerId: string; requesterOwnerId: string } }
+  | { ok: false; reason: string };
 
 /**
  * Event types for bond inbound events
@@ -136,6 +138,15 @@ export async function handleInboundBondIntent(
             displayName: payload.requesterDisplayName ?? remotePeerId,
           });
         }
+
+        // Mirror manual acceptHello: notify the requester with bond.accept so they record us as a contact
+        return {
+          ok: true,
+          bondAcceptToRequester: {
+            requesterPeerId: remotePeerId,
+            requesterOwnerId: payload.requesterOwnerId,
+          },
+        };
       } else {
         // outcome === "record" - manual approval needed
         console.log(`[bond.request] ${summary} - manual approval required`);
@@ -240,6 +251,10 @@ export async function handleInboundBondIntent(
       console.log(`[bond-inbound] handling bond.accept from ${remotePeerId}`);
       const payload = parseBondAcceptPayload(envelope.payload);
       console.log(`[bond-inbound] bond.accept payload: responderOwnerId=${payload.responderOwnerId}, requesterOwnerId=${payload.requesterOwnerId}, message=${payload.message}`);
+
+      if (payload.requesterOwnerId !== profile.owner.ownerId) {
+        return { ok: false, reason: "bond.accept requesterOwnerId does not match local owner" };
+      }
 
       // Extract display name from the message (format: "Hello from {displayName}!")
       let displayName = payload.responderOwnerId;
