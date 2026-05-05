@@ -1,40 +1,65 @@
-import { createAuditEvent, type LocalTaskStore } from "@envoymesh/local-store";
-import { parseKnowledgeQueryPayload, type EnvoyEnvelope } from "@envoymesh/protocol";
+import { createAuditEvent, type LocalTaskStore, type LocalTrustStore, type LocalPeerDirectoryStore, type NodeProfile } from "@envoymesh/local-store";
+import {
+  createKnowledgeResponsePayload,
+  parseKnowledgeQueryPayload,
+  type EnvoyEnvelope,
+  type KnowledgeResponsePayload,
+} from "@envoymesh/protocol";
+import { evaluatePolicy } from "@envoymesh/bonds";
+import { searchVaultWithAudit, type VaultIndex } from "@envoymesh/vault";
+import {
+  createMockModelProvider,
+  routeModelRequest,
+} from "@envoymesh/models";
 import { ZodError } from "zod";
 
+export type KnowledgeQueryInboundResult =
+  | { ok: true; responsePayload: KnowledgeResponsePayload }
+  | { ok: false; reason: string };
+
+/**
+ * Resolve the owner ID for a sender using the peer directory.
+ * Returns undefined if the sender is not a known contact.
+ */
+async function resolveSenderOwnerId(
+  senderPeerId: string,
+  peerDirectoryStore: LocalPeerDirectoryStore,
+): Promise<string | undefined> {
+  const records = await peerDirectoryStore.listPeerRecords();
+  const match = records.find((r) => r.peerId === senderPeerId);
+  return match?.ownerId;
+}
+
+/**
+ * Handle an inbound `knowledge.query` intent.
+ *
+ * Flow:
+ * 1. Validate payload (Zod)
+ * 2. Audit: message verified
+ * 3. Resolve sender's owner ID via peer directory; look up bond level
+ * 4. Evaluate bond policy via @envoymesh/bonds
+ * 5. If denied/approval_required: audit and return rejection
+ * 6. Search vault (within allowed sensitivity ceiling)
+ * 7. Route prompt through model router (mock provider)
+ * 8. Audit policy, vault, model routing decisions
+ * 9. Return signed knowledge.response payload for the caller to send
+ */
 export async function handleInboundKnowledgeQuery(input: {
   envelope: EnvoyEnvelope;
   remotePeerId: string;
   receivedAt: number;
   correlationId: string | undefined;
   taskStore: Pick<LocalTaskStore, "appendAuditEvent">;
-}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  trustStore: LocalTrustStore;
+  peerDirectoryStore: LocalPeerDirectoryStore;
+  profile: NodeProfile;
+  vaultIndex: VaultIndex | null;
+}): Promise<KnowledgeQueryInboundResult> {
+  const { envelope, remotePeerId, receivedAt, correlationId, taskStore, trustStore, peerDirectoryStore, profile, vaultIndex } = input;
+
+  let payload: ReturnType<typeof parseKnowledgeQueryPayload>;
   try {
-    const payload = parseKnowledgeQueryPayload(input.envelope.payload);
-    const preview =
-      payload.query.length > 120 ? `${payload.query.slice(0, 117)}...` : payload.query;
-
-    await input.taskStore.appendAuditEvent(
-      createAuditEvent({
-        type: "message.verified",
-        intent: input.envelope.intent,
-        messageId: input.envelope.messageId,
-        correlationId: input.correlationId,
-        remotePeerId: input.remotePeerId,
-        direction: "inbound",
-        verificationStatus: "verified",
-        latencyMs: Date.now() - input.receivedAt,
-        outcome: "allow",
-        summary: `mock knowledge.query handled: ${preview}`,
-        createdAt: input.envelope.createdAt,
-      }),
-    );
-
-    const sens = payload.requestedSensitivity ? ` sensitivity=${payload.requestedSensitivity}` : "";
-    console.log(
-      `[mock knowledge.query] from ${input.envelope.senderPeerId} via ${input.remotePeerId}: ${preview}${sens}`,
-    );
-    return { ok: true };
+    payload = parseKnowledgeQueryPayload(envelope.payload);
   } catch (error) {
     const reason =
       error instanceof ZodError
@@ -42,4 +67,174 @@ export async function handleInboundKnowledgeQuery(input: {
         : "invalid knowledge.query payload";
     return { ok: false, reason };
   }
+
+  const preview = payload.query.length > 120 ? `${payload.query.slice(0, 117)}...` : payload.query;
+
+  // 1. Audit: inbound message verified
+  await taskStore.appendAuditEvent(
+    createAuditEvent({
+      type: "message.verified",
+      intent: envelope.intent,
+      messageId: envelope.messageId,
+      correlationId,
+      remotePeerId,
+      direction: "inbound",
+      verificationStatus: "verified",
+      latencyMs: Date.now() - receivedAt,
+      outcome: "allow",
+      summary: `knowledge.query received: ${preview}`,
+      createdAt: envelope.createdAt,
+    }),
+  );
+
+  // 2. Policy check: resolve sender's owner ID, then look up bond level
+  const senderOwnerId = await resolveSenderOwnerId(envelope.senderPeerId, peerDirectoryStore);
+  const bondLevel = senderOwnerId
+    ? (await trustStore.getTrustRecord(senderOwnerId))?.level ?? "public"
+    : "public";
+
+  const policyDecision = evaluatePolicy({
+    peerId: senderOwnerId ?? envelope.senderPeerId,
+    bondLevel,
+    intent: "knowledge.query",
+    requestedSensitivity: payload.requestedSensitivity,
+  });
+
+  // 3. Audit: policy decision
+  if (policyDecision.action === "deny") {
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "policy.decided",
+        intent: "knowledge.query",
+        messageId: envelope.messageId,
+        correlationId,
+        remotePeerId,
+        direction: "inbound",
+        verificationStatus: "verified",
+        latencyMs: Date.now() - receivedAt,
+        outcome: "deny",
+        summary: `knowledge.query denied: ${policyDecision.reason}`,
+        createdAt: envelope.createdAt,
+      }),
+    );
+    return { ok: false, reason: policyDecision.reason };
+  }
+
+  if (policyDecision.action === "approval_required") {
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "policy.decided",
+        intent: "knowledge.query",
+        messageId: envelope.messageId,
+        correlationId,
+        remotePeerId,
+        direction: "inbound",
+        verificationStatus: "verified",
+        latencyMs: Date.now() - receivedAt,
+        outcome: "deny",
+        summary: `knowledge.query requires approval: ${policyDecision.reason}`,
+        createdAt: envelope.createdAt,
+      }),
+    );
+    return { ok: false, reason: `approval required: ${policyDecision.reason}` };
+  }
+
+  // action === "allow": proceed with vault search + model routing
+  const maxSens = policyDecision.action === "allow" ? policyDecision.maxSensitivity : "public";
+  const allowedSensitivity = maxSens ?? "public";
+
+  // 4. Search vault (best-effort; if vaultIndex is null, skip vault search)
+  let vaultResults: { results: ReturnType<typeof searchVaultWithAudit>["results"]; audited: boolean } = { results: [], audited: false };
+  if (vaultIndex) {
+    const searchResult = searchVaultWithAudit(vaultIndex, payload.query, {
+      requesterPeerId: remotePeerId,
+      requesterOwnerId: senderOwnerId,
+      createdAt: envelope.createdAt,
+    });
+    vaultResults = { results: searchResult.results, audited: true };
+    // Audit vault search
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "vault.searched",
+        intent: "knowledge.query",
+        messageId: envelope.messageId,
+        correlationId,
+        remotePeerId,
+        direction: "inbound",
+        verificationStatus: "verified",
+        latencyMs: Date.now() - receivedAt,
+        outcome: "record",
+        summary: `vault search: ${searchResult.results.length} result(s) for query "${preview}"`,
+        createdAt: envelope.createdAt,
+      }),
+    );
+  }
+
+  // 5. Build model prompt from vault snippets (if any)
+  const snippets = vaultResults.results.slice(0, 5);
+  const promptContext = snippets.length > 0
+    ? snippets.map((r) => `[From ${r.document.title}]: ${r.chunk.text}`).join("\n\n")
+    : "(No vault documents found — answering from general knowledge)";
+
+  const prompt = `You are answering a knowledge query from a contact on the EnvoyMesh P2P network.\n\
+Answer only based on the provided context. If the context does not contain relevant information, say so.\n\
+Do not make up information. Keep the answer concise (2-4 sentences).\n\
+Sensitivity level of this answer: ${allowedSensitivity}.\n\n\
+Context:\n${promptContext}\n\n\
+Query: ${payload.query}`;
+
+  // 6. Route through model router with mock provider
+  const providers = [
+    createMockModelProvider({
+      providerId: "local.mock",
+      responseText: snippets.length > 0
+        ? `Based on the available documents: ${snippets[0].chunk.text.slice(0, 200)}...`
+        : "I don't have specific information about that in my local documents. Could you rephrase or ask something more specific?",
+    }),
+  ];
+
+  const modelResult = await routeModelRequest(
+    {
+      taskType: "knowledge.query",
+      prompt,
+      sensitivity: allowedSensitivity,
+      requesterPeerId: remotePeerId,
+      ownerApproved: false,
+    },
+    providers,
+  );
+
+  // 7. Audit model routing decision
+  const evt = modelResult.auditEvent;
+  await taskStore.appendAuditEvent(
+    createAuditEvent({
+      type: "model.routed",
+      intent: "knowledge.query",
+      messageId: envelope.messageId,
+      correlationId,
+      remotePeerId,
+      direction: "inbound",
+      verificationStatus: "verified",
+      latencyMs: Date.now() - receivedAt,
+      outcome: modelResult.decision.action === "allow" ? "allow" : "deny",
+      summary: `model routing: ${modelResult.decision.action} (${"reason" in modelResult.decision ? modelResult.decision.reason : "provider=" + (evt?.providerId ?? "unknown")})`,
+      createdAt: envelope.createdAt,
+    }),
+  );
+
+  // 8. Build and return response payload
+  const answer = modelResult.response?.text ?? "Model unavailable.";
+  const matchScore = snippets.length > 0
+    ? Math.min(1, snippets.reduce((sum, r) => sum + r.score, 0) / snippets.length / 10)
+    : 0;
+
+  const responsePayload = createKnowledgeResponsePayload({
+    inReplyTo: envelope.messageId,
+    answer,
+    sensitivity: allowedSensitivity,
+    matchScore,
+    refused: false,
+  });
+
+  return { ok: true, responsePayload };
 }

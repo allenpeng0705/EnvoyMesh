@@ -68,6 +68,7 @@ import {
   parseRelaySummaryPayload,
   createSystemPingPayload,
   createSystemSignalPayload,
+  createKnowledgeResponsePayload,
   createUnsignedEnvelope,
   createBondAcceptPayload,
   createHumanProfilePayload,
@@ -87,6 +88,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { buildVaultIndex } from "@envoymesh/vault";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -135,6 +137,13 @@ const taskRuntimeStore = createTaskRuntimeStateStore(args.profileDir);
 const resolvedArgs = await resolveNodeArgsTargetsByOwnerId(args, peerDirectoryStore);
 const inboundGuard = createInboundMessageGuard();
 const vaultDirForNode = process.env.ENVOYMESH_VAULT ?? join(process.cwd(), "shared_vault");
+let vaultIndex: Awaited<ReturnType<typeof buildVaultIndex>> | null = null;
+try {
+  vaultIndex = await buildVaultIndex({ rootDir: vaultDirForNode });
+  console.log(`[vault] indexed ${vaultIndex.documents.length} document(s), ${vaultIndex.chunks.length} chunk(s)`);
+} catch (err) {
+  console.warn(`[vault] index build failed (vault may be missing or empty):`, err);
+}
 
 // WebSocket server reference for event emission
 let wsServerForEvents: WsServer | null = null;
@@ -480,6 +489,10 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       receivedAt,
       correlationId,
       taskStore,
+      trustStore,
+      peerDirectoryStore,
+      profile,
+      vaultIndex,
     });
     if (!kq.ok) {
       await taskStore.appendAuditEvent(
@@ -500,6 +513,33 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       console.warn(`[rejected knowledge.query] ${kq.reason}`);
       return;
     }
+
+    // Policy allowed — send signed knowledge.response back to sender
+    const unsignedResponse = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      recipientPeerId: envelope.senderPeerId,
+      intent: "knowledge.response",
+      payload: createKnowledgeResponsePayload(kq.responsePayload),
+      correlationId,
+    });
+    const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
+    const latencyMs = await mesh.send(remotePeerId, signedResponse);
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "message.sent",
+        intent: signedResponse.intent,
+        messageId: signedResponse.messageId,
+        correlationId: signedResponse.correlationId,
+        remotePeerId,
+        direction: "outbound",
+        latencyMs,
+        protocol: ENVOY_MESSAGE_PROTOCOL,
+        outcome: "record",
+        summary: `Sent knowledge.response for ${envelope.messageId}.`,
+        createdAt: signedResponse.createdAt,
+      }),
+    );
     return;
   }
 

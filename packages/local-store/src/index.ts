@@ -147,6 +147,9 @@ export type AuditEventType =
   | "message.verified"
   | "task.handled"
   | "task.rejected"
+  | "policy.decided"
+  | "vault.searched"
+  | "model.routed"
   | "p2p.trace";
 
 export type AuditDirection = "inbound" | "outbound";

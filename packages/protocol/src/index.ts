@@ -352,6 +352,16 @@ export const KnowledgeQueryPayloadSchema = z.object({
   requestedSensitivity: SensitivitySchema.optional(),
 });
 
+/** First-class EMP payload for `knowledge.response`. */
+export const KnowledgeResponsePayloadSchema = z.object({
+  inReplyTo: z.string(), // messageId of the originating knowledge.query
+  answer: z.string().max(32768),
+  sensitivity: SensitivitySchema.default("public"),
+  matchScore: z.number().min(0).max(1).optional(),
+  refused: z.boolean().optional().default(false),
+  refusalReason: z.string().max(500).optional(),
+});
+
 export const BondRequestedLevelSchema = z.enum(["direct", "referred"]);
 
 /** `bond.request` — ask for a trust relationship; optional proof-of-context for policy / owner review. */
@@ -905,6 +915,7 @@ export type AgentCard = z.infer<typeof AgentCardSchema>;
 export type AgentCardRequestPayload = z.infer<typeof AgentCardRequestPayloadSchema>;
 export type AgentCardResponsePayload = z.infer<typeof AgentCardResponsePayloadSchema>;
 export type KnowledgeQueryPayload = z.infer<typeof KnowledgeQueryPayloadSchema>;
+export type KnowledgeResponsePayload = z.infer<typeof KnowledgeResponsePayloadSchema>;
 export type BondRequestedLevel = z.infer<typeof BondRequestedLevelSchema>;
 export type BondRequestPayload = z.infer<typeof BondRequestPayloadSchema>;
 export type BondChallengePayload = z.infer<typeof BondChallengePayloadSchema>;
@@ -1063,6 +1074,10 @@ export function parseAgentCardResponsePayload(input: unknown): AgentCardResponse
 
 export function parseKnowledgeQueryPayload(input: unknown): KnowledgeQueryPayload {
   return KnowledgeQueryPayloadSchema.parse(input);
+}
+
+export function parseKnowledgeResponsePayload(input: unknown): KnowledgeResponsePayload {
+  return KnowledgeResponsePayloadSchema.parse(input);
 }
 
 export function parseBondRequestPayload(input: unknown): BondRequestPayload {
@@ -1244,6 +1259,26 @@ export function createKnowledgeQueryPayload(input: CreateKnowledgeQueryPayloadIn
   return KnowledgeQueryPayloadSchema.parse({
     query: input.query,
     requestedSensitivity: input.requestedSensitivity,
+  });
+}
+
+export interface CreateKnowledgeResponsePayloadInput {
+  inReplyTo: string;
+  answer: string;
+  sensitivity?: Sensitivity;
+  matchScore?: number;
+  refused?: boolean;
+  refusalReason?: string;
+}
+
+export function createKnowledgeResponsePayload(input: CreateKnowledgeResponsePayloadInput): KnowledgeResponsePayload {
+  return KnowledgeResponsePayloadSchema.parse({
+    inReplyTo: input.inReplyTo,
+    answer: input.answer,
+    sensitivity: input.sensitivity ?? "public",
+    matchScore: input.matchScore,
+    refused: input.refused ?? false,
+    refusalReason: input.refusalReason,
   });
 }
 

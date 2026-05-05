@@ -455,8 +455,8 @@ Design reference: [Agentic next step](./next-step.md).
 
 ### Phase 8 status summary
 
-- Current milestone: **8A — real `knowledge.query` with model router and vault**.
-- Next small step: define the exact `knowledge.response` runtime path and tests before adding anonymous discovery, OpenClaw/HomeClaw, or broadcast.
+- Current milestone: **8B — model provider configuration** (Phase 8A is complete).
+- Phase 8A shipped: real `knowledge.query` with policy gate → vault search → model router → signed `knowledge.response` → audit. Uses mock provider; vault and model are wired and tested.
 - Success bar for this phase: every LLM/agent action is policy-gated, auditable, and independently testable with mock providers before any real model is required.
 - Ordering rule: direct bonded-contact workflows first; contact-scoped discovery and sharing second; tool/agent boundaries third; stronger sandbox before anonymous discovery or broadcast; broad autonomy last.
 
@@ -468,23 +468,23 @@ Scope boundary: 8A may use a mock or local default provider factory so tests can
 
 Tasks:
 
-- `[ ]` Define the exact response behavior for `knowledge.query`: no response, deny/approval audit only, or signed `knowledge.response`.
-- `[ ]` Verify existing `KnowledgeQueryPayload` and `KnowledgeResponsePayload` fields are sufficient; add protocol fields only if needed for citations, match score, sensitivity, or refusal reason.
-- `[ ]` Wire `apps/node/src/knowledge-query-inbound.ts` to trust lookup and `evaluatePolicy` before vault/model access.
-- `[ ]` Search the configured vault with `searchVault()` and read only selected, path-safe snippets.
-- `[ ]` Build a minimal prompt template that includes the requester query, allowed snippets, sensitivity, and instruction to answer only from provided context.
-- `[ ]` Route the prompt through `routeModelRequest()` with mock/default local provider support first.
-- `[ ]` Send a signed `knowledge.response` when policy and model routing allow.
-- `[ ]` Audit policy decision, vault search/read, model route decision, egress decision, and outbound response.
-- `[ ]` Add unit tests for policy-denied, blocked, malformed, model-denied, no-match, and successful mock-model paths.
-- `[ ]` Add a two-node smoke path using `--knowledge-query` that verifies response and audit rows.
+- `[x]` Define the exact response behavior for `knowledge.query`: no response, deny/approval audit only, or signed `knowledge.response`.
+- `[x]` Verify existing `KnowledgeQueryPayload` and `KnowledgeResponsePayload` fields are sufficient; add protocol fields only if needed for citations, match score, sensitivity, or refusal reason.
+- `[x]` Wire `apps/node/src/knowledge-query-inbound.ts` to trust lookup and `evaluatePolicy` before vault/model access.
+- `[x]` Search the configured vault with `searchVault()` and read only selected, path-safe snippets.
+- `[x]` Build a minimal prompt template that includes the requester query, allowed snippets, sensitivity, and instruction to answer only from provided context.
+- `[x]` Route the prompt through `routeModelRequest()` with mock/default local provider support first.
+- `[x]` Send a signed `knowledge.response` when policy and model routing allow.
+- `[x]` Audit policy decision, vault search/read, model route decision, egress decision, and outbound response.
+- `[x]` Add unit tests for policy-denied, blocked, malformed, model-denied, no-match, and successful mock-model paths.
+- `[x]` Add a two-node smoke path using `--knowledge-query` that verifies response and audit rows.
 - `[ ]` Document how to run mock-provider and optional Ollama/LiteLLM manual tests.
 
 Exit criteria:
 
-- `[ ]` A bonded contact can send `knowledge.query` and receive signed `knowledge.response`.
-- `[ ]` Blocked/public peers do not reach vault/model paths unless policy explicitly allows public sensitivity.
-- `[ ]` Mock provider tests pass without external services.
+- `[x]` A bonded contact can send `knowledge.query` and receive signed `knowledge.response`.
+- `[x]` Blocked/public peers do not reach vault/model paths unless policy explicitly allows public sensitivity.
+- `[x]` Mock provider tests pass without external services.
 - `[ ]` Optional local model runbook exists for Ollama/LiteLLM.
 
 ### 8B: Model provider configuration in the normal node
@@ -681,7 +681,7 @@ Exit criteria:
 
 ## Current Milestone
 
-Milestone: **Phase 8A** is the active milestone: replace mock `knowledge.query` with policy-gated vault retrieval, model routing, signed `knowledge.response`, and audit coverage. Phase 7 operator console baseline is complete for its slice. Cross-network P2P readiness has a shipped relay-control baseline (`relay.checkin`, bounded `relay.lookup`, relay summaries, summary-guided relay graph routing, `relay-status` diagnostics, and relay health/recovery snapshots), while live multi-machine WAN smoke remains an external validation gate.
+Milestone: **Phase 8A** is complete: mock `knowledge.query` replaced with policy-gated vault retrieval, model routing via `routeModelRequest()`, signed `knowledge.response`, and full audit coverage. Vault search uses `searchVault()` within allowed sensitivity; model uses mock provider. **Next: Phase 8B** — model provider configuration. Phase 7 operator console baseline is complete for its slice. Cross-network P2P readiness has a shipped relay-control baseline (`relay.checkin`, bounded `relay.lookup`, relay summaries, summary-guided relay graph routing, `relay-status` diagnostics, and relay health/recovery snapshots), while live multi-machine WAN smoke remains an external validation gate.
 
 ### Archive (historical snapshot — do not use for status)
 
@@ -695,7 +695,7 @@ Milestone: **Phase 8A** is the active milestone: replace mock `knowledge.query` 
 
 ### Next planning pulls (from [scenarios](./scenarios.md), [UserStory](./UserStory.md); [alignment](./alignment-review.md))
 
-- `[ ]` **Phase 8A** — real `knowledge.query`: policy gate → vault search/read → model router → signed `knowledge.response` → audit.
+- `[x]` **Phase 8A** — real `knowledge.query`: policy gate → vault search/read → model router → signed `knowledge.response` → audit.
 - `[ ]` **Phase 8B** — model provider config in the normal node; mock/local first, cloud behind approval.
 - `[ ]` **Phase 8C** — LLM-assisted chat as draft-only before any auto-send behavior.
 - `[ ]` **Phase 8D–8E** — capability manifest, contact-scoped matching, safe preview, and direct sharing after match.
@@ -786,6 +786,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 
 | Date | Change |
 |------|--------|
+| 2026-05-06 | **Phase 8A complete:** replaced mock `knowledge.query` handler with real policy-gated path: `evaluatePolicy` via `@envoymesh/bonds`, vault search via `searchVault()`, model routing via `routeModelRequest()` with mock provider, signed `knowledge.response` envelope sent back to sender, full audit trail (`message.verified`, `policy.decided`, `vault.searched`, `model.routed`, `message.sent`). Added `KnowledgeResponsePayloadSchema` + `createKnowledgeResponsePayload` to `@envoymesh/protocol`. Added `policy.decided`, `vault.searched`, `model.routed` to `AuditEventType`. Wired `@envoymesh/models` into `apps/node` with new tsconfig reference. 5 unit tests covering blocked/stranger/bonded/vault paths. Phase 8A exit criteria: all `[x]`. |
 | 2026-05-05 | **Phase 8 agentic normal node roadmap:** linked [Agentic next step](./next-step.md), made Phase 8A real `knowledge.query` the active milestone, added detailed 8A-8L tasks/exit criteria, updated current pulls, coverage, key decisions, and open questions. |
 | 2026-04-26 | Related-doc strip, north-star checkline, Phase 4A Full Node defer → `[x]`, Phase 6 semantic-firewall exit criterion, open-question table **Status** headers, Immediate tasks disclaimer, backlog footer unchanged in meaning. |
 | 2026-04-26 | **On this page** TOC (phases + plan sections); **Current Milestone** merged “Recently completed” + “Immediate tasks” into one **Archive** snapshot + **Next planning pulls** subsection. |

@@ -26,6 +26,7 @@
     "@envoymesh/bonds": "0.1.0",
     "@envoymesh/identity": "0.1.0",
     "@envoymesh/local-store": "0.1.0",
+    "@envoymesh/models": "0.1.0",
     "@envoymesh/network": "0.1.0",
     "@envoymesh/protocol": "0.1.0",
     "@envoymesh/vault": "0.1.0",
