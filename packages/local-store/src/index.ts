@@ -35,6 +35,16 @@ import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
+const PEER_DIRECTORY_READ_BUDGET_MS = 20_000;
+
+/** Bounded read so a stuck `fs.readFile` cannot hang the node forever (Windows + AV / cloud-sync paths). */
+async function readPeerDirectoryRaw(path: string): Promise<string> {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return readFile(path, { encoding: "utf8", signal: AbortSignal.timeout(PEER_DIRECTORY_READ_BUDGET_MS) });
+  }
+  return readFile(path, "utf8");
+}
+
 const PROFILE_FILE = "profile.json";
 const TASK_JOURNAL_FILE = "task-journal.jsonl";
 const AUDIT_EVENTS_FILE = "audit-events.jsonl";
@@ -1353,7 +1363,7 @@ async function readPeerDirectoryFile(path: string): Promise<PeerDirectoryFile> {
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      return JSON.parse(await readFile(path, "utf8")) as PeerDirectoryFile;
+      return JSON.parse(await readPeerDirectoryRaw(path)) as PeerDirectoryFile;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
 
@@ -1396,7 +1406,7 @@ async function readPeerDirectoryFile(path: string): Promise<PeerDirectoryFile> {
  */
 async function tryRecoverPeerDirectory(path: string): Promise<PeerDirectoryFile | null> {
   try {
-    const raw = await readFile(path, "utf8");
+    const raw = await readPeerDirectoryRaw(path);
     if (!raw.trim()) {
       return { version: "0.1", records: [] };
     }

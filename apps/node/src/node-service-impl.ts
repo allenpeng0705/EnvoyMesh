@@ -56,6 +56,23 @@ import {
 import { join } from "node:path";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
 
+/** Unblocks when an underlying `fs.readFile` or mutex never settles (seen on some Windows setups). */
+function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
 /**
  * NodeServiceImpl implements the NodeService interface.
  *
@@ -706,14 +723,44 @@ class NodeServiceImpl implements NodeService {
 
     console.log(`[sendChat] targetOwnerId=${targetOwnerId}, text=${text}`);
 
-    const targetPeer = await this._peerDirectoryStore.getPeerByOwnerId(targetOwnerId);
+    const t0 = Date.now();
+    console.log("[sendChat] step=peer-lookup-start");
+
+    let targetPeer: Awaited<ReturnType<LocalPeerDirectoryStore["getPeerByOwnerId"]>>;
+    try {
+      targetPeer = await raceWithTimeout(
+        this._peerDirectoryStore.getPeerByOwnerId(targetOwnerId),
+        25_000,
+        "getPeerByOwnerId",
+      );
+    } catch (err) {
+      console.log(`[sendChat] peer-lookup-failed after ${Date.now() - t0}ms`, err);
+      throw err;
+    }
+    console.log(
+      `[sendChat] step=peer-lookup-done ms=${Date.now() - t0} found=${targetPeer ? "yes" : "no"}`,
+    );
 
     if (!targetPeer) {
       throw new Error(`Peer not found for owner: ${targetOwnerId}`);
     }
 
     const recipientPeerId = targetPeer.peerId;
-    const dialHints = await this._dialHintsForChat(recipientPeerId, targetPeer.listenAddrs);
+    const t1 = Date.now();
+    console.log("[sendChat] step=dial-hints-start");
+    let dialHints: string[];
+    try {
+      dialHints = await raceWithTimeout(
+        this._dialHintsForChat(recipientPeerId, targetPeer.listenAddrs),
+        30_000,
+        "_dialHintsForChat",
+      );
+    } catch (err) {
+      console.log(`[sendChat] dial-hints-failed after ${Date.now() - t1}ms`, err);
+      throw err;
+    }
+    console.log(`[sendChat] step=dial-hints-done ms=${Date.now() - t1} n=${dialHints.length}`);
+
     console.log(
       `[sendChat] recipientPeerId=${recipientPeerId} storedListenAddrs=${(targetPeer.listenAddrs ?? []).length} dialHints=${dialHints.length}`,
     );
