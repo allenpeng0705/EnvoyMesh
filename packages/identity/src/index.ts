@@ -147,6 +147,7 @@ export function generateEd25519KeyPair(): EnvoyKeyPair {
 }
 
 export function derivePeerId(publicKeyPem: string): string {
+  /** Protocol / envelope only — distinct from libp2p `PeerId`; do not show as a user-facing “peer id”. */
   return `envoy_${createHash("sha256").update(publicKeyPem).digest("base64url")}`;
 }
 

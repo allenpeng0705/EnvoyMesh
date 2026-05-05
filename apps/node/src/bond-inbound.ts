@@ -143,7 +143,7 @@ export async function handleInboundBondIntent(
         return {
           ok: true,
           bondAcceptToRequester: {
-            requesterPeerId: envelope.senderPeerId,
+            requesterPeerId: remotePeerId,
             requesterOwnerId: payload.requesterOwnerId,
           },
         };
@@ -156,12 +156,12 @@ export async function handleInboundBondIntent(
           emitHelloRequest({
             messageId: envelope.messageId,
             sender: {
-              nodeId: envelope.senderPeerId,
+              nodeId: remotePeerId,
               ownerId: payload.requesterOwnerId,
-              displayName: payload.requesterDisplayName ?? envelope.senderPeerId,
+              displayName: payload.requesterDisplayName ?? payload.requesterOwnerId,
             },
             profile: {
-              displayName: payload.requesterDisplayName ?? remotePeerId,
+              displayName: payload.requesterDisplayName ?? payload.requesterOwnerId,
               bio: "",
               interests: [],
               whatShares: [],

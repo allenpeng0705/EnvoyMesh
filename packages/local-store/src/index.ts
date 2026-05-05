@@ -974,6 +974,9 @@ export interface LocalPeerDirectoryStore {
    * Ensure a row exists for a peer learned on the wire: inbound `chat.message`, any inbound
    * `bond.request` / `bond.accept`, manual `acceptHello`, or outbound `sendHello` after send.
    * Updates `peerId` / listen addrs when the row already exists so bonds always reflect current libp2p id.
+   *
+   * `peerId` must be the **libp2p** transport peer id (`12D3Koo…` / `Qm…` from the connection),
+   * not an Envoy envelope `senderPeerId` (`envoy_…` prefix) — libp2p cannot parse those for dialing.
    */
   ensurePeerFromInboundChat(input: {
     ownerId: string;

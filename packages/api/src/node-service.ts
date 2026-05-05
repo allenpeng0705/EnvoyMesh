@@ -80,6 +80,8 @@ export type BondLevel = "direct" | "referred" | "public" | "blocked";
 export interface BondRecord {
   peerOwnerId: string;
   displayName?: string;
+  /** Libp2p dial id from peer directory when known (e.g. `12D3Koo…`), for UI fallback when `displayName` is empty. */
+  libp2pPeerId?: string;
   level: BondLevel;
   createdAt: string;
   note?: string;
@@ -103,9 +105,13 @@ export interface ChatMessage {
   sender: {
     nodeId: string;
     displayName: string;
+    /** Envoy owner id (`envoy:owner:…`); `nodeId` remains the libp2p transport id when applicable. */
+    ownerId?: string;
   };
   recipient: {
     nodeId: string;
+    displayName?: string;
+    ownerId?: string;
   };
   content: {
     text: string;

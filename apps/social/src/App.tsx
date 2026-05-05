@@ -42,6 +42,30 @@ interface PresetCapabilityGroup {
   capabilities: Array<{ tag: string; label: string; description?: string }>;
 }
 
+/** Prefer profile display name; otherwise show libp2p peer id from the node (`nodeId`). */
+function peerDisplayLabel(sender: { displayName?: string; nodeId?: string }): string {
+  const d = sender.displayName?.trim();
+  if (d) {
+    return d;
+  }
+  const n = sender.nodeId?.trim();
+  if (n) {
+    return n;
+  }
+  return "Peer";
+}
+
+function contactLabel(contact: { displayName?: string; libp2pPeerId?: string; peerOwnerId: string }): string {
+  const d = contact.displayName?.trim();
+  if (d) {
+    return d;
+  }
+  if (contact.libp2pPeerId?.trim()) {
+    return contact.libp2pPeerId.trim();
+  }
+  return contact.peerOwnerId;
+}
+
 const PRESET_CAPABILITY_GROUPS: PresetCapabilityGroup[] = [
   {
     label: "Services",
@@ -629,7 +653,9 @@ function App() {
             </div>
           )}
           <span className="node-status">{nodeStatus}</span>
-          <span className="node-name" title={connectionInfo.peerId}>{humanProfile?.displayName || humanProfile?.username || connectionInfo.peerId.slice(0, 8) + "..."}</span>
+          <span className="node-name" title={connectionInfo.peerId && !connectionInfo.peerId.startsWith("envoy_") ? connectionInfo.peerId : ""}>
+            {humanProfile?.displayName || humanProfile?.username || (connectionInfo.peerId && !connectionInfo.peerId.startsWith("envoy_") ? `${connectionInfo.peerId.slice(0, 8)}…` : "Peer")}
+          </span>
           {connectionStatus?.bondedPeers > 0 && (
             <span className="peer-count">{connectionStatus.bondedPeers} peers</span>
           )}
@@ -685,14 +711,14 @@ function App() {
                   <h4>Pending Messages <button className="clear-btn small" onClick={() => setPendingMessages([])}>Clear All</button></h4>
                   {pendingMessages.map((msg) => (
                     <div key={msg.messageId} className="pending-message-card">
-                      <span className="avatar small">{msg.sender.displayName?.[0] ?? "?"}</span>
+                      <span className="avatar small">{peerDisplayLabel(msg.sender).charAt(0) || "?"}</span>
                       <div className="pending-message-info">
-                        <strong>{msg.sender.displayName ?? msg.sender.nodeId}</strong>
+                        <strong>{peerDisplayLabel(msg.sender)}</strong>
                         <span className="message-preview">{msg.content?.text?.slice(0, 30)}...</span>
                       </div>
                       <button
                         className="say-hello-btn small"
-                        onClick={() => handleSayHello(msg.sender.nodeId)}
+                        onClick={() => handleSayHello(msg.sender.ownerId)}
                       >
                         Say Hello
                       </button>
@@ -710,7 +736,7 @@ function App() {
                     onClick={() => setSelectedContact(contact.peerOwnerId)}
                   >
                     <span className="avatar">{contact.displayName?.[0] ?? "?"}</span>
-                    <span className="name">{contact.displayName ?? contact.peerOwnerId}</span>
+                    <span className="name">{contactLabel(contact)}</span>
                   </button>
                 ))
               )}
@@ -721,7 +747,11 @@ function App() {
                 <>
                   <header className="chat-header">
                     <span className="chat-name">
-                      {bonds.find((c) => c.peerOwnerId === selectedContact)?.displayName ?? selectedContact}
+                      {contactLabel(
+                        bonds.find((c) => c.peerOwnerId === selectedContact) ?? {
+                          peerOwnerId: selectedContact,
+                        },
+                      )}
                     </span>
                   </header>
                   <div className="messages">
@@ -805,9 +835,9 @@ function App() {
               <ul className="contact-cards">
                 {bonds.map((contact) => (
                   <li key={contact.peerOwnerId} className="contact-card">
-                    <span className="avatar large">{contact.displayName?.[0] ?? "?"}</span>
+                    <span className="avatar large">{contactLabel(contact).charAt(0) || "?"}</span>
                     <div className="contact-info">
-                      <strong>{contact.displayName ?? contact.peerOwnerId}</strong>
+                      <strong>{contactLabel(contact)}</strong>
                       <span className="bond-level">{contact.level}</span>
                     </div>
                     <button
@@ -1184,10 +1214,14 @@ function App() {
                     <p className="profile-owner-id">
                       <button
                         className="copy-id-btn"
-                        onClick={() => navigator.clipboard.writeText(connectionInfo.peerId)}
-                        title="Click to copy Peer ID"
+                        type="button"
+                        onClick={() => connectionInfo.peerId && !connectionInfo.peerId.startsWith("envoy_") && navigator.clipboard.writeText(connectionInfo.peerId)}
+                        title="Copy network peer ID (libp2p)"
+                        disabled={!connectionInfo.peerId || connectionInfo.peerId.startsWith("envoy_")}
                       >
-                        {connectionInfo.peerId.slice(0, 12)}... (click to copy)
+                        {connectionInfo.peerId && !connectionInfo.peerId.startsWith("envoy_")
+                          ? `${connectionInfo.peerId.slice(0, 12)}… (copy)`
+                          : "Network ID loading…"}
                       </button>
                     </p>
                   </div>
@@ -1239,10 +1273,11 @@ function App() {
                   </div>
                 )}
                 <div className="profile-section">
-                  <h3>Connection Info</h3>
+                  <h3>Connection</h3>
+                  <p className="profile-hint">Libp2p network address for this device — not the same as Envoy owner or envelope ids.</p>
                   <dl className="profile-info">
-                    <dt>Peer ID</dt>
-                    <dd><code className="peer-id-display">{connectionInfo.peerId}</code></dd>
+                    <dt>Network peer ID</dt>
+                    <dd><code className="peer-id-display">{connectionInfo.peerId && !connectionInfo.peerId.startsWith("envoy_") ? connectionInfo.peerId : "—"}</code></dd>
                     <dt>Node Status</dt>
                     <dd>{nodeStatus}</dd>
                     <dt>Connected Peers</dt>
@@ -1287,8 +1322,14 @@ function App() {
                     <dt>Profile Directory</dt>
                     <dd>{nodeConfig?.profileDir ?? "Loading..."}</dd>
 
-                    <dt>Peer ID</dt>
-                    <dd><code>{connectionInfo.peerId || "Not connected"}</code></dd>
+                    <dt>Network peer ID (libp2p)</dt>
+                    <dd>
+                      <code>
+                        {connectionInfo.peerId && !connectionInfo.peerId.startsWith("envoy_")
+                          ? connectionInfo.peerId
+                          : "Not connected"}
+                      </code>
+                    </dd>
                   </dl>
 
                   <div className="node-controls">

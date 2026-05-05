@@ -298,11 +298,6 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     void peerDirectoryStore
       .mergeListenAddrsForPeerId(remotePeerId, [trimmed])
       .catch((err) => console.warn(`[peer-directory] mergeListenAddrsForPeerId failed:`, err));
-    if (envelope.senderPeerId !== remotePeerId) {
-      void peerDirectoryStore
-        .mergeListenAddrsForPeerId(envelope.senderPeerId, [trimmed])
-        .catch((err) => console.warn(`[peer-directory] mergeListenAddrsForPeerId (sender) failed:`, err));
-    }
   }
   const correlationId = deriveCorrelationIdFromEnvelope(envelope);
   const rolePolicyDecision = evaluateInboundEnvelopeRolePolicy(envelope);
@@ -445,7 +440,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       }),
     );
     await peerDirectoryStore.upsertPeerFromSignal({
-      peerId: envelope.senderPeerId,
+      peerId: remotePeerId,
       payload,
       seenAt: envelope.createdAt,
     });
@@ -713,7 +708,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     void peerDirectoryStore
       .ensurePeerFromInboundChat({
         ownerId: payload.senderOwnerId,
-        peerId: envelope.senderPeerId,
+        peerId: remotePeerId,
         listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
       })
       .catch((err) => console.warn(`[peer-directory] ensurePeerFromInboundChat failed:`, err));
@@ -737,21 +732,21 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     // Emit chat:message event to connected apps via WebSocket
     console.log(`[chat.message] wsServerForEvents is ${wsServerForEvents ? "set" : "null"}`);
     if (wsServerForEvents) {
-      // Look up sender's displayName from peer directory
-      const senderPeer = (await peerDirectoryStore.listPeerRecords()).find(
-        (r) => r.ownerId === payload.senderOwnerId,
-      );
+      const [senderTrust, selfHuman] = await Promise.all([
+        trustStore.getTrustRecord(payload.senderOwnerId),
+        humanProfileStore.loadHumanProfile(),
+      ]);
       wsServerForEvents.emitEvent("chat:message", {
         messageId: envelope.messageId,
         sender: {
-          nodeId: envelope.senderPeerId,
+          nodeId: remotePeerId,
           ownerId: payload.senderOwnerId,
-          displayName: senderPeer?.ownerId ?? payload.senderOwnerId,
+          displayName: senderTrust?.displayName ?? payload.senderOwnerId,
         },
         recipient: {
           nodeId: mesh.peerId,
           ownerId: profile.owner.ownerId,
-          displayName: profile.owner.ownerId,
+          displayName: selfHuman?.displayName ?? profile.owner.ownerId,
         },
         content: {
           text: payload.text,
@@ -971,7 +966,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
             const payload = parseBondRequestPayload(envelope.payload);
             await peerDirectoryStore.ensurePeerFromInboundChat({
               ownerId: payload.requesterOwnerId,
-              peerId: envelope.senderPeerId,
+              peerId: remotePeerId,
               listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
             });
           } catch (err) {
@@ -983,7 +978,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
             const payload = parseBondAcceptPayload(envelope.payload);
             await peerDirectoryStore.ensurePeerFromInboundChat({
               ownerId: payload.responderOwnerId,
-              peerId: envelope.senderPeerId,
+              peerId: remotePeerId,
               listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
             });
           } catch (err) {

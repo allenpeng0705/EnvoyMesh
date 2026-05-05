@@ -652,9 +652,18 @@ class NodeServiceImpl implements NodeService {
 
   async getBonds(): Promise<BondRecord[]> {
     const trustRecords = await this._trustStore.listTrustRecords();
+    const dirRecords = await this._peerDirectoryStore.listPeerRecords();
+    const latestByOwner = new Map<string, { peerId: string; lastSeenAt: string }>();
+    for (const r of dirRecords) {
+      const cur = latestByOwner.get(r.ownerId);
+      if (!cur || r.lastSeenAt > cur.lastSeenAt) {
+        latestByOwner.set(r.ownerId, { peerId: r.peerId, lastSeenAt: r.lastSeenAt });
+      }
+    }
     return trustRecords.map((record) => ({
       peerOwnerId: record.peerOwnerId,
       displayName: record.displayName,
+      libp2pPeerId: latestByOwner.get(record.peerOwnerId)?.peerId,
       level: record.level,
       createdAt: record.createdAt,
       note: record.note,
@@ -761,13 +770,28 @@ class NodeServiceImpl implements NodeService {
       throw new Error(`Peer not found for owner: ${targetOwnerId}`);
     }
 
-    const recipientPeerId = targetPeer.peerId;
+    const transportPeerId = targetPeer.peerId;
+    if (transportPeerId.startsWith("envoy_")) {
+      throw new Error(
+        `Peer directory has Envoy envelope id for this owner (not libp2p). Delete peer-directory row or have the contact send again after update.`,
+      );
+    }
+    /** Envelope field: recipient's Envoy device peer id — never the libp2p transport id. */
+    const recipientEnvelopePeerId = targetPeer.devicePublicKeyPem
+      ? derivePeerId(targetPeer.devicePublicKeyPem)
+      : undefined;
+
+    const [selfHuman, recipientTrust] = await Promise.all([
+      this._humanProfileStore.loadHumanProfile(),
+      this._trustStore.getTrustRecord(targetOwnerId),
+    ]);
+
     const t1 = Date.now();
     console.log("[sendChat] step=dial-hints-start");
     let dialHints: string[];
     try {
       dialHints = await raceWithTimeout(
-        this._dialHintsForChat(recipientPeerId, targetPeer.listenAddrs),
+        this._dialHintsForChat(transportPeerId, targetPeer.listenAddrs),
         30_000,
         "_dialHintsForChat",
       );
@@ -778,13 +802,13 @@ class NodeServiceImpl implements NodeService {
     console.log(`[sendChat] step=dial-hints-done ms=${Date.now() - t1} n=${dialHints.length}`);
 
     console.log(
-      `[sendChat] recipientPeerId=${recipientPeerId} storedListenAddrs=${(targetPeer.listenAddrs ?? []).length} dialHints=${dialHints.length}`,
+      `[sendChat] transportPeerId=${transportPeerId} envelopeRecipientPeerId=${recipientEnvelopePeerId ?? "(omitted)"} storedListenAddrs=${(targetPeer.listenAddrs ?? []).length} dialHints=${dialHints.length}`,
     );
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({
         senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
         senderPublicKey: selfProfile.device.publicKeyPem,
-        recipientPeerId: recipientPeerId,
+        recipientPeerId: recipientEnvelopePeerId,
         intent: "chat.message",
         payload: createChatMessagePayload({
           senderOwnerId: selfProfile.owner.ownerId,
@@ -794,7 +818,7 @@ class NodeServiceImpl implements NodeService {
       selfProfile.device.privateKeyPem,
     );
 
-    await mesh.sendChat(recipientPeerId, envelope, {
+    await mesh.sendChat(transportPeerId, envelope, {
       dialHints,
     });
 
@@ -803,12 +827,12 @@ class NodeServiceImpl implements NodeService {
       sender: {
         nodeId: mesh.peerId,
         ownerId: selfProfile.owner.ownerId,
-        displayName: selfProfile.owner.ownerId,
+        displayName: selfHuman?.displayName ?? selfProfile.owner.ownerId,
       },
       recipient: {
-        nodeId: recipientPeerId,
+        nodeId: transportPeerId,
         ownerId: targetOwnerId,
-        displayName: targetOwnerId,
+        displayName: recipientTrust?.displayName ?? targetOwnerId,
       },
       content: {
         text,
@@ -1431,10 +1455,20 @@ class NodeServiceImpl implements NodeService {
 
       if (intent === "chat.message") {
         const payload = parseChatMessagePayload(envelope.payload);
+        const senderTrust = await this._trustStore.getTrustRecord(payload.senderOwnerId);
+        const selfHuman = await this._humanProfileStore.loadHumanProfile();
         this.emit("chat:message", {
           messageId: envelope.messageId,
-          sender: { nodeId: remotePeerId, displayName: payload.senderOwnerId },
-          recipient: { nodeId: profile.owner.ownerId },
+          sender: {
+            nodeId: remotePeerId,
+            ownerId: payload.senderOwnerId,
+            displayName: senderTrust?.displayName ?? payload.senderOwnerId,
+          },
+          recipient: {
+            nodeId: mesh.peerId,
+            ownerId: profile.owner.ownerId,
+            displayName: selfHuman?.displayName ?? profile.owner.ownerId,
+          },
           content: { text: payload.text },
           metadata: { timestamp: envelope.createdAt, deliveryReceipt: "delivered" },
           signature: envelope.signature,

@@ -111,7 +111,7 @@ describe("handleInboundBondIntent", () => {
     expect(result).toEqual({
       ok: true,
       bondAcceptToRequester: {
-        requesterPeerId: "peer-remote",
+        requesterPeerId: "libp2p-mac-peer",
         requesterOwnerId: "envoy:owner:stranger",
       },
     });
