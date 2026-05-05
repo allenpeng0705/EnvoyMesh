@@ -131,6 +131,24 @@ export interface NodeConfig {
   advertiseAddrs: string[];
   bootstrapPeers: string[];
   bootstrapPresets: string[];
+  /** Model provider configuration. Default: mock provider only. */
+  modelProviders: ModelProviderConfig;
+}
+
+/** Model provider mode: mock (no external calls), ollama (local), litellm (local/cloud), or disabled. */
+export type ModelProviderMode = "mock" | "ollama" | "litellm" | "disabled";
+
+export interface ModelProviderConfig {
+  /** Provider mode. When "disabled", no model calls are made. Default: "mock". */
+  mode: ModelProviderMode;
+  /** Endpoint for ollama/litellm providers (e.g. "http://127.0.0.1:11434"). */
+  endpoint?: string;
+  /** Model name for ollama (e.g. "llama3.1") or litellm (e.g. "gpt-4o-mini"). */
+  modelName?: string;
+  /** Optional API key for litellm providers. */
+  apiKey?: string;
+  /** If true, cloud providers require explicit owner approval per request. Default: true. */
+  requireApprovalForCloud?: boolean;
 }
 
 export type DiscoveryProfile = "lan-fast" | "wan-default";

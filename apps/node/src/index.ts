@@ -105,6 +105,7 @@ import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-ru
 import { installEnvoyDataTransferReceiver } from "./data-transfer-inbound.js";
 import { createNodeService, NodeServiceImpl } from "./node-service-impl.js";
 import { WsServer } from "./ws-server.js";
+import type { ModelProviderConfig } from "@envoymesh/api";
 import { evaluateInboundEnvelopeRolePolicy } from "./role-policy.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
 import { resolveBootstrapAddresses } from "./bootstrap-resolver.js";
@@ -144,6 +145,9 @@ try {
 } catch (err) {
   console.warn(`[vault] index build failed (vault may be missing or empty):`, err);
 }
+
+// Model provider configuration — loaded from persisted config after nodeService is created
+let currentModelProviders: ModelProviderConfig = { mode: "mock" };
 
 // WebSocket server reference for event emission
 let wsServerForEvents: WsServer | null = null;
@@ -493,6 +497,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       peerDirectoryStore,
       profile,
       vaultIndex,
+      modelProviders: currentModelProviders,
     });
     if (!kq.ok) {
       await taskStore.appendAuditEvent(
@@ -1235,6 +1240,10 @@ const nodeService = createNodeService(
 if (nodeService instanceof NodeServiceImpl) {
   nodeService.bindExternalMesh(mesh);
   void nodeService.resyncBondedContactReachabilityTags();
+  // Load model provider config from persisted config
+  const nodeConfig = await nodeService.getNodeConfig();
+  currentModelProviders = nodeConfig.modelProviders;
+  console.log(`[model] provider mode=${currentModelProviders.mode}`);
 }
 
 // Start WebSocket server for app connections

@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { DiscoveryProfile, RelayConfig } from "@envoymesh/api";
+import type { DiscoveryProfile, ModelProviderConfig, RelayConfig } from "@envoymesh/api";
 
 const NODE_CONFIG_FILE = "node-config.json";
 
@@ -15,6 +15,7 @@ export interface PersistedNodeConfig {
   bootstrapPeers: string[];
   bootstrapPresets: string[];
   configuredRelays: RelayConfig[];
+  modelProviders: ModelProviderConfig;
   updatedAt: string;
 }
 
@@ -98,6 +99,21 @@ function isValidNodeConfig(value: unknown): value is PersistedNodeConfig {
     return false;
   }
   if (!Array.isArray(file.configuredRelays)) {
+    return false;
+  }
+  if (!isValidModelProviders(file.modelProviders)) {
+    return false;
+  }
+  return true;
+}
+
+function isValidModelProviders(value: unknown): value is ModelProviderConfig {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const cfg = value as Record<string, unknown>;
+  const validModes = ["mock", "ollama", "litellm", "disabled"];
+  if (typeof cfg.mode !== "string" || !validModes.includes(cfg.mode)) {
     return false;
   }
   return true;

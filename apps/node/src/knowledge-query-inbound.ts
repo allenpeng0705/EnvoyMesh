@@ -9,13 +9,54 @@ import { evaluatePolicy } from "@envoymesh/bonds";
 import { searchVaultWithAudit, type VaultIndex } from "@envoymesh/vault";
 import {
   createMockModelProvider,
+  createOllamaLiteLlmProvider,
+  createLiteLlmProvider,
   routeModelRequest,
+  type ModelProvider,
 } from "@envoymesh/models";
+import type { ModelProviderConfig } from "@envoymesh/api";
 import { ZodError } from "zod";
 
 export type KnowledgeQueryInboundResult =
   | { ok: true; responsePayload: KnowledgeResponsePayload }
   | { ok: false; reason: string };
+
+/**
+ * Build the list of model providers from the node's model provider configuration.
+ */
+function buildModelProviders(config: ModelProviderConfig): ModelProvider[] {
+  switch (config.mode) {
+    case "disabled":
+      return [];
+    case "mock":
+      return [
+        createMockModelProvider({
+          providerId: "local.mock",
+          providerType: "local",
+        }),
+      ];
+    case "ollama":
+      return [
+        createOllamaLiteLlmProvider({
+          providerId: `local.ollama.${config.modelName ?? "llama3.1"}`,
+          modelName: config.modelName ?? "llama3.1",
+          endpoint: config.endpoint ?? "http://127.0.0.1:11434",
+        }),
+      ];
+    case "litellm":
+      return [
+        createLiteLlmProvider({
+          providerId: `cloud.${config.modelName ?? "litellm-model"}`,
+          providerType: config.requireApprovalForCloud !== false ? "cloud" : "local",
+          modelName: config.modelName ?? "gpt-4o-mini",
+          endpoint: config.endpoint ?? "http://127.0.0.1:4000/v1",
+          apiKey: config.apiKey,
+        }),
+      ];
+    default:
+      return [createMockModelProvider({ providerId: "local.mock" })];
+  }
+}
 
 /**
  * Resolve the owner ID for a sender using the peer directory.
@@ -54,8 +95,9 @@ export async function handleInboundKnowledgeQuery(input: {
   peerDirectoryStore: LocalPeerDirectoryStore;
   profile: NodeProfile;
   vaultIndex: VaultIndex | null;
+  modelProviders: ModelProviderConfig;
 }): Promise<KnowledgeQueryInboundResult> {
-  const { envelope, remotePeerId, receivedAt, correlationId, taskStore, trustStore, peerDirectoryStore, profile, vaultIndex } = input;
+  const { envelope, remotePeerId, receivedAt, correlationId, taskStore, trustStore, peerDirectoryStore, profile, vaultIndex, modelProviders } = input;
 
   let payload: ReturnType<typeof parseKnowledgeQueryPayload>;
   try {
@@ -183,15 +225,37 @@ Sensitivity level of this answer: ${allowedSensitivity}.\n\n\
 Context:\n${promptContext}\n\n\
 Query: ${payload.query}`;
 
-  // 6. Route through model router with mock provider
-  const providers = [
-    createMockModelProvider({
-      providerId: "local.mock",
-      responseText: snippets.length > 0
-        ? `Based on the available documents: ${snippets[0].chunk.text.slice(0, 200)}...`
-        : "I don't have specific information about that in my local documents. Could you rephrase or ask something more specific?",
-    }),
-  ];
+  // 6. Route through model router with configured provider(s)
+  if (modelProviders.mode === "disabled") {
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "model.routed",
+        intent: "knowledge.query",
+        messageId: envelope.messageId,
+        correlationId,
+        remotePeerId,
+        direction: "inbound",
+        verificationStatus: "verified",
+        latencyMs: Date.now() - receivedAt,
+        outcome: "deny",
+        summary: "model routing: denied (model provider is disabled)",
+        createdAt: envelope.createdAt,
+      }),
+    );
+    return {
+      ok: true,
+      responsePayload: createKnowledgeResponsePayload({
+        inReplyTo: envelope.messageId,
+        answer: "The model provider is currently disabled. Please enable a model provider to answer knowledge queries.",
+        sensitivity: allowedSensitivity,
+        matchScore: 0,
+        refused: true,
+        refusalReason: "model disabled",
+      }),
+    };
+  }
+
+  const providers = buildModelProviders(modelProviders);
 
   const modelResult = await routeModelRequest(
     {

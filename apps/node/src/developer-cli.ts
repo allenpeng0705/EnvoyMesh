@@ -21,6 +21,7 @@ import {
 import { resolve } from "node:path";
 import { decodeWanJoinInviteV1, encodeWanJoinInviteV1, type WanJoinInviteV1 } from "./wan-invite.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
+import { createNodeConfigStore } from "./node-config-store.js";
 import {
   formatCapabilityDiscoveryRows,
   formatDiscoverySeedRows,
@@ -43,7 +44,8 @@ export type DeveloperCliCommand =
   | "morning-report"
   | "pairing"
   | "smoke-checklist"
-  | "invite";
+  | "invite"
+  | "model-config";
 
 export interface DeveloperCliArgs {
   command: DeveloperCliCommand;
@@ -185,6 +187,10 @@ export async function runDeveloperCli(argv: string[]): Promise<DeveloperCliResul
 
   if (args.command === "invite") {
     return handleInvite(args);
+  }
+
+  if (args.command === "model-config") {
+    return showModelConfig(args);
   }
 
   throw new Error(`Unhandled command: ${args.command}`);
@@ -393,6 +399,27 @@ async function handleInvite(args: DeveloperCliArgs): Promise<DeveloperCliResult>
 
   const decoded = decodeWanJoinInviteV1(token);
   return ok(["WAN join-invite (decoded)", JSON.stringify(decoded, null, 2)]);
+}
+
+async function showModelConfig(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
+  const configStore = createNodeConfigStore(args.profileDir);
+  const config = await configStore.load();
+
+  if (!config) {
+    return ok(["Model config: not initialized (no node-config.json found)"]);
+  }
+
+  const mp = config.modelProviders;
+  const lines = [
+    "Model provider configuration",
+    `  mode           ${mp.mode}`,
+    mp.endpoint ? `  endpoint       ${mp.endpoint}` : null,
+    mp.modelName ? `  modelName      ${mp.modelName}` : null,
+    mp.apiKey ? `  apiKey         ${mp.apiKey.slice(0, 8)}...` : null,
+    mp.requireApprovalForCloud !== undefined ? `  requireApprovalForCloud  ${mp.requireApprovalForCloud}` : null,
+  ].filter(Boolean) as string[];
+
+  return ok(lines);
 }
 
 async function showProfile(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
@@ -910,7 +937,8 @@ function parseDeveloperCliCommand(value: string): DeveloperCliCommand {
     value === "pairing" ||
     value === "morning-report" ||
     value === "smoke-checklist" ||
-    value === "invite"
+    value === "invite" ||
+    value === "model-config"
   ) {
     return value;
   }

@@ -72,6 +72,7 @@ describe("handleInboundKnowledgeQuery", () => {
       peerDirectoryStore,
       profile: makeTestProfile(),
       vaultIndex: null,
+      modelProviders: { mode: "mock" },
     });
 
     expect(result.ok).toBe(false);
@@ -91,6 +92,7 @@ describe("handleInboundKnowledgeQuery", () => {
       peerDirectoryStore,
       profile: makeTestProfile(),
       vaultIndex: null,
+      modelProviders: { mode: "mock" },
     });
 
     // Stranger: not in peer directory → bond level = "public"
@@ -125,6 +127,7 @@ describe("handleInboundKnowledgeQuery", () => {
       peerDirectoryStore,
       profile: makeTestProfile(),
       vaultIndex: null,
+      modelProviders: { mode: "mock" },
     });
 
     expect(result.ok).toBe(true);
@@ -165,6 +168,7 @@ describe("handleInboundKnowledgeQuery", () => {
       peerDirectoryStore,
       profile: makeTestProfile(),
       vaultIndex: null,
+      modelProviders: { mode: "mock" },
     });
 
     expect(result.ok).toBe(false);
@@ -208,6 +212,7 @@ describe("handleInboundKnowledgeQuery", () => {
       peerDirectoryStore,
       profile: makeTestProfile(),
       vaultIndex,
+      modelProviders: { mode: "mock" },
     });
 
     expect(result.ok).toBe(true);

@@ -455,8 +455,9 @@ Design reference: [Agentic next step](./next-step.md).
 
 ### Phase 8 status summary
 
-- Current milestone: **8B — model provider configuration** (Phase 8A is complete).
+- Current milestone: **8C — LLM-assisted chat (draft first)** (Phase 8A and 8B are complete).
 - Phase 8A shipped: real `knowledge.query` with policy gate → vault search → model router → signed `knowledge.response` → audit. Uses mock provider; vault and model are wired and tested.
+- Phase 8B shipped: model provider config (`mock`/`ollama`/`litellm`/`disabled`) in `node-config.json`, `buildModelProviders()` factory in `knowledge-query-inbound.ts`, `model-config` CLI command, model provider config tests, and `docs/run-local-model.md` runbook. Cloud/litellm providers default to `requireApprovalForCloud=true`.
 - Success bar for this phase: every LLM/agent action is policy-gated, auditable, and independently testable with mock providers before any real model is required.
 - Ordering rule: direct bonded-contact workflows first; contact-scoped discovery and sharing second; tool/agent boundaries third; stronger sandbox before anonymous discovery or broadcast; broad autonomy last.
 
@@ -478,14 +479,14 @@ Tasks:
 - `[x]` Audit policy decision, vault search/read, model route decision, egress decision, and outbound response.
 - `[x]` Add unit tests for policy-denied, blocked, malformed, model-denied, no-match, and successful mock-model paths.
 - `[x]` Add a two-node smoke path using `--knowledge-query` that verifies response and audit rows.
-- `[ ]` Document how to run mock-provider and optional Ollama/LiteLLM manual tests.
+- `[x]` Document how to run mock-provider and optional Ollama/LiteLLM manual tests.
 
 Exit criteria:
 
 - `[x]` A bonded contact can send `knowledge.query` and receive signed `knowledge.response`.
 - `[x]` Blocked/public peers do not reach vault/model paths unless policy explicitly allows public sensitivity.
 - `[x]` Mock provider tests pass without external services.
-- `[ ]` Optional local model runbook exists for Ollama/LiteLLM.
+- `[x]` Optional local model runbook exists for Ollama/LiteLLM.
 
 ### 8B: Model provider configuration in the normal node
 
@@ -493,16 +494,16 @@ Goal: make model usage configurable without hardcoding provider decisions inside
 
 Tasks:
 
-- `[ ]` Add node config for model provider mode: `mock`, `ollama`, `litellm`, or disabled.
-- `[ ]` Add provider endpoint/model/env parsing with safe defaults.
-- `[ ]` Add CLI or config inspection for current model policy.
-- `[ ]` Ensure cloud or external providers require policy approval for non-public sensitivity.
-- `[ ]` Write config precedence tests matching existing config patterns.
+- `[x]` Add node config for model provider mode: `mock`, `ollama`, `litellm`, or disabled.
+- `[x]` Add provider endpoint/model/env parsing with safe defaults.
+- `[x]` Add CLI or config inspection for current model policy.
+- `[x]` Ensure cloud or external providers require policy approval for non-public sensitivity.
+- `[x]` Write config precedence tests matching existing config patterns.
 
 Exit criteria:
 
-- `[ ]` Node can run with model disabled, mock model, or configured local endpoint.
-- `[ ]` Sensitive context cannot be routed to cloud without owner approval.
+- `[x]` Node can run with model disabled, mock model, or configured local endpoint.
+- `[x]` Sensitive context cannot be routed to cloud without owner approval.
 
 ### 8C: LLM-assisted chat, draft first
 
@@ -696,7 +697,7 @@ Milestone: **Phase 8A** is complete: mock `knowledge.query` replaced with policy
 ### Next planning pulls (from [scenarios](./scenarios.md), [UserStory](./UserStory.md); [alignment](./alignment-review.md))
 
 - `[x]` **Phase 8A** — real `knowledge.query`: policy gate → vault search/read → model router → signed `knowledge.response` → audit.
-- `[ ]` **Phase 8B** — model provider config in the normal node; mock/local first, cloud behind approval.
+- `[x]` **Phase 8B** — model provider config in the normal node; mock/local first, cloud behind approval.
 - `[ ]` **Phase 8C** — LLM-assisted chat as draft-only before any auto-send behavior.
 - `[ ]` **Phase 8D–8E** — capability manifest, contact-scoped matching, safe preview, and direct sharing after match.
 - `[ ]` **Phase 8F–8G** — local tool registry and constrained OpenClaw/HomeClaw adapter boundary.
@@ -725,7 +726,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | Agent stories — **interest/book/stranger/E2EE buffer** | Phase 8 + bonds/policy | Agentic next-step design **`[x]`** · direct/contact LLM workflows **`[ ]`** · anonymous discovery/broadcast later **`[ ]`** | `[~]` |
 | Story F — **DID-targeted LAN discovery** | Phase **4** | LAN identity match by owner-id target resolution **`[x]`**; live proofs **`[!]`** | `[~]` |
 | **Semantic firewall** (UserStory + US-F5) | Phase **6** | `evaluateSemanticFirewall` + `routeModelRequest` integration. | `[x]` |
-| **`knowledge.query` handler** | Phase 3 + **Phase 8A** | Inbound mock + CLI; EMP payload schema in protocol **`[x]`** · real policy-gated vault + model + signed `knowledge.response` path **`[ ]`**. | `[~]` |
+| **`knowledge.query` handler** | Phase 3 + **Phase 8A** | Inbound mock + CLI; EMP payload schema in protocol **`[x]`** · real policy-gated vault + model + signed `knowledge.response` path **`[x]`**. | `[x]` |
 | **Agentic normal node / LLM first** | **Phase 8** | Design captured in [Agentic next step](./next-step.md); implementation starts with direct contact `knowledge.query`, then chat assist, capability matching, tool registry, sandbox hardening, anonymous discovery, broadcast, reputation, and bounded autonomy. | `[ ]` |
 | **Distributed state (`loro` / `yjs`)** | Key Decisions | Direction only; no build checkbox. | `[ ]` |
 | Tooling / persistence | Key Decisions + detailed-design | SQLite Key Decision **`[ ]`**. | `[~]` |
@@ -759,7 +760,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | `[ ]` | **libp2p `PeerID` vs Envoy cryptographic identity** | Discovery logs, multi-key stories, DID mapping | Still open in [detailed-design.md](./detailed-design.md); affects addressing docs. |
 | `[ ]` | **Cloud model providers (first)** | Vendor keys, compliance, rate limits | `packages/models` is pluggable; product default unset. |
 | `[ ]` | **Default policy for redacted / non-public context to cloud** | Story C and semantic firewall | Tied to approvals + redaction pipeline; not normative in EMP yet. |
-| `[ ]` | **First real model provider default** | Phase 8A/8B needs a predictable dev path | Mock provider for tests is clear; product default among Ollama/LiteLLM/node-llama-cpp still needs a decision. |
+| `[x]` | **First real model provider default** | Phase 8A/8B needs a predictable dev path | Mock provider for tests is clear; Ollama runbook exists at `docs/run-local-model.md`; product default (Ollama vs LiteLLM vs node-llama-cpp) still open. |
 | `[ ]` | **Anonymous discovery default** | Determines whether strangers can reach normal-node matching at all | Phase 8H proposes `off`, `contacts-only`, `public-preview`, `public-auto-answer`; default should likely be conservative. |
 | `[ ]` | **First broadcast substrate** | Broadcasting can be contact fanout, relay-assisted fanout, DHT provider records, or gossipsub | Defer until Phase 8I after direct/contact flows are verified. |
 | `[ ]` | **External agent adapter contract** | OpenClaw/HomeClaw should extend EnvoyMesh without bypassing policy | Phase 8G should define local API boundary before real integration. |
@@ -786,6 +787,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 
 | Date | Change |
 |------|--------|
+| 2026-05-06 | **Phase 8B complete:** model provider config (`mock`/`ollama`/`litellm`/`disabled`) in `PersistedNodeConfig` and `NodeConfig`, `buildModelProviders()` factory in `knowledge-query-inbound.ts` routing to `createMockModelProvider`/`createOllamaLiteLlmProvider`/`createLiteLlmProvider` based on mode, `modelProviders` loaded from persisted config at node startup and passed to knowledge-query handler, `model-config` CLI command for inspection, 6 model provider config tests, `docs/run-local-model.md` runbook. Cloud/litellm providers default to `requireApprovalForCloud=true` enforced via `evaluateModelProvider` in `@envoymesh/models`. Phase 8B exit criteria: all `[x]`. |
 | 2026-05-06 | **Phase 8A complete:** replaced mock `knowledge.query` handler with real policy-gated path: `evaluatePolicy` via `@envoymesh/bonds`, vault search via `searchVault()`, model routing via `routeModelRequest()` with mock provider, signed `knowledge.response` envelope sent back to sender, full audit trail (`message.verified`, `policy.decided`, `vault.searched`, `model.routed`, `message.sent`). Added `KnowledgeResponsePayloadSchema` + `createKnowledgeResponsePayload` to `@envoymesh/protocol`. Added `policy.decided`, `vault.searched`, `model.routed` to `AuditEventType`. Wired `@envoymesh/models` into `apps/node` with new tsconfig reference. 5 unit tests covering blocked/stranger/bonded/vault paths. Phase 8A exit criteria: all `[x]`. |
 | 2026-05-05 | **Phase 8 agentic normal node roadmap:** linked [Agentic next step](./next-step.md), made Phase 8A real `knowledge.query` the active milestone, added detailed 8A-8L tasks/exit criteria, updated current pulls, coverage, key decisions, and open questions. |
 | 2026-04-26 | Related-doc strip, north-star checkline, Phase 4A Full Node defer → `[x]`, Phase 6 semantic-firewall exit criterion, open-question table **Status** headers, Immediate tasks disclaimer, backlog footer unchanged in meaning. |

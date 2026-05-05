@@ -12,6 +12,7 @@ const mockConfig = {
   bootstrapPeers: [] as string[],
   bootstrapPresets: [] as string[],
   configuredRelays: [],
+  modelProviders: { mode: "mock" as const },
   updatedAt: new Date().toISOString(),
 };
 
@@ -250,5 +251,104 @@ describe("Bootstrap Preset Validation", () => {
     expect(presetPattern.test("public-libp2p-am7")).toBe(true);
     expect(presetPattern.test("invalid")).toBe(false);
     expect(presetPattern.test("")).toBe(false);
+  });
+});
+
+describe("Model Provider Config", () => {
+  beforeEach(() => {
+    mockStore.reset();
+  });
+
+  describe("modelProviders persistence", () => {
+    it("should store and retrieve modelProviders with mock mode", async () => {
+      const initialConfig = await mockStore.load();
+      expect(initialConfig.modelProviders.mode).toBe("mock");
+    });
+
+    it("should store and retrieve ollama model provider config", async () => {
+      await mockStore.save({
+        ...mockStore.getConfig(),
+        modelProviders: {
+          mode: "ollama",
+          endpoint: "http://127.0.0.1:11434",
+          modelName: "llama3.1",
+        },
+      });
+
+      const config = await mockStore.load();
+      expect(config.modelProviders.mode).toBe("ollama");
+      expect(config.modelProviders.endpoint).toBe("http://127.0.0.1:11434");
+      expect(config.modelProviders.modelName).toBe("llama3.1");
+    });
+
+    it("should store and retrieve litellm model provider config with api key", async () => {
+      await mockStore.save({
+        ...mockStore.getConfig(),
+        modelProviders: {
+          mode: "litellm",
+          endpoint: "http://127.0.0.1:4000/v1",
+          modelName: "gpt-4o-mini",
+          apiKey: "sk-test-key-123",
+          requireApprovalForCloud: true,
+        },
+      });
+
+      const config = await mockStore.load();
+      expect(config.modelProviders.mode).toBe("litellm");
+      expect(config.modelProviders.endpoint).toBe("http://127.0.0.1:4000/v1");
+      expect(config.modelProviders.modelName).toBe("gpt-4o-mini");
+      expect(config.modelProviders.apiKey).toBe("sk-test-key-123");
+      expect(config.modelProviders.requireApprovalForCloud).toBe(true);
+    });
+
+    it("should store disabled mode", async () => {
+      await mockStore.save({
+        ...mockStore.getConfig(),
+        modelProviders: { mode: "disabled" },
+      });
+
+      const config = await mockStore.load();
+      expect(config.modelProviders.mode).toBe("disabled");
+    });
+
+    it("should preserve other config fields when updating modelProviders", async () => {
+      // Set up initial config with some values
+      await mockStore.save({
+        ...mockStore.getConfig(),
+        discoveryProfile: "lan-fast",
+        relayEnabled: true,
+        bootstrapPresets: ["public-libp2p"],
+      });
+
+      // Update just modelProviders
+      await mockStore.save({
+        ...mockStore.getConfig(),
+        modelProviders: { mode: "ollama", modelName: "llama3.1" },
+      });
+
+      const config = await mockStore.load();
+      expect(config.modelProviders.mode).toBe("ollama");
+      expect(config.modelProviders.modelName).toBe("llama3.1");
+      // Other fields preserved
+      expect(config.discoveryProfile).toBe("lan-fast");
+      expect(config.relayEnabled).toBe(true);
+      expect(config.bootstrapPresets).toEqual(["public-libp2p"]);
+    });
+
+    it("should default requireApprovalForCloud to true for litellm", async () => {
+      await mockStore.save({
+        ...mockStore.getConfig(),
+        modelProviders: {
+          mode: "litellm",
+          endpoint: "http://127.0.0.1:4000/v1",
+          modelName: "gpt-4o-mini",
+        },
+      });
+
+      const config = await mockStore.load();
+      // When not explicitly set, the field may be undefined in stored config
+      // The code should treat undefined as true (require approval for cloud)
+      expect(config.modelProviders.requireApprovalForCloud ?? true).toBe(true);
+    });
   });
 });

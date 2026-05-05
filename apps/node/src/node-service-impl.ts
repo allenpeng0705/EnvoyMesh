@@ -7,6 +7,7 @@ import type {
   HelloRequest,
   HelloResponse,
   HumanProfile,
+  ModelProviderConfig,
   NodeConfig,
   NodeProfile,
   NodeService,
@@ -1249,6 +1250,7 @@ class NodeServiceImpl implements NodeService {
         advertiseAddrs: config.advertiseAddrs,
         bootstrapPeers: config.bootstrapPeers,
         bootstrapPresets: config.bootstrapPresets,
+        modelProviders: config.modelProviders,
       };
     }
     return {
@@ -1260,6 +1262,7 @@ class NodeServiceImpl implements NodeService {
       advertiseAddrs: [],
       bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
       bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
+      modelProviders: { mode: "mock" },
     };
   }
 
@@ -1274,6 +1277,7 @@ class NodeServiceImpl implements NodeService {
       bootstrapPeers: [] as string[],
       bootstrapPresets: [] as string[],
       configuredRelays: [],
+      modelProviders: { mode: "mock" as const },
       updatedAt: new Date().toISOString(),
     };
 
@@ -1287,6 +1291,7 @@ class NodeServiceImpl implements NodeService {
       ...(config.bootstrapPeers && { bootstrapPeers: config.bootstrapPeers }),
       ...(config.bootstrapPresets && { bootstrapPresets: config.bootstrapPresets }),
       ...(config.configuredRelays && { configuredRelays: config.configuredRelays }),
+      ...(config.modelProviders && { modelProviders: config.modelProviders }),
       updatedAt: new Date().toISOString(),
     };
 
@@ -1313,6 +1318,7 @@ class NodeServiceImpl implements NodeService {
       bootstrapPeers: [] as string[],
       bootstrapPresets: [] as string[],
       configuredRelays: [],
+      modelProviders: { mode: "mock" as const },
       updatedAt: new Date().toISOString(),
     };
 
@@ -1375,6 +1381,7 @@ class NodeServiceImpl implements NodeService {
       bootstrapPeers: options?.bootstrapPeers ?? [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
       bootstrapPresets: options?.bootstrapPresets ?? [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
       configuredRelays: [],
+      modelProviders: { mode: "mock" },
       updatedAt: new Date().toISOString(),
     };
 
