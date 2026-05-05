@@ -73,6 +73,9 @@ import {
   parseSystemPingPayload,
   parseSystemSignalPayload,
   parseTaskCancelPayload,
+  parseRendezvousRegisterPayload,
+  parseRendezvousQueryPayload,
+  createRendezvousResponsePayload,
   type EnvoyEnvelope,
   type RelayHint,
   type RelayLookupPayload,
@@ -89,6 +92,7 @@ import { createInboundMessageGuard } from "./inbound-guard.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates } from "./discovery-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
+import { CapabilityRegistry } from "./capability-registry.js";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
 import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
@@ -161,6 +165,7 @@ const mesh = new EnvoyMesh({
     void appendP2pTrace(event);
   },
 });
+let rendezvousRegistry: CapabilityRegistry | undefined;
 if (args.p2pDebug) {
   console.log(
     `[p2p-debug] relay periodic SUMMARY logs: ${args.relayDebugSummary ? "on" : "off"} (enable with --relay-debug-summary or ENVOYMESH_RELAY_DEBUG_SUMMARY=1)`,
@@ -304,6 +309,50 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       }),
     );
     console.warn(`[rejected role policy] ${envelope.intent}: ${rolePolicyDecision.reason}`);
+    return;
+  }
+
+  /** Rendezvous (public relay / discovery): requires same-stream reply for sendExpectReply clients */
+  if (
+    rendezvousRegistry &&
+    (envelope.intent === "rendezvous.register" || envelope.intent === "rendezvous.query") &&
+    replyWithEnvelope
+  ) {
+    const sendRendezvousResponse = async (matches: Parameters<typeof createRendezvousResponsePayload>[0]["matches"]) => {
+      const responsePayload = createRendezvousResponsePayload({ matches });
+      await replyWithEnvelope({
+        version: "0.1",
+        messageId: randomUUID(),
+        createdAt: new Date().toISOString(),
+        senderPeerId: mesh.peerId,
+        senderPublicKey: "",
+        senderRole: "agent",
+        recipientPeerId: envelope.senderPeerId,
+        recipientRole: "agent",
+        intent: "rendezvous.response",
+        signature: "",
+        payload: responsePayload,
+      } as EnvoyEnvelope);
+    };
+
+    try {
+      if (envelope.intent === "rendezvous.register") {
+        const regPayload = parseRendezvousRegisterPayload(envelope.payload);
+        rendezvousRegistry.register(regPayload);
+        await sendRendezvousResponse([]);
+      } else {
+        const q = parseRendezvousQueryPayload(envelope.payload);
+        const matches = rendezvousRegistry.query(q);
+        await sendRendezvousResponse(matches);
+      }
+    } catch (error) {
+      console.error(`[node-rendezvous] ${envelope.intent} failed:`, error);
+      try {
+        await sendRendezvousResponse([]);
+      } catch (replyErr) {
+        console.error("[node-rendezvous] failed to ACK:", replyErr);
+      }
+    }
     return;
   }
 
@@ -1098,6 +1147,12 @@ installEnvoyDataTransferReceiver({
 });
 
 await mesh.start();
+
+if (args.enableRelayServer) {
+  rendezvousRegistry = new CapabilityRegistry();
+  rendezvousRegistry.startSweeper();
+  console.log("[node] Rendezvous capability registry enabled (--relay-server)");
+}
 
 if (args.bootstrapPeers.length > 0) {
   await discoverySeedStore.upsertMany(args.bootstrapPeers, "manual-bootstrap");
