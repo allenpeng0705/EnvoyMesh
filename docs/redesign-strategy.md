@@ -44,7 +44,6 @@ Use this table to **prioritize rewrites**. Status is **intent** until a PR flips
 | [poc-discovery-connectivity.md](./poc-discovery-connectivity.md) | Stages A–D POC (single doc) | **Active** — canonical entry before hybrid/Matrix investment |
 | [vision.md](./vision.md) | Product vision | **Partial refresh** — hybrid signaling note under P2P First; broader narrative pass optional |
 | [high-level-design.md](./high-level-design.md) | Architecture overview | **Partial refresh** — living-doc stance; dual-plane diagram still optional |
-| [architecture.md](./architecture.md) | Package map | **Refresh** when packages move |
 | [detailed-design.md](./detailed-design.md) | EMP, packages | **Living** — update when protocol refactors |
 | [protocol-standard.md](./protocol-standard.md) | EMP normative | **Version** with breaking changes explicitly |
 | [scenarios.md](./scenarios.md), [UserStory.md](./UserStory.md) | Backlog narratives | **Reconcile** with hybrid + agent stories periodically |

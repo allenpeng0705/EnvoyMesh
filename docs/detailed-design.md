@@ -343,26 +343,6 @@ unknown peer    -> no model execution
 
 The Model Router may make an automatic choice, but only inside hard policy limits. LLMs can help choose a provider later, but they must not override privacy, trust, or cost policy.
 
-### `packages/sandbox`
-
-Provides isolation for risky work.
-
-First version:
-
-- Run Brain as a separate Node.js worker or child process.
-- Pass approved context through stdin, IPC, or a local restricted API.
-- Do not pass arbitrary filesystem paths.
-- Disable direct network behavior by convention and process separation.
-
-Later version:
-
-- WASI/WebAssembly sandbox for tools.
-- OS-level sandbox profiles.
-- Read-only mount of specific vault paths.
-- Capability-based tool permissions.
-
-The sandbox should be designed so the Brain can answer from provided context without needing filesystem or network access.
-
 ### Persistence and audit (`@envoymesh/local-store`)
 
 **Today:** append-only **JSONL** files under the profile directory — `task-journal.jsonl`, `audit-events.jsonl`, `approval-queue.jsonl`, `trust-records.json`, `peer-directory.json` (owner-id to recent peer-id mapping from verified `system.signal`), plus **`task-runtime-state.json`** for broadcast-termination metadata. Types include audit fields such as `correlationId`, `direction`, `verificationStatus`, `latencyMs`, `protocol`, and `p2p.trace` when enabled.

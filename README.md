@@ -227,7 +227,6 @@ Python, Rust, Go, or native binaries can still be used where they are strongest.
 - [EnvoyMesh Protocol](docs/protocol-standard.md)
 - [Developer CLI](docs/developer-cli.md)
 - [Social UI + Tauri shell](docs/desktop-dashboard.md)
-- [Architecture](docs/architecture.md)
 - [Model Strategy](docs/model-strategy.md)
 - [Security Model](docs/security.md)
 - [Roadmap](docs/roadmap.md)

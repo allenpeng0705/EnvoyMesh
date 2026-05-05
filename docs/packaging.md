@@ -262,8 +262,6 @@ npm run tauri:build    # Desktop app installer
 
 ## Cloud Relay Server Deployment
 
-For detailed step-by-step instructions on deploying a pure relay server on cloud VPS, see [install-relay-server.md](./install-relay-server.md).
-
 For quick start with scripts, see [run-relay-scripts.md](./run-relay-scripts.md).
 
 **Quick start with scripts:**
