@@ -266,7 +266,7 @@ mesh.onPeerDiscovered(async (peer) => {
   }
 });
 
-mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelope }) => {
+mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelope, remoteAddr }) => {
   const receivedAt = Date.now();
   const guardDecision = inboundGuard.inspect(inboundEnvelope);
 
@@ -293,6 +293,11 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
   }
 
   const envelope = guardDecision.envelope;
+  if (remoteAddr?.trim()) {
+    void peerDirectoryStore
+      .mergeListenAddrsForPeerId(remotePeerId, [remoteAddr.trim()])
+      .catch((err) => console.warn(`[peer-directory] mergeListenAddrsForPeerId failed:`, err));
+  }
   const correlationId = deriveCorrelationIdFromEnvelope(envelope);
   const rolePolicyDecision = evaluateInboundEnvelopeRolePolicy(envelope);
   if (!rolePolicyDecision.ok) {
@@ -1165,7 +1170,15 @@ if (args.bootstrapPeers.length > 0) {
 }
 
 console.log("Envoy node started");
-const nodeService = createNodeService(undefined, trustStore, peerDirectoryStore, humanProfileStore, args.profileDir, profile);
+const nodeService = createNodeService(
+  undefined,
+  trustStore,
+  peerDirectoryStore,
+  humanProfileStore,
+  args.profileDir,
+  profile,
+  effectiveBootstrapPeers,
+);
 
 // Start WebSocket server for app connections
 const wsServer = new WsServer(3030, "/ws");

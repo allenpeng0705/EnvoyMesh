@@ -958,6 +958,8 @@ export interface PeerDirectoryRecord {
 export interface LocalPeerDirectoryStore {
   listPeerRecords(): Promise<PeerDirectoryRecord[]>;
   getPeerByOwnerId(ownerId: string): Promise<PeerDirectoryRecord | undefined>;
+  /** Append dialable multiaddrs learned from inbound libp2p connections (e.g. relay circuit path). */
+  mergeListenAddrsForPeerId(peerId: string, addrs: string[]): Promise<void>;
   upsertPeerFromSignal(input: {
     peerId: string;
     payload: SystemSignalPayload;
@@ -1219,7 +1221,43 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
     async upsertPeerFromSignal(input) {
       return upsertPeerFromSignalSerialized(input);
     },
+
+    async mergeListenAddrsForPeerId(peerId, addrs) {
+      const trimmed = addrs.map((a) => a.trim()).filter(Boolean);
+      if (trimmed.length === 0) {
+        return;
+      }
+      await withDirectory(async (file) => {
+        const record = file.records.find((r) => r.peerId === peerId);
+        if (!record) {
+          return;
+        }
+        const merged = dedupeListenAddrList([...record.listenAddrs, ...trimmed]);
+        const same =
+          merged.length === record.listenAddrs.length && merged.every((a, i) => a === record.listenAddrs[i]);
+        if (same) {
+          return;
+        }
+        record.listenAddrs = merged;
+        record.lastSeenAt = new Date().toISOString();
+        await writePeerDirectoryFileAtomic(directoryPath, file);
+      });
+    },
   };
+}
+
+function dedupeListenAddrList(addrs: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const a of addrs) {
+    const t = a.trim();
+    if (!t || seen.has(t)) {
+      continue;
+    }
+    seen.add(t);
+    out.push(t);
+  }
+  return out;
 }
 
 export function parseTrustLevel(value: string): TrustRecord["level"] {

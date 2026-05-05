@@ -71,6 +71,7 @@ class NodeServiceImpl implements NodeService {
   private readonly _humanProfileStore: HumanProfileStore;
   private readonly _configStore: ReturnType<typeof createNodeConfigStore>;
   private readonly _profileDir: string;
+  private readonly _cliBootstrapPeers: readonly string[];
 
   // App-managed mode stores
   private _taskStore: LocalTaskStore | undefined;
@@ -126,12 +127,14 @@ class NodeServiceImpl implements NodeService {
     humanProfileStore: HumanProfileStore,
     profileDir: string | undefined,
     profile?: NodeProfile,
+    cliBootstrapPeers: readonly string[] = [],
   ) {
     this._mesh = mesh;
     this._trustStore = trustStore;
     this._peerDirectoryStore = peerDirectoryStore;
     this._humanProfileStore = humanProfileStore;
     this._profileDir = profileDir ?? "/tmp/unknown";
+    this._cliBootstrapPeers = cliBootstrapPeers;
     this._configStore = profileDir ? createNodeConfigStore(profileDir) : createStubNodeConfigStore();
     if (profileDir && profileDir !== "/tmp/unknown") {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
@@ -652,7 +655,13 @@ class NodeServiceImpl implements NodeService {
 
     const config = await this._configStore.load();
     const seeds = await this._discoverySeedStore.listSeedAddrs();
+    const envBootstrap =
+      process.env.ENVOYMESH_BOOTSTRAP_PEERS?.split(/[,]+/)
+        .map((s) => s.trim())
+        .filter(Boolean) ?? [];
     const extraRelays: string[] = [
+      ...this._cliBootstrapPeers,
+      ...envBootstrap,
       ...(config?.bootstrapPeers ?? []),
       ...(config?.configuredRelays?.filter((r) => r.enabled && r.addr).map((r) => r.addr) ?? []),
     ];
@@ -1514,8 +1523,9 @@ export function createNodeService(
   humanProfileStore: HumanProfileStore,
   profileDir: string,
   profile?: NodeProfile,
+  cliBootstrapPeers?: readonly string[],
 ): NodeService {
-  return new NodeServiceImpl(mesh, trustStore, peerDirectoryStore, humanProfileStore, profileDir, profile);
+  return new NodeServiceImpl(mesh, trustStore, peerDirectoryStore, humanProfileStore, profileDir, profile, cliBootstrapPeers);
 }
 
 // Export the class for testing

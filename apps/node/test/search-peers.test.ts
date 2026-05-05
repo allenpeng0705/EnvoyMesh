@@ -15,6 +15,7 @@ const createMockTrustStore = (records: any[] = []): LocalTrustStore => ({
 const createMockPeerDirectoryStore = (records: any[] = []): LocalPeerDirectoryStore => ({
   listPeerRecords: async () => records,
   getPeerByOwnerId: async () => undefined,
+  mergeListenAddrsForPeerId: async () => {},
   upsertPeerFromSignal: async () => ({}),
 });
 

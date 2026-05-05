@@ -37,6 +37,8 @@ export interface InboundMeshMessage {
   envelope: EnvoyEnvelope;
   remotePeerId: string;
   protocol: string;
+  /** Remote end of the libp2p connection (often includes `/p2p-circuit/` for relay paths). */
+  remoteAddr?: string;
   /**
    * Inbound control streams only: send one signed reply on the same libp2p stream (required for
    * NAT clients that are not dialable for reverse opens after the client closes its write half).
@@ -728,6 +730,7 @@ export class EnvoyMesh {
             envelope,
             remotePeerId,
             protocol,
+            remoteAddr: connection?.remoteAddr?.toString?.(),
             ...(replyWithEnvelope ? { replyWithEnvelope } : {}),
           });
         }
