@@ -1253,6 +1253,7 @@ class NodeServiceImpl implements NodeService {
 
       const meshOptions: EnvoyMeshOptions = {
         listen: ["/ip4/0.0.0.0/tcp/0"],
+        advertiseAddrs: config.advertiseAddrs,
         enableMdns: config.enableMdns ?? true, // mDNS for local discovery (default true, can be disabled for testing)
         enableDht: true, // Always enable DHT for topic-based discovery
         dhtClientMode: true,
