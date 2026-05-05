@@ -30,6 +30,7 @@ import {
   verifyHumanProfile,
 } from "@envoymesh/identity";
 import {
+  CapabilityRegistry,
   DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME,
   ENVOY_CHAT_PROTOCOL,
   ENVOY_DATA_PROTOCOL,
@@ -92,7 +93,6 @@ import { createInboundMessageGuard } from "./inbound-guard.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates } from "./discovery-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
-import { CapabilityRegistry } from "./capability-registry.js";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
 import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
@@ -149,6 +149,7 @@ const effectiveBootstrapPeers = dedupeAddrs([
 const libp2pPrivateKeyPath = join(args.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME);
 const mesh = new EnvoyMesh({
   listen: args.listen,
+  advertiseAddrs: args.advertiseAddrs,
   enableMdns: args.enableMdns,
   enableDht: true, // Always enable DHT for topic-based discovery (wan-default always uses DHT)
   dhtClientMode: args.dhtClientMode ?? true,
@@ -315,9 +316,12 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
   /** Rendezvous (public relay / discovery): requires same-stream reply for sendExpectReply clients */
   if (
     rendezvousRegistry &&
-    (envelope.intent === "rendezvous.register" || envelope.intent === "rendezvous.query") &&
-    replyWithEnvelope
+    (envelope.intent === "rendezvous.register" || envelope.intent === "rendezvous.query")
   ) {
+    if (!replyWithEnvelope) {
+      console.warn(`[node-rendezvous] ${envelope.intent}: no replyWithEnvelope; cannot ACK`);
+      return;
+    }
     const sendRendezvousResponse = async (matches: Parameters<typeof createRendezvousResponsePayload>[0]["matches"]) => {
       const responsePayload = createRendezvousResponsePayload({ matches });
       await replyWithEnvelope({
@@ -1149,7 +1153,7 @@ installEnvoyDataTransferReceiver({
 await mesh.start();
 
 if (args.enableRelayServer) {
-  rendezvousRegistry = new CapabilityRegistry();
+  rendezvousRegistry = new CapabilityRegistry({ verbosity: "minimal", logPrefix: "[node-rendezvous]" });
   rendezvousRegistry.startSweeper();
   console.log("[node] Rendezvous capability registry enabled (--relay-server)");
 }

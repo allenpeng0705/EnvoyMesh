@@ -73,6 +73,12 @@ export interface MeshOutboundOptions {
 
 export interface EnvoyMeshOptions {
   listen?: string[];
+  /**
+   * Extra multiaddrs to append to libp2p’s announced addresses (Identify, DHT, etc.).
+   * Use when listening on `0.0.0.0` but peers must dial a stable public IP or DNS multiaddr.
+   * Mapped to libp2p `addresses.appendAnnounce`. Invalid strings are skipped with a warning.
+   */
+  advertiseAddrs?: string[];
   enableMdns?: boolean;
   mdnsIntervalMs?: number;
   enableDht?: boolean;
@@ -151,6 +157,21 @@ export class EnvoyMesh {
       listenAddrs = [...listenAddrs, "/p2p-circuit"];
     }
 
+    const appendAnnounce: string[] = [];
+    for (const raw of this.options.advertiseAddrs ?? []) {
+      const s = typeof raw === "string" ? raw.trim() : "";
+      if (!s) continue;
+      try {
+        multiaddr(s);
+        appendAnnounce.push(s);
+      } catch {
+        console.warn(`[p2p] skipping invalid advertise multiaddr: ${raw}`);
+      }
+    }
+    if (appendAnnounce.length > 0) {
+      console.log(`[p2p] appendAnnounce: ${appendAnnounce.join(", ")}`);
+    }
+
     const quicTransportFactory = this.options.enableQuic ? await this.loadQuicTransport() : undefined;
 
     const libp2pPrivateKey = this.options.libp2pPrivateKeyPath
@@ -164,6 +185,7 @@ export class EnvoyMesh {
       ...(libp2pPrivateKey != null ? { privateKey: libp2pPrivateKey } : {}),
       addresses: {
         listen: listenAddrs,
+        ...(appendAnnounce.length > 0 ? { appendAnnounce } : {}),
       },
       transports: [
         tcp(),
@@ -910,6 +932,7 @@ export { decodeEnvelope, encodeEnvelope };
 export { voucherJsonBytesFromObject } from "./data-framing.js";
 export { CAPABILITY_TOPIC_NAMESPACE, cidForCapabilityTopic } from "./capability-topic.js";
 export { expandListenAddressesWithQuic, quicListenFromTcpListen } from "./quic-listen.js";
+export { CapabilityRegistry, type CapabilityRegistryOptions, type CapabilityRegistryVerbosity } from "./capability-registry.js";
 
 function parsePeerIdFromDialTarget(target: string): string {
   const trimmed = target.trim();

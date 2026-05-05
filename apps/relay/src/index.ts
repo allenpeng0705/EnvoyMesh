@@ -9,10 +9,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { mkdirSync } from "fs";
 import { join } from "path";
 import { randomUUID } from "node:crypto";
-import { EnvoyMesh } from "@envoymesh/network";
-import { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME } from "@envoymesh/network";
+import { CapabilityRegistry, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, EnvoyMesh } from "@envoymesh/network";
 import { parseRelayArgs } from "./args.js";
-import { CapabilityRegistry } from "./capability-registry.js";
 import {
   parseRendezvousRegisterPayload,
   parseRendezvousQueryPayload,
@@ -32,6 +30,9 @@ console.log(`[relay] Profile: ${args.profileDir}`);
 console.log(`[relay] Listen: ${args.listen.join(", ")}`);
 console.log(`[relay] DHT: ${args.enableDht ? (args.dhtClientMode ? "client mode" : "server mode") : "disabled"}`);
 console.log(`[relay] Rendezvous: ${args.enableRendezvous ? "enabled" : "disabled (empty ACKs only)"}`);
+if (args.advertiseAddrs.length > 0) {
+  console.log(`[relay] Advertise (append to libp2p announce): ${args.advertiseAddrs.join(", ")}`);
+}
 if (args.httpPort) {
   console.log(`[relay] HTTP info endpoint: enabled (port ${args.httpPort})`);
 } else {
@@ -41,6 +42,7 @@ if (args.httpPort) {
 // Create minimal EnvoyMesh for relay-only operation
 const mesh = new EnvoyMesh({
   listen: args.listen,
+  advertiseAddrs: args.advertiseAddrs,
   enableRelayServer: true,
   enableRelay: true,
   enableAutoNat: true,
@@ -91,7 +93,7 @@ try {
   console.log(`[relay] Ready to accept relay connections.`);
 
   if (args.enableRendezvous) {
-    capabilityRegistry = new CapabilityRegistry();
+    capabilityRegistry = new CapabilityRegistry({ verbosity: "full", logPrefix: "[registry]" });
     rendezvousSweeper = capabilityRegistry.startSweeper();
     console.log("[relay] Rendezvous capability registry enabled (TTL + indexes)");
   } else {
@@ -174,7 +176,6 @@ try {
         const payload = parseRendezvousRegisterPayload(message.envelope.payload);
         if (capabilityRegistry) {
           capabilityRegistry.register(payload);
-          console.log(`[relay] Registered capabilities for ${payload.peerId}`);
         }
         await ack([]);
       } catch (error) {
