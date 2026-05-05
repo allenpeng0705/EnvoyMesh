@@ -1198,24 +1198,22 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
 
   return {
     async listPeerRecords() {
-      return withDirectory((file) =>
-        Promise.resolve(file.records.sort((left, right) => right.lastSeenAt.localeCompare(left.lastSeenAt))),
-      );
+      // Reads bypass the mutex so lookups are not blocked by an in-flight write (Windows EPERM
+      // retries can hold the mutex for a long time; chat send would otherwise stall with no logs).
+      const file = await readPeerDirectoryFile(directoryPath);
+      return file.records.sort((left, right) => right.lastSeenAt.localeCompare(left.lastSeenAt));
     },
 
     async getPeerByOwnerId(ownerId) {
-      return withDirectory((file) => {
-        const matches = file.records.filter((record) => record.ownerId === ownerId);
-        if (matches.length === 0) {
-          return Promise.resolve(undefined);
-        }
-        if (matches.length === 1) {
-          return Promise.resolve(matches[0]);
-        }
-        return Promise.resolve(
-          matches.reduce((a, b) => (a.lastSeenAt >= b.lastSeenAt ? a : b)),
-        );
-      });
+      const file = await readPeerDirectoryFile(directoryPath);
+      const matches = file.records.filter((record) => record.ownerId === ownerId);
+      if (matches.length === 0) {
+        return undefined;
+      }
+      if (matches.length === 1) {
+        return matches[0];
+      }
+      return matches.reduce((a, b) => (a.lastSeenAt >= b.lastSeenAt ? a : b));
     },
 
     async upsertPeerFromSignal(input) {

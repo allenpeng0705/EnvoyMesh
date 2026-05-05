@@ -264,8 +264,12 @@ function App() {
     if (!isConnected) return;
     const unsubscribe = nodeService.on("chat:message", (data) => {
       const msg = data as any;
-      // Skip if this is our own message (local echo after sending) - these are already sent successfully
-      if (msg.sender.nodeId === peerId) {
+      // Local echo after sendChat uses deliveryReceipt "sent"; inbound uses "delivered".
+      if (msg.metadata?.deliveryReceipt === "sent") {
+        return;
+      }
+      // Skip if this is our own message (local echo) — peerId can be unset briefly at startup.
+      if (peerId && msg.sender.nodeId === peerId) {
         return;
       }
       // Check if this peer is NOT already bonded
