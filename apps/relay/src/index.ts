@@ -10,6 +10,7 @@ import { EnvoyMesh } from "@envoymesh/network";
 import { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME } from "@envoymesh/network";
 import { join } from "path";
 import { mkdirSync } from "fs";
+import { randomUUID } from "node:crypto";
 import { parseRelayArgs } from "./args.js";
 import { CapabilityRegistry } from "./capability-registry.js";
 import {
@@ -130,37 +131,53 @@ try {
     mesh.onMessage(async (message) => {
       const intent = message.envelope.intent;
 
+      /** Clients use sendExpectReply — they block until one reply is written on the same stream. */
+      const ackRegister = async (matches: Parameters<typeof createRendezvousResponsePayload>[0]["matches"]) => {
+        if (!message.replyWithEnvelope) {
+          return;
+        }
+        const responsePayload = createRendezvousResponsePayload({ matches });
+        await message.replyWithEnvelope({
+          version: "0.1",
+          messageId: randomUUID(),
+          createdAt: new Date().toISOString(),
+          senderPeerId: mesh.peerId,
+          senderPublicKey: "",
+          senderRole: "agent",
+          recipientPeerId: message.envelope.senderPeerId,
+          recipientRole: "agent",
+          intent: "rendezvous.response",
+          signature: "",
+          payload: responsePayload,
+        } as EnvoyEnvelope);
+      };
+
       if (intent === "rendezvous.register") {
         try {
           const payload = parseRendezvousRegisterPayload(message.envelope.payload);
           capabilityRegistry!.register(payload);
           console.log(`[relay] Registered capabilities for ${payload.peerId}`);
+          await ackRegister([]);
         } catch (error) {
           console.error("[relay] Failed to parse rendezvous.register:", error);
+          try {
+            await ackRegister([]);
+          } catch (replyErr) {
+            console.error("[relay] Failed to ACK rendezvous.register:", replyErr);
+          }
         }
       } else if (intent === "rendezvous.query") {
         try {
           const queryPayload = parseRendezvousQueryPayload(message.envelope.payload);
           const matches = capabilityRegistry!.query(queryPayload);
-          const responsePayload = createRendezvousResponsePayload({ matches });
-
-          if (message.replyWithEnvelope) {
-            await message.replyWithEnvelope({
-              version: "0.1",
-              messageId: crypto.randomUUID(),
-              createdAt: new Date().toISOString(),
-              senderPeerId: mesh.peerId,
-              senderPublicKey: "",
-              senderRole: "agent",
-              recipientPeerId: message.envelope.senderPeerId,
-              recipientRole: "agent",
-              intent: "rendezvous.response",
-              signature: "",
-              payload: responsePayload,
-            } as EnvoyEnvelope);
-          }
+          await ackRegister(matches);
         } catch (error) {
           console.error("[relay] Failed to parse rendezvous.query:", error);
+          try {
+            await ackRegister([]);
+          } catch (replyErr) {
+            console.error("[relay] Failed to ACK rendezvous.query:", replyErr);
+          }
         }
       }
     });
