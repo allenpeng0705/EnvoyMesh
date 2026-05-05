@@ -970,6 +970,16 @@ export interface LocalPeerDirectoryStore {
   getPeerByOwnerId(ownerId: string): Promise<PeerDirectoryRecord | undefined>;
   /** Append dialable multiaddrs learned from inbound libp2p connections (e.g. relay circuit path). */
   mergeListenAddrsForPeerId(peerId: string, addrs: string[]): Promise<void>;
+  /**
+   * Ensure a row exists for a peer learned on the wire: inbound `chat.message`, any inbound
+   * `bond.request` / `bond.accept`, manual `acceptHello`, or outbound `sendHello` after send.
+   * Updates `peerId` / listen addrs when the row already exists so bonds always reflect current libp2p id.
+   */
+  ensurePeerFromInboundChat(input: {
+    ownerId: string;
+    peerId: string;
+    listenAddrs?: string[];
+  }): Promise<void>;
   upsertPeerFromSignal(input: {
     peerId: string;
     payload: SystemSignalPayload;
@@ -1248,6 +1258,41 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         }
         record.listenAddrs = merged;
         record.lastSeenAt = new Date().toISOString();
+        await writePeerDirectoryFileAtomic(directoryPath, file);
+      });
+    },
+
+    async ensurePeerFromInboundChat(input) {
+      const ownerId = input.ownerId.trim();
+      const peerId = input.peerId.trim();
+      if (!ownerId || !peerId) {
+        return;
+      }
+      const extra = dedupeListenAddrList((input.listenAddrs ?? []).map((a) => a.trim()).filter(Boolean));
+      await withDirectory(async (file) => {
+        const seenAt = new Date().toISOString();
+        let existing = file.records.find((r) => r.ownerId === ownerId);
+        if (!existing) {
+          existing = file.records.find((r) => r.peerId === peerId);
+        }
+        if (existing) {
+          existing.ownerId = ownerId;
+          existing.peerId = peerId;
+          existing.lastSeenAt = seenAt;
+          if (extra.length > 0) {
+            existing.listenAddrs = dedupeListenAddrList([...existing.listenAddrs, ...extra]);
+          }
+          await writePeerDirectoryFileAtomic(directoryPath, file);
+          return;
+        }
+        file.records.push({
+          version: "0.1",
+          ownerId,
+          peerId,
+          deviceId: "chat-inbound",
+          lastSeenAt: seenAt,
+          listenAddrs: extra,
+        });
         await writePeerDirectoryFileAtomic(directoryPath, file);
       });
     },

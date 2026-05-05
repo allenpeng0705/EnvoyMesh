@@ -294,9 +294,15 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
 
   const envelope = guardDecision.envelope;
   if (remoteAddr?.trim()) {
+    const trimmed = remoteAddr.trim();
     void peerDirectoryStore
-      .mergeListenAddrsForPeerId(remotePeerId, [remoteAddr.trim()])
+      .mergeListenAddrsForPeerId(remotePeerId, [trimmed])
       .catch((err) => console.warn(`[peer-directory] mergeListenAddrsForPeerId failed:`, err));
+    if (envelope.senderPeerId !== remotePeerId) {
+      void peerDirectoryStore
+        .mergeListenAddrsForPeerId(envelope.senderPeerId, [trimmed])
+        .catch((err) => console.warn(`[peer-directory] mergeListenAddrsForPeerId (sender) failed:`, err));
+    }
   }
   const correlationId = deriveCorrelationIdFromEnvelope(envelope);
   const rolePolicyDecision = evaluateInboundEnvelopeRolePolicy(envelope);
@@ -704,6 +710,13 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
 
   if (envelope.intent === "chat.message") {
     const payload = parseChatMessagePayload(envelope.payload);
+    void peerDirectoryStore
+      .ensurePeerFromInboundChat({
+        ownerId: payload.senderOwnerId,
+        peerId: envelope.senderPeerId,
+        listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
+      })
+      .catch((err) => console.warn(`[peer-directory] ensurePeerFromInboundChat failed:`, err));
     await taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.verified",
@@ -951,47 +964,28 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         } else {
           console.log(`[bond:established callback] wsServerForEvents is null!`);
         }
-        // Also store peer info in peer directory so sendChat can find them
+        // Persist counterparty ownerId ↔ libp2p peerId for every bond event (new or refresh).
         if (envelope.intent === "bond.request") {
           try {
             const { parseBondRequestPayload } = await import("@envoymesh/protocol");
             const payload = parseBondRequestPayload(envelope.payload);
-            const existing = await peerDirectoryStore.getPeerByOwnerId(payload.requesterOwnerId);
-            if (!existing) {
-              await peerDirectoryStore.upsertPeerFromSignal({
-                peerId: remotePeerId,
-                payload: {
-                  type: "bond.request",
-                  version: "1.0",
-                  ownerId: payload.requesterOwnerId,
-                  deviceId: "unknown",
-                  deviceCertificate: { devicePublicKeyPem: "" },
-                  listenAddrs: [],
-                } as any,
-              });
-            }
+            await peerDirectoryStore.ensurePeerFromInboundChat({
+              ownerId: payload.requesterOwnerId,
+              peerId: envelope.senderPeerId,
+              listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
+            });
           } catch (err) {
             console.error(`[bond:established] failed to store peer in directory:`, err);
           }
         } else if (envelope.intent === "bond.accept") {
-          // When receiving bond.accept, store the responder (the one who accepted our request)
           try {
             const { parseBondAcceptPayload } = await import("@envoymesh/protocol");
             const payload = parseBondAcceptPayload(envelope.payload);
-            const existing = await peerDirectoryStore.getPeerByOwnerId(payload.responderOwnerId);
-            if (!existing) {
-              await peerDirectoryStore.upsertPeerFromSignal({
-                peerId: remotePeerId,
-                payload: {
-                  type: "bond.accept",
-                  version: "1.0",
-                  ownerId: payload.responderOwnerId,
-                  deviceId: "unknown",
-                  deviceCertificate: { devicePublicKeyPem: "" },
-                  listenAddrs: [],
-                } as any,
-              });
-            }
+            await peerDirectoryStore.ensurePeerFromInboundChat({
+              ownerId: payload.responderOwnerId,
+              peerId: envelope.senderPeerId,
+              listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
+            });
           } catch (err) {
             console.error(`[bond:established] failed to store peer from bond.accept:`, err);
           }

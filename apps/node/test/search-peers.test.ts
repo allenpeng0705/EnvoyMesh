@@ -16,6 +16,7 @@ const createMockPeerDirectoryStore = (records: any[] = []): LocalPeerDirectorySt
   listPeerRecords: async () => records,
   getPeerByOwnerId: async () => undefined,
   mergeListenAddrsForPeerId: async () => {},
+  ensurePeerFromInboundChat: async () => {},
   upsertPeerFromSignal: async () => ({}),
 });
 

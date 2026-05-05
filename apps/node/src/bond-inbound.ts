@@ -125,7 +125,7 @@ export async function handleInboundBondIntent(
         // Store the bond in trust store
         await trustStore.setTrustRecord({
           peerOwnerId: payload.requesterOwnerId,
-          displayName: payload.requesterDisplayName ?? remotePeerId,
+          displayName: payload.requesterDisplayName ?? envelope.senderPeerId,
           level: (payload.requestedLevel as Exclude<BondLevel, "self">) ?? "direct",
           note: payload.message ?? undefined,
           now: new Date().toISOString(),
@@ -135,7 +135,7 @@ export async function handleInboundBondIntent(
         if (emitBondEstablished) {
           emitBondEstablished({
             peerOwnerId: payload.requesterOwnerId,
-            displayName: payload.requesterDisplayName ?? remotePeerId,
+            displayName: payload.requesterDisplayName ?? envelope.senderPeerId,
           });
         }
 
@@ -143,7 +143,7 @@ export async function handleInboundBondIntent(
         return {
           ok: true,
           bondAcceptToRequester: {
-            requesterPeerId: remotePeerId,
+            requesterPeerId: envelope.senderPeerId,
             requesterOwnerId: payload.requesterOwnerId,
           },
         };
@@ -156,9 +156,9 @@ export async function handleInboundBondIntent(
           emitHelloRequest({
             messageId: envelope.messageId,
             sender: {
-              nodeId: remotePeerId,
+              nodeId: envelope.senderPeerId,
               ownerId: payload.requesterOwnerId,
-              displayName: payload.requesterDisplayName ?? remotePeerId,
+              displayName: payload.requesterDisplayName ?? envelope.senderPeerId,
             },
             profile: {
               displayName: payload.requesterDisplayName ?? remotePeerId,

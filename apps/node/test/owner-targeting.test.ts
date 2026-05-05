@@ -35,6 +35,8 @@ describe("resolveNodeArgsTargetsByOwnerId", () => {
             listenAddrs: [],
           };
         },
+        async mergeListenAddrsForPeerId() {},
+        async ensurePeerFromInboundChat() {},
         async upsertPeerFromSignal() {
           throw new Error("not needed");
         },
@@ -68,6 +70,8 @@ describe("resolveNodeArgsTargetsByOwnerId", () => {
           async getPeerByOwnerId() {
             return undefined;
           },
+          async mergeListenAddrsForPeerId() {},
+          async ensurePeerFromInboundChat() {},
           async upsertPeerFromSignal() {
             throw new Error("not needed");
           },

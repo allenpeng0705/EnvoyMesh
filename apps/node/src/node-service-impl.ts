@@ -505,21 +505,15 @@ class NodeServiceImpl implements NodeService {
       await mesh.send(targetPeerId, envelope, { dialHints: matchedRecord?.listenAddrs ?? [] });
       console.log(`[node-service] Hello sent successfully to ${targetPeerId}`);
 
-      // Store peer info locally so we can send messages later
-      // This is needed because the receiver doesn't send back a bond confirmation
-      const existingTarget = await this._peerDirectoryStore.getPeerByOwnerId(targetOwnerId);
-      if (!existingTarget) {
-        await this._peerDirectoryStore.upsertPeerFromSignal({
+      // Always record owner ↔ peerId after a successful bond.request (refresh if already present).
+      try {
+        await this._peerDirectoryStore.ensurePeerFromInboundChat({
+          ownerId: targetOwnerId,
           peerId: targetPeerId,
-          payload: {
-            type: "bond.request.sent",
-            version: "1.0",
-            ownerId: targetOwnerId,
-            deviceId: "unknown",
-            deviceCertificate: { devicePublicKeyPem: "" },
-            listenAddrs: [],
-          } as any,
+          listenAddrs: matchedRecord?.listenAddrs ?? [],
         });
+      } catch (err) {
+        console.warn(`[peer-directory] sendHello ensurePeerFromInboundChat:`, err);
       }
     } catch (err) {
       console.error(`[node-service] Failed to send hello to ${targetPeerId}:`, err);
@@ -558,6 +552,18 @@ class NodeServiceImpl implements NodeService {
       note: pending.message || undefined,
       now: new Date().toISOString(),
     });
+
+    // Manual-approval hello never ran `emitBondEstablished` from bond-inbound, so index.ts did not
+    // upsert peer-directory. Persist requester libp2p id so sendChat can resolve owner → peerId.
+    try {
+      await this._peerDirectoryStore.ensurePeerFromInboundChat({
+        ownerId: pending.requesterOwnerId,
+        peerId: pending.remotePeerId,
+        listenAddrs: [],
+      });
+    } catch (err) {
+      console.warn(`[peer-directory] acceptHello ensurePeerFromInboundChat:`, err);
+    }
 
     // Send bond.accept back to the requester
     const { createBondAcceptPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
@@ -736,6 +742,16 @@ class NodeServiceImpl implements NodeService {
     } catch (err) {
       console.log(`[sendChat] peer-lookup-failed after ${Date.now() - t0}ms`, err);
       throw err;
+    }
+    if (!targetPeer) {
+      const records = await raceWithTimeout(
+        this._peerDirectoryStore.listPeerRecords(),
+        25_000,
+        "listPeerRecords",
+      );
+      targetPeer =
+        records.find((r) => r.ownerId === targetOwnerId) ??
+        records.find((r) => r.peerId === targetOwnerId);
     }
     console.log(
       `[sendChat] step=peer-lookup-done ms=${Date.now() - t0} found=${targetPeer ? "yes" : "no"}`,

@@ -84,4 +84,21 @@ describe("peer directory store", () => {
     expect(updated?.deviceId).toBe("envoy:device:phone");
     expect(updated?.devicePublicKeyPem).toBe("device-key-2");
   });
+
+  it("ensurePeerFromInboundChat creates a row so reply-by-ownerId can resolve libp2p peer id", async () => {
+    const store = createLocalPeerDirectoryStore(profileDir);
+
+    expect(await store.getPeerByOwnerId("envoy:owner:bob")).toBeUndefined();
+
+    await store.ensurePeerFromInboundChat({
+      ownerId: "envoy:owner:bob",
+      peerId: "12D3KooWChatBob",
+      listenAddrs: ["/ip4/10.0.0.2/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWChatBob"],
+    });
+
+    const found = await store.getPeerByOwnerId("envoy:owner:bob");
+    expect(found?.peerId).toBe("12D3KooWChatBob");
+    expect(found?.deviceId).toBe("chat-inbound");
+    expect(found?.listenAddrs.length).toBe(1);
+  });
 });

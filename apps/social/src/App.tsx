@@ -275,9 +275,8 @@ function App() {
       // Check if this peer is NOT already bonded
       const isBonded = bonds.some(
         (b) =>
-          b.peerOwnerId === msg.sender.nodeId ||
           b.peerOwnerId === msg.sender.ownerId ||
-          b.peerOwnerId === msg.sender.displayName,
+          (b.displayName && b.displayName === msg.sender.displayName),
       );
       if (!isBonded) {
         setPendingMessages((prev) => {
