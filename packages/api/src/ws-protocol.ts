@@ -93,6 +93,7 @@ export type RpcMethods =
   | "declineShare"
   // Connection Status
   | "getConnectionStatus"
+  | "getPeerConnectionInfo"
   // Node Configuration
   | "getNodeConfig"
   | "updateNodeConfig"
@@ -252,6 +253,10 @@ export interface DeclineShareParams {
 }
 
 export interface GetConnectionStatusParams {}
+
+export interface GetPeerConnectionInfoParams {
+  peerOwnerId: string;
+}
 
 export interface GetNodeConfigParams {}
 

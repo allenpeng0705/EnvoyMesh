@@ -230,6 +230,8 @@ export class WsServer {
         return ns.declineShare(params.shareId as string);
       case "getConnectionStatus":
         return ns.getConnectionStatus();
+      case "getPeerConnectionInfo":
+        return ns.getPeerConnectionInfo(params.peerOwnerId as string);
       case "getNodeConfig":
         return ns.getNodeConfig();
       case "updateNodeConfig":

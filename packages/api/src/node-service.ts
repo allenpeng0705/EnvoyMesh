@@ -181,6 +181,16 @@ export interface ConnectionStatus {
   bondedPeers: number;
 }
 
+/**
+ * Connection info for a specific peer (direct P2P vs relay-mediated).
+ */
+export interface PeerConnectionInfo {
+  connected: boolean;
+  direct: boolean;
+  /** If relay connection, the relay's peer ID */
+  relayPeerId?: string;
+}
+
 // ============================================
 // NodeService Interface
 // ============================================
@@ -406,4 +416,11 @@ export interface NodeService {
    * Get current connection status
    */
   getConnectionStatus(): ConnectionStatus;
+
+  /**
+   * Get connection info for a specific peer (direct P2P vs relay-mediated).
+   * Use this to show connection type indicator in UI.
+   * @param peerOwnerId The owner's peer ID (e.g., envoy:owner:...)
+   */
+  getPeerConnectionInfo(peerOwnerId: string): Promise<PeerConnectionInfo>;
 }

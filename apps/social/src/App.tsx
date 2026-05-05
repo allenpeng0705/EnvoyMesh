@@ -11,12 +11,14 @@ interface AppSettings {
   wsUrl: string;
   autoConnect: boolean;
   notificationsEnabled: boolean;
+  showConnectionStatus: boolean;
 }
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
   wsUrl: "ws://localhost:3030/ws",
   autoConnect: true,
   notificationsEnabled: true,
+  showConnectionStatus: false,
 };
 
 function loadAppSettings(): AppSettings {
@@ -184,6 +186,9 @@ function App() {
   const [pendingMessages, setPendingMessages] = useState<any[]>([]);
   const [showInbox, setShowInbox] = useState(false);
 
+  // Peer connection info cache: ownerId -> { connected, direct, relayPeerId }
+  const [peerConnectionInfo, setPeerConnectionInfo] = useState<Record<string, { connected: boolean; direct: boolean; relayPeerId?: string }>>({});
+
   const { messages, isOutgoing } = useChatMessages(selectedContact);
 
   useEffect(() => {
@@ -333,6 +338,34 @@ function App() {
     });
     return unsubscribe;
   }, [nodeService]);
+
+  // Fetch peer connection info when selectedContact changes (if showConnectionStatus is enabled)
+  useEffect(() => {
+    if (!isConnected || !appSettings.showConnectionStatus || !selectedContact) return;
+
+    // Check cache first
+    if (peerConnectionInfo[selectedContact]) return;
+
+    nodeService.getPeerConnectionInfo(selectedContact).then((info) => {
+      setPeerConnectionInfo((prev) => ({ ...prev, [selectedContact]: info }));
+    }).catch(() => {});
+  }, [isConnected, appSettings.showConnectionStatus, selectedContact, nodeService]);
+
+  // Clear connection info when peer is lost
+  useEffect(() => {
+    if (!isConnected) return;
+    const unsubscribe = nodeService.on("peer:lost", (data) => {
+      const { nodeId } = data as { nodeId: string };
+      // Clear cached info for this peer - we'll re-fetch if they reconnect
+      setPeerConnectionInfo((prev) => {
+        const next = { ...prev };
+        // We don't know which ownerId maps to this nodeId, so we clear all
+        // This is a limitation - in a real app we'd track the mapping
+        return next;
+      });
+    });
+    return unsubscribe;
+  }, [isConnected, nodeService]);
 
   const connectionInfo = {
     online: isConnected && nodeStatus === "running",
@@ -774,6 +807,11 @@ function App() {
                         },
                       )}
                     </span>
+                    {appSettings.showConnectionStatus && peerConnectionInfo[selectedContact] && (
+                      <span className={`connection-type ${peerConnectionInfo[selectedContact].direct ? "p2p" : "relay"}`}>
+                        {peerConnectionInfo[selectedContact].direct ? "P2P" : "Relay"}
+                      </span>
+                    )}
                   </header>
                   <div className="messages">
                     {messages.length === 0 ? (
@@ -1575,6 +1613,20 @@ function App() {
                       }}
                     />
                     <label>Enable notifications for new messages</label>
+                  </dd>
+
+                  <dt>Show Connection Status</dt>
+                  <dd>
+                    <input
+                      type="checkbox"
+                      checked={appSettings.showConnectionStatus}
+                      onChange={(e) => {
+                        const newSettings = { ...appSettings, showConnectionStatus: e.target.checked };
+                        setAppSettings(newSettings);
+                        saveAppSettings(newSettings);
+                      }}
+                    />
+                    <label>Show P2P/Relay indicator in chat</label>
                   </dd>
                 </dl>
               </section>

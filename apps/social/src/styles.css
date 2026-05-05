@@ -256,6 +256,23 @@ body {
   font-size: 0.9375rem;
 }
 
+.connection-type {
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-weight: 500;
+}
+
+.connection-type.p2p {
+  background: var(--color-success-bg, #dcfce7);
+  color: var(--color-success, #16a34a);
+}
+
+.connection-type.relay {
+  background: var(--color-warning-bg, #fef3c7);
+  color: var(--color-warning, #d97706);
+}
+
 .messages {
   flex: 1;
   padding: 1.25rem;

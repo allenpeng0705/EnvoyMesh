@@ -11,6 +11,7 @@ import type {
   NodeProfile,
   NodeService,
   NodeServiceEvents,
+  PeerConnectionInfo,
   PeerSearchResult,
   RelayConfig,
   SearchQuery,
@@ -1758,6 +1759,20 @@ class NodeServiceImpl implements NodeService {
       connectedRelays: [],
       bondedPeers: 0,
     };
+  }
+
+  async getPeerConnectionInfo(peerOwnerId: string): Promise<PeerConnectionInfo> {
+    if (!this._mesh) {
+      return { connected: false, direct: false };
+    }
+
+    // Look up the libp2p peer ID from the peer directory
+    const peerRecord = await this._peerDirectoryStore.getPeerByOwnerId(peerOwnerId);
+    if (!peerRecord?.peerId) {
+      return { connected: false, direct: false };
+    }
+
+    return this._mesh.getPeerConnectionInfo(peerRecord.peerId);
   }
 
   // ============================================

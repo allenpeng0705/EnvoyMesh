@@ -409,6 +409,55 @@ export class EnvoyMesh {
   }
 
   /**
+   * Returns connection info for a specific peer.
+   * @param peerId Libp2p peer ID (e.g., 12D3KooW...)
+   * @returns Connection info: connected status, whether connection is direct P2P or relayed
+   */
+  getPeerConnectionInfo(peerId: string): { connected: boolean; direct: boolean; relayPeerId?: string } {
+    if (!this.node) {
+      return { connected: false, direct: false };
+    }
+
+    try {
+      const connections = (this.node as any).connectionManager?.connections;
+      if (!connections) {
+        return { connected: false, direct: false };
+      }
+
+      const conns = connections.get(peerId);
+      if (!conns || !Array.isArray(conns) || conns.length === 0) {
+        return { connected: false, direct: false };
+      }
+
+      // Find the best (direct) connection
+      const openConns = conns.filter((c) => c?.status === "open");
+      if (openConns.length === 0) {
+        return { connected: false, direct: false };
+      }
+
+      // Check if any connection is direct (not via p2p-circuit)
+      const directConn = openConns.find(
+        (c) => !(c?.remoteAddr?.toString?.() ?? "").includes("/p2p-circuit"),
+      );
+
+      if (directConn) {
+        return { connected: true, direct: true };
+      }
+
+      // Relay connection - extract relay peer ID from address
+      const relayConn = openConns[0];
+      const remoteAddr = relayConn?.remoteAddr?.toString?.() ?? "";
+      // Address format: /ip4/x.x.x.x/tcp/port/p2p-circuit/p2p/<relayPeerId>/p2p/<targetPeerId>
+      const relayMatch = remoteAddr.match(/p2p-circuit\/p2p\/([^/]+)\/p2p\//);
+      const relayPeerId = relayMatch?.[1];
+
+      return { connected: true, direct: false, relayPeerId };
+    } catch {
+      return { connected: false, direct: false };
+    }
+  }
+
+  /**
    * Derives the libp2p provider CID for a capability topic (same mapping as {@link provideCapabilityTopic}).
    */
   async capabilityTopicCid(topic: string): Promise<CID> {

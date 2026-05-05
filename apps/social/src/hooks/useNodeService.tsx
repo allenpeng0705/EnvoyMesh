@@ -65,6 +65,7 @@ interface NodeServiceClient {
 
   // Connection Status
   getConnectionStatus(): Promise<{ online: boolean; peerId: string; multiaddrs: string[]; connectedRelays: string[]; bondedPeers: number }>;
+  getPeerConnectionInfo(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
 
   // Node Configuration
   getNodeConfig(): Promise<NodeConfig>;
@@ -178,6 +179,10 @@ export function NodeServiceProvider({ children }: { children: ReactNode }) {
 
       async getConnectionStatus() {
         return wsClient.rpc("getConnectionStatus");
+      },
+
+      async getPeerConnectionInfo(peerOwnerId: string) {
+        return wsClient.rpc("getPeerConnectionInfo", { peerOwnerId });
       },
 
       async advertiseTopic(topic: string) {
