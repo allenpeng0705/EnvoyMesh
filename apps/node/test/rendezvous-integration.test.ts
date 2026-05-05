@@ -1,4 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
+} from "@envoymesh/api";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
 import { createStubNodeConfigStore, type PersistedNodeConfig } from "../src/node-config-store.js";
 import type { LocalTrustStore, LocalPeerDirectoryStore, HumanProfileStore } from "@envoymesh/local-store";
@@ -342,7 +346,8 @@ describe("NodeServiceImpl - Discovery Configuration", () => {
 
       const config = await nodeService.getNodeConfig();
       expect(config.discoveryProfile).toBe("wan-default");
-      expect(config.bootstrapPresets).toEqual([]);
+      expect(config.bootstrapPresets).toEqual([...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS]);
+      expect(config.bootstrapPeers).toEqual([DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR]);
       expect(config.configuredRelays).toEqual([]);
     });
 

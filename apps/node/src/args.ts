@@ -1,4 +1,8 @@
 import type { Sensitivity } from "@envoymesh/protocol";
+import {
+  DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
+} from "@envoymesh/api";
 import { mergeBootstrapPresetYamlFiles, type BootstrapPresetRegistry } from "./bootstrap-presets-file.js";
 import { loadNodeYamlConfig } from "./node-config.js";
 import { applyJoinInviteToNodeArgs } from "./wan-invite.js";
@@ -81,13 +85,13 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     profileDir: "./data/default",
     discoveryProfile: "wan-default",
     connectivityStrict: false,
-    bootstrapPresets: ["public-libp2p"],
+    bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
     bootstrapPresetsFiles: [],
     listen: ["/ip4/0.0.0.0/tcp/0"],
     advertiseAddrs: [],
     enableMdns: true,
     enableDht: false,
-    bootstrapPeers: [],
+    bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
     enableRelay: false,
     enableRelayServer: false,
     enableAutoNat: false,
@@ -292,7 +296,8 @@ Options:
   --dht-server          Enable DHT in server-capable mode.
   --bootstrap <addr>    Add a bootstrap peer multiaddr. Repeatable.
                          Env: ENVOYMESH_BOOTSTRAP_PEERS (comma-separated)
-  --bootstrap-preset <p> Add managed bootstrap set. Supported: public-libp2p, public-libp2p-am6, public-libp2p-am7
+  --bootstrap-preset <p> Add managed bootstrap set. Supported: public-libp2p, public-libp2p-am6, public-libp2p-am7, cn-relay
+                         Default (wan-default, no explicit bootstrap): all public-libp2p presets plus EnvoyMesh community relay multiaddr.
                          Repeatable. Env: ENVOYMESH_BOOTSTRAP_PRESETS (comma-separated)
   --bootstrap-presets-file <path> Load custom bootstrap preset definitions from YAML. Repeatable.
                          Env: ENVOYMESH_BOOTSTRAP_PRESETS_FILES (comma-separated)
@@ -464,6 +469,7 @@ export function normalizeWin32NpmArgv(argv: string[]): string[] {
 }
 
 function applyDiscoveryProfileDefaults(args: NodeArgs, customPresetRegistry: BootstrapPresetRegistry): void {
+  args.bootstrapPresets = [...new Set(args.bootstrapPresets)];
   for (const preset of args.bootstrapPresets) {
     args.bootstrapPeers = dedupePeers([...args.bootstrapPeers, ...bootstrapPeersForPreset(preset, customPresetRegistry)]);
   }
@@ -635,7 +641,7 @@ function bootstrapPeersForPreset(preset: string, customPresetRegistry: Bootstrap
     return ["/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf"];
   }
   if (preset === "cn-relay") {
-    return ["/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo"];
+    return [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR];
   }
   throw new Error(`Unknown bootstrap preset: ${preset}`);
 }

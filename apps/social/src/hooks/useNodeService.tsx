@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { createWsClient, type WsClient } from "../ws-client.js";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createWsClient } from "../ws-client.js";
 import type {
   BondRecord,
   ChatMessage,
@@ -332,25 +332,125 @@ export function useHelloRequests() {
   return { requests, accept, decline };
 }
 
-export function useChatMessages(peerOwnerId: string | null) {
+/** Thread key = contact's owner id (bonds use `peerOwnerId`). */
+function partnerOwnerIdForChat(
+  msg: ChatMessage,
+  selfOwnerId: string,
+  selfPeerId: string,
+): string | null {
+  const selfO = selfOwnerId.trim();
+  const selfP = selfPeerId.trim();
+  const sndO = msg.sender.ownerId?.trim();
+  const sndN = msg.sender.nodeId?.trim();
+  const rcvO = msg.recipient.ownerId?.trim();
+  const rcvN = msg.recipient.nodeId?.trim();
+
+  const senderIsSelf =
+    (sndO !== undefined && sndO === selfO) || (!!selfP && sndN === selfP);
+  const recipientIsSelf =
+    (rcvO !== undefined && rcvO === selfO) || (!!selfP && rcvN === selfP);
+
+  if (senderIsSelf && !recipientIsSelf) {
+    return rcvO ?? rcvN ?? null;
+  }
+  if (recipientIsSelf && !senderIsSelf) {
+    return sndO ?? sndN ?? null;
+  }
+  return null;
+}
+
+function messageIsOutgoing(msg: ChatMessage, selfOwnerId: string, selfPeerId: string): boolean {
+  const selfO = selfOwnerId.trim();
+  const selfP = selfPeerId.trim();
+  const sndO = msg.sender.ownerId?.trim();
+  const sndN = msg.sender.nodeId?.trim();
+  return (sndO !== undefined && sndO === selfO) || (!!selfP && sndN === selfP);
+}
+
+function appendChatToThreads(
+  prev: Record<string, ChatMessage[]>,
+  msg: ChatMessage,
+  self: { ownerId: string; peerId: string },
+): Record<string, ChatMessage[]> | null {
+  const key = partnerOwnerIdForChat(msg, self.ownerId, self.peerId);
+  if (!key) {
+    console.warn("[useChatMessages] could not route chat to a thread (missing owner match)", msg.messageId);
+    return null;
+  }
+  const list = prev[key] ?? [];
+  if (list.some((m) => m.messageId === msg.messageId)) {
+    return prev;
+  }
+  const nextList = [...list, msg].sort(
+    (a, b) =>
+      new Date(a.metadata.timestamp).getTime() -
+      new Date(b.metadata.timestamp).getTime(),
+  );
+  return { ...prev, [key]: nextList };
+}
+
+export function useChatMessages(selectedContactOwnerId: string | null) {
   const client = useNodeService();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [threads, setThreads] = useState<Record<string, ChatMessage[]>>({});
+  const [selfIds, setSelfIds] = useState<{ ownerId: string; peerId: string } | null>(null);
+  const pendingUntilSelfReady = useRef<ChatMessage[]>([]);
+  const selfIdsRef = useRef(selfIds);
+
+  selfIdsRef.current = selfIds;
 
   useEffect(() => {
-    if (!peerOwnerId || !client.isConnected) return;
+    if (!client.isConnected) return;
+    let cancelled = false;
+    void Promise.all([client.getProfile(), client.getConnectionStatus()])
+      .then(([prof, cs]) => {
+        if (cancelled) return;
+        setSelfIds({
+          ownerId: prof?.owner?.ownerId ?? "",
+          peerId: cs?.peerId ?? "",
+        });
+      })
+      .catch(console.error);
+    return () => {
+      cancelled = true;
+    };
+  }, [client, client.isConnected]);
+
+  useEffect(() => {
+    if (!client.isConnected) return;
 
     const unsub = client.on("chat:message", (data) => {
       const msg = data as ChatMessage;
-      console.log(`[useChatMessages] received:`, msg);
-      // For now, add all messages - filtering happens at display time
-      setMessages((prev) => {
-        if (prev.some((m) => m.messageId === msg.messageId)) return prev;
-        return [...prev, msg];
-      });
+      const self = selfIdsRef.current;
+      if (!self?.ownerId) {
+        pendingUntilSelfReady.current.push(msg);
+        return;
+      }
+      setThreads((prev) => appendChatToThreads(prev, msg, self) ?? prev);
     });
 
     return unsub;
-  }, [client, peerOwnerId]);
+  }, [client, client.isConnected]);
 
-  return messages;
+  useEffect(() => {
+    if (!selfIds?.ownerId) return;
+    const self = selfIds;
+    const flushed = pendingUntilSelfReady.current.splice(0);
+    if (flushed.length === 0) return;
+    setThreads((prev) => {
+      let next = prev;
+      for (const m of flushed) {
+        const n = appendChatToThreads(next, m, self);
+        if (n) next = n;
+      }
+      return next;
+    });
+  }, [selfIds]);
+
+  const isOutgoing = (msg: ChatMessage) =>
+    !!(selfIds?.ownerId && messageIsOutgoing(msg, selfIds.ownerId, selfIds.peerId));
+
+  return {
+    messages: selectedContactOwnerId ? threads[selectedContactOwnerId] ?? [] : [],
+    isOutgoing,
+  };
 }

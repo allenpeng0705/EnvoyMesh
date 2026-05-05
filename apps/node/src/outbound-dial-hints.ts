@@ -7,6 +7,7 @@ import { isLoopbackOrUnspecifiedDialHint } from "@envoymesh/network";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
+import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
 
 function relayCircuitToPeer(relayBaseMultiaddr: string, targetPeerId: string): string | undefined {
   const s = relayBaseMultiaddr.trim().replace(/\/$/, "");
@@ -67,7 +68,7 @@ export async function buildOutboundDialHints(input: {
 
   const cfgPresets = input.config?.bootstrapPresets ?? [];
   if (cfgPresets.includes("cn-relay")) {
-    extraRelays.push("/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo");
+    extraRelays.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
   }
 
   const relayPool = dedupeDialHints([...seeds, ...extraRelays]);

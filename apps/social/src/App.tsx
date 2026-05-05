@@ -1,6 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNodeService, useHelloRequests, useBonds, useChatMessages } from "./hooks/useNodeService.js";
 import type { PeerSearchResult, HelloProfile, NodeConfig, RelayConfig, NodeStatus } from "@envoymesh/api";
+import {
+  DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
+  DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+} from "@envoymesh/api";
 
 // App-level settings
 interface AppSettings {
@@ -119,6 +123,9 @@ function App() {
   const [searchMode, setSearchMode] = useState<"interest" | "peerId" | "topic">("interest");
   const [isSearching, setIsSearching] = useState(false);
   const [chatInput, setChatInput] = useState("");
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const lastChatSendRef = useRef<{ at: number; contact: string; text: string } | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const [currentView, setCurrentView] = useState<"chat" | "contacts" | "search" | "profile" | "settings" | "inbox">("chat");
   const [nodeConfig, setNodeConfig] = useState<NodeConfig | null>(null);
   const [relays, setRelays] = useState<RelayConfig[]>([]);
@@ -152,9 +159,7 @@ function App() {
   // Bootstrap presets for public network (libp2p)
   // Default to all public libp2p servers for hybrid mode
   const [bootstrapPresets, setBootstrapPresets] = useState<string[]>([
-    "public-libp2p",
-    "public-libp2p-am6",
-    "public-libp2p-am7",
+    ...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
   ]);
 
   // Node status and setup
@@ -162,7 +167,7 @@ function App() {
   const [showSetup, setShowSetup] = useState(false);
   const [setupProfileDir, setSetupProfileDir] = useState("./data/default");
   const [setupDiscoveryProfile, setSetupDiscoveryProfile] = useState<"lan-fast" | "wan-default">("wan-default");
-  const [setupBootstrapPeers, setSetupBootstrapPeers] = useState("/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo");
+  const [setupBootstrapPeers, setSetupBootstrapPeers] = useState<string>(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
   const [isInitializing, setIsInitializing] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -179,7 +184,11 @@ function App() {
   const [pendingMessages, setPendingMessages] = useState<any[]>([]);
   const [showInbox, setShowInbox] = useState(false);
 
-  const messages = useChatMessages(selectedContact);
+  const { messages, isOutgoing } = useChatMessages(selectedContact);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, selectedContact]);
 
   // Track connection state
   useEffect(() => {
@@ -387,19 +396,31 @@ function App() {
   };
 
   const handleSendMessage = async () => {
-    console.log(`[handleSendMessage] called, selectedContact=${selectedContact}, chatInput=${chatInput}, trimmed=${chatInput.trim()}`);
-    if (!chatInput.trim() || !selectedContact) {
-      console.log(`[handleSendMessage] early return - missing contact or empty input`);
-      console.log(`  - chatInput.trim() = ${chatInput.trim()}, !selectedContact = ${!selectedContact}`);
+    const text = chatInput.trim();
+    if (!text || !selectedContact || isSendingChat) {
       return;
     }
+
+    const now = Date.now();
+    const last = lastChatSendRef.current;
+    if (
+      last &&
+      last.contact === selectedContact &&
+      last.text === text &&
+      now - last.at < 1500
+    ) {
+      return;
+    }
+    lastChatSendRef.current = { at: now, contact: selectedContact, text };
+
+    setIsSendingChat(true);
     try {
-      console.log(`[handleSendMessage] calling sendChat...`);
-      await nodeService.sendChat(selectedContact, chatInput);
-      console.log(`[handleSendMessage] sendChat succeeded, clearing input`);
+      await nodeService.sendChat(selectedContact, text);
       setChatInput("");
     } catch (error) {
       console.error("[handleSendMessage] sendChat failed:", error);
+    } finally {
+      setIsSendingChat(false);
     }
   };
 
@@ -758,15 +779,25 @@ function App() {
                     {messages.length === 0 ? (
                       <p className="empty">No messages yet. Say hello!</p>
                     ) : (
-                      messages.map((msg) => (
-                        <div key={msg.messageId} className="message">
-                          <span className="message-text">{msg.content.text}</span>
-                          <span className="message-time">
-                            {new Date(msg.metadata.timestamp).toLocaleTimeString()}
-                          </span>
-                        </div>
-                      ))
+                      messages.map((msg) => {
+                        const outgoing = isOutgoing(msg);
+                        return (
+                          <div
+                            key={msg.messageId}
+                            className={`message ${outgoing ? "outgoing" : "incoming"}`}
+                          >
+                            {!outgoing && (
+                              <span className="message-sender">{peerDisplayLabel(msg.sender)}</span>
+                            )}
+                            <span className="message-text">{msg.content.text}</span>
+                            <span className="message-time">
+                              {new Date(msg.metadata.timestamp).toLocaleTimeString()}
+                            </span>
+                          </div>
+                        );
+                      })
                     )}
+                    <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
                   </div>
                   <footer className="chat-input">
                     <input
@@ -774,9 +805,17 @@ function App() {
                       placeholder="Type a message..."
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          void handleSendMessage();
+                        }
+                      }}
+                      disabled={isSendingChat}
                     />
-                    <button onClick={handleSendMessage}>Send</button>
+                    <button type="button" onClick={() => void handleSendMessage()} disabled={isSendingChat || !chatInput.trim()}>
+                      {isSendingChat ? "Sending…" : "Send"}
+                    </button>
                   </footer>
                 </>
               ) : (

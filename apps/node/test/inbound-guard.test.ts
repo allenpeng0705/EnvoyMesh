@@ -72,16 +72,30 @@ describe("inbound message guard", () => {
       messageId: envelope.messageId,
     });
   });
+  it("drops oldest replay entries when maxReplayEntries is exceeded", () => {
+    const guard = createInboundMessageGuard({ maxReplayEntries: 2 });
+    expect(guard.inspect(signedPingEnvelope("id-a")).action).toBe("allow");
+    expect(guard.inspect(signedPingEnvelope("id-b")).action).toBe("allow");
+    expect(guard.inspect(signedPingEnvelope("id-c")).action).toBe("allow");
+    expect(guard.inspect(signedPingEnvelope("id-a")).action).toBe("allow");
+    const reb = signedPingEnvelope("id-b");
+    expect(guard.inspect(reb).action).toBe("allow");
+    expect(guard.inspect(reb)).toEqual({
+      action: "reject",
+      reason: "replayed message",
+      messageId: reb.messageId,
+    });
+  });
 });
 
-function signedPingEnvelope() {
+function signedPingEnvelope(messageId: string = "message-1") {
   const identity = generateIdentity();
   const unsigned = createUnsignedEnvelope({
     senderPeerId: identity.peerId,
     senderPublicKey: identity.publicKeyPem,
     intent: "system.ping",
     payload: createSystemPingPayload("hello"),
-    messageId: "message-1",
+    messageId,
     createdAt: "2026-04-27T10:00:00.000Z",
   });
 

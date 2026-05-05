@@ -13,8 +13,14 @@ import type {
   PeerSearchResult,
   RelayConfig,
   SearchQuery,
+  NodeStatus,
+  InitNodeOptions,
+  NodeInitResult,
 } from "@envoymesh/api";
-import type { NodeStatus, InitNodeOptions, NodeInitResult } from "@envoymesh/api";
+import {
+  DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
+} from "@envoymesh/api";
 
 import {
   createBondAcceptPayload,
@@ -359,9 +365,13 @@ class NodeServiceImpl implements NodeService {
    * This is a fallback when DHT provide fails, using relay-based discovery instead
    */
   private async _registerWithRendezvousServers(interests: string[], username: string): Promise<void> {
+    const profileForRendezvous = this._profile;
+    if (!profileForRendezvous) {
+      return;
+    }
+
     const config = await this._configStore.load();
     const mesh = this._requireMesh();
-    const selfProfile = this._requireProfile();
 
     // Build capabilities list from interests (as tags)
     const capabilities = interests.map(interest => ({ tag: interest.toLowerCase() }));
@@ -385,7 +395,7 @@ class NodeServiceImpl implements NodeService {
       for (const preset of config.bootstrapPresets) {
         // cn-relay is a known relay preset
         if (preset === "cn-relay") {
-          relayAddrs.push("/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo");
+          relayAddrs.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
         }
       }
     }
@@ -422,7 +432,7 @@ class NodeServiceImpl implements NodeService {
           const envelope = signUnsignedEnvelope(
             createUnsignedEnvelope({
               senderPeerId: mesh.peerId,
-              senderPublicKey: selfProfile.device.publicKeyPem,
+              senderPublicKey: profileForRendezvous.device.publicKeyPem,
               recipientPeerId: relayAddr,
               intent: "rendezvous.register",
               payload: createRendezvousRegisterPayload({
@@ -432,7 +442,7 @@ class NodeServiceImpl implements NodeService {
                 ttlSeconds: 3600,
               }),
             }),
-            selfProfile.device.privateKeyPem,
+            profileForRendezvous.device.privateKeyPem,
           );
 
           // Send to relay and wait for response with retry
@@ -1160,8 +1170,8 @@ class NodeServiceImpl implements NodeService {
       relayServerEnabled: false,
       configuredRelays: [],
       advertiseAddrs: [],
-      bootstrapPeers: [],
-      bootstrapPresets: [],
+      bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
+      bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
     };
   }
 
@@ -1274,8 +1284,8 @@ class NodeServiceImpl implements NodeService {
       relayEnabled: options?.relayEnabled ?? true,
       relayServerEnabled: options?.relayServerEnabled ?? false,
       advertiseAddrs: options?.advertiseAddrs ?? [],
-      bootstrapPeers: options?.bootstrapPeers ?? [],
-      bootstrapPresets: options?.bootstrapPresets ?? [],
+      bootstrapPeers: options?.bootstrapPeers ?? [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
+      bootstrapPresets: options?.bootstrapPresets ?? [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
       configuredRelays: [],
       updatedAt: new Date().toISOString(),
     };

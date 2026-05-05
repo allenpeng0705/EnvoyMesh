@@ -33,6 +33,28 @@ export const ENVOY_MESSAGE_PROTOCOL = "/envoymesh/message/0.1.0";
 export const ENVOY_CHAT_PROTOCOL = "/envoymesh/chat/0.1.0";
 export const ENVOY_DATA_PROTOCOL = "/envoymesh/data/0.1.0";
 
+/**
+ * When libp2p still reports a connection as open, `newStream` can hang or fail after NAT sleep,
+ * idle TCP half-open state, or relay path expiry (often seen on Windows). We time out and force a fresh dial.
+ */
+const NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS = 15_000;
+
+function promiseWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e: unknown) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
 export interface InboundMeshMessage {
   envelope: EnvoyEnvelope;
   remotePeerId: string;
@@ -514,10 +536,36 @@ export class EnvoyMesh {
 
     const existing = this.findOpenConnectionToPeer(node, peerIdStr);
     if (existing) {
-      const stream = await existing.newStream(protocol);
-      return { stream, remotePeerId: existing.remotePeer.toString() };
+      try {
+        const stream = await promiseWithTimeout(
+          existing.newStream(protocol),
+          NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS,
+          `newStream ${protocol}`,
+        );
+        return { stream, remotePeerId: existing.remotePeer.toString() };
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        console.warn(
+          `[network] outbound reuse failed for ${peerIdStr.slice(0, 12)}… (${detail}); closing connection and redialing`,
+        );
+        try {
+          await existing.close();
+        } catch {
+          /* ignore */
+        }
+      }
     }
 
+    return this.dialOpenStreamViaHints(node, peerIdStr, target, protocol, sendOptions);
+  }
+
+  private async dialOpenStreamViaHints(
+    node: Libp2p,
+    peerIdStr: string,
+    target: string,
+    protocol: string,
+    sendOptions?: MeshOutboundOptions,
+  ): Promise<{ stream: any; remotePeerId?: string }> {
     const hintsRaw = sendOptions?.dialHints ?? [];
     const routableHints = preferNonLoopbackDialHints(hintsRaw);
     /** True when hints include at least one non-loopback circuit/LAN/WAN addr — try before bare `/p2p/id` dial (peerstore may prioritize remote loopback → ECONNREFUSED here). */

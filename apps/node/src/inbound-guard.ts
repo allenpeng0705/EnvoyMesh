@@ -11,15 +11,20 @@ export interface InboundMessageGuard {
 
 export interface InboundMessageGuardOptions {
   maxEnvelopeBytes?: number;
+  /** Max messageIds kept for replay suppression; oldest evicted first (long-running nodes / Windows). Default 100000. */
+  maxReplayEntries?: number;
 }
 
 const defaultMaxEnvelopeBytes = 64 * 1024;
+const defaultMaxReplayEntries = 100_000;
 
 export function createInboundMessageGuard(
   options: InboundMessageGuardOptions = {},
 ): InboundMessageGuard {
   const seenMessageIds = new Set<string>();
+  const replayOrder: string[] = [];
   const maxEnvelopeBytes = options.maxEnvelopeBytes ?? defaultMaxEnvelopeBytes;
+  const maxReplayEntries = options.maxReplayEntries ?? defaultMaxReplayEntries;
 
   return {
     inspect(input) {
@@ -52,6 +57,13 @@ export function createInboundMessageGuard(
       }
 
       seenMessageIds.add(envelope.messageId);
+      replayOrder.push(envelope.messageId);
+      while (replayOrder.length > maxReplayEntries) {
+        const old = replayOrder.shift();
+        if (old !== undefined) {
+          seenMessageIds.delete(old);
+        }
+      }
       return { action: "allow", envelope };
     },
   };

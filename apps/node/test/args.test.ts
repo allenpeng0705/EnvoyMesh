@@ -3,6 +3,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { normalizeWin32NpmArgv, parseNodeArgs } from "../src/args.js";
+import {
+  DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
+} from "@envoymesh/api";
 
 describe("node args", () => {
   it("parses bond.request flags", () => {
@@ -124,28 +128,23 @@ describe("node args", () => {
   });
 
   it("parses advanced P2P connectivity flags", () => {
-    expect(
-      parseNodeArgs([
-        "--dht-client",
-        "--bootstrap",
-        "/ip4/127.0.0.1/tcp/4001/p2p/peer-a",
-        "--bootstrap",
-        "/ip4/127.0.0.1/tcp/4002/p2p/peer-b",
-        "--relay",
-        "--relay-server",
-        "--autonat",
-        "--dcutr",
-        "--p2p-debug",
-        "--correlation-id",
-        "corr-123",
-      ]),
-    ).toMatchObject({
+    const p2pArgs = parseNodeArgs([
+      "--dht-client",
+      "--bootstrap",
+      "/ip4/127.0.0.1/tcp/4001/p2p/peer-a",
+      "--bootstrap",
+      "/ip4/127.0.0.1/tcp/4002/p2p/peer-b",
+      "--relay",
+      "--relay-server",
+      "--autonat",
+      "--dcutr",
+      "--p2p-debug",
+      "--correlation-id",
+      "corr-123",
+    ]);
+    expect(p2pArgs).toMatchObject({
       enableDht: true,
       dhtClientMode: true,
-      bootstrapPeers: [
-        "/ip4/127.0.0.1/tcp/4001/p2p/peer-a",
-        "/ip4/127.0.0.1/tcp/4002/p2p/peer-b",
-      ],
       enableRelay: true,
       enableRelayServer: true,
       enableAutoNat: true,
@@ -153,6 +152,9 @@ describe("node args", () => {
       p2pDebug: true,
       correlationId: "corr-123",
     });
+    expect(p2pArgs.bootstrapPeers).toContain(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+    expect(p2pArgs.bootstrapPeers).toContain("/ip4/127.0.0.1/tcp/4001/p2p/peer-a");
+    expect(p2pArgs.bootstrapPeers).toContain("/ip4/127.0.0.1/tcp/4002/p2p/peer-b");
   });
 
   it("parses QUIC flags", () => {
@@ -239,10 +241,10 @@ discovery:
     process.env.ENVOYMESH_BOOTSTRAP_PEERS =
       "/ip4/127.0.0.1/tcp/4101/p2p/peer-a,/ip4/127.0.0.1/tcp/4102/p2p/peer-b";
     try {
-      expect(parseNodeArgs([]).bootstrapPeers).toEqual([
-        "/ip4/127.0.0.1/tcp/4101/p2p/peer-a",
-        "/ip4/127.0.0.1/tcp/4102/p2p/peer-b",
-      ]);
+      const peers = parseNodeArgs([]).bootstrapPeers;
+      expect(peers).toContain(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+      expect(peers).toContain("/ip4/127.0.0.1/tcp/4101/p2p/peer-a");
+      expect(peers).toContain("/ip4/127.0.0.1/tcp/4102/p2p/peer-b");
     } finally {
       process.env.ENVOYMESH_BOOTSTRAP_PEERS = original;
     }
@@ -346,7 +348,7 @@ discovery:
 
   it("applies public bootstrap preset", () => {
     const args = parseNodeArgs(["--bootstrap-preset", "public-libp2p"]);
-    expect(args.bootstrapPresets).toEqual(["public-libp2p"]);
+    expect(args.bootstrapPresets).toEqual([...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS]);
     expect(args.bootstrapPeers.length).toBeGreaterThanOrEqual(4);
     expect(args.bootstrapPeers.some((peer) => peer.includes("bootstrap.libp2p.io"))).toBe(true);
   });

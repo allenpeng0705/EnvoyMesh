@@ -6,6 +6,8 @@
  * 2. Domain name: relay.example.com (will fetch http://domain/info to get full multiaddr)
  */
 
+import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
+
 export interface ResolvedBootstrapAddr {
   original: string;
   resolved: string[];
@@ -98,9 +100,7 @@ export async function resolveBootstrapAddresses(addresses: string[]): Promise<Re
     "public-libp2p-am7": [
       "/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf",
     ],
-    "cn-relay": [
-      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo",
-    ],
+    "cn-relay": [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
   };
 
   for (const addr of addresses) {
