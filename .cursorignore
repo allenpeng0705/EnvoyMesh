@@ -1,0 +1,3 @@
+# Rust / Tauri build output — not source; avoid TS/JS resolvers scanning Cargo artifacts
+apps/tauri/src-tauri/target/
+**/src-tauri/target/
