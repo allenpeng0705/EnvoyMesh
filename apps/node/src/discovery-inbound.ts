@@ -143,6 +143,16 @@ export function clearExpiredQueueEntries(): number {
   return cleared;
 }
 
+/**
+ * Resets all discovery queue and rate limit state.
+ * For testing only - clears in-memory state between test runs.
+ */
+export function __resetDiscoveryState(): void {
+  discoveryRequestRate.clear();
+  anonDiscoveryRate.clear();
+  anonymousDiscoveryQueue.clear();
+}
+
 export async function handleInboundDiscoveryIntent(input: {
   envelope: EnvoyEnvelope;
   profile: NodeProfile;

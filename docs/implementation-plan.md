@@ -623,7 +623,7 @@ Tasks:
 
 - `[x]` Add `anonymousDiscoveryMode`: `off`, `contacts-only`, `public-preview`, or `public-auto-answer`.
 - `[x]` Add anonymous intent allowlist and requested-sensitivity ceiling.
-- `[ ]` Add low-priority queue for anonymous discovery/query work.
+- `[x]` Add low-priority queue for anonymous discovery/query work.
 - `[x]` Add per-peer/per-address rate limits.
 - `[x]` Match anonymous requests against public manifest metadata before any LLM call.
 - `[x]` Add load tests or synthetic spam tests proving non-matches do not call the model.

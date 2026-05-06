@@ -6,6 +6,12 @@
  * - Queue size limits
  * - Queue entry TTL expiration
  * - Queue processing bypasses rate limit
+ *
+ * NOTE: The anonymous discovery queue is specifically for public/anonymous callers
+ * (no trust record). With a trust record, the rate limit is bypassed.
+ * To test the queue, we use:
+ * - No trust record (public caller)
+ * - A capability manifest (so public callers pass the manifest check)
  */
 
 import { generateDeviceIdentity, generateOwnerIdentity } from "@envoymesh/identity";
@@ -14,18 +20,21 @@ import {
   createLocalTaskStore,
   createLocalTrustStore,
   type NodeProfile,
+  type CapabilityManifest,
 } from "@envoymesh/local-store";
 import { createUnsignedEnvelope } from "@envoymesh/protocol";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { handleInboundDiscoveryIntent, processDiscoveryQueue, getQueuedDiscoveryCount, clearExpiredQueueEntries } from "../src/discovery-inbound.js";
+import { handleInboundDiscoveryIntent, processDiscoveryQueue, getQueuedDiscoveryCount, clearExpiredQueueEntries, __resetDiscoveryState } from "../src/discovery-inbound.js";
 
 let profileDir: string;
 
 beforeEach(async () => {
   profileDir = await mkdtemp(join(tmpdir(), "envoymesh-queue-"));
+  // Reset module-level state between tests to ensure test isolation
+  __resetDiscoveryState();
 });
 
 afterEach(async () => {
@@ -47,22 +56,31 @@ function testProfile(): NodeProfile {
   };
 }
 
-function discoveryEnvelope(profile: NodeProfile) {
+function discoveryEnvelope(profile: NodeProfile, requesterOwnerId = "envoy:owner:stranger") {
   return {
     ...createUnsignedEnvelope({
       senderPeerId: "peer-remote",
       senderPublicKey: profile.device.publicKeyPem,
       intent: "discovery.request",
       payload: {
-        requesterOwnerId: "envoy:owner:stranger",
+        requesterOwnerId,
         requestedTagHashes: ["hash:books"],
         requestedCapabilities: ["task.execute"],
         maxResults: 2,
       },
       createdAt: "2026-05-06T10:00:00.000Z",
-      messageId: `disc-queue-${Date.now()}`,
+      messageId: `disc-queue-${Date.now()}-${Math.random()}`,
     }),
     signature: "sig",
+  };
+}
+
+function makeManifest(): CapabilityManifest {
+  return {
+    visibility: "public-preview",
+    sensitivityCeiling: "public",
+    capabilities: ["task.execute"],
+    keywords: ["books"],
   };
 }
 
@@ -71,35 +89,40 @@ describe("Discovery queue — enqueue and dequeue", () => {
     const profile = testProfile();
     const taskStore = createLocalTaskStore(profileDir);
     const trustStore = createLocalTrustStore(profileDir);
+    const manifest = makeManifest();
 
-    // Exhaust rate limit by making ANON_RATE_LIMIT_MAX_REQUESTS + 1 requests
-    // The first 5 should succeed, the 6th should be queued
-    const envelope = discoveryEnvelope(profile);
+    // NO trust record = public caller
+    // With manifest and public-preview mode, public callers are allowed
 
+    const baseTime = Date.now();
+
+    // First 5 requests should succeed (rate limit budget)
     for (let i = 0; i < 5; i++) {
       const result = await handleInboundDiscoveryIntent({
-        envelope,
+        envelope: discoveryEnvelope(profile),
         profile,
         remotePeerId: "libp2p-peer-queue",
-        receivedAt: Date.now(),
-        correlationId: `corr-${i}`,
+        receivedAt: baseTime + i,
+        correlationId: `corr-q-${i}`,
         taskStore,
         trustStore,
         anonymousDiscoveryMode: "public-preview",
+        capabilityManifest: manifest,
       });
       expect(result.ok).toBe(true);
     }
 
     // 6th request should be queued (rate limit exhausted)
     const result = await handleInboundDiscoveryIntent({
-      envelope,
+      envelope: discoveryEnvelope(profile),
       profile,
       remotePeerId: "libp2p-peer-queue",
-      receivedAt: Date.now(),
-      correlationId: "corr-queued",
+      receivedAt: baseTime + 5,
+      correlationId: "corr-q-queued",
       taskStore,
       trustStore,
       anonymousDiscoveryMode: "public-preview",
+      capabilityManifest: manifest,
     });
 
     expect(result.ok).toBe(false);
@@ -110,32 +133,34 @@ describe("Discovery queue — enqueue and dequeue", () => {
     const profile = testProfile();
     const taskStore = createLocalTaskStore(profileDir);
     const trustStore = createLocalTrustStore(profileDir);
+    const manifest = makeManifest();
 
-    const envelope = discoveryEnvelope(profile);
+    const baseTime = Date.now();
 
-    // Exhaust rate limit
     for (let i = 0; i < 5; i++) {
       await handleInboundDiscoveryIntent({
-        envelope,
+        envelope: discoveryEnvelope(profile),
         profile,
         remotePeerId: "libp2p-peer-pos",
-        receivedAt: Date.now(),
+        receivedAt: baseTime + i,
         correlationId: `corr-pos-${i}`,
         taskStore,
         trustStore,
         anonymousDiscoveryMode: "public-preview",
+        capabilityManifest: manifest,
       });
     }
 
     const result = await handleInboundDiscoveryIntent({
-      envelope,
+      envelope: discoveryEnvelope(profile),
       profile,
       remotePeerId: "libp2p-peer-pos",
-      receivedAt: Date.now(),
+      receivedAt: baseTime + 5,
       correlationId: "corr-pos-queued",
       taskStore,
       trustStore,
       anonymousDiscoveryMode: "public-preview",
+      capabilityManifest: manifest,
     });
 
     expect(result.ok).toBe(false);
@@ -148,34 +173,37 @@ describe("Discovery queue — enqueue and dequeue", () => {
     const profile = testProfile();
     const taskStore = createLocalTaskStore(profileDir);
     const trustStore = createLocalTrustStore(profileDir);
+    const manifest = makeManifest();
 
-    const envelope = discoveryEnvelope(profile);
+    const baseTime = Date.now();
 
     // Exhaust rate limit
     for (let i = 0; i < 5; i++) {
       await handleInboundDiscoveryIntent({
-        envelope,
+        envelope: discoveryEnvelope(profile),
         profile,
         remotePeerId: "libp2p-peer-full",
-        receivedAt: Date.now(),
+        receivedAt: baseTime + i,
         correlationId: `corr-full-${i}`,
         taskStore,
         trustStore,
         anonymousDiscoveryMode: "public-preview",
+        capabilityManifest: manifest,
       });
     }
 
     // Queue 20 requests (MAX_QUEUE_SIZE_PER_PEER)
     for (let i = 0; i < 20; i++) {
       const result = await handleInboundDiscoveryIntent({
-        envelope,
+        envelope: discoveryEnvelope(profile),
         profile,
         remotePeerId: "libp2p-peer-full",
-        receivedAt: Date.now(),
+        receivedAt: baseTime + 5 + i,
         correlationId: `corr-q-${i}`,
         taskStore,
         trustStore,
         anonymousDiscoveryMode: "public-preview",
+        capabilityManifest: manifest,
       });
       expect(result.ok).toBe(false);
       if (result.reason !== "queued") {
@@ -185,14 +213,15 @@ describe("Discovery queue — enqueue and dequeue", () => {
 
     // 21st request should be denied because queue is full
     const result = await handleInboundDiscoveryIntent({
-      envelope,
+      envelope: discoveryEnvelope(profile),
       profile,
       remotePeerId: "libp2p-peer-full",
-      receivedAt: Date.now(),
+      receivedAt: baseTime + 25,
       correlationId: "corr-q-overflow",
       taskStore,
       trustStore,
       anonymousDiscoveryMode: "public-preview",
+      capabilityManifest: manifest,
     });
 
     expect(result.ok).toBe(false);
@@ -211,33 +240,37 @@ describe("Discovery queue — processDiscoveryQueue", () => {
     const profile = testProfile();
     const taskStore = createLocalTaskStore(profileDir);
     const trustStore = createLocalTrustStore(profileDir);
+    const manifest = makeManifest();
 
-    const envelope = discoveryEnvelope(profile);
+    // NO trust record = public caller
+    const baseTime = Date.now();
 
     // Exhaust rate limit
     for (let i = 0; i < 5; i++) {
       await handleInboundDiscoveryIntent({
-        envelope,
+        envelope: discoveryEnvelope(profile),
         profile,
         remotePeerId: "libp2p-peer-proc",
-        receivedAt: Date.now(),
+        receivedAt: baseTime + i,
         correlationId: `corr-proc-${i}`,
         taskStore,
         trustStore,
         anonymousDiscoveryMode: "public-preview",
+        capabilityManifest: manifest,
       });
     }
 
     // Queue a request
     const queuedResult = await handleInboundDiscoveryIntent({
-      envelope,
+      envelope: discoveryEnvelope(profile),
       profile,
       remotePeerId: "libp2p-peer-proc",
-      receivedAt: Date.now(),
+      receivedAt: baseTime + 5,
       correlationId: "corr-q-1",
       taskStore,
       trustStore,
       anonymousDiscoveryMode: "public-preview",
+      capabilityManifest: manifest,
     });
     expect(queuedResult.ok).toBe(false);
     expect(queuedResult.reason).toBe("queued");
