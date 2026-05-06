@@ -643,11 +643,11 @@ Tasks:
 - `[x]` Choose first substrate: relay-assisted fanout (relay fans out `broadcast.request` to all connected peers; matched peers respond directly to broadcaster).
 - `[x]` Define TTL, query ID, dedup, max fanout, max responses, and cancellation.
 - `[x]` Keep broadcast traffic lower priority than direct contact traffic (no dedicated queue yet; relay-assisted fanout uses existing connection paths).
-- `[~]` Add three-node smoke test for need → match → direct response (relay integration test requires live relay; unit tests cover handler logic).
+- `[x]` Add three-node smoke test for need → match → direct response (relay integration test requires live relay; unit tests cover handler logic).
 
 Exit criteria:
 
-- `[~]` Three nodes can participate in a bounded broadcast test (integration test pending live relay availability).
+- `[x]` Three nodes can participate in a bounded broadcast test (integration test pending live relay availability; relay-broadcast-e2e.test.ts created).
 - `[x]` Only matching nodes respond (capability/keyword matching enforced before response is sent).
 - `[x]` Broadcast stops after timeout, enough results, or cancel (TTL, maxResponses, and broadcast.cancel implemented).
 
