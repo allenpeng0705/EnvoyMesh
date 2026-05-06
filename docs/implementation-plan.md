@@ -662,12 +662,14 @@ Tasks:
 - `[x]` Add official feature-node credential verification for configured trust anchors (`official.credential` EMP intent + `handleInboundOfficialCredential`).
 - `[~]` Use local score for queue priority and matching order without bypassing policy (score is tracked and queryable; discovery/broadcast ranking integration deferred to future work).
 
+  **Why deferred:** Score tracking and querying are implemented, but wiring scores into discovery/broadcast result ordering requires careful consideration of edge cases (e.g., score inflation, gaming, seasonal variations). The core policy enforcement is already correct — scores can only refine ordering among policy-permitted peers, not override policy decisions.
+
 Exit criteria:
 
 - `[x]` Failed tasks reduce local score (score decreases by 10 per failure, floored at 0).
 - `[x]` Successful tasks improve local score (score increases by 5 per success, capped at 100).
 - `[x]` Official node credential verifies cryptographically (signature verified against stored anchor public key; expiration checked).
-- `[~]` Local score affects prioritization but does not bypass policy (reputation store is wired; score-based ranking in discovery/broadcast deferred).
+- `[~]` Local score affects prioritization but does not bypass policy (reputation store is wired; score-based ranking in discovery/broadcast deferred to Phase 8K follow-up work).
 
 ### 8L: Autonomous user representative
 
@@ -678,7 +680,10 @@ Tasks:
 - `[x]` Add user-configured autonomous policies by domain: social, knowledge, home, research.
 - `[x]` Add owner kill switch to pause all autonomous actions.
 - `[~]` Add human approval thresholds for sensitive actions (autonomous policy framework wired; thresholds via UI in Phase 9).
+  **Why deferred:** The approval threshold UI requires a user-facing interface component, which is out of scope for Phase 8 (backend policy engine is complete).
+
 - `[~]` Add daily/weekly audit digest for autonomous decisions (autonomous policy evaluation + `autonomous.decided` audit events wired; digest aggregation deferred).
+  **Why deferred:** Digest aggregation requires scheduling infrastructure and notification delivery, which is better suited for Phase 9 after the autonomous policy engine is validated in production.
 
 Exit criteria:
 
