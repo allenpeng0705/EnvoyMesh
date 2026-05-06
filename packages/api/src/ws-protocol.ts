@@ -83,10 +83,15 @@ export type RpcMethods =
   | "sendChat"
   | "listChatHistory"
   | "markRead"
+  | "getChatDrafts"
+  | "deleteChatDraft"
   // Search
   | "searchPeers"
   | "advertiseTopic"
   | "stopAdvertiseTopic"
+  // Capability Manifest
+  | "getCapabilityManifest"
+  | "updateCapabilityManifest"
   // File Sharing
   | "shareFile"
   | "acceptShare"
@@ -133,6 +138,56 @@ export interface NodeConfig {
   bootstrapPresets: string[];
   /** Model provider configuration. Default: mock provider only. */
   modelProviders: ModelProviderConfig;
+  /** Enable LLM-assisted chat drafts. Default: false (disabled). */
+  chatAssistEnabled: boolean;
+  /**
+   * Anonymous discovery mode — controls how the node responds to unknown/public peers.
+   * Default: "off" (anonymous discovery disabled).
+   */
+  anonymousDiscoveryMode: AnonymousDiscoveryMode;
+  /**
+   * EMP intent allowlist for anonymous/public requests.
+   * If undefined, only discovery.request is allowed anonymously.
+   */
+  anonymousIntentAllowlist?: readonly string[];
+  /**
+   * Sensitivity ceiling for anonymous auto-answer (public-auto-answer mode).
+   * Default: "public".
+   */
+  anonymousSensitivityCeiling: "public" | "friends";
+  /**
+   * Trusted anchor public keys for verifying official credentials.
+   * Maps anchorId → PEM-encoded public key.
+   */
+  trustAnchorPublicKeys: Record<string, string>;
+  /**
+   * Master kill switch: when true, all autonomous actions are paused.
+   * The node will require explicit approval for any action it would otherwise take autonomously.
+   */
+  autonomousKillSwitch: boolean;
+  /**
+   * Per-domain autonomous policies defining what the node may do without prompting the owner.
+   * Each policy applies to a domain and defines sensitivity ceilings for autonomous responses.
+   */
+  autonomousPolicies: AutonomousPolicy[];
+}
+
+/**
+ * Domain in which the node operates autonomously on behalf of the owner.
+ */
+export type AutonomousDomain = "social" | "knowledge" | "home" | "research";
+
+/**
+ * Defines what the node may do autonomously in a given domain without prompting the owner.
+ */
+export interface AutonomousPolicy {
+  domain: AutonomousDomain;
+  /** Maximum sensitivity of vault content the node may respond with autonomously. */
+  maxSensitivity: "public" | "friends";
+  /** Whether the node may autonomously answer queries in this domain. */
+  autoAnswer: boolean;
+  /** Whether the node may autonomously send chat messages in this domain. */
+  autoSendChat: boolean;
 }
 
 /** Model provider mode: mock (no external calls), ollama (local), litellm (local/cloud), or disabled. */
@@ -249,6 +304,94 @@ export interface MarkReadParams {
   upToMessageId?: string;
 }
 
+export interface ChatDraft {
+  draftId: string;
+  threadPeerOwnerId: string;
+  inReplyToMessageId: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface GetChatDraftsParams {
+  threadPeerOwnerId?: string;
+}
+
+export interface DeleteChatDraftParams {
+  draftId: string;
+}
+
+// ====================================
+// Capability Manifest Types
+// ====================================
+
+/**
+ * Visibility level for the capability manifest:
+ * - "contacts-only" — respond only to referred/direct trust peers
+ * - "public-preview" — respond to public peers with safe preview only (no LLM)
+ * - "public-auto-answer" — respond to public peers with auto-answer (requires LLM)
+ */
+export type ManifestVisibility = "contacts-only" | "public-preview" | "public-auto-answer";
+
+/**
+ * Anonymous discovery mode — controls how the node responds to unknown/public peers.
+ * - "off" — anonymous discovery is disabled; public strangers are ignored
+ * - "contacts-only" — only bonded contacts (referred/direct) can discover this node
+ * - "public-preview" — public peers get safe preview responses only (no LLM call)
+ * - "public-auto-answer" — public peers can trigger LLM-powered auto-answer within sensitivity ceiling
+ *
+ * This is a node-level override independent of the capability manifest visibility.
+ */
+export type AnonymousDiscoveryMode = "off" | "contacts-only" | "public-preview" | "public-auto-answer";
+
+/**
+ * Owner-approved capability manifest describing what the node is willing to do
+ * for contact-scoped discovery matching.
+ */
+export interface CapabilityManifest {
+  version: "0.1";
+  /** Unique identifier for this manifest (changes when manifest is updated). */
+  id: string;
+  /** Semantic version string. */
+  versionTag: string;
+  /** Who can receive matches from this manifest. */
+  visibility: ManifestVisibility;
+  /**
+   * Sensitivity ceiling for this manifest.
+   * Requests above this ceiling are not answered even if capabilities match.
+   */
+  sensitivityCeiling: "public" | "friends" | "private";
+  /**
+   * Freeform keywords describing this node's capabilities.
+   * Matched against keyword hashes in discovery requests.
+   */
+  keywords: string[];
+  /**
+   * Specific EMP capabilities this node exposes.
+   * Used for discovery matching instead of device certificate capabilities.
+   */
+  capabilities: string[];
+  /**
+   * Owner-provided description of this node (shown in discovery).
+   */
+  description?: string;
+  /**
+   * Timestamp when the owner approved this manifest.
+   */
+  approvedAt: string;
+  /** Timestamp of last update. */
+  updatedAt: string;
+}
+
+export interface GetCapabilityManifestParams {}
+
+export interface UpdateCapabilityManifestParams {
+  visibility?: ManifestVisibility;
+  sensitivityCeiling?: CapabilityManifest["sensitivityCeiling"];
+  keywords?: string[];
+  capabilities?: string[];
+  description?: string;
+}
+
 export interface SearchPeersParams {
   interests?: string[];
   queryText?: string;
@@ -285,6 +428,13 @@ export interface UpdateNodeConfigParams {
   advertiseAddrs?: string[];
   bootstrapPeers?: string[];
   enableMdns?: boolean;
+  chatAssistEnabled?: boolean;
+  anonymousDiscoveryMode?: AnonymousDiscoveryMode;
+  anonymousIntentAllowlist?: readonly string[];
+  anonymousSensitivityCeiling?: "public" | "friends";
+  trustAnchorPublicKeys?: Record<string, string>;
+  autonomousKillSwitch?: boolean;
+  autonomousPolicies?: AutonomousPolicy[];
 }
 
 export interface ListRelaysParams {}

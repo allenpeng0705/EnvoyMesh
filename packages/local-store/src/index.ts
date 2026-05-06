@@ -9,6 +9,7 @@ import type {
   RelayBookState,
   RelayRelation,
   RelayVisibility,
+  Sensitivity,
   SystemSignalPayload,
   TaskJournalEntry,
   TaskLifecycleState,
@@ -52,6 +53,8 @@ const APPROVAL_QUEUE_FILE = "approval-queue.jsonl";
 const TRUST_STORE_FILE = "trust-records.json";
 const PEER_DIRECTORY_FILE = "peer-directory.json";
 const DISCOVERY_EVENTS_FILE = "discovery-events.jsonl";
+const REPUTATION_STORE_FILE = "peer-reputation.json";
+const SHARE_EVENTS_FILE = "share-events.jsonl";
 const RELAY_BOOK_FILE = "relay-book.json";
 const RELAY_SUMMARIES_FILE = "relay-summaries.json";
 const HUMAN_PROFILE_FILE = "human-profile.json";
@@ -150,7 +153,11 @@ export type AuditEventType =
   | "policy.decided"
   | "vault.searched"
   | "model.routed"
-  | "p2p.trace";
+  | "share.preview"
+  | "share.request"
+  | "share.accept"
+  | "p2p.trace"
+  | "autonomous.decided";
 
 export type AuditDirection = "inbound" | "outbound";
 
@@ -557,9 +564,32 @@ export interface LocalTaskStore {
   readAuditEvents(): Promise<AuditEvent[]>;
   appendDiscoveryEvent(event: DiscoveryEvent): Promise<void>;
   readDiscoveryEvents(): Promise<DiscoveryEvent[]>;
+  appendShareEvent(event: ShareEvent): Promise<void>;
+  readShareEvents(): Promise<ShareEvent[]>;
   appendApprovalRequest(request: ApprovalRequest): Promise<void>;
   readApprovalRequests(): Promise<ApprovalRequest[]>;
   updateApprovalRequestStatus(approvalId: string, status: ApprovalRequestStatus): Promise<ApprovalRequest>;
+}
+
+export type AbuseFlag = "none" | "slow_response" | "no_answer" | "malicious" | "offensive";
+
+export interface PeerReputationRecord {
+  version: "0.1";
+  peerOwnerId: string;
+  score: number; // 0–100
+  totalTasks: number;
+  successfulTasks: number;
+  failedTasks: number;
+  avgLatencyMs: number;
+  abuseFlags: AbuseFlag[];
+  lastUpdated: string;
+}
+
+export interface PeerReputationStore {
+  getReputation(peerOwnerId: string): Promise<PeerReputationRecord | undefined>;
+  upsertReputation(peerOwnerId: string, update: Partial<PeerReputationRecord> & { outcome?: "success" | "failure"; latencyMs?: number; abuseFlag?: AbuseFlag }): Promise<PeerReputationRecord>;
+  listReputations(): Promise<PeerReputationRecord[]>;
+  clearReputation(peerOwnerId: string): Promise<void>;
 }
 
 export interface DiscoveryEvent {
@@ -601,6 +631,48 @@ export interface CreateDiscoveryEventInput {
   summary: string;
 }
 
+/** Share lifecycle event for correlating share.preview → share.accept → content transfer. */
+export interface ShareEvent {
+  version: "0.1";
+  eventId: string;
+  createdAt: string;
+  direction: "inbound" | "outbound";
+  intent: "share.preview" | "share.request" | "share.accept";
+  ownerId: string;
+  remotePeerId?: string;
+  correlationId?: string;
+  requestMessageId?: string;
+  requestType?: "knowledge" | "file";
+  sensitivity?: Sensitivity;
+  requiresApproval?: boolean;
+  isFileTransfer?: boolean;
+  previewRefused?: boolean;
+  previewRefusalReason?: string;
+  accepted?: boolean;
+  outcome: "allow" | "deny" | "record";
+  summary: string;
+}
+
+export interface CreateShareEventInput {
+  createdAt?: string;
+  eventId?: string;
+  direction: ShareEvent["direction"];
+  intent: ShareEvent["intent"];
+  ownerId: string;
+  remotePeerId?: string;
+  correlationId?: string;
+  requestMessageId?: string;
+  requestType?: "knowledge" | "file";
+  sensitivity?: Sensitivity;
+  requiresApproval?: boolean;
+  isFileTransfer?: boolean;
+  previewRefused?: boolean;
+  previewRefusalReason?: string;
+  accepted?: boolean;
+  outcome: ShareEvent["outcome"];
+  summary: string;
+}
+
 export interface MorningReportEntry {
   ownerId: string;
   peerId?: string;
@@ -632,10 +704,12 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
   const auditEventsPath = join(profileDir, AUDIT_EVENTS_FILE);
   const approvalQueuePath = join(profileDir, APPROVAL_QUEUE_FILE);
   const discoveryEventsPath = join(profileDir, DISCOVERY_EVENTS_FILE);
+  const shareEventsPath = join(profileDir, SHARE_EVENTS_FILE);
 
   const appendTaskJournalQueued = createSerialJsonlAppender(taskJournalPath);
   const appendAuditQueued = createSerialJsonlAppender(auditEventsPath);
   const appendDiscoveryQueued = createSerialJsonlAppender(discoveryEventsPath);
+  const appendShareQueued = createSerialJsonlAppender(shareEventsPath);
 
   let approvalFileTail: Promise<unknown> = Promise.resolve();
   const runApprovalFileOp = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -670,6 +744,14 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
 
     async readDiscoveryEvents() {
       return readJsonLines<DiscoveryEvent>(discoveryEventsPath);
+    },
+
+    async appendShareEvent(event) {
+      await appendShareQueued(event);
+    },
+
+    async readShareEvents() {
+      return readJsonLines<ShareEvent>(shareEventsPath);
     },
 
     async appendApprovalRequest(request) {
@@ -714,6 +796,29 @@ export function createDiscoveryEvent(input: CreateDiscoveryEventInput): Discover
     matchedTagHashes: input.matchedTagHashes ?? [],
     matchedCapabilities: input.matchedCapabilities ?? [],
     trustLevel: input.trustLevel,
+    outcome: input.outcome,
+    summary: input.summary,
+  };
+}
+
+export function createShareEvent(input: CreateShareEventInput): ShareEvent {
+  return {
+    version: "0.1",
+    eventId: input.eventId ?? `share_${randomUUID()}`,
+    createdAt: input.createdAt ?? new Date().toISOString(),
+    direction: input.direction,
+    intent: input.intent,
+    ownerId: input.ownerId,
+    remotePeerId: input.remotePeerId,
+    correlationId: input.correlationId,
+    requestMessageId: input.requestMessageId,
+    requestType: input.requestType,
+    sensitivity: input.sensitivity,
+    requiresApproval: input.requiresApproval,
+    isFileTransfer: input.isFileTransfer,
+    previewRefused: input.previewRefused,
+    previewRefusalReason: input.previewRefusalReason,
+    accepted: input.accepted,
     outcome: input.outcome,
     summary: input.summary,
   };
@@ -1141,6 +1246,104 @@ export function createLocalTrustStore(profileDir: string): LocalTrustStore {
       file.records = file.records.filter((candidate) => candidate.peerOwnerId !== peerOwnerId);
       await writeTrustStoreFile(trustStorePath, file);
       return record;
+    },
+  };
+}
+
+interface ReputationStoreFile {
+  version: "0.1";
+  records: PeerReputationRecord[];
+}
+
+async function readReputationStoreFile(path: string): Promise<ReputationStoreFile> {
+  try {
+    const raw = await readFile(path, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed === null || typeof parsed !== "object" || (parsed as Record<string, unknown>).version !== "0.1") {
+      return { version: "0.1", records: [] };
+    }
+    return parsed as ReputationStoreFile;
+  } catch {
+    return { version: "0.1", records: [] };
+  }
+}
+
+async function writeReputationStoreFile(path: string, file: ReputationStoreFile): Promise<void> {
+  const tmp = `${path}.tmp`;
+  await writeFile(tmp, JSON.stringify(file, null, 2), { mode: 0o600 });
+  await rename(tmp, path);
+}
+
+export function createLocalPeerReputationStore(profileDir: string): PeerReputationStore {
+  const reputationStorePath = join(profileDir, REPUTATION_STORE_FILE);
+
+  return {
+    async getReputation(peerOwnerId) {
+      const file = await readReputationStoreFile(reputationStorePath);
+      return file.records.find((r) => r.peerOwnerId === peerOwnerId);
+    },
+
+    async upsertReputation(peerOwnerId, update) {
+      const file = await readReputationStoreFile(reputationStorePath);
+      const existing = file.records.find((r) => r.peerOwnerId === peerOwnerId);
+      const now = new Date().toISOString();
+
+      if (existing) {
+        // Apply deltas
+        if (update.outcome === "success") {
+          existing.successfulTasks += 1;
+          existing.score = Math.min(100, existing.score + 5);
+        } else if (update.outcome === "failure") {
+          existing.failedTasks += 1;
+          existing.score = Math.max(0, existing.score - 10);
+        }
+        if (update.latencyMs !== undefined) {
+          // Rolling average
+          existing.avgLatencyMs =
+            existing.totalTasks === 0
+              ? update.latencyMs
+              : (existing.avgLatencyMs * existing.totalTasks + update.latencyMs) / (existing.totalTasks + 1);
+        }
+        if (update.abuseFlag && update.abuseFlag !== "none") {
+          if (!existing.abuseFlags.includes(update.abuseFlag)) {
+            existing.abuseFlags.push(update.abuseFlag);
+          }
+          existing.score = Math.max(0, existing.score - 20);
+        }
+        existing.totalTasks += 1;
+        existing.lastUpdated = now;
+        await writeReputationStoreFile(reputationStorePath, file);
+        return existing;
+      }
+
+      // New record
+      const score =
+        update.outcome === "success" ? 55 : update.outcome === "failure" ? 40 : 50;
+      const newRecord: PeerReputationRecord = {
+        version: "0.1",
+        peerOwnerId,
+        score,
+        totalTasks: 1,
+        successfulTasks: update.outcome === "success" ? 1 : 0,
+        failedTasks: update.outcome === "failure" ? 1 : 0,
+        avgLatencyMs: update.latencyMs ?? 0,
+        abuseFlags: update.abuseFlag && update.abuseFlag !== "none" ? [update.abuseFlag] : [],
+        lastUpdated: now,
+      };
+      file.records.push(newRecord);
+      await writeReputationStoreFile(reputationStorePath, file);
+      return newRecord;
+    },
+
+    async listReputations() {
+      const file = await readReputationStoreFile(reputationStorePath);
+      return file.records.sort((a, b) => b.score - a.score);
+    },
+
+    async clearReputation(peerOwnerId) {
+      const file = await readReputationStoreFile(reputationStorePath);
+      file.records = file.records.filter((r) => r.peerOwnerId !== peerOwnerId);
+      await writeReputationStoreFile(reputationStorePath, file);
     },
   };
 }
@@ -1647,3 +1850,5 @@ function isMissingFileError(error: unknown): boolean {
 export * from "./task-runtime-state.js";
 export * from "./connectivity-stage-d.js";
 export * from "./chat-log-store.js";
+export * from "./chat-draft-store.js";
+export * from "./capability-manifest-store.js";

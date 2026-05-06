@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { DiscoveryProfile, ModelProviderConfig, RelayConfig } from "@envoymesh/api";
+import type { AnonymousDiscoveryMode, AutonomousPolicy, DiscoveryProfile, ModelProviderConfig, RelayConfig } from "@envoymesh/api";
 
 const NODE_CONFIG_FILE = "node-config.json";
 
@@ -16,7 +16,20 @@ export interface PersistedNodeConfig {
   bootstrapPresets: string[];
   configuredRelays: RelayConfig[];
   modelProviders: ModelProviderConfig;
+  chatAssistEnabled: boolean;
   updatedAt: string;
+  /** Anonymous discovery mode. Default: "off". */
+  anonymousDiscoveryMode?: AnonymousDiscoveryMode;
+  /** EMP intent allowlist for anonymous requests. Defaults to ["discovery.request"]. */
+  anonymousIntentAllowlist?: readonly string[];
+  /** Sensitivity ceiling for anonymous auto-answer. Default: "public". */
+  anonymousSensitivityCeiling?: "public" | "friends";
+  /** Trusted anchor public keys for verifying official credentials. Maps anchorId → PEM public key. */
+  trustAnchorPublicKeys?: Record<string, string>;
+  /** Master kill switch for all autonomous actions. Default: false (autonomous actions allowed). */
+  autonomousKillSwitch?: boolean;
+  /** Per-domain autonomous policies. Default: empty (all autonomous actions require approval). */
+  autonomousPolicies?: AutonomousPolicy[];
 }
 
 export interface NodeConfigStore {
@@ -102,6 +115,9 @@ function isValidNodeConfig(value: unknown): value is PersistedNodeConfig {
     return false;
   }
   if (!isValidModelProviders(file.modelProviders)) {
+    return false;
+  }
+  if (typeof file.chatAssistEnabled !== "boolean") {
     return false;
   }
   return true;

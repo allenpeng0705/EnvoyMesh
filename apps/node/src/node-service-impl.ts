@@ -48,16 +48,20 @@ import {
   createLocalPeerDirectoryStore,
   createHumanProfileStore,
   createLocalChatLogStore,
+  createChatDraftStore,
   createTaskRuntimeStateStore,
   createRelayStateStore,
+  createCapabilityManifestStore,
   loadOrCreateNodeProfile,
   type LocalTaskStore,
   type LocalTrustStore,
   type LocalPeerDirectoryStore,
   type LocalChatLogStore,
+  type ChatDraftStore,
   type HumanProfileStore,
   type TaskRuntimeStateStore,
   type RelayStateStore,
+  type CapabilityManifestStore,
 } from "@envoymesh/local-store";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
@@ -107,6 +111,8 @@ class NodeServiceImpl implements NodeService {
   private readonly _peerDirectoryStore: LocalPeerDirectoryStore;
   private readonly _humanProfileStore: HumanProfileStore;
   private readonly _chatLogStore: LocalChatLogStore | null;
+  private readonly _chatDraftStore: ChatDraftStore | null;
+  private readonly _capabilityManifestStore: CapabilityManifestStore | null;
   private readonly _configStore: ReturnType<typeof createNodeConfigStore>;
   private readonly _profileDir: string;
   private readonly _cliBootstrapPeers: readonly string[];
@@ -176,6 +182,10 @@ class NodeServiceImpl implements NodeService {
     this._configStore = profileDir ? createNodeConfigStore(profileDir) : createStubNodeConfigStore();
     this._chatLogStore =
       profileDir && profileDir !== "/tmp/unknown" ? createLocalChatLogStore(profileDir) : null;
+    this._chatDraftStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createChatDraftStore(profileDir) : null;
+    this._capabilityManifestStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createCapabilityManifestStore(profileDir) : null;
     if (profileDir && profileDir !== "/tmp/unknown") {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
     }
@@ -1251,6 +1261,13 @@ class NodeServiceImpl implements NodeService {
         bootstrapPeers: config.bootstrapPeers,
         bootstrapPresets: config.bootstrapPresets,
         modelProviders: config.modelProviders,
+        chatAssistEnabled: config.chatAssistEnabled ?? false,
+        anonymousDiscoveryMode: config.anonymousDiscoveryMode ?? "off",
+        anonymousIntentAllowlist: config.anonymousIntentAllowlist ?? ["discovery.request"],
+        anonymousSensitivityCeiling: config.anonymousSensitivityCeiling ?? "public",
+        trustAnchorPublicKeys: config.trustAnchorPublicKeys ?? {},
+        autonomousKillSwitch: config.autonomousKillSwitch ?? false,
+        autonomousPolicies: config.autonomousPolicies ?? [],
       };
     }
     return {
@@ -1263,6 +1280,13 @@ class NodeServiceImpl implements NodeService {
       bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
       bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
       modelProviders: { mode: "mock" },
+      chatAssistEnabled: false,
+      anonymousDiscoveryMode: "off",
+      anonymousIntentAllowlist: ["discovery.request"],
+      anonymousSensitivityCeiling: "public",
+      trustAnchorPublicKeys: {},
+      autonomousKillSwitch: false,
+      autonomousPolicies: [],
     };
   }
 
@@ -1278,6 +1302,12 @@ class NodeServiceImpl implements NodeService {
       bootstrapPresets: [] as string[],
       configuredRelays: [],
       modelProviders: { mode: "mock" as const },
+      chatAssistEnabled: false,
+      anonymousDiscoveryMode: "off",
+      anonymousIntentAllowlist: ["discovery.request"],
+      anonymousSensitivityCeiling: "public",
+      autonomousKillSwitch: false,
+      autonomousPolicies: [],
       updatedAt: new Date().toISOString(),
     };
 
@@ -1292,6 +1322,13 @@ class NodeServiceImpl implements NodeService {
       ...(config.bootstrapPresets && { bootstrapPresets: config.bootstrapPresets }),
       ...(config.configuredRelays && { configuredRelays: config.configuredRelays }),
       ...(config.modelProviders && { modelProviders: config.modelProviders }),
+      ...(config.chatAssistEnabled !== undefined && { chatAssistEnabled: config.chatAssistEnabled }),
+      ...(config.anonymousDiscoveryMode !== undefined && { anonymousDiscoveryMode: config.anonymousDiscoveryMode }),
+      ...(config.anonymousIntentAllowlist !== undefined && { anonymousIntentAllowlist: config.anonymousIntentAllowlist }),
+      ...(config.anonymousSensitivityCeiling !== undefined && { anonymousSensitivityCeiling: config.anonymousSensitivityCeiling }),
+      ...(config.trustAnchorPublicKeys !== undefined && { trustAnchorPublicKeys: config.trustAnchorPublicKeys }),
+      ...(config.autonomousKillSwitch !== undefined && { autonomousKillSwitch: config.autonomousKillSwitch }),
+      ...(config.autonomousPolicies !== undefined && { autonomousPolicies: config.autonomousPolicies }),
       updatedAt: new Date().toISOString(),
     };
 
@@ -1307,6 +1344,55 @@ class NodeServiceImpl implements NodeService {
     return config?.configuredRelays ?? [];
   }
 
+  async getChatDrafts(threadPeerOwnerId?: string): Promise<Array<{ draftId: string; threadPeerOwnerId: string; inReplyToMessageId: string; text: string; createdAt: string }>> {
+    if (!this._chatDraftStore) return [];
+    if (threadPeerOwnerId) {
+      return this._chatDraftStore.listByThread(threadPeerOwnerId);
+    }
+    return this._chatDraftStore.listAll();
+  }
+
+  async deleteChatDraft(draftId: string): Promise<void> {
+    if (!this._chatDraftStore) return;
+    await this._chatDraftStore.delete(draftId);
+  }
+
+  // ============================================
+  // Capability Manifest
+  // ============================================
+
+  async getCapabilityManifest(): Promise<import("@envoymesh/api").CapabilityManifest | undefined> {
+    if (!this._capabilityManifestStore) return undefined;
+    return this._capabilityManifestStore.loadManifest();
+  }
+
+  async updateCapabilityManifest(params: {
+    visibility?: import("@envoymesh/api").ManifestVisibility;
+    sensitivityCeiling?: "public" | "friends" | "private";
+    keywords?: string[];
+    capabilities?: string[];
+    description?: string;
+  }): Promise<import("@envoymesh/api").CapabilityManifest> {
+    if (!this._capabilityManifestStore) {
+      throw new Error("Capability manifest store not available");
+    }
+    const existing = await this._capabilityManifestStore.loadManifest();
+    if (existing) {
+      const updated: import("@envoymesh/local-store").CapabilityManifest = {
+        ...existing,
+        ...(params.visibility !== undefined && { visibility: params.visibility }),
+        ...(params.sensitivityCeiling !== undefined && { sensitivityCeiling: params.sensitivityCeiling }),
+        ...(params.keywords !== undefined && { keywords: params.keywords }),
+        ...(params.capabilities !== undefined && { capabilities: params.capabilities }),
+        ...(params.description !== undefined && { description: params.description }),
+        updatedAt: new Date().toISOString(),
+      };
+      await this._capabilityManifestStore.saveManifest(updated);
+      return updated as import("@envoymesh/api").CapabilityManifest;
+    }
+    return this._capabilityManifestStore.createDefaultManifest(params);
+  }
+
   async addRelay(addr: string, level?: number, region?: string): Promise<RelayConfig> {
     const config = (await this._configStore.load()) ?? {
       version: "0.1" as const,
@@ -1319,6 +1405,9 @@ class NodeServiceImpl implements NodeService {
       bootstrapPresets: [] as string[],
       configuredRelays: [],
       modelProviders: { mode: "mock" as const },
+      chatAssistEnabled: false,
+      autonomousKillSwitch: false,
+      autonomousPolicies: [],
       updatedAt: new Date().toISOString(),
     };
 
@@ -1382,6 +1471,9 @@ class NodeServiceImpl implements NodeService {
       bootstrapPresets: options?.bootstrapPresets ?? [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
       configuredRelays: [],
       modelProviders: { mode: "mock" },
+      chatAssistEnabled: false,
+      autonomousKillSwitch: false,
+      autonomousPolicies: [],
       updatedAt: new Date().toISOString(),
     };
 

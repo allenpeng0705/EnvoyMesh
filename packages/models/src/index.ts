@@ -2,11 +2,21 @@ import { randomUUID } from "node:crypto";
 import type { Sensitivity } from "@envoymesh/protocol";
 import {
   evaluateSemanticFirewall,
+  evaluateEgressContent,
   MAX_MODEL_PROMPT_CHARS,
   type SemanticFirewallResult,
+  type EgressScanResult,
+  type EgressSecretMatch,
 } from "./semantic-firewall.js";
 
-export { evaluateSemanticFirewall, MAX_MODEL_PROMPT_CHARS, type SemanticFirewallResult };
+export {
+  evaluateSemanticFirewall,
+  evaluateEgressContent,
+  MAX_MODEL_PROMPT_CHARS,
+  type SemanticFirewallResult,
+  type EgressScanResult,
+  type EgressSecretMatch,
+};
 
 export type ModelProviderType = "local" | "cloud" | "peer";
 export type ModelRouteDecision =
@@ -402,3 +412,27 @@ function sensitivityAllowed(
     (allowed) => sensitivityRank[requested] <= sensitivityRank[allowed],
   );
 }
+
+// ─── Local tool registry exports ───────────────────────────────────────────────
+
+export {
+  evaluateToolPolicy,
+  LocalToolRegistry,
+  VAULT_SEARCH_TOOL,
+  PEER_LOOKUP_TOOL,
+  TASK_SUMMARY_TOOL,
+  MESH_FIND_CAPABILITY_TOOL,
+  MESH_REQUEST_KNOWLEDGE_TOOL,
+  MESH_SEND_CHAT_TOOL,
+  MESH_LIST_CONTACTS_TOOL,
+} from "./tools.js";
+
+export type {
+  LocalToolDescriptor,
+  ToolParamDescriptor,
+  ToolCallRequest,
+  ToolCallResult,
+  ToolCallPolicyDecision,
+  ToolCallAuditEvent,
+  ToolImplementation,
+} from "./tools.js";

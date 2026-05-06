@@ -15,6 +15,9 @@ import {
   parseRendezvousRegisterPayload,
   parseRendezvousQueryPayload,
   createRendezvousResponsePayload,
+  parseBroadcastRequestPayload,
+  parseBroadcastCancelPayload,
+  createBroadcastCancelPayload,
   RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
   RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
   type EnvoyEnvelope,
@@ -148,62 +151,119 @@ try {
    */
   mesh.onMessage(async (message) => {
     const intent = message.envelope.intent;
-    if (intent !== "rendezvous.register" && intent !== "rendezvous.query") {
-      return;
-    }
 
-    const ack = async (matches: Parameters<typeof createRendezvousResponsePayload>[0]["matches"]) => {
-      if (!message.replyWithEnvelope) {
-        console.warn(`[relay] rendezvous ${intent}: no replyWithEnvelope (unexpected)`);
+    // Handle rendezvous intents
+    if (intent === "rendezvous.register" || intent === "rendezvous.query") {
+      const ack = async (matches: Parameters<typeof createRendezvousResponsePayload>[0]["matches"]) => {
+        if (!message.replyWithEnvelope) {
+          console.warn(`[relay] rendezvous ${intent}: no replyWithEnvelope (unexpected)`);
+          return;
+        }
+        const responsePayload = createRendezvousResponsePayload({ matches });
+        await message.replyWithEnvelope({
+          version: "0.1",
+          messageId: randomUUID(),
+          createdAt: new Date().toISOString(),
+          senderPeerId: mesh.peerId,
+          senderPublicKey: RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
+          senderRole: "agent",
+          recipientPeerId: message.envelope.senderPeerId,
+          recipientRole: "agent",
+          intent: "rendezvous.response",
+          signature: RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
+          payload: responsePayload,
+        } as EnvoyEnvelope);
+      };
+
+      if (intent === "rendezvous.register") {
+        try {
+          const payload = parseRendezvousRegisterPayload(message.envelope.payload);
+          if (capabilityRegistry) {
+            capabilityRegistry.register(payload);
+          }
+          await ack([]);
+        } catch (error) {
+          console.error("[relay] Failed to handle rendezvous.register:", error);
+          try {
+            await ack([]);
+          } catch (replyErr) {
+            console.error("[relay] Failed to ACK rendezvous.register:", replyErr);
+          }
+        }
         return;
       }
-      const responsePayload = createRendezvousResponsePayload({ matches });
-      await message.replyWithEnvelope({
-        version: "0.1",
-        messageId: randomUUID(),
-        createdAt: new Date().toISOString(),
-        senderPeerId: mesh.peerId,
-        senderPublicKey: RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
-        senderRole: "agent",
-        recipientPeerId: message.envelope.senderPeerId,
-        recipientRole: "agent",
-        intent: "rendezvous.response",
-        signature: RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
-        payload: responsePayload,
-      } as EnvoyEnvelope);
-    };
 
-    if (intent === "rendezvous.register") {
-      try {
-        const payload = parseRendezvousRegisterPayload(message.envelope.payload);
-        if (capabilityRegistry) {
-          capabilityRegistry.register(payload);
-        }
-        await ack([]);
-      } catch (error) {
-        console.error("[relay] Failed to handle rendezvous.register:", error);
+      if (intent === "rendezvous.query") {
         try {
-          await ack([]);
-        } catch (replyErr) {
-          console.error("[relay] Failed to ACK rendezvous.register:", replyErr);
+          const queryPayload = parseRendezvousQueryPayload(message.envelope.payload);
+          const matches = capabilityRegistry ? capabilityRegistry.query(queryPayload) : [];
+          await ack(matches);
+        } catch (error) {
+          console.error("[relay] Failed to handle rendezvous.query:", error);
+          try {
+            await ack([]);
+          } catch (replyErr) {
+            console.error("[relay] Failed to ACK rendezvous.query:", replyErr);
+          }
         }
       }
       return;
     }
 
-    if (intent === "rendezvous.query") {
+    // Handle broadcast.request — fan out to all connected peers (except sender)
+    if (intent === "broadcast.request") {
       try {
-        const queryPayload = parseRendezvousQueryPayload(message.envelope.payload);
-        const matches = capabilityRegistry ? capabilityRegistry.query(queryPayload) : [];
-        await ack(matches);
-      } catch (error) {
-        console.error("[relay] Failed to handle rendezvous.query:", error);
-        try {
-          await ack([]);
-        } catch (replyErr) {
-          console.error("[relay] Failed to ACK rendezvous.query:", replyErr);
+        const payload = parseBroadcastRequestPayload(message.envelope.payload);
+        const connectedPeers = mesh.getConnectedRelayPeerIds();
+        const senderPeerId = message.envelope.senderPeerId;
+        const targets = connectedPeers.filter((pid) => pid !== senderPeerId);
+
+        if (targets.length === 0) {
+          console.log(`[relay] broadcast.request queryId=${payload.queryId}: no peers to fan out to`);
+          return;
         }
+
+        // Decrement TTL before forwarding
+        const nextTtl = payload.ttl - 1;
+        if (nextTtl < 0) {
+          console.log(`[relay] broadcast.request queryId=${payload.queryId}: TTL expired, not forwarding`);
+          return;
+        }
+
+        const forwardEnvelope: EnvoyEnvelope = {
+          ...message.envelope,
+          messageId: randomUUID(),
+          recipientPeerId: undefined,
+          payload: { ...payload, ttl: nextTtl },
+        } as EnvoyEnvelope;
+
+        let delivered = 0;
+        for (const targetPeer of targets) {
+          try {
+            await mesh.send(targetPeer, forwardEnvelope);
+            delivered++;
+          } catch (err) {
+            console.warn(`[relay] broadcast.request fanout to ${targetPeer}: ${err}`);
+          }
+        }
+        console.log(
+          `[relay] broadcast.request queryId=${payload.queryId} ttl=${payload.ttl}→${nextTtl}: delivered to ${delivered}/${targets.length} peers`,
+        );
+      } catch (error) {
+        console.error("[relay] Failed to handle broadcast.request:", error);
       }
+      return;
+    }
+
+    // Handle broadcast.cancel — log and silently ignore (relay doesn't track state)
+    if (intent === "broadcast.cancel") {
+      try {
+        const payload = parseBroadcastCancelPayload(message.envelope.payload);
+        console.log(`[relay] broadcast.cancel queryId=${payload.queryId} reason=${payload.reason}`);
+      } catch (error) {
+        console.error("[relay] Failed to handle broadcast.cancel:", error);
+      }
+      return;
     }
   });
 } catch (error) {

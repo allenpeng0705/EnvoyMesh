@@ -45,6 +45,14 @@ export const EnvoyIntentSchema = z.enum([
   "rendezvous.register",
   "rendezvous.query",
   "rendezvous.response",
+  "share.preview",
+  "share.request",
+  "share.accept",
+  "broadcast.request",
+  "broadcast.response",
+  "broadcast.cancel",
+  "task.feedback",
+  "official.credential",
 ]);
 
 export const SensitivitySchema = z.enum(["public", "friends", "trusted", "private"]);
@@ -362,6 +370,63 @@ export const KnowledgeResponsePayloadSchema = z.object({
   refusalReason: z.string().max(500).optional(),
 });
 
+/**
+ * `share.preview` — safe preview of content available for sharing.
+ * Contains only a descriptive summary, not raw vault content.
+ * The responder sends this after evaluating policy; the requester can then
+ * send `share.accept` to receive the actual content via `knowledge.response`
+ * or `/envoymesh/data/0.1.0`.
+ */
+export const SharePreviewPayloadSchema = z.object({
+  inReplyTo: z.string(), // messageId of the originating share.request
+  /** Human-readable description of what sharing would provide. */
+  previewText: z.string().max(500),
+  /** Sensitivity level of the content that would be shared. */
+  sensitivity: SensitivitySchema.default("public"),
+  /** Whether the full share requires owner approval (e.g. private sensitivity or file transfer). */
+  requiresApproval: z.boolean().default(false),
+  /** Optional hint about what format the content is in (e.g. "text answer", "file: research.pdf"). */
+  contentHint: z.string().max(200).optional(),
+  /** If true, the full share would go through /envoymesh/data/0.1.0 (file transfer). */
+  isFileTransfer: z.boolean().default(false),
+  /** Refused preview reason, if preview was denied. */
+  refused: z.boolean().optional().default(false),
+  refusalReason: z.string().max(300).optional(),
+});
+
+export type SharePreviewPayload = z.infer<typeof SharePreviewPayloadSchema>;
+
+/**
+ * `share.request` — request a safe preview of content before accepting a full share.
+ * The requester indicates what they want (query, capability, or file reference).
+ */
+export const ShareRequestPayloadSchema = z.object({
+  /** What is being requested: a knowledge query or a reference to shared vault content. */
+  requestType: z.enum(["knowledge", "file"]),
+  /** For knowledge requests: the query string. */
+  query: z.string().max(4096).optional(),
+  /** For file requests: the vault-relative path being requested. */
+  relativePath: z.string().max(500).optional(),
+  /** Requested sensitivity level. */
+  requestedSensitivity: SensitivitySchema.default("public"),
+  /** Correlation ID linking this request to a discovery match. */
+  correlationId: z.string().optional(),
+});
+
+export type ShareRequestPayload = z.infer<typeof ShareRequestPayloadSchema>;
+
+/**
+ * `share.accept` — explicit acceptance to receive the full content after reviewing a preview.
+ * Triggers the actual share: knowledge.response or /envoymesh/data/0.1.0 transfer.
+ */
+export const ShareAcceptPayloadSchema = z.object({
+  inReplyTo: z.string(), // messageId of the originating share.preview
+  /** Acknowledge the preview and accept the share. */
+  accept: z.boolean().default(true),
+});
+
+export type ShareAcceptPayload = z.infer<typeof ShareAcceptPayloadSchema>;
+
 export const BondRequestedLevelSchema = z.enum(["direct", "referred"]);
 
 /** `bond.request` — ask for a trust relationship; optional proof-of-context for policy / owner review. */
@@ -424,6 +489,8 @@ export const DiscoveryRequestPayloadSchema = z
     requestedTagHashes: z.array(z.string().min(1)).default([]),
     requestedCapabilities: z.array(z.string().min(1)).default([]),
     maxResults: z.number().int().min(1).max(20).default(5),
+    /** Requested sensitivity level. If absent, defaults to "public". */
+    requestedSensitivity: z.enum(["public", "friends", "private"]).optional(),
   })
   .refine(
     (value) => value.requestedTagHashes.length > 0 || value.requestedCapabilities.length > 0,
@@ -442,6 +509,46 @@ export const DiscoveryResponsePayloadSchema = z.object({
   responderOwnerId: z.string().min(1),
   matches: z.array(DiscoveryMatchSchema).default([]),
   truncated: z.boolean().default(false),
+});
+
+/** `broadcast.request` — one-to-many discovery query sent through a relay. */
+export const BroadcastRequestPayloadSchema = z.object({
+  /** Unique ID for this broadcast; used for dedup and cancel. */
+  queryId: z.string().min(1),
+  /**
+   * Time-to-live: number of relay hops. Set to 1 for single-relay fanout.
+   * Each relay decrements before forwarding; stops at 0.
+   */
+  ttl: z.number().int().min(0).max(8).default(1),
+  /** Maximum responses to collect before terminating. */
+  maxResponses: z.number().int().min(1).max(100).default(10),
+  /** Topic tag hashes to match. */
+  requestedTagHashes: z.array(z.string().min(1)).default([]),
+  /** Capabilities to match. */
+  requestedCapabilities: z.array(z.string().min(1)).default([]),
+  /** Sensitivity floor for the query. */
+  requestedSensitivity: z.enum(["public", "friends", "private"]).default("public"),
+  /** Owner issuing the broadcast. */
+  senderOwnerId: z.string().min(1),
+  /** Stop collecting after this many milliseconds. */
+  timeoutMs: z.number().int().min(1000).max(300_000).default(30_000),
+});
+
+/** `broadcast.response` — a peer's response to a broadcast.request. */
+export const BroadcastResponsePayloadSchema = z.object({
+  queryId: z.string().min(1),
+  responderOwnerId: z.string().min(1),
+  responderPeerId: z.string().min(1),
+  matchedTagHashes: z.array(z.string().min(1)).default([]),
+  matchedCapabilities: z.array(z.string().min(1)).default([]),
+  /** Set to true on the last response from this peer. */
+  done: z.boolean().default(false),
+});
+
+/** `broadcast.cancel` — cancel an in-progress broadcast. */
+export const BroadcastCancelPayloadSchema = z.object({
+  queryId: z.string().min(1),
+  reason: z.string().min(1).default("cancelled"),
 });
 
 /** `relay.peers.request` — ask a relay server for peers connected via this relay. */
@@ -669,6 +776,7 @@ export const MandateActionSchema = z.enum([
   "send.raw_files",
   "raw_contact_exchange",
   "device.sync",
+  "tool.call",
 ]);
 
 export const MandatePeerScopeSchema = z.enum(["self", "direct", "referred", "public"]);
@@ -843,6 +951,30 @@ export const TaskResultPayloadSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
+/** `task.feedback` — signed feedback from one peer about task outcome; used to update local reputation scores. */
+export const TaskFeedbackPayloadSchema = z.object({
+  taskId: z.string().min(1),
+  outcome: z.enum(["success", "failure"]),
+  latencyMs: z.number().int().min(0),
+  abuseFlags: z.array(z.enum(["none", "slow_response", "no_answer", "malicious", "offensive"])).default([]),
+  notes: z.string().min(1).max(500).optional(),
+});
+
+/** `official.credential` — a signed credential from a trusted anchor attesting to a peer's capabilities. */
+export const OfficialCredentialSchema = z.object({
+  version: z.literal("0.1"),
+  anchorId: z.string().min(1),
+  peerId: z.string().min(1),
+  ownerId: z.string().min(1),
+  capabilities: z.array(z.string().min(1)).default([]),
+  expiresAt: z.string().datetime(),
+  issuedAt: z.string().datetime(),
+});
+
+export const SignedOfficialCredentialSchema = OfficialCredentialSchema.extend({
+  signature: z.string().min(1),
+});
+
 export const ReportingModeSchema = z.enum(["instant", "brief", "silent", "approval"]);
 
 export const AutonomousReportingPolicySchema = z.object({
@@ -923,6 +1055,9 @@ export type BondChallengeResponsePayload = z.infer<typeof BondChallengeResponseP
 export type DiscoveryRequestPayload = z.infer<typeof DiscoveryRequestPayloadSchema>;
 export type DiscoveryMatch = z.infer<typeof DiscoveryMatchSchema>;
 export type DiscoveryResponsePayload = z.infer<typeof DiscoveryResponsePayloadSchema>;
+export type BroadcastRequestPayload = z.infer<typeof BroadcastRequestPayloadSchema>;
+export type BroadcastResponsePayload = z.infer<typeof BroadcastResponsePayloadSchema>;
+export type BroadcastCancelPayload = z.infer<typeof BroadcastCancelPayloadSchema>;
 export type RelayPeersRequestPayload = z.infer<typeof RelayPeersRequestPayloadSchema>;
 export type RelayPeerInfo = z.infer<typeof RelayPeerInfoSchema>;
 export type RelayPeersResponsePayload = z.infer<typeof RelayPeersResponsePayloadSchema>;
@@ -968,6 +1103,9 @@ export type UnsignedDataTransferVoucher = z.infer<typeof UnsignedDataTransferVou
 export type DataTransferVoucher = z.infer<typeof DataTransferVoucherSchema>;
 export type TaskHeartbeatPayload = z.infer<typeof TaskHeartbeatPayloadSchema>;
 export type TaskResultPayload = z.infer<typeof TaskResultPayloadSchema>;
+export type TaskFeedbackPayload = z.infer<typeof TaskFeedbackPayloadSchema>;
+export type OfficialCredential = z.infer<typeof OfficialCredentialSchema>;
+export type SignedOfficialCredential = z.infer<typeof SignedOfficialCredentialSchema>;
 export type ReportingMode = z.infer<typeof ReportingModeSchema>;
 export type AutonomousReportingPolicy = z.infer<typeof AutonomousReportingPolicySchema>;
 export type ReportEvidence = z.infer<typeof ReportEvidenceSchema>;
@@ -1080,6 +1218,18 @@ export function parseKnowledgeResponsePayload(input: unknown): KnowledgeResponse
   return KnowledgeResponsePayloadSchema.parse(input);
 }
 
+export function parseShareRequestPayload(input: unknown): ShareRequestPayload {
+  return ShareRequestPayloadSchema.parse(input);
+}
+
+export function parseSharePreviewPayload(input: unknown): SharePreviewPayload {
+  return SharePreviewPayloadSchema.parse(input);
+}
+
+export function parseShareAcceptPayload(input: unknown): ShareAcceptPayload {
+  return ShareAcceptPayloadSchema.parse(input);
+}
+
 export function parseBondRequestPayload(input: unknown): BondRequestPayload {
   return BondRequestPayloadSchema.parse(input);
 }
@@ -1098,6 +1248,18 @@ export function parseDiscoveryRequestPayload(input: unknown): DiscoveryRequestPa
 
 export function parseDiscoveryResponsePayload(input: unknown): DiscoveryResponsePayload {
   return DiscoveryResponsePayloadSchema.parse(input);
+}
+
+export function parseBroadcastRequestPayload(input: unknown): BroadcastRequestPayload {
+  return BroadcastRequestPayloadSchema.parse(input);
+}
+
+export function parseBroadcastResponsePayload(input: unknown): BroadcastResponsePayload {
+  return BroadcastResponsePayloadSchema.parse(input);
+}
+
+export function parseBroadcastCancelPayload(input: unknown): BroadcastCancelPayload {
+  return BroadcastCancelPayloadSchema.parse(input);
 }
 
 export function parseRelayPeersRequestPayload(input: unknown): RelayPeersRequestPayload {
@@ -1213,6 +1375,14 @@ export function parseTaskResultPayload(input: unknown): TaskResultPayload {
   return TaskResultPayloadSchema.parse(input);
 }
 
+export function parseTaskFeedbackPayload(input: unknown): TaskFeedbackPayload {
+  return TaskFeedbackPayloadSchema.parse(input);
+}
+
+export function parseOfficialCredentialPayload(input: unknown): SignedOfficialCredential {
+  return SignedOfficialCredentialSchema.parse(input);
+}
+
 export function parseReport(input: unknown): Report {
   return ReportSchema.parse(input);
 }
@@ -1282,6 +1452,60 @@ export function createKnowledgeResponsePayload(input: CreateKnowledgeResponsePay
   });
 }
 
+export interface CreateSharePreviewPayloadInput {
+  inReplyTo: string;
+  previewText: string;
+  sensitivity?: Sensitivity;
+  requiresApproval?: boolean;
+  contentHint?: string;
+  isFileTransfer?: boolean;
+  refused?: boolean;
+  refusalReason?: string;
+}
+
+export function createSharePreviewPayload(input: CreateSharePreviewPayloadInput): SharePreviewPayload {
+  return SharePreviewPayloadSchema.parse({
+    inReplyTo: input.inReplyTo,
+    previewText: input.previewText,
+    sensitivity: input.sensitivity ?? "public",
+    requiresApproval: input.requiresApproval ?? false,
+    contentHint: input.contentHint,
+    isFileTransfer: input.isFileTransfer ?? false,
+    refused: input.refused ?? false,
+    refusalReason: input.refusalReason,
+  });
+}
+
+export interface CreateShareRequestPayloadInput {
+  requestType: "knowledge" | "file";
+  query?: string;
+  relativePath?: string;
+  requestedSensitivity?: Sensitivity;
+  correlationId?: string;
+}
+
+export function createShareRequestPayload(input: CreateShareRequestPayloadInput): ShareRequestPayload {
+  return ShareRequestPayloadSchema.parse({
+    requestType: input.requestType,
+    query: input.query,
+    relativePath: input.relativePath,
+    requestedSensitivity: input.requestedSensitivity ?? "public",
+    correlationId: input.correlationId,
+  });
+}
+
+export interface CreateShareAcceptPayloadInput {
+  inReplyTo: string;
+  accept?: boolean;
+}
+
+export function createShareAcceptPayload(input: CreateShareAcceptPayloadInput): ShareAcceptPayload {
+  return ShareAcceptPayloadSchema.parse({
+    inReplyTo: input.inReplyTo,
+    accept: input.accept ?? true,
+  });
+}
+
 export interface CreateBondRequestPayloadInput {
   requesterOwnerId: string;
   requesterDisplayName?: string;
@@ -1347,6 +1571,7 @@ export interface CreateDiscoveryRequestPayloadInput {
   requestedTagHashes?: string[];
   requestedCapabilities?: string[];
   maxResults?: number;
+  requestedSensitivity?: "public" | "friends" | "private";
 }
 
 export function createDiscoveryRequestPayload(
@@ -1357,6 +1582,7 @@ export function createDiscoveryRequestPayload(
     requestedTagHashes: input.requestedTagHashes ?? [],
     requestedCapabilities: input.requestedCapabilities ?? [],
     maxResults: input.maxResults,
+    requestedSensitivity: input.requestedSensitivity,
   });
 }
 
@@ -1375,6 +1601,62 @@ export function createDiscoveryResponsePayload(
     responderOwnerId: input.responderOwnerId,
     matches: input.matches ?? [],
     truncated: input.truncated ?? false,
+  });
+}
+
+export interface CreateBroadcastRequestPayloadInput {
+  queryId: string;
+  ttl?: number;
+  maxResponses?: number;
+  requestedTagHashes?: string[];
+  requestedCapabilities?: string[];
+  requestedSensitivity?: "public" | "friends" | "private";
+  senderOwnerId: string;
+  timeoutMs?: number;
+}
+
+export function createBroadcastRequestPayload(input: CreateBroadcastRequestPayloadInput): BroadcastRequestPayload {
+  return BroadcastRequestPayloadSchema.parse({
+    queryId: input.queryId,
+    ttl: input.ttl ?? 1,
+    maxResponses: input.maxResponses ?? 10,
+    requestedTagHashes: input.requestedTagHashes ?? [],
+    requestedCapabilities: input.requestedCapabilities ?? [],
+    requestedSensitivity: input.requestedSensitivity ?? "public",
+    senderOwnerId: input.senderOwnerId,
+    timeoutMs: input.timeoutMs ?? 30_000,
+  });
+}
+
+export interface CreateBroadcastResponsePayloadInput {
+  queryId: string;
+  responderOwnerId: string;
+  responderPeerId: string;
+  matchedTagHashes?: string[];
+  matchedCapabilities?: string[];
+  done?: boolean;
+}
+
+export function createBroadcastResponsePayload(input: CreateBroadcastResponsePayloadInput): BroadcastResponsePayload {
+  return BroadcastResponsePayloadSchema.parse({
+    queryId: input.queryId,
+    responderOwnerId: input.responderOwnerId,
+    responderPeerId: input.responderPeerId,
+    matchedTagHashes: input.matchedTagHashes ?? [],
+    matchedCapabilities: input.matchedCapabilities ?? [],
+    done: input.done ?? false,
+  });
+}
+
+export interface CreateBroadcastCancelPayloadInput {
+  queryId: string;
+  reason?: string;
+}
+
+export function createBroadcastCancelPayload(input: CreateBroadcastCancelPayloadInput): BroadcastCancelPayload {
+  return BroadcastCancelPayloadSchema.parse({
+    queryId: input.queryId,
+    reason: input.reason ?? "cancelled",
   });
 }
 
@@ -1905,6 +2187,21 @@ export function createTaskResultPayload(
     artifacts: input.artifacts ?? [],
     createdAt: input.createdAt ?? new Date().toISOString(),
   });
+}
+
+export function createTaskFeedbackPayload(
+  input: Omit<TaskFeedbackPayload, "abuseFlags"> & Partial<Pick<TaskFeedbackPayload, "abuseFlags">>,
+): TaskFeedbackPayload {
+  return TaskFeedbackPayloadSchema.parse({
+    ...input,
+    abuseFlags: input.abuseFlags ?? [],
+  });
+}
+
+export function createSignedOfficialCredential(
+  input: Omit<SignedOfficialCredential, never>,
+): SignedOfficialCredential {
+  return SignedOfficialCredentialSchema.parse(input);
 }
 
 export function createAutonomousReportingPolicy(

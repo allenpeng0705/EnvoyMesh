@@ -81,6 +81,7 @@ describe("handleInboundDiscoveryIntent", () => {
       correlationId: "disc-corr-1",
       taskStore,
       trustStore,
+      anonymousDiscoveryMode: "contacts-only",
     });
 
     expect(result.ok).toBe(true);
@@ -110,11 +111,12 @@ describe("handleInboundDiscoveryIntent", () => {
       correlationId: undefined,
       taskStore,
       trustStore,
+      anonymousDiscoveryMode: "contacts-only",
     });
 
     expect(result).toEqual({
       ok: false,
-      reason: "discovery.request requires referred/direct trust (got public)",
+      reason: "anonymous discovery mode is contacts-only; public callers are rejected",
     });
   });
 });

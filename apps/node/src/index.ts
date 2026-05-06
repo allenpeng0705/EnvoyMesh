@@ -7,11 +7,14 @@ import {
   createAuditEvent,
   createHumanProfileStore,
   createLocalChatLogStore,
+  createChatDraftStore,
   createLocalPeerDirectoryStore,
   createLocalTaskStore,
   createLocalTrustStore,
+  createLocalPeerReputationStore,
   createRelayStateStore,
   createTaskRuntimeStateStore,
+  createCapabilityManifestStore,
   deriveCorrelationIdFromEnvelope,
   loadOrCreateNodeProfile,
   RELAY_MANAGER_SNAPSHOT_PROTOCOL,
@@ -20,6 +23,7 @@ import {
   type PersistedRelayBookEntry,
   type PersistedRelaySummaryEntry,
   type RelayManagerRuntimeState,
+  type ChatDraftStore,
 } from "@envoymesh/local-store";
 import {
   createSignedDataTransferVoucher,
@@ -69,6 +73,7 @@ import {
   createSystemPingPayload,
   createSystemSignalPayload,
   createKnowledgeResponsePayload,
+  createSharePreviewPayload,
   createUnsignedEnvelope,
   createBondAcceptPayload,
   createHumanProfilePayload,
@@ -97,13 +102,18 @@ import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
-import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates } from "./discovery-inbound.js";
+import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates, processDiscoveryQueue } from "./discovery-inbound.js";
+import { handleInboundBroadcastRequest, handleInboundBroadcastResponse } from "./broadcast-inbound.js";
+import { handleInboundTaskFeedback, handleInboundOfficialCredential } from "./reputation-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
+import { handleInboundShareRequest, handleInboundShareAccept } from "./share-inbound.js";
+import { generateChatDraft } from "./chat-draft-inbound.js";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
 import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
 import { installEnvoyDataTransferReceiver } from "./data-transfer-inbound.js";
 import { createNodeService, NodeServiceImpl } from "./node-service-impl.js";
+import { createNodeConfigStore } from "./node-config-store.js";
 import { WsServer } from "./ws-server.js";
 import type { ModelProviderConfig } from "@envoymesh/api";
 import { evaluateInboundEnvelopeRolePolicy } from "./role-policy.js";
@@ -133,6 +143,10 @@ const trustStore = createLocalTrustStore(args.profileDir);
 const peerDirectoryStore = createLocalPeerDirectoryStore(args.profileDir);
 const humanProfileStore = createHumanProfileStore(args.profileDir);
 const chatLogStore = createLocalChatLogStore(args.profileDir);
+const chatDraftStore = createChatDraftStore(args.profileDir);
+const capabilityManifestStore = createCapabilityManifestStore(args.profileDir);
+const reputationStore = createLocalPeerReputationStore(args.profileDir);
+const nodeConfigStore = createNodeConfigStore(args.profileDir);
 const discoverySeedStore = createDiscoverySeedStore(args.profileDir);
 const taskRuntimeStore = createTaskRuntimeStateStore(args.profileDir);
 const resolvedArgs = await resolveNodeArgsTargetsByOwnerId(args, peerDirectoryStore);
@@ -148,6 +162,9 @@ try {
 
 // Model provider configuration — loaded from persisted config after nodeService is created
 let currentModelProviders: ModelProviderConfig = { mode: "mock" };
+
+// Chat assist setting — loaded from persisted config after nodeService is created
+let currentChatAssistEnabled = false;
 
 // WebSocket server reference for event emission
 let wsServerForEvents: WsServer | null = null;
@@ -220,6 +237,7 @@ let relayLookupTimer: ReturnType<typeof setTimeout> | undefined;
 let relaySummaryTimer: ReturnType<typeof setTimeout> | undefined;
 let relayManagerSnapshotTimer: ReturnType<typeof setTimeout> | undefined;
 let relayHealthTimer: ReturnType<typeof setTimeout> | undefined;
+let discoveryQueueTimer: ReturnType<typeof setTimeout> | undefined;
 const processStartedAt = Date.now();
 
 if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length === 0) {
@@ -548,7 +566,97 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     return;
   }
 
+  // ── share.preview / share.request ──────────────────────────────────────────
+  if (envelope.intent === "share.request") {
+    const capabilityManifest = await capabilityManifestStore.loadManifest();
+    const share = await handleInboundShareRequest({
+      envelope,
+      remotePeerId,
+      receivedAt,
+      correlationId,
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      profile,
+      vaultIndex,
+      modelProviders: currentModelProviders,
+      capabilityManifest,
+    });
+    if (!share.ok) {
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.rejected",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "rejected",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "deny",
+          summary: `Rejected share.request: ${share.reason}.`,
+          createdAt: envelope.createdAt,
+        }),
+      );
+      console.warn(`[rejected share.request] ${share.reason}`);
+      return;
+    }
+
+    // Policy allowed — send signed share.preview back to sender
+    const unsignedResponse = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      recipientPeerId: envelope.senderPeerId,
+      intent: "share.preview",
+      payload: createSharePreviewPayload(share.responsePayload),
+      correlationId,
+    });
+    const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
+    const latencyMs = await mesh.send(remotePeerId, signedResponse);
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "message.sent",
+        intent: signedResponse.intent,
+        messageId: signedResponse.messageId,
+        correlationId: signedResponse.correlationId,
+        remotePeerId,
+        direction: "outbound",
+        latencyMs,
+        protocol: ENVOY_MESSAGE_PROTOCOL,
+        outcome: "record",
+        summary: `Sent share.preview for ${envelope.messageId}.`,
+        createdAt: signedResponse.createdAt,
+      }),
+    );
+    return;
+  }
+
+  if (envelope.intent === "share.accept") {
+    const share = await handleInboundShareAccept({
+      envelope,
+      remotePeerId,
+      receivedAt,
+      correlationId,
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      profile,
+      vaultIndex,
+    });
+    if (!share.ok) {
+      console.warn(`[share.accept denied] ${share.reason}`);
+      return;
+    }
+    // share.accept acknowledged — caller (the requester) will now receive the actual
+    // content via knowledge.response or initiate /envoymesh/data/0.1.0 transfer.
+    // The share.accept is recorded in the share event log for audit correlation.
+    console.log(`[share.accept] peer=${remotePeerId} proceeding with content share`);
+    return;
+  }
+
   if (envelope.intent === "discovery.request" || envelope.intent === "discovery.response") {
+    const capabilityManifest = await capabilityManifestStore.loadManifest();
+    const nodeConfig = await nodeConfigStore.load();
     const discovery = await handleInboundDiscoveryIntent({
       envelope,
       profile,
@@ -557,6 +665,10 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       correlationId,
       taskStore,
       trustStore,
+      capabilityManifest,
+      anonymousDiscoveryMode: nodeConfig?.anonymousDiscoveryMode ?? "off",
+      anonymousIntentAllowlist: nodeConfig?.anonymousIntentAllowlist,
+      anonymousSensitivityCeiling: nodeConfig?.anonymousSensitivityCeiling ?? "public",
     });
     if (!discovery.ok) {
       await taskStore.appendAuditEvent(
@@ -624,6 +736,87 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         outcome: "record",
         summary: `Sent discovery.response with ${discovery.responsePayload.matches.length} match(es).`,
       });
+    }
+    return;
+  }
+
+  if (envelope.intent === "broadcast.request" || envelope.intent === "broadcast.response") {
+    const capabilityManifest = await capabilityManifestStore.loadManifest();
+    const nodeConfig = await nodeConfigStore.load();
+
+    if (envelope.intent === "broadcast.request") {
+      const result = await handleInboundBroadcastRequest({
+        envelope,
+        profile,
+        remotePeerId,
+        receivedAt,
+        correlationId,
+        taskStore,
+        trustStore,
+        capabilityManifest,
+        anonymousDiscoveryMode: nodeConfig?.anonymousDiscoveryMode ?? "off",
+        anonymousSensitivityCeiling: nodeConfig?.anonymousSensitivityCeiling ?? "public",
+      });
+      if (!result.ok) {
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "message.rejected",
+            intent: envelope.intent,
+            messageId: envelope.messageId,
+            correlationId,
+            remotePeerId,
+            direction: "inbound",
+            verificationStatus: "rejected",
+            latencyMs: Date.now() - receivedAt,
+            outcome: "deny",
+            summary: `Rejected broadcast.request: ${result.reason}.`,
+            createdAt: envelope.createdAt,
+          }),
+        );
+        console.warn(`[rejected broadcast] ${envelope.intent}: ${result.reason}`);
+        return;
+      }
+
+      // Send broadcast.response directly to the broadcaster (peer-to-peer, not via relay)
+      if (result.responsePayload) {
+        const { signUnsignedEnvelope: signEnv } = await import("@envoymesh/identity");
+        const { createUnsignedEnvelope: createUnsignedEnv } = await import("@envoymesh/protocol");
+        const unsignedResponse = createUnsignedEnv({
+          senderPeerId: derivePeerId(profile.device.publicKeyPem),
+          senderPublicKey: profile.device.publicKeyPem,
+          recipientPeerId: envelope.senderPeerId,
+          intent: "broadcast.response",
+          payload: result.responsePayload,
+          correlationId,
+        });
+        const signedResponse = signEnv(unsignedResponse, profile.device.privateKeyPem);
+        const latencyMs = await mesh.send(envelope.senderPeerId, signedResponse);
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "message.sent",
+            intent: signedResponse.intent,
+            messageId: signedResponse.messageId,
+            correlationId: signedResponse.correlationId,
+            remotePeerId: envelope.senderPeerId,
+            direction: "outbound",
+            latencyMs,
+            protocol: ENVOY_MESSAGE_PROTOCOL,
+            outcome: "record",
+            summary: `Sent broadcast.response for queryId=${result.responsePayload.queryId}.`,
+            createdAt: signedResponse.createdAt,
+          }),
+        );
+      }
+      return;
+    }
+
+    // broadcast.response — record inbound response
+    const responseResult = await handleInboundBroadcastResponse({
+      envelope,
+      taskStore,
+    });
+    if (!responseResult.ok) {
+      console.warn(`[rejected broadcast.response] ${responseResult.reason}`);
     }
     return;
   }
@@ -751,6 +944,36 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     return;
   }
 
+  // task.feedback — signed reputation feedback from peers about task outcomes
+  if (envelope.intent === "task.feedback") {
+    const nodeConfig = await nodeConfigStore.load();
+    const result = await handleInboundTaskFeedback({
+      envelope,
+      taskStore,
+      reputationStore,
+      peerDirectoryStore,
+    });
+    if (!result.ok) {
+      console.warn(`[rejected task.feedback] ${result.reason}`);
+    }
+    return;
+  }
+
+  // official.credential — verify signed credentials from trusted anchors
+  if (envelope.intent === "official.credential") {
+    const nodeConfig = await nodeConfigStore.load();
+    const trustAnchorPublicKeys = nodeConfig?.trustAnchorPublicKeys ?? {};
+    const result = await handleInboundOfficialCredential({
+      envelope,
+      taskStore,
+      trustAnchorPublicKeys,
+    });
+    if (!result.ok) {
+      console.warn(`[rejected official.credential] ${result.reason}`);
+    }
+    return;
+  }
+
   if (envelope.intent === "chat.message") {
     const payload = parseChatMessagePayload(envelope.payload);
     const senderTrustForReach = await trustStore.getTrustRecord(payload.senderOwnerId);
@@ -815,6 +1038,34 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         console.warn(`[chat.message] chat log append failed:`, err),
       );
       wsServerForEvents.emitEvent("chat:message", chatMsg);
+
+      // Generate a chat draft if chat assist is enabled (async, fire-and-forget)
+      if (currentChatAssistEnabled) {
+        const senderDisplayName = senderTrust?.displayName ?? payload.senderOwnerId;
+        void generateChatDraft({
+          envelope,
+          senderOwnerId: payload.senderOwnerId,
+          senderDisplayName,
+          chatText: payload.text,
+          remotePeerId,
+          receivedAt,
+          correlationId,
+          taskStore,
+          trustStore,
+          peerDirectoryStore,
+          profile,
+          draftStore: chatDraftStore,
+          modelProviders: currentModelProviders,
+          chatAssistEnabled: currentChatAssistEnabled,
+        }).then((result) => {
+          if (result.ok && wsServerForEvents) {
+            wsServerForEvents.emitEvent("chat:draft", {
+              threadPeerOwnerId: payload.senderOwnerId,
+              draft: result.draft,
+            });
+          }
+        }).catch((err) => console.warn(`[chat-draft] generation failed:`, err));
+      }
     }
     return;
   }
@@ -1243,7 +1494,9 @@ if (nodeService instanceof NodeServiceImpl) {
   // Load model provider config from persisted config
   const nodeConfig = await nodeService.getNodeConfig();
   currentModelProviders = nodeConfig.modelProviders;
+  currentChatAssistEnabled = nodeConfig.chatAssistEnabled;
   console.log(`[model] provider mode=${currentModelProviders.mode}`);
+  console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
 }
 
 // Start WebSocket server for app connections
@@ -1255,6 +1508,7 @@ wsServerForEvents = wsServer;
 nodeService.on("hello:request", (data) => wsServer.emitEvent("hello:request", data));
 nodeService.on("hello:response", (data) => wsServer.emitEvent("hello:response", data));
 nodeService.on("chat:message", (data) => wsServer.emitEvent("chat:message", data));
+nodeService.on("chat:draft", (data) => wsServer.emitEvent("chat:draft", data));
 nodeService.on("bond:established", (data) => {
   console.log(`[index.ts] nodeService bond:established event fired, peerOwnerId=${data.peerOwnerId}`);
   wsServer.emitEvent("bond:established", data);
@@ -1412,6 +1666,35 @@ if (args.enableRelay || args.enableRelayServer) {
   }
   scheduleRelayManagerSnapshot();
 }
+
+// ─── Discovery Queue Processor (Phase 8I: low-priority queue for anonymous discovery) ───
+
+const DISCOVERY_QUEUE_INTERVAL_MS = 5_000; // Process queue every 5 seconds
+
+async function runDiscoveryQueueCycle(): Promise<void> {
+  const meshInterface = {
+    send: async (peerId: string, envelope: ReturnType<typeof createUnsignedEnvelope>) => {
+      return await mesh.send(peerId, envelope as Parameters<typeof mesh.send>[1]);
+    },
+  };
+  const processed = await processDiscoveryQueue(meshInterface);
+  if (processed.length > 0) {
+    console.log(`[discovery-queue] processed ${processed.length} queued request(s)`);
+  }
+}
+
+function scheduleDiscoveryQueue(): void {
+  discoveryQueueTimer = setTimeout(() => {
+    void runDiscoveryQueueCycle()
+      .catch((error) => {
+        console.error("[discovery-queue] error:", error);
+      })
+      .finally(() => scheduleDiscoveryQueue());
+  }, DISCOVERY_QUEUE_INTERVAL_MS);
+}
+
+scheduleDiscoveryQueue();
+
 setTimeout(() => {
   void taskStore.appendAuditEvent(
     createAuditEvent({

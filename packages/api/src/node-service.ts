@@ -8,7 +8,7 @@ import type {
   DeviceIdentity,
   OwnerIdentity,
 } from "@envoymesh/identity";
-import type { NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult } from "./ws-protocol.js";
+import type { NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult, ChatDraft, CapabilityManifest, UpdateCapabilityManifestParams } from "./ws-protocol.js";
 
 // ============================================
 // Identity Types
@@ -205,6 +205,7 @@ export interface NodeServiceEvents {
 
   // Chat events
   "chat:message": ChatMessage;
+  "chat:draft": { threadPeerOwnerId: string; draft: ChatDraft };
   "chat:delivered": { messageId: string; timestamp: string };
   "chat:read": { messageId: string; timestamp: string };
 
@@ -325,6 +326,20 @@ export interface NodeService {
    * @param topic The topic string to stop advertising
    */
   stopAdvertiseTopic(topic: string): Promise<void>;
+
+  // ----- Capability Manifest -----
+
+  /**
+   * Get the current capability manifest.
+   * Returns undefined if no manifest has been created yet.
+   */
+  getCapabilityManifest(): Promise<CapabilityManifest | undefined>;
+
+  /**
+   * Update the capability manifest.
+   * Creates a default manifest if none exists.
+   */
+  updateCapabilityManifest(params: UpdateCapabilityManifestParams): Promise<CapabilityManifest>;
 
   // ----- File Sharing -----
 
