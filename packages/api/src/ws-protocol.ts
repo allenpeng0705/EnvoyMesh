@@ -190,8 +190,8 @@ export interface AutonomousPolicy {
   autoSendChat: boolean;
 }
 
-/** Model provider mode: mock (no external calls), ollama (local), litellm (local/cloud), or disabled. */
-export type ModelProviderMode = "mock" | "ollama" | "litellm" | "disabled";
+/** Model provider mode: mock (no external calls), ollama (local), litellm (local/cloud), openai-compatible (OpenAI Chat Completions API format), anthropic-compatible (Anthropic Messages API format), or disabled. */
+export type ModelProviderMode = "mock" | "ollama" | "litellm" | "openai-compatible" | "anthropic-compatible" | "disabled";
 
 export interface ModelProviderConfig {
   /** Provider mode. When "disabled", no model calls are made. Default: "mock". */
@@ -200,7 +200,7 @@ export interface ModelProviderConfig {
   endpoint?: string;
   /** Model name for ollama (e.g. "llama3.1") or litellm (e.g. "gpt-4o-mini"). */
   modelName?: string;
-  /** Optional API key for litellm providers. */
+  /** Optional API key for litellm, openai, and anthropic providers. */
   apiKey?: string;
   /** If true, cloud providers require explicit owner approval per request. Default: true. */
   requireApprovalForCloud?: boolean;

@@ -107,6 +107,24 @@ export interface CreateOllamaLiteLlmProviderInput {
   policy?: Partial<ModelProviderPolicy>;
 }
 
+export interface CreateOpenAiProviderInput {
+  providerId?: string;
+  modelName?: string;
+  apiKey?: string;
+  endpoint?: string;
+  policy?: Partial<ModelProviderPolicy>;
+  fetchImplementation?: typeof fetch;
+}
+
+export interface CreateAnthropicProviderInput {
+  providerId?: string;
+  modelName?: string;
+  apiKey?: string;
+  endpoint?: string;
+  policy?: Partial<ModelProviderPolicy>;
+  fetchImplementation?: typeof fetch;
+}
+
 interface LiteLlmChatCompletionResponse {
   choices?: Array<{
     message?: {
@@ -258,6 +276,121 @@ export function createOllamaLiteLlmProvider(
       ...input.policy,
     },
   });
+}
+
+export function createOpenAiProvider(input: CreateOpenAiProviderInput = {}): ModelProvider {
+  const providerId = input.providerId ?? "cloud.openai";
+  const modelName = input.modelName ?? "gpt-4o-mini";
+  const endpoint = input.endpoint ?? "https://api.openai.com/v1";
+
+  const policy: ModelProviderPolicy = {
+    providerId,
+    providerType: "cloud",
+    enabled: true,
+    allowedSensitivity: ["public"],
+    allowedTaskTypes: ["*"],
+    requiresOwnerApproval: true,
+    ...input.policy,
+  };
+
+  const fetchImpl = input.fetchImplementation ?? fetch;
+
+  return {
+    policy,
+    async complete(request) {
+      const response = await fetchImpl(`${endpoint.replace(/\/$/, "")}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(input.apiKey ? { authorization: `Bearer ${input.apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model: modelName,
+          messages: [{ role: "user", content: request.prompt }],
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        throw new Error(`OpenAI provider ${providerId} failed: HTTP ${response.status} ${errorText}`);
+      }
+
+      const body = (await response.json()) as LiteLlmChatCompletionResponse;
+      const text = body.choices?.[0]?.message?.content;
+      if (!text) {
+        throw new Error(`OpenAI provider ${providerId} returned no text`);
+      }
+
+      return {
+        providerId,
+        modelName,
+        text,
+        usage: {
+          inputTokens: body.usage?.prompt_tokens,
+          outputTokens: body.usage?.completion_tokens,
+          estimatedCost: request.estimatedCost ?? body.usage?.total_cost,
+        },
+      };
+    },
+  };
+}
+
+export function createAnthropicProvider(input: CreateAnthropicProviderInput = {}): ModelProvider {
+  const providerId = input.providerId ?? "cloud.anthropic";
+  const modelName = input.modelName ?? "claude-sonnet-4-20250514";
+  const endpoint = input.endpoint ?? "https://api.anthropic.com";
+
+  const policy: ModelProviderPolicy = {
+    providerId,
+    providerType: "cloud",
+    enabled: true,
+    allowedSensitivity: ["public"],
+    allowedTaskTypes: ["*"],
+    requiresOwnerApproval: true,
+    ...input.policy,
+  };
+
+  const fetchImpl = input.fetchImplementation ?? fetch;
+
+  return {
+    policy,
+    async complete(request) {
+      const response = await fetchImpl(`${endpoint.replace(/\/$/, "")}/v1/messages`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "anthropic-version": "2023-06-01",
+          ...(input.apiKey ? { "x-api-key": input.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          model: modelName,
+          messages: [{ role: "user", content: request.prompt }],
+          max_tokens: 1024,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        throw new Error(`Anthropic provider ${providerId} failed: HTTP ${response.status} ${errorText}`);
+      }
+
+      const body = (await response.json()) as { content?: Array<{ text?: string }>; usage?: { input_tokens?: number; output_tokens?: number } };
+      const text = body.content?.[0]?.text;
+      if (!text) {
+        throw new Error(`Anthropic provider ${providerId} returned no text`);
+      }
+
+      return {
+        providerId,
+        modelName,
+        text,
+        usage: {
+          inputTokens: body.usage?.input_tokens,
+          outputTokens: body.usage?.output_tokens,
+        },
+      };
+    },
+  };
 }
 
 export function evaluateModelProvider(

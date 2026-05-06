@@ -11,6 +11,8 @@ import {
   createMockModelProvider,
   createOllamaLiteLlmProvider,
   createLiteLlmProvider,
+  createOpenAiProvider,
+  createAnthropicProvider,
   routeModelRequest,
   type ModelProvider,
 } from "@envoymesh/models";
@@ -51,6 +53,24 @@ function buildModelProviders(config: ModelProviderConfig): ModelProvider[] {
           modelName: config.modelName ?? "gpt-4o-mini",
           endpoint: config.endpoint ?? "http://127.0.0.1:4000/v1",
           apiKey: config.apiKey,
+        }),
+      ];
+    case "openai-compatible":
+      return [
+        createOpenAiProvider({
+          providerId: "cloud.openai-compatible",
+          modelName: config.modelName ?? "gpt-4o-mini",
+          apiKey: config.apiKey,
+          endpoint: config.endpoint ?? "https://api.openai.com/v1",
+        }),
+      ];
+    case "anthropic-compatible":
+      return [
+        createAnthropicProvider({
+          providerId: "cloud.anthropic-compatible",
+          modelName: config.modelName ?? "claude-sonnet-4-20250514",
+          apiKey: config.apiKey,
+          endpoint: config.endpoint ?? "https://api.anthropic.com",
         }),
       ];
     default:
