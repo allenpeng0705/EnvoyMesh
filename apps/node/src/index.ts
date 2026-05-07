@@ -108,6 +108,8 @@ import { handleInboundTaskFeedback, handleInboundOfficialCredential } from "./re
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { handleInboundShareRequest, handleInboundShareAccept } from "./share-inbound.js";
 import { generateChatDraft } from "./chat-draft-inbound.js";
+import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
+import type { AutonomousDomain, AutonomousPolicy } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
 import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
@@ -165,6 +167,10 @@ let currentModelProviders: ModelProviderConfig = { mode: "mock" };
 
 // Chat assist setting — loaded from persisted config after nodeService is created
 let currentChatAssistEnabled = false;
+
+// Autonomous policy configuration — loaded from persisted config after nodeService is created
+let currentAutonomousKillSwitch = false;
+let currentAutonomousPolicies: readonly AutonomousPolicy[] = [];
 
 // WebSocket server reference for event emission
 let wsServerForEvents: WsServer | null = null;
@@ -1144,8 +1150,10 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       wsServerForEvents.emitEvent("chat:message", chatMsg);
 
       // Generate a chat draft if chat assist is enabled (async, fire-and-forget)
+      console.log(`[chat] currentChatAssistEnabled=${currentChatAssistEnabled}, bondLevel=${senderTrust?.level}`);
       if (currentChatAssistEnabled) {
         const senderDisplayName = senderTrust?.displayName ?? payload.senderOwnerId;
+        console.log(`[chat] generating draft for message from ${senderDisplayName}: ${payload.text}`);
         void generateChatDraft({
           envelope,
           senderOwnerId: payload.senderOwnerId,
@@ -1161,12 +1169,51 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           draftStore: chatDraftStore,
           modelProviders: currentModelProviders,
           chatAssistEnabled: currentChatAssistEnabled,
-        }).then((result) => {
+        }).then(async (result) => {
           if (result.ok && wsServerForEvents) {
+            // Always emit draft event for UI to display
             wsServerForEvents.emitEvent("chat:draft", {
               threadPeerOwnerId: payload.senderOwnerId,
               draft: result.draft,
             });
+
+            // Check autonomous policy for auto-send
+            const bondLevel = senderTrust?.level ?? "public";
+            const requestedSensitivity = bondLevel === "direct" || bondLevel === "referred" ? "friends" : "public";
+
+            const autoSendPolicy = evaluateAutonomousPolicy({
+              autonomousKillSwitch: currentAutonomousKillSwitch,
+              autonomousPolicies: currentAutonomousPolicies,
+              domain: "social",
+              action: "auto_send_chat",
+              requestedSensitivity,
+            });
+
+            // Audit the autonomous decision
+            await auditAutonomousDecision({
+              taskStore,
+              intent: "chat.message",
+              messageId: envelope.messageId,
+              correlationId,
+              remotePeerId,
+              receivedAt,
+              domain: "social",
+              action: "auto_send_chat",
+              allowed: autoSendPolicy.allowed,
+              reason: autoSendPolicy.allowed ? undefined : autoSendPolicy.reason,
+              createdAt: new Date().toISOString(),
+            });
+
+            // Auto-send the chat response if policy allows
+            if (autoSendPolicy.allowed && nodeService instanceof NodeServiceImpl) {
+              console.log(`[chat] auto-sending AI response to ${payload.senderOwnerId}: ${result.draft.text}`);
+              try {
+                await nodeService.sendChat(payload.senderOwnerId, result.draft.text);
+                console.log(`[chat] auto-send success`);
+              } catch (err) {
+                console.warn(`[chat] auto-send failed:`, err);
+              }
+            }
           }
         }).catch((err) => console.warn(`[chat-draft] generation failed:`, err));
       }
@@ -1645,8 +1692,12 @@ if (nodeService instanceof NodeServiceImpl) {
   currentModelProviders = nodeConfig.modelProviders;
   // Environment variable can override chat assist setting
   currentChatAssistEnabled = process.env.ENVOY_CHAT_ASSIST_ENABLED === "true" ? true : nodeConfig.chatAssistEnabled;
+  // Load autonomous policy config
+  currentAutonomousKillSwitch = nodeConfig.autonomousKillSwitch ?? false;
+  currentAutonomousPolicies = nodeConfig.autonomousPolicies ?? [];
   console.log(`[model] provider mode=${currentModelProviders.mode}`);
   console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
+  console.log(`[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`);
 }
 
 // Start WebSocket server for app connections

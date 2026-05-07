@@ -172,6 +172,8 @@ export async function generateChatDraft(input: {
 
   // Build model providers
   const providers = buildModelProviders(modelProviders);
+  console.log(`[chat-draft] ENVOY_MODEL_MODE=${process.env.ENVOY_MODEL_MODE}`);
+  console.log(`[chat-draft] providers.length=${providers.length}`);
   if (providers.length === 0) {
     return { ok: false, reason: "no model providers available" };
   }
