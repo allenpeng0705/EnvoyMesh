@@ -122,7 +122,10 @@ export class CapabilityRegistry {
   }
 
   query(payload: RendezvousQueryPayload, maxResults?: number): RendezvousMatch[] {
-    this.cleanExpired();
+    // NOTE: cleanExpired() is NOT called here on every query.
+    // The periodic sweeper (startSweeper) handles expiry cleanup.
+    // Calling cleanExpired() on every query caused O(n) iteration over all
+    // entries, which would degrade performance on a busy relay.
 
     let candidatePeerIds: Set<string>;
 

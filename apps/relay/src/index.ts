@@ -65,6 +65,60 @@ let capabilityRegistry: CapabilityRegistry | undefined;
 let rendezvousSweeper: ReturnType<typeof setInterval> | undefined;
 let statsInterval: ReturnType<typeof setInterval> | undefined;
 
+// Rate limiting: track registrations per peer to prevent abuse
+const peerRegistrationCount = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
+const RATE_LIMIT_MAX_REGISTRATIONS = 10; // max registrations per peer per window
+
+function checkRegistrationRateLimit(peerId: string): boolean {
+  const now = Date.now();
+  const entry = peerRegistrationCount.get(peerId);
+
+  if (!entry || entry.resetAt < now) {
+    peerRegistrationCount.set(peerId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+
+  if (entry.count >= RATE_LIMIT_MAX_REGISTRATIONS) {
+    return false;
+  }
+
+  entry.count++;
+  return true;
+}
+
+// Periodic cleanup of rate limit map (remove expired entries)
+setInterval(() => {
+  const now = Date.now();
+  for (const [peerId, entry] of peerRegistrationCount.entries()) {
+    if (entry.resetAt < now) {
+      peerRegistrationCount.delete(peerId);
+    }
+  }
+}, 60_000);
+
+// Message deduplication: prevent processing the same message ID twice
+// (relay doesn't verify signatures, so this is the only guard against duplicates)
+const seenMessageIds = new Set<string>();
+const MAX_SEEN_MESSAGE_IDS = 100_000;
+
+function isMessageSeen(messageId: string): boolean {
+  return seenMessageIds.has(messageId);
+}
+
+function markMessageSeen(messageId: string): void {
+  // Evict oldest entries if we're at capacity
+  if (seenMessageIds.size >= MAX_SEEN_MESSAGE_IDS) {
+    // Remove first 10% to avoid frequent eviction
+    const entries = Array.from(seenMessageIds);
+    entries.length = Math.floor(MAX_SEEN_MESSAGE_IDS * 0.1);
+    for (const id of entries) {
+      seenMessageIds.delete(id);
+    }
+  }
+  seenMessageIds.add(messageId);
+}
+
 async function shutdown(): Promise<void> {
   console.log("[relay] Shutting down...");
   if (rendezvousSweeper) {
@@ -179,6 +233,14 @@ try {
       if (intent === "rendezvous.register") {
         try {
           const payload = parseRendezvousRegisterPayload(message.envelope.payload);
+
+          // Rate limit check
+          if (!checkRegistrationRateLimit(message.envelope.senderPeerId)) {
+            console.warn(`[relay] rendezvous.register rate limited for ${message.envelope.senderPeerId}`);
+            await ack([]);
+            return;
+          }
+
           if (capabilityRegistry) {
             capabilityRegistry.register(payload);
           }
@@ -214,6 +276,12 @@ try {
     // Handle broadcast.request — fan out to all connected peers (except sender)
     if (intent === "broadcast.request") {
       try {
+        // Deduplicate: skip if we've already processed this message ID
+        if (isMessageSeen(message.envelope.messageId)) {
+          return;
+        }
+        markMessageSeen(message.envelope.messageId);
+
         const payload = parseBroadcastRequestPayload(message.envelope.payload);
         const connectedPeers = mesh.getConnectedRelayPeerIds();
         const senderPeerId = message.envelope.senderPeerId;
@@ -238,14 +306,21 @@ try {
           payload: { ...payload, ttl: nextTtl },
         } as EnvoyEnvelope;
 
+        // Fan out with bounded concurrency
         let delivered = 0;
-        for (const targetPeer of targets) {
-          try {
-            await mesh.send(targetPeer, forwardEnvelope);
-            delivered++;
-          } catch (err) {
-            console.warn(`[relay] broadcast.request fanout to ${targetPeer}: ${err}`);
-          }
+        const CONCURRENCY_LIMIT = 50;
+        for (let i = 0; i < targets.length; i += CONCURRENCY_LIMIT) {
+          const batch = targets.slice(i, i + CONCURRENCY_LIMIT);
+          await Promise.allSettled(
+            batch.map(async (targetPeer) => {
+              try {
+                await mesh.send(targetPeer, forwardEnvelope);
+                delivered++;
+              } catch (err) {
+                console.warn(`[relay] broadcast.request fanout to ${targetPeer}: ${err}`);
+              }
+            }),
+          );
         }
         console.log(
           `[relay] broadcast.request queryId=${payload.queryId} ttl=${payload.ttl}→${nextTtl}: delivered to ${delivered}/${targets.length} peers`,
@@ -273,6 +348,12 @@ try {
     // Recipients verify using the ORIGINAL sender's signature (relay is just transport).
     if (intent === "task.cancel") {
       try {
+        // Deduplicate: skip if we've already processed this message ID
+        if (isMessageSeen(message.envelope.messageId)) {
+          return;
+        }
+        markMessageSeen(message.envelope.messageId);
+
         const payload = parseTaskCancelPayload(message.envelope.payload);
         const hops = payload.relayRemainingHops ?? 0;
         const allForwards = payload.forwardToPeerIds ?? [];
@@ -292,20 +373,27 @@ try {
         // Decrement hops for next relay, but keep original payload intact for signature
         const nextHops = hops - 1;
 
+        // Fan out with bounded concurrency
         let delivered = 0;
-        for (const targetPeer of forwards) {
-          try {
-            const forwardEnvelope: EnvoyEnvelope = {
-              ...message.envelope,
-              messageId: randomUUID(),
-              recipientPeerId: targetPeer,
-              // Keep original payload — signature must remain valid!
-            } as EnvoyEnvelope;
-            await mesh.send(targetPeer, forwardEnvelope);
-            delivered++;
-          } catch (err) {
-            console.warn(`[relay] task.cancel fanout to ${targetPeer}: ${err}`);
-          }
+        const CONCURRENCY_LIMIT = 50;
+        for (let i = 0; i < forwards.length; i += CONCURRENCY_LIMIT) {
+          const batch = forwards.slice(i, i + CONCURRENCY_LIMIT);
+          await Promise.allSettled(
+            batch.map(async (targetPeer) => {
+              try {
+                const forwardEnvelope: EnvoyEnvelope = {
+                  ...message.envelope,
+                  messageId: randomUUID(),
+                  recipientPeerId: targetPeer,
+                  // Keep original payload — signature must remain valid!
+                } as EnvoyEnvelope;
+                await mesh.send(targetPeer, forwardEnvelope);
+                delivered++;
+              } catch (err) {
+                console.warn(`[relay] task.cancel fanout to ${targetPeer}: ${err}`);
+              }
+            }),
+          );
         }
         console.log(
           `[relay] task.cancel taskId=${payload.taskId} hops=${hops}→${nextHops}: delivered to ${delivered}/${forwards.length} peers`,
