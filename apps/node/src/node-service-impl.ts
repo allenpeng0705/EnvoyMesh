@@ -1338,7 +1338,7 @@ class NodeServiceImpl implements NodeService {
       ...(config.bootstrapPeers && { bootstrapPeers: config.bootstrapPeers }),
       ...(config.bootstrapPresets && { bootstrapPresets: config.bootstrapPresets }),
       ...(config.configuredRelays && { configuredRelays: config.configuredRelays }),
-      ...(config.modelProviders && { modelProviders: config.modelProviders }),
+      ...(config.modelProviders && { modelProviders: { ...current.modelProviders, ...config.modelProviders } }),
       ...(config.chatAssistEnabled !== undefined && { chatAssistEnabled: config.chatAssistEnabled }),
       ...(config.anonymousDiscoveryMode !== undefined && { anonymousDiscoveryMode: config.anonymousDiscoveryMode }),
       ...(config.anonymousIntentAllowlist !== undefined && { anonymousIntentAllowlist: config.anonymousIntentAllowlist }),
