@@ -1353,6 +1353,11 @@ class NodeServiceImpl implements NodeService {
       status: this._nodeStatus,
       peerId: this._mesh?.peerId,
     });
+    // Emit config:updated so listeners can refresh cached config values
+    this.emit("config:updated", {
+      autonomousKillSwitch: updated.autonomousKillSwitch ?? false,
+      autonomousPolicies: updated.autonomousPolicies ?? [],
+    });
   }
 
   async listRelays(): Promise<RelayConfig[]> {

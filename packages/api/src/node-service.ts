@@ -8,7 +8,7 @@ import type {
   DeviceIdentity,
   OwnerIdentity,
 } from "@envoymesh/identity";
-import type { NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult, ChatDraft, CapabilityManifest, UpdateCapabilityManifestParams } from "./ws-protocol.js";
+import type { NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult, ChatDraft, CapabilityManifest, UpdateCapabilityManifestParams, AutonomousPolicy } from "./ws-protocol.js";
 
 // ============================================
 // Identity Types
@@ -223,6 +223,9 @@ export interface NodeServiceEvents {
   "node:online": { peerId: string; multiaddrs: string[] };
   "node:offline": { peerId: string };
   "node:status": { status: NodeStatus; peerId?: string };
+
+  // Config events
+  "config:updated": { autonomousKillSwitch: boolean; autonomousPolicies: readonly AutonomousPolicy[] };
 }
 
 export interface NodeService {

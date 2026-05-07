@@ -1714,6 +1714,12 @@ nodeService.on("bond:established", (data) => {
   console.log(`[index.ts] nodeService bond:established event fired, peerOwnerId=${data.peerOwnerId}`);
   wsServer.emitEvent("bond:established", data);
 });
+nodeService.on("config:updated", (data) => {
+  console.log(`[index.ts] config:updated event fired, autonomous policies updated`);
+  currentAutonomousKillSwitch = data.autonomousKillSwitch;
+  currentAutonomousPolicies = data.autonomousPolicies;
+  console.log(`[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`);
+});
 if (args.configPath) {
   console.log(`Config file: ${args.configPath}`);
 }
