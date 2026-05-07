@@ -1643,7 +1643,8 @@ if (nodeService instanceof NodeServiceImpl) {
   // Load model provider config from persisted config
   const nodeConfig = await nodeService.getNodeConfig();
   currentModelProviders = nodeConfig.modelProviders;
-  currentChatAssistEnabled = nodeConfig.chatAssistEnabled;
+  // Environment variable can override chat assist setting
+  currentChatAssistEnabled = process.env.ENVOY_CHAT_ASSIST_ENABLED === "true" ? true : nodeConfig.chatAssistEnabled;
   console.log(`[model] provider mode=${currentModelProviders.mode}`);
   console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
 }
