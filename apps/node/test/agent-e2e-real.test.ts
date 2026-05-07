@@ -9,10 +9,13 @@
  */
 
 import { derivePeerId, generateDeviceIdentity, generateOwnerIdentity, signUnsignedEnvelope, verifyEnvelope } from "@envoymesh/identity";
-import { createChatMessagePayload, createUnsignedEnvelope, parseChatMessagePayload } from "@envoymesh/protocol";
+import { createChatMessagePayload, createKnowledgeQueryPayload, createUnsignedEnvelope, parseChatMessagePayload } from "@envoymesh/protocol";
 import { describe, expect, it, afterEach } from "vitest";
 import { EnvoyMesh } from "@envoymesh/network";
-import type { NodeProfile } from "@envoymesh/local-store";
+import { createLocalTaskStore, createLocalTrustStore, createLocalPeerDirectoryStore, type NodeProfile } from "@envoymesh/local-store";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const REAL_RELAY_ADDR = "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
 
@@ -209,6 +212,91 @@ describe("E2E: Heartbeat through relay", () => {
 
     console.log(`[test] Owner received intents: ${ownerReceived.join(", ")}`);
   }, 20000);
+});
+
+// ============================================================================
+// E2E: Minimax LLM Integration
+// ============================================================================
+
+describe("E2E: Minimax LLM integration", () => {
+  it("knowledge.query returns response from Minimax", async () => {
+    const { handleInboundKnowledgeQuery } = await import("../src/knowledge-query-inbound.js");
+    const { createKnowledgeQueryPayload, createUnsignedEnvelope, parseKnowledgeQueryPayload, parseKnowledgeResponsePayload } = await import("@envoymesh/protocol");
+    const { derivePeerId } = await import("@envoymesh/identity");
+
+    // Create test profile
+    const profile = testProfile();
+
+    // Create task store for audit logging
+    const taskDir = await mkdtemp(join(tmpdir(), "envoymesh-llm-test-"));
+    const taskStore = createLocalTaskStore(taskDir);
+    const trustStore = createLocalTrustStore(taskDir);
+    const peerDirectoryStore = createLocalPeerDirectoryStore(taskDir);
+
+    // Set up direct trust relationship so the query is allowed
+    await trustStore.setTrustRecord({
+      peerOwnerId: profile.owner.ownerId,
+      level: "direct",
+      displayName: "Test peer",
+    });
+
+    // Add sender to peer directory so owner ID can be resolved
+    await peerDirectoryStore.ensurePeerFromInboundChat({
+      ownerId: profile.owner.ownerId,
+      peerId: derivePeerId(profile.device.publicKeyPem),
+    });
+
+    // Minimax model config
+    const modelProviders = {
+      mode: "openai-compatible" as const,
+      endpoint: "https://api.minimaxi.com/v1",
+      modelName: "MiniMax-M2.7",
+      apiKey: "sk-cp-R5p531wCAML-lD0wwo16l8ZOV5efMns7HutktV5yrF5FIOuKw5ESVC7qGoqXFWIGmLaCubGHQSaXjhj1n0MZfVuXQa6Du3Ll9Op3anwTCqoEvXUsUci0iYw",
+    };
+
+    // Create knowledge query
+    const kqPayload = createKnowledgeQueryPayload({
+      query: "What is 2+2? Answer briefly.",
+      maxTokens: 100,
+      temperature: 0.7,
+    });
+
+    const envelope = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "agent",
+      intent: "knowledge.query",
+      payload: kqPayload,
+      createdAt: new Date().toISOString(),
+      messageId: `kq-minimax-${Date.now()}`,
+    });
+
+    console.log(`[test] Sending knowledge.query to Minimax...`);
+
+    const result = await handleInboundKnowledgeQuery({
+      envelope,
+      remotePeerId: "test-peer",
+      receivedAt: Date.now(),
+      correlationId: envelope.messageId,
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      profile,
+      vaultIndex: null,
+      modelProviders,
+    });
+
+    console.log(`[test] Result:`, result.ok ? "success" : `failed: ${result.reason}`);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      console.log(`[test] Response:`, result.responsePayload.answer.slice(0, 200));
+      expect(result.responsePayload.answer.length).toBeGreaterThan(0);
+    }
+
+    // Cleanup
+    await rm(taskDir, { recursive: true, force: true });
+  }, 30000);
 });
 
 // ============================================================================
