@@ -350,6 +350,7 @@ class NodeServiceImpl implements NodeService {
    * Runs continuously in background with periodic retries (like system topics)
    */
   private _advertiseInterestsTimer?: ReturnType<typeof setInterval>;
+  private _advertiseInterestsStartupTimeout?: ReturnType<typeof setTimeout>;
 
   private async _advertiseInterests(interests: string[], username: string): Promise<void> {
     // Stop any existing advertising timer
@@ -1616,7 +1617,7 @@ class NodeServiceImpl implements NodeService {
 
       // Wait longer for DHT to connect to bootstrap peers and stabilize routing table
       // DHT provide operations require the routing table to be populated
-      setTimeout(() => {
+      this._advertiseInterestsStartupTimeout = setTimeout(() => {
         void this._advertiseInterestsIfPublic();
       }, 15000);
     } catch (error) {
@@ -1829,6 +1830,11 @@ class NodeServiceImpl implements NodeService {
       if (this._advertiseInterestsTimer) {
         clearInterval(this._advertiseInterestsTimer);
         this._advertiseInterestsTimer = undefined;
+      }
+      // Clear startup timeout
+      if (this._advertiseInterestsStartupTimeout) {
+        clearTimeout(this._advertiseInterestsStartupTimeout);
+        this._advertiseInterestsStartupTimeout = undefined;
       }
     } catch (error) {
       console.error("[node-service] Error stopping mesh:", error);
