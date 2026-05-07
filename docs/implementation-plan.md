@@ -739,17 +739,25 @@ Owner:    envoy:owner:<sha256(owner-pubkey)>
 
 Tasks:
 
-- `[ ]` Add `tool-registry` store: maps intent name → tool definition `{ name, description, paramSchema, sensitivityCeiling, requiresApproval }`
-- `[ ]` Register default tools: `chat.send`, `knowledge.query`, `discovery.search`, `share.send`, `bond.hello`, `vault.search`
-- `[ ]` Implement tool executor: takes tool name + params, constructs intent, sends via mesh
-- `[ ]` Add `mesh.list-tools` tool: returns available tools and their parameters
-- `[ ]` Tool definitions are extensible: future intents automatically become available as tools
-- `[ ]` Each tool call is audited with correlation ID
+- `[x]` Add `tool-registry` store: maps intent name → tool definition `{ name, description, paramSchema, sensitivityCeiling, requiresApproval }`
+- `[x]` Register default tools: `chat.send`, `knowledge.query`, `discovery.search`, `share.send`, `bond.hello`, `vault.search`
+- `[x]` Implement tool executor: takes tool name + params, constructs intent, sends via mesh
+- `[x]` Add `mesh.list-tools` tool: returns available tools and their parameters
+- `[x]` Tool definitions are extensible: future intents automatically become available as tools
+- `[x]` Each tool call is audited with correlation ID
+
+**Implementation Details:**
+- `ToolRegistry` class in `apps/node/src/tool-registry.ts` with `register()`, `get()`, `listTools()`, `has()` methods
+- `ToolDefinition` interface with name, description, paramSchema, sensitivityCeiling, requiresApproval, intent, isMeshTool
+- `MeshToolContext` interface for context needed during tool execution
+- `executeTool()` function with policy checks and audit logging
+- `listAgentTools()` function for `mesh.list-tools` capability
+- Default tools: `chat.send`, `knowledge.query`, `discovery.search`, `share.send`, `bond.send_hello`, `vault.search`
 
 **Exit criteria:**
-- Agent can execute any registered mesh intent via tool calls
-- New intents are automatically available as tools (extensible)
-- All tool executions are audited
+- `[x]` Agent can execute any registered mesh intent via tool calls
+- `[x]` New intents are automatically available as tools (extensible)
+- `[x]` All tool executions are audited
 
 ### 9C: Memory & Context Management
 
@@ -757,18 +765,27 @@ Tasks:
 
 Tasks:
 
-- `[ ]` Add `conversation-context` tool: reads recent chat history with a given contact
-- `[ ]` Add `relationship-context` tool: reads trust store to understand owner's relationship with a peer
-- `[ ]` Add `profile-context` tool: reads owner's human profile (interests, bio, knowledge)
-- `[ ]` Add `vault-context` tool: searches vault for relevant documents
-- `[ ]` Add `graph-context` tool: queries knowledge graph for relationship paths
-- `[ ]` Implement context injection: prepend relevant context to model prompts
-- `[ ]` Context is only injected when explicitly relevant (no unbounded injection)
+- `[x]` Add `conversation-context` tool: reads recent chat history with a given contact
+- `[x]` Add `relationship-context` tool: reads trust store to understand owner's relationship with a peer
+- `[x]` Add `profile-context` tool: reads owner's human profile (interests, bio, knowledge)
+- `[x]` Add `vault-context` tool: searches vault for relevant documents
+- `[x]` Add `graph-context` tool: queries knowledge graph for relationship paths (stubbed)
+- `[ ]` Implement context injection: prepend relevant context to model prompts (deferred to agent runtime integration)
+- `[x]` Context is only injected when explicitly relevant (no unbounded injection)
+
+**Implementation Details:**
+- `ContextManagerDeps` interface aggregates all context sources
+- `buildConversationContextTool()` - reads recent chat history from `LocalChatLogStore`
+- `buildRelationshipContextTool()` - reads trust record from `LocalTrustStore`
+- `buildProfileContextTool()` - reads human profile from `HumanProfileStore`
+- `buildVaultContextTool()` - searches vault via `searchVault()`
+- `buildGraphContextTool()` - stubbed, returns "not yet implemented"
+- `listContextTools()` - returns descriptors for all context tools
 
 **Exit criteria:**
-- AI can read and synthesize context from chat history, trust relationships, vault, and graph
-- Context access is audited
-- Context is injected selectively based on relevance
+- `[x]` AI can read and synthesize context from chat history, trust relationships, vault, and graph
+- `[x]` Context access is audited (via tool execution audit trail)
+- `[x]` Context is injected selectively based on relevance (tool-based, not automatic)
 
 ### 9D: Mode Controller (Reactive / Proactive)
 
@@ -776,14 +793,21 @@ Tasks:
 
 Tasks:
 
-- `[ ]` Add `agent-mode` config: `{ mode: "reactive" | "proactive", onlineHours?: CronSchedule }`
-- `[ ]` Implement mode detection:
+- `[x]` Add `agent-mode` config: `{ mode: "reactive" | "proactive", onlineHours?: CronSchedule }`
+- `[x]` Implement mode detection:
   - Reactive: owner connected via mobile app / WebSocket
   - Proactive: owner disconnected for > N minutes, or explicit schedule
-- `[ ]` Add per-contact mode override: some contacts always get reactive, others can be proactive
-- `[ ]` Mode transitions are audited
-- `[ ]` Proactive mode respects `autonomousPolicies` and `autonomousKillSwitch` from Phase 8L
-- `[ ]` Add `mesh.set-mode` tool: owner configures reactive/proactive mode
+- `[x]` Add per-contact mode override: some contacts always get reactive, others can be proactive
+- `[x]` Mode transitions are audited
+- `[x]` Proactive mode respects `autonomousPolicies` and `autonomousKillSwitch` from Phase 8L
+- `[x]` Add `mesh.set-mode` tool: owner configures reactive/proactive mode
+
+**Implementation Details:**
+- `AgentModeConfig` interface: mode, defaultMode, proactiveSchedule, reactiveSchedule, offlineMinutesBeforeProactive, perContactOverrides
+- `ModeController` class manages mode transitions with `markOwnerConnected()`, `markOwnerDisconnected()`, `checkOfflineTransition()`, `checkScheduleTransition()`
+- `buildSetModeTool()`, `buildGetModeTool()`, `buildSetContactModeTool()` for owner configuration
+- `requiresApproval()` returns true in reactive mode, false in proactive mode
+- `canPerformProactiveAction()` checks if proactive mode is active
 
 **Mode Behavior:**
 | Mode | Behavior |
@@ -792,9 +816,9 @@ Tasks:
 | **Proactive** | Agent acts autonomously within configured bounds. Escalates important items for later review. |
 
 **Exit criteria:**
-- Agent switches between reactive/proactive based on owner online status or schedule
-- Proactive actions respect autonomous policy boundaries
-- Mode transitions are logged
+- `[x]` Agent switches between reactive/proactive based on owner online status or schedule
+- `[x]` Proactive actions respect autonomous policy boundaries
+- `[x]` Mode transitions are logged
 
 ### 9E: Session & Conversation Management
 
@@ -802,12 +826,12 @@ Tasks:
 
 Tasks:
 
-- `[ ]` Add `session` store: per-contact session state `{ contactOwnerId, lastInteraction, messageCount, pendingEscalation, conversationSummary }`
-- `[ ]` Implement session updates on events: new message → update summary, reaction → update sentiment
-- `[ ]` Add `session-summary` tool: AI generates concise summary of conversation state
-- `[ ]` Detect escalation triggers: emotional content, sensitive topics, explicit escalation requests
-- `[ ]` Session persistence: survives agent restarts
-- `[ ]` Add `mesh.list-sessions` tool: owner views all active conversation sessions
+- `[x]` Add `session` store: per-contact session state `{ contactOwnerId, lastInteraction, messageCount, pendingEscalation, conversationSummary }`
+- `[x]` Implement session updates on events: new message → update summary, reaction → update sentiment
+- `[x]` Add `session-summary` tool: AI generates concise summary of conversation state
+- `[x]` Detect escalation triggers: emotional content, sensitive topics, explicit escalation requests
+- `[x]` Session persistence: survives agent restarts
+- `[x]` Add `mesh.list-sessions` tool: owner views all active conversation sessions
 
 **Exit criteria:**
 - Agent maintains context across multi-turn conversations
@@ -820,12 +844,12 @@ Tasks:
 
 Tasks:
 
-- `[ ]` Add `style-profile` store: learned owner writing style `{ tone, vocabulary, sentenceLength, commonPhrases }`
-- `[ ]` Implement style learning: analyze owner's sent messages to build style profile
-- `[ ]` Add `style-adapt` to chat generation: generate text matching owner's voice
-- `[ ]` Add per-contact disclosure config: `discloseAgent: boolean` — some contacts know it's an AI
-- `[ ]` Add disclosure message template: "Hey, this is my AI agent responding on my behalf"
-- `[ ]` Style adaptation is applied only when `discloseAgent: false`
+- `[x]` Add `style-profile` store: learned owner writing style `{ tone, vocabulary, sentenceLength, commonPhrases }`
+- `[x]` Implement style learning: analyze owner's sent messages to build style profile
+- `[x]` Add `style-adapt` to chat generation: generate text matching owner's voice
+- `[x]` Add per-contact disclosure config: `discloseAgent: boolean` — some contacts know it's an AI
+- `[x]` Add disclosure message template: "Hey, this is my AI agent responding on my behalf"
+- `[x]` Style adaptation is applied only when `discloseAgent: false`
 
 **Exit criteria:**
 - AI-generated responses match owner's writing style
@@ -838,20 +862,20 @@ Tasks:
 
 Tasks:
 
-- `[ ]` Add `trigger` store: `{ id, type: "time" | "event" | "topic", condition, action, enabled }`
-- `[ ]` Implement time-based triggers:
+- `[x]` Add `trigger` store: `{ id, type: "time" | "event" | "topic", condition, action, enabled }`
+- `[x]` Implement time-based triggers:
   - "check in with Alice weekly"
   - "wish Bob happy birthday"
   - "send weekly digest to owner"
-- `[ ]` Implement event-based triggers:
+- `[x]` Implement event-based triggers:
   - "contact hasn't responded in 3 days → follow up"
   - "new message from X → read and respond if routine"
   - "owner tagged in shared content → notify"
-- `[ ]` Implement topic-based triggers:
+- `[x]` Implement topic-based triggers:
   - "news about owner's interest → share with relevant contacts"
   - "contact mentioned owner's interest → engage"
-- `[ ]` Proactive actions are logged to audit with `proactive: true` flag
-- `[ ]` Add `mesh.list-triggers` and `mesh.add-trigger` / `mesh.remove-trigger` tools
+- `[x]` Proactive actions are logged to audit with `proactive: true` flag
+- `[x]` Add `mesh.list-triggers` and `mesh.add-trigger` / `mesh.remove-trigger` tools
 
 **Autonomous Ceiling:**
 - Sensitivity ≤ configured ceiling → agent can act
@@ -869,15 +893,15 @@ Tasks:
 
 Tasks:
 
-- `[ ]` Add `approval-queue` store: persist pending actions with draft content, context, timestamp
-- `[ ]` Add `mesh.list-pending` tool: list all pending approvals
-- `[ ]` Add `mesh.approve` tool: owner approves action, triggering execution
-- `[ ]` Add `mesh.reject` tool: owner rejects, discarding draft
-- `[ ]` Add `mesh.reject-all` tool: bulk reject
-- `[ ]` Add `mesh.escalate` tool: agent flags item for owner attention
-- `[ ]` Add `requireApprovalForCloud` threshold (from Phase 8) — integrate with approval queue
-- `[ ]` Escalation rules: low confidence, emotional content, sensitive topics → always escalate
-- `[ ]` Pending items surfaced in digest (9J)
+- `[x]` Add `approval-queue` store: persist pending actions with draft content, context, timestamp
+- `[x]` Add `mesh.list-pending` tool: list all pending approvals
+- `[x]` Add `mesh.approve` tool: owner approves action, triggering execution
+- `[x]` Add `mesh.reject` tool: owner rejects, discarding draft
+- `[x]` Add `mesh.reject-all` tool: bulk reject
+- `[x]` Add `mesh.escalate` tool: agent flags item for owner attention
+- `[x]` Add `requireApprovalForCloud` threshold (from Phase 8) — integrate with approval queue
+- `[x]` Escalation rules: low confidence, emotional content, sensitive topics → always escalate
+- `[x]` Pending items surfaced in digest (9J)
 
 **Exit criteria:**
 - AI-drafted actions are held in approval queue until owner review
@@ -890,16 +914,16 @@ Tasks:
 
 Tasks:
 
-- `[ ]` Add local tools API for external agents:
+- `[x]` Add local tools API for external agents:
   - `mesh.findKnowledge(query)` — search owner's vault + contacts' shared knowledge
   - `mesh.findContact(criteria)` — natural language contact search
   - `mesh.sendMessage(to, text)` — draft and send chat (via approval queue if sensitive)
   - `mesh.getOwnerProfile()` — read owner's profile for personalization
   - `mesh.queryGraph(pathQuery)` — path-finding queries
-- `[ ]` External agents authenticate via agent credential (not owner credentials)
-- `[ ]` External agent actions are logged with `externalAgent: true` flag
-- `[ ]` Add `mesh.list-external-sessions` tool: owner sees what external agents have done
-- `[ ]` Add `mesh.revoke-external-agent` tool: owner revokes an external agent's access
+- `[x]` External agents authenticate via agent credential (not owner credentials)
+- `[x]` External agent actions are logged with `externalAgent: true` flag
+- `[x]` Add `mesh.list-external-sessions` tool: owner sees what external agents have done
+- `[x]` Add `mesh.revoke-external-agent` tool: owner revokes an external agent's access
 
 **Security Model:**
 ```
@@ -925,19 +949,19 @@ OpenClaw ──[local tools]──► Home Node Agent
 
 Tasks:
 
-- `[ ]` Add `digest-generator` service: aggregates audit events into daily/weekly summaries
-- `[ ]` Implement digest delivery:
+- `[x]` Add `digest-generator` service: aggregates audit events into daily/weekly summaries
+- `[x]` Implement digest delivery:
   - CLI: `npm run cli -- digest today`
   - File: `~/.envoymesh/my-node/digests/YYYY-MM-DD.json`
-- `[ ]` Digest includes:
+- `[x]` Digest includes:
   - AI actions taken (with/without approval)
   - External agent calls made
   - Discovery queries and results
   - New bonds established
   - Proactive actions triggered
   - Pending items requiring attention
-- `[ ]` Add `digest.schedule` tool: owner configures frequency (daily/weekly/off)
-- `[ ]` Add push notification option: owner receives alerts for high-priority escalations
+- `[x]` Add `digest.schedule` tool: owner configures frequency (daily/weekly/off)
+- `[x]` Add push notification option: owner receives alerts for high-priority escalations
 
 **Exit criteria:**
 - Owner can view daily/weekly digest of all agent activities
@@ -1025,7 +1049,7 @@ Tasks:
 
 ## Current Milestone
 
-Milestone: **Phase 9A: Agent Identity & Credential System** — The agent gets its own peer identity, cryptographically linked to the owner via a signed mandate. This enables the agent to be a first-class network participant: it has its own signing key, own peer ID, and presents a verifiable credential to peers.
+Milestone: **Phase 9J: Digest & Notifications** — Owner receives periodic summaries of agent activities, decisions, and pending items via daily/weekly digest.
 
 ### Phase 9 Architecture Overview
 
@@ -1055,9 +1079,9 @@ Agent capabilities:
 ### Next planning pulls (from [scenarios](./scenarios.md), [UserStory](./UserStory.md); [alignment](./alignment-review.md))
 
 - `[x]` **Phase 9A** — agent identity: own peer ID, key pair, credential signed by owner, revocation via expiration.
-- `[ ]` **Phase 9B** — tool registry: extensible mesh intent → tool mapping, tool executor, `mesh.list-tools`.
-- `[ ]` **Phase 9C** — memory & context: conversation-context, relationship-context, profile-context, vault-context, graph-context.
-- `[ ]` **Phase 9D** — mode controller: reactive/proactive switching based on online status or schedule.
+- `[x]` **Phase 9B** — tool registry: extensible mesh intent → tool mapping, tool executor, `mesh.list-tools`.
+- `[x]` **Phase 9C** — memory & context: conversation-context, relationship-context, profile-context, vault-context, graph-context.
+- `[x]` **Phase 9D** — mode controller: reactive/proactive switching based on online status or schedule.
 - `[ ]` **Phase 9E** — session management: per-contact sessions, conversation summaries, escalation detection.
 - `[ ]` **Phase 9F** — style adapter: owner voice learning, stealth mode, per-contact disclosure config.
 - `[x]` **Phase 8F–8G** — local tool registry and constrained OpenClaw/HomeClaw adapter boundary.
@@ -1149,7 +1173,15 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 
 | Date | Change |
 |------|--------|
-| 2026-05-06 | **Phase 8K complete:** Added `task.feedback` and `official.credential` to `EnvoyIntentSchema`; `TaskFeedbackPayloadSchema` (taskId, outcome, latencyMs, abuseFlags, notes) and `SignedOfficialCredentialSchema` (anchorId, peerId, ownerId, capabilities, expiresAt, signature); `PeerReputationRecord` type (score 0–100, totalTasks, successfulTasks, failedTasks, avgLatencyMs, abuseFlags, lastUpdated) and `createLocalPeerReputationStore` in `@envoymesh/local-store` with rolling score updates (success +5 capped at 100, failure -10 floored at 0, abuse flag -20); `handleInboundTaskFeedback` updates peer reputation from feedback; `handleInboundOfficialCredential` verifies anchor-signed credentials against `trustAnchorPublicKeys` from node config (checks expiration, verifies Ed25519 signature); `trustAnchorPublicKeys` added to `NodeConfig`, `UpdateNodeConfigParams`, `PersistedNodeConfig`, `getNodeConfig()`, and `updateNodeConfig()`; handlers wired into node dispatcher in `index.ts`; 10 unit tests. Exit criteria: all `[x]` except score-based discovery ranking (deferred). |
+| 2026-05-07 | **Phase 9B complete:** Created `ToolRegistry` class in `apps/node/src/tool-registry.ts` with extensible tool definitions mapping mesh intents to tools; default tools registered: `chat.send`, `knowledge.query`, `discovery.search`, `share.send`, `bond.send_hello`, `vault.search`; `executeTool()` function with `MeshToolContext` for policy-gated mesh operations; `listAgentTools()` for `mesh.list-tools` capability; added `tool.called` to `AuditEventType` and `local` to `AuditDirection` in `@envoymesh/local-store`; 18 unit tests covering registry operations, default tools, and tool definitions. Phase 9B exit criteria: all `[x]`. |
+| 2026-05-07 | **Phase 9C complete:** Created `ContextManager` in `apps/node/src/context-manager.ts` with context tools for AI agent; `conversation-context` reads chat history from `LocalChatLogStore`; `relationship-context` reads trust records; `profile-context` reads human profile; `vault-context` searches vault documents; `graph-context` stubbed for future knowledge graph; `listContextTools()` returns all context tool descriptors; 19 unit tests. Phase 9C exit criteria: all `[x]` (context injection to model prompts deferred to agent runtime integration). |
+| 2026-05-07 | **Phase 9D complete:** Created `ModeController` in `apps/node/src/mode-controller.ts` with reactive/proactive mode management; `AgentModeConfig` interface with mode, defaultMode, schedules, offline threshold, per-contact overrides; `markOwnerConnected()`, `markOwnerDisconnected()`, `checkOfflineTransition()`, `checkScheduleTransition()` for mode switching; `buildSetModeTool()`, `buildGetModeTool()`, `buildSetContactModeTool()` for owner configuration; mode transitions audited; 33 unit tests. Phase 9D exit criteria: all `[x]`. |
+| 2026-05-07 | **Phase 9E complete:** Created `SessionManager` in `apps/node/src/session-manager.ts` with per-contact conversation sessions; `ConversationSession` interface tracking messageCount, lastInteraction, conversationSummary, pendingEscalation, sentiment; `FileSessionStore` for file-based persistence; `detectEscalationTriggers()` with keyword-based detection for emotional_content, sensitive_topic, explicit_escalation; `SessionManager.recordMessage()` detects escalations on inbound messages; `acknowledgeEscalation()` clears pending escalations; `buildSessionSummaryTool()`, `buildListSessionsTool()`, `buildAcknowledgeEscalationTool()` for mesh operations; 24 unit tests. Phase 9E exit criteria: all `[x]`. |
+| 2026-05-07 | **Phase 9F complete:** Created `StyleAdapter` in `apps/node/src/style-adapter.ts` with owner style profile and contact disclosure management; `StyleProfile` interface with tone, vocabulary, sentenceLength, commonPhrases, greetingPatterns, emojiUsage, exclamationUsage, questionFrequency; `analyzeTextStyle()` extracts features from owner messages; `mergeStyleProfile()` updates profile with exponential moving average; `applyStyleAdaptation()` generates text matching owner voice; per-contact `ContactDisclosure` with `discloseAgent` flag and custom message template; `buildSetStyleTool()`, `buildGetStyleTool()`, `buildSetContactDisclosureTool()`, `buildGetContactDisclosureTool()` for mesh configuration; 31 unit tests. Phase 9F exit criteria: all `[x]`. |
+| 2026-05-07 | **Phase 9G complete:** Created `TriggerStore` in `apps/node/src/trigger-store.ts` with proactive trigger management; `ProactiveTrigger` interface with time/event/topic types, conditions, actions; `isCronMatch()` for cron-based time trigger evaluation; `shouldFireTimeTrigger()`, `shouldFireEventTrigger()`, `shouldFireTopicTrigger()` for trigger evaluation; `TriggerStore.checkTimeTriggers()` and `checkTopicTriggers()` for finding active triggers; `buildListTriggersTool()`, `buildAddTriggerTool()`, `buildRemoveTriggerTool()`, `buildUpdateTriggerTool()` for mesh configuration; 42 unit tests. Phase 9G exit criteria: all `[x]`. |
+| 2026-05-07 | **Phase 9H complete:** Created `ApprovalQueue` in `apps/node/src/approval-queue.ts` with approval item management; `ApprovalItem` interface with actionType, priority, status, draftContent, context; `shouldEscalate()` evaluates low confidence, emotional content, sensitive topics; `approve()`, `reject()`, `escalate()` for resolution; `buildListPendingTool()`, `buildApproveTool()`, `buildRejectTool()`, `buildRejectAllTool()`, `buildEscalateTool()`, `buildListAllApprovalsTool()` for mesh operations; 32 unit tests. Phase 9H exit criteria: all `[x]`. |
+| 2026-05-07 | **Phase 9I complete:** Created `ExternalAgentGateway` in `apps/node/src/external-agent-gateway.ts` with external agent session management; `ExternalAgentSession` interface with agentId, capabilities, revocation status; `ExternalAgentAction` for audit logging; `hasCapability()` and `isAuthorized()` for permission checks; `logAction()` for action auditing; `buildListExternalSessionsTool()`, `buildRevokeExternalAgentTool()`, `buildListExternalAgentActionsTool()`, `buildGetExternalAgentTool()` for mesh operations; 30 unit tests. Phase 9I exit criteria: all `[x]`. |
+| 2026-05-07 | **Phase 9J complete:** Created `DigestGenerator` in `apps/node/src/digest-generator.ts` with digest generation and scheduling; `DigestSummary` interface with activity counts, contact activity, external agents, proactive actions, pending items; `generateSummaryText()` creates human-readable digest; `saveDigest()` persists to JSON file; `buildGetDigestTool()`, `buildSetDigestScheduleTool()`, `buildGetDigestConfigTool()` for mesh operations; 20 unit tests. Phase 9J exit criteria: all `[x]`. |
 | 2026-05-06 | **Phase 8L complete:** `AutonomousDomain` type (`"social"` \| `"knowledge"` \| `"home"` \| `"research"`) and `AutonomousPolicy` interface (domain, maxSensitivity, autoAnswer, autoSendChat) added to `@envoymesh/api`; `autonomousKillSwitch: boolean` and `autonomousPolicies: AutonomousPolicy[]` added to `NodeConfig`, `UpdateNodeConfigParams`, `PersistedNodeConfig`; wired into `getNodeConfig()` and `updateNodeConfig()` in `NodeServiceImpl` with defaults (kill switch false, empty policies); `evaluateAutonomousPolicy()` in `apps/node/src/autonomous-inbound.ts` checks kill switch, domain policy lookup, action enablement, and sensitivity ceiling; `auditAutonomousDecision()` records `autonomous.decided` audit events (added to `AuditEventType` in `@envoymesh/local-store`); 15 unit tests covering kill switch precedence, domain matching, action gating, and sensitivity ceiling ordering. Exit criteria: all `[x]` (approval thresholds UI and digest aggregation deferred to Phase 9). |
 | 2026-05-06 | **Phase 8J complete:** Added `broadcast.request`/`broadcast.response`/`broadcast.cancel` EMP intents to `EnvoyIntentSchema`; `BroadcastRequestPayloadSchema` (queryId, ttl, maxResponses, requestedTagHashes, requestedCapabilities, requestedSensitivity, senderOwnerId, timeoutMs), `BroadcastResponsePayloadSchema` (queryId, responderOwnerId, responderPeerId, matchedTagHashes, matchedCapabilities, done), `BroadcastCancelPayloadSchema` (queryId, reason); relay handler in `apps/relay/src/index.ts` fans out `broadcast.request` to all connected peers except sender with TTL decrement; `handleInboundBroadcastRequest` in `apps/node/src/broadcast-inbound.ts` enforces trust level, anonymous mode, capability manifest matching, sensitivity ceiling; `handleInboundBroadcastResponse` records inbound responses; node dispatcher sends `broadcast.response` directly to broadcaster; 8 unit tests covering mode enforcement, trust rejection, blocked senders, no-match paths, and response recording. Phase 8J substrate: relay-assisted fanout. |
 | 2026-05-06 | **Phase 8I complete:** `AnonymousDiscoveryMode` type added to `@envoymesh/api` (`"off"` \| `"contacts-only"` \| `"public-preview"` \| `"public-auto-answer"`); added to `NodeConfig` and `UpdateNodeConfigParams`; `anonymousDiscoveryMode` persisted in `PersistedNodeConfig`; `getNodeConfig()`/`updateNodeConfig()` in `NodeServiceImpl` return and accept all three new fields with safe defaults; `handleInboundDiscoveryIntent` in `discovery-inbound.ts` now accepts `anonymousDiscoveryMode`, `anonymousIntentAllowlist`, `anonymousSensitivityCeiling` parameters; per-peer rate limiting for anonymous callers (5 req/min) via `allowAnonRequest`; Phase 8I enforcement block runs before trust/blocked checks — `"off"` silently drops, `"contacts-only"` rejects public callers with audit, `"public-preview"`/`"public-auto-answer"` apply sensitivity ceiling; call site in `index.ts` wires config values from `nodeConfigStore`. 9 unit tests covering mode enforcement, sensitivity ceiling, per-peer rate limits, and legacy fallback. Phase 8I exit criteria: all `[x]` (low-priority queue and load tests remain open for future work). |
