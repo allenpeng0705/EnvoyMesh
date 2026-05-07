@@ -425,6 +425,356 @@ describe("E2E: Minimax LLM integration", () => {
 
     await rm(taskDir, { recursive: true, force: true });
   }, 30000);
+
+  it("knowledge.query with mock provider returns deterministic response", async () => {
+    const { handleInboundKnowledgeQuery } = await import("../src/knowledge-query-inbound.js");
+    const { createKnowledgeQueryPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const { derivePeerId } = await import("@envoymesh/identity");
+
+    const profile = testProfile();
+    const taskDir = await mkdtemp(join(tmpdir(), "envoymesh-llm-mock-"));
+    const taskStore = createLocalTaskStore(taskDir);
+    const trustStore = createLocalTrustStore(taskDir);
+    const peerDirectoryStore = createLocalPeerDirectoryStore(taskDir);
+
+    await trustStore.setTrustRecord({ peerOwnerId: profile.owner.ownerId, level: "direct" });
+    await peerDirectoryStore.ensurePeerFromInboundChat({
+      ownerId: profile.owner.ownerId,
+      peerId: derivePeerId(profile.device.publicKeyPem),
+    });
+
+    const modelProviders = {
+      mode: "mock" as const,
+    };
+
+    const kqPayload = createKnowledgeQueryPayload({ query: "What is 2+2?" });
+    const envelope = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "agent",
+      intent: "knowledge.query",
+      payload: kqPayload,
+      createdAt: new Date().toISOString(),
+      messageId: `kq-mock-${Date.now()}`,
+    });
+
+    const result = await handleInboundKnowledgeQuery({
+      envelope,
+      remotePeerId: "test-peer",
+      receivedAt: Date.now(),
+      correlationId: envelope.messageId,
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      profile,
+      vaultIndex: null,
+      modelProviders,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Mock returns "Mock model response."
+      expect(result.responsePayload.answer).toBe("Mock model response.");
+      expect(result.responsePayload.refused).toBe(false);
+      console.log(`[test] Mock response: ${result.responsePayload.answer}`);
+    }
+
+    await rm(taskDir, { recursive: true, force: true });
+  }, 15000);
+
+  it("knowledge.query with disabled provider returns refusal", async () => {
+    const { handleInboundKnowledgeQuery } = await import("../src/knowledge-query-inbound.js");
+    const { createKnowledgeQueryPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const { derivePeerId } = await import("@envoymesh/identity");
+
+    const profile = testProfile();
+    const taskDir = await mkdtemp(join(tmpdir(), "envoymesh-llm-disabled-"));
+    const taskStore = createLocalTaskStore(taskDir);
+    const trustStore = createLocalTrustStore(taskDir);
+    const peerDirectoryStore = createLocalPeerDirectoryStore(taskDir);
+
+    await trustStore.setTrustRecord({ peerOwnerId: profile.owner.ownerId, level: "direct" });
+    await peerDirectoryStore.ensurePeerFromInboundChat({
+      ownerId: profile.owner.ownerId,
+      peerId: derivePeerId(profile.device.publicKeyPem),
+    });
+
+    const modelProviders = {
+      mode: "disabled" as const,
+    };
+
+    const kqPayload = createKnowledgeQueryPayload({ query: "What is 2+2?" });
+    const envelope = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "agent",
+      intent: "knowledge.query",
+      payload: kqPayload,
+      createdAt: new Date().toISOString(),
+      messageId: `kq-disabled-${Date.now()}`,
+    });
+
+    const result = await handleInboundKnowledgeQuery({
+      envelope,
+      remotePeerId: "test-peer",
+      receivedAt: Date.now(),
+      correlationId: envelope.messageId,
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      profile,
+      vaultIndex: null,
+      modelProviders,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload.refused).toBe(true);
+      expect(result.responsePayload.refusalReason).toBe("model disabled");
+      expect(result.responsePayload.answer).toContain("disabled");
+      console.log(`[test] Disabled response: ${result.responsePayload.answer}`);
+    }
+
+    await rm(taskDir, { recursive: true, force: true });
+  }, 15000);
+
+  it("knowledge.query with different sensitivity levels", async () => {
+    const { handleInboundKnowledgeQuery } = await import("../src/knowledge-query-inbound.js");
+    const { createKnowledgeQueryPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const { derivePeerId } = await import("@envoymesh/identity");
+
+    const profile = testProfile();
+    const taskDir = await mkdtemp(join(tmpdir(), "envoymesh-llm-sens-"));
+    const taskStore = createLocalTaskStore(taskDir);
+    const trustStore = createLocalTrustStore(taskDir);
+    const peerDirectoryStore = createLocalPeerDirectoryStore(taskDir);
+
+    await trustStore.setTrustRecord({ peerOwnerId: profile.owner.ownerId, level: "direct" });
+    await peerDirectoryStore.ensurePeerFromInboundChat({
+      ownerId: profile.owner.ownerId,
+      peerId: derivePeerId(profile.device.publicKeyPem),
+    });
+
+    const modelProviders = {
+      mode: "mock" as const,
+    };
+
+    // Note: "trusted" and "private" require higher bond levels than "direct"
+    const sensitivities = ["public", "friends"];
+
+    for (const sensitivity of sensitivities) {
+      const kqPayload = createKnowledgeQueryPayload({
+        query: `Test query for sensitivity ${sensitivity}`,
+        requestedSensitivity: sensitivity as "public" | "friends" | "trusted" | "private",
+      });
+      const envelope = createUnsignedEnvelope({
+        senderPeerId: derivePeerId(profile.device.publicKeyPem),
+        senderPublicKey: profile.device.publicKeyPem,
+        senderRole: "agent",
+        intent: "knowledge.query",
+        payload: kqPayload,
+        createdAt: new Date().toISOString(),
+        messageId: `kq-sens-${sensitivity}-${Date.now()}`,
+      });
+
+      const result = await handleInboundKnowledgeQuery({
+        envelope,
+        remotePeerId: "test-peer",
+        receivedAt: Date.now(),
+        correlationId: envelope.messageId,
+        taskStore,
+        trustStore,
+        peerDirectoryStore,
+        profile,
+        vaultIndex: null,
+        modelProviders,
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.responsePayload.sensitivity).toBe(sensitivity);
+        console.log(`[test] Sensitivity ${sensitivity}: ${result.responsePayload.answer}`);
+      }
+    }
+
+    await rm(taskDir, { recursive: true, force: true });
+  }, 20000);
+
+  it("knowledge.query with long query near max length", async () => {
+    const { handleInboundKnowledgeQuery } = await import("../src/knowledge-query-inbound.js");
+    const { createKnowledgeQueryPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const { derivePeerId } = await import("@envoymesh/identity");
+
+    const profile = testProfile();
+    const taskDir = await mkdtemp(join(tmpdir(), "envoymesh-llm-long-"));
+    const taskStore = createLocalTaskStore(taskDir);
+    const trustStore = createLocalTrustStore(taskDir);
+    const peerDirectoryStore = createLocalPeerDirectoryStore(taskDir);
+
+    await trustStore.setTrustRecord({ peerOwnerId: profile.owner.ownerId, level: "direct" });
+    await peerDirectoryStore.ensurePeerFromInboundChat({
+      ownerId: profile.owner.ownerId,
+      peerId: derivePeerId(profile.device.publicKeyPem),
+    });
+
+    const modelProviders = {
+      mode: "mock" as const,
+    };
+
+    // Max is 4096 chars - use 4000 char query
+    const longQuery = "A".repeat(4000);
+    const kqPayload = createKnowledgeQueryPayload({ query: longQuery });
+    const envelope = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "agent",
+      intent: "knowledge.query",
+      payload: kqPayload,
+      createdAt: new Date().toISOString(),
+      messageId: `kq-long-${Date.now()}`,
+    });
+
+    const result = await handleInboundKnowledgeQuery({
+      envelope,
+      remotePeerId: "test-peer",
+      receivedAt: Date.now(),
+      correlationId: envelope.messageId,
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      profile,
+      vaultIndex: null,
+      modelProviders,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload.answer).toBeTruthy();
+      console.log(`[test] Long query (4000 chars) response length: ${result.responsePayload.answer.length}`);
+    }
+
+    await rm(taskDir, { recursive: true, force: true });
+  }, 15000);
+
+  it("knowledge.query with different query types", async () => {
+    const { handleInboundKnowledgeQuery } = await import("../src/knowledge-query-inbound.js");
+    const { createKnowledgeQueryPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const { derivePeerId } = await import("@envoymesh/identity");
+
+    const profile = testProfile();
+    const taskDir = await mkdtemp(join(tmpdir(), "envoymesh-llm-types-"));
+    const taskStore = createLocalTaskStore(taskDir);
+    const trustStore = createLocalTrustStore(taskDir);
+    const peerDirectoryStore = createLocalPeerDirectoryStore(taskDir);
+
+    await trustStore.setTrustRecord({ peerOwnerId: profile.owner.ownerId, level: "direct" });
+    await peerDirectoryStore.ensurePeerFromInboundChat({
+      ownerId: profile.owner.ownerId,
+      peerId: derivePeerId(profile.device.publicKeyPem),
+    });
+
+    const modelProviders = {
+      mode: "mock" as const,
+    };
+
+    const queryTypes = [
+      { query: "What is the capital of France?", type: "factual" },
+      { query: "What is your opinion on AI?", type: "opinion" },
+      { query: "Write a short poem about the sea", type: "creative" },
+    ];
+
+    for (const { query, type } of queryTypes) {
+      const kqPayload = createKnowledgeQueryPayload({ query });
+      const envelope = createUnsignedEnvelope({
+        senderPeerId: derivePeerId(profile.device.publicKeyPem),
+        senderPublicKey: profile.device.publicKeyPem,
+        senderRole: "agent",
+        intent: "knowledge.query",
+        payload: kqPayload,
+        createdAt: new Date().toISOString(),
+        messageId: `kq-${type}-${Date.now()}`,
+      });
+
+      const result = await handleInboundKnowledgeQuery({
+        envelope,
+        remotePeerId: "test-peer",
+        receivedAt: Date.now(),
+        correlationId: envelope.messageId,
+        taskStore,
+        trustStore,
+        peerDirectoryStore,
+        profile,
+        vaultIndex: null,
+        modelProviders,
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        console.log(`[test] Query type "${type}": ${result.responsePayload.answer}`);
+      }
+    }
+
+    await rm(taskDir, { recursive: true, force: true });
+  }, 20000);
+});
+
+// ============================================================================
+// E2E: LLM Model Provider Modes
+// ============================================================================
+
+describe("E2E: LLM model provider modes", () => {
+  it("mock provider returns configured custom response", async () => {
+    const { handleInboundKnowledgeQuery } = await import("../src/knowledge-query-inbound.js");
+    const { createKnowledgeQueryPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const { derivePeerId } = await import("@envoymesh/identity");
+
+    const profile = testProfile();
+    const taskDir = await mkdtemp(join(tmpdir(), "envoymesh-mock-custom-"));
+    const taskStore = createLocalTaskStore(taskDir);
+    const trustStore = createLocalTrustStore(taskDir);
+    const peerDirectoryStore = createLocalPeerDirectoryStore(taskDir);
+
+    await trustStore.setTrustRecord({ peerOwnerId: profile.owner.ownerId, level: "direct" });
+    await peerDirectoryStore.ensurePeerFromInboundChat({
+      ownerId: profile.owner.ownerId,
+      peerId: derivePeerId(profile.device.publicKeyPem),
+    });
+
+    const modelProviders = {
+      mode: "mock" as const,
+    };
+
+    const kqPayload = createKnowledgeQueryPayload({ query: "Hello" });
+    const envelope = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "agent",
+      intent: "knowledge.query",
+      payload: kqPayload,
+      createdAt: new Date().toISOString(),
+      messageId: `kq-custom-${Date.now()}`,
+    });
+
+    const result = await handleInboundKnowledgeQuery({
+      envelope,
+      remotePeerId: "test-peer",
+      receivedAt: Date.now(),
+      correlationId: envelope.messageId,
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      profile,
+      vaultIndex: null,
+      modelProviders,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload.answer).toBe("Mock model response.");
+    }
+
+    await rm(taskDir, { recursive: true, force: true });
+  }, 15000);
 });
 
 // ============================================================================
