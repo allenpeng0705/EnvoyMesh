@@ -10,6 +10,9 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 export default defineConfig({
   plugins: [react()],
   root: "src",
+  server: {
+    port: 5173,
+  },
   resolve: {
     alias: {
       "@envoymesh/api": resolve(repoRoot, "packages/api/src/index.ts"),

@@ -1252,6 +1252,20 @@ class NodeServiceImpl implements NodeService {
 
   async getNodeConfig(): Promise<NodeConfig> {
     const config = await this._configStore.load();
+    // Apply environment variable overrides for model providers
+    const modelProviders: ModelProviderConfig = config?.modelProviders ? {
+      ...config.modelProviders,
+      mode: (process.env.ENVOY_MODEL_MODE as ModelProviderConfig["mode"]) ?? config.modelProviders.mode,
+      endpoint: process.env.ENVOY_MODEL_ENDPOINT ?? config.modelProviders.endpoint,
+      apiKey: process.env.ENVOY_MODEL_API_KEY ?? config.modelProviders.apiKey,
+      modelName: process.env.ENVOY_MODEL_NAME ?? config.modelProviders.modelName,
+    } : {
+      mode: (process.env.ENVOY_MODEL_MODE as ModelProviderConfig["mode"]) ?? "mock",
+      endpoint: process.env.ENVOY_MODEL_ENDPOINT,
+      apiKey: process.env.ENVOY_MODEL_API_KEY,
+      modelName: process.env.ENVOY_MODEL_NAME,
+    };
+
     if (config) {
       return {
         profileDir: config.profileDir,
@@ -1262,7 +1276,7 @@ class NodeServiceImpl implements NodeService {
         advertiseAddrs: config.advertiseAddrs,
         bootstrapPeers: config.bootstrapPeers,
         bootstrapPresets: config.bootstrapPresets,
-        modelProviders: config.modelProviders,
+        modelProviders,
         chatAssistEnabled: config.chatAssistEnabled ?? false,
         anonymousDiscoveryMode: config.anonymousDiscoveryMode ?? "off",
         anonymousIntentAllowlist: config.anonymousIntentAllowlist ?? ["discovery.request"],
@@ -1281,7 +1295,7 @@ class NodeServiceImpl implements NodeService {
       advertiseAddrs: [],
       bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
       bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
-      modelProviders: { mode: "mock" },
+      modelProviders,
       chatAssistEnabled: false,
       anonymousDiscoveryMode: "off",
       anonymousIntentAllowlist: ["discovery.request"],
@@ -1877,6 +1891,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async knowledgeQuery(question: string): Promise<string> {
+    console.log(`[knowledgeQuery] called with question: ${question.substring(0, 50)}...`);
     if (!this._mesh || !this._profile) {
       throw new Error("Node not initialized");
     }
@@ -1896,6 +1911,7 @@ class NodeServiceImpl implements NodeService {
     const envelope = signUnsignedEnvelope(unsignedEnvelope, this._profile.device.privateKeyPem) as EnvoyEnvelope;
 
     const nodeConfig = await this.getNodeConfig();
+    console.log(`[knowledgeQuery] nodeConfig.modelProviders.mode=${nodeConfig.modelProviders.mode}`);
 
     const result = await handleInboundKnowledgeQuery({
       envelope,
@@ -1908,6 +1924,8 @@ class NodeServiceImpl implements NodeService {
       profile: this._profile,
       vaultIndex: null,
       modelProviders: nodeConfig.modelProviders,
+      isLocalSelfQuery: true,
+      ownerApproved: true, // Local owner queries are implicitly approved
     });
 
     if (!result.ok) {

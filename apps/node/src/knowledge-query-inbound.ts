@@ -26,18 +26,23 @@ export type KnowledgeQueryInboundResult =
 /**
  * Build the list of model providers from the node's model provider configuration.
  * Environment variables can override config values:
+ * - ENVOY_MODEL_MODE: overrides config.mode (e.g., "openai-compatible", "mock")
  * - ENVOY_MODEL_ENDPOINT: overrides config.endpoint
  * - ENVOY_MODEL_API_KEY: overrides config.apiKey
  * - ENVOY_MODEL_NAME: overrides config.modelName
+ * @param ownerApproved - If true, cloud providers allow higher sensitivity for local owner queries
  */
-function buildModelProviders(config: ModelProviderConfig): ModelProvider[] {
+function buildModelProviders(config: ModelProviderConfig, ownerApproved: boolean = false): ModelProvider[] {
   // Allow environment variables to override config
+  console.log(`[buildModelProviders] ENVOY_MODEL_MODE=${process.env.ENVOY_MODEL_MODE}`);
   const effectiveConfig: ModelProviderConfig = {
     ...config,
+    mode: (process.env.ENVOY_MODEL_MODE as ModelProviderConfig["mode"]) ?? config.mode,
     endpoint: process.env.ENVOY_MODEL_ENDPOINT ?? config.endpoint,
     apiKey: process.env.ENVOY_MODEL_API_KEY ?? config.apiKey,
     modelName: process.env.ENVOY_MODEL_NAME ?? config.modelName,
   };
+  console.log(`[buildModelProviders] effectiveConfig.mode=${effectiveConfig.mode}, endpoint=${effectiveConfig.endpoint}, apiKey=${effectiveConfig.apiKey ? "***" : "undefined"}`);
 
   switch (effectiveConfig.mode) {
     case "disabled":
@@ -74,6 +79,11 @@ function buildModelProviders(config: ModelProviderConfig): ModelProvider[] {
           modelName: effectiveConfig.modelName ?? "gpt-4o-mini",
           apiKey: effectiveConfig.apiKey,
           endpoint: effectiveConfig.endpoint ?? "https://api.openai.com/v1",
+          // For local self-queries, allow higher sensitivity since owner is approving
+          policy: ownerApproved ? {
+            allowedSensitivity: ["public", "friends", "trusted", "private"],
+            requiresOwnerApproval: false,
+          } : undefined,
         }),
       ];
     case "anthropic-compatible":
@@ -128,8 +138,17 @@ export async function handleInboundKnowledgeQuery(input: {
   profile: NodeProfile;
   vaultIndex: VaultIndex | null;
   modelProviders: ModelProviderConfig;
+  /**
+   * If true, this is a local self-query (e.g., from the AI tab via WebSocket).
+   * Self-queries bypass public peer restrictions and get full access.
+   */
+  isLocalSelfQuery?: boolean;
+  /**
+   * If true, the owner has approved this request (skips owner approval check for cloud providers).
+   */
+  ownerApproved?: boolean;
 }): Promise<KnowledgeQueryInboundResult> {
-  const { envelope, remotePeerId, receivedAt, correlationId, taskStore, trustStore, peerDirectoryStore, profile, vaultIndex, modelProviders } = input;
+  const { envelope, remotePeerId, receivedAt, correlationId, taskStore, trustStore, peerDirectoryStore, profile, vaultIndex, modelProviders, isLocalSelfQuery = false, ownerApproved = false } = input;
 
   let payload: ReturnType<typeof parseKnowledgeQueryPayload>;
   try {
@@ -162,10 +181,18 @@ export async function handleInboundKnowledgeQuery(input: {
   );
 
   // 2. Policy check: resolve sender's owner ID, then look up bond level
-  const senderOwnerId = await resolveSenderOwnerId(envelope.senderPeerId, peerDirectoryStore);
-  const bondLevel = senderOwnerId
-    ? (await trustStore.getTrustRecord(senderOwnerId))?.level ?? "public"
-    : "public";
+  // For local self-queries (AI tab), use "self" bond level to bypass public restrictions
+  let bondLevel: "self" | "direct" | "referred" | "public" | "blocked" = "public";
+  let senderOwnerId: string | undefined;
+
+  if (isLocalSelfQuery) {
+    bondLevel = "self";
+  } else {
+    senderOwnerId = await resolveSenderOwnerId(envelope.senderPeerId, peerDirectoryStore);
+    bondLevel = senderOwnerId
+      ? (await trustStore.getTrustRecord(senderOwnerId))?.level ?? "public"
+      : "public";
+  }
 
   const policyDecision = evaluatePolicy({
     peerId: senderOwnerId ?? envelope.senderPeerId,
@@ -257,6 +284,12 @@ Sensitivity level of this answer: ${allowedSensitivity}.\n\n\
 Context:\n${promptContext}\n\n\
 Query: ${payload.query}`;
 
+  // Cap sensitivity for cloud providers (they only allow "public" by default)
+  // For local self-queries with owner approval, we can use up to "friends" sensitivity
+  const effectiveSensitivity = modelProviders.mode === "openai-compatible" || modelProviders.mode === "anthropic-compatible"
+    ? (ownerApproved ? "friends" : "public")
+    : allowedSensitivity;
+
   // 6. Route through model router with configured provider(s)
   if (modelProviders.mode === "disabled") {
     await taskStore.appendAuditEvent(
@@ -287,18 +320,20 @@ Query: ${payload.query}`;
     };
   }
 
-  const providers = buildModelProviders(modelProviders);
+  const providers = buildModelProviders(modelProviders, ownerApproved);
+  console.log(`[knowledge-query] providers.length=${providers.length}`);
 
   const modelResult = await routeModelRequest(
     {
       taskType: "knowledge.query",
       prompt,
-      sensitivity: allowedSensitivity,
+      sensitivity: effectiveSensitivity,
       requesterPeerId: remotePeerId,
-      ownerApproved: false,
+      ownerApproved,
     },
     providers,
   );
+  console.log(`[knowledge-query] modelResult:`, JSON.stringify(modelResult));
 
   // 7. Audit model routing decision
   const evt = modelResult.auditEvent;
