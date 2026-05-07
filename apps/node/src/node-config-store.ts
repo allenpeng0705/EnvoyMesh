@@ -128,7 +128,7 @@ function isValidModelProviders(value: unknown): value is ModelProviderConfig {
     return false;
   }
   const cfg = value as Record<string, unknown>;
-  const validModes = ["mock", "ollama", "litellm", "disabled"];
+  const validModes = ["mock", "ollama", "litellm", "openai-compatible", "anthropic-compatible", "disabled"];
   if (typeof cfg.mode !== "string" || !validModes.includes(cfg.mode)) {
     return false;
   }
