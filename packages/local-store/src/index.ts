@@ -752,10 +752,6 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     },
 
     async appendAuditEvent(event) {
-      // Selective auditing: skip noisy routine events to prevent unbounded growth
-      if (shouldSkipAuditEvent(event)) {
-        return;
-      }
       await appendAuditQueued(event);
     },
 
@@ -939,47 +935,6 @@ function recencyPoints(lastSeenAt: string): number {
  * Keep: security decisions (rejections), task lifecycle, bond/trust events, important errors.
  * Skip: routine message passes, vault searches, model routes, tool calls, AI decisions.
  */
-function shouldSkipAuditEvent(event: AuditEvent): boolean {
-  switch (event.type) {
-    // Always skip these noisy routine events
-    case "message.sent":
-    case "message.verified":
-    case "vault.searched":
-    case "model.routed":
-    case "tool.called":
-    case "autonomous.decided":
-      return true;
-
-    // Skip routine p2p.trace events (keep relay.manager.warning and connectivity.warning)
-    case "p2p.trace":
-      if (event.protocol) {
-        // Keep important connectivity and relay warnings
-        if (
-          event.protocol.startsWith("relay.") ||
-          event.protocol === "connectivity.warning" ||
-          event.protocol === "connectivity.error" ||
-          event.protocol === "relay.manager.warning"
-        ) {
-          return false;
-        }
-      }
-      return true;
-
-    // Keep these important event types
-    case "message.rejected":
-    case "task.handled":
-    case "task.rejected":
-    case "policy.decided":
-    case "share.preview":
-    case "share.request":
-    case "share.accept":
-      return false;
-
-    default:
-      return false;
-  }
-}
-
 export function createAuditEvent(input: CreateAuditEventInput): AuditEvent {
   return {
     version: "0.1",
