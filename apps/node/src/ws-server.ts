@@ -35,6 +35,11 @@ export class WsServer {
     this.nodeService = nodeService;
     this.wss = new WebSocketServer({ port: this.port, path: this.path });
 
+    // Handle WebSocket server errors gracefully to prevent crashes
+    this.wss.on("error", (err: Error) => {
+      console.error(`[ws-server] WebSocket server error: ${err.message}`);
+    });
+
     // Wire up nodeService events to WebSocket broadcasts
     const nodeServiceImpl = nodeService as NodeServiceImpl;
     console.log(`[ws-server] start: nodeServiceImpl has 'on' method?`, typeof nodeServiceImpl.on);
