@@ -26,7 +26,7 @@ EnvoyMesh is a **decentralized, peer-to-peer mesh for autonomous AI agents**. Ag
 - Semantic consistency — typed intents agents can reason about, not opaque bytes
 - Observability — JSONL audit with correlation IDs stitching multi-peer flows
 
-**Active milestone: Phase 8A** — replacing the mock `knowledge.query` handler with a policy-gated vault + model router + signed `knowledge.response` path. See `docs/implementation-plan.md` for full roadmap (8A–8L).
+**Active milestone: Phase 9A** — AI agent gets its own peer identity, cryptographically linked to the owner via signed mandate. Agent runs on home node as a first-class network participant. See `docs/implementation-plan.md` for full roadmap (9A–9J).
 
 ---
 
@@ -78,7 +78,10 @@ apps/node    (depends on everything)
 |----------|-----------|---------|
 | **Owner** | `envoy:owner:<sha256(pubkey)>` | Long-lived human identity, signs mandates & device certificates |
 | **Device** | `envoy:device:<sha256(pubkey)>` | A specific device (laptop, phone, server), authorized by owner |
+| **Agent** | `envoy:agent:<sha256(ownerId + agent-pubkey)>` | AI agent running on owner's node, authorized by owner-signed mandate |
 | **Peer** | `envoy_<sha256(pubkey)>` | Runtime identity for message signing (lasts as long as the key) |
+
+**Agent identity** (Phase 9): The agent has its own peer ID derived from `sha256(ownerId + agent-pubkey)`. The owner signs a mandate/credential linking the agent to the owner. Peers can verify: "This agent is authorized by `envoy:owner:abc123`."
 
 Every outbound message envelope is Ed25519-signed by the sender's private key. Recipients verify using the included public key, which must hash to the claimed `senderPeerId`.
 
@@ -102,7 +105,7 @@ interface EnvoyEnvelope {
 }
 ```
 
-Role policy is enforced in the schema: `chat.message` requires senderRole=human + recipientRole=human. Task intents require senderRole=agent + recipientRole=agent.
+Role policy is enforced in the schema: `chat.message` requires senderRole=human + recipientRole=human. Task intents require senderRole=agent + recipientRole=agent. Agents can communicate directly (agent-to-agent) using any intent appropriate for agents (knowledge.query, discovery.request, etc.).
 
 ### Signing convention
 
@@ -156,13 +159,34 @@ The **Diplomat → Bond Engine → Brain → Vault** pipeline:
 - Contains disallowed control characters (code < 32 except tab/newline/CR, or DEL) → reject
 - Collapses excessive newline runs (>50 consecutive) to prevent log spam
 
-### Agentic Topology (Phase 8)
+### Mobile as a Full Network Node
+
+The mobile app is a **full EnvoyMesh node**, not a thin client. It participates in the P2P mesh directly:
+
+- **Own peer identity**: generated from the owner's keys, distinct from the home node
+- **Own signing key**: signs messages just like any other node
+- **Direct P2P connectivity**: connects via relay when on different networks from home node
+- **Full intent support**: sends/receives any EnvoyMesh intent (chat, knowledge, discovery, share, etc.)
+
+**Pairing via QR code**: When mobile scans the home node's QR code, they create a direct bond. The mobile app sees the home node and its AI agent as contacts in the peer list. Communication with the AI agent is standard `chat.message` to the agent's peer ID — no separate control channel.
+
+```
+Mobile App (phone) ←P2P bond via QR→ Home Node (computer)
+                                              │
+                                              └── AI Agent (contact in mobile's peer list)
+```
+
+### Agentic Topology (Phase 9)
 
 **Relay nodes stay lean** — they handle connectivity, relay check-in/lookup, and routing hints. They do not run LLMs, read payloads, execute agents, or store private knowledge.
 
 **Normal nodes are intelligent edges** — they run LLMs, vault RAG, tools, agents, and policy checks.
 
-**External agents (OpenClaw/HomeClaw) must not call libp2p directly** — they must use Envoy local tools (`mesh.findCapability()`, `mesh.requestKnowledge()`). EnvoyMesh is the secure network extension of the local agent, not a raw socket handed to the agent.
+**The AI agent runs on the home node** — it has its own peer identity (`envoy_agent_<hash>`), derived from the owner's identity and signed by a mandate. Peers can verify the agent is authorized by this owner.
+
+**External agents (OpenClaw/HomeClaw) must not call libp2p directly** — they must use Envoy local tools (`mesh.findKnowledge()`, `mesh.findContact()`, `mesh.sendMessage()`, etc.). EnvoyMesh is the secure network extension of the local agent, not a raw socket handed to the agent.
+
+**MCP compatibility** (future): Phase 9 tool registry could expose MCP endpoints, allowing MCP-compatible clients to use the agent's tools.
 
 **Ordering rule for agentic work:**
 1. Direct bonded-contact workflows first (`knowledge.query`, chat assist)

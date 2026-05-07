@@ -354,11 +354,12 @@ describe("protocol", () => {
       }),
     ).toThrow(/senderRole=agent/);
 
+    // chat.message with system role is not allowed
     expect(() =>
       createUnsignedEnvelope({
         senderPeerId: "peer-a",
         senderPublicKey: "public-key",
-        senderRole: "agent",
+        senderRole: "system",
         recipientPeerId: "peer-b",
         recipientRole: "human",
         intent: "chat.message",
@@ -367,7 +368,7 @@ describe("protocol", () => {
           text: "hello",
         },
       }),
-    ).toThrow(/chat\.message requires senderRole=human/);
+    ).toThrow(/cannot involve system role/);
   });
 
   it("defaults mandate closeOnFirstCompletedResult to false", () => {

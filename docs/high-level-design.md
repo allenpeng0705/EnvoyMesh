@@ -95,16 +95,24 @@ Responsibilities:
 - Run heavier local model tasks or route approved tasks to allowed providers.
 - Help the owner's phone or light devices.
 
-### Mobile UI
+### Mobile Envoy
 
-The first mobile product is a thin UI channel. It runs on a phone or tablet and connects securely to the owner's Primary Envoy instead of joining the full P2P mesh.
+The mobile app is a **full EnvoyMesh node**, not a thin client. It runs on a phone or tablet and participates directly in the P2P mesh — it has its own peer identity, signing key, and can send/receive any EnvoyMesh intent.
+
+**Pairing via QR code:** When the mobile app scans a QR code from the Primary Envoy (home computer), both nodes create a direct bond. The mobile app becomes a peer like any other in the network. This means:
+
+- Mobile app sends intents directly to the Primary Envoy and its AI agent
+- The AI agent running on the home node is addressed as a **contact/peer** in the mobile app
+- When the owner sends a message to their agent from mobile, it's just `chat.message` → agent peer
+- Everything is standard EnvoyMesh P2P — no separate control channel or WebSocket API
 
 Responsibilities:
 
-- Show approvals and notifications.
-- Exchange QR-code trust handshakes.
-- Send lightweight messages.
-- Delegate mesh participation, vault access, and heavier work to the Primary Envoy.
+- Generate own peer identity and signing key
+- Bond with Primary Envoy via QR code (same as bonding with any peer)
+- Send and receive all EnvoyMesh intents (chat, knowledge, discovery, etc.)
+- Connect via relay when on different network from Primary Envoy
+- Cache messages and sync when reconnecting (asynchronous by default)
 
 ### Friend Envoy
 
@@ -121,11 +129,12 @@ Responsibilities:
 
 ### Pair My Own Devices
 
-1. The owner starts EnvoyMesh on a Primary Envoy.
-2. The Mobile UI scans a QR code from the Primary Envoy.
-3. Both devices exchange public keys.
-4. The Primary Envoy authorizes the phone as a satellite UI/control device.
-5. Private state and commands sync through an encrypted owner-device channel.
+1. The owner starts EnvoyMesh on a Primary Envoy (home computer).
+2. The Primary Envoy generates a QR code containing its peer ID and multiaddr.
+3. The Mobile Envoy scans the QR code and sends a `bond.hello` to the Primary Envoy.
+4. The Primary Envoy accepts the bond — both nodes now have a direct P2P connection.
+5. The mobile app now sees the home node and its AI agent as contacts in the peer list.
+6. The owner can message their AI agent directly from the mobile app, or the agent can send proactive notifications back.
 
 ### Add A Trusted Friend
 
@@ -153,11 +162,11 @@ Responsibilities:
 
 ### Asynchronous Task Delegation
 
-1. The Mobile UI creates a task while the owner is away.
-2. The task is sent to the Primary Envoy when connectivity is available.
-3. The Primary Envoy processes it locally or routes it through policy.
-4. The result is returned when the Mobile UI reconnects.
-5. The owner sees the completed result and audit trail.
+1. The owner sends a message to their AI agent from the Mobile Envoy.
+2. The message is routed via relay (if needed) to the Primary Envoy's AI agent.
+3. The AI agent processes it locally (vault search, model routing, etc.) or queues for later.
+4. The AI agent responds via `chat.message` back to the Mobile Envoy.
+5. The owner sees the response in the mobile app.
 
 ## Trust Model
 

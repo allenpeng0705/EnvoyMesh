@@ -1,14 +1,18 @@
 import {
+  agentCredentialForSigning,
   authChallengeProofForSigning,
   canonicalJson,
+  createUnsignedAgentCredential,
   deviceCertificateForSigning,
   deviceRevocationRecordForSigning,
   envelopeForSigning,
   mandateForSigning,
   proofOfIntentForSigning,
+  type AgentCredential,
   type AuthChallengePayload,
   type AuthChallengeResponsePayload,
   type Capability,
+  type CreateUnsignedAgentCredentialInput,
   type DeviceCertificate,
   type DeviceProfile,
   type DeviceRevocationRecord,
@@ -18,6 +22,7 @@ import {
   type Mandate,
   type ProofOfIntent,
   type PublicIdentity,
+  type UnsignedAgentCredential,
   type UnsignedMandate,
   type UnsignedDeviceCertificate,
   type UnsignedDeviceRevocationRecord,
@@ -57,6 +62,22 @@ export interface DeviceIdentity {
   deviceId: string;
   publicKeyPem: string;
   privateKeyPem: string;
+}
+
+export interface AgentIdentity {
+  agentId: string;
+  agentPeerId: string;
+  publicKeyPem: string;
+  privateKeyPem: string;
+}
+
+export interface CreateAgentCredentialInput {
+  owner: OwnerIdentity;
+  agent: AgentIdentity;
+  scope?: string[];
+  credentialId?: string;
+  issuedAt?: string;
+  expiresAt?: string | null;
 }
 
 export interface CreateDeviceCertificateInput {
@@ -128,6 +149,22 @@ export function generateDeviceIdentity(): DeviceIdentity {
   };
 }
 
+/**
+ * Generate an agent identity.
+ * Note: The agent's peerId is derived from ownerId + agentPublicKeyPem to create
+ * a unique identity that can be verified by peers.
+ */
+export function generateAgentIdentity(ownerId: string): AgentIdentity {
+  const { publicKeyPem, privateKeyPem } = generateEd25519KeyPair();
+
+  return {
+    agentId: deriveAgentId(ownerId, publicKeyPem),
+    agentPeerId: `envoy_agent_${createHash("sha256").update(ownerId + publicKeyPem).digest("base64url")}`,
+    publicKeyPem,
+    privateKeyPem,
+  };
+}
+
 export function generateEd25519KeyPair(): EnvoyKeyPair {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519", {
     publicKeyEncoding: {
@@ -157,6 +194,14 @@ export function deriveOwnerId(publicKeyPem: string): string {
 
 export function deriveDeviceId(publicKeyPem: string): string {
   return `envoy:device:${createHash("sha256").update(publicKeyPem).digest("base64url")}`;
+}
+
+/**
+ * Derive an agent ID from the owner's ID and the agent's public key.
+ * Format: envoy:agent:<sha256(ownerId + agentPublicKeyPem)>
+ */
+export function deriveAgentId(ownerId: string, agentPublicKeyPem: string): string {
+  return `envoy:agent:${createHash("sha256").update(ownerId + agentPublicKeyPem).digest("base64url")}`;
 }
 
 export function toPublicOwnerIdentity(owner: OwnerIdentity): PublicIdentity {
@@ -211,6 +256,70 @@ export function verifyDeviceCertificate(
     certificate.signature,
     ownerPublicKeyPem,
   );
+}
+
+/**
+ * Create an agent credential signed by the owner.
+ * The credential links the agent's public key to the owner and defines
+ * what intents the agent is allowed to send.
+ */
+export function createAgentCredential(input: CreateAgentCredentialInput): AgentCredential {
+  const unsignedCredential = createUnsignedAgentCredential({
+    ownerId: input.owner.ownerId,
+    agentId: input.agent.agentId,
+    agentPeerId: input.agent.agentPeerId,
+    agentPublicKeyPem: input.agent.publicKeyPem,
+    scope: input.scope,
+    credentialId: input.credentialId,
+    issuedAt: input.issuedAt,
+    expiresAt: input.expiresAt,
+  });
+
+  return {
+    ...unsignedCredential,
+    signature: signCanonicalPayload(unsignedCredential, input.owner.privateKeyPem),
+  };
+}
+
+/**
+ * Verify an agent credential using the owner's public key.
+ * Returns true if:
+ * 1. The owner's public key matches ownerId
+ * 2. The agent's public key matches agentPublicKeyPem
+ * 3. The agent's peer ID matches agentPeerId
+ * 4. The signature is valid
+ */
+export function verifyAgentCredential(
+  credential: AgentCredential,
+  ownerPublicKeyPem: string,
+): boolean {
+  if (deriveOwnerId(ownerPublicKeyPem) !== credential.ownerId) {
+    return false;
+  }
+
+  if (deriveAgentId(credential.ownerId, credential.agentPublicKeyPem) !== credential.agentId) {
+    return false;
+  }
+
+  return verifyCanonicalPayload(
+    agentCredentialForSigning(credential),
+    credential.signature,
+    ownerPublicKeyPem,
+  );
+}
+
+/**
+ * Check if an agent credential is expired.
+ * Returns true if expired or not yet valid.
+ */
+export function isAgentCredentialExpired(credential: AgentCredential): boolean {
+  if (credential.expiresAt === null) {
+    return false; // No expiration
+  }
+
+  const now = new Date();
+  const expiresAt = new Date(credential.expiresAt);
+  return now > expiresAt;
 }
 
 export function createDeviceRevocationRecord(
@@ -287,6 +396,58 @@ export function verifyEnvelope(envelope: EnvoyEnvelope): boolean {
     envelope.signature,
     envelope.senderPublicKey,
   );
+}
+
+/**
+ * Verify an envelope sent by an agent.
+ * Checks:
+ * 1. Envelope signature is valid (using agent's public key)
+ * 2. senderPeerId matches the agent's peer ID from credential
+ * 3. Agent credential is present (required for senderRole=agent)
+ * 4. Agent credential is signed by the owner
+ * 5. Agent credential is not expired
+ * 6. The intent is within the agent's scope
+ */
+export function verifyAgentEnvelope(
+  envelope: EnvoyEnvelope,
+  ownerPublicKeyPem: string,
+): boolean {
+  // Agent credential must be present
+  if (!envelope.agentCredential) {
+    return false;
+  }
+
+  // Verify the agent credential signature first
+  if (!verifyAgentCredential(envelope.agentCredential, ownerPublicKeyPem)) {
+    return false;
+  }
+
+  // Check that senderPeerId matches the agent's peer ID from the credential
+  if (envelope.senderPeerId !== envelope.agentCredential.agentPeerId) {
+    return false;
+  }
+
+  // Verify envelope signature using the agent's public key
+  if (!verifyCanonicalPayload(
+    envelopeForSigning(envelope),
+    envelope.signature,
+    envelope.senderPublicKey,
+  )) {
+    return false;
+  }
+
+  // Check expiration
+  if (isAgentCredentialExpired(envelope.agentCredential)) {
+    return false;
+  }
+
+  // Check scope: the intent must be in the allowed scope
+  const scope = envelope.agentCredential.scope;
+  if (!scope.includes(envelope.intent)) {
+    return false;
+  }
+
+  return true;
 }
 
 export function verifyAuthorizedDeviceEnvelope(

@@ -691,26 +691,375 @@ Exit criteria:
 - `[x]` Node asks for approval on sensitive requests.
 - `[x]` Owner can pause autonomous actions immediately.
 
+---
+
+## Phase 9: AI-Augmented Agent
+
+**Goal:** Enable the AI agent to act as a first-class network participant — with its own peer identity, operating autonomously on the owner's behalf, configurable in reactive or proactive mode, accessible via mobile app or external agents (OpenClaw/HomeClaw).
+
+### 9A: Agent Identity & Credential System
+
+**Goal:** Agent has its own peer identity, cryptographically linked to the owner via a signed mandate. Peers can verify the agent is authorized by this owner.
+
+Tasks:
+
+- `[x]` Add `AgentCredential` schema: `{ agentPubKey, ownerOwnerId, agentId, agentPeerId, scope: string[], expiresAt }` signed by owner's private key
+- `[x]` Add `agent identity` store: generates agent key pair, derives agent peer ID from owner, stores credential locally
+- `[x]` Implement credential derivation: `agentId = envoy:agent:<sha256(ownerId + agent-pubkey)>` and `agentPeerId = envoy_agent_<sha256(ownerId + agent-pubkey)>`
+- `[x]` Add `agentCredential` field to envelope: agent includes credential in envelopes for non-task intents
+- `[x]` Add credential verification: `verifyAgentEnvelope()` checks credential signature, expiration, and scope
+- `[~]` Add credential revocation: expiration is implemented; explicit revocation list deferred to future work
+- `[x]` Agent uses `senderRole: "agent"` in envelopes (protocol already supports this)
+- `[x]` Update role policy: `chat.message` now allows agent roles (previously required human)
+
+**Identity Model:**
+```
+Owner:    envoy:owner:<sha256(owner-pubkey)>
+  └── Signed mandate (owner signs agent's pubkey + scope)
+      └── Agent ID:   envoy:agent:<sha256(ownerId + agent-pubkey)>
+          Agent PeerID: envoy_agent_<sha256(ownerId + agent-pubkey)>
+```
+
+**Implementation Details:**
+- `AgentCredentialSchema` in `packages/protocol` defines the credential structure
+- `generateAgentIdentity()` in `packages/identity` creates agent key pair and IDs
+- `createAgentCredential()` signs the credential with owner's key
+- `verifyAgentEnvelope()` verifies: signature, credential, expiration, scope
+- Schema refinement requires `agentCredential` when `senderRole=agent` and `intent=chat.message`
+
+**Exit criteria:**
+- `[x]` Agent has its own peer identity distinct from owner's
+- `[x]` All agent actions are signed with agent's key and include owner-signed credential
+- `[x]` Peers can cryptographically verify agent → owner linkage
+- `[~]` Owner can revoke agent access (via expiration; explicit revocation list deferred)
+
+### 9B: Tool Registry & Execution Engine
+
+**Goal:** Extensible registry of mesh operations that the agent can perform. New intents get added as tools without changing agent core code.
+
+Tasks:
+
+- `[ ]` Add `tool-registry` store: maps intent name → tool definition `{ name, description, paramSchema, sensitivityCeiling, requiresApproval }`
+- `[ ]` Register default tools: `chat.send`, `knowledge.query`, `discovery.search`, `share.send`, `bond.hello`, `vault.search`
+- `[ ]` Implement tool executor: takes tool name + params, constructs intent, sends via mesh
+- `[ ]` Add `mesh.list-tools` tool: returns available tools and their parameters
+- `[ ]` Tool definitions are extensible: future intents automatically become available as tools
+- `[ ]` Each tool call is audited with correlation ID
+
+**Exit criteria:**
+- Agent can execute any registered mesh intent via tool calls
+- New intents are automatically available as tools (extensible)
+- All tool executions are audited
+
+### 9C: Memory & Context Management
+
+**Goal:** Agent maintains memory of conversations, relationships, and owner preferences to generate informed responses.
+
+Tasks:
+
+- `[ ]` Add `conversation-context` tool: reads recent chat history with a given contact
+- `[ ]` Add `relationship-context` tool: reads trust store to understand owner's relationship with a peer
+- `[ ]` Add `profile-context` tool: reads owner's human profile (interests, bio, knowledge)
+- `[ ]` Add `vault-context` tool: searches vault for relevant documents
+- `[ ]` Add `graph-context` tool: queries knowledge graph for relationship paths
+- `[ ]` Implement context injection: prepend relevant context to model prompts
+- `[ ]` Context is only injected when explicitly relevant (no unbounded injection)
+
+**Exit criteria:**
+- AI can read and synthesize context from chat history, trust relationships, vault, and graph
+- Context access is audited
+- Context is injected selectively based on relevance
+
+### 9D: Mode Controller (Reactive / Proactive)
+
+**Goal:** Agent operates in reactive mode when owner is online, proactive mode when owner is offline. Configurable per-contact or globally.
+
+Tasks:
+
+- `[ ]` Add `agent-mode` config: `{ mode: "reactive" | "proactive", onlineHours?: CronSchedule }`
+- `[ ]` Implement mode detection:
+  - Reactive: owner connected via mobile app / WebSocket
+  - Proactive: owner disconnected for > N minutes, or explicit schedule
+- `[ ]` Add per-contact mode override: some contacts always get reactive, others can be proactive
+- `[ ]` Mode transitions are audited
+- `[ ]` Proactive mode respects `autonomousPolicies` and `autonomousKillSwitch` from Phase 8L
+- `[ ]` Add `mesh.set-mode` tool: owner configures reactive/proactive mode
+
+**Mode Behavior:**
+| Mode | Behavior |
+|------|----------|
+| **Reactive** | Agent assists only when owner initiates. All sensitive actions require approval. |
+| **Proactive** | Agent acts autonomously within configured bounds. Escalates important items for later review. |
+
+**Exit criteria:**
+- Agent switches between reactive/proactive based on owner online status or schedule
+- Proactive actions respect autonomous policy boundaries
+- Mode transitions are logged
+
+### 9E: Session & Conversation Management
+
+**Goal:** Agent maintains persistent conversation sessions per contact, tracking context, state, and relationship over time.
+
+Tasks:
+
+- `[ ]` Add `session` store: per-contact session state `{ contactOwnerId, lastInteraction, messageCount, pendingEscalation, conversationSummary }`
+- `[ ]` Implement session updates on events: new message → update summary, reaction → update sentiment
+- `[ ]` Add `session-summary` tool: AI generates concise summary of conversation state
+- `[ ]` Detect escalation triggers: emotional content, sensitive topics, explicit escalation requests
+- `[ ]` Session persistence: survives agent restarts
+- `[ ]` Add `mesh.list-sessions` tool: owner views all active conversation sessions
+
+**Exit criteria:**
+- Agent maintains context across multi-turn conversations
+- Agent can summarize conversation state for any contact
+- Escalation triggers are detected and surfaced
+
+### 9F: Style & Identity Adapter
+
+**Goal:** Agent mimics owner's communication style so contacts don't know they're talking to an AI (stealth mode).
+
+Tasks:
+
+- `[ ]` Add `style-profile` store: learned owner writing style `{ tone, vocabulary, sentenceLength, commonPhrases }`
+- `[ ]` Implement style learning: analyze owner's sent messages to build style profile
+- `[ ]` Add `style-adapt` to chat generation: generate text matching owner's voice
+- `[ ]` Add per-contact disclosure config: `discloseAgent: boolean` — some contacts know it's an AI
+- `[ ]` Add disclosure message template: "Hey, this is my AI agent responding on my behalf"
+- `[ ]` Style adaptation is applied only when `discloseAgent: false`
+
+**Exit criteria:**
+- AI-generated responses match owner's writing style
+- Agent can optionally disclose itself to contacts
+- Disclosure is configurable per contact
+
+### 9G: Proactive Triggers & Autonomous Actions
+
+**Goal:** Agent initiates actions on its own based on time, events, or learned patterns — while respecting owner-defined boundaries.
+
+Tasks:
+
+- `[ ]` Add `trigger` store: `{ id, type: "time" | "event" | "topic", condition, action, enabled }`
+- `[ ]` Implement time-based triggers:
+  - "check in with Alice weekly"
+  - "wish Bob happy birthday"
+  - "send weekly digest to owner"
+- `[ ]` Implement event-based triggers:
+  - "contact hasn't responded in 3 days → follow up"
+  - "new message from X → read and respond if routine"
+  - "owner tagged in shared content → notify"
+- `[ ]` Implement topic-based triggers:
+  - "news about owner's interest → share with relevant contacts"
+  - "contact mentioned owner's interest → engage"
+- `[ ]` Proactive actions are logged to audit with `proactive: true` flag
+- `[ ]` Add `mesh.list-triggers` and `mesh.add-trigger` / `mesh.remove-trigger` tools
+
+**Autonomous Ceiling:**
+- Sensitivity ≤ configured ceiling → agent can act
+- Sensitivity > ceiling → queue for approval or skip
+- All proactive actions logged for owner review
+
+**Exit criteria:**
+- Agent can proactively initiate contact based on configured triggers
+- Triggers are configurable and auditable
+- Autonomous ceiling is enforced
+
+### 9H: Escalation & Approval Workflow
+
+**Goal:** Sensitive actions go to approval queue for owner review. Agent can escalate to owner when confidence is low or topic is sensitive.
+
+Tasks:
+
+- `[ ]` Add `approval-queue` store: persist pending actions with draft content, context, timestamp
+- `[ ]` Add `mesh.list-pending` tool: list all pending approvals
+- `[ ]` Add `mesh.approve` tool: owner approves action, triggering execution
+- `[ ]` Add `mesh.reject` tool: owner rejects, discarding draft
+- `[ ]` Add `mesh.reject-all` tool: bulk reject
+- `[ ]` Add `mesh.escalate` tool: agent flags item for owner attention
+- `[ ]` Add `requireApprovalForCloud` threshold (from Phase 8) — integrate with approval queue
+- `[ ]` Escalation rules: low confidence, emotional content, sensitive topics → always escalate
+- `[ ]` Pending items surfaced in digest (9J)
+
+**Exit criteria:**
+- AI-drafted actions are held in approval queue until owner review
+- Agent can proactively escalate when needed
+- All approval actions are audited
+
+### 9I: External Agent Gateway (OpenClaw / HomeClaw)
+
+**Goal:** External agents (OpenClaw, HomeClaw, etc.) interact with EnvoyMesh exclusively via local tools — never directly call libp2p. Agent acts as secure gateway.
+
+Tasks:
+
+- `[ ]` Add local tools API for external agents:
+  - `mesh.findKnowledge(query)` — search owner's vault + contacts' shared knowledge
+  - `mesh.findContact(criteria)` — natural language contact search
+  - `mesh.sendMessage(to, text)` — draft and send chat (via approval queue if sensitive)
+  - `mesh.getOwnerProfile()` — read owner's profile for personalization
+  - `mesh.queryGraph(pathQuery)` — path-finding queries
+- `[ ]` External agents authenticate via agent credential (not owner credentials)
+- `[ ]` External agent actions are logged with `externalAgent: true` flag
+- `[ ]` Add `mesh.list-external-sessions` tool: owner sees what external agents have done
+- `[ ]` Add `mesh.revoke-external-agent` tool: owner revokes an external agent's access
+
+**Security Model:**
+```
+OpenClaw ──[local tools]──► Home Node Agent
+                                │
+                                ├── Verifies credential
+                                ├── Enforces policy
+                                ├── Logs all actions
+                                └── Approves via queue (if needed)
+                                    │
+                                    ▼
+                              EnvoyMesh Network
+```
+
+**Exit criteria:**
+- External agents can only interact via local tools API
+- All external agent actions are logged and attributable
+- Owner can revoke external agent access
+
+### 9J: Digest & Notifications
+
+**Goal:** Owner receives periodic summaries of agent activities, decisions, and pending items.
+
+Tasks:
+
+- `[ ]` Add `digest-generator` service: aggregates audit events into daily/weekly summaries
+- `[ ]` Implement digest delivery:
+  - CLI: `npm run cli -- digest today`
+  - File: `~/.envoymesh/my-node/digests/YYYY-MM-DD.json`
+- `[ ]` Digest includes:
+  - AI actions taken (with/without approval)
+  - External agent calls made
+  - Discovery queries and results
+  - New bonds established
+  - Proactive actions triggered
+  - Pending items requiring attention
+- `[ ]` Add `digest.schedule` tool: owner configures frequency (daily/weekly/off)
+- `[ ]` Add push notification option: owner receives alerts for high-priority escalations
+
+**Exit criteria:**
+- Owner can view daily/weekly digest of all agent activities
+- Digest is human-readable and actionable
+- Pending approvals and escalations are surfaced
+
+### Phase 9 Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Owner (Mobile App)                           │
+│                         WebSocket / CLI                             │
+└─────────────────────────────────┬───────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                     Home Node (Always On)                            │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                      Mesh Agent                               │   │
+│  │                                                               │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │   │
+│  │  │ Tool Registry│  │ Mode Ctrl   │  │ Session Manager    │  │   │
+│  │  │ (extensible)│  │ reactive/   │  │ (per-contact)      │  │   │
+│  │  │             │  │ proactive   │  │                     │  │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────┘  │   │
+│  │                                                               │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │   │
+│  │  │ Memory Store│  │Style Adapter│  │ Trigger Engine      │  │   │
+│  │  │ (context)   │  │(owner voice)│  │ (time/event/topic) │  │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────┘  │   │
+│  │                                                               │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │   │
+│  │  │Approval Queue│ │Knowledge Graph│ │ Agent Credential   │  │   │
+│  │  │             │  │             │  │ (owner-signed)     │  │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────┘  │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│          │                                    │                      │
+│          │ Local Tools API                    │ External Agents    │
+│          ▼                                    ▼                      │
+│  ┌─────────────────┐                  ┌─────────────────┐          │
+│  │ OpenClaw        │                  │ EnvoyMesh       │          │
+│  │ HomeClaw        │                  │ Network (P2P)   │          │
+│  │ (no libp2p)     │                  │                 │          │
+│  └─────────────────┘                  └─────────────────┘          │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Agent Identity Flow
+
+```
+1. Owner creates agent:
+   - Agent generates key pair (agent-pubkey, agent-privkey)
+   - Agent derives peer ID: agentPeerId = sha256(ownerOwnerId + agent-pubkey)
+   - Owner signs credential: sign({ agentPubKey, ownerOwnerId, agentPeerId, scope }, owner-privkey)
+   - Credential stored locally on home node
+
+2. Agent sends message:
+   - Agent creates envelope with senderRole="agent"
+   - Signs envelope with agent-privkey
+   - Attaches credential (signed by owner)
+   - Sends via mesh
+
+3. Peer receives message:
+   - Verifies envelope signature (agent-pubkey)
+   - Verifies credential signature (owner-pubkey)
+   - Checks scope: is this intent allowed?
+   - Checks expiry: is credential still valid?
+   - If all pass → process intent
+   - If any fail → reject with reason
+```
+
+### Exit Criteria (Phase 9)
+
+- `[ ]` Agent has its own peer identity, cryptographically linked to owner
+- `[ ]` Agent can execute all mesh intents via extensible tool registry
+- `[ ]` Agent reads context (conversation, relationships, vault, graph) before responding
+- `[ ]` Agent operates in reactive or proactive mode based on owner online status
+- `[ ]` Agent maintains conversation sessions per contact
+- `[ ]` Agent can mimic owner's writing style (stealth mode)
+- `[ ]` Agent proactively initiates actions within configured boundaries
+- `[ ]` Sensitive actions go to approval queue for owner review
+- `[ ]` External agents (OpenClaw/HomeClaw) access mesh only via local tools API
+- `[ ]` Owner receives periodic digest of agent activities
+
 ## Current Milestone
 
-Milestone: **Phase 8L is complete** — all Phase 8A through 8L tasks are shipped: real `knowledge.query` with vault+model routing, model provider config, LLM chat drafts, capability manifests, contact-scoped matching, tool registry, sandbox hardening, anonymous discovery toggle, relay-assisted broadcast, local reputation + official credentials, and bounded autonomy with kill switch. All Phase 8 exit criteria are met. Cross-network P2P readiness has a shipped relay-control baseline; live multi-machine WAN smoke remains an external validation gate.
+Milestone: **Phase 9A: Agent Identity & Credential System** — The agent gets its own peer identity, cryptographically linked to the owner via a signed mandate. This enables the agent to be a first-class network participant: it has its own signing key, own peer ID, and presents a verifiable credential to peers.
+
+### Phase 9 Architecture Overview
+
+The agent runs on the **home node** (always-on computer), accessible via:
+- **Mobile app** (owner on the go) → WebSocket connection
+- **External agents** (OpenClaw/HomeClaw) → Local tools API (no libp2p direct access)
+- **CLI** (direct on home computer)
+
+Agent capabilities:
+- Own peer identity derived from owner (via signed mandate)
+- Reactive mode when owner is online, proactive mode when offline
+- Maintains conversation sessions per contact
+- Mimics owner's writing style (stealth mode)
+- Proactive triggers based on time, events, topics
+- All actions audited; sensitive actions require approval
 
 ### Archive (historical snapshot — do not use for status)
 
-**Source of truth** for shipped vs open work is the **phase checklists** above (`Phase 0`–`Phase 8`, **Open questions**, **Coverage**). This block is a compact merge of the old “Recently completed” + “Immediate tasks” lists so we do not maintain duplicate checklines.
+**Source of truth** for shipped vs open work is the **phase checklists** above (`Phase 0`–`Phase 9`, **Open questions**, **Coverage**). This block is a compact merge of the old “Recently completed” + “Immediate tasks” lists so we do not maintain duplicate checklines.
 
+- `[x]` **Phase 8 complete:** real `knowledge.query` with vault+model routing, model provider config (mock/ollama/litellm/OpenAI-compatible/Anthropic-compatible), LLM chat drafts, capability manifests, contact-scoped matching, tool registry, sandbox hardening, anonymous discovery with queue, relay-assisted broadcast, local reputation + official credentials, bounded autonomy with kill switch.
 - `[x]` **Docs:** `docs/scenarios.md`, `docs/UserStory.md`, `docs/alignment-review.md` in place as story / alignment spine.
 - `[x]` **Monorepo bootstrap:** npm workspaces, `packages/protocol`, `packages/identity`, `packages/bonds`, `packages/network`, `apps/node` entry, first tests, two-node signed ping.
 - `[x]` **Runtime slice:** EMP owner/device split, certified `system.signal`, Agent Card + mandate schemas, CLI (profile, audit, tasks, approvals, peers, vault), persisted trust store, `@envoymesh/local-store`, Social + Tauri (Electron retired); `npm run typecheck`, `npm test`, `npm run social:build && npm run node:build && npm run tauri:build` for native bundles.
-- `[x]` **Observability / termination slice:** Phase 4C (correlation, audit enrichment, optional `p2p.trace`, probes, dashboard audit UX); Phase 4D (mandate/propose expiry, cancel / satisfied / `closeOnFirstCompletedResult`, `task-runtime-state`, CLI flags).
 - `[!]` **Live connectivity proofs** outside the default CI runner (mDNS / DHT / relay / DCUtR) — same as Phase 4 `[!]` items and [live-connectivity-testing.md](./live-connectivity-testing.md).
 
 ### Next planning pulls (from [scenarios](./scenarios.md), [UserStory](./UserStory.md); [alignment](./alignment-review.md))
 
-- `[x]` **Phase 8A** — real `knowledge.query`: policy gate → vault search/read → model router → signed `knowledge.response` → audit.
-- `[x]` **Phase 8B** — model provider config in the normal node; mock/local first, cloud behind approval.
-- `[x]` **Phase 8C** — LLM-assisted chat as draft-only before any auto-send behavior.
-- `[x]` **Phase 8D–8E** — capability manifest, contact-scoped matching, safe preview, and direct sharing after match.
+- `[x]` **Phase 9A** — agent identity: own peer ID, key pair, credential signed by owner, revocation via expiration.
+- `[ ]` **Phase 9B** — tool registry: extensible mesh intent → tool mapping, tool executor, `mesh.list-tools`.
+- `[ ]` **Phase 9C** — memory & context: conversation-context, relationship-context, profile-context, vault-context, graph-context.
+- `[ ]` **Phase 9D** — mode controller: reactive/proactive switching based on online status or schedule.
+- `[ ]` **Phase 9E** — session management: per-contact sessions, conversation summaries, escalation detection.
+- `[ ]` **Phase 9F** — style adapter: owner voice learning, stealth mode, per-contact disclosure config.
 - `[x]` **Phase 8F–8G** — local tool registry and constrained OpenClaw/HomeClaw adapter boundary.
 - `[x]` **Phase 8H** — stronger sandbox and egress hardening before public/anonymous traffic grows.
 - `[x]` **Phase 8I** — anonymous discovery toggle and fast path.

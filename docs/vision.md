@@ -20,6 +20,32 @@ An Envoy should be able to:
 
 The network should not require a central social server. Some helper infrastructure, such as bootstrap nodes or relays, may exist, but the system should continue to work without a single company-controlled backend owning all communication and state. Relay nodes are infrastructure; the user's normal node is where identity, vault access, model routing, agent tools, policy, and approvals live.
 
+## Mobile as a Full Network Node
+
+Every Envoy is a **first-class participant in the EnvoyMesh network** — including the mobile app. The mobile app is not a thin client or remote control. It is a full EnvoyMesh node with:
+
+- **Own peer identity**: generated from the owner's keys, distinct from the home node
+- **Own signing key**: signs messages just like any other node
+- **Direct P2P connectivity**: connects to the mesh via relay when on different networks
+- **Full intent support**: sends and receives any EnvoyMesh intent (chat, knowledge, discovery, share, etc.)
+
+**Pairing is bonding**: When the mobile app scans a QR code from the home node, they create a direct peer bond. The mobile app then sees the home node (and its AI agent) as contacts in its peer list. There is no separate control channel or WebSocket API — communication with the AI agent is just `chat.message` to the agent's peer ID.
+
+```
+Mobile App (phone) ←P2P bond via QR→ Home Node (computer)
+                                              │
+                                              ├── Owner (direct user)
+                                              └── AI Agent (contact in mobile's peer list)
+                                                      │
+                                                      └── EnvoyMesh network (other peers, agents)
+```
+
+This means:
+- Owner messages their AI agent from mobile → `chat.message` to agent peer
+- AI agent sends proactive notifications to mobile → `chat.message` to owner peer
+- External agents (OpenClaw/HomeClaw) run on the home node, access mesh only via local tools
+- When owner is offline, AI agent acts autonomously within configured boundaries, surfaces pending items on mobile
+
 ## Design Principles
 
 ### Owner First

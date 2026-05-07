@@ -705,14 +705,16 @@ Unknown peers should not learn the full owner graph. Public discovery should rev
 
 ## Pairing Workflows
 
-### Pair Owner Device
+### Pair Owner Device (Mobile as Full Node)
 
-1. Primary Envoy displays a QR code with owner ID, pairing endpoint, and nonce.
-2. Satellite device generates a device key.
-3. Satellite sends a pairing request.
-4. Owner approves on Primary Envoy.
-5. Primary signs a device certificate.
-6. Satellite stores the certificate and starts using its device key.
+The mobile app is a **full EnvoyMesh node**, not a satellite or thin client. It bonds with the home node like any other peer.
+
+1. Primary Envoy (home node) generates a QR code with its peer ID and reachable multiaddr.
+2. Mobile app scans the QR code and initiates a `bond.hello` to the Primary Envoy.
+3. Primary Envoy verifies the request and accepts the bond (or prompts owner for approval).
+4. Both nodes now have a direct P2P bond.
+5. The AI agent running on the home node has its own peer ID — the mobile app sees it as a contact.
+6. Owner communicates with the AI agent via standard `chat.message` to the agent's peer ID.
 
 ### Pair Trusted Friend
 

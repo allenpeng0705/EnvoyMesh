@@ -7,16 +7,21 @@ import {
 } from "@envoymesh/protocol";
 import { describe, expect, it } from "vitest";
 import {
+  createAgentCredential,
   createDeviceCertificate,
   createAuthChallengeResponse,
   createDeviceRevocationRecord,
   createProofOfIntent,
   derivePeerId,
+  generateAgentIdentity,
   generateDeviceIdentity,
   generateIdentity,
   generateOwnerIdentity,
+  isAgentCredentialExpired,
   signMandate,
   signUnsignedEnvelope,
+  verifyAgentCredential,
+  verifyAgentEnvelope,
   verifyAuthChallengeResponse,
   verifyAuthorizedDeviceEnvelope,
   verifyDeviceCertificate,
@@ -386,5 +391,213 @@ describe("identity", () => {
     });
 
     expect(verifyProofOfIntent(proof, mandate, otherCertificate, owner.publicKeyPem)).toBe(false);
+  });
+});
+
+describe("agent identity", () => {
+  it("generates an agent identity with correct IDs", () => {
+    const owner = generateOwnerIdentity();
+    const agent = generateAgentIdentity(owner.ownerId);
+
+    expect(agent.agentId).toMatch(/^envoy:agent:/);
+    expect(agent.agentPeerId).toMatch(/^envoy_agent_/);
+    expect(agent.publicKeyPem).toBeTruthy();
+    expect(agent.privateKeyPem).toBeTruthy();
+  });
+
+  it("creates and verifies an agent credential", () => {
+    const owner = generateOwnerIdentity();
+    const agent = generateAgentIdentity(owner.ownerId);
+
+    const credential = createAgentCredential({
+      owner,
+      agent,
+      scope: ["chat.message", "knowledge.query"],
+    });
+
+    expect(credential.ownerId).toBe(owner.ownerId);
+    expect(credential.agentId).toBe(agent.agentId);
+    expect(credential.agentPeerId).toBe(agent.agentPeerId);
+    expect(credential.scope).toEqual(["chat.message", "knowledge.query"]);
+    expect(verifyAgentCredential(credential, owner.publicKeyPem)).toBe(true);
+  });
+
+  it("rejects agent credential signed by wrong owner", () => {
+    const owner = generateOwnerIdentity();
+    const otherOwner = generateOwnerIdentity();
+    const agent = generateAgentIdentity(owner.ownerId);
+
+    const credential = createAgentCredential({
+      owner,
+      agent,
+      scope: ["chat.message"],
+    });
+
+    expect(verifyAgentCredential(credential, otherOwner.publicKeyPem)).toBe(false);
+  });
+
+  it("detects expired agent credentials", () => {
+    const owner = generateOwnerIdentity();
+    const agent = generateAgentIdentity(owner.ownerId);
+
+    const credential = createAgentCredential({
+      owner,
+      agent,
+      scope: ["chat.message"],
+      expiresAt: "2020-01-01T00:00:00.000Z", // Expired
+    });
+
+    expect(isAgentCredentialExpired(credential)).toBe(true);
+  });
+
+  it("allows null expiresAt (no expiration)", () => {
+    const owner = generateOwnerIdentity();
+    const agent = generateAgentIdentity(owner.ownerId);
+
+    const credential = createAgentCredential({
+      owner,
+      agent,
+      scope: ["chat.message"],
+      expiresAt: null,
+    });
+
+    expect(isAgentCredentialExpired(credential)).toBe(false);
+  });
+
+  it("verifies an agent envelope with valid credential", () => {
+    const owner = generateOwnerIdentity();
+    const agent = generateAgentIdentity(owner.ownerId);
+    const credential = createAgentCredential({
+      owner,
+      agent,
+      scope: ["chat.message", "knowledge.query"],
+    });
+
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: agent.agentPeerId,
+      senderPublicKey: agent.publicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: "peer-b",
+      recipientRole: "human",
+      intent: "chat.message",
+      payload: { text: "hello" },
+      agentCredential: credential,
+    });
+
+    const envelope = signUnsignedEnvelope(unsigned, agent.privateKeyPem);
+
+    expect(verifyAgentEnvelope(envelope, owner.publicKeyPem)).toBe(true);
+  });
+
+  it("rejects agent envelope when intent not in scope", () => {
+    const owner = generateOwnerIdentity();
+    const agent = generateAgentIdentity(owner.ownerId);
+    const credential = createAgentCredential({
+      owner,
+      agent,
+      scope: ["chat.message"], // Only chat.message allowed
+    });
+
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: agent.agentPeerId,
+      senderPublicKey: agent.publicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: "peer-b",
+      recipientRole: "human",
+      intent: "knowledge.query", // Not in scope!
+      payload: { text: "hello" },
+      agentCredential: credential,
+    });
+
+    const envelope = signUnsignedEnvelope(unsigned, agent.privateKeyPem);
+
+    expect(verifyAgentEnvelope(envelope, owner.publicKeyPem)).toBe(false);
+  });
+
+  it("rejects agent envelope with expired credential", () => {
+    const owner = generateOwnerIdentity();
+    const agent = generateAgentIdentity(owner.ownerId);
+    const credential = createAgentCredential({
+      owner,
+      agent,
+      scope: ["chat.message"],
+      expiresAt: "2020-01-01T00:00:00.000Z", // Expired
+    });
+
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: agent.agentPeerId,
+      senderPublicKey: agent.publicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: "peer-b",
+      recipientRole: "human",
+      intent: "chat.message",
+      payload: { text: "hello" },
+      agentCredential: credential,
+    });
+
+    const envelope = signUnsignedEnvelope(unsigned, agent.privateKeyPem);
+
+    expect(verifyAgentEnvelope(envelope, owner.publicKeyPem)).toBe(false);
+  });
+
+  it("rejects agent envelope when credential is tampered", () => {
+    const owner = generateOwnerIdentity();
+    const agent = generateAgentIdentity(owner.ownerId);
+    const credential = createAgentCredential({
+      owner,
+      agent,
+      scope: ["chat.message"],
+    });
+
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: agent.agentPeerId,
+      senderPublicKey: agent.publicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: "peer-b",
+      recipientRole: "human",
+      intent: "chat.message",
+      payload: { text: "hello" },
+      agentCredential: credential,
+    });
+
+    const envelope = signUnsignedEnvelope(unsigned, agent.privateKeyPem);
+
+    // Tamper with the credential
+    const tamperedEnvelope = {
+      ...envelope,
+      agentCredential: {
+        ...credential,
+        scope: ["task.propose"], // Different scope
+      },
+    };
+
+    expect(verifyAgentEnvelope(tamperedEnvelope, owner.publicKeyPem)).toBe(false);
+  });
+
+  it("rejects agent envelope when owner public key doesn't match", () => {
+    const owner = generateOwnerIdentity();
+    const otherOwner = generateOwnerIdentity();
+    const agent = generateAgentIdentity(owner.ownerId);
+    const credential = createAgentCredential({
+      owner,
+      agent,
+      scope: ["chat.message"],
+    });
+
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: agent.agentPeerId,
+      senderPublicKey: agent.publicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: "peer-b",
+      recipientRole: "human",
+      intent: "chat.message",
+      payload: { text: "hello" },
+      agentCredential: credential,
+    });
+
+    const envelope = signUnsignedEnvelope(unsigned, agent.privateKeyPem);
+
+    // Verify with other owner's public key
+    expect(verifyAgentEnvelope(envelope, otherOwner.publicKeyPem)).toBe(false);
   });
 });

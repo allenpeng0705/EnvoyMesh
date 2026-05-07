@@ -119,6 +119,28 @@ export const DeviceRevocationRecordSchema = UnsignedDeviceRevocationRecordSchema
   signature: z.string().min(1),
 });
 
+/**
+ * AgentCredential links an AI agent to its owner.
+ * The agent has its own key pair and peer ID, but is authorized by the owner's signature.
+ * Peers can verify: "This agent is authorized by envoy:owner:XXX"
+ */
+export const UnsignedAgentCredentialSchema = z.object({
+  version: z.literal("0.1"),
+  credentialId: z.string().min(1),
+  ownerId: z.string().min(1),
+  agentId: z.string().min(1),
+  agentPeerId: z.string().min(1),
+  agentPublicKeyPem: z.string().min(1),
+  /** Intents the agent is allowed to send on behalf of the owner */
+  scope: z.array(z.string().min(1)).min(1),
+  issuedAt: z.string().datetime(),
+  expiresAt: z.string().datetime().nullable(),
+});
+
+export const AgentCredentialSchema = UnsignedAgentCredentialSchema.extend({
+  signature: z.string().min(1),
+});
+
 const EnvoyEnvelopeObjectSchema = z.object({
   version: z.literal("0.1"),
   messageId: z.string().min(1),
@@ -131,6 +153,8 @@ const EnvoyEnvelopeObjectSchema = z.object({
   recipientRole: EnvoyActorRoleSchema,
   intent: EnvoyIntentSchema,
   payload: z.unknown(),
+  /** Agent credential, required when senderRole is "agent" */
+  agentCredential: AgentCredentialSchema.optional(),
   signature: z.string().min(1),
 });
 
@@ -141,6 +165,16 @@ export const EnvoyEnvelopeSchema = EnvoyEnvelopeObjectSchema.superRefine((value,
       code: z.ZodIssueCode.custom,
       message: decision.reason,
       path: ["senderRole"],
+    });
+  }
+  // When senderRole is "agent" and intent is chat.message, agentCredential must be present.
+  // chat.message is the primary intent where an agent directly represents the owner to a human.
+  // For task.* and report.create intents, authorization comes from mandates instead.
+  if (value.senderRole === "agent" && value.intent === "chat.message" && !value.agentCredential) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "agentCredential is required when senderRole is 'agent' for chat.message",
+      path: ["agentCredential"],
     });
   }
 });
@@ -154,6 +188,16 @@ export const UnsignedEnvoyEnvelopeSchema = EnvoyEnvelopeObjectSchema.omit({
       code: z.ZodIssueCode.custom,
       message: decision.reason,
       path: ["senderRole"],
+    });
+  }
+  // When senderRole is "agent" and intent is chat.message, agentCredential must be present.
+  // chat.message is the primary intent where an agent directly represents the owner to a human.
+  // For task.* and report.create intents, authorization comes from mandates instead.
+  if (value.senderRole === "agent" && value.intent === "chat.message" && !value.agentCredential) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "agentCredential is required when senderRole is 'agent' for chat.message",
+      path: ["agentCredential"],
     });
   }
 });
@@ -1034,6 +1078,8 @@ export type UnsignedDeviceRevocationRecord = z.infer<
   typeof UnsignedDeviceRevocationRecordSchema
 >;
 export type DeviceRevocationRecord = z.infer<typeof DeviceRevocationRecordSchema>;
+export type UnsignedAgentCredential = z.infer<typeof UnsignedAgentCredentialSchema>;
+export type AgentCredential = z.infer<typeof AgentCredentialSchema>;
 export type SystemPingPayload = z.infer<typeof SystemPingPayloadSchema>;
 export type SystemSignalPayload = z.infer<typeof SystemSignalPayloadSchema>;
 export type DevicePairRequestPayload = z.infer<typeof DevicePairRequestPayloadSchema>;
@@ -1131,6 +1177,7 @@ export interface CreateEnvelopeInput<TPayload> {
   recipientRole?: EnvoyActorRole;
   intent: EnvoyIntent;
   payload: TPayload;
+  agentCredential?: AgentCredential;
   createdAt?: string;
   messageId?: string;
   correlationId?: string;
@@ -1157,6 +1204,7 @@ export function createUnsignedEnvelope<TPayload>(
     recipientRole: input.recipientRole ?? defaultRoles.recipientRole,
     intent: input.intent,
     payload: input.payload,
+    agentCredential: input.agentCredential,
   }) as UnsignedEnvoyEnvelope<TPayload>;
 }
 
@@ -1397,6 +1445,15 @@ export function parseDeviceCertificate(input: unknown): DeviceCertificate {
 
 export function parseDeviceRevocationRecord(input: unknown): DeviceRevocationRecord {
   return DeviceRevocationRecordSchema.parse(input);
+}
+
+export function parseAgentCredential(input: unknown): AgentCredential {
+  return AgentCredentialSchema.parse(input);
+}
+
+export function agentCredentialForSigning(credential: AgentCredential): UnsignedAgentCredential {
+  const { signature: _signature, ...unsigned } = credential;
+  return unsigned;
 }
 
 export function deviceCertificateForSigning(
@@ -1980,6 +2037,33 @@ export function createUnsignedMandate(input: CreateUnsignedMandateInput): Unsign
   });
 }
 
+export interface CreateUnsignedAgentCredentialInput {
+  ownerId: string;
+  agentId: string;
+  agentPeerId: string;
+  agentPublicKeyPem: string;
+  scope?: string[];
+  credentialId?: string;
+  issuedAt?: string;
+  expiresAt?: string | null;
+}
+
+export function createUnsignedAgentCredential(
+  input: CreateUnsignedAgentCredentialInput,
+): UnsignedAgentCredential {
+  return UnsignedAgentCredentialSchema.parse({
+    version: "0.1",
+    credentialId: input.credentialId ?? `agent_cred_${randomUUID()}`,
+    ownerId: input.ownerId,
+    agentId: input.agentId,
+    agentPeerId: input.agentPeerId,
+    agentPublicKeyPem: input.agentPublicKeyPem,
+    scope: input.scope ?? ["chat.message", "knowledge.query", "discovery.request", "discovery.response", "share.request", "share.preview", "share.accept"],
+    issuedAt: input.issuedAt ?? new Date().toISOString(),
+    expiresAt: input.expiresAt ?? null,
+  });
+}
+
 
 export interface CreateDevicePairRequestPayloadInput {
   requesterOwnerId: string;
@@ -2277,10 +2361,11 @@ function evaluateEnvelopeRolePolicy(
   recipientRole: EnvoyActorRole,
 ): { ok: true } | { ok: false; reason: string } {
   if (intent === "chat.message") {
-    if (senderRole !== "human" || recipientRole !== "human") {
+    // chat.message is allowed for: human↔human, human↔agent, agent↔human, agent↔agent
+    if (senderRole === "system" || recipientRole === "system") {
       return {
         ok: false,
-        reason: "chat.message requires senderRole=human and recipientRole=human",
+        reason: "chat.message cannot involve system role",
       };
     }
     return { ok: true };

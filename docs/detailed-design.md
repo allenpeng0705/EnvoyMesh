@@ -406,7 +406,7 @@ Real payloads must satisfy `TaskProposePayloadSchema` (proof of intent, mandate 
 
 **Done (high level):** monorepo, protocol + tests, identity split, signed P2P ping/signal, mDNS + optional advanced connectivity, A2A task intents with journal + audits, trust store + approvals, shared vault indexing/search, model router scaffolding, Social UI + optional Tauri native wrapper (Electron-era desktop retired), correlated audit + optional `p2p-debug`, local task termination slice (Phase 4D).
 
-**Next (story-aligned):** semantic discovery (Phase 4E), device pairing / thin mobile (Phase 4A), chat **or** data sub-protocol (Scenario 6), semantic firewall before LLM on untrusted text.
+**Next (story-aligned):** semantic discovery (Phase 4E), mobile as full node (Phase 9), chat **or** data sub-protocol (Scenario 6), semantic firewall before LLM on untrusted text.
 
 Keep **mock / policy-gated** model providers until inbound trust and redaction paths are stable for each new intent surface.
 
