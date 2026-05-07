@@ -153,6 +153,11 @@ function App() {
   const [aiInput, setAiInput] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
 
+  // AI Model Provider settings (local state for input fields)
+  const [modelEndpoint, setModelEndpoint] = useState("");
+  const [modelName, setModelName] = useState("");
+  const [modelApiKey, setModelApiKey] = useState("");
+
   // Selected capabilities for rendezvous discovery
   const [selectedCapabilities, setSelectedCapabilities] = useState<Capability[]>([]);
 
@@ -227,6 +232,12 @@ function App() {
       const presets = config.bootstrapPresets || [];
       setBootstrapPresets(presets);
       setIsPublicNetwork(presets.length > 0);
+      // Initialize AI model provider local state
+      if (config.modelProviders) {
+        setModelEndpoint(config.modelProviders.endpoint ?? "");
+        setModelName(config.modelProviders.modelName ?? "");
+        setModelApiKey(config.modelProviders.apiKey ?? "");
+      }
     }).catch(console.error);
     nodeService.listRelays().then(setRelays).catch(console.error);
 
@@ -1522,9 +1533,18 @@ function App() {
                               // Restart node to apply new bootstrap presets (enables DHT)
                               try {
                                 await nodeService.stopNode();
-                                // Wait for reconnection after stop
-                                await nodeService.waitForConnection(10000);
                                 await nodeService.startNode();
+                                // Wait for node to emit "running" status before fetching config
+                                await new Promise<void>((resolve, reject) => {
+                                  const timeout = setTimeout(() => reject(new Error("Node restart timeout")), 15000);
+                                  const unsubscribe = nodeService.on("node:status", (data: { status: string }) => {
+                                    if (data.status === "running") {
+                                      clearTimeout(timeout);
+                                      unsubscribe();
+                                      resolve();
+                                    }
+                                  });
+                                });
                               } catch (e) {
                                 console.error("[app] Failed to restart node:", e);
                               }
@@ -1642,13 +1662,12 @@ function App() {
                         type="text"
                         className="settings-input"
                         placeholder="https://api.minimaxi.com/v1"
-                        value={nodeConfig?.modelProviders?.endpoint ?? ""}
-                        onChange={async (e) => {
-                          await nodeService.updateNodeConfig({
-                            modelProviders: { ...nodeConfig?.modelProviders, endpoint: e.target.value },
-                          } as any);
-                        }}
+                        value={modelEndpoint}
+                        onChange={(e) => setModelEndpoint(e.target.value)}
                         onBlur={async () => {
+                          await nodeService.updateNodeConfig({
+                            modelProviders: { ...nodeConfig?.modelProviders, endpoint: modelEndpoint },
+                          } as any);
                           nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                         }}
                       />
@@ -1660,13 +1679,12 @@ function App() {
                         type="text"
                         className="settings-input"
                         placeholder="MiniMax-M2.7"
-                        value={nodeConfig?.modelProviders?.modelName ?? ""}
-                        onChange={async (e) => {
-                          await nodeService.updateNodeConfig({
-                            modelProviders: { ...nodeConfig?.modelProviders, modelName: e.target.value },
-                          } as any);
-                        }}
+                        value={modelName}
+                        onChange={(e) => setModelName(e.target.value)}
                         onBlur={async () => {
+                          await nodeService.updateNodeConfig({
+                            modelProviders: { ...nodeConfig?.modelProviders, modelName: modelName },
+                          } as any);
                           nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                         }}
                       />
@@ -1678,13 +1696,12 @@ function App() {
                         type="password"
                         className="settings-input"
                         placeholder="sk-..."
-                        value={nodeConfig?.modelProviders?.apiKey ?? ""}
-                        onChange={async (e) => {
-                          await nodeService.updateNodeConfig({
-                            modelProviders: { ...nodeConfig?.modelProviders, apiKey: e.target.value },
-                          } as any);
-                        }}
+                        value={modelApiKey}
+                        onChange={(e) => setModelApiKey(e.target.value)}
                         onBlur={async () => {
+                          await nodeService.updateNodeConfig({
+                            modelProviders: { ...nodeConfig?.modelProviders, apiKey: modelApiKey },
+                          } as any);
                           nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                         }}
                       />
