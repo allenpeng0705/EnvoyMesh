@@ -75,13 +75,29 @@ function truncateForSnapshotEmbed(text: string, maxChars: number): string {
 }
 
 /**
+ * Retention policy for bounded JSONL files.
+ */
+export interface JsonlRetentionPolicy {
+  /** Maximum file size in bytes before rotation (default: 100MB) */
+  maxSizeBytes?: number;
+  /** Maximum age of entries in milliseconds (default: 7 days) */
+  maxAgeMs?: number;
+}
+
+/**
  * Serialize appends to a JSONL file so concurrent audit/journal writes cannot interleave bytes
  * and produce a corrupted line (two JSON objects sharing one line fragment).
+ * Supports optional retention policy for size and TTL-based rotation.
  */
-function createSerialJsonlAppender(path: string): (value: unknown) => Promise<void> {
+function createSerialJsonlAppender(
+  path: string,
+  policy: JsonlRetentionPolicy = {},
+): (value: unknown) => Promise<void> {
+  const { maxSizeBytes = 100 * 1024 * 1024, maxAgeMs = 7 * 24 * 60 * 60 * 1000 } = policy;
   let tail: Promise<unknown> = Promise.resolve();
+
   return (value: unknown) => {
-    const done = tail.then(() => appendJsonLine(path, value));
+    const done = tail.then(() => appendJsonLineWithRetention(path, value, maxSizeBytes, maxAgeMs));
     tail = done.then(
       () => {},
       () => {},
@@ -708,7 +724,11 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
   const shareEventsPath = join(profileDir, SHARE_EVENTS_FILE);
 
   const appendTaskJournalQueued = createSerialJsonlAppender(taskJournalPath);
-  const appendAuditQueued = createSerialJsonlAppender(auditEventsPath);
+  // Audit events: 100MB max file size, 7-day retention
+  const appendAuditQueued = createSerialJsonlAppender(auditEventsPath, {
+    maxSizeBytes: 100 * 1024 * 1024,
+    maxAgeMs: 7 * 24 * 60 * 60 * 1000,
+  });
   const appendDiscoveryQueued = createSerialJsonlAppender(discoveryEventsPath);
   const appendShareQueued = createSerialJsonlAppender(shareEventsPath);
 
@@ -732,6 +752,10 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     },
 
     async appendAuditEvent(event) {
+      // Selective auditing: skip noisy routine events to prevent unbounded growth
+      if (shouldSkipAuditEvent(event)) {
+        return;
+      }
       await appendAuditQueued(event);
     },
 
@@ -908,6 +932,52 @@ function recencyPoints(lastSeenAt: string): number {
     return 6;
   }
   return 2;
+}
+
+/**
+ * Selective audit filtering: skip noisy routine events that would cause unbounded growth.
+ * Keep: security decisions (rejections), task lifecycle, bond/trust events, important errors.
+ * Skip: routine message passes, vault searches, model routes, tool calls, AI decisions.
+ */
+function shouldSkipAuditEvent(event: AuditEvent): boolean {
+  switch (event.type) {
+    // Always skip these noisy routine events
+    case "message.sent":
+    case "message.verified":
+    case "vault.searched":
+    case "model.routed":
+    case "tool.called":
+    case "autonomous.decided":
+      return true;
+
+    // Skip routine p2p.trace events (keep relay.manager.warning and connectivity.warning)
+    case "p2p.trace":
+      if (event.protocol) {
+        // Keep important connectivity and relay warnings
+        if (
+          event.protocol.startsWith("relay.") ||
+          event.protocol === "connectivity.warning" ||
+          event.protocol === "connectivity.error" ||
+          event.protocol === "relay.manager.warning"
+        ) {
+          return false;
+        }
+      }
+      return true;
+
+    // Keep these important event types
+    case "message.rejected":
+    case "task.handled":
+    case "task.rejected":
+    case "policy.decided":
+    case "share.preview":
+    case "share.request":
+    case "share.accept":
+      return false;
+
+    default:
+      return false;
+  }
 }
 
 export function createAuditEvent(input: CreateAuditEventInput): AuditEvent {
@@ -1540,6 +1610,103 @@ async function appendJsonLine(path: string, value: unknown): Promise<void> {
     );
   }
   await appendFile(path, line, { mode: 0o600 });
+}
+
+/**
+ * Append a line to a JSONL file with retention enforcement.
+ * Checks file size and entry age, rewriting the file with pruned entries if needed.
+ */
+async function appendJsonLineWithRetention(
+  path: string,
+  value: unknown,
+  maxSizeBytes: number,
+  maxAgeMs: number,
+): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+
+  // Check current file size
+  let fileSize = 0;
+  try {
+    const stats = await (await import("node:fs/promises")).stat(path);
+    fileSize = stats.size;
+  } catch {
+    // File doesn't exist yet, skip size check
+  }
+
+  const line = `${JSON.stringify(value)}\n`;
+  if (line.length > MAX_JSONL_LINE_CHARS) {
+    throw new Error(
+      `JSONL record exceeds MAX_JSONL_LINE_CHARS (${MAX_JSONL_LINE_CHARS}): ${basename(path)} (${line.length} chars)`,
+    );
+  }
+
+  // If appending would exceed size limit, prune old entries first
+  if (fileSize + line.length > maxSizeBytes) {
+    await pruneJsonlByRetention(path, maxSizeBytes, maxAgeMs);
+  }
+
+  await appendFile(path, line, { mode: 0o600 });
+}
+
+/**
+ * Read a JSONL file, filter out entries older than maxAgeMs, and rewrite.
+ * Also truncates if the file is still over maxSizeBytes after age pruning.
+ */
+async function pruneJsonlByRetention(path: string, maxSizeBytes: number, maxAgeMs: number): Promise<void> {
+  const now = Date.now();
+  const cutoff = now - maxAgeMs;
+
+  let entries: Array<{ line: string; ageMs: number }> = [];
+
+  try {
+    const content = await readFile(path, "utf8");
+    const lines = content.split("\n").filter((line) => line.trim().length > 0);
+
+    for (const line of lines) {
+      try {
+        const obj = JSON.parse(line);
+        const createdAt = obj.createdAt ? new Date(obj.createdAt).getTime() : 0;
+        const ageMs = now - createdAt;
+        entries.push({ line, ageMs });
+      } catch {
+        // Keep malformed lines as-is (they'll be filtered by readJsonLines on next read)
+        entries.push({ line, ageMs: 0 });
+      }
+    }
+  } catch {
+    // File doesn't exist or can't be read — nothing to prune
+    return;
+  }
+
+  // Filter out expired entries
+  const before = entries.length;
+  entries = entries.filter((e) => e.ageMs < maxAgeMs);
+
+  if (entries.length === before) {
+    // No entries expired, but file is too big — keep newest entries up to size
+    entries.sort((a, b) => b.ageMs - a.ageMs);
+  }
+
+  // Build new content, keeping newest entries until under size limit
+  let newContent = "";
+  const kept: string[] = [];
+  for (const entry of entries) {
+    const trial = newContent + entry.line + "\n";
+    if (trial.length > maxSizeBytes && kept.length > 0) {
+      break;
+    }
+    newContent = trial;
+    kept.push(entry.line);
+  }
+
+  if (kept.length === entries.length) {
+    // Nothing was pruned
+    return;
+  }
+
+  // Rewrite file with pruned entries
+  await writeFile(path, newContent, { mode: 0o600 });
+  console.warn(`[local-store] pruned ${before - kept.length} old entries from ${basename(path)} (was ${before}, kept ${kept.length})`);
 }
 
 async function writeJsonLines(path: string, values: unknown[]): Promise<void> {
