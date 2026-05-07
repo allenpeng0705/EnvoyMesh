@@ -3,6 +3,12 @@
  *
  * A minimal P2P circuit relay server with optional rendezvous capability registry.
  * Handles relay traffic routing between peers and optionally registers peer capabilities.
+ *
+ * DESIGN PRINCIPLES FOR LONG-RUNNING RELAY:
+ * - Never crash: all async operations wrapped in try-catch
+ * - Never run out of memory: bounded data structures with eviction
+ * - Never block the event loop: async operations, bounded concurrency
+ * - Graceful degradation: reject abuse, log issues, continue serving
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
@@ -24,12 +30,47 @@ import {
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
 
+// ============================================================================
+// CONSTANTS & CONFIGURATION
+// ============================================================================
+
 const args = parseRelayArgs(process.argv.slice(2));
 
 // Ensure profile directory exists
 mkdirSync(args.profileDir, { recursive: true });
 
 const libp2pPrivateKeyPath = join(args.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME);
+
+// Maximum payload size to prevent memory exhaustion (1MB)
+const MAX_ENVELOPE_BYTES = 1 * 1024 * 1024;
+
+// Maximum fan-out targets to prevent resource exhaustion
+const MAX_FANOUT_TARGETS = 500;
+
+// Maximum forward targets for task.cancel
+const MAX_FORWARD_TARGETS = 100;
+
+// Maximum concurrent deliveries per fan-out batch
+const CONCURRENCY_LIMIT = 50;
+
+// ============================================================================
+// CRASH PREVENTION: Global error handlers
+// ============================================================================
+
+// Prevent uncaught synchronous exceptions from killing the relay
+process.on("uncaughtException", (error: Error) => {
+  console.error("[relay] UNCAUGHT EXCEPTION — continuing (relay must not crash):", error.message, error.stack);
+});
+
+// Prevent unhandled promise rejections from killing the relay
+process.on("unhandledRejection", (reason: unknown) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  console.error("[relay] UNHANDLED REJECTION — continuing (relay must not crash):", msg);
+});
+
+// ============================================================================
+// MESH & STATE
+// ============================================================================
 
 console.log(`[relay] Starting EnvoyMesh Relay Server`);
 console.log(`[relay] Profile: ${args.profileDir}`);
@@ -65,12 +106,36 @@ let capabilityRegistry: CapabilityRegistry | undefined;
 let rendezvousSweeper: ReturnType<typeof setInterval> | undefined;
 let statsInterval: ReturnType<typeof setInterval> | undefined;
 
-// Rate limiting: track registrations per peer to prevent abuse
+// ============================================================================
+// RATE LIMITING: Track registrations per peer to prevent abuse
+// ============================================================================
 const peerRegistrationCount = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
 const RATE_LIMIT_MAX_REGISTRATIONS = 10; // max registrations per peer per window
+const MAX_RATE_LIMIT_ENTRIES = 10_000; // Prevent memory exhaustion
 
 function checkRegistrationRateLimit(peerId: string): boolean {
+  // Guard against invalid input
+  if (!peerId || typeof peerId !== "string") {
+    return false;
+  }
+
+  // Prevent memory exhaustion - evict oldest if at capacity
+  if (peerRegistrationCount.size >= MAX_RATE_LIMIT_ENTRIES) {
+    const now = Date.now();
+    let oldest: string | null = null;
+    let oldestExpiry = Infinity;
+    for (const [id, entry] of peerRegistrationCount) {
+      if (entry.resetAt < now && entry.resetAt < oldestExpiry) {
+        oldest = id;
+        oldestExpiry = entry.resetAt;
+      }
+    }
+    if (oldest) {
+      peerRegistrationCount.delete(oldest);
+    }
+  }
+
   const now = Date.now();
   const entry = peerRegistrationCount.get(peerId);
 
@@ -87,37 +152,60 @@ function checkRegistrationRateLimit(peerId: string): boolean {
   return true;
 }
 
-// Periodic cleanup of rate limit map (remove expired entries)
-setInterval(() => {
-  const now = Date.now();
-  for (const [peerId, entry] of peerRegistrationCount.entries()) {
-    if (entry.resetAt < now) {
-      peerRegistrationCount.delete(peerId);
-    }
-  }
-}, 60_000);
-
-// Message deduplication: prevent processing the same message ID twice
-// (relay doesn't verify signatures, so this is the only guard against duplicates)
+// ============================================================================
+// MESSAGE DEDUPLICATION: Prevent processing the same message ID twice
+// ============================================================================
 const seenMessageIds = new Set<string>();
 const MAX_SEEN_MESSAGE_IDS = 100_000;
 
 function isMessageSeen(messageId: string): boolean {
+  // Guard against invalid input
+  if (!messageId || typeof messageId !== "string") {
+    return true; // Treat invalid IDs as "seen" to reject them
+  }
   return seenMessageIds.has(messageId);
 }
 
 function markMessageSeen(messageId: string): void {
+  // Guard against invalid input
+  if (!messageId || typeof messageId !== "string") {
+    return;
+  }
+
   // Evict oldest entries if we're at capacity
   if (seenMessageIds.size >= MAX_SEEN_MESSAGE_IDS) {
-    // Remove first 10% to avoid frequent eviction
-    const entries = Array.from(seenMessageIds);
-    entries.length = Math.floor(MAX_SEEN_MESSAGE_IDS * 0.1);
-    for (const id of entries) {
+    // Remove oldest 10% to avoid frequent eviction
+    const targetSize = Math.floor(MAX_SEEN_MESSAGE_IDS * 0.1);
+    let removed = 0;
+    for (const id of seenMessageIds) {
+      if (removed >= targetSize) break;
       seenMessageIds.delete(id);
+      removed++;
     }
   }
   seenMessageIds.add(messageId);
 }
+
+// ============================================================================
+// PERIODIC CLEANUP: Rate limit map
+// ============================================================================
+setInterval(() => {
+  try {
+    const now = Date.now();
+    let cleaned = 0;
+    for (const [peerId, entry] of peerRegistrationCount.entries()) {
+      if (entry.resetAt < now) {
+        peerRegistrationCount.delete(peerId);
+        cleaned++;
+      }
+    }
+    if (cleaned > 0) {
+      console.log(`[relay] Rate limit cleanup: removed ${cleaned} expired entries`);
+    }
+  } catch (err) {
+    console.error("[relay] Rate limit cleanup error:", err);
+  }
+}, 60_000);
 
 async function shutdown(): Promise<void> {
   console.log("[relay] Shutting down...");
@@ -205,30 +293,47 @@ try {
    * Always handle rendezvous intents; when storage is off, ACK with empty matches only.
    */
   mesh.onMessage(async (message) => {
-    const intent = message.envelope.intent;
+    try {
+      const intent = message.envelope.intent;
 
-    // Handle rendezvous intents
-    if (intent === "rendezvous.register" || intent === "rendezvous.query") {
-      const ack = async (matches: Parameters<typeof createRendezvousResponsePayload>[0]["matches"]) => {
-        if (!message.replyWithEnvelope) {
-          console.warn(`[relay] rendezvous ${intent}: no replyWithEnvelope (unexpected)`);
+      // Guard: payload size limit to prevent memory exhaustion
+      try {
+        const payloadBytes = JSON.stringify(message.envelope.payload).length;
+        if (payloadBytes > MAX_ENVELOPE_BYTES) {
+          console.warn(`[relay] payload too large ${payloadBytes} > ${MAX_ENVELOPE_BYTES} bytes, dropping`);
           return;
         }
-        const responsePayload = createRendezvousResponsePayload({ matches });
-        await message.replyWithEnvelope({
-          version: "0.1",
-          messageId: randomUUID(),
-          createdAt: new Date().toISOString(),
-          senderPeerId: mesh.peerId,
-          senderPublicKey: RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
-          senderRole: "agent",
-          recipientPeerId: message.envelope.senderPeerId,
-          recipientRole: "agent",
-          intent: "rendezvous.response",
-          signature: RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
-          payload: responsePayload,
-        } as EnvoyEnvelope);
-      };
+      } catch {
+        console.warn(`[relay] failed to measure payload size, dropping`);
+        return;
+      }
+
+      // Handle rendezvous intents
+      if (intent === "rendezvous.register" || intent === "rendezvous.query") {
+        const ack = async (matches: Parameters<typeof createRendezvousResponsePayload>[0]["matches"]) => {
+          try {
+            if (!message.replyWithEnvelope) {
+              console.warn(`[relay] rendezvous ${intent}: no replyWithEnvelope (unexpected)`);
+              return;
+            }
+            const responsePayload = createRendezvousResponsePayload({ matches });
+            await message.replyWithEnvelope({
+              version: "0.1",
+              messageId: randomUUID(),
+              createdAt: new Date().toISOString(),
+              senderPeerId: mesh.peerId,
+              senderPublicKey: RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
+              senderRole: "agent",
+              recipientPeerId: message.envelope.senderPeerId,
+              recipientRole: "agent",
+              intent: "rendezvous.response",
+              signature: RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
+              payload: responsePayload,
+            } as EnvoyEnvelope);
+          } catch (ackErr) {
+            console.error("[relay] Failed to send rendezvous ACK:", ackErr);
+          }
+        };
 
       if (intent === "rendezvous.register") {
         try {
@@ -286,6 +391,14 @@ try {
         const connectedPeers = mesh.getConnectedRelayPeerIds();
         const senderPeerId = message.envelope.senderPeerId;
         const targets = connectedPeers.filter((pid) => pid !== senderPeerId);
+
+        // Guard: limit fan-out targets to prevent resource exhaustion
+        if (targets.length > MAX_FANOUT_TARGETS) {
+          console.warn(
+            `[relay] broadcast.request queryId=${payload.queryId}: too many targets ${targets.length} > ${MAX_FANOUT_TARGETS}, truncating`,
+          );
+          targets.length = MAX_FANOUT_TARGETS;
+        }
 
         if (targets.length === 0) {
           console.log(`[relay] broadcast.request queryId=${payload.queryId}: no peers to fan out to`);
@@ -366,6 +479,14 @@ try {
         const senderPeerId = message.envelope.senderPeerId;
         const forwards = allForwards.filter((pid) => pid !== senderPeerId);
 
+        // Guard: limit forward targets to prevent resource exhaustion
+        if (forwards.length > MAX_FORWARD_TARGETS) {
+          console.warn(
+            `[relay] task.cancel taskId=${payload.taskId}: too many forwards ${forwards.length} > ${MAX_FORWARD_TARGETS}, truncating`,
+          );
+          forwards.length = MAX_FORWARD_TARGETS;
+        }
+
         if (forwards.length === 0) {
           return;
         }
@@ -402,6 +523,10 @@ try {
         console.error("[relay] Failed to handle task.cancel:", error);
       }
       return;
+    }
+    } catch (error) {
+      // Guard: catch-all for any unexpected errors in message handling
+      console.error("[relay] Unexpected error in message handler:", error);
     }
   });
 } catch (error) {
