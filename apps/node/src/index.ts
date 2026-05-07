@@ -228,6 +228,84 @@ const RELAY_CONTROL_TTL_MS = 90_000;
 const RELAY_FORWARD_LOOKUP_REPLY_MS = 12_000;
 const RELAY_MANAGER_SNAPSHOT_INTERVAL_MS = 30_000;
 const RELAY_HEALTH_INTERVAL_MS = 30_000;
+
+// ============================================================================
+// RATE LIMITING & ABUSE PREVENTION: Bounded structures to prevent exhaustion
+// ============================================================================
+
+// Per-peer inbound message rate limiting
+const peerRegistrationCount = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
+const RATE_LIMIT_MAX_REGISTRATIONS = 30; // max inbound messages per peer per window
+const MAX_RATE_LIMIT_ENTRIES = 10_000; // Prevent memory exhaustion
+
+// Message deduplication to prevent replay attacks
+const seenMessageIds = new Set<string>();
+const MAX_SEEN_MESSAGE_IDS = 100_000;
+
+// Maximum payload size to prevent memory exhaustion (1MB)
+const MAX_ENVELOPE_BYTES = 1 * 1024 * 1024;
+
+function checkInboundRateLimit(peerId: string): boolean {
+  if (!peerId || typeof peerId !== "string") {
+    return false;
+  }
+
+  if (peerRegistrationCount.size >= MAX_RATE_LIMIT_ENTRIES) {
+    const now = Date.now();
+    let oldest: string | null = null;
+    let oldestExpiry = Infinity;
+    for (const [id, entry] of peerRegistrationCount) {
+      if (entry.resetAt < now && entry.resetAt < oldestExpiry) {
+        oldest = id;
+        oldestExpiry = entry.resetAt;
+      }
+    }
+    if (oldest) {
+      peerRegistrationCount.delete(oldest);
+    }
+  }
+
+  const now = Date.now();
+  const entry = peerRegistrationCount.get(peerId);
+
+  if (!entry || entry.resetAt < now) {
+    peerRegistrationCount.set(peerId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+
+  if (entry.count >= RATE_LIMIT_MAX_REGISTRATIONS) {
+    return false;
+  }
+
+  entry.count++;
+  return true;
+}
+
+function isMessageSeen(messageId: string): boolean {
+  if (!messageId || typeof messageId !== "string") {
+    return true; // Treat invalid IDs as "seen" to reject them
+  }
+  return seenMessageIds.has(messageId);
+}
+
+function markMessageSeen(messageId: string): void {
+  if (!messageId || typeof messageId !== "string") {
+    return;
+  }
+
+  if (seenMessageIds.size >= MAX_SEEN_MESSAGE_IDS) {
+    const targetSize = Math.floor(MAX_SEEN_MESSAGE_IDS * 0.1);
+    let removed = 0;
+    for (const id of seenMessageIds) {
+      if (removed >= targetSize) break;
+      seenMessageIds.delete(id);
+      removed++;
+    }
+  }
+  seenMessageIds.add(messageId);
+}
+
 let bootstrapReprobeTimer: ReturnType<typeof setTimeout> | undefined;
 let bootstrapReprobeCursor = 0;
 let capabilityDiscoveryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -303,6 +381,31 @@ mesh.onPeerDiscovered(async (peer) => {
 
 mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelope, remoteAddr }) => {
   const receivedAt = Date.now();
+
+  // Guard: payload size limit to prevent memory exhaustion
+  try {
+    const payloadBytes = JSON.stringify(inboundEnvelope.payload).length;
+    if (payloadBytes > MAX_ENVELOPE_BYTES) {
+      console.warn(`[node] payload too large ${payloadBytes} > ${MAX_ENVELOPE_BYTES} bytes from ${remotePeerId}, dropping`);
+      return;
+    }
+  } catch {
+    console.warn(`[node] failed to measure payload size from ${remotePeerId}, dropping`);
+    return;
+  }
+
+  // Guard: deduplication — skip if we've already processed this message ID
+  if (isMessageSeen(inboundEnvelope.messageId)) {
+    return;
+  }
+  markMessageSeen(inboundEnvelope.messageId);
+
+  // Guard: per-peer rate limiting
+  if (!checkInboundRateLimit(remotePeerId)) {
+    console.warn(`[node] rate limited for peer ${remotePeerId}, dropping message`);
+    return;
+  }
+
   const guardDecision = inboundGuard.inspect(inboundEnvelope);
 
   if (guardDecision.action === "reject") {
@@ -1503,6 +1606,25 @@ statsIntervalTimer = setInterval(() => {
     }
   } catch (err) {
     console.error("[node-stats] stats interval error:", err);
+  }
+}, 60_000);
+
+// Periodic cleanup of expired rate limit entries
+setInterval(() => {
+  try {
+    const now = Date.now();
+    let cleaned = 0;
+    for (const [peerId, entry] of peerRegistrationCount.entries()) {
+      if (entry.resetAt < now) {
+        peerRegistrationCount.delete(peerId);
+        cleaned++;
+      }
+    }
+    if (cleaned > 0) {
+      console.log(`[node] Rate limit cleanup: removed ${cleaned} expired entries`);
+    }
+  } catch (err) {
+    console.error("[node] Rate limit cleanup error:", err);
   }
 }, 60_000);
 
