@@ -18,6 +18,7 @@ import {
   parseBroadcastRequestPayload,
   parseBroadcastCancelPayload,
   createBroadcastCancelPayload,
+  parseTaskCancelPayload,
   RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
   RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
   type EnvoyEnvelope,
@@ -262,6 +263,49 @@ try {
         console.log(`[relay] broadcast.cancel queryId=${payload.queryId} reason=${payload.reason}`);
       } catch (error) {
         console.error("[relay] Failed to handle broadcast.cancel:", error);
+      }
+      return;
+    }
+
+    // Handle task.cancel — fan out to forwardToPeerIds with TTL decrement
+    if (intent === "task.cancel") {
+      try {
+        const payload = parseTaskCancelPayload(message.envelope.payload);
+        const hops = payload.relayRemainingHops ?? 0;
+        const forwards = payload.forwardToPeerIds ?? [];
+
+        if (forwards.length === 0 || hops <= 0) {
+          return;
+        }
+
+        // Decrement TTL before forwarding
+        const nextHops = hops - 1;
+        const nextPayload = {
+          ...payload,
+          relayRemainingHops: nextHops > 0 ? nextHops : undefined,
+          forwardToPeerIds: nextHops > 0 ? forwards : undefined,
+        };
+
+        let delivered = 0;
+        for (const targetPeer of forwards) {
+          try {
+            const forwardEnvelope: EnvoyEnvelope = {
+              ...message.envelope,
+              messageId: randomUUID(),
+              recipientPeerId: targetPeer,
+              payload: nextPayload,
+            } as EnvoyEnvelope;
+            await mesh.send(targetPeer, forwardEnvelope);
+            delivered++;
+          } catch (err) {
+            console.warn(`[relay] task.cancel fanout to ${targetPeer}: ${err}`);
+          }
+        }
+        console.log(
+          `[relay] task.cancel taskId=${payload.taskId} hops=${hops}→${nextHops}: delivered to ${delivered}/${forwards.length} peers`,
+        );
+      } catch (error) {
+        console.error("[relay] Failed to handle task.cancel:", error);
       }
       return;
     }

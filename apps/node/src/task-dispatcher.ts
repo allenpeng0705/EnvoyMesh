@@ -161,6 +161,12 @@ function createDefaultDecision<TIntent extends A2ATaskIntent>(
     payload,
   );
 
+  // Extract peer tracking info from envelope sender
+  // peerOwnerId: the sender's runtime peer identity (used for routing cancellations)
+  // peerDeviceId: derived from sender's public key (unique per device)
+  const peerOwnerId = envelope.senderPeerId;
+  const peerDeviceId = envelope.senderPublicKey;
+
   return {
     action: "handled",
     intent: envelope.intent as A2ATaskIntent,
@@ -175,6 +181,8 @@ function createDefaultDecision<TIntent extends A2ATaskIntent>(
       summary,
       relatedMessageId: envelope.messageId,
       createdAt: envelope.createdAt,
+      peerOwnerId,
+      peerDeviceId,
     }),
   };
 }

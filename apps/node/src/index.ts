@@ -2969,7 +2969,13 @@ async function relayTaskCancelIfNeeded(input: {
   try {
     const cancelPayload = parseTaskCancelPayload(envelope.payload);
     const hops = cancelPayload.relayRemainingHops ?? 0;
-    const forwards = cancelPayload.forwardToPeerIds ?? [];
+    let forwards = cancelPayload.forwardToPeerIds ?? [];
+
+    // Auto-populate forwardToPeerIds from task journal if not already set
+    if (forwards.length === 0 && hops > 0) {
+      forwards = await getTaskParticipantsForCancel(taskStore, cancelPayload.taskId, profile);
+    }
+
     if (forwards.length === 0 || hops <= 0) {
       return;
     }
@@ -3016,6 +3022,28 @@ async function relayTaskCancelIfNeeded(input: {
   } catch {
     // ignore malformed cancel relay metadata
   }
+}
+
+/**
+ * Look up task participants from journal entries to auto-populate forwardToPeerIds
+ * for task cancellation relay. Excludes our own peer ID.
+ */
+async function getTaskParticipantsForCancel(
+  taskStore: ReturnType<typeof createLocalTaskStore>,
+  taskId: string,
+  profile: Awaited<ReturnType<typeof loadOrCreateNodeProfile>>,
+): Promise<string[]> {
+  const ourPeerId = derivePeerId(profile.device.publicKeyPem);
+  const allEntries = await taskStore.readTaskJournalEntries();
+  const participantSet = new Set<string>();
+
+  for (const entry of allEntries) {
+    if (entry.taskId === taskId && entry.peerOwnerId && entry.peerOwnerId !== ourPeerId) {
+      participantSet.add(entry.peerOwnerId);
+    }
+  }
+
+  return Array.from(participantSet);
 }
 
 async function appendP2pTrace(event: P2pDebugEvent): Promise<void> {

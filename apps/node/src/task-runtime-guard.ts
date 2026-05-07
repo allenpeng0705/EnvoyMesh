@@ -39,6 +39,12 @@ export async function guardInboundTaskRuntime(input: {
       return { ok: false, reason: "task is closed after a completed result" };
     }
 
+    // Check TTL for task mandates (propagation budget for relay hops)
+    const ttlReason = await resolveTtlExpiredReason(intent, payload, store);
+    if (ttlReason) {
+      return { ok: false, reason: ttlReason };
+    }
+
     const deadlineIso = await resolveExpiryDeadlineIso(intent, payload, store);
     if (deadlineIso && new Date(deadlineIso).getTime() < now.getTime()) {
       return { ok: false, reason: `task window expired (deadline ${deadlineIso})` };
@@ -163,5 +169,28 @@ async function resolveExpiryDeadlineIso(
       const mandateId = reportPayload.report.mandateId;
       return mandateId ? (await store.getMandateTermination(mandateId))?.expiresAt : undefined;
     }
+  }
+}
+
+/**
+ * Check if mandate TTL has expired (propagation budget exhausted).
+ * Returns undefined if TTL is valid, or an error reason string if expired.
+ */
+async function resolveTtlExpiredReason(
+  intent: A2ATaskIntent,
+  payload: A2ATaskPayloadByIntent[A2ATaskIntent],
+  _store: TaskRuntimeStateStore,
+): Promise<string | undefined> {
+  switch (intent) {
+    case "task.mandate": {
+      const mandatePayload = payload as TaskMandatePayload;
+      const ttl = mandatePayload.mandate.ttl ?? 3;
+      if (ttl <= 0) {
+        return `mandate TTL expired (mandate propagation budget exhausted)`;
+      }
+      return undefined;
+    }
+    default:
+      return undefined;
   }
 }

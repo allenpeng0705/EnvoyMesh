@@ -846,6 +846,8 @@ export const UnsignedMandateSchema = z.object({
   closeOnFirstCompletedResult: z.boolean().default(false),
   /** When set (2–32), task stays open until this many completed task.result payloads arrive. Ignored if closeOnFirstCompletedResult is true. */
   collectCompletedResults: z.number().int().min(2).max(32).optional(),
+  /** Time-to-live: max relay hops for task propagation. Default 3. */
+  ttl: z.number().int().min(1).max(8).default(3),
   requiresApprovalFor: z.array(MandateActionSchema).default([]),
 });
 
@@ -2009,6 +2011,7 @@ export interface CreateUnsignedMandateInput {
   expiresAt?: string;
   closeOnFirstCompletedResult?: boolean;
   collectCompletedResults?: number;
+  ttl?: number;
   requiresApprovalFor?: MandateAction[];
   mandateId?: string;
 }
@@ -2033,6 +2036,7 @@ export function createUnsignedMandate(input: CreateUnsignedMandateInput): Unsign
     expiresAt: input.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     closeOnFirstCompletedResult: input.closeOnFirstCompletedResult ?? false,
     collectCompletedResults: input.collectCompletedResults,
+    ttl: input.ttl ?? 3,
     requiresApprovalFor: input.requiresApprovalFor ?? ["purchase", "raw_contact_exchange"],
   });
 }
