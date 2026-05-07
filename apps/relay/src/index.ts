@@ -267,24 +267,30 @@ try {
       return;
     }
 
-    // Handle task.cancel — fan out to forwardToPeerIds with TTL decrement
+    // Handle task.cancel — fan out to forwardToPeerIds (if hops remain)
+    // NOTE: We do NOT modify relayRemainingHops or forwardToPeerIds in the payload.
+    // The signature covers the original payload, so we must not modify it.
+    // Recipients verify using the ORIGINAL sender's signature (relay is just transport).
     if (intent === "task.cancel") {
       try {
         const payload = parseTaskCancelPayload(message.envelope.payload);
         const hops = payload.relayRemainingHops ?? 0;
-        const forwards = payload.forwardToPeerIds ?? [];
+        const allForwards = payload.forwardToPeerIds ?? [];
 
-        if (forwards.length === 0 || hops <= 0) {
+        if (allForwards.length === 0 || hops <= 0) {
           return;
         }
 
-        // Decrement TTL before forwarding
+        // Filter out sender from forward list (don't send cancel back to originator)
+        const senderPeerId = message.envelope.senderPeerId;
+        const forwards = allForwards.filter((pid) => pid !== senderPeerId);
+
+        if (forwards.length === 0) {
+          return;
+        }
+
+        // Decrement hops for next relay, but keep original payload intact for signature
         const nextHops = hops - 1;
-        const nextPayload = {
-          ...payload,
-          relayRemainingHops: nextHops > 0 ? nextHops : undefined,
-          forwardToPeerIds: nextHops > 0 ? forwards : undefined,
-        };
 
         let delivered = 0;
         for (const targetPeer of forwards) {
@@ -293,7 +299,7 @@ try {
               ...message.envelope,
               messageId: randomUUID(),
               recipientPeerId: targetPeer,
-              payload: nextPayload,
+              // Keep original payload — signature must remain valid!
             } as EnvoyEnvelope;
             await mesh.send(targetPeer, forwardEnvelope);
             delivered++;
