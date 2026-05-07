@@ -1566,6 +1566,178 @@ function App() {
                     </button>
                   </div>
                 </section>
+
+                <section className="settings-section">
+                  <h3>AI / Model Provider</h3>
+                  <p className="section-desc">
+                    Configure the AI model provider for knowledge queries and chat assistance.
+                  </p>
+
+                  <dl className="settings-list">
+                    <dt>Provider Mode</dt>
+                    <dd>
+                      <select
+                        className="settings-select"
+                        value={nodeConfig?.modelProviders?.mode ?? "mock"}
+                        onChange={async (e) => {
+                          const mode = e.target.value as any;
+                          await nodeService.updateNodeConfig({
+                            modelProviders: { ...nodeConfig?.modelProviders, mode },
+                          } as any);
+                          nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                        }}
+                      >
+                        <option value="mock">Mock (testing only)</option>
+                        <option value="openai-compatible">OpenAI-Compatible (Minimax, OpenAI, etc.)</option>
+                        <option value="anthropic-compatible">Anthropic-Compatible</option>
+                        <option value="ollama">Ollama (local)</option>
+                        <option value="litellm">LiteLLM (local/cloud)</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                    </dd>
+
+                    <dt>Endpoint URL</dt>
+                    <dd>
+                      <input
+                        type="text"
+                        className="settings-input"
+                        placeholder="https://api.minimaxi.com/v1"
+                        value={nodeConfig?.modelProviders?.endpoint ?? ""}
+                        onChange={async (e) => {
+                          await nodeService.updateNodeConfig({
+                            modelProviders: { ...nodeConfig?.modelProviders, endpoint: e.target.value },
+                          } as any);
+                        }}
+                        onBlur={async () => {
+                          nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                        }}
+                      />
+                    </dd>
+
+                    <dt>Model Name</dt>
+                    <dd>
+                      <input
+                        type="text"
+                        className="settings-input"
+                        placeholder="MiniMax-M2.7"
+                        value={nodeConfig?.modelProviders?.modelName ?? ""}
+                        onChange={async (e) => {
+                          await nodeService.updateNodeConfig({
+                            modelProviders: { ...nodeConfig?.modelProviders, modelName: e.target.value },
+                          } as any);
+                        }}
+                        onBlur={async () => {
+                          nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                        }}
+                      />
+                    </dd>
+
+                    <dt>API Key</dt>
+                    <dd>
+                      <input
+                        type="password"
+                        className="settings-input"
+                        placeholder="sk-..."
+                        value={nodeConfig?.modelProviders?.apiKey ?? ""}
+                        onChange={async (e) => {
+                          await nodeService.updateNodeConfig({
+                            modelProviders: { ...nodeConfig?.modelProviders, apiKey: e.target.value },
+                          } as any);
+                        }}
+                        onBlur={async () => {
+                          nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                        }}
+                      />
+                    </dd>
+                  </dl>
+                </section>
+
+                <section className="settings-section">
+                  <h3>AI Chat Behavior</h3>
+                  <p className="section-desc">
+                    Control how AI interacts in conversations.
+                  </p>
+
+                  <div className="settings-toggle-row">
+                    <div className="toggle-info">
+                      <strong>Chat Assist</strong>
+                      <span className="toggle-desc">AI suggests message drafts while typing</span>
+                    </div>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={nodeConfig?.chatAssistEnabled ?? false}
+                        onChange={async (e) => {
+                          await nodeService.updateNodeConfig({
+                            chatAssistEnabled: e.target.checked,
+                          } as any);
+                          nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                        }}
+                      />
+                      <span className="toggle-slider" />
+                    </label>
+                  </div>
+
+                  <div className="settings-toggle-row">
+                    <div className="toggle-info">
+                      <strong>Auto AI Response</strong>
+                      <span className="toggle-desc">AI responds automatically to messages in chat</span>
+                    </div>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={
+                          (nodeConfig?.autonomousPolicies ?? []).find(p => p.domain === "social")?.autoSendChat ?? false
+                        }
+                        onChange={async (e) => {
+                          const currentPolicies = nodeConfig?.autonomousPolicies ?? [];
+                          const existingSocial = currentPolicies.find(p => p.domain === "social");
+                          let updatedPolicies: any[];
+                          if (existingSocial) {
+                            updatedPolicies = currentPolicies.map(p =>
+                              p.domain === "social" ? { ...p, autoSendChat: e.target.checked } : p
+                            );
+                          } else {
+                            updatedPolicies = [
+                              ...currentPolicies,
+                              {
+                                domain: "social",
+                                maxSensitivity: "friends",
+                                autoAnswer: e.target.checked,
+                                autoSendChat: e.target.checked,
+                              },
+                            ];
+                          }
+                          await nodeService.updateNodeConfig({
+                            autonomousPolicies: updatedPolicies,
+                          } as any);
+                          nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                        }}
+                      />
+                      <span className="toggle-slider" />
+                    </label>
+                  </div>
+
+                  <div className="settings-toggle-row">
+                    <div className="toggle-info">
+                      <strong>Autonomous Kill Switch</strong>
+                      <span className="toggle-desc">Master toggle - pause all autonomous AI actions</span>
+                    </div>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={nodeConfig?.autonomousKillSwitch ?? false}
+                        onChange={async (e) => {
+                          await nodeService.updateNodeConfig({
+                            autonomousKillSwitch: e.target.checked,
+                          } as any);
+                          nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                        }}
+                      />
+                      <span className="toggle-slider" />
+                    </label>
+                  </div>
+                </section>
               </>
             )}
 
