@@ -263,6 +263,8 @@ export class WsServer {
       case "stopAdvertiseTopic":
         await ns.stopAdvertiseTopic(params.topic as string);
         return { success: true };
+      case "knowledgeQuery":
+        return ns.knowledgeQuery(params.question as string);
       default:
         throw new Error(`Unknown method: ${method}`);
     }

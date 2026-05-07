@@ -25,9 +25,21 @@ export type KnowledgeQueryInboundResult =
 
 /**
  * Build the list of model providers from the node's model provider configuration.
+ * Environment variables can override config values:
+ * - ENVOY_MODEL_ENDPOINT: overrides config.endpoint
+ * - ENVOY_MODEL_API_KEY: overrides config.apiKey
+ * - ENVOY_MODEL_NAME: overrides config.modelName
  */
 function buildModelProviders(config: ModelProviderConfig): ModelProvider[] {
-  switch (config.mode) {
+  // Allow environment variables to override config
+  const effectiveConfig: ModelProviderConfig = {
+    ...config,
+    endpoint: process.env.ENVOY_MODEL_ENDPOINT ?? config.endpoint,
+    apiKey: process.env.ENVOY_MODEL_API_KEY ?? config.apiKey,
+    modelName: process.env.ENVOY_MODEL_NAME ?? config.modelName,
+  };
+
+  switch (effectiveConfig.mode) {
     case "disabled":
       return [];
     case "mock":
@@ -40,37 +52,37 @@ function buildModelProviders(config: ModelProviderConfig): ModelProvider[] {
     case "ollama":
       return [
         createOllamaLiteLlmProvider({
-          providerId: `local.ollama.${config.modelName ?? "llama3.1"}`,
-          modelName: config.modelName ?? "llama3.1",
-          endpoint: config.endpoint ?? "http://127.0.0.1:11434",
+          providerId: `local.ollama.${effectiveConfig.modelName ?? "llama3.1"}`,
+          modelName: effectiveConfig.modelName ?? "llama3.1",
+          endpoint: effectiveConfig.endpoint ?? "http://127.0.0.1:11434",
         }),
       ];
     case "litellm":
       return [
         createLiteLlmProvider({
-          providerId: `cloud.${config.modelName ?? "litellm-model"}`,
-          providerType: config.requireApprovalForCloud !== false ? "cloud" : "local",
-          modelName: config.modelName ?? "gpt-4o-mini",
-          endpoint: config.endpoint ?? "http://127.0.0.1:4000/v1",
-          apiKey: config.apiKey,
+          providerId: `cloud.${effectiveConfig.modelName ?? "litellm-model"}`,
+          providerType: effectiveConfig.requireApprovalForCloud !== false ? "cloud" : "local",
+          modelName: effectiveConfig.modelName ?? "gpt-4o-mini",
+          endpoint: effectiveConfig.endpoint ?? "http://127.0.0.1:4000/v1",
+          apiKey: effectiveConfig.apiKey,
         }),
       ];
     case "openai-compatible":
       return [
         createOpenAiProvider({
           providerId: "cloud.openai-compatible",
-          modelName: config.modelName ?? "gpt-4o-mini",
-          apiKey: config.apiKey,
-          endpoint: config.endpoint ?? "https://api.openai.com/v1",
+          modelName: effectiveConfig.modelName ?? "gpt-4o-mini",
+          apiKey: effectiveConfig.apiKey,
+          endpoint: effectiveConfig.endpoint ?? "https://api.openai.com/v1",
         }),
       ];
     case "anthropic-compatible":
       return [
         createAnthropicProvider({
           providerId: "cloud.anthropic-compatible",
-          modelName: config.modelName ?? "claude-sonnet-4-20250514",
-          apiKey: config.apiKey,
-          endpoint: config.endpoint ?? "https://api.anthropic.com",
+          modelName: effectiveConfig.modelName ?? "claude-sonnet-4-20250514",
+          apiKey: effectiveConfig.apiKey,
+          endpoint: effectiveConfig.endpoint ?? "https://api.anthropic.com",
         }),
       ];
     default:

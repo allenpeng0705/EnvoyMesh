@@ -67,6 +67,9 @@ interface NodeServiceClient {
   getConnectionStatus(): Promise<{ online: boolean; peerId: string; multiaddrs: string[]; connectedRelays: string[]; bondedPeers: number }>;
   getPeerConnectionInfo(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
 
+  // AI / Knowledge Query
+  knowledgeQuery(question: string): Promise<string>;
+
   // Node Configuration
   getNodeConfig(): Promise<NodeConfig>;
   updateNodeConfig(config: Partial<NodeConfig>): Promise<void>;
@@ -183,6 +186,10 @@ export function NodeServiceProvider({ children }: { children: ReactNode }) {
 
       async getPeerConnectionInfo(peerOwnerId: string) {
         return wsClient.rpc("getPeerConnectionInfo", { peerOwnerId });
+      },
+
+      async knowledgeQuery(question: string) {
+        return wsClient.rpc("knowledgeQuery", { question }) as Promise<string>;
       },
 
       async advertiseTopic(topic: string) {

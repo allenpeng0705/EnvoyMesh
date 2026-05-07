@@ -438,4 +438,12 @@ export interface NodeService {
    * @param peerOwnerId The owner's peer ID (e.g., envoy:owner:...)
    */
   getPeerConnectionInfo(peerOwnerId: string): Promise<PeerConnectionInfo>;
+
+  // ----- AI / Knowledge Query -----
+
+  /**
+   * Query the AI model with a knowledge question.
+   * Returns the AI's response text.
+   */
+  knowledgeQuery(question: string): Promise<string>;
 }

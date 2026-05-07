@@ -36,6 +36,7 @@ import {
   createRendezvousRegisterPayload,
   createRendezvousQueryPayload,
   RendezvousResponsePayloadSchema,
+  createKnowledgeQueryPayload,
   type HumanProfilePayload,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
@@ -77,6 +78,7 @@ import {
 import { join } from "node:path";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
+import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 
 /** Unblocks when an underlying `fs.readFile` or mutex never settles (seen on some Windows setups). */
 function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -1872,6 +1874,47 @@ class NodeServiceImpl implements NodeService {
     }
 
     return this._mesh.getPeerConnectionInfo(peerRecord.peerId);
+  }
+
+  async knowledgeQuery(question: string): Promise<string> {
+    if (!this._mesh || !this._profile) {
+      throw new Error("Node not initialized");
+    }
+
+    if (!this._taskStore) {
+      throw new Error("Task store not initialized");
+    }
+
+    const kqPayload = createKnowledgeQueryPayload({ query: question });
+    const unsignedEnvelope = createUnsignedEnvelope({
+      senderPeerId: this._mesh.peerId,
+      senderPublicKey: this._profile.device.publicKeyPem,
+      senderRole: "agent",
+      intent: "knowledge.query",
+      payload: kqPayload,
+    });
+    const envelope = signUnsignedEnvelope(unsignedEnvelope, this._profile.device.privateKeyPem) as EnvoyEnvelope;
+
+    const nodeConfig = await this.getNodeConfig();
+
+    const result = await handleInboundKnowledgeQuery({
+      envelope,
+      remotePeerId: this._mesh.peerId,
+      receivedAt: Date.now(),
+      correlationId: envelope.messageId,
+      taskStore: this._taskStore,
+      trustStore: this._trustStore,
+      peerDirectoryStore: this._peerDirectoryStore,
+      profile: this._profile,
+      vaultIndex: null,
+      modelProviders: nodeConfig.modelProviders,
+    });
+
+    if (!result.ok) {
+      throw new Error(result.reason);
+    }
+
+    return result.responsePayload.answer;
   }
 
   // ============================================

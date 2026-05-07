@@ -128,7 +128,7 @@ function App() {
   const [isSendingChat, setIsSendingChat] = useState(false);
   const lastChatSendRef = useRef<{ at: number; contact: string; text: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const [currentView, setCurrentView] = useState<"chat" | "contacts" | "search" | "profile" | "settings" | "inbox">("chat");
+  const [currentView, setCurrentView] = useState<"chat" | "contacts" | "search" | "profile" | "settings" | "inbox" | "ai">("chat");
   const [nodeConfig, setNodeConfig] = useState<NodeConfig | null>(null);
   const [relays, setRelays] = useState<RelayConfig[]>([]);
   const [newRelayAddr, setNewRelayAddr] = useState("");
@@ -147,6 +147,11 @@ function App() {
   });
   const [advertisedTopics, setAdvertisedTopics] = useState<string[]>([]);
   const [newTopic, setNewTopic] = useState("");
+
+  // AI Chat state
+  const [aiMessages, setAiMessages] = useState<Array<{ role: "user" | "ai"; text: string; timestamp: string }>>([]);
+  const [aiInput, setAiInput] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
 
   // Selected capabilities for rendezvous discovery
   const [selectedCapabilities, setSelectedCapabilities] = useState<Capability[]>([]);
@@ -434,6 +439,14 @@ function App() {
       return;
     }
 
+    // Check for /ai command - send to AI instead
+    if (text.startsWith("/ai ")) {
+      const question = text.slice(4); // Remove "/ai " prefix
+      await sendAiMessage(question);
+      setChatInput("");
+      return;
+    }
+
     const now = Date.now();
     const last = lastChatSendRef.current;
     if (
@@ -454,6 +467,27 @@ function App() {
       console.error("[handleSendMessage] sendChat failed:", error);
     } finally {
       setIsSendingChat(false);
+    }
+  };
+
+  const sendAiMessage = async (question: string) => {
+    if (!question.trim() || isAiLoading) return;
+
+    const userMessage = { role: "user" as const, text: question.trim(), timestamp: new Date().toISOString() };
+    setAiMessages((prev) => [...prev, userMessage]);
+    setAiInput("");
+    setIsAiLoading(true);
+
+    try {
+      const answer = await nodeService.knowledgeQuery(question);
+      const aiMessage = { role: "ai" as const, text: answer, timestamp: new Date().toISOString() };
+      setAiMessages((prev) => [...prev, aiMessage]);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to get AI response";
+      const aiMessage = { role: "ai" as const, text: `Error: ${errorMessage}`, timestamp: new Date().toISOString() };
+      setAiMessages((prev) => [...prev, aiMessage]);
+    } finally {
+      setIsAiLoading(false);
     }
   };
 
@@ -679,6 +713,12 @@ function App() {
             onClick={() => setCurrentView("search")}
           >
             Search
+          </button>
+          <button
+            className={currentView === "ai" ? "active" : ""}
+            onClick={() => setCurrentView("ai")}
+          >
+            AI
           </button>
           <button
             className={currentView === "profile" ? "active" : ""}
@@ -1807,6 +1847,72 @@ function App() {
         )}
 
               </main>
+
+        {currentView === "ai" && (
+          <div className="ai-view">
+            <header className="chat-header">
+              <h2>AI Assistant</h2>
+              <span className="ai-status">
+                {nodeConfig?.modelProviders?.mode === "disabled" ? "AI Disabled" :
+                 nodeConfig?.modelProviders?.mode === "mock" ? "Mock Mode" :
+                 `Model: ${nodeConfig?.modelProviders?.modelName ?? "Not set"}`}
+              </span>
+            </header>
+
+            <div className="ai-messages">
+              {aiMessages.length === 0 ? (
+                <div className="ai-empty">
+                  <p>Chat with your AI assistant</p>
+                  <small>Ask questions, get help with tasks, or just have a conversation</small>
+                  <div className="ai-suggestions">
+                    <button onClick={() => setAiInput("What can you help me with?")}>What can you help me with?</button>
+                    <button onClick={() => setAiInput("Summarize my recent conversations")}>Summarize my recent conversations</button>
+                    <button onClick={() => setAiInput("Help me draft a message")}>Help me draft a message</button>
+                  </div>
+                </div>
+              ) : (
+                aiMessages.map((msg, i) => (
+                  <div key={i} className={`ai-message ${msg.role}`}>
+                    <span className="ai-message-role">{msg.role === "user" ? "You" : "AI"}</span>
+                    <p className="ai-message-text">{msg.text}</p>
+                  </div>
+                ))
+              )}
+              {isAiLoading && (
+                <div className="ai-message ai">
+                  <span className="ai-message-role">AI</span>
+                  <p className="ai-message-text ai-loading">Thinking...</p>
+                </div>
+              )}
+            </div>
+
+            <div className="ai-input-area">
+              <input
+                type="text"
+                className="ai-input"
+                placeholder="Ask the AI anything..."
+                value={aiInput}
+                onChange={(e) => setAiInput(e.target.value)}
+                onKeyDown={async (e) => {
+                  if (e.key === "Enter" && aiInput.trim() && !isAiLoading) {
+                    await sendAiMessage(aiInput);
+                  }
+                }}
+              />
+              <button
+                className="ai-send"
+                onClick={async () => {
+                  if (aiInput.trim() && !isAiLoading) {
+                    await sendAiMessage(aiInput);
+                  }
+                }}
+                disabled={!aiInput.trim() || isAiLoading}
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        )}
 
         {currentView === "inbox" && (
           <div className="inbox-view">

@@ -99,6 +99,8 @@ export type RpcMethods =
   // Connection Status
   | "getConnectionStatus"
   | "getPeerConnectionInfo"
+  // AI / Knowledge Query
+  | "knowledgeQuery"
   // Node Configuration
   | "getNodeConfig"
   | "updateNodeConfig"
