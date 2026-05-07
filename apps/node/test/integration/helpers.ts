@@ -318,8 +318,8 @@ export function getRelayAddress(): string {
     }
   }
 
-  // Default for local testing - replace with your actual relay peer ID
-  return "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWJNFm9sPAcC1xKjJEqe7N3KKH7tM8hT4Z3s8X9vR2qLmK";
+  // Default: EnvoyMesh community relay
+  return "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
 }
 
 /**
