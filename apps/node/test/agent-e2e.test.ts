@@ -30,6 +30,7 @@ import {
   createTaskMandatePayload,
   createTaskNegotiatePayload,
   createTaskProposePayload,
+  createTaskHeartbeatPayload,
   createTaskResultPayload,
   createUnsignedEnvelope,
   parseBondAcceptPayload,
@@ -958,6 +959,458 @@ describe("E2E: task broadcast with TTL", () => {
     // Final recipient should send propose back
     await waitFor(async () => originatorReceived.includes("task.propose"), 3000);
     expect(originatorReceived).toContain("task.propose");
+  });
+});
+
+// ============================================================================
+// E2E: AI Agent Heartbeat During Long-Running Task
+// ============================================================================
+
+describe("E2E: AI agent heartbeat during long task", () => {
+  it("agent sends heartbeats while working and reports partial progress", async () => {
+    const ownerProfile = testProfile();
+    const agentProfile = testProfile();
+
+    const ownerReceived: string[] = [];
+    const agentReceived: string[] = [];
+    let heartbeatCount = 0;
+
+    const owner = await startMesh();
+    owner.onMessage(async ({ envelope }) => {
+      if (!verifyEnvelope(envelope)) return;
+      ownerReceived.push(envelope.intent);
+
+      if (envelope.intent === "task.heartbeat") {
+        heartbeatCount++;
+      }
+    });
+
+    const agent = await startMesh();
+    agent.onMessage(async ({ envelope }) => {
+      if (!verifyEnvelope(envelope)) return;
+      agentReceived.push(envelope.intent);
+
+      if (envelope.intent === "task.accept") {
+        // Simulate AI starting work and sending heartbeats
+        const accept = parseTaskAcceptPayload(envelope.payload);
+
+        // Simulate work with periodic heartbeats
+        let heartbeatIndex = 0;
+        const heartbeatInterval = setInterval(async () => {
+          heartbeatIndex++;
+          const heartbeatPayload = createTaskHeartbeatPayload({
+            taskId: accept.taskId,
+            mandateId: accept.mandateId,
+            state: "running",
+            summary: `Work in progress: step ${heartbeatIndex}/3`,
+          });
+
+          const unsignedHeartbeat = createUnsignedEnvelope({
+            senderPeerId: derivePeerId(agentProfile.device.publicKeyPem),
+            senderPublicKey: agentProfile.device.publicKeyPem,
+            senderRole: "agent",
+            recipientPeerId: owner.peerId,
+            recipientRole: "agent",
+            intent: "task.heartbeat",
+            payload: heartbeatPayload,
+          });
+
+          const signedHeartbeat = signUnsignedEnvelope(unsignedHeartbeat, agentProfile.device.privateKeyPem);
+          await agent.send(owner.multiaddrs[0], signedHeartbeat);
+
+          if (heartbeatIndex >= 3) {
+            clearInterval(heartbeatInterval);
+
+            // Send final result
+            const resultPayload = createTaskResultPayload({
+              taskId: accept.taskId,
+              mandateId: accept.mandateId,
+              status: "completed",
+              summary: "Task completed after sending heartbeats",
+            });
+
+            const unsignedResult = createUnsignedEnvelope({
+              senderPeerId: derivePeerId(agentProfile.device.publicKeyPem),
+              senderPublicKey: agentProfile.device.publicKeyPem,
+              senderRole: "agent",
+              recipientPeerId: owner.peerId,
+              recipientRole: "agent",
+              intent: "task.result",
+              payload: resultPayload,
+            });
+
+            const signedResult = signUnsignedEnvelope(unsignedResult, agentProfile.device.privateKeyPem);
+            await agent.send(owner.multiaddrs[0], signedResult);
+          }
+        }, 100);
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Owner sends mandate
+    const mandatePayload = createTaskMandatePayload({
+      taskId: "task-heartbeat",
+      mandateId: "mandate-heartbeat",
+      ownerOwnerId: ownerProfile.owner.ownerId,
+      ownerDeviceId: ownerProfile.device.deviceId,
+      maxSensitivity: "friends",
+      maxCost: { limit: 10, unit: "calls" },
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      closeOnFirstCompletedResult: true,
+    });
+
+    const unsignedMandate = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(ownerProfile.device.publicKeyPem),
+      senderPublicKey: ownerProfile.device.publicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: agent.peerId,
+      recipientRole: "agent",
+      intent: "task.mandate",
+      payload: mandatePayload,
+    });
+
+    const signedMandate = signUnsignedEnvelope(unsignedMandate, ownerProfile.device.privateKeyPem);
+    await owner.send(agent.multiaddrs[0], signedMandate);
+
+    await waitFor(async () => agentReceived.includes("task.mandate"), 3000);
+
+    // Owner sends propose
+    const proposePayload = createTaskProposePayload({
+      taskId: "task-heartbeat",
+      mandateId: "mandate-heartbeat",
+      proofOfIntent: testProofOfIntent(ownerProfile, "task-heartbeat", "mandate-heartbeat"),
+      objective: "Complete a long research task",
+      requestedResult: "Comprehensive report",
+    });
+
+    const unsignedPropose = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(ownerProfile.device.publicKeyPem),
+      senderPublicKey: ownerProfile.device.publicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: agent.peerId,
+      recipientRole: "agent",
+      intent: "task.propose",
+      payload: proposePayload,
+    });
+
+    const signedPropose = signUnsignedEnvelope(unsignedPropose, ownerProfile.device.privateKeyPem);
+    await owner.send(agent.multiaddrs[0], signedPropose);
+
+    await waitFor(async () => agentReceived.includes("task.propose"), 3000);
+
+    // Agent accepts
+    const acceptPayload = createTaskAcceptPayload({
+      taskId: "task-heartbeat",
+      mandateId: "mandate-heartbeat",
+      agreementSummary: "I accept this task",
+    });
+
+    const unsignedAccept = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(ownerProfile.device.publicKeyPem),
+      senderPublicKey: ownerProfile.device.publicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: agent.peerId,
+      recipientRole: "agent",
+      intent: "task.accept",
+      payload: acceptPayload,
+    });
+
+    const signedAccept = signUnsignedEnvelope(unsignedAccept, ownerProfile.device.privateKeyPem);
+    await owner.send(agent.multiaddrs[0], signedAccept);
+
+    // Wait for heartbeats
+    await waitFor(async () => heartbeatCount >= 3, 3000);
+    expect(heartbeatCount).toBe(3);
+
+    // Wait for final result
+    await waitFor(async () => ownerReceived.includes("task.result"), 3000);
+    expect(ownerReceived).toContain("task.result");
+  });
+});
+
+// ============================================================================
+// E2E: Multiple Agents Working on Same Task
+// ============================================================================
+
+describe("E2E: multiple agents on same task", () => {
+  it("three agents work on different parts of a task", async () => {
+    const ownerProfile = testProfile();
+    const agentAlphaProfile = testProfile();
+    const agentBetaProfile = testProfile();
+    const agentGammaProfile = testProfile();
+
+    const ownerReceived: string[] = [];
+    const results: string[] = [];
+
+    const owner = await startMesh();
+    owner.onMessage(async ({ envelope }) => {
+      if (!verifyEnvelope(envelope)) return;
+      ownerReceived.push(envelope.intent);
+
+      if (envelope.intent === "task.result") {
+        results.push(envelope.senderPeerId.slice(0, 10));
+      }
+    });
+
+    // Agent Alpha - does research
+    const agentAlpha = await startMesh();
+    agentAlpha.onMessage(async ({ envelope }) => {
+      if (!verifyEnvelope(envelope)) return;
+
+      if (envelope.intent === "task.mandate" && envelope.recipientPeerId === agentAlpha.peerId) {
+        setTimeout(async () => {
+          const resultPayload = createTaskResultPayload({
+            taskId: "task-multi-agent",
+            mandateId: "mandate-multi",
+            status: "completed",
+            summary: "Alpha: Research phase completed - found 50 relevant sources",
+          });
+
+          const unsignedResult = createUnsignedEnvelope({
+            senderPeerId: derivePeerId(agentAlphaProfile.device.publicKeyPem),
+            senderPublicKey: agentAlphaProfile.device.publicKeyPem,
+            senderRole: "agent",
+            recipientPeerId: owner.peerId,
+            recipientRole: "agent",
+            intent: "task.result",
+            payload: resultPayload,
+          });
+
+          const signedResult = signUnsignedEnvelope(unsignedResult, agentAlphaProfile.device.privateKeyPem);
+          await agentAlpha.send(owner.multiaddrs[0], signedResult);
+        }, 100);
+      }
+    });
+
+    // Agent Beta - does analysis
+    const agentBeta = await startMesh();
+    agentBeta.onMessage(async ({ envelope }) => {
+      if (!verifyEnvelope(envelope)) return;
+
+      if (envelope.intent === "task.mandate" && envelope.recipientPeerId === agentBeta.peerId) {
+        setTimeout(async () => {
+          const resultPayload = createTaskResultPayload({
+            taskId: "task-multi-agent",
+            mandateId: "mandate-multi",
+            status: "completed",
+            summary: "Beta: Analysis phase completed - synthesized all findings",
+          });
+
+          const unsignedResult = createUnsignedEnvelope({
+            senderPeerId: derivePeerId(agentBetaProfile.device.publicKeyPem),
+            senderPublicKey: agentBetaProfile.device.publicKeyPem,
+            senderRole: "agent",
+            recipientPeerId: owner.peerId,
+            recipientRole: "agent",
+            intent: "task.result",
+            payload: resultPayload,
+          });
+
+          const signedResult = signUnsignedEnvelope(unsignedResult, agentBetaProfile.device.privateKeyPem);
+          await agentBeta.send(owner.multiaddrs[0], signedResult);
+        }, 150);
+      }
+    });
+
+    // Agent Gamma - writes report
+    const agentGamma = await startMesh();
+    agentGamma.onMessage(async ({ envelope }) => {
+      if (!verifyEnvelope(envelope)) return;
+
+      if (envelope.intent === "task.mandate" && envelope.recipientPeerId === agentGamma.peerId) {
+        setTimeout(async () => {
+          const resultPayload = createTaskResultPayload({
+            taskId: "task-multi-agent",
+            mandateId: "mandate-multi",
+            status: "completed",
+            summary: "Gamma: Report writing completed - 10-page document ready",
+          });
+
+          const unsignedResult = createUnsignedEnvelope({
+            senderPeerId: derivePeerId(agentGammaProfile.device.publicKeyPem),
+            senderPublicKey: agentGammaProfile.device.publicKeyPem,
+            senderRole: "agent",
+            recipientPeerId: owner.peerId,
+            recipientRole: "agent",
+            intent: "task.result",
+            payload: resultPayload,
+          });
+
+          const signedResult = signUnsignedEnvelope(unsignedResult, agentGammaProfile.device.privateKeyPem);
+          await agentGamma.send(owner.multiaddrs[0], signedResult);
+        }, 200);
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Owner sends mandates to all three agents
+    const createMandate = (recipientPeerId: string) => {
+      const mandatePayload = createTaskMandatePayload({
+        taskId: "task-multi-agent",
+        mandateId: "mandate-multi",
+        ownerOwnerId: ownerProfile.owner.ownerId,
+        ownerDeviceId: ownerProfile.device.deviceId,
+        maxSensitivity: "friends",
+        maxCost: { limit: 10, unit: "calls" },
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        closeOnFirstCompletedResult: false, // Wait for all
+        collectCompletedResults: 3,
+      });
+
+      const unsignedMandate = createUnsignedEnvelope({
+        senderPeerId: derivePeerId(ownerProfile.device.publicKeyPem),
+        senderPublicKey: ownerProfile.device.publicKeyPem,
+        senderRole: "agent",
+        recipientPeerId,
+        recipientRole: "agent",
+        intent: "task.mandate",
+        payload: mandatePayload,
+      });
+
+      return signUnsignedEnvelope(unsignedMandate, ownerProfile.device.privateKeyPem);
+    };
+
+    await owner.send(agentAlpha.multiaddrs[0], createMandate(agentAlpha.peerId));
+    await owner.send(agentBeta.multiaddrs[0], createMandate(agentBeta.peerId));
+    await owner.send(agentGamma.multiaddrs[0], createMandate(agentGamma.peerId));
+
+    // Wait for all three results
+    await waitFor(async () => results.length >= 3, 3000);
+    expect(results.length).toBe(3);
+  });
+});
+
+// ============================================================================
+// E2E: Task with Deadline Pressure
+// ============================================================================
+
+describe("E2E: task with deadline pressure", () => {
+  it("agent completes task before deadline expires", async () => {
+    const ownerProfile = testProfile();
+    const agentProfile = testProfile();
+
+    const ownerReceived: string[] = [];
+    const agentReceived: string[] = [];
+
+    const owner = await startMesh();
+    owner.onMessage(async ({ envelope }) => {
+      if (!verifyEnvelope(envelope)) return;
+      ownerReceived.push(envelope.intent);
+    });
+
+    const agent = await startMesh();
+    agent.onMessage(async ({ envelope }) => {
+      if (!verifyEnvelope(envelope)) return;
+      agentReceived.push(envelope.intent);
+
+      if (envelope.intent === "task.accept") {
+        const accept = parseTaskAcceptPayload(envelope.payload);
+
+        // Agent works quickly to meet deadline
+        setTimeout(async () => {
+          const resultPayload = createTaskResultPayload({
+            taskId: accept.taskId,
+            mandateId: accept.mandateId,
+            status: "completed",
+            summary: "Completed with 5 minutes to spare!",
+          });
+
+          const unsignedResult = createUnsignedEnvelope({
+            senderPeerId: derivePeerId(agentProfile.device.publicKeyPem),
+            senderPublicKey: agentProfile.device.publicKeyPem,
+            senderRole: "agent",
+            recipientPeerId: owner.peerId,
+            recipientRole: "agent",
+            intent: "task.result",
+            payload: resultPayload,
+          });
+
+          const signedResult = signUnsignedEnvelope(unsignedResult, agentProfile.device.privateKeyPem);
+          await agent.send(owner.multiaddrs[0], signedResult);
+        }, 50);
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Owner sends mandate with short deadline (1 minute)
+    const deadline = new Date(Date.now() + 60 * 1000).toISOString(); // 1 minute from now
+
+    const mandatePayload = createTaskMandatePayload({
+      taskId: "task-deadline",
+      mandateId: "mandate-deadline",
+      ownerOwnerId: ownerProfile.owner.ownerId,
+      ownerDeviceId: ownerProfile.device.deviceId,
+      maxSensitivity: "friends",
+      maxCost: { limit: 10, unit: "calls" },
+      expiresAt: deadline,
+      closeOnFirstCompletedResult: true,
+    });
+
+    const unsignedMandate = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(ownerProfile.device.publicKeyPem),
+      senderPublicKey: ownerProfile.device.publicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: agent.peerId,
+      recipientRole: "agent",
+      intent: "task.mandate",
+      payload: mandatePayload,
+    });
+
+    const signedMandate = signUnsignedEnvelope(unsignedMandate, ownerProfile.device.privateKeyPem);
+    await owner.send(agent.multiaddrs[0], signedMandate);
+
+    await waitFor(async () => agentReceived.includes("task.mandate"), 3000);
+
+    // Owner sends propose
+    const proposePayload = createTaskProposePayload({
+      taskId: "task-deadline",
+      mandateId: "mandate-deadline",
+      proofOfIntent: testProofOfIntent(ownerProfile, "task-deadline", "mandate-deadline"),
+      objective: "Urgent task - deadline in 1 minute",
+      requestedResult: "Quick result",
+    });
+
+    const unsignedPropose = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(ownerProfile.device.publicKeyPem),
+      senderPublicKey: ownerProfile.device.publicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: agent.peerId,
+      recipientRole: "agent",
+      intent: "task.propose",
+      payload: proposePayload,
+    });
+
+    const signedPropose = signUnsignedEnvelope(unsignedPropose, ownerProfile.device.privateKeyPem);
+    await owner.send(agent.multiaddrs[0], signedPropose);
+
+    await waitFor(async () => agentReceived.includes("task.propose"), 3000);
+
+    // Agent accepts
+    const acceptPayload = createTaskAcceptPayload({
+      taskId: "task-deadline",
+      mandateId: "mandate-deadline",
+      agreementSummary: "I accept - will deliver quickly",
+    });
+
+    const unsignedAccept = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(ownerProfile.device.publicKeyPem),
+      senderPublicKey: ownerProfile.device.publicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: agent.peerId,
+      recipientRole: "agent",
+      intent: "task.accept",
+      payload: acceptPayload,
+    });
+
+    const signedAccept = signUnsignedEnvelope(unsignedAccept, ownerProfile.device.privateKeyPem);
+    await owner.send(agent.multiaddrs[0], signedAccept);
+
+    // Wait for result before deadline
+    await waitFor(async () => ownerReceived.includes("task.result"), 3000);
+    expect(ownerReceived).toContain("task.result");
   });
 });
 
