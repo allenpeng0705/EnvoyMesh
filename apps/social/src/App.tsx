@@ -1664,12 +1664,6 @@ function App() {
                         placeholder="https://api.minimaxi.com/v1"
                         value={modelEndpoint}
                         onChange={(e) => setModelEndpoint(e.target.value)}
-                        onBlur={async () => {
-                          await nodeService.updateNodeConfig({
-                            modelProviders: { ...nodeConfig?.modelProviders, endpoint: modelEndpoint },
-                          } as any);
-                          nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
-                        }}
                       />
                     </dd>
 
@@ -1681,12 +1675,6 @@ function App() {
                         placeholder="MiniMax-M2.7"
                         value={modelName}
                         onChange={(e) => setModelName(e.target.value)}
-                        onBlur={async () => {
-                          await nodeService.updateNodeConfig({
-                            modelProviders: { ...nodeConfig?.modelProviders, modelName: modelName },
-                          } as any);
-                          nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
-                        }}
                       />
                     </dd>
 
@@ -1698,13 +1686,45 @@ function App() {
                         placeholder="sk-..."
                         value={modelApiKey}
                         onChange={(e) => setModelApiKey(e.target.value)}
-                        onBlur={async () => {
-                          await nodeService.updateNodeConfig({
-                            modelProviders: { ...nodeConfig?.modelProviders, apiKey: modelApiKey },
-                          } as any);
-                          nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
-                        }}
                       />
+                    </dd>
+
+                    <dt>&nbsp;</dt>
+                    <dd>
+                      <div className="settings-buttons">
+                        <button
+                          type="button"
+                          className="settings-save-btn"
+                          onClick={async () => {
+                            await nodeService.updateNodeConfig({
+                              modelProviders: {
+                                ...nodeConfig?.modelProviders,
+                                endpoint: modelEndpoint,
+                                modelName: modelName,
+                                apiKey: modelApiKey,
+                              },
+                            } as any);
+                            nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                            setModelEndpoint(modelEndpoint);
+                            setModelName(modelName);
+                            setModelApiKey(modelApiKey);
+                          }}
+                        >
+                          Save AI Settings
+                        </button>
+                        <button
+                          type="button"
+                          className="settings-cancel-btn"
+                          onClick={() => {
+                            // Reset to current config values
+                            setModelEndpoint(nodeConfig?.modelProviders?.endpoint ?? "");
+                            setModelName(nodeConfig?.modelProviders?.modelName ?? "");
+                            setModelApiKey(nodeConfig?.modelProviders?.apiKey ?? "");
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </dd>
                   </dl>
                 </section>

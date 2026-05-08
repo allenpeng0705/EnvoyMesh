@@ -1358,6 +1358,8 @@ class NodeServiceImpl implements NodeService {
     this.emit("config:updated", {
       autonomousKillSwitch: updated.autonomousKillSwitch ?? false,
       autonomousPolicies: updated.autonomousPolicies ?? [],
+      chatAssistEnabled: updated.chatAssistEnabled ?? false,
+      modelProviders: updated.modelProviders,
     });
   }
 

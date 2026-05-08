@@ -1715,10 +1715,14 @@ nodeService.on("bond:established", (data) => {
   wsServer.emitEvent("bond:established", data);
 });
 nodeService.on("config:updated", (data) => {
-  console.log(`[index.ts] config:updated event fired, autonomous policies updated`);
+  console.log(`[index.ts] config:updated event fired`);
   currentAutonomousKillSwitch = data.autonomousKillSwitch;
   currentAutonomousPolicies = data.autonomousPolicies;
+  currentChatAssistEnabled = data.chatAssistEnabled;
+  currentModelProviders = data.modelProviders;
   console.log(`[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`);
+  console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
+  console.log(`[model] provider mode=${currentModelProviders.mode}`);
 });
 if (args.configPath) {
   console.log(`Config file: ${args.configPath}`);

@@ -1698,6 +1698,40 @@ body {
   padding-right: 2rem;
 }
 
+.settings-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.settings-save-btn {
+  padding: 0.5rem 1rem;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.settings-save-btn:hover {
+  opacity: 0.9;
+}
+
+.settings-cancel-btn {
+  padding: 0.5rem 1rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.settings-cancel-btn:hover {
+  background: var(--color-bg);
+}
+
 .node-controls {
   margin-top: 1rem;
   display: flex;
