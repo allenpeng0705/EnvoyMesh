@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createUnsignedMandate, type Mandate } from "@envoymesh/protocol";
-import { evaluateCapability, evaluateMandateAction, evaluatePolicy } from "../src/index.js";
+import {
+  checkCapabilityTopicRateLimit,
+  evaluateCapability,
+  evaluateMandateAction,
+  evaluatePolicy,
+} from "../src/index.js";
 
 describe("bonds", () => {
   it("allows direct peers to request friend-level knowledge", () => {
@@ -224,6 +229,63 @@ describe("bonds", () => {
       action: "approval_required",
       reason: "requested sensitivity exceeds public",
     });
+  });
+});
+
+describe("checkCapabilityTopicRateLimit", () => {
+  it("allows queries within the rate limit window", () => {
+    const peer = "rate-test-allow-peer";
+    const result = checkCapabilityTopicRateLimit(peer, 5, 60_000);
+    expect(result.allowed).toBe(true);
+    expect(result.remaining).toBe(4);
+  });
+
+  it("tracks remaining count across multiple calls", () => {
+    const peer = "rate-test-count-peer";
+    checkCapabilityTopicRateLimit(peer, 3, 60_000);
+    checkCapabilityTopicRateLimit(peer, 3, 60_000);
+    const result = checkCapabilityTopicRateLimit(peer, 3, 60_000);
+    expect(result.allowed).toBe(true);
+    expect(result.remaining).toBe(0);
+  });
+
+  it("denies queries once the limit is exceeded", () => {
+    const peer = "rate-test-deny-peer";
+    const limit = 2;
+    checkCapabilityTopicRateLimit(peer, limit, 60_000);
+    checkCapabilityTopicRateLimit(peer, limit, 60_000);
+    const result = checkCapabilityTopicRateLimit(peer, limit, 60_000);
+    expect(result.allowed).toBe(false);
+    expect(result.remaining).toBe(0);
+  });
+
+  it("returns the correct resetAt timestamp", () => {
+    const peer = "rate-test-reset-peer";
+    const windowMs = 30_000;
+    const before = Date.now();
+    const result = checkCapabilityTopicRateLimit(peer, 10, windowMs);
+    const after = Date.now();
+    expect(result.resetAt).toBeGreaterThanOrEqual(before + windowMs);
+    expect(result.resetAt).toBeLessThanOrEqual(after + windowMs);
+  });
+
+  it("enforces independent limits per peer", () => {
+    const peerA = "rate-test-peer-a";
+    const peerB = "rate-test-peer-b";
+    // Exhaust peer A's limit
+    checkCapabilityTopicRateLimit(peerA, 1, 60_000);
+    const resultA = checkCapabilityTopicRateLimit(peerA, 1, 60_000);
+    const resultB = checkCapabilityTopicRateLimit(peerB, 1, 60_000);
+    expect(resultA.allowed).toBe(false);
+    expect(resultB.allowed).toBe(true);
+    expect(resultB.remaining).toBe(0);
+  });
+
+  it("defaults to 30 queries per 60 seconds", () => {
+    const peer = "rate-test-defaults-peer";
+    const r1 = checkCapabilityTopicRateLimit(peer);
+    expect(r1.remaining).toBe(29);
+    expect(r1.allowed).toBe(true);
   });
 });
 

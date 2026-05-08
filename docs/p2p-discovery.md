@@ -133,11 +133,47 @@ At the EnvoyMesh protocol layer, discovery-ish intents must still be treated as 
 - **Signing** prevents trivial spoofing and ties statements to keys/certs (`system.signal` participates in identity continuity).
 - **Policy + rate limits + trust tiers** prevent flooding and “truthy noise” even from valid signatures.
 
-Threat-model implications to document explicitly:
+## Threat Model: DHT Capability Topic Discovery (Phase 4F.B)
 
-- Sybil identities can still sign messages.
-- Capability advertisements must include **freshness**, **scopes**, and **intent-specific limits**.
-- Abuse controls belong in inbound guards + audits (correlation), not “crypto alone”.
+### Threat Actors
+
+**Sybil identities:** An attacker generates many Ed25519 key pairs and publishes capability topic records under different peer IDs. Since DHT has no PKI, a single entity can dominate a topic's provider set.
+
+**Replay / stale records:** A validly-signed record published with a long TTL is re-advertised by an attacker after the TTL has expired at the publisher, but before the record expires in the DHT. Queriers who have not refreshed their DHT state may accept stale records.
+
+**Flooding:** A peer advertises itself under hundreds of topics simultaneously, or a querier issues many rapid queries for different topics, overwhelming the local node's DHT processing or audit log.
+
+**Coordinated noise:** Multiple Sybil nodes collude to advertise the same malicious endpoint under many topics, amplifying the signal of a single attack.
+
+**Partial connectivity:** A legitimate peer advertises a capability but is unreachable at the advertised multiaddr (NAT, churn, stale address), wasting the querier's connection attempt budget.
+
+### Mitigations
+
+| Threat | Mitigation | Status |
+|--------|-----------|--------|
+| Sybil peer IDs | Signature binding to a known public key; querier supplies `signingPublicKey` to verify | Shipped (4F.A) |
+| Stale records | `createdAt + ttlSeconds` freshness window enforced by `verifySignedCapabilityTopicRecord` | Shipped (4F.A) |
+| Empty / malformed fields | Non-empty validation on `topic`, `peerId`, `multiaddr` | Shipped (4F.A) |
+| Query flooding | `checkCapabilityTopicRateLimit(peerId, maxQueries, windowMs)` in `@envoymesh/bonds` — sliding window per peer | Shipped (4F.B) |
+| Audit correlation | `discovery.capability.verified` / `discovery.capability.rejected` audit event types in `@envoymesh/local-store` | Shipped (4F.B) |
+| Unknown-topic DoS | Query budget bounded by `limit` param and `queryTimeoutMs` on `findCapabilityTopicProviders` | Shipped (4F.A) |
+| Malicious multiaddr | Decoding returns `null` for non-capability multiaddrs; verified multiaddrs used for dialing only after signature check passes | Shipped (4F.A) |
+
+### Product Policy Controls
+
+**Rate limits:** Use `checkCapabilityTopicRateLimit(peerId, maxQueries, windowMs)` before processing DHT provider records. Default: 30 queries per 60-second sliding window per peer. If `allowed === false`, skip the provider and log a `discovery.capability.rejected` audit event.
+
+**Trust tiers (from `@envoymesh/bonds`):** Capability topic providers from `blocked` peers are ignored. Providers from `public` / `referred` peers are accepted only after signature verification passes.
+
+**Scope tags:** `org`, `net`, `ver` fields on `SignedCapabilityTopicRecord` allow queriers to filter providers by organizational boundary, network, or version — reducing cross-org noise in shared DHT networks.
+
+**Freshness enforcement:** Queriers must supply a `signingPublicKey` when they need verified records. Without it, `findCapabilityTopicProviders` returns unsigned results (no signature verification). Stale records are rejected regardless of signature validity.
+
+### Abuse Control Responsibilities
+
+- **Crypto alone is not enough:** Ed25519 signatures prove a record was created by the holder of the private key, but do not prove the key belongs to a trustworthy entity. Trust is established through `evaluatePolicy` (bond levels) and out-of-band key verification.
+- **Audit everything:** Rejected providers should emit `discovery.capability.rejected` events with `remotePeerId`, `outcome: “deny”`, and a `reason` field covering the rejection type (unknown topic, stale, wrong signature, rate limited).
+- **Do not auto-dial unverified multiaddrs:** The `cleanMultiaddr` field is the verified transport address. Only use it after `verifySignedCapabilityTopicRecord` returns `ok: true`.
 
 ## Roadmap: QUIC As Additive Transport (Parallel To TCP)
 

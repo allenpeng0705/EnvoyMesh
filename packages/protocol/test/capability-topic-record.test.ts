@@ -107,7 +107,7 @@ describe("SignedCapabilityTopicRecordSchema", () => {
       ttlSeconds: 3600,
       signature: "my_signature",
     };
-    const unsigned = capabilityTopicRecordForSigning(signed);
+    const unsigned = capabilityTopicRecordForSigning(signed) as Partial<SignedCapabilityTopicRecord>;
     expect(unsigned.signature).toBeUndefined();
     expect(unsigned.topic).toBe("envoymesh.test");
     expect(unsigned.peerId).toBe("12D3KooWMyPeerId");

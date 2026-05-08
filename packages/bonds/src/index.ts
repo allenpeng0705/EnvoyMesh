@@ -230,3 +230,52 @@ function evaluateMandateCost(
 
   return undefined;
 }
+
+// ============================================
+// Sliding-window rate limiter for per-peer DHT capability topic queries
+// ============================================
+
+interface RateLimitEntry {
+  count: number;
+  windowStart: number;
+}
+
+/** In-memory sliding-window rate limit state, keyed by peerId. */
+const queryRateLimiters = new Map<string, RateLimitEntry>();
+
+export interface RateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  resetAt: number; // absolute ms timestamp when the window resets
+}
+
+/**
+ * Check (and update) the per-peer rate limit for capability-topic DHT queries.
+ * Uses a sliding window: each call within `windowMs` counts against the budget.
+ * When the window expires, the counter resets.
+ *
+ * @param peerId     - The peer making the query
+ * @param maxQueries  - Maximum queries allowed per window (default 30)
+ * @param windowMs    - Window size in ms (default 60_000 = 1 minute)
+ */
+export function checkCapabilityTopicRateLimit(
+  peerId: string,
+  maxQueries: number = 30,
+  windowMs: number = 60_000,
+): RateLimitResult {
+  const now = Date.now();
+  const entry = queryRateLimiters.get(peerId);
+
+  if (!entry || now - entry.windowStart >= windowMs) {
+    // Start a new window
+    queryRateLimiters.set(peerId, { count: 1, windowStart: now });
+    return { allowed: true, remaining: maxQueries - 1, resetAt: now + windowMs };
+  }
+
+  if (entry.count >= maxQueries) {
+    return { allowed: false, remaining: 0, resetAt: entry.windowStart + windowMs };
+  }
+
+  entry.count++;
+  return { allowed: true, remaining: maxQueries - entry.count, resetAt: entry.windowStart + windowMs };
+}

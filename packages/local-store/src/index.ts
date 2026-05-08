@@ -174,7 +174,9 @@ export type AuditEventType =
   | "share.accept"
   | "p2p.trace"
   | "autonomous.decided"
-  | "tool.called";
+  | "tool.called"
+  | "discovery.capability.verified"
+  | "discovery.capability.rejected";
 
 export type AuditDirection = "inbound" | "outbound" | "local";
 
