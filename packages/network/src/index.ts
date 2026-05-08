@@ -1417,6 +1417,11 @@ export function isLoopbackOrUnspecifiedDialHint(addr: string): boolean {
   );
 }
 
+/** Returns true if the multiaddr uses QUIC (udp port + quic-v1). */
+export function isQuicDialHint(addr: string): boolean {
+  return addr.includes("/quic-v1");
+}
+
 /** Prefer non-loopback multiaddrs first; omit loopback whenever any usable hint exists. */
 export function preferNonLoopbackDialHints(hints: string[]): string[] {
   const non = hints.filter((h) => !isLoopbackOrUnspecifiedDialHint(h));
@@ -1426,11 +1431,20 @@ export function preferNonLoopbackDialHints(hints: string[]): string[] {
   return sortDialHints(hints);
 }
 
-/** Prefer routable LAN/WAN hints; try loopback last (often useless for cross-machine dials). */
+/**
+ * Sort dial hints by:
+ * 1. Prefer QUIC multiaddrs over TCP-only
+ * 2. Prefer non-loopback / non-unspecified over loopback
+ */
 function sortDialHints(hints: string[]): string[] {
-  return [...hints].sort(
-    (a, b) => Number(isLoopbackOrUnspecifiedDialHint(a)) - Number(isLoopbackOrUnspecifiedDialHint(b)),
-  );
+  return [...hints].sort((a, b) => {
+    // Primary: QUIC first
+    const quicA = isQuicDialHint(a) ? 0 : 1;
+    const quicB = isQuicDialHint(b) ? 0 : 1;
+    if (quicA !== quicB) return quicA - quicB;
+    // Secondary: non-loopback first
+    return Number(isLoopbackOrUnspecifiedDialHint(a)) - Number(isLoopbackOrUnspecifiedDialHint(b));
+  });
 }
 
 function dialHintsToMultiaddrs(
