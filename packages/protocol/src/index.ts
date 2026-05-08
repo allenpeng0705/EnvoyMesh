@@ -141,6 +141,33 @@ export const AgentCredentialSchema = UnsignedAgentCredentialSchema.extend({
   signature: z.string().min(1),
 });
 
+// ============================================
+// DHT Capability Topic Record
+// ============================================
+
+/**
+ * Unsigned capability topic record — signed and embedded in DHT provider multiaddr query params.
+ * The signed version is verified by queriers before attempting a dial.
+ */
+export const UnsignedCapabilityTopicRecordSchema = z.object({
+  topic: z.string().min(1),
+  peerId: z.string().min(1),
+  multiaddr: z.string().min(1),
+  createdAt: z.string().datetime(),
+  ttlSeconds: z.number().int().min(1),
+  org: z.string().optional(),
+  net: z.string().optional(),
+  ver: z.string().optional(),
+});
+
+export const SignedCapabilityTopicRecordSchema = UnsignedCapabilityTopicRecordSchema.extend({
+  /** base64url-encoded Ed25519 signature over canonical JSON of the unsigned fields */
+  signature: z.string().min(1),
+});
+
+export type UnsignedCapabilityTopicRecord = z.infer<typeof UnsignedCapabilityTopicRecordSchema>;
+export type SignedCapabilityTopicRecord = z.infer<typeof SignedCapabilityTopicRecordSchema>;
+
 const EnvoyEnvelopeObjectSchema = z.object({
   version: z.literal("0.1"),
   messageId: z.string().min(1),
@@ -1455,6 +1482,13 @@ export function parseAgentCredential(input: unknown): AgentCredential {
 
 export function agentCredentialForSigning(credential: AgentCredential): UnsignedAgentCredential {
   const { signature: _signature, ...unsigned } = credential;
+  return unsigned;
+}
+
+export function capabilityTopicRecordForSigning(
+  record: SignedCapabilityTopicRecord,
+): UnsignedCapabilityTopicRecord {
+  const { signature: _signature, ...unsigned } = record;
   return unsigned;
 }
 

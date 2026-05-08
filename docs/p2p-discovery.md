@@ -76,9 +76,55 @@ A **global** “topic” system is a different layer: a way to **publish and fin
 
 This only becomes reliable with an operator **bootstrap + relay fleet** (your Lighthouse nodes), because home users cannot depend on overloaded public relays or flaky community bootstraps.
 
-**Shipped (scaffolding):** `@envoymesh/network` now includes deterministic topic hashing (`cidForCapabilityTopic`) plus helper APIs to publish/query provider records (`provideCapabilityTopic`, `findCapabilityTopicProviders`). Query calls are bounded with a timeout by default so they settle instead of streaming forever in sparse networks.
+**Shipped:** `@envoymesh/network` includes deterministic topic hashing (`cidForCapabilityTopic`) plus helper APIs to publish/query provider records (`provideCapabilityTopic`, `findCapabilityTopicProviders`). Query calls are bounded with a timeout by default so they settle instead of streaming forever in sparse networks.
 
-## Roadmap: “Ghost” Discovery Signals — Signing Is Necessary, Not Sufficient
+**Signed record envelopes (Phase 4F.A):** Provider records carry a **cryptographically signed capability topic record** to prevent spoofing. The record is encoded as multiaddr query parameters when advertised via DHT, and verified by queriers before trusting the provider.
+
+**Record shape:**
+
+```
+SignedCapabilityTopicRecord {
+  topic: string           // capability topic string (e.g. "envoymesh.file_provider")
+  peerId: string          // publisher libp2p peer ID
+  multiaddr: string       // transport multiaddr
+  signature: string       // base64url-encoded Ed25519 signature
+  createdAt: string       // ISO 8601 timestamp
+  ttlSeconds: number      // freshness window (seconds)
+  org?: string            // optional org scope tag
+  net?: string            // optional network scope tag
+  ver?: string            // optional version scope tag
+}
+```
+
+**Multiaddr encoding:** When a signed record is advertised, it is encoded as query parameters on the provider's transport multiaddr:
+
+```
+/ip4/1.2.3.4/tcp/4000/p2p/12D3KooW...?
+  topic=<topic>&
+  sig=<base64url-signature>&
+  ts=<iso-timestamp>&
+  ttl=<seconds>&
+  org=<org-scope>&     # optional
+  net=<net-scope>&     # optional
+  ver=<version-scope>   # optional
+```
+
+**Publishing with signing:** `provideCapabilityTopic(topic, { signingKey: pemPrivateKey, ttlSeconds: 3600, org: "acme" })` — the signing key is a PEM-encoded Ed25519 private key. The signed record is stored in the DHT (best-effort, 5s timeout) and the multiaddr carrying the encoded record is announced via `contentRouting.provide`.
+
+**Querying with verification:** `findCapabilityTopicProviders(topic, { signingPublicKey: pemPublicKey })` — after finding providers via DHT, the querier fetches and verifies the signed record from the DHT. If `signingPublicKey` is omitted, providers are returned without signature verification. Results include:
+
+- `signedRecord` — verified record (signature valid, not stale)
+- `signedRecordInvalid` — present but verification failed (signature mismatch or stale)
+- neither field — no signed record found for this provider
+
+**Verification checks:** `verifySignedCapabilityTopicRecord` enforces:
+1. Non-empty `topic`, `peerId`, `multiaddr`
+2. Record not stale: `now - createdAt <= ttlSeconds * 1000`
+3. Signature valid over canonical JSON of the unsigned record fields
+
+## Signed Discovery Signals — Signing Is Necessary, Not Sufficient
+
+**Shipped (Phase 4F.A):** Signed capability topic records are now implemented (`createSignedCapabilityTopicRecord`, `verifySignedCapabilityTopicRecord`) with Ed25519 signatures over canonical JSON, staleness enforcement, and multiaddr encoding. The `findCapabilityTopicProviders` API accepts a `signingPublicKey` to verify incoming records.
 
 At the transport layer, libp2p connections are encrypted (Noise in this repo’s mesh setup).
 

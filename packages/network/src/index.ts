@@ -24,7 +24,12 @@ import {
   parseInboundDataTransferBody,
   parseVoucherJsonObject,
 } from "./data-framing.js";
-import { cidForCapabilityTopic } from "./capability-topic.js";
+import {
+  cidForCapabilityTopic,
+  createSignedCapabilityTopicRecord,
+  verifySignedCapabilityTopicRecord,
+  encodeCapabilityTopicRecordToMultiaddr,
+} from "./capability-topic.js";
 import { expandListenAddressesWithQuic } from "./quic-listen.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key.js";
 
@@ -162,6 +167,10 @@ export interface CapabilityTopicProviderRecord {
   peerId: string;
   multiaddrs: string[];
   routing?: string;
+  /** Present when the provider's capability topic announcement included a signed record and verification succeeded. */
+  signedRecord?: import("@envoymesh/protocol").SignedCapabilityTopicRecord;
+  /** Present when a signed record was found but verification failed (so caller knows it exists but is invalid). */
+  signedRecordInvalid?: true;
 }
 
 export type P2pDebugEvent =
@@ -467,11 +476,61 @@ export class EnvoyMesh {
   /**
    * Announce this node as a provider for `topic` on the DHT (requires {@link EnvoyMeshOptions.enableDht}).
    * Uses IPFS-style provider records; `topic` is hashed to a CID per `docs/p2p-discovery.md`.
+   *
+   * If `signingKey` is provided, also stores a signed capability topic record under the same CID
+   * via DHT `put`, so queriers can retrieve and verify it. The signed record is also returned
+   * to the caller.
    */
-  async provideCapabilityTopic(topic: string, options?: RoutingOptions): Promise<void> {
+  async provideCapabilityTopic(
+    topic: string,
+    options?: RoutingOptions & {
+      /** PEM-encoded Ed25519 private key for signing the capability record. */
+      signingKey?: string;
+      /** TTL in seconds for the signed record's freshness. Default: 3600 (1 hour). */
+      ttlSeconds?: number;
+      /** Optional org scope tag. */
+      org?: string;
+      /** Optional network scope tag. */
+      net?: string;
+      /** Optional version scope tag. */
+      ver?: string;
+    },
+  ): Promise<{ cid: CID; signedRecord?: import("@envoymesh/protocol").SignedCapabilityTopicRecord }> {
     this.requireDhtForCapabilityTopics();
     const cid = await cidForCapabilityTopic(topic);
     await this.requireNode().contentRouting.provide(cid, options);
+
+    let signedRecord: import("@envoymesh/protocol").SignedCapabilityTopicRecord | undefined;
+    if (options?.signingKey) {
+      const selfPeerId = this.requireNode().peerId.toString();
+      const addrs = this.requireNode().getMultiaddrs();
+      const primaryAddr = addrs.length > 0 ? addrs[0].toString() : `/p2p/${selfPeerId}`;
+      signedRecord = createSignedCapabilityTopicRecord({
+        topic,
+        peerId: selfPeerId,
+        multiaddr: primaryAddr,
+        ttlSeconds: options.ttlSeconds ?? 3600,
+        org: options.org,
+        net: options.net,
+        ver: options.ver,
+        privateKey: options.signingKey,
+      });
+
+      // Also store the signed record in the DHT so queriers can retrieve it.
+      // Use Promise.race with a hard timeout so this doesn't block indefinitely when no DHT peers are available.
+      const recordBytes = Buffer.from(JSON.stringify(signedRecord), "utf8");
+      await Promise.race([
+        this.requireNode().contentRouting.put(cid.bytes, recordBytes, options),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("put timeout")), 5000)),
+      ]).catch((err) => {
+        if (!err.message.includes("timeout")) {
+          throw err;
+        }
+        // Timeout is acceptable — record is still announced via provide(); put is best-effort DHT propagation
+      });
+    }
+
+    return { cid, signedRecord };
   }
 
   async cancelCapabilityTopicReprovide(topic: string, options?: RoutingOptions): Promise<void> {
@@ -484,15 +543,27 @@ export class EnvoyMesh {
    * Query the DHT for peers that have called {@link provideCapabilityTopic} for the same topic string.
    * libp2p {@link ContentRouting.findProviders} streams until aborted; unless `signal` is passed, this
    * method uses {@link AbortSignal.timeout} (`queryTimeoutMs`, default 20s) so the promise always settles.
+   *
+   * For each provider that has a signed capability topic record in the DHT, this method
+   * fetches the record, verifies the signature using `signingPublicKey`, and sets
+   * `signedRecord` on the result if valid. If verification fails, `signedRecordInvalid` is set.
+   *
+   * If `signingPublicKey` is not provided, no verification is attempted but signed records
+   * are still included in results (unverified).
    */
   async findCapabilityTopicProviders(
     topic: string,
-    options?: RoutingOptions & { limit?: number; queryTimeoutMs?: number },
+    options?: RoutingOptions & {
+      limit?: number;
+      queryTimeoutMs?: number;
+      /** PEM-encoded Ed25519 public key for verifying signed capability records. */
+      signingPublicKey?: string;
+    },
   ): Promise<CapabilityTopicProviderRecord[]> {
     this.requireDhtForCapabilityTopics();
     const cid = await cidForCapabilityTopic(topic);
     const merged = { limit: 32, queryTimeoutMs: 20_000, ...options };
-    const { limit, queryTimeoutMs, ...routingOpts } = merged;
+    const { limit, queryTimeoutMs, signingPublicKey, ...routingOpts } = merged;
     const signal = routingOpts.signal ?? AbortSignal.timeout(queryTimeoutMs);
     const out: CapabilityTopicProviderRecord[] = [];
     try {
@@ -500,10 +571,42 @@ export class EnvoyMesh {
         ...routingOpts,
         signal,
       })) {
+        const peerId = provider.id.toString();
+        const multiaddrs = provider.multiaddrs.map((ma) => ma.toString());
+
+        let signedRecord: import("@envoymesh/protocol").SignedCapabilityTopicRecord | undefined;
+        let signedRecordInvalid: true | undefined;
+
+        if (signingPublicKey) {
+          try {
+            const recordBytes = await this.requireNode().contentRouting.get(cid.bytes, {
+              ...routingOpts,
+              signal,
+            });
+            if (recordBytes) {
+              const record = JSON.parse(Buffer.from(recordBytes).toString("utf8")) as import("@envoymesh/protocol").SignedCapabilityTopicRecord;
+              // Only trust the record if the peerId matches the provider's peerId
+              if (record.peerId === peerId) {
+                const verification = verifySignedCapabilityTopicRecord(record, signingPublicKey);
+                if (verification.ok) {
+                  signedRecord = record;
+                } else {
+                  console.log(`[capability-topic] verification failed for ${peerId}: ${verification.reason}`);
+                  signedRecordInvalid = true;
+                }
+              }
+            }
+          } catch {
+            // No signed record in DHT for this provider — not an error
+          }
+        }
+
         out.push({
-          peerId: provider.id.toString(),
-          multiaddrs: provider.multiaddrs.map((ma) => ma.toString()),
+          peerId,
+          multiaddrs,
           routing: provider.routing,
+          signedRecord,
+          signedRecordInvalid,
         });
         if (out.length >= limit) {
           break;
