@@ -233,6 +233,12 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+}
+
+.contact-list button .ai-access-badge {
+  font-size: 0.75rem;
+  flex-shrink: 0;
 }
 
 /* Chat Area */
@@ -1732,6 +1738,12 @@ body {
   background: var(--color-bg);
 }
 
+.settings-save-error {
+  color: var(--color-error, #dc2626);
+  font-size: 0.875rem;
+  margin-left: 0.5rem;
+}
+
 .node-controls {
   margin-top: 1rem;
   display: flex;
@@ -1921,6 +1933,127 @@ body {
   font-size: 0.75rem;
   color: var(--color-text-muted);
   margin-bottom: 0.75rem;
+}
+
+/* Field description */
+.field-desc {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-bottom: 0.5rem;
+}
+
+/* Settings Radio Group */
+.settings-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.settings-radio-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.settings-radio-option:hover {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+}
+
+.settings-radio-option.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+}
+
+.settings-radio-option input[type="radio"] {
+  margin-top: 0.2rem;
+  accent-color: var(--color-primary);
+}
+
+.settings-radio-option .radio-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-radio-option .radio-content strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.settings-radio-option .radio-content span {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+/* AI Identity Mode Options */
+.identity-mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.identity-mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.identity-mode-option:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+}
+
+.identity-mode-option.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+}
+
+.identity-mode-option input[type="radio"] {
+  margin-top: 0.25rem;
+  accent-color: var(--color-primary);
+}
+
+.identity-mode-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.identity-mode-content strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.identity-mode-content span {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.identity-mode-content small {
+  font-size: 0.6875rem;
+  color: var(--color-text-subtle);
+  font-style: italic;
+}
+
+.settings-section h4 {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: var(--color-text);
 }
 
 /* Profile View */
@@ -3010,4 +3143,333 @@ button:disabled {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   Assistant Switch (Per-Chat AI Mode Toggle)
+   ============================================ */
+
+.assistant-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  padding: 0.125rem;
+}
+
+.assistant-switch-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 9999px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.assistant-switch-btn:hover:not(.disabled) {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+.assistant-switch-btn.active {
+  background: var(--color-primary);
+  color: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.assistant-switch-btn.active:hover {
+  background: var(--color-primary-hover);
+}
+
+.assistant-switch-btn.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.assistant-switch-btn[title]::after {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.25rem 0.5rem;
+  background: var(--color-text);
+  color: white;
+  font-size: 0.6875rem;
+  border-radius: 0.25rem;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.assistant-switch-btn:hover::after {
+  opacity: 1;
+}
+
+.assistant-switch-label {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  margin-right: 0.25rem;
+}
+
+/* Assistant Mode Indicator (shows when AI is actively assisting) */
+.assistant-mode-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.assistant-mode-indicator::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Chat header with assistant switch */
+.chat-header.has-assistant-switch {
+  justify-content: space-between;
+}
+
+.chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chat-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* AI Access Badge on contact list */
+.ai-access-badge {
+  font-size: 0.625rem;
+  margin-left: auto;
+}
+
+/* Contact Context Menu */
+.context-menu {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  min-width: 220px;
+  padding: 0.375rem 0;
+}
+
+.context-menu-header {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border-subtle);
+  margin-bottom: 0.25rem;
+}
+
+.context-menu-item {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.context-menu-item:hover {
+  background: var(--color-bg);
+}
+
+.context-menu-item.active {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.context-menu-item.active::before {
+  content: "✓";
+  font-size: 0.75rem;
+}
+
+/* AI Rules Builder */
+.rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.rule-item {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+}
+
+.rule-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.rule-item-name {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.rule-item-category {
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.375rem;
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+}
+
+.rule-item-triggers {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.rule-item-actions {
+  font-size: 0.75rem;
+  color: var(--color-text-subtle);
+}
+
+.rule-item-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.rule-item-controls button {
+  background: none;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.rule-item-controls button:hover {
+  background: var(--color-bg);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.rule-item-controls button.delete:hover {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+.add-rule-form {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+}
+
+.add-rule-form h5 {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem 0;
+}
+
+.form-group {
+  margin-bottom: 0.75rem;
+}
+
+.form-group label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+  color: var(--color-text-muted);
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.form-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.form-row .form-group {
+  flex: 1;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-primary:hover {
+  background: var(--color-primary-dark);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-secondary:hover {
+  border-color: var(--color-text-muted);
 }

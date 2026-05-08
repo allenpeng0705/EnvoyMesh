@@ -102,6 +102,8 @@ export class WsServer {
     ws.on("message", async (data: Buffer) => {
       try {
         const message = JSON.parse(data.toString()) as JsonRpcRequest;
+        // Record owner activity for online/offline detection
+        this.nodeService.recordOwnerActivity();
         await this.handleMessage(ws, message);
       } catch (error) {
         console.error("[ws-server] Error handling message:", error);

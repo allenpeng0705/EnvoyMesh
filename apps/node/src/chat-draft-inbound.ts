@@ -9,7 +9,8 @@ import {
   routeModelRequest,
   type ModelProvider,
 } from "@envoymesh/models";
-import type { ModelProviderConfig } from "@envoymesh/api";
+import { searchVault, type VaultIndex } from "@envoymesh/vault";
+import type { AiIdentity, AiRule, ModelProviderConfig } from "@envoymesh/api";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 
 export interface ChatDraftResult {
@@ -131,6 +132,13 @@ export async function generateChatDraft(input: {
   draftStore: ChatDraftStore;
   modelProviders: ModelProviderConfig;
   chatAssistEnabled: boolean;
+  aiIdentity?: AiIdentity;
+  contactAiAccessLevel?: "none" | "assistant_only" | "full";
+  knowledgeAccess?: "public" | "professional" | "personal";
+  rules?: AiRule[];
+  vaultIndex?: VaultIndex | null;
+  isOnline?: boolean;
+  ownerDisplayName?: string;
 }): Promise<ChatDraftResult | ChatDraftFailure> {
   const {
     envelope,
@@ -141,11 +149,18 @@ export async function generateChatDraft(input: {
     receivedAt,
     correlationId,
     taskStore,
+    contactAiAccessLevel = "none",
+    knowledgeAccess = "public",
     trustStore,
     profile,
     draftStore,
     modelProviders,
     chatAssistEnabled,
+    aiIdentity,
+    rules = [],
+    vaultIndex,
+    isOnline = true,
+    ownerDisplayName,
   } = input;
 
   // Guard: chat assist must be enabled
@@ -170,6 +185,54 @@ export async function generateChatDraft(input: {
   // Sensitivity ceiling based on bond level
   const sensitivityCeiling = bondLevel === "direct" || bondLevel === "referred" ? "friends" : "public";
 
+  // Match rules against the incoming message
+  // Rules are sorted by priority; first matching rule wins
+  const enabledRules = rules
+    .filter((r) => r.enabled)
+    .sort((a, b) => a.priority - b.priority);
+
+  const matchedRule = enabledRules.find((rule) => {
+    const trigger = rule.trigger;
+
+    // Check keywords
+    if (trigger.keywords && trigger.keywords.length > 0) {
+      const lowerText = chatText.toLowerCase();
+      const hasKeyword = trigger.keywords.some((kw) => lowerText.includes(kw.toLowerCase()));
+      if (!hasKeyword) return false;
+    }
+
+    // Check messageContains (regex)
+    if (trigger.messageContains) {
+      try {
+        const regex = new RegExp(trigger.messageContains, "i");
+        if (!regex.test(chatText)) return false;
+      } catch {
+        // Invalid regex, skip this trigger
+      }
+    }
+
+    // Check contact AI access level
+    if (trigger.contactAiAccessLevel && trigger.contactAiAccessLevel.length > 0) {
+      // contactAiAccessLevel can be "none" but rule trigger only accepts "assistant_only" | "full"
+      // If contact has "none" access, we shouldn't be here anyway (caller checks this)
+      if (!trigger.contactAiAccessLevel.includes(contactAiAccessLevel as "assistant_only" | "full")) return false;
+    }
+
+    // Check isGreeting (simple heuristics)
+    if (trigger.isGreeting) {
+      const lowerText = chatText.toLowerCase().trim();
+      const greetingPatterns = /^(hi|hello|hey|howdy|hiya|greetings|good\s+(morning|afternoon|evening))[!.,?]*$/;
+      if (!greetingPatterns.test(lowerText)) return false;
+    }
+
+    // Check isComplex (placeholder - always false for now)
+    if (trigger.isComplex) {
+      return false; // Not implemented yet
+    }
+
+    return true;
+  });
+
   // Build model providers
   const providers = buildModelProviders(modelProviders);
   console.log(`[chat-draft] ENVOY_MODEL_MODE=${process.env.ENVOY_MODEL_MODE}`);
@@ -179,17 +242,124 @@ export async function generateChatDraft(input: {
   }
 
   // Build the prompt for draft generation
-  const selfDisplayName = profile.owner.ownerId; // fallback
+  const selfDisplayName = ownerDisplayName ?? profile.owner.ownerId;
+  const identityMode = aiIdentity?.mode ?? "transparent";
+  const identityPrefix = aiIdentity?.transparentPrefix ?? "[AI Agent]";
+
+  // Build identity-specific system instructions
+  let identityInstructions = "";
+  switch (identityMode) {
+    case "invisible":
+      identityInstructions = `You are ${selfDisplayName}. Respond naturally as if you are them.
+Keep your response style casual and in character with how they would normally write.
+Do NOT mention that you are an AI.`;
+      break;
+    case "transparent":
+      identityInstructions = `You are ${selfDisplayName}'s AI assistant.
+Your responses will be shown with the prefix "${identityPrefix}".
+Be helpful, concise, and friendly.`;
+      break;
+    case "defensive":
+      identityInstructions = `You are ${selfDisplayName}'s assistant. When they are unavailable, you act as a polite gatekeeper.
+Prefix your responses with "${identityPrefix}".
+Be courteous and professional. If you cannot help, politely explain limitations.`;
+      break;
+  }
+
+  // Build rule context for the prompt
+  let ruleContext = "";
+  if (matchedRule) {
+    console.log(`[chat-draft] matched rule: ${matchedRule.name} (${matchedRule.id})`);
+    // If rule has an identity override, update identity instructions
+    if (matchedRule.action.aiIdentityOverride) {
+      const overrideMode = matchedRule.action.aiIdentityOverride;
+      switch (overrideMode) {
+        case "invisible":
+          identityInstructions = `You are ${selfDisplayName}. Respond naturally as if you are them.
+Keep your response style casual and in character with how they would normally write.
+Do NOT mention that you are an AI.`;
+          break;
+        case "transparent":
+          identityInstructions = `You are ${selfDisplayName}'s AI assistant.
+Your responses will be shown with the prefix "${identityPrefix}".
+Be helpful, concise, and friendly.`;
+          break;
+        case "defensive":
+          identityInstructions = `You are ${selfDisplayName}'s assistant. When they are unavailable, you act as a polite gatekeeper.
+Prefix your responses with "${identityPrefix}".
+Be courteous and professional. If you cannot help, politely explain limitations.`;
+          break;
+      }
+    }
+    // Add template context if provided
+    if (matchedRule.action.template) {
+      ruleContext = `\n\nIMPORTANT: Use this response template for your reply:\n"${matchedRule.action.template.replace(/\{ownerName\}/g, senderDisplayName)}"`;
+    }
+  }
+
+  // Build vault context if rule has vaultQuery
+  let vaultContext = "";
+  if (matchedRule?.action?.vaultQuery && vaultIndex) {
+    const vaultQuery = matchedRule.action.vaultQuery;
+    console.log(`[chat-draft] querying vault: path=${vaultQuery.path}, maxSensitivity=${vaultQuery.maxSensitivity}`);
+
+    // Search vault for relevant content
+    const vaultResults = searchVault(vaultIndex, vaultQuery.path, { limit: 5 });
+
+    // Filter results based on knowledgeAccess sensitivity
+    // Sensitivity hierarchy: public (0) < friends (1) < professional (2) < personal (3)
+    const sensitivityOrder = ["public", "friends", "professional", "personal"];
+    const maxSensitivityIndex = sensitivityOrder.indexOf(vaultQuery.maxSensitivity);
+    const userSensitivityIndex = sensitivityOrder.indexOf(knowledgeAccess);
+
+    const filteredResults = vaultResults.filter((result) => {
+      // Simple heuristic: documents with "personal" in path are personal,
+      // "work" or "professional" or "office" are professional,
+      // "friends" or "shared" are friends, rest is public
+      const path = result.document.relativePath.toLowerCase();
+      let docSensitivity: "public" | "friends" | "professional" | "personal" = "public";
+      if (path.includes("personal") || path.includes("private")) {
+        docSensitivity = "personal";
+      } else if (path.includes("work") || path.includes("professional") || path.includes("office")) {
+        docSensitivity = "professional";
+      } else if (path.includes("friends") || path.includes("shared")) {
+        docSensitivity = "friends";
+      }
+      // Include document if its sensitivity is <= both the rule's max and the user's access level
+      return sensitivityOrder.indexOf(docSensitivity) <= maxSensitivityIndex && sensitivityOrder.indexOf(docSensitivity) <= userSensitivityIndex;
+    });
+
+    if (filteredResults.length > 0) {
+      vaultContext = `\n\nRelevant information from vault:\n`;
+      for (const result of filteredResults.slice(0, 3)) {
+        vaultContext += `- ${result.document.title}: "${result.chunk.text.slice(0, 200)}${result.chunk.text.length > 200 ? "..." : ""}"\n`;
+      }
+      console.log(`[chat-draft] vault returned ${filteredResults.length} results`);
+    }
+  }
+
+  // Build status and permissions context
+  const statusContext = `\n\nUser status: ${isOnline ? "ONLINE (draft mode — owner will review before sending)" : "OFFLINE (auto-reply mode)"}
+Contact permissions:
+- AI Access Level: ${contactAiAccessLevel}
+- Knowledge Access: ${knowledgeAccess}`;
+
   const prompt = `You are a helpful assistant in a secure P2P messaging app called EnvoyMesh.
+
+${identityInstructions}
+${ruleContext}
+${statusContext}
+${vaultContext}
+
 A message was just received from your contact "${senderDisplayName}" (owner ID: ${senderOwnerId}).
 
-Your task is to draft a concise, friendly reply to their message.
+Your task is to draft a reply to their message.
 Guidelines:
 - Keep the reply short (1-3 sentences).
 - Match the tone and topic of the received message.
 - Do not reveal any private information that wasn't in the message.
 - Do not make up facts not supported by the conversation.
-- The reply draft is for the owner to review and send manually — never auto-send.
+- The reply draft is for the owner to review and send manually.
 
 Received message:
 "${chatText}"

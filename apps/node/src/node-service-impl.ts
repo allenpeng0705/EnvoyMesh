@@ -1,4 +1,5 @@
 import type {
+  AiSettings,
   BondRecord,
   ChatMessage,
   ConnectionStatus,
@@ -804,6 +805,8 @@ class NodeServiceImpl implements NodeService {
 
   async sendChat(targetOwnerId: string, text: string): Promise<void> {
     this._assertOnline();
+    // Record owner activity when they send a message (keeps them "online" in automatic mode)
+    this.recordOwnerActivity();
     const mesh = this._requireMesh();
     const selfProfile = this._requireProfile();
 
@@ -1285,6 +1288,7 @@ class NodeServiceImpl implements NodeService {
         trustAnchorPublicKeys: config.trustAnchorPublicKeys ?? {},
         autonomousKillSwitch: config.autonomousKillSwitch ?? false,
         autonomousPolicies: config.autonomousPolicies ?? [],
+        contactAiPreferences: config.contactAiPreferences ?? [],
       };
     }
     return {
@@ -1304,6 +1308,7 @@ class NodeServiceImpl implements NodeService {
       trustAnchorPublicKeys: {},
       autonomousKillSwitch: false,
       autonomousPolicies: [],
+      contactAiPreferences: [],
     };
   }
 
@@ -1325,6 +1330,7 @@ class NodeServiceImpl implements NodeService {
       anonymousSensitivityCeiling: "public",
       autonomousKillSwitch: false,
       autonomousPolicies: [],
+      contactAiPreferences: [],
       updatedAt: new Date().toISOString(),
     };
 
@@ -1346,6 +1352,10 @@ class NodeServiceImpl implements NodeService {
       ...(config.trustAnchorPublicKeys !== undefined && { trustAnchorPublicKeys: config.trustAnchorPublicKeys }),
       ...(config.autonomousKillSwitch !== undefined && { autonomousKillSwitch: config.autonomousKillSwitch }),
       ...(config.autonomousPolicies !== undefined && { autonomousPolicies: config.autonomousPolicies }),
+      ...(config.aiSettings !== undefined && { aiSettings: config.aiSettings }),
+      ...(config.contactAiPreferences !== undefined && {
+        contactAiPreferences: config.contactAiPreferences,
+      }),
       updatedAt: new Date().toISOString(),
     };
 
@@ -1360,6 +1370,8 @@ class NodeServiceImpl implements NodeService {
       autonomousPolicies: updated.autonomousPolicies ?? [],
       chatAssistEnabled: updated.chatAssistEnabled ?? false,
       modelProviders: updated.modelProviders,
+      aiSettings: updated.aiSettings,
+      contactAiPreferences: updated.contactAiPreferences ?? [],
     });
   }
 
@@ -1432,6 +1444,7 @@ class NodeServiceImpl implements NodeService {
       chatAssistEnabled: false,
       autonomousKillSwitch: false,
       autonomousPolicies: [],
+      contactAiPreferences: [],
       updatedAt: new Date().toISOString(),
     };
 
@@ -1498,6 +1511,7 @@ class NodeServiceImpl implements NodeService {
       chatAssistEnabled: false,
       autonomousKillSwitch: false,
       autonomousPolicies: [],
+      contactAiPreferences: [],
       updatedAt: new Date().toISOString(),
     };
 
@@ -1959,6 +1973,33 @@ class NodeServiceImpl implements NodeService {
         handler(data);
       }
     }
+  }
+
+  // ============================================
+  // Activity Tracking
+  // ============================================
+
+  private lastActivityTimestamp: number = Date.now();
+  private readonly activityTimeoutMs: number = 5 * 60 * 1000; // 5 minutes
+
+  recordOwnerActivity(): void {
+    this.lastActivityTimestamp = Date.now();
+    console.log(`[activity] owner activity recorded, isOnline=${this.isOwnerOnline()}`);
+  }
+
+  async isOwnerOnline(): Promise<boolean> {
+    const config = await this._configStore.load();
+    const aiSettings = config?.aiSettings;
+    const status = aiSettings?.status;
+
+    if (!status) return true; // Default to online if no status configured
+
+    if (status.statusMode === "manual") {
+      return status.isOnlineManual ?? true;
+    }
+
+    // Automatic mode: online if had activity within timeout
+    return Date.now() - this.lastActivityTimestamp < this.activityTimeoutMs;
   }
 }
 

@@ -8,7 +8,7 @@ import type {
   DeviceIdentity,
   OwnerIdentity,
 } from "@envoymesh/identity";
-import type { NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult, ChatDraft, CapabilityManifest, UpdateCapabilityManifestParams, AutonomousPolicy, ModelProviderConfig } from "./ws-protocol.js";
+import type { NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult, ChatDraft, CapabilityManifest, UpdateCapabilityManifestParams, AutonomousPolicy, ModelProviderConfig, AiSettings, ContactAiPreferences } from "./ws-protocol.js";
 
 // ============================================
 // Identity Types
@@ -225,7 +225,7 @@ export interface NodeServiceEvents {
   "node:status": { status: NodeStatus; peerId?: string };
 
   // Config events
-  "config:updated": { autonomousKillSwitch: boolean; autonomousPolicies: readonly AutonomousPolicy[]; chatAssistEnabled: boolean; modelProviders: ModelProviderConfig };
+  "config:updated": { autonomousKillSwitch: boolean; autonomousPolicies: readonly AutonomousPolicy[]; chatAssistEnabled: boolean; modelProviders: ModelProviderConfig; aiSettings?: AiSettings; contactAiPreferences: ContactAiPreferences[] };
 }
 
 export interface NodeService {
@@ -449,4 +449,19 @@ export interface NodeService {
    * Returns the AI's response text.
    */
   knowledgeQuery(question: string): Promise<string>;
+
+  // ----- Activity Tracking -----
+
+  /**
+   * Record owner activity (call when owner sends any message via WebSocket).
+   * Used for online/offline detection.
+   */
+  recordOwnerActivity(): void;
+
+  /**
+   * Check if the owner is currently online based on:
+   * - Manual mode: returns the manual isOnline setting
+   * - Automatic mode: returns true if activity within timeout (5 min)
+   */
+  isOwnerOnline(): Promise<boolean>;
 }

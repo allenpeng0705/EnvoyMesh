@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { AnonymousDiscoveryMode, AutonomousPolicy, DiscoveryProfile, ModelProviderConfig, RelayConfig } from "@envoymesh/api";
+import type { AiSettings, AnonymousDiscoveryMode, AutonomousPolicy, ContactAiPreferences, DiscoveryProfile, ModelProviderConfig, RelayConfig } from "@envoymesh/api";
 
 const NODE_CONFIG_FILE = "node-config.json";
 
@@ -30,6 +30,10 @@ export interface PersistedNodeConfig {
   autonomousKillSwitch?: boolean;
   /** Per-domain autonomous policies. Default: empty (all autonomous actions require approval). */
   autonomousPolicies?: AutonomousPolicy[];
+  /** AI Assistant settings — identity, online/offline behavior, defaults. */
+  aiSettings?: AiSettings;
+  /** Per-contact AI preferences. */
+  contactAiPreferences: ContactAiPreferences[];
 }
 
 export interface NodeConfigStore {

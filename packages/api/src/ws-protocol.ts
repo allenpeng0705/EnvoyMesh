@@ -172,6 +172,14 @@ export interface NodeConfig {
    * Each policy applies to a domain and defines sensitivity ceilings for autonomous responses.
    */
   autonomousPolicies: AutonomousPolicy[];
+  /**
+   * AI Assistant settings — identity mode, online/offline behavior, and defaults.
+   */
+  aiSettings?: AiSettings;
+  /**
+   * Per-contact AI preferences — defines how AI behaves for each contact.
+   */
+  contactAiPreferences: ContactAiPreferences[];
 }
 
 /**
@@ -190,6 +198,110 @@ export interface AutonomousPolicy {
   autoAnswer: boolean;
   /** Whether the node may autonomously send chat messages in this domain. */
   autoSendChat: boolean;
+}
+
+/**
+ * How the AI presents itself in responses.
+ * - invisible: Responds as if it were the human owner
+ * - transparent: Prefixes messages with [AI Agent]:
+ * - defensive: Acts as gatekeeper when owner is unavailable
+ */
+export type AiIdentityMode = "invisible" | "transparent" | "defensive";
+
+/**
+ * AI Identity configuration — defines how the AI presents itself in responses.
+ */
+export interface AiIdentity {
+  /** How the AI introduces itself. Default: "transparent" */
+  mode: AiIdentityMode;
+  /** Prefix to use in transparent mode. Default: "[AI Agent]" */
+  transparentPrefix?: string;
+}
+
+/**
+ * AI Assistant status — online/offline detection and global toggles.
+ */
+export interface AiAssistantStatus {
+  /** When true, suggest drafts but never auto-send when online. Default: true */
+  onlineAssistantEnabled: boolean;
+  /** When true, allow auto-reply when detected offline. Default: false */
+  offlineAgentEnabled: boolean;
+  /** How to detect online/offline status. Default: "automatic" */
+  statusMode: "automatic" | "manual";
+  /** Current manual status override (only meaningful when statusMode is "manual"). */
+  isOnlineManual?: boolean;
+}
+
+/**
+ * Complete AI settings — stored in node config.
+ */
+export interface AiSettings {
+  status: AiAssistantStatus;
+  identity: AiIdentity;
+  /** Default mode for new contacts (when no preference is set). Default: "manual" */
+  defaultModeForNewContacts: "manual" | "assistant" | "auto";
+  /** AI rules for trigger-action behavior. Default: empty */
+  rules: AiRule[];
+}
+
+/**
+ * AI Rule — defines trigger-action behavior for AI responses.
+ */
+export type AiRuleCategory = "availability" | "capability" | "catch_all";
+
+export interface AiRuleTrigger {
+  /** Keywords to match in the message (case-insensitive). */
+  keywords?: string[];
+  /** Match contact AI access level (only assistant_only and full can trigger rules). */
+  contactAiAccessLevel?: Array<"assistant_only" | "full">;
+  /** Regex pattern to match in message. */
+  messageContains?: string;
+  /** Match greeting messages (hi, hello, hey, etc.). */
+  isGreeting?: boolean;
+  /** Match complex queries (placeholder for future LLM confidence integration). */
+  isComplex?: boolean;
+}
+
+export type AiRuleActionType = "draft" | "auto_send" | "gatekeep" | "defer";
+
+export interface AiVaultQuery {
+  path: string;
+  /** Sensitivity ceiling for vault queries: public (anyone), friends (bonded), professional (work), personal (private) */
+  maxSensitivity: "public" | "friends" | "professional" | "personal";
+}
+
+export interface AiRuleAction {
+  type: AiRuleActionType;
+  /** Response template with placeholders. */
+  template?: string;
+  /** Override AI identity mode for this rule. */
+  aiIdentityOverride?: AiIdentityMode;
+  /** Vault query for this action. */
+  vaultQuery?: AiVaultQuery;
+}
+
+export interface AiRule {
+  id: string;
+  enabled: boolean;
+  name: string;
+  category: AiRuleCategory;
+  priority: number;
+  trigger: AiRuleTrigger;
+  action: AiRuleAction;
+}
+
+/**
+ * Per-contact AI preferences — stored in node config.
+ * Defines how the AI behaves for each contact.
+ */
+export interface ContactAiPreferences {
+  peerOwnerId: string;
+  /** AI access level for this contact. Default: "none" */
+  aiAccessLevel: "none" | "assistant_only" | "full";
+  /** Knowledge access level for vault queries. Default: "public" */
+  knowledgeAccess: "public" | "professional" | "personal";
+  /** Priority — whether to alert human immediately or let AI handle. Default: "high" */
+  priority: "high" | "low";
 }
 
 /** Model provider mode: mock (no external calls), ollama (local), litellm (local/cloud), openai-compatible (OpenAI Chat Completions API format), anthropic-compatible (Anthropic Messages API format), or disabled. */
@@ -437,6 +549,9 @@ export interface UpdateNodeConfigParams {
   trustAnchorPublicKeys?: Record<string, string>;
   autonomousKillSwitch?: boolean;
   autonomousPolicies?: AutonomousPolicy[];
+  aiSettings?: AiSettings;
+  /** Per-contact AI preferences. Update individual contacts via updateContactAiPrefs(). */
+  contactAiPreferences?: ContactAiPreferences[];
 }
 
 export interface ListRelaysParams {}

@@ -109,7 +109,7 @@ import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { handleInboundShareRequest, handleInboundShareAccept } from "./share-inbound.js";
 import { generateChatDraft } from "./chat-draft-inbound.js";
 import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
-import type { AutonomousDomain, AutonomousPolicy } from "@envoymesh/api";
+import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
 import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
@@ -171,6 +171,44 @@ let currentChatAssistEnabled = false;
 // Autonomous policy configuration — loaded from persisted config after nodeService is created
 let currentAutonomousKillSwitch = false;
 let currentAutonomousPolicies: readonly AutonomousPolicy[] = [];
+
+// AI Settings — identity mode, online/offline behavior (loaded from persisted config)
+let currentAiSettings: AiSettings | undefined;
+
+// Contact AI preferences — per-contact access levels (loaded from persisted config)
+let currentContactAiPrefs: Map<string, { aiAccessLevel: "none" | "assistant_only" | "full"; knowledgeAccess: "public" | "professional" | "personal"; priority: "high" | "low" }> = new Map();
+
+// Activity tracking for online/offline detection (inbound path)
+// Note: node-service-impl.ts has its own activity tracking for outbound paths (sendChat).
+// The index.ts version tracks activity from WebSocket messages (inbound).
+// The node-service-impl.ts version tracks activity from API calls like sendChat (outbound).
+let lastActivityTimestamp: number = Date.now();
+const ACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes of inactivity = offline
+
+/**
+ * Determine if the owner is currently online based on:
+ * - If statusMode is "manual": use the manual isOnlineManual setting
+ * - If statusMode is "automatic": return true if activity within timeout
+ */
+function isOwnerOnline(): boolean {
+  const status = currentAiSettings?.status;
+  if (!status) return true; // Default to online if no status configured
+
+  if (status.statusMode === "manual") {
+    return status.isOnlineManual ?? true;
+  }
+
+  // Automatic mode: online if had activity within timeout
+  return Date.now() - lastActivityTimestamp < ACTIVITY_TIMEOUT_MS;
+}
+
+/**
+ * Record an owner activity event (any message from the owner's client)
+ */
+function recordOwnerActivity(): void {
+  lastActivityTimestamp = Date.now();
+  console.log(`[activity] owner activity recorded, online=${isOwnerOnline()}`);
+}
 
 // WebSocket server reference for event emission
 let wsServerForEvents: WsServer | null = null;
@@ -1150,8 +1188,15 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       wsServerForEvents.emitEvent("chat:message", chatMsg);
 
       // Generate a chat draft if chat assist is enabled (async, fire-and-forget)
-      console.log(`[chat] currentChatAssistEnabled=${currentChatAssistEnabled}, bondLevel=${senderTrust?.level}`);
-      if (currentChatAssistEnabled) {
+      // Also check the contact's AI access level
+      const contactPrefs = currentContactAiPrefs.get(payload.senderOwnerId);
+      // If contact has no preferences, use defaultModeForNewContacts setting
+      const defaultMode = currentAiSettings?.defaultModeForNewContacts ?? "manual";
+      const aiAccessLevel = contactPrefs?.aiAccessLevel ?? (defaultMode === "manual" ? "none" : defaultMode === "assistant" ? "assistant_only" : "full");
+      console.log(`[chat] currentChatAssistEnabled=${currentChatAssistEnabled}, bondLevel=${senderTrust?.level}, aiAccessLevel=${aiAccessLevel}, defaultMode=${defaultMode}`);
+
+      // Only generate drafts if AI access level allows it (assistant_only or full)
+      if (currentChatAssistEnabled && (aiAccessLevel === "assistant_only" || aiAccessLevel === "full")) {
         const senderDisplayName = senderTrust?.displayName ?? payload.senderOwnerId;
         console.log(`[chat] generating draft for message from ${senderDisplayName}: ${payload.text}`);
         void generateChatDraft({
@@ -1169,6 +1214,13 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           draftStore: chatDraftStore,
           modelProviders: currentModelProviders,
           chatAssistEnabled: currentChatAssistEnabled,
+          aiIdentity: currentAiSettings?.identity,
+          contactAiAccessLevel: aiAccessLevel,
+          knowledgeAccess: contactPrefs?.knowledgeAccess ?? "public",
+          rules: currentAiSettings?.rules ?? [],
+          vaultIndex,
+          isOnline: isOwnerOnline(), // Use actual online status
+          ownerDisplayName: selfHuman?.displayName,
         }).then(async (result) => {
           if (result.ok && wsServerForEvents) {
             // Always emit draft event for UI to display
@@ -1177,7 +1229,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
               draft: result.draft,
             });
 
-            // Check autonomous policy for auto-send
+            // Check autonomous policy for auto-send (only if AI access level is full)
             const bondLevel = senderTrust?.level ?? "public";
             const requestedSensitivity = bondLevel === "direct" || bondLevel === "referred" ? "friends" : "public";
 
@@ -1204,8 +1256,8 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
               createdAt: new Date().toISOString(),
             });
 
-            // Auto-send the chat response if policy allows
-            if (autoSendPolicy.allowed && nodeService instanceof NodeServiceImpl) {
+            // Auto-send the chat response if policy allows AND contact AI access level is "full"
+            if (autoSendPolicy.allowed && aiAccessLevel === "full" && nodeService instanceof NodeServiceImpl) {
               console.log(`[chat] auto-sending AI response to ${payload.senderOwnerId}: ${result.draft.text}`);
               try {
                 await nodeService.sendChat(payload.senderOwnerId, result.draft.text);
@@ -1695,6 +1747,12 @@ if (nodeService instanceof NodeServiceImpl) {
   // Load autonomous policy config
   currentAutonomousKillSwitch = nodeConfig.autonomousKillSwitch ?? false;
   currentAutonomousPolicies = nodeConfig.autonomousPolicies ?? [];
+  // Load AI settings
+  currentAiSettings = nodeConfig.aiSettings;
+  // Load contact AI preferences into a Map for fast lookup
+  currentContactAiPrefs = new Map(
+    (nodeConfig.contactAiPreferences ?? []).map((p) => [p.peerOwnerId, { aiAccessLevel: p.aiAccessLevel, knowledgeAccess: p.knowledgeAccess, priority: p.priority }]),
+  );
   console.log(`[model] provider mode=${currentModelProviders.mode}`);
   console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
   console.log(`[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`);
@@ -1720,9 +1778,17 @@ nodeService.on("config:updated", (data) => {
   currentAutonomousPolicies = data.autonomousPolicies;
   currentChatAssistEnabled = data.chatAssistEnabled;
   currentModelProviders = data.modelProviders;
+  currentAiSettings = data.aiSettings;
+  currentContactAiPrefs = new Map(
+    (data.contactAiPreferences ?? []).map((p: ContactAiPreferences) => [p.peerOwnerId, { aiAccessLevel: p.aiAccessLevel, knowledgeAccess: p.knowledgeAccess, priority: p.priority }]),
+  );
   console.log(`[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`);
   console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
   console.log(`[model] provider mode=${currentModelProviders.mode}`);
+  if (currentAiSettings) {
+    console.log(`[ai] identity mode=${currentAiSettings.identity.mode}, onlineAssistant=${currentAiSettings.status.onlineAssistantEnabled}, offlineAgent=${currentAiSettings.status.offlineAgentEnabled}`);
+  }
+  console.log(`[ai] contact prefs: ${currentContactAiPrefs.size} contacts`);
 });
 if (args.configPath) {
   console.log(`Config file: ${args.configPath}`);

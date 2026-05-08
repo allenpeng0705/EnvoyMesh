@@ -128,12 +128,12 @@ function App() {
   const [isSendingChat, setIsSendingChat] = useState(false);
   const lastChatSendRef = useRef<{ at: number; contact: string; text: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const [currentView, setCurrentView] = useState<"chat" | "contacts" | "search" | "profile" | "settings" | "inbox" | "ai">("chat");
+  const [currentView, setCurrentView] = useState<"chat" | "contacts" | "search" | "profile" | "settings" | "inbox">("chat");
   const [nodeConfig, setNodeConfig] = useState<NodeConfig | null>(null);
   const [relays, setRelays] = useState<RelayConfig[]>([]);
   const [newRelayAddr, setNewRelayAddr] = useState("");
   const [appSettings, setAppSettings] = useState<AppSettings>(loadAppSettings);
-  const [settingsTab, setSettingsTab] = useState<"node" | "app">("node");
+  const [settingsTab, setSettingsTab] = useState<"node" | "app" | "ai">("node");
   const [humanProfile, setHumanProfile] = useState<any>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileEditForm, setProfileEditForm] = useState({
@@ -157,6 +157,59 @@ function App() {
   const [modelEndpoint, setModelEndpoint] = useState("");
   const [modelName, setModelName] = useState("");
   const [modelApiKey, setModelApiKey] = useState("");
+  const [settingsSaveStatus, setSettingsSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  // Per-contact AI Assistant Mode
+  type AssistantMode = "manual" | "assistant" | "auto";
+
+  interface ContactAiPrefs {
+    mode: AssistantMode;
+    aiAccessLevel: "none" | "assistant_only" | "full"; // For gating auto-reply
+  }
+
+  function loadContactAiPrefs(): Record<string, ContactAiPrefs> {
+    try {
+      const stored = localStorage.getItem("envoymesh:contact-ai-prefs");
+      if (stored) return JSON.parse(stored);
+    } catch { /* ignore */ }
+    return {};
+  }
+
+  // Load contact AI mode preferences from localStorage (UI state only)
+  function loadContactAiModes(): Record<string, AssistantMode> {
+    try {
+      const stored = localStorage.getItem("envoymesh:contact-ai-modes");
+      if (stored) return JSON.parse(stored);
+    } catch { /* ignore */ }
+    return {};
+  }
+
+  function saveContactAiModes(modes: Record<string, AssistantMode>): void {
+    localStorage.setItem("envoymesh:contact-ai-modes", JSON.stringify(modes));
+  }
+
+  const [contactAiModes, setContactAiModes] = useState<Record<string, AssistantMode>>(loadContactAiModes);
+
+  // Helper to get aiAccessLevel for a contact from nodeConfig
+  function getContactAiAccessLevel(ownerId: string): "none" | "assistant_only" | "full" {
+    return nodeConfig?.contactAiPreferences?.find(p => p.peerOwnerId === ownerId)?.aiAccessLevel ?? "none";
+  }
+
+  // Helper to update contact aiAccessLevel in node config
+  async function updateContactAiAccessLevel(ownerId: string, level: "none" | "assistant_only" | "full"): Promise<void> {
+    const currentPrefs = nodeConfig?.contactAiPreferences ?? [];
+    const existingPref = currentPrefs.find(p => p.peerOwnerId === ownerId);
+    // Preserve existing knowledgeAccess and priority if they exist
+    const otherPrefs = currentPrefs.filter(p => p.peerOwnerId !== ownerId);
+    const newPrefs = [...otherPrefs, {
+      peerOwnerId: ownerId,
+      aiAccessLevel: level,
+      knowledgeAccess: existingPref?.knowledgeAccess ?? "public",
+      priority: existingPref?.priority ?? "high",
+    }];
+    await nodeService.updateNodeConfig({ contactAiPreferences: newPrefs } as any);
+    await nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+  }
 
   // Selected capabilities for rendezvous discovery
   const [selectedCapabilities, setSelectedCapabilities] = useState<Capability[]>([]);
@@ -195,6 +248,9 @@ function App() {
   const [inboxRequests, setInboxRequests] = useState<any[]>([]);
   const [pendingMessages, setPendingMessages] = useState<any[]>([]);
   const [showInbox, setShowInbox] = useState(false);
+
+  // Contact context menu for AI access level
+  const [contextMenu, setContextMenu] = useState<{ ownerId: string; x: number; y: number } | null>(null);
 
   // Peer connection info cache: ownerId -> { connected, direct, relayPeerId }
   const [peerConnectionInfo, setPeerConnectionInfo] = useState<Record<string, { connected: boolean; direct: boolean; relayPeerId?: string }>>({});
@@ -382,6 +438,14 @@ function App() {
     });
     return unsubscribe;
   }, [isConnected, nodeService]);
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClick = () => setContextMenu(null);
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [contextMenu]);
 
   const connectionInfo = {
     online: isConnected && nodeStatus === "running",
@@ -726,12 +790,6 @@ function App() {
             Search
           </button>
           <button
-            className={currentView === "ai" ? "active" : ""}
-            onClick={() => setCurrentView("ai")}
-          >
-            AI
-          </button>
-          <button
             className={currentView === "profile" ? "active" : ""}
             onClick={() => setCurrentView("profile")}
           >
@@ -831,6 +889,15 @@ function App() {
                   ))}
                 </div>
               )}
+              {/* Envoy AI contact */}
+              <button
+                className={selectedContact === "__envoy_ai__" ? "active" : ""}
+                onClick={() => setSelectedContact("__envoy_ai__")}
+              >
+                <span className="avatar">AI</span>
+                <span className="name">Envoy AI</span>
+              </button>
+
               {bonds.length === 0 && inboxRequests.length === 0 && pendingMessages.length === 0 ? (
                 <p className="empty">No contacts yet. Search to find people!</p>
               ) : (
@@ -839,30 +906,183 @@ function App() {
                     key={contact.peerOwnerId}
                     className={selectedContact === contact.peerOwnerId ? "active" : ""}
                     onClick={() => setSelectedContact(contact.peerOwnerId)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setContextMenu({ ownerId: contact.peerOwnerId, x: e.clientX, y: e.clientY });
+                    }}
                   >
                     <span className="avatar">{contact.displayName?.[0] ?? "?"}</span>
                     <span className="name">{contactLabel(contact)}</span>
+                    {/* Show AI access level indicator */}
+                    {getContactAiAccessLevel(contact.peerOwnerId) === "full" && (
+                      <span className="ai-access-badge" title="Full AI Access">🔄</span>
+                    )}
+                    {getContactAiAccessLevel(contact.peerOwnerId) === "assistant_only" && (
+                      <span className="ai-access-badge" title="Assistant Only">💬</span>
+                    )}
                   </button>
                 ))
+              )}
+
+              {/* Context Menu for Contact AI Settings */}
+              {contextMenu && (
+                <div
+                  className="context-menu"
+                  style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, zIndex: 1000 }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="context-menu-header">AI Access for Contact</div>
+                  {(["none", "assistant_only", "full"] as const).map((level) => {
+                    const currentLevel = getContactAiAccessLevel(contextMenu.ownerId);
+                    return (
+                      <div
+                        key={level}
+                        className={`context-menu-item ${currentLevel === level ? "active" : ""}`}
+                        onClick={() => {
+                          void updateContactAiAccessLevel(contextMenu.ownerId, level);
+                          setContextMenu(null);
+                        }}
+                      >
+                        {level === "none" && "○ None — AI never responds"}
+                        {level === "assistant_only" && "💬 Assistant Only — Draft suggestions only"}
+                        {level === "full" && "🔄 Full Auto-Reply — AI can respond automatically"}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </aside>
 
             <section className="chat-area">
-              {selectedContact ? (
+              {selectedContact === "__envoy_ai__" ? (
                 <>
                   <header className="chat-header">
-                    <span className="chat-name">
-                      {contactLabel(
-                        bonds.find((c) => c.peerOwnerId === selectedContact) ?? {
-                          peerOwnerId: selectedContact,
-                        },
-                      )}
+                    <span className="chat-name">Envoy AI</span>
+                    <span className="ai-status">
+                      {nodeConfig?.modelProviders?.mode === "disabled" ? "AI Disabled" :
+                       nodeConfig?.modelProviders?.mode === "mock" ? "Mock Mode" :
+                       `Model: ${nodeConfig?.modelProviders?.modelName ?? "Not set"}`}
                     </span>
-                    {appSettings.showConnectionStatus && peerConnectionInfo[selectedContact] && (
-                      <span className={`connection-type ${peerConnectionInfo[selectedContact].direct ? "p2p" : "relay"}`}>
-                        {peerConnectionInfo[selectedContact].direct ? "P2P" : "Relay"}
-                      </span>
+                  </header>
+                  <div className="ai-messages">
+                    {aiMessages.length === 0 ? (
+                      <div className="ai-empty">
+                        <p>Chat with your AI assistant</p>
+                        <small>Ask questions, get help with tasks, or just have a conversation</small>
+                        <div className="ai-suggestions">
+                          <button onClick={() => setAiInput("What can you help me with?")}>What can you help me with?</button>
+                          <button onClick={() => setAiInput("Summarize my recent conversations")}>Summarize my recent conversations</button>
+                          <button onClick={() => setAiInput("Help me draft a message")}>Help me draft a message</button>
+                        </div>
+                      </div>
+                    ) : (
+                      aiMessages.map((msg, i) => (
+                        <div key={i} className={`ai-message ${msg.role}`}>
+                          <span className="ai-message-role">{msg.role === "user" ? "You" : "AI"}</span>
+                          <p className="ai-message-text">{msg.text}</p>
+                        </div>
+                      ))
                     )}
+                    {isAiLoading && (
+                      <div className="ai-message ai">
+                        <span className="ai-message-role">AI</span>
+                        <p className="ai-message-text ai-loading">Thinking...</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="ai-input-area">
+                    <input
+                      type="text"
+                      className="ai-input"
+                      placeholder="Ask the AI anything..."
+                      value={aiInput}
+                      onChange={(e) => setAiInput(e.target.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === "Enter" && aiInput.trim() && !isAiLoading) {
+                          await sendAiMessage(aiInput);
+                        }
+                      }}
+                    />
+                    <button
+                      className="ai-send"
+                      onClick={async () => {
+                        if (aiInput.trim() && !isAiLoading) {
+                          await sendAiMessage(aiInput);
+                        }
+                      }}
+                      disabled={!aiInput.trim() || isAiLoading}
+                    >
+                      Send
+                    </button>
+                  </div>
+                </>
+              ) : selectedContact ? (
+                <>
+                  <header className="chat-header has-assistant-switch">
+                    <div className="chat-header-left">
+                      <span className="chat-name">
+                        {contactLabel(
+                          bonds.find((c) => c.peerOwnerId === selectedContact) ?? {
+                            peerOwnerId: selectedContact,
+                          },
+                        )}
+                      </span>
+                      {appSettings.showConnectionStatus && peerConnectionInfo[selectedContact] && (
+                        <span className={`connection-type ${peerConnectionInfo[selectedContact].direct ? "p2p" : "relay"}`}>
+                          {peerConnectionInfo[selectedContact].direct ? "P2P" : "Relay"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="chat-header-right">
+                      {/* Assistant Switch */}
+                      {(() => {
+                        const mode = contactAiModes[selectedContact] ?? "manual";
+                        const aiAccessLevel = getContactAiAccessLevel(selectedContact);
+                        const isAssistantAllowed = aiAccessLevel === "assistant_only" || aiAccessLevel === "full";
+                        const isAutoAllowed = aiAccessLevel === "full" && (nodeConfig?.autonomousPolicies ?? []).some(p => p.domain === "social" && p.autoSendChat);
+                        const isChatAssistEnabled = nodeConfig?.chatAssistEnabled ?? false;
+                        return (
+                          <div className="assistant-switch" title={`Current: ${mode.charAt(0).toUpperCase() + mode.slice(1)}`}>
+                            <span className="assistant-switch-label">AI</span>
+                            <button
+                              className={`assistant-switch-btn ${mode === "manual" ? "active" : ""}`}
+                              title="Manual: Type yourself"
+                              onClick={() => {
+                                const updated = { ...contactAiModes, [selectedContact]: "manual" as AssistantMode };
+                                setContactAiModes(updated);
+                                saveContactAiModes(updated);
+                              }}
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              className={`assistant-switch-btn ${mode === "assistant" ? "active" : ""} ${!isAssistantAllowed || !isChatAssistEnabled ? "disabled" : ""}`}
+                              title={!isAssistantAllowed ? "Assistant mode requires AI access for this contact" : isChatAssistEnabled ? "Assistant: AI suggests drafts" : "Chat Assist is disabled"}
+                              onClick={() => {
+                                if (!isAssistantAllowed || !isChatAssistEnabled) return;
+                                const updated = { ...contactAiModes, [selectedContact]: "assistant" as AssistantMode };
+                                setContactAiModes(updated);
+                                saveContactAiModes(updated);
+                              }}
+                            >
+                              💬
+                            </button>
+                            <button
+                              className={`assistant-switch-btn ${mode === "auto" ? "active" : ""} ${!isAutoAllowed ? "disabled" : ""}`}
+                              title={isAutoAllowed ? "Auto-Reply: AI responds automatically" : "Auto-Reply requires full AI access for this contact"}
+                              onClick={() => {
+                                if (!isAutoAllowed) return;
+                                const updated = { ...contactAiModes, [selectedContact]: "auto" as AssistantMode };
+                                setContactAiModes(updated);
+                                saveContactAiModes(updated);
+                              }}
+                            >
+                              🔄
+                            </button>
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </header>
                   <div className="messages">
                     {messages.length === 0 ? (
@@ -909,7 +1129,7 @@ function App() {
                 </>
               ) : (
                 <div className="no-chat-selected">
-                  <p>Select a contact to start chatting</p>
+                  <p>Select a contact or Envoy AI to start chatting</p>
                 </div>
               )}
             </section>
@@ -1429,6 +1649,12 @@ function App() {
                 Node
               </button>
               <button
+                className={settingsTab === "ai" ? "active" : ""}
+                onClick={() => setSettingsTab("ai")}
+              >
+                AI
+              </button>
+              <button
                 className={settingsTab === "app" ? "active" : ""}
                 onClick={() => setSettingsTab("app")}
               >
@@ -1688,44 +1914,6 @@ function App() {
                         onChange={(e) => setModelApiKey(e.target.value)}
                       />
                     </dd>
-
-                    <dt>&nbsp;</dt>
-                    <dd>
-                      <div className="settings-buttons">
-                        <button
-                          type="button"
-                          className="settings-save-btn"
-                          onClick={async () => {
-                            await nodeService.updateNodeConfig({
-                              modelProviders: {
-                                ...nodeConfig?.modelProviders,
-                                endpoint: modelEndpoint,
-                                modelName: modelName,
-                                apiKey: modelApiKey,
-                              },
-                            } as any);
-                            nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
-                            setModelEndpoint(modelEndpoint);
-                            setModelName(modelName);
-                            setModelApiKey(modelApiKey);
-                          }}
-                        >
-                          Save AI Settings
-                        </button>
-                        <button
-                          type="button"
-                          className="settings-cancel-btn"
-                          onClick={() => {
-                            // Reset to current config values
-                            setModelEndpoint(nodeConfig?.modelProviders?.endpoint ?? "");
-                            setModelName(nodeConfig?.modelProviders?.modelName ?? "");
-                            setModelApiKey(nodeConfig?.modelProviders?.apiKey ?? "");
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </dd>
                   </dl>
                 </section>
 
@@ -1814,8 +2002,483 @@ function App() {
                       <span className="toggle-slider" />
                     </label>
                   </div>
+
+                  <div className="settings-buttons">
+                    <button
+                      type="button"
+                      className="settings-save-btn"
+                      disabled={settingsSaveStatus === "saving"}
+                      onClick={async () => {
+                        setSettingsSaveStatus("saving");
+                        try {
+                          await nodeService.updateNodeConfig({
+                            modelProviders: {
+                              ...nodeConfig?.modelProviders,
+                              endpoint: modelEndpoint,
+                              modelName: modelName,
+                              apiKey: modelApiKey,
+                            },
+                          } as any);
+                          await nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                          setSettingsSaveStatus("saved");
+                          setTimeout(() => setSettingsSaveStatus("idle"), 2000);
+                        } catch (e) {
+                          console.error("Save failed:", e);
+                          setSettingsSaveStatus("error");
+                          setTimeout(() => setSettingsSaveStatus("idle"), 2000);
+                        }
+                      }}
+                    >
+                      {settingsSaveStatus === "saving" ? "Saving..." : settingsSaveStatus === "saved" ? "Saved!" : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-cancel-btn"
+                      onClick={() => {
+                        // Reset to current config values
+                        setModelEndpoint(nodeConfig?.modelProviders?.endpoint ?? "");
+                        setModelName(nodeConfig?.modelProviders?.modelName ?? "");
+                        setModelApiKey(nodeConfig?.modelProviders?.apiKey ?? "");
+                        setSettingsSaveStatus("idle");
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    {settingsSaveStatus === "error" && (
+                      <span className="settings-save-error">Save failed</span>
+                    )}
+                  </div>
                 </section>
               </>
+            )}
+
+            {settingsTab === "ai" && (
+              <section className="settings-section">
+                <h3>AI Assistant Settings</h3>
+                <p className="section-desc">
+                  Configure how the AI responds on your behalf.
+                </p>
+
+                <h4>Status</h4>
+                <div className="settings-toggle-row">
+                  <div className="toggle-info">
+                    <strong>Online Assistant</strong>
+                    <span className="toggle-desc">Suggest drafts when you are online</span>
+                  </div>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={nodeConfig?.aiSettings?.status?.onlineAssistantEnabled ?? true}
+                      onChange={async (e) => {
+                        const currentStatus = nodeConfig?.aiSettings?.status ?? { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" };
+                        await nodeService.updateNodeConfig({
+                          aiSettings: {
+                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                            status: { ...currentStatus, onlineAssistantEnabled: e.target.checked },
+                          },
+                        } as any);
+                        nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                      }}
+                    />
+                    <span className="toggle-slider" />
+                  </label>
+                </div>
+
+                <div className="settings-toggle-row">
+                  <div className="toggle-info">
+                    <strong>Offline Agent</strong>
+                    <span className="toggle-desc">Handle chats when you are away</span>
+                  </div>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={nodeConfig?.aiSettings?.status?.offlineAgentEnabled ?? false}
+                      onChange={async (e) => {
+                        const currentStatus = nodeConfig?.aiSettings?.status ?? { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" };
+                        await nodeService.updateNodeConfig({
+                          aiSettings: {
+                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                            status: { ...currentStatus, offlineAgentEnabled: e.target.checked },
+                          },
+                        } as any);
+                        nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                      }}
+                    />
+                    <span className="toggle-slider" />
+                  </label>
+                </div>
+
+                <h4>Status Detection</h4>
+                <p className="field-desc">Choose how your online status is determined.</p>
+                <div className="settings-radio-group">
+                  <label className={`settings-radio-option ${(nodeConfig?.aiSettings?.status?.statusMode ?? "automatic") === "automatic" ? "active" : ""}`}>
+                    <input
+                      type="radio"
+                      name="status-mode"
+                      value="automatic"
+                      checked={(nodeConfig?.aiSettings?.status?.statusMode ?? "automatic") === "automatic"}
+                      onChange={async () => {
+                        const currentStatus = nodeConfig?.aiSettings?.status ?? { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" };
+                        await nodeService.updateNodeConfig({
+                          aiSettings: {
+                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                            status: { ...currentStatus, statusMode: "automatic" },
+                          },
+                        } as any);
+                        nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                      }}
+                    />
+                    <div className="radio-content">
+                      <strong>Automatic</strong>
+                      <span>Detect based on activity (typing, mouse movement)</span>
+                    </div>
+                  </label>
+                  <label className={`settings-radio-option ${(nodeConfig?.aiSettings?.status?.statusMode ?? "automatic") === "manual" ? "active" : ""}`}>
+                    <input
+                      type="radio"
+                      name="status-mode"
+                      value="manual"
+                      checked={(nodeConfig?.aiSettings?.status?.statusMode ?? "automatic") === "manual"}
+                      onChange={async () => {
+                        const currentStatus = nodeConfig?.aiSettings?.status ?? { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" };
+                        await nodeService.updateNodeConfig({
+                          aiSettings: {
+                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                            status: { ...currentStatus, statusMode: "manual" },
+                          },
+                        } as any);
+                        nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                      }}
+                    />
+                    <div className="radio-content">
+                      <strong>Manual</strong>
+                      <span>Set your status manually below</span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Manual status toggle - only shown when in manual mode */}
+                {(nodeConfig?.aiSettings?.status?.statusMode ?? "automatic") === "manual" && (
+                  <div className="settings-toggle-row" style={{ marginTop: "0.75rem" }}>
+                    <div className="toggle-info">
+                      <strong>Current Status</strong>
+                      <span className="toggle-desc">Set whether you appear online or away</span>
+                    </div>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={nodeConfig?.aiSettings?.status?.isOnlineManual ?? true}
+                        onChange={async (e) => {
+                          const currentStatus = nodeConfig?.aiSettings?.status ?? { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" };
+                          await nodeService.updateNodeConfig({
+                            aiSettings: {
+                              ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                              status: { ...currentStatus, isOnlineManual: e.target.checked },
+                            },
+                          } as any);
+                          nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                        }}
+                      />
+                      <span className="toggle-slider" />
+                    </label>
+                  </div>
+                )}
+
+                <h4>AI Identity</h4>
+                <p className="field-desc">How the AI presents itself in responses.</p>
+
+                <div className="identity-mode-options">
+                  <label className={`identity-mode-option ${(nodeConfig?.aiSettings?.identity?.mode ?? "transparent") === "invisible" ? "active" : ""}`}>
+                    <input
+                      type="radio"
+                      name="ai-identity"
+                      value="invisible"
+                      checked={(nodeConfig?.aiSettings?.identity?.mode ?? "transparent") === "invisible"}
+                      onChange={async () => {
+                        await nodeService.updateNodeConfig({
+                          aiSettings: {
+                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                            identity: { ...(nodeConfig?.aiSettings?.identity ?? { mode: "transparent" }), mode: "invisible" },
+                          },
+                        } as any);
+                        nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                      }}
+                    />
+                    <div className="identity-mode-content">
+                      <strong>Invisible</strong>
+                      <span>Responds as if it were you</span>
+                      <small>Example: "Yeah, I can do that."</small>
+                    </div>
+                  </label>
+
+                  <label className={`identity-mode-option ${(nodeConfig?.aiSettings?.identity?.mode ?? "transparent") === "transparent" ? "active" : ""}`}>
+                    <input
+                      type="radio"
+                      name="ai-identity"
+                      value="transparent"
+                      checked={(nodeConfig?.aiSettings?.identity?.mode ?? "transparent") === "transparent"}
+                      onChange={async () => {
+                        await nodeService.updateNodeConfig({
+                          aiSettings: {
+                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                            identity: { ...(nodeConfig?.aiSettings?.identity ?? { mode: "transparent" }), mode: "transparent" },
+                          },
+                        } as any);
+                        nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                      }}
+                    />
+                    <div className="identity-mode-content">
+                      <strong>Transparent</strong>
+                      <span>Prefix messages with [AI Agent]</span>
+                      <small>Example: "[AI Agent]: I'm checking..."</small>
+                    </div>
+                  </label>
+
+                  <label className={`identity-mode-option ${(nodeConfig?.aiSettings?.identity?.mode ?? "transparent") === "defensive" ? "active" : ""}`}>
+                    <input
+                      type="radio"
+                      name="ai-identity"
+                      value="defensive"
+                      checked={(nodeConfig?.aiSettings?.identity?.mode ?? "transparent") === "defensive"}
+                      onChange={async () => {
+                        await nodeService.updateNodeConfig({
+                          aiSettings: {
+                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                            identity: { ...(nodeConfig?.aiSettings?.identity ?? { mode: "transparent" }), mode: "defensive" },
+                          },
+                        } as any);
+                        nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                      }}
+                    />
+                    <div className="identity-mode-content">
+                      <strong>Defensive (Gatekeep)</strong>
+                      <span>Acts as gatekeeper when you are away</span>
+                      <small>Example: "I've received your message and will notify them when back."</small>
+                    </div>
+                  </label>
+                </div>
+
+                <h4>Default Mode for New Contacts</h4>
+                <p className="field-desc">The default AI mode when you start a chat with a new contact.</p>
+                <select
+                  className="settings-select"
+                  value={nodeConfig?.aiSettings?.defaultModeForNewContacts ?? "manual"}
+                  onChange={async (e) => {
+                    await nodeService.updateNodeConfig({
+                      aiSettings: {
+                        ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                        defaultModeForNewContacts: e.target.value as "manual" | "assistant" | "auto",
+                      },
+                    } as any);
+                    nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                  }}
+                >
+                  <option value="manual">Manual (safest — you type everything)</option>
+                  <option value="assistant">Assistant (AI suggests drafts)</option>
+                  <option value="auto">Auto-Reply (AI responds automatically, requires trust)</option>
+                </select>
+
+                <h4>AI Rules</h4>
+                <p className="field-desc">Rules define how the AI responds to specific triggers.</p>
+
+                {/* Rules List */}
+                {nodeConfig?.aiSettings?.rules && nodeConfig.aiSettings.rules.length > 0 ? (
+                  <div className="rules-list">
+                    {nodeConfig.aiSettings.rules.map((rule) => (
+                      <div key={rule.id} className="rule-item">
+                        <div className="rule-item-header">
+                          <span className="rule-item-name">{rule.name}</span>
+                          <span className="rule-item-category">{rule.category}</span>
+                        </div>
+                        <div className="rule-item-triggers">
+                          {rule.trigger.isGreeting && "Greetings "}
+                          {rule.trigger.keywords && rule.trigger.keywords.length > 0 && `Keywords: ${rule.trigger.keywords.join(", ")} `}
+                          {rule.trigger.messageContains && `Regex: ${rule.trigger.messageContains}`}
+                          {rule.trigger.contactAiAccessLevel && rule.trigger.contactAiAccessLevel.length > 0 && ` Access: ${rule.trigger.contactAiAccessLevel.join(", ")}`}
+                          {!rule.trigger.isGreeting && (!rule.trigger.keywords || rule.trigger.keywords.length === 0) && !rule.trigger.messageContains && "No triggers (catch-all)"}
+                        </div>
+                        <div className="rule-item-actions">
+                          Action: {rule.action.type}
+                          {rule.action.template && ` — "${rule.action.template.slice(0, 50)}${rule.action.template.length > 50 ? "..." : ""}"`}
+                          {rule.action.aiIdentityOverride && ` | Identity: ${rule.action.aiIdentityOverride}`}
+                        </div>
+                        <div className="rule-item-controls">
+                          <button
+                            onClick={async () => {
+                              const newRules = nodeConfig.aiSettings!.rules.filter(r => r.id !== rule.id);
+                              await nodeService.updateNodeConfig({
+                                aiSettings: {
+                                  ...nodeConfig.aiSettings,
+                                  rules: newRules,
+                                },
+                              } as any);
+                              nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+                            }}
+                            className="delete"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="field-desc" style={{ marginBottom: "1rem" }}>No rules configured. Add a rule below.</p>
+                )}
+
+                {/* Add Rule Form */}
+                <div className="add-rule-form">
+                  <h5>Add New Rule</h5>
+                  <div className="form-group">
+                    <label>Rule Name</label>
+                    <input
+                      type="text"
+                      id="rule-name"
+                      placeholder="e.g., Greeting Response"
+                    />
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Category</label>
+                      <select id="rule-category">
+                        <option value="availability">Availability</option>
+                        <option value="capability">Capability</option>
+                        <option value="catch_all">Catch-all</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Priority (lower = first)</label>
+                      <input
+                        type="number"
+                        id="rule-priority"
+                        defaultValue={nodeConfig?.aiSettings?.rules?.length ? Math.max(...nodeConfig.aiSettings.rules.map(r => r.priority)) + 1 : 1}
+                        min={1}
+                        max={100}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Trigger: Keywords (comma-separated)</label>
+                      <input
+                        type="text"
+                        id="rule-keywords"
+                        placeholder="e.g., help, question, support"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Trigger: Message Regex</label>
+                      <input
+                        type="text"
+                        id="rule-regex"
+                        placeholder="e.g., \\b(help|support)\\b"
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Trigger: Greeting?</label>
+                      <select id="rule-greeting">
+                        <option value="">Any</option>
+                        <option value="true">Yes (match greetings)</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Trigger: AI Access Level</label>
+                      <select id="rule-access">
+                        <option value="">Any</option>
+                        <option value="full">Full access only</option>
+                        <option value="assistant_only">Assistant only</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Action Type</label>
+                      <select id="rule-action-type">
+                        <option value="draft">Draft (suggest reply)</option>
+                        <option value="auto_send">Auto-send (send directly)</option>
+                        <option value="gatekeep">Gatekeep (polite refusal)</option>
+                        <option value="defer">Defer (ask owner)</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Identity Override</label>
+                      <select id="rule-identity">
+                        <option value="">Use default</option>
+                        <option value="invisible">Invisible (as owner)</option>
+                        <option value="transparent">Transparent ([AI])</option>
+                        <option value="defensive">Defensive (gatekeep)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label>Response Template (optional, use {"{ownerName}"} for owner&apos;s name)</label>
+                    <textarea
+                      id="rule-template"
+                      placeholder="e.g., Hi {ownerName} is currently away. I'll let them know you reached out!"
+                    />
+                  </div>
+                  <div className="form-actions">
+                    <button
+                      className="btn-primary"
+                      onClick={async () => {
+                        const name = (document.getElementById("rule-name") as HTMLInputElement).value.trim();
+                        const category = (document.getElementById("rule-category") as HTMLSelectElement).value as "availability" | "capability" | "catch_all";
+                        const priority = parseInt((document.getElementById("rule-priority") as HTMLInputElement).value) || 1;
+                        const keywordsStr = (document.getElementById("rule-keywords") as HTMLInputElement).value.trim();
+                        const regex = (document.getElementById("rule-regex") as HTMLInputElement).value.trim();
+                        const isGreeting = (document.getElementById("rule-greeting") as HTMLSelectElement).value === "true";
+                        const access = (document.getElementById("rule-access") as HTMLSelectElement).value;
+                        const actionType = (document.getElementById("rule-action-type") as HTMLSelectElement).value as "draft" | "auto_send" | "gatekeep" | "defer";
+                        const identity = (document.getElementById("rule-identity") as HTMLSelectElement).value;
+                        const template = (document.getElementById("rule-template") as HTMLTextAreaElement).value.trim();
+
+                        if (!name) {
+                          alert("Please enter a rule name");
+                          return;
+                        }
+
+                        const newRule = {
+                          id: `rule_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                          enabled: true,
+                          name,
+                          category,
+                          priority,
+                          trigger: {
+                            ...(keywordsStr && { keywords: keywordsStr.split(",").map(k => k.trim()).filter(Boolean) }),
+                            ...(regex && { messageContains: regex }),
+                            ...(isGreeting && { isGreeting: true }),
+                            ...(access && { contactAiAccessLevel: [access as "full" | "assistant_only"] }),
+                          },
+                          action: {
+                            type: actionType,
+                            ...(template && { template }),
+                            ...(identity && { aiIdentityOverride: identity as "invisible" | "transparent" | "defensive" }),
+                          },
+                        };
+
+                        const currentRules = nodeConfig?.aiSettings?.rules ?? [];
+                        await nodeService.updateNodeConfig({
+                          aiSettings: {
+                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                            rules: [...currentRules, newRule],
+                          },
+                        } as any);
+                        nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
+
+                        // Clear form
+                        (document.getElementById("rule-name") as HTMLInputElement).value = "";
+                        (document.getElementById("rule-keywords") as HTMLInputElement).value = "";
+                        (document.getElementById("rule-regex") as HTMLInputElement).value = "";
+                        (document.getElementById("rule-template") as HTMLTextAreaElement).value = "";
+                      }}
+                    >
+                      Add Rule
+                    </button>
+                  </div>
+                </div>
+              </section>
             )}
 
             {settingsTab === "app" && (
@@ -1884,72 +2547,6 @@ function App() {
         )}
 
               </main>
-
-        {currentView === "ai" && (
-          <div className="ai-view">
-            <header className="chat-header">
-              <h2>AI Assistant</h2>
-              <span className="ai-status">
-                {nodeConfig?.modelProviders?.mode === "disabled" ? "AI Disabled" :
-                 nodeConfig?.modelProviders?.mode === "mock" ? "Mock Mode" :
-                 `Model: ${nodeConfig?.modelProviders?.modelName ?? "Not set"}`}
-              </span>
-            </header>
-
-            <div className="ai-messages">
-              {aiMessages.length === 0 ? (
-                <div className="ai-empty">
-                  <p>Chat with your AI assistant</p>
-                  <small>Ask questions, get help with tasks, or just have a conversation</small>
-                  <div className="ai-suggestions">
-                    <button onClick={() => setAiInput("What can you help me with?")}>What can you help me with?</button>
-                    <button onClick={() => setAiInput("Summarize my recent conversations")}>Summarize my recent conversations</button>
-                    <button onClick={() => setAiInput("Help me draft a message")}>Help me draft a message</button>
-                  </div>
-                </div>
-              ) : (
-                aiMessages.map((msg, i) => (
-                  <div key={i} className={`ai-message ${msg.role}`}>
-                    <span className="ai-message-role">{msg.role === "user" ? "You" : "AI"}</span>
-                    <p className="ai-message-text">{msg.text}</p>
-                  </div>
-                ))
-              )}
-              {isAiLoading && (
-                <div className="ai-message ai">
-                  <span className="ai-message-role">AI</span>
-                  <p className="ai-message-text ai-loading">Thinking...</p>
-                </div>
-              )}
-            </div>
-
-            <div className="ai-input-area">
-              <input
-                type="text"
-                className="ai-input"
-                placeholder="Ask the AI anything..."
-                value={aiInput}
-                onChange={(e) => setAiInput(e.target.value)}
-                onKeyDown={async (e) => {
-                  if (e.key === "Enter" && aiInput.trim() && !isAiLoading) {
-                    await sendAiMessage(aiInput);
-                  }
-                }}
-              />
-              <button
-                className="ai-send"
-                onClick={async () => {
-                  if (aiInput.trim() && !isAiLoading) {
-                    await sendAiMessage(aiInput);
-                  }
-                }}
-                disabled={!aiInput.trim() || isAiLoading}
-              >
-                Send
-              </button>
-            </div>
-          </div>
-        )}
 
         {currentView === "inbox" && (
           <div className="inbox-view">
