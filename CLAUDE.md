@@ -26,7 +26,7 @@ EnvoyMesh is a **decentralized, peer-to-peer mesh for autonomous AI agents**. Ag
 - Semantic consistency — typed intents agents can reason about, not opaque bytes
 - Observability — JSONL audit with correlation IDs stitching multi-peer flows
 
-**Active milestone: Phase 9A** — AI agent gets its own peer identity, cryptographically linked to the owner via signed mandate. Agent runs on home node as a first-class network participant. See `docs/implementation-plan.md` for full roadmap (9A–9J).
+**Active milestone: Phase 9 complete** — AI agent has its own peer identity (9A), tool registry (9B), memory/context (9C), mode controller (9D), session management (9E), style adapter (9F), proactive triggers (9G), approval workflow (9H), external agent gateway (9I), and digest/notifications (9J). See `docs/implementation-plan.md` for full roadmap.
 
 ---
 
@@ -38,6 +38,10 @@ EnvoyMesh/
 │   ├── node/          # Node.js runtime: CLI, mesh, WebSocket API for Social
 │   ├── relay/         # Relay node binary
 │   ├── social/        # Social/chat UI (Vite + React)
+│   │   ├── src/components/  # Header, ErrorBoundary, views/ (Chat, Search, Profile, Settings, etc.)
+│   │   ├── src/context/     # NodeStateContext (shared state, event-driven)
+│   │   ├── src/lib/         # storage.ts, display.ts (shared util)
+│   │   └── test/            # Component + context tests (vitest + testing-library)
 │   └── tauri/         # End-user native wrapper: WebView loads Social web UI + spawns Node (no Electron)
 ├── packages/
 │   ├── protocol/      # Core protocol: Zod schemas, payload constructors, canonical JSON
@@ -231,7 +235,8 @@ npm run cli -w @envoymesh/node -- --help
 ### Test conventions
 
 - Tests live in `packages/*/test/` and `apps/*/test/`
-- Filename matches: `<module>.test.ts`
+- Filename matches: `<module>.test.ts` or `<module>.test.tsx`
+- React component tests use `@testing-library/react` with jsdom environment (`/** @vitest-environment jsdom */`)
 - Uses Vitest with `describe`/`it`/`expect`
 - Vitest config maps `@envoymesh/*` imports to source `.ts` files for direct testing without build
 - Tests are run with `npm test` (CI) or `npx vitest` (watch mode)
