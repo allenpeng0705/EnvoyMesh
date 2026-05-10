@@ -9,6 +9,7 @@ import type {
   HelloRequest,
   HelloResponse,
   HumanProfile,
+  NodeProfile,
   NodeServiceEvents,
   NodeConfig,
   PeerSearchResult,
@@ -43,7 +44,7 @@ interface NodeServiceClient {
   reconnectAttempts: number;
 
   // Identity
-  getProfile(): Promise<{ owner: any; device: any; deviceCertificate: any }>;
+  getProfile(): Promise<NodeProfile>;
   getHumanProfile(): Promise<HumanProfile | undefined>;
   updateHumanProfile(input: CreateHumanProfileInput): Promise<HumanProfile>;
 

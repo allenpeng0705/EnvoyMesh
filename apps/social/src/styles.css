@@ -3473,3 +3473,34 @@ button:disabled {
 .btn-secondary:hover {
   border-color: var(--color-text-muted);
 }
+
+/* Error Boundary */
+.error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 2rem;
+}
+
+.error-boundary-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+  box-shadow: var(--shadow-md);
+}
+
+.error-boundary-card h2 {
+  margin-bottom: 0.5rem;
+  color: var(--color-danger);
+}
+
+.error-boundary-message {
+  color: var(--color-text-muted);
+  margin-bottom: 1.5rem;
+  word-break: break-word;
+}
