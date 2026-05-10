@@ -37,6 +37,7 @@ interface NodeServiceClient {
   // Connection
   connect(): Promise<void>;
   disconnect(): void;
+  reconnect(): Promise<void>;
   isConnected: boolean;
   isReady: boolean;
   reconnectAttempts: number;
@@ -126,6 +127,17 @@ export function NodeServiceProvider({ children }: { children: ReactNode }) {
         readyReceived = false;
         setConnected(false);
         setReady(false);
+      },
+
+      async reconnect() {
+        wsClient.disconnect();
+        connected = false;
+        readyReceived = false;
+        setConnected(false);
+        setReady(false);
+        await wsClient.connect();
+        connected = true;
+        setConnected(true);
       },
 
       async getProfile() {

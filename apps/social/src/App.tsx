@@ -1,6 +1,18 @@
 import { useState, useEffect, useRef } from "react";
 import { useNodeService, useHelloRequests, useBonds, useChatMessages } from "./hooks/useNodeService.js";
-import type { PeerSearchResult, HelloProfile, NodeConfig, RelayConfig, NodeStatus } from "@envoymesh/api";
+import type {
+  AiRule,
+  AiSettings,
+  AutonomousDomain,
+  AutonomousPolicy,
+  ContactAiPreferences,
+  HelloProfile,
+  ModelProviderMode,
+  NodeConfig,
+  NodeStatus,
+  PeerSearchResult,
+  RelayConfig,
+} from "@envoymesh/api";
 import {
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
@@ -35,6 +47,15 @@ function loadAppSettings(): AppSettings {
 
 function saveAppSettings(settings: AppSettings): void {
   localStorage.setItem("envoymesh:app-settings", JSON.stringify(settings));
+}
+
+function defaultAiSettings(): AiSettings {
+  return {
+    status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" },
+    identity: { mode: "transparent" },
+    defaultModeForNewContacts: "manual",
+    rules: [],
+  };
 }
 
 // Preset capabilities for rendezvous discovery
@@ -201,13 +222,13 @@ function App() {
     const existingPref = currentPrefs.find(p => p.peerOwnerId === ownerId);
     // Preserve existing knowledgeAccess and priority if they exist
     const otherPrefs = currentPrefs.filter(p => p.peerOwnerId !== ownerId);
-    const newPrefs = [...otherPrefs, {
+    const newPrefs: ContactAiPreferences[] = [...otherPrefs, {
       peerOwnerId: ownerId,
       aiAccessLevel: level,
       knowledgeAccess: existingPref?.knowledgeAccess ?? "public",
       priority: existingPref?.priority ?? "high",
     }];
-    await nodeService.updateNodeConfig({ contactAiPreferences: newPrefs } as any);
+    await nodeService.updateNodeConfig({ contactAiPreferences: newPrefs });
     await nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
   }
 
@@ -1716,14 +1737,22 @@ function App() {
                         checked={nodeConfig?.enableMdns ?? true}
                         onChange={async (e) => {
                           const newValue = e.target.checked;
-                          await nodeService.updateNodeConfig({ enableMdns: newValue } as any);
+                          await nodeService.updateNodeConfig({ enableMdns: newValue });
                           // Restart node to apply changes
                           try {
                             await nodeService.stopNode();
-                            await nodeService.waitForConnection(10000);
+                          } catch (err) {
+                            console.error("[app] Failed to stop node:", err);
+                          }
+                          try {
+                            await nodeService.waitForConnection(15000);
+                          } catch (err) {
+                            console.error("[app] Node did not reconnect after stop; proceeding to start:", err);
+                          }
+                          try {
                             await nodeService.startNode();
                           } catch (err) {
-                            console.error("[app] Failed to restart node:", err);
+                            console.error("[app] Failed to start node:", err);
                           }
                           nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                         }}
@@ -1866,10 +1895,10 @@ function App() {
                         className="settings-select"
                         value={nodeConfig?.modelProviders?.mode ?? "mock"}
                         onChange={async (e) => {
-                          const mode = e.target.value as any;
+                          const mode = e.target.value as ModelProviderMode;
                           await nodeService.updateNodeConfig({
                             modelProviders: { ...nodeConfig?.modelProviders, mode },
-                          } as any);
+                          });
                           nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                         }}
                       >
@@ -1935,7 +1964,7 @@ function App() {
                         onChange={async (e) => {
                           await nodeService.updateNodeConfig({
                             chatAssistEnabled: e.target.checked,
-                          } as any);
+                          });
                           nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                         }}
                       />
@@ -1957,7 +1986,7 @@ function App() {
                         onChange={async (e) => {
                           const currentPolicies = nodeConfig?.autonomousPolicies ?? [];
                           const existingSocial = currentPolicies.find(p => p.domain === "social");
-                          let updatedPolicies: any[];
+                          let updatedPolicies: AutonomousPolicy[];
                           if (existingSocial) {
                             updatedPolicies = currentPolicies.map(p =>
                               p.domain === "social" ? { ...p, autoSendChat: e.target.checked } : p
@@ -1966,7 +1995,7 @@ function App() {
                             updatedPolicies = [
                               ...currentPolicies,
                               {
-                                domain: "social",
+                                domain: "social" as AutonomousDomain,
                                 maxSensitivity: "friends",
                                 autoAnswer: e.target.checked,
                                 autoSendChat: e.target.checked,
@@ -1975,7 +2004,7 @@ function App() {
                           }
                           await nodeService.updateNodeConfig({
                             autonomousPolicies: updatedPolicies,
-                          } as any);
+                          });
                           nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                         }}
                       />
@@ -1995,7 +2024,7 @@ function App() {
                         onChange={async (e) => {
                           await nodeService.updateNodeConfig({
                             autonomousKillSwitch: e.target.checked,
-                          } as any);
+                          });
                           nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                         }}
                       />
@@ -2013,12 +2042,12 @@ function App() {
                         try {
                           await nodeService.updateNodeConfig({
                             modelProviders: {
-                              ...nodeConfig?.modelProviders,
+                              ...(nodeConfig?.modelProviders ?? { mode: "mock" as ModelProviderMode }),
                               endpoint: modelEndpoint,
                               modelName: modelName,
                               apiKey: modelApiKey,
                             },
-                          } as any);
+                          });
                           await nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                           setSettingsSaveStatus("saved");
                           setTimeout(() => setSettingsSaveStatus("idle"), 2000);
@@ -2073,10 +2102,10 @@ function App() {
                         const currentStatus = nodeConfig?.aiSettings?.status ?? { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" };
                         await nodeService.updateNodeConfig({
                           aiSettings: {
-                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                            ...(nodeConfig?.aiSettings ?? defaultAiSettings()),
                             status: { ...currentStatus, onlineAssistantEnabled: e.target.checked },
                           },
-                        } as any);
+                        });
                         nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                       }}
                     />
@@ -2097,10 +2126,10 @@ function App() {
                         const currentStatus = nodeConfig?.aiSettings?.status ?? { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" };
                         await nodeService.updateNodeConfig({
                           aiSettings: {
-                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                            ...(nodeConfig?.aiSettings ?? defaultAiSettings()),
                             status: { ...currentStatus, offlineAgentEnabled: e.target.checked },
                           },
-                        } as any);
+                        });
                         nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                       }}
                     />
@@ -2121,10 +2150,10 @@ function App() {
                         const currentStatus = nodeConfig?.aiSettings?.status ?? { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" };
                         await nodeService.updateNodeConfig({
                           aiSettings: {
-                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                            ...(nodeConfig?.aiSettings ?? defaultAiSettings()),
                             status: { ...currentStatus, statusMode: "automatic" },
                           },
-                        } as any);
+                        });
                         nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                       }}
                     />
@@ -2143,10 +2172,10 @@ function App() {
                         const currentStatus = nodeConfig?.aiSettings?.status ?? { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" };
                         await nodeService.updateNodeConfig({
                           aiSettings: {
-                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                            ...(nodeConfig?.aiSettings ?? defaultAiSettings()),
                             status: { ...currentStatus, statusMode: "manual" },
                           },
-                        } as any);
+                        });
                         nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                       }}
                     />
@@ -2172,10 +2201,10 @@ function App() {
                           const currentStatus = nodeConfig?.aiSettings?.status ?? { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" };
                           await nodeService.updateNodeConfig({
                             aiSettings: {
-                              ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                              ...(nodeConfig?.aiSettings ?? defaultAiSettings()),
                               status: { ...currentStatus, isOnlineManual: e.target.checked },
                             },
-                          } as any);
+                          });
                           nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                         }}
                       />
@@ -2197,10 +2226,10 @@ function App() {
                       onChange={async () => {
                         await nodeService.updateNodeConfig({
                           aiSettings: {
-                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
-                            identity: { ...(nodeConfig?.aiSettings?.identity ?? { mode: "transparent" }), mode: "invisible" },
+                            ...(nodeConfig?.aiSettings ?? defaultAiSettings()),
+                            identity: { ...(nodeConfig?.aiSettings?.identity ?? { mode: "transparent" as const }), mode: "invisible" },
                           },
-                        } as any);
+                        });
                         nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                       }}
                     />
@@ -2220,10 +2249,10 @@ function App() {
                       onChange={async () => {
                         await nodeService.updateNodeConfig({
                           aiSettings: {
-                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
-                            identity: { ...(nodeConfig?.aiSettings?.identity ?? { mode: "transparent" }), mode: "transparent" },
+                            ...(nodeConfig?.aiSettings ?? defaultAiSettings()),
+                            identity: { ...(nodeConfig?.aiSettings?.identity ?? { mode: "transparent" as const }), mode: "transparent" },
                           },
-                        } as any);
+                        });
                         nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                       }}
                     />
@@ -2243,10 +2272,10 @@ function App() {
                       onChange={async () => {
                         await nodeService.updateNodeConfig({
                           aiSettings: {
-                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
-                            identity: { ...(nodeConfig?.aiSettings?.identity ?? { mode: "transparent" }), mode: "defensive" },
+                            ...(nodeConfig?.aiSettings ?? defaultAiSettings()),
+                            identity: { ...(nodeConfig?.aiSettings?.identity ?? { mode: "transparent" as const }), mode: "defensive" },
                           },
-                        } as any);
+                        });
                         nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                       }}
                     />
@@ -2266,10 +2295,10 @@ function App() {
                   onChange={async (e) => {
                     await nodeService.updateNodeConfig({
                       aiSettings: {
-                        ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                        ...(nodeConfig?.aiSettings ?? defaultAiSettings()),
                         defaultModeForNewContacts: e.target.value as "manual" | "assistant" | "auto",
                       },
-                    } as any);
+                    });
                     nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                   }}
                 >
@@ -2305,13 +2334,13 @@ function App() {
                         <div className="rule-item-controls">
                           <button
                             onClick={async () => {
-                              const newRules = nodeConfig.aiSettings!.rules.filter(r => r.id !== rule.id);
+                              const newRules = (nodeConfig.aiSettings ?? defaultAiSettings()).rules.filter(r => r.id !== rule.id);
                               await nodeService.updateNodeConfig({
                                 aiSettings: {
-                                  ...nodeConfig.aiSettings,
+                                  ...(nodeConfig.aiSettings ?? defaultAiSettings()),
                                   rules: newRules,
                                 },
-                              } as any);
+                              });
                               nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
                             }}
                             className="delete"
@@ -2461,10 +2490,10 @@ function App() {
                         const currentRules = nodeConfig?.aiSettings?.rules ?? [];
                         await nodeService.updateNodeConfig({
                           aiSettings: {
-                            ...(nodeConfig?.aiSettings ?? { status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" }, identity: { mode: "transparent" }, defaultModeForNewContacts: "manual" }),
+                            ...(nodeConfig?.aiSettings ?? defaultAiSettings()),
                             rules: [...currentRules, newRule],
                           },
-                        } as any);
+                        });
                         nodeService.getNodeConfig().then(setNodeConfig).catch(console.error);
 
                         // Clear form
@@ -2495,6 +2524,10 @@ function App() {
                         const newSettings = { ...appSettings, wsUrl: e.target.value };
                         setAppSettings(newSettings);
                         saveAppSettings(newSettings);
+                        // Reconnect with the new URL so the change takes effect immediately
+                        if (appSettings.autoConnect) {
+                          void nodeService.reconnect();
+                        }
                       }}
                     />
                   </dd>
