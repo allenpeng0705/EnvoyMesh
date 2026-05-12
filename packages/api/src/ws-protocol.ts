@@ -101,6 +101,8 @@ export type RpcMethods =
   | "getPeerConnectionInfo"
   // AI / Knowledge Query
   | "knowledgeQuery"
+  // Agent Bridge
+  | "getBridgeStatus"
   // Node Configuration
   | "getNodeConfig"
   | "updateNodeConfig"
@@ -180,12 +182,25 @@ export interface NodeConfig {
    * Per-contact AI preferences — defines how AI behaves for each contact.
    */
   contactAiPreferences: ContactAiPreferences[];
+  /** Agent bridge status — when an external agent (HomeClaw/OpenClaw) is bridged into the mesh. */
+  bridgeStatus?: BridgeStatus;
 }
 
 /**
  * Domain in which the node operates autonomously on behalf of the owner.
  */
 export type AutonomousDomain = "social" | "knowledge" | "home" | "research";
+
+// ============================================
+// Agent Bridge Types
+// ============================================
+
+export interface BridgeStatus {
+  enabled: boolean;
+  agentPeerId: string;
+  agentUrl: string;
+  listenPort: number;
+}
 
 /**
  * Defines what the node may do autonomously in a given domain without prompting the owner.
@@ -528,6 +543,8 @@ export interface DeclineShareParams {
 }
 
 export interface GetConnectionStatusParams {}
+
+export interface GetBridgeStatusParams {}
 
 export interface GetPeerConnectionInfoParams {
   peerOwnerId: string;

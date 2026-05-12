@@ -1846,6 +1846,27 @@ const bridge = createBridge({
 });
 bridgeHandleMessage = bridge._handleMessage;
 
+// Emit bridge status for Social UI and register bridge agent in peer directory
+if (nodeService instanceof NodeServiceImpl && bridgeConfig.enabled) {
+  nodeService.setBridgeStatus({
+    enabled: true,
+    agentPeerId: bridge.agentPeerId,
+    agentUrl: bridgeConfig.agentUrl,
+    listenPort: bridgeConfig.listenPort,
+  });
+  // Register bridge agent as a virtual peer so sendChat can resolve it.
+  // ownerId = bridge agent peer ID (lookup key for sendChat)
+  // peerId = home node's libp2p ID (transport)
+  peerDirectoryStore.ensurePeerFromInboundChat({
+    ownerId: bridge.agentPeerId,
+    peerId: mesh.peerId,
+    listenAddrs: mesh.multiaddrs,
+  }).catch((err: Error) => {
+    console.warn(`[bridge] failed to register agent in peer directory: ${err.message}`);
+  });
+  console.log(`[bridge] agent peer ${bridge.agentPeerId} registered`);
+}
+
 if (args.configPath) {
   console.log(`Config file: ${args.configPath}`);
 }
@@ -2250,6 +2271,9 @@ console.log("Press Ctrl+C to stop.");
 
 async function shutdown(): Promise<void> {
   await bridge.stop();
+  if (nodeService instanceof NodeServiceImpl) {
+    nodeService.setBridgeStatus({ enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0 });
+  }
   wsServer.stop();
   if (bootstrapReprobeTimer) {
     clearTimeout(bootstrapReprobeTimer);

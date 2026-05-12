@@ -51,6 +51,7 @@ export class WsServer {
       nodeServiceImpl.on("bond:established", (data: unknown) => this.emitEvent("bond:established", data));
       nodeServiceImpl.on("bond:revoked", (data: unknown) => this.emitEvent("bond:revoked", data));
       nodeServiceImpl.on("node:status", (data: unknown) => this.emitEvent("node:status", data));
+      nodeServiceImpl.on("bridge:status", (data: unknown) => this.emitEvent("bridge:status", data));
     } else {
       console.log(`[ws-server] ERROR: nodeServiceImpl.on is not a function!`);
     }
@@ -148,6 +149,7 @@ export class WsServer {
       "node:offline",
       "peer:discovered",
       "peer:lost",
+      "bridge:status",
     ];
     for (const event of allEvents) {
       this.subscribe(ws, event);
@@ -267,6 +269,8 @@ export class WsServer {
         return { success: true };
       case "knowledgeQuery":
         return ns.knowledgeQuery(params.question as string);
+      case "getBridgeStatus":
+        return ns.getBridgeStatus();
       default:
         throw new Error(`Unknown method: ${method}`);
     }

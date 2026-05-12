@@ -1,6 +1,7 @@
 import type {
   AiSettings,
   BondRecord,
+  BridgeStatus,
   ChatMessage,
   ConnectionStatus,
   CreateHumanProfileInput,
@@ -129,6 +130,7 @@ class NodeServiceImpl implements NodeService {
   private _taskDispatcher: ReturnType<typeof createTaskDispatcher> | undefined;
 
   private _nodeStatus: NodeStatus = "offline";
+  private _bridgeStatus: BridgeStatus | null = null;
 
   // Pending hello requests (messageId -> info) awaiting user acceptance
   private readonly _pendingHelloRequests = new Map<string, {
@@ -853,7 +855,9 @@ class NodeServiceImpl implements NodeService {
     /** Envelope field: recipient's Envoy device peer id — never the libp2p transport id. */
     const recipientEnvelopePeerId = targetPeer.devicePublicKeyPem
       ? derivePeerId(targetPeer.devicePublicKeyPem)
-      : undefined;
+      : targetOwnerId.startsWith("envoy_")
+        ? targetOwnerId
+        : undefined;
 
     const [selfHuman, recipientTrust] = await Promise.all([
       this._humanProfileStore.loadHumanProfile(),
@@ -1289,6 +1293,7 @@ class NodeServiceImpl implements NodeService {
         autonomousKillSwitch: config.autonomousKillSwitch ?? false,
         autonomousPolicies: config.autonomousPolicies ?? [],
         contactAiPreferences: config.contactAiPreferences ?? [],
+        bridgeStatus: this._bridgeStatus ?? undefined,
       };
     }
     return {
@@ -1309,6 +1314,7 @@ class NodeServiceImpl implements NodeService {
       autonomousKillSwitch: false,
       autonomousPolicies: [],
       contactAiPreferences: [],
+      bridgeStatus: this._bridgeStatus ?? undefined,
     };
   }
 
@@ -1901,6 +1907,15 @@ class NodeServiceImpl implements NodeService {
       connectedRelays: [],
       bondedPeers: 0,
     };
+  }
+
+  setBridgeStatus(status: BridgeStatus): void {
+    this._bridgeStatus = status;
+    this.emit("bridge:status", status);
+  }
+
+  async getBridgeStatus(): Promise<BridgeStatus> {
+    return this._bridgeStatus ?? { enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0 };
   }
 
   async getPeerConnectionInfo(peerOwnerId: string): Promise<PeerConnectionInfo> {

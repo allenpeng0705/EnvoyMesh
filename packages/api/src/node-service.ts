@@ -8,7 +8,7 @@ import type {
   DeviceIdentity,
   OwnerIdentity,
 } from "@envoymesh/identity";
-import type { NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult, ChatDraft, CapabilityManifest, UpdateCapabilityManifestParams, AutonomousPolicy, ModelProviderConfig, AiSettings, ContactAiPreferences } from "./ws-protocol.js";
+import type { BridgeStatus, NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult, ChatDraft, CapabilityManifest, UpdateCapabilityManifestParams, AutonomousPolicy, ModelProviderConfig, AiSettings, ContactAiPreferences } from "./ws-protocol.js";
 
 // ============================================
 // Identity Types
@@ -226,6 +226,9 @@ export interface NodeServiceEvents {
 
   // Config events
   "config:updated": { autonomousKillSwitch: boolean; autonomousPolicies: readonly AutonomousPolicy[]; chatAssistEnabled: boolean; modelProviders: ModelProviderConfig; aiSettings?: AiSettings; contactAiPreferences: ContactAiPreferences[] };
+
+  // Agent bridge events
+  "bridge:status": BridgeStatus;
 }
 
 export interface NodeService {
@@ -427,6 +430,14 @@ export interface NodeService {
    * Check if any listeners for a given event
    */
   hasListeners(event: keyof NodeServiceEvents): boolean;
+
+  // ----- Agent Bridge -----
+
+  /**
+   * Get agent bridge status (external agent like HomeClaw/OpenClaw).
+   * Returns default disabled status when bridge is not configured.
+   */
+  getBridgeStatus(): Promise<BridgeStatus>;
 
   // ----- Connection Status -----
 

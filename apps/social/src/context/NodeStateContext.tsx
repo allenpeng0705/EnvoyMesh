@@ -21,6 +21,7 @@ import {
 } from "../lib/storage.js";
 import type {
   BondRecord,
+  BridgeStatus,
   ChatMessage,
   ConnectionStatus,
   HelloProfile,
@@ -61,6 +62,9 @@ interface NodeStateValue {
 
   // App settings (persisted)
   appSettings: AppSettings;
+
+  // Agent bridge
+  bridgeStatus: BridgeStatus | null;
 
   // Per-contact AI modes (persisted)
   contactAiModes: Record<string, AssistantMode>;
@@ -106,6 +110,9 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
 
   // --- Per-contact AI modes ---
   const [contactAiModes, setContactAiModesState] = useState<Record<string, AssistantMode>>(loadContactAiModes);
+
+  // --- Agent bridge ---
+  const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus | null>(null);
 
   // -----------------------------------------------------------------------
   // Event-driven connection tracking (replaces 100ms polling)
@@ -160,6 +167,11 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     nodeService.getHumanProfile().then((profile) => {
       if (profile) setHumanProfile(profile);
     }).catch(() => {});
+
+    // Bridge status
+    nodeService.getBridgeStatus().then((status) => {
+      if (status.enabled) setBridgeStatus(status);
+    }).catch(() => {});
   }, [nodeService, isConnected]);
 
   // -----------------------------------------------------------------------
@@ -207,6 +219,15 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
           contactAiPreferences: [...data.contactAiPreferences],
         };
       });
+    });
+    return unsub;
+  }, [nodeService, isConnected]);
+
+  // bridge:status — keep bridge state in sync
+  useEffect(() => {
+    if (!isConnected) return;
+    const unsub = nodeService.on("bridge:status", (data) => {
+      setBridgeStatus(data);
     });
     return unsub;
   }, [nodeService, isConnected]);
@@ -317,6 +338,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     discoveredPeers,
     pendingMessages,
     appSettings,
+    bridgeStatus,
     contactAiModes,
     setAppSettings: wrappedSetAppSettings,
     refreshNodeConfig,

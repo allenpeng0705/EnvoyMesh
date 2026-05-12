@@ -14,7 +14,7 @@ import type {
 
 export function SettingsNodeTab() {
   const nodeService = useNodeService();
-  const { nodeConfig, nodeStatus, peerId, refreshNodeConfig } = useNodeState();
+  const { nodeConfig, nodeStatus, peerId, bridgeStatus, refreshNodeConfig } = useNodeState();
 
   // Local state mirrors nodeConfig fields for debounced editing
   const [newRelayAddr, setNewRelayAddr] = useState("");
@@ -347,6 +347,31 @@ export function SettingsNodeTab() {
           </button>
           {settingsSaveStatus === "error" && <span className="settings-save-error">Save failed</span>}
         </div>
+      </section>
+
+      {/* Agent Bridge */}
+      <section className="settings-section">
+        <h3>Agent Bridge</h3>
+        <dl className="settings-list">
+          <dt>Status</dt>
+          <dd>
+            <span className={`status-dot ${bridgeStatus?.enabled ? "online" : "offline"}`} />
+            {bridgeStatus?.enabled ? "Enabled" : "Disabled"}
+          </dd>
+          {bridgeStatus?.enabled && (
+            <>
+              <dt>Agent Peer ID</dt>
+              <dd><code>{bridgeStatus.agentPeerId}</code></dd>
+              <dt>Agent URL</dt>
+              <dd><code>{bridgeStatus.agentUrl}</code></dd>
+              <dt>Listen Port</dt>
+              <dd>{bridgeStatus.listenPort}</dd>
+            </>
+          )}
+        </dl>
+        {(!bridgeStatus?.enabled) && (
+          <p className="settings-hint">Enable the bridge in your node's bridge-config.json to connect an external agent (HomeClaw, OpenClaw).</p>
+        )}
       </section>
     </>
   );

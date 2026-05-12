@@ -17,6 +17,7 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
   const nodeService = useNodeService();
   const {
     bonds,
+    bridgeStatus,
     pendingHellOs,
     pendingMessages,
     humanProfile,
@@ -136,6 +137,17 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
         <span className="avatar">AI</span>
         <span className="name">Envoy AI</span>
       </button>
+
+      {/* Bridge agent contact — appears when external agent bridge is enabled */}
+      {bridgeStatus?.enabled && (
+        <button
+          className={selectedContact === bridgeStatus.agentPeerId ? "active" : ""}
+          onClick={() => onSelectContact(bridgeStatus.agentPeerId)}
+        >
+          <span className="avatar">AG</span>
+          <span className="name">My Agent</span>
+        </button>
+      )}
 
       {/* Bonded contacts */}
       {bonds.length === 0 && pendingHellOs.length === 0 && pendingMessages.length === 0 ? (
