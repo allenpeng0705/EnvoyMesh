@@ -131,6 +131,7 @@ class NodeServiceImpl implements NodeService {
 
   private _nodeStatus: NodeStatus = "offline";
   private _bridgeStatus: BridgeStatus | null = null;
+  private _bridgeChatHandler: ((envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>) | null = null;
 
   // Pending hello requests (messageId -> info) awaiting user acceptance
   private readonly _pendingHelloRequests = new Map<string, {
@@ -896,9 +897,15 @@ class NodeServiceImpl implements NodeService {
       selfProfile.device.privateKeyPem,
     );
 
-    await mesh.sendChat(transportPeerId, envelope, {
-      dialHints,
-    });
+    if (transportPeerId === mesh.peerId && this._bridgeChatHandler) {
+      // Self-send: route through bridge handler directly (no P2P dial)
+      console.log(`[sendChat] self-send to ${targetOwnerId}, routing via bridge handler`);
+      await this._bridgeChatHandler(envelope, mesh.peerId);
+    } else {
+      await mesh.sendChat(transportPeerId, envelope, {
+        dialHints,
+      });
+    }
     void this._tagBondedContactReachability(transportPeerId);
 
     const emittedMsg = {
@@ -1912,6 +1919,10 @@ class NodeServiceImpl implements NodeService {
   setBridgeStatus(status: BridgeStatus): void {
     this._bridgeStatus = status;
     this.emit("bridge:status", status);
+  }
+
+  setBridgeChatHandler(handler: (envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>): void {
+    this._bridgeChatHandler = handler;
   }
 
   async getBridgeStatus(): Promise<BridgeStatus> {

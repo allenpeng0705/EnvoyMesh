@@ -1846,6 +1846,11 @@ const bridge = createBridge({
 });
 bridgeHandleMessage = bridge._handleMessage;
 
+// Wire bridge chat handler into NodeServiceImpl so sendChat can short-circuit self-dial
+if (nodeService instanceof NodeServiceImpl) {
+  nodeService.setBridgeChatHandler(bridge._handleMessage);
+}
+
 // Emit bridge status for Social UI and register bridge agent in peer directory
 if (nodeService instanceof NodeServiceImpl && bridgeConfig.enabled) {
   nodeService.setBridgeStatus({
