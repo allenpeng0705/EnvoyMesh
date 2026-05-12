@@ -71,6 +71,7 @@ interface NodeServiceClient {
 
   // Agent Bridge
   getBridgeStatus(): Promise<{ enabled: boolean; agentPeerId: string; agentUrl: string; listenPort: number; agentName: string }>;
+  getPairingPayload(): Promise<{ wsUrl: string; relayPeerId?: string; agentPeerId?: string; agentPubKey?: string }>;
 
   // AI / Knowledge Query
   knowledgeQuery(question: string): Promise<string>;
@@ -206,6 +207,10 @@ export function NodeServiceProvider({ children }: { children: ReactNode }) {
 
       async getBridgeStatus() {
         return wsClient.rpc("getBridgeStatus");
+      },
+
+      async getPairingPayload() {
+        return wsClient.rpc("getPairingPayload");
       },
 
       async knowledgeQuery(question: string) {

@@ -141,6 +141,12 @@ import {
   type RelayHealthSnapshot,
   type RelayHealthState,
 } from "./relay-health.js";
+import {
+  createInitialNodeHealthState,
+  evaluateNodeHealth,
+  type NodeHealthSnapshot,
+  type NodeHealthState,
+} from "./node-health.js";
 
 const args = parseNodeArgs(process.argv.slice(2));
 const profile = await loadOrCreateNodeProfile(args.profileDir);
@@ -303,6 +309,9 @@ const RELAY_CONTROL_TTL_MS = 90_000;
 const RELAY_FORWARD_LOOKUP_REPLY_MS = 12_000;
 const RELAY_MANAGER_SNAPSHOT_INTERVAL_MS = 30_000;
 const RELAY_HEALTH_INTERVAL_MS = 30_000;
+const NODE_HEALTH_INTERVAL_MS = 30_000;
+const EVENT_LOOP_LAG_SAMPLE_MS = 1_000;
+const MAX_RECORDED_FATAL_ERRORS = 20;
 
 // ============================================================================
 // RATE LIMITING & ABUSE PREVENTION: Bounded structures to prevent exhaustion
@@ -390,9 +399,17 @@ let relayLookupTimer: ReturnType<typeof setTimeout> | undefined;
 let relaySummaryTimer: ReturnType<typeof setTimeout> | undefined;
 let relayManagerSnapshotTimer: ReturnType<typeof setTimeout> | undefined;
 let relayHealthTimer: ReturnType<typeof setTimeout> | undefined;
+let nodeHealthTimer: ReturnType<typeof setTimeout> | undefined;
+let eventLoopLagTimer: ReturnType<typeof setInterval> | undefined;
 let discoveryQueueTimer: ReturnType<typeof setTimeout> | undefined;
 let statsIntervalTimer: ReturnType<typeof setInterval> | undefined;
+let rateLimitCleanupInterval: ReturnType<typeof setInterval> | undefined;
+let rendezvousSweeper: ReturnType<typeof setInterval> | undefined;
 const processStartedAt = Date.now();
+let meshStarted = false;
+let lastKnownLibp2pPeerId = "";
+let lastEventLoopLagMs = 0;
+const recentFatalErrors: Array<{ at: number; message: string }> = [];
 
 if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length === 0) {
   connectivityWarnings.push(
@@ -433,6 +450,9 @@ const relayClientState = createRelayClientState(effectiveBootstrapPeers.map(rela
 const relayLookupRouter = createRelayLookupRouter();
 let relayHealthState: RelayHealthState = createInitialRelayHealthState();
 let relayHealthSnapshot: RelayHealthSnapshot | undefined;
+let nodeHealthState: NodeHealthState = createInitialNodeHealthState();
+let nodeHealthSnapshot: NodeHealthSnapshot | undefined;
+let libp2pRepairInProgress = false;
 
 mesh.onPeerDiscovered(async (peer) => {
   const source = peer.multiaddrs.some((addr) => addr.includes("/p2p-circuit")) ? "relay" : "unknown";
@@ -1707,10 +1727,12 @@ installEnvoyDataTransferReceiver({
 });
 
 await mesh.start();
+meshStarted = true;
+lastKnownLibp2pPeerId = mesh.peerId;
 
 if (args.enableRelayServer) {
   rendezvousRegistry = new CapabilityRegistry({ verbosity: "minimal", logPrefix: "[node-rendezvous]" });
-  rendezvousRegistry.startSweeper();
+  rendezvousSweeper = rendezvousRegistry.startSweeper();
   console.log("[node] Rendezvous capability registry enabled (--relay-server)");
 }
 
@@ -1746,7 +1768,7 @@ statsIntervalTimer = setInterval(() => {
 }, 60_000);
 
 // Periodic cleanup of expired rate limit entries
-setInterval(() => {
+rateLimitCleanupInterval = setInterval(() => {
   try {
     const now = Date.now();
     let cleaned = 0;
@@ -1763,6 +1785,8 @@ setInterval(() => {
     console.error("[node] Rate limit cleanup error:", err);
   }
 }, 60_000);
+
+startEventLoopLagMonitor();
 
 const nodeService = createNodeService(
   undefined,
@@ -1799,6 +1823,12 @@ if (nodeService instanceof NodeServiceImpl) {
 const wsServer = new WsServer(3030, "/ws");
 wsServer.start(nodeService);
 wsServerForEvents = wsServer;
+// Tell NodeServiceImpl the ws listen address so it can generate pairing QR data
+if (nodeService instanceof NodeServiceImpl) {
+  nodeService.setWsListenAddress(3030, "/ws");
+}
+await runNodeHealthCycle("startup");
+scheduleNodeHealth();
 
 // Wire NodeService events to WebSocket server
 nodeService.on("hello:request", (data) => wsServer.emitEvent("hello:request", data));
@@ -2340,11 +2370,28 @@ async function shutdown(): Promise<void> {
     clearTimeout(relayHealthTimer);
     relayHealthTimer = undefined;
   }
+  if (nodeHealthTimer) {
+    clearTimeout(nodeHealthTimer);
+    nodeHealthTimer = undefined;
+  }
+  if (eventLoopLagTimer) {
+    clearInterval(eventLoopLagTimer);
+    eventLoopLagTimer = undefined;
+  }
   if (statsIntervalTimer) {
     clearInterval(statsIntervalTimer);
     statsIntervalTimer = undefined;
   }
+  if (rateLimitCleanupInterval) {
+    clearInterval(rateLimitCleanupInterval);
+    rateLimitCleanupInterval = undefined;
+  }
+  if (rendezvousSweeper) {
+    clearInterval(rendezvousSweeper);
+    rendezvousSweeper = undefined;
+  }
   await mesh.stop();
+  meshStarted = false;
   process.exit(0);
 }
 
@@ -2640,6 +2687,123 @@ function scheduleRelayHealth(): void {
   }, RELAY_HEALTH_INTERVAL_MS);
 }
 
+function startEventLoopLagMonitor(): void {
+  let expectedAt = Date.now() + EVENT_LOOP_LAG_SAMPLE_MS;
+  eventLoopLagTimer = setInterval(() => {
+    const now = Date.now();
+    lastEventLoopLagMs = Math.max(0, now - expectedAt);
+    expectedAt = now + EVENT_LOOP_LAG_SAMPLE_MS;
+  }, EVENT_LOOP_LAG_SAMPLE_MS);
+}
+
+function scheduleNodeHealth(): void {
+  nodeHealthTimer = setTimeout(() => {
+    void runNodeHealthCycle("periodic")
+      .catch((error) => {
+        recordNodeFatalError("node.health.periodic", error);
+        console.error("[node-health] periodic check failed:", error);
+      })
+      .finally(() => scheduleNodeHealth());
+  }, NODE_HEALTH_INTERVAL_MS);
+}
+
+async function runNodeHealthCycle(source: "startup" | "periodic"): Promise<void> {
+  const result = evaluateNodeHealth({
+    startedAtMs: processStartedAt,
+    meshStarted,
+    listenAddrs: meshStarted ? mesh.multiaddrs : [],
+    relayPeerCount: meshStarted ? mesh.getConnectedRelayPeerIds().length : 0,
+    eventLoopLagMs: lastEventLoopLagMs,
+    rssBytes: process.memoryUsage().rss,
+    recentFatalErrors,
+    previous: nodeHealthState,
+  });
+  nodeHealthState = result.state;
+  nodeHealthSnapshot = result.snapshot;
+
+  await appendNodeHealthTrace(
+    nodeHealthProtocol(result.snapshot.status),
+    `node health ${result.snapshot.status} source=${source} actions=${result.snapshot.actions.join(",")} reasons=${result.snapshot.reasons.join(";") || "-"}`,
+  );
+
+  if (result.snapshot.actions.includes("exit-for-supervisor")) {
+    await exitForNodeSupervisor(result.snapshot.reasons.join(";") || "node health critical");
+    return;
+  }
+
+  if (result.snapshot.actions.includes("restart-libp2p")) {
+    await restartLibp2pForNodeHealth(result.snapshot.reasons.join(";") || "node health requested restart");
+  }
+}
+
+async function restartLibp2pForNodeHealth(reason: string): Promise<void> {
+  if (libp2pRepairInProgress) {
+    await appendNodeHealthTrace("node.health.repair", "node health libp2p restart already in progress");
+    return;
+  }
+  libp2pRepairInProgress = true;
+  try {
+    console.warn(`[node-health] restarting libp2p: ${reason}`);
+    meshStarted = false;
+    await mesh.stop();
+    await mesh.start();
+    meshStarted = true;
+    lastKnownLibp2pPeerId = mesh.peerId;
+    await appendNodeHealthTrace("node.health.repair", "node health libp2p restart completed");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await appendNodeHealthTrace(
+      "node.health.critical",
+      `node health libp2p restart failed; exiting for supervisor error=${message}`,
+    );
+    await exitForNodeSupervisor("node health libp2p restart failed");
+  } finally {
+    libp2pRepairInProgress = false;
+  }
+}
+
+async function exitForNodeSupervisor(reason: string): Promise<void> {
+  console.error(`[node-health] critical; exiting for supervisor restart: ${reason}`);
+  try {
+    await bridge.stop();
+    wsServer.stop();
+    if (meshStarted) {
+      await mesh.stop();
+      meshStarted = false;
+    }
+  } catch (error) {
+    console.error("[node-health] failed to stop cleanly before supervisor exit:", error);
+  } finally {
+    process.exit(2);
+  }
+}
+
+async function appendNodeHealthTrace(protocol: string, summary: string): Promise<void> {
+  await taskStore.appendAuditEvent(
+    createAuditEvent({
+      type: "p2p.trace",
+      direction: "outbound",
+      protocol,
+      remotePeerId: lastKnownLibp2pPeerId || derivePeerId(profile.device.publicKeyPem),
+      outcome: "record",
+      summary,
+    }),
+  );
+}
+
+function nodeHealthProtocol(status: NodeHealthSnapshot["status"]): string {
+  switch (status) {
+    case "healthy":
+      return "node.health.ok";
+    case "degraded":
+      return "node.health.warn";
+    case "unhealthy":
+      return "node.health.fail";
+    case "critical":
+      return "node.health.critical";
+  }
+}
+
 async function runRelayHealthCycle(source: "startup" | "periodic"): Promise<void> {
   const result = evaluateRelayHealth({
     relayEnabled: args.enableRelay,
@@ -2669,17 +2833,51 @@ async function runRelayHealthCycle(source: "startup" | "periodic"): Promise<void
   if (result.snapshot.actions.includes("refresh-relay-summary")) {
     await runRelaySummaryCycle("periodic");
   }
-  if (result.snapshot.actions.includes("restart-libp2p")) {
-    await appendRelayTrace(
-      "relay.health.repair",
-      mesh.peerId,
-      "relay health requested libp2p restart; current runtime records repair request for supervisor-aware follow-up",
-    );
-  }
   if (result.snapshot.actions.includes("exit-for-supervisor")) {
     await appendRelayTrace("relay.health.critical", mesh.peerId, "relay health critical; exiting for external supervisor restart");
     await mesh.stop();
     process.exit(2);
+  }
+  if (result.snapshot.actions.includes("restart-libp2p")) {
+    await appendRelayTrace(
+      "relay.health.repair",
+      mesh.peerId,
+      "relay health requested libp2p restart; attempting bounded local repair",
+    );
+    await restartLibp2pForRelayHealth(result.snapshot.reasons.join(";") || "relay health requested restart");
+  }
+}
+
+async function restartLibp2pForRelayHealth(reason: string): Promise<void> {
+  const relayPeerId = mesh.peerId;
+  if (libp2pRepairInProgress) {
+    await appendRelayTrace("relay.health.repair", relayPeerId, "relay health libp2p restart already in progress");
+    return;
+  }
+  libp2pRepairInProgress = true;
+  try {
+    console.warn(`[relay-health] restarting libp2p: ${reason}`);
+    meshStarted = false;
+    await mesh.stop();
+    await mesh.start();
+    meshStarted = true;
+    lastKnownLibp2pPeerId = mesh.peerId;
+    await appendRelayTrace("relay.health.repair", relayPeerId, "relay health libp2p restart completed");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await appendRelayTrace(
+      "relay.health.critical",
+      relayPeerId,
+      `relay health libp2p restart failed; exiting for supervisor error=${message}`,
+    );
+    try {
+      await mesh.stop();
+    } catch {
+      // Process is about to exit for the external supervisor.
+    }
+    process.exit(2);
+  } finally {
+    libp2pRepairInProgress = false;
   }
 }
 
@@ -3350,16 +3548,26 @@ process.on("SIGTERM", () => {
 });
 
 // ============================================================================
-// CRASH PREVENTION: Global error handlers to prevent any uncaught error from killing the node
+// CRASH PREVENTION: Global error handlers record failures for the health watchdog
 // ============================================================================
 
+function recordNodeFatalError(label: string, reason: unknown): void {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  recentFatalErrors.push({ at: Date.now(), message: `${label}: ${message}` });
+  if (recentFatalErrors.length > MAX_RECORDED_FATAL_ERRORS) {
+    recentFatalErrors.splice(0, recentFatalErrors.length - MAX_RECORDED_FATAL_ERRORS);
+  }
+}
+
 process.on("uncaughtException", (error: Error) => {
-  console.error("[node] UNCAUGHT EXCEPTION — continuing (node must not crash):", error.message, error.stack);
+  recordNodeFatalError("uncaughtException", error);
+  console.error("[node] UNCAUGHT EXCEPTION — recorded for health watchdog:", error.message, error.stack);
 });
 
 process.on("unhandledRejection", (reason: unknown) => {
   const msg = reason instanceof Error ? reason.message : String(reason);
-  console.error("[node] UNHANDLED REJECTION — continuing (node must not crash):", msg);
+  recordNodeFatalError("unhandledRejection", reason);
+  console.error("[node] UNHANDLED REJECTION — recorded for health watchdog:", msg);
 });
 
 async function relayTaskCancelIfNeeded(input: {

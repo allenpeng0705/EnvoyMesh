@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
+import QRCode from "qrcode";
 import {
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
 } from "@envoymesh/api";
@@ -28,6 +29,31 @@ export function SettingsNodeTab() {
 
   const isPublicNetwork = bootstrapPresets.length > 0;
   const relays = (nodeConfig?.configuredRelays ?? []) as RelayConfig[];
+
+  // QR pairing state
+  const [pairingQR, setPairingQR] = useState<string | null>(null); // data URL
+  const [pairingUri, setPairingUri] = useState<string>("");
+  const [pairingLoading, setPairingLoading] = useState(false);
+
+  const handleShowPairingQR = useCallback(async () => {
+    setPairingLoading(true);
+    try {
+      const payload = await nodeService.getPairingPayload();
+      // Build envoy://pair URI
+      const params = new URLSearchParams({ wsUrl: payload.wsUrl });
+      if (payload.relayPeerId) params.set("relayPeerId", payload.relayPeerId);
+      if (payload.agentPeerId) params.set("agentPeerId", payload.agentPeerId);
+      if (payload.agentPubKey) params.set("agentPubKey", payload.agentPubKey);
+      const uri = `envoy://pair?${params.toString()}`;
+      setPairingUri(uri);
+      const dataUrl = await QRCode.toDataURL(uri, { width: 256, margin: 1 });
+      setPairingQR(dataUrl);
+    } catch (e) {
+      console.error("Failed to generate pairing QR:", e);
+    } finally {
+      setPairingLoading(false);
+    }
+  }, [nodeService]);
 
   const handleStartNode = async () => {
     try { await nodeService.startNode(); } catch (e) { console.error(e); }
@@ -374,6 +400,46 @@ export function SettingsNodeTab() {
         {(!bridgeStatus?.enabled) && (
           <p className="settings-hint">Enable the bridge in your node's bridge-config.json to connect an external agent (HomeClaw, OpenClaw).</p>
         )}
+
+        {/* Pairing QR for mobile app */}
+        <div style={{ marginTop: "12px" }}>
+          {!pairingQR ? (
+            <button
+              className="settings-button"
+              onClick={handleShowPairingQR}
+              disabled={pairingLoading}
+            >
+              {pairingLoading ? "Generating…" : "Show Pairing QR"}
+            </button>
+          ) : (
+            <div style={{ textAlign: "center" }}>
+              <img
+                src={pairingQR}
+                alt="Pairing QR Code"
+                style={{ width: 256, height: 256, border: "2px solid var(--border-color)", borderRadius: 8 }}
+              />
+              <p className="settings-hint" style={{ marginTop: 8, wordBreak: "break-all", fontSize: "0.75rem" }}>
+                Scan with HomeClaw mobile app to pair.
+                <br />
+                <code style={{ fontSize: "0.65rem" }}>{pairingUri}</code>
+              </p>
+              <button
+                className="settings-button"
+                onClick={() => { void navigator.clipboard.writeText(pairingUri); }}
+                style={{ marginTop: 4 }}
+              >
+                Copy URI
+              </button>
+              <button
+                className="settings-button"
+                onClick={() => setPairingQR(null)}
+                style={{ marginTop: 4, marginLeft: 4 }}
+              >
+                Hide QR
+              </button>
+            </div>
+          )}
+        </div>
       </section>
     </>
   );

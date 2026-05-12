@@ -273,6 +273,8 @@ export class WsServer {
         return ns.knowledgeQuery(params.question as string);
       case "getBridgeStatus":
         return ns.getBridgeStatus();
+      case "getPairingPayload":
+        return ns.getPairingPayload();
       case "forwardEnvelope":
         return ns.forwardEnvelope(params.envelope as Record<string, unknown>, params.dialHints as string[] | undefined);
       default:

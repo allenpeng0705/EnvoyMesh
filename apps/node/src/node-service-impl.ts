@@ -133,6 +133,8 @@ class NodeServiceImpl implements NodeService {
   private _nodeStatus: NodeStatus = "offline";
   private _bridgeStatus: BridgeStatus | null = null;
   private _bridgeChatHandler: ((envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>) | null = null;
+  private _wsPort: number = 3030;
+  private _wsPath: string = "/ws";
 
   // Pending hello requests (messageId -> info) awaiting user acceptance
   private readonly _pendingHelloRequests = new Map<string, {
@@ -1933,8 +1935,52 @@ class NodeServiceImpl implements NodeService {
     this._bridgeChatHandler = handler;
   }
 
+  /** Set the WebSocket server's listen port/path for pairing QR URL generation. */
+  setWsListenAddress(port: number, path: string): void {
+    this._wsPort = port;
+    this._wsPath = path;
+  }
+
   async getBridgeStatus(): Promise<BridgeStatus> {
     return this._bridgeStatus ?? { enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0, agentName: "" };
+  }
+
+  /**
+   * Get pairing payload for mobile-app QR pairing (Phase 10A.7).
+   *
+   * Derives the LAN WebSocket URL from the node's advertised multiaddrs
+   * and ws-server port. Falls back to localhost if no IPv4 multiaddr found.
+   */
+  async getPairingPayload(): Promise<{ wsUrl: string; relayPeerId?: string; agentPeerId?: string; agentPubKey?: string }> {
+    const bridgeStatus = await this.getBridgeStatus();
+
+    // Derive LAN IP from multiaddrs, e.g. /ip4/192.168.1.100/tcp/63641 → 192.168.1.100
+    let lanIp = "localhost";
+    if (this._mesh?.multiaddrs) {
+      for (const addr of this._mesh.multiaddrs) {
+        const match = addr.match(/\/ip4\/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/);
+        if (match) {
+          lanIp = match[1];
+          break;
+        }
+      }
+    }
+
+    const wsPort = (this._wsPort ?? 3030);
+    const wsPath = (this._wsPath ?? "/ws");
+    const wsUrl = `ws://${lanIp}:${wsPort}${wsPath}`;
+
+    const payload: { wsUrl: string; relayPeerId?: string; agentPeerId?: string; agentPubKey?: string } = { wsUrl };
+
+    if (bridgeStatus.enabled) {
+      payload.agentPeerId = bridgeStatus.agentPeerId;
+      // Include agent public key if we have a profile with a public key
+      if (this._profile?.device?.publicKeyPem) {
+        payload.agentPubKey = this._profile.device.publicKeyPem;
+      }
+    }
+
+    return payload;
   }
 
   /**

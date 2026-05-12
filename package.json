@@ -26,9 +26,13 @@
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
+    "@types/qrcode": "^1.5.6",
     "@vitest/coverage-v8": "^4.1.5",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
   }
 }

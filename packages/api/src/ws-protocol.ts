@@ -103,6 +103,7 @@ export type RpcMethods =
   | "knowledgeQuery"
   // Agent Bridge
   | "getBridgeStatus"
+  | "getPairingPayload"
   // Node Configuration
   | "getNodeConfig"
   | "updateNodeConfig"
@@ -204,6 +205,25 @@ export interface BridgeStatus {
   listenPort: number;
   /** Human-readable name for the bridge agent (e.g. "HomeClaw", "OpenClaw"). */
   agentName: string;
+}
+
+/**
+ * Pairing payload for QR-code mobile pairing (Phase 10A).
+ *
+ * Encoded as `envoy://pair?wsUrl=...&relayPeerId=...&agentPeerId=...`
+ * Displayed as a QR code in the Social UI for the mobile app to scan.
+ */
+export interface PairingPayload {
+  /** WebSocket relay URL the mobile app connects to (e.g. ws://192.168.1.100:3030/ws) */
+  wsUrl: string;
+  /** Relay peer ID (optional) */
+  relayPeerId?: string;
+  /** Bridge agent peer ID (optional — present when bridge is enabled) */
+  agentPeerId?: string;
+  /** Bridge agent public key PEM (optional) */
+  agentPubKey?: string;
+  /** Pairing token for owner verification (optional) */
+  token?: string;
 }
 
 /**
@@ -549,6 +569,8 @@ export interface DeclineShareParams {
 export interface GetConnectionStatusParams {}
 
 export interface GetBridgeStatusParams {}
+
+export interface GetPairingPayloadParams {}
 
 export interface GetPeerConnectionInfoParams {
   peerOwnerId: string;

@@ -8,7 +8,7 @@ import type {
   DeviceIdentity,
   OwnerIdentity,
 } from "@envoymesh/identity";
-import type { BridgeStatus, NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult, ChatDraft, CapabilityManifest, UpdateCapabilityManifestParams, AutonomousPolicy, ModelProviderConfig, AiSettings, ContactAiPreferences } from "./ws-protocol.js";
+import type { BridgeStatus, NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult, ChatDraft, CapabilityManifest, UpdateCapabilityManifestParams, AutonomousPolicy, ModelProviderConfig, AiSettings, ContactAiPreferences, PairingPayload } from "./ws-protocol.js";
 
 // ============================================
 // Identity Types
@@ -454,6 +454,17 @@ export interface NodeService {
    * Returns default disabled status when bridge is not configured.
    */
   getBridgeStatus(): Promise<BridgeStatus>;
+
+  /**
+   * Get pairing payload for mobile-app QR pairing (Phase 10A).
+   *
+   * Returns the data needed to construct the `envoy://pair` URI:
+   *   wsUrl, relayPeerId, agentPeerId, agentPubKey
+   *
+   * Used by the Social UI to display a pairing QR code that the
+   * HomeClaw mobile app can scan.
+   */
+  getPairingPayload(): Promise<PairingPayload>;
 
   // ----- Connection Status -----
 
