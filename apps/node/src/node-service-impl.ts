@@ -35,6 +35,7 @@ import {
   parseBondAcceptPayload,
   parseBondRequestPayload,
   parseChatMessagePayload,
+  parseEnvelope,
   createRendezvousRegisterPayload,
   createRendezvousQueryPayload,
   RendezvousResponsePayloadSchema,
@@ -1666,6 +1667,13 @@ class NodeServiceImpl implements NodeService {
       const guardDecision = this._inboundGuard!.inspect(envelope);
       if (guardDecision.action === "reject") return;
 
+      // Emit raw envelope for remote P2P clients (e.g. mobile app) with own identity
+      try {
+        this.emit("p2p:envelope", { envelope: envelope as unknown as Record<string, unknown>, remotePeerId });
+      } catch (_) {
+        // ignore emit errors (e.g. no listeners)
+      }
+
       const { intent } = envelope;
 
       if (
@@ -1926,7 +1934,65 @@ class NodeServiceImpl implements NodeService {
   }
 
   async getBridgeStatus(): Promise<BridgeStatus> {
-    return this._bridgeStatus ?? { enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0 };
+    return this._bridgeStatus ?? { enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0, agentName: "" };
+  }
+
+  /**
+   * Forward a pre-signed EnvoyEnvelope from a remote client into the P2P mesh.
+   * The client signs the envelope with its own keys; the node only validates
+   * the envelope shape and forwards it.
+   */
+  async forwardEnvelope(envelopeJson: Record<string, unknown>, dialHints?: string[]): Promise<void> {
+    this._assertOnline();
+    const mesh = this._requireMesh();
+    const profile = this._requireProfile();
+
+    // Parse the envelope to validate structure
+    const envelope = parseEnvelope(envelopeJson);
+
+    // Determine the transport target: use recipientPeerId if present,
+    // otherwise fall back to trying to look up via the peer directory.
+    let transportPeerId: string;
+    if (envelope.recipientPeerId) {
+      // For relay.lookup, relay.peers.request, etc., we dial the relay directly.
+      // The caller can pass dialHints if the recipient is not in our peer directory.
+      transportPeerId = envelope.recipientPeerId;
+    } else {
+      // For chat messages, look up via the peer directory
+      const payload = envelope.payload as { senderOwnerId?: string };
+      if (payload.senderOwnerId) {
+        const dir = await this._peerDirectoryStore.getPeerByOwnerId(payload.senderOwnerId);
+        if (dir) {
+          transportPeerId = dir.peerId;
+        } else {
+          throw new Error(`Peer not found for forwarded envelope to ${payload.senderOwnerId}`);
+        }
+      } else {
+        throw new Error("forwardEnvelope: envelope has no recipientPeerId and payload has no senderOwnerId");
+      }
+    }
+
+    // Self-send shortcut
+    if (transportPeerId === mesh.peerId && this._bridgeChatHandler) {
+      console.log(`[forwardEnvelope] self-send to ${transportPeerId}, routing via bridge handler`);
+      await this._bridgeChatHandler(envelope, mesh.peerId);
+      return;
+    }
+
+    if (transportPeerId.startsWith("envoy_")) {
+      throw new Error(`forwardEnvelope: cannot dial envoy_ peer ID "${transportPeerId}" — need a libp2p peer ID`);
+    }
+
+    // Forward into the P2P mesh
+    console.log(`[forwardEnvelope] intent=${envelope.intent} senderPeerId=${envelope.senderPeerId} transportPeerId=${transportPeerId}`);
+    if (envelope.intent === "chat.message") {
+      await mesh.sendChat(transportPeerId, envelope as any, { dialHints: dialHints ?? [] });
+    } else {
+      await mesh.send(transportPeerId, envelope as any, { dialHints: dialHints ?? [] });
+    }
+
+    // Tag reachability for the transport peer
+    void this._tagBondedContactReachability(transportPeerId);
   }
 
   async getPeerConnectionInfo(peerOwnerId: string): Promise<PeerConnectionInfo> {

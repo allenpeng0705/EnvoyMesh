@@ -114,6 +114,8 @@ export type RpcMethods =
   | "getNodeStatus"
   | "startNode"
   | "stopNode"
+  // P2P relay — forward a pre-signed envelope from a remote client
+  | "forwardEnvelope"
   // Event subscription
   | "on"
   | "off";
@@ -200,6 +202,8 @@ export interface BridgeStatus {
   agentPeerId: string;
   agentUrl: string;
   listenPort: number;
+  /** Human-readable name for the bridge agent (e.g. "HomeClaw", "OpenClaw"). */
+  agentName: string;
 }
 
 /**

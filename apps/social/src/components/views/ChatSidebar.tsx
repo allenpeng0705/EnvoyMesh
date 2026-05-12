@@ -145,7 +145,7 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
           onClick={() => onSelectContact(bridgeStatus.agentPeerId)}
         >
           <span className="avatar">AG</span>
-          <span className="name">My Agent</span>
+          <span className="name">{bridgeStatus.agentName ?? "My Agent"}</span>
         </button>
       )}
 

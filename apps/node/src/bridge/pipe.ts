@@ -89,7 +89,7 @@ export async function receiveFromAgent(
     recipientRole: "human" as const,
     intent: "chat.message" as const,
     payload: createChatMessagePayload({
-      senderOwnerId: deps.identity.ownerId,
+      senderOwnerId: deps.identity.agentPeerId,
       text: response.text,
     }),
   };

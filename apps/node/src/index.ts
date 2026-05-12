@@ -1854,7 +1854,7 @@ const bridge = createBridge({
       sender: {
         nodeId: mesh.peerId,
         ownerId: payload.senderOwnerId,
-        displayName: "My Agent",
+        displayName: bridgeConfig.agentName ?? "My Agent",
       },
       recipient: {
         nodeId: mesh.peerId,
@@ -1885,6 +1885,7 @@ if (nodeService instanceof NodeServiceImpl && bridgeConfig.enabled) {
     agentPeerId: bridge.agentPeerId,
     agentUrl: bridgeConfig.agentUrl,
     listenPort: bridgeConfig.listenPort,
+    agentName: bridgeConfig.agentName ?? "My Agent",
   });
   // Register bridge agent as a virtual peer so sendChat can resolve it.
   // ownerId = bridge agent peer ID (lookup key for sendChat)
@@ -2304,7 +2305,7 @@ console.log("Press Ctrl+C to stop.");
 async function shutdown(): Promise<void> {
   await bridge.stop();
   if (nodeService instanceof NodeServiceImpl) {
-    nodeService.setBridgeStatus({ enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0 });
+    nodeService.setBridgeStatus({ enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0, agentName: "" });
   }
   wsServer.stop();
   if (bootstrapReprobeTimer) {

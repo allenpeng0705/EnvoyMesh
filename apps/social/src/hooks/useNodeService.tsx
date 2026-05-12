@@ -70,7 +70,7 @@ interface NodeServiceClient {
   getPeerConnectionInfo(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
 
   // Agent Bridge
-  getBridgeStatus(): Promise<{ enabled: boolean; agentPeerId: string; agentUrl: string; listenPort: number }>;
+  getBridgeStatus(): Promise<{ enabled: boolean; agentPeerId: string; agentUrl: string; listenPort: number; agentName: string }>;
 
   // AI / Knowledge Query
   knowledgeQuery(question: string): Promise<string>;
@@ -382,17 +382,19 @@ function partnerOwnerIdForChat(
   const rcvO = msg.recipient.ownerId?.trim();
   const rcvN = msg.recipient.nodeId?.trim();
 
-  const senderIsSelf =
-    (sndO !== undefined && sndO === selfO) || (!!selfP && sndN === selfP);
-  const recipientIsSelf =
-    (rcvO !== undefined && rcvO === selfO) || (!!selfP && rcvN === selfP);
-
-  if (senderIsSelf && !recipientIsSelf) {
-    return rcvO ?? rcvN ?? null;
+  // Use ownerId as primary routing key (ownerIds are distinct even when
+  // both peers share the same node, e.g. bridge agent running on same node).
+  if (sndO && sndO === selfO && rcvO && rcvO !== selfO) {
+    return rcvO;
   }
-  if (recipientIsSelf && !senderIsSelf) {
-    return sndO ?? sndN ?? null;
+  if (rcvO && rcvO === selfO && sndO && sndO !== selfO) {
+    return sndO;
   }
+  // Fallback: nodeId-based routing when ownerId is unavailable or matches both sides
+  const sndNIsSelf = !!selfP && sndN === selfP;
+  const rcvNIsSelf = !!selfP && rcvN === selfP;
+  if (sndNIsSelf && !rcvNIsSelf) return rcvO ?? rcvN ?? null;
+  if (rcvNIsSelf && !sndNIsSelf) return sndO ?? sndN ?? null;
   return null;
 }
 

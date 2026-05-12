@@ -229,6 +229,9 @@ export interface NodeServiceEvents {
 
   // Agent bridge events
   "bridge:status": BridgeStatus;
+
+  // P2P relay events — raw inbound envelopes for remote clients with their own identity
+  "p2p:envelope": { envelope: Record<string, unknown>; remotePeerId: string };
 }
 
 export interface NodeService {
@@ -303,6 +306,19 @@ export interface NodeService {
    * Send a chat message to a bonded peer
    */
   sendChat(targetOwnerId: string, text: string): Promise<void>;
+
+  /**
+   * Forward a pre-signed EnvoyEnvelope from a remote client (e.g. mobile app)
+   * into the P2P mesh. The envelope must already be signed by the sender's key.
+   * The node validates the envelope schema but does NOT re-sign or inspect payloads.
+   *
+   * Used by remote P2P clients that have their own Ed25519 identity but no
+   * direct libp2p connection — the node acts as a P2P proxy.
+   *
+   * @param envelopeJson The signed EnvoyEnvelope JSON object
+   * @param dialHints Optional multiaddrs to try when dialing the recipient
+   */
+  forwardEnvelope(envelopeJson: Record<string, unknown>, dialHints?: string[]): Promise<void>;
 
   /**
    * Human chat transcripts persisted under the profile (`chat-messages.jsonl`).

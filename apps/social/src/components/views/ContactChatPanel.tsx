@@ -15,6 +15,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   const {
     bonds,
     nodeConfig,
+    bridgeStatus,
     appSettings,
     contactAiModes,
     setContactAiModes,
@@ -98,9 +99,11 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
       <header className="chat-header has-assistant-switch">
         <div className="chat-header-left">
           <span className="chat-name">
-            {contactLabel(
-              bonds.find((c) => c.peerOwnerId === selectedContact) ?? { peerOwnerId: selectedContact },
-            )}
+            {selectedContact === bridgeStatus?.agentPeerId
+              ? (bridgeStatus.agentName ?? "My Agent")
+              : contactLabel(
+                  bonds.find((c) => c.peerOwnerId === selectedContact) ?? { peerOwnerId: selectedContact },
+                )}
           </span>
           {appSettings.showConnectionStatus && peerConnectionInfo[selectedContact] && (
             <span className={`connection-type ${peerConnectionInfo[selectedContact].direct ? "p2p" : "relay"}`}>

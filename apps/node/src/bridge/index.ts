@@ -39,6 +39,22 @@ export function createBridge(options: CreateBridgeOptions): {
     return { agentPeerId: options.identity.agentPeerId, stop: async () => {}, _handleMessage: async () => {} };
   }
 
+  // Dedup replies: some agents (e.g. HomeClaw) both return a sync reply AND
+  // POST the same reply to /bridge/send. Track recent reply hashes to skip dupes.
+  const recentReplies = new Set<string>();
+  const MAX_RECENT_REPLIES = 64;
+  function isDuplicateReply(to: string, text: string): boolean {
+    const key = `${to}|${text}`;
+    if (recentReplies.has(key)) return true;
+    recentReplies.add(key);
+    if (recentReplies.size > MAX_RECENT_REPLIES) {
+      // Evict oldest (iteration order = insertion order in JS Sets)
+      const first = recentReplies.keys().next().value;
+      if (first) recentReplies.delete(first);
+    }
+    return false;
+  }
+
   const deps: BridgeDeps = {
     config,
     identity: options.identity,
@@ -76,6 +92,13 @@ export function createBridge(options: CreateBridgeOptions): {
         return;
       }
 
+      if (isDuplicateReply(to, text)) {
+        console.log(`[bridge] skipping duplicate async reply to=${to}`);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, skipped: true }));
+        return;
+      }
+
       const result = await receiveFromAgent(deps, { to, text });
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, messageId: result.messageId }));
@@ -105,12 +128,16 @@ export function createBridge(options: CreateBridgeOptions): {
         text: payload.text,
       });
 
-      // If agent returned a synchronous reply, send it back
+      // If agent returned a synchronous reply, send it back (deduped)
       if (replyText) {
-        await receiveFromAgent(deps, {
-          to: remotePeerId,
-          text: replyText,
-        });
+        if (isDuplicateReply(remotePeerId, replyText)) {
+          console.log(`[bridge] skipping duplicate sync reply to=${remotePeerId}`);
+        } else {
+          await receiveFromAgent(deps, {
+            to: remotePeerId,
+            text: replyText,
+          });
+        }
       }
     } catch (err) {
       console.error(`[bridge] forward failed:`, err);

@@ -360,6 +360,8 @@ export function SettingsNodeTab() {
           </dd>
           {bridgeStatus?.enabled && (
             <>
+              <dt>Agent Name</dt>
+              <dd>{bridgeStatus.agentName ?? "My Agent"}</dd>
               <dt>Agent Peer ID</dt>
               <dd><code>{bridgeStatus.agentPeerId}</code></dd>
               <dt>Agent URL</dt>

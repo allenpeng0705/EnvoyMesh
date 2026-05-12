@@ -52,6 +52,7 @@ export class WsServer {
       nodeServiceImpl.on("bond:revoked", (data: unknown) => this.emitEvent("bond:revoked", data));
       nodeServiceImpl.on("node:status", (data: unknown) => this.emitEvent("node:status", data));
       nodeServiceImpl.on("bridge:status", (data: unknown) => this.emitEvent("bridge:status", data));
+      nodeServiceImpl.on("p2p:envelope", (data: unknown) => this.emitEvent("p2p:envelope", data));
     } else {
       console.log(`[ws-server] ERROR: nodeServiceImpl.on is not a function!`);
     }
@@ -150,6 +151,7 @@ export class WsServer {
       "peer:discovered",
       "peer:lost",
       "bridge:status",
+      "p2p:envelope",
     ];
     for (const event of allEvents) {
       this.subscribe(ws, event);
@@ -271,6 +273,8 @@ export class WsServer {
         return ns.knowledgeQuery(params.question as string);
       case "getBridgeStatus":
         return ns.getBridgeStatus();
+      case "forwardEnvelope":
+        return ns.forwardEnvelope(params.envelope as Record<string, unknown>, params.dialHints as string[] | undefined);
       default:
         throw new Error(`Unknown method: ${method}`);
     }
