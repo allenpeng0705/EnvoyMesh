@@ -1078,20 +1078,20 @@ Tasks:
 ### Exit Criteria (Phase 9)
 
 - `[x]` Agent has its own peer identity, cryptographically linked to owner
-- `[x]` Agent can execute all mesh intents via extensible tool registry
-- `[x]` Agent reads context (conversation, relationships, vault, graph) before responding
-- `[x]` Agent operates in reactive or proactive mode based on owner online status
-- `[x]` Agent maintains conversation sessions per contact
-- `[x]` Agent can mimic owner's writing style (stealth mode)
-- `[x]` Agent proactively initiates actions within configured boundaries
-- `[x]` Sensitive actions go to approval queue for owner review
-- `[x]` External agents (OpenClaw/HomeClaw) access mesh only via local tools API
-- `[x]` Owner receives periodic digest of agent activities
+- `[~]` Agent can execute mesh intents via extensible tool registry module; daemon runtime wiring remains partial.
+- `[~]` Agent context modules exist (conversation, relationships, vault, graph); prompt/runtime injection remains partial.
+- `[~]` Reactive/proactive mode controller exists; live daemon scheduling/event wiring remains partial.
+- `[~]` Session management module exists; inbound chat/runtime integration remains partial.
+- `[~]` Style adapter module exists; live chat draft/runtime integration remains partial.
+- `[~]` Proactive trigger storage/checking exists; live trigger scheduler remains partial.
+- `[~]` Approval queue module exists; sensitive-action runtime integration remains partial.
+- `[ ]` External agents (OpenClaw/HomeClaw) access mesh only via local tools API.
+- `[~]` Owner receives periodic digest of agent activities; digest generator exists, but runtime aggregation/notification remains partial.
 - `[x]` External agents can participate in P2P conversations via HTTP bridge (9K)
 
 ## Current Milestone
 
-Milestone: **Phase 9 complete (9A–9K)** — Agent identity, tool registry, memory/context, mode controller, session management, style adapter, proactive triggers, approval workflow, external agent gateway, digest/notifications, and P2P bridge for external agents are all shipped. Next: Social app UX polish and cross-network P2P readiness validation.
+Milestone: **Phase 9 bridge hardening in progress** — Agent credential primitives and the P2P HTTP bridge are shipped and wired; several Phase 9 agent-runtime modules exist as tested scaffolding but still need daemon integration before Phase 9 can be called complete. Next: wire the local tools API / gateway, context/session/style/mode runtime, digest aggregation, and cross-network P2P readiness validation.
 
 ### Phase 9 Architecture Overview
 
@@ -1121,11 +1121,11 @@ Agent capabilities:
 ### Next planning pulls (from [scenarios](./scenarios.md), [UserStory](./UserStory.md); [alignment](./alignment-review.md))
 
 - `[x]` **Phase 9A** — agent identity: own peer ID, key pair, credential signed by owner, revocation via expiration.
-- `[x]` **Phase 9B** — tool registry: extensible mesh intent → tool mapping, tool executor, `mesh.list-tools`.
-- `[x]` **Phase 9C** — memory & context: conversation-context, relationship-context, profile-context, vault-context, graph-context.
-- `[x]` **Phase 9D** — mode controller: reactive/proactive switching based on online status or schedule.
-- `[x]` **Phase 9E** — session management: per-contact sessions, conversation summaries, escalation detection.
-- `[x]` **Phase 9F** — style adapter: owner voice learning, stealth mode, per-contact disclosure config.
+- `[~]` **Phase 9B** — tool registry: extensible mesh intent → tool mapping and executor exist; daemon/API wiring remains partial.
+- `[~]` **Phase 9C** — memory & context: conversation-context, relationship-context, profile-context, vault-context, graph-context modules exist; model prompt injection remains partial.
+- `[~]` **Phase 9D** — mode controller exists; live reactive/proactive scheduler wiring remains partial.
+- `[~]` **Phase 9E** — session management exists; inbound chat integration remains partial.
+- `[~]` **Phase 9F** — style adapter exists; live chat draft/agent response integration remains partial.
 - `[x]` **Phase 8F–8G** — local tool registry and constrained OpenClaw/HomeClaw adapter boundary.
 - `[x]` **Phase 8H** — stronger sandbox and egress hardening before public/anonymous traffic grows.
 - `[x]` **Phase 8I** — anonymous discovery toggle and fast path.
@@ -1409,77 +1409,221 @@ Tasks:
 
 ---
 
-### 10B (Phase 2b): Full libp2p in Dart — True Mobile P2P Node
+### 10B: Multi-Transport P2P — Direct libp2p with Relay Fallback
 
-**Goal:** Replace the relay-only WebSocket client with a full libp2p stack in Dart. The mobile node can discover peers directly via mDNS (LAN) and DHT (WAN), and establish direct connections via TCP/QUIC with NAT hole-punching. The relay becomes a fallback, not a requirement.
+**Goal:** Add a full libp2p stack (`dart_libp2p`) as an **additional transport** alongside the Phase 10A relay WebSocket client. The mobile app uses direct P2P connections (mDNS, TCP, circuit relay) when possible, and falls back to the home-node relay when direct paths are unavailable. **Phase 10A is not replaced — it's a permanent transport.**
 
-**Why Phase 2b:** The relay client (10A) works, but every message goes through the relay — adding latency and depending on relay availability. With full libp2p, the mobile node can connect directly to peers when possible, falling back to relay only when NAT traversal fails.
+**Core design principle — transport coexistence:**
 
-#### 10B.1: libp2p_dart Integration
+```
+                       EnvoyNodeService (unchanged API)
+                                  │
+                    ┌─────────────┴─────────────┐
+                    ▼                           ▼
+        ┌──────────────────┐       ┌──────────────────┐
+        │  RelayTransport  │       │  DirectTransport │
+        │  (Phase 10A)     │       │  (Phase 10B)     │
+        │                  │       │                  │
+        │  WebSocket to    │       │  libp2p: TCP +   │
+        │  home node relay │       │  mDNS + DHT +    │
+        │                  │       │  circuit relay   │
+        │  Always-on       │       │                  │
+        │  anchor when     │       │  Direct when     │
+        │  home reachable  │       │  possible        │
+        └────────┬─────────┘       └────────┬─────────┘
+                 │                          │
+                 └──────────┬───────────────┘
+                            ▼
+                   TransportSelector
+              (identical to TypeScript
+               dial selection logic)
+```
 
-**Goal:** Integrate the `libp2p_dart` package for transport-layer P2P connectivity.
+This mirrors exactly how the desktop TypeScript node works — TCP and QUIC transports coexist, with circuit relay as fallback. The mobile app gains the same multi-transport capability.
 
-Tasks:
+**Transport selection strategy (matching `@envoymesh/network`):**
 
-- `[ ]` Evaluate `libp2p_dart` maturity: check transport support (TCP, QUIC, WebSocket, WebRTC), security (noise), muxing (mplex, yamux), and DHT support
-- `[ ]` Implement `DartMeshNode` class wrapping libp2p_dart: create node, configure transports, set up protocol handlers
-- `[ ]` Implement mDNS discovery for LAN peer finding
-- `[ ]` Implement DHT peer discovery for WAN (Kademlia)
-- `[ ]` Implement bootstrap: connect to EnvoyMesh bootstrap peers on startup
-- `[ ]` Implement circuit relay: use relay for NAT traversal when direct connection fails
-- `[ ]` Implement DCUtR (Direct Connection Upgrade through Relay) for hole-punching
+| Scenario | Transport | Why |
+|----------|-----------|-----|
+| Same LAN, home node online | **Direct TCP** (mDNS discovered) | Lowest latency, no relay hop |
+| Same LAN, home node online, direct fails | **Relay** (WebSocket to home) | Proven fallback |
+| WAN, home node reachable | **Relay** (WebSocket to home) | Home node proxies to mesh |
+| WAN, home node unreachable | **Circuit relay v2** via public relays | WAN connectivity without home |
+| QR pairing scan | **Relay** (WebSocket to scanned node) | Cold-start bootstrap |
 
-**Exit criteria:**
-- `[ ]` Mobile node can discover and connect to desktop node on same LAN via mDNS (no relay)
-- `[ ]` Mobile node can discover and connect to desktop node across networks via DHT + hole-punch
-- `[ ]` Relay is only used when direct connection fails
+#### 10B.1: Transport Abstraction Layer
 
-#### 10B.2: Dart libp2p Protocol Handlers
-
-**Goal:** Register EnvoyMesh protocol handlers on the libp2p stream router.
-
-Tasks:
-
-- `[ ]` Register `/envoymesh/chat/0.1.0` protocol handler: receives chat.message envelopes on libp2p streams
-- `[ ]` Register `/envoymesh/message/0.1.0` protocol handler: receives task/general envelopes
-- `[ ]` Implement stream lifecycle: read envelope bytes, parse, verify signature, route to handler
-- `[ ]` Implement outbound stream: open stream to peer, write envelope bytes, read response
-
-**Exit criteria:**
-- `[ ]` Inbound envelopes arrive via libp2p streams (not relay WebSocket)
-- `[ ]` Outbound envelopes sent via libp2p streams (direct or relayed)
-
-#### 10B.3: Connection Manager
-
-**Goal:** Manage peer connections, prefer direct over relay, handle connectivity changes.
-
-Tasks:
-
-- `[ ]` Implement `ConnectionManager`: tracks connected peers, their addresses, and connection type (direct/relay)
-- `[ ]` Implement peer scoring: prefer peers with lower latency
-- `[ ]` Implement network change detection: reconnect on Wi-Fi ↔ cellular switch
-- `[ ]` Implement background/foreground handling: pause/resume P2P activity based on app lifecycle
-- `[ ]` Connection status events for UI: `peer:connected`, `peer:disconnected`, `connection:type_changed`
-
-**Exit criteria:**
-- `[ ]` App survives Wi-Fi → cellular → Wi-Fi transitions without message loss
-- `[ ]` Background/foreground transitions handled gracefully (no crash, reconnect on foreground)
-
-#### 10B.4: Replace RelayClient with DartMeshNode
-
-**Goal:** Swap the 10A relay client for the full libp2p node. The `EnvoyNodeService` API stays the same.
+**Goal:** Create a `MeshTransport` interface and `TransportSelector` that routes messages through the optimal available transport, matching the TypeScript `EnvoyMesh.send()` / `openOutboundStream` logic.
 
 Tasks:
 
-- `[ ]` `EnvoyNodeService` uses `DartMeshNode` instead of `RelayClient` internally
-- `[ ]` Message send path: try direct stream first, fall back to relay if direct fails
-- `[ ]` Message receive path: handle both direct stream and relay-delivered messages
-- `[ ]` All existing 10A Flutter UI code works unchanged (API compatibility)
-- `[ ]` Update tests: mock DartMeshNode instead of RelayClient
+- `[ ]` Define `MeshTransport` interface: `connect()`, `disconnect()`, `send(peerId, envelope)`, `isConnectedTo(peerId)`, `connectionState`, `onMessage` stream, `onPeerDiscovered` stream
+- `[ ]` Extract `RelayTransport` from existing `RelayClient` — wraps the Phase 10A WebSocket relay as a `MeshTransport` implementation
+- `[ ]` Implement `TransportSelector` with tiered dial strategy (matching TypeScript `openOutboundStream`):
+  1. Check open direct connections → `newStream(protocol)` on existing
+  2. Check open relay-limited connections → `newStream(protocol, { runOnLimitedConnection: true })`
+  3. Fresh dial with sorted dial hints (non-loopback first)
+- `[ ]` Implement dial hint sorting: non-loopback before loopback (QUIC-first is skipped since `dart_libp2p` lacks QUIC)
+- `[ ]` `EnvoyNodeService` uses `TransportSelector` instead of directly calling `RelayClient`
 
 **Exit criteria:**
-- `[ ]` All 10A exit criteria still pass with full libp2p
-- `[ ]` Direct connections used >50% of the time in real-world testing
+- `[ ]` `RelayTransport` passes all existing `RelayClient` tests
+- `[ ]` `TransportSelector` routes correctly given simulated available transports
+- `[ ]` All existing Phase 10A UI code works unchanged
+
+#### 10B.2: libp2p_dart Integration — DirectTransport
+
+**Goal:** Integrate the `dart_libp2p` package as a `DirectTransport` implementing `MeshTransport`. This gives the mobile app a real libp2p node with TCP transport, Noise encryption, Yamux muxing, mDNS discovery, and Kademlia DHT.
+
+**libp2p_dart stack (v1.0.3, MIT licensed):**
+
+| Layer | dart_libp2p | EnvoyMesh TypeScript equivalent |
+|-------|-------------|-------------------------------|
+| Transport | TCP, UDX (custom UDP) | `@libp2p/tcp`, `@chainsafe/libp2p-quic` |
+| Security | Noise | `@chainsafe/libp2p-noise` |
+| Muxer | Yamux | `@chainsafe/libp2p-yamux` |
+| Discovery | mDNS (`mdns_dart`) | `@libp2p/mdns` |
+| DHT | Kademlia (`dart_libp2p_kad_dht`) | `@libp2p/kad-dht` |
+| Relay | Circuit Relay v2, AutoRelay | `@libp2p/circuit-relay-v2` |
+| NAT | Hole punching, AutoNAT | `@libp2p/autonat`, `@libp2p/dcutr` |
+| Core | Ping, Identify | `@libp2p/ping`, `@libp2p/identify` |
+
+**Known gaps vs TypeScript:**
+
+| Feature | Status | Impact |
+|---------|--------|--------|
+| QUIC transport | Not supported | Mobile uses TCP + UDX only; no QUIC-to-QUIC with desktop |
+| UDX vs QUIC interop | UDX is custom, not QUIC-compatible | Desktop nodes must keep TCP listener enabled |
+| Identify push | May be absent | Peer address updates may be slower |
+| Persistent key file | Must implement manually | Store protobuf-serialized Ed25519 in `flutter_secure_storage` |
+| Connection tags (KEEP_ALIVE) | Not confirmed | May need workaround for reachability management |
+| iOS background networking | Platform limitation | Pause libp2p in background; relay queues messages |
+
+Tasks:
+
+- `[ ]` Add `dart_libp2p` dependency to `pubspec.yaml` (Android, iOS, macOS, Linux, Windows supported; Web NOT)
+- `[ ]` Implement persistent Ed25519 key via `flutter_secure_storage` (protobuf-serialized, matching `loadOrCreateLibp2pPrivateKey`)
+- `[ ]` Implement `DirectTransport` class wrapping `dart_libp2p.Host`:
+  ```dart
+  class DirectTransport implements MeshTransport {
+    late final Host _host;
+    // Configure: TCP transport + Noise security + Yamux muxer
+    // Configure: mDNS (LAN discovery)
+    // Configure: Kademlia DHT (WAN discovery, client mode)
+    // Configure: circuit relay v2 (NAT traversal)
+    // Configure: AutoNAT + DCUtR (hole punching)
+  }
+  ```
+- `[ ]` Configure node with EnvoyMesh bootstrap peers + operator relay fleet addresses
+- `[ ]` Register protocol handlers on stream router:
+  - `/envoymesh/message/0.1.0` — general envelope protocol (discovery, relay, task, system)
+  - `/envoymesh/chat/0.1.0` — chat-only envelopes (enforces `chat.message` intent)
+- `[ ]` Implement envelope codec: JSON serialize/deserialize + canonical JSON (already in `envoy_protocol.dart`)
+- `[ ]` Implement `EnvelopeCodec` class: `encode(EnvoyEnvelope) → Uint8List`, `decode(Uint8List) → EnvoyEnvelope`
+- `[ ]` Wire peer discovery events: mDNS `peer:discovery` → `onPeerDiscovered` stream
+- `[ ]` Wire connection state events: `peer:connect`, `peer:disconnect` → `TransportSelector`
+- `[ ]` Handle platform lifecycles: iOS/Android background suspension → pause libp2p; foreground → resume + reconnect
+
+**Exit criteria:**
+- `[ ]` Flutter app on emulator discovers desktop EnvoyMesh node on same LAN via mDNS
+- `[ ]` Flutter app establishes direct TCP+Noise+Yamux connection to desktop node
+- `[ ]` Chat message round-trip via direct libp2p (bypassing relay) works end-to-end
+- `[ ]` Circuit relay v2: Flutter app connects via relay when behind NAT
+- `[ ]` App survives suspend/resume on iOS and Android
+
+#### 10B.3: EnvoyMesh Protocol Handlers on libp2p Streams
+
+**Goal:** Register the standard EnvoyMesh protocol handlers on the dart_libp2p stream router so the mobile node can receive envelopes directly over libp2p streams (not just via the relay WebSocket).
+
+Protocols (matching TypeScript `packages/network/src/index.ts`):
+
+| Protocol ID | Purpose | Roles | Envelope Intent |
+|------------|---------|-------|-----------------|
+| `/envoymesh/chat/0.1.0` | Chat messages only | human↔human, human↔agent | `chat.message` |
+| `/envoymesh/message/0.1.0` | All other intents | agent↔agent | discovery, relay, task, system, etc. |
+
+Tasks:
+
+- `[ ]` Register `/envoymesh/chat/0.1.0` handler on `Host.handle()`:
+  1. Read stream bytes → `Uint8List`
+  2. Decode via `EnvelopeCodec.decode()` → `EnvoyEnvelope`
+  3. Verify envelope intent is `chat.message` (reject otherwise)
+  4. Verify Ed25519 signature via `verifyCanonicalPayload()`
+  5. Emit to `onMessage` stream → routes to `EnvoyNodeService.onChatMessage`
+- `[ ]` Register `/envoymesh/message/0.1.0` handler on `Host.handle()`:
+  1. Same as chat but allows all intents except `chat.message` (rejected on this protocol)
+  2. Handle relay intents (`relay.lookup`, `relay.peers.request`) for mesh discovery
+- `[ ]` Implement outbound stream: `openStream(peerId, protocol)` → write envelope bytes → optionally read response
+- `[ ]` Implement stream lifecycle: timeout on idle streams, close after send/receive, handle stream errors gracefully
+
+**Exit criteria:**
+- `[ ]` Inbound `chat.message` arrives via libp2p stream → parsed → signature verified → emitted on `onChatMessage`
+- `[ ]` Inbound `discovery.request` arrives via libp2p stream → handled by relay protocol handler
+- `[ ]` Outbound envelope sent via `Host.openStream()` → received by desktop node
+
+#### 10B.4: Connection Manager — Mobile-Aware Lifecycle
+
+**Goal:** Track peer connections, handle network transitions (WiFi ↔ cellular), and manage background/foreground state. This is critical for mobile where connections are ephemeral.
+
+Tasks:
+
+- `[ ]` Implement `ConnectionManager` class:
+  - Track per-peer connection state: `{ peerId, state, transport (direct|relay), latency, multiaddrs }`
+  - Peer scoring: prefer lower-latency connections
+  - Emit events: `peer:connected`, `peer:disconnected`, `connection:type_changed`
+- `[ ]` Implement network change detection:
+  - Listen to `connectivity_plus` for WiFi ↔ cellular transitions
+  - On network change: re-evaluate transports, reconnect direct if possible
+  - Grace period (2s debounce) to avoid thrashing on brief disconnects
+- `[ ]` Implement background/foreground handling:
+  - On background (iOS `sceneDidEnterBackground` / Android `onPause`): pause libp2p mDNS + DHT to save battery
+  - Keep relay WebSocket alive (if connected) for push-like message delivery
+  - On foreground: resume libp2p, re-discover peers, reconnect direct paths
+  - Queue messages during offline; send on reconnect
+- `[ ]` Implement adaptive heartbeat:
+  - Foreground: keepalive ping every 30s
+  - Background: keepalive ping every 5min (or disable, relying on relay)
+  - WiFi: standard intervals
+  - Cellular: double intervals to conserve data
+
+**Exit criteria:**
+- `[ ]` App survives WiFi → cellular → WiFi without message loss (relay bridges the gap)
+- `[ ]` App survives suspend → resume (5 min background) and reconnects within 3 seconds
+- `[ ]` Battery impact <5% per hour in background with P2P paused
+
+#### 10B.5: Identity Bridging — One Identity, Two Transports
+
+**Goal:** The same Ed25519 identity (generated in Phase 10A) works for both relay and direct libp2p transports. The `peerId` used in envelopes and the libp2p `PeerId` must be consistent.
+
+Tasks:
+
+- `[ ]` Generate libp2p `Host` identity from the same Ed25519 keypair used by `EnvoyNodeService`
+  - `dart_libp2p` uses standard libp2p protobuf key format
+  - Convert between Phase 10A's PEM format and libp2p protobuf via raw 32-byte seed
+- `[ ]` Ensure `EnvoyEnvelope.senderPeerId` matches libp2p `PeerId` on outbound direct messages
+- `[ ]` Verify inbound direct message envelopes have `senderPeerId` matching the stream's libp2p peer ID
+  - Mismatch = reject (potential spoofing)
+
+**Exit criteria:**
+- `[ ]` `EnvoyNodeService.peerId` matches libp2p `Host.peerId` for the same key
+- `[ ]` Desktop node sees same `peerId` from mobile node regardless of transport (relay vs direct)
+
+#### 10B.6: Android/iOS Platform Integration
+
+**Goal:** Handle mobile-specific constraints: app permissions, background execution limits, and platform channel integration.
+
+Tasks:
+
+- `[ ]` Android: request `INTERNET` + `ACCESS_NETWORK_STATE` + `ACCESS_WIFI_STATE` + `FOREGROUND_SERVICE` permissions
+- `[ ]` iOS: configure `Bonjour services` in `Info.plist` for mDNS; set `UIApplicationBackgroundModes` for VoIP/background fetch
+- `[ ]` Implement platform channel for background keepalive: Android foreground service keeps libp2p alive briefly after background
+- `[ ]` Handle Doze mode (Android): schedule periodic wake for DHT re-provide + check queued messages
+- `[ ]` Handle Low Power Mode (iOS): pause non-critical P2P activity
+
+**Exit criteria:**
+- `[ ]` App compiles and runs on Android 8+ and iOS 15+
+- `[ ]` mDNS discovery works on both platforms
+- `[ ]` No crash when app moves to background with active P2P connections
 
 ---
 

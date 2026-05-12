@@ -1,4 +1,4 @@
-import { verifyEnvelope } from "@envoymesh/identity";
+import { verifyAgentEnvelope, verifyEnvelope } from "@envoymesh/identity";
 import { EnvoyEnvelopeSchema, type EnvoyEnvelope } from "@envoymesh/protocol";
 
 export type InboundGuardDecision =
@@ -48,10 +48,12 @@ export function createInboundMessageGuard(
         };
       }
 
-      if (!verifyEnvelope(envelope)) {
+      const shouldVerifyAgentCredential = envelope.senderRole === "agent" && envelope.agentCredential != null;
+      const verified = shouldVerifyAgentCredential ? verifyAgentEnvelope(envelope) : verifyEnvelope(envelope);
+      if (!verified) {
         return {
           action: "reject",
-          reason: "invalid signature",
+          reason: shouldVerifyAgentCredential ? "invalid agent credential or signature" : "invalid signature",
           messageId: envelope.messageId,
         };
       }

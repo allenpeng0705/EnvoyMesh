@@ -23,6 +23,19 @@ describe("bridge identity-store", () => {
     agentPublicKeyPem: "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA...\n-----END PUBLIC KEY-----",
     agentPrivateKeyPem: "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIE...\n-----END PRIVATE KEY-----",
     ownerId: "envoy:owner:abc123",
+    agentCredential: {
+      version: "0.1",
+      credentialId: "agent_cred_test123",
+      ownerId: "envoy:owner:abc123",
+      ownerPublicKeyPem: "-----BEGIN PUBLIC KEY-----\nowner\n-----END PUBLIC KEY-----",
+      agentId: "envoy:agent:test123",
+      agentPeerId: "envoy_agent_test123",
+      agentPublicKeyPem: "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA...\n-----END PUBLIC KEY-----",
+      scope: ["chat.message"],
+      issuedAt: "2026-05-12T00:00:00.000Z",
+      expiresAt: null,
+      signature: "sig",
+    },
   };
 
   it("returns null when no identity file exists", async () => {

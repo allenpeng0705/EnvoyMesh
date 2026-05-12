@@ -1,6 +1,6 @@
-import type { EnvoyEnvelope } from "@envoymesh/protocol";
-import { createChatMessagePayload } from "@envoymesh/protocol";
-import { signCanonicalPayload } from "@envoymesh/identity";
+import type { AgentCredential, EnvoyEnvelope } from "@envoymesh/protocol";
+import { createChatMessagePayload, createUnsignedEnvelope } from "@envoymesh/protocol";
+import { signUnsignedEnvelope } from "@envoymesh/identity";
 import type { BridgeConfig } from "./config.js";
 
 export interface BridgeIdentity {
@@ -8,6 +8,7 @@ export interface BridgeIdentity {
   agentPublicKeyPem: string;
   agentPrivateKeyPem: string;
   ownerId: string;
+  agentCredential: AgentCredential;
 }
 
 export interface BridgeDeps {
@@ -78,26 +79,22 @@ export async function receiveFromAgent(
 
   const messageId = `bridge-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-  const unsigned = {
-    version: "0.1" as const,
+  const unsigned = createUnsignedEnvelope({
     messageId,
-    createdAt: new Date().toISOString(),
     senderPeerId: deps.identity.agentPeerId,
     senderPublicKey: deps.identity.agentPublicKeyPem,
-    senderRole: "agent" as const,
+    senderRole: "agent",
     recipientPeerId,
-    recipientRole: "human" as const,
-    intent: "chat.message" as const,
+    recipientRole: "human",
+    intent: "chat.message",
     payload: createChatMessagePayload({
-      senderOwnerId: deps.identity.agentPeerId,
+      senderOwnerId: deps.identity.ownerId,
       text: response.text,
     }),
-  };
+    agentCredential: deps.identity.agentCredential,
+  });
 
-  const envelope: EnvoyEnvelope = {
-    ...unsigned,
-    signature: signCanonicalPayload(unsigned, deps.identity.agentPrivateKeyPem),
-  };
+  const envelope = signUnsignedEnvelope(unsigned, deps.identity.agentPrivateKeyPem);
 
   await deps.sendChat(recipientPeerId, envelope);
 

@@ -128,6 +128,8 @@ export const UnsignedAgentCredentialSchema = z.object({
   version: z.literal("0.1"),
   credentialId: z.string().min(1),
   ownerId: z.string().min(1),
+  /** Owner public key used to verify the owner signature without an out-of-band lookup. */
+  ownerPublicKeyPem: z.string().min(1),
   agentId: z.string().min(1),
   agentPeerId: z.string().min(1),
   agentPublicKeyPem: z.string().min(1),
@@ -2077,6 +2079,7 @@ export function createUnsignedMandate(input: CreateUnsignedMandateInput): Unsign
 
 export interface CreateUnsignedAgentCredentialInput {
   ownerId: string;
+  ownerPublicKeyPem: string;
   agentId: string;
   agentPeerId: string;
   agentPublicKeyPem: string;
@@ -2093,6 +2096,7 @@ export function createUnsignedAgentCredential(
     version: "0.1",
     credentialId: input.credentialId ?? `agent_cred_${randomUUID()}`,
     ownerId: input.ownerId,
+    ownerPublicKeyPem: input.ownerPublicKeyPem,
     agentId: input.agentId,
     agentPeerId: input.agentPeerId,
     agentPublicKeyPem: input.agentPublicKeyPem,

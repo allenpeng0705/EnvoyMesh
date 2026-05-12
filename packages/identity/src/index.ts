@@ -266,6 +266,7 @@ export function verifyDeviceCertificate(
 export function createAgentCredential(input: CreateAgentCredentialInput): AgentCredential {
   const unsignedCredential = createUnsignedAgentCredential({
     ownerId: input.owner.ownerId,
+    ownerPublicKeyPem: input.owner.publicKeyPem,
     agentId: input.agent.agentId,
     agentPeerId: input.agent.agentPeerId,
     agentPublicKeyPem: input.agent.publicKeyPem,
@@ -291,8 +292,12 @@ export function createAgentCredential(input: CreateAgentCredentialInput): AgentC
  */
 export function verifyAgentCredential(
   credential: AgentCredential,
-  ownerPublicKeyPem: string,
+  ownerPublicKeyPem = credential.ownerPublicKeyPem,
 ): boolean {
+  if (credential.ownerPublicKeyPem !== ownerPublicKeyPem) {
+    return false;
+  }
+
   if (deriveOwnerId(ownerPublicKeyPem) !== credential.ownerId) {
     return false;
   }
@@ -410,7 +415,7 @@ export function verifyEnvelope(envelope: EnvoyEnvelope): boolean {
  */
 export function verifyAgentEnvelope(
   envelope: EnvoyEnvelope,
-  ownerPublicKeyPem: string,
+  ownerPublicKeyPem = envelope.agentCredential?.ownerPublicKeyPem ?? "",
 ): boolean {
   // Agent credential must be present
   if (!envelope.agentCredential) {

@@ -1,5 +1,11 @@
-import { generateIdentity, signUnsignedEnvelope } from "@envoymesh/identity";
-import { createSystemPingPayload, createUnsignedEnvelope } from "@envoymesh/protocol";
+import {
+  createAgentCredential,
+  generateAgentIdentity,
+  generateIdentity,
+  generateOwnerIdentity,
+  signUnsignedEnvelope,
+} from "@envoymesh/identity";
+import { createChatMessagePayload, createSystemPingPayload, createUnsignedEnvelope } from "@envoymesh/protocol";
 import { describe, expect, it } from "vitest";
 import { createInboundMessageGuard } from "../src/inbound-guard.js";
 
@@ -72,6 +78,35 @@ describe("inbound message guard", () => {
       messageId: envelope.messageId,
     });
   });
+
+  it("allows an agent chat envelope with a valid owner-signed credential", () => {
+    const guard = createInboundMessageGuard();
+    const envelope = signedAgentChatEnvelope();
+
+    const decision = guard.inspect(envelope);
+
+    expect(decision.action).toBe("allow");
+  });
+
+  it("rejects an agent chat envelope with a tampered credential", () => {
+    const guard = createInboundMessageGuard();
+    const envelope = signedAgentChatEnvelope();
+
+    const decision = guard.inspect({
+      ...envelope,
+      agentCredential: {
+        ...envelope.agentCredential,
+        scope: ["knowledge.query"],
+      },
+    });
+
+    expect(decision).toEqual({
+      action: "reject",
+      reason: "invalid agent credential or signature",
+      messageId: envelope.messageId,
+    });
+  });
+
   it("drops oldest replay entries when maxReplayEntries is exceeded", () => {
     const guard = createInboundMessageGuard({ maxReplayEntries: 2 });
     expect(guard.inspect(signedPingEnvelope("id-a")).action).toBe("allow");
@@ -100,4 +135,31 @@ function signedPingEnvelope(messageId: string = "message-1") {
   });
 
   return signUnsignedEnvelope(unsigned, identity.privateKeyPem);
+}
+
+function signedAgentChatEnvelope(messageId: string = "agent-message-1") {
+  const owner = generateOwnerIdentity();
+  const agent = generateAgentIdentity(owner.ownerId);
+  const credential = createAgentCredential({
+    owner,
+    agent,
+    scope: ["chat.message"],
+  });
+  const unsigned = createUnsignedEnvelope({
+    senderPeerId: agent.agentPeerId,
+    senderPublicKey: agent.publicKeyPem,
+    senderRole: "agent",
+    recipientPeerId: "envoy_recipient",
+    recipientRole: "human",
+    intent: "chat.message",
+    payload: createChatMessagePayload({
+      senderOwnerId: owner.ownerId,
+      text: "hello from agent",
+    }),
+    agentCredential: credential,
+    messageId,
+    createdAt: "2026-04-27T10:00:00.000Z",
+  });
+
+  return signUnsignedEnvelope(unsigned, agent.privateKeyPem);
 }

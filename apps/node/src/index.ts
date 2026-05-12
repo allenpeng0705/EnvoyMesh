@@ -26,7 +26,9 @@ import {
   type ChatDraftStore,
 } from "@envoymesh/local-store";
 import {
+  createAgentCredential,
   createSignedDataTransferVoucher,
+  deriveAgentId,
   derivePeerId,
   generateAgentIdentity,
   signHumanProfile,
@@ -165,15 +167,45 @@ const nodeConfigStore = createNodeConfigStore(args.profileDir);
 let bridgeIdentity = await loadBridgeIdentity(args.profileDir);
 if (!bridgeIdentity) {
   const agentId = generateAgentIdentity(profile.owner.ownerId);
+  const agentCredential = createAgentCredential({
+    owner: profile.owner,
+    agent: agentId,
+    scope: ["chat.message"],
+  });
   bridgeIdentity = {
     agentPeerId: agentId.agentPeerId,
     agentPublicKeyPem: agentId.publicKeyPem,
     agentPrivateKeyPem: agentId.privateKeyPem,
     ownerId: profile.owner.ownerId,
+    agentCredential,
   };
   await saveBridgeIdentity(args.profileDir, bridgeIdentity);
   console.log(`[bridge] generated agent identity: ${bridgeIdentity.agentPeerId}`);
 } else {
+  const expectedAgentId = deriveAgentId(bridgeIdentity.ownerId, bridgeIdentity.agentPublicKeyPem);
+  if (
+    bridgeIdentity.agentCredential.ownerId !== bridgeIdentity.ownerId ||
+    bridgeIdentity.agentCredential.agentId !== expectedAgentId ||
+    bridgeIdentity.agentCredential.agentPeerId !== bridgeIdentity.agentPeerId ||
+    bridgeIdentity.agentCredential.agentPublicKeyPem !== bridgeIdentity.agentPublicKeyPem ||
+    bridgeIdentity.agentCredential.ownerPublicKeyPem !== profile.owner.publicKeyPem
+  ) {
+    bridgeIdentity = {
+      ...bridgeIdentity,
+      agentCredential: createAgentCredential({
+        owner: profile.owner,
+        agent: {
+          agentId: expectedAgentId,
+          agentPeerId: bridgeIdentity.agentPeerId,
+          publicKeyPem: bridgeIdentity.agentPublicKeyPem,
+          privateKeyPem: bridgeIdentity.agentPrivateKeyPem,
+        },
+        scope: ["chat.message"],
+      }),
+    };
+    await saveBridgeIdentity(args.profileDir, bridgeIdentity);
+    console.log(`[bridge] refreshed agent credential: ${bridgeIdentity.agentPeerId}`);
+  }
   console.log(`[bridge] loaded agent identity: ${bridgeIdentity.agentPeerId}`);
 }
 
@@ -1208,6 +1240,11 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     );
     console.log(`[chat.message] ${payload.senderOwnerId}: ${payload.text}`);
 
+    if (envelope.recipientPeerId === bridgeIdentity.agentPeerId) {
+      void bridgeHandleMessage(envelope, remotePeerId);
+      return;
+    }
+
     // Emit chat:message event to connected apps via WebSocket
     console.log(`[chat.message] wsServerForEvents is ${wsServerForEvents ? "set" : "null"}`);
     if (wsServerForEvents) {
@@ -1328,6 +1365,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
   }
 
   // Bridge: forward chat messages to external agent (if configured)
+  // Non-chat intents are ignored by the bridge handler.
   void bridgeHandleMessage(envelope, remotePeerId);
 
   if (envelope.intent === "device.pair.request") {
@@ -1882,7 +1920,7 @@ const bridge = createBridge({
     const chatMsg = {
       messageId: envelope.messageId,
       sender: {
-        nodeId: mesh.peerId,
+        nodeId: bridgeIdentity.agentPeerId,
         ownerId: payload.senderOwnerId,
         displayName: bridgeConfig.agentName ?? "My Agent",
       },

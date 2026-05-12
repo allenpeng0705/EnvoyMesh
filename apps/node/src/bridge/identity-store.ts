@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BridgeIdentity } from "./pipe.js";
 
@@ -12,7 +12,9 @@ export async function loadBridgeIdentity(profileDir: string): Promise<BridgeIden
       typeof parsed.agentPeerId === "string" &&
       typeof parsed.agentPublicKeyPem === "string" &&
       typeof parsed.agentPrivateKeyPem === "string" &&
-      typeof parsed.ownerId === "string"
+      typeof parsed.ownerId === "string" &&
+      parsed.agentCredential &&
+      typeof parsed.agentCredential === "object"
     ) {
       return parsed as BridgeIdentity;
     }
@@ -26,5 +28,5 @@ export async function saveBridgeIdentity(profileDir: string, identity: BridgeIde
   const tmp = join(profileDir, `${BRIDGE_IDENTITY_FILENAME}.tmp`);
   const target = join(profileDir, BRIDGE_IDENTITY_FILENAME);
   await writeFile(tmp, JSON.stringify(identity, null, 2), { mode: 0o600 });
-  await writeFile(target, JSON.stringify(identity, null, 2), { mode: 0o600 });
+  await rename(tmp, target);
 }

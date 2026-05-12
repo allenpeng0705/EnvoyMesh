@@ -1,18 +1,26 @@
 import { describe, it, expect, vi } from "vitest";
-import { generateEd25519KeyPair } from "@envoymesh/identity";
+import { createAgentCredential, generateAgentIdentity, generateOwnerIdentity, verifyAgentEnvelope } from "@envoymesh/identity";
+import { EnvoyEnvelopeSchema } from "@envoymesh/protocol";
 import { receiveFromAgent, type BridgeDeps } from "../src/bridge/pipe.js";
 import type { BridgeConfig } from "../src/bridge/config.js";
 
-const agentKey = generateEd25519KeyPair();
+const owner = generateOwnerIdentity();
+const agent = generateAgentIdentity(owner.ownerId);
+const agentCredential = createAgentCredential({
+  owner,
+  agent,
+  scope: ["chat.message"],
+});
 
 function makeDeps(overrides?: Partial<BridgeDeps>): BridgeDeps {
   return {
     config: { enabled: true, agentUrl: "http://localhost:8080/message", listenPort: 3031 },
     identity: {
-      agentPeerId: "envoy_agent_test123",
-      agentPublicKeyPem: agentKey.publicKeyPem,
-      agentPrivateKeyPem: agentKey.privateKeyPem,
-      ownerId: "envoy:owner:abc123",
+      agentPeerId: agent.agentPeerId,
+      agentPublicKeyPem: agent.publicKeyPem,
+      agentPrivateKeyPem: agent.privateKeyPem,
+      ownerId: owner.ownerId,
+      agentCredential,
     },
     sendChat: vi.fn(),
     getRecipientPeerId: vi.fn().mockResolvedValue("12D3PeerId"),
@@ -41,7 +49,11 @@ describe("receiveFromAgent", () => {
     expect(envelope.intent).toBe("chat.message");
     expect(envelope.senderRole).toBe("agent");
     expect(envelope.recipientRole).toBe("human");
-    expect(envelope.senderPeerId).toBe("envoy_agent_test123");
+    expect(envelope.senderPeerId).toBe(agent.agentPeerId);
+    expect(envelope.agentCredential).toEqual(agentCredential);
+    expect((envelope.payload as { senderOwnerId: string }).senderOwnerId).toBe(owner.ownerId);
+    expect(EnvoyEnvelopeSchema.safeParse(envelope).success).toBe(true);
+    expect(verifyAgentEnvelope(envelope)).toBe(true);
     expect(typeof envelope.signature).toBe("string");
     expect(envelope.signature.length).toBeGreaterThan(0);
 

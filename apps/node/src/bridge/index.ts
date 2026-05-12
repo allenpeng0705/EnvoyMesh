@@ -15,6 +15,8 @@ export type { BridgeIdentity } from "./pipe.js";
 export { BridgeConfigSchema } from "./config.js";
 export { forwardToAgent, receiveFromAgent } from "./pipe.js";
 
+const MAX_BRIDGE_BODY_BYTES = 64 * 1024;
+
 export interface CreateBridgeOptions {
   config: Partial<BridgeConfig>;
   identity: BridgeIdentity;
@@ -39,20 +41,8 @@ export function createBridge(options: CreateBridgeOptions): {
     return { agentPeerId: options.identity.agentPeerId, stop: async () => {}, _handleMessage: async () => {} };
   }
 
-  // Dedup replies: some agents (e.g. HomeClaw) both return a sync reply AND
-  // POST the same reply to /bridge/send. Track recent reply hashes to skip dupes.
-  const recentReplies = new Set<string>();
-  const MAX_RECENT_REPLIES = 64;
-  function isDuplicateReply(to: string, text: string): boolean {
-    const key = `${to}|${text}`;
-    if (recentReplies.has(key)) return true;
-    recentReplies.add(key);
-    if (recentReplies.size > MAX_RECENT_REPLIES) {
-      // Evict oldest (iteration order = insertion order in JS Sets)
-      const first = recentReplies.keys().next().value;
-      if (first) recentReplies.delete(first);
-    }
-    return false;
+  if (!config.secret) {
+    throw new Error("Bridge requires a shared secret when enabled");
   }
 
   const deps: BridgeDeps = {
@@ -85,17 +75,10 @@ export function createBridge(options: CreateBridgeOptions): {
     }
 
     try {
-      const raw = await readBody(req);
+      const raw = await readBody(req, MAX_BRIDGE_BODY_BYTES);
       const { to, text } = JSON.parse(raw);
-      if (!to || !text) {
+      if (typeof to !== "string" || typeof text !== "string" || !to.trim() || !text.trim()) {
         res.writeHead(400).end(JSON.stringify({ ok: false, reason: "to and text are required" }));
-        return;
-      }
-
-      if (isDuplicateReply(to, text)) {
-        console.log(`[bridge] skipping duplicate async reply to=${to}`);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, skipped: true }));
         return;
       }
 
@@ -128,16 +111,12 @@ export function createBridge(options: CreateBridgeOptions): {
         text: payload.text,
       });
 
-      // If agent returned a synchronous reply, send it back (deduped)
+      // If agent returned a synchronous reply, send it back.
       if (replyText) {
-        if (isDuplicateReply(remotePeerId, replyText)) {
-          console.log(`[bridge] skipping duplicate sync reply to=${remotePeerId}`);
-        } else {
-          await receiveFromAgent(deps, {
-            to: remotePeerId,
-            text: replyText,
-          });
-        }
+        await receiveFromAgent(deps, {
+          to: remotePeerId,
+          text: replyText,
+        });
       }
     } catch (err) {
       console.error(`[bridge] forward failed:`, err);
@@ -154,10 +133,18 @@ export function createBridge(options: CreateBridgeOptions): {
   };
 }
 
-function readBody(req: http.IncomingMessage): Promise<string> {
+function readBody(req: http.IncomingMessage, maxBytes: number): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = "";
-    req.on("data", (chunk) => (body += chunk));
+    let bytes = 0;
+    req.on("data", (chunk) => {
+      bytes += Buffer.byteLength(chunk);
+      if (bytes > maxBytes) {
+        req.destroy(new Error("bridge request body too large"));
+        return;
+      }
+      body += chunk;
+    });
     req.on("end", () => resolve(body));
     req.on("error", reject);
   });

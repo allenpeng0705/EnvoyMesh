@@ -135,14 +135,14 @@ The bridge generates its own agent keypair on first run, persisted as `bridge-id
   "enabled": true,
   "agentUrl": "http://localhost:8080/message",
   "listenPort": 3031,
-  "secret": "optional-shared-secret"
+  "secret": "required-shared-secret"
 }
 ```
 
 **Security:**
-- Optional Bearer token auth on both directions (HTTP server and outbound fetch)
+- Required Bearer token auth on both directions (HTTP server and outbound fetch) when the bridge is enabled
 - Bridge handler only processes messages addressed to its agent peer ID
-- Agent replies go through standard P2P signing and role policy
+- Agent replies go through standard P2P signing, owner-signed agent credentials, and role policy
 - Role policy updated: `chat.message` requires at least one human role (agent↔human OK, agent↔agent blocked)
 
 ## Package Design

@@ -19,6 +19,7 @@ import {
   createKnowledgeQueryPayload,
   createDiscoveryRequestPayload,
   createShareRequestPayload,
+  type AgentCredential,
   type EnvoyIntent,
 } from "@envoymesh/protocol";
 import type { Sensitivity } from "@envoymesh/protocol";
@@ -241,9 +242,7 @@ export interface MeshToolContext {
   ownerIdentity: {
     ownerId: string;
   };
-  agentCredential: {
-    scope: string[];
-  };
+  agentCredential: AgentCredential;
   mesh?: EnvoyMesh; // Optional - may not be available in all contexts
 }
 
@@ -403,7 +402,7 @@ async function executeMeshTool(
             senderOwnerId: context.ownerIdentity.ownerId,
             text: params.text as string,
           }),
-          agentCredential: undefined, // Will be added by caller
+          agentCredential: context.agentCredential,
         }),
         context.agentIdentity.privateKeyPem,
       );
@@ -441,7 +440,7 @@ async function executeMeshTool(
             query: params.query as string,
             requestedSensitivity: (params.requestedSensitivity as Sensitivity) ?? "public",
           }),
-          agentCredential: undefined,
+          agentCredential: context.agentCredential,
         }),
         context.agentIdentity.privateKeyPem,
       );
@@ -469,7 +468,7 @@ async function executeMeshTool(
             requestedCapabilities: (params.interests as string[]) ?? [],
             maxResults: params.maxResults as number | undefined,
           }),
-          agentCredential: undefined,
+          agentCredential: context.agentCredential,
         }),
         context.agentIdentity.privateKeyPem,
       );
@@ -510,7 +509,7 @@ async function executeMeshTool(
             relativePath: params.path as string,
             requestedSensitivity: (params.sensitivity as "public" | "friends" | "private") ?? "friends",
           }),
-          agentCredential: undefined,
+          agentCredential: context.agentCredential,
         }),
         context.agentIdentity.privateKeyPem,
       );
@@ -543,7 +542,7 @@ async function executeMeshTool(
             whatShares: [],
             requestedBondLevel: "direct" as const,
           },
-          agentCredential: undefined,
+          agentCredential: context.agentCredential,
         }),
         context.agentIdentity.privateKeyPem,
       );
