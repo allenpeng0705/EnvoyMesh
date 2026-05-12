@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 import { evaluateInboundEnvelopeRolePolicy } from "../src/role-policy.js";
 
 describe("role policy", () => {
-  it("allows chat.message only for human-to-human", () => {
-    const allowed = evaluateInboundEnvelopeRolePolicy(
+  it("allows chat.message when at least one role is human", () => {
+    // human ↔ human: allowed
+    const humanToHuman = evaluateInboundEnvelopeRolePolicy(
       createUnsignedEnvelope({
         senderPeerId: "peer-a",
         senderPublicKey: "pk-a",
@@ -15,9 +16,10 @@ describe("role policy", () => {
         payload: { senderOwnerId: "envoy:owner:a", text: "hi" },
       }) as any,
     );
-    expect(allowed).toEqual({ ok: true });
+    expect(humanToHuman).toEqual({ ok: true });
 
-    const rejected = evaluateInboundEnvelopeRolePolicy({
+    // agent → human: allowed (Phase 9A — AI assistant / bridge replies)
+    const agentToHuman = evaluateInboundEnvelopeRolePolicy({
       ...createUnsignedEnvelope({
         senderPeerId: "peer-a",
         senderPublicKey: "pk-a",
@@ -29,9 +31,40 @@ describe("role policy", () => {
       }),
       senderRole: "agent",
     } as any);
-    expect(rejected).toEqual({
+    expect(agentToHuman).toEqual({ ok: true });
+
+    // human → agent: allowed (Phase 9A — human talking to AI/bridge)
+    const humanToAgent = evaluateInboundEnvelopeRolePolicy({
+      ...createUnsignedEnvelope({
+        senderPeerId: "peer-a",
+        senderPublicKey: "pk-a",
+        senderRole: "human",
+        recipientPeerId: "peer-b",
+        recipientRole: "human",
+        intent: "chat.message",
+        payload: { senderOwnerId: "envoy:owner:a", text: "hi" },
+      }),
+      recipientRole: "agent",
+    } as any);
+    expect(humanToAgent).toEqual({ ok: true });
+
+    // agent → agent: NOT allowed (use A2A task intents instead)
+    const agentToAgent = evaluateInboundEnvelopeRolePolicy({
+      ...createUnsignedEnvelope({
+        senderPeerId: "peer-a",
+        senderPublicKey: "pk-a",
+        senderRole: "human",
+        recipientPeerId: "peer-b",
+        recipientRole: "human",
+        intent: "chat.message",
+        payload: { senderOwnerId: "envoy:owner:a", text: "hi" },
+      }),
+      senderRole: "agent",
+      recipientRole: "agent",
+    } as any);
+    expect(agentToAgent).toEqual({
       ok: false,
-      reason: "chat.message requires senderRole=human and recipientRole=human",
+      reason: "chat.message requires at least one human role (use A2A intents for agent-to-agent)",
     });
   });
 

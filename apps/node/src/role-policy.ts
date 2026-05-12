@@ -10,10 +10,14 @@ export type InboundRolePolicyDecision =
 
 export function evaluateInboundEnvelopeRolePolicy(envelope: EnvoyEnvelope): InboundRolePolicyDecision {
   if (envelope.intent === "chat.message") {
-    if (envelope.senderRole !== "human" || envelope.recipientRole !== "human") {
+    // human↔human: OK (original)
+    // agent↔human: OK (Phase 9A — AI assistant / bridge replies)
+    // agent↔agent: NOT OK (use A2A task intents instead)
+    const roles = [envelope.senderRole, envelope.recipientRole];
+    if (!roles.includes("human")) {
       return {
         ok: false,
-        reason: "chat.message requires senderRole=human and recipientRole=human",
+        reason: "chat.message requires at least one human role (use A2A intents for agent-to-agent)",
       };
     }
     return { ok: true };

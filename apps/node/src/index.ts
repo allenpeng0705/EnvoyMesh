@@ -28,6 +28,7 @@ import {
 import {
   createSignedDataTransferVoucher,
   derivePeerId,
+  generateAgentIdentity,
   signHumanProfile,
   signUnsignedEnvelope,
   verifyAuthorizedDeviceEnvelope,
@@ -119,6 +120,10 @@ import { createNodeConfigStore } from "./node-config-store.js";
 import { WsServer } from "./ws-server.js";
 import type { ModelProviderConfig } from "@envoymesh/api";
 import { evaluateInboundEnvelopeRolePolicy } from "./role-policy.js";
+import { createBridge } from "./bridge/index.js";
+import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
+import type { BridgeConfig } from "./bridge/config.js";
+import { BridgeConfigSchema } from "./bridge/config.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
 import { resolveBootstrapAddresses } from "./bootstrap-resolver.js";
 import {
@@ -149,6 +154,32 @@ const chatDraftStore = createChatDraftStore(args.profileDir);
 const capabilityManifestStore = createCapabilityManifestStore(args.profileDir);
 const reputationStore = createLocalPeerReputationStore(args.profileDir);
 const nodeConfigStore = createNodeConfigStore(args.profileDir);
+
+// Bridge: load or generate agent identity for external agent pipe
+let bridgeIdentity = await loadBridgeIdentity(args.profileDir);
+if (!bridgeIdentity) {
+  const agentId = generateAgentIdentity(profile.owner.ownerId);
+  bridgeIdentity = {
+    agentPeerId: agentId.agentPeerId,
+    agentPublicKeyPem: agentId.publicKeyPem,
+    agentPrivateKeyPem: agentId.privateKeyPem,
+    ownerId: profile.owner.ownerId,
+  };
+  await saveBridgeIdentity(args.profileDir, bridgeIdentity);
+  console.log(`[bridge] generated agent identity: ${bridgeIdentity.agentPeerId}`);
+} else {
+  console.log(`[bridge] loaded agent identity: ${bridgeIdentity.agentPeerId}`);
+}
+
+// Bridge config — loaded from profile dir, defaults to disabled
+let bridgeConfig: BridgeConfig = BridgeConfigSchema.parse({});
+try {
+  const raw = await readFile(join(args.profileDir, "bridge-config.json"), "utf-8");
+  bridgeConfig = BridgeConfigSchema.parse(JSON.parse(raw));
+  console.log(`[bridge] loaded config: enabled=${bridgeConfig.enabled}`);
+} catch {
+  // use defaults; disabled by default
+}
 const discoverySeedStore = createDiscoverySeedStore(args.profileDir);
 const taskRuntimeStore = createTaskRuntimeStateStore(args.profileDir);
 const resolvedArgs = await resolveNodeArgsTargetsByOwnerId(args, peerDirectoryStore);
@@ -422,6 +453,9 @@ mesh.onPeerDiscovered(async (peer) => {
     await discoverySeedStore.upsertMany(peer.multiaddrs, "peer.discovery");
   }
 });
+
+// Bridge message handler — set to no-op until bridge is created below
+let bridgeHandleMessage: (envelope: any, remotePeerId: string) => Promise<void> = async () => {};
 
 mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelope, remoteAddr }) => {
   const receivedAt = Date.now();
@@ -1273,6 +1307,9 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     return;
   }
 
+  // Bridge: forward chat messages to external agent (if configured)
+  void bridgeHandleMessage(envelope, remotePeerId);
+
   if (envelope.intent === "device.pair.request") {
     const payload = parseDevicePairRequestPayload(envelope.payload);
     const expectedRequester = derivePeerId(payload.requesterDevicePublicKeyPem);
@@ -1790,6 +1827,25 @@ nodeService.on("config:updated", (data) => {
   }
   console.log(`[ai] contact prefs: ${currentContactAiPrefs.size} contacts`);
 });
+
+// Bridge: P2P ↔ external agent HTTP pipe
+function getRecipientPeerId(ownerOrPeerId: string): Promise<string | null> {
+  // If it looks like a peer ID, use it directly
+  if (ownerOrPeerId.startsWith("12D3") || ownerOrPeerId.startsWith("envoy_")) {
+    return Promise.resolve(ownerOrPeerId);
+  }
+  // Otherwise look up by ownerId in the peer directory
+  return peerDirectoryStore.getPeerByOwnerId(ownerOrPeerId).then((record) => record?.peerId ?? null);
+}
+
+const bridge = createBridge({
+  config: bridgeConfig,
+  identity: bridgeIdentity,
+  mesh,
+  getRecipientPeerId,
+});
+bridgeHandleMessage = bridge._handleMessage;
+
 if (args.configPath) {
   console.log(`Config file: ${args.configPath}`);
 }
@@ -2193,6 +2249,7 @@ if (resolvedArgs.humanProfileUpdate) {
 console.log("Press Ctrl+C to stop.");
 
 async function shutdown(): Promise<void> {
+  await bridge.stop();
   wsServer.stop();
   if (bootstrapReprobeTimer) {
     clearTimeout(bootstrapReprobeTimer);
