@@ -26,7 +26,7 @@ EnvoyMesh is a **decentralized, peer-to-peer mesh for autonomous AI agents**. Ag
 - Semantic consistency — typed intents agents can reason about, not opaque bytes
 - Observability — JSONL audit with correlation IDs stitching multi-peer flows
 
-**Active milestone: Phase 9 complete** — AI agent has its own peer identity (9A), tool registry (9B), memory/context (9C), mode controller (9D), session management (9E), style adapter (9F), proactive triggers (9G), approval workflow (9H), external agent gateway (9I), and digest/notifications (9J). See `docs/implementation-plan.md` for full roadmap.
+**Active milestone: Phase 9 complete** — AI agent has its own peer identity (9A), tool registry (9B), memory/context (9C), mode controller (9D), session management (9E), style adapter (9F), proactive triggers (9G), approval workflow (9H), external agent gateway (9I), digest/notifications (9J), and P2P bridge for external agents (9K). See `docs/implementation-plan.md` for full roadmap.
 
 ---
 

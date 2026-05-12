@@ -972,6 +972,42 @@ Tasks:
 - Digest is human-readable and actionable
 - Pending approvals and escalations are surfaced
 
+### 9K: P2P Bridge for External Agents
+
+**Goal:** External agents (OpenClaw, HomeClaw, Hermes, etc.) can participate in P2P conversations via a lightweight HTTP bridge. One node = one bridge = one configured external agent. The bridge is a pure message pipe — no SDK, no tool discovery, no session management.
+
+Tasks:
+
+- `[x]` Create self-contained `apps/node/src/bridge/` module (config, pipe, index, identity-store)
+- `[x]` Bridge agent identity: own peer ID derived from owner + agent keypair, persisted as `bridge-identity.json`
+- `[x]` HTTP callback server on `config.listenPort` (default 3031): agent calls `POST /bridge/send` with `{ to, text }`
+- `[x]` P2P handler: forwards `chat.message` addressed to bridge's agent peer ID to external agent HTTP endpoint
+- `[x]` Agent responses sent back as signed EMP `chat.message` envelopes with `senderRole: "agent"`
+- `[x]` Bridge config (`bridge-config.json`): `enabled`, `agentUrl`, `listenPort`, optional `secret` for Bearer auth
+- `[x]` Role policy updated: `chat.message` allows agent↔human (at least one human role required)
+- `[x]` Wire bridge into node startup: identity generation, mesh.onMessage hook, graceful shutdown
+- `[x]` Unit tests: bridge pipe (signing, routing, auth, error handling), identity store (persistence)
+
+**Architecture:**
+```
+┌──────────────────┐     HTTP POST /bridge/send       ┌──────────────────┐
+│  External Agent  │ ──────────────────────────────►   │  EnvoyMesh Node  │
+│  (OpenClaw/etc)  │ ◄──── { text: "reply" } ─────── │  (Bridge)        │
+└──────────────────┘                                   └──────┬───────────┘
+                                                              │
+                                                       P2P (libp2p)
+                                                              │
+                                                   ┌──────────▼───────────┐
+                                                   │  Peer (chat.message)  │
+                                                   └──────────────────────┘
+```
+
+**Exit criteria:**
+- External agent receives P2P chat messages forwarded via HTTP
+- Agent can reply and have its response sent back as signed EMP envelope
+- Bridge identity persists across restarts
+- Bridge is disabled by default; enabled via `bridge-config.json`
+
 ### Phase 9 Architecture
 
 ```
@@ -1050,10 +1086,11 @@ Tasks:
 - `[x]` Sensitive actions go to approval queue for owner review
 - `[x]` External agents (OpenClaw/HomeClaw) access mesh only via local tools API
 - `[x]` Owner receives periodic digest of agent activities
+- `[x]` External agents can participate in P2P conversations via HTTP bridge (9K)
 
 ## Current Milestone
 
-Milestone: **Phase 9 complete (9A–9J)** — Agent identity, tool registry, memory/context, mode controller, session management, style adapter, proactive triggers, approval workflow, external agent gateway, and digest/notifications are all shipped. Next: Social app UX polish and cross-network P2P readiness validation.
+Milestone: **Phase 9 complete (9A–9K)** — Agent identity, tool registry, memory/context, mode controller, session management, style adapter, proactive triggers, approval workflow, external agent gateway, digest/notifications, and P2P bridge for external agents are all shipped. Next: Social app UX polish and cross-network P2P readiness validation.
 
 ### Phase 9 Architecture Overview
 
@@ -1094,6 +1131,7 @@ Agent capabilities:
 - `[x]` **Phase 8J** — relay-assisted broadcast substrate.
 - `[x]` **Phase 8K** — local reputation and official credentials.
 - `[x]` **Phase 8L** — bounded autonomy, digests, and kill switch.
+- `[x]` **Phase 9K** — P2P bridge for external agents: HTTP callback server + P2P handler, self-contained in `apps/node/src/bridge/`.
 - `[~]` **Cross-network P2P readiness (post-LAN gate):** relay graph baseline is shipped; live multi-machine relay/DCUtR validation and operator defaults remain open but do not block Phase 8A.
 
 ## Coverage vs UserStory and design docs
@@ -1198,7 +1236,8 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | 2026-05-06 | **Phase 8C complete:** `generateChatDraft()` in `chat-draft-inbound.ts` generates draft replies from model for inbound `chat.message`, `ChatDraftStore` (`chat-draft-store.ts`) persists drafts separately from chat logs keyed by thread+draftId, `chat:draft` WebSocket event surfaces drafts to Social UI, `getChatDrafts`/`deleteChatDraft` RPC methods in `NodeServiceImpl`, `chatAssistEnabled` toggle added to `NodeConfig`/`UpdateNodeConfigParams`/`PersistedNodeConfig`, `ChatDraft` type added to ws-protocol, drafts audited without full text content (privacy). 10 unit tests covering disabled/blocked/bonded/stranger/draft-store paths. Phase 8C exit criteria: all `[x]`. |
 | 2026-05-06 | **Phase 8B complete:** model provider config (`mock`/`ollama`/`litellm`/`disabled`) in `PersistedNodeConfig` and `NodeConfig`, `buildModelProviders()` factory in `knowledge-query-inbound.ts` routing to `createMockModelProvider`/`createOllamaLiteLlmProvider`/`createLiteLlmProvider` based on mode, `modelProviders` loaded from persisted config at node startup and passed to knowledge-query handler, `model-config` CLI command for inspection, 6 model provider config tests, `docs/run-local-model.md` runbook. Cloud/litellm providers default to `requireApprovalForCloud=true` enforced via `evaluateModelProvider` in `@envoymesh/models`. Phase 8B exit criteria: all `[x]`. |
 | 2026-05-06 | **Phase 8A complete:** replaced mock `knowledge.query` handler with real policy-gated path: `evaluatePolicy` via `@envoymesh/bonds`, vault search via `searchVault()`, model routing via `routeModelRequest()` with mock provider, signed `knowledge.response` envelope sent back to sender, full audit trail (`message.verified`, `policy.decided`, `vault.searched`, `model.routed`, `message.sent`). Added `KnowledgeResponsePayloadSchema` + `createKnowledgeResponsePayload` to `@envoymesh/protocol`. Added `policy.decided`, `vault.searched`, `model.routed` to `AuditEventType`. Wired `@envoymesh/models` into `apps/node` with new tsconfig reference. 5 unit tests covering blocked/stranger/bonded/vault paths. Phase 8A exit criteria: all `[x]`. |
-| 2026-05-10 | **Social app refactoring:** decomposed the 2,677-line `App.tsx` monolith into 16 focused components (`Header`, `ErrorBoundary`, view components under `components/views/`); extracted `NodeStateContext` with event-driven connection tracking (no polling); extracted shared utils (`lib/display.ts`, `lib/storage.ts`); fixed bugs (stale closure in `SearchView`, `any` types in `getProfile()`, imperative DOM access in rule builder form, missing null-safety); added `ErrorBoundary` for crash recovery; added 33 unit/component tests with `@testing-library/react` + jsdom across 5 test files; updated vitest config for `.tsx` test files. |
+| 2026-05-12 | **Phase 9K complete:** P2P bridge for external agents in `apps/node/src/bridge/`. Self-contained module (4 files) makes EnvoyMesh Node act as a message pipe between P2P chat and external agents (OpenClaw, HomeClaw, Hermes). Bridge has its own agent peer identity derived from owner + agent keypair, persisted across restarts. HTTP callback server on port 3031 receives agent replies via `POST /bridge/send`. P2P handler forwards `chat.message` addressed to bridge's agent peer ID to external agent HTTP endpoint. Updated role-policy to allow agent↔human chat. 15 unit tests (pipe + identity store). |
+  1240→| 2026-05-10 | **Social app refactoring:** decomposed the 2,677-line `App.tsx` monolith into 16 focused components (`Header`, `ErrorBoundary`, view components under `components/views/`); extracted `NodeStateContext` with event-driven connection tracking (no polling); extracted shared utils (`lib/display.ts`, `lib/storage.ts`); fixed bugs (stale closure in `SearchView`, `any` types in `getProfile()`, imperative DOM access in rule builder form, missing null-safety); added `ErrorBoundary` for crash recovery; added 33 unit/component tests with `@testing-library/react` + jsdom across 5 test files; updated vitest config for `.tsx` test files. |
 | 2026-05-05 | **Phase 8 agentic normal node roadmap:** linked [Agentic next step](./next-step.md), made Phase 8A real `knowledge.query` the active milestone, added detailed 8A-8L tasks/exit criteria, updated current pulls, coverage, key decisions, and open questions. |
 | 2026-04-26 | Related-doc strip, north-star checkline, Phase 4A Full Node defer → `[x]`, Phase 6 semantic-firewall exit criterion, open-question table **Status** headers, Immediate tasks disclaimer, backlog footer unchanged in meaning. |
 | 2026-04-26 | **On this page** TOC (phases + plan sections); **Current Milestone** merged “Recently completed” + “Immediate tasks” into one **Archive** snapshot + **Next planning pulls** subsection. |

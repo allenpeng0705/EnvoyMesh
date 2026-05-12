@@ -75,6 +75,76 @@ The Brain Worker is a separate process or worker thread that handles summarizati
 
 The Brain Worker receives approved context only. It should not own the network connection and should not read arbitrary paths. Cloud and peer model calls must go through provider adapters with audit logging and policy checks.
 
+### Bridge (P2P ↔ HTTP Pipe)
+
+The bridge is a lightweight, self-contained module (`apps/node/src/bridge/`) that makes the EnvoyMesh Node act as a transparent message pipe between P2P `chat.message` traffic and an external agent (OpenClaw, HomeClaw, Hermes, etc.).
+
+**Design principles:**
+- **Pure message pipe** — no tool discovery, no session management, no SDK. The bridge forwards messages and returns replies.
+- **One node = one bridge = one agent** — each node runs at most one bridge, configured to talk to one external agent.
+- **Agent-agnostic** — the bridge does not know or care what agent is on the other end. Any HTTP-speaking agent works.
+- **Self-contained** — the bridge lives entirely in `apps/node/src/bridge/` with its own config, identity, and HTTP server.
+- **Separate from `__envoy_ai__`** — the bridge agent has its own peer identity, distinct from EnvoyMesh's native AI agent.
+
+**Architecture:**
+
+```
+┌──────────────────────┐                         ┌──────────────────────┐
+│   External Agent     │                         │   EnvoyMesh Node     │
+│   (OpenClaw etc.)    │                         │                      │
+│                      │  POST /bridge/send      │  ┌────────────────┐  │
+│  agentUrl ◄──────────┼─────────────────────────┼──► HTTP server    │  │
+│  (default:           │                         │  │ (port 3031)    │  │
+│   localhost:8080)    │  { text: "reply" }      │  └───────┬────────┘  │
+│                      │◄─────────────────────────┼──────────┘           │
+└──────────────────────┘   HTTP response          │         │            │
+                                                  │  receiveFromAgent()  │
+                                                  │         │            │
+                                                  │  sign EMP envelope   │
+                                                  │  senderRole: agent   │
+                                                  │         │            │
+                                                  │   mesh.sendChat()    │
+                                                  │         │            │
+                                                  │    P2P (libp2p)      │
+                                                  │         │            │
+                                                  │  ┌──────▼─────────┐  │
+                                                  │  │  Peer Contact   │  │
+                                                  │  └────────────────┘  │
+                                                  └──────────────────────┘
+```
+
+**Message flow:**
+
+1. Peer sends `chat.message` to the bridge's agent peer ID → P2P network delivers to node
+2. `mesh.onMessage()` dispatches to bridge handler
+3. Bridge forwards to external agent via `POST agentUrl` with `{ from, fromOwnerId, fromName, text }`
+4. Agent processes and optionally replies by calling `POST /bridge/send` with `{ to, text }`
+5. Bridge resolves `to` to a peer ID (accepts peer IDs directly, or resolves ownerIds via peer directory)
+6. Bridge creates signed EMP envelope (`senderRole: "agent"`, `recipientRole: "human"`, intent `chat.message`)
+7. Envelope is sent via P2P
+
+**Identity:**
+
+The bridge generates its own agent keypair on first run, persisted as `bridge-identity.json`. The agent peer ID is derived from `sha256(ownerId + agentPublicKeyPem)`. This identity is separate from the node's libp2p peer ID and from the native AI agent identity (`__envoy_ai__`).
+
+**Configuration:**
+
+```json
+// bridge-config.json in profile directory
+{
+  "enabled": true,
+  "agentUrl": "http://localhost:8080/message",
+  "listenPort": 3031,
+  "secret": "optional-shared-secret"
+}
+```
+
+**Security:**
+- Optional Bearer token auth on both directions (HTTP server and outbound fetch)
+- Bridge handler only processes messages addressed to its agent peer ID
+- Agent replies go through standard P2P signing and role policy
+- Role policy updated: `chat.message` requires at least one human role (agent↔human OK, agent↔agent blocked)
+
 ## Package Design
 
 ### `packages/protocol` (EMP implementation)

@@ -43,6 +43,7 @@ EnvoyMesh is a working TypeScript prototype **under active architectural refinem
 - A model router with mock, LiteLLM-compatible, and Ollama-through-LiteLLM providers.
 - A developer CLI for local profile, trust, approval, audit, task, peer, vault, connectivity, and relay-status inspection.
 - A **Tauri** desktop shell for end users: a native window that loads the **Social** web UI (built static assets) and spawns the Node runtime—no separate Electron app.
+- A **P2P bridge** for external agents (OpenClaw, HomeClaw, Hermes): a lightweight HTTP pipe that lets external agents participate in P2P conversations via a configurable callback.
 
 ## Quick Start
 

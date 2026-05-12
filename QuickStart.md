@@ -133,6 +133,65 @@ npm run node:dev -- --profile ./data/node-a --listen /ip4/0.0.0.0/tcp/0 --discov
 
 The relay stores short-lived `relay.checkin` rows, answers bounded `relay.lookup` requests, and can forward lookups across selected relay neighbors using summaries, `maxHops`, `maxFanout`, query IDs, and negative caching.
 
+## Bridge (P2P ↔ External Agent)
+
+The bridge makes the node act as a message pipe between P2P chat and an external agent (OpenClaw, HomeClaw, Hermes, etc.). One node = one bridge = one configured agent.
+
+### Configuration
+
+Create a `bridge-config.json` in your profile directory:
+
+```json
+{
+  "enabled": true,
+  "agentUrl": "http://localhost:8080/message",
+  "listenPort": 3031,
+  "secret": "optional-shared-secret"
+}
+```
+
+Fields:
+- `enabled` (boolean, default `false`) — enable the bridge
+- `agentUrl` (string, default `http://localhost:8080/message`) — external agent HTTP endpoint
+- `listenPort` (number, default `3031`) — local HTTP server port for agent callbacks
+- `secret` (string, optional) — shared secret for Bearer auth on both sides
+
+The bridge agent identity is automatically generated on first run and persisted as `bridge-identity.json` in the profile directory.
+
+### Agent Protocol
+
+**P2P → Agent (forward):** When a `chat.message` arrives addressed to the bridge's agent peer ID, the bridge POSTs to the configured `agentUrl`:
+```json
+{
+  "from": "12D3PeerId",
+  "fromOwnerId": "envoy:owner:alice",
+  "fromName": "Alice",
+  "text": "Hello agent!"
+}
+```
+
+**Agent → P2P (callback):** The external agent sends a reply to `POST http://127.0.0.1:<listenPort>/bridge/send`:
+```json
+{
+  "to": "12D3PeerId or envoy:owner:alice",
+  "text": "Hello back!"
+}
+```
+
+The bridge signs the reply as a `chat.message` EMP envelope with `senderRole: "agent"` and sends it via P2P.
+
+If `secret` is configured, both sides use `Authorization: Bearer <secret>`.
+
+### Supported Agents
+
+Any HTTP-speaking agent works. Examples:
+- **OpenClaw** — configure the bridge URL as one of OpenClaw's channels
+- **HomeClaw** — point `agentUrl` to your HomeClaw instance
+- **Hermes** — point `agentUrl` to your Hermes instance
+- **Custom agents** — any HTTP server that accepts the forward protocol
+
+The bridge is agent-agnostic — it just pipes messages. The agent decides what to do with them.
+
 Correlate outbound probes and A2A sends (optional `correlationId` on the wire envelope):
 
 ```bash
