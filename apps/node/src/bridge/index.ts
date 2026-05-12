@@ -21,6 +21,8 @@ export interface CreateBridgeOptions {
   mesh: EnvoyMesh;
   /** Resolve an ownerId or peerId to the current libp2p peer ID. */
   getRecipientPeerId: (ownerOrPeerId: string) => Promise<string | null>;
+  /** Called when the bridge needs to deliver an envelope to the local node (self-send). */
+  onSelfSendEnvelope?: (envelope: any, remotePeerId: string) => Promise<void>;
 }
 
 /**
@@ -41,6 +43,11 @@ export function createBridge(options: CreateBridgeOptions): {
     config,
     identity: options.identity,
     sendChat: async (peerId, envelope) => {
+      if (peerId === options.mesh.peerId && options.onSelfSendEnvelope) {
+        console.log(`[bridge] self-send reply, routing locally`);
+        await options.onSelfSendEnvelope(envelope, options.mesh.peerId);
+        return;
+      }
       await options.mesh.sendChat(peerId, envelope, {});
     },
     getRecipientPeerId: options.getRecipientPeerId,

@@ -1843,6 +1843,33 @@ const bridge = createBridge({
   identity: bridgeIdentity,
   mesh,
   getRecipientPeerId,
+  onSelfSendEnvelope: async (envelope, _remotePeerId) => {
+    // Deliver bridge agent reply locally — emit chat:message + persist to log
+    const payload = parseChatMessagePayload(envelope.payload);
+    if (!payload || !wsServerForEvents) return;
+    let selfHuman = null;
+    try { selfHuman = await humanProfileStore.loadHumanProfile(); } catch { /* ignore */ }
+    const chatMsg = {
+      messageId: envelope.messageId,
+      sender: {
+        nodeId: mesh.peerId,
+        ownerId: payload.senderOwnerId,
+        displayName: "My Agent",
+      },
+      recipient: {
+        nodeId: mesh.peerId,
+        ownerId: profile.owner.ownerId,
+        displayName: selfHuman?.displayName ?? profile.owner.ownerId,
+      },
+      content: { text: payload.text },
+      metadata: { timestamp: envelope.createdAt, deliveryReceipt: "delivered" as const },
+      signature: envelope.signature,
+    };
+    void chatLogStore.append(payload.senderOwnerId, chatMsg).catch((err) =>
+      console.warn(`[bridge] chat log append failed:`, err),
+    );
+    wsServerForEvents.emitEvent("chat:message", chatMsg);
+  },
 });
 bridgeHandleMessage = bridge._handleMessage;
 
