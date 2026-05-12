@@ -71,6 +71,46 @@ describe("relay health", () => {
     expect(result.state.counters.restartRequested).toBe(1);
   });
 
+  it("requests libp2p restart when event-loop lag is too high", () => {
+    const result = evaluateRelayHealth({
+      now: () => now,
+      relayEnabled: true,
+      relayServerEnabled: true,
+      listenAddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-a"],
+      bootstrapProbeResults: [],
+      relayBook: [],
+      rosterEntries: [],
+      summaries: [],
+      routing: baseRouting,
+      eventLoopLagMs: 2_500,
+      previous: createInitialRelayHealthState(),
+    });
+
+    expect(result.snapshot.status).toBe("unhealthy");
+    expect(result.snapshot.actions).toContain("restart-libp2p");
+    expect(result.state.counters.restartRequested).toBe(1);
+  });
+
+  it("requests supervisor exit when memory is too high", () => {
+    const result = evaluateRelayHealth({
+      now: () => now,
+      relayEnabled: true,
+      relayServerEnabled: true,
+      listenAddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-a"],
+      bootstrapProbeResults: [],
+      relayBook: [],
+      rosterEntries: [],
+      summaries: [],
+      routing: baseRouting,
+      rssBytes: 2_000 * 1024 * 1024,
+      previous: createInitialRelayHealthState(),
+    });
+
+    expect(result.snapshot.status).toBe("critical");
+    expect(result.snapshot.actions).toContain("exit-for-supervisor");
+    expect(result.state.counters.exitRequested).toBe(1);
+  });
+
   it("escalates repeated failures to critical supervisor exit", () => {
     const previous = {
       ...createInitialRelayHealthState(),

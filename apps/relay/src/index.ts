@@ -18,6 +18,12 @@ import { randomUUID } from "node:crypto";
 import { CapabilityRegistry, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, EnvoyMesh } from "@envoymesh/network";
 import { parseRelayArgs } from "./args.js";
 import {
+  createInitialStandaloneRelayHealthState,
+  evaluateStandaloneRelayHealth,
+  type StandaloneRelayHealthSnapshot,
+  type StandaloneRelayHealthState,
+} from "./relay-health.js";
+import {
   parseRendezvousRegisterPayload,
   parseRendezvousQueryPayload,
   createRendezvousResponsePayload,
@@ -35,6 +41,7 @@ import {
 // ============================================================================
 
 const args = parseRelayArgs(process.argv.slice(2));
+const startedAtMs = Date.now();
 
 // Ensure profile directory exists
 mkdirSync(args.profileDir, { recursive: true });
@@ -53,19 +60,35 @@ const MAX_FORWARD_TARGETS = 100;
 // Maximum concurrent deliveries per fan-out batch
 const CONCURRENCY_LIMIT = 50;
 
+const RELAY_HEALTH_INTERVAL_MS = 30_000;
+const EVENT_LOOP_LAG_SAMPLE_MS = 1_000;
+const MAX_RECORDED_FATAL_ERRORS = 20;
+
 // ============================================================================
 // CRASH PREVENTION: Global error handlers
 // ============================================================================
 
-// Prevent uncaught synchronous exceptions from killing the relay
+const recentFatalErrors: Array<{ at: number; message: string }> = [];
+
+function recordFatalError(label: string, reason: unknown): void {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  recentFatalErrors.push({ at: Date.now(), message: `${label}: ${message}` });
+  if (recentFatalErrors.length > MAX_RECORDED_FATAL_ERRORS) {
+    recentFatalErrors.splice(0, recentFatalErrors.length - MAX_RECORDED_FATAL_ERRORS);
+  }
+}
+
+// Record uncaught synchronous exceptions and let the watchdog decide when a clean restart is safer.
 process.on("uncaughtException", (error: Error) => {
-  console.error("[relay] UNCAUGHT EXCEPTION — continuing (relay must not crash):", error.message, error.stack);
+  recordFatalError("uncaughtException", error);
+  console.error("[relay] UNCAUGHT EXCEPTION — recorded for health watchdog:", error.message, error.stack);
 });
 
-// Prevent unhandled promise rejections from killing the relay
+// Record unhandled promise rejections and let the watchdog decide when to exit for the supervisor.
 process.on("unhandledRejection", (reason: unknown) => {
   const msg = reason instanceof Error ? reason.message : String(reason);
-  console.error("[relay] UNHANDLED REJECTION — continuing (relay must not crash):", msg);
+  recordFatalError("unhandledRejection", reason);
+  console.error("[relay] UNHANDLED REJECTION — recorded for health watchdog:", msg);
 });
 
 // ============================================================================
@@ -105,6 +128,13 @@ let httpServer: ReturnType<typeof createServer> | null = null;
 let capabilityRegistry: CapabilityRegistry | undefined;
 let rendezvousSweeper: ReturnType<typeof setInterval> | undefined;
 let statsInterval: ReturnType<typeof setInterval> | undefined;
+let rateLimitCleanupInterval: ReturnType<typeof setInterval> | undefined;
+let relayHealthTimer: ReturnType<typeof setInterval> | undefined;
+let eventLoopLagTimer: ReturnType<typeof setInterval> | undefined;
+let relayHealthState: StandaloneRelayHealthState = createInitialStandaloneRelayHealthState();
+let relayHealthSnapshot: StandaloneRelayHealthSnapshot | undefined;
+let lastEventLoopLagMs = 0;
+let relayRepairInProgress = false;
 
 // ============================================================================
 // RATE LIMITING: Track registrations per peer to prevent abuse
@@ -189,7 +219,7 @@ function markMessageSeen(messageId: string): void {
 // ============================================================================
 // PERIODIC CLEANUP: Rate limit map
 // ============================================================================
-setInterval(() => {
+rateLimitCleanupInterval = setInterval(() => {
   try {
     const now = Date.now();
     let cleaned = 0;
@@ -209,6 +239,10 @@ setInterval(() => {
 
 async function shutdown(): Promise<void> {
   console.log("[relay] Shutting down...");
+  if (rateLimitCleanupInterval) {
+    clearInterval(rateLimitCleanupInterval);
+    rateLimitCleanupInterval = undefined;
+  }
   if (rendezvousSweeper) {
     clearInterval(rendezvousSweeper);
     rendezvousSweeper = undefined;
@@ -216,6 +250,14 @@ async function shutdown(): Promise<void> {
   if (statsInterval) {
     clearInterval(statsInterval);
     statsInterval = undefined;
+  }
+  if (relayHealthTimer) {
+    clearInterval(relayHealthTimer);
+    relayHealthTimer = undefined;
+  }
+  if (eventLoopLagTimer) {
+    clearInterval(eventLoopLagTimer);
+    eventLoopLagTimer = undefined;
   }
   if (httpServer) {
     httpServer.close();
@@ -229,6 +271,91 @@ async function shutdown(): Promise<void> {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
+function startEventLoopLagMonitor(): void {
+  let expectedAt = Date.now() + EVENT_LOOP_LAG_SAMPLE_MS;
+  eventLoopLagTimer = setInterval(() => {
+    const now = Date.now();
+    lastEventLoopLagMs = Math.max(0, now - expectedAt);
+    expectedAt = now + EVENT_LOOP_LAG_SAMPLE_MS;
+  }, EVENT_LOOP_LAG_SAMPLE_MS);
+}
+
+function startRelayHealthWatchdog(): void {
+  relayHealthTimer = setInterval(() => {
+    void runRelayHealthCycle("periodic").catch((error) => {
+      recordFatalError("relayHealthWatchdog", error);
+      console.error("[relay] Health watchdog failed:", error);
+    });
+  }, RELAY_HEALTH_INTERVAL_MS);
+}
+
+async function runRelayHealthCycle(source: "startup" | "periodic"): Promise<void> {
+  const result = evaluateStandaloneRelayHealth({
+    startedAtMs,
+    listenAddrs: started ? mesh.multiaddrs : [],
+    connectedRelayPeerCount: started ? mesh.getConnectedRelayPeerIds().length : 0,
+    httpEnabled: args.httpPort != null,
+    httpListening: args.httpPort == null || httpServer?.listening === true || (source === "startup" && httpServer != null),
+    eventLoopLagMs: lastEventLoopLagMs,
+    rssBytes: process.memoryUsage().rss,
+    recentFatalErrors,
+    previous: relayHealthState,
+  });
+  relayHealthState = result.state;
+  relayHealthSnapshot = result.snapshot;
+
+  const reasonText = result.snapshot.reasons.join("; ") || "-";
+  console.log(
+    `[relay] Health ${result.snapshot.status} source=${source} actions=${result.snapshot.actions.join(",")} reasons=${reasonText}`,
+  );
+
+  if (result.snapshot.actions.includes("exit-for-supervisor")) {
+    await exitForSupervisor(reasonText);
+    return;
+  }
+
+  if (result.snapshot.actions.includes("restart-libp2p")) {
+    await restartLibp2pForHealth(reasonText);
+  }
+}
+
+async function restartLibp2pForHealth(reason: string): Promise<void> {
+  if (relayRepairInProgress) {
+    return;
+  }
+  relayRepairInProgress = true;
+  try {
+    console.warn(`[relay] Health requested libp2p restart: ${reason}`);
+    if (started) {
+      await mesh.stop();
+      started = false;
+    }
+    await mesh.start();
+    started = true;
+    console.warn("[relay] Libp2p restart completed.");
+  } catch (error) {
+    recordFatalError("libp2pRestart", error);
+    console.error("[relay] Libp2p restart failed; exiting for supervisor:", error);
+    await exitForSupervisor("libp2p restart failed");
+  } finally {
+    relayRepairInProgress = false;
+  }
+}
+
+async function exitForSupervisor(reason: string): Promise<void> {
+  console.error(`[relay] Critical health state; exiting for supervisor restart: ${reason}`);
+  try {
+    if (started) {
+      await mesh.stop();
+      started = false;
+    }
+  } catch (error) {
+    console.error("[relay] Failed to stop cleanly before supervisor exit:", error);
+  } finally {
+    process.exit(2);
+  }
+}
 
 try {
   await mesh.start();
@@ -262,12 +389,26 @@ try {
           }),
         );
       } else if (req.url === "/health") {
-        res.writeHead(200, { "Content-Type": "text/plain" });
-        res.end("OK");
+        const snapshot = relayHealthSnapshot ?? {
+          status: started ? "healthy" : "starting",
+          checkedAt: new Date().toISOString(),
+          uptimeMs: Date.now() - startedAtMs,
+          reasons: started ? [] : ["relay is starting"],
+        };
+        const statusCode =
+          snapshot.status === "critical" || snapshot.status === "unhealthy" || snapshot.status === "starting"
+            ? 503
+            : 200;
+        res.writeHead(statusCode, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(snapshot));
       } else {
         res.writeHead(404);
         res.end();
       }
+    });
+    httpServer.on("error", (error) => {
+      recordFatalError("httpServer", error);
+      console.error("[relay] HTTP info server error:", error);
     });
 
     httpServer.listen(args.httpPort, "0.0.0.0", () => {
@@ -529,6 +670,10 @@ try {
       console.error("[relay] Unexpected error in message handler:", error);
     }
   });
+
+  startEventLoopLagMonitor();
+  await runRelayHealthCycle("startup");
+  startRelayHealthWatchdog();
 } catch (error) {
   console.error(`[relay] Failed to start:`, error);
   process.exit(1);

@@ -191,7 +191,7 @@ If no advertise is set, the relay uses its detected local addresses, which work 
 | `--profile <dir>` | Profile directory for relay identity | `./data/relay` |
 | `--port <port>` | TCP listen port | `4001` |
 | `--advertise <IP>` | Public IP address for advertise | (none) |
-| `--http-port <port>` | HTTP port for /info endpoint | (disabled) |
+| `--http-port <port>` | HTTP port for `/info` and `/health` endpoints | `15432` |
 | `--help`, `-h` | Show help message | - |
 
 ---
@@ -236,27 +236,37 @@ Press `Ctrl+C` to gracefully stop.
 
 ### With Systemd (Recommended for Cloud)
 
-Create a service instead:
+For long-running public relays, use the standalone relay under `systemd`. The relay performs local health checks and exits with a non-zero code when a clean process restart is safer than continuing. `systemd` then restarts it while journald keeps the logs.
 
 ```bash
 sudo tee /etc/systemd/system/envoymesh-relay.service <<'EOF'
 [Unit]
 Description=EnvoyMesh Relay Server
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-ExecStart=/usr/bin/env node /path/to/envoymesh/apps/relay/dist/index.js \
+Type=simple
+WorkingDirectory=/opt/envoymesh
+ExecStart=/usr/bin/node /opt/envoymesh/apps/relay/dist/index.js \
   --profile /var/lib/envoymesh-relay \
   --listen /ip4/0.0.0.0/tcp/4001 \
-  --advertise-addr /ip4/YOUR_PUBLIC_IP/tcp/4001
+  --advertise-addr /ip4/YOUR_PUBLIC_IP/tcp/4001 \
+  --http-port 15432
 Restart=always
-RestartSec=10
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=10
 User=envoymesh
+Environment=NODE_ENV=production
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
+sudo useradd --system --home /var/lib/envoymesh-relay --create-home envoymesh
+sudo mkdir -p /opt/envoymesh /var/lib/envoymesh-relay
+sudo chown -R envoymesh:envoymesh /var/lib/envoymesh-relay
 sudo systemctl enable envoymesh-relay
 sudo systemctl start envoymesh-relay
 ```
@@ -267,7 +277,10 @@ sudo systemctl stop envoymesh-relay
 sudo systemctl start envoymesh-relay
 sudo systemctl restart envoymesh-relay
 sudo journalctl -u envoymesh-relay -f
+curl http://127.0.0.1:15432/health
 ```
+
+The `/health` endpoint returns JSON with the relay status (`healthy`, `degraded`, `unhealthy`, or `critical`), recent reasons, restart counters, uptime, memory usage, event-loop lag, and connected relay peer count. `unhealthy` and `critical` responses return HTTP 503 so a load balancer or host probe can detect the problem too.
 
 ---
 
