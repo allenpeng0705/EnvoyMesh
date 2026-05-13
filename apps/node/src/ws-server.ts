@@ -163,6 +163,7 @@ export class WsServer {
       "peer:lost",
       "bridge:status",
       "p2p:envelope",
+      "trigger:fired",
     ];
     for (const event of allEvents) {
       this.subscribe(ws, event);

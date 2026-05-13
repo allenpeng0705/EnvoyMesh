@@ -114,6 +114,7 @@ import { generateChatDraft } from "./chat-draft-inbound.js";
 import { ModeController, createDefaultModeConfig } from "./mode-controller.js";
 import { FileSessionStore, SessionManager } from "./session-manager.js";
 import { StyleAdapter } from "./style-adapter.js";
+import { TriggerStore } from "./trigger-store.js";
 import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
@@ -1298,6 +1299,37 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         payload.text,
         false,
       ).catch((err) => console.warn(`[chat.message] session record failed:`, err));
+      // Check topic-based triggers (Phase 9G): match message content against trigger keywords
+      const matchedTopicTriggers = triggerStore.checkTopicTriggers(payload.text);
+      for (const trigger of matchedTopicTriggers) {
+        console.log(`[trigger] topic trigger fired: ${trigger.name} (${trigger.id}) action=${trigger.action.type}`);
+        triggerStore.recordFire(trigger.id);
+        void taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "trigger.fired",
+            intent: "chat.message",
+            messageId: envelope.messageId,
+            correlationId,
+            remotePeerId,
+            direction: "inbound",
+            verificationStatus: "verified",
+            latencyMs: Date.now() - receivedAt,
+            outcome: "record",
+            summary: `topic trigger: ${trigger.name} action=${trigger.action.type} proactive=true`,
+            createdAt: new Date().toISOString(),
+          }),
+        );
+        // Emit trigger event for UI notification
+        wsServerForEvents.emitEvent("trigger:fired", {
+          triggerId: trigger.id,
+          triggerName: trigger.name,
+          triggerType: trigger.triggerType,
+          action: trigger.action,
+          contactOwnerId: payload.senderOwnerId,
+          contactDisplayName: chatMsg.sender.displayName,
+          messagePreview: payload.text.slice(0, 80),
+        });
+      }
       wsServerForEvents.emitEvent("chat:message", chatMsg);
 
       // Generate a chat draft if chat assist is enabled (async, fire-and-forget)
@@ -1895,6 +1927,7 @@ if (nodeService instanceof NodeServiceImpl) {
 const modeController = new ModeController(createDefaultModeConfig(), taskStore);
 const sessionManager = new SessionManager(new FileSessionStore(join(args.profileDir, "sessions")));
 const styleAdapter = new StyleAdapter();
+const triggerStore = new TriggerStore();
 const wsServer = new WsServer(3030, "/ws", {
   onConnectionChange: (connectedCount) => {
     if (connectedCount > 0) {
@@ -1913,10 +1946,31 @@ if (nodeService instanceof NodeServiceImpl) {
 await runNodeHealthCycle("startup");
 scheduleNodeHealth();
 
-// Start periodic mode transition checks (Phase 9D): every 30s
+// Start periodic checks (Phase 9D + 9G): every 30s
 modeTransitionTimer = setInterval(() => {
   modeController.checkOfflineTransition();
   modeController.checkScheduleTransition();
+  // Check time-based proactive triggers (Phase 9G)
+  const now = new Date();
+  const dueTimeTriggers = triggerStore.checkTimeTriggers(now);
+  for (const trigger of dueTimeTriggers) {
+    console.log(`[trigger] time trigger fired: ${trigger.name} (${trigger.id}) action=${trigger.action.type}`);
+    triggerStore.recordFire(trigger.id);
+    void taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "trigger.fired",
+        intent: "chat.message",
+        messageId: randomUUID(),
+        remotePeerId: "local",
+        direction: "local",
+        verificationStatus: "verified",
+        latencyMs: 0,
+        outcome: "record",
+        summary: `time trigger: ${trigger.name} action=${trigger.action.type} proactive=true`,
+        createdAt: now.toISOString(),
+      }),
+    );
+  }
 }, 30000);
 
 // Wire NodeService events to WebSocket server

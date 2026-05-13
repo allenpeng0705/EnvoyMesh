@@ -367,6 +367,74 @@ export class ToolRegistry {
       isMeshTool: false,
     });
 
+    // Trigger store tools (Phase 9G)
+    this.register({
+      name: "mesh.list-triggers",
+      description: "List all proactive triggers (optional filter by type)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          type: { type: "string", enum: ["time", "event", "topic"], description: "Filter by trigger type" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.add-trigger",
+      description: "Add a new proactive trigger (time, event, or topic based)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Trigger name" },
+          triggerType: { type: "string", enum: ["time", "event", "topic"], description: "Type of trigger" },
+          condition: { type: "object", description: "Trigger condition" },
+          action: { type: "object", description: "Action to execute when triggered" },
+          description: { type: "string", description: "Optional description" },
+        },
+        required: ["name", "triggerType", "condition", "action"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.remove-trigger",
+      description: "Remove a proactive trigger",
+      paramSchema: {
+        type: "object",
+        properties: {
+          triggerId: { type: "string", description: "The trigger ID to remove" },
+        },
+        required: ["triggerId"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.update-trigger",
+      description: "Update a proactive trigger (enable/disable, rename)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          triggerId: { type: "string", description: "The trigger ID to update" },
+          enabled: { type: "boolean", description: "Enable or disable the trigger" },
+          name: { type: "string", description: "New name for the trigger" },
+          description: { type: "string", description: "New description" },
+        },
+        required: ["triggerId"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
     // Session manager tools (Phase 9E)
     this.register({
       name: "mesh.list-sessions",

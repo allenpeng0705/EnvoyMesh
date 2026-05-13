@@ -176,7 +176,8 @@ export type AuditEventType =
   | "autonomous.decided"
   | "tool.called"
   | "discovery.capability.verified"
-  | "discovery.capability.rejected";
+  | "discovery.capability.rejected"
+  | "trigger.fired";
 
 export type AuditDirection = "inbound" | "outbound" | "local";
 
