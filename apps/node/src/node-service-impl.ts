@@ -1988,12 +1988,14 @@ class NodeServiceImpl implements NodeService {
     const bridgeStatus = await this.getBridgeStatus();
     const reachable = this._mesh ?? this._externalMesh;
 
-    // Derive LAN IP from multiaddrs, e.g. /ip4/192.168.1.100/tcp/63641 → 192.168.1.100
+    // Derive LAN IP from multiaddrs, e.g. /ip4/192.168.1.100/tcp/63641 → 192.168.1.100.
+    // Skip 127.0.0.1 — it's unreachable from mobile devices on the same LAN.
     let lanIp = "localhost";
+    const LOOPBACK_RE = /^127\./;
     if (reachable?.multiaddrs) {
       for (const addr of reachable.multiaddrs) {
         const match = addr.match(/\/ip4\/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/);
-        if (match) {
+        if (match && !LOOPBACK_RE.test(match[1])) {
           lanIp = match[1];
           break;
         }

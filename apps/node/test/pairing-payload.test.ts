@@ -84,4 +84,39 @@ describe("NodeServiceImpl getPairingPayload", () => {
     expect(p.wsUrl).toBe("ws://172.16.0.7:8080/ws");
     expect(p.relayPeerId).toBe("12D3KooWExt");
   });
+
+  it("skips 127.0.0.1 multiaddr to prefer LAN IP for mobile pairing", async () => {
+    const trustStore = createLocalTrustStore(profileDir);
+    const peerDirectory = createLocalPeerDirectoryStore(profileDir);
+    const human = createHumanProfileStore(profileDir);
+    const mesh = mockMesh({
+      peerId: "12D3KooWHome",
+      multiaddrs: [
+        "/ip4/127.0.0.1/tcp/63641",
+        "/ip4/192.168.1.50/tcp/63641",
+      ],
+    });
+
+    const svc = new NodeServiceImpl(mesh, trustStore, peerDirectory, human, profileDir);
+    svc.setWsListenAddress(3030, "/ws");
+
+    const p = await svc.getPairingPayload();
+    expect(p.wsUrl).toBe("ws://192.168.1.50:3030/ws");
+  });
+
+  it("falls back to localhost when only loopback multiaddr exists", async () => {
+    const trustStore = createLocalTrustStore(profileDir);
+    const peerDirectory = createLocalPeerDirectoryStore(profileDir);
+    const human = createHumanProfileStore(profileDir);
+    const mesh = mockMesh({
+      peerId: "12D3KooWHome",
+      multiaddrs: ["/ip4/127.0.0.1/tcp/63641"],
+    });
+
+    const svc = new NodeServiceImpl(mesh, trustStore, peerDirectory, human, profileDir);
+    svc.setWsListenAddress(3030, "/ws");
+
+    const p = await svc.getPairingPayload();
+    expect(p.wsUrl).toBe("ws://localhost:3030/ws");
+  });
 });
