@@ -45,6 +45,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 6 — Model router](#phase-6-model-router)
 - [Phase 7 — Product surface](#phase-7-product-surface)
 - [Phase 8 — Agentic normal node, LLM first](#phase-8-agentic-normal-node-llm-first)
+- [Phase 9 — AI-Augmented Agent](#phase-9-ai-augmented-agent)
 - [Phase 10 — HomeClaw App P2P integration](#phase-10-homeclaw-app-p2p-integration)
 
 ## Current Direction
@@ -1246,7 +1247,24 @@ Today the HomeClaw App connects to HomeClaw Core via HTTP to a public URL (`POST
 
 ### 10A (Phase 2a): Dart Relay Client — Thin P2P Edge
 
-**Goal:** Implement a thin EnvoyMesh P2P layer in Dart that the HomeClawApp embeds. The Dart node connects to a relay via WebSocket and speaks the EnvoyMesh envelope protocol. No full libp2p stack — the relay handles DHT, peer discovery, and message routing.
+**Goal:** Implement a thin EnvoyMesh P2P layer in Dart that the HomeClawApp embeds. The Dart node connects to the home node's WebSocket server and speaks the EnvoyMesh envelope protocol. No full libp2p stack on mobile — the home node handles DHT, peer discovery, and message routing.
+
+**Current status (2026-05-13):** All server-side infrastructure is complete. The home Node exposes `forwardEnvelope`, `getPairingPayload`, and `getBridgeStatus` RPCs over WebSocket. The Social UI displays a pairing QR code. The bridge module pipes messages between P2P mesh and external agents with credential hardening and body size limits. Relay health monitoring and node health monitoring ensure the home node stays healthy for mobile client connectivity. Remaining work is entirely on the Dart/Flutter side (in the HomeClawApp repo).
+
+#### Server-side infrastructure (completed on TypeScript/Node side)
+
+| Component | File | What it does |
+|-----------|------|--------------|
+| `forwardEnvelope` RPC | `ws-server.ts`, `node-service-impl.ts` | Forwards a signed `EnvoyEnvelope` to any P2P peer on behalf of the mobile client |
+| `getPairingPayload` RPC | `ws-server.ts`, `node-service-impl.ts` | Returns `wsUrl`, `relayPeerId`, `agentPeerId`, `agentPubKey` for QR pairing |
+| `getBridgeStatus` RPC | `ws-server.ts`, `node-service-impl.ts` | Returns bridge agent status (peer ID, enabled state, agent name) |
+| `p2p:envelope` push event | `ws-server.ts` | Auto-subscribed; pushes raw inbound envelopes to mobile client |
+| Pairing QR display | `apps/social/.../SettingsNodeTab.tsx` | Renders `envoy://pair?...` QR code in Social UI for mobile to scan |
+| Bridge module | `apps/node/src/bridge/` | HTTP callback server (port 3031), credential hardening, body size limits, transport coexistence design |
+| Relay health monitoring | `apps/node/src/relay-health.ts` | Evaluates relay health (listen addrs, bootstrap, roster freshness); actions: reprobe, restart, exit |
+| Node health monitoring | `apps/node/src/node-health.ts` | Evaluates process health (loop lag, RSS, fatal errors); 30s periodic check; auto-restart or supervisor exit |
+| Standalone relay health | `apps/relay/src/relay-health.ts` | Health evaluation for the `apps/relay` binary |
+| `PairingPayload` type | `packages/api/src/ws-protocol.ts` | TypeScript interface for the pairing payload response |
 
 #### 10A.1: EnvoyMesh Identity in Dart
 
@@ -1318,10 +1336,18 @@ Tasks:
 
 Tasks:
 
+**Server-side (TypeScript/Node — done):**
+- `[x]` `WsServer` routes `forwardEnvelope`, `getPairingPayload`, and `getBridgeStatus` JSON-RPC methods → `NodeServiceImpl`
+- `[x]` `NodeServiceImpl.forwardEnvelope()` validates envelope schema, resolves transport target, forwards via `mesh.send()`/`mesh.sendChat()`, tags reachability
+- `[x]` `NodeServiceImpl.getPairingPayload()` derives LAN WebSocket URL from advertised multiaddrs, includes `relayPeerId` (libp2p), and bridge `agentPeerId`/`agentPubKey` when bridge is enabled
+- `[x]` `NodeServiceImpl.getBridgeStatus()` returns bridge agent peer ID, enabled state, agent name
+- `[x]` `p2p:envelope` push event auto-subscribed for all WebSocket clients; emits raw inbound envelopes
+- `[x]` Relay health + node health monitoring (30s periodic) keeps home node healthy for mobile clients
+
+**Client-side (Dart/Flutter — remaining):**
 - `[ ]` Implement WebSocket client with JSON-RPC request/response handling
-- `[x]` Implement `forwardEnvelope` for outbound signed `EnvoyEnvelope` traffic (server-side: `forwardEnvelope` RPC wired in Node)
-- `[ ]` Parse inbound push events (`chat:message`, `bridge:status`, etc.) as implemented by the node
-- `[x]` Optional: call `getPairingPayload` / `getBridgeStatus` after connect for UI state (server-side: `getPairingPayload` RPC returns pairing QR payload)
+- `[ ]` Parse inbound push events (`chat:message`, `bridge:status`, `p2p:envelope`, etc.)
+- `[ ]` Call `getPairingPayload` / `getBridgeStatus` after connect for UI state
 - `[ ]` Reconnection: exponential backoff on disconnect (app-defined policy)
 - `[ ]` Unit tests: mock WebSocket, test RPC + event parsing
 
@@ -1383,14 +1409,18 @@ Tasks:
 
 Tasks:
 
-- `[x]` Desktop/host side: EnvoyMesh node displays pairing QR code containing:
-  - Home node's libp2p peer ID (`12D3KooW...`, `relayPeerId` in payload — for `dialHints` / diagnostics)
-  - Bridge agent's peer ID (`envoy_agent_xxx`)
-  - Bridge agent's public key (PEM)
-  - WebSocket URL to the node (`wsUrl`)
-  - Short-lived pairing token (optional, for auth)
-- `[ ]` Mobile side: `PairingScreen` scans QR, extracts peer info, saves to local peer directory
-- `[ ]` Mobile sends `hello.request` to bridge agent via relay
+**Desktop/host side (done):**
+- `[x]` EnvoyMesh node exposes pairing QR code in Social UI (Settings → Node tab) containing:
+  - Home node's libp2p peer ID (`relayPeerId` — for `dialHints` / diagnostics)
+  - Bridge agent's peer ID (`agentPeerId`)
+  - Bridge agent's public key PEM (`agentPubKey`)
+  - WebSocket URL to the node (`wsUrl`, derived from LAN multiaddr)
+  - QR rendered via `qrcode` library as 256x256 PNG data URL
+  - "Copy URI" button for manual `envoy://pair?...` sharing
+
+**Mobile side (remaining):**
+- `[ ]` `PairingScreen` scans QR, extracts peer info, saves to local peer directory
+- `[ ]` Mobile sends `hello.request` to bridge agent via `forwardEnvelope`
 - `[ ]` Desktop node auto-accepts hello from own owner's other device (trust-on-first-use or pre-shared key verification)
 - `[ ]` After pairing: bridge agent appears in mobile friend list as "HomeClaw"
 - `[ ]` Pairing state persisted across app restarts (SharedPreferences)
@@ -1751,4 +1781,4 @@ Tasks:
 | 2026-04-30 | **Relay graph + manager baseline:** added typed relay protocol primitives, in-memory relay roster/book/summary state, summary-guided bounded relay lookup routing, loop/negative-cache controls, `relay.manager.snapshot`, `relay-status`, desktop Relay Manager panel, tests, and docs. |
 | 2026-04-30 | **Relay stability baseline:** added relay health scoring, local health audit traces, bounded soft-repair actions, health fields in Relay Manager snapshots/CLI/dashboard, and supervisor recipes for macOS, Linux, Windows, Docker, and Kubernetes. |
 | 2026-05-12 | **Phase 10 planned:** HomeClaw App P2P integration design. Phase 10A (mobile relay client): thin Dart P2P layer with Ed25519 identity, canonical JSON signing, relay WebSocket client, EnvoyNodeService, Flutter UI integration, and QR pairing flow. Phase 10B (full libp2p in Dart): replace relay-only client with libp2p_dart for direct P2P connections with relay fallback. Detailed task breakdowns, file summaries, risks, mitigations, and key decisions documented. |
-| 2026-05-13 | **Phase 10A progress (server-side):** `forwardEnvelope` RPC wired in Node `WsServer` and `NodeServiceImpl` — forwards P2P envelopes from remote relay clients to any peer. `getPairingPayload` RPC returns pairing QR payload (`wsUrl`, `relayPeerId`, `agentPeerId`, `agentPubKey`). Pairing QR display added to Social app for mobile app pairing. Bridge agent credential hardening, body size limits, transport coexistence design documented. Relay health cycle and node health monitoring added. |
+| 2026-05-13 | **Phase 10A server-side complete:** All TypeScript/Node infrastructure for mobile P2P client is shipped. `forwardEnvelope` RPC forwards signed envelopes from mobile to any P2P peer via home node. `getPairingPayload` RPC returns `wsUrl`, `relayPeerId`, `agentPeerId`, `agentPubKey` for QR pairing. `getBridgeStatus` RPC returns bridge agent status. `p2p:envelope` push event auto-subscribed for all WebSocket clients. Pairing QR display in Social UI (Settings → Node tab) renders `envoy://pair?...` as 256x256 PNG. Bridge module hardened with agent credential validation, 64KB body size limit, and transport coexistence design. Relay health monitoring (`relay-health.ts`) and node health monitoring (`node-health.ts`) with 30s periodic checks, auto-restart, and supervisor exit. All remaining Phase 10A tasks are on the Dart/Flutter side (in HomeClawApp repo). |
