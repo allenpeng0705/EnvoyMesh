@@ -76,15 +76,17 @@ describe("ToolRegistry", () => {
       });
 
       const tools = registry.listTools();
-      // 24 default tools + 2 additional = 26
-      expect(tools).toHaveLength(26);
+      // 30 default tools + 2 additional = 32
+      expect(tools).toHaveLength(32);
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "bond.send_hello", "chat.send", "discovery.search", "knowledge.query",
-          "mesh.acknowledge-escalation", "mesh.add-trigger", "mesh.get-contact-disclosure",
-          "mesh.get-external-agent", "mesh.get-mode", "mesh.get-style",
+          "mesh.acknowledge-escalation", "mesh.add-trigger", "mesh.approve",
+          "mesh.escalate", "mesh.get-contact-disclosure", "mesh.get-external-agent",
+          "mesh.get-mode", "mesh.get-style", "mesh.list-all-approvals",
           "mesh.list-external-agent-actions", "mesh.list-external-sessions",
-          "mesh.list-sessions", "mesh.list-triggers", "mesh.remove-trigger",
+          "mesh.list-pending", "mesh.list-sessions", "mesh.list-triggers",
+          "mesh.reject", "mesh.reject-all", "mesh.remove-trigger",
           "mesh.revoke-external-agent", "mesh.session-summary", "mesh.set-contact-disclosure",
           "mesh.set-contact-mode", "mesh.set-mode", "mesh.set-style", "mesh.update-trigger",
           "share.send", "tool.1", "tool.2", "vault.search",
@@ -95,8 +97,8 @@ describe("ToolRegistry", () => {
     it("default tools are pre-registered", () => {
       const registry = new ToolRegistry();
       const tools = registry.listTools();
-      // Default tools: 6 core + 4 gateway + 3 mode + 3 session + 4 style + 4 trigger = 24
-      expect(tools.length).toBe(24);
+      // Default tools: 6 core + 4 gateway + 3 mode + 3 session + 4 style + 4 trigger + 6 approval = 30
+      expect(tools.length).toBe(30);
     });
   });
 

@@ -435,6 +435,98 @@ export class ToolRegistry {
       isMeshTool: false,
     });
 
+    // Approval queue tools (Phase 9H)
+    this.register({
+      name: "mesh.list-pending",
+      description: "List all pending approval items (optionally filtered by contact)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          contactOwnerId: { type: "string", description: "Filter by contact owner ID" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.approve",
+      description: "Approve a pending action in the approval queue",
+      paramSchema: {
+        type: "object",
+        properties: {
+          itemId: { type: "string", description: "The approval item ID" },
+          notes: { type: "string", description: "Optional notes" },
+        },
+        required: ["itemId"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: true,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.reject",
+      description: "Reject a pending action in the approval queue",
+      paramSchema: {
+        type: "object",
+        properties: {
+          itemId: { type: "string", description: "The approval item ID" },
+          notes: { type: "string", description: "Optional notes" },
+        },
+        required: ["itemId"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: true,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.reject-all",
+      description: "Reject all pending approval items at once",
+      paramSchema: {
+        type: "object",
+        properties: {
+          notes: { type: "string", description: "Optional notes applied to all rejections" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: true,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.escalate",
+      description: "Escalate a pending item with a reason (low confidence, emotional content, etc.)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          itemId: { type: "string", description: "The approval item ID" },
+          reason: { type: "string", enum: ["low_confidence", "emotional_content", "sensitive_topic", "high_cost", "manual"], description: "Reason for escalation" },
+        },
+        required: ["itemId", "reason"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.list-all-approvals",
+      description: "List all approval items regardless of status including approved, rejected, expired",
+      paramSchema: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
     // Session manager tools (Phase 9E)
     this.register({
       name: "mesh.list-sessions",

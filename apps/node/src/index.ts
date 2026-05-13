@@ -115,6 +115,7 @@ import { ModeController, createDefaultModeConfig } from "./mode-controller.js";
 import { FileSessionStore, SessionManager } from "./session-manager.js";
 import { StyleAdapter } from "./style-adapter.js";
 import { TriggerStore } from "./trigger-store.js";
+import { ApprovalQueue, createApprovalItem } from "./approval-queue.js";
 import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
@@ -1422,6 +1423,37 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
               } catch (err) {
                 console.warn(`[chat] auto-send failed:`, err);
               }
+            } else if (draftText) {
+              // Phase 9H: Queue draft for owner approval when auto-send is not allowed
+              const item = createApprovalItem(
+                "send_chat",
+                `Reply to ${senderDisplayName}`,
+                `AI-drafted reply: "${draftText.slice(0, 80)}${draftText.length > 80 ? "..." : ""}"`,
+                draftText,
+                {
+                  contactOwnerId: payload.senderOwnerId,
+                  contactDisplayName: senderDisplayName,
+                },
+                bondLevel === "direct" ? "normal" : "low",
+              );
+              approvalQueue.add(item);
+              const denyReason = autoSendPolicy.allowed ? "policy" : autoSendPolicy.reason;
+              console.log(`[approval] queued draft ${item.id} for owner review (auto-send denied: ${denyReason})`);
+              void taskStore.appendAuditEvent(
+                createAuditEvent({
+                  type: "model.routed",
+                  intent: "chat.message",
+                  messageId: envelope.messageId,
+                  correlationId,
+                  remotePeerId,
+                  direction: "inbound",
+                  verificationStatus: "verified",
+                  latencyMs: Date.now() - receivedAt,
+                  outcome: "record",
+                  summary: `approval queued: ${item.id} action=send_chat contact=${payload.senderOwnerId}`,
+                  createdAt: new Date().toISOString(),
+                }),
+              );
             }
           }
         }).catch((err) => console.warn(`[chat-draft] generation failed:`, err));
@@ -1928,6 +1960,7 @@ const modeController = new ModeController(createDefaultModeConfig(), taskStore);
 const sessionManager = new SessionManager(new FileSessionStore(join(args.profileDir, "sessions")));
 const styleAdapter = new StyleAdapter();
 const triggerStore = new TriggerStore();
+const approvalQueue = new ApprovalQueue();
 const wsServer = new WsServer(3030, "/ws", {
   onConnectionChange: (connectedCount) => {
     if (connectedCount > 0) {
@@ -1970,6 +2003,11 @@ modeTransitionTimer = setInterval(() => {
         createdAt: now.toISOString(),
       }),
     );
+  }
+  // Expire old approval items (Phase 9H)
+  const expiredIds = approvalQueue.expireOldItems();
+  if (expiredIds.length > 0) {
+    console.log(`[approval] expired ${expiredIds.length} items`);
   }
 }, 30000);
 
