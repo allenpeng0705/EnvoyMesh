@@ -70,7 +70,7 @@ Product-level **user stories and epics** (discovery, broadcast termination, comm
 
 **Story-driven principle:** Implementation phases stay anchored to **testable** entries in `scenarios.md`. Narrative text in `UserStory.md` becomes plan items only when it gains acceptance criteria and (usually) a scenario id.
 
-**North-star steps:** `[x]` protocol and trust boundaries · `[x]` local signed node · `[x]` P2P discovery/transport · `[x]` shared vault + policy · `[x]` model routing package behind policy · `[x]` node runtime uses model router for real `knowledge.query` · `[x]` agent/tool orchestration behind sandbox · `[x]` safe discovery/broadcast at scale · `[x]` agent identity, tool registry, proactive autonomy, digest (Phase 9A–9J).
+**North-star steps:** `[x]` protocol and trust boundaries · `[x]` local signed node · `[x]` P2P discovery/transport · `[x]` shared vault + policy · `[x]` model routing package behind policy · `[x]` node runtime uses model router for real `knowledge.query` · `[x]` agent/tool orchestration behind sandbox · `[x]` safe discovery/broadcast at scale · `[x]` agent identity, tool registry, proactive autonomy, digest (Phase 9A–9K).
 
 **Prioritization:** **Active next** — [Phase 8A](#8a-real-knowledgequery-with-model-router-and-vault) real `knowledge.query` with vault + model router + signed response. **Still important but not blocking Phase 8A:** live multi-machine WAN relay/DCUtR validation, operator relay defaults, and connectivity diagnostics. **Parked for now:** satellite / thin mobile UI product path, commerce, global reputation ledger, and broad anonymous broadcast. EnvoyMesh will stay libp2p/relay-first for discovery and coordination; no external signaling track is planned.
 
@@ -775,7 +775,7 @@ Tasks:
 - `[x]` Add `profile-context` tool: reads owner's human profile (interests, bio, knowledge)
 - `[x]` Add `vault-context` tool: searches vault for relevant documents
 - `[x]` Add `graph-context` tool: queries knowledge graph for relationship paths (stubbed)
-- `[ ]` Implement context injection: prepend relevant context to model prompts (deferred to agent runtime integration)
+- `[x]` Implement context injection: prepend relevant context to model prompts (wired in Phase 9C)
 - `[x]` Context is only injected when explicitly relevant (no unbounded injection)
 
 **Implementation Details:**
@@ -1078,20 +1078,20 @@ Tasks:
 ### Exit Criteria (Phase 9)
 
 - `[x]` Agent has its own peer identity, cryptographically linked to owner
-- `[~]` Agent can execute mesh intents via extensible tool registry module; daemon runtime wiring remains partial.
-- `[~]` Agent context modules exist (conversation, relationships, vault, graph); prompt/runtime injection remains partial.
-- `[~]` Reactive/proactive mode controller exists; live daemon scheduling/event wiring remains partial.
-- `[~]` Session management module exists; inbound chat/runtime integration remains partial.
-- `[~]` Style adapter module exists; live chat draft/runtime integration remains partial.
-- `[~]` Proactive trigger storage/checking exists; live trigger scheduler remains partial.
-- `[~]` Approval queue module exists; sensitive-action runtime integration remains partial.
-- `[ ]` External agents (OpenClaw/HomeClaw) access mesh only via local tools API.
-- `[~]` Owner receives periodic digest of agent activities; digest generator exists, but runtime aggregation/notification remains partial.
+- `[x]` Agent can execute mesh intents via extensible tool registry module; daemon runtime wired (9B).
+- `[x]` Agent context modules exist (conversation, relationships, vault, graph); prompt/runtime injection wired (9C).
+- `[x]` Reactive/proactive mode controller exists; live daemon scheduling/event wiring complete (9D).
+- `[x]` Session management module exists; inbound chat/runtime integration complete (9E).
+- `[x]` Style adapter module exists; live chat draft/runtime integration complete (9F).
+- `[x]` Proactive trigger storage/checking exists; live trigger scheduler complete (9G).
+- `[x]` Approval queue module exists; sensitive-action runtime integration complete (9H).
+- `[x]` External agents (OpenClaw/HomeClaw) access mesh only via local tools API (9I).
+- `[x]` Owner receives periodic digest of agent activities; digest generator and runtime aggregation complete (9J).
 - `[x]` External agents can participate in P2P conversations via HTTP bridge (9K)
 
 ## Current Milestone
 
-Milestone: **Phase 9 bridge hardening in progress** — Agent credential primitives and the P2P HTTP bridge are shipped and wired; several Phase 9 agent-runtime modules exist as tested scaffolding but still need daemon integration before Phase 9 can be called complete. Next: wire the local tools API / gateway, context/session/style/mode runtime, digest aggregation, and cross-network P2P readiness validation.
+Milestone: **Phase 9 complete** — All agent-runtime modules (tool registry, context injection, mode controller, session manager, style adapter, proactive triggers, approval queue, external agent gateway, digest generator, P2P bridge) are shipped, tested, and wired into the daemon runtime. Agent identity is cryptographically linked to owner. External agents access mesh via local tools API only. Next: Phase 8A real `knowledge.query` with vault + model router + signed response; cross-network P2P readiness validation.
 
 ### Phase 9 Architecture Overview
 
@@ -1721,6 +1721,7 @@ Tasks:
 | 2026-05-06 | **Phase 8B complete:** model provider config (`mock`/`ollama`/`litellm`/`disabled`) in `PersistedNodeConfig` and `NodeConfig`, `buildModelProviders()` factory in `knowledge-query-inbound.ts` routing to `createMockModelProvider`/`createOllamaLiteLlmProvider`/`createLiteLlmProvider` based on mode, `modelProviders` loaded from persisted config at node startup and passed to knowledge-query handler, `model-config` CLI command for inspection, 6 model provider config tests, `docs/run-local-model.md` runbook. Cloud/litellm providers default to `requireApprovalForCloud=true` enforced via `evaluateModelProvider` in `@envoymesh/models`. Phase 8B exit criteria: all `[x]`. |
 | 2026-05-06 | **Phase 8A complete:** replaced mock `knowledge.query` handler with real policy-gated path: `evaluatePolicy` via `@envoymesh/bonds`, vault search via `searchVault()`, model routing via `routeModelRequest()` with mock provider, signed `knowledge.response` envelope sent back to sender, full audit trail (`message.verified`, `policy.decided`, `vault.searched`, `model.routed`, `message.sent`). Added `KnowledgeResponsePayloadSchema` + `createKnowledgeResponsePayload` to `@envoymesh/protocol`. Added `policy.decided`, `vault.searched`, `model.routed` to `AuditEventType`. Wired `@envoymesh/models` into `apps/node` with new tsconfig reference. 5 unit tests covering blocked/stranger/bonded/vault paths. Phase 8A exit criteria: all `[x]`. |
 | 2026-05-12 | **Phase 9K complete:** P2P bridge for external agents in `apps/node/src/bridge/`. Self-contained module (4 files) makes EnvoyMesh Node act as a message pipe between P2P chat and external agents (OpenClaw, HomeClaw, Hermes). Bridge has its own agent peer identity derived from owner + agent keypair, persisted across restarts. HTTP callback server on port 3031 receives agent replies via `POST /bridge/send`. P2P handler forwards `chat.message` addressed to bridge's agent peer ID to external agent HTTP endpoint. Updated role-policy to allow agent↔human chat. 15 unit tests (pipe + identity store). |
+| 2026-05-13 | **Phase 9 complete — all modules wired into daemon runtime:** Wired 9D (ModeController with `onConnectionChange` callback on WsServer, `recordOwnerActivity`, 30s periodic mode transitions), 9E (SessionManager recording inbound chat messages), 9F (StyleAdapter learning from outbound chat, adapting AI drafts), 9G (TriggerStore topic trigger checking on inbound chat, time triggers in periodic timer), 9H (ApprovalQueue fallback when auto-send policy denies), 9I (ExternalAgentGateway tools registered), 9J (DigestGenerator aggregation in periodic timer). All 33 default tools registered across 6 core + 4 gateway + 3 mode + 3 session + 4 style + 4 trigger + 6 approval + 3 digest = 33. Updated `chat-draft-inbound.ts` with mode guard and context injection. Updated `knowledge-query-inbound.ts` with context injection. Extended `AuditEventType` with `"trigger.fired"`. Added `onConnectionChange` to WsServer. Added `"trigger:fired"` and `"digest:ready"` to ws-server auto-subscribe list. Added `setStyleAdapter()` to NodeServiceImpl. Phase 9 exit criteria: all `[x]`. |
   1240→| 2026-05-10 | **Social app refactoring:** decomposed the 2,677-line `App.tsx` monolith into 16 focused components (`Header`, `ErrorBoundary`, view components under `components/views/`); extracted `NodeStateContext` with event-driven connection tracking (no polling); extracted shared utils (`lib/display.ts`, `lib/storage.ts`); fixed bugs (stale closure in `SearchView`, `any` types in `getProfile()`, imperative DOM access in rule builder form, missing null-safety); added `ErrorBoundary` for crash recovery; added 33 unit/component tests with `@testing-library/react` + jsdom across 5 test files; updated vitest config for `.tsx` test files. |
 | 2026-05-05 | **Phase 8 agentic normal node roadmap:** linked [Agentic next step](./next-step.md), made Phase 8A real `knowledge.query` the active milestone, added detailed 8A-8L tasks/exit criteria, updated current pulls, coverage, key decisions, and open questions. |
 | 2026-04-26 | Related-doc strip, north-star checkline, Phase 4A Full Node defer → `[x]`, Phase 6 semantic-firewall exit criterion, open-question table **Status** headers, Immediate tasks disclaimer, backlog footer unchanged in meaning. |
