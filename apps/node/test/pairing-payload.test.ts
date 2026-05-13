@@ -41,6 +41,8 @@ describe("NodeServiceImpl getPairingPayload", () => {
     expect(p.relayPeerId).toBe("12D3KooWHome");
     expect(p.agentPeerId).toBeUndefined();
     expect(p.agentPubKey).toBeUndefined();
+    expect(typeof p.token).toBe("string");
+    expect(p.token.length).toBeGreaterThan(8);
   });
 
   it("uses bridge agent PEM in agentPubKey when bridge is enabled", async () => {

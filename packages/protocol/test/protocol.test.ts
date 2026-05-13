@@ -273,6 +273,7 @@ describe("protocol", () => {
       requesterDeviceId: "envoy:device:alice-laptop",
       requesterDevicePublicKeyPem: "alice-device-key",
       note: "Please pair this device.",
+      pairingToken: "tok_qr_scan_01",
     });
     expect(parseDevicePairRequestPayload(request)).toEqual(request);
 

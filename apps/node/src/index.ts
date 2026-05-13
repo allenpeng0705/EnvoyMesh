@@ -1489,6 +1489,43 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       return;
     }
 
+    const persistedCfg = await nodeConfigStore.load();
+    const allowAuto =
+      persistedCfg?.companionPairingAutoAcceptWithToken === true &&
+      Boolean(payload.pairingToken) &&
+      nodeService instanceof NodeServiceImpl &&
+      nodeService.validatePairingToken(payload.pairingToken!);
+
+    if (allowAuto) {
+      await trustStore.setTrustRecord({
+        peerOwnerId: payload.requesterOwnerId,
+        level: "direct",
+        displayName: "Companion",
+        note: "device.pair.request auto-accepted (pairing token)",
+      });
+      await peerDirectoryStore.ensurePeerFromInboundChat({
+        ownerId: payload.requesterOwnerId,
+        peerId: remotePeerId,
+        listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
+      });
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.verified",
+          intent: "device.pair.request",
+          messageId: envelope.messageId,
+          correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "verified",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "allow",
+          summary: `Auto-accepted companion pairing (pairingToken) for ${payload.requesterOwnerId}.`,
+          createdAt: envelope.createdAt,
+        }),
+      );
+      return;
+    }
+
     const context = Buffer.from(
       JSON.stringify({
         requestId: payload.requestId,

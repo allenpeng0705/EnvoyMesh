@@ -1249,14 +1249,14 @@ Today the HomeClaw App connects to HomeClaw Core via HTTP to a public URL (`POST
 
 **Goal:** Implement a thin EnvoyMesh P2P layer in Dart that the HomeClawApp embeds. The Dart layer connects to the home node's WebSocket server and speaks JSON-RPC + signed envelopes. No full libp2p stack on mobile — the home node handles DHT, peer discovery, and message routing.
 
-**Current status (2026-05-13):** Server-side pieces in **this repo** are in place (`forwardEnvelope`, `getPairingPayload`, `getBridgeStatus`, pairing QR in Social, bridge hardening, health watchdogs). The **HomeClawApp** companion repo (`HomeClaw/clients/HomeClawApp`, sibling to EnvoyMesh) contains the Dart implementation (`lib/envoy/*`, `test/envoy/*`, pairing screen + providers). **Gap:** treat Phase 10A exit criteria (full manual E2E on device, polish) as verification, not “not started.”
+**Current status (2026-05-13):** Server-side pieces in **this repo** are in place (`forwardEnvelope`, `getPairingPayload`, optional token-based companion auto-pair (`companionPairingAutoAcceptWithToken`), pairing QR in Social, bridge hardening, health watchdogs). The **HomeClawApp** companion repo (`HomeClaw/clients/HomeClawApp`, sibling to EnvoyMesh) contains the Dart implementation (`lib/envoy/*`, `test/envoy/*`). **Interop:** committed envelope golden vectors (`packages/identity/test/fixtures/companion_envelope_interop_golden.json` + mirrored in HomeClawApp); `relayReconnectDelayMs` unit-tested. Manual LAN verification: **`docs/phase-10a-manual-e2e.md`** (10A.7).
 
 #### Server-side infrastructure (completed on TypeScript/Node side)
 
 | Component | File | What it does |
 |-----------|------|--------------|
 | `forwardEnvelope` RPC | `ws-server.ts`, `node-service-impl.ts` | Forwards a signed `EnvoyEnvelope` to any P2P peer on behalf of the mobile client |
-| `getPairingPayload` RPC | `ws-server.ts`, `node-service-impl.ts` | Returns `wsUrl`, `relayPeerId`, `agentPeerId`, `agentPubKey` for QR pairing |
+| `getPairingPayload` RPC | `ws-server.ts`, `node-service-impl.ts` | Returns `wsUrl`, `relayPeerId`, optional `agentPeerId`, `agentPubKey`, **`token`** (short-lived pairing secret for optional auto-accept) |
 | `getBridgeStatus` RPC | `ws-server.ts`, `node-service-impl.ts` | Returns bridge agent status (peer ID, enabled state, agent name) |
 | `p2p:envelope` push event | `ws-server.ts` | Auto-subscribed; pushes raw inbound envelopes to mobile client |
 | Pairing QR display | `apps/social/.../SettingsNodeTab.tsx` | Renders `envoy://pair?...` QR code in Social UI for mobile to scan |
@@ -1274,10 +1274,11 @@ Canonical path: **`HomeClaw/clients/HomeClawApp`** (sibling checkout next to Env
 |------|----------|
 | Ed25519 identity + peer / owner ID | `lib/envoy/envoy_identity.dart`; tests `test/envoy/envoy_identity_test.dart` |
 | Protocol types, signing helpers, `PairingPayload` URI | `lib/envoy/envoy_protocol.dart`; tests `test/envoy/envoy_protocol_test.dart` |
-| JSON-RPC WebSocket client (`forwardEnvelope`, `getNodeConfig`, `getBonds`, `p2p:envelope`) | `lib/envoy/relay_client.dart`; tests `test/envoy/relay_client_test.dart` |
-| `EnvoyNodeService`, pairing persistence, chat routing hooks | `lib/envoy/envoy_node_service.dart`; tests `test/envoy/envoy_node_service_test.dart` |
+| JSON-RPC WebSocket client (`forwardEnvelope`, `getNodeConfig`, `getBonds`, `getBridgeStatus`, `p2p:envelope`, `bridge:status`, `relayDispatchServerPush`, exponential reconnect helper `relayReconnectDelayMs`) | `lib/envoy/relay_client.dart`; tests `test/envoy/relay_client_test.dart` |
+| `EnvoyNodeService`, pairing persistence, `fetchP2PContacts()`, bridge status stream | `lib/envoy/envoy_node_service.dart`; tests `test/envoy/envoy_node_service_test.dart` |
 | Pairing / QR flows | `lib/screens/envoy_pairing_screen.dart`, `test/envoy/pairing_flow_test.dart` |
-| Riverpod wiring | `lib/providers/envoy_providers.dart` |
+| Riverpod wiring + disconnect clears contacts | `lib/providers/envoy_providers.dart` |
+| Global sync: reconnect + bridge pushes refresh contacts | `lib/widgets/envoy_mesh_riverpod_sync.dart` (wired from `lib/main.dart`) |
 
 **2026-05 interop fixes (HomeClawApp):** JSON-RPC responses now use the **`result` payload** (not the full `{ id, result }` wrapper) so `getNodeConfig` / `discoverBridgeAgent` read `bridgeStatus` correctly. Pairing QR **`agentPubKey`** encoding avoids double-`encodeComponent`. Bridge display name uses `agentName` from node config when present.
 
@@ -1295,14 +1296,15 @@ Tasks:
 - `[x]` Implement `signEnvelope()`: sign canonical JSON of unsigned envelope with Ed25519 private key
 - `[x]` Implement `verifyEnvelope()`: verify Ed25519 signature against claimed public key
 - `[x]` Implement owner ID derivation: `ownerId = "envoy:owner:" + base64url(sha256(ownerPublicKeyPem))`
-- `[~]` Unit tests: cross-verify signatures between Dart and TypeScript (sign in Dart, verify in TS, and vice versa) — strengthen if not automated in CI
+- `[x]` Unit tests: cross-verify **peer ID / owner ID** with TypeScript using committed PEM + expected ids (`packages/identity/test/fixtures/companion_identity_golden.json`, `packages/identity/test/identity.test.ts`; HomeClawApp `test/fixtures/` + `test/envoy/golden_identity_fixture_test.dart`)
+- `[x]` Unit tests: **`system.ping` envelope golden** (`companion_envelope_interop_golden.json`) — Dart `signCanonicalPayload` / `verifyCanonicalPayload` match TypeScript (`packages/identity/test/identity.test.ts`, `test/envoy/companion_envelope_interop_test.dart`)
 
 **Key dependency:** `cryptography` ^2.9.0 (already in HomeClawApp pubspec.yaml for E2E encryption)
 
 **Exit criteria:**
-- `[~]` Dart-generated peer ID matches TypeScript peer ID for the same keypair (covered by unit tests; optional CI matrix)
-- `[~]` Dart-signed envelope verifies in TypeScript, and vice versa
-- `[~]` Canonical JSON output is byte-identical between Dart and TypeScript
+- `[x]` Dart-generated peer ID matches TypeScript for the same public key PEM (golden fixture; CI: `vitest` + `flutter test`)
+- `[x]` Dart-signed envelope verifies in TypeScript **and Dart matches TS fixture signature** (golden `companion_envelope_interop_golden.json`; `vitest` + `flutter test test/envoy/companion_envelope_interop_test.dart`)
+- `[~]` Canonical JSON byte-identical for representative envelopes (string sort covered; full parity TBD)
 
 #### 10A.2: EnvoyMesh Protocol Schemas in Dart
 
@@ -1366,9 +1368,9 @@ Tasks:
 **Client-side (Dart/Flutter — HomeClawApp):**
 - `[x]` Implement WebSocket client with JSON-RPC request/response handling (`RelayClient` / `_rpc`)
 - `[x]` Parse inbound push events for **`p2p:envelope`** (primary path for raw mesh traffic to the app)
-- `[~]` Parse other push events (`chat:message`, `bridge:status`) — optional; not required if UI consumes envelopes via `p2p:envelope` only
+- `[x]` Parse **`bridge:status`** push (and optional `chat:message` if added server-side); `RelayClient.onBridgeStatus` / `relayDispatchServerPush` unit-tested
 - `[x]` `getNodeConfig` / `getBonds` use unwrapped JSON-RPC **`result`** (fix 2026-05)
-- `[~]` Call `getPairingPayload` / `getBridgeStatus` after connect for UI state (available via RPC; wiring depth varies by screen)
+- `[x]` Call **`getBridgeStatus`** after connect (primes UI / [`onBridgeStatusFromNode`]); `getPairingPayload` remains QR / pairing screen (not repeated every connect)
 - `[x]` Reconnection: exponential backoff on disconnect (see `RelayClient`)
 - `[x]` Unit tests: `test/envoy/relay_client_test.dart` and related
 
@@ -1376,7 +1378,7 @@ Tasks:
 
 - `[x]` Dart client can connect to a running EnvoyMesh node WebSocket
 - `[~]` Can send a signed envelope via `forwardEnvelope` and receive chat-related pushes on the same connection (unit + integration coverage; full device E2E under 10A.7)
-- `[~]` Reconnect path is tested or exercised manually
+- `[~]` Reconnect path is tested or exercised manually (backoff in [RelayClient]; no automated reconnect integration test)
 
 #### 10A.4: EnvoyNodeService — Flutter Integration Layer
 
@@ -1391,8 +1393,9 @@ Tasks:
 - `[x]` Connection lifecycle: `connect(homeNodeUrl)` / `disconnect`; state via `RelayClient`
 - `[x]` Messaging: `sendChat` / `sendChatToOwner` → signed `chat.message` via `forwardEnvelope`
 - `[x]` Inbound events: `onChatMessage` stream from parsed `p2p:envelope` chat messages
-- `[x]` Peer directory: `getBonds()` via JSON-RPC
-- `[~]` Pairing: `pairWithPeer` / full hello bond flow — app uses **`device.pair.request`** to bridge agent post-QR (see 10A.6), not only `hello.request`
+- `[x]` Peer directory: `getBonds()` via JSON-RPC; **`fetchP2PContacts()`** combines `discoverBridgeAgent()` + bonds for the friend list
+- `[x]` Bridge status stream: **`onBridgeStatusFromNode`** (from `bridge:status` push forwarded by `RelayClient`)
+- `[x]` Pairing: app uses **`device.pair.request`** to bridge agent post-QR (see 10A.6); legacy `hello.request`-only flow not required for companion
 - `[x]` Bridge agent: `discoverBridgeAgent()` reads `bridgeStatus` from `getNodeConfig()` (uses `agentName` when present)
 - `[x]` Chat history: persistence hooks via `ChatHistoryStore`
 - `[x]` Persist incoming messages to existing Hive-backed chat store where wired
@@ -1400,27 +1403,27 @@ Tasks:
 
 **Exit criteria:**
 - `[~]` Flutter app can send a chat message to HomeClaw Core via P2P and receive a reply (verify on device / Core — 10A.7)
-- `[~]` Chat messages appear in the existing chat UI (Hive store + ChatScreen) when P2P path selected
-- `[~]` Bridge agent appears as a contact in the friend list (see FriendList / settings integration)
+- `[~]` Chat messages appear in the existing chat UI (Hive keys aligned with Envoy owner id; inbound P2P appended to Hive — verify persistence on device)
+- `[~]` Bridge agent appears as a contact in the friend list (implemented; verify with live node — 10A.7)
 
 #### 10A.5: Flutter UI Integration
 
 **Goal:** Wire the EnvoyNodeService into the existing HomeClawApp UI without breaking existing features.
 
-**Touches (HomeClawApp):** `lib/screens/friend_list_screen.dart`, `lib/screens/settings_screen.dart`, `lib/screens/chat_screen.dart`, `lib/screens/envoy_pairing_screen.dart`, `lib/providers/envoy_providers.dart`.
+**Touches (HomeClawApp):** `lib/screens/friend_list_screen.dart`, `lib/screens/settings_screen.dart`, `lib/screens/chat_screen.dart`, `lib/screens/envoy_pairing_screen.dart`, `lib/providers/envoy_providers.dart`, `lib/widgets/envoy_mesh_riverpod_sync.dart`, `lib/main.dart`.
 
 Tasks:
 
 - `[x]` Add `EnvoyNodeService` Riverpod provider to `providers/` (alongside existing `coreServiceProvider`)
-- `[~]` Add node status indicator to FriendListScreen (connected/disconnected dot)
-- `[~]` Add bridge agent contact to friend list when bridge is enabled (shows "HomeClaw" with preset avatar)
-- `[~]` Route P2P messages in ChatScreen: if friend is a P2P peer, use `EnvoyNodeService.sendChat()` instead of `CoreService.sendMessage()`
-- `[~]` Route inbound P2P messages: subscribe to `EnvoyNodeService.onChatMessage`, persist to Hive
-- `[x]` Add pairing screen: QR / pairing flow (`envoy_pairing_screen.dart`)
-- `[~]` Add relay config to SettingsScreen: relay address, pairing status
-- `[~]` Preset friends (Reminder, Files, Knowledge, etc.) continue using `CoreService` HTTP path — they talk to Core directly when Core is reachable via P2P bridge agent
-- `[~]` Keep existing HTTP/CoreService path as fallback if P2P is not configured
-- `[~]` Unit/Widget tests: `test/envoy/envoy_ui_integration_test.dart` and related
+- `[x]` **`EnvoyMeshRiverpodSync`**: listens to connection + `onBridgeStatusFromNode`, refreshes `fetchP2PContacts()` when connected, calls `setDisconnected()` on loss (clears P2P contacts)
+- `[x]` Add node status indicator to FriendListScreen (connected/disconnected dot in app bar when P2P identity initialized)
+- `[x]` Add bridge agent contact to friend list when bridge is enabled (prepend tile from `envoyMeshProvider.contacts`)
+- `[x]` Route P2P messages in ChatScreen: `isP2pPeer` → `EnvoyNodeService.sendChat` / `sendChatToOwner`
+- `[x]` Route inbound P2P messages: `onChatMessage` subscription; **`ChatHistoryStore.appendMessage`** for assistant lines (Hive keys match outbound `EnvoyNodeService` persistence)
+- `[x]` Add relay config to SettingsScreen: home node URL, status dot, peer/owner ids, **saved URL + QR pairing hint**, Scan QR
+- `[x]` Preset friends (Reminder, Files, Knowledge, etc.) continue using `CoreService` HTTP path — unchanged
+- `[x]` Keep existing HTTP/CoreService path as fallback if P2P is not configured
+- `[~]` Unit/Widget tests: `test/envoy/envoy_ui_integration_test.dart` (notifier + merge logic); full widget tests optional
 
 **Exit criteria:**
 - `[~]` Bridge agent contact appears and is tappable
@@ -1440,14 +1443,15 @@ Tasks:
   - Bridge agent's peer ID (`agentPeerId`)
   - Bridge agent's public key PEM (`agentPubKey`)
   - WebSocket URL to the node (`wsUrl`, derived from LAN multiaddr)
+  - **`token`** — short-lived pairing secret (when `getPairingPayload` issues one); included in QR URI for optional companion auto-accept (`companionPairingAutoAcceptWithToken` on the node)
   - QR rendered via `qrcode` library as 256x256 PNG data URL
   - "Copy URI" button for manual `envoy://pair?...` sharing
 
 **Mobile side (HomeClawApp — partial / verify):**
 - `[x]` `PairingPayload` encode/decode (`envoy://pair`), persistence (`savePairedNodeInfo` / `getPairedNodeInfo`)
 - `[x]` **`device.pair.request`** to bridge agent peer (post-scan) via `forwardEnvelope` — this is the implemented bond request path (not `hello.request` alone)
-- `[~]` Desktop node policy for auto-accept / owner approval of device pair requests — depends on node trust workflow (see Phase 4A pairing)
-- `[~]` After pairing: bridge agent in friend list — UI integration ongoing (`[~]` in 10A.5)
+- `[x]` **`device.pair.request`** may include **`pairingToken`** (QR `token`). When **`companionPairingAutoAcceptWithToken`** is enabled on the home node (`updateNodeConfig` / persisted config), inbound requests with a valid token matching the latest `getPairingPayload()` issue are **auto-accepted** (direct trust + peer directory entry) without owner approval queue. Default remains approval/deferred behaviour when unset/false.
+- `[x]` After pairing: bridge agent in friend list when node reports bridge + contacts load (`fetchP2PContacts`)
 - `[x]` Pairing state persisted (SharedPreferences)
 - `[x]` Unit tests: `test/envoy/pairing_flow_test.dart` (URI, device pair payload, persistence)
 
@@ -1459,6 +1463,8 @@ Tasks:
 #### 10A.7: End-to-End Verification
 
 **Goal:** Prove the Dart client works with the real EnvoyMesh **home node** (WebSocket) and TypeScript bridge.
+
+**Runbook:** `docs/phase-10a-manual-e2e.md` (checklist; tick below when executed on hardware).
 
 Tasks:
 
@@ -1703,7 +1709,7 @@ Tasks:
 | Create | `lib/envoy/envoy_identity.dart` | Ed25519 keys, peer ID, canonical JSON, signing |
 | Create | `lib/envoy/envoy_envelope.dart` | EnvoyEnvelope types, constructors, parsers |
 | Create | `lib/envoy/envoy_protocol.dart` | Chat message, hello payload schemas |
-| Create | `lib/envoy/envoy_relay_client.dart` | WebSocket relay client |
+| Create | `lib/envoy/relay_client.dart` | JSON-RPC WebSocket relay client (`relayDispatchServerPush` for push events) |
 | Create | `lib/envoy/envoy_node_service.dart` | High-level EnvoyNodeService + Riverpod provider |
 | Create | `lib/envoy/envoy_peer_directory.dart` | Local peer/bond storage (SharedPreferences) |
 | Modify | `lib/providers/providers.dart` | Add envoyNodeServiceProvider |
@@ -1714,7 +1720,7 @@ Tasks:
 | Create | `test/envoy/` directory | Dart P2P tests |
 | Create | `test/envoy/envoy_identity_test.dart` | Identity + signing tests |
 | Create | `test/envoy/envoy_protocol_test.dart` | Protocol schema tests |
-| Create | `test/envoy/envoy_relay_client_test.dart` | Relay client mock tests |
+| Create | `test/envoy/relay_client_test.dart` | Relay client + push dispatch tests |
 | Create | `test/envoy/envoy_node_service_test.dart` | Service integration tests |
 
 ### Files Summary (10B)
@@ -1778,8 +1784,11 @@ Tasks:
 | 2026-05-06 | **Phase 8B complete:** model provider config (`mock`/`ollama`/`litellm`/`disabled`) in `PersistedNodeConfig` and `NodeConfig`, `buildModelProviders()` factory in `knowledge-query-inbound.ts` routing to `createMockModelProvider`/`createOllamaLiteLlmProvider`/`createLiteLlmProvider` based on mode, `modelProviders` loaded from persisted config at node startup and passed to knowledge-query handler, `model-config` CLI command for inspection, 6 model provider config tests, `docs/run-local-model.md` runbook. Cloud/litellm providers default to `requireApprovalForCloud=true` enforced via `evaluateModelProvider` in `@envoymesh/models`. Phase 8B exit criteria: all `[x]`. |
 | 2026-05-06 | **Phase 8A complete:** replaced mock `knowledge.query` handler with real policy-gated path: `evaluatePolicy` via `@envoymesh/bonds`, vault search via `searchVault()`, model routing via `routeModelRequest()` with mock provider, signed `knowledge.response` envelope sent back to sender, full audit trail (`message.verified`, `policy.decided`, `vault.searched`, `model.routed`, `message.sent`). Added `KnowledgeResponsePayloadSchema` + `createKnowledgeResponsePayload` to `@envoymesh/protocol`. Added `policy.decided`, `vault.searched`, `model.routed` to `AuditEventType`. Wired `@envoymesh/models` into `apps/node` with new tsconfig reference. 5 unit tests covering blocked/stranger/bonded/vault paths. Phase 8A exit criteria: all `[x]`. |
 | 2026-05-12 | **Phase 9K complete:** P2P bridge for external agents in `apps/node/src/bridge/`. Self-contained module (4 files) makes EnvoyMesh Node act as a message pipe between P2P chat and external agents (OpenClaw, HomeClaw, Hermes). Bridge has its own agent peer identity derived from owner + agent keypair, persisted across restarts. HTTP callback server on port 3031 receives agent replies via `POST /bridge/send`. P2P handler forwards `chat.message` addressed to bridge's agent peer ID to external agent HTTP endpoint. Updated role-policy to allow agent↔human chat. 15 unit tests (pipe + identity store). |
+| 2026-05-13 | **Phase 10A interop + pairing:** Identity golden (`companion_identity_golden.json`); **envelope golden** (`companion_envelope_interop_golden.json`) with vitest (`companion envelope signature`) and `test/envoy/companion_envelope_interop_test.dart`; `relayReconnectDelayMs` backoff unit tests in `relay_client_test.dart`; manual LAN runbook `docs/phase-10a-manual-e2e.md`. **`device.pair.request`** may carry **`pairingToken`**; node **`companionPairingAutoAcceptWithToken`** auto-accepts when token matches `getPairingPayload()` TTL window (§10A.6).
+| 2026-05-13 | **Phase 10A HomeClawApp ([`~`] tasks):** ChatScreen P2P chat Hive keys match `EnvoyNodeService` (`ownerId` + peer or owner friend key); inbound P2P messages persisted with `ChatHistoryStore.appendMessage`; resume lifecycle skips Core sync for P2P. `EnvoyNodeService.connect` calls `getBridgeStatus` and forwards to `onBridgeStatusFromNode`. Settings: pre-fill saved WebSocket URL, pairing hint after QR, refresh after Scan QR. Plan: mark 10A.3/10A.4/10A.5 implementation tasks complete where wired; 10A.7 manual E2E remains. |
+| 2026-05-13 | **Phase 10A client (HomeClawApp):** Documented `bridge:status` handling, `getBridgeStatus`, `fetchP2PContacts()`, `EnvoyMeshRiverpodSync` + `setDisconnected()` contact clearing; extracted `relayDispatchServerPush` in `relay_client.dart` with unit tests for `bridge:status` / `p2p:envelope` push shapes. |
 | 2026-05-13 | **Phase 9 complete — all modules wired into daemon runtime:** Wired 9D (ModeController with `onConnectionChange` callback on WsServer, `recordOwnerActivity`, 30s periodic mode transitions), 9E (SessionManager recording inbound chat messages), 9F (StyleAdapter learning from outbound chat, adapting AI drafts), 9G (TriggerStore topic trigger checking on inbound chat, time triggers in periodic timer), 9H (ApprovalQueue fallback when auto-send policy denies), 9I (ExternalAgentGateway tools registered), 9J (DigestGenerator aggregation in periodic timer). All 33 default tools registered across 6 core + 4 gateway + 3 mode + 3 session + 4 style + 4 trigger + 6 approval + 3 digest = 33. Updated `chat-draft-inbound.ts` with mode guard and context injection. Updated `knowledge-query-inbound.ts` with context injection. Extended `AuditEventType` with `"trigger.fired"`. Added `onConnectionChange` to WsServer. Added `"trigger:fired"` and `"digest:ready"` to ws-server auto-subscribe list. Added `setStyleAdapter()` to NodeServiceImpl. Phase 9 exit criteria: all `[x]`. |
-  1240→| 2026-05-10 | **Social app refactoring:** decomposed the 2,677-line `App.tsx` monolith into 16 focused components (`Header`, `ErrorBoundary`, view components under `components/views/`); extracted `NodeStateContext` with event-driven connection tracking (no polling); extracted shared utils (`lib/display.ts`, `lib/storage.ts`); fixed bugs (stale closure in `SearchView`, `any` types in `getProfile()`, imperative DOM access in rule builder form, missing null-safety); added `ErrorBoundary` for crash recovery; added 33 unit/component tests with `@testing-library/react` + jsdom across 5 test files; updated vitest config for `.tsx` test files. |
+| 2026-05-10 | **Social app refactoring:** decomposed the 2,677-line `App.tsx` monolith into 16 focused components (`Header`, `ErrorBoundary`, view components under `components/views/`); extracted `NodeStateContext` with event-driven connection tracking (no polling); extracted shared utils (`lib/display.ts`, `lib/storage.ts`); fixed bugs (stale closure in `SearchView`, `any` types in `getProfile()`, imperative DOM access in rule builder form, missing null-safety); added `ErrorBoundary` for crash recovery; added 33 unit/component tests with `@testing-library/react` + jsdom across 5 test files; updated vitest config for `.tsx` test files. |
 | 2026-05-05 | **Phase 8 agentic normal node roadmap:** linked [Agentic next step](./next-step.md), made Phase 8A real `knowledge.query` the active milestone, added detailed 8A-8L tasks/exit criteria, updated current pulls, coverage, key decisions, and open questions. |
 | 2026-04-26 | Related-doc strip, north-star checkline, Phase 4A Full Node defer → `[x]`, Phase 6 semantic-firewall exit criterion, open-question table **Status** headers, Immediate tasks disclaimer, backlog footer unchanged in meaning. |
 | 2026-04-26 | **On this page** TOC (phases + plan sections); **Current Milestone** merged “Recently completed” + “Immediate tasks” into one **Archive** snapshot + **Next planning pulls** subsection. |

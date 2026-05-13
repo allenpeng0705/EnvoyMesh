@@ -23,6 +23,7 @@ import type {
   InitNodeOptions,
   NodeInitResult,
 } from "@envoymesh/api";
+import { randomUUID } from "node:crypto";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
@@ -137,6 +138,11 @@ class NodeServiceImpl implements NodeService {
   private _styleAdapter: import("./style-adapter.js").StyleAdapter | null = null;
   private _wsPort: number = 3030;
   private _wsPath: string = "/ws";
+
+  /** Latest QR / `getPairingPayload` token for optional companion auto-pair (short TTL). */
+  private _pairingToken: string | null = null;
+  private _pairingTokenIssuedAt = 0;
+  private static readonly _pairingTokenTtlMs = 10 * 60 * 1000;
 
   // Pending hello requests (messageId -> info) awaiting user acceptance
   private readonly _pendingHelloRequests = new Map<string, {
@@ -1308,6 +1314,7 @@ class NodeServiceImpl implements NodeService {
         autonomousPolicies: config.autonomousPolicies ?? [],
         contactAiPreferences: config.contactAiPreferences ?? [],
         bridgeStatus: this._bridgeStatus ?? undefined,
+        companionPairingAutoAcceptWithToken: config.companionPairingAutoAcceptWithToken ?? false,
       };
     }
     return {
@@ -1329,6 +1336,7 @@ class NodeServiceImpl implements NodeService {
       autonomousPolicies: [],
       contactAiPreferences: [],
       bridgeStatus: this._bridgeStatus ?? undefined,
+      companionPairingAutoAcceptWithToken: false,
     };
   }
 
@@ -1375,6 +1383,9 @@ class NodeServiceImpl implements NodeService {
       ...(config.aiSettings !== undefined && { aiSettings: config.aiSettings }),
       ...(config.contactAiPreferences !== undefined && {
         contactAiPreferences: config.contactAiPreferences,
+      }),
+      ...(config.companionPairingAutoAcceptWithToken !== undefined && {
+        companionPairingAutoAcceptWithToken: config.companionPairingAutoAcceptWithToken,
       }),
       updatedAt: new Date().toISOString(),
     };
@@ -1949,6 +1960,20 @@ class NodeServiceImpl implements NodeService {
     this._wsPath = path;
   }
 
+  /**
+   * Returns true if [token] matches the latest pairing token from [getPairingPayload] and TTL not exceeded.
+   */
+  validatePairingToken(token: string): boolean {
+    const t = token.trim();
+    if (!t || !this._pairingToken || t !== this._pairingToken) {
+      return false;
+    }
+    if (Date.now() - this._pairingTokenIssuedAt > NodeServiceImpl._pairingTokenTtlMs) {
+      return false;
+    }
+    return true;
+  }
+
   async getBridgeStatus(): Promise<BridgeStatus> {
     return this._bridgeStatus ?? { enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0, agentName: "" };
   }
@@ -1980,6 +2005,9 @@ class NodeServiceImpl implements NodeService {
     const wsUrl = `ws://${lanIp}:${wsPort}${wsPath}`;
 
     const payload: PairingPayload = { wsUrl };
+    this._pairingToken = randomUUID();
+    this._pairingTokenIssuedAt = Date.now();
+    payload.token = this._pairingToken;
 
     if (reachable?.peerId) {
       payload.relayPeerId = reachable.peerId;

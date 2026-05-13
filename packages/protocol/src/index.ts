@@ -260,6 +260,8 @@ export const DevicePairRequestPayloadSchema = z.object({
   requestedCapabilities: z.array(CapabilitySchema).default(["ui.channel", "message.send"]),
   note: z.string().min(1).max(1000).optional(),
   createdAt: z.string().datetime(),
+  /** When set, home node may auto-accept if this matches the latest token from `getPairingPayload`. */
+  pairingToken: z.string().min(1).optional(),
 });
 
 export const DevicePairApprovePayloadSchema = z.object({
@@ -2116,6 +2118,8 @@ export interface CreateDevicePairRequestPayloadInput {
   note?: string;
   requestId?: string;
   createdAt?: string;
+  /** Same value as `PairingPayload.token` from the QR / `getPairingPayload` RPC. */
+  pairingToken?: string;
 }
 
 export function createDevicePairRequestPayload(
@@ -2130,6 +2134,7 @@ export function createDevicePairRequestPayload(
     requestedCapabilities: input.requestedCapabilities,
     note: input.note,
     createdAt: input.createdAt ?? new Date().toISOString(),
+    pairingToken: input.pairingToken,
   });
 }
 

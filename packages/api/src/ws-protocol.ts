@@ -187,6 +187,12 @@ export interface NodeConfig {
   contactAiPreferences: ContactAiPreferences[];
   /** Agent bridge status — when an external agent (HomeClaw/OpenClaw) is bridged into the mesh. */
   bridgeStatus?: BridgeStatus;
+  /**
+   * When true, an inbound `device.pair.request` whose `pairingToken` matches the latest
+   * token from `getPairingPayload` may be auto-accepted (direct trust + peer directory).
+   * Default: false.
+   */
+  companionPairingAutoAcceptWithToken?: boolean;
 }
 
 /**
@@ -600,6 +606,8 @@ export interface UpdateNodeConfigParams {
   aiSettings?: AiSettings;
   /** Per-contact AI preferences. Update individual contacts via updateContactAiPrefs(). */
   contactAiPreferences?: ContactAiPreferences[];
+  /** When true, allow `device.pair.request` auto-accept when `pairingToken` matches QR/RPC token. */
+  companionPairingAutoAcceptWithToken?: boolean;
 }
 
 export interface ListRelaysParams {}

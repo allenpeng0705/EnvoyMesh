@@ -34,6 +34,11 @@ export interface PersistedNodeConfig {
   aiSettings?: AiSettings;
   /** Per-contact AI preferences. */
   contactAiPreferences: ContactAiPreferences[];
+  /**
+   * When true, inbound `device.pair.request` with a valid `pairingToken` matching the latest
+   * `getPairingPayload` token can be auto-accepted. Default: false (undefined).
+   */
+  companionPairingAutoAcceptWithToken?: boolean;
 }
 
 export interface NodeConfigStore {

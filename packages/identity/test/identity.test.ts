@@ -1,9 +1,14 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
   createAuthChallengePayload,
   createUnsignedMandate,
   createSystemSignalPayload,
   createUnsignedEnvelope,
   type DeviceCertificate,
+  type EnvoyEnvelope,
 } from "@envoymesh/protocol";
 import { describe, expect, it } from "vitest";
 import {
@@ -17,7 +22,9 @@ import {
   generateDeviceIdentity,
   generateIdentity,
   generateOwnerIdentity,
+  deriveOwnerId,
   isAgentCredentialExpired,
+  signCanonicalPayload,
   signMandate,
   signUnsignedEnvelope,
   verifyAgentCredential,
@@ -31,6 +38,38 @@ import {
   verifyMandate,
   verifyProofOfIntent,
 } from "../src/index.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+describe("companion golden fixture (Dart TS peer/owner id parity)", () => {
+  it("derivePeerId and deriveOwnerId match committed vectors", () => {
+    const golden = JSON.parse(
+      readFileSync(join(__dirname, "fixtures/companion_identity_golden.json"), "utf8"),
+    ) as {
+      publicKeyPem: string;
+      peerId: string;
+      ownerId: string;
+    };
+    expect(derivePeerId(golden.publicKeyPem)).toBe(golden.peerId);
+    expect(deriveOwnerId(golden.publicKeyPem)).toBe(golden.ownerId);
+  });
+});
+
+describe("companion envelope signature (Dart interop)", () => {
+  it("fixture unsigned signs to fixture signature; signed envelope verifies", () => {
+    const g = JSON.parse(
+      readFileSync(join(__dirname, "fixtures/companion_envelope_interop_golden.json"), "utf8"),
+    ) as {
+      privateKeyPem: string;
+      unsignedEnvelopeJson: Record<string, unknown>;
+      signatureBase64Url: string;
+      signedEnvelopeJson: Record<string, unknown>;
+    };
+    const sig = signCanonicalPayload(g.unsignedEnvelopeJson, g.privateKeyPem);
+    expect(sig).toBe(g.signatureBase64Url);
+    expect(verifyEnvelope(g.signedEnvelopeJson as EnvoyEnvelope)).toBe(true);
+  });
+});
 
 describe("identity", () => {
   it("signs and verifies an envelope", () => {
