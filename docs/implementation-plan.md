@@ -1305,6 +1305,8 @@ Tasks:
 { "id": "msg_3", "method": "getBridgeStatus", "params": {} }
 ```
 
+> **Server side implemented:** `forwardEnvelope` and `getPairingPayload` RPC methods are wired in `WsServer` and `NodeServiceImpl`. The `forwardEnvelope` handler forwards P2P envelopes to any peer on behalf of a remote relay client. `getPairingPayload` returns the pairing QR payload for mobile app pairing.
+
 **Node → Client (response):**
 ```json
 { "id": "msg_1", "result": null }
@@ -1317,9 +1319,9 @@ Tasks:
 Tasks:
 
 - `[ ]` Implement WebSocket client with JSON-RPC request/response handling
-- `[ ]` Implement `forwardEnvelope` for outbound signed `EnvoyEnvelope` traffic
+- `[x]` Implement `forwardEnvelope` for outbound signed `EnvoyEnvelope` traffic (server-side: `forwardEnvelope` RPC wired in Node)
 - `[ ]` Parse inbound push events (`chat:message`, `bridge:status`, etc.) as implemented by the node
-- `[ ]` Optional: call `getPairingPayload` / `getBridgeStatus` after connect for UI state
+- `[x]` Optional: call `getPairingPayload` / `getBridgeStatus` after connect for UI state (server-side: `getPairingPayload` RPC returns pairing QR payload)
 - `[ ]` Reconnection: exponential backoff on disconnect (app-defined policy)
 - `[ ]` Unit tests: mock WebSocket, test RPC + event parsing
 
@@ -1381,7 +1383,7 @@ Tasks:
 
 Tasks:
 
-- `[ ]` Desktop/host side: EnvoyMesh node displays pairing QR code containing:
+- `[x]` Desktop/host side: EnvoyMesh node displays pairing QR code containing:
   - Home node's libp2p peer ID (`12D3KooW...`, `relayPeerId` in payload — for `dialHints` / diagnostics)
   - Bridge agent's peer ID (`envoy_agent_xxx`)
   - Bridge agent's public key (PEM)
@@ -1749,3 +1751,4 @@ Tasks:
 | 2026-04-30 | **Relay graph + manager baseline:** added typed relay protocol primitives, in-memory relay roster/book/summary state, summary-guided bounded relay lookup routing, loop/negative-cache controls, `relay.manager.snapshot`, `relay-status`, desktop Relay Manager panel, tests, and docs. |
 | 2026-04-30 | **Relay stability baseline:** added relay health scoring, local health audit traces, bounded soft-repair actions, health fields in Relay Manager snapshots/CLI/dashboard, and supervisor recipes for macOS, Linux, Windows, Docker, and Kubernetes. |
 | 2026-05-12 | **Phase 10 planned:** HomeClaw App P2P integration design. Phase 10A (mobile relay client): thin Dart P2P layer with Ed25519 identity, canonical JSON signing, relay WebSocket client, EnvoyNodeService, Flutter UI integration, and QR pairing flow. Phase 10B (full libp2p in Dart): replace relay-only client with libp2p_dart for direct P2P connections with relay fallback. Detailed task breakdowns, file summaries, risks, mitigations, and key decisions documented. |
+| 2026-05-13 | **Phase 10A progress (server-side):** `forwardEnvelope` RPC wired in Node `WsServer` and `NodeServiceImpl` — forwards P2P envelopes from remote relay clients to any peer. `getPairingPayload` RPC returns pairing QR payload (`wsUrl`, `relayPeerId`, `agentPeerId`, `agentPubKey`). Pairing QR display added to Social app for mobile app pairing. Bridge agent credential hardening, body size limits, transport coexistence design documented. Relay health cycle and node health monitoring added. |
