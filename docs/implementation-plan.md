@@ -1243,13 +1243,13 @@ Today the HomeClaw App connects to HomeClaw Core via HTTP to a public URL (`POST
         └────────────────────────────────────┘
 ```
 
-**Key principle:** The Dart EnvoyMesh node is a lightweight P2P edge — it handles identity, envelope signing, and relay connectivity. The relay/DHT/bridge handle routing. The Flutter app talks to the local Dart node, which handles all P2P concerns.
+**Key principle:** The HomeClaw companion app embeds a thin **Dart P2P client** (identity, canonical signing, protocol types) that opens a **single WebSocket** to the owner's TypeScript EnvoyMesh **home node**. The home node performs libp2p routing; the phone does not run a full libp2p stack in Phase 10A.
 
 ### 10A (Phase 2a): Dart Relay Client — Thin P2P Edge
 
-**Goal:** Implement a thin EnvoyMesh P2P layer in Dart that the HomeClawApp embeds. The Dart node connects to the home node's WebSocket server and speaks the EnvoyMesh envelope protocol. No full libp2p stack on mobile — the home node handles DHT, peer discovery, and message routing.
+**Goal:** Implement a thin EnvoyMesh P2P layer in Dart that the HomeClawApp embeds. The Dart layer connects to the home node's WebSocket server and speaks JSON-RPC + signed envelopes. No full libp2p stack on mobile — the home node handles DHT, peer discovery, and message routing.
 
-**Current status (2026-05-13):** All server-side infrastructure is complete. The home Node exposes `forwardEnvelope`, `getPairingPayload`, and `getBridgeStatus` RPCs over WebSocket. The Social UI displays a pairing QR code. The bridge module pipes messages between P2P mesh and external agents with credential hardening and body size limits. Relay health monitoring and node health monitoring ensure the home node stays healthy for mobile client connectivity. Remaining work is entirely on the Dart/Flutter side (in the HomeClawApp repo).
+**Current status (2026-05-13):** Server-side pieces in **this repo** are in place (`forwardEnvelope`, `getPairingPayload`, `getBridgeStatus`, pairing QR in Social, bridge hardening, health watchdogs). The **HomeClawApp** companion repo (`HomeClaw/clients/HomeClawApp`, sibling to EnvoyMesh) contains the Dart implementation (`lib/envoy/*`, `test/envoy/*`, pairing screen + providers). **Gap:** treat Phase 10A exit criteria (full manual E2E on device, polish) as verification, not “not started.”
 
 #### Server-side infrastructure (completed on TypeScript/Node side)
 
@@ -1266,45 +1266,64 @@ Today the HomeClaw App connects to HomeClaw Core via HTTP to a public URL (`POST
 | Standalone relay health | `apps/relay/src/relay-health.ts` | Health evaluation for the `apps/relay` binary |
 | `PairingPayload` type | `packages/api/src/ws-protocol.ts` | TypeScript interface for the pairing payload response |
 
+#### HomeClawApp companion repository (Dart / Flutter — not in this monorepo)
+
+Canonical path: **`HomeClaw/clients/HomeClawApp`** (sibling checkout next to EnvoyMesh). Major modules:
+
+| Area | Location |
+|------|----------|
+| Ed25519 identity + peer / owner ID | `lib/envoy/envoy_identity.dart`; tests `test/envoy/envoy_identity_test.dart` |
+| Protocol types, signing helpers, `PairingPayload` URI | `lib/envoy/envoy_protocol.dart`; tests `test/envoy/envoy_protocol_test.dart` |
+| JSON-RPC WebSocket client (`forwardEnvelope`, `getNodeConfig`, `getBonds`, `p2p:envelope`) | `lib/envoy/relay_client.dart`; tests `test/envoy/relay_client_test.dart` |
+| `EnvoyNodeService`, pairing persistence, chat routing hooks | `lib/envoy/envoy_node_service.dart`; tests `test/envoy/envoy_node_service_test.dart` |
+| Pairing / QR flows | `lib/screens/envoy_pairing_screen.dart`, `test/envoy/pairing_flow_test.dart` |
+| Riverpod wiring | `lib/providers/envoy_providers.dart` |
+
+**2026-05 interop fixes (HomeClawApp):** JSON-RPC responses now use the **`result` payload** (not the full `{ id, result }` wrapper) so `getNodeConfig` / `discoverBridgeAgent` read `bridgeStatus` correctly. Pairing QR **`agentPubKey`** encoding avoids double-`encodeComponent`. Bridge display name uses `agentName` from node config when present.
+
 #### 10A.1: EnvoyMesh Identity in Dart
 
 **Goal:** Ed25519 key generation, peer ID derivation, and envelope signing — all in pure Dart.
 
+**Implementation (HomeClawApp):** `lib/envoy/envoy_identity.dart`; tests `test/envoy/envoy_identity_test.dart`.
+
 Tasks:
 
-- `[ ]` Implement `EnvoyIdentity` class: generate Ed25519 keypair using `cryptography` package (already a HomeClawApp dependency)
-- `[ ]` Implement peer ID derivation: `peerId = "envoy_" + base64url(sha256(publicKeyPem))` matching the TypeScript algorithm in `packages/identity`
-- `[ ]` Implement canonical JSON serializer: sorted keys, no undefined values — produces exact same byte output as the TypeScript `canonicalJson()`
-- `[ ]` Implement `signEnvelope()`: sign canonical JSON of unsigned envelope with Ed25519 private key
-- `[ ]` Implement `verifyEnvelope()`: verify Ed25519 signature against claimed public key
-- `[ ]` Implement owner ID derivation: `ownerId = "envoy:owner:" + base64url(sha256(ownerPublicKeyPem))`
-- `[ ]` Unit tests: cross-verify signatures between Dart and TypeScript (sign in Dart, verify in TS, and vice versa)
+- `[x]` Implement `EnvoyIdentity` class: generate Ed25519 keypair using `cryptography` package (already a HomeClawApp dependency)
+- `[x]` Implement peer ID derivation: `peerId = "envoy_" + base64url(sha256(publicKeyPem))` matching the TypeScript algorithm in `packages/identity`
+- `[x]` Implement canonical JSON serializer: sorted keys, no undefined values — produces exact same byte output as the TypeScript `canonicalJson()`
+- `[x]` Implement `signEnvelope()`: sign canonical JSON of unsigned envelope with Ed25519 private key
+- `[x]` Implement `verifyEnvelope()`: verify Ed25519 signature against claimed public key
+- `[x]` Implement owner ID derivation: `ownerId = "envoy:owner:" + base64url(sha256(ownerPublicKeyPem))`
+- `[~]` Unit tests: cross-verify signatures between Dart and TypeScript (sign in Dart, verify in TS, and vice versa) — strengthen if not automated in CI
 
 **Key dependency:** `cryptography` ^2.9.0 (already in HomeClawApp pubspec.yaml for E2E encryption)
 
 **Exit criteria:**
-- `[ ]` Dart-generated peer ID matches TypeScript peer ID for the same keypair
-- `[ ]` Dart-signed envelope verifies in TypeScript, and vice versa
-- `[ ]` Canonical JSON output is byte-identical between Dart and TypeScript
+- `[~]` Dart-generated peer ID matches TypeScript peer ID for the same keypair (covered by unit tests; optional CI matrix)
+- `[~]` Dart-signed envelope verifies in TypeScript, and vice versa
+- `[~]` Canonical JSON output is byte-identical between Dart and TypeScript
 
 #### 10A.2: EnvoyMesh Protocol Schemas in Dart
 
 **Goal:** Dart types and constructors for the core EnvoyMesh protocol schemas (envelope, chat messages, hello).
 
+**Implementation (HomeClawApp):** `lib/envoy/envoy_protocol.dart` (large generated-style port); tests `test/envoy/envoy_protocol_test.dart`.
+
 Tasks:
 
-- `[ ]` Port `EnvoyEnvelope` schema: `version`, `messageId`, `correlationId`, `createdAt`, `senderPeerId`, `senderPublicKey`, `senderRole`, `recipientPeerId`, `recipientRole`, `intent`, `payload`, `signature`
-- `[ ]` Port `ChatMessagePayload` schema: `senderOwnerId`, `text`
-- `[ ]` Implement `createChatMessagePayload()` constructor
-- `[ ]` Implement `parseChatMessagePayload()` validator
-- `[ ]` Port `HelloRequestPayload` schema (for pairing bond)
-- `[ ]` Port `UnsignedEnvelope` type and `UnsignedChatMessagePayload` type
-- `[ ]` Define `EnvoyIntent` union type in Dart covering all intents needed by companion app: `chat.message`, `hello.request`, `hello.accept`, `hello.decline`
-- `[ ]` Unit tests: schema validation round-trips, rejection of malformed payloads
+- `[x]` Port `EnvoyEnvelope` schema: `version`, `messageId`, `correlationId`, `createdAt`, `senderPeerId`, `senderPublicKey`, `senderRole`, `recipientPeerId`, `recipientRole`, `intent`, `payload`, `signature`
+- `[x]` Port `ChatMessagePayload` schema: `senderOwnerId`, `text`
+- `[x]` Implement `createChatMessagePayload()` constructor
+- `[x]` Implement `parseChatMessagePayload()` validator
+- `[~]` Port `HelloRequestPayload` schema (for pairing bond) — partial; pairing uses **`device.pair.request`** for mobile → bridge (see 10A.6)
+- `[x]` Port `UnsignedEnvelope` type and `UnsignedChatMessagePayload` type
+- `[~]` Define `EnvoyIntent` union type in Dart covering all intents needed by companion app: `chat.message`, `hello.request`, `hello.accept`, `hello.decline`
+- `[x]` Unit tests: schema validation round-trips, rejection of malformed payloads
 
 **Exit criteria:**
-- `[ ]` All schema types have Dart equivalents with same field names and validation rules
-- `[ ]` Payload constructors produce output parseable by TypeScript parsers
+- `[~]` All schema types have Dart equivalents with same field names and validation rules (core paths covered; expand with new intents as needed)
+- `[~]` Payload constructors produce output parseable by TypeScript parsers
 
 #### 10A.3: Node WebSocket client (JSON-RPC)
 
@@ -1344,64 +1363,70 @@ Tasks:
 - `[x]` `p2p:envelope` push event auto-subscribed for all WebSocket clients; emits raw inbound envelopes
 - `[x]` Relay health + node health monitoring (30s periodic) keeps home node healthy for mobile clients
 
-**Client-side (Dart/Flutter — remaining):**
-- `[ ]` Implement WebSocket client with JSON-RPC request/response handling
-- `[ ]` Parse inbound push events (`chat:message`, `bridge:status`, `p2p:envelope`, etc.)
-- `[ ]` Call `getPairingPayload` / `getBridgeStatus` after connect for UI state
-- `[ ]` Reconnection: exponential backoff on disconnect (app-defined policy)
-- `[ ]` Unit tests: mock WebSocket, test RPC + event parsing
+**Client-side (Dart/Flutter — HomeClawApp):**
+- `[x]` Implement WebSocket client with JSON-RPC request/response handling (`RelayClient` / `_rpc`)
+- `[x]` Parse inbound push events for **`p2p:envelope`** (primary path for raw mesh traffic to the app)
+- `[~]` Parse other push events (`chat:message`, `bridge:status`) — optional; not required if UI consumes envelopes via `p2p:envelope` only
+- `[x]` `getNodeConfig` / `getBonds` use unwrapped JSON-RPC **`result`** (fix 2026-05)
+- `[~]` Call `getPairingPayload` / `getBridgeStatus` after connect for UI state (available via RPC; wiring depth varies by screen)
+- `[x]` Reconnection: exponential backoff on disconnect (see `RelayClient`)
+- `[x]` Unit tests: `test/envoy/relay_client_test.dart` and related
 
 **Exit criteria:**
 
-- `[ ]` Dart client can connect to a running EnvoyMesh node WebSocket
-- `[ ]` Can send a signed envelope via `forwardEnvelope` and receive chat-related pushes on the same connection
-- `[ ]` Reconnect path is tested or exercised manually
+- `[x]` Dart client can connect to a running EnvoyMesh node WebSocket
+- `[~]` Can send a signed envelope via `forwardEnvelope` and receive chat-related pushes on the same connection (unit + integration coverage; full device E2E under 10A.7)
+- `[~]` Reconnect path is tested or exercised manually
 
 #### 10A.4: EnvoyNodeService — Flutter Integration Layer
 
 **Goal:** High-level Dart API that the Flutter app uses for all P2P operations. Mirrors the TypeScript `NodeService` WebSocket protocol but implemented as a local Dart class (no subprocess, no WebSocket to localhost — direct method calls).
 
+**Implementation (HomeClawApp):** `lib/envoy/envoy_node_service.dart`; tests `test/envoy/envoy_node_service_test.dart`.
+
 Tasks:
 
-- `[ ]` Implement `EnvoyNodeService` class with Riverpod provider
-- `[ ]` Identity lifecycle: `initialize(profileDir)` generates or loads keypair, derives peer ID and owner ID
-- `[ ]` Connection lifecycle: `start()` connects to relay, `stop()` disconnects, `getStatus()` returns `NodeStatus`
-- `[ ]` Messaging: `sendChat(targetOwnerId, text)` builds envelope, signs, sends via relay
-- `[ ]` Inbound events: `onChatMessage` stream emits `ChatMessage` objects from incoming envelopes
-- `[ ]` Peer directory: `getBonds()` returns bonded peers, `getPeerInfo(ownerId)` returns peer details
-- `[ ]` Pairing: `pairWithPeer(qrCodeData)` sends `hello.request`, waits for `hello.accept`
-- `[ ]` Bridge agent: `getBridgeStatus()` discovers HomeClaw Core's bridge agent as a contact
-- `[ ]` Chat history: `listChatHistory(peerOwnerId)` from local Hive store (already exists in HomeClawApp)
-- `[ ]` Persist incoming messages to existing Hive chat store
-- `[ ]` Unit tests: mock RelayClient, test send/receive flow
+- `[x]` Implement `EnvoyNodeService` class with Riverpod provider (`lib/providers/envoy_providers.dart`)
+- `[x]` Identity lifecycle: `initialize(profileDir)` generates or loads keypair, derives peer ID and owner ID
+- `[x]` Connection lifecycle: `connect(homeNodeUrl)` / `disconnect`; state via `RelayClient`
+- `[x]` Messaging: `sendChat` / `sendChatToOwner` → signed `chat.message` via `forwardEnvelope`
+- `[x]` Inbound events: `onChatMessage` stream from parsed `p2p:envelope` chat messages
+- `[x]` Peer directory: `getBonds()` via JSON-RPC
+- `[~]` Pairing: `pairWithPeer` / full hello bond flow — app uses **`device.pair.request`** to bridge agent post-QR (see 10A.6), not only `hello.request`
+- `[x]` Bridge agent: `discoverBridgeAgent()` reads `bridgeStatus` from `getNodeConfig()` (uses `agentName` when present)
+- `[x]` Chat history: persistence hooks via `ChatHistoryStore`
+- `[x]` Persist incoming messages to existing Hive-backed chat store where wired
+- `[x]` Unit tests: `envoy_node_service_test.dart`, mocks where applicable
 
 **Exit criteria:**
-- `[ ]` Flutter app can send a chat message to HomeClaw Core via P2P and receive a reply
-- `[ ]` Chat messages appear in the existing chat UI (Hive store + ChatScreen)
-- `[ ]` Bridge agent appears as a contact in the friend list
+- `[~]` Flutter app can send a chat message to HomeClaw Core via P2P and receive a reply (verify on device / Core — 10A.7)
+- `[~]` Chat messages appear in the existing chat UI (Hive store + ChatScreen) when P2P path selected
+- `[~]` Bridge agent appears as a contact in the friend list (see FriendList / settings integration)
 
 #### 10A.5: Flutter UI Integration
 
 **Goal:** Wire the EnvoyNodeService into the existing HomeClawApp UI without breaking existing features.
 
+**Touches (HomeClawApp):** `lib/screens/friend_list_screen.dart`, `lib/screens/settings_screen.dart`, `lib/screens/chat_screen.dart`, `lib/screens/envoy_pairing_screen.dart`, `lib/providers/envoy_providers.dart`.
+
 Tasks:
 
-- `[ ]` Add `EnvoyNodeService` Riverpod provider to `providers/` (alongside existing `coreServiceProvider`)
-- `[ ]` Add node status indicator to FriendListScreen (connected/disconnected dot)
-- `[ ]` Add bridge agent contact to friend list when bridge is enabled (shows "HomeClaw" with preset avatar)
-- `[ ]` Route P2P messages in ChatScreen: if friend is a P2P peer, use `EnvoyNodeService.sendChat()` instead of `CoreService.sendMessage()`
-- `[ ]` Route inbound P2P messages: subscribe to `EnvoyNodeService.onChatMessage`, persist to Hive
-- `[ ]` Add pairing screen: "Pair with HomeClaw" button → QR scanner → `pairWithPeer()`
-- `[ ]` Add relay config to SettingsScreen: relay address, pairing status
-- `[ ]` Preset friends (Reminder, Files, Knowledge, etc.) continue using `CoreService` HTTP path — they talk to Core directly when Core is reachable via P2P bridge agent
-- `[ ]` Keep existing HTTP/CoreService path as fallback if P2P is not configured
-- `[ ]` Unit/Widget tests: test friend list with P2P contacts, test chat routing
+- `[x]` Add `EnvoyNodeService` Riverpod provider to `providers/` (alongside existing `coreServiceProvider`)
+- `[~]` Add node status indicator to FriendListScreen (connected/disconnected dot)
+- `[~]` Add bridge agent contact to friend list when bridge is enabled (shows "HomeClaw" with preset avatar)
+- `[~]` Route P2P messages in ChatScreen: if friend is a P2P peer, use `EnvoyNodeService.sendChat()` instead of `CoreService.sendMessage()`
+- `[~]` Route inbound P2P messages: subscribe to `EnvoyNodeService.onChatMessage`, persist to Hive
+- `[x]` Add pairing screen: QR / pairing flow (`envoy_pairing_screen.dart`)
+- `[~]` Add relay config to SettingsScreen: relay address, pairing status
+- `[~]` Preset friends (Reminder, Files, Knowledge, etc.) continue using `CoreService` HTTP path — they talk to Core directly when Core is reachable via P2P bridge agent
+- `[~]` Keep existing HTTP/CoreService path as fallback if P2P is not configured
+- `[~]` Unit/Widget tests: `test/envoy/envoy_ui_integration_test.dart` and related
 
 **Exit criteria:**
-- `[ ]` Bridge agent contact appears and is tappable
-- `[ ]` Chat with bridge agent works end-to-end (send message, see reply)
-- `[ ]` Existing features (preset friends, Claw-Code, reminders) continue working
-- `[ ]` App works both with and without P2P configured
+- `[~]` Bridge agent contact appears and is tappable
+- `[~]` Chat with bridge agent works end-to-end (send message, see reply)
+- `[~]` Existing features (preset friends, Claw-Code, reminders) continue working
+- `[~]` App works both with and without P2P configured
 
 #### 10A.6: Pairing Flow
 
@@ -1418,37 +1443,37 @@ Tasks:
   - QR rendered via `qrcode` library as 256x256 PNG data URL
   - "Copy URI" button for manual `envoy://pair?...` sharing
 
-**Mobile side (remaining):**
-- `[ ]` `PairingScreen` scans QR, extracts peer info, saves to local peer directory
-- `[ ]` Mobile sends `hello.request` to bridge agent via `forwardEnvelope`
-- `[ ]` Desktop node auto-accepts hello from own owner's other device (trust-on-first-use or pre-shared key verification)
-- `[ ]` After pairing: bridge agent appears in mobile friend list as "HomeClaw"
-- `[ ]` Pairing state persisted across app restarts (SharedPreferences)
-- `[ ]` Unit tests: QR data encode/decode, hello.request construction
+**Mobile side (HomeClawApp — partial / verify):**
+- `[x]` `PairingPayload` encode/decode (`envoy://pair`), persistence (`savePairedNodeInfo` / `getPairedNodeInfo`)
+- `[x]` **`device.pair.request`** to bridge agent peer (post-scan) via `forwardEnvelope` — this is the implemented bond request path (not `hello.request` alone)
+- `[~]` Desktop node policy for auto-accept / owner approval of device pair requests — depends on node trust workflow (see Phase 4A pairing)
+- `[~]` After pairing: bridge agent in friend list — UI integration ongoing (`[~]` in 10A.5)
+- `[x]` Pairing state persisted (SharedPreferences)
+- `[x]` Unit tests: `test/envoy/pairing_flow_test.dart` (URI, device pair payload, persistence)
 
 **Exit criteria:**
-- `[ ]` QR scan → pairing → bridge agent visible in friend list (under 30 seconds)
-- `[ ]` Pairing survives app restart
-- `[ ]` Re-pairing with same node updates existing entry (no duplicates)
+- `[~]` QR scan → pairing → bridge agent visible in friend list (under 30 seconds) — verify manually
+- `[~]` Pairing survives app restart
+- `[~]` Re-pairing with same node updates existing entry (no duplicates)
 
 #### 10A.7: End-to-End Verification
 
-**Goal:** Prove the Dart relay client works with the real EnvoyMesh relay and TypeScript node.
+**Goal:** Prove the Dart client works with the real EnvoyMesh **home node** (WebSocket) and TypeScript bridge.
 
 Tasks:
 
-- `[ ]` Manual test: start EnvoyMesh relay + TypeScript node with bridge + HomeClaw Core
-- `[ ]` Manual test: run Dart relay client unit tests against live relay (test mode)
-- `[ ]` Manual test: Dart client sends `chat.message` to bridge agent, receives reply
-- `[ ]` Manual test: Flutter app on emulator/device connects to relay, chats with bridge agent
+- `[ ]` Manual test: start EnvoyMesh node with bridge + HomeClaw Core
+- `[ ]` Manual test: Flutter app connects WebSocket to home node LAN URL from pairing QR
+- `[ ]` Manual test: Dart / Flutter sends `chat.message` to bridge agent, receives reply
+- `[ ]` Manual test: Flutter app on emulator/device chats with bridge agent
 - `[ ]` Manual test: verify canonical JSON compatibility (snapshot test with real envelopes)
-- `[ ]` Manual test: disconnect/reconnect relay, verify message delivery after reconnect
+- `[ ]` Manual test: disconnect/reconnect WebSocket, verify delivery or recovery
 - `[ ]` Fix any interop issues found
 
 **Exit criteria:**
-- `[ ]` Full end-to-end: Flutter app → relay → TypeScript node → bridge → HomeClaw Core → reply → relay → Flutter app
-- `[ ]` Message round-trip under 2 seconds on LAN
-- `[ ]` No Cloudflare tunnel or public IP involved
+- `[ ]` Full end-to-end: Flutter app → WebSocket home node → libp2p mesh → bridge → HomeClaw Core → reply → path back to app
+- `[ ]` Message round-trip under ~2 seconds on LAN (target)
+- `[ ]` No Cloudflare tunnel or public IP required on LAN
 
 ---
 
