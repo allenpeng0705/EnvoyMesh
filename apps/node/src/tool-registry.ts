@@ -303,6 +303,70 @@ export class ToolRegistry {
       isMeshTool: false,
     });
 
+    // Style adapter tools (Phase 9F)
+    this.register({
+      name: "mesh.set-style",
+      description: "Set the agent's writing style (tone, vocabulary, sentence length)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          tone: { type: "string", enum: ["formal", "casual", "neutral"], description: "Writing tone" },
+          vocabulary: { type: "array", items: { type: "string" }, description: "Preferred vocabulary words" },
+          sentenceLength: { type: "number", description: "Target average sentence length" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.get-style",
+      description: "Get the agent's current writing style profile",
+      paramSchema: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.set-contact-disclosure",
+      description: "Configure whether to disclose the AI agent identity to a contact",
+      paramSchema: {
+        type: "object",
+        properties: {
+          contactOwnerId: { type: "string", description: "The contact's owner ID" },
+          discloseAgent: { type: "boolean", description: "Whether to reveal the agent identity" },
+          disclosureMessage: { type: "string", description: "Custom disclosure message" },
+          customGreeting: { type: "string", description: "Custom greeting for this contact" },
+        },
+        required: ["contactOwnerId"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.get-contact-disclosure",
+      description: "Get the disclosure configuration for a contact",
+      paramSchema: {
+        type: "object",
+        properties: {
+          contactOwnerId: { type: "string", description: "The contact's owner ID" },
+        },
+        required: ["contactOwnerId"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
     // Session manager tools (Phase 9E)
     this.register({
       name: "mesh.list-sessions",

@@ -113,6 +113,7 @@ import { handleInboundShareRequest, handleInboundShareAccept } from "./share-inb
 import { generateChatDraft } from "./chat-draft-inbound.js";
 import { ModeController, createDefaultModeConfig } from "./mode-controller.js";
 import { FileSessionStore, SessionManager } from "./session-manager.js";
+import { StyleAdapter } from "./style-adapter.js";
 import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
@@ -1338,10 +1339,19 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           modeController,
         }).then(async (result) => {
           if (result.ok && wsServerForEvents) {
+            // Apply style adaptation (Phase 9F): match owner's writing voice
+            const adapted = styleAdapter.adapt(
+              result.draft.text,
+              payload.senderOwnerId,
+              false,
+              "statement",
+            );
+            const draftText = adapted.adaptedText;
+
             // Always emit draft event for UI to display
             wsServerForEvents.emitEvent("chat:draft", {
               threadPeerOwnerId: payload.senderOwnerId,
-              draft: result.draft,
+              draft: { ...result.draft, text: draftText },
             });
 
             // Check autonomous policy for auto-send (only if AI access level is full)
@@ -1373,9 +1383,9 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
 
             // Auto-send the chat response if policy allows AND contact AI access level is "full"
             if (autoSendPolicy.allowed && aiAccessLevel === "full" && nodeService instanceof NodeServiceImpl) {
-              console.log(`[chat] auto-sending AI response to ${payload.senderOwnerId}: ${result.draft.text}`);
+              console.log(`[chat] auto-sending AI response to ${payload.senderOwnerId}: ${draftText}`);
               try {
-                await nodeService.sendChat(payload.senderOwnerId, result.draft.text);
+                await nodeService.sendChat(payload.senderOwnerId, draftText);
                 console.log(`[chat] auto-send success`);
               } catch (err) {
                 console.warn(`[chat] auto-send failed:`, err);
@@ -1884,6 +1894,7 @@ if (nodeService instanceof NodeServiceImpl) {
 // Start WebSocket server for app connections
 const modeController = new ModeController(createDefaultModeConfig(), taskStore);
 const sessionManager = new SessionManager(new FileSessionStore(join(args.profileDir, "sessions")));
+const styleAdapter = new StyleAdapter();
 const wsServer = new WsServer(3030, "/ws", {
   onConnectionChange: (connectedCount) => {
     if (connectedCount > 0) {
@@ -1985,6 +1996,7 @@ bridgeHandleMessage = bridge._handleMessage;
 // Wire bridge chat handler into NodeServiceImpl so sendChat can short-circuit self-dial
 if (nodeService instanceof NodeServiceImpl) {
   nodeService.setBridgeChatHandler(bridge._handleMessage);
+  nodeService.setStyleAdapter(styleAdapter);
 }
 
 // Emit bridge status for Social UI and register bridge agent in peer directory

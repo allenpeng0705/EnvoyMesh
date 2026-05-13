@@ -134,6 +134,7 @@ class NodeServiceImpl implements NodeService {
   private _nodeStatus: NodeStatus = "offline";
   private _bridgeStatus: BridgeStatus | null = null;
   private _bridgeChatHandler: ((envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>) | null = null;
+  private _styleAdapter: import("./style-adapter.js").StyleAdapter | null = null;
   private _wsPort: number = 3030;
   private _wsPath: string = "/ws";
 
@@ -936,6 +937,8 @@ class NodeServiceImpl implements NodeService {
     console.log(`[sendChat] Emitting chat:message locally:`, emittedMsg);
     this._persistChatMessage(targetOwnerId, emittedMsg);
     this.emit("chat:message", emittedMsg);
+    // Learn owner writing style from sent messages (Phase 9F)
+    this._styleAdapter?.learnFromMessage(true, text);
   }
 
   async listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]> {
@@ -1934,6 +1937,10 @@ class NodeServiceImpl implements NodeService {
 
   setBridgeChatHandler(handler: (envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>): void {
     this._bridgeChatHandler = handler;
+  }
+
+  setStyleAdapter(adapter: import("./style-adapter.js").StyleAdapter): void {
+    this._styleAdapter = adapter;
   }
 
   /** Set the WebSocket server's listen port/path for pairing QR URL generation. */
