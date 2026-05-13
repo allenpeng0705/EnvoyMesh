@@ -193,6 +193,12 @@ export interface NodeConfig {
    * Default: false.
    */
   companionPairingAutoAcceptWithToken?: boolean;
+  /**
+   * Public WebSocket URL of the EnvoyMesh relay node (e.g. ws://relay.example.com:15432/ws).
+   * When set, the pairing QR directs mobile clients to the relay instead of the LAN IP,
+   * allowing pairing from any network. The relay proxies WebSocket ↔ libp2p to this node.
+   */
+  relayPublicWsUrl?: string;
 }
 
 /**
@@ -222,13 +228,18 @@ export interface BridgeStatus {
  * Displayed as a QR code in the Social UI for the mobile app to scan.
  */
 export interface PairingPayload {
-  /** WebSocket relay URL the mobile app connects to (e.g. ws://192.168.1.100:3030/ws) */
+  /** WebSocket URL the mobile app connects to. Either the home node's direct LAN WS URL, or the relay's public WS URL when relay-proxy is configured. */
   wsUrl: string;
   /**
    * Home node's libp2p peer ID (optional).
-   * Used for `forwardEnvelope` dial hints, diagnostics, and pairing with the correct mesh hop — not a standalone relay protocol.
+   * When connecting through a relay, this is passed as the `target` query param so the relay knows which node to proxy to.
    */
   relayPeerId?: string;
+  /**
+   * Relay's public WebSocket URL (optional).
+   * When present, the QR encodes this relay URL instead of the direct LAN wsUrl, so mobile can connect from any network.
+   */
+  relayWsUrl?: string;
   /** Bridge agent peer ID (optional — present when bridge is enabled) */
   agentPeerId?: string;
   /** Bridge agent public key PEM (optional) */
@@ -608,6 +619,8 @@ export interface UpdateNodeConfigParams {
   contactAiPreferences?: ContactAiPreferences[];
   /** When true, allow `device.pair.request` auto-accept when `pairingToken` matches QR/RPC token. */
   companionPairingAutoAcceptWithToken?: boolean;
+  /** Public WebSocket URL of the relay node for mobile pairing through relay proxy. */
+  relayPublicWsUrl?: string;
 }
 
 export interface ListRelaysParams {}

@@ -138,6 +138,7 @@ class NodeServiceImpl implements NodeService {
   private _styleAdapter: import("./style-adapter.js").StyleAdapter | null = null;
   private _wsPort: number = 3030;
   private _wsPath: string = "/ws";
+  private _relayPublicWsUrl: string | undefined;
 
   /** Latest QR / `getPairingPayload` token for optional companion auto-pair (short TTL). */
   private _pairingToken: string | null = null;
@@ -1315,6 +1316,7 @@ class NodeServiceImpl implements NodeService {
         contactAiPreferences: config.contactAiPreferences ?? [],
         bridgeStatus: this._bridgeStatus ?? undefined,
         companionPairingAutoAcceptWithToken: config.companionPairingAutoAcceptWithToken ?? false,
+        relayPublicWsUrl: config.relayPublicWsUrl ?? this._relayPublicWsUrl,
       };
     }
     return {
@@ -1337,6 +1339,7 @@ class NodeServiceImpl implements NodeService {
       contactAiPreferences: [],
       bridgeStatus: this._bridgeStatus ?? undefined,
       companionPairingAutoAcceptWithToken: false,
+      relayPublicWsUrl: this._relayPublicWsUrl,
     };
   }
 
@@ -1387,8 +1390,15 @@ class NodeServiceImpl implements NodeService {
       ...(config.companionPairingAutoAcceptWithToken !== undefined && {
         companionPairingAutoAcceptWithToken: config.companionPairingAutoAcceptWithToken,
       }),
+      ...(config.relayPublicWsUrl !== undefined && {
+        relayPublicWsUrl: config.relayPublicWsUrl,
+      }),
       updatedAt: new Date().toISOString(),
     };
+
+    if (config.relayPublicWsUrl !== undefined) {
+      this._relayPublicWsUrl = config.relayPublicWsUrl || undefined;
+    }
 
     await this._configStore.save(updated);
     this.emit("node:status", {
@@ -1961,6 +1971,15 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
+   * Set the relay's public WebSocket URL for mobile pairing through relay proxy (Phase 10A).
+   * When set, `getPairingPayload()` returns this URL as `wsUrl` instead of the LAN IP,
+   * so mobile clients can pair from any network.
+   */
+  setRelayPublicWsUrl(url: string | undefined): void {
+    this._relayPublicWsUrl = url || undefined;
+  }
+
+  /**
    * Returns true if [token] matches the latest pairing token from [getPairingPayload] and TTL not exceeded.
    */
   validatePairingToken(token: string): boolean {
@@ -2004,15 +2023,34 @@ class NodeServiceImpl implements NodeService {
 
     const wsPort = (this._wsPort ?? 3030);
     const wsPath = (this._wsPath ?? "/ws");
-    const wsUrl = `ws://${lanIp}:${wsPort}${wsPath}`;
+    const lanWsUrl = `ws://${lanIp}:${wsPort}${wsPath}`;
 
-    const payload: PairingPayload = { wsUrl };
+    const relayWsUrl = this._relayPublicWsUrl;
     this._pairingToken = randomUUID();
     this._pairingTokenIssuedAt = Date.now();
+
+    // When a relay is configured, the mobile connects to the relay (any-network).
+    // Include `target` (home node peer ID) and `token` as query params so the
+    // relay knows which node to proxy to. No mobile-side changes needed.
+    let wsUrl: string;
+    if (relayWsUrl) {
+      const params = new URLSearchParams();
+      if (reachable?.peerId) params.set("target", reachable.peerId);
+      params.set("token", this._pairingToken);
+      wsUrl = `${relayWsUrl}?${params.toString()}`;
+    } else {
+      wsUrl = lanWsUrl;
+    }
+
+    const payload: PairingPayload = { wsUrl };
     payload.token = this._pairingToken;
 
     if (reachable?.peerId) {
       payload.relayPeerId = reachable.peerId;
+    }
+
+    if (relayWsUrl) {
+      payload.relayWsUrl = relayWsUrl;
     }
 
     if (bridgeStatus.enabled) {

@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "@envoymesh/network": "0.1.0",
-    "@envoymesh/identity": "0.1.0"
+    "@envoymesh/identity": "0.1.0",
+    "@libp2p/utils": "^7.0.0",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "tsx": "^4.19.0",

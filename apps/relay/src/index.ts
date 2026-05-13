@@ -15,7 +15,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { mkdirSync } from "fs";
 import { join } from "path";
 import { randomUUID } from "node:crypto";
-import { CapabilityRegistry, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, EnvoyMesh } from "@envoymesh/network";
+import { WebSocketServer, WebSocket } from "ws";
+import { byteStream } from "@libp2p/utils";
+import { CapabilityRegistry, CLIENT_PROXY_PROTOCOL, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, EnvoyMesh } from "@envoymesh/network";
 import { parseRelayArgs } from "./args.js";
 import {
   createInitialStandaloneRelayHealthState,
@@ -56,6 +58,10 @@ const MAX_FANOUT_TARGETS = 500;
 
 // Maximum forward targets for task.cancel
 const MAX_FORWARD_TARGETS = 100;
+
+// Maximum concurrent client-proxy connections (mobile → relay → home node)
+const MAX_PROXY_CONNECTIONS = 50;
+const MAX_PROXY_CONNS_PER_TARGET = 10;
 
 // Maximum concurrent deliveries per fan-out batch
 const CONCURRENCY_LIMIT = 50;
@@ -386,6 +392,7 @@ try {
             peerId: mesh.peerId,
             addrs: mesh.multiaddrs,
             rendezvous: args.enableRendezvous,
+            clientProxy: true,
           }),
         );
       } else if (req.url === "/health") {
@@ -406,13 +413,131 @@ try {
         res.end();
       }
     });
+
+    // WebSocket proxy for mobile client connections (Phase 10A relay bridge)
+    const wss = new WebSocketServer({ noServer: true });
+    const proxyConnByTarget = new Map<string, Set<WebSocket>>();
+    let proxyConnTotal = 0;
+
+    httpServer.on("upgrade", (req, socket, head) => {
+      const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+      if (url.pathname !== "/ws") {
+        socket.destroy();
+        return;
+      }
+      const targetPeerId = (url.searchParams.get("target") ?? "").trim();
+      if (!targetPeerId) {
+        socket.write("HTTP/1.1 400 Bad Request\r\n\r\nMissing target peer ID");
+        socket.destroy();
+        return;
+      }
+      const token = (url.searchParams.get("token") ?? "").trim();
+
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        void handleProxyConnection(ws, targetPeerId, token);
+      });
+    });
+
+    async function handleProxyConnection(ws: WebSocket, targetPeerId: string, token: string): Promise<void> {
+      // Rate limit
+      if (proxyConnTotal >= MAX_PROXY_CONNECTIONS) {
+        console.warn(`[relay] client-proxy: rejected — max total connections ${MAX_PROXY_CONNECTIONS}`);
+        ws.close(1013, "relay proxy connections full");
+        return;
+      }
+      const targetSet = proxyConnByTarget.get(targetPeerId);
+      if (targetSet && targetSet.size >= MAX_PROXY_CONNS_PER_TARGET) {
+        console.warn(`[relay] client-proxy: rejected — max connections per target ${MAX_PROXY_CONNS_PER_TARGET}`);
+        ws.close(1013, "too many connections to target");
+        return;
+      }
+
+      proxyConnTotal++;
+      const conns = proxyConnByTarget.get(targetPeerId) ?? new Set();
+      conns.add(ws);
+      proxyConnByTarget.set(targetPeerId, conns);
+      console.log(`[relay] client-proxy: connecting to ${targetPeerId.slice(0, 12)}… (total=${proxyConnTotal})`);
+
+      let libp2pStream: any = null;
+
+      try {
+        libp2pStream = await mesh.dialProtocol(targetPeerId, CLIENT_PROXY_PROTOCOL);
+        const streamIo = byteStream(libp2pStream);
+
+        // Send handshake with pairing token
+        const handshake = JSON.stringify({ type: "proxy-connect", token });
+        await streamIo.write(new TextEncoder().encode(handshake));
+
+        // Read handshake response
+        const responseBytes = await streamIo.read();
+        if (!responseBytes) {
+          ws.close(1011, "home node closed stream");
+          return;
+        }
+        const response = JSON.parse(new TextDecoder().decode(responseBytes.subarray()));
+        if (response.type !== "proxy-accept") {
+          ws.close(1011, response.reason ?? "home node rejected proxy");
+          return;
+        }
+
+        // Bridge: WebSocket → libp2p stream
+        ws.on("message", async (data: Buffer) => {
+          try {
+            await streamIo.write(new Uint8Array(data));
+          } catch (err) {
+            console.error("[relay] client-proxy: write error:", err);
+            ws.close();
+          }
+        });
+
+        // Bridge: libp2p stream → WebSocket
+        void (async () => {
+          try {
+            while (ws.readyState === WebSocket.OPEN) {
+              const bytes = await streamIo.read();
+              if (!bytes) {
+                ws.close();
+                break;
+              }
+              ws.send(Buffer.from(bytes.subarray()));
+            }
+          } catch (err) {
+            // stream closed — clean up
+          }
+        })();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[relay] client-proxy: failed to connect to ${targetPeerId.slice(0, 12)}…: ${msg}`);
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close(1011, "unable to reach home node");
+        }
+      }
+
+      ws.on("close", () => {
+        proxyConnTotal--;
+        const s = proxyConnByTarget.get(targetPeerId);
+        if (s) {
+          s.delete(ws);
+          if (s.size === 0) proxyConnByTarget.delete(targetPeerId);
+        }
+        if (libp2pStream) {
+          try { libp2pStream.close(); } catch { /* ignore */ }
+        }
+        console.log(`[relay] client-proxy: disconnected from ${targetPeerId.slice(0, 12)}… (total=${proxyConnTotal})`);
+      });
+
+      ws.on("error", () => {
+        ws.close();
+      });
+    }
+
     httpServer.on("error", (error) => {
       recordFatalError("httpServer", error);
       console.error("[relay] HTTP info server error:", error);
     });
 
     httpServer.listen(args.httpPort, "0.0.0.0", () => {
-      console.log(`[relay] HTTP info server listening on port ${args.httpPort}`);
+      console.log(`[relay] HTTP info + WebSocket proxy listening on port ${args.httpPort}`);
     });
   }
 

@@ -119,4 +119,39 @@ describe("NodeServiceImpl getPairingPayload", () => {
     const p = await svc.getPairingPayload();
     expect(p.wsUrl).toBe("ws://localhost:3030/ws");
   });
+
+  it("uses relay proxy URL with target and token when relayPublicWsUrl is configured", async () => {
+    const trustStore = createLocalTrustStore(profileDir);
+    const peerDirectory = createLocalPeerDirectoryStore(profileDir);
+    const human = createHumanProfileStore(profileDir);
+    const mesh = mockMesh({ peerId: "12D3KooWHome", multiaddrs: ["/ip4/192.168.1.50/tcp/63641"] });
+
+    const svc = new NodeServiceImpl(mesh, trustStore, peerDirectory, human, profileDir);
+    svc.setWsListenAddress(3030, "/ws");
+    svc.setRelayPublicWsUrl("ws://relay.example.com:15432/ws");
+
+    const p = await svc.getPairingPayload();
+    expect(p.relayWsUrl).toBe("ws://relay.example.com:15432/ws");
+    expect(p.relayPeerId).toBe("12D3KooWHome");
+    expect(p.wsUrl).toContain("ws://relay.example.com:15432/ws");
+    expect(p.wsUrl).toContain("target=12D3KooWHome");
+    expect(p.wsUrl).toContain("token=");
+    expect(p.token).toBeTruthy();
+  });
+
+  it("uses LAN IP when relayPublicWsUrl is not configured", async () => {
+    const trustStore = createLocalTrustStore(profileDir);
+    const peerDirectory = createLocalPeerDirectoryStore(profileDir);
+    const human = createHumanProfileStore(profileDir);
+    const mesh = mockMesh({ peerId: "12D3KooWHome", multiaddrs: ["/ip4/192.168.1.50/tcp/63641"] });
+
+    const svc = new NodeServiceImpl(mesh, trustStore, peerDirectory, human, profileDir);
+    svc.setWsListenAddress(3030, "/ws");
+    // no setRelayPublicWsUrl call
+
+    const p = await svc.getPairingPayload();
+    expect(p.wsUrl).toBe("ws://192.168.1.50:3030/ws");
+    expect(p.relayWsUrl).toBeUndefined();
+    expect(p.relayPeerId).toBe("12D3KooWHome");
+  });
 });

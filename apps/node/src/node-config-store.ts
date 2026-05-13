@@ -39,6 +39,11 @@ export interface PersistedNodeConfig {
    * `getPairingPayload` token can be auto-accepted. Default: false (undefined).
    */
   companionPairingAutoAcceptWithToken?: boolean;
+  /**
+   * Public WebSocket URL of the relay node for mobile pairing (Phase 10A relay bridge).
+   * When set, the pairing QR encodes this URL so mobile can connect via the relay from any network.
+   */
+  relayPublicWsUrl?: string;
 }
 
 export interface NodeConfigStore {

@@ -39,6 +39,7 @@ import {
 } from "@envoymesh/identity";
 import {
   CapabilityRegistry,
+  CLIENT_PROXY_PROTOCOL,
   DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME,
   ENVOY_CHAT_PROTOCOL,
   ENVOY_DATA_PROTOCOL,
@@ -160,6 +161,8 @@ import {
   type NodeHealthSnapshot,
   type NodeHealthState,
 } from "./node-health.js";
+import { byteStream } from "@libp2p/utils";
+import { routeRpcMethod } from "./json-rpc-router.js";
 
 const args = parseNodeArgs(process.argv.slice(2));
 const profile = await loadOrCreateNodeProfile(args.profileDir);
@@ -1977,6 +1980,10 @@ if (nodeService instanceof NodeServiceImpl) {
   // Load model provider config from persisted config
   const nodeConfig = await nodeService.getNodeConfig();
   currentModelProviders = nodeConfig.modelProviders;
+  // Restore relay pairing proxy URL from persisted config (Phase 10A relay bridge)
+  if (nodeConfig.relayPublicWsUrl) {
+    nodeService.setRelayPublicWsUrl(nodeConfig.relayPublicWsUrl);
+  }
   // Environment variable can override chat assist setting
   currentChatAssistEnabled = process.env.ENVOY_CHAT_ASSIST_ENABLED === "true" ? true : nodeConfig.chatAssistEnabled;
   // Load autonomous policy config
@@ -2017,6 +2024,57 @@ wsServerForEvents = wsServer;
 if (nodeService instanceof NodeServiceImpl) {
   nodeService.setWsListenAddress(3030, "/ws");
 }
+
+// Register client-proxy protocol handler (Phase 10A relay bridge)
+// Mobile app connects to relay's WebSocket; relay proxies to home node via this libp2p stream.
+mesh.handleRawProtocol(CLIENT_PROXY_PROTOCOL, async (stream, _connection) => {
+  const streamIo = byteStream(stream);
+  try {
+    // Read handshake
+    const handshakeBytes = await streamIo.read();
+    if (!handshakeBytes) { await stream.close(); return; }
+    const handshake = JSON.parse(new TextDecoder().decode(handshakeBytes.subarray()));
+
+    // Validate pairing token
+    const token = handshake?.token as string | undefined;
+    if (!token || !(nodeService instanceof NodeServiceImpl) || !nodeService.validatePairingToken(token)) {
+      await streamIo.write(new TextEncoder().encode(JSON.stringify({ type: "proxy-reject", reason: "invalid or expired token" })));
+      await stream.close();
+      return;
+    }
+
+    await streamIo.write(new TextEncoder().encode(JSON.stringify({ type: "proxy-accept" })));
+    console.log(`[client-proxy] accepted relay-proxied client`);
+
+    // Bidirectional message loop: read JSON-RPC from stream, route, write response
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    while (true) {
+      const bytes = await streamIo.read();
+      if (!bytes) break;
+      let msg: { id?: string; method?: string; params?: Record<string, unknown> };
+      try {
+        msg = JSON.parse(decoder.decode(bytes.subarray()));
+      } catch {
+        continue;
+      }
+      if (!msg.id || !msg.method) continue;
+
+      try {
+        const result = await routeRpcMethod(nodeService, msg.method, msg.params ?? {});
+        await streamIo.write(encoder.encode(JSON.stringify({ id: msg.id, result })));
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        await streamIo.write(encoder.encode(JSON.stringify({ id: msg.id, error: { code: "ERROR", message: errMsg } })));
+      }
+    }
+  } catch (err) {
+    // Client disconnected or stream error — nothing to do
+  } finally {
+    try { await stream.close(); } catch { /* ignore */ }
+  }
+});
+
 await runNodeHealthCycle("startup");
 scheduleNodeHealth();
 

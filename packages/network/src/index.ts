@@ -38,6 +38,7 @@ export { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, loadOrCreateLibp2pPrivateKey } fro
 export const ENVOY_MESSAGE_PROTOCOL = "/envoymesh/message/0.1.0";
 export const ENVOY_CHAT_PROTOCOL = "/envoymesh/chat/0.1.0";
 export const ENVOY_DATA_PROTOCOL = "/envoymesh/data/0.1.0";
+export const CLIENT_PROXY_PROTOCOL = "/envoymesh/client-proxy/0.1.0";
 
 /** Prefix `keep-alive-*` triggers libp2p reconnect-on-disconnect queue for bonded contacts */
 const CONTACT_KEEP_ALIVE_PEER_TAG = `${KEEP_ALIVE}-envoymesh-contact`;
@@ -651,6 +652,27 @@ export class EnvoyMesh {
   onPeerDiscovered(handler: MeshPeerDiscoveryHandler): () => void {
     this.peerDiscoveryHandlers.add(handler);
     return () => this.peerDiscoveryHandlers.delete(handler);
+  }
+
+  /**
+   * Register a raw protocol handler that receives the libp2p stream directly.
+   * Unlike `onMessage` (which provides decoded envelopes), this gives access
+   * to the raw duplex stream for non-envelope protocols like client-proxy.
+   */
+  async handleRawProtocol(
+    protocol: string,
+    handler: (stream: any, connection: any) => Promise<void>,
+  ): Promise<void> {
+    await this.requireNode().handle(protocol, handler);
+  }
+
+  /**
+   * Open a libp2p stream on [protocol] to [target] and return the raw stream.
+   * Caller is responsible for read/write lifecycle and closing the stream.
+   */
+  async dialProtocol(target: string, protocol: string): Promise<any> {
+    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    return this.requireNode().dialProtocol(dialTarget as any, protocol);
   }
 
   async send(target: string, envelope: EnvoyEnvelope, sendOptions?: MeshOutboundOptions): Promise<number> {
