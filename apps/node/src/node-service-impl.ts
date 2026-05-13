@@ -2,6 +2,7 @@ import type {
   AiSettings,
   BondRecord,
   BridgeStatus,
+  PairingPayload,
   ChatMessage,
   ConnectionStatus,
   CreateHumanProfileInput,
@@ -1951,13 +1952,14 @@ class NodeServiceImpl implements NodeService {
    * Derives the LAN WebSocket URL from the node's advertised multiaddrs
    * and ws-server port. Falls back to localhost if no IPv4 multiaddr found.
    */
-  async getPairingPayload(): Promise<{ wsUrl: string; relayPeerId?: string; agentPeerId?: string; agentPubKey?: string }> {
+  async getPairingPayload(): Promise<PairingPayload> {
     const bridgeStatus = await this.getBridgeStatus();
+    const reachable = this._mesh ?? this._externalMesh;
 
     // Derive LAN IP from multiaddrs, e.g. /ip4/192.168.1.100/tcp/63641 → 192.168.1.100
     let lanIp = "localhost";
-    if (this._mesh?.multiaddrs) {
-      for (const addr of this._mesh.multiaddrs) {
+    if (reachable?.multiaddrs) {
+      for (const addr of reachable.multiaddrs) {
         const match = addr.match(/\/ip4\/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/);
         if (match) {
           lanIp = match[1];
@@ -1970,13 +1972,16 @@ class NodeServiceImpl implements NodeService {
     const wsPath = (this._wsPath ?? "/ws");
     const wsUrl = `ws://${lanIp}:${wsPort}${wsPath}`;
 
-    const payload: { wsUrl: string; relayPeerId?: string; agentPeerId?: string; agentPubKey?: string } = { wsUrl };
+    const payload: PairingPayload = { wsUrl };
+
+    if (reachable?.peerId) {
+      payload.relayPeerId = reachable.peerId;
+    }
 
     if (bridgeStatus.enabled) {
       payload.agentPeerId = bridgeStatus.agentPeerId;
-      // Include agent public key if we have a profile with a public key
-      if (this._profile?.device?.publicKeyPem) {
-        payload.agentPubKey = this._profile.device.publicKeyPem;
+      if (bridgeStatus.agentPublicKeyPem) {
+        payload.agentPubKey = bridgeStatus.agentPublicKeyPem;
       }
     }
 

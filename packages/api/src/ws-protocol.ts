@@ -205,6 +205,8 @@ export interface BridgeStatus {
   listenPort: number;
   /** Human-readable name for the bridge agent (e.g. "HomeClaw", "OpenClaw"). */
   agentName: string;
+  /** PEM public key of the bridge agent (`chat.message` signer), when bridge is enabled. */
+  agentPublicKeyPem?: string;
 }
 
 /**
@@ -216,7 +218,10 @@ export interface BridgeStatus {
 export interface PairingPayload {
   /** WebSocket relay URL the mobile app connects to (e.g. ws://192.168.1.100:3030/ws) */
   wsUrl: string;
-  /** Relay peer ID (optional) */
+  /**
+   * Home node's libp2p peer ID (optional).
+   * Used for `forwardEnvelope` dial hints, diagnostics, and pairing with the correct mesh hop — not a standalone relay protocol.
+   */
   relayPeerId?: string;
   /** Bridge agent peer ID (optional — present when bridge is enabled) */
   agentPeerId?: string;

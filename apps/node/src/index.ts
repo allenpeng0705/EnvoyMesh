@@ -126,6 +126,11 @@ import { createBridge } from "./bridge/index.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
 import type { BridgeConfig } from "./bridge/config.js";
 import { BridgeConfigSchema } from "./bridge/config.js";
+import {
+  ExternalAgentGateway,
+  createExternalAgentSession,
+  DEFAULT_AGENT_CAPABILITIES,
+} from "./external-agent-gateway.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
 import { resolveBootstrapAddresses } from "./bootstrap-resolver.js";
 import {
@@ -162,6 +167,9 @@ const chatDraftStore = createChatDraftStore(args.profileDir);
 const capabilityManifestStore = createCapabilityManifestStore(args.profileDir);
 const reputationStore = createLocalPeerReputationStore(args.profileDir);
 const nodeConfigStore = createNodeConfigStore(args.profileDir);
+
+// External Agent Gateway — manages external agent sessions, capabilities, and action logging
+const gateway = new ExternalAgentGateway();
 
 // Bridge: load or generate agent identity for external agent pipe
 let bridgeIdentity = await loadBridgeIdentity(args.profileDir);
@@ -1911,6 +1919,7 @@ const bridge = createBridge({
   identity: bridgeIdentity,
   mesh,
   getRecipientPeerId,
+  gateway,
   onSelfSendEnvelope: async (envelope, _remotePeerId) => {
     // Deliver bridge agent reply locally — emit chat:message + persist to log
     const payload = parseChatMessagePayload(envelope.payload);
@@ -1954,6 +1963,7 @@ if (nodeService instanceof NodeServiceImpl && bridgeConfig.enabled) {
     agentUrl: bridgeConfig.agentUrl,
     listenPort: bridgeConfig.listenPort,
     agentName: bridgeConfig.agentName ?? "My Agent",
+    agentPublicKeyPem: bridgeIdentity.agentPublicKeyPem,
   });
   // Register bridge agent as a virtual peer so sendChat can resolve it.
   // ownerId = bridge agent peer ID (lookup key for sendChat)
@@ -1966,6 +1976,18 @@ if (nodeService instanceof NodeServiceImpl && bridgeConfig.enabled) {
     console.warn(`[bridge] failed to register agent in peer directory: ${err.message}`);
   });
   console.log(`[bridge] agent peer ${bridge.agentPeerId} registered`);
+
+  // Register bridge agent in the external agent gateway for session management
+  gateway.registerAgent(
+    createExternalAgentSession(
+      bridgeIdentity.agentCredential.agentId,
+      bridgeIdentity.agentPeerId,
+      bridgeConfig.agentName ?? "My Agent",
+      bridgeIdentity.ownerId,
+      DEFAULT_AGENT_CAPABILITIES,
+    ),
+  );
+  console.log(`[gateway] registered agent: ${bridgeIdentity.agentCredential.agentId} (${bridgeConfig.agentName ?? "My Agent"})`);
 }
 
 if (args.configPath) {

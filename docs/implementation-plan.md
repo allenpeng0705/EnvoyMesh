@@ -1288,35 +1288,46 @@ Tasks:
 - `[ ]` All schema types have Dart equivalents with same field names and validation rules
 - `[ ]` Payload constructors produce output parseable by TypeScript parsers
 
-#### 10A.3: Relay WebSocket Client
+#### 10A.3: Node WebSocket client (JSON-RPC)
 
-**Goal:** Connect to an EnvoyMesh relay, register as a peer, and send/receive envelopes.
+**Goal:** Connect to the **EnvoyMesh Node** WebSocket (`WsServer` in `apps/node/src/ws-server.ts`), call JSON-RPC methods, and subscribe to push events. The mobile thin client does **not** speak a standalone `relay.hello` / `relay.send` frame protocol on the fleet relay binary; it uses the same JSON-RPC surface as the Social UI.
+
+**Transport:** WebSocket URL from pairing QR (`wsUrl`, e.g. `ws://192.168.1.100:3030/ws`).
+
+**Client → Node (request):**
+```json
+{ "id": "msg_1", "method": "forwardEnvelope", "params": { "envelope": { ... }, "dialHints": [ "/optional/multiaddr" ] } }
+```
+```json
+{ "id": "msg_2", "method": "getPairingPayload", "params": {} }
+```
+```json
+{ "id": "msg_3", "method": "getBridgeStatus", "params": {} }
+```
+
+**Node → Client (response):**
+```json
+{ "id": "msg_1", "result": null }
+```
+
+**Node → Client (push events):** same connection; server sends `{ "event": "chat:message", "data": { ... } }`-style frames for subscribed topics (see `WsServer`).
+
+**Pairing QR payload (`envoy://pair?...`):** includes `wsUrl`, optional `relayPeerId` (home node's **libp2p** peer ID for `dialHints` / diagnostics), and when the bridge is enabled optional `agentPeerId` / `agentPubKey` (bridge **agent** PEM, not the device key).
 
 Tasks:
 
-- `[ ]` Implement `RelayClient` class: WebSocket connection to relay at configured address
-- `[ ]` Implement relay handshake: send `relay.hello` with peer ID and public key
-- `[ ]` Implement `relay.send` envelope wrapping: wraps an `EnvoyEnvelope` for relay routing
-- `[ ]` Implement inbound message stream: parse `relay.receive` messages, unwrap inner envelope, verify signature
-- `[ ]` Implement keepalive: ping/pong to maintain relay connection
-- `[ ]` Implement reconnection: exponential backoff on disconnect, max 5 retries then notify UI
-- `[ ]` Implement `RelayClientState` enum: `disconnected`, `connecting`, `connected`, `error`
-- `[ ]` Unit tests: mock WebSocket, test handshake, send/receive, reconnection
-
-**Relay protocol (existing EnvoyMesh relay):**
-```
-Client → Relay:  { "type": "relay.hello", "peerId": "envoy_xxx", "publicKey": "..." }
-Relay → Client:  { "type": "relay.hello.ack", "relayPeerId": "12D3KooW..." }
-Client → Relay:  { "type": "relay.send", "recipientPeerId": "12D3KooW...", "envelope": { ... } }
-Relay → Client:  { "type": "relay.receive", "senderPeerId": "12D3KooW...", "envelope": { ... } }
-Client → Relay:  { "type": "relay.ping" }
-Relay → Client:  { "type": "relay.pong" }
-```
+- `[ ]` Implement WebSocket client with JSON-RPC request/response handling
+- `[ ]` Implement `forwardEnvelope` for outbound signed `EnvoyEnvelope` traffic
+- `[ ]` Parse inbound push events (`chat:message`, `bridge:status`, etc.) as implemented by the node
+- `[ ]` Optional: call `getPairingPayload` / `getBridgeStatus` after connect for UI state
+- `[ ]` Reconnection: exponential backoff on disconnect (app-defined policy)
+- `[ ]` Unit tests: mock WebSocket, test RPC + event parsing
 
 **Exit criteria:**
-- `[ ]` Dart relay client can connect to a running EnvoyMesh relay
-- `[ ]` Can send an envelope to another peer and receive the reply
-- `[ ]` Reconnection works after relay restart
+
+- `[ ]` Dart client can connect to a running EnvoyMesh node WebSocket
+- `[ ]` Can send a signed envelope via `forwardEnvelope` and receive chat-related pushes on the same connection
+- `[ ]` Reconnect path is tested or exercised manually
 
 #### 10A.4: EnvoyNodeService — Flutter Integration Layer
 
@@ -1371,10 +1382,10 @@ Tasks:
 Tasks:
 
 - `[ ]` Desktop/host side: EnvoyMesh node displays pairing QR code containing:
-  - Desktop's relay peer ID (`12D3KooW...`)
+  - Home node's libp2p peer ID (`12D3KooW...`, `relayPeerId` in payload — for `dialHints` / diagnostics)
   - Bridge agent's peer ID (`envoy_agent_xxx`)
   - Bridge agent's public key (PEM)
-  - Relay multiaddr
+  - WebSocket URL to the node (`wsUrl`)
   - Short-lived pairing token (optional, for auth)
 - `[ ]` Mobile side: `PairingScreen` scans QR, extracts peer info, saves to local peer directory
 - `[ ]` Mobile sends `hello.request` to bridge agent via relay

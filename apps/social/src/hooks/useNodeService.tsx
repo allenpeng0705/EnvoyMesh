@@ -2,7 +2,9 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { createWsClient } from "../ws-client.js";
 import type {
   BondRecord,
+  BridgeStatus,
   ChatMessage,
+  PairingPayload,
   ConnectionStatus,
   CreateHumanProfileInput,
   HelloProfile,
@@ -70,8 +72,8 @@ interface NodeServiceClient {
   getPeerConnectionInfo(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
 
   // Agent Bridge
-  getBridgeStatus(): Promise<{ enabled: boolean; agentPeerId: string; agentUrl: string; listenPort: number; agentName: string }>;
-  getPairingPayload(): Promise<{ wsUrl: string; relayPeerId?: string; agentPeerId?: string; agentPubKey?: string }>;
+  getBridgeStatus(): Promise<BridgeStatus>;
+  getPairingPayload(): Promise<PairingPayload>;
 
   // AI / Knowledge Query
   knowledgeQuery(question: string): Promise<string>;

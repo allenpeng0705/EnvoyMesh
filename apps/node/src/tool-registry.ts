@@ -195,6 +195,68 @@ export class ToolRegistry {
       intent: undefined, // Local operation, not mesh
       isMeshTool: false,
     });
+
+    // External agent management tools (Phase 9I)
+    this.register({
+      name: "mesh.list-external-sessions",
+      description: "List all external agent sessions registered in the gateway",
+      paramSchema: {
+        type: "object",
+        properties: {
+          includeRevoked: { type: "boolean", description: "Include revoked agents" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "trusted",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.revoke-external-agent",
+      description: "Revoke an external agent's access",
+      paramSchema: {
+        type: "object",
+        properties: {
+          agentId: { type: "string", description: "The agent's ID to revoke" },
+        },
+        required: ["agentId"],
+      },
+      sensitivityCeiling: "trusted",
+      requiresApproval: true,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.list-external-agent-actions",
+      description: "List recent actions performed by external agents",
+      paramSchema: {
+        type: "object",
+        properties: {
+          agentId: { type: "string", description: "Filter by agent ID (optional)" },
+          limit: { type: "number", description: "Max entries (default 50)" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "trusted",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.get-external-agent",
+      description: "Get details of a registered external agent",
+      paramSchema: {
+        type: "object",
+        properties: {
+          agentId: { type: "string", description: "The agent's ID" },
+        },
+        required: ["agentId"],
+      },
+      sensitivityCeiling: "trusted",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
   }
 
   /**

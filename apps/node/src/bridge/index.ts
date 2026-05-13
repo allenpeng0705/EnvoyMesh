@@ -1,6 +1,7 @@
 import * as http from "node:http";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { parseChatMessagePayload } from "@envoymesh/protocol";
+import type { ExternalAgentGateway } from "../external-agent-gateway.js";
 import type { BridgeConfig } from "./config.js";
 import { BridgeConfigSchema } from "./config.js";
 import {
@@ -25,6 +26,8 @@ export interface CreateBridgeOptions {
   getRecipientPeerId: (ownerOrPeerId: string) => Promise<string | null>;
   /** Called when the bridge needs to deliver an envelope to the local node (self-send). */
   onSelfSendEnvelope?: (envelope: any, remotePeerId: string) => Promise<void>;
+  /** Gateway for external agent session management and action logging (Phase 9I). */
+  gateway?: ExternalAgentGateway;
 }
 
 /**
@@ -45,6 +48,8 @@ export function createBridge(options: CreateBridgeOptions): {
     throw new Error("Bridge requires a shared secret when enabled");
   }
 
+  const agentId = options.identity.agentCredential.agentId;
+
   const deps: BridgeDeps = {
     config,
     identity: options.identity,
@@ -57,6 +62,8 @@ export function createBridge(options: CreateBridgeOptions): {
       await options.mesh.sendChat(peerId, envelope, {});
     },
     getRecipientPeerId: options.getRecipientPeerId,
+    gateway: options.gateway,
+    agentId,
   };
 
   // --- HTTP server: agent → P2P ---
@@ -74,6 +81,13 @@ export function createBridge(options: CreateBridgeOptions): {
       }
     }
 
+    // Gateway authorization: reject if agent session is revoked or missing
+    if (options.gateway && agentId && !options.gateway.isAuthorized(agentId)) {
+      res.writeHead(403).end(JSON.stringify({ ok: false, reason: "agent revoked" }));
+      return;
+    }
+
+    const httpStartTime = Date.now();
     try {
       const raw = await readBody(req, MAX_BRIDGE_BODY_BYTES);
       const { to, text } = JSON.parse(raw);
@@ -105,13 +119,26 @@ export function createBridge(options: CreateBridgeOptions): {
     console.log(`[bridge] ${payload.senderOwnerId}: ${payload.text}`);
 
     try {
+      const fwdStartTime = Date.now();
       const replyText = await forwardToAgent(config, {
         senderPeerId: remotePeerId,
         senderOwnerId: payload.senderOwnerId,
         text: payload.text,
       });
 
+      // Log forward action via gateway
+      options.gateway?.logAction({
+        agentId: agentId ?? "unknown",
+        toolName: "bridge.forward_to_agent",
+        params: { from: payload.senderOwnerId, textLength: payload.text.length },
+        outcome: "success",
+        requiresApproval: false,
+        durationMs: Date.now() - fwdStartTime,
+      });
+      options.gateway?.touchAgent(agentId ?? "unknown");
+
       // If agent returned a synchronous reply, send it back.
+      // receiveFromAgent also logs via the gateway via its own deps.
       if (replyText) {
         await receiveFromAgent(deps, {
           to: remotePeerId,
@@ -120,6 +147,15 @@ export function createBridge(options: CreateBridgeOptions): {
       }
     } catch (err) {
       console.error(`[bridge] forward failed:`, err);
+      options.gateway?.logAction({
+        agentId: agentId ?? "unknown",
+        toolName: "bridge.forward_to_agent",
+        params: { from: payload.senderOwnerId },
+        outcome: "error",
+        error: err instanceof Error ? err.message : String(err),
+        requiresApproval: false,
+        durationMs: 0,
+      });
     }
   };
 

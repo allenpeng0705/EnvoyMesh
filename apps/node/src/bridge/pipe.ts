@@ -1,6 +1,7 @@
 import type { AgentCredential, EnvoyEnvelope } from "@envoymesh/protocol";
 import { createChatMessagePayload, createUnsignedEnvelope } from "@envoymesh/protocol";
 import { signUnsignedEnvelope } from "@envoymesh/identity";
+import type { ExternalAgentGateway } from "../external-agent-gateway.js";
 import type { BridgeConfig } from "./config.js";
 
 export interface BridgeIdentity {
@@ -17,6 +18,10 @@ export interface BridgeDeps {
   sendChat: (peerId: string, envelope: EnvoyEnvelope) => Promise<void>;
   /** Resolve an ownerId or peerId to the current libp2p peer ID (for routing replies). */
   getRecipientPeerId: (ownerOrPeerId: string) => Promise<string | null>;
+  /** Gateway for external agent session management and action logging (Phase 9I). */
+  gateway?: ExternalAgentGateway;
+  /** Agent ID used to key gateway session lookups and action logs. */
+  agentId?: string;
 }
 
 export interface P2PMessage {
@@ -72,6 +77,7 @@ export async function receiveFromAgent(
   deps: BridgeDeps,
   response: AgentResponse,
 ): Promise<{ messageId: string; recipientPeerId: string }> {
+  const startTime = Date.now();
   const recipientPeerId = await deps.getRecipientPeerId(response.to);
   if (!recipientPeerId) {
     throw new Error(`Cannot resolve peer ID for: ${response.to}`);
@@ -97,6 +103,18 @@ export async function receiveFromAgent(
   const envelope = signUnsignedEnvelope(unsigned, deps.identity.agentPrivateKeyPem);
 
   await deps.sendChat(recipientPeerId, envelope);
+
+  if (deps.gateway && deps.agentId) {
+    deps.gateway.logAction({
+      agentId: deps.agentId,
+      toolName: "bridge.send_message",
+      params: { to: response.to, textLength: response.text.length },
+      outcome: "success",
+      requiresApproval: false,
+      durationMs: Date.now() - startTime,
+    });
+    deps.gateway.touchAgent(deps.agentId);
+  }
 
   return { messageId, recipientPeerId };
 }
