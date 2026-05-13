@@ -527,6 +527,51 @@ export class ToolRegistry {
       isMeshTool: false,
     });
 
+    // Digest generator tools (Phase 9J)
+    this.register({
+      name: "mesh.get-digest",
+      description: "Get the daily or weekly digest of agent activity",
+      paramSchema: {
+        type: "object",
+        properties: {
+          period: { type: "string", enum: ["daily", "weekly"], description: "Digest period (defaults to daily)" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.set-digest-schedule",
+      description: "Configure the digest frequency and output directory",
+      paramSchema: {
+        type: "object",
+        properties: {
+          frequency: { type: "string", enum: ["daily", "weekly", "off"], description: "Digest frequency" },
+          outputDir: { type: "string", description: "Output directory for saved digests" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.get-digest-config",
+      description: "Get the current digest configuration and next scheduled time",
+      paramSchema: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
     // Session manager tools (Phase 9E)
     this.register({
       name: "mesh.list-sessions",

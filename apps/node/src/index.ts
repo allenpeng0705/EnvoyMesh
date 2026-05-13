@@ -116,6 +116,7 @@ import { FileSessionStore, SessionManager } from "./session-manager.js";
 import { StyleAdapter } from "./style-adapter.js";
 import { TriggerStore } from "./trigger-store.js";
 import { ApprovalQueue, createApprovalItem } from "./approval-queue.js";
+import { DigestGenerator, createDefaultDigestConfig } from "./digest-generator.js";
 import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
@@ -1961,6 +1962,9 @@ const sessionManager = new SessionManager(new FileSessionStore(join(args.profile
 const styleAdapter = new StyleAdapter();
 const triggerStore = new TriggerStore();
 const approvalQueue = new ApprovalQueue();
+const digestGenerator = new DigestGenerator(
+  createDefaultDigestConfig(join(args.profileDir, "digests")),
+);
 const wsServer = new WsServer(3030, "/ws", {
   onConnectionChange: (connectedCount) => {
     if (connectedCount > 0) {
@@ -2008,6 +2012,52 @@ modeTransitionTimer = setInterval(() => {
   const expiredIds = approvalQueue.expireOldItems();
   if (expiredIds.length > 0) {
     console.log(`[approval] expired ${expiredIds.length} items`);
+  }
+  // Check digest schedule (Phase 9J)
+  const digestConfig = digestGenerator.getConfig();
+  if (digestConfig.frequency !== "off") {
+    const nextScheduled = digestGenerator.getNextScheduledTime();
+    if (nextScheduled && now >= nextScheduled) {
+      console.log(`[digest] generating ${digestConfig.frequency} digest`);
+      const period = digestConfig.frequency as "daily" | "weekly";
+      void sessionManager.listSessions().then((sessions) =>
+        digestGenerator.generateDigest(period, {
+          contactActivity: sessions.map((s) => ({
+            contactOwnerId: s.contactOwnerId,
+            contactDisplayName: s.contactDisplayName,
+            messageCount: s.messageCount,
+            lastInteractionAt: s.lastInteraction,
+            escalated: s.pendingEscalation !== null,
+            pendingApproval: false,
+          })),
+          pendingApprovals: approvalQueue.listPending().map((item) => ({
+            id: item.id,
+            type: item.actionType,
+            title: item.title,
+            priority: item.priority,
+            requestedAt: item.requestedAt,
+          })),
+          proactiveActions: [],
+        }),
+      ).then(async (digest) => {
+        try {
+          const path = await digestGenerator.saveDigest(digest);
+          console.log(`[digest] saved to ${path}`);
+          wsServerForEvents?.emitEvent("digest:ready", {
+            digestId: digest.id,
+            period: digest.period,
+            startDate: digest.startDate,
+            endDate: digest.endDate,
+            totalActions: digest.totalActions,
+            pendingCount: digest.pendingApprovals.length,
+            summaryText: digest.summaryText,
+            savedPath: path,
+          });
+        } catch (err) {
+          console.warn(`[digest] save failed:`, err);
+        }
+      }).catch((err) => console.warn(`[digest] generation failed:`, err));
+    }
   }
 }, 30000);
 
