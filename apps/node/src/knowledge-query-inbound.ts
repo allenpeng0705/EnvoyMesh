@@ -1,4 +1,5 @@
-import { createAuditEvent, type LocalTaskStore, type LocalTrustStore, type LocalPeerDirectoryStore, type NodeProfile } from "@envoymesh/local-store";
+import { createAuditEvent, type LocalTaskStore, type LocalTrustStore, type LocalPeerDirectoryStore, type NodeProfile, type LocalChatLogStore, type HumanProfileStore } from "@envoymesh/local-store";
+import { buildContextInjection } from "./context-injector.js";
 import {
   createKnowledgeResponsePayload,
   parseKnowledgeQueryPayload,
@@ -147,8 +148,12 @@ export async function handleInboundKnowledgeQuery(input: {
    * If true, the owner has approved this request (skips owner approval check for cloud providers).
    */
   ownerApproved?: boolean;
+  /** Chat log store for conversation context injection (Phase 9C). */
+  chatLogStore?: LocalChatLogStore | null;
+  /** Human profile store for owner profile context injection (Phase 9C). */
+  humanProfileStore?: HumanProfileStore;
 }): Promise<KnowledgeQueryInboundResult> {
-  const { envelope, remotePeerId, receivedAt, correlationId, taskStore, trustStore, peerDirectoryStore, profile, vaultIndex, modelProviders, isLocalSelfQuery = false, ownerApproved = false } = input;
+  const { envelope, remotePeerId, receivedAt, correlationId, taskStore, trustStore, peerDirectoryStore, profile, vaultIndex, modelProviders, isLocalSelfQuery = false, ownerApproved = false, chatLogStore = null, humanProfileStore } = input;
 
   let payload: ReturnType<typeof parseKnowledgeQueryPayload>;
   try {
@@ -277,11 +282,16 @@ export async function handleInboundKnowledgeQuery(input: {
     ? snippets.map((r) => `[From ${r.document.title}]: ${r.chunk.text}`).join("\n\n")
     : "(No vault documents found — answering from general knowledge)";
 
+  // Build rich context injection (Phase 9C): conversation history + relationship + profile
+  const injectedContext = humanProfileStore && senderOwnerId
+    ? await buildContextInjection(senderOwnerId, chatLogStore, trustStore, humanProfileStore)
+    : "";
+
   const prompt = `You are answering a knowledge query from a contact on the EnvoyMesh P2P network.\n\
 Answer only based on the provided context. If the context does not contain relevant information, say so.\n\
 Do not make up information. Keep the answer concise (2-4 sentences).\n\
 Sensitivity level of this answer: ${allowedSensitivity}.\n\n\
-Context:\n${promptContext}\n\n\
+Context:\n${promptContext}\n${injectedContext}\n\
 Query: ${payload.query}`;
 
   // Cap sensitivity for cloud providers (they only allow "public" by default)

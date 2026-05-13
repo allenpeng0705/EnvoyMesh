@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createAuditEvent, type LocalTaskStore, type LocalTrustStore, type LocalPeerDirectoryStore, type NodeProfile, type ChatDraftStore } from "@envoymesh/local-store";
+import { createAuditEvent, type LocalTaskStore, type LocalTrustStore, type LocalPeerDirectoryStore, type NodeProfile, type ChatDraftStore, type LocalChatLogStore, type HumanProfileStore } from "@envoymesh/local-store";
 import {
   createMockModelProvider,
   createOllamaLiteLlmProvider,
@@ -12,6 +12,7 @@ import {
 import { searchVault, type VaultIndex } from "@envoymesh/vault";
 import type { AiIdentity, AiRule, ModelProviderConfig } from "@envoymesh/api";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
+import { buildContextInjection } from "./context-injector.js";
 
 export interface ChatDraftResult {
   ok: true;
@@ -139,6 +140,8 @@ export async function generateChatDraft(input: {
   vaultIndex?: VaultIndex | null;
   isOnline?: boolean;
   ownerDisplayName?: string;
+  chatLogStore?: LocalChatLogStore | null;
+  humanProfileStore?: HumanProfileStore;
 }): Promise<ChatDraftResult | ChatDraftFailure> {
   const {
     envelope,
@@ -161,6 +164,8 @@ export async function generateChatDraft(input: {
     vaultIndex,
     isOnline = true,
     ownerDisplayName,
+    chatLogStore = null,
+    humanProfileStore,
   } = input;
 
   // Guard: chat assist must be enabled
@@ -344,11 +349,16 @@ Contact permissions:
 - AI Access Level: ${contactAiAccessLevel}
 - Knowledge Access: ${knowledgeAccess}`;
 
+  // Build rich context injection (Phase 9C): conversation history + relationship + profile
+  const injectedContext = humanProfileStore
+    ? await buildContextInjection(senderOwnerId, chatLogStore, trustStore, humanProfileStore)
+    : "";
+
   const prompt = `You are a helpful assistant in a secure P2P messaging app called EnvoyMesh.
 
 ${identityInstructions}
 ${ruleContext}
-${statusContext}
+${statusContext}${injectedContext}
 ${vaultContext}
 
 A message was just received from your contact "${senderDisplayName}" (owner ID: ${senderOwnerId}).

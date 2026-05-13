@@ -758,6 +758,8 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       profile,
       vaultIndex,
       modelProviders: currentModelProviders,
+      chatLogStore,
+      humanProfileStore,
     });
     if (!kq.ok) {
       await taskStore.appendAuditEvent(
@@ -1320,6 +1322,8 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           vaultIndex,
           isOnline: isOwnerOnline(), // Use actual online status
           ownerDisplayName: selfHuman?.displayName,
+          chatLogStore,
+          humanProfileStore,
         }).then(async (result) => {
           if (result.ok && wsServerForEvents) {
             // Always emit draft event for UI to display
