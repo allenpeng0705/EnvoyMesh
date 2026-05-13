@@ -44,6 +44,11 @@ export interface PersistedNodeConfig {
    * When set, the pairing QR encodes this URL so mobile can connect via the relay from any network.
    */
   relayPublicWsUrl?: string;
+  /**
+   * Whether the agent bridge is enabled. When true, the bridge is activated on next
+   * node start. Default: false.
+   */
+  bridgeEnabled?: boolean;
 }
 
 export interface NodeConfigStore {

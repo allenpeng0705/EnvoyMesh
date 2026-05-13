@@ -377,6 +377,32 @@ export function SettingsNodeTab() {
         </div>
       </section>
 
+      {/* Relay Public WS URL */}
+      <section className="settings-section">
+        <h3>Relay WebSocket URL</h3>
+        <p className="section-desc">
+          Public WebSocket URL of the EnvoyMesh relay for mobile pairing.
+          When set, the pairing QR directs mobile clients through the relay, enabling pairing from any network.
+          Leave empty to auto-discover from configured relays.
+        </p>
+        <dl className="settings-list">
+          <dt>Relay WS URL</dt>
+          <dd>
+            <input
+              type="text"
+              className="settings-input"
+              placeholder="ws://relay.example.com:15432/ws (leave empty for auto-discovery)"
+              value={nodeConfig?.relayPublicWsUrl ?? ""}
+              onChange={async (e) => {
+                const value = e.target.value.trim();
+                await nodeService.updateNodeConfig({ relayPublicWsUrl: value || "" });
+                await refreshNodeConfig();
+              }}
+            />
+          </dd>
+        </dl>
+      </section>
+
       {/* Agent Bridge */}
       <section className="settings-section">
         <h3>Agent Bridge</h3>
@@ -402,6 +428,25 @@ export function SettingsNodeTab() {
         {(!bridgeStatus?.enabled) && (
           <p className="settings-hint">Enable the bridge in your node's bridge-config.json to connect an external agent (HomeClaw, OpenClaw).</p>
         )}
+
+        {/* Bridge enable/disable toggle — takes effect on next node restart */}
+        <div className="settings-toggle-row" style={{ marginTop: "12px" }}>
+          <div className="toggle-info">
+            <strong>Enable Bridge</strong>
+            <span className="toggle-desc">Turn the agent bridge on/off (requires node restart)</span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={nodeConfig?.bridgeEnabled ?? false}
+              onChange={async (e) => {
+                await nodeService.updateNodeConfig({ bridgeEnabled: e.target.checked });
+                await refreshNodeConfig();
+              }}
+            />
+            <span className="toggle-slider" />
+          </label>
+        </div>
 
         {/* Pairing QR for mobile app */}
         <div style={{ marginTop: "12px" }}>

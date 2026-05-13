@@ -188,6 +188,11 @@ export interface NodeConfig {
   /** Agent bridge status — when an external agent (HomeClaw/OpenClaw) is bridged into the mesh. */
   bridgeStatus?: BridgeStatus;
   /**
+   * Whether the agent bridge is enabled (toggle in Settings UI).
+   * When true, the bridge is active on next node start. Default: false.
+   */
+  bridgeEnabled?: boolean;
+  /**
    * When true, an inbound `device.pair.request` whose `pairingToken` matches the latest
    * token from `getPairingPayload` may be auto-accepted (direct trust + peer directory).
    * Default: false.
@@ -621,6 +626,8 @@ export interface UpdateNodeConfigParams {
   companionPairingAutoAcceptWithToken?: boolean;
   /** Public WebSocket URL of the relay node for mobile pairing through relay proxy. */
   relayPublicWsUrl?: string;
+  /** Enable/disable the agent bridge (takes effect on next node start). */
+  bridgeEnabled?: boolean;
 }
 
 export interface ListRelaysParams {}

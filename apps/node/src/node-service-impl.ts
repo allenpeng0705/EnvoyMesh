@@ -26,6 +26,7 @@ import type {
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
 } from "@envoymesh/api";
 
@@ -1317,12 +1318,13 @@ class NodeServiceImpl implements NodeService {
         bridgeStatus: this._bridgeStatus ?? undefined,
         companionPairingAutoAcceptWithToken: config.companionPairingAutoAcceptWithToken ?? false,
         relayPublicWsUrl: config.relayPublicWsUrl ?? this._relayPublicWsUrl,
+        bridgeEnabled: config.bridgeEnabled ?? false,
       };
     }
     return {
       profileDir: this._profileDir,
       discoveryProfile: "wan-default" as const,
-      relayEnabled: false,
+      relayEnabled: true,
       relayServerEnabled: false,
       configuredRelays: [],
       advertiseAddrs: [],
@@ -1340,6 +1342,7 @@ class NodeServiceImpl implements NodeService {
       bridgeStatus: this._bridgeStatus ?? undefined,
       companionPairingAutoAcceptWithToken: false,
       relayPublicWsUrl: this._relayPublicWsUrl,
+      bridgeEnabled: false,
     };
   }
 
@@ -1348,7 +1351,7 @@ class NodeServiceImpl implements NodeService {
       version: "0.1" as const,
       profileDir: this._profileDir,
       discoveryProfile: "wan-default" as const,
-      relayEnabled: false,
+      relayEnabled: true,
       relayServerEnabled: false,
       advertiseAddrs: [] as string[],
       bootstrapPeers: [] as string[],
@@ -1393,11 +1396,15 @@ class NodeServiceImpl implements NodeService {
       ...(config.relayPublicWsUrl !== undefined && {
         relayPublicWsUrl: config.relayPublicWsUrl,
       }),
+      ...(config.bridgeEnabled !== undefined && {
+        bridgeEnabled: config.bridgeEnabled,
+      }),
       updatedAt: new Date().toISOString(),
     };
 
     if (config.relayPublicWsUrl !== undefined) {
-      this._relayPublicWsUrl = config.relayPublicWsUrl || undefined;
+      // empty string = explicitly disabled; any other value = explicit URL
+      this._relayPublicWsUrl = config.relayPublicWsUrl;
     }
 
     await this._configStore.save(updated);
@@ -1976,7 +1983,8 @@ class NodeServiceImpl implements NodeService {
    * so mobile clients can pair from any network.
    */
   setRelayPublicWsUrl(url: string | undefined): void {
-    this._relayPublicWsUrl = url || undefined;
+    // undefined = use auto-discovery; empty string = explicitly disabled; anything else = explicit URL
+    this._relayPublicWsUrl = url;
   }
 
   /**
@@ -2000,8 +2008,9 @@ class NodeServiceImpl implements NodeService {
   /**
    * Get pairing payload for mobile-app QR pairing (Phase 10A.7).
    *
-   * Derives the LAN WebSocket URL from the node's advertised multiaddrs
-   * and ws-server port. Falls back to localhost if no IPv4 multiaddr found.
+   * When a relay is discoverable, the QR points to the relay's client-proxy
+   * WebSocket so mobile can pair from any network. Falls back to direct LAN IP
+   * when no relay is known.
    */
   async getPairingPayload(): Promise<PairingPayload> {
     const bridgeStatus = await this.getBridgeStatus();
@@ -2025,13 +2034,20 @@ class NodeServiceImpl implements NodeService {
     const wsPath = (this._wsPath ?? "/ws");
     const lanWsUrl = `ws://${lanIp}:${wsPort}${wsPath}`;
 
-    const relayWsUrl = this._relayPublicWsUrl;
+    // Resolve relay WebSocket URL:
+    //   undefined (not configured) → auto-discover from relays / bootstrap peers
+    //   "" (explicitly disabled)    → no relay proxy, direct LAN connection only
+    //   "<url>" (explicit URL)      → use this URL for relay proxy
+    const relayWsUrl = this._relayPublicWsUrl !== undefined
+      ? (this._relayPublicWsUrl || undefined) // "" → undefined (disabled)
+      : await this._autoDiscoverRelayWsUrl();
+
     this._pairingToken = randomUUID();
     this._pairingTokenIssuedAt = Date.now();
 
-    // When a relay is configured, the mobile connects to the relay (any-network).
+    // When a relay is reachable, the mobile connects through it (any-network).
     // Include `target` (home node peer ID) and `token` as query params so the
-    // relay knows which node to proxy to. No mobile-side changes needed.
+    // relay knows which node to proxy to.
     let wsUrl: string;
     if (relayWsUrl) {
       const params = new URLSearchParams();
@@ -2061,6 +2077,39 @@ class NodeServiceImpl implements NodeService {
     }
 
     return payload;
+  }
+
+  /**
+   * Try to derive a relay WebSocket URL from configured relays or bootstrap peers.
+   * Relays expose their client-proxy WebSocket on port 15432 (the HTTP info port).
+   */
+  private async _autoDiscoverRelayWsUrl(): Promise<string | undefined> {
+    // 1. Check configured relays in persisted config
+    try {
+      const config = await this._configStore.load();
+      if (config?.configuredRelays?.length) {
+        const r = config.configuredRelays.find((r) => r.addr.includes("/ip4/"));
+        if (r) {
+          const derived = NodeServiceImpl._deriveRelayWsUrl(r.addr);
+          if (derived) return derived;
+        }
+      }
+    } catch { /* no persisted config */ }
+
+    // 2. Fall back to known community relay
+    return NodeServiceImpl._deriveRelayWsUrl(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+  }
+
+  /**
+   * Derive the relay's WebSocket proxy URL from a libp2p multiaddr.
+   * e.g. `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooW...` → `ws://47.93.11.212:15432/ws`
+   */
+  private static _deriveRelayWsUrl(relayAddr: string): string | undefined {
+    // Match IPv4 from multiaddr like /ip4/X.X.X.X/tcp/N...
+    const match = relayAddr.match(/\/ip4\/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/);
+    if (!match) return undefined;
+    // Relay exposes client-proxy WebSocket on its HTTP info port (15432)
+    return `ws://${match[1]}:${DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT}/ws`;
   }
 
   /**

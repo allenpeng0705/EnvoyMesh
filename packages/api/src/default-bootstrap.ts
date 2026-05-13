@@ -14,4 +14,7 @@ export const DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS = [
 export const DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR =
   "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo" as const
 
+/** HTTP info port exposed by the community relay (serves WebSocket client-proxy on /ws). */
+export const DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT = 15432
+
 export type DefaultPublicBootstrapPresetId = (typeof DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS)[number]

@@ -2237,7 +2237,11 @@ if (nodeService instanceof NodeServiceImpl) {
 }
 
 // Emit bridge status for Social UI and register bridge agent in peer directory
-if (nodeService instanceof NodeServiceImpl && bridgeConfig.enabled) {
+// Respect the UI bridgeEnabled toggle from persisted config.
+// When bridgeEnabled is not set, fall back to bridgeConfig.enabled (backward compat).
+const persistedCfg = await nodeConfigStore.load();
+const effectiveBridgeEnabled = persistedCfg?.bridgeEnabled ?? bridgeConfig.enabled;
+if (nodeService instanceof NodeServiceImpl && effectiveBridgeEnabled) {
   nodeService.setBridgeStatus({
     enabled: true,
     agentPeerId: bridge.agentPeerId,
