@@ -112,6 +112,7 @@ import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { handleInboundShareRequest, handleInboundShareAccept } from "./share-inbound.js";
 import { generateChatDraft } from "./chat-draft-inbound.js";
 import { ModeController, createDefaultModeConfig } from "./mode-controller.js";
+import { FileSessionStore, SessionManager } from "./session-manager.js";
 import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
@@ -1289,6 +1290,13 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       void chatLogStore.append(payload.senderOwnerId, chatMsg).catch((err) =>
         console.warn(`[chat.message] chat log append failed:`, err),
       );
+      // Record message in session manager (Phase 9E): track conversation state, sentiment, escalations
+      void sessionManager.recordMessage(
+        payload.senderOwnerId,
+        chatMsg.sender.displayName,
+        payload.text,
+        false,
+      ).catch((err) => console.warn(`[chat.message] session record failed:`, err));
       wsServerForEvents.emitEvent("chat:message", chatMsg);
 
       // Generate a chat draft if chat assist is enabled (async, fire-and-forget)
@@ -1875,6 +1883,7 @@ if (nodeService instanceof NodeServiceImpl) {
 
 // Start WebSocket server for app connections
 const modeController = new ModeController(createDefaultModeConfig(), taskStore);
+const sessionManager = new SessionManager(new FileSessionStore(join(args.profileDir, "sessions")));
 const wsServer = new WsServer(3030, "/ws", {
   onConnectionChange: (connectedCount) => {
     if (connectedCount > 0) {

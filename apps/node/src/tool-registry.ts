@@ -302,6 +302,50 @@ export class ToolRegistry {
       requiresApproval: false,
       isMeshTool: false,
     });
+
+    // Session manager tools (Phase 9E)
+    this.register({
+      name: "mesh.list-sessions",
+      description: "List all active conversation sessions",
+      paramSchema: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.session-summary",
+      description: "Get conversation summary for a contact",
+      paramSchema: {
+        type: "object",
+        properties: {
+          ownerId: { type: "string", description: "The contact's owner ID" },
+        },
+        required: ["ownerId"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.acknowledge-escalation",
+      description: "Acknowledge and clear a pending escalation for a contact",
+      paramSchema: {
+        type: "object",
+        properties: {
+          ownerId: { type: "string", description: "The contact's owner ID" },
+        },
+        required: ["ownerId"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
   }
 
   /**

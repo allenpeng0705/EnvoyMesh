@@ -76,14 +76,15 @@ describe("ToolRegistry", () => {
       });
 
       const tools = registry.listTools();
-      // 13 default tools + 2 additional = 15
-      expect(tools).toHaveLength(15);
+      // 16 default tools + 2 additional = 18
+      expect(tools).toHaveLength(18);
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "bond.send_hello", "chat.send", "discovery.search", "knowledge.query",
-          "mesh.get-external-agent", "mesh.get-mode", "mesh.list-external-agent-actions",
-          "mesh.list-external-sessions", "mesh.revoke-external-agent",
-          "mesh.set-contact-mode", "mesh.set-mode",
+          "mesh.acknowledge-escalation", "mesh.get-external-agent", "mesh.get-mode",
+          "mesh.list-external-agent-actions", "mesh.list-external-sessions",
+          "mesh.list-sessions", "mesh.revoke-external-agent",
+          "mesh.session-summary", "mesh.set-contact-mode", "mesh.set-mode",
           "share.send", "tool.1", "tool.2", "vault.search",
         ].sort(),
       );
@@ -92,8 +93,8 @@ describe("ToolRegistry", () => {
     it("default tools are pre-registered", () => {
       const registry = new ToolRegistry();
       const tools = registry.listTools();
-      // Default tools: 6 core + 4 gateway management + 3 mode = 13
-      expect(tools.length).toBe(13);
+      // Default tools: 6 core + 4 gateway management + 3 mode + 3 session = 16
+      expect(tools.length).toBe(16);
     });
   });
 
