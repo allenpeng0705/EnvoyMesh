@@ -13,6 +13,7 @@ import { searchVault, type VaultIndex } from "@envoymesh/vault";
 import type { AiIdentity, AiRule, ModelProviderConfig } from "@envoymesh/api";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { buildContextInjection } from "./context-injector.js";
+import type { ModeController } from "./mode-controller.js";
 
 export interface ChatDraftResult {
   ok: true;
@@ -142,6 +143,7 @@ export async function generateChatDraft(input: {
   ownerDisplayName?: string;
   chatLogStore?: LocalChatLogStore | null;
   humanProfileStore?: HumanProfileStore;
+  modeController?: ModeController;
 }): Promise<ChatDraftResult | ChatDraftFailure> {
   const {
     envelope,
@@ -166,6 +168,7 @@ export async function generateChatDraft(input: {
     ownerDisplayName,
     chatLogStore = null,
     humanProfileStore,
+    modeController,
   } = input;
 
   // Guard: chat assist must be enabled
@@ -185,6 +188,11 @@ export async function generateChatDraft(input: {
   // Blocked senders never get drafts
   if (bondLevel === "blocked") {
     return { ok: false, reason: "sender is blocked" };
+  }
+
+  // Mode guard (Phase 9D): skip draft in reactive mode when owner is connected
+  if (modeController && modeController.getCurrentMode() === "reactive" && modeController.isOwnerConnected()) {
+    return { ok: false, reason: "agent is in reactive mode with owner online" };
   }
 
   // Sensitivity ceiling based on bond level

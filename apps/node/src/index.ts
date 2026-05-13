@@ -111,6 +111,7 @@ import { handleInboundTaskFeedback, handleInboundOfficialCredential } from "./re
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { handleInboundShareRequest, handleInboundShareAccept } from "./share-inbound.js";
 import { generateChatDraft } from "./chat-draft-inbound.js";
+import { ModeController, createDefaultModeConfig } from "./mode-controller.js";
 import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
@@ -284,7 +285,8 @@ function isOwnerOnline(): boolean {
  */
 function recordOwnerActivity(): void {
   lastActivityTimestamp = Date.now();
-  console.log(`[activity] owner activity recorded, online=${isOwnerOnline()}`);
+  modeController.recordOwnerActivity();
+  console.log(`[activity] owner activity recorded, online=${isOwnerOnline()}, mode=${modeController.getCurrentMode()}`);
 }
 
 // WebSocket server reference for event emission
@@ -445,6 +447,7 @@ let discoveryQueueTimer: ReturnType<typeof setTimeout> | undefined;
 let statsIntervalTimer: ReturnType<typeof setInterval> | undefined;
 let rateLimitCleanupInterval: ReturnType<typeof setInterval> | undefined;
 let rendezvousSweeper: ReturnType<typeof setInterval> | undefined;
+let modeTransitionTimer: ReturnType<typeof setInterval> | undefined;
 const processStartedAt = Date.now();
 let meshStarted = false;
 let lastKnownLibp2pPeerId = "";
@@ -1324,6 +1327,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           ownerDisplayName: selfHuman?.displayName,
           chatLogStore,
           humanProfileStore,
+          modeController,
         }).then(async (result) => {
           if (result.ok && wsServerForEvents) {
             // Always emit draft event for UI to display
@@ -1870,7 +1874,16 @@ if (nodeService instanceof NodeServiceImpl) {
 }
 
 // Start WebSocket server for app connections
-const wsServer = new WsServer(3030, "/ws");
+const modeController = new ModeController(createDefaultModeConfig(), taskStore);
+const wsServer = new WsServer(3030, "/ws", {
+  onConnectionChange: (connectedCount) => {
+    if (connectedCount > 0) {
+      modeController.markOwnerConnected();
+    } else {
+      modeController.markOwnerDisconnected();
+    }
+  },
+});
 wsServer.start(nodeService);
 wsServerForEvents = wsServer;
 // Tell NodeServiceImpl the ws listen address so it can generate pairing QR data
@@ -1879,6 +1892,12 @@ if (nodeService instanceof NodeServiceImpl) {
 }
 await runNodeHealthCycle("startup");
 scheduleNodeHealth();
+
+// Start periodic mode transition checks (Phase 9D): every 30s
+modeTransitionTimer = setInterval(() => {
+  modeController.checkOfflineTransition();
+  modeController.checkScheduleTransition();
+}, 30000);
 
 // Wire NodeService events to WebSocket server
 nodeService.on("hello:request", (data) => wsServer.emitEvent("hello:request", data));
@@ -2453,6 +2472,10 @@ async function shutdown(): Promise<void> {
   if (rendezvousSweeper) {
     clearInterval(rendezvousSweeper);
     rendezvousSweeper = undefined;
+  }
+  if (modeTransitionTimer) {
+    clearInterval(modeTransitionTimer);
+    modeTransitionTimer = undefined;
   }
   await mesh.stop();
   meshStarted = false;

@@ -257,6 +257,51 @@ export class ToolRegistry {
       requiresApproval: false,
       isMeshTool: false,
     });
+
+    // Mode controller tools (Phase 9D)
+    this.register({
+      name: "mesh.set-mode",
+      description: "Set the agent's operating mode (reactive or proactive)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          mode: { type: "string", enum: ["reactive", "proactive"], description: "The operating mode" },
+        },
+        required: ["mode"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.get-mode",
+      description: "Get the agent's current operating mode and configuration",
+      paramSchema: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.set-contact-mode",
+      description: "Set per-contact mode override (reactive, proactive, or default)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          contactOwnerId: { type: "string", description: "The contact's owner ID" },
+          mode: { type: "string", enum: ["reactive", "proactive"], description: "The mode for this contact" },
+        },
+        required: ["contactOwnerId", "mode"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
   }
 
   /**

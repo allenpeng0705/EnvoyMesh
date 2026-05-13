@@ -24,8 +24,14 @@ export class WsServer {
   private readonly clientSubscriptions = new Map<WebSocket, Set<string>>();
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private readonly heartbeatIntervalMs = 30000; // 30 seconds
+  private onConnectionChange?: (connectedCount: number) => void;
 
-  constructor(private readonly port: number = 3030, private readonly path: string = "/ws") {
+  constructor(
+    private readonly port: number = 3030,
+    private readonly path: string = "/ws",
+    opts?: { onConnectionChange?: (connectedCount: number) => void },
+  ) {
+    this.onConnectionChange = opts?.onConnectionChange;
   }
 
   /**
@@ -98,6 +104,9 @@ export class WsServer {
   private async handleConnection(ws: WebSocket): Promise<void> {
     const clientId = randomUUID();
 
+    // Notify connection change
+    this.onConnectionChange?.(this.wss.clients.size);
+
     // Initialize subscription tracking for this client
     this.clientSubscriptions.set(ws, new Set());
 
@@ -126,6 +135,8 @@ export class WsServer {
         }
         this.clientSubscriptions.delete(ws);
       }
+      // Notify connection change (after cleanup, count does not include this client)
+      this.onConnectionChange?.(this.wss.clients.size);
     });
 
     ws.on("error", (error: Error) => {
