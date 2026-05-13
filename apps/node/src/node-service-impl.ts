@@ -442,6 +442,8 @@ class NodeServiceImpl implements NodeService {
    * Re-advertise interests on DHT and rendezvous servers (called on node start/restart)
    */
   private async _advertiseInterestsIfPublic(): Promise<void> {
+    // Defensive: the 15s startup timeout may fire after stopNode() cleared the mesh
+    if (!this._mesh) return;
     const config = await this._configStore.load();
     const profile = await this._humanProfileStore.loadHumanProfile();
     if (!config || !profile) return;
@@ -464,13 +466,15 @@ class NodeServiceImpl implements NodeService {
    * This is a fallback when DHT provide fails, using relay-based discovery instead
    */
   private async _registerWithRendezvousServers(interests: string[], username: string): Promise<void> {
+    // Defensive: the 15s startup timeout may fire after stopNode() cleared the mesh
+    const mesh = this._mesh;
+    if (!mesh) return;
     const profileForRendezvous = this._profile;
     if (!profileForRendezvous) {
       return;
     }
 
     const config = await this._configStore.load();
-    const mesh = this._requireMesh();
 
     // Build capabilities list from interests (as tags)
     const capabilities = interests.map(interest => ({ tag: interest.toLowerCase() }));
@@ -1686,6 +1690,10 @@ class NodeServiceImpl implements NodeService {
       }, 15000);
     } catch (error) {
       console.error("[node-service] startNode failed:", error);
+      if (this._advertiseInterestsStartupTimeout) {
+        clearTimeout(this._advertiseInterestsStartupTimeout);
+        this._advertiseInterestsStartupTimeout = undefined;
+      }
       this._nodeStatus = "offline";
       this.emit("node:status", { status: this._nodeStatus });
       throw error;
