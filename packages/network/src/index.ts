@@ -680,9 +680,17 @@ export class EnvoyMesh {
   /**
    * Open a libp2p stream on [protocol] to [target] and return the raw stream.
    * Caller is responsible for read/write lifecycle and closing the stream.
+   *
+   * Goes through {@link openOutboundStream} so existing connections (including
+   * inbound ones from NAT'd home nodes) are reused before attempting a fresh dial.
+   * This is critical for the relay bridge: the relay receives an inbound TCP
+   * connection from a home node behind NAT; when the relay later dials that home
+   * node, it must open a new stream on the *existing* connection — a fresh dial
+   * to the home node's private IP would fail from a cloud relay.
    */
   async dialProtocol(target: string, protocol: string): Promise<any> {
-    return this.requireNode().dialProtocol(this._normalizeDialTarget(target) as any, protocol);
+    const { stream } = await this.openOutboundStream(target, protocol);
+    return stream;
   }
 
   async send(target: string, envelope: EnvoyEnvelope, sendOptions?: MeshOutboundOptions): Promise<number> {
