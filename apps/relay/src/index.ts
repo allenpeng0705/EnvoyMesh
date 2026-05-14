@@ -425,13 +425,30 @@ try {
         socket.destroy();
         return;
       }
-      const targetPeerId = (url.searchParams.get("target") ?? "").trim();
+
+      // Read target / token from query params first, fall back to HTTP headers.
+      // Mobile clients (HomeClawApp) may send these as upgrade headers (e.g.
+      // x-pairing-token, x-target-peer-id, or sec-websocket-protocol).
+      const hdr = (name: string): string | undefined => {
+        const v = req.headers[name];
+        return Array.isArray(v) ? v[0] : v;
+      };
+      const targetPeerId = (
+        url.searchParams.get("target") ??
+        hdr("x-target-peer-id") ??
+        ""
+      ).trim();
       if (!targetPeerId) {
         socket.write("HTTP/1.1 400 Bad Request\r\n\r\nMissing target peer ID");
         socket.destroy();
         return;
       }
-      const token = (url.searchParams.get("token") ?? "").trim();
+      const token = (
+        url.searchParams.get("token") ??
+        hdr("x-pairing-token") ??
+        hdr("sec-websocket-protocol") ??
+        ""
+      ).trim();
 
       wss.handleUpgrade(req, socket, head, (ws) => {
         void handleProxyConnection(ws, targetPeerId, token);
@@ -481,9 +498,20 @@ try {
         }
 
         // Bridge: WebSocket → libp2p stream
-        ws.on("message", async (data: Buffer) => {
+        // Mobile clients may send text frames (JSON-RPC strings) or binary frames.
+        ws.on("message", async (raw: string | Buffer | ArrayBuffer | Buffer[]) => {
           try {
-            await streamIo.write(new Uint8Array(data));
+            let bytes: Uint8Array;
+            if (typeof raw === "string") {
+              bytes = new TextEncoder().encode(raw);
+            } else if (raw instanceof Uint8Array) {
+              bytes = raw;
+            } else if (Array.isArray(raw)) {
+              bytes = new Uint8Array(Buffer.concat(raw));
+            } else {
+              bytes = new Uint8Array(raw as ArrayBuffer);
+            }
+            await streamIo.write(bytes);
           } catch (err) {
             console.error("[relay] client-proxy: write error:", err);
             ws.close();

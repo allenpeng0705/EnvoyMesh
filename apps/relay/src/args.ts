@@ -13,7 +13,7 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
   argv = normalizeWin32Argv(argv);
   const args: RelayArgs = {
     profileDir: "./data/relay",
-    listen: ["/ip4/0.0.0.0/tcp/0"],
+    listen: ["/ip4/0.0.0.0/tcp/4001"],
     advertiseAddrs: [],
     bootstrapPeers: [],
     enableDht: true,
