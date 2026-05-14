@@ -8,7 +8,24 @@ import type {
   DeviceIdentity,
   OwnerIdentity,
 } from "@envoymesh/identity";
-import type { BridgeStatus, NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult, ChatDraft, CapabilityManifest, UpdateCapabilityManifestParams, AutonomousPolicy, ModelProviderConfig, AiSettings, ContactAiPreferences, PairingPayload } from "./ws-protocol.js";
+import type {
+  BridgeStatus,
+  NodeConfig,
+  RelayConfig,
+  NodeStatus,
+  InitNodeOptions,
+  NodeInitResult,
+  ChatDraft,
+  CapabilityManifest,
+  UpdateCapabilityManifestParams,
+  AutonomousPolicy,
+  ModelProviderConfig,
+  AiSettings,
+  ContactAiPreferences,
+  PairingPayload,
+  HomeClawCoreProxyParams,
+  HomeClawCoreProxyResult,
+} from "./ws-protocol.js";
 
 // ============================================
 // Identity Types
@@ -319,6 +336,12 @@ export interface NodeService {
    * @param dialHints Optional multiaddrs to try when dialing the recipient
    */
   forwardEnvelope(envelopeJson: Record<string, unknown>, dialHints?: string[]): Promise<void>;
+
+  /**
+   * Forward a single HomeClaw Core HTTP request from the Companion app to Core on the home LAN.
+   * Path must match an allowlisted prefix (SSR-safe); URLs are not accepted.
+   */
+  homeclawCoreProxy(params: HomeClawCoreProxyParams): Promise<HomeClawCoreProxyResult>;
 
   /**
    * Human chat transcripts persisted under the profile (`chat-messages.jsonl`).

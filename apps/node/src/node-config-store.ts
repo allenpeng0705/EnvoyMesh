@@ -49,6 +49,8 @@ export interface PersistedNodeConfig {
    * node start. Default: false.
    */
   bridgeEnabled?: boolean;
+  /** HomeClaw Core base URL on the node's LAN (`homeclawCoreProxy`). */
+  homeClawCoreBaseUrl?: string;
 }
 
 export interface NodeConfigStore {

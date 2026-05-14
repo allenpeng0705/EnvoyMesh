@@ -1,4 +1,4 @@
-import type { NodeService, RpcMethods } from "@envoymesh/api";
+import type { NodeService, RpcMethods, HomeClawCoreProxyParams } from "@envoymesh/api";
 
 /**
  * Route a JSON-RPC method call to the appropriate NodeService method.
@@ -88,6 +88,8 @@ export async function routeRpcMethod(
       return ns.getPairingPayload();
     case "forwardEnvelope":
       return ns.forwardEnvelope(params.envelope as Record<string, unknown>, params.dialHints as string[] | undefined);
+    case "homeclawCoreProxy":
+      return ns.homeclawCoreProxy(params as unknown as HomeClawCoreProxyParams);
     default:
       throw new Error(`Unknown method: ${method}`);
   }

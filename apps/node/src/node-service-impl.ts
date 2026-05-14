@@ -22,6 +22,8 @@ import type {
   NodeStatus,
   InitNodeOptions,
   NodeInitResult,
+  HomeClawCoreProxyParams,
+  HomeClawCoreProxyResult,
 } from "@envoymesh/api";
 import { randomUUID } from "node:crypto";
 import {
@@ -85,6 +87,7 @@ import { join } from "node:path";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
+import { executeHomeClawCoreProxy } from "./homeclaw-core-proxy.js";
 
 /** Unblocks when an underlying `fs.readFile` or mutex never settles (seen on some Windows setups). */
 function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -1323,6 +1326,7 @@ class NodeServiceImpl implements NodeService {
         companionPairingAutoAcceptWithToken: config.companionPairingAutoAcceptWithToken ?? false,
         relayPublicWsUrl: config.relayPublicWsUrl ?? this._relayPublicWsUrl,
         bridgeEnabled: config.bridgeEnabled ?? false,
+        homeClawCoreBaseUrl: config.homeClawCoreBaseUrl,
       };
     }
     return {
@@ -1347,6 +1351,7 @@ class NodeServiceImpl implements NodeService {
       companionPairingAutoAcceptWithToken: false,
       relayPublicWsUrl: this._relayPublicWsUrl,
       bridgeEnabled: false,
+      homeClawCoreBaseUrl: undefined,
     };
   }
 
@@ -1402,6 +1407,9 @@ class NodeServiceImpl implements NodeService {
       }),
       ...(config.bridgeEnabled !== undefined && {
         bridgeEnabled: config.bridgeEnabled,
+      }),
+      ...(config.homeClawCoreBaseUrl !== undefined && {
+        homeClawCoreBaseUrl: config.homeClawCoreBaseUrl,
       }),
       updatedAt: new Date().toISOString(),
     };
@@ -2091,6 +2099,11 @@ class NodeServiceImpl implements NodeService {
     return payload;
   }
 
+  async homeclawCoreProxy(params: HomeClawCoreProxyParams): Promise<HomeClawCoreProxyResult> {
+    const cfg = await this.getNodeConfig();
+    return executeHomeClawCoreProxy(params, cfg.homeClawCoreBaseUrl);
+  }
+
   /**
    * Try to derive a relay WebSocket URL from configured relays or bootstrap peers.
    * Relays expose their client-proxy WebSocket on port 15432 (the HTTP info port).
@@ -2186,11 +2199,16 @@ class NodeServiceImpl implements NodeService {
       }
     }
 
-    // Self-send shortcut
-    if (transportPeerId === mesh.peerId && this._bridgeChatHandler) {
-      console.log(`[forwardEnvelope] self-send to ${transportPeerId}, routing via bridge handler`);
-      await this._bridgeChatHandler(envelope, mesh.peerId);
-      return;
+    // Self-send or local agent: route via bridge handler
+    // The bridge agent runs on this same node, identified by envoy_agent_* peer IDs.
+    // Envelopes addressed to the bridge agent (e.g. device.pair.request from mobile
+    // via relay proxy) must be delivered locally, not dialed via libp2p.
+    if (this._bridgeChatHandler) {
+      if (transportPeerId === mesh.peerId || transportPeerId.startsWith("envoy_agent_")) {
+        console.log(`[forwardEnvelope] local delivery to ${transportPeerId.slice(0, 20)}… via bridge handler`);
+        await this._bridgeChatHandler(envelope, mesh.peerId);
+        return;
+      }
     }
 
     if (transportPeerId.startsWith("envoy_")) {

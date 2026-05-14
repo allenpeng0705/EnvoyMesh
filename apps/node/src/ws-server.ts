@@ -9,6 +9,13 @@ import type {
 import type { NodeService } from "@envoymesh/api";
 import { NodeServiceImpl } from "./node-service-impl.js";
 import { routeRpcMethod } from "./json-rpc-router.js";
+import {
+  closeHomeClawCoreWsForCompanion,
+  rpcHomeClawCoreWsClose,
+  rpcHomeClawCoreWsOpen,
+  rpcHomeClawCoreWsSend,
+} from "./homeclaw-core-ws.js";
+
 
 /**
  * WebSocket server that exposes NodeService via JSON-RPC protocol.
@@ -136,6 +143,7 @@ export class WsServer {
         }
         this.clientSubscriptions.delete(ws);
       }
+      closeHomeClawCoreWsForCompanion(ws);
       // Notify connection change (after cleanup, count does not include this client)
       this.onConnectionChange?.(this.wss.clients.size);
     });
@@ -166,6 +174,7 @@ export class WsServer {
       "p2p:envelope",
       "trigger:fired",
       "digest:ready",
+      "homeclawCoreWs:rx",
     ];
     for (const event of allEvents) {
       this.subscribe(ws, event);
@@ -199,6 +208,35 @@ export class WsServer {
       const eventName = (params?.event as string) ?? "";
       this.unsubscribe(ws, eventName);
       this.sendResponse(ws, id, { success: true });
+      return;
+    }
+
+    if (method === "homeClawCoreWsOpen") {
+      try {
+        const cfg = await this.nodeService.getNodeConfig();
+        const err = await rpcHomeClawCoreWsOpen(
+          ws,
+          (params ?? {}) as { pathWithQuery: string },
+          cfg.homeClawCoreBaseUrl,
+          (event, data) => this.sendEvent(ws, event, data),
+        );
+        this.sendResponse(ws, String(id), err === null ? { ok: true } : { ok: false, error: err });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        this.sendResponse(ws, String(id), { ok: false, error: errorMessage });
+      }
+      return;
+    }
+
+    if (method === "homeClawCoreWsSend") {
+      const err = rpcHomeClawCoreWsSend(ws, (params ?? {}) as { text: string });
+      this.sendResponse(ws, String(id), err === null ? { ok: true } : { ok: false, error: err });
+      return;
+    }
+
+    if (method === "homeClawCoreWsClose") {
+      rpcHomeClawCoreWsClose(ws);
+      this.sendResponse(ws, String(id), { ok: true });
       return;
     }
 

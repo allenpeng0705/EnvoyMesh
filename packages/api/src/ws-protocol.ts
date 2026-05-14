@@ -117,6 +117,8 @@ export type RpcMethods =
   | "stopNode"
   // P2P relay — forward a pre-signed envelope from a remote client
   | "forwardEnvelope"
+  /** HTTP proxy from mobile Companion to HomeClaw Core on the home LAN (SSR-safe paths only). */
+  | "homeclawCoreProxy"
   // Event subscription
   | "on"
   | "off";
@@ -131,6 +133,24 @@ export interface RelayConfig {
   level?: number;
   region?: string;
   enabled: boolean;
+}
+
+/** Params for RPC method `homeclawCoreProxy` — path is `/api/...` style including optional `?query`. */
+export interface HomeClawCoreProxyParams {
+  method: string;
+  path: string;
+  headers?: Record<string, string>;
+  bodyBase64?: string;
+  /** Upstream fetch timeout (ms). Clamped 1s–4h. Default 175s. */
+  timeoutMs?: number;
+}
+
+/** Packed HTTP response returned to Companion over JSON-RPC (`bodyBase64` when present). */
+export interface HomeClawCoreProxyResult {
+  status: number;
+  headers: Record<string, string>;
+  bodyBase64?: string;
+  error?: string;
 }
 
 export interface NodeConfig {
@@ -204,6 +224,11 @@ export interface NodeConfig {
    * allowing pairing from any network. The relay proxies WebSocket ↔ libp2p to this node.
    */
   relayPublicWsUrl?: string;
+  /**
+   * Base URL for HomeClaw Core on the node's LAN (default `http://127.0.0.1:9000`).
+   * Override when Core listens elsewhere. Used only by `homeclawCoreProxy`.
+   */
+  homeClawCoreBaseUrl?: string;
 }
 
 /**
