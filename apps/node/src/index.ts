@@ -161,8 +161,7 @@ import {
   type NodeHealthSnapshot,
   type NodeHealthState,
 } from "./node-health.js";
-import { byteStream } from "@libp2p/utils";
-import { routeRpcMethod } from "./json-rpc-router.js";
+import { createClientProxyHandler } from "./client-proxy-handler.js";
 
 const args = parseNodeArgs(process.argv.slice(2));
 const profile = await loadOrCreateNodeProfile(args.profileDir);
@@ -2027,71 +2026,9 @@ if (nodeService instanceof NodeServiceImpl) {
 
 // Register client-proxy protocol handler (Phase 10A relay bridge)
 // Mobile app connects to relay's WebSocket; relay proxies to home node via this libp2p stream.
-mesh.handleRawProtocol(CLIENT_PROXY_PROTOCOL, async (stream, _connection) => {
-  const streamIo = byteStream(stream);
-  try {
-    // Read handshake
-    const handshakeBytes = await streamIo.read();
-    if (!handshakeBytes) { await stream.close(); return; }
-    const handshake = JSON.parse(new TextDecoder().decode(handshakeBytes.subarray()));
-
-    // Validate pairing token
-    const token = handshake?.token as string | undefined;
-    if (!token || !(nodeService instanceof NodeServiceImpl) || !nodeService.validatePairingToken(token)) {
-      await streamIo.write(new TextEncoder().encode(JSON.stringify({ type: "proxy-reject", reason: "invalid or expired token" })));
-      await stream.close();
-      return;
-    }
-
-    await streamIo.write(new TextEncoder().encode(JSON.stringify({ type: "proxy-accept" })));
-    console.log(`[client-proxy] accepted relay-proxied client`);
-
-    // NOTE: connected event is sent by the RELAY immediately after proxy-accept.
-    // Sending it from home node too causes byteStream reads to concatenate both
-    // JSON objects, breaking JSON.parse on the relay side.
-
-    // Bidirectional message loop: read JSON-RPC from stream, route, write response
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-
-    // Bidirectional message loop: read JSON-RPC from stream, route, write response
-    while (true) {
-      const bytes = await streamIo.read();
-      if (!bytes) {
-        console.log(`[client-proxy] stream ended (client disconnected)`);
-        break;
-      }
-      let msg: { id?: string; method?: string; params?: Record<string, unknown> };
-      try {
-        msg = JSON.parse(decoder.decode(bytes.subarray()));
-      } catch (e) {
-        console.log(`[client-proxy] failed to parse JSON-RPC: ${String(e).slice(0, 80)}`);
-        continue;
-      }
-      if (!msg.id || !msg.method) {
-        console.log(`[client-proxy] skipping non-RPC message: ${JSON.stringify(msg).slice(0, 80)}`);
-        continue;
-      }
-
-      console.log(`[client-proxy] RPC id=${msg.id} method=${msg.method}`);
-      try {
-        const result = await routeRpcMethod(nodeService, msg.method, msg.params ?? {});
-        await streamIo.write(encoder.encode(JSON.stringify({ id: msg.id, result })));
-        console.log(`[client-proxy] RPC id=${msg.id} method=${msg.method} → ok`);
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        await streamIo.write(encoder.encode(JSON.stringify({ id: msg.id, error: { code: "ERROR", message: errMsg } })));
-        console.log(`[client-proxy] RPC id=${msg.id} method=${msg.method} → error: ${errMsg}`);
-      }
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[client-proxy] handler error: ${msg}`);
-  } finally {
-    console.log(`[client-proxy] closing stream`);
-    try { await stream.close(); } catch { /* ignore */ }
-  }
-});
+if (nodeService instanceof NodeServiceImpl) {
+  await mesh.handleRawProtocol(CLIENT_PROXY_PROTOCOL, createClientProxyHandler(nodeService));
+}
 
 await runNodeHealthCycle("startup");
 scheduleNodeHealth();
