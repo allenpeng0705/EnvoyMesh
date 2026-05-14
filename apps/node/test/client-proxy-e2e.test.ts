@@ -339,6 +339,59 @@ describe("client-proxy protocol E2E", () => {
     expect(text).toContain('"event":"connected"');
   });
 
+  it("BUG REGRESSION: early RPC probe before handshake completes is buffered, not dropped", async () => {
+    // This test validates the race condition fix: mobile sends JSON-RPC probes
+    // immediately after WebSocket connect, but the relay is still doing
+    // dialProtocol + handshake. The relay buffers early arrivals and flushes
+    // them to the libp2p stream after proxy-accept.
+    //
+    // Key insight: the early message arrives at the relay's WebSocket BEFORE
+    // the libp2p handshake completes, but the relay buffers it in memory
+    // (earlyBuffer) and only writes it to the libp2p stream AFTER proxy-accept.
+    const [hs, rs] = createPairedByteStreams();
+
+    // --- Step 1: Relay sends proxy-connect (handshake starts) ---
+    await rs.write(new TextEncoder().encode(JSON.stringify({ type: "proxy-connect", token: "tok" })));
+
+    // Home node reads the handshake
+    const handshakeBytes = await hs.read();
+    expect(handshakeBytes).not.toBeNull();
+    const hs_ = JSON.parse(new TextDecoder().decode(handshakeBytes!.subarray()));
+    expect(hs_.type).toBe("proxy-connect");
+
+    // Home node sends proxy-accept
+    await hs.write(new TextEncoder().encode(JSON.stringify({ type: "proxy-accept" })));
+
+    // Relay reads proxy-accept
+    const acceptBytes = await rs.read();
+    expect(acceptBytes).not.toBeNull();
+    const accept = JSON.parse(new TextDecoder().decode(acceptBytes!.subarray()));
+    expect(accept.type).toBe("proxy-accept");
+
+    // --- Step 2: Relay now flushes buffered early messages ---
+    // In the real relay, this is where earlyBuffer items are written to
+    // the libp2p stream after streamReady=true.
+    const earlyRpc = JSON.stringify({ id: "1", method: "getNodeConfig", params: {} });
+    await rs.write(new TextEncoder().encode(earlyRpc));
+
+    // Home node reads the buffered RPC
+    const rpcBytes = await hs.read();
+    expect(rpcBytes).not.toBeNull();
+    const rpc = JSON.parse(new TextDecoder().decode(rpcBytes!.subarray()));
+    expect(rpc.method).toBe("getNodeConfig");
+    expect(rpc.id).toBe("1");
+
+    // Home node responds
+    await hs.write(new TextEncoder().encode(JSON.stringify({ id: "1", result: { ok: true } })));
+
+    // Relay reads response (forwards to mobile WebSocket)
+    const respBytes = await rs.read();
+    expect(respBytes).not.toBeNull();
+    const resp = JSON.parse(new TextDecoder().decode(respBytes!.subarray()));
+    expect(resp.id).toBe("1");
+    expect(resp.result.ok).toBe(true);
+  });
+
   it("relay sends connected event (not home node) to avoid byte concatenation", async () => {
     const [hs, rs] = createPairedByteStreams();
 

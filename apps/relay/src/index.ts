@@ -477,9 +477,38 @@ try {
 
       let libp2pStream: any = null;
 
+      // Buffer early messages — the mobile sends JSON-RPC probes immediately after
+      // WebSocket connect, but dialProtocol + handshake can take seconds. Without
+      // buffering, those messages arrive before ws.on("message") is registered and
+      // are silently dropped by the ws EventEmitter.
+      const earlyBuffer: Uint8Array[] = [];
+      let streamReady = false;
+      let streamIo: ReturnType<typeof byteStream> | null = null;
+
+      const rawToBytes = (raw: string | Buffer | ArrayBuffer | Buffer[]): Uint8Array => {
+        if (typeof raw === "string") return new TextEncoder().encode(raw);
+        if (raw instanceof Uint8Array) return raw;
+        if (Array.isArray(raw)) return new Uint8Array(Buffer.concat(raw));
+        return new Uint8Array(raw as ArrayBuffer);
+      };
+
+      // Register message handler IMMEDIATELY so no early RPC probes are dropped.
+      ws.on("message", (raw: string | Buffer | ArrayBuffer | Buffer[]) => {
+        try {
+          const bytes = rawToBytes(raw);
+          if (streamReady && streamIo) {
+            void streamIo.write(bytes).catch(() => ws.close());
+          } else {
+            earlyBuffer.push(bytes);
+          }
+        } catch {
+          ws.close();
+        }
+      });
+
       try {
         libp2pStream = await mesh.dialProtocol(targetPeerId, CLIENT_PROXY_PROTOCOL);
-        const streamIo = byteStream(libp2pStream);
+        streamIo = byteStream(libp2pStream);
         console.log(`[relay] client-proxy: dialed ${targetPeerId.slice(0, 12)}…, sending handshake`);
 
         // Send handshake with pairing token
@@ -501,42 +530,29 @@ try {
         }
         console.log(`[relay] client-proxy: proxy-accept received from ${targetPeerId.slice(0, 12)}…`);
 
+        // Mark stream as ready and flush buffered early messages.
+        streamReady = true;
+        if (earlyBuffer.length > 0) {
+          console.log(`[relay] client-proxy: flushing ${earlyBuffer.length} buffered early message(s)`);
+          for (const bytes of earlyBuffer) {
+            await streamIo.write(bytes);
+          }
+          earlyBuffer.length = 0;
+        }
+
         // Send "connected" event immediately so the mobile knows the RPC channel is ready.
-        // The home node also sends a connected event, but we send one from the relay
-        // right away so the mobile doesn't have to wait for the bridge loop to forward it.
         ws.send(JSON.stringify({
           event: "connected",
           data: { relayProxied: true },
         }));
         console.log(`[relay] client-proxy: sent connected event to mobile client`);
 
-        // Bridge: WebSocket → libp2p stream
-        // Mobile clients may send text frames (JSON-RPC strings) or binary frames.
-        ws.on("message", async (raw: string | Buffer | ArrayBuffer | Buffer[]) => {
-          try {
-            let bytes: Uint8Array;
-            if (typeof raw === "string") {
-              bytes = new TextEncoder().encode(raw);
-            } else if (raw instanceof Uint8Array) {
-              bytes = raw;
-            } else if (Array.isArray(raw)) {
-              bytes = new Uint8Array(Buffer.concat(raw));
-            } else {
-              bytes = new Uint8Array(raw as ArrayBuffer);
-            }
-            await streamIo.write(bytes);
-          } catch (err) {
-            console.error("[relay] client-proxy: write error:", err);
-            ws.close();
-          }
-        });
-
         // Bridge: libp2p stream → WebSocket (send as text frames — mobile client expects text)
         void (async () => {
           const decoder = new TextDecoder();
           try {
             while (ws.readyState === WebSocket.OPEN) {
-              const bytes = await streamIo.read();
+              const bytes = await streamIo!.read();
               if (!bytes) {
                 console.log(`[relay] client-proxy: home node stream ended`);
                 ws.close();
