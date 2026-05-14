@@ -507,6 +507,8 @@ try {
       });
 
       try {
+        console.log(`[relay] client-proxy: dialing ${targetPeerId.slice(0, 12)}… protocol=${CLIENT_PROXY_PROTOCOL}`);
+
         libp2pStream = await mesh.dialProtocol(targetPeerId, CLIENT_PROXY_PROTOCOL);
         streamIo = byteStream(libp2pStream);
         console.log(`[relay] client-proxy: dialed ${targetPeerId.slice(0, 12)}…, sending handshake`);

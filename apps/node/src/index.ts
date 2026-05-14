@@ -2028,6 +2028,9 @@ if (nodeService instanceof NodeServiceImpl) {
 // Mobile app connects to relay's WebSocket; relay proxies to home node via this libp2p stream.
 if (nodeService instanceof NodeServiceImpl) {
   await mesh.handleRawProtocol(CLIENT_PROXY_PROTOCOL, createClientProxyHandler(nodeService));
+  console.log(`[node] client-proxy protocol handler registered: ${CLIENT_PROXY_PROTOCOL}`);
+} else {
+  console.warn(`[node] client-proxy handler NOT registered: nodeService is not NodeServiceImpl`);
 }
 
 await runNodeHealthCycle("startup");

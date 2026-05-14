@@ -395,4 +395,71 @@ describe("Relay bridge E2E (real libp2p)", () => {
 
     await Promise.all(streams.map((s) => s.close().catch(() => {})));
   });
+
+  it("PRODUCTION SCENARIO: dialProtocol with bare peer ID succeeds after peer store is populated", async () => {
+    // This is the EXACT scenario that fails in production:
+    //   mesh.dialProtocol(targetPeerId, CLIENT_PROXY_PROTOCOL)
+    // where targetPeerId is a bare string like "12D3KooW..." (NOT a multiaddr).
+    //
+    // The relay extracts this from the WebSocket query params (?target=...).
+    // For this to work, libp2p must have the home node's address in its peer store.
+    // In production, this is populated by circuit-relay connections.
+    const home = await startMesh();
+    const relay = await startMesh();
+    const svc = makeNodeService(profileDir, home);
+
+    const payload = await svc.getPairingPayload();
+    const token = payload.token!;
+
+    await home.handleRawProtocol(CLIENT_PROXY_PROTOCOL, createClientProxyHandler(svc));
+
+    // Step 1: Populate relay's peer store by dialing the home node once.
+    // In production, this happens via circuit relay connections.
+    const homeAddr = home.multiaddrs[0];
+    const initialStream = await relay.dialProtocol(homeAddr, CLIENT_PROXY_PROTOCOL);
+    await initialStream.close();
+
+    // Step 2: Now dial using ONLY the bare peer ID string.
+    // This is exactly what production relay does:
+    //   mesh.dialProtocol(targetPeerId, CLIENT_PROXY_PROTOCOL)
+    // where targetPeerId comes from WebSocket query params.
+    const barePeerId = home.peerId;
+    const stream = await relay.dialProtocol(barePeerId, CLIENT_PROXY_PROTOCOL);
+    expect(stream).toBeDefined();
+
+    // Full handshake + RPC to verify everything works
+    const streamIo = byteStream(stream);
+    await streamIo.write(
+      new TextEncoder().encode(JSON.stringify({ type: "proxy-connect", token })),
+    );
+    const acceptBytes = await streamIo.read();
+    expect(JSON.parse(new TextDecoder().decode(acceptBytes!.subarray())).type).toBe("proxy-accept");
+
+    // RPC round-trip
+    await streamIo.write(
+      new TextEncoder().encode(JSON.stringify({ id: "bare", method: "getNodeStatus", params: {} })),
+    );
+    const rpcRespBytes = await streamIo.read();
+    const rpcResp = JSON.parse(new TextDecoder().decode(rpcRespBytes!.subarray()));
+    expect(rpcResp.id).toBe("bare");
+    expect(rpcResp.result.status).toBe("running");
+
+    await stream.close();
+  });
+
+  it("dialProtocol with bare peer ID fails with NoValidAddressesError when peer store is empty", async () => {
+    // This verifies the expected failure mode: if the relay doesn't have the
+    // home node in its peer store, dialProtocol with bare peer ID will fail.
+    const home = await startMesh();
+    const relay = await startMesh();
+    const svc = makeNodeService(profileDir, home);
+
+    await home.handleRawProtocol(CLIENT_PROXY_PROTOCOL, createClientProxyHandler(svc));
+
+    // Do NOT populate the peer store — dial directly with bare peer ID
+    const barePeerId = home.peerId;
+    await expect(
+      relay.dialProtocol(barePeerId, CLIENT_PROXY_PROTOCOL),
+    ).rejects.toThrow(/No valid addresses|no addresses|no transport|connection failed/i);
+  });
 });
