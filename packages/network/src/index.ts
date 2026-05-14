@@ -672,9 +672,9 @@ export class EnvoyMesh {
    * .getComponents() on the input — passing a bare string crashes with
    * "multiaddrs[0].getComponents is not a function".
    */
-  private _normalizeDialTarget(target: string): string | ReturnType<typeof multiaddr> {
+  private _normalizeDialTarget(target: string): ReturnType<typeof multiaddr> {
     if (target.startsWith("/")) return multiaddr(target);
-    return `/p2p/${target}`;
+    return multiaddr(`/p2p/${target}`);
   }
 
   /**

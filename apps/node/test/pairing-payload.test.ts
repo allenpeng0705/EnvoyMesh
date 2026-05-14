@@ -27,6 +27,12 @@ function communityRelayWsUrl(): string {
   return `ws://${ip}:${DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT}/ws`;
 }
 
+/** Extract the relay's peer ID from the community relay bootstrap addr. */
+function communityRelayPeerId(): string {
+  const match = DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR.match(/\/p2p\/([1-9A-HJ-NP-Za-km-z]+)/);
+  return match?.[1] ?? "";
+}
+
 describe("NodeServiceImpl getPairingPayload", () => {
   let profileDir: string;
 
@@ -49,8 +55,10 @@ describe("NodeServiceImpl getPairingPayload", () => {
 
     const p = await svc.getPairingPayload();
     const expectedRelay = communityRelayWsUrl();
+    const expectedRelayPeerId = communityRelayPeerId();
     expect(p.relayWsUrl).toBe(expectedRelay);
-    expect(p.relayPeerId).toBe("12D3KooWHome");
+    // relayPeerId is the RELAY's peer ID, not the home node's
+    expect(p.relayPeerId).toBe(expectedRelayPeerId);
     expect(p.wsUrl).toContain(expectedRelay);
     expect(p.wsUrl).toContain("target=12D3KooWHome");
     expect(p.wsUrl).toContain("token=");
@@ -82,7 +90,8 @@ describe("NodeServiceImpl getPairingPayload", () => {
     const p = await svc.getPairingPayload();
     expect(p.agentPeerId).toBe("envoy_agent_test");
     expect(p.agentPubKey).toBe(agentPem);
-    expect(p.relayPeerId).toBe("12D3KooWHome");
+    // relayPeerId is the RELAY's peer ID, not the home node's
+    expect(p.relayPeerId).toBe(communityRelayPeerId());
     expect(p.relayWsUrl).toBe(communityRelayWsUrl());
     expect(p.token).toBeTruthy();
   });
@@ -102,7 +111,8 @@ describe("NodeServiceImpl getPairingPayload", () => {
     expect(p.relayWsUrl).toBe(expectedRelay);
     expect(p.wsUrl).toContain(expectedRelay);
     expect(p.wsUrl).toContain("target=12D3KooWExt");
-    expect(p.relayPeerId).toBe("12D3KooWExt");
+    // relayPeerId is the RELAY's peer ID, not the home node's
+    expect(p.relayPeerId).toBe(communityRelayPeerId());
   });
 
   it("skips 127.0.0.1 multiaddr but still uses relay auto-discovery for mobile pairing", async () => {
@@ -143,7 +153,8 @@ describe("NodeServiceImpl getPairingPayload", () => {
     const p = await svc.getPairingPayload();
     expect(p.wsUrl).toBe("ws://localhost:3030/ws");
     expect(p.relayWsUrl).toBeUndefined();
-    expect(p.relayPeerId).toBe("12D3KooWHome");
+    // No relay → no relay peer ID
+    expect(p.relayPeerId).toBeUndefined();
   });
 
   it("uses relay proxy URL with target and token when relayPublicWsUrl is configured", async () => {
@@ -158,7 +169,8 @@ describe("NodeServiceImpl getPairingPayload", () => {
 
     const p = await svc.getPairingPayload();
     expect(p.relayWsUrl).toBe("ws://relay.example.com:15432/ws");
-    expect(p.relayPeerId).toBe("12D3KooWHome");
+    // Explicit URL → can't derive relay peer ID
+    expect(p.relayPeerId).toBeUndefined();
     expect(p.wsUrl).toContain("ws://relay.example.com:15432/ws");
     expect(p.wsUrl).toContain("target=12D3KooWHome");
     expect(p.wsUrl).toContain("token=");
@@ -179,7 +191,8 @@ describe("NodeServiceImpl getPairingPayload", () => {
     const expectedRelay = communityRelayWsUrl();
     expect(p.relayWsUrl).toBe(expectedRelay);
     expect(p.wsUrl).toContain(expectedRelay);
-    expect(p.relayPeerId).toBe("12D3KooWHome");
+    // relayPeerId is the RELAY's peer ID, not the home node's
+    expect(p.relayPeerId).toBe(communityRelayPeerId());
   });
 
   it("auto-discovers relay WS URL from configured relay in persisted config", async () => {
@@ -191,12 +204,13 @@ describe("NodeServiceImpl getPairingPayload", () => {
     const svc = new NodeServiceImpl(mesh, trustStore, peerDirectory, human, profileDir);
     svc.setWsListenAddress(3030, "/ws");
     // Add a configured relay — auto-discovery should pick it up
-    await svc.addRelay("/ip4/10.0.0.1/tcp/4001/p2p/12D3KooWConfigRelay");
+    await svc.addRelay("/ip4/10.0.0.1/tcp/4001/p2p/12D3KooWConfigRe1ay");
 
     const p = await svc.getPairingPayload();
     expect(p.relayWsUrl).toBe("ws://10.0.0.1:15432/ws");
     expect(p.wsUrl).toContain("ws://10.0.0.1:15432/ws");
     expect(p.wsUrl).toContain("target=12D3KooWHome");
-    expect(p.relayPeerId).toBe("12D3KooWHome");
+    // relayPeerId extracted from the configured relay's /p2p/ component
+    expect(p.relayPeerId).toBe("12D3KooWConfigRe1ay");
   });
 });

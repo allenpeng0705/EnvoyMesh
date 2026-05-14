@@ -2069,8 +2069,12 @@ class NodeServiceImpl implements NodeService {
     const payload: PairingPayload = { wsUrl };
     payload.token = this._pairingToken;
 
-    if (reachable?.peerId) {
-      payload.relayPeerId = reachable.peerId;
+    // Include the relay's peer ID (not the home node's) so the mobile app can
+    // use it for RPC probe params and reconstructed dial URLs.
+    // Only set when auto-discovering — for explicit URLs we don't know the
+    // relay's peer ID unless it's in configuredRelays.
+    if (relayWsUrl && this._relayPublicWsUrl === undefined) {
+      payload.relayPeerId = await this._autoDiscoverRelayPeerId();
     }
 
     if (relayWsUrl) {
@@ -2109,6 +2113,24 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
+   * Auto-discover the relay's libp2p peer ID from configured relays or the
+   * known community relay bootstrap address.
+   */
+  private async _autoDiscoverRelayPeerId(): Promise<string | undefined> {
+    try {
+      const config = await this._configStore.load();
+      if (config?.configuredRelays?.length) {
+        const r = config.configuredRelays.find((r) => r.addr.includes("/ip4/"));
+        if (r) {
+          const derived = NodeServiceImpl._deriveRelayPeerId(r.addr);
+          if (derived) return derived;
+        }
+      }
+    } catch { /* no persisted config */ }
+    return NodeServiceImpl._deriveRelayPeerId(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+  }
+
+  /**
    * Derive the relay's WebSocket proxy URL from a libp2p multiaddr.
    * e.g. `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooW...` → `ws://47.93.11.212:15432/ws`
    */
@@ -2118,6 +2140,15 @@ class NodeServiceImpl implements NodeService {
     if (!match) return undefined;
     // Relay exposes client-proxy WebSocket on its HTTP info port (15432)
     return `ws://${match[1]}:${DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT}/ws`;
+  }
+
+  /**
+   * Derive the relay's libp2p peer ID from a multiaddr.
+   * e.g. `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooW...` → `12D3KooW...`
+   */
+  private static _deriveRelayPeerId(relayAddr: string): string | undefined {
+    const match = relayAddr.match(/\/p2p\/([1-9A-HJ-NP-Za-km-z]+)/);
+    return match?.[1];
   }
 
   /**
