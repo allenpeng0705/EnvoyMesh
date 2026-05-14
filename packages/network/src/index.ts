@@ -672,7 +672,42 @@ export class EnvoyMesh {
    */
   async dialProtocol(target: string, protocol: string): Promise<any> {
     const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    // Normalize the peer's stored multiaddrs so libp2p's internal
+    // getPeerAddress() doesn't fail with "multiaddrs[0].getComponents is
+    // not a function" when the peer store contains plain strings (common
+    // after restart — the datastore deserializes addresses as strings).
+    if (typeof dialTarget === "string" && !target.startsWith("/")) {
+      await this._ensurePeerMultiaddrsAreObjects(dialTarget);
+    }
     return this.requireNode().dialProtocol(dialTarget as any, protocol);
+  }
+
+  /**
+   * libp2p's peer store may contain string-form multiaddrs after deserializing
+   * from the on-disk datastore (protobuf → JSON).  The dial-queue calls
+   * getPeerAddress() which expects real Multiaddr objects and calls
+   * .getComponents() on them.  This normalizes the peer's stored addresses.
+   */
+  private async _ensurePeerMultiaddrsAreObjects(peerIdStr: string): Promise<void> {
+    const node = this.requireNode();
+    try {
+      const peerId = peerIdFromString(peerIdStr);
+      const peer = await node.peerStore.get(peerId);
+      const clean: any[] = [];
+      for (const addr of peer.addresses) {
+        if (typeof (addr.multiaddr as any) === "string") {
+          clean.push(multiaddr(addr.multiaddr as any));
+        } else {
+          // Already a Multiaddr object — keep as-is.
+          clean.push(addr.multiaddr);
+        }
+      }
+      if (clean.length > 0) {
+        await node.peerStore.patch(peerId, { multiaddrs: clean });
+      }
+    } catch {
+      // peer may not be in the store yet — that's ok, libp2p will use peer routing.
+    }
   }
 
   async send(target: string, envelope: EnvoyEnvelope, sendOptions?: MeshOutboundOptions): Promise<number> {
