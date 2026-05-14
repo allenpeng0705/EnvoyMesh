@@ -405,6 +405,7 @@
     "@envoymesh/network" "0.1.0"
     "@envoymesh/protocol" "0.1.0"
     "@envoymesh/vault" "0.1.0"
+    "@libp2p/utils" "^7.0.0"
     ws "^8.20.0"
     yaml "^2.8.1"
 
@@ -420,6 +421,8 @@
   dependencies:
     "@envoymesh/identity" "0.1.0"
     "@envoymesh/network" "0.1.0"
+    "@libp2p/utils" "^7.0.0"
+    ws "^8.20.0"
 
 "@envoymesh/social@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social":
   version "0.1.0"
@@ -1628,6 +1631,14 @@ it-merge@^3.0.0, it-merge@^3.0.12:
   integrity sha512-D3t1Go2G2SQMkTujaA6EVojJPJKA9pFksxlSPDRBfrHKhWl6O40vEP7Itr5eCAjyCQH5p9+BFFVIy9bhLM4ZuQ==
   dependencies:
     it-queueless-pushable "^2.0.0"
+
+it-pair@^2.0.6:
+  version "2.0.6"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/it-pair/-/it-pair-2.0.6.tgz"
+  integrity sha512-5M0t5RAcYEQYNG5BV7d7cqbdwbCAp5yLdzvkxsZmkuZsLbTdZzah6MQySYfaAQjNDCq6PUnDt0hqBZ4NwMfW6g==
+  dependencies:
+    it-stream-types "^2.0.1"
+    p-defer "^4.0.0"
 
 it-parallel@^3.0.13:
   version "3.0.15"
