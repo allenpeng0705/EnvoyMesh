@@ -2046,9 +2046,20 @@ mesh.handleRawProtocol(CLIENT_PROXY_PROTOCOL, async (stream, _connection) => {
     await streamIo.write(new TextEncoder().encode(JSON.stringify({ type: "proxy-accept" })));
     console.log(`[client-proxy] accepted relay-proxied client`);
 
-    // Bidirectional message loop: read JSON-RPC from stream, route, write response
+    // Send connected event so mobile client knows the RPC channel is ready
+    // (mirrors WsServer.handleConnection which sends this on direct WS connect)
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
+    await streamIo.write(encoder.encode(JSON.stringify({
+      event: "connected",
+      data: {
+        peerId: mesh.peerId,
+        multiaddrs: mesh.multiaddrs,
+        relayProxied: true,
+      },
+    })));
+
+    // Bidirectional message loop: read JSON-RPC from stream, route, write response
     while (true) {
       const bytes = await streamIo.read();
       if (!bytes) break;

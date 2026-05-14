@@ -490,8 +490,9 @@ try {
           }
         });
 
-        // Bridge: libp2p stream → WebSocket
+        // Bridge: libp2p stream → WebSocket (send as text frames — mobile client expects text)
         void (async () => {
+          const decoder = new TextDecoder();
           try {
             while (ws.readyState === WebSocket.OPEN) {
               const bytes = await streamIo.read();
@@ -499,7 +500,7 @@ try {
                 ws.close();
                 break;
               }
-              ws.send(Buffer.from(bytes.subarray()));
+              ws.send(decoder.decode(bytes.subarray()));
             }
           } catch (err) {
             // stream closed — clean up
