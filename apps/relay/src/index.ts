@@ -480,6 +480,7 @@ try {
       try {
         libp2pStream = await mesh.dialProtocol(targetPeerId, CLIENT_PROXY_PROTOCOL);
         const streamIo = byteStream(libp2pStream);
+        console.log(`[relay] client-proxy: dialed ${targetPeerId.slice(0, 12)}…, sending handshake`);
 
         // Send handshake with pairing token
         const handshake = JSON.stringify({ type: "proxy-connect", token });
@@ -488,14 +489,26 @@ try {
         // Read handshake response
         const responseBytes = await streamIo.read();
         if (!responseBytes) {
+          console.warn(`[relay] client-proxy: home node closed stream before handshake response`);
           ws.close(1011, "home node closed stream");
           return;
         }
         const response = JSON.parse(new TextDecoder().decode(responseBytes.subarray()));
         if (response.type !== "proxy-accept") {
+          console.warn(`[relay] client-proxy: home node rejected proxy: ${response.reason ?? "unknown"}`);
           ws.close(1011, response.reason ?? "home node rejected proxy");
           return;
         }
+        console.log(`[relay] client-proxy: proxy-accept received from ${targetPeerId.slice(0, 12)}…`);
+
+        // Send "connected" event immediately so the mobile knows the RPC channel is ready.
+        // The home node also sends a connected event, but we send one from the relay
+        // right away so the mobile doesn't have to wait for the bridge loop to forward it.
+        ws.send(JSON.stringify({
+          event: "connected",
+          data: { relayProxied: true },
+        }));
+        console.log(`[relay] client-proxy: sent connected event to mobile client`);
 
         // Bridge: WebSocket → libp2p stream
         // Mobile clients may send text frames (JSON-RPC strings) or binary frames.
@@ -525,13 +538,18 @@ try {
             while (ws.readyState === WebSocket.OPEN) {
               const bytes = await streamIo.read();
               if (!bytes) {
+                console.log(`[relay] client-proxy: home node stream ended`);
                 ws.close();
                 break;
               }
-              ws.send(decoder.decode(bytes.subarray()));
+              const text = decoder.decode(bytes.subarray());
+              console.log(`[relay] client-proxy: forwarding from home node (${text.length} chars): ${text.slice(0, 100)}`);
+              ws.send(text);
             }
           } catch (err) {
-            // stream closed — clean up
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(`[relay] client-proxy: bridge read error: ${msg}`);
+            try { ws.close(); } catch { /* ignore */ }
           }
         })();
       } catch (err) {
