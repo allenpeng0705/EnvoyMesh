@@ -667,47 +667,22 @@ export class EnvoyMesh {
   }
 
   /**
+   * Helper: if [target] is a bare peer ID (not starting with "/"), wrap it in
+   * a multiaddr path: "/p2p/<peerId>".  libp2p's getPeerAddress() calls
+   * .getComponents() on the input — passing a bare string crashes with
+   * "multiaddrs[0].getComponents is not a function".
+   */
+  private _normalizeDialTarget(target: string): string | ReturnType<typeof multiaddr> {
+    if (target.startsWith("/")) return multiaddr(target);
+    return `/p2p/${target}`;
+  }
+
+  /**
    * Open a libp2p stream on [protocol] to [target] and return the raw stream.
    * Caller is responsible for read/write lifecycle and closing the stream.
    */
   async dialProtocol(target: string, protocol: string): Promise<any> {
-    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
-    // Normalize the peer's stored multiaddrs so libp2p's internal
-    // getPeerAddress() doesn't fail with "multiaddrs[0].getComponents is
-    // not a function" when the peer store contains plain strings (common
-    // after restart — the datastore deserializes addresses as strings).
-    if (typeof dialTarget === "string" && !target.startsWith("/")) {
-      await this._ensurePeerMultiaddrsAreObjects(dialTarget);
-    }
-    return this.requireNode().dialProtocol(dialTarget as any, protocol);
-  }
-
-  /**
-   * libp2p's peer store may contain string-form multiaddrs after deserializing
-   * from the on-disk datastore (protobuf → JSON).  The dial-queue calls
-   * getPeerAddress() which expects real Multiaddr objects and calls
-   * .getComponents() on them.  This normalizes the peer's stored addresses.
-   */
-  private async _ensurePeerMultiaddrsAreObjects(peerIdStr: string): Promise<void> {
-    const node = this.requireNode();
-    try {
-      const peerId = peerIdFromString(peerIdStr);
-      const peer = await node.peerStore.get(peerId);
-      const clean: any[] = [];
-      for (const addr of peer.addresses) {
-        if (typeof (addr.multiaddr as any) === "string") {
-          clean.push(multiaddr(addr.multiaddr as any));
-        } else {
-          // Already a Multiaddr object — keep as-is.
-          clean.push(addr.multiaddr);
-        }
-      }
-      if (clean.length > 0) {
-        await node.peerStore.patch(peerId, { multiaddrs: clean });
-      }
-    } catch {
-      // peer may not be in the store yet — that's ok, libp2p will use peer routing.
-    }
+    return this.requireNode().dialProtocol(this._normalizeDialTarget(target) as any, protocol);
   }
 
   async send(target: string, envelope: EnvoyEnvelope, sendOptions?: MeshOutboundOptions): Promise<number> {
@@ -725,7 +700,7 @@ export class EnvoyMesh {
     options?: { timeoutMs?: number },
   ): Promise<EnvoyEnvelope> {
     validateEnvelopeProtocol(ENVOY_MESSAGE_PROTOCOL, envelope);
-    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    const dialTarget = this._normalizeDialTarget(target);
     const timeoutMs = options?.timeoutMs ?? 30_000;
     const stream: any = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_MESSAGE_PROTOCOL);
     const remotePeerId = stream.connection?.remotePeer?.toString();
@@ -866,7 +841,7 @@ export class EnvoyMesh {
     const hasRoutableHint = routableHints.some((h) => !isLoopbackOrUnspecifiedDialHint(h));
     const barePeerDial = !target.trim().startsWith("/");
 
-    const dialOnce = async (addr: ReturnType<typeof multiaddr>): Promise<{ stream: any; remotePeerId?: string }> => {
+    const dialOnce = async (addr: ReturnType<typeof multiaddr> | string): Promise<{ stream: any; remotePeerId?: string }> => {
       const stream = await node.dialProtocol(addr as any, protocol);
       const s = stream as { connection?: { remotePeer?: { toString(): string } } };
       return { stream, remotePeerId: s.connection?.remotePeer?.toString() };
@@ -884,7 +859,7 @@ export class EnvoyMesh {
       }
     }
 
-    const dialTarget = target.startsWith("/") ? multiaddr(target) : multiaddr(`/p2p/${target}`);
+    const dialTarget = this._normalizeDialTarget(target);
     try {
       return await dialOnce(dialTarget);
     } catch (firstError) {
@@ -993,7 +968,7 @@ export class EnvoyMesh {
   }
 
   async sendDataTransfer(target: string, voucherUtf8: Uint8Array, chunks: Uint8Array[]): Promise<number> {
-    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    const dialTarget = this._normalizeDialTarget(target);
     const startedAt = Date.now();
     const stream: any = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_DATA_PROTOCOL);
     const remotePeerId = stream.connection?.remotePeer?.toString();
@@ -1034,7 +1009,7 @@ export class EnvoyMesh {
   }
 
   async probePeer(target: string): Promise<number> {
-    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    const dialTarget = this._normalizeDialTarget(target);
     const startedAt = Date.now();
     const connection = await this.requireNode().dial(dialTarget as any);
     await connection.close();
@@ -1046,7 +1021,7 @@ export class EnvoyMesh {
    * Intended for adversarial probes and resilience testing (not for normal application traffic).
    */
   async sendRawBytes(target: string, bytes: Uint8Array): Promise<number> {
-    const dialTarget = target.startsWith("/") ? multiaddr(target) : target;
+    const dialTarget = this._normalizeDialTarget(target);
     const startedAt = Date.now();
     const stream: any = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_MESSAGE_PROTOCOL);
     const remotePeerId = stream.connection?.remotePeer?.toString();
