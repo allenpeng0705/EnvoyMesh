@@ -2046,42 +2046,49 @@ mesh.handleRawProtocol(CLIENT_PROXY_PROTOCOL, async (stream, _connection) => {
     await streamIo.write(new TextEncoder().encode(JSON.stringify({ type: "proxy-accept" })));
     console.log(`[client-proxy] accepted relay-proxied client`);
 
-    // Send connected event so mobile client knows the RPC channel is ready
-    // (mirrors WsServer.handleConnection which sends this on direct WS connect)
+    // NOTE: connected event is sent by the RELAY immediately after proxy-accept.
+    // Sending it from home node too causes byteStream reads to concatenate both
+    // JSON objects, breaking JSON.parse on the relay side.
+
+    // Bidirectional message loop: read JSON-RPC from stream, route, write response
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
-    await streamIo.write(encoder.encode(JSON.stringify({
-      event: "connected",
-      data: {
-        peerId: mesh.peerId,
-        multiaddrs: mesh.multiaddrs,
-        relayProxied: true,
-      },
-    })));
 
     // Bidirectional message loop: read JSON-RPC from stream, route, write response
     while (true) {
       const bytes = await streamIo.read();
-      if (!bytes) break;
+      if (!bytes) {
+        console.log(`[client-proxy] stream ended (client disconnected)`);
+        break;
+      }
       let msg: { id?: string; method?: string; params?: Record<string, unknown> };
       try {
         msg = JSON.parse(decoder.decode(bytes.subarray()));
-      } catch {
+      } catch (e) {
+        console.log(`[client-proxy] failed to parse JSON-RPC: ${String(e).slice(0, 80)}`);
         continue;
       }
-      if (!msg.id || !msg.method) continue;
+      if (!msg.id || !msg.method) {
+        console.log(`[client-proxy] skipping non-RPC message: ${JSON.stringify(msg).slice(0, 80)}`);
+        continue;
+      }
 
+      console.log(`[client-proxy] RPC id=${msg.id} method=${msg.method}`);
       try {
         const result = await routeRpcMethod(nodeService, msg.method, msg.params ?? {});
         await streamIo.write(encoder.encode(JSON.stringify({ id: msg.id, result })));
+        console.log(`[client-proxy] RPC id=${msg.id} method=${msg.method} → ok`);
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         await streamIo.write(encoder.encode(JSON.stringify({ id: msg.id, error: { code: "ERROR", message: errMsg } })));
+        console.log(`[client-proxy] RPC id=${msg.id} method=${msg.method} → error: ${errMsg}`);
       }
     }
   } catch (err) {
-    // Client disconnected or stream error — nothing to do
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[client-proxy] handler error: ${msg}`);
   } finally {
+    console.log(`[client-proxy] closing stream`);
     try { await stream.close(); } catch { /* ignore */ }
   }
 });
