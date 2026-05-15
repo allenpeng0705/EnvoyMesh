@@ -2109,13 +2109,29 @@ class NodeServiceImpl implements NodeService {
   /**
    * Try to derive a relay WebSocket URL from configured relays or bootstrap peers.
    * Relays expose their client-proxy WebSocket on port 15432 (the HTTP info port).
+   * Only returns a URL if the node is actually connected to that relay via libp2p —
+   * otherwise the relay can't proxy to this node and the QR would point to a dead end.
    */
+  /**
+   * Returns true when [relayPeerId] has a direct, unlimited libp2p connection.
+   *
+   * This is the signal we need for client-proxy: the relay must be able to call
+   * {@link EnvoyMesh.findOpenConnectionToPeer} (which requires {@code limits == null}
+   * — i.e. a direct TCP connection, NOT a circuit-relay path) so it can open a
+   * new stream and proxy the mobile client's WebSocket data.
+   */
+  private _hasDirectConnectionTo(relayPeerId: string): boolean {
+    return this._reachableMesh()?.getPeerConnectionInfo(relayPeerId).direct === true;
+  }
+
   private async _autoDiscoverRelayWsUrl(): Promise<string | undefined> {
-    // 1. Check configured relays in persisted config
+    // 1. Check configured relays in persisted config — only when directly connected
     try {
       const config = await this._configStore.load();
       if (config?.configuredRelays?.length) {
-        const r = config.configuredRelays.find((r) => r.addr.includes("/ip4/"));
+        const r = config.configuredRelays.find(
+          (r) => r.addr.includes("/ip4/") && this._hasDirectConnectionTo(NodeServiceImpl._deriveRelayPeerId(r.addr) ?? ""),
+        );
         if (r) {
           const derived = NodeServiceImpl._deriveRelayWsUrl(r.addr);
           if (derived) return derived;
@@ -2123,26 +2139,38 @@ class NodeServiceImpl implements NodeService {
       }
     } catch { /* no persisted config */ }
 
-    // 2. Fall back to known community relay
-    return NodeServiceImpl._deriveRelayWsUrl(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+    // 2. Fall back to known community relay — only if directly connected
+    const cnRelayPeerId = NodeServiceImpl._deriveRelayPeerId(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+    if (cnRelayPeerId && this._hasDirectConnectionTo(cnRelayPeerId)) {
+      return NodeServiceImpl._deriveRelayWsUrl(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+    }
+
+    return undefined;
   }
 
   /**
    * Auto-discover the relay's libp2p peer ID from configured relays or the
-   * known community relay bootstrap address.
+   * known community relay bootstrap address. Only returns a peer ID if the
+   * node is actually connected to that relay.
    */
   private async _autoDiscoverRelayPeerId(): Promise<string | undefined> {
     try {
       const config = await this._configStore.load();
       if (config?.configuredRelays?.length) {
-        const r = config.configuredRelays.find((r) => r.addr.includes("/ip4/"));
+        const r = config.configuredRelays.find(
+          (r) => r.addr.includes("/ip4/") && this._hasDirectConnectionTo(NodeServiceImpl._deriveRelayPeerId(r.addr) ?? ""),
+        );
         if (r) {
           const derived = NodeServiceImpl._deriveRelayPeerId(r.addr);
           if (derived) return derived;
         }
       }
     } catch { /* no persisted config */ }
-    return NodeServiceImpl._deriveRelayPeerId(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+    const cnRelayPeerId = NodeServiceImpl._deriveRelayPeerId(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+    if (cnRelayPeerId && this._hasDirectConnectionTo(cnRelayPeerId)) {
+      return cnRelayPeerId;
+    }
+    return undefined;
   }
 
   /**

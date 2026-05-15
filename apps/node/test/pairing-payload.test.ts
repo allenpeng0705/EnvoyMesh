@@ -14,10 +14,18 @@ import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT,
 } from "@envoymesh/api";
 
-function mockMesh(overrides: Partial<{ peerId: string; multiaddrs: string[] }> = {}): EnvoyMesh {
+function mockMesh(overrides: Partial<{ peerId: string; multiaddrs: string[]; directConnections: string[] }> = {}): EnvoyMesh {
   const peerId = overrides.peerId ?? "12D3KooWTestMeshPeerId";
   const multiaddrs = overrides.multiaddrs ?? ["/ip4/10.0.0.5/tcp/4001"];
-  return { peerId, multiaddrs } as unknown as EnvoyMesh;
+  const directConnections = new Set(overrides.directConnections ?? [communityRelayPeerId()]);
+  return {
+    peerId,
+    multiaddrs,
+    getPeerConnectionInfo: (connPeerId: string) => ({
+      connected: directConnections.has(connPeerId),
+      direct: directConnections.has(connPeerId),
+    }),
+  } as unknown as EnvoyMesh;
 }
 
 /** Derive the auto-discovered relay WS URL from the community relay bootstrap addr. */
@@ -199,7 +207,11 @@ describe("NodeServiceImpl getPairingPayload", () => {
     const trustStore = createLocalTrustStore(profileDir);
     const peerDirectory = createLocalPeerDirectoryStore(profileDir);
     const human = createHumanProfileStore(profileDir);
-    const mesh = mockMesh({ peerId: "12D3KooWHome", multiaddrs: ["/ip4/192.168.1.50/tcp/63641"] });
+    const mesh = mockMesh({
+      peerId: "12D3KooWHome",
+      multiaddrs: ["/ip4/192.168.1.50/tcp/63641"],
+      directConnections: ["12D3KooWConfigRe1ay"],
+    });
 
     const svc = new NodeServiceImpl(mesh, trustStore, peerDirectory, human, profileDir);
     svc.setWsListenAddress(3030, "/ws");
@@ -212,5 +224,53 @@ describe("NodeServiceImpl getPairingPayload", () => {
     expect(p.wsUrl).toContain("target=12D3KooWHome");
     // relayPeerId extracted from the configured relay's /p2p/ component
     expect(p.relayPeerId).toBe("12D3KooWConfigRe1ay");
+  });
+
+  it("falls back to LAN wsUrl when no relay has a direct connection", async () => {
+    const trustStore = createLocalTrustStore(profileDir);
+    const peerDirectory = createLocalPeerDirectoryStore(profileDir);
+    const human = createHumanProfileStore(profileDir);
+    // No direct connections to any relay
+    const mesh = mockMesh({
+      peerId: "12D3KooWHome",
+      multiaddrs: ["/ip4/192.168.1.50/tcp/63641"],
+      directConnections: [], // no relay has a direct connection
+    });
+
+    const svc = new NodeServiceImpl(mesh, trustStore, peerDirectory, human, profileDir);
+    svc.setWsListenAddress(3030, "/ws");
+
+    const p = await svc.getPairingPayload();
+    // Falls back to LAN because no relay can proxy to this node
+    expect(p.wsUrl).toBe("ws://192.168.1.50:3030/ws");
+    expect(p.relayWsUrl).toBeUndefined();
+    expect(p.relayPeerId).toBeUndefined();
+    expect(p.token).toBeTruthy();
+  });
+
+  it("falls back to LAN when only a relayed (non-direct) connection exists", async () => {
+    const trustStore = createLocalTrustStore(profileDir);
+    const peerDirectory = createLocalPeerDirectoryStore(profileDir);
+    const human = createHumanProfileStore(profileDir);
+    const cnRelayId = communityRelayPeerId();
+    // Node is "connected" to the relay but only via circuit-relay (not direct).
+    // getPeerConnectionInfo returns connected:true but direct:false.
+    const mesh = {
+      peerId: "12D3KooWHome",
+      multiaddrs: ["/ip4/192.168.1.50/tcp/63641"],
+      getPeerConnectionInfo: (peerId: string) => ({
+        connected: peerId === cnRelayId, // connected through relay
+        direct: false, // but NOT direct — the relay's findOpenConnectionToPeer would skip it
+      }),
+    } as unknown as EnvoyMesh;
+
+    const svc = new NodeServiceImpl(mesh, trustStore, peerDirectory, human, profileDir);
+    svc.setWsListenAddress(3030, "/ws");
+
+    const p = await svc.getPairingPayload();
+    // Falls back to LAN — indirect relay connections can't serve client-proxy
+    expect(p.wsUrl).toBe("ws://192.168.1.50:3030/ws");
+    expect(p.relayWsUrl).toBeUndefined();
+    expect(p.relayPeerId).toBeUndefined();
   });
 });
