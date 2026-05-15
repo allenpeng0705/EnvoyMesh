@@ -89,7 +89,7 @@ export async function receiveFromAgent(
   // Truncate long LLM replies to fit within the protocol text limit.
   // The ChatMessagePayloadSchema enforces max 64000 chars; we truncate here
   // with a marker so the bridge never fails on long agent responses.
-  const MAX_TEXT = 64000;
+  const MAX_TEXT = 128000;
   let text = response.text;
   if (text.length > MAX_TEXT) {
     text = text.slice(0, MAX_TEXT - 30) + "\n\n[truncated by bridge — reply too long]";
