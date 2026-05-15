@@ -417,7 +417,7 @@ export function SettingsNodeTab() {
           <dt>Status</dt>
           <dd>
             <span className={`status-dot ${bridgeStatus?.enabled ? "online" : "offline"}`} />
-            {bridgeStatus?.enabled ? "Enabled" : "Disabled"}
+            {bridgeStatus?.enabled ? "Running" : nodeConfig?.bridgeEnabled ? "Stopped (needs restart)" : "Disabled"}
           </dd>
           {bridgeStatus?.enabled && (
             <>
@@ -433,7 +433,11 @@ export function SettingsNodeTab() {
           )}
         </dl>
         {(!bridgeStatus?.enabled) && (
-          <p className="settings-hint">Enable the bridge in your node's bridge-config.json to connect an external agent (HomeClaw, OpenClaw).</p>
+          nodeConfig?.bridgeEnabled ? (
+            <p className="settings-hint">Bridge will be enabled on next node restart.</p>
+          ) : (
+            <p className="settings-hint">Enable the bridge in your node's bridge-config.json to connect an external agent (HomeClaw, OpenClaw).</p>
+          )
         )}
 
         {/* Bridge enable/disable toggle — takes effect on next node restart */}
