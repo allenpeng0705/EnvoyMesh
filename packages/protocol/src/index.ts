@@ -837,7 +837,7 @@ export const RendezvousResponsePayloadSchema = z.object({
 
 export const ChatMessagePayloadSchema = z.object({
   senderOwnerId: z.string().min(1),
-  text: z.string().min(1).max(4000),
+  text: z.string().min(1).max(16000),
 });
 
 export const MandateActionSchema = z.enum([
