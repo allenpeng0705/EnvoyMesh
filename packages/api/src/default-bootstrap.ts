@@ -8,6 +8,7 @@ export const DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS = [
   "public-libp2p",
   "public-libp2p-am6",
   "public-libp2p-am7",
+  "cn-relay",
 ] as const
 
 /** EnvoyMesh-operated relay (also selectable as preset id `cn-relay`). */

@@ -119,9 +119,17 @@ export type RpcMethods =
   | "forwardEnvelope"
   /** HTTP proxy from mobile Companion to HomeClaw Core on the home LAN (SSR-safe paths only). */
   | "homeclawCoreProxy"
+  // HomeClaw Core WebSocket tunnel
+  | "homeClawCoreWsOpen"
+  | "homeClawCoreWsSend"
+  | "homeClawCoreWsClose"
   // Event subscription
   | "on"
-  | "off";
+  | "off"
+  // Legacy snake_case variants (mobile app compat)
+  | "home_claw_core_ws_open"
+  | "home_claw_core_ws_send"
+  | "home_claw_core_ws_close";
 
 // ============================================
 // Node Configuration Types

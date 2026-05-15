@@ -362,7 +362,7 @@ discovery:
       "--bootstrap-preset",
       "public-libp2p-am7",
     ]);
-    expect(args.bootstrapPresets).toEqual(["public-libp2p", "public-libp2p-am6", "public-libp2p-am7"]);
+    expect(args.bootstrapPresets).toEqual(["public-libp2p", "public-libp2p-am6", "public-libp2p-am7", "cn-relay"]);
     expect(args.bootstrapPeers.length).toBeGreaterThanOrEqual(4);
     expect(args.bootstrapPeers.some((peer) => peer.includes("am6.bootstrap.libp2p.io"))).toBe(true);
     expect(args.bootstrapPeers.some((peer) => peer.includes("am7.bootstrap.libp2p.io"))).toBe(true);

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import QRCode from "qrcode";
@@ -26,6 +26,13 @@ export function SettingsNodeTab() {
   const [bootstrapPresets, setBootstrapPresets] = useState<string[]>(
     nodeConfig?.bootstrapPresets ?? [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
   );
+
+  // Sync local state when nodeConfig loads/changes (async load after mount)
+  useEffect(() => {
+    if (nodeConfig?.bootstrapPresets) {
+      setBootstrapPresets(nodeConfig.bootstrapPresets);
+    }
+  }, [nodeConfig?.bootstrapPresets]);
 
   const isPublicNetwork = bootstrapPresets.length > 0;
   const relays = (nodeConfig?.configuredRelays ?? []) as RelayConfig[];

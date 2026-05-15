@@ -90,6 +90,21 @@ export async function routeRpcMethod(
       return ns.forwardEnvelope(params.envelope as Record<string, unknown>, params.dialHints as string[] | undefined);
     case "homeclawCoreProxy":
       return ns.homeclawCoreProxy(params as unknown as HomeClawCoreProxyParams);
+    // HomeClaw Core WebSocket tunnel methods — only available via direct WebSocket.
+    // The relay bridge uses a libp2p request-response stream which cannot push
+    // homeclawCoreWs:rx events back to the client, so these are:
+    //   - wsOpen → returns an error telling the client to use direct WS
+    //   - wsSend → returns an error (no tunnel)
+    //   - wsClose → succeeds (no-op, tunnel never opened)
+    case "homeClawCoreWsOpen":
+    case "home_claw_core_ws_open":
+      return { ok: false, error: "Core WebSocket tunnel requires direct WebSocket connection to home node" };
+    case "homeClawCoreWsSend":
+    case "home_claw_core_ws_send":
+      return { ok: false, error: "no active Core WebSocket tunnel (connect directly to home node)" };
+    case "homeClawCoreWsClose":
+    case "home_claw_core_ws_close":
+      return { ok: true };
     default:
       throw new Error(`Unknown method: ${method}`);
   }
