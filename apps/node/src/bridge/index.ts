@@ -123,45 +123,42 @@ export function createBridge(options: CreateBridgeOptions): {
     const payload = parseChatMessagePayload(envelope.payload);
     console.log(`[bridge] ${payload.senderOwnerId}: ${payload.text}`);
 
-    try {
-      const fwdStartTime = Date.now();
-      const replyText = await forwardToAgent(config, {
-        senderPeerId: remotePeerId,
-        senderOwnerId: payload.senderOwnerId,
-        text: payload.text,
-      });
+    // Fire-and-forget: forward to external agent without blocking the sendChat RPC.
+    // The agent's reply comes back via HTTP POST to /bridge/send (async path).
+    // We intentionally do NOT process synchronous replies from forwardToAgent —
+    // agents like HomeClaw send replies via _reply_to_bridge which POSTs to
+    // /bridge/send, and processing both paths would cause duplicate messages.
+    void (async () => {
+      try {
+        const fwdStartTime = Date.now();
+        await forwardToAgent(config, {
+          senderPeerId: remotePeerId,
+          senderOwnerId: payload.senderOwnerId,
+          text: payload.text,
+        });
 
-      // Log forward action via gateway
-      options.gateway?.logAction({
-        agentId: agentId ?? "unknown",
-        toolName: "bridge.forward_to_agent",
-        params: { from: payload.senderOwnerId, textLength: payload.text.length },
-        outcome: "success",
-        requiresApproval: false,
-        durationMs: Date.now() - fwdStartTime,
-      });
-      options.gateway?.touchAgent(agentId ?? "unknown");
-
-      // If agent returned a synchronous reply, send it back.
-      // receiveFromAgent also logs via the gateway via its own deps.
-      if (replyText) {
-        await receiveFromAgent(deps, {
-          to: remotePeerId,
-          text: replyText,
+        options.gateway?.logAction({
+          agentId: agentId ?? "unknown",
+          toolName: "bridge.forward_to_agent",
+          params: { from: payload.senderOwnerId, textLength: payload.text.length },
+          outcome: "success",
+          requiresApproval: false,
+          durationMs: Date.now() - fwdStartTime,
+        });
+        options.gateway?.touchAgent(agentId ?? "unknown");
+      } catch (err) {
+        console.error(`[bridge] forward failed:`, err);
+        options.gateway?.logAction({
+          agentId: agentId ?? "unknown",
+          toolName: "bridge.forward_to_agent",
+          params: { from: payload.senderOwnerId },
+          outcome: "error",
+          error: err instanceof Error ? err.message : String(err),
+          requiresApproval: false,
+          durationMs: 0,
         });
       }
-    } catch (err) {
-      console.error(`[bridge] forward failed:`, err);
-      options.gateway?.logAction({
-        agentId: agentId ?? "unknown",
-        toolName: "bridge.forward_to_agent",
-        params: { from: payload.senderOwnerId },
-        outcome: "error",
-        error: err instanceof Error ? err.message : String(err),
-        requiresApproval: false,
-        durationMs: 0,
-      });
-    }
+    })();
   };
 
   return {
