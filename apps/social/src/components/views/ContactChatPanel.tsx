@@ -4,6 +4,7 @@ import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
 import type { ChatMessage } from "@envoymesh/api";
 import type { AssistantMode } from "../../lib/storage.js";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
+import { Markdown } from "../Markdown.js";
 
 interface ContactChatPanelProps {
   selectedContact: string;
@@ -147,7 +148,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
             return (
               <div key={msg.messageId} className={`message ${outgoing ? "outgoing" : "incoming"}`}>
                 {!outgoing && <span className="message-sender">{peerDisplayLabel(msg.sender)}</span>}
-                <span className="message-text">{msg.content.text}</span>
+                <Markdown text={msg.content.text} className="message-text" />
                 <span className="message-time">{new Date(msg.metadata.timestamp).toLocaleTimeString()}</span>
               </div>
             );

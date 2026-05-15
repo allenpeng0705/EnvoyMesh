@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
+import { Markdown } from "../Markdown.js";
 
 interface AiMessage {
   role: "user" | "ai";
@@ -60,7 +61,7 @@ export function AIChatPanel() {
           aiMessages.map((msg, i) => (
             <div key={i} className={`ai-message ${msg.role}`}>
               <span className="ai-message-role">{msg.role === "user" ? "You" : "AI"}</span>
-              <p className="ai-message-text">{msg.text}</p>
+              <Markdown text={msg.text} className="ai-message-text" />
             </div>
           ))
         )}
