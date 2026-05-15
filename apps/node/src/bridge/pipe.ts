@@ -55,11 +55,12 @@ export async function forwardToAgent(
     headers["Authorization"] = `Bearer ${config.secret}`;
   }
 
+  console.log(`[bridge] forwardToAgent: POST ${config.agentUrl} from=${msg.senderOwnerId?.slice(0, 20)} text=${msg.text?.slice(0, 50)}`);
   const res = await fetch(config.agentUrl, {
     method: "POST",
     headers,
     body,
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(300000),
   });
 
   if (!res.ok) {

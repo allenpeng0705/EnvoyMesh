@@ -99,7 +99,7 @@ import {
 } from "@envoymesh/protocol";
 import { buildVaultIndex } from "@envoymesh/vault";
 import { createHash, randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseNodeArgs } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
@@ -225,7 +225,9 @@ if (!bridgeIdentity) {
   console.log(`[bridge] loaded agent identity: ${bridgeIdentity.agentPeerId}`);
 }
 
-// Bridge config — loaded from profile dir, defaults to disabled
+// Bridge config — loaded from profile dir, defaults to disabled.
+// The UI toggle in persisted config (bridgeEnabled) overrides bridge-config.json's enabled field,
+// so users can turn the bridge on/off without editing the JSON file.
 let bridgeConfig: BridgeConfig = BridgeConfigSchema.parse({});
 try {
   const raw = await readFile(join(args.profileDir, "bridge-config.json"), "utf-8");
@@ -233,6 +235,18 @@ try {
   console.log(`[bridge] loaded config: enabled=${bridgeConfig.enabled}`);
 } catch {
   // use defaults; disabled by default
+}
+// Merge UI toggle from persisted config — bridgeEnabled: true overrides bridge-config.json.
+// Default to true when no persisted config exists (matches the UI default in getNodeConfig).
+{
+  try {
+    const persistedCfg = await nodeConfigStore.load();
+    const uiEnabled = persistedCfg?.bridgeEnabled ?? true;
+    if (uiEnabled && !bridgeConfig.enabled) {
+      bridgeConfig = { ...bridgeConfig, enabled: true };
+      console.log(`[bridge] UI toggle overrides: enabled=true (persisted=${persistedCfg?.bridgeEnabled ?? "none"})`);
+    }
+  } catch { /* ignore — persisted config may not exist yet */ }
 }
 const discoverySeedStore = createDiscoverySeedStore(args.profileDir);
 const taskRuntimeStore = createTaskRuntimeStateStore(args.profileDir);
@@ -2161,14 +2175,15 @@ const bridge = createBridge({
   onSelfSendEnvelope: async (envelope, _remotePeerId) => {
     // Deliver bridge agent reply locally — emit chat:message + persist to log
     const payload = parseChatMessagePayload(envelope.payload);
-    if (!payload || !wsServerForEvents) return;
+    if (!payload) { console.warn(`[bridge] onSelfSendEnvelope: failed to parse payload`); return; }
+    if (!wsServerForEvents) { console.warn(`[bridge] onSelfSendEnvelope: wsServerForEvents not ready`); return; }
     let selfHuman = null;
     try { selfHuman = await humanProfileStore.loadHumanProfile(); } catch { /* ignore */ }
     const chatMsg = {
       messageId: envelope.messageId,
       sender: {
         nodeId: bridgeIdentity.agentPeerId,
-        ownerId: payload.senderOwnerId,
+        ownerId: bridgeIdentity.agentPeerId,
         displayName: bridgeConfig.agentName ?? "My Agent",
       },
       recipient: {
@@ -2180,7 +2195,7 @@ const bridge = createBridge({
       metadata: { timestamp: envelope.createdAt, deliveryReceipt: "delivered" as const },
       signature: envelope.signature,
     };
-    void chatLogStore.append(payload.senderOwnerId, chatMsg).catch((err) =>
+    void chatLogStore.append(bridgeIdentity.agentPeerId, chatMsg).catch((err) =>
       console.warn(`[bridge] chat log append failed:`, err),
     );
     wsServerForEvents.emitEvent("chat:message", chatMsg);
@@ -2194,12 +2209,9 @@ if (nodeService instanceof NodeServiceImpl) {
   nodeService.setStyleAdapter(styleAdapter);
 }
 
-// Emit bridge status for Social UI and register bridge agent in peer directory
-// Respect the UI bridgeEnabled toggle from persisted config.
-// When bridgeEnabled is not set, fall back to bridgeConfig.enabled (backward compat).
-const persistedCfg = await nodeConfigStore.load();
-const effectiveBridgeEnabled = persistedCfg?.bridgeEnabled ?? bridgeConfig.enabled;
-if (nodeService instanceof NodeServiceImpl && effectiveBridgeEnabled) {
+// Emit bridge status for Social UI and register bridge agent in peer directory.
+// bridgeConfig.enabled was already merged with the UI toggle at startup (see above).
+if (nodeService instanceof NodeServiceImpl && bridgeConfig.enabled) {
   nodeService.setBridgeStatus({
     enabled: true,
     agentPeerId: bridge.agentPeerId,

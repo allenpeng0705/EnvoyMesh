@@ -44,10 +44,6 @@ export function createBridge(options: CreateBridgeOptions): {
     return { agentPeerId: options.identity.agentPeerId, stop: async () => {}, _handleMessage: async () => {} };
   }
 
-  if (!config.secret) {
-    throw new Error("Bridge requires a shared secret when enabled");
-  }
-
   const agentId = options.identity.agentCredential.agentId;
 
   const deps: BridgeDeps = {
@@ -55,10 +51,11 @@ export function createBridge(options: CreateBridgeOptions): {
     identity: options.identity,
     sendChat: async (peerId, envelope) => {
       if (peerId === options.mesh.peerId && options.onSelfSendEnvelope) {
-        console.log(`[bridge] self-send reply, routing locally`);
+        console.log(`[bridge] self-send reply to=${peerId.slice(0, 20)}… intent=${envelope.intent}`);
         await options.onSelfSendEnvelope(envelope, options.mesh.peerId);
         return;
       }
+      console.log(`[bridge] P2P send to=${peerId.slice(0, 20)}… intent=${envelope.intent}`);
       await options.mesh.sendChat(peerId, envelope, {});
     },
     getRecipientPeerId: options.getRecipientPeerId,
@@ -97,6 +94,7 @@ export function createBridge(options: CreateBridgeOptions): {
       }
 
       const result = await receiveFromAgent(deps, { to, text });
+      console.log(`[bridge] receiveFromAgent ok: msgId=${result.messageId} toPeerId=${result.recipientPeerId?.slice(0, 20)}…`);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, messageId: result.messageId }));
     } catch (err) {
@@ -112,8 +110,15 @@ export function createBridge(options: CreateBridgeOptions): {
 
   // --- P2P handler: P2P → agent ---
   const bridgeHandler = async (envelope: any, remotePeerId: string) => {
-    if (envelope.intent !== "chat.message") return;
-    if (envelope.recipientPeerId !== options.identity.agentPeerId) return;
+    console.log(`[bridge] inbound intent=${envelope.intent} from=${envelope.senderPeerId?.slice(0, 20)} to=${envelope.recipientPeerId?.slice(0, 20)}`);
+    if (envelope.intent !== "chat.message") {
+      console.log(`[bridge] skipping non-chat intent: ${envelope.intent}`);
+      return;
+    }
+    if (envelope.recipientPeerId !== options.identity.agentPeerId) {
+      console.log(`[bridge] message for different recipient: ${envelope.recipientPeerId} !== ${options.identity.agentPeerId}`);
+      return;
+    }
 
     const payload = parseChatMessagePayload(envelope.payload);
     console.log(`[bridge] ${payload.senderOwnerId}: ${payload.text}`);
