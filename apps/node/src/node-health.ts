@@ -48,8 +48,17 @@ export interface NodeHealthInput {
   previous?: NodeHealthState;
 }
 
+function readMaxRssBytes(envName: string, defaultMb: number): number {
+  const raw = process.env[envName];
+  if (raw) {
+    const mb = Number(raw);
+    if (Number.isFinite(mb) && mb > 0) return mb * 1024 * 1024;
+  }
+  return defaultMb * 1024 * 1024;
+}
+
 const MAX_EVENT_LOOP_LAG_MS = 2_000;
-const MAX_RSS_BYTES = 2_000 * 1024 * 1024;
+const MAX_RSS_BYTES = readMaxRssBytes("ENVOYMESH_MAX_RSS_MB", 4096);
 const FATAL_ERROR_WINDOW_MS = 5 * 60_000;
 const MAX_FATAL_ERRORS_PER_WINDOW = 3;
 const MAX_CONSECUTIVE_RESTART_REQUESTS = 2;
