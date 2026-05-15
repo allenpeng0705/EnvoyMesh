@@ -2308,40 +2308,44 @@ for (const warning of connectivityWarnings) {
 }
 if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length > 0) {
   console.log(
-    `[connectivity] probing ${effectiveBootstrapPeers.length} bootstrap peer(s) for wan-default (may take a while if peers are unreachable)…`,
+    `[connectivity] probing ${effectiveBootstrapPeers.length} bootstrap peer(s) for wan-default…`,
   );
   const orderedBootstrapPeers = rotatePeers(effectiveBootstrapPeers);
-  for (const peer of orderedBootstrapPeers) {
-    try {
-      const latencyMs = await mesh.probePeer(peer);
-      pushBootstrapProbeResult({ peer, ok: true, latencyMs });
-      await discoverySeedStore.upsertSuccess(peer, "bootstrap-probe");
-      await taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "p2p.trace",
-          direction: "outbound",
-          protocol: "connectivity.bootstrap.ok",
-          remotePeerId: peer,
-          latencyMs,
-          outcome: "record",
-          summary: `bootstrap probe ok peer=${peer} latencyMs=${latencyMs}`,
-        }),
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      pushBootstrapProbeResult({ peer, ok: false, error: message });
-      await taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "p2p.trace",
-          direction: "outbound",
-          protocol: "connectivity.bootstrap.fail",
-          remotePeerId: peer,
-          outcome: "record",
-          summary: `bootstrap probe failed peer=${peer} error=${message}`,
-        }),
-      );
-    }
-  }
+  // Probe all peers in parallel so one unreachable peer doesn't delay the rest.
+  // Each probe has a built-in 15s dialTimeout, so total wait is bounded to ~15s.
+  await Promise.allSettled(
+    orderedBootstrapPeers.map(async (peer) => {
+      try {
+        const latencyMs = await mesh.probePeer(peer);
+        pushBootstrapProbeResult({ peer, ok: true, latencyMs });
+        await discoverySeedStore.upsertSuccess(peer, "bootstrap-probe");
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "p2p.trace",
+            direction: "outbound",
+            protocol: "connectivity.bootstrap.ok",
+            remotePeerId: peer,
+            latencyMs,
+            outcome: "record",
+            summary: `bootstrap probe ok peer=${peer} latencyMs=${latencyMs}`,
+          }),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        pushBootstrapProbeResult({ peer, ok: false, error: message });
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "p2p.trace",
+            direction: "outbound",
+            protocol: "connectivity.bootstrap.fail",
+            remotePeerId: peer,
+            outcome: "record",
+            summary: `bootstrap probe failed peer=${peer} error=${message}`,
+          }),
+        );
+      }
+    }),
+  );
   const succeeded = bootstrapProbeResults.some((item) => item.ok);
   if (!succeeded && args.connectivityStrict) {
     throw new Error(

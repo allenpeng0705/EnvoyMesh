@@ -236,6 +236,8 @@ class NodeServiceImpl implements NodeService {
    */
   bindExternalMesh(mesh: EnvoyMesh): void {
     this._externalMesh = mesh;
+    this._nodeStatus = "running";
+    this.emit("node:status", { status: this._nodeStatus, peerId: mesh.peerId });
   }
 
   /** Re-apply contact reachability tags from the trust store (after cold start or mesh restart). */
