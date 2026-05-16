@@ -794,46 +794,51 @@ export class EnvoyMesh {
     const node = this.requireNode();
     const peerIdStr = parsePeerIdFromDialTarget(target);
 
-    const existing = this.findOpenConnectionToPeer(node, peerIdStr);
-    if (existing) {
-      try {
-        const stream = await promiseWithTimeout(
-          existing.newStream(protocol),
-          NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS,
-          `newStream ${protocol}`,
-        );
-        return { stream, remotePeerId: existing.remotePeer.toString() };
-      } catch (e) {
-        const detail = e instanceof Error ? e.message : String(e);
-        console.warn(
-          `[network] outbound reuse failed for ${peerIdStr.slice(0, 12)}… (${detail}); closing connection and redialing`,
-        );
+    // Existing-connection reuse requires a peer ID. Transport-level multiaddrs
+    // without /p2p/ (e.g. WebTransport certhash addrs from the DHT) skip this
+    // block and fall through to a fresh dial via dialOpenStreamViaHints.
+    if (peerIdStr) {
+      const existing = this.findOpenConnectionToPeer(node, peerIdStr);
+      if (existing) {
         try {
-          await existing.close();
-        } catch {
-          /* ignore */
+          const stream = await promiseWithTimeout(
+            existing.newStream(protocol),
+            NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS,
+            `newStream ${protocol}`,
+          );
+          return { stream, remotePeerId: existing.remotePeer.toString() };
+        } catch (e) {
+          const detail = e instanceof Error ? e.message : String(e);
+          console.warn(
+            `[network] outbound reuse failed for ${peerIdStr.slice(0, 12)}… (${detail}); closing connection and redialing`,
+          );
+          try {
+            await existing.close();
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+
+      const limitedExisting = this.findLimitedConnectionToPeer(node, peerIdStr);
+      if (limitedExisting) {
+        try {
+          const stream = await promiseWithTimeout(
+            limitedExisting.newStream([protocol], { runOnLimitedConnection: true }),
+            NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS,
+            `newStream(limited relay) ${protocol}`,
+          );
+          return { stream, remotePeerId: limitedExisting.remotePeer.toString() };
+        } catch (e) {
+          const detail = e instanceof Error ? e.message : String(e);
+          console.warn(
+            `[network] limited relay stream open failed for ${peerIdStr.slice(0, 12)}… (${detail}); trying fresh dial`,
+          );
         }
       }
     }
 
-    const limitedExisting = this.findLimitedConnectionToPeer(node, peerIdStr);
-    if (limitedExisting) {
-      try {
-        const stream = await promiseWithTimeout(
-          limitedExisting.newStream([protocol], { runOnLimitedConnection: true }),
-          NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS,
-          `newStream(limited relay) ${protocol}`,
-        );
-        return { stream, remotePeerId: limitedExisting.remotePeer.toString() };
-      } catch (e) {
-        const detail = e instanceof Error ? e.message : String(e);
-        console.warn(
-          `[network] limited relay stream open failed for ${peerIdStr.slice(0, 12)}… (${detail}); trying fresh dial`,
-        );
-      }
-    }
-
-    return this.dialOpenStreamViaHints(node, peerIdStr, target, protocol, sendOptions);
+    return this.dialOpenStreamViaHints(node, peerIdStr ?? "", target, protocol, sendOptions);
   }
 
   private async dialOpenStreamViaHints(
@@ -844,9 +849,6 @@ export class EnvoyMesh {
     sendOptions?: MeshOutboundOptions,
   ): Promise<{ stream: any; remotePeerId?: string }> {
     const hintsRaw = sendOptions?.dialHints ?? [];
-    const routableHints = preferNonLoopbackDialHints(hintsRaw);
-    /** True when hints include at least one non-loopback circuit/LAN/WAN addr — try before bare `/p2p/id` dial (peerstore may prioritize remote loopback → ECONNREFUSED here). */
-    const hasRoutableHint = routableHints.some((h) => !isLoopbackOrUnspecifiedDialHint(h));
     const barePeerDial = !target.trim().startsWith("/");
 
     const dialOnce = async (addr: ReturnType<typeof multiaddr> | string): Promise<{ stream: any; remotePeerId?: string }> => {
@@ -854,6 +856,16 @@ export class EnvoyMesh {
       const s = stream as { connection?: { remotePeer?: { toString(): string } } };
       return { stream, remotePeerId: s.connection?.remotePeer?.toString() };
     };
+
+    // Peer-ID-less multiaddrs (e.g. WebTransport certhash addresses from the
+    // DHT): skip hint-based dials which require a peer ID for /p2p/ appending.
+    if (!peerIdStr && !barePeerDial) {
+      return dialOnce(this._normalizeDialTarget(target));
+    }
+
+    const routableHints = preferNonLoopbackDialHints(hintsRaw);
+    /** True when hints include at least one non-loopback circuit/LAN/WAN addr — try before bare `/p2p/id` dial (peerstore may prioritize remote loopback → ECONNREFUSED here). */
+    const hasRoutableHint = routableHints.some((h) => !isLoopbackOrUnspecifiedDialHint(h));
 
     let lastError: unknown = new Error("no outbound dial attempted");
 
@@ -1432,18 +1444,24 @@ export { CAPABILITY_TOPIC_NAMESPACE, cidForCapabilityTopic } from "./capability-
 export { expandListenAddressesWithQuic, quicListenFromTcpListen } from "./quic-listen.js";
 export { CapabilityRegistry, type CapabilityRegistryOptions, type CapabilityRegistryVerbosity } from "./capability-registry.js";
 
-function parsePeerIdFromDialTarget(target: string): string {
+/**
+ * Extract the libp2p peer ID from a dial target.
+ * Returns `undefined` for transport-level multiaddrs that lack a `/p2p/` component
+ * (e.g. WebTransport CERT hashes from DHT-discovered peers). Callers should fall
+ * through to a fresh dial in that case since existing-connection reuse requires a peer ID.
+ */
+function parsePeerIdFromDialTarget(target: string): string | undefined {
   const trimmed = target.trim();
   if (!trimmed.includes("/")) {
     return trimmed;
   }
   const p = trimmed.lastIndexOf("/p2p/");
   if (p < 0) {
-    throw new Error(`Cannot parse peer id from dial target: ${target}`);
+    return undefined;
   }
   const id = trimmed.slice(p + "/p2p/".length).split("/")[0]?.trim();
   if (!id) {
-    throw new Error(`Cannot parse peer id from dial target: ${target}`);
+    return undefined;
   }
   return id;
 }
