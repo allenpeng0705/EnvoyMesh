@@ -333,7 +333,32 @@ export class EnvoyMesh {
       }
     });
 
-    await this.node.start();
+    // node.start() starts all transports including circuit-relay-v2. When relay
+    // is enabled, the relay transport may try to reach configured relay servers
+    // during startup. If those servers are unreachable, each dial attempt
+    // blocks for dialTimeout (15 s).  Without a timeout, the entire start()
+    // can hang for minutes, keeping the Social UI in "Connecting…" forever.
+    //
+    // A 25 s deadline gives the relay transport ~1 full dialTimeout cycle
+    // (15 s) plus headroom for TCP + QUIC listen, DHT bootstrap, and the
+    // relay auto-reservation handshake.  If it still hasn't finished, we
+    // continue — the node is functional for direct P2P, and relay
+    // connectivity will be established asynchronously when possible.
+    const NODE_START_DEADLINE_MS = 25_000;
+    try {
+      await promiseWithTimeout(
+        Promise.resolve(this.node.start()),
+        NODE_START_DEADLINE_MS,
+        "libp2p node.start",
+      );
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(
+        `[network] node.start did not finish within ${NODE_START_DEADLINE_MS}ms (${msg}). ` +
+        "The node is functional for direct P2P; relay connectivity will follow asynchronously.",
+      );
+    }
+
     this.attachP2pDebug(this.node);
     this.attachReachabilityObservability(this.node);
   }
