@@ -24,6 +24,8 @@ import type {
   NodeInitResult,
   HomeClawCoreProxyParams,
   HomeClawCoreProxyResult,
+  PairDeviceParams,
+  PairDeviceResult,
 } from "@envoymesh/api";
 import { randomUUID } from "node:crypto";
 import {
@@ -61,6 +63,7 @@ import {
   createTaskRuntimeStateStore,
   createRelayStateStore,
   createCapabilityManifestStore,
+  createSessionTokenStore,
   loadOrCreateNodeProfile,
   type LocalTaskStore,
   type LocalTrustStore,
@@ -71,6 +74,7 @@ import {
   type TaskRuntimeStateStore,
   type RelayStateStore,
   type CapabilityManifestStore,
+  type SessionTokenStore,
 } from "@envoymesh/local-store";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
@@ -149,6 +153,9 @@ class NodeServiceImpl implements NodeService {
   private _pairingTokenIssuedAt = 0;
   private static readonly _pairingTokenTtlMs = 10 * 60 * 1000;
 
+  /** Persistent session token store for long-lived pairings (no QR re-scan). */
+  private readonly _sessionTokenStore: SessionTokenStore | null;
+
   // Pending hello requests (messageId -> info) awaiting user acceptance
   private readonly _pendingHelloRequests = new Map<string, {
     remotePeerId: string;
@@ -208,6 +215,8 @@ class NodeServiceImpl implements NodeService {
       profileDir && profileDir !== "/tmp/unknown" ? createChatDraftStore(profileDir) : null;
     this._capabilityManifestStore =
       profileDir && profileDir !== "/tmp/unknown" ? createCapabilityManifestStore(profileDir) : null;
+    this._sessionTokenStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createSessionTokenStore(profileDir) : null;
     if (profileDir && profileDir !== "/tmp/unknown") {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
     }
@@ -778,6 +787,9 @@ class NodeServiceImpl implements NodeService {
   async revokeBond(peerOwnerId: string): Promise<void> {
     await this._untagReachabilityForOwner(peerOwnerId);
     await this._trustStore.removeTrustRecord(peerOwnerId);
+    if (this._sessionTokenStore) {
+      await this._sessionTokenStore.removeTokensForOwner(peerOwnerId);
+    }
     this.emit("bond:revoked", { peerOwnerId });
   }
 
@@ -2006,17 +2018,37 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
-   * Returns true if [token] matches the latest pairing token from [getPairingPayload] and TTL not exceeded.
+   * Returns true if [token] matches either:
+   * 1. The latest QR pairing token from [getPairingPayload] (10-min TTL), or
+   * 2. A persisted session token (no TTL — for reconnections without QR re-scan).
+   *
+   * When a persisted token is matched, [lastUsedAt] is touched.
    */
-  validatePairingToken(token: string): boolean {
+  async validatePairingToken(token: string): Promise<boolean> {
     const t = token.trim();
-    if (!t || !this._pairingToken || t !== this._pairingToken) {
+    if (!t) {
       return false;
     }
-    if (Date.now() - this._pairingTokenIssuedAt > NodeServiceImpl._pairingTokenTtlMs) {
-      return false;
+
+    // 1. Check in-memory QR pairing token (10-min TTL)
+    if (this._pairingToken && t === this._pairingToken) {
+      if (Date.now() - this._pairingTokenIssuedAt <= NodeServiceImpl._pairingTokenTtlMs) {
+        return true;
+      }
     }
-    return true;
+
+    // 2. Check persisted session token store (no TTL)
+    if (this._sessionTokenStore) {
+      const record = await this._sessionTokenStore.getTokenByValue(t);
+      if (record) {
+        // Touch lastUsedAt
+        record.lastUsedAt = new Date().toISOString();
+        await this._sessionTokenStore.setToken(record);
+        return true;
+      }
+    }
+
+    return false;
   }
 
   async getBridgeStatus(): Promise<BridgeStatus> {
@@ -2099,6 +2131,70 @@ class NodeServiceImpl implements NodeService {
     }
 
     return payload;
+  }
+
+  /**
+   * Pair a mobile device after QR-code scan.
+   *
+   * Validates the short-lived QR pairing token, creates a persistent session
+   * token for future reconnections, and sets up a "direct" trust record.
+   */
+  async pairDevice(params: PairDeviceParams): Promise<PairDeviceResult> {
+    const { requesterOwnerId, requesterDeviceId, requesterDevicePublicKeyPem, pairingToken } = params;
+
+    if (!requesterOwnerId || !requesterDeviceId || !requesterDevicePublicKeyPem || !pairingToken) {
+      throw new Error("Missing required pairDevice params");
+    }
+
+    // Validate the QR pairing token
+    const valid = await this.validatePairingToken(pairingToken);
+    if (!valid) {
+      throw new Error("Invalid or expired pairing token");
+    }
+
+    // Derive the requester's libp2p peer ID from their device public key
+    const peerId = derivePeerId(requesterDevicePublicKeyPem);
+
+    // Create trust record at "direct" level
+    await this._trustStore.setTrustRecord({
+      peerOwnerId: requesterOwnerId,
+      level: "direct",
+      displayName: "Companion",
+      note: "pairDevice",
+      now: new Date().toISOString(),
+    });
+
+    // Register in peer directory so dial hints work
+    await this._peerDirectoryStore.ensurePeerFromInboundChat({
+      ownerId: requesterOwnerId,
+      peerId,
+      listenAddrs: [],
+    });
+
+    // Generate persistent session token
+    const sessionToken = randomUUID();
+    const now = new Date().toISOString();
+    if (this._sessionTokenStore) {
+      await this._sessionTokenStore.setToken({
+        token: sessionToken,
+        ownerId: requesterOwnerId,
+        deviceId: requesterDeviceId,
+        displayName: "Companion",
+        createdAt: now,
+        lastUsedAt: now,
+      });
+    }
+
+    const bridgeStatus = await this.getBridgeStatus();
+    const result: PairDeviceResult = { sessionToken };
+    if (bridgeStatus.enabled) {
+      result.agentPeerId = bridgeStatus.agentPeerId;
+      if (bridgeStatus.agentPublicKeyPem) {
+        result.agentPubKey = bridgeStatus.agentPublicKeyPem;
+      }
+    }
+
+    return result;
   }
 
   async homeclawCoreProxy(params: HomeClawCoreProxyParams): Promise<HomeClawCoreProxyResult> {

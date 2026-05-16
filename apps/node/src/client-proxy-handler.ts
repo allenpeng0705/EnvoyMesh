@@ -29,7 +29,7 @@ export function createClientProxyHandler(
 
       // Validate pairing token
       const token = handshake?.token as string | undefined;
-      if (!token || !nodeService.validatePairingToken(token)) {
+      if (!token || !(await nodeService.validatePairingToken(token))) {
         await streamIo.write(
           new TextEncoder().encode(
             JSON.stringify({ type: "proxy-reject", reason: "invalid or expired token" }),

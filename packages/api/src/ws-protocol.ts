@@ -104,6 +104,7 @@ export type RpcMethods =
   // Agent Bridge
   | "getBridgeStatus"
   | "getPairingPayload"
+  | "pairDevice"
   // Node Configuration
   | "getNodeConfig"
   | "updateNodeConfig"
@@ -631,6 +632,19 @@ export interface GetConnectionStatusParams {}
 export interface GetBridgeStatusParams {}
 
 export interface GetPairingPayloadParams {}
+
+export interface PairDeviceParams {
+  requesterOwnerId: string;
+  requesterDeviceId: string;
+  requesterDevicePublicKeyPem: string;
+  pairingToken: string;
+}
+
+export interface PairDeviceResult {
+  sessionToken: string;
+  agentPeerId?: string;
+  agentPubKey?: string;
+}
 
 export interface GetPeerConnectionInfoParams {
   peerOwnerId: string;

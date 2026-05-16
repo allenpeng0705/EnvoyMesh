@@ -25,6 +25,8 @@ import type {
   PairingPayload,
   HomeClawCoreProxyParams,
   HomeClawCoreProxyResult,
+  PairDeviceParams,
+  PairDeviceResult,
 } from "./ws-protocol.js";
 
 // ============================================
@@ -488,6 +490,17 @@ export interface NodeService {
    * HomeClaw mobile app can scan.
    */
   getPairingPayload(): Promise<PairingPayload>;
+
+  /**
+   * Validate a QR pairing token and create a persistent session token.
+   *
+   * Called by the mobile app after scanning the QR code. On success, the mobile
+   * app saves the returned sessionToken and uses it for future reconnections
+   * without re-scanning.
+   *
+   * Also creates a trust record at "direct" level for the requester.
+   */
+  pairDevice(params: PairDeviceParams): Promise<PairDeviceResult>;
 
   // ----- Connection Status -----
 

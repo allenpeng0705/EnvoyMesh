@@ -1510,7 +1510,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       persistedCfg?.companionPairingAutoAcceptWithToken === true &&
       Boolean(payload.pairingToken) &&
       nodeService instanceof NodeServiceImpl &&
-      nodeService.validatePairingToken(payload.pairingToken!);
+      await nodeService.validatePairingToken(payload.pairingToken!);
 
     if (allowAuto) {
       await trustStore.setTrustRecord({
