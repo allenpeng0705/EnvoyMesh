@@ -3,34 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
-    <meta name="theme-color" content="#0f0f0f" />
+    <meta name="theme-color" content="#f8fafc" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>EnvoyMesh</title>
   </head>
-  <body style="background:#0f0f0f;color:#fff;font-family:system-ui,sans-serif;margin:0;">
-    <!-- Visible before React mounts — proves HTML/CSS loads -->
-    <div id="root">
-      <div style="display:flex;align-items:center;justify-content:center;height:100vh;text-align:center;padding:24px;">
-        <p>Starting EnvoyMesh...</p>
-      </div>
-    </div>
-
-    <!-- Inline error display (no JSX dependency) -->
-    <script>
-      window.__envoyDebug = {};
-      window.addEventListener("error", function(e) {
-        if (e.filename && e.filename.includes("assets/")) {
-          var root = document.getElementById("root");
-          if (root) root.innerHTML =
-            "<div style='padding:24px;color:#fff;'>" +
-            "<h2>EnvoyMesh</h2>" +
-            "<p style='color:#ef4444'>JS error: " + (e.message || "unknown") + "</p>" +
-            "<pre style='color:#94a3b8;font-size:12px;white-space:pre-wrap'>" +
-            (e.filename || "") + ":" + (e.lineno || "") +
-            "</pre></div>";
-        }
-      }, true);
-    </script>
-
+  <body>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

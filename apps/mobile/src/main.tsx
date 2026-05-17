@@ -12,7 +12,7 @@ import { createDirectCallClient } from "@envoymesh/social/lib/direct-call-client
 import { NodeServiceProvider } from "@envoymesh/social/hooks/useNodeService.js";
 import { NodeStateProvider } from "@envoymesh/social/context/NodeStateContext.js";
 import { ErrorBoundary } from "@envoymesh/social/components/ErrorBoundary.js";
-import { App } from "@envoymesh/social/App.js";
+import { MobileApp } from "./MobileApp.js";
 import "@envoymesh/social/styles.css";
 
 // ---------------------------------------------------------------------------
@@ -55,7 +55,7 @@ async function main(): Promise<void> {
     <NodeServiceProvider clientFactory={() => directClient}>
       <NodeStateProvider>
         <ErrorBoundary>
-          <App />
+          <MobileApp />
         </ErrorBoundary>
       </NodeStateProvider>
     </NodeServiceProvider>,
@@ -67,7 +67,7 @@ main().catch((err) => {
   const rootEl = document.getElementById("root");
   if (rootEl) {
     createRoot(rootEl).render(
-      <div style={{ color: "#fff", padding: 24, fontFamily: "system-ui" }}>
+      <div style={{ padding: 24, fontFamily: "system-ui" }}>
         <h2>EnvoyMesh</h2>
         <p>Failed to start: {String(err?.message ?? err)}</p>
       </div>,

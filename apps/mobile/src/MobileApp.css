@@ -1,0 +1,278 @@
+/* ---------------------------------------------------------------------------
+ * MobileApp — Mobile-specific layout & bottom tab bar
+ *
+ * The shared social styles.css provides the base component styles.
+ * This file adds the mobile shell: bottom tabs, compact top bar, safe areas.
+ * --------------------------------------------------------------------------- */
+
+/* ---- Reset & viewport ---- */
+html, body {
+  margin: 0;
+  padding: 0;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+body {
+  background: var(--color-bg, #f8fafc);
+  color: var(--color-text, #0f172a);
+}
+
+/* ---- App shell ---- */
+.mobile-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--color-bg, #f8fafc);
+  overflow: hidden;
+}
+
+/* ---- Loading / Setup states ---- */
+.mobile-loading,
+.mobile-setup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-muted, #64748b);
+}
+
+.mobile-loading .spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--color-border, #e2e8f0);
+  border-top-color: var(--color-primary, #6366f1);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Top bar ---- */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  padding-top: max(8px, env(safe-area-inset-top, 0px));
+  background: var(--color-surface, #fff);
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  flex-shrink: 0;
+  min-height: 44px;
+}
+
+.top-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.top-bar-logo {
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, var(--color-primary, #6366f1), #818cf8);
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.top-bar-title {
+  font-size: 16px;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--color-primary, #6366f1), #a5b4fc);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.top-bar-peer {
+  font-size: 11px;
+  color: var(--color-text-muted, #64748b);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-bar-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-success, #10b981);
+  flex-shrink: 0;
+}
+
+.top-bar-status.offline {
+  background: var(--color-text-subtle, #94a3b8);
+}
+
+/* ---- Main content ---- */
+.mobile-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 8px;
+}
+
+/* ---- Bottom tab bar ---- */
+.bottom-tabs {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
+  background: var(--color-surface, #fff);
+  border-top: 1px solid var(--color-border, #e2e8f0);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+
+.tab-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 0;
+  min-width: 56px;
+  min-height: 48px;
+  border: none;
+  background: none;
+  color: var(--color-text-subtle, #94a3b8);
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  flex: 1;
+}
+
+.tab-button:active {
+  opacity: 0.7;
+}
+
+.tab-button.active {
+  color: var(--color-primary, #6366f1);
+}
+
+.tab-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tab-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.tab-badge {
+  position: absolute;
+  top: 2px;
+  right: calc(50% - 18px);
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--color-danger, #ef4444);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.tab-label {
+  line-height: 1.2;
+}
+
+/* ---- Chat mobile overrides ---- */
+
+/* Stack sidebar above chat area on mobile */
+.mobile-content .chat-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.mobile-content .chat-view .contact-list {
+  flex-shrink: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+}
+
+/* Chat area takes remaining space */
+.mobile-content .chat-view .chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Message bubbles */
+.mobile-content .chat-area .message {
+  max-width: 85%;
+}
+
+/* Chat input bar */
+.mobile-content .chat-input {
+  padding: 8px 12px;
+  padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+}
+
+/* ---- Contacts mobile ---- */
+.mobile-content .contacts-view {
+  padding: 0;
+}
+
+.mobile-content .contacts-view .contact-card {
+  border-radius: 0;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+}
+
+/* ---- Search mobile ---- */
+.mobile-content .search-view {
+  padding: 12px;
+}
+
+/* ---- Profile mobile ---- */
+.mobile-content .profile-view {
+  padding: 16px;
+}
+
+/* ---- Settings mobile ---- */
+.mobile-content .settings-view {
+  padding: 0 12px;
+}
+
+/* ---- View transitions ---- */
+.mobile-content > * {
+  animation: mobileFadeIn 0.2s ease;
+}
+
+@keyframes mobileFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
