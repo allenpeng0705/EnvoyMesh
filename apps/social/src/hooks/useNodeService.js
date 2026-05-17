@@ -79,7 +79,10 @@ export function NodeServiceProvider({ children, clientFactory, }) {
             // Mobile / in-process: use the provided factory
             const nodeService = clientFactory();
             setClient(nodeService);
-            nodeService.connect().catch(console.error);
+            nodeService.connect().then(() => {
+                setConnected(true);
+                setReady(true);
+            }).catch(console.error);
             return () => { nodeService.disconnect(); };
         }
         // Desktop: use WebSocket client
