@@ -6,6 +6,7 @@ import {
   createMobileChatLogStore,
   createMobileIdentityStateStore,
   mobileStorageSchema,
+  createInMemoryDb,
   type MobileDatabase,
   type MobilePeerDirectory,
   type MobileTrustStore,
@@ -17,110 +18,6 @@ import {
 } from "../src/index.js";
 import type { BondRecord } from "@envoymesh/api";
 import type { SessionTokenRecord } from "../src/session-token-types.js";
-
-// ---------------------------------------------------------------------------
-// In-memory test database
-// ---------------------------------------------------------------------------
-
-function createTestDatabase(): MobileDatabase {
-  const tables = new Map<string, Map<string, Record<string, unknown>>>();
-
-  function ensureTable(name: string): Map<string, Record<string, unknown>> {
-    let t = tables.get(name);
-    if (!t) {
-      t = new Map();
-      tables.set(name, t);
-    }
-    return t;
-  }
-
-  function parseColumns(sql: string): string[] {
-    const m = sql.match(/\(([^)]+)\)/);
-    if (!m) return [];
-    return m[1].split(",").map((c) => c.trim());
-  }
-
-  return {
-    async open() {},
-    async close() {},
-    async query(sql: string, params?: unknown[]): Promise<Record<string, unknown>[]> {
-      const fromMatch = sql.match(/FROM\s+(\w+)/i);
-      const tableName = fromMatch?.[1] ?? "unknown";
-      const t = ensureTable(tableName);
-      let rows = [...t.values()];
-
-      // WHERE filtering
-      const whereMatch = sql.match(/WHERE\s+(\w+)\s*=\s*\?/i);
-      if (whereMatch && params?.[0] !== undefined) {
-        const col = whereMatch[1];
-        const val = String(params[0]);
-        rows = rows.filter((r) => String(r[col] ?? "") === val);
-      }
-
-      // ORDER BY (single column, optional DESC/ASC)
-      const orderMatch = sql.match(/ORDER BY\s+(\w+)(?:\s+(DESC|ASC))?/i);
-      if (orderMatch) {
-        const col = orderMatch[1];
-        const desc = orderMatch[2]?.toUpperCase() === "DESC";
-        rows.sort((a, b) => {
-          const av = String(a[col] ?? "");
-          const bv = String(b[col] ?? "");
-          return desc ? bv.localeCompare(av) : av.localeCompare(bv);
-        });
-      }
-
-      // LIMIT (hardcoded)
-      const limitMatch = sql.match(/LIMIT\s+(\d+)/i);
-      if (limitMatch) {
-        rows = rows.slice(0, parseInt(limitMatch[1], 10));
-      }
-
-      // LIMIT with ? placeholder — use the last numeric param
-      const limitParamMatch = sql.match(/LIMIT\s+\?/i);
-      if (limitParamMatch) {
-        const limitVal = params?.[params.length - 1];
-        if (typeof limitVal === "number") {
-          rows = rows.slice(0, limitVal);
-        }
-      }
-
-      return rows;
-    },
-    async execute(sql: string, params?: unknown[]): Promise<void> {
-      const upper = sql.toUpperCase();
-      const intoMatch = sql.match(/INTO\s+(\w+)/i);
-      const fromMatch = sql.match(/FROM\s+(\w+)/i);
-
-      if (upper.includes("INSERT") || upper.includes("REPLACE")) {
-        if (!intoMatch || !params) return;
-        const tableName = intoMatch[1];
-        const t = ensureTable(tableName);
-        const cols = parseColumns(sql);
-        const row: Record<string, unknown> = {};
-        for (let i = 0; i < cols.length; i++) {
-          row[cols[i]] = params[i] ?? null;
-        }
-        t.set(String(params[0] ?? "row"), row);
-      } else if (upper.includes("DELETE")) {
-        if (!fromMatch) return;
-        const tableName = fromMatch[1];
-        const t = ensureTable(tableName);
-
-        // DELETE with WHERE clause on a specific column
-        const whereMatch = sql.match(/WHERE\s+(\w+)\s*=\s*\?/i);
-        if (whereMatch && params?.[0] !== undefined) {
-          const col = whereMatch[1];
-          const val = String(params[0]);
-          for (const [key, row] of t) {
-            if (String(row[col] ?? "") === val) t.delete(key);
-          }
-        } else {
-          t.clear();
-        }
-      }
-    },
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Test setup
@@ -135,7 +32,7 @@ describe("mobile-storage", () => {
   let identityStateStore: MobileIdentityStateStore;
 
   beforeEach(() => {
-    db = createTestDatabase();
+    db = createInMemoryDb();
     peerDirectory = createMobilePeerDirectory(db);
     trustStore = createMobileTrustStore(db);
     sessionTokenStore = createMobileSessionTokenStore(db);

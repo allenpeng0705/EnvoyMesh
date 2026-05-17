@@ -39,6 +39,7 @@ import {
   createMobileSessionTokenStore,
   createMobileIdentityStateStore,
   createMobileChatLogStore,
+  createInMemoryDb,
   type MobileSessionTokenStore,
   type MobileDatabase,
   type MobileIdentityStateStore,
@@ -152,7 +153,7 @@ export class MobileNode implements NodeService {
   constructor(config: MobileNodeConfig) {
     this._profileDir = config.profileDir;
     this._relayUrls = [...config.relayUrls];
-    this._db = config.database ?? _createInMemoryDb();
+    this._db = config.database ?? createInMemoryDb();
     this._vault = config.vault ?? createMobileVault();
     this._secureStorage = config.secureStorage;
     this._peerDirectory = createMobilePeerDirectory(this._db);
@@ -196,7 +197,7 @@ export class MobileNode implements NodeService {
     profileDir: string,
     ownerPrivateKeyPem: string,
     ownerPublicKeyPem: string,
-    homeNodePeerId: string,
+    homeNodePeerId?: string,
   ): Promise<MobileNodeState> {
     const ownerId = deriveOwnerId(ownerPublicKeyPem);
     const owner: OwnerIdentity = {
@@ -279,9 +280,20 @@ export class MobileNode implements NodeService {
    * Public state goes to SQLite, private keys go to OS keychain via SecureStorage.
    */
   async persistSharedIdentity(): Promise<PersistedIdentityState> {
+    return this._persistCurrentIdentity(true);
+  }
+
+  /**
+   * Persist the current (standalone or shared) identity to SQLite + SecureStorage.
+   * Internal method called by persistSharedIdentity / persistStandaloneIdentity.
+   */
+  private async _persistCurrentIdentity(sharedIdentity: boolean): Promise<PersistedIdentityState> {
     const s = this._state;
+    // Preserve original createdAt if re-persisting
+    const existing = await this._identityStateStore.load();
+    const createdAt = existing?.createdAt ?? new Date().toISOString();
     const persisted: PersistedIdentityState = {
-      sharedIdentity: true,
+      sharedIdentity,
       ownerId: s.owner.ownerId,
       ownerPublicKeyPem: s.owner.publicKeyPem,
       deviceId: s.device.deviceId,
@@ -290,11 +302,10 @@ export class MobileNode implements NodeService {
       agentPublicKeyPem: s.agent.publicKeyPem,
       homeNodePeerId: s.homeNodePeerId,
       relayUrls: [...this._relayUrls],
-      createdAt: new Date().toISOString(),
+      createdAt,
       updatedAt: new Date().toISOString(),
     };
     await this._identityStateStore.save(persisted);
-    // Also save private keys to SecureStorage (iOS Keychain / Android EncryptedSharedPreferences)
     if (this._secureStorage) {
       await this._secureStorage.set("ownerPrivateKey", s.owner.privateKeyPem);
       await this._secureStorage.set("devicePrivateKey", s.device.privateKeyPem);
@@ -334,90 +345,111 @@ export class MobileNode implements NodeService {
     const device = generateDeviceIdentity();
     const ecdhKeyPair = await generateEcdhKeyPair();
 
-    // 2. Connect to relay
+    // 2. Connect to relay and exchange pairSharedIdentity RPC
     const ws = new WebSocket(qrPayload.wsUrl);
-    await new Promise<void>((resolve, reject) => {
-      ws.onopen = () => resolve();
-      ws.onerror = () => reject(new Error("Failed to connect to relay"));
-      setTimeout(() => reject(new Error("Connection timeout")), 15000);
-    });
-
-    // 3. Send pairSharedIdentity RPC
-    const requestId = _randomUUID();
-    const rpcRequest = {
-      id: requestId,
-      method: "pairSharedIdentity",
-      params: {
-        requesterOwnerId: qrPayload.ownerId,
-        requesterDeviceId: device.deviceId,
-        requesterDevicePublicKeyPem: device.publicKeyPem,
-        keyExchangePublicKey: bytesToBase64url(new Uint8Array(ecdhKeyPair.publicKeyRaw)),
-        pairingToken: qrPayload.token,
-      },
-    };
-    ws.send(JSON.stringify(rpcRequest));
-
-    const response = await new Promise<PairSharedIdentityResult>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        ws.close();
-        reject(new Error("pairSharedIdentity timeout"));
-      }, 30000);
-      ws.onmessage = (event) => {
-        clearTimeout(timeout);
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.id === requestId) {
-            if (msg.error) {
-              reject(new Error(msg.error.message ?? "pairSharedIdentity failed"));
-            } else {
-              resolve(msg.result as PairSharedIdentityResult);
-            }
-          }
-        } catch { /* wait for next message */ }
-      };
-      ws.onerror = () => { clearTimeout(timeout); reject(new Error("WebSocket error")); };
-      ws.onclose = () => { clearTimeout(timeout); reject(new Error("Connection closed")); };
-    });
-
-    // 4. Decrypt owner private key
-    const encrypted: EncryptedOwnerKey = {
-      encryptedKey: response.encryptedOwnerKey,
-      ephemeralPublicKey: response.ephemeralPublicKey,
-      iv: response.iv,
-      authTag: response.authTag,
-    };
-    const ownerPrivateKeyPem = await decryptOwnerKeyFromDevice(encrypted, ecdhKeyPair.privateKey);
-
-    // 5. Import owner identity
-    await this.importOwnerIdentity(
-      this._profileDir,
-      ownerPrivateKeyPem,
-      response.ownerPublicKey,
-      qrPayload.relayPeerId ?? "",
-    );
-
-    // 6. Persist to storage (public state → SQLite, private keys → SecureStorage)
-    await this.persistSharedIdentity();
-
-    // Store session token for reconnection
-    if (response.sessionToken && this._sessionTokenStore) {
-      await this._sessionTokenStore.setToken({
-        token: response.sessionToken,
-        ownerId: response.ownerId,
-        deviceId: device.deviceId,
-        displayName: "Home Node",
-        createdAt: new Date().toISOString(),
-        lastUsedAt: new Date().toISOString(),
+    let connectTimer: ReturnType<typeof setTimeout> | undefined;
+    let rpcTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        connectTimer = setTimeout(() => {
+          reject(new Error("Connection timeout"));
+        }, 15000);
+        ws.onopen = () => { clearTimeout(connectTimer); resolve(); };
+        ws.onerror = () => { clearTimeout(connectTimer); reject(new Error("Failed to connect to relay")); };
       });
+
+      // 3. Send pairSharedIdentity RPC
+      const requestId = _randomUUID();
+      const rpcRequest = {
+        id: requestId,
+        method: "pairSharedIdentity",
+        params: {
+          requesterOwnerId: qrPayload.ownerId,
+          requesterDeviceId: device.deviceId,
+          requesterDevicePublicKeyPem: device.publicKeyPem,
+          keyExchangePublicKey: bytesToBase64url(new Uint8Array(ecdhKeyPair.publicKeyRaw)),
+          pairingToken: qrPayload.token,
+        },
+      };
+      ws.send(JSON.stringify(rpcRequest));
+
+      const response = await new Promise<PairSharedIdentityResult>((resolve, reject) => {
+        let settled = false;
+        rpcTimer = setTimeout(() => {
+          settled = true;
+          reject(new Error("pairSharedIdentity timeout"));
+        }, 30000);
+        ws.onmessage = (event) => {
+          if (settled) return;
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.id === requestId) {
+              clearTimeout(rpcTimer);
+              settled = true;
+              if (msg.error) {
+                reject(new Error(msg.error.message ?? "pairSharedIdentity failed"));
+              } else {
+                resolve(msg.result as PairSharedIdentityResult);
+              }
+            }
+          } catch { /* wait for next message */ }
+        };
+        ws.onerror = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(rpcTimer);
+          reject(new Error("WebSocket error"));
+        };
+        ws.onclose = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(rpcTimer);
+          reject(new Error("Connection closed"));
+        };
+      });
+
+      // 4. Decrypt owner private key
+      const encrypted: EncryptedOwnerKey = {
+        encryptedKey: response.encryptedOwnerKey,
+        ephemeralPublicKey: response.ephemeralPublicKey,
+        iv: response.iv,
+        authTag: response.authTag,
+      };
+      const ownerPrivateKeyPem = await decryptOwnerKeyFromDevice(encrypted, ecdhKeyPair.privateKey);
+
+      // 5. Import owner identity
+      await this.importOwnerIdentity(
+        this._profileDir,
+        ownerPrivateKeyPem,
+        response.ownerPublicKey,
+        qrPayload.relayPeerId,
+      );
+
+      // 6. Persist to storage (public state → SQLite, private keys → SecureStorage)
+      await this.persistSharedIdentity();
+
+      // Store session token for reconnection
+      if (response.sessionToken && this._sessionTokenStore) {
+        await this._sessionTokenStore.setToken({
+          token: response.sessionToken,
+          ownerId: response.ownerId,
+          deviceId: device.deviceId,
+          displayName: "Home Node",
+          createdAt: new Date().toISOString(),
+          lastUsedAt: new Date().toISOString(),
+        });
+      }
+
+      return {
+        sessionToken: response.sessionToken,
+        deviceCertificate: response.deviceCertificate,
+        state: this._state,
+      };
+    } finally {
+      clearTimeout(connectTimer);
+      clearTimeout(rpcTimer);
+      try { ws.close(); } catch { /* ignore */ }
     }
-
-    ws.close();
-
-    return {
-      sessionToken: response.sessionToken,
-      deviceCertificate: response.deviceCertificate,
-      state: this._state,
-    };
   }
 
   // -----------------------------------------------------------------------
@@ -444,8 +476,8 @@ export class MobileNode implements NodeService {
       throw new Error("SecureStorage not configured");
     }
     const persisted = await this._identityStateStore.load();
-    if (!persisted?.sharedIdentity) {
-      throw new Error("No persisted shared identity found");
+    if (!persisted) {
+      throw new Error("No persisted identity found");
     }
     const ownerKey = await this._secureStorage.get("ownerPrivateKey");
     const deviceKey = await this._secureStorage.get("devicePrivateKey");
@@ -453,7 +485,36 @@ export class MobileNode implements NodeService {
     if (!ownerKey || !deviceKey || !agentKey) {
       throw new Error("Private keys not found in secure storage — re-pair required");
     }
-    return this.restoreSharedIdentity(persisted, ownerKey, deviceKey, agentKey);
+
+    if (persisted.sharedIdentity) {
+      return this.restoreSharedIdentity(persisted, ownerKey, deviceKey, agentKey);
+    }
+
+    // Restore standalone identity (no home node pairing)
+    this._state = {
+      owner: {
+        ownerId: persisted.ownerId,
+        publicKeyPem: persisted.ownerPublicKeyPem,
+        privateKeyPem: ownerKey,
+      },
+      device: {
+        deviceId: persisted.deviceId,
+        publicKeyPem: persisted.devicePublicKeyPem,
+        privateKeyPem: deviceKey,
+      },
+      agent: {
+        agentId: deriveAgentId(persisted.ownerId, persisted.agentPublicKeyPem),
+        agentPeerId: persisted.agentPeerId,
+        publicKeyPem: persisted.agentPublicKeyPem,
+        privateKeyPem: agentKey,
+      },
+      sharedIdentity: false,
+      profileDir: this._profileDir,
+      relayUrls: persisted.relayUrls,
+    };
+    this._relayUrls.length = 0;
+    this._relayUrls.push(...persisted.relayUrls);
+    return this._state;
   }
 
   // -----------------------------------------------------------------------
@@ -469,17 +530,24 @@ export class MobileNode implements NodeService {
     if (!this._state) {
       // Try to restore from persisted state first
       const persisted = await this._identityStateStore.load();
-      if (persisted?.sharedIdentity) {
-        // Shared identity found in storage — caller must provide private keys from Keychain
-        // If private keys aren't available (e.g. first app launch after install),
-        // the caller should check this and prompt for QR scan
+      if (persisted) {
+        if (persisted.sharedIdentity) {
+          throw new Error(
+            "Shared identity state found but private keys not provided. " +
+            "Use restoreFromSecureStorage() or restoreSharedIdentity().",
+          );
+        }
+        // Standalone identity found but private keys not in memory —
+        // caller should use restoreFromSecureStorage() instead
         throw new Error(
-          "Shared identity state found but private keys not provided. " +
-          "Use restoreSharedIdentity() with keys from Keychain.",
+          "Standalone identity state found but not restored. " +
+          "Use restoreFromSecureStorage() to restore with private keys.",
         );
       }
-      // No persisted state — fresh init (UI should show onboarding / QR scan)
+      // No persisted state — fresh standalone init
       await this.initStandalone(profileDir);
+      // Persist the new standalone identity so it survives app restarts
+      this._persistCurrentIdentity(false).catch(() => {});
     }
     return {
       profileDir: this._profileDir,
@@ -568,7 +636,10 @@ export class MobileNode implements NodeService {
   async sendChat(targetOwnerId: string, text: string): Promise<void> {
     const msgId = _randomUUID();
     const ts = new Date().toISOString();
-    // Persist locally
+    // Persist locally — threaded by targetOwnerId (ownerId namespace).
+    // NOTE: Inbound chat messages are threaded by senderPeerId (peerId namespace).
+    // The two namespaces differ; a unified thread view requires an ownerId→peerId
+    // mapping from the trust store. Tracked as ISSUE #6.
     await this._chatLog.append(targetOwnerId, {
       messageId: msgId,
       sender: { ownerId: this._state.owner.ownerId, displayName: "Me" },
@@ -595,6 +666,10 @@ export class MobileNode implements NodeService {
     });
   }
 
+  // TODO(security): forwardEnvelope currently sends the raw JSON without
+  // re-signing with the local agent key. The relay proxy model should either
+  // pass through the original signature (if the recipient trusts the source
+  // relay) or re-wrap in a local envelope. Tracked as ISSUE #15.
   async forwardEnvelope(_envelopeJson: Record<string, unknown>, _dialHints?: string[]): Promise<void> {
     // Forward to relay
     this._sendToRelay({ type: "forward-envelope", envelope: _envelopeJson });
@@ -776,6 +851,9 @@ export class MobileNode implements NodeService {
    * - Legacy/event messages → emit as typed events
    */
   private _handleInboundMessage(msg: Record<string, unknown>): void {
+    if (!this._state) return;
+
+    const { owner, agent } = this._state;
     // EnvoyEnvelope: has version, intent, and signature
     if (msg.version === "0.1" && typeof msg.intent === "string" && typeof msg.signature === "string") {
       const verified = verifyEnvelope(msg as any);
@@ -791,13 +869,16 @@ export class MobileNode implements NodeService {
       const payload = (msg.payload as Record<string, unknown>) ?? {};
 
       if (intent === "chat.message") {
-        // Persist to chat log
+        // Persist to chat log — threaded by senderPeerId (peerId namespace).
+        // NOTE: Outbound chat is threaded by targetOwnerId (ownerId namespace).
+        // The envelope does not carry senderOwnerId, so a unified view needs
+        // a peerId→ownerId mapping from the trust store. ISSUE #6.
         const ts = (msg.createdAt as string) ?? new Date().toISOString();
         const senderPeerId = (msg.senderPeerId as string) ?? "";
         this._chatLog.append(senderPeerId, {
           messageId: (msg.messageId as string) ?? _randomUUID(),
           sender: { ownerId: senderPeerId, displayName: senderPeerId },
-          recipient: { ownerId: this._state.owner.ownerId, displayName: "Me" },
+          recipient: { ownerId: owner.ownerId, displayName: "Me" },
           content: { text: String(payload.text ?? "") },
           metadata: { timestamp: ts, deliveryReceipt: "delivered" },
           signature: msg.signature as string,
@@ -806,7 +887,7 @@ export class MobileNode implements NodeService {
         this._events.emit("chat:message", {
           messageId: msg.messageId as string,
           sender: { nodeId: senderPeerId, displayName: senderPeerId, ownerId: senderPeerId },
-          recipient: { nodeId: this._state.agent.agentPeerId, ownerId: this._state.owner.ownerId },
+          recipient: { nodeId: agent.agentPeerId, ownerId: owner.ownerId },
           content: { text: String(payload.text ?? "") },
           metadata: { timestamp: ts },
           signature: msg.signature as string,
@@ -815,6 +896,7 @@ export class MobileNode implements NodeService {
         intent === "bond.request" || intent === "bond.accept" ||
         intent === "bond.inbound" || intent === "bond.response"
       ) {
+        // Bond events use the senderPeerId; ownerId mapping handled by trust store
         this._events.emit("bond:established", {
           peerOwnerId: (msg.senderPeerId as string) ?? "",
           displayName: (msg.senderPeerId as string) ?? "",
@@ -863,6 +945,8 @@ export class MobileNode implements NodeService {
   }
 
   private _sendToRelay(msg: Record<string, unknown>): void {
+    if (!this._state?.agent) return;
+
     // Construct a signed envelope for chat messages
     let data: string;
     if (msg.type === "chat" && typeof msg.text === "string") {
@@ -887,109 +971,6 @@ export class MobileNode implements NodeService {
       }
     }
   }
-}
-
-// ---------------------------------------------------------------------------
-// In-memory database (dev/testing fallback)
-// ---------------------------------------------------------------------------
-
-function _createInMemoryDb(): MobileDatabase {
-  const tables = new Map<string, Map<string, Record<string, unknown>>>();
-
-  function ensureTable(name: string): Map<string, Record<string, unknown>> {
-    let t = tables.get(name);
-    if (!t) {
-      t = new Map();
-      tables.set(name, t);
-    }
-    return t;
-  }
-
-  function parseColumns(sql: string): string[] {
-    const m = sql.match(/\(([^)]+)\)/);
-    if (!m) return [];
-    return m[1].split(",").map((c) => c.trim());
-  }
-
-  return {
-    async open() {},
-    async close() {},
-    async query(_sql: string, _params?: unknown[]): Promise<Record<string, unknown>[]> {
-      const fromMatch = _sql.match(/FROM\s+(\w+)/i);
-      const tableName = fromMatch?.[1] ?? "unknown";
-      const t = ensureTable(tableName);
-      let rows = [...t.values()];
-
-      // WHERE filtering
-      const whereMatch = _sql.match(/WHERE\s+(\w+)\s*=\s*\?/i);
-      if (whereMatch && _params?.[0] !== undefined) {
-        const col = whereMatch[1];
-        const val = String(_params[0]);
-        rows = rows.filter((r) => String(r[col] ?? "") === val);
-      }
-
-      // ORDER BY (single column, optional DESC/ASC)
-      const orderMatch = _sql.match(/ORDER BY\s+(\w+)(?:\s+(DESC|ASC))?/i);
-      if (orderMatch) {
-        const col = orderMatch[1];
-        const desc = orderMatch[2]?.toUpperCase() === "DESC";
-        rows.sort((a, b) => {
-          const av = String(a[col] ?? "");
-          const bv = String(b[col] ?? "");
-          return desc ? bv.localeCompare(av) : av.localeCompare(bv);
-        });
-      }
-
-      // LIMIT (hardcoded)
-      const limitMatch = _sql.match(/LIMIT\s+(\d+)/i);
-      if (limitMatch) {
-        rows = rows.slice(0, parseInt(limitMatch[1], 10));
-      }
-
-      // LIMIT with ? placeholder — use the last numeric param
-      const limitParamMatch = _sql.match(/LIMIT\s+\?/i);
-      if (limitParamMatch) {
-        const limitVal = _params?.[_params.length - 1];
-        if (typeof limitVal === "number") {
-          rows = rows.slice(0, limitVal);
-        }
-      }
-
-      return rows;
-    },
-    async execute(sql: string, params?: unknown[]): Promise<void> {
-      const upper = sql.toUpperCase();
-      const intoMatch = sql.match(/INTO\s+(\w+)/i);
-      const fromMatch = sql.match(/FROM\s+(\w+)/i);
-
-      if (upper.includes("INSERT") || upper.includes("REPLACE")) {
-        if (!intoMatch || !params) return;
-        const tableName = intoMatch[1];
-        const t = ensureTable(tableName);
-        const cols = parseColumns(sql);
-        const row: Record<string, unknown> = {};
-        for (let i = 0; i < cols.length; i++) {
-          row[cols[i]] = params[i] ?? null;
-        }
-        t.set(String(params[0] ?? "row"), row);
-      } else if (upper.includes("DELETE")) {
-        if (!fromMatch) return;
-        const tableName = fromMatch[1];
-        const t = ensureTable(tableName);
-
-        const whereMatch = sql.match(/WHERE\s+(\w+)\s*=\s*\?/i);
-        if (whereMatch && params?.[0] !== undefined) {
-          const col = whereMatch[1];
-          const val = String(params[0]);
-          for (const [key, row] of t) {
-            if (String(row[col] ?? "") === val) t.delete(key);
-          }
-        } else {
-          t.clear();
-        }
-      }
-    },
-  };
 }
 
 // ---------------------------------------------------------------------------

@@ -317,10 +317,18 @@ function _rowToChatLogEntry(row: Record<string, unknown>): ChatLogEntry {
     content: { text: String(row.textContent ?? "") },
     metadata: {
       timestamp: String(row.timestamp ?? ""),
-      deliveryReceipt: (row.deliveryReceipt as ChatLogEntry["metadata"]["deliveryReceipt"]) ?? "sent",
+      deliveryReceipt: _normalizeDeliveryReceipt(row.deliveryReceipt),
     },
     signature: String(row.signature ?? ""),
   };
+}
+
+const _deliveryReceiptValues = new Set(["sent", "delivered", "read"]);
+function _normalizeDeliveryReceipt(v: unknown): "sent" | "delivered" | "read" {
+  if (typeof v === "string" && _deliveryReceiptValues.has(v)) {
+    return v as "sent" | "delivered" | "read";
+  }
+  return "sent";
 }
 
 export function createMobileChatLogStore(db: MobileDatabase): MobileChatLogStore {
@@ -432,7 +440,7 @@ export function createMobileIdentityStateStore(db: MobileDatabase): MobileIdenti
 
 function _rowToIdentityState(row: Record<string, unknown>): PersistedIdentityState {
   return {
-    sharedIdentity: (row.sharedIdentity as number) === 1,
+    sharedIdentity: Number(row.sharedIdentity) === 1,
     ownerId: String(row.ownerId ?? ""),
     ownerPublicKeyPem: String(row.ownerPublicKeyPem ?? ""),
     deviceId: String(row.deviceId ?? ""),
@@ -447,5 +455,112 @@ function _rowToIdentityState(row: Record<string, unknown>): PersistedIdentitySta
     sessionToken: row.sessionToken != null ? String(row.sessionToken) : undefined,
     createdAt: String(row.createdAt ?? ""),
     updatedAt: String(row.updatedAt ?? ""),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// In-memory database (dev/testing fallback)
+// ---------------------------------------------------------------------------
+
+/**
+ * In-memory MobileDatabase for testing and development.
+ * Supports INSERT/REPLACE, SELECT with WHERE/ORDER BY/LIMIT, and DELETE.
+ */
+export function createInMemoryDb(): MobileDatabase {
+  const tables = new Map<string, Map<string, Record<string, unknown>>>();
+
+  function ensureTable(name: string): Map<string, Record<string, unknown>> {
+    let t = tables.get(name);
+    if (!t) {
+      t = new Map();
+      tables.set(name, t);
+    }
+    return t;
+  }
+
+  function parseColumns(sql: string): string[] {
+    const m = sql.match(/\(([^)]+)\)/);
+    if (!m) return [];
+    return m[1].split(",").map((c) => c.trim());
+  }
+
+  return {
+    async open() {},
+    async close() {},
+    async query(_sql: string, _params?: unknown[]): Promise<Record<string, unknown>[]> {
+      const fromMatch = _sql.match(/FROM\s+(\w+)/i);
+      const tableName = fromMatch?.[1] ?? "unknown";
+      const t = ensureTable(tableName);
+      let rows = [...t.values()];
+
+      // WHERE filtering
+      const whereMatch = _sql.match(/WHERE\s+(\w+)\s*=\s*\?/i);
+      if (whereMatch && _params?.[0] !== undefined) {
+        const col = whereMatch[1];
+        const val = String(_params[0]);
+        rows = rows.filter((r) => String(r[col] ?? "") === val);
+      }
+
+      // ORDER BY (single column, optional DESC/ASC)
+      const orderMatch = _sql.match(/ORDER BY\s+(\w+)(?:\s+(DESC|ASC))?/i);
+      if (orderMatch) {
+        const col = orderMatch[1];
+        const desc = orderMatch[2]?.toUpperCase() === "DESC";
+        rows.sort((a, b) => {
+          const av = String(a[col] ?? "");
+          const bv = String(b[col] ?? "");
+          return desc ? bv.localeCompare(av) : av.localeCompare(bv);
+        });
+      }
+
+      // LIMIT (hardcoded number)
+      const limitMatch = _sql.match(/LIMIT\s+(\d+)/i);
+      if (limitMatch) {
+        rows = rows.slice(0, parseInt(limitMatch[1], 10));
+      }
+
+      // LIMIT with ? placeholder — use the last numeric param
+      const limitParamMatch = _sql.match(/LIMIT\s+\?/i);
+      if (limitParamMatch) {
+        const limitVal = _params?.[_params.length - 1];
+        if (typeof limitVal === "number") {
+          rows = rows.slice(0, limitVal);
+        }
+      }
+
+      return rows;
+    },
+    async execute(sql: string, params?: unknown[]): Promise<void> {
+      const upper = sql.toUpperCase();
+      const intoMatch = sql.match(/INTO\s+(\w+)/i);
+      const fromMatch = sql.match(/FROM\s+(\w+)/i);
+
+      if (upper.includes("INSERT") || upper.includes("REPLACE")) {
+        if (!intoMatch || !params) return;
+        const tableName = intoMatch[1];
+        const t = ensureTable(tableName);
+        const cols = parseColumns(sql);
+        const row: Record<string, unknown> = {};
+        for (let i = 0; i < cols.length; i++) {
+          row[cols[i]] = params[i] ?? null;
+        }
+        t.set(String(params[0] ?? "row"), row);
+      } else if (upper.includes("DELETE")) {
+        if (!fromMatch) return;
+        const tableName = fromMatch[1];
+        const t = ensureTable(tableName);
+
+        const whereMatch = sql.match(/WHERE\s+(\w+)\s*=\s*\?/i);
+        if (whereMatch && params?.[0] !== undefined) {
+          const col = whereMatch[1];
+          const val = String(params[0]);
+          for (const [key, row] of t) {
+            if (String(row[col] ?? "") === val) t.delete(key);
+          }
+        } else {
+          t.clear();
+        }
+      }
+    },
   };
 }
