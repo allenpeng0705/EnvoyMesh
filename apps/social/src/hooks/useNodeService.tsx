@@ -232,8 +232,20 @@ export function NodeServiceProvider({
     return <div className="loading">Connecting...</div>;
   }
 
+  // Proxy delegates all calls to the real client while overriding connection-tracked
+  // getters. Necessary because class instances (DirectCallClient) store methods on
+  // the prototype — { ...client } would lose them.
+  const ctx = new Proxy(client, {
+    get(target, prop, receiver) {
+      if (prop === "isConnected") return connected;
+      if (prop === "isReady") return ready;
+      if (prop === "reconnectAttempts") return reconnectAttempts;
+      return Reflect.get(target, prop, receiver);
+    },
+  }) as NodeServiceClient;
+
   return (
-    <NodeServiceContext.Provider value={{ ...client, isConnected: connected, isReady: ready, reconnectAttempts }}>
+    <NodeServiceContext.Provider value={ctx}>
       {children}
     </NodeServiceContext.Provider>
   );

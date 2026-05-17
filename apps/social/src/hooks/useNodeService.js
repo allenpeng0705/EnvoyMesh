@@ -106,7 +106,18 @@ export function NodeServiceProvider({ children, clientFactory, }) {
     if (!client) {
         return _jsx("div", { className: "loading", children: "Connecting..." });
     }
-    return (_jsx(NodeServiceContext.Provider, { value: { ...client, isConnected: connected, isReady: ready, reconnectAttempts }, children: children }));
+    var ctx = new Proxy(client, {
+        get: function (target, prop, receiver) {
+            if (prop === "isConnected")
+                return connected;
+            if (prop === "isReady")
+                return ready;
+            if (prop === "reconnectAttempts")
+                return reconnectAttempts;
+            return Reflect.get(target, prop, receiver);
+        },
+    });
+    return (_jsx(NodeServiceContext.Provider, { value: ctx, children: children }));
 }
 export function useNodeService() {
     const ctx = useContext(NodeServiceContext);
