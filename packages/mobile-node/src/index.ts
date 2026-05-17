@@ -26,6 +26,7 @@ import {
   decryptOwnerKeyFromDevice,
   bytesToBase64url,
   signUnsignedEnvelope,
+  signCanonicalPayload,
   verifyEnvelope,
   type OwnerIdentity,
   type DeviceIdentity,
@@ -49,6 +50,8 @@ import {
 import { createUnsignedEnvelope } from "@envoymesh/protocol";
 import type {
   BondRecord,
+  CreateHumanProfileInput,
+  HumanProfile,
   NodeService,
   NodeServiceEvents,
   PairSharedIdentityResult,
@@ -150,6 +153,7 @@ export class MobileNode implements NodeService {
   private _relaySockets: WebSocket[] = [];
   private _lastActivity = 0;
   private _manualOnline = true;
+  private _humanProfile: HumanProfile | undefined;
   constructor(config: MobileNodeConfig) {
     this._profileDir = config.profileDir;
     this._relayUrls = [...config.relayUrls];
@@ -595,11 +599,30 @@ export class MobileNode implements NodeService {
   }
 
   async getHumanProfile() {
-    return undefined; // Mobile MVP — profile from storage later
+    return this._humanProfile;
   }
 
-  async updateHumanProfile(_input: any): Promise<any> {
-    throw new Error("Not implemented");
+  async updateHumanProfile(input: CreateHumanProfileInput): Promise<HumanProfile> {
+    if (!this._state) {
+      throw new Error("Node not initialized — call initNode() first");
+    }
+    const unsigned: Omit<HumanProfile, "signature"> = {
+      version: "0.1",
+      ownerId: this._state.owner.ownerId,
+      displayName: input.displayName.trim(),
+      username: input.username.trim(),
+      bio: input.bio?.trim(),
+      gender: input.gender?.trim(),
+      hobbies: input.hobbies,
+      knowledge: input.knowledge,
+      profileVisibility: input.profileVisibility ?? "private",
+      capabilities: input.capabilities,
+      updatedAt: new Date().toISOString(),
+    };
+    const signature = signCanonicalPayload(unsigned, this._state.owner.privateKeyPem);
+    const profile: HumanProfile = { ...unsigned, signature };
+    this._humanProfile = profile;
+    return profile;
   }
 
   // -----------------------------------------------------------------------
