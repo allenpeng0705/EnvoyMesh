@@ -99,13 +99,31 @@ Responsibilities:
 
 The mobile app is a **full EnvoyMesh node**, not a thin client. It runs on a phone or tablet and participates directly in the P2P mesh — it has its own peer identity, signing key, and can send/receive any EnvoyMesh intent.
 
-**Architecture:** The Social UI (React SPA) and the Node runtime (`MobileNode`) run **in-process** within a single Capacitor WebView. No child process, no WebSocket server. The `DirectCallClient` wraps `NodeService` and calls methods directly — no JSON-RPC serialization. Storage uses Capacitor-native SQLite (`@capacitor-community/sqlite`) and Filesystem APIs.
+**Architecture:** The Social UI (React SPA) and the Node runtime (`MobileNode`) run **in-process** within a single Capacitor WebView. No child process, no WebSocket server. The `DirectCallClient` wraps `NodeService` and calls methods directly — no JSON-RPC serialization.
 
-**Multi-device shared identity:** The mobile app can either generate a standalone identity or **import the home node's owner identity** via QR + device certificate. When shared, ownerId is identical on both devices — contacts, bonds, and chat history are shared. Each device gets its own device keypair, and the home node signs a device certificate authorizing the mobile device.
+**Dependency injection:** Capacitor-native implementations live in `apps/mobile/src/`, NOT in the mobile packages. Packages stay pure TypeScript with zero native deps — fully testable in Node.js without a device.
+
+```
+MobileNodeConfig {
+  database?: MobileDatabase      ← CapacitorSqliteDatabase in production
+  vault?: MobileVault           ← CapacitorFilesystemVault in production
+  secureStorage?: SecureStorage ← CapacitorSecureStorage in production
+}
+// All fields optional — fall back to in-memory when undefined (dev/testing)
+```
+
+**Storage:** Uses Capacitor-native SQLite (`@capacitor-community/sqlite`) for peer directory, trust store, session tokens, chat history, and identity state. Uses Capacitor Filesystem for the vault. Private keys are stored in the platform keychain (iOS Keychain / Android EncryptedSharedPreferences) via the `SecureStorage` interface.
+
+**Multi-device shared identity:** The mobile app can either generate a standalone identity or **import the home node's owner identity** via QR + device certificate. When shared, ownerId is identical on both devices — contacts, bonds, and chat history are shared. Each device gets its own device keypair, and the home node signs a device certificate authorizing the mobile device. Identity state is persisted to SQLite + SecureStorage, and automatically restored on next launch.
 
 **Crypto:** Uses `@noble/curves` (pure-JS Ed25519) and `@noble/hashes` (SHA-256) — works in browsers, WebViews, and Node.js without `node:crypto`. PEM encode/decode is implemented in pure JS using Ed25519 SPKI/PKCS8 DER prefix bytes.
 
-**Networking:** Relay-only WebSocket transport (outbound only). No TCP/QUIC/mDNS listeners. The node acts as a WebSocket client connecting to relay URLs; all P2P traffic flows through the relay. The home node proxies P2P envelopes via `forwardEnvelope` RPC.
+**Networking:** Relay-only WebSocket transport (outbound only). No TCP/QUIC/mDNS listeners. The node acts as a WebSocket client connecting to relay URLs; all P2P traffic flows through the relay. The home node proxies P2P envelopes via `forwardEnvelope` RPC. Outbound messages are sent as signed `EnvoyEnvelope`s (construct → sign → JSON → WebSocket send). Relay checkin is sent on connect and every 30s.
+
+**Inbound routing:** Incoming WebSocket messages are parsed, verified (`verifyEnvelope` checks `derivePeerId(senderPublicKey) === senderPeerId`), and routed by intent:
+- `chat.message` → persists to `MobileChatLogStore`, emits `chat:message` event
+- `bond.request` / `bond.accept` → emits `bond:established` event
+- All → emits `p2p:envelope` event for raw listeners
 
 **Pairing via QR code:** When the mobile app scans a QR code from the Primary Envoy (home computer), the QR contains the `envoy://pair` URI with `wsUrl`, `relayPeerId`, `agentPeerId`, `agentPubKey`, and owner identity info. Both nodes create a direct bond. The mobile app becomes a peer like any other in the network. This means:
 
@@ -121,6 +139,7 @@ Responsibilities:
 - Send and receive all EnvoyMesh intents (chat, knowledge, discovery, etc.)
 - Connect via relay when on different network from Primary Envoy
 - Cache messages and sync when reconnecting (asynchronous by default)
+- Persist all state to SQLite + platform keychain; auto-restore on next launch
 
 ### Friend Envoy
 
@@ -227,6 +246,16 @@ Primary implementation:
 - Ed25519 keys for signatures.
 - SQLite or local files for early storage.
 - A model router that can select local, cloud, or peer providers behind policy.
+
+Mobile stack (Phase 11):
+
+- Capacitor.js for iOS/Android native wrapper.
+- `@noble/curves` + `@noble/hashes` for pure-JS Ed25519 (no `node:crypto`).
+- `@capacitor-community/sqlite` for on-device SQLite storage.
+- `@capacitor/filesystem` for vault file I/O.
+- `capacitor-secure-storage-plugin` for iOS Keychain / Android Keystore.
+- Relay-only WebSocket transport — no libp2p TCP/QUIC/mDNS on mobile.
+- In-process NodeService — no child process, no WebSocket server.
 
 Available or emerging additions:
 

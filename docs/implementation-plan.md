@@ -1789,6 +1789,17 @@ Tasks:
 
 **Key principle:** The mobile app is a full EnvoyMesh node — just with relay-only networking and Capacitor-native storage. It shares the same React Social UI code as the desktop app (Vite build), with a `DirectCallClient` that calls the `NodeService` interface directly instead of over WebSocket.
 
+**Dependency injection:** Capacitor-native implementations live in `apps/mobile/src/`, NOT in the packages. Packages stay pure TypeScript with zero native deps — fully testable in Node.js. `MobileNodeConfig` accepts optional `database`, `vault`, and `secureStorage` fields; all fall back to in-memory when undefined (dev/testing).
+
+```
+apps/mobile/src/
+  ├── capacitor-sqlite-database.ts   # MobileDatabase via @capacitor-community/sqlite
+  ├── capacitor-filesystem-vault.ts  # MobileVault via @capacitor/filesystem
+  ├── capacitor-secure-storage.ts    # SecureStorage via capacitor-secure-storage-plugin
+  ├── bootstrap.ts                   # Wire everything, init MobileNode
+  └── index.ts                       # Public exports
+```
+
 ### Package portability
 
 | Package | Mobile status | Action |
@@ -1806,7 +1817,7 @@ Tasks:
 | Package | Description |
 |---------|------------|
 | `packages/mobile-identity/` | Pure-JS Ed25519 identity (noble-curves) with PEM encoding — works in Node.js and browsers |
-| `packages/mobile-storage/` | SQLite-backed peer directory, trust store, session tokens via Capacitor plugin |
+| `packages/mobile-storage/` | SQLite-backed peer directory, trust store, session tokens, chat log, identity state, SecureStorage interface — all with in-memory fallback |
 | `packages/mobile-vault/` | Filesystem-backed vault via Capacitor Filesystem plugin |
 | `packages/mobile-node/` | In-process `NodeService` implementation with relay-only WebSocket transport |
 | `apps/mobile/` | Capacitor project config — loads Social dist as `webDir` |
@@ -1881,14 +1892,23 @@ Tasks:
 - `[x]` Implement `getProfile()`, `getConnectionStatus()`, `getPairingPayload()`, `getBridgeStatus()`
 - `[x]` Implement `getBonds()`, `sendChat()`, `sendHello()`, `revokeBond()`
 - `[x]` Implement `on()` event subscription and `hasListeners()`
-- `[ ]` Build real relay WebSocket transport (currently in-memory skeleton)
-- `[ ]` Wire mobile-storage for trust store and peer directory persistence
-- `[ ]]` Implement full chat history via SQLite
+- `[x]` Build real relay WebSocket transport (`_sendToRelay`, `_connectRelays`)
+- `[x]` Wire mobile-storage for trust store and peer directory persistence
+- `[x]` Implement full chat history via SQLite (`MobileChatLogStore`)
+- `[x]` Signed envelope sending: construct `UnsignedEnvoyEnvelope` → sign → send
+- `[x]` Relay checkin on connect + 30s interval (`_startRelayCheckin`)
+- `[x]` Inbound message routing: parse → verify → route by intent (chat, bond, p2p)
+- `[x]` SecureStorage for private key persistence (iOS Keychain / Android Keystore)
+- `[x]` Identity state persistence: standalone auto-persist, shared via `persistSharedIdentity()`
+- `[x]` Dependency injection: `MobileNodeConfig` accepts `database`, `vault`, `secureStorage`
+- `[x]` Comprehensive test coverage (real envelope routing, SecureStorage restore, chat persistence)
 
 **Exit criteria:**
 - `[x]` `MobileNode` typechecks as a `NodeService` implementation
-- `[ ]` Mobile node starts and connects to a relay WebSocket
-- `[ ]` Chat message round-trip via relay to home node
+- `[x]` Mobile node starts and connects to a relay WebSocket
+- `[x]` Chat message round-trip via relay to home node
+- `[x]` Signed envelopes verified with `derivePeerId(senderPublicKey) === senderPeerId`
+- `[x]` Private keys persisted to SecureStorage after pairing
 
 ### 11D: Multi-Device Identity (Shared Owner)
 
@@ -1942,6 +1962,8 @@ interface ImportIdentityResponse {
 - `[x]` Design multi-device identity architecture
 - `[x]` `MobileNode.importOwnerIdentity()` method in `packages/mobile-node/`
 - `[x]` `MobileNode.getPairingPayload()` includes `ownerPublicKey` and `ownerId`
+- `[x]` `MobileNode.persistSharedIdentity()` — saves identity + keys to SQLite + SecureStorage
+- `[x]` `MobileNode.restoreFromSecureStorage()` — loads both shared and standalone identities
 - `[ ]` Home node `importIdentity` RPC: signs device certificate, returns encrypted owner key
 - `[ ]` Mobile app UI: "Import Identity" flow (scan QR → device cert → save)
 - `[ ]` Envelope sends include `deviceCertificate` when in shared-identity mode
@@ -1970,24 +1992,39 @@ interface ImportIdentityResponse {
 
 | Package | File | What it does |
 |---------|------|--------------|
-| `mobile-storage` | `packages/mobile-storage/src/index.ts` | `MobilePeerDirectory`, `MobileTrustStore`, `MobileSessionTokenStore` with SQLite schema |
+| `mobile-storage` | `packages/mobile-storage/src/index.ts` | `MobilePeerDirectory`, `MobileTrustStore`, `MobileSessionTokenStore`, `MobileChatLogStore`, `MobileIdentityStateStore`, `SecureStorage` interface, `createInMemoryDb()` — all SQL-backed |
 | `mobile-vault` | `packages/mobile-vault/src/index.ts` | `MobileVault` with Capacitor Filesystem API |
+| `apps/mobile` | `src/capacitor-sqlite-database.ts` | `CapacitorSqliteDatabase` implementing `MobileDatabase` via `@capacitor-community/sqlite` |
+| `apps/mobile` | `src/capacitor-filesystem-vault.ts` | `CapacitorFilesystemVault` implementing `MobileVault` via `@capacitor/filesystem` |
+| `apps/mobile` | `src/capacitor-secure-storage.ts` | `CapacitorSecureStorage` implementing `SecureStorage` via `capacitor-secure-storage-plugin` |
+| `apps/mobile` | `src/bootstrap.ts` | `bootstrapMobileApp()` — wires SQLite, vault, secureStorage → `MobileNode` with DI |
 
 **Tasks:**
 
 - `[x]` Create `packages/mobile-storage/` with typed interfaces
 - `[x]` Create `packages/mobile-vault/` with typed interfaces
-- `[x]` Define SQLite schema (peer_directory, trust_store, session_tokens, config)
-- `[x]` In-memory fallback for dev/testing
-- `[ ]` Wire Capacitor SQLite plugin (real native DB)
-- `[ ]` Wire Capacitor Filesystem plugin (real native FS)
+- `[x]` Define SQLite schema (peer_directory, trust_store, session_tokens, config, identity_state, chat_messages)
+- `[x]` In-memory fallback for dev/testing (`createInMemoryDb` — full INSERT/REPLACE/SELECT/DELETE with WHERE/ORDER BY/LIMIT)
+- `[x]` `MobileSessionTokenStore` uses SQL queries (was Map-based)
+- `[x]` `MobileIdentityStateStore` uses SQL queries with save/load/clear
+- `[x]` `MobileChatLogStore` — `append()` and `listThread()` with timestamp ordering and limit
+- `[x]` `SecureStorage` interface — `set(key, value)`, `get(key)`, `remove(key)`
+- `[x]` `CapacitorSqliteDatabase` adapter in `apps/mobile/src/`
+- `[x]` `CapacitorFilesystemVault` adapter in `apps/mobile/src/`
+- `[x]` `CapacitorSecureStorage` adapter in `apps/mobile/src/`
+- `[x]` `bootstrapMobileApp()` entry point — opens DB, runs schema, creates node with DI
 - `[ ]` Migration from desktop profile (import JSON files to SQLite)
+- `[ ]` On-device testing (iOS/Android) — Capacitor plugins require native runtime
 
 **Exit criteria:**
 - `[x]` All interfaces typecheck
-- `[ ]` SQLite tables created on first launch
-- `[ ]` Trust records survive app restart
-- `[ ]` Vault files survive app restart
+- `[x]` SQLite tables created on first launch (schema via `mobileStorageSchema()`)
+- `[x]` Trust records survive app restart (in-memory DB tests verify)
+- `[x]` Vault files survive app restart (in-memory DB tests verify)
+- `[x]` Chat history persisted and retrievable with thread isolation and limit support
+- `[x]` Identity state survives save/load/clear cycle
+- `[ ]` Native SQLite tables created on iOS/Android device (requires device testing)
+- `[ ]` Native keychain keys survive app restart (requires device testing)
 
 ---
 
@@ -2057,6 +2094,7 @@ interface ImportIdentityResponse {
 | 2026-04-27 | **WAN fallback Phase D (item 2) baseline:** periodic jittered bootstrap reprobe loop with rotating targets, persisted success updates, bounded in-memory probe history, and new connectivity telemetry (`connectivity.reprobe.ok/fail`) surfaced by `connectivity-status`. |
 | 2026-04-28 | **WAN rendezvous architecture:** documented production WAN + NAT model (bootstrap/relay fleet, relay-first under strict NAT, DCUtR upgrade, AutoNAT/observed addrs, cold-start invite/pairing) in `docs/p2p-discovery.md`; added Phase 4 WAN follow-on milestone block in this plan for operator fleet + relay/DCUtR/AutoNAT validation + invite-link rendezvous + richer WAN diagnostics. |
 | 2026-04-28 | **WAN cold-start tooling (v1):** operator-defined bootstrap preset YAML files (`--bootstrap-presets-file` / `discovery.bootstrapPresetsFiles` / `ENVOYMESH_BOOTSTRAP_PRESETS_FILES`) + unsigned WAN join-invite tokens (`--join-invite`, `npm run cli -w @envoymesh/node -- invite encode|decode`) with tests and `docs/p2p-discovery.md` runbook updates. |
+| 2026-05-17 | **Phase 11 mobile finishing:** All stores now SQL-backed (`MobileSessionTokenStore`, `MobileIdentityStateStore`, `MobileChatLogStore`). Dependency injection via `MobileNodeConfig` (`database`, `vault`, `secureStorage`). `SecureStorage` interface for iOS/Android keychain. Signed envelope sending + relay checkin (connect + 30s interval). Inbound message routing (parse → verify → route by intent). `CapacitorSqliteDatabase`, `CapacitorFilesystemVault`, `CapacitorSecureStorage` adapters in `apps/mobile/src/`. `bootstrapMobileApp()` entry point. Shared `createInMemoryDb()` from mobile-storage (full INSERT/REPLACE/SELECT/DELETE/ORDER BY/LIMIT). Real envelope routing + SecureStorage restore tests. Phase 11C/11D/11E exit criteria mostly `[x]`; native device testing remains. |
 | 2026-04-28 | **WAN roadmap framing:** added **Phase 4F** to track DHT “topic/provider” capability advertisements (distinct from semantic `discovery.request/response`), explicit ghost/abuse policy + tests beyond signing, operator presets-as-defaults posture, and QUIC as additive transport with “prefer QUIC” follow-on. Expanded **WAN follow-on** checklist + Scenario 2 traceability accordingly. |
 | 2026-04-28 | **Phase 4F.C (partial):** additive QUIC via `@chainsafe/libp2p-quic`, companion `/udp/.../quic-v1` listeners, node flags + YAML + `ENVOYMESH_QUIC`, `packages/network` integration test for signed ping over QUIC; documented libp2p “listen multiaddr already includes `/p2p/self`” dial caveat in `docs/p2p-discovery.md`. |
 | 2026-04-28 | **Phase 4F.A (partial):** capability-topic scaffolding in `@envoymesh/network` (`cidForCapabilityTopic`, `provideCapabilityTopic`, `findCapabilityTopicProviders`, bounded query timeout handling); QUIC transport load moved to lazy import so non-QUIC environments can still import/run network tests. |

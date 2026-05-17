@@ -422,6 +422,105 @@ npm run cli -w @envoymesh/node -- audit --profile ./data/primary --limit 60 --in
 npm run cli -w @envoymesh/node -- tasks --profile ./data/primary --limit 40
 ```
 
+## Mobile App (Capacitor — iOS / Android)
+
+The mobile app runs the full EnvoyMesh node **in-process** inside a Capacitor WebView. The Social UI (React SPA) and `MobileNode` runtime share a single JavaScript context — no child process, no WebSocket server. Networking is relay-only (outbound WebSocket). Storage uses native Capacitor plugins (SQLite, Filesystem, Keychain).
+
+### Architecture: Dependency Injection
+
+Capacitor-native implementations live in `apps/mobile/src/`, NOT in the packages. Packages stay pure TypeScript — fully testable in Node.js without native deps.
+
+```
+apps/mobile/src/
+  ├── capacitor-sqlite-database.ts   # MobileDatabase via @capacitor-community/sqlite
+  ├── capacitor-filesystem-vault.ts  # MobileVault via @capacitor/filesystem
+  ├── capacitor-secure-storage.ts    # SecureStorage via capacitor-secure-storage-plugin
+  ├── bootstrap.ts                   # Wire everything, init MobileNode
+  └── index.ts                       # Public exports
+```
+
+`MobileNode` accepts optional `database`, `vault`, and `secureStorage` in its config. When omitted, everything falls back to in-memory — perfect for dev and CI testing.
+
+### Requirements
+
+- Node.js 22+
+- Xcode 16+ (iOS) or Android Studio (Android)
+- Capacitor CLI: `npm install -g @capacitor/cli`
+
+### Install & Build
+
+```bash
+# Install all workspace dependencies
+npm install
+
+# Type-check everything (including mobile packages)
+npm run typecheck
+
+# Run full test suite (mobile tests use in-memory fallbacks)
+npm test
+
+# Build the Social UI (shared with desktop app)
+npm run social:build
+```
+
+### Run on Device
+
+```bash
+# Navigate to the Capacitor project
+cd apps/mobile
+
+# Add iOS platform
+npx cap add ios
+
+# Add Android platform
+npx cap add android
+
+# Sync web assets + plugin config into native projects
+npx cap sync
+
+# Open in Xcode
+npx cap open ios
+
+# OR open in Android Studio
+npx cap open android
+```
+
+From Xcode/Android Studio, select your device and hit Run.
+
+### Identity Modes
+
+The mobile app supports two identity modes:
+
+**Standalone** (default): The app generates its own owner keypair + identity on first launch. Auto-persisted to SQLite + SecureStorage. On next launch, restores automatically — no onboarding needed.
+
+**Shared** (import from home node): Scan the home node's QR code to import the owner identity. Same `ownerId` on both devices — contacts, bonds, and chat history are shared. Each device keeps its own device keypair. The home node signs a device certificate authorizing the mobile device.
+
+```typescript
+// bootstrap.ts entry point
+const node = await bootstrapMobileApp({
+  relayUrls: ["wss://relay.example.com:9000"],
+  // database, vault, secureStorage auto-detected on native;
+  // fall back to in-memory in dev
+});
+```
+
+### What works in CI (no device needed)
+
+All packages are tested in Node.js with in-memory fallbacks:
+- `packages/mobile-identity/` — Ed25519 keygen, signing, verification, identity derivation, PEM encode/decode
+- `packages/mobile-storage/` — Peer directory, trust store, session tokens, chat log, identity state (all SQL-backed, tested with `createInMemoryDb()`)
+- `packages/mobile-vault/` — File CRUD, search, path safety
+- `packages/mobile-node/` — Full `NodeService` lifecycle, relay WebSocket transport, signed envelope send/receive, inbound routing, SecureStorage persistence, pairing flow
+
+### What requires a real device
+
+- Capacitor SQLite plugin (`@capacitor-community/sqlite`) — native SQLite on iOS/Android
+- Capacitor Filesystem plugin (`@capacitor/filesystem`) — native file I/O
+- Capacitor SecureStorage plugin — iOS Keychain / Android EncryptedSharedPreferences
+- QR code scanning → `pairWithHomeNode()` E2E
+- Real relay WebSocket connectivity
+- Background app refresh / push notifications
+
 ## Cross-Network Relay Walkthrough (Mac Relay + Two Windows)
 
 Use this flow when two Windows nodes can discover a Mac node but cannot discover each other directly. The Mac runs as the relay/address switcher; both Windows nodes check in, then use `relay.lookup` to learn `/p2p-circuit` addresses for each other.
