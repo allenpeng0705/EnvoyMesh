@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
     "cap:sync": "npx cap sync",
     "cap:ios": "npx cap add ios",
     "cap:android": "npx cap add android",
@@ -17,13 +18,18 @@
     "@capacitor/filesystem": "^6.0.0",
     "@capacitor-community/sqlite": "^6.0.0",
     "capacitor-secure-storage-plugin": "^0.10.0",
-    "@envoymesh/social": "0.1.0",
     "@envoymesh/mobile-node": "0.1.0",
     "@envoymesh/mobile-storage": "0.1.0",
-    "@envoymesh/mobile-vault": "0.1.0"
+    "@envoymesh/mobile-vault": "0.1.0",
+    "@envoymesh/mobile-identity": "0.1.0",
+    "@envoymesh/api": "0.1.0",
+    "@envoymesh/protocol": "0.1.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.0.0",
+    "@vitejs/plugin-react": "^5.1.0",
     "typescript": "^6.0.3",
     "vite": "^6.0.0"
   },

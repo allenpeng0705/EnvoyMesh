@@ -2,10 +2,14 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": ".",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@envoymesh/social/*": ["../social/src/*"]
+    }
   },
-  "include": ["capacitor.config.ts", "src/**/*.ts"],
+  "include": ["capacitor.config.ts", "src/**/*.ts", "src/**/*.tsx"],
   "references": [
     { "path": "../../packages/protocol" },
     { "path": "../../packages/api" },

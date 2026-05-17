@@ -3,10 +3,12 @@ import type { CapacitorConfig } from "@capacitor/cli";
 const config: CapacitorConfig = {
   appId: "mesh.envoy.app",
   appName: "EnvoyMesh",
-  webDir: "../social/dist",
+  webDir: "dist",
   server: {
     // On iOS, the default scheme is `capacitor://`. Allow it.
     iosScheme: "capacitor",
+    // Allow navigation to capacitor:// origins
+    allowNavigation: ["capacitor://*"],
   },
   plugins: {
     CapacitorSQLite: {

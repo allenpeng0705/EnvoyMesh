@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
+const randomUUID = () => crypto.randomUUID();
 
 export const EnvoyIntentSchema = z.enum([
   "system.ping",

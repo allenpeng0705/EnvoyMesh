@@ -69,7 +69,9 @@ export async function rpcHomeClawCoreWsOpen(
         ? data
         : Buffer.isBuffer(data)
           ? data.toString("utf8")
-          : Buffer.from(data as ArrayLike<number>).toString("utf8");
+          : data instanceof ArrayBuffer
+            ? Buffer.from(data).toString("utf8")
+            : Buffer.concat(data).toString("utf8");
     emitToCompanion("homeclawCoreWs:rx", { text });
   });
 
