@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { Markdown } from "../Markdown.js";
+import { SendIcon, AIIcon } from "../../icons.js";
 
 interface AiMessage {
   role: "user" | "ai";
@@ -36,46 +37,71 @@ export function AIChatPanel() {
     }
   };
 
+  const modelLabel = nodeConfig?.modelProviders?.mode === "disabled" ? "AI Disabled"
+    : nodeConfig?.modelProviders?.mode === "mock" ? "Mock Mode"
+    : nodeConfig?.modelProviders?.modelName ?? "Not configured";
+
   return (
     <>
-      <header className="chat-header">
-        <span className="chat-name">Envoy AI</span>
-        <span className="ai-status">
-          {nodeConfig?.modelProviders?.mode === "disabled" ? "AI Disabled" :
-           nodeConfig?.modelProviders?.mode === "mock" ? "Mock Mode" :
-           `Model: ${nodeConfig?.modelProviders?.modelName ?? "Not set"}`}
-        </span>
+      <header className="chat-panel-header">
+        <div className="contact-avatar" style={{
+          width: 36, height: 36, fontSize: "var(--text-sm)",
+          background: "linear-gradient(135deg, var(--color-secondary), var(--color-primary))",
+        }}>
+          <AIIcon size={18} color="#fff" stroke="none" fill="#fff" />
+        </div>
+        <div className="chat-panel-header-info">
+          <div className="chat-panel-header-name">Envoy AI</div>
+          <div className="chat-panel-header-status">{modelLabel}</div>
+        </div>
       </header>
-      <div className="ai-messages">
+
+      <div className="chat-messages">
         {aiMessages.length === 0 ? (
-          <div className="ai-empty">
-            <p>Chat with your AI assistant</p>
-            <small>Ask questions, get help with tasks, or just have a conversation</small>
-            <div className="ai-suggestions">
-              <button onClick={() => setAiInput("What can you help me with?")}>What can you help me with?</button>
-              <button onClick={() => setAiInput("Summarize my recent conversations")}>Summarize my recent conversations</button>
-              <button onClick={() => setAiInput("Help me draft a message")}>Help me draft a message</button>
+          <div className="no-chat-selected">
+            <div className="no-chat-selected-icon">
+              <AIIcon size={32} />
+            </div>
+            <h3>Chat with your AI Assistant</h3>
+            <p>Ask questions, get help with tasks, or just have a conversation</p>
+            <div className="suggestion-chips">
+              <button className="suggestion-chip" onClick={() => setAiInput("What can you help me with?")}>
+                What can you help me with?
+              </button>
+              <button className="suggestion-chip" onClick={() => setAiInput("Summarize my recent conversations")}>
+                Summarize my recent conversations
+              </button>
+              <button className="suggestion-chip" onClick={() => setAiInput("Help me draft a message")}>
+                Help me draft a message
+              </button>
             </div>
           </div>
         ) : (
           aiMessages.map((msg, i) => (
-            <div key={i} className={`ai-message ${msg.role}`}>
-              <span className="ai-message-role">{msg.role === "user" ? "You" : "AI"}</span>
-              <Markdown text={msg.text} className="ai-message-text" />
+            <div
+              key={i}
+              className={`chat-bubble ${msg.role === "user" ? "outgoing" : "incoming"}`}
+            >
+              <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-subtle)", marginBottom: 4, fontWeight: 500 }}>
+                {msg.role === "user" ? "You" : "AI"}
+              </div>
+              <Markdown text={msg.text} className="markdown-content" />
             </div>
           ))
         )}
         {isAiLoading && (
-          <div className="ai-message ai">
-            <span className="ai-message-role">AI</span>
-            <p className="ai-message-text ai-loading">Thinking...</p>
+          <div className="chat-bubble incoming">
+            <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-subtle)", marginBottom: 4, fontWeight: 500 }}>
+              AI
+            </div>
+            <p style={{ fontStyle: "italic", color: "var(--color-text-muted)" }}>Thinking...</p>
           </div>
         )}
       </div>
-      <div className="ai-input-area">
+
+      <div className="chat-composer">
         <input
           type="text"
-          className="ai-input"
           placeholder="Ask the AI anything..."
           value={aiInput}
           onChange={(e) => setAiInput(e.target.value)}
@@ -86,10 +112,10 @@ export function AIChatPanel() {
           }}
         />
         <button
-          className="ai-send"
           onClick={async () => { if (aiInput.trim() && !isAiLoading) await sendAiMessage(aiInput); }}
           disabled={!aiInput.trim() || isAiLoading}
         >
+          <SendIcon size={16} />
           Send
         </button>
       </div>

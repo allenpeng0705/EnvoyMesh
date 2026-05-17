@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
+import { RemoveIcon, AddIcon } from "../../icons.js";
 import type { BondRecord, HelloProfile } from "@envoymesh/api";
 
 function contactLabel(contact: Partial<BondRecord> & { peerOwnerId: string }): string {
@@ -8,6 +9,11 @@ function contactLabel(contact: Partial<BondRecord> & { peerOwnerId: string }): s
   if (d) return d;
   if (contact.libp2pPeerId?.trim()) return contact.libp2pPeerId.trim();
   return contact.peerOwnerId;
+}
+
+function shortId(id: string): string {
+  if (!id) return "";
+  return id.length > 12 ? id.slice(0, 6) + "..." + id.slice(-4) : id;
 }
 
 export function ContactsView() {
@@ -42,61 +48,74 @@ export function ContactsView() {
     <div className="contacts-view">
       <div className="contacts-header">
         <h2>Your Contacts</h2>
-        <div className="around-me-toggle">
-          <button
-            className={`around-me-btn ${showAroundMe ? "active" : ""}`}
-            onClick={() => setShowAroundMe(!showAroundMe)}
-          >
-            Around Me {discoveredPeers.length > 0 && <span className="badge">{discoveredPeers.length}</span>}
-          </button>
-        </div>
+        <button
+          className={`around-me-toggle${showAroundMe ? " active" : ""}`}
+          onClick={() => setShowAroundMe(!showAroundMe)}
+        >
+          <AddIcon size={14} />
+          Around Me
+          {discoveredPeers.length > 0 && (
+            <span className="around-me-badge">{discoveredPeers.length}</span>
+          )}
+        </button>
       </div>
 
+      {/* Discovered peers section */}
       {showAroundMe && (
-        <div className="around-me-section">
+        <div className="profile-section" style={{ marginBottom: "var(--space-4)" }}>
           <h3>Discovered Peers</h3>
           {discoveredPeers.length === 0 ? (
-            <p className="empty">No peers discovered yet. Keep your node running to discover nearby peers.</p>
+            <div className="empty-contacts">
+              <p>No peers discovered yet. Keep your node running to discover nearby peers.</p>
+            </div>
           ) : (
-            <ul className="around-me-list">
+            <div className="contact-card-list">
               {discoveredPeers.map((peer) => (
-                <li key={peer.nodeId} className="around-me-item">
-                  <span className="avatar">{peer.displayName?.[0] ?? "?"}</span>
-                  <div className="peer-info">
-                    <strong>{peer.displayName || "Unknown Peer"}</strong>
-                    <span className="peer-id">{peer.nodeId.slice(0, 12)}...</span>
+                <div key={peer.nodeId} className="contact-card">
+                  <span className="contact-avatar">{peer.displayName?.[0] ?? "?"}</span>
+                  <div className="contact-card-info">
+                    <div className="contact-card-name">{peer.displayName || "Unknown Peer"}</div>
+                    <div className="contact-card-id">{shortId(peer.nodeId)}</div>
                   </div>
                   <button className="say-hello-btn" onClick={() => handleSayHello(peer.nodeId)}>
                     Say Hello
                   </button>
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           )}
         </div>
       )}
 
+      {/* Bonded contacts */}
       {bonds.length === 0 && !showAroundMe ? (
-        <p className="empty">No contacts yet. Use Search to find people, or check Around Me for discovered peers.</p>
+        <div className="empty-contacts">
+          <h3>No contacts yet</h3>
+          <p>Use Search to find people, or check Around Me for discovered peers.</p>
+        </div>
       ) : (
-        <ul className="contact-cards">
+        <div className="contact-card-list">
           {bonds.map((contact) => (
-            <li key={contact.peerOwnerId} className="contact-card">
-              <span className="avatar large">{contactLabel(contact).charAt(0) || "?"}</span>
-              <div className="contact-info">
-                <strong>{contactLabel(contact)}</strong>
-                <span className="bond-level">{contact.level}</span>
+            <div key={contact.peerOwnerId} className="contact-card">
+              <span className="contact-avatar">{contactLabel(contact).charAt(0) || "?"}</span>
+              <div className="contact-card-info">
+                <div className="contact-card-name">{contactLabel(contact)}</div>
+                <div className="contact-card-id">{shortId(contact.peerOwnerId)}</div>
+                {contact.level && (
+                  <span className={`contact-card-badge ${contact.level}`}>{contact.level}</span>
+                )}
               </div>
               <button
-                className="remove-contact"
+                className="contact-card-remove"
                 onClick={() => handleRevokeBond(contact.peerOwnerId)}
                 title="Remove contact"
+                aria-label={`Remove ${contactLabel(contact)}`}
               >
-                ×
+                <RemoveIcon size={16} />
               </button>
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
