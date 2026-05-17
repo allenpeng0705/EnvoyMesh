@@ -8,8 +8,19 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const socialSrc = resolve(repoRoot, "apps/social/src");
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // Strip crossorigin attributes for Capacitor WebView compatibility.
+    // WKWebView can be strict about CORS on file:///capacitor:// schemes.
+    {
+      name: "strip-crossorigin",
+      transformIndexHtml(html) {
+        return html.replace(/\s+crossorigin(?:="[^"]*")?/g, "");
+      },
+    },
+  ],
   root: __dirname,
+  base: "./",
   build: {
     outDir: "dist",
   },
