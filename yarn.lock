@@ -221,6 +221,11 @@
   dependencies:
     jeep-sqlite "^2.7.2"
 
+"@capacitor/android@^6.2.1":
+  version "6.2.1"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@capacitor/android/-/android-6.2.1.tgz"
+  integrity sha512-8gd4CIiQO5LAIlPIfd5mCuodBRxMMdZZEdj8qG8m+dQ1sQ2xyemVpzHmRK8qSCHorsBUCg3D62j2cp6bEBAkdw==
+
 "@capacitor/cli@^6.0.0":
   version "6.2.1"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@capacitor/cli/-/cli-6.2.1.tgz"
@@ -244,7 +249,7 @@
     tslib "^2.4.0"
     xml2js "^0.5.0"
 
-"@capacitor/core@^6.0.0":
+"@capacitor/core@^6.0.0", "@capacitor/core@^6.2.0":
   version "6.2.1"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@capacitor/core/-/core-6.2.1.tgz"
   integrity sha512-urZwxa7hVE/BnA18oCFAdizXPse6fCKanQyEqpmz6cBJ2vObwMpyJDG5jBeoSsgocS9+Ax+9vb4ducWJn0y2qQ==
@@ -255,6 +260,11 @@
   version "6.0.4"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@capacitor/filesystem/-/filesystem-6.0.4.tgz"
   integrity sha512-eFlg/ZrwYA4Y6ClLRRikudVu2XvuZxfX/XC0ky9MgfbC9dyqTnVkkEoWM6vr1xR89YNY4mB0EeVTet1m1Jcumw==
+
+"@capacitor/ios@^6.2.1":
+  version "6.2.1"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@capacitor/ios/-/ios-6.2.1.tgz"
+  integrity sha512-tbMlQdQjxe1wyaBvYVU1yTojKJjgluZQsJkALuJxv/6F8QTw5b6vd7X785O/O7cMpIAZfUWo/vtAHzFkRV+kXw==
 
 "@chainsafe/as-chacha20poly1305@^0.1.0":
   version "0.1.0"
