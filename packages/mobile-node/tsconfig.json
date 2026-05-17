@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./dist",
+    "rootDir": ".",
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../protocol" },
+    { "path": "../api" },
+    { "path": "../bonds" },
+    { "path": "../models" },
+    { "path": "../mobile-identity" },
+    { "path": "../mobile-storage" },
+    { "path": "../mobile-vault" }
+  ]
+}

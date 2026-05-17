@@ -1,0 +1,238 @@
+import type { NodeService, NodeServiceEvents } from "@envoymesh/api";
+import type { NodeServiceClient } from "../hooks/useNodeService.js";
+
+type EventHandler = (data: unknown) => void;
+
+/**
+ * In-process NodeServiceClient that calls NodeService methods directly.
+ * No WebSocket, no JSON-RPC serialization — just JS function calls.
+ *
+ * Used by the Capacitor mobile app where the Social UI and node runtime
+ * share a single WebView JavaScript thread.
+ */
+export class DirectCallClient implements NodeServiceClient {
+  private readonly _ns: NodeService;
+  private _connected = false;
+  private _ready = false;
+
+  /** Active unsubscribers keyed by event name */
+  private readonly _cleanups = new Map<keyof NodeServiceEvents, () => void>();
+
+  constructor(nodeService: NodeService) {
+    this._ns = nodeService;
+  }
+
+  // -----------------------------------------------------------------------
+  // Connection (in-process — always "connected" once the node is running)
+  // -----------------------------------------------------------------------
+
+  get isConnected(): boolean {
+    return this._connected;
+  }
+
+  get isReady(): boolean {
+    return this._ready;
+  }
+
+  get reconnectAttempts(): number {
+    return 0; // No reconnection needed in-process
+  }
+
+  async connect(): Promise<void> {
+    this._connected = true;
+    this._ready = true;
+  }
+
+  disconnect(): void {
+    this._connected = false;
+    this._ready = false;
+    // Clean up all event subscriptions
+    for (const cleanup of this._cleanups.values()) {
+      cleanup();
+    }
+    this._cleanups.clear();
+  }
+
+  async reconnect(): Promise<void> {
+    this.disconnect();
+    await this.connect();
+  }
+
+  // -----------------------------------------------------------------------
+  // Identity
+  // -----------------------------------------------------------------------
+
+  async getProfile() {
+    return this._ns.getProfile();
+  }
+
+  async getHumanProfile() {
+    return this._ns.getHumanProfile();
+  }
+
+  async updateHumanProfile(input: Parameters<NodeService["updateHumanProfile"]>[0]) {
+    return this._ns.updateHumanProfile(input);
+  }
+
+  // -----------------------------------------------------------------------
+  // Bond Management
+  // -----------------------------------------------------------------------
+
+  async sendHello(
+    targetOwnerId: string,
+    profile: Parameters<NodeService["sendHello"]>[1],
+    message: string,
+  ) {
+    return this._ns.sendHello(targetOwnerId, profile, message);
+  }
+
+  async acceptHello(messageId: string) {
+    return this._ns.acceptHello(messageId);
+  }
+
+  async declineHello(messageId: string, reason?: string) {
+    return this._ns.declineHello(messageId, reason);
+  }
+
+  async blockPeer(peerOwnerId: string) {
+    return this._ns.blockPeer(peerOwnerId);
+  }
+
+  async revokeBond(peerOwnerId: string) {
+    return this._ns.revokeBond(peerOwnerId);
+  }
+
+  async getBonds() {
+    return this._ns.getBonds();
+  }
+
+  // -----------------------------------------------------------------------
+  // Messaging
+  // -----------------------------------------------------------------------
+
+  async sendChat(targetOwnerId: string, text: string) {
+    return this._ns.sendChat(targetOwnerId, text);
+  }
+
+  async listChatHistory(peerOwnerId: string, limit?: number) {
+    return this._ns.listChatHistory(peerOwnerId, limit);
+  }
+
+  // -----------------------------------------------------------------------
+  // Search
+  // -----------------------------------------------------------------------
+
+  async searchPeers(query: Parameters<NodeService["searchPeers"]>[0]) {
+    return this._ns.searchPeers(query);
+  }
+
+  async advertiseTopic(topic: string) {
+    return this._ns.advertiseTopic(topic);
+  }
+
+  async stopAdvertiseTopic(topic: string) {
+    return this._ns.stopAdvertiseTopic(topic);
+  }
+
+  // -----------------------------------------------------------------------
+  // Connection Status
+  // -----------------------------------------------------------------------
+
+  async getConnectionStatus() {
+    return this._ns.getConnectionStatus();
+  }
+
+  async getPeerConnectionInfo(peerOwnerId: string) {
+    return this._ns.getPeerConnectionInfo(peerOwnerId);
+  }
+
+  // -----------------------------------------------------------------------
+  // Agent Bridge
+  // -----------------------------------------------------------------------
+
+  async getBridgeStatus() {
+    return this._ns.getBridgeStatus();
+  }
+
+  async getPairingPayload() {
+    return this._ns.getPairingPayload();
+  }
+
+  // -----------------------------------------------------------------------
+  // AI / Knowledge Query
+  // -----------------------------------------------------------------------
+
+  async knowledgeQuery(question: string) {
+    return this._ns.knowledgeQuery(question);
+  }
+
+  // -----------------------------------------------------------------------
+  // Node Configuration
+  // -----------------------------------------------------------------------
+
+  async getNodeConfig() {
+    return this._ns.getNodeConfig();
+  }
+
+  async updateNodeConfig(config: Parameters<NodeService["updateNodeConfig"]>[0]) {
+    return this._ns.updateNodeConfig(config);
+  }
+
+  async listRelays() {
+    return this._ns.listRelays();
+  }
+
+  async addRelay(addr: string, level?: number, region?: string) {
+    return this._ns.addRelay(addr, level, region);
+  }
+
+  async removeRelay(relayId: string) {
+    return this._ns.removeRelay(relayId);
+  }
+
+  // -----------------------------------------------------------------------
+  // Node Lifecycle
+  // -----------------------------------------------------------------------
+
+  async initNode(profileDir: string, options?: Parameters<NodeService["initNode"]>[1]) {
+    return this._ns.initNode(profileDir, options);
+  }
+
+  async getNodeStatus() {
+    return { status: this._ns.getNodeStatus() };
+  }
+
+  async startNode() {
+    await this._ns.startNode();
+  }
+
+  async stopNode() {
+    await this._ns.stopNode();
+  }
+
+  async waitForConnection(_timeoutMs?: number) {
+    // In-process — node is always available
+    return;
+  }
+
+  // -----------------------------------------------------------------------
+  // Events
+  // -----------------------------------------------------------------------
+
+  on<K extends keyof NodeServiceEvents>(
+    event: K,
+    handler: (data: NodeServiceEvents[K]) => void,
+  ): () => void {
+    const unsub = this._ns.on(event, handler);
+    // Also track in case of reconnect
+    this._cleanups.set(event, unsub);
+    return unsub;
+  }
+}
+
+/**
+ * Create a DirectCallClient bound to the given NodeService instance.
+ */
+export function createDirectCallClient(nodeService: NodeService): NodeServiceClient {
+  return new DirectCallClient(nodeService);
+}

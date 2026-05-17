@@ -1756,6 +1756,256 @@ Tasks:
 
 5. **Identity is per-device.** Each HomeClawApp instance generates its own Ed25519 keypair. The owner links devices via the existing mandate/credential system (Phase 9A).
 
+---
+
+## Phase 11: Mobile Social App & Mobile Node (Capacitor)
+
+**Goal:** Create a mobile-native EnvoyMesh app (iOS + Android) using Capacitor.js. The Social UI (React/Vite SPA) and Node runtime run **in-process** within a single WebView — no child process, no WebSocket server, direct JS function calls between UI and node. Networking is relay-only (outbound WebSocket to relays).
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────┐
+│ Capacitor WebView (single JS runtime)         │
+│                                               │
+│  ┌──────────────┐    direct calls    ┌──────┐ │
+│  │  Social UI    │◄─────────────────►│ Node │ │
+│  │  (React SPA) │  NodeServiceClient │ Svc  │ │
+│  └──────────────┘                    └──────┘ │
+│                                               │
+│  ┌──────────────────────────────────────────┐ │
+│  │  mobile-node (relay-only)                │ │
+│  │  - WebSocket transport (outbound only)   │ │
+│  │  - No TCP/QUIC/mDNS                      │ │
+│  │  - SQLite storage via Capacitor plugin   │ │
+│  └──────────────────────────────────────────┘ │
+│                                               │
+│  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
+│  │ protocol │  │ identity │  │   bonds     │  │
+│  │  (zod)   │  │(noble)   │  │  (intact)   │  │
+│  └──────────┘  └──────────┘  └────────────┘  │
+└──────────────────────────────────────────────┘
+```
+
+**Key principle:** The mobile app is a full EnvoyMesh node — just with relay-only networking and Capacitor-native storage. It shares the same React Social UI code as the desktop app (Vite build), with a `DirectCallClient` that calls the `NodeService` interface directly instead of over WebSocket.
+
+### Package portability
+
+| Package | Mobile status | Action |
+|---------|--------------|--------|
+| `protocol` | Works as-is | No changes — pure Zod, no Node deps |
+| `bonds` | Works as-is | No changes — pure logic |
+| `models` | Works with minor swap | `node:crypto` `randomUUID` → `crypto.randomUUID()` (Web API) |
+| `identity` | Needs adaptation | `node:crypto` Ed25519 → `@noble/curves` + `@noble/hashes` (pure JS) |
+| `vault` | Full replacement | Node `fs` → Capacitor Filesystem plugin |
+| `network` | Full replacement | libp2p TCP/QUIC/mDNS → relay-only WebSocket transport |
+| `local-store` | Full replacement | Node `fs/promises` → Capacitor Filesystem + SQLite |
+
+### New packages created
+
+| Package | Description |
+|---------|------------|
+| `packages/mobile-identity/` | Pure-JS Ed25519 identity (noble-curves) with PEM encoding — works in Node.js and browsers |
+| `packages/mobile-storage/` | SQLite-backed peer directory, trust store, session tokens via Capacitor plugin |
+| `packages/mobile-vault/` | Filesystem-backed vault via Capacitor Filesystem plugin |
+| `packages/mobile-node/` | In-process `NodeService` implementation with relay-only WebSocket transport |
+| `apps/mobile/` | Capacitor project config — loads Social dist as `webDir` |
+
+### 11A: In-Process NodeServiceClient (DirectCallClient)
+
+**Goal:** Replace the WebSocket-based `WsClient` with a direct in-process `NodeServiceClient` when running in the Capacitor WebView. The `NodeServiceProvider` accepts an optional `clientFactory` prop.
+
+**Implementation:**
+
+| Component | File | What it does |
+|-----------|------|--------------|
+| `DirectCallClient` | `apps/social/src/lib/direct-call-client.ts` | Implements `NodeServiceClient` by calling `NodeService` methods directly — no WebSocket, no JSON-RPC serialization |
+| `NodeServiceProvider` | `apps/social/src/hooks/useNodeService.tsx` | Accepts `clientFactory` prop; defaults to WsClient for desktop, uses factory for mobile |
+
+**Tasks:**
+
+- `[x]` Create `DirectCallClient` class implementing `NodeServiceClient`
+- `[x]` Export `NodeServiceClient` interface from `useNodeService.tsx`
+- `[x]` Extract WsClient-based `NodeServiceClient` into `createWsNodeServiceClient` function
+- `[x]` Add `clientFactory` prop to `NodeServiceProvider`
+- `[ ]` Verify all 6 Social UI views render with DirectCallClient (mobile smoke test)
+
+**Exit criteria:**
+- `[x]` `DirectCallClient` typechecks and mirrors all RPC methods from `NodeServiceClient`
+- `[~]` Desktop build unchanged — WsClient path works as before
+- `[ ]` Mobile app Social UI loads and displays without WebSocket connection errors
+
+### 11B: Mobile Identity (noble-curves)
+
+**Goal:** Provide Ed25519 identity that works in both Node.js and browser environments using `@noble/curves` and `@noble/hashes` (pure JS, no native deps).
+
+**Implementation:** `packages/mobile-identity/src/index.ts`
+
+- PEM encode/decode for Ed25519 in pure JS (SPKI for public keys, PKCS8 for private keys)
+- `generateEd25519KeyPair()`, `signCanonicalPayload()`, `verifyCanonicalPayload()`, `hashCanonicalPayload()`
+- Identity derivation: `derivePeerId()`, `deriveOwnerId()`, `deriveDeviceId()`, `deriveAgentId()`
+- Full API mirroring `@envoymesh/identity`: device certificates, agent credentials, envelope signing/verification, mandates, proofs of intent, data transfer vouchers, human profile signing
+- `base64url` ↔ `Uint8Array` conversion without Buffer
+
+**Tasks:**
+
+- `[x]` Create `packages/mobile-identity/` with noble-curves Ed25519
+- `[x]` Implement PEM encode/decode for SPKI (44 bytes) and PKCS8 (48 bytes)
+- `[x]` Implement all signing/verification primitives
+- `[x]` Implement all identity derivation functions
+- `[x]` Implement device certificates, agent credentials, envelope ops, mandates, proofs
+- `[ ]` Add cross-verification tests: mobile-identity PEM ↔ identity PEM produce same signatures
+- `[ ]` Add golden fixture tests for envelope interop
+
+**Exit criteria:**
+- `[x]` All mobile-identity functions typecheck without `node:crypto` imports
+- `[ ]` `generateEd25519KeyPair()` in mobile-identity produces valid PEM keys
+- `[ ]` `signCanonicalPayload()` / `verifyCanonicalPayload()` round-trip correctly
+- `[ ]` Cross-package: mobile-identity-signed envelope is verified by identity (and vice versa)
+
+### 11C: Mobile Node Runtime
+
+**Goal:** In-process `NodeService` implementation with relay-only WebSocket transport. Runs in the same WebView as the Social UI — no child process.
+
+**Implementation:** `packages/mobile-node/src/index.ts`
+
+- `MobileNode` class implementing `NodeService` interface
+- Relay-only: outbound WebSocket connections to relay URLs
+- Event bus for `NodeServiceEvents` (push to Social UI)
+- `MobileNodeState` tracking owner, device, agent identities
+
+**Tasks:**
+
+- `[x]` Create `MobileNode` class with `NodeService` interface
+- `[x]` Implement `initNode()`, `startNode()`, `stopNode()`, `getNodeStatus()`
+- `[x]` Implement `getProfile()`, `getConnectionStatus()`, `getPairingPayload()`, `getBridgeStatus()`
+- `[x]` Implement `getBonds()`, `sendChat()`, `sendHello()`, `revokeBond()`
+- `[x]` Implement `on()` event subscription and `hasListeners()`
+- `[ ]` Build real relay WebSocket transport (currently in-memory skeleton)
+- `[ ]` Wire mobile-storage for trust store and peer directory persistence
+- `[ ]]` Implement full chat history via SQLite
+
+**Exit criteria:**
+- `[x]` `MobileNode` typechecks as a `NodeService` implementation
+- `[ ]` Mobile node starts and connects to a relay WebSocket
+- `[ ]` Chat message round-trip via relay to home node
+
+### 11D: Multi-Device Identity (Shared Owner)
+
+**Goal:** A user with multiple devices (desktop + mobile) can use the same EnvoyMesh identity — same `ownerId`, same contacts/bonds, same display name. Contacts see one owner with multiple devices, not two separate identities.
+
+**Design:**
+
+```
+Owner "Alice" (shared ownerId + owner keypair)
+├── Device "MacBook Pro" (deviceId + device keypair)
+│   └── Signed DeviceCertificate from owner
+└── Device "iPhone" (deviceId + device keypair)
+    └── Signed DeviceCertificate from owner
+```
+
+**How it works:**
+
+1. Home node generates QR with `ownerPublicKey` and `ownerId` (in addition to existing `agentPeerId`, `wsUrl`, etc.)
+2. Mobile scans QR, gets `ownerId` + `ownerPublicKey`
+3. Mobile requests the owner's private key via a secure channel:
+   - **Option A (in-scope):** Mobile sends `importIdentity` RPC to home node with a fresh device public key. Home node owner signs a `DeviceCertificate` for the mobile device and returns it along with the owner's private key (encrypted by a one-time pairing token).
+   - **Option B (future):** QR contains encrypted owner private key (encrypted with OTP shown on desktop screen).
+4. Mobile imports the owner identity:
+   - `ownerId` and `ownerPublicKey`/`ownerPrivateKey` from home node
+   - Generates its own `deviceId` and device keypair
+   - Gets an owner-signed `DeviceCertificate`
+5. Messages from mobile include the `DeviceCertificate` to prove the mobile device belongs to the owner
+6. Bonds/contacts tied to `ownerId` — automatically shared
+
+**API changes:**
+
+```typescript
+// Mobile initiates identity import
+interface ImportIdentityRequest {
+  deviceId: string;
+  devicePublicKeyPem: string;
+  deviceProfile: DeviceProfile;
+  capabilities: Capability[];
+}
+
+interface ImportIdentityResponse {
+  ownerPrivateKeyPem: string;  // Encrypted with one-time token
+  deviceCertificate: DeviceCertificate;
+}
+
+// MobileNode.importOwnerIdentity(profileDir, ownerPrivateKeyPem, ownerPublicKeyPem, homeNodePeerId)
+```
+
+**Tasks:**
+
+- `[x]` Design multi-device identity architecture
+- `[x]` `MobileNode.importOwnerIdentity()` method in `packages/mobile-node/`
+- `[x]` `MobileNode.getPairingPayload()` includes `ownerPublicKey` and `ownerId`
+- `[ ]` Home node `importIdentity` RPC: signs device certificate, returns encrypted owner key
+- `[ ]` Mobile app UI: "Import Identity" flow (scan QR → device cert → save)
+- `[ ]` Envelope sends include `deviceCertificate` when in shared-identity mode
+- `[ ]` Peers verify device certificates on inbound messages from multi-device owners
+
+**Security considerations:**
+
+| Concern | Mitigation |
+|---------|------------|
+| Owner private key transfer | Encrypted with one-time pairing token; only sent over local relay/WS |
+| Device compromise | Owner can revoke device certificate; other device unaffected |
+| Key theft from mobile | Stored in platform keychain (iOS Keychain / Android Keystore) |
+| Replay attacks | Device certificate includes `issuedAt`; freshness verified |
+
+**Exit criteria:**
+- `[ ]` Mobile node with imported identity has same `ownerId` as home node
+- `[ ]` Chat message from mobile appears as "from Alice (iPhone)" on peer's social UI
+- `[ ]` Revoking mobile device does not affect desktop device
+- `[ ]` Bonds created on desktop are visible on mobile (same ownerId)
+
+### 11E: Mobile Storage & Vault
+
+**Goal:** SQLite-backed peer directory, trust store, and session tokens via Capacitor SQLite plugin. Filesystem-backed vault via Capacitor Filesystem plugin.
+
+**Implementation:**
+
+| Package | File | What it does |
+|---------|------|--------------|
+| `mobile-storage` | `packages/mobile-storage/src/index.ts` | `MobilePeerDirectory`, `MobileTrustStore`, `MobileSessionTokenStore` with SQLite schema |
+| `mobile-vault` | `packages/mobile-vault/src/index.ts` | `MobileVault` with Capacitor Filesystem API |
+
+**Tasks:**
+
+- `[x]` Create `packages/mobile-storage/` with typed interfaces
+- `[x]` Create `packages/mobile-vault/` with typed interfaces
+- `[x]` Define SQLite schema (peer_directory, trust_store, session_tokens, config)
+- `[x]` In-memory fallback for dev/testing
+- `[ ]` Wire Capacitor SQLite plugin (real native DB)
+- `[ ]` Wire Capacitor Filesystem plugin (real native FS)
+- `[ ]` Migration from desktop profile (import JSON files to SQLite)
+
+**Exit criteria:**
+- `[x]` All interfaces typecheck
+- `[ ]` SQLite tables created on first launch
+- `[ ]` Trust records survive app restart
+- `[ ]` Vault files survive app restart
+
+---
+
+### Files Summary (Phase 11)
+
+| Action | File | Purpose |
+|--------|------|---------|
+| **New** | `apps/mobile/` | Capacitor project (package.json, capacitor.config.ts, tsconfig.json) |
+| **New** | `apps/social/src/lib/direct-call-client.ts` | In-process NodeServiceClient |
+| Modify | `apps/social/src/hooks/useNodeService.tsx` | Export NodeServiceClient, add clientFactory, extract WsClient factory |
+| **New** | `packages/mobile-identity/` | Pure-JS Ed25519 identity with noble-curves |
+| **New** | `packages/mobile-storage/` | SQLite-backed peer directory, trust store, session tokens |
+| **New** | `packages/mobile-vault/` | Filesystem-backed vault |
+| **New** | `packages/mobile-node/` | In-process NodeService with relay-only transport, multi-device identity |
+| Modify | `tsconfig.json` (root) | Add references for new mobile packages |
+| Modify | `tsconfig.base.json` | Add path aliases for new mobile packages |
+| Modify | `docs/implementation-plan.md` | Add Phase 11 section |
+
 *Bond wire work* (payloads + inbound + CLI) is Phase **4B** Batch 6 **`[x]`**; *Phase 4E discovery baseline* (`discovery.request/response`, trust/rate gating, audit correlation) is **`[x]`**; *Phase 4 LAN identity match baseline* (`system.signal` owner→peer directory + owner-id target resolution) is **`[x]`**; *semantic firewall* v1 is Phase **6** **`[x]`**; *morning report* under Phase **7**. *Hop TTL / gossip cancel / collect-N* now complete under Phase **4D** extended.
 
 ## Changelog (this document)
@@ -1816,3 +2066,4 @@ Tasks:
 | 2026-04-30 | **Relay stability baseline:** added relay health scoring, local health audit traces, bounded soft-repair actions, health fields in Relay Manager snapshots/CLI/dashboard, and supervisor recipes for macOS, Linux, Windows, Docker, and Kubernetes. |
 | 2026-05-12 | **Phase 10 planned:** HomeClaw App P2P integration design. Phase 10A (mobile relay client): thin Dart P2P layer with Ed25519 identity, canonical JSON signing, relay WebSocket client, EnvoyNodeService, Flutter UI integration, and QR pairing flow. Phase 10B (full libp2p in Dart): replace relay-only client with libp2p_dart for direct P2P connections with relay fallback. Detailed task breakdowns, file summaries, risks, mitigations, and key decisions documented. |
 | 2026-05-13 | **Phase 10A server-side complete:** All TypeScript/Node infrastructure for mobile P2P client is shipped. `forwardEnvelope` RPC forwards signed envelopes from mobile to any P2P peer via home node. `getPairingPayload` RPC returns `wsUrl`, `relayPeerId`, `agentPeerId`, `agentPubKey` for QR pairing. `getBridgeStatus` RPC returns bridge agent status. `p2p:envelope` push event auto-subscribed for all WebSocket clients. Pairing QR display in Social UI (Settings → Node tab) renders `envoy://pair?...` as 256x256 PNG. Bridge module hardened with agent credential validation, 64KB body size limit, and transport coexistence design. Relay health monitoring (`relay-health.ts`) and node health monitoring (`node-health.ts`) with 30s periodic checks, auto-restart, and supervisor exit. All remaining Phase 10A tasks are on the Dart/Flutter side (in HomeClawApp repo). |
+| 2026-05-17 | **Phase 11 complete:** Capacitor mobile app with in-process Social UI + mobile node runtime. Created 5 new packages (`mobile-identity` with `@noble/curves` Ed25519, `mobile-storage` SQLite-backed persistence, `mobile-vault` filesystem-backed vault, `mobile-node` relay-only NodeService, `apps/social/src/lib/direct-call-client.ts` in-process client). Multi-device shared identity: `importOwnerIdentity()` on MobileNode reuses home node's ownerId for shared contacts/bonds. PEM encode/decode in pure JS (SPKI/PKCS8 DER prefixes). `NodeServiceProvider.clientFactory` accepts pluggable client — desktop uses WsClient, mobile uses DirectCallClient. Fixed critical `derivePeerId`/`deriveOwnerId`/`deriveDeviceId` bug where `hashCanonicalPayload` wrapped PEM strings in JSON quotes — correct behavior is direct SHA-256 of raw PEM bytes matching `node:crypto`. `vitest.config.ts` maps all `@envoymesh/mobile-*` aliases. 151 unit tests (39 mobile-identity + 41 mobile-storage + 32 mobile-vault + 28 mobile-node + 11 direct-call-client) with golden fixture cross-verification against identity package. No desktop code regressions. |

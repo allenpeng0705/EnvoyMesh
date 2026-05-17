@@ -95,11 +95,19 @@ Responsibilities:
 - Run heavier local model tasks or route approved tasks to allowed providers.
 - Help the owner's phone or light devices.
 
-### Mobile Envoy
+### Mobile Envoy (Capacitor, Phase 11)
 
 The mobile app is a **full EnvoyMesh node**, not a thin client. It runs on a phone or tablet and participates directly in the P2P mesh — it has its own peer identity, signing key, and can send/receive any EnvoyMesh intent.
 
-**Pairing via QR code:** When the mobile app scans a QR code from the Primary Envoy (home computer), both nodes create a direct bond. The mobile app becomes a peer like any other in the network. This means:
+**Architecture:** The Social UI (React SPA) and the Node runtime (`MobileNode`) run **in-process** within a single Capacitor WebView. No child process, no WebSocket server. The `DirectCallClient` wraps `NodeService` and calls methods directly — no JSON-RPC serialization. Storage uses Capacitor-native SQLite (`@capacitor-community/sqlite`) and Filesystem APIs.
+
+**Multi-device shared identity:** The mobile app can either generate a standalone identity or **import the home node's owner identity** via QR + device certificate. When shared, ownerId is identical on both devices — contacts, bonds, and chat history are shared. Each device gets its own device keypair, and the home node signs a device certificate authorizing the mobile device.
+
+**Crypto:** Uses `@noble/curves` (pure-JS Ed25519) and `@noble/hashes` (SHA-256) — works in browsers, WebViews, and Node.js without `node:crypto`. PEM encode/decode is implemented in pure JS using Ed25519 SPKI/PKCS8 DER prefix bytes.
+
+**Networking:** Relay-only WebSocket transport (outbound only). No TCP/QUIC/mDNS listeners. The node acts as a WebSocket client connecting to relay URLs; all P2P traffic flows through the relay. The home node proxies P2P envelopes via `forwardEnvelope` RPC.
+
+**Pairing via QR code:** When the mobile app scans a QR code from the Primary Envoy (home computer), the QR contains the `envoy://pair` URI with `wsUrl`, `relayPeerId`, `agentPeerId`, `agentPubKey`, and owner identity info. Both nodes create a direct bond. The mobile app becomes a peer like any other in the network. This means:
 
 - Mobile app sends intents directly to the Primary Envoy and its AI agent
 - The AI agent running on the home node is addressed as a **contact/peer** in the mobile app
@@ -108,7 +116,7 @@ The mobile app is a **full EnvoyMesh node**, not a thin client. It runs on a pho
 
 Responsibilities:
 
-- Generate own peer identity and signing key
+- Generate own peer identity and signing key (standalone mode) or import owner identity (shared mode)
 - Bond with Primary Envoy via QR code (same as bonding with any peer)
 - Send and receive all EnvoyMesh intents (chat, knowledge, discovery, etc.)
 - Connect via relay when on different network from Primary Envoy

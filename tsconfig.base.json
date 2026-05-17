@@ -13,7 +13,11 @@
       "@envoymesh/vault": ["./packages/vault/src/index.ts"],
       "@envoymesh/models": ["./packages/models/src/index.ts"],
       "@envoymesh/local-store": ["./packages/local-store/src/index.ts"],
-      "@envoymesh/api": ["./packages/api/src/index.ts"]
+      "@envoymesh/api": ["./packages/api/src/index.ts"],
+      "@envoymesh/mobile-identity": ["./packages/mobile-identity/src/index.ts"],
+      "@envoymesh/mobile-storage": ["./packages/mobile-storage/src/index.ts"],
+      "@envoymesh/mobile-vault": ["./packages/mobile-vault/src/index.ts"],
+      "@envoymesh/mobile-node": ["./packages/mobile-node/src/index.ts"]
     },
     "strict": true,
     "declaration": true,

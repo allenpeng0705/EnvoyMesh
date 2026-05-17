@@ -1,0 +1,14 @@
+{
+  "name": "@envoymesh/mobile-identity",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "exports": {
+    ".": "./dist/src/index.js"
+  },
+  "dependencies": {
+    "@envoymesh/protocol": "0.1.0",
+    "@noble/curves": "^1.9.0",
+    "@noble/hashes": "^1.8.0"
+  }
+}

@@ -36,7 +36,7 @@ type NodeInitResult = {
   deviceId: string;
 };
 
-interface NodeServiceClient {
+export interface NodeServiceClient {
   // Connection
   connect(): Promise<void>;
   disconnect(): void;
@@ -98,182 +98,117 @@ interface NodeServiceClient {
 
 const NodeServiceContext = createContext<NodeServiceClient | null>(null);
 
-export function NodeServiceProvider({ children }: { children: ReactNode }) {
+type WsClientType = ReturnType<typeof createWsClient>;
+
+/** Build a NodeServiceClient that talks to a local WsServer via WebSocket (desktop). */
+function createWsNodeServiceClient(
+  connectCb: (connected: boolean) => void,
+  readyCb: (ready: boolean) => void,
+  reconnectAttemptsCb: (n: number) => void,
+): { client: NodeServiceClient; wsClient: WsClientType } {
+  const wsClient = createWsClient();
+  let connected = false;
+  let readyReceived = false;
+
+  const client: NodeServiceClient = {
+    get isConnected() { return connected; },
+    get isReady() { return readyReceived; },
+    get reconnectAttempts() { return wsClient.getReconnectAttempts(); },
+
+    async connect() {
+      await wsClient.connect();
+      connected = true;
+      connectCb(true);
+    },
+
+    disconnect() {
+      wsClient.disconnect();
+      connected = false;
+      readyReceived = false;
+      connectCb(false);
+      readyCb(false);
+    },
+
+    async reconnect() {
+      wsClient.disconnect();
+      connected = false;
+      readyReceived = false;
+      connectCb(false);
+      readyCb(false);
+      await wsClient.connect();
+      connected = true;
+      connectCb(true);
+    },
+
+    async getProfile() { return wsClient.rpc("getProfile"); },
+    async getHumanProfile() { return wsClient.rpc("getHumanProfile"); },
+    async updateHumanProfile(input: CreateHumanProfileInput) { return wsClient.rpc("updateHumanProfile", input as unknown as Record<string, unknown>); },
+    async sendHello(targetOwnerId: string, profile: HelloProfile, message: string) { return wsClient.rpc("sendHello", { targetOwnerId, profile, message }); },
+    async acceptHello(messageId: string) { return wsClient.rpc("acceptHello", { messageId }); },
+    async declineHello(messageId: string, reason?: string) { return wsClient.rpc("declineHello", { messageId, reason }); },
+    async blockPeer(peerOwnerId: string) { return wsClient.rpc("blockPeer", { peerOwnerId }); },
+    async revokeBond(peerOwnerId: string) { return wsClient.rpc("revokeBond", { peerOwnerId }); },
+    async getBonds() { return wsClient.rpc("getBonds"); },
+    async sendChat(targetOwnerId: string, text: string) { return wsClient.rpc("sendChat", { targetOwnerId, text }); },
+    async listChatHistory(peerOwnerId: string, limit?: number) { return wsClient.rpc("listChatHistory", { peerOwnerId, limit }) as Promise<ChatMessage[]>; },
+    async searchPeers(query: SearchQuery) { return wsClient.rpc("searchPeers", query as unknown as Record<string, unknown>); },
+    async getNodeConfig() { return wsClient.rpc("getNodeConfig"); },
+    async getConnectionStatus() { return wsClient.rpc("getConnectionStatus"); },
+    async getPeerConnectionInfo(peerOwnerId: string) { return wsClient.rpc("getPeerConnectionInfo", { peerOwnerId }); },
+    async getBridgeStatus() { return wsClient.rpc("getBridgeStatus"); },
+    async getPairingPayload() { return wsClient.rpc("getPairingPayload"); },
+    async knowledgeQuery(question: string) { return wsClient.rpc("knowledgeQuery", { question }) as Promise<string>; },
+    async advertiseTopic(topic: string) { return wsClient.rpc("advertiseTopic", { topic }); },
+    async stopAdvertiseTopic(topic: string) { return wsClient.rpc("stopAdvertiseTopic", { topic }); },
+    async updateNodeConfig(config: Partial<NodeConfig>) { return wsClient.rpc("updateNodeConfig", config); },
+    async listRelays() { return wsClient.rpc("listRelays"); },
+    async addRelay(addr: string, level?: number, region?: string) { return wsClient.rpc("addRelay", { addr, level, region }); },
+    async removeRelay(relayId: string) { return wsClient.rpc("removeRelay", { relayId }); },
+    async initNode(profileDir: string, options?: InitNodeOptions) { return wsClient.rpc("initNode", { profileDir, options }); },
+    async getNodeStatus() { return wsClient.rpc("getNodeStatus"); },
+    async startNode() { return wsClient.rpc("startNode"); },
+    async stopNode() { return wsClient.rpc("stopNode"); },
+    async waitForConnection(timeoutMs?: number) { return wsClient.waitForConnection(timeoutMs); },
+
+    // Bypass generic variance: WsClient uses string/unknown, NodeServiceClient uses K/NodeServiceEvents[K]
+    on(event: any, handler: any): any {
+      return wsClient.on(event, handler);
+    },
+  };
+
+  return { client, wsClient };
+}
+
+export function NodeServiceProvider({
+  children,
+  clientFactory,
+}: {
+  children: ReactNode;
+  /** Provide a custom client factory for in-process/mobile usage. Defaults to WebSocket. */
+  clientFactory?: () => NodeServiceClient;
+}) {
   const [client, setClient] = useState<NodeServiceClient | null>(null);
   const [connected, setConnected] = useState(false);
   const [ready, setReady] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
 
   useEffect(() => {
-    let connected = false;
-    let readyReceived = false;
+    if (clientFactory) {
+      // Mobile / in-process: use the provided factory
+      const nodeService = clientFactory();
+      setClient(nodeService);
+      nodeService.connect().catch(console.error);
+      return () => { nodeService.disconnect(); };
+    }
 
-    const wsClient = createWsClient();
-    const nodeService: NodeServiceClient = {
-      get isConnected() {
-        return connected;
-      },
-
-      get isReady() {
-        return readyReceived;
-      },
-
-      get reconnectAttempts() {
-        return wsClient.getReconnectAttempts();
-      },
-
-      async connect() {
-        await wsClient.connect();
-        connected = true;
-        setConnected(true);
-      },
-
-      disconnect() {
-        wsClient.disconnect();
-        connected = false;
-        readyReceived = false;
-        setConnected(false);
-        setReady(false);
-      },
-
-      async reconnect() {
-        wsClient.disconnect();
-        connected = false;
-        readyReceived = false;
-        setConnected(false);
-        setReady(false);
-        await wsClient.connect();
-        connected = true;
-        setConnected(true);
-      },
-
-      async getProfile() {
-        return wsClient.rpc("getProfile");
-      },
-
-      async getHumanProfile() {
-        return wsClient.rpc("getHumanProfile");
-      },
-
-      async updateHumanProfile(input) {
-        return wsClient.rpc("updateHumanProfile", input as unknown as Record<string, unknown>);
-      },
-
-      async sendHello(targetOwnerId, profile, message) {
-        return wsClient.rpc("sendHello", { targetOwnerId, profile, message });
-      },
-
-      async acceptHello(messageId) {
-        return wsClient.rpc("acceptHello", { messageId });
-      },
-
-      async declineHello(messageId, reason) {
-        return wsClient.rpc("declineHello", { messageId, reason });
-      },
-
-      async blockPeer(peerOwnerId) {
-        return wsClient.rpc("blockPeer", { peerOwnerId });
-      },
-
-      async revokeBond(peerOwnerId) {
-        return wsClient.rpc("revokeBond", { peerOwnerId });
-      },
-
-      async getBonds() {
-        return wsClient.rpc("getBonds");
-      },
-
-      async sendChat(targetOwnerId, text) {
-        return wsClient.rpc("sendChat", { targetOwnerId, text });
-      },
-
-      async listChatHistory(peerOwnerId, limit) {
-        return wsClient.rpc("listChatHistory", { peerOwnerId, limit }) as Promise<ChatMessage[]>;
-      },
-
-      async searchPeers(query) {
-        return wsClient.rpc("searchPeers", query as unknown as Record<string, unknown>);
-      },
-
-      async getNodeConfig() {
-        return wsClient.rpc("getNodeConfig");
-      },
-
-      async getConnectionStatus() {
-        return wsClient.rpc("getConnectionStatus");
-      },
-
-      async getPeerConnectionInfo(peerOwnerId: string) {
-        return wsClient.rpc("getPeerConnectionInfo", { peerOwnerId });
-      },
-
-      async getBridgeStatus() {
-        return wsClient.rpc("getBridgeStatus");
-      },
-
-      async getPairingPayload() {
-        return wsClient.rpc("getPairingPayload");
-      },
-
-      async knowledgeQuery(question: string) {
-        return wsClient.rpc("knowledgeQuery", { question }) as Promise<string>;
-      },
-
-      async advertiseTopic(topic: string) {
-        return wsClient.rpc("advertiseTopic", { topic });
-      },
-
-      async stopAdvertiseTopic(topic: string) {
-        return wsClient.rpc("stopAdvertiseTopic", { topic });
-      },
-
-      async updateNodeConfig(config) {
-        return wsClient.rpc("updateNodeConfig", config);
-      },
-
-      async listRelays() {
-        return wsClient.rpc("listRelays");
-      },
-
-      async addRelay(addr, level, region) {
-        return wsClient.rpc("addRelay", { addr, level, region });
-      },
-
-      async removeRelay(relayId) {
-        return wsClient.rpc("removeRelay", { relayId });
-      },
-
-      async initNode(profileDir, options) {
-        return wsClient.rpc("initNode", { profileDir, options });
-      },
-
-      async getNodeStatus() {
-        return wsClient.rpc("getNodeStatus");
-      },
-
-      async startNode() {
-        return wsClient.rpc("startNode");
-      },
-
-      async stopNode() {
-        return wsClient.rpc("stopNode");
-      },
-
-      async waitForConnection(timeoutMs?: number) {
-        return wsClient.waitForConnection(timeoutMs);
-      },
-
-      on(event, handler) {
-        return wsClient.on(event, handler as (data: unknown) => void);
-      },
-    };
+    // Desktop: use WebSocket client
+    const { client: nodeService, wsClient } = createWsNodeServiceClient(setConnected, setReady, setReconnectAttempts);
 
     // Auto-connect on mount
     nodeService.connect().catch(console.error);
 
     // Subscribe to node:ready event
     wsClient.on("node:ready", () => {
-      readyReceived = true;
       setReady(true);
     });
 
@@ -288,7 +223,7 @@ export function NodeServiceProvider({ children }: { children: ReactNode }) {
       clearInterval(reconnectInterval);
       nodeService.disconnect();
     };
-  }, []);
+  }, [clientFactory]);
 
   if (!client) {
     return <div className="loading">Connecting...</div>;

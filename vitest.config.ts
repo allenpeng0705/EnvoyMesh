@@ -15,6 +15,10 @@ export default defineConfig({
       "@envoymesh/vault": resolve(rootDir, "packages/vault/src/index.ts"),
       "@envoymesh/models": resolve(rootDir, "packages/models/src/index.ts"),
       "@envoymesh/local-store": resolve(rootDir, "packages/local-store/src/index.ts"),
+      "@envoymesh/mobile-identity": resolve(rootDir, "packages/mobile-identity/src/index.ts"),
+      "@envoymesh/mobile-storage": resolve(rootDir, "packages/mobile-storage/src/index.ts"),
+      "@envoymesh/mobile-vault": resolve(rootDir, "packages/mobile-vault/src/index.ts"),
+      "@envoymesh/mobile-node": resolve(rootDir, "packages/mobile-node/src/index.ts"),
     },
   },
   test: {

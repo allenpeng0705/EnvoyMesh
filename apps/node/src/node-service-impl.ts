@@ -26,6 +26,8 @@ import type {
   HomeClawCoreProxyResult,
   PairDeviceParams,
   PairDeviceResult,
+  PairSharedIdentityParams,
+  PairSharedIdentityResult,
 } from "@envoymesh/api";
 import { randomUUID } from "node:crypto";
 import {
@@ -50,7 +52,7 @@ import {
   type HumanProfilePayload,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
-import { derivePeerId, signHumanProfile, signUnsignedEnvelope } from "@envoymesh/identity";
+import { createDeviceCertificate, derivePeerId, encryptOwnerKeyForDevice, signHumanProfile, signUnsignedEnvelope } from "@envoymesh/identity";
 import {
   createAuditEvent,
   deriveCorrelationIdFromEnvelope,
@@ -2130,6 +2132,14 @@ class NodeServiceImpl implements NodeService {
       }
     }
 
+    // Phase 11: Include owner identity for multi-device shared-identity pairing.
+    // These are public info — safe for QR codes.
+    const profile = this._profile;
+    if (profile) {
+      payload.ownerPublicKey = profile.owner.publicKeyPem;
+      payload.ownerId = profile.owner.ownerId;
+    }
+
     return payload;
   }
 
@@ -2187,6 +2197,112 @@ class NodeServiceImpl implements NodeService {
 
     const bridgeStatus = await this.getBridgeStatus();
     const result: PairDeviceResult = { sessionToken };
+    if (bridgeStatus.enabled) {
+      result.agentPeerId = bridgeStatus.agentPeerId;
+      if (bridgeStatus.agentPublicKeyPem) {
+        result.agentPubKey = bridgeStatus.agentPublicKeyPem;
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Shared-identity pairing (Phase 11).
+   *
+   * Like pairDevice but additionally:
+   * - Signs a DeviceCertificate authorizing the mobile device
+   * - ECDH-encrypts the owner private key for secure transfer
+   *
+   * Called by the Capacitor mobile app when it wants to share the home node's
+   * owner identity (same ownerId on both devices).
+   */
+  async pairSharedIdentity(params: PairSharedIdentityParams): Promise<PairSharedIdentityResult> {
+    const { requesterOwnerId, requesterDeviceId, requesterDevicePublicKeyPem, keyExchangePublicKey, pairingToken } = params;
+
+    if (!requesterOwnerId || !requesterDeviceId || !requesterDevicePublicKeyPem || !keyExchangePublicKey || !pairingToken) {
+      throw new Error("Missing required pairSharedIdentity params");
+    }
+
+    // Verify the ownerId matches — shared identity means the mobile claims the same owner
+    const profile = this._requireProfile();
+    if (requesterOwnerId !== profile.owner.ownerId) {
+      throw new Error(`ownerId mismatch — expected ${profile.owner.ownerId}, got ${requesterOwnerId}`);
+    }
+
+    // Validate the QR pairing token
+    const valid = await this.validatePairingToken(pairingToken);
+    if (!valid) {
+      throw new Error("Invalid or expired pairing token");
+    }
+
+    // Sign a device certificate authorizing this mobile device
+    const deviceCert = createDeviceCertificate({
+      owner: {
+        ownerId: profile.owner.ownerId,
+        publicKeyPem: profile.owner.publicKeyPem,
+        privateKeyPem: profile.owner.privateKeyPem,
+      },
+      device: {
+        deviceId: requesterDeviceId,
+        publicKeyPem: requesterDevicePublicKeyPem,
+        privateKeyPem: "", // mobile keeps its private key; only public part is certified
+      },
+      deviceProfile: "satellite",
+      capabilities: ["mesh.listen", "message.send", "device.sync"],
+    });
+
+    // ECDH-encrypt the owner private key for the mobile device
+    const keyExchangePubKeyBytes = Buffer.from(keyExchangePublicKey, "base64url");
+    const encrypted = await encryptOwnerKeyForDevice(
+      profile.owner.privateKeyPem,
+      keyExchangePubKeyBytes,
+    );
+
+    // Derive the mobile device's peer ID
+    const peerId = derivePeerId(requesterDevicePublicKeyPem);
+
+    // Create trust record at "direct" level (same as pairDevice)
+    await this._trustStore.setTrustRecord({
+      peerOwnerId: requesterOwnerId,
+      level: "direct",
+      displayName: "Mobile (shared identity)",
+      note: "pairSharedIdentity",
+      now: new Date().toISOString(),
+    });
+
+    // Register in peer directory
+    await this._peerDirectoryStore.ensurePeerFromInboundChat({
+      ownerId: requesterOwnerId,
+      peerId,
+      listenAddrs: [],
+    });
+
+    // Generate persistent session token
+    const sessionToken = randomUUID();
+    const now = new Date().toISOString();
+    if (this._sessionTokenStore) {
+      await this._sessionTokenStore.setToken({
+        token: sessionToken,
+        ownerId: requesterOwnerId,
+        deviceId: requesterDeviceId,
+        displayName: "Mobile (shared identity)",
+        createdAt: now,
+        lastUsedAt: now,
+      });
+    }
+
+    const bridgeStatus = await this.getBridgeStatus();
+    const result: PairSharedIdentityResult = {
+      sessionToken,
+      deviceCertificate: deviceCert as unknown as Record<string, unknown>,
+      encryptedOwnerKey: encrypted.encryptedKey,
+      ephemeralPublicKey: encrypted.ephemeralPublicKey,
+      iv: encrypted.iv,
+      authTag: encrypted.authTag,
+      ownerPublicKey: profile.owner.publicKeyPem,
+      ownerId: profile.owner.ownerId,
+    };
     if (bridgeStatus.enabled) {
       result.agentPeerId = bridgeStatus.agentPeerId;
       if (bridgeStatus.agentPublicKeyPem) {

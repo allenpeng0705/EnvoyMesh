@@ -88,6 +88,8 @@ export async function routeRpcMethod(
       return ns.getPairingPayload();
     case "pairDevice":
       return ns.pairDevice(params as any);
+    case "pairSharedIdentity":
+      return ns.pairSharedIdentity(params as any);
     case "forwardEnvelope":
       return ns.forwardEnvelope(params.envelope as Record<string, unknown>, params.dialHints as string[] | undefined);
     case "homeclawCoreProxy":

@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": ".",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "include": ["capacitor.config.ts", "src/**/*.ts"],
+  "references": [
+    { "path": "../../packages/protocol" },
+    { "path": "../../packages/api" },
+    { "path": "../../packages/mobile-identity" },
+    { "path": "../../packages/mobile-storage" },
+    { "path": "../../packages/mobile-vault" },
+    { "path": "../../packages/mobile-node" }
+  ]
+}

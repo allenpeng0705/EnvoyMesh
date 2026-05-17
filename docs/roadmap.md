@@ -146,13 +146,14 @@ Potential tools:
 
 - React or Next.js for local dashboard.
 - Tauri for desktop packaging (Electron path removed).
-- Capacitor or React Native for thin mobile UI exploration.
+- Capacitor for mobile Social UI + in-process node (Phase 11, shipped).
 
 Success criteria:
 
-- Owner can see peers, trust levels, vault documents, requests, and audit events.
-- Owner can approve or reject raw sharing requests.
-- Owner can pair devices or friends without editing JSON by hand.
+- [x] Owner can see peers, trust levels, vault documents, requests, and audit events.
+- [x] Owner can approve or reject raw sharing requests.
+- [x] Owner can pair devices or friends without editing JSON by hand.
+- [x] Mobile app (iOS + Android) runs Social UI and node in-process via Capacitor (Phase 11).
 
 ## Open Questions
 

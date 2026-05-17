@@ -26,7 +26,7 @@ EnvoyMesh is a **decentralized, peer-to-peer mesh for autonomous AI agents**. Ag
 - Semantic consistency — typed intents agents can reason about, not opaque bytes
 - Observability — JSONL audit with correlation IDs stitching multi-peer flows
 
-**Active milestone: Phase 9 complete** — AI agent has its own peer identity (9A), tool registry (9B), memory/context (9C), mode controller (9D), session management (9E), style adapter (9F), proactive triggers (9G), approval workflow (9H), external agent gateway (9I), digest/notifications (9J), and P2P bridge for external agents (9K). See `docs/implementation-plan.md` for full roadmap.
+**Active milestone: Phase 11 complete** — Capacitor mobile app with in-process Social UI + Node runtime (11A-11E), multi-device shared identity, `@noble/curves` pure-JS crypto, mobile storage (SQLite) and vault (Filesystem). Phase 9 modules (agent identity, tools, memory, mode, sessions, style, triggers, approvals, external agents, digest, P2P bridge) all shipped. See `docs/implementation-plan.md` for full roadmap.
 
 ---
 
@@ -40,8 +40,9 @@ EnvoyMesh/
 │   ├── social/        # Social/chat UI (Vite + React)
 │   │   ├── src/components/  # Header, ErrorBoundary, views/ (Chat, Search, Profile, Settings, etc.)
 │   │   ├── src/context/     # NodeStateContext (shared state, event-driven)
-│   │   ├── src/lib/         # storage.ts, display.ts (shared util)
+│   │   ├── src/lib/         # storage.ts, display.ts, direct-call-client.ts
 │   │   └── test/            # Component + context tests (vitest + testing-library)
+│   ├── mobile/        # Capacitor iOS/Android wrapper (Phase 11)
 │   └── tauri/         # End-user native wrapper: WebView loads Social web UI + spawns Node (no Electron)
 ├── packages/
 │   ├── protocol/      # Core protocol: Zod schemas, payload constructors, canonical JSON
@@ -51,7 +52,11 @@ EnvoyMesh/
 │   ├── vault/         # Local file vault: indexing, chunking, search, path safety
 │   ├── models/        # Model router: provider selection, semantic firewall, LiteLLM adapter
 │   ├── local-store/   # On-disk persistence: JSONL audit/journal, trust store, peer directory
-│   └── api/           # API package (planned, tsconfig stub only)
+│   ├── mobile-identity/# Pure-JS Ed25519 identity with @noble/curves (Phase 11B)
+│   ├── mobile-storage/ # SQLite-backed peer directory, trust store (Phase 11E)
+│   ├── mobile-vault/   # Filesystem-backed vault (Phase 11E)
+│   ├── mobile-node/    # In-process NodeService, relay-only transport (Phase 11C)
+│   └── api/           # Shared TypeScript interfaces (NodeService, types)
 ├── docs/              # User stories, scenarios, security model, implementation plan
 ├── tsconfig.base.json # Shared TS configuration
 ├── tsconfig.json      # Project references (builds all packages & apps)
@@ -63,13 +68,20 @@ EnvoyMesh/
 
 ```
 protocol  (Zod schemas, no deps beyond zod)
-   ├── identity  (crypto ops on protocol types)
-   ├── vault     (standalone file indexing)
-   ├── models    (protocol deps only)
-   └── bonds     (protocol deps only)
-local-store  (depends on bonds, identity, protocol)
-network      (depends on protocol + libp2p ecosystem)
-apps/node    (depends on everything)
+   ├── identity      (node:crypto Ed25519 — desktop)
+   ├── mobile-identity (@noble/curves Ed25519 — mobile/browser)
+   ├── vault         (desktop file vault)
+   ├── mobile-vault  (Capacitor Filesystem vault)
+   ├── models        (protocol deps only)
+   ├── bonds         (protocol deps only)
+   └── api           (shared TypeScript interfaces)
+local-store       (depends on bonds, identity, protocol)
+mobile-storage    (depends on protocol, api — SQLite-backed)
+network           (depends on protocol + libp2p ecosystem)
+mobile-node       (depends on mobile-identity, mobile-storage, mobile-vault, api, protocol)
+apps/node         (depends on everything desktop)
+apps/social       (depends on api — React SPA + DirectCallClient for mobile)
+apps/mobile       (Capacitor wrapper — loads apps/social + mobile-node in-process)
 ```
 
 ---
@@ -163,21 +175,26 @@ The **Diplomat → Bond Engine → Brain → Vault** pipeline:
 - Contains disallowed control characters (code < 32 except tab/newline/CR, or DEL) → reject
 - Collapses excessive newline runs (>50 consecutive) to prevent log spam
 
-### Mobile as a Full Network Node
+### Mobile as a Full Network Node (Phase 11)
 
 The mobile app is a **full EnvoyMesh node**, not a thin client. It participates in the P2P mesh directly:
 
+- **In-process architecture**: Social UI (React) + `MobileNode` (NodeService) run in a single Capacitor WebView. `DirectCallClient` calls `NodeService` methods directly — no WebSocket, no JSON-RPC.
 - **Own peer identity**: generated from the owner's keys, distinct from the home node
-- **Own signing key**: signs messages just like any other node
-- **Direct P2P connectivity**: connects via relay when on different networks from home node
+- **Multi-device shared identity**: `MobileNode.importOwnerIdentity()` imports home node's owner key — same `ownerId`, shared contacts/bonds, different `deviceId` per device
+- **Own signing key**: signs messages using `@noble/curves` Ed25519 (pure-JS, works in WebViews)
+- **Relay-only networking**: outbound WebSocket connections only; no TCP/QUIC/mDNS listeners
 - **Full intent support**: sends/receives any EnvoyMesh intent (chat, knowledge, discovery, share, etc.)
 
-**Pairing via QR code**: When mobile scans the home node's QR code, they create a direct bond. The mobile app sees the home node and its AI agent as contacts in the peer list. Communication with the AI agent is standard `chat.message` to the agent's peer ID — no separate control channel.
+**Pairing via QR code**: When mobile scans the home node's QR code (`envoy://pair?...` URI), they create a direct bond. The mobile app sees the home node and its AI agent as contacts in the peer list. Communication with the AI agent is standard `chat.message` to the agent's peer ID — no separate control channel.
 
 ```
 Mobile App (phone) ←P2P bond via QR→ Home Node (computer)
-                                              │
-                                              └── AI Agent (contact in mobile's peer list)
+  │                                        │
+  │  DirectCallClient ──► MobileNode       │  WsClient ──► NodeService (child process)
+  │  (in-process calls)                    │  (WebSocket to localhost)
+  │                                        │
+  └── relay WebSocket(s) ──────────────────┴── relay mesh
 ```
 
 ### Agentic Topology (Phase 9)

@@ -27,6 +27,8 @@ import type {
   HomeClawCoreProxyResult,
   PairDeviceParams,
   PairDeviceResult,
+  PairSharedIdentityParams,
+  PairSharedIdentityResult,
 } from "./ws-protocol.js";
 
 // ============================================
@@ -501,6 +503,18 @@ export interface NodeService {
    * Also creates a trust record at "direct" level for the requester.
    */
   pairDevice(params: PairDeviceParams): Promise<PairDeviceResult>;
+
+  /**
+   * Shared-identity pairing (Phase 11).
+   *
+   * Like pairDevice but also:
+   * - Signs a DeviceCertificate authorizing the mobile device
+   * - ECDH-encrypts the owner private key for secure transfer
+   *
+   * Called by the Capacitor mobile app when pairing in shared-identity mode
+   * (same ownerId as the home node).
+   */
+  pairSharedIdentity(params: PairSharedIdentityParams): Promise<PairSharedIdentityResult>;
 
   // ----- Connection Status -----
 

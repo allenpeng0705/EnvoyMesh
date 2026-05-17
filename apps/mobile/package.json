@@ -1,0 +1,33 @@
+{
+  "name": "@envoymesh/mobile",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "cap:sync": "npx cap sync",
+    "cap:ios": "npx cap add ios",
+    "cap:android": "npx cap add android",
+    "cap:open:ios": "npx cap open ios",
+    "cap:open:android": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/filesystem": "^6.0.0",
+    "@capacitor-community/sqlite": "^6.0.0",
+    "capacitor-secure-storage-plugin": "^0.10.0",
+    "@envoymesh/social": "0.1.0",
+    "@envoymesh/mobile-node": "0.1.0",
+    "@envoymesh/mobile-storage": "0.1.0",
+    "@envoymesh/mobile-vault": "0.1.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.0.0",
+    "typescript": "^6.0.3",
+    "vite": "^6.0.0"
+  },
+  "comments": {
+    "plugins": "Additional Capacitor plugins to install when building: @capacitor/android, @capacitor/ios, @capacitor/filesystem, @capacitor/preferences, @capacitor-community/sqlite, capacitor-secure-storage-plugin"
+  }
+}

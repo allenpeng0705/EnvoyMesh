@@ -53,6 +53,8 @@ export function SettingsNodeTab() {
       if (payload.agentPeerId) params.set("agentPeerId", payload.agentPeerId);
       if (payload.agentPubKey) params.set("agentPubKey", payload.agentPubKey);
       if (payload.token) params.set("token", payload.token);
+      if (payload.ownerPublicKey) params.set("ownerPublicKey", payload.ownerPublicKey);
+      if (payload.ownerId) params.set("ownerId", payload.ownerId);
       const uri = `envoy://pair?${params.toString()}`;
       setPairingUri(uri);
       const dataUrl = await QRCode.toDataURL(uri, { width: 256, margin: 1 });

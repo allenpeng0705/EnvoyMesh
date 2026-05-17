@@ -105,6 +105,7 @@ export type RpcMethods =
   | "getBridgeStatus"
   | "getPairingPayload"
   | "pairDevice"
+  | "pairSharedIdentity"
   // Node Configuration
   | "getNodeConfig"
   | "updateNodeConfig"
@@ -285,6 +286,10 @@ export interface PairingPayload {
   agentPubKey?: string;
   /** Pairing token for owner verification (optional) */
   token?: string;
+  /** Owner's public key PEM (Phase 11 — for shared-identity pairing, public info safe for QR) */
+  ownerPublicKey?: string;
+  /** Owner ID e.g. envoy:owner:... (Phase 11 — for shared-identity pairing) */
+  ownerId?: string;
 }
 
 /**
@@ -642,6 +647,39 @@ export interface PairDeviceParams {
 
 export interface PairDeviceResult {
   sessionToken: string;
+  agentPeerId?: string;
+  agentPubKey?: string;
+}
+
+// ============================================
+// Shared-Identity Pairing (Phase 11)
+// ============================================
+
+export interface PairSharedIdentityParams {
+  requesterOwnerId: string;
+  requesterDeviceId: string;
+  requesterDevicePublicKeyPem: string;
+  /** P-256 ECDH public key (raw uncompressed, base64url) for key exchange — encrypts the owner private key */
+  keyExchangePublicKey: string;
+  pairingToken: string;
+}
+
+export interface PairSharedIdentityResult {
+  sessionToken: string;
+  /** Owner-signed device certificate authorizing the mobile device */
+  deviceCertificate: Record<string, unknown>;
+  /** Owner private key encrypted with AES-256-GCM (base64url) */
+  encryptedOwnerKey: string;
+  /** Ephemeral P-256 ECDH public key used for key exchange (raw uncompressed, base64url) */
+  ephemeralPublicKey: string;
+  /** AES-GCM IV/nonce (base64url) */
+  iv: string;
+  /** AES-GCM authentication tag (base64url) — included separately for Web Crypto API */
+  authTag: string;
+  /** Owner public key PEM (confirmation of the key encrypted above) */
+  ownerPublicKey: string;
+  /** Owner ID */
+  ownerId: string;
   agentPeerId?: string;
   agentPubKey?: string;
 }
