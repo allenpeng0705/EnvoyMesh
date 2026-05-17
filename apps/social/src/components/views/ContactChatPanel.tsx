@@ -5,22 +5,13 @@ import type { ChatMessage } from "@envoymesh/api";
 import type { AssistantMode } from "../../lib/storage.js";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { Markdown } from "../Markdown.js";
-import {
-  BackIcon,
-  SendIcon,
-  EditIcon,
-  ChatIcon,
-  AIIcon,
-  P2PIcon,
-  RelayIcon,
-} from "../../icons.js";
 
 interface ContactChatPanelProps {
   selectedContact: string;
   onSelectContact: (id: string | null) => void;
 }
 
-export function ContactChatPanel({ selectedContact, onSelectContact }: ContactChatPanelProps) {
+export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   const nodeService = useNodeService();
   const {
     bonds,
@@ -38,7 +29,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   const [isSendingChat, setIsSendingChat] = useState(false);
   const lastChatSendRef = useRef<{ at: number; contact: string; text: string } | null>(null);
 
-  // Peer connection info
+  // Peer connection info (locally cached)
   const [peerConnectionInfo, setPeerConnectionInfo] = useState<Record<string, { connected: boolean; direct: boolean; relayPeerId?: string }>>({});
 
   // Scroll to bottom on new messages
@@ -54,6 +45,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     }).catch(() => {});
   }, [appSettings.showConnectionStatus, selectedContact, nodeService]);
 
+  // AI access
   const getContactAiAccessLevel = useCallback(
     (ownerId: string): "none" | "assistant_only" | "full" =>
       nodeConfig?.contactAiPreferences?.find(p => p.peerOwnerId === ownerId)?.aiAccessLevel ?? "none",
@@ -64,10 +56,12 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     const text = chatInput.trim();
     if (!text || isSendingChat) return;
 
+    // /ai command routing
     if (text.startsWith("/ai ")) {
       const question = text.slice(4);
       try {
         const answer = await nodeService.knowledgeQuery(question);
+        // For now, we don't display AI answers inline in ContactChatPanel
         console.log("[ContactChatPanel] AI answer:", answer);
       } catch (e) {
         console.error("[ContactChatPanel] AI query failed:", e);
@@ -76,6 +70,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       return;
     }
 
+    // Duplicate send guard (1.5s)
     const now = Date.now();
     const last = lastChatSendRef.current;
     if (last && last.contact === selectedContact && last.text === text && now - last.at < 1500) {
@@ -100,103 +95,68 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   const isAutoAllowed = aiAccessLevel === "full" && (nodeConfig?.autonomousPolicies ?? []).some(p => p.domain === "social" && p.autoSendChat);
   const isChatAssistEnabled = nodeConfig?.chatAssistEnabled ?? false;
 
-  const contact = bonds.find((c) => c.peerOwnerId === selectedContact);
-  const displayName = selectedContact === bridgeStatus?.agentPeerId
-    ? (bridgeStatus.agentName ?? "My Agent")
-    : contactLabel(contact ?? { peerOwnerId: selectedContact });
-
-  const connInfo = peerConnectionInfo[selectedContact];
-  const isDirect = connInfo?.direct ?? false;
-
   return (
     <>
-      <header className="chat-panel-header">
-        <button
-          className="back-btn"
-          aria-label="Back to contacts"
-          onClick={() => onSelectContact(null)}
-        >
-          <BackIcon size={20} />
-        </button>
-        <div className="contact-avatar" style={{ width: 36, height: 36, fontSize: "var(--text-sm)" }}>
-          {displayName[0]}
+      <header className="chat-header has-assistant-switch">
+        <div className="chat-header-left">
+          <span className="chat-name">
+            {selectedContact === bridgeStatus?.agentPeerId
+              ? (bridgeStatus.agentName ?? "My Agent")
+              : contactLabel(
+                  bonds.find((c) => c.peerOwnerId === selectedContact) ?? { peerOwnerId: selectedContact },
+                )}
+          </span>
+          {appSettings.showConnectionStatus && peerConnectionInfo[selectedContact] && (
+            <span className={`connection-type ${peerConnectionInfo[selectedContact].direct ? "p2p" : "relay"}`}>
+              {peerConnectionInfo[selectedContact].direct ? "P2P" : "Relay"}
+            </span>
+          )}
         </div>
-        <div className="chat-panel-header-info">
-          <div className="chat-panel-header-name">{displayName}</div>
-          <div className="chat-panel-header-status">
-            {connInfo && (
-              <>
-                {isDirect ? <P2PIcon size={12} /> : <RelayIcon size={12} />}
-                {isDirect ? "P2P" : "Relay"}
-              </>
-            )}
+        <div className="chat-header-right">
+          <div className="assistant-switch" title={`Current: ${currentAiMode.charAt(0).toUpperCase() + currentAiMode.slice(1)}`}>
+            <span className="assistant-switch-label">AI</span>
+            <button
+              className={`assistant-switch-btn ${currentAiMode === "manual" ? "active" : ""}`}
+              title="Manual: Type yourself"
+              onClick={() => setContactAiModes({ ...contactAiModes, [selectedContact]: "manual" })}
+            >✏️</button>
+            <button
+              className={`assistant-switch-btn ${currentAiMode === "assistant" ? "active" : ""} ${!isAssistantAllowed || !isChatAssistEnabled ? "disabled" : ""}`}
+              title={!isAssistantAllowed ? "Assistant mode requires AI access for this contact" : isChatAssistEnabled ? "Assistant: AI suggests drafts" : "Chat Assist is disabled"}
+              onClick={() => {
+                if (!isAssistantAllowed || !isChatAssistEnabled) return;
+                setContactAiModes({ ...contactAiModes, [selectedContact]: "assistant" });
+              }}
+            >💬</button>
+            <button
+              className={`assistant-switch-btn ${currentAiMode === "auto" ? "active" : ""} ${!isAutoAllowed ? "disabled" : ""}`}
+              title={isAutoAllowed ? "Auto-Reply: AI responds automatically" : "Auto-Reply requires full AI access for this contact"}
+              onClick={() => {
+                if (!isAutoAllowed) return;
+                setContactAiModes({ ...contactAiModes, [selectedContact]: "auto" });
+              }}
+            >🔄</button>
           </div>
-        </div>
-        {/* AI mode toggle */}
-        <div className="ai-mode-toggle">
-          <button
-            className={`ai-mode-btn${currentAiMode === "manual" ? " active" : ""}`}
-            title="Manual: Type yourself"
-            onClick={() => setContactAiModes({ ...contactAiModes, [selectedContact]: "manual" })}
-          >
-            <EditIcon size={14} />
-            Manual
-          </button>
-          <button
-            className={`ai-mode-btn${currentAiMode === "assistant" ? " active" : ""}${!isAssistantAllowed || !isChatAssistEnabled ? " disabled" : ""}`}
-            title={!isAssistantAllowed ? "Assistant mode requires AI access" : isChatAssistEnabled ? "AI suggests drafts" : "Chat Assist disabled"}
-            onClick={() => {
-              if (!isAssistantAllowed || !isChatAssistEnabled) return;
-              setContactAiModes({ ...contactAiModes, [selectedContact]: "assistant" });
-            }}
-          >
-            <ChatIcon size={14} />
-            Assist
-          </button>
-          <button
-            className={`ai-mode-btn${currentAiMode === "auto" ? " active" : ""}${!isAutoAllowed ? " disabled" : ""}`}
-            title={isAutoAllowed ? "Auto-Reply" : "Requires full AI access"}
-            onClick={() => {
-              if (!isAutoAllowed) return;
-              setContactAiModes({ ...contactAiModes, [selectedContact]: "auto" });
-            }}
-          >
-            <AIIcon size={14} />
-            Auto
-          </button>
         </div>
       </header>
-
-      <div className="chat-messages">
+      <div className="messages">
         {messages.length === 0 ? (
-          <div className="no-chat-selected" style={{ padding: "32px 16px" }}>
-            <p>No messages yet. Say hello!</p>
-          </div>
+          <p className="empty">No messages yet. Say hello!</p>
         ) : (
           messages.map((msg) => {
             const outgoing = isOutgoing(msg);
             return (
-              <div
-                key={msg.messageId}
-                className={`chat-bubble ${outgoing ? "outgoing" : "incoming"}`}
-              >
-                {!outgoing && (
-                  <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-subtle)", marginBottom: 4, fontWeight: 500 }}>
-                    {peerDisplayLabel(msg.sender)}
-                  </div>
-                )}
-                <Markdown text={msg.content.text} className="markdown-content" />
-                <div style={{ fontSize: "10px", opacity: 0.6, marginTop: 6, textAlign: "right" }}>
-                  {new Date(msg.metadata.timestamp).toLocaleTimeString()}
-                </div>
+              <div key={msg.messageId} className={`message ${outgoing ? "outgoing" : "incoming"}`}>
+                {!outgoing && <span className="message-sender">{peerDisplayLabel(msg.sender)}</span>}
+                <Markdown text={msg.content.text} className="message-text" />
+                <span className="message-time">{new Date(msg.metadata.timestamp).toLocaleTimeString()}</span>
               </div>
             );
           })
         )}
         <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
       </div>
-
-      <footer className="chat-composer">
+      <footer className="chat-input">
         <input
           type="text"
           placeholder="Type a message..."
@@ -210,13 +170,8 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
           }}
           disabled={isSendingChat}
         />
-        <button
-          type="button"
-          onClick={() => void handleSendMessage()}
-          disabled={isSendingChat || !chatInput.trim()}
-        >
-          <SendIcon size={16} />
-          {isSendingChat ? "Sending..." : "Send"}
+        <button type="button" onClick={() => void handleSendMessage()} disabled={isSendingChat || !chatInput.trim()}>
+          {isSendingChat ? "Sending\u2026" : "Send"}
         </button>
       </footer>
     </>

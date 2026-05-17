@@ -12,19 +12,19 @@ export function SettingsView() {
 
       <div className="settings-tabs">
         <button
-          className={`settings-tab-btn${settingsTab === "node" ? " active" : ""}`}
+          className={settingsTab === "node" ? "active" : ""}
           onClick={() => setSettingsTab("node")}
         >
           Node
         </button>
         <button
-          className={`settings-tab-btn${settingsTab === "ai" ? " active" : ""}`}
+          className={settingsTab === "ai" ? "active" : ""}
           onClick={() => setSettingsTab("ai")}
         >
           AI
         </button>
         <button
-          className={`settings-tab-btn${settingsTab === "app" ? " active" : ""}`}
+          className={settingsTab === "app" ? "active" : ""}
           onClick={() => setSettingsTab("app")}
         >
           App

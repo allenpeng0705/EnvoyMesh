@@ -1,5 +1,3 @@
-import { useTheme } from "../context/ThemeContext.js";
-import { DarkModeIcon, LightModeIcon } from "../icons.js";
 import type {
   ConnectionStatus,
   HumanProfile,
@@ -30,82 +28,65 @@ export function Header({
   humanProfile,
   peerId,
 }: HeaderProps) {
-  const { resolved, setTheme } = useTheme();
-
   const displayLabel =
     humanProfile?.displayName ||
     humanProfile?.username ||
     (peerId && !peerId.startsWith("envoy_") ? `${peerId.slice(0, 8)}\u2026` : "Peer");
 
-  function shortId(id: string): string {
-    if (!id) return "";
-    return id.length > 12 ? id.slice(0, 6) + "..." + id.slice(-4) : id;
-  }
-
-  const online = connectionStatus?.online ?? false;
-
   return (
     <header className="header">
       <div className="header-left">
-        <div className="header-logo">E</div>
-        <span className="header-logo-text">EnvoyMesh</span>
+        <img src="/assets/logo.svg" alt="Envoy" className="logo" />
+        <span className="logo-text">Envoy</span>
       </div>
-
       <nav className="header-nav">
         <button
-          className={`header-nav-btn${currentView === "chat" ? " active" : ""}`}
+          className={`${currentView === "chat" ? "active" : ""} ${inboxCount > 0 ? "has-inbox" : ""}`}
           onClick={() => onNavigate("chat")}
         >
-          Chat
-          {inboxCount > 0 && <span className="nav-badge">{inboxCount > 99 ? "99+" : inboxCount}</span>}
+          Chat {inboxCount > 0 && <span className="inbox-badge">{inboxCount}</span>}
         </button>
         <button
-          className={`header-nav-btn${currentView === "contacts" ? " active" : ""}`}
+          className={currentView === "contacts" ? "active" : ""}
           onClick={() => onNavigate("contacts")}
         >
           Contacts ({bondsCount})
         </button>
         <button
-          className={`header-nav-btn${currentView === "search" ? " active" : ""}`}
+          className={currentView === "search" ? "active" : ""}
           onClick={() => onNavigate("search")}
         >
           Search
         </button>
         <button
-          className={`header-nav-btn${currentView === "profile" ? " active" : ""}`}
+          className={currentView === "profile" ? "active" : ""}
           onClick={() => onNavigate("profile")}
         >
           Profile
         </button>
         <button
-          className={`header-nav-btn${currentView === "settings" ? " active" : ""}`}
+          className={currentView === "settings" ? "active" : ""}
           onClick={() => onNavigate("settings")}
         >
           Settings
         </button>
       </nav>
-
       <div className="header-right">
-        <button
-          className="theme-btn"
-          aria-label={resolved === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          title={resolved === "dark" ? "Light mode" : "Dark mode"}
-          onClick={() => setTheme(resolved === "dark" ? "light" : "dark")}
-        >
-          {resolved === "dark" ? <LightModeIcon size={18} /> : <DarkModeIcon size={18} />}
-        </button>
-
-        <div className="header-status">
-          <span className={`header-status-dot ${online ? "online" : isPublicNetwork ? "connecting" : "offline"}`} />
-          <span>{isPublicNetwork ? (online ? "Public" : "Connecting") : "Private"}</span>
-        </div>
-
+        {isPublicNetwork ? (
+          <div className={`network-status ${connectionStatus?.online ? 'public' : 'checking'}`}>
+            <span className="status-indicator" />
+            <span>{connectionStatus?.online ? 'Public Network' : 'Connecting...'}</span>
+          </div>
+        ) : (
+          <div className="network-status private">
+            <span className="status-indicator" />
+            <span>Private</span>
+          </div>
+        )}
         <span className="node-status">{nodeStatus}</span>
-        <span className="node-name" title={peerId}>
+        <span className="node-name" title={peerId && !peerId.startsWith("envoy_") ? peerId : ""}>
           {displayLabel}
         </span>
-        <span className="header-peer-id">{shortId(peerId)}</span>
-
         {connectionStatus && connectionStatus.bondedPeers > 0 && (
           <span className="peer-count">{connectionStatus.bondedPeers} peers</span>
         )}

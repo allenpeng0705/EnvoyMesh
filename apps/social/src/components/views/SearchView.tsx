@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { SUGGESTED_TOPICS } from "../../lib/display.js";
-import { SearchIcon } from "../../icons.js";
 import type { HelloProfile, PeerSearchResult } from "@envoymesh/api";
 
 export function SearchView() {
@@ -58,24 +57,20 @@ export function SearchView() {
   return (
     <div className="search-view">
       <h2>Find People</h2>
-
-      {/* Search mode tabs */}
-      <div className="search-tabs">
+      <div className="search-mode-tabs">
         <button
-          className={`search-tab-btn${searchMode === "interest" ? " active" : ""}`}
+          className={searchMode === "interest" ? "active" : ""}
           onClick={() => setSearchMode("interest")}
         >
           By Interest
         </button>
         <button
-          className={`search-tab-btn${searchMode === "peerId" ? " active" : ""}`}
+          className={searchMode === "peerId" ? "active" : ""}
           onClick={() => setSearchMode("peerId")}
         >
           By Peer ID
         </button>
       </div>
-
-      {/* Search bar */}
       <div className="search-bar">
         <input
           type="text"
@@ -93,26 +88,39 @@ export function SearchView() {
             }
           }}
         />
-        <button onClick={() => handleSearch()} disabled={isSearching}>
-          <SearchIcon size={16} />
-          {isSearching ? "Searching..." : "Search"}
+        <button onClick={() => handleSearch()} disabled={isSearching} className="search-btn">
+          {isSearching ? (
+            <>
+              <span className="search-spinner" />
+              Searching...
+            </>
+          ) : (
+            "Search"
+          )}
         </button>
       </div>
 
-      {/* Searching indicator */}
       {isSearching && (
-        <div className="search-loading">
-          <div className="spinner" />
-          <span>Searching for "{searchQuery}"...</span>
+        <div className="search-status">
+          <div className="search-status-content">
+            <span className="search-status-icon">🔍</span>
+            <div>
+              <strong>Searching for "{searchQuery}"</strong>
+              <p>Looking for peers with this interest...</p>
+            </div>
+          </div>
+          <div className="search-status-progress">
+            <div className="progress-bar">
+              <div className="progress-bar-fill" />
+            </div>
+            <span className="progress-text">Querying network...</span>
+          </div>
         </div>
       )}
 
-      {/* Suggested topics */}
       {searchMode === "interest" && !searchQuery && (
-        <div style={{ marginTop: "var(--space-4)" }}>
-          <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, marginBottom: "var(--space-3)", color: "var(--color-text-muted)" }}>
-            Suggested Interests
-          </div>
+        <div className="topic-suggestions">
+          <h4>Suggested Interests</h4>
           <div className="topic-chips">
             {SUGGESTED_TOPICS.map((topic) => (
               <button
@@ -130,46 +138,37 @@ export function SearchView() {
         </div>
       )}
 
-      {/* Results */}
       {!isSearching && searchResults.length > 0 ? (
-        <div className="search-results">
+        <ul className="search-results">
           {searchResults.map((result) => (
-            <div key={result.nodeId} className="search-result">
-              <span className="contact-avatar">{result.displayName?.[0] || "?"}</span>
-              <div className="search-result-info">
-                <div className="search-result-name">
-                  {result.displayName}
-                  {result.username && (
-                    <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-muted)", marginLeft: 8 }}>
-                      @{result.username}
-                    </span>
-                  )}
-                </div>
-                {result.bio && <div className="search-result-detail">{result.bio}</div>}
+            <li key={result.nodeId} className="search-result">
+              <span className="avatar">{result.displayName?.[0] || "?"}</span>
+              <div className="result-info">
+                <strong>{result.displayName}</strong>
+                {result.username && <span className="result-username">@{result.username}</span>}
+                {result.bio && <p>{result.bio}</p>}
                 {result.interests.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
-                    {result.interests.map((interest) => (
-                      <span key={interest} className="profile-tag neutral">{interest}</span>
-                    ))}
-                  </div>
+                  <span className="interests">{result.interests.join(", ")}</span>
                 )}
               </div>
-              <button className="say-hello-btn" onClick={() => handleSayHello(result.nodeId)}>
+              <button onClick={() => handleSayHello(result.nodeId)}>
                 Say Hello
               </button>
-            </div>
+            </li>
           ))}
-        </div>
-      ) : searchQuery.trim() && !isSearching ? (
+        </ul>
+      ) : searchQuery.trim() ? (
         <div className="search-empty">
-          <h3>No peers found for "{searchQuery}"</h3>
-          <p>
+          <p>No peers found for "{searchQuery}"</p>
+          <small>
             {searchMode === "peerId"
               ? "Check if the peer ID is correct. You may need to be connected to them first."
               : "Try a different interest or check your connection to the network."}
-          </p>
+          </small>
         </div>
-      ) : null}
+      ) : (
+        <p className="empty">Enter an interest to find people</p>
+      )}
     </div>
   );
 }

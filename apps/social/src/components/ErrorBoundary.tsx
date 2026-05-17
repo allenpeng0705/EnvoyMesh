@@ -2,6 +2,7 @@ import { Component, type ReactNode } from "react";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
+  /** Custom fallback content to show instead of the default error card */
   fallback?: ReactNode;
 }
 
@@ -31,16 +32,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
       return (
         <div className="error-boundary">
-          <h2>Something went wrong</h2>
-          <p style={{ color: "var(--color-text-muted)", marginBottom: "var(--space-4)" }}>
-            {this.state.error?.message ?? "An unexpected error occurred."}
-          </p>
-          {this.state.error?.stack && (
-            <pre>{this.state.error.stack}</pre>
-          )}
-          <button className="btn btn-primary" onClick={this.handleReset}>
-            Try Again
-          </button>
+          <div className="error-boundary-card">
+            <h2>Something went wrong</h2>
+            <p className="error-boundary-message">
+              {this.state.error?.message ?? "An unexpected error occurred."}
+            </p>
+            <button className="primary" onClick={this.handleReset}>
+              Try Again
+            </button>
+          </div>
         </div>
       );
     }

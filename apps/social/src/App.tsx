@@ -9,7 +9,6 @@ import { SearchView } from "./components/views/SearchView.js";
 import { ProfileView } from "./components/views/ProfileView.js";
 import { SettingsView } from "./components/views/SettingsView.js";
 import { InboxView } from "./components/views/InboxView.js";
-import { CloseIcon } from "./icons.js";
 
 export type ViewName = "chat" | "contacts" | "search" | "profile" | "settings" | "inbox";
 
@@ -34,10 +33,7 @@ export function App() {
   if (!isConnected) {
     return (
       <div className="app">
-        <div className="loading">
-          <div className="spinner" />
-          <p>Connecting to EnvoyMesh...</p>
-        </div>
+        <div className="loading">Connecting to Envoy...</div>
       </div>
     );
   }
@@ -67,28 +63,19 @@ export function App() {
 
       <ErrorBoundary>
         <main className="main">
-          {currentView === "chat" && <ChatView key="chat" />}
-          {currentView === "contacts" && <ContactsView key="contacts" />}
-          {currentView === "search" && <SearchView key="search" />}
-          {currentView === "profile" && <ProfileView key="profile" />}
-          {currentView === "settings" && <SettingsView key="settings" />}
-          {currentView === "inbox" && <InboxView key="inbox" />}
+          {currentView === "chat" && <ChatView />}
+          {currentView === "contacts" && <ContactsView />}
+          {currentView === "search" && <SearchView />}
+          {currentView === "profile" && <ProfileView />}
+          {currentView === "settings" && <SettingsView />}
+          {currentView === "inbox" && <InboxView />}
         </main>
       </ErrorBoundary>
 
-      {/* Floating hello requests panel */}
+      {/* Floating hello requests sidebar */}
       {!showInbox && pendingHellOs.length > 0 && currentView !== "inbox" && (
         <aside className="hello-requests">
-          <div className="hello-requests-header">
-            <h3>Hello Requests ({pendingHellOs.length})</h3>
-            <button
-              className="close-btn"
-              aria-label="Close"
-              onClick={() => setShowInbox(true)}
-            >
-              <CloseIcon size={18} />
-            </button>
-          </div>
+          <h3>Hello Requests ({pendingHellOs.length})</h3>
           {pendingHellOs.map((request) => (
             <div key={request.messageId} className="hello-card">
               <span className="avatar">{request.profile.displayName[0]}</span>

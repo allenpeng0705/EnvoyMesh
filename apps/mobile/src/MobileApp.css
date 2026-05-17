@@ -101,24 +101,6 @@ body {
   gap: 8px;
 }
 
-.top-bar-theme-btn {
-  background: none;
-  border: none;
-  border-radius: 6px;
-  padding: 4px;
-  cursor: pointer;
-  color: var(--color-text-muted, #64748b);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.15s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.top-bar-theme-btn:active {
-  opacity: 0.7;
-}
-
 .top-bar-peer {
   font-size: 11px;
   color: var(--color-text-muted, #64748b);
@@ -227,7 +209,7 @@ body {
 
 /* ---- Chat mobile overrides ---- */
 
-/* Stack sidebar above chat panel on mobile */
+/* Stack sidebar above chat area on mobile */
 .mobile-content .chat-view {
   display: flex;
   flex-direction: column;
@@ -241,8 +223,8 @@ body {
   border-bottom: 1px solid var(--color-border, #e2e8f0);
 }
 
-/* Chat panel takes remaining space */
-.mobile-content .chat-view .chat-panel {
+/* Chat area takes remaining space */
+.mobile-content .chat-view .chat-area {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -250,12 +232,12 @@ body {
 }
 
 /* Message bubbles */
-.mobile-content .chat-messages .chat-bubble {
+.mobile-content .chat-area .message {
   max-width: 85%;
 }
 
-/* Chat composer bar */
-.mobile-content .chat-composer {
+/* Chat input bar */
+.mobile-content .chat-input {
   padding: 8px 12px;
   padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
 }

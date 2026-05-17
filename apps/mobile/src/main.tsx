@@ -11,12 +11,9 @@ import { MobileNode } from "@envoymesh/mobile-node";
 import { createDirectCallClient } from "@envoymesh/social/lib/direct-call-client.js";
 import { NodeServiceProvider } from "@envoymesh/social/hooks/useNodeService.js";
 import { NodeStateProvider } from "@envoymesh/social/context/NodeStateContext.js";
-import { ThemeProvider } from "@envoymesh/social/context/ThemeContext.js";
 import { ErrorBoundary } from "@envoymesh/social/components/ErrorBoundary.js";
 import { MobileApp } from "./MobileApp.js";
-import "@envoymesh/social/styles-v2.css";
-import "@envoymesh/social/reset.css";
-import "@envoymesh/social/design-tokens.css";
+import "@envoymesh/social/styles.css";
 
 // ---------------------------------------------------------------------------
 // Bootstrap the in-process node before rendering
@@ -57,11 +54,9 @@ async function main(): Promise<void> {
   createRoot(document.getElementById("root")!).render(
     <NodeServiceProvider clientFactory={() => directClient}>
       <NodeStateProvider>
-        <ThemeProvider>
-          <ErrorBoundary>
-            <MobileApp />
-          </ErrorBoundary>
-        </ThemeProvider>
+        <ErrorBoundary>
+          <MobileApp />
+        </ErrorBoundary>
       </NodeStateProvider>
     </NodeServiceProvider>,
   );
