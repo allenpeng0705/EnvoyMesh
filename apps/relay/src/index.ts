@@ -414,6 +414,11 @@ try {
       }
     });
 
+    // Direct client WebSocket connections (mobile → relay direct envelope routing)
+    const directWss = new WebSocketServer({ noServer: true });
+    const directClients = new Map<WebSocket, string>(); // ws → peerId
+    const MAX_DIRECT_CLIENTS = 200;
+
     // WebSocket proxy for mobile client connections (Phase 10A relay bridge)
     const wss = new WebSocketServer({ noServer: true });
     const proxyConnByTarget = new Map<string, Set<WebSocket>>();
@@ -421,6 +426,20 @@ try {
 
     httpServer.on("upgrade", (req, socket, head) => {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+
+      // ---- /ws/client — direct client envelope routing (mobile standalone) ----
+      if (url.pathname === "/ws/client") {
+        if (directClients.size >= MAX_DIRECT_CLIENTS) {
+          socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\nToo many direct clients");
+          socket.destroy();
+          return;
+        }
+        directWss.handleUpgrade(req, socket, head, (ws) => {
+          handleDirectClientConnection(ws);
+        });
+        return;
+      }
+
       if (url.pathname !== "/ws") {
         socket.destroy();
         return;
@@ -592,6 +611,135 @@ try {
       });
 
       ws.on("error", () => {
+        ws.close();
+      });
+    }
+
+    /**
+     * Handle a direct client WebSocket connection (mobile standalone mode).
+     *
+     * The client sends EnvoyEnvelopes as JSON text frames. This handler routes
+     * them by intent — rendezvous.register, rendezvous.query, and relay.checkin.
+     * Responses are sent back as JSON on the same WebSocket.
+     */
+    function handleDirectClientConnection(ws: WebSocket): void {
+      let peerId = "";
+      directClients.set(ws, peerId);
+      const maxDirectClientConnections = MAX_DIRECT_CLIENTS;
+      console.log(`[relay] direct-client: connected (total=${directClients.size}/${maxDirectClientConnections})`);
+
+      ws.on("message", (raw: string | Buffer | ArrayBuffer | Buffer[]) => {
+        try {
+          const text = typeof raw === "string" ? raw : Buffer.isBuffer(raw) ? raw.toString("utf-8") :
+            Array.isArray(raw) ? Buffer.concat(raw).toString("utf-8") : new TextDecoder().decode(new Uint8Array(raw as ArrayBuffer));
+          const envelope = JSON.parse(text) as Record<string, unknown>;
+
+          // Size guard
+          if (text.length > MAX_ENVELOPE_BYTES) {
+            console.warn(`[relay] direct-client: payload too large ${text.length} > ${MAX_ENVELOPE_BYTES}`);
+            return;
+          }
+
+          // Track peer ID from checkin or envelope
+          const senderPeerId = (envelope.senderPeerId as string) ?? "";
+          if (senderPeerId && peerId !== senderPeerId) {
+            peerId = senderPeerId;
+            directClients.set(ws, peerId);
+          }
+
+          const intent = envelope.intent as string;
+          const payload = (envelope.payload as Record<string, unknown>) ?? {};
+
+          // ---- relay.checkin — track connected peer ----
+          if (intent === "relay.checkin") {
+            if (senderPeerId) {
+              peerId = senderPeerId;
+              directClients.set(ws, peerId);
+            }
+            return;
+          }
+
+          // ---- rendezvous.register — register capabilities ----
+          if (intent === "rendezvous.register") {
+            if (!checkRegistrationRateLimit(senderPeerId)) {
+              console.warn(`[relay] direct-client: rendezvous.register rate limited for ${senderPeerId}`);
+              return;
+            }
+            try {
+              const regPayload = parseRendezvousRegisterPayload(payload);
+              if (capabilityRegistry) {
+                capabilityRegistry.register(regPayload);
+              }
+              console.log(`[relay] direct-client: rendezvous.register from ${senderPeerId}`);
+            } catch (err) {
+              console.error(`[relay] direct-client: failed to parse rendezvous.register:`, err);
+            }
+            return;
+          }
+
+          // ---- rendezvous.query — search capabilities ----
+          if (intent === "rendezvous.query") {
+            try {
+              const queryPayload = parseRendezvousQueryPayload(payload);
+              const matches = capabilityRegistry ? capabilityRegistry.query(queryPayload) : [];
+              const responsePayload = createRendezvousResponsePayload({ matches });
+              const correlationId = (envelope.correlationId as string) ?? "";
+              const response = {
+                version: "0.1",
+                messageId: randomUUID(),
+                correlationId,
+                createdAt: new Date().toISOString(),
+                senderPeerId: mesh.peerId,
+                senderPublicKey: RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
+                senderRole: "agent",
+                recipientPeerId: senderPeerId,
+                recipientRole: "agent",
+                intent: "rendezvous.response",
+                signature: RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
+                payload: responsePayload,
+              };
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(response));
+              }
+              console.log(`[relay] direct-client: rendezvous.query from ${senderPeerId} → ${matches.length} matches`);
+            } catch (err) {
+              console.error(`[relay] direct-client: failed to handle rendezvous.query:`, err);
+              // Send empty response on error
+              try {
+                const responsePayload = createRendezvousResponsePayload({ matches: [] });
+                const response = {
+                  version: "0.1",
+                  messageId: randomUUID(),
+                  correlationId: (envelope.correlationId as string) ?? "",
+                  createdAt: new Date().toISOString(),
+                  senderPeerId: mesh.peerId,
+                  senderPublicKey: RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
+                  senderRole: "agent",
+                  recipientPeerId: senderPeerId,
+                  recipientRole: "agent",
+                  intent: "rendezvous.response",
+                  signature: RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
+                  payload: responsePayload,
+                };
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify(response));
+                }
+              } catch { /* ignore */ }
+            }
+            return;
+          }
+        } catch (err) {
+          console.warn(`[relay] direct-client: failed to parse message:`, err);
+        }
+      });
+
+      ws.on("close", () => {
+        directClients.delete(ws);
+        console.log(`[relay] direct-client: disconnected ${peerId ? peerId.slice(0, 12) + "..." : ""} (total=${directClients.size})`);
+      });
+
+      ws.on("error", () => {
+        directClients.delete(ws);
         ws.close();
       });
     }

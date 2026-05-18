@@ -1,1 +1,0 @@
-{"version":3,"file":"ContactChatPanel.d.ts","sourceRoot":"","sources":["ContactChatPanel.tsx"],"names":[],"mappings":"AAQA,UAAU,qBAAqB;IAC7B,eAAe,EAAE,MAAM,CAAC;IACxB,eAAe,EAAE,CAAC,EAAE,EAAE,MAAM,GAAG,IAAI,KAAK,IAAI,CAAC;CAC9C;AAED,wBAAgB,gBAAgB,CAAC,EAAE,eAAe,EAAE,EAAE,qBAAqB,2CAqK1E"}

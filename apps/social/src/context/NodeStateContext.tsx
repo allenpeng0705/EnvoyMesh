@@ -72,6 +72,7 @@ interface NodeStateValue {
   // Mutations
   setAppSettings: (settings: AppSettings) => void;
   refreshNodeConfig: () => Promise<void>;
+  refreshHumanProfile: () => Promise<void>;
   acceptHello: (messageId: string) => Promise<void>;
   declineHello: (messageId: string, reason?: string) => Promise<void>;
   setContactAiModes: (modes: Record<string, AssistantMode>) => void;
@@ -297,6 +298,15 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     }
   }, [nodeService]);
 
+  const refreshHumanProfile = useCallback(async () => {
+    try {
+      const profile = await nodeService.getHumanProfile();
+      if (profile) setHumanProfile(profile);
+    } catch (e) {
+      console.error("[NodeState] refreshHumanProfile failed:", e);
+    }
+  }, [nodeService]);
+
   const wrappedSetAppSettings = useCallback((settings: AppSettings) => {
     setAppSettings(settings);
     saveAppSettings(settings);
@@ -342,6 +352,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     contactAiModes,
     setAppSettings: wrappedSetAppSettings,
     refreshNodeConfig,
+    refreshHumanProfile,
     acceptHello,
     declineHello,
     setContactAiModes: wrappedSetContactAiModes,

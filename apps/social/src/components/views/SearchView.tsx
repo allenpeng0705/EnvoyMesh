@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { SUGGESTED_TOPICS } from "../../lib/display.js";
+import { SearchIcon } from "../../icons.js";
 import type { HelloProfile, PeerSearchResult } from "@envoymesh/api";
 
 export function SearchView() {
@@ -56,7 +57,7 @@ export function SearchView() {
 
   return (
     <div className="search-view">
-      <h2>Find People</h2>
+      <h2>Discover</h2>
       <div className="search-mode-tabs">
         <button
           className={searchMode === "interest" ? "active" : ""}
@@ -103,7 +104,7 @@ export function SearchView() {
       {isSearching && (
         <div className="search-status">
           <div className="search-status-content">
-            <span className="search-status-icon">🔍</span>
+            <span className="search-status-icon"><SearchIcon size={20} /></span>
             <div>
               <strong>Searching for "{searchQuery}"</strong>
               <p>Looking for peers with this interest...</p>
@@ -167,7 +168,13 @@ export function SearchView() {
           </small>
         </div>
       ) : (
-        <p className="empty">Enter an interest to find people</p>
+        <div className="empty-state">
+          <div className="empty-state-icon">
+            <SearchIcon size={40} />
+          </div>
+          <div className="empty-state-title">Discover people</div>
+          <div className="empty-state-desc">Find peers by interest, username, or Peer ID</div>
+        </div>
       )}
     </div>
   );

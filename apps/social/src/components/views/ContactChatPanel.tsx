@@ -1,14 +1,40 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
 import type { ChatMessage } from "@envoymesh/api";
 import type { AssistantMode } from "../../lib/storage.js";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { Markdown } from "../Markdown.js";
+import { EditIcon, ChatIcon, BridgeIcon } from "../../icons.js";
 
 interface ContactChatPanelProps {
   selectedContact: string;
   onSelectContact: (id: string | null) => void;
+}
+
+// ---- Date formatting helpers ----
+
+function fmtDateLabel(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+  const msgDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  if (msgDate.getTime() === today.getTime()) return "Today";
+  if (msgDate.getTime() === yesterday.getTime()) return "Yesterday";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function groupMessagesByDate(msgs: ChatMessage[]): [string, ChatMessage[]][] {
+  const groups = new Map<string, ChatMessage[]>();
+  for (const msg of msgs) {
+    const key = new Date(msg.metadata.timestamp).toLocaleDateString();
+    const arr = groups.get(key);
+    if (arr) arr.push(msg);
+    else groups.set(key, [msg]);
+  }
+  return [...groups.entries()];
 }
 
 export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
@@ -95,6 +121,9 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   const isAutoAllowed = aiAccessLevel === "full" && (nodeConfig?.autonomousPolicies ?? []).some(p => p.domain === "social" && p.autoSendChat);
   const isChatAssistEnabled = nodeConfig?.chatAssistEnabled ?? false;
 
+  // Group messages by date for date separators
+  const messageGroups = useMemo(() => groupMessagesByDate(messages), [messages]);
+
   return (
     <>
       <header className="chat-header has-assistant-switch">
@@ -119,7 +148,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
               className={`assistant-switch-btn ${currentAiMode === "manual" ? "active" : ""}`}
               title="Manual: Type yourself"
               onClick={() => setContactAiModes({ ...contactAiModes, [selectedContact]: "manual" })}
-            >✏️</button>
+            ><EditIcon size={16} /></button>
             <button
               className={`assistant-switch-btn ${currentAiMode === "assistant" ? "active" : ""} ${!isAssistantAllowed || !isChatAssistEnabled ? "disabled" : ""}`}
               title={!isAssistantAllowed ? "Assistant mode requires AI access for this contact" : isChatAssistEnabled ? "Assistant: AI suggests drafts" : "Chat Assist is disabled"}
@@ -127,7 +156,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
                 if (!isAssistantAllowed || !isChatAssistEnabled) return;
                 setContactAiModes({ ...contactAiModes, [selectedContact]: "assistant" });
               }}
-            >💬</button>
+            ><ChatIcon size={16} /></button>
             <button
               className={`assistant-switch-btn ${currentAiMode === "auto" ? "active" : ""} ${!isAutoAllowed ? "disabled" : ""}`}
               title={isAutoAllowed ? "Auto-Reply: AI responds automatically" : "Auto-Reply requires full AI access for this contact"}
@@ -135,24 +164,35 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
                 if (!isAutoAllowed) return;
                 setContactAiModes({ ...contactAiModes, [selectedContact]: "auto" });
               }}
-            >🔄</button>
+            ><BridgeIcon size={16} /></button>
           </div>
         </div>
       </header>
       <div className="messages">
         {messages.length === 0 ? (
-          <p className="empty">No messages yet. Say hello!</p>
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <ChatIcon size={40} />
+            </div>
+            <div className="empty-state-title">No messages yet</div>
+            <div className="empty-state-desc">Say hello to start the conversation</div>
+          </div>
         ) : (
-          messages.map((msg) => {
-            const outgoing = isOutgoing(msg);
-            return (
-              <div key={msg.messageId} className={`message ${outgoing ? "outgoing" : "incoming"}`}>
-                {!outgoing && <span className="message-sender">{peerDisplayLabel(msg.sender)}</span>}
-                <Markdown text={msg.content.text} className="message-text" />
-                <span className="message-time">{new Date(msg.metadata.timestamp).toLocaleTimeString()}</span>
-              </div>
-            );
-          })
+          messageGroups.map(([dateKey, msgs]) => (
+            <div key={dateKey}>
+              <div className="date-separator"><span>{fmtDateLabel(msgs[0].metadata.timestamp)}</span></div>
+              {msgs.map((msg) => {
+                const outgoing = isOutgoing(msg);
+                return (
+                  <div key={msg.messageId} className={`message ${outgoing ? "outgoing" : "incoming"}`}>
+                    {!outgoing && <span className="message-sender">{peerDisplayLabel(msg.sender)}</span>}
+                    <Markdown text={msg.content.text} className="message-text" />
+                    <span className="message-time">{new Date(msg.metadata.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ))
         )}
         <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
       </div>
@@ -168,6 +208,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
               void handleSendMessage();
             }
           }}
+          enterKeyHint="send"
           disabled={isSendingChat}
         />
         <button type="button" onClick={() => void handleSendMessage()} disabled={isSendingChat || !chatInput.trim()}>

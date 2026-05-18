@@ -55,6 +55,7 @@ import type {
   NodeService,
   NodeServiceEvents,
   PairSharedIdentityResult,
+  PeerSearchResult,
 } from "@envoymesh/api";
 function _randomUUID(): string { return crypto.randomUUID(); }
 
@@ -154,6 +155,7 @@ export class MobileNode implements NodeService {
   private _lastActivity = 0;
   private _manualOnline = true;
   private _humanProfile: HumanProfile | undefined;
+  private _pendingQueries = new Map<string, { resolve: (r: PeerSearchResult[]) => void; timer: ReturnType<typeof setTimeout> }>();
   constructor(config: MobileNodeConfig) {
     this._profileDir = config.profileDir;
     this._relayUrls = [...config.relayUrls];
@@ -553,6 +555,8 @@ export class MobileNode implements NodeService {
       // Persist the new standalone identity so it survives app restarts
       this._persistCurrentIdentity(false).catch(() => {});
     }
+    // Load cached profile if available (survives app restarts)
+    this._loadCachedProfile();
     return {
       profileDir: this._profileDir,
       peerId: this._state.agent.agentPeerId,
@@ -622,7 +626,24 @@ export class MobileNode implements NodeService {
     const signature = signCanonicalPayload(unsigned, this._state.owner.privateKeyPem);
     const profile: HumanProfile = { ...unsigned, signature };
     this._humanProfile = profile;
+    // Persist to localStorage so it survives app restarts
+    try {
+      localStorage.setItem(
+        `envoymesh_profile_${this._state.owner.ownerId}`,
+        JSON.stringify(profile),
+      );
+    } catch { /* localStorage may be unavailable */ }
     return profile;
+  }
+
+  private _loadCachedProfile(): void {
+    if (!this._state) return;
+    try {
+      const raw = localStorage.getItem(`envoymesh_profile_${this._state.owner.ownerId}`);
+      if (raw) {
+        this._humanProfile = JSON.parse(raw) as HumanProfile;
+      }
+    } catch { /* ignore parse errors */ }
   }
 
   // -----------------------------------------------------------------------
@@ -712,7 +733,110 @@ export class MobileNode implements NodeService {
   // Search
   // -----------------------------------------------------------------------
 
-  async searchPeers(_query: any): Promise<any[]> { return []; }
+  async searchPeers(query: {
+    peerId?: string;
+    queryText?: string;
+    username?: string;
+    interests?: string[];
+  }): Promise<PeerSearchResult[]> {
+    // 1. Search local trust store (bonded peers)
+    const bonds = await this._trustStore.list();
+    let results: BondRecord[] = bonds;
+
+    // Filter by peer ID if provided
+    if (query.peerId) {
+      const q = query.peerId.toLowerCase();
+      results = results.filter(
+        (b) =>
+          b.libp2pPeerId?.toLowerCase() === q ||
+          b.peerOwnerId?.toLowerCase() === q,
+      );
+    }
+
+    // Filter by text search (displayName, note)
+    const textQuery =
+      query.queryText?.toLowerCase().trim() ||
+      query.username?.toLowerCase().trim() ||
+      query.interests?.[0]?.toLowerCase().trim();
+
+    if (textQuery) {
+      results = results.filter(
+        (b) =>
+          b.displayName?.toLowerCase().includes(textQuery) ||
+          b.peerOwnerId?.toLowerCase().includes(textQuery) ||
+          b.note?.toLowerCase().includes(textQuery),
+      );
+    }
+
+    const localResults: PeerSearchResult[] = results.map((b) => ({
+      nodeId: b.libp2pPeerId ?? b.peerOwnerId,
+      ownerId: b.peerOwnerId,
+      displayName: b.displayName ?? b.peerOwnerId.slice(0, 12) + "...",
+      interests: [],
+      profileVisibility: "public" as const,
+    }));
+
+    // 2. Query relay network for more peers (rendezvous query)
+    if (this._relaySockets.length > 0 && this._relaySockets.some((ws) => ws.readyState === WebSocket.OPEN)) {
+      const relayResults = await this._searchRelayRendezvous(query);
+      // Merge with local results, deduplicating by ownerId
+      const seen = new Set(localResults.map((r) => r.ownerId));
+      for (const rr of relayResults) {
+        if (!seen.has(rr.ownerId)) {
+          localResults.push(rr);
+          seen.add(rr.ownerId);
+        }
+      }
+    }
+
+    return localResults;
+  }
+
+  /** Send a rendezvous.query to the relay and wait for rendezvous.response. */
+  private _searchRelayRendezvous(query: {
+    peerId?: string;
+    queryText?: string;
+    username?: string;
+    interests?: string[];
+  }): Promise<PeerSearchResult[]> {
+    return new Promise((resolve) => {
+      if (!this._state?.agent) { resolve([]); return; }
+
+      const queryId = _randomUUID();
+      const searchTag = query.peerId ?? query.queryText ?? query.interests?.[0] ?? query.username ?? "";
+
+      // Timeout after 5s
+      const timer = setTimeout(() => {
+        this._pendingQueries.delete(queryId);
+        resolve([]);
+      }, 5000);
+
+      this._pendingQueries.set(queryId, { resolve, timer });
+
+      // Build and send signed rendezvous.query envelope
+      const unsigned = createUnsignedEnvelope({
+        intent: "rendezvous.query",
+        senderPeerId: this._state.agent.agentPeerId,
+        senderPublicKey: this._state.agent.publicKeyPem,
+        senderRole: "agent",
+        recipientRole: "system",
+        correlationId: queryId,
+        payload: {
+          match: searchTag ? { tag: searchTag.toLowerCase() } : {},
+          maxResults: 20,
+        },
+      });
+      const signed = signUnsignedEnvelope(unsigned, this._state.agent.privateKeyPem);
+      const data = JSON.stringify(signed);
+
+      for (const ws of this._relaySockets) {
+        if (ws.readyState === WebSocket.OPEN) {
+          try { ws.send(data); } catch { /* ignore */ }
+        }
+      }
+    });
+  }
+
   async advertiseTopic(_topic: string): Promise<void> { /* TODO */ }
   async stopAdvertiseTopic(_topic: string): Promise<void> { /* TODO */ }
 
@@ -841,7 +965,10 @@ export class MobileNode implements NodeService {
   private _connectRelays(): void {
     for (const url of this._relayUrls) {
       try {
-        const ws = new WebSocket(url);
+        // Ensure the relay WebSocket uses the /ws/client path for direct
+        // envelope routing (not the /ws proxy path which requires a target).
+        const wsUrl = url.includes("/ws/client") ? url : url.replace(/\/+$/, "") + "/ws/client";
+        const ws = new WebSocket(wsUrl);
         ws.onopen = () => {
           // Send immediate relay checkin on connect
           this._sendRelayCheckin(ws);
@@ -924,6 +1051,25 @@ export class MobileNode implements NodeService {
           peerOwnerId: (msg.senderPeerId as string) ?? "",
           displayName: (msg.senderPeerId as string) ?? "",
         });
+      } else if (intent === "rendezvous.response") {
+        // Handle relay search response
+        const correlationId = (msg.correlationId as string) ?? "";
+        const pending = this._pendingQueries.get(correlationId);
+        if (pending) {
+          clearTimeout(pending.timer);
+          this._pendingQueries.delete(correlationId);
+          const matches = (payload.matches as any[]) ?? [];
+          pending.resolve(
+            matches.map((m: any) => ({
+              nodeId: (m.peerId as string) ?? "",
+              ownerId: (m.ownerId as string) ?? (m.peerId as string) ?? "",
+              displayName: (m.displayName as string) ?? (m.peerId as string)?.slice(0, 12) ?? "",
+              interests: (m.capabilities as any[])?.filter((c: any) => c.tag)
+                .map((c: any) => c.tag as string) ?? [],
+              profileVisibility: "public" as const,
+            })),
+          );
+        }
       }
       return;
     }

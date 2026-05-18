@@ -5,8 +5,8 @@ import type {
   ContactAiPreferences,
   HelloProfile,
 } from "@envoymesh/api";
-import type { AssistantMode } from "../../lib/storage.js";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
+import { ChatIcon, BridgeIcon } from "../../icons.js";
 
 interface ChatSidebarProps {
   selectedContact: string | null;
@@ -26,8 +26,6 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
     acceptHello,
     declineHello,
     clearPendingMessages,
-    contactAiModes,
-    setContactAiModes,
   } = useNodeState();
 
   const [contextMenu, setContextMenu] = useState<{ ownerId: string; x: number; y: number } | null>(null);
@@ -78,63 +76,23 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
     } catch (e) { console.error(e); }
   };
 
+  const totalPending = pendingHellOs.length + pendingMessages.length;
+
   return (
     <aside className="contact-list">
       <div className="contact-list-header">
-        <h3>Contacts</h3>
-        <span className="inbox-count">{pendingHellOs.length} pending</span>
-      </div>
-
-      {/* Inbox section */}
-      <div className="inbox-section">
-        <h4>Inbox <button className="clear-btn small" onClick={() => {
-          // Hello requests are managed by useHelloRequests; view-level clearing
-        }}>Clear All</button></h4>
-        {pendingHellOs.length === 0 ? (
-          <p className="empty inbox-empty-text">No pending requests</p>
-        ) : (
-          pendingHellOs.map((request) => (
-            <div key={request.messageId} className="inbox-mini-card">
-              <span className="avatar small">{request.profile.displayName[0]}</span>
-              <div className="inbox-mini-info">
-                <strong>{request.profile.displayName}</strong>
-                <span className="owner-id">{request.sender.ownerId.slice(0, 12)}...</span>
-              </div>
-              <div className="inbox-mini-actions">
-                <button className="accept small" onClick={() => handleAcceptHello(request.messageId)}>✓</button>
-                <button className="decline small" onClick={() => handleDeclineHello(request.messageId)}>✗</button>
-              </div>
-            </div>
-          ))
+        <h3>Chats</h3>
+        {totalPending > 0 && (
+          <span className="inbox-count">{totalPending} new</span>
         )}
       </div>
-
-      {/* Pending messages from unbonded peers */}
-      {pendingMessages.length > 0 && (
-        <div className="pending-messages-section">
-          <h4>Pending Messages <button className="clear-btn small" onClick={clearPendingMessages}>Clear All</button></h4>
-          {pendingMessages.map((msg) => (
-            <div key={msg.messageId} className="pending-message-card">
-              <span className="avatar small">{peerDisplayLabel(msg.sender).charAt(0) || "?"}</span>
-              <div className="pending-message-info">
-                <strong>{peerDisplayLabel(msg.sender)}</strong>
-                <span className="message-preview">{msg.content?.text?.slice(0, 30)}...</span>
-              </div>
-              <button className="say-hello-btn small"
-                onClick={() => handleSayHello(msg.sender.ownerId ?? msg.sender.nodeId)}>
-                Say Hello
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Envoy AI contact */}
       <button
         className={`${selectedContact === "__envoy_ai__" ? "active" : ""}`}
         onClick={() => onSelectContact("__envoy_ai__")}
       >
-        <span className="avatar">AI</span>
+        <span className="avatar ai-avatar">AI</span>
         <span className="name">Envoy AI</span>
       </button>
 
@@ -149,30 +107,78 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
         </button>
       )}
 
+      {/* Pending Hello requests — shown inline as contact list items */}
+      {pendingHellOs.length > 0 && (
+        <>
+          <div className="contact-list-section-label">
+            Requests ({pendingHellOs.length})
+          </div>
+          {pendingHellOs.map((request) => (
+            <button
+              key={request.messageId}
+              className="pending-contact"
+              onClick={() => handleAcceptHello(request.messageId)}
+            >
+              <span className="avatar">{request.profile.displayName[0]}</span>
+              <div className="name-group">
+                <span className="name">{request.profile.displayName}</span>
+                <span className="preview">Tap to accept</span>
+              </div>
+            </button>
+          ))}
+        </>
+      )}
+
+      {/* Pending messages from unbonded peers — shown inline in contact list */}
+      {pendingMessages.length > 0 && (
+        <>
+          <div className="contact-list-section-label">Pending</div>
+          {pendingMessages.map((msg) => (
+            <button
+              key={msg.messageId}
+              className="pending-contact"
+              onClick={() => handleSayHello(msg.sender.ownerId ?? msg.sender.nodeId)}
+            >
+              <span className="avatar">{peerDisplayLabel(msg.sender).charAt(0) || "?"}</span>
+              <div className="name-group">
+                <span className="name">{peerDisplayLabel(msg.sender)}</span>
+                <span className="preview">{msg.content?.text?.slice(0, 40) ?? ""}</span>
+              </div>
+            </button>
+          ))}
+          <button className="clear-pending-btn" onClick={clearPendingMessages}>
+            Clear all
+          </button>
+        </>
+      )}
+
       {/* Bonded contacts */}
       {bonds.length === 0 && pendingHellOs.length === 0 && pendingMessages.length === 0 ? (
-        <p className="empty">No contacts yet. Search to find people!</p>
+        <div className="empty-state">
+          <div className="empty-state-icon">
+            <ChatIcon size={32} />
+          </div>
+          <div className="empty-state-title">No contacts yet</div>
+          <div className="empty-state-desc">Search to find people and start connecting</div>
+        </div>
       ) : (
-        bonds.map((contact) => (
-          <button
-            key={contact.peerOwnerId}
-            className={selectedContact === contact.peerOwnerId ? "active" : ""}
-            onClick={() => onSelectContact(contact.peerOwnerId)}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setContextMenu({ ownerId: contact.peerOwnerId, x: e.clientX, y: e.clientY });
-            }}
-          >
-            <span className="avatar">{contact.displayName?.[0] ?? "?"}</span>
-            <span className="name">{contactLabel(contact)}</span>
-            {getContactAiAccessLevel(contact.peerOwnerId) === "full" && (
-              <span className="ai-access-badge" title="Full AI Access">🔄</span>
-            )}
-            {getContactAiAccessLevel(contact.peerOwnerId) === "assistant_only" && (
-              <span className="ai-access-badge" title="Assistant Only">💬</span>
-            )}
-          </button>
-        ))
+        <>
+          <div className="contact-list-section-label">Contacts</div>
+          {bonds.map((contact) => (
+            <button
+              key={contact.peerOwnerId}
+              className={selectedContact === contact.peerOwnerId ? "active" : ""}
+              onClick={() => onSelectContact(contact.peerOwnerId)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setContextMenu({ ownerId: contact.peerOwnerId, x: e.clientX, y: e.clientY });
+              }}
+            >
+              <span className="avatar">{contact.displayName?.[0] ?? "?"}</span>
+              <span className="name">{contactLabel(contact)}</span>
+            </button>
+          ))}
+        </>
       )}
 
       {/* Context menu for AI access level */}
@@ -195,8 +201,8 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
                 }}
               >
                 {level === "none" && "○ None — AI never responds"}
-                {level === "assistant_only" && "💬 Assistant Only — Draft suggestions only"}
-                {level === "full" && "🔄 Full Auto-Reply — AI can respond automatically"}
+                {level === "assistant_only" && <><ChatIcon size={14} /> Assistant Only — Draft suggestions only</>}
+                {level === "full" && <><BridgeIcon size={14} /> Full Auto-Reply — AI can respond automatically</>}
               </div>
             );
           })}

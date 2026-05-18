@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { ChatSidebar } from "./ChatSidebar.js";
 import { AIChatPanel } from "./AIChatPanel.js";
 import { ContactChatPanel } from "./ContactChatPanel.js";
+import { ChatIcon } from "../../icons.js";
 
 /**
  * ChatView is a layout shell that manages `selectedContact` state and
@@ -31,7 +32,11 @@ export function ChatView() {
           />
         ) : (
           <div className="no-chat-selected">
-            <p>Select a contact or Envoy AI to start chatting</p>
+            <div className="no-chat-selected-icon">
+              <ChatIcon size={48} />
+            </div>
+            <h3>Select a contact</h3>
+            <p>Choose a contact from the list or start a conversation with Envoy AI</p>
           </div>
         )}
       </section>

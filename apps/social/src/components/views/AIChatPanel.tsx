@@ -1,12 +1,36 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { Markdown } from "../Markdown.js";
+import { ChatIcon } from "../../icons.js";
 
 interface AiMessage {
   role: "user" | "ai";
   text: string;
   timestamp: string;
+}
+
+function fmtDateLabel(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+  const msgDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  if (msgDate.getTime() === today.getTime()) return "Today";
+  if (msgDate.getTime() === yesterday.getTime()) return "Yesterday";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function groupByDate(msgs: AiMessage[]): [string, AiMessage[]][] {
+  const groups = new Map<string, AiMessage[]>();
+  for (const msg of msgs) {
+    const key = new Date(msg.timestamp).toLocaleDateString();
+    const arr = groups.get(key);
+    if (arr) arr.push(msg);
+    else groups.set(key, [msg]);
+  }
+  return [...groups.entries()];
 }
 
 export function AIChatPanel() {
@@ -16,6 +40,8 @@ export function AIChatPanel() {
   const [aiMessages, setAiMessages] = useState<AiMessage[]>([]);
   const [aiInput, setAiInput] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
+
+  const messageGroups = useMemo(() => groupByDate(aiMessages), [aiMessages]);
 
   const sendAiMessage = async (question: string) => {
     if (!question.trim() || isAiLoading) return;
@@ -48,9 +74,12 @@ export function AIChatPanel() {
       </header>
       <div className="ai-messages">
         {aiMessages.length === 0 ? (
-          <div className="ai-empty">
-            <p>Chat with your AI assistant</p>
-            <small>Ask questions, get help with tasks, or just have a conversation</small>
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <ChatIcon size={40} />
+            </div>
+            <div className="empty-state-title">Chat with your AI assistant</div>
+            <div className="empty-state-desc">Ask questions, get help with tasks, or just have a conversation</div>
             <div className="ai-suggestions">
               <button onClick={() => setAiInput("What can you help me with?")}>What can you help me with?</button>
               <button onClick={() => setAiInput("Summarize my recent conversations")}>Summarize my recent conversations</button>
@@ -58,10 +87,15 @@ export function AIChatPanel() {
             </div>
           </div>
         ) : (
-          aiMessages.map((msg, i) => (
-            <div key={i} className={`ai-message ${msg.role}`}>
-              <span className="ai-message-role">{msg.role === "user" ? "You" : "AI"}</span>
-              <Markdown text={msg.text} className="ai-message-text" />
+          messageGroups.map(([dateKey, msgs]) => (
+            <div key={dateKey}>
+              <div className="date-separator"><span>{fmtDateLabel(msgs[0].timestamp)}</span></div>
+              {msgs.map((msg, i) => (
+                <div key={i} className={`ai-message ${msg.role}`}>
+                  <span className="ai-message-role">{msg.role === "user" ? "You" : "AI"}</span>
+                  <Markdown text={msg.text} className="ai-message-text" />
+                </div>
+              ))}
             </div>
           ))
         )}

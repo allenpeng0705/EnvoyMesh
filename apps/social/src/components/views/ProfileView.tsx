@@ -2,61 +2,9 @@ import { useState, useRef } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { SUGGESTED_TOPICS } from "../../lib/display.js";
+import { PRESET_CAPABILITY_GROUPS, type Capability } from "../../lib/profile.js";
+import { PublicIcon, PrivateIcon } from "../../icons.js";
 import type { HumanProfile, CreateHumanProfileInput } from "@envoymesh/api";
-
-// ---- Preset capability groups (same as original App.tsx) ----
-
-type CapabilityTag = { tag: string };
-type CapabilityType = { type: string; params?: Record<string, unknown>; confidence?: number };
-type CapabilityDescriptor = { descriptor: string };
-type Capability = CapabilityTag | CapabilityType | CapabilityDescriptor;
-
-interface PresetCapabilityGroup {
-  label: string;
-  capabilities: Array<{ tag: string; label: string; description?: string }>;
-}
-
-const PRESET_CAPABILITY_GROUPS: PresetCapabilityGroup[] = [
-  {
-    label: "Services",
-    capabilities: [
-      { tag: "document-search", label: "Document Search", description: "Can search and retrieve documents" },
-      { tag: "coding-help", label: "Coding Help", description: "Assists with programming tasks" },
-      { tag: "translation", label: "Translation", description: "Language translation service" },
-      { tag: "data-analysis", label: "Data Analysis", description: "Analyzes and visualizes data" },
-    ],
-  },
-  {
-    label: "Languages",
-    capabilities: [
-      { tag: "lang:en", label: "English" },
-      { tag: "lang:zh", label: "Chinese" },
-      { tag: "lang:es", label: "Spanish" },
-      { tag: "lang:fr", label: "French" },
-      { tag: "lang:de", label: "German" },
-      { tag: "lang:ja", label: "Japanese" },
-    ],
-  },
-  {
-    label: "Expertise",
-    capabilities: [
-      { tag: "expertise:python", label: "Python" },
-      { tag: "expertise:javascript", label: "JavaScript" },
-      { tag: "expertise:typescript", label: "TypeScript" },
-      { tag: "expertise:rust", label: "Rust" },
-      { tag: "expertise:go", label: "Go" },
-      { tag: "expertise:ai", label: "AI/ML" },
-    ],
-  },
-  {
-    label: "Resources",
-    capabilities: [
-      { tag: "vault-access:finance", label: "Finance Vault" },
-      { tag: "vault-access:legal", label: "Legal Vault" },
-      { tag: "compute-gpu", label: "GPU Compute" },
-    ],
-  },
-];
 
 interface ProfileEditForm {
   displayName: string;
@@ -70,7 +18,7 @@ interface ProfileEditForm {
 
 export function ProfileView() {
   const nodeService = useNodeService();
-  const { humanProfile, nodeStatus, peerId, bonds, connectionStatus, refreshNodeConfig } = useNodeState();
+  const { humanProfile, nodeStatus, peerId, bonds, connectionStatus, refreshNodeConfig, refreshHumanProfile } = useNodeState();
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -118,12 +66,8 @@ export function ProfileView() {
         profileVisibility: profileEditForm.profileVisibility,
         capabilities: selectedCapabilities,
       } satisfies CreateHumanProfileInput);
+      await refreshHumanProfile();
       await refreshNodeConfig();
-      await nodeService.getHumanProfile().then((p) => {
-        if (p) {
-          // Update is handled by context refresh, but we reset form
-        }
-      }).catch(() => {});
       setIsEditingProfile(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to update profile";
@@ -238,7 +182,7 @@ export function ProfileView() {
                 className={profileEditForm.profileVisibility === "public" ? "active public" : ""}
                 onClick={() => setProfileEditForm({ ...profileEditForm, profileVisibility: "public" })}
               >
-                <span className="visibility-icon">🌐</span>
+                <span className="visibility-icon"><PublicIcon size={20} /></span>
                 <span className="visibility-label">Public</span>
                 <small>Advertise to network for discovery</small>
               </button>
@@ -247,7 +191,7 @@ export function ProfileView() {
                 className={profileEditForm.profileVisibility === "private" ? "active private" : ""}
                 onClick={() => setProfileEditForm({ ...profileEditForm, profileVisibility: "private" })}
               >
-                <span className="visibility-icon">🔒</span>
+                <span className="visibility-icon"><PrivateIcon size={20} /></span>
                 <span className="visibility-label">Private</span>
                 <small>Only visible to bonded peers</small>
               </button>
@@ -376,7 +320,14 @@ export function ProfileView() {
   return (
     <div className="profile-view">
       <div className="profile-display">
-        <div className="profile-header">
+        <div
+          className="profile-header profile-header--tappable"
+          onClick={() => setIsEditingProfile(true)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setIsEditingProfile(true); }}
+          aria-label="Edit profile"
+        >
           <div className="profile-avatar">
             {humanProfile?.displayName?.[0] ?? humanProfile?.username?.[0] ?? connectionInfo.peerId?.[0] ?? "?"}
           </div>
@@ -389,26 +340,27 @@ export function ProfileView() {
               <button
                 className="copy-id-btn"
                 type="button"
-                onClick={() => peerId && !peerId.startsWith("envoy_") && navigator.clipboard.writeText(peerId)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (peerId && !(peerId.startsWith("envoy_") && !peerId.startsWith("envoy_agent_"))) navigator.clipboard.writeText(peerId);
+                }}
                 title="Copy network peer ID (libp2p)"
-                disabled={!peerId || peerId.startsWith("envoy_")}
+                disabled={!peerId || (peerId.startsWith("envoy_") && !peerId.startsWith("envoy_agent_"))}
               >
-                {peerId && !peerId.startsWith("envoy_")
+                {peerId && !(peerId.startsWith("envoy_") && !peerId.startsWith("envoy_agent_"))
                   ? `${peerId.slice(0, 12)}\u2026 (copy)`
                   : "Network ID loading\u2026"}
               </button>
             </p>
           </div>
+          <span className="profile-chevron" aria-hidden="true">&#8250;</span>
         </div>
-        <div className="profile-actions">
-          <button onClick={() => setIsEditingProfile(true)} className="btn-primary">
-            Edit Profile
-          </button>
-        </div>
-        <div className="profile-section">
-          <h3>About</h3>
-          <p className="profile-bio">{humanProfile?.bio || "No bio yet"}</p>
-        </div>
+        {humanProfile?.bio && (
+          <div className="profile-section">
+            <h3>About</h3>
+            <p className="profile-bio">{humanProfile.bio}</p>
+          </div>
+        )}
         {humanProfile?.gender && (
           <div className="profile-section">
             <h3>Gender</h3>
@@ -418,7 +370,6 @@ export function ProfileView() {
         {(humanProfile?.hobbies?.length ?? 0) > 0 || (humanProfile?.knowledge?.length ?? 0) > 0 || advertisedTopics.length > 0 ? (
           <div className="profile-section">
             <h3>Interests</h3>
-            <p className="profile-hint">Your interests help others discover you in search. Dashed tags are advertised for DHT discovery.</p>
             <div className="profile-tags">
               {humanProfile?.hobbies?.map((h: string, i: number) => (
                 <span key={`h-${i}`} className="tag">{h}</span>
@@ -435,7 +386,6 @@ export function ProfileView() {
         {(humanProfile?.capabilities?.length ?? 0) > 0 || selectedCapabilities.length > 0 ? (
           <div className="profile-section">
             <h3>Capabilities</h3>
-            <p className="profile-hint">Your advertised capabilities for rendezvous-based peer discovery.</p>
             <div className="profile-tags">
               {(humanProfile?.capabilities ?? selectedCapabilities).map((cap: Capability, i: number) => {
                 const label = "tag" in cap ? cap.tag : "type" in cap ? cap.type : "descriptor" in cap ? cap.descriptor : "";
@@ -448,14 +398,21 @@ export function ProfileView() {
         ) : null}
         <div className="profile-section">
           <h3>Connection</h3>
-          <p className="profile-hint">Libp2p network address for this device — not the same as Envoy owner or envelope ids.</p>
           <dl className="profile-info">
-            <dt>Network peer ID</dt>
-            <dd><code className="peer-id-display">{peerId && !peerId.startsWith("envoy_") ? peerId : "\u2014"}</code></dd>
-            <dt>Node Status</dt>
-            <dd>{nodeStatus}</dd>
-            <dt>Connected Peers</dt>
-            <dd>{bonds.length}</dd>
+            <div className="profile-info-row">
+              <dt>Status</dt>
+              <dd className={nodeStatus === "running" ? "text-success" : ""}>{nodeStatus}</dd>
+            </div>
+            {peerId && !(peerId.startsWith("envoy_") && !peerId.startsWith("envoy_agent_")) && (
+              <div className="profile-info-row">
+                <dt>Peer ID</dt>
+                <dd><code className="peer-id-display">{peerId}</code></dd>
+              </div>
+            )}
+            <div className="profile-info-row">
+              <dt>Bonded Peers</dt>
+              <dd>{bonds.length}</dd>
+            </div>
           </dl>
         </div>
       </div>

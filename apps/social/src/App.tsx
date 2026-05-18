@@ -25,7 +25,6 @@ export function App() {
   } = useNodeState();
 
   const [currentView, setCurrentView] = useState<ViewName>("chat");
-  const [showInbox, setShowInbox] = useState(false);
 
   const isPublicNetwork = (nodeConfig?.bootstrapPresets ?? []).length > 0;
 
@@ -48,10 +47,7 @@ export function App() {
     <div className="app">
       <Header
         currentView={currentView}
-        onNavigate={(v) => {
-          setCurrentView(v);
-          if (v === "inbox") setShowInbox(true);
-        }}
+        onNavigate={(v) => { setCurrentView(v); }}
         inboxCount={pendingHellOs.length}
         bondsCount={bonds.length}
         isPublicNetwork={isPublicNetwork}
@@ -72,22 +68,6 @@ export function App() {
         </main>
       </ErrorBoundary>
 
-      {/* Floating hello requests sidebar */}
-      {!showInbox && pendingHellOs.length > 0 && currentView !== "inbox" && (
-        <aside className="hello-requests">
-          <h3>Hello Requests ({pendingHellOs.length})</h3>
-          {pendingHellOs.map((request) => (
-            <div key={request.messageId} className="hello-card">
-              <span className="avatar">{request.profile.displayName[0]}</span>
-              <div className="hello-info">
-                <strong>{request.profile.displayName}</strong>
-                {request.profile.bio && <p>{request.profile.bio}</p>}
-                <span className="interests">{request.profile.interests.join(", ")}</span>
-              </div>
-            </div>
-          ))}
-        </aside>
-      )}
     </div>
   );
 }

@@ -6,11 +6,12 @@
  * --------------------------------------------------------------------------- */
 
 /* ---- Reset & viewport ---- */
-html, body {
+html, body, #root {
   margin: 0;
   padding: 0;
+  height: 100%;
+  overflow: hidden;
   overscroll-behavior: none;
-  -webkit-overflow-scrolling: touch;
 }
 
 body {
@@ -22,10 +23,8 @@ body {
 .mobile-app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  height: 100dvh;
+  height: 100%;
   background: var(--color-bg, #f8fafc);
-  overflow: hidden;
 }
 
 /* ---- Loading / Setup states ---- */
@@ -45,7 +44,7 @@ body {
   width: 32px;
   height: 32px;
   border: 3px solid var(--color-border, #e2e8f0);
-  border-top-color: var(--color-primary, #6366f1);
+  border-top-color: var(--color-primary, #07C160);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -59,12 +58,16 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
-  padding-top: max(8px, env(safe-area-inset-top, 0px));
-  background: var(--color-surface, #fff);
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
   flex-shrink: 0;
+  padding: 0 16px;
+  padding-top: env(safe-area-inset-top, 0px);
   min-height: 44px;
+  background: var(--color-surface, #ffffff);
+  border-bottom: 0.5px solid var(--color-border-subtle, #f1f5f9);
+}
+
+:root[data-theme="dark"] .top-bar {
+  background: var(--color-surface, #0f172a);
 }
 
 .top-bar-left {
@@ -76,7 +79,7 @@ body {
 .top-bar-logo {
   width: 28px;
   height: 28px;
-  background: linear-gradient(135deg, var(--color-primary, #6366f1), #818cf8);
+  background: linear-gradient(135deg, var(--color-primary, #07C160), #2DD4A8);
   border-radius: 7px;
   display: flex;
   align-items: center;
@@ -89,16 +92,73 @@ body {
 .top-bar-title {
   font-size: 16px;
   font-weight: 600;
-  background: linear-gradient(135deg, var(--color-primary, #6366f1), #a5b4fc);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--color-text);
 }
 
 .top-bar-right {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.top-bar-theme-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted, #64748b);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.top-bar-theme-btn:active {
+  background: var(--color-bg, #f8fafc);
+}
+
+.top-bar-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--color-primary, #07C160);
+  cursor: pointer;
+  border-radius: 50%;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
+  transition: background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.top-bar-back-btn:active {
+  background: var(--color-primary-subtle, #E8F8EF);
+}
+
+.top-bar-settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted, #64748b);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.top-bar-settings-btn:active {
+  background: var(--color-bg, #f8fafc);
 }
 
 .top-bar-peer {
@@ -124,11 +184,11 @@ body {
 
 /* ---- Main content ---- */
 .mobile-content {
-  flex: 1;
+  flex: 1 1 0%;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 8px;
 }
 
 /* ---- Bottom tab bar ---- */
@@ -136,12 +196,15 @@ body {
   display: flex;
   justify-content: space-around;
   align-items: center;
-  padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
-  background: var(--color-surface, #fff);
-  border-top: 1px solid var(--color-border, #e2e8f0);
   flex-shrink: 0;
-  position: relative;
-  z-index: 10;
+  padding: 2px 0;
+  padding-bottom: max(2px, env(safe-area-inset-bottom, 0px));
+  background: var(--color-surface, #ffffff);
+  box-shadow: 0 -0.5px 0 0 var(--color-border-subtle, #f1f5f9);
+}
+
+:root[data-theme="dark"] .bottom-tabs {
+  background: var(--color-surface, #0f172a);
 }
 
 .tab-button {
@@ -150,9 +213,10 @@ body {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  padding: 6px 0;
-  min-width: 56px;
-  min-height: 48px;
+  flex: 1;
+  padding: 0;
+  min-height: 44px;
+  min-width: 44px;
   border: none;
   background: none;
   color: var(--color-text-subtle, #94a3b8);
@@ -161,8 +225,10 @@ body {
   cursor: pointer;
   transition: color 0.15s ease;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
   outline: none;
-  flex: 1;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .tab-button:active {
@@ -170,10 +236,11 @@ body {
 }
 
 .tab-button.active {
-  color: var(--color-primary, #6366f1);
+  color: var(--color-primary, #07C160);
 }
 
 .tab-icon {
+  position: relative;
   width: 24px;
   height: 24px;
   display: flex;
@@ -188,8 +255,8 @@ body {
 
 .tab-badge {
   position: absolute;
-  top: 2px;
-  right: calc(50% - 18px);
+  top: -4px;
+  right: -10px;
   min-width: 16px;
   height: 16px;
   border-radius: 8px;
@@ -205,66 +272,6 @@ body {
 
 .tab-label {
   line-height: 1.2;
-}
-
-/* ---- Chat mobile overrides ---- */
-
-/* Stack sidebar above chat area on mobile */
-.mobile-content .chat-view {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.mobile-content .chat-view .contact-list {
-  flex-shrink: 0;
-  max-height: 40vh;
-  overflow-y: auto;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
-}
-
-/* Chat area takes remaining space */
-.mobile-content .chat-view .chat-area {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-/* Message bubbles */
-.mobile-content .chat-area .message {
-  max-width: 85%;
-}
-
-/* Chat input bar */
-.mobile-content .chat-input {
-  padding: 8px 12px;
-  padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
-}
-
-/* ---- Contacts mobile ---- */
-.mobile-content .contacts-view {
-  padding: 0;
-}
-
-.mobile-content .contacts-view .contact-card {
-  border-radius: 0;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
-}
-
-/* ---- Search mobile ---- */
-.mobile-content .search-view {
-  padding: 12px;
-}
-
-/* ---- Profile mobile ---- */
-.mobile-content .profile-view {
-  padding: 16px;
-}
-
-/* ---- Settings mobile ---- */
-.mobile-content .settings-view {
-  padding: 0 12px;
 }
 
 /* ---- View transitions ---- */

@@ -1,25 +1,40 @@
 /**
  * MobileApp — Mobile-specific app shell with bottom tab bar.
  *
- * Replaces the desktop App+Header layout from @envoymesh/social.
- * Reuses all view components (ChatView, ContactsView, SearchView,
- * ProfileView, SettingsView) as-is — they get their data from context.
+ * Uses independent mobile-native view components (MobileChatView, etc.)
+ * that share only hooks/context/icons with the desktop app.
+ *
+ * 4-tab layout (WeChat-style): Chats | Contacts | Discover | Me
+ * Settings is accessed from the "Me" tab via a gear icon.
  */
 import { useState, type ReactNode } from "react";
 import { useNodeState } from "@envoymesh/social/context/NodeStateContext.js";
+import { useTheme } from "@envoymesh/social/context/ThemeContext.js";
 import { ErrorBoundary } from "@envoymesh/social/components/ErrorBoundary.js";
-import { ChatView } from "@envoymesh/social/components/views/ChatView.js";
-import { ContactsView } from "@envoymesh/social/components/views/ContactsView.js";
-import { SearchView } from "@envoymesh/social/components/views/SearchView.js";
-import { ProfileView } from "@envoymesh/social/components/views/ProfileView.js";
-import { SettingsView } from "@envoymesh/social/components/views/SettingsView.js";
+import { MobileChatView } from "./views/MobileChatView.js";
+import { MobileContactsView } from "./views/MobileContactsView.js";
+import { MobileDiscoverView } from "./views/MobileDiscoverView.js";
+import { MobileProfileView } from "./views/MobileProfileView.js";
+import { MobileSettingsView } from "./views/MobileSettingsView.js";
+import {
+  ChatIcon,
+  ContactsIcon,
+  SearchIcon,
+  ProfileIcon,
+  SettingsIcon,
+  DarkModeIcon,
+  LightModeIcon,
+} from "@envoymesh/social/icons.js";
 import "./MobileApp.css";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type TabId = "chat" | "contacts" | "search" | "profile" | "settings";
+type TabId = "chat" | "contacts" | "discover" | "me";
+
+/** Sub-views within the "Me" tab */
+type MeView = "profile" | "settings";
 
 interface TabButtonProps {
   id: TabId;
@@ -31,61 +46,6 @@ interface TabButtonProps {
 }
 
 // ---------------------------------------------------------------------------
-// SVG Icons (24x24, outline style)
-// ---------------------------------------------------------------------------
-
-function ChatIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
-
-function ContactsIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="8" />
-      <path d="m21 21-4.35-4.35" />
-    </svg>
-  );
-}
-
-function ProfileIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-      <circle cx="12" cy="7" r="4" />
-    </svg>
-  );
-}
-
-function SettingsIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Tab Button
 // ---------------------------------------------------------------------------
 
@@ -93,7 +53,7 @@ function TabButton({ icon, label, active, onClick, id, badge }: TabButtonProps) 
   return (
     <button
       className={`tab-button${active ? " active" : ""}`}
-      onClick={() => onClick(id)}
+      onClick={() => { navigator.vibrate?.(10); onClick(id); }}
       aria-label={label}
       aria-selected={active}
       role="tab"
@@ -118,13 +78,24 @@ function shortPeerId(peerId: string | undefined): string {
   return peerId.length > 12 ? peerId.slice(0, 6) + "..." + peerId.slice(-4) : peerId;
 }
 
+const TAB_TITLES: Record<TabId, string> = {
+  chat: "Chats",
+  contacts: "Contacts",
+  discover: "Discover",
+  me: "Me",
+};
+
 // ---------------------------------------------------------------------------
 // MobileApp
 // ---------------------------------------------------------------------------
 
 export function MobileApp() {
   const { isConnected, nodeStatus, peerId, pendingHellOs } = useNodeState();
+  const { resolved, setTheme } = useTheme();
   const [currentTab, setCurrentTab] = useState<TabId>("chat");
+  const [meView, setMeView] = useState<MeView>("profile");
+
+  const isDark = resolved === "dark";
 
   // -- Loading ---------------------------------------------------------------
   if (!isConnected) {
@@ -161,10 +132,41 @@ export function MobileApp() {
       {/* Top bar */}
       <header className="top-bar">
         <div className="top-bar-left">
-          <div className="top-bar-logo">E</div>
-          <span className="top-bar-title">EnvoyMesh</span>
+          {currentTab === "me" && meView === "settings" ? (
+            <>
+              <button
+                className="top-bar-back-btn"
+                onClick={() => setMeView("profile")}
+                aria-label="Back to profile"
+              >
+                &#8592;
+              </button>
+              <span className="top-bar-title">Settings</span>
+            </>
+          ) : (
+            <>
+              <div className="top-bar-logo">E</div>
+              <span className="top-bar-title">{TAB_TITLES[currentTab]}</span>
+            </>
+          )}
         </div>
         <div className="top-bar-right">
+          {currentTab === "me" && meView === "profile" && (
+            <button
+              className="top-bar-settings-btn"
+              onClick={() => setMeView("settings")}
+              aria-label="Settings"
+            >
+              <SettingsIcon size={18} />
+            </button>
+          )}
+          <button
+            className="top-bar-theme-btn"
+            onClick={() => setTheme(isDark ? "light" : "dark")}
+            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {isDark ? <LightModeIcon size={18} /> : <DarkModeIcon size={18} />}
+          </button>
           <span className="top-bar-peer">{shortPeerId(peerId)}</span>
           <div className="top-bar-status" />
         </div>
@@ -173,36 +175,42 @@ export function MobileApp() {
       {/* Main content area */}
       <main className="mobile-content">
         <ErrorBoundary>
-          {currentTab === "chat" && <ChatView key="chat" />}
-          {currentTab === "contacts" && <ContactsView key="contacts" />}
-          {currentTab === "search" && <SearchView key="search" />}
-          {currentTab === "profile" && <ProfileView key="profile" />}
-          {currentTab === "settings" && <SettingsView key="settings" />}
+          {currentTab === "chat" && <MobileChatView key="chat" />}
+          {currentTab === "contacts" && <MobileContactsView key="contacts" />}
+          {currentTab === "discover" && <MobileDiscoverView key="discover" />}
+          {currentTab === "me" && meView === "profile" && (
+            <MobileProfileView
+              key="profile"
+              onNavigateSettings={() => setMeView("settings")}
+            />
+          )}
+          {currentTab === "me" && meView === "settings" && (
+            <MobileSettingsView
+              key="settings"
+              onBack={() => setMeView("profile")}
+            />
+          )}
         </ErrorBoundary>
       </main>
 
-      {/* Bottom tab bar */}
+      {/* Bottom tab bar — WeChat-style 4 tabs */}
       <nav className="bottom-tabs" role="tablist">
         <TabButton
-          id="chat" icon={<ChatIcon />} label="Chat"
-          active={currentTab === "chat"} onClick={setCurrentTab}
+          id="chat" icon={<ChatIcon size={22} />} label="Chats"
+          active={currentTab === "chat"} onClick={(id) => { setCurrentTab(id); }}
           badge={pendingHellOs.length}
         />
         <TabButton
-          id="contacts" icon={<ContactsIcon />} label="Contacts"
-          active={currentTab === "contacts"} onClick={setCurrentTab}
+          id="contacts" icon={<ContactsIcon size={22} />} label="Contacts"
+          active={currentTab === "contacts"} onClick={(id) => { setCurrentTab(id); }}
         />
         <TabButton
-          id="search" icon={<SearchIcon />} label="Search"
-          active={currentTab === "search"} onClick={setCurrentTab}
+          id="discover" icon={<SearchIcon size={22} />} label="Discover"
+          active={currentTab === "discover"} onClick={(id) => { setCurrentTab(id); }}
         />
         <TabButton
-          id="profile" icon={<ProfileIcon />} label="Profile"
-          active={currentTab === "profile"} onClick={setCurrentTab}
-        />
-        <TabButton
-          id="settings" icon={<SettingsIcon />} label="Settings"
-          active={currentTab === "settings"} onClick={setCurrentTab}
+          id="me" icon={<ProfileIcon size={22} />} label="Me"
+          active={currentTab === "me"} onClick={(id) => { setCurrentTab(id); setMeView("profile"); }}
         />
       </nav>
     </div>
