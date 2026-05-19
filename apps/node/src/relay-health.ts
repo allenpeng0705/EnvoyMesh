@@ -50,6 +50,8 @@ export interface RelayHealthInput {
   previous?: RelayHealthState;
   eventLoopLagMs?: number;
   rssBytes?: number;
+  /** Override the MAX_RSS_BYTES threshold (used by tests to avoid env-var timing issues). */
+  maxRssBytesOverride?: number;
 }
 
 function readMaxRssBytes(envName: string, defaultMb: number): number {
@@ -139,7 +141,7 @@ export function evaluateRelayHealth(input: RelayHealthInput): { snapshot: RelayH
     actions.add("restart-libp2p");
   }
 
-  if ((input.rssBytes ?? 0) > MAX_RSS_BYTES) {
+  if ((input.rssBytes ?? 0) > (input.maxRssBytesOverride ?? MAX_RSS_BYTES)) {
     reasons.push(`memory rss high=${input.rssBytes}`);
     actions.add("exit-for-supervisor");
   }

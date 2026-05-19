@@ -103,6 +103,7 @@ describe("relay health", () => {
       summaries: [],
       routing: baseRouting,
       rssBytes: 2_000 * 1024 * 1024,
+      maxRssBytesOverride: 1, // set threshold to 1 byte so 2 GB triggers critical
       previous: createInitialRelayHealthState(),
     });
 
