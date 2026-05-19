@@ -9,6 +9,7 @@ import { kadDHT } from "@libp2p/kad-dht";
 import { mdns } from "@libp2p/mdns";
 import { ping } from "@libp2p/ping";
 import { tcp } from "@libp2p/tcp";
+import { webSockets } from "@libp2p/websockets";
 import { byteStream } from "@libp2p/utils";
 import { KEEP_ALIVE, type RoutingOptions } from "@libp2p/interface";
 import { peerIdFromString } from "@libp2p/peer-id";
@@ -145,6 +146,22 @@ export interface EnvoyMeshOptions {
   enableDcutr?: boolean;
   /** When true, register the QUIC transport and add matching `/udp/.../quic-v1` listeners for each TCP listen address. */
   enableQuic?: boolean;
+  /**
+   * When true, register the WebSocket transport (browser-compatible).
+   * Mobile/browser nodes should enable this along with {@link browserMode}.
+   */
+  enableWebSocketTransport?: boolean;
+  /**
+   * Browser-friendly mode: uses WebSocket/WebRTC transports instead of TCP,
+   * skips autoNAT/dcutr (not needed in browser), and uses relay for inbound.
+   */
+  browserMode?: boolean;
+  /**
+   * Pre-loaded libp2p Ed25519 private key. Takes precedence over
+   * {@link libp2pPrivateKeyPath}. Use this in environments where file I/O
+   * is unavailable (browsers, Capacitor WebView).
+   */
+  libp2pPrivateKey?: import("@libp2p/interface").PrivateKey;
   enableP2pDebug?: boolean;
   /**
    * Log `[reachability] …` on `peer:disconnect` (peer store tags, reconnect-queue eligibility) and
@@ -211,15 +228,19 @@ export class EnvoyMesh {
 
     const advancedConnectivityEnabled = this.isAdvancedConnectivityEnabled();
 
-    const baseListen = this.options.listen ?? ["/ip4/0.0.0.0/tcp/0"];
+    const browserMode = this.options.browserMode === true;
+    const enableWebSocket = this.options.enableWebSocketTransport === true || browserMode;
+
+    const baseListen = this.options.listen ?? (browserMode ? [] : ["/ip4/0.0.0.0/tcp/0"]);
     let listenAddrs =
-      this.options.enableQuic === true ? expandListenAddressesWithQuic(baseListen) : [...baseListen];
+      this.options.enableQuic === true && !browserMode ? expandListenAddressesWithQuic(baseListen) : [...baseListen];
 
     // Circuit relay v2 clients must advertise `/p2p-circuit` in listen addrs so libp2p can obtain
     // reservations on relays we dial (e.g. bootstrap). Without this, other peers cannot complete
     // inbound dials via `/…/p2p-circuit/p2p/<ourPeerId>` even if EMP relay.checkin/lookup work.
     // Servers use `circuitRelayServer()` and do not need this when only acting as the hop.
-    if (this.options.enableRelay && !this.options.enableRelayServer && !listenAddrs.includes("/p2p-circuit")) {
+    // Browser nodes always need this (no listening addresses).
+    if ((this.options.enableRelay || browserMode) && !this.options.enableRelayServer && !listenAddrs.includes("/p2p-circuit")) {
       listenAddrs = [...listenAddrs, "/p2p-circuit"];
     }
 
@@ -240,9 +261,10 @@ export class EnvoyMesh {
 
     const quicTransportFactory = this.options.enableQuic ? await this.loadQuicTransport() : undefined;
 
-    const libp2pPrivateKey = this.options.libp2pPrivateKeyPath
-      ? await loadOrCreateLibp2pPrivateKey(this.options.libp2pPrivateKeyPath)
-      : undefined;
+    const libp2pPrivateKey = this.options.libp2pPrivateKey
+      ?? (this.options.libp2pPrivateKeyPath
+        ? await loadOrCreateLibp2pPrivateKey(this.options.libp2pPrivateKeyPath)
+        : undefined);
     if (libp2pPrivateKey && this.options.enableP2pDebug) {
       console.log(`[p2p] libp2p private key file: ${this.options.libp2pPrivateKeyPath}`);
     }
@@ -266,9 +288,10 @@ export class EnvoyMesh {
         ...(appendAnnounce.length > 0 ? { appendAnnounce } : {}),
       },
       transports: [
-        tcp(),
-        ...(this.options.enableRelay || this.options.enableRelayServer ? [circuitRelayTransport()] : []),
-        ...(quicTransportFactory ? [quicTransportFactory()] : []),
+        ...(browserMode ? [] : [tcp()]),
+        ...(enableWebSocket ? [webSockets()] : []),
+        ...(this.options.enableRelay || this.options.enableRelayServer || browserMode ? [circuitRelayTransport()] : []),
+        ...(quicTransportFactory && !browserMode ? [quicTransportFactory()] : []),
       ],
       connectionEncrypters: [noise()],
       streamMuxers: [yamux()],
@@ -287,8 +310,8 @@ export class EnvoyMesh {
                 }
               : {}),
             ...(this.options.enableRelayServer ? { relay: circuitRelayServer() } : {}),
-            ...(this.options.enableAutoNat ? { autoNAT: autoNAT() } : {}),
-            ...(this.options.enableDcutr ? { dcutr: dcutr() } : {}),
+            ...(this.options.enableAutoNat && !browserMode ? { autoNAT: autoNAT() } : {}),
+            ...(this.options.enableDcutr && !browserMode ? { dcutr: dcutr() } : {}),
           }
         : undefined,
     });

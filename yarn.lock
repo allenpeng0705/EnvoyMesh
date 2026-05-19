@@ -492,6 +492,7 @@
     "@libp2p/ping" "^3.1.3"
     "@libp2p/tcp" "^11.0.0"
     "@libp2p/utils" "^7.0.0"
+    "@libp2p/websockets" "^10.1.13"
     "@multiformats/multiaddr" "^13.0.1"
     it-all "^3.0.0"
     libp2p "^3.0.0"
@@ -765,10 +766,10 @@
     uint8arraylist "^2.4.8"
     uint8arrays "^5.1.0"
 
-"@libp2p/crypto@^5.1.17", "@libp2p/crypto@^5.1.7", "@libp2p/crypto@^5.1.9":
-  version "5.1.17"
-  resolved "https://mirrors.huaweicloud.com/repository/npm/@libp2p/crypto/-/crypto-5.1.17.tgz"
-  integrity sha512-gzn9b3tX9D5xCiXb36PF0rH16kGkLW5ESbT+nmXKUp1HCDD30RXQT/oHSylz5I3GN39BC1C3hBOBNaIQYuO+qw==
+"@libp2p/crypto@^5.1.17", "@libp2p/crypto@^5.1.18", "@libp2p/crypto@^5.1.7", "@libp2p/crypto@^5.1.9":
+  version "5.1.18"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@libp2p/crypto/-/crypto-5.1.18.tgz"
+  integrity sha512-sCm+dFFZmH4LJIHTCzPy7+EBRhzkndFUcIU8bui6iaxK6SDSRVa11+/O6DzW8hn/U9LgDXe6jXnzWM8bM7OoCA==
   dependencies:
     "@libp2p/interface" "^3.2.2"
     "@noble/curves" "^2.0.1"
@@ -871,10 +872,10 @@
     uint8arraylist "^2.4.8"
     uint8arrays "^5.1.0"
 
-"@libp2p/logger@^6.2.4", "@libp2p/logger@^6.2.6":
-  version "6.2.6"
-  resolved "https://mirrors.huaweicloud.com/repository/npm/@libp2p/logger/-/logger-6.2.6.tgz"
-  integrity sha512-ep2fNBFZHVomQEvXk0NET2Y85csVeQbFpCvT94uQrtP4MrRE6zVjxiuh67KZuE32odnoKwE29i2fWPHc1p1Xng==
+"@libp2p/logger@^6.2.4", "@libp2p/logger@^6.2.6", "@libp2p/logger@^6.2.7":
+  version "6.2.7"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@libp2p/logger/-/logger-6.2.7.tgz"
+  integrity sha512-IVEz5+0kE4mRWwMzXP34AlXe2k1FLzBqKkjeASyhPVdMz0A4qH9nYmCBwonzmRzymklGjFIEDa1s7Vjhd9V4Rg==
   dependencies:
     "@libp2p/interface" "^3.2.2"
     "@multiformats/multiaddr" "^13.0.1"
@@ -999,17 +1000,18 @@
     progress-events "^1.0.1"
     uint8arraylist "^2.4.8"
 
-"@libp2p/utils@^7.0.0", "@libp2p/utils@^7.0.11", "@libp2p/utils@^7.1.0":
-  version "7.1.0"
-  resolved "https://mirrors.huaweicloud.com/repository/npm/@libp2p/utils/-/utils-7.1.0.tgz"
-  integrity sha512-gfOpPIMpv+B4XXIsmXVN41p6kFrBw8yC2OwNaX6sjTwf7s1GmpQ/O0R4nI0P2t0RzBELy1EG8DgUmlxZOvdwjA==
+"@libp2p/utils@^7.0.0", "@libp2p/utils@^7.0.11", "@libp2p/utils@^7.1.0", "@libp2p/utils@^7.2.1":
+  version "7.2.1"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@libp2p/utils/-/utils-7.2.1.tgz"
+  integrity sha512-tRBQHUqgggXATgTY8S0A8amdhljZ7Xx9nAWDOpfvW/ojDVY89BpIJfKLEe0TUD9Lc/3pSmlAC6oBYaHe2jP9UA==
   dependencies:
     "@chainsafe/is-ip" "^2.1.0"
     "@chainsafe/netmask" "^2.0.0"
-    "@libp2p/crypto" "^5.1.17"
+    "@libp2p/crypto" "^5.1.18"
     "@libp2p/interface" "^3.2.2"
-    "@libp2p/logger" "^6.2.6"
+    "@libp2p/logger" "^6.2.7"
     "@multiformats/multiaddr" "^13.0.1"
+    "@multiformats/multiaddr-matcher" "^3.0.1"
     "@sindresorhus/fnv1a" "^3.1.0"
     any-signal "^4.1.1"
     cborg "^5.1.0"
@@ -1029,6 +1031,23 @@
     uint8arraylist "^2.4.8"
     uint8arrays "^5.1.0"
 
+"@libp2p/websockets@^10.1.13":
+  version "10.1.13"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@libp2p/websockets/-/websockets-10.1.13.tgz"
+  integrity sha512-p0gVOeehKqkE9SWceY17NYeeO0ZuyoLu30GhJU7bAO9iG/s/0bON6+mKvks2ALvVGUCrJSqUE0qzNZHMGixOMg==
+  dependencies:
+    "@libp2p/interface" "^3.2.2"
+    "@libp2p/utils" "^7.2.1"
+    "@multiformats/multiaddr" "^13.0.1"
+    "@multiformats/multiaddr-matcher" "^3.0.1"
+    "@multiformats/multiaddr-to-uri" "^12.0.0"
+    main-event "^1.0.1"
+    p-event "^7.0.0"
+    progress-events "^1.0.1"
+    uint8arraylist "^2.4.8"
+    uint8arrays "^5.1.0"
+    ws "^8.18.3"
+
 "@multiformats/dns@^1.0.6":
   version "1.0.13"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@multiformats/dns/-/dns-1.0.13.tgz"
@@ -1045,6 +1064,13 @@
   version "3.0.2"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@multiformats/multiaddr-matcher/-/multiaddr-matcher-3.0.2.tgz"
   integrity sha512-iphGQJliZxe2yKu57bdRDgeS+3znc5uXtMybDO1Wau3rIjas4zjrjlyxmFz3wqyUL9f3VDQwas/ZqA7N4QeSfw==
+  dependencies:
+    "@multiformats/multiaddr" "^13.0.0"
+
+"@multiformats/multiaddr-to-uri@^12.0.0":
+  version "12.0.0"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@multiformats/multiaddr-to-uri/-/multiaddr-to-uri-12.0.0.tgz"
+  integrity sha512-3uIEBCiy8tfzxYYBl81x1tISiNBQ7mHU4pGjippbJRoQYHzy/ZdZM/7JvTldr8pc/dzpkaNJxnsuxxlhsPOJsA==
   dependencies:
     "@multiformats/multiaddr" "^13.0.0"
 
@@ -3348,7 +3374,7 @@ wrap-ansi@^7.0.0:
     string-width "^4.1.0"
     strip-ansi "^6.0.0"
 
-ws@^8.20.0:
+ws@^8.18.3, ws@^8.20.0:
   version "8.20.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/ws/-/ws-8.20.0.tgz"
   integrity sha512-sAt8BhgNbzCtgGbt2OxmpuryO63ZoDk/sqaB/znQm94T4fCEsy/yV+7CdC1kJhOU9lboAEU7R3kquuycDoibVA==

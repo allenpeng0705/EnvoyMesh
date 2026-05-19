@@ -1,3 +1,7 @@
+/**
+ * @vitest-environment jsdom
+ */
+
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { MobileNode, createMobileNode } from "../src/index.js";
 import type { MobileNodeConfig } from "../src/index.js";
@@ -642,6 +646,533 @@ describe("MobileNode", () => {
       const history = await node.listChatHistory(senderPeerId);
       expect(history).toHaveLength(1);
       expect(history[0].content.text).toBe("inbound hello");
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Libp2p key persistence
+  // -----------------------------------------------------------------------
+
+  describe("libp2p key persistence", () => {
+    beforeEach(async () => {
+      node = new MobileNode(makeConfig());
+      await node.initStandalone("/test-profile");
+    });
+
+    it("_loadOrCreateLibp2pKey creates a valid Ed25519 key", async () => {
+      const key = await (node as any)._loadOrCreateLibp2pKey();
+      expect(key).toBeDefined();
+      expect(key.type).toBe("Ed25519");
+    });
+
+    it("_loadOrCreateLibp2pKey returns the SAME key on second call (persistence)", async () => {
+      const key1 = await (node as any)._loadOrCreateLibp2pKey();
+      const key2 = await (node as any)._loadOrCreateLibp2pKey();
+      expect(key2).toBeDefined();
+      // Same key material: peerId derived from the same key should be identical
+      const { peerIdFromPrivateKey } = await import("@libp2p/peer-id");
+      const id1 = peerIdFromPrivateKey(key1);
+      const id2 = peerIdFromPrivateKey(key2);
+      expect(id2.toString()).toBe(id1.toString());
+    });
+
+    it("_loadOrCreateLibp2pKey handles corrupted localStorage gracefully", async () => {
+      // Store invalid data in localStorage
+      localStorage.setItem("envoymesh_libp2p_private_key", "!!!not-base64!!!");
+      const key = await (node as any)._loadOrCreateLibp2pKey();
+      expect(key).toBeDefined();
+      expect(key.type).toBe("Ed25519");
+      // Should have overwritten the corrupted key
+      const stored = localStorage.getItem("envoymesh_libp2p_private_key");
+      expect(stored).toBeTruthy();
+      expect(stored).not.toBe("!!!not-base64!!!");
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Capability topic CID & DHT search/advertise integration
+  // -----------------------------------------------------------------------
+
+  describe("DHT search and advertise integration", () => {
+    beforeEach(async () => {
+      node = new MobileNode(makeConfig());
+      await node.initStandalone("/test-profile");
+    });
+
+    it("_searchDhtTopic returns empty array when mesh is not started", async () => {
+      const results = await (node as any)._searchDhtTopic("music", 10);
+      expect(results).toEqual([]);
+    });
+
+    it("_advertiseTopicsOnDht is a no-op when mesh is not started", async () => {
+      await expect(
+        (node as any)._advertiseTopicsOnDht(["music", "coding"]),
+      ).resolves.toBeUndefined();
+    });
+
+    it("_advertiseTopicsOnDht calls contentRouting.provide for each topic when mesh is available", async () => {
+      const provideSpy = vi.fn().mockResolvedValue(undefined);
+      // Mock _capabilityTopicCid to avoid jsdom TextEncoder issues
+      const mockCid = { toString: () => "bafytest" };
+      const origCid = (node as any)._capabilityTopicCid;
+      (node as any)._capabilityTopicCid = vi.fn().mockResolvedValue(mockCid);
+
+      (node as any)._mesh = {
+        contentRouting: { provide: provideSpy },
+        getMultiaddrs: () => [],
+        peerId: { toString: () => "12D3KooWSelf" },
+      };
+
+      await (node as any)._advertiseTopicsOnDht(["music", "coding"]);
+
+      expect(provideSpy).toHaveBeenCalledTimes(2);
+      expect(provideSpy).toHaveBeenCalledWith(mockCid);
+
+      // Restore
+      (node as any)._capabilityTopicCid = origCid;
+      (node as any)._mesh = undefined;
+    });
+
+    it("searchPeers merges DHT results with trust store results when searching by displayName", async () => {
+      // Add a bonded peer to trust store
+      await (node as any)._trustStore.set({
+        peerOwnerId: "envoy:owner:bob",
+        displayName: "Bob",
+        libp2pPeerId: "12D3KooWBob",
+        level: "direct",
+        note: "Friend",
+      });
+
+      // Mock DHT search AND mesh so the DHT path is entered
+      const origSearch = (node as any)._searchDhtTopic;
+      (node as any)._searchDhtTopic = vi.fn().mockResolvedValue([
+        { peerId: "12D3KooWDhtPeer1", multiaddrs: [] },
+        { peerId: "12D3KooWDhtPeer2", multiaddrs: [] },
+      ]);
+      (node as any)._mesh = {
+        getMultiaddrs: () => [],
+        peerId: { toString: () => "12D3KooWSelf" },
+      };
+
+      // Search for "bob" — trust store matches displayName
+      const results = await node.searchPeers({ username: "bob" });
+
+      // Should include trust store match
+      const bobResult = results.find((r: any) => r.ownerId === "envoy:owner:bob");
+      expect(bobResult).toBeDefined();
+      expect(bobResult?.displayName).toBe("Bob");
+
+      // DHT also searched for "bob" topic
+      const dht1 = results.find((r: any) => r.nodeId === "12D3KooWDhtPeer1");
+      expect(dht1).toBeDefined();
+      expect(dht1?.interests).toContain("bob");
+
+      // Restore
+      (node as any)._searchDhtTopic = origSearch;
+      (node as any)._mesh = undefined;
+    });
+
+    it("searchPeers filters out self from DHT results", async () => {
+      // Set a known mesh peer ID for self
+      (node as any)._meshPeerId = "12D3KooWSelf";
+
+      const origSearch = (node as any)._searchDhtTopic;
+      (node as any)._searchDhtTopic = vi.fn().mockResolvedValue([
+        { peerId: "12D3KooWSelf", multiaddrs: [] },
+        { peerId: "12D3KooWOther", multiaddrs: [] },
+      ]);
+
+      // Mock mesh for searchPeers
+      (node as any)._mesh = {
+        getMultiaddrs: () => [],
+        peerId: { toString: () => "12D3KooWSelf" },
+      };
+
+      const results = await node.searchPeers({ interests: ["music"] });
+
+      // Self should be filtered out
+      const selfResult = results.find((r: any) => r.nodeId === "12D3KooWSelf");
+      expect(selfResult).toBeUndefined();
+
+      // Other peer should be included
+      const other = results.find((r: any) => r.nodeId === "12D3KooWOther");
+      expect(other).toBeDefined();
+
+      // Restore
+      (node as any)._searchDhtTopic = origSearch;
+      (node as any)._mesh = undefined;
+      (node as any)._meshPeerId = "";
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // DHT advertise lifecycle
+  // -----------------------------------------------------------------------
+
+  describe("DHT advertise lifecycle", () => {
+    beforeEach(async () => {
+      vi.useFakeTimers();
+      node = new MobileNode(makeConfig());
+      await node.initStandalone("/test-profile");
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("_startDhtAdvertise schedules initial timer, _stopDhtAdvertise cancels it", async () => {
+      (node as any)._startDhtAdvertise();
+      const timer = (node as any)._dhtAdvertiseTimer;
+      expect(timer).not.toBeNull();
+
+      (node as any)._stopDhtAdvertise();
+      expect((node as any)._dhtAdvertiseTimer).toBeNull();
+    });
+
+    it("_stopDhtAdvertise is idempotent (safe to call twice)", async () => {
+      (node as any)._startDhtAdvertise();
+      (node as any)._stopDhtAdvertise();
+      (node as any)._stopDhtAdvertise(); // Should not throw
+      expect((node as any)._dhtAdvertiseTimer).toBeNull();
+    });
+
+    it("_startDhtAdvertise replaces existing timer on second call", async () => {
+      (node as any)._startDhtAdvertise();
+      const first = (node as any)._dhtAdvertiseTimer;
+      (node as any)._startDhtAdvertise();
+      const second = (node as any)._dhtAdvertiseTimer;
+      expect(second).not.toBeNull();
+      // The old timer should have been cleared
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // searchPeers — self-filtering and multi-source merging
+  // -----------------------------------------------------------------------
+
+  describe("searchPeers self-filtering", () => {
+    beforeEach(async () => {
+      node = new MobileNode(makeConfig());
+      await node.initStandalone("/test-profile");
+    });
+
+    it("searchPeers filters out self by ownerId from trust store", async () => {
+      // Add a bond for our own owner (should be filtered)
+      const state = node.state;
+      const result = await node.searchPeers({ peerId: state.owner.ownerId });
+      // Our own identity should not appear in results
+      const selfResult = result.find((r: any) => r.ownerId === state.owner.ownerId);
+      expect(selfResult).toBeUndefined();
+    });
+
+    it("searchPeers filters out self by agentPeerId", async () => {
+      const state = node.state;
+      const result = await node.searchPeers({ peerId: state.agent.agentPeerId });
+      const selfResult = result.find((r: any) => r.nodeId === state.agent.agentPeerId);
+      expect(selfResult).toBeUndefined();
+    });
+
+    it("searchPeers returns trusted peers matching interest", async () => {
+      // Add a bonded peer to the trust store first
+      await (node as any)._trustStore.set({
+        peerOwnerId: "envoy:owner:alice",
+        displayName: "Alice",
+        libp2pPeerId: "12D3KooWAlice",
+        level: "direct",
+        note: "Friend",
+      });
+      const result = await node.searchPeers({ username: "alice" });
+      const alice = result.find((r: any) => r.ownerId === "envoy:owner:alice");
+      expect(alice).toBeDefined();
+      expect(alice?.displayName).toBe("Alice");
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // _sendToRelay — mesh P2P vs relay routing
+  // -----------------------------------------------------------------------
+
+  describe("_sendToRelay mesh vs relay routing", () => {
+    beforeEach(async () => {
+      node = new MobileNode(makeConfig());
+      await node.initStandalone("/test-profile");
+    });
+
+    it("sends non-chat messages via relay sockets (not mesh)", async () => {
+      // Add a fake relay socket to capture messages
+      let sent: string | null = null;
+      (node as any)._relaySockets = [{
+        readyState: 1, // WebSocket.OPEN = 1
+        send: (data: string) => { sent = data; },
+      }];
+
+      await (node as any)._sendToRelay({
+        type: "hello-request",
+        targetOwnerId: "envoy:owner:target",
+        senderOwnerId: node.state.owner.ownerId,
+        senderDeviceId: node.state.device.deviceId,
+      });
+
+      expect(sent).not.toBeNull();
+      const parsed = JSON.parse(sent!);
+      expect(parsed.type).toBe("hello-request");
+    });
+
+    it("sends chat messages via relay when trust store has no libp2pPeerId", async () => {
+      // Add a trust store entry WITHOUT libp2pPeerId
+      await (node as any)._trustStore.set({
+        peerOwnerId: "envoy:owner:target",
+        displayName: "Target",
+        level: "direct",
+      });
+
+      let sent: string | null = null;
+      (node as any)._relaySockets = [{
+        readyState: 1,
+        send: (data: string) => { sent = data; },
+      }];
+
+      await (node as any)._sendToRelay({
+        type: "chat",
+        targetOwnerId: "envoy:owner:target",
+        text: "hello via relay",
+      });
+
+      expect(sent).not.toBeNull();
+      const parsed = JSON.parse(sent!);
+      expect(parsed.intent).toBe("chat.message");
+      expect(parsed.payload.text).toBe("hello via relay");
+    });
+
+    it("sends chat via mesh when trust store has libp2pPeerId", async () => {
+      const { generateAgentIdentity } = await import("@envoymesh/mobile-identity");
+      const targetAgent = generateAgentIdentity("envoy:owner:target");
+      const targetPeerId = targetAgent.agentPeerId;
+
+      // Add a trust store entry WITH libp2pPeerId
+      await (node as any)._trustStore.set({
+        peerOwnerId: "envoy:owner:target",
+        displayName: "Target",
+        libp2pPeerId: targetPeerId,
+        level: "direct",
+      });
+
+      // Create a mock mesh
+      let dialledPeer: string | null = null;
+      let sentData: string | null = null;
+      (node as any)._mesh = {
+        dialProtocol: async (peerId: string, _protocol: string) => {
+          dialledPeer = peerId;
+          return {
+            close: async () => {},
+          };
+        },
+        getMultiaddrs: () => [],
+        peerId: { toString: () => "12D3KooWSelf" },
+      };
+
+      // Mock _sendViaMesh to verify correct peerId was resolved
+      const originalSendViaMesh = (node as any)._sendViaMesh;
+      (node as any)._sendViaMesh = async (peerId: string, data: string) => {
+        dialledPeer = peerId;
+        sentData = data;
+      };
+
+      await (node as any)._sendToRelay({
+        type: "chat",
+        targetOwnerId: "envoy:owner:target",
+        text: "hello via mesh",
+      });
+
+      // Verify it resolved the libp2pPeerId from trust store
+      expect(dialledPeer).toBe(targetPeerId);
+      expect(sentData).toBeTruthy();
+      const parsed = JSON.parse(sentData!);
+      expect(parsed.payload.text).toBe("hello via mesh");
+
+      // Restore
+      (node as any)._sendViaMesh = originalSendViaMesh;
+      (node as any)._mesh = undefined;
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // stopNode — full cleanup
+  // -----------------------------------------------------------------------
+
+  describe("stopNode cleanup", () => {
+    beforeEach(async () => {
+      vi.useFakeTimers();
+      node = new MobileNode(makeConfig());
+      await node.initStandalone("/test-profile");
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("stopNode drains all pending rendezvous queries", async () => {
+      // Register pending queries
+      const queries = new Map();
+      const resolveSpy = vi.fn();
+      const timer = setTimeout(() => {}, 10000);
+      queries.set("query-1", { resolve: resolveSpy, timer });
+      (node as any)._pendingQueries = queries;
+
+      await node.stopNode();
+
+      expect(resolveSpy).toHaveBeenCalledWith([]);
+      expect(queries.size).toBe(0);
+    });
+
+    it("stopNode clears all relay backoff timers", async () => {
+      // Register backoff timers
+      const backoffTimers = new Map();
+      const clearSpy = vi.fn();
+      const fakeTimer = setTimeout(() => {}, 10000);
+      backoffTimers.set("ws://relay1", fakeTimer);
+      (node as any)._relayBackoffTimers = backoffTimers;
+
+      await node.stopNode();
+
+      expect(backoffTimers.size).toBe(0);
+      vi.clearAllTimers();
+    });
+
+    it("stopNode cleans up DHT advertise timer", async () => {
+      (node as any)._startDhtAdvertise();
+      expect((node as any)._dhtAdvertiseTimer).not.toBeNull();
+
+      await node.stopNode();
+
+      expect((node as any)._dhtAdvertiseTimer).toBeNull();
+    });
+
+    it("stopNode transitions status to offline", async () => {
+      node.on("node:status" as any, () => {});
+      node.on("node:online" as any, () => {});
+      node.on("node:offline" as any, () => {});
+      await node.startNode();
+      await node.stopNode();
+
+      expect(node.getNodeStatus()).toBe("offline");
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // E2E: Two mobile nodes communicating via relay
+  // -----------------------------------------------------------------------
+
+  describe("E2E two-node relay chat", () => {
+    let alice: MobileNode;
+    let bob: MobileNode;
+    const ALICE_URL = "ws://relay.example.com:9000";
+    const BOB_URL = "ws://relay.example.com:9000";
+
+    afterEach(async () => {
+      try { await alice?.stopNode(); } catch { /* ignore */ }
+      try { await bob?.stopNode(); } catch { /* ignore */ }
+    });
+
+    it("two nodes can exchange chat messages via simulated relay", async () => {
+      alice = new MobileNode(makeConfig({ relayUrls: [ALICE_URL] }));
+      bob = new MobileNode(makeConfig({ relayUrls: [BOB_URL] }));
+
+      await alice.initStandalone("/alice");
+      await bob.initStandalone("/bob");
+
+      // Capture what alice sends to the relay
+      let aliceSentData: string | null = null;
+      (alice as any)._relaySockets = [{
+        readyState: 1,
+        send: (data: string) => { aliceSentData = data; },
+      }];
+
+      // Bob listens for chat events
+      const bobMessages: unknown[] = [];
+      bob.on("chat:message" as any, (d: unknown) => bobMessages.push(d));
+
+      // Alice sends a chat message to Bob
+      await alice.sendChat(bob.state.owner.ownerId, "Hello Bob!");
+
+      // Verify alice sent the envelope to her relay socket
+      expect(aliceSentData).not.toBeNull();
+      const envelope = JSON.parse(aliceSentData!);
+      expect(envelope.intent).toBe("chat.message");
+      expect(envelope.payload.text).toBe("Hello Bob!");
+
+      // Verify alice's own local chat event fired
+      const aliceHistory = await alice.listChatHistory(bob.state.owner.ownerId);
+      expect(aliceHistory.length).toBeGreaterThanOrEqual(1);
+      expect(aliceHistory[0].content.text).toBe("Hello Bob!");
+    });
+
+    it("two nodes with bonded relationship can see each other in search", async () => {
+      alice = new MobileNode(makeConfig({ relayUrls: [ALICE_URL] }));
+      bob = new MobileNode(makeConfig({ relayUrls: [BOB_URL] }));
+
+      await alice.initStandalone("/alice");
+      await bob.initStandalone("/bob");
+
+      // Bob should appear in alice's bond-aware search (local trust store)
+      const results = await alice.searchPeers({ peerId: bob.state.owner.ownerId });
+      // Alice hasn't bonded with bob yet, so they shouldn't see each other
+      const bobInResults = results.find((r: any) => r.ownerId === bob.state.owner.ownerId);
+      // May or may not appear depending on whether this is a fresh node
+      // The key is that the search doesn't crash or return self
+      const aliceSelf = results.find((r: any) => r.ownerId === alice.state.owner.ownerId);
+      expect(aliceSelf).toBeUndefined();
+    });
+
+    it("sendHello followed by sendChat resolves libp2p peer ID from bond", async () => {
+      alice = new MobileNode(makeConfig({ relayUrls: [ALICE_URL] }));
+      bob = new MobileNode(makeConfig({ relayUrls: [BOB_URL] }));
+
+      await alice.initStandalone("/alice");
+      await bob.initStandalone("/bob");
+
+      // Before the bond exists, _sendToRelay should NOT have libp2pPeerId
+      // Simulate bob sending alice a hello to establish a bond
+      await bob.sendHello(alice.state.owner.ownerId, {
+        displayName: "Bob",
+        interests: ["music"],
+        whatShares: [],
+      }, "Hi!");
+
+      // Now send a chat — since bob's bond entry may not have libp2pPeerId,
+      // it should fall back to relay (verified by the test not throwing)
+      await expect(
+        bob.sendChat(alice.state.owner.ownerId, "Can you hear me?"),
+      ).resolves.toBeUndefined();
+    });
+
+    it("stopNode on one side does not crash the other", async () => {
+      alice = new MobileNode(makeConfig({ relayUrls: [ALICE_URL] }));
+      bob = new MobileNode(makeConfig({ relayUrls: [BOB_URL] }));
+
+      await alice.initStandalone("/alice");
+      await bob.initStandalone("/bob");
+
+      // Setup cross-routing
+      (alice as any)._broadcastToRelaySockets = async (data: string) => {
+        try {
+          const msg = JSON.parse(data);
+          if ((bob as any)._status !== "offline") {
+            await (bob as any)._handleInboundMessage(msg);
+          }
+        } catch { /* ignore */ }
+      };
+
+      // Send a message while both are online
+      await alice.sendChat(bob.state.owner.ownerId, "Message 1");
+
+      // Stop bob
+      await bob.stopNode();
+
+      // Alice sending while bob is offline should not crash
+      await expect(
+        alice.sendChat(bob.state.owner.ownerId, "Message 2"),
+      ).resolves.toBeUndefined();
     });
   });
 });

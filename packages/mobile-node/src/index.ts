@@ -2,7 +2,8 @@
  * Mobile EnvoyMesh Node — In-process runtime for Capacitor mobile app.
  *
  * Key differences from the desktop node (apps/node):
- * - No libp2p — relay-only WebSocket transport (outbound only)
+ * - Browser-mode libp2p: WebSocket transport + DHT client + circuit relay
+ *   (no TCP/QUIC/mDNS/autoNAT/DCUtR — not available in browsers)
  * - No child process — runs in the same WebView as the Social UI
  * - No CLI — initialized programmatically
  * - SQLite storage via Capacitor (packages/mobile-storage)
@@ -47,7 +48,9 @@ import {
   type PersistedIdentityState,
   type SecureStorage,
 } from "@envoymesh/mobile-storage";
-import { createUnsignedEnvelope } from "@envoymesh/protocol";
+import { createUnsignedEnvelope, createRendezvousRegisterPayload } from "@envoymesh/protocol";
+import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from "@libp2p/crypto/keys";
+import type { PrivateKey } from "@libp2p/interface";
 import type {
   BondRecord,
   CreateHumanProfileInput,
@@ -68,6 +71,10 @@ export interface MobileNodeConfig {
   profileDir: string;
   /** Relay WebSocket URLs to connect to. */
   relayUrls: string[];
+  /** Bootstrap peer multiaddrs for the libp2p DHT. If empty, DHT is still
+   * enabled but may take longer to find peers. Defaults to relayUrls
+   * converted to p2p-circuit multiaddrs. */
+  bootstrapPeers?: string[];
   /** Home node peer ID for shared identity pairing. */
   homeNodePeerId?: string;
   /** Injected database (SQLite). Falls back to in-memory for dev/testing. */
@@ -156,9 +163,18 @@ export class MobileNode implements NodeService {
   private _manualOnline = true;
   private _humanProfile: HumanProfile | undefined;
   private _pendingQueries = new Map<string, { resolve: (r: PeerSearchResult[]) => void; timer: ReturnType<typeof setTimeout> }>();
+  private _relayBackoffTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private _relayBackoffs = new Map<string, number>();
+
+  // Libp2p mesh (browser-mode: WebSocket transport + DHT client + circuit relay)
+  private _mesh?: import("libp2p").Libp2p;
+  private _meshPeerId = "";
+  private _meshBootstrapPeers: string[] = [];
+  private _dhtAdvertiseTimer: ReturnType<typeof setInterval> | null = null;
   constructor(config: MobileNodeConfig) {
     this._profileDir = config.profileDir;
     this._relayUrls = [...config.relayUrls];
+    this._meshBootstrapPeers = config.bootstrapPeers ?? [];
     this._db = config.database ?? createInMemoryDb();
     this._vault = config.vault ?? createMobileVault();
     this._secureStorage = config.secureStorage;
@@ -316,6 +332,13 @@ export class MobileNode implements NodeService {
       await this._secureStorage.set("ownerPrivateKey", s.owner.privateKeyPem);
       await this._secureStorage.set("devicePrivateKey", s.device.privateKeyPem);
       await this._secureStorage.set("agentPrivateKey", s.agent.privateKeyPem);
+    } else {
+      // Fallback: persist keys to localStorage for browser dev mode
+      try {
+        localStorage.setItem("envoymesh_keys_owner", s.owner.privateKeyPem);
+        localStorage.setItem("envoymesh_keys_device", s.device.privateKeyPem);
+        localStorage.setItem("envoymesh_keys_agent", s.agent.privateKeyPem);
+      } catch { /* localStorage may be unavailable */ }
     }
     return persisted;
   }
@@ -537,6 +560,45 @@ export class MobileNode implements NodeService {
       // Try to restore from persisted state first
       const persisted = await this._identityStateStore.load();
       if (persisted) {
+        // Try to load keys from localStorage fallback (browser dev mode)
+        if (!this._secureStorage) {
+          const ownerKey = localStorage.getItem("envoymesh_keys_owner");
+          const deviceKey = localStorage.getItem("envoymesh_keys_device");
+          const agentKey = localStorage.getItem("envoymesh_keys_agent");
+          if (ownerKey && deviceKey && agentKey) {
+            // Restore from localStorage keys
+            this._state = {
+              owner: {
+                ownerId: persisted.ownerId,
+                publicKeyPem: persisted.ownerPublicKeyPem,
+                privateKeyPem: ownerKey,
+              },
+              device: {
+                deviceId: persisted.deviceId,
+                publicKeyPem: persisted.devicePublicKeyPem,
+                privateKeyPem: deviceKey,
+              },
+              agent: {
+                agentId: deriveAgentId(persisted.ownerId, persisted.agentPublicKeyPem),
+                agentPeerId: persisted.agentPeerId,
+                publicKeyPem: persisted.agentPublicKeyPem,
+                privateKeyPem: agentKey,
+              },
+              sharedIdentity: false,
+              profileDir: this._profileDir,
+              relayUrls: persisted.relayUrls,
+            };
+            this._relayUrls.length = 0;
+            this._relayUrls.push(...persisted.relayUrls);
+            // Profile loaded later in startNode()
+            return {
+              profileDir: this._profileDir,
+              peerId: this._state.agent.agentPeerId,
+              ownerId: this._state.owner.ownerId,
+              deviceId: this._state.device.deviceId,
+            };
+          }
+        }
         if (persisted.sharedIdentity) {
           throw new Error(
             "Shared identity state found but private keys not provided. " +
@@ -555,8 +617,7 @@ export class MobileNode implements NodeService {
       // Persist the new standalone identity so it survives app restarts
       this._persistCurrentIdentity(false).catch(() => {});
     }
-    // Load cached profile if available (survives app restarts)
-    this._loadCachedProfile();
+    // Profile loaded later in startNode()
     return {
       profileDir: this._profileDir,
       peerId: this._state.agent.agentPeerId,
@@ -572,7 +633,16 @@ export class MobileNode implements NodeService {
 
   async startNode(): Promise<void> {
     this._status = "starting";
+    // Load cached profile from localStorage (survives app restarts)
+    this._loadCachedProfile();
+    // Start relay WebSocket transport (always available)
     this._connectRelays();
+    // Start browser-mode libp2p mesh (WebSocket transport + DHT + circuit relay)
+    try {
+      await this._startLibp2p();
+    } catch (err) {
+      console.warn("[mobile-node] libp2p start failed, continuing with relay-only mode:", err);
+    }
     this._status = "running";
     this._events.emit("node:status", { status: "running", peerId: this._state?.agent?.agentPeerId });
     this._events.emit("node:online", { peerId: this._state?.agent?.agentPeerId ?? "", multiaddrs: this._relayUrls });
@@ -581,10 +651,26 @@ export class MobileNode implements NodeService {
   async stopNode(): Promise<void> {
     this._status = "stopping";
     this._stopRelayCheckin();
+    this._stopDhtAdvertise();
+    // Drain all pending rendezvous queries
+    for (const [, pending] of this._pendingQueries) {
+      clearTimeout(pending.timer);
+      pending.resolve([]);
+    }
+    this._pendingQueries.clear();
+    // Clear all backoff timers for reconnection
+    for (const [, timer] of this._relayBackoffTimers) {
+      clearTimeout(timer);
+    }
+    this._relayBackoffTimers.clear();
+    this._relayBackoffs.clear();
+    // Close all relay sockets and clean up
     for (const ws of this._relaySockets) {
       try { ws.close(); } catch { /* ignore */ }
     }
     this._relaySockets = [];
+    // Stop libp2p mesh
+    await this._stopLibp2p();
     this._status = "offline";
     this._events.emit("node:status", { status: "offline", peerId: this._state?.agent?.agentPeerId });
     this._events.emit("node:offline", { peerId: this._state?.agent?.agentPeerId ?? "" });
@@ -739,6 +825,10 @@ export class MobileNode implements NodeService {
     username?: string;
     interests?: string[];
   }): Promise<PeerSearchResult[]> {
+    console.log("[mobile-node] searchPeers called:", JSON.stringify(query),
+      "relaySockets:", this._relaySockets.length,
+      "openSockets:", this._relaySockets.filter((ws) => ws.readyState === WebSocket.OPEN).length,
+      "meshStarted:", !!this._mesh);
     // 1. Search local trust store (bonded peers)
     const bonds = await this._trustStore.list();
     let results: BondRecord[] = bonds;
@@ -768,7 +858,7 @@ export class MobileNode implements NodeService {
       );
     }
 
-    const localResults: PeerSearchResult[] = results.map((b) => ({
+    const searchResults: PeerSearchResult[] = results.map((b) => ({
       nodeId: b.libp2pPeerId ?? b.peerOwnerId,
       ownerId: b.peerOwnerId,
       displayName: b.displayName ?? b.peerOwnerId.slice(0, 12) + "...",
@@ -776,20 +866,58 @@ export class MobileNode implements NodeService {
       profileVisibility: "public" as const,
     }));
 
-    // 2. Query relay network for more peers (rendezvous query)
-    if (this._relaySockets.length > 0 && this._relaySockets.some((ws) => ws.readyState === WebSocket.OPEN)) {
-      const relayResults = await this._searchRelayRendezvous(query);
-      // Merge with local results, deduplicating by ownerId
-      const seen = new Set(localResults.map((r) => r.ownerId));
-      for (const rr of relayResults) {
-        if (!seen.has(rr.ownerId)) {
-          localResults.push(rr);
-          seen.add(rr.ownerId);
+    const seen = new Set(searchResults.map((r) => r.ownerId));
+
+    // Collect self IDs for filtering
+    const selfAgentPeerId = this._state?.agent?.agentPeerId;
+    const selfMeshPeerId = this._meshPeerId;
+    const selfOwnerId = this._state?.owner?.ownerId;
+
+    // 2. Search DHT via libp2p (browser-mode mesh)
+    if (this._mesh) {
+      const searchTag = query.interests?.[0] ?? query.username ?? query.queryText ?? "";
+      if (searchTag) {
+        const topics = [searchTag.toLowerCase()];
+        if (query.username) topics.push(`username:${query.username.toLowerCase()}`);
+        for (const topic of topics) {
+          try {
+            console.log(`[mobile-node] DHT search for topic: "${topic}"`);
+            const providers = await this._searchDhtTopic(topic, 10);
+            console.log(`[mobile-node] DHT found ${providers.length} providers for "${topic}"`);
+            for (const p of providers) {
+              // Skip self
+              if (p.peerId === selfMeshPeerId || p.peerId === selfAgentPeerId) continue;
+              if (seen.has(p.peerId)) continue;
+              seen.add(p.peerId);
+              searchResults.push({
+                nodeId: p.peerId,
+                ownerId: p.peerId,
+                displayName: p.peerId.slice(0, 12) + "...",
+                interests: [topic],
+                profileVisibility: "public" as const,
+              });
+            }
+          } catch (err) {
+            console.log(`[mobile-node] DHT search for "${topic}" failed:`, err instanceof Error ? err.message : err);
+          }
         }
       }
     }
 
-    return localResults;
+    // 3. Query relay network for more peers (rendezvous query)
+    if (this._relaySockets.length > 0 && this._relaySockets.some((ws) => ws.readyState === WebSocket.OPEN)) {
+      const relayResults = await this._searchRelayRendezvous(query);
+      for (const rr of relayResults) {
+        const key = rr.ownerId || rr.nodeId;
+        if (seen.has(key)) continue;
+        // Skip self
+        if (rr.ownerId === selfOwnerId || rr.nodeId === selfAgentPeerId) continue;
+        seen.add(key);
+        searchResults.push(rr);
+      }
+    }
+
+    return searchResults;
   }
 
   /** Send a rendezvous.query to the relay and wait for rendezvous.response. */
@@ -876,7 +1004,7 @@ export class MobileNode implements NodeService {
     return {
       online: this._status === "running",
       peerId: this._state?.agent?.agentPeerId ?? "",
-      multiaddrs: this._relayUrls,
+      multiaddrs: this._mesh ? this._mesh.getMultiaddrs().map((a: any) => a.toString()) : this._relayUrls,
       connectedRelays: this._relayUrls,
       bondedPeers: 0,
     };
@@ -964,35 +1092,66 @@ export class MobileNode implements NodeService {
 
   private _connectRelays(): void {
     for (const url of this._relayUrls) {
-      try {
-        // Ensure the relay WebSocket uses the /ws/client path for direct
-        // envelope routing (not the /ws proxy path which requires a target).
-        const wsUrl = url.includes("/ws/client") ? url : url.replace(/\/+$/, "") + "/ws/client";
-        const ws = new WebSocket(wsUrl);
-        ws.onopen = () => {
-          // Send immediate relay checkin on connect
-          this._sendRelayCheckin(ws);
-          this._events.emit("node:online", {
-            peerId: this._state?.agent?.agentPeerId ?? "",
-            multiaddrs: [url],
-          });
-        };
-        ws.onclose = () => {
-          this._events.emit("node:offline", {
-            peerId: this._state?.agent?.agentPeerId ?? "",
-          });
-        };
-        ws.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data);
-            this._handleInboundMessage(msg);
-          } catch { /* ignore malformed */ }
-        };
-        this._relaySockets.push(ws);
-      } catch { /* relay unreachable */ }
+      this._connectRelay(url);
     }
     // Start periodic relay checkin
     this._startRelayCheckin();
+  }
+
+  /**
+   * Connect to a single relay with backoff reconnection.
+   * On close/error: remove from _relaySockets, schedule reconnect with
+   * exponential backoff (1s → 2s → 4s → ... → max 30s).
+   */
+  private _connectRelay(url: string): void {
+    if (!url || this._status === "offline" || this._status === "stopping") return;
+    try {
+      const wsUrl = url.includes("/ws/client") ? url : url.replace(/\/+$/, "") + "/ws/client";
+      const ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        this._relayBackoffs.delete(url);
+        this._sendRelayCheckin(ws);
+        this._sendRendezvousRegister(ws);
+        this._events.emit("node:online", {
+          peerId: this._state?.agent?.agentPeerId ?? "",
+          multiaddrs: [url],
+        });
+      };
+      ws.onclose = () => {
+        // Remove from socket array eagerly
+        this._relaySockets = this._relaySockets.filter((s) => s !== ws);
+        this._events.emit("node:offline", {
+          peerId: this._state?.agent?.agentPeerId ?? "",
+        });
+        // Schedule reconnect with backoff
+        this._scheduleRelayReconnect(url);
+      };
+      ws.onerror = () => {
+        this._relaySockets = this._relaySockets.filter((s) => s !== ws);
+        try { ws.close(); } catch { /* ignore */ }
+      };
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          this._handleInboundMessage(msg);
+        } catch { /* ignore malformed */ }
+      };
+      this._relaySockets.push(ws);
+    } catch { /* relay unreachable — will retry via backoff */ }
+  }
+
+  private _scheduleRelayReconnect(url: string): void {
+    if (this._status === "offline" || this._status === "stopping") return;
+    // Clear any existing backoff timer for this URL
+    const existing = this._relayBackoffTimers.get(url);
+    if (existing) clearTimeout(existing);
+    const backoff = Math.min((this._relayBackoffs.get(url) ?? 1000) * 2, 30000);
+    this._relayBackoffs.set(url, backoff);
+    const timer = setTimeout(() => {
+      this._relayBackoffTimers.delete(url);
+      this._connectRelay(url);
+    }, backoff);
+    this._relayBackoffTimers.set(url, timer);
   }
 
   /**
@@ -1006,7 +1165,11 @@ export class MobileNode implements NodeService {
     const { owner, agent } = this._state;
     // EnvoyEnvelope: has version, intent, and signature
     if (msg.version === "0.1" && typeof msg.intent === "string" && typeof msg.signature === "string") {
-      const verified = verifyEnvelope(msg as any);
+      // rendezvous.response from relay uses placeholder keys — skip verification
+      // per protocol spec (they are not Ed25519 device signatures)
+      const isRendezvousResponse = msg.intent === "rendezvous.response" &&
+        msg.senderPublicKey === "relay:rendezvous-response/unsigned-placeholder";
+      const verified = isRendezvousResponse ? true : verifyEnvelope(msg as any);
       // Always emit raw envelope for any listeners
       this._events.emit("p2p:envelope", {
         envelope: msg,
@@ -1052,6 +1215,7 @@ export class MobileNode implements NodeService {
           displayName: (msg.senderPeerId as string) ?? "",
         });
       } else if (intent === "rendezvous.response") {
+        console.log("[mobile-node] rendezvous.response received, matches:", (payload.matches as any[])?.length);
         // Handle relay search response
         const correlationId = (msg.correlationId as string) ?? "";
         const pending = this._pendingQueries.get(correlationId);
@@ -1097,11 +1261,353 @@ export class MobileNode implements NodeService {
     try { ws.send(JSON.stringify(signed)); } catch { /* ignore */ }
   }
 
+  /**
+   * Register capabilities on the relay's rendezvous registry so other peers
+   * can discover this mobile node via rendezvous.query.
+   * Also advertises topics on the DHT (if mesh is available) for libp2p-level discovery.
+   */
+  private _sendRendezvousRegister(ws: WebSocket): void {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (!this._state?.agent) return;
+
+    // Build capabilities from human profile interests
+    const profileCaps: Array<{ tag: string }> = [];
+    const topics: string[] = [];
+    if (this._humanProfile?.hobbies) {
+      for (const h of this._humanProfile.hobbies) {
+        if (h) {
+          profileCaps.push({ tag: h.toLowerCase() });
+          topics.push(h.toLowerCase());
+        }
+      }
+    }
+    // Always advertise basic capabilities
+    profileCaps.push({ tag: "chat.message" });
+    topics.push("chat.message");
+    if (this._humanProfile?.username) {
+      const userTopic = `username:${this._humanProfile.username.toLowerCase()}`;
+      profileCaps.push({ tag: userTopic });
+      topics.push(userTopic);
+    }
+
+    // Register on relay rendezvous
+    const relayUrl = this._relayUrls[0] ?? "";
+    const unsigned = createUnsignedEnvelope({
+      intent: "rendezvous.register",
+      senderPeerId: this._state.agent.agentPeerId,
+      senderPublicKey: this._state.agent.publicKeyPem,
+      senderRole: "agent",
+      recipientRole: "system",
+      payload: createRendezvousRegisterPayload({
+        peerId: this._state.agent.agentPeerId,
+        multiaddr: relayUrl ? `${relayUrl}/p2p/${this._state.agent.agentPeerId}` : `/p2p/${this._state.agent.agentPeerId}`,
+        capabilities: profileCaps,
+        ttlSeconds: 3600,
+      }),
+    });
+    const signed = signUnsignedEnvelope(unsigned, this._state.agent.privateKeyPem);
+    try { ws.send(JSON.stringify(signed)); } catch { /* ignore */ }
+
+    // Also advertise on DHT (best-effort)
+    this._advertiseTopicsOnDht(topics).catch(() => {});
+  }
+
+  // -------------------------------------------------------------------
+  // Libp2p mesh (browser-mode: WebSocket transport + DHT + circuit relay)
+  // -------------------------------------------------------------------
+
+  /** Load or create a stable libp2p Ed25519 private key (persisted in localStorage). */
+  private async _loadOrCreateLibp2pKey(): Promise<PrivateKey> {
+    const KEY = "envoymesh_libp2p_private_key";
+    try {
+      const stored = localStorage.getItem(KEY);
+      if (stored) {
+        const binary = atob(stored);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return privateKeyFromProtobuf(bytes);
+      }
+    } catch { /* corrupted key — regenerate */ }
+    const pk = await generateKeyPair("Ed25519");
+    try {
+      const protoBytes = privateKeyToProtobuf(pk);
+      let binary = "";
+      for (let i = 0; i < protoBytes.length; i++) binary += String.fromCharCode(protoBytes[i]);
+      localStorage.setItem(KEY, btoa(binary));
+    } catch { /* localStorage unavailable */ }
+    return pk;
+  }
+
+  /** Start the browser-mode libp2p mesh with WebSocket transport + DHT client + circuit relay. */
+  private async _startLibp2p(): Promise<void> {
+    if (this._mesh) return;
+    if (!this._state?.agent) return;
+
+    // Dynamically import libp2p modules (avoid bundling node:* deps at top level)
+    const [
+      { createLibp2p },
+      { noise },
+      { yamux },
+      { webSockets: wsTransport },
+      { circuitRelayTransport },
+      { identify, identifyPush },
+      { kadDHT },
+      { bootstrap },
+      { ping },
+    ] = await Promise.all([
+      import("libp2p"),
+      import("@chainsafe/libp2p-noise"),
+      import("@chainsafe/libp2p-yamux"),
+      import("@libp2p/websockets"),
+      import("@libp2p/circuit-relay-v2"),
+      import("@libp2p/identify"),
+      import("@libp2p/kad-dht"),
+      import("@libp2p/bootstrap"),
+      import("@libp2p/ping"),
+    ]);
+
+    const libp2pKey = await this._loadOrCreateLibp2pKey();
+
+    // Build bootstrap peers: use configured bootstrap or convert relay URLs
+    let bootstrapPeers = this._meshBootstrapPeers;
+    if (bootstrapPeers.length === 0 && this._relayUrls.length > 0) {
+      bootstrapPeers = this._relayUrls
+        .map((url) => {
+          try {
+            const u = new URL(url);
+            const host = u.hostname;
+            const port = u.port || (u.protocol === "wss:" ? "443" : "80");
+            const wsProto = u.protocol === "wss:" ? "wss" : "ws";
+            return `/dns4/${host}/tcp/${port}/${wsProto}`;
+          } catch { return ""; }
+        })
+        .filter(Boolean);
+    }
+
+    console.log("[mobile-node] starting libp2p mesh (browser-mode), bootstrap:", bootstrapPeers);
+
+    const node = await createLibp2p({
+      privateKey: libp2pKey,
+      connectionMonitor: {
+        pingInterval: 6000,
+        abortConnectionOnPingFailure: true,
+      },
+      connectionManager: {
+        reconnectRetries: 10,
+        reconnectRetryInterval: 2000,
+        reconnectBackoffFactor: 1.5,
+        maxParallelReconnects: 10,
+        dialTimeout: 15_000,
+        addressDialTimeout: 10_000,
+      },
+      addresses: {
+        listen: ["/p2p-circuit"],
+      },
+      transports: [
+        wsTransport(),
+        circuitRelayTransport(),
+      ],
+      connectionEncrypters: [noise()],
+      streamMuxers: [yamux()],
+      peerDiscovery: bootstrapPeers.length > 0
+        ? [bootstrap({ list: bootstrapPeers, timeout: 5000 })]
+        : [],
+      services: {
+        ping: ping(),
+        identify: identify(),
+        identifyPush: identifyPush(),
+        dht: kadDHT({ clientMode: true }),
+      },
+    });
+
+    // Install EnvoyMesh protocol handlers
+    const ENVOY_CHAT_PROTOCOL = "/envoymesh/chat/0.1.0";
+    const ENVOY_MESSAGE_PROTOCOL = "/envoymesh/message/0.1.0";
+
+    const handleInboundStream = async (stream: any, connection: any) => {
+      const remotePeerId = connection.remotePeer.toString();
+      try {
+        const { byteStream } = await import("@libp2p/utils");
+        const bytes = await byteStream(stream).read();
+        if (bytes) {
+          let data: Uint8Array;
+          if (bytes instanceof Uint8Array) {
+            data = bytes;
+          } else {
+            data = (bytes as import("uint8arraylist").Uint8ArrayList).subarray();
+          }
+          const text = new TextDecoder().decode(data);
+          const msg = JSON.parse(text) as Record<string, unknown>;
+          this._handleInboundMessage({ ...msg, senderPeerId: (msg.senderPeerId as string) ?? remotePeerId });
+        }
+      } catch { /* ignore malformed */ }
+      try { await stream.close(); } catch { /* ignore */ }
+    };
+
+    await node.handle(ENVOY_MESSAGE_PROTOCOL, handleInboundStream);
+    await node.handle(ENVOY_CHAT_PROTOCOL, handleInboundStream);
+
+    // Start with timeout
+    const NODE_START_DEADLINE_MS = 25_000;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          console.warn("[mobile-node] libp2p start timed out after 25s — continuing with relay-only");
+          resolve();
+        }, NODE_START_DEADLINE_MS);
+        Promise.resolve(node.start()).then(() => {
+          clearTimeout(timer);
+          resolve();
+        }).catch((err: unknown) => {
+          clearTimeout(timer);
+          reject(err);
+        });
+      });
+    } catch (err) {
+      console.warn("[mobile-node] libp2p node.start failed:", err instanceof Error ? err.message : err);
+      return;
+    }
+
+    this._mesh = node;
+    this._meshPeerId = node.peerId.toString();
+    console.log(`[mobile-node] libp2p mesh started, peerId=${this._meshPeerId}`);
+
+    this._events.emit("node:online", {
+      peerId: this._state.agent.agentPeerId,
+      multiaddrs: node.getMultiaddrs().map((a: any) => a.toString()),
+    });
+
+    // Advertise profile topics on DHT after startup delay
+    this._startDhtAdvertise();
+  }
+
+  private async _stopLibp2p(): Promise<void> {
+    if (!this._mesh) return;
+    this._stopDhtAdvertise();
+    try {
+      await this._mesh.stop();
+    } catch (err) {
+      console.warn("[mobile-node] libp2p stop error:", err instanceof Error ? err.message : err);
+    }
+    this._mesh = undefined;
+    this._meshPeerId = "";
+  }
+
+  /** Send a signed envelope via the libp2p mesh (chat protocol). */
+  private async _sendViaMesh(targetPeerId: string, data: string): Promise<void> {
+    if (!this._mesh || !targetPeerId) throw new Error("Mesh not available");
+    const { byteStream } = await import("@libp2p/utils");
+    const stream = await this._mesh.dialProtocol(
+      `/p2p/${targetPeerId}` as any,
+      "/envoymesh/chat/0.1.0",
+    );
+    try {
+      await byteStream(stream).write(new TextEncoder().encode(data));
+    } finally {
+      try { await stream.close(); } catch { /* ignore */ }
+    }
+  }
+
+  /**
+   * Compute the DHT provider CID for a capability topic.
+   * Inlined from @envoymesh/network/capability-topic to avoid bundling node:crypto.
+   */
+  private async _capabilityTopicCid(topic: string): Promise<any> {
+    const { CID } = await import("multiformats/cid");
+    const { sha256 } = await import("multiformats/hashes/sha2");
+    const normalized = topic.trim();
+    const bytes = new TextEncoder().encode(`envoymesh:cap:v1:${normalized}`);
+    const digest = await sha256.digest(bytes);
+    return CID.createV1(0x55, digest);
+  }
+
+  /** Search the DHT for capability topic providers. */
+  private async _searchDhtTopic(topic: string, limit: number): Promise<Array<{ peerId: string; multiaddrs: string[] }>> {
+    if (!this._mesh) return [];
+    const cid = await this._capabilityTopicCid(topic);
+    const results: Array<{ peerId: string; multiaddrs: string[] }> = [];
+    const signal = AbortSignal.timeout(5000);
+    try {
+      for await (const provider of this._mesh.contentRouting.findProviders(cid, { signal })) {
+        results.push({
+          peerId: provider.id.toString(),
+          multiaddrs: provider.multiaddrs.map((ma: any) => ma.toString()),
+        });
+        if (results.length >= limit) break;
+      }
+    } catch (err) {
+      const name = err instanceof Error ? (err as Error & { name?: string }).name : "";
+      if (name === "AbortError" || name === "TimeoutError" || signal.aborted) {
+        return results;
+      }
+      throw err;
+    }
+    return results;
+  }
+
+  /** Advertise profile topics on the DHT. */
+  private async _advertiseTopicsOnDht(topics: string[]): Promise<void> {
+    if (!this._mesh) return;
+    for (const topic of topics) {
+      try {
+        const cid = await this._capabilityTopicCid(topic);
+        await this._mesh.contentRouting.provide(cid);
+        console.log(`[mobile-node] DHT advertised topic: ${topic}`);
+      } catch (err) {
+        console.warn(`[mobile-node] DHT advertise failed for "${topic}":`, err instanceof Error ? err.message : err);
+      }
+    }
+  }
+
+  private _startDhtAdvertise(): void {
+    this._stopDhtAdvertise();
+    // First advertise after 15s (let DHT bootstrap stabilize)
+    const initialTimer = setTimeout(() => {
+      const topics: string[] = ["chat.message"];
+      if (this._humanProfile?.hobbies) {
+        for (const h of this._humanProfile.hobbies) {
+          if (h) topics.push(h.toLowerCase());
+        }
+      }
+      if (this._humanProfile?.username) {
+        topics.push(`username:${this._humanProfile.username.toLowerCase()}`);
+      }
+      this._advertiseTopicsOnDht(topics).catch(() => {});
+    }, 15_000);
+
+    // Re-advertise every 5 minutes (similar to desktop node)
+    this._dhtAdvertiseTimer = setInterval(() => {
+      const topics: string[] = ["chat.message"];
+      if (this._humanProfile?.hobbies) {
+        for (const h of this._humanProfile.hobbies) {
+          if (h) topics.push(h.toLowerCase());
+        }
+      }
+      if (this._humanProfile?.username) {
+        topics.push(`username:${this._humanProfile.username.toLowerCase()}`);
+      }
+      this._advertiseTopicsOnDht(topics).catch(() => {});
+    }, 5 * 60 * 1000);
+
+    // Store initial timer for cleanup
+    (this._dhtAdvertiseTimer as any)._initial = initialTimer;
+  }
+
+  private _stopDhtAdvertise(): void {
+    if (this._dhtAdvertiseTimer) {
+      clearInterval(this._dhtAdvertiseTimer);
+      const initial = (this._dhtAdvertiseTimer as any)._initial;
+      if (initial) clearTimeout(initial);
+      this._dhtAdvertiseTimer = null;
+    }
+  }
+
   private _startRelayCheckin(): void {
     this._stopRelayCheckin();
     this._relayCheckinTimer = setInterval(() => {
       for (const ws of this._relaySockets) {
         this._sendRelayCheckin(ws);
+        this._sendRendezvousRegister(ws);
       }
     }, 30_000);
   }
@@ -1113,11 +1619,10 @@ export class MobileNode implements NodeService {
     }
   }
 
-  private _sendToRelay(msg: Record<string, unknown>): void {
+  private async _sendToRelay(msg: Record<string, unknown>): Promise<void> {
     if (!this._state?.agent) return;
 
     // Construct a signed envelope for chat messages
-    let data: string;
     if (msg.type === "chat" && typeof msg.text === "string") {
       const unsigned = createUnsignedEnvelope({
         intent: "chat.message",
@@ -1129,11 +1634,34 @@ export class MobileNode implements NodeService {
         payload: { text: msg.text },
       });
       const signed = signUnsignedEnvelope(unsigned, this._state.agent.privateKeyPem);
-      data = JSON.stringify(signed);
+      const data = JSON.stringify(signed);
+
+      // Try mesh first (P2P) if we can resolve the owner ID to a libp2p peer ID
+      if (this._mesh) {
+        const targetOwnerId = (msg.targetOwnerId as string) ?? "";
+        if (targetOwnerId) {
+          const bond = await this._trustStore.get(targetOwnerId);
+          const libp2pPeerId = bond?.libp2pPeerId;
+          if (libp2pPeerId) {
+            this._sendViaMesh(libp2pPeerId, data).then(() => {
+              console.log(`[mobile-node] chat sent via mesh to ${libp2pPeerId.slice(0, 12)}...`);
+            }).catch((err) => {
+              console.warn(`[mobile-node] mesh sendChat failed, falling back to relay:`, err instanceof Error ? err.message : err);
+              this._broadcastToRelaySockets(data);
+            });
+            return;
+          }
+        }
+      }
+      this._broadcastToRelaySockets(data);
     } else {
       // Non-chat messages (hello requests, forward-envelope, etc.) — send as-is for now
-      data = JSON.stringify(msg);
+      const data = JSON.stringify(msg);
+      this._broadcastToRelaySockets(data);
     }
+  }
+
+  private _broadcastToRelaySockets(data: string): void {
     for (const ws of this._relaySockets) {
       if (ws.readyState === WebSocket.OPEN) {
         try { ws.send(data); } catch { /* ignore */ }
