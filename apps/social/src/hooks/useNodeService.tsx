@@ -44,6 +44,7 @@ export interface NodeServiceClient {
   isConnected: boolean;
   isReady: boolean;
   reconnectAttempts: number;
+  getLastError?(): string | null;
 
   // Identity
   getProfile(): Promise<NodeProfile>;
@@ -194,6 +195,7 @@ export function NodeServiceProvider({
   const [connected, setConnected] = useState(false);
   const [ready, setReady] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   useEffect(() => {
     if (clientFactory) {
@@ -210,6 +212,11 @@ export function NodeServiceProvider({
     // Desktop: use WebSocket client
     const { client: nodeService, wsClient } = createWsNodeServiceClient(setConnected, setReady, setReconnectAttempts);
 
+    // Subscribe to wsClient lastError changes
+    wsClient.onStatusChange(() => {
+      setLastError(wsClient.getLastError());
+    });
+
     // Auto-connect on mount
     nodeService.connect().catch(console.error);
 
@@ -218,9 +225,10 @@ export function NodeServiceProvider({
       setReady(true);
     });
 
-    // Update reconnect attempts periodically
+    // Update reconnect attempts and lastError periodically
     const reconnectInterval = setInterval(() => {
       setReconnectAttempts(wsClient.getReconnectAttempts());
+      setLastError(wsClient.getLastError());
     }, 1000);
 
     setClient(nodeService);
@@ -243,6 +251,7 @@ export function NodeServiceProvider({
       if (prop === "isConnected") return connected;
       if (prop === "isReady") return ready;
       if (prop === "reconnectAttempts") return reconnectAttempts;
+      if (prop === "getLastError") return () => lastError;
       return Reflect.get(target, prop, receiver);
     },
   }) as NodeServiceClient;

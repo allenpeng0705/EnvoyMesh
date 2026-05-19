@@ -65,6 +65,8 @@ export class WsServer {
       nodeServiceImpl.on("bond:established", (data: unknown) => this.emitEvent("bond:established", data));
       nodeServiceImpl.on("bond:revoked", (data: unknown) => this.emitEvent("bond:revoked", data));
       nodeServiceImpl.on("node:status", (data: unknown) => this.emitEvent("node:status", data));
+      nodeServiceImpl.on("node:online", (data: unknown) => this.emitEvent("node:online", data));
+      nodeServiceImpl.on("node:offline", (data: unknown) => this.emitEvent("node:offline", data));
       nodeServiceImpl.on("bridge:status", (data: unknown) => this.emitEvent("bridge:status", data));
       nodeServiceImpl.on("p2p:envelope", (data: unknown) => this.emitEvent("p2p:envelope", data));
     } else {

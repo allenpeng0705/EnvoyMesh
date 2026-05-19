@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNodeState } from "./context/NodeStateContext.js";
 import { useNodeService } from "./hooks/useNodeService.js";
+import type { NodeServiceClient } from "./hooks/useNodeService.js";
 import { ToastProvider } from "./hooks/useToast.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { Header } from "./components/Header.js";
@@ -26,8 +27,15 @@ export function App() {
     connectionStatus,
   } = useNodeState();
 
+  // Derive relay unreachable state from WebSocket errors or many reconnect attempts
   const nodeService = useNodeService();
   const reconnectAttempts = nodeService.reconnectAttempts;
+  const lastError = (nodeService as unknown as { getLastError?(): string | null }).getLastError?.() ?? null;
+  const isRelayUnreachable = reconnectAttempts > 3 || (lastError?.includes("Connection timed out") || lastError?.includes("relay") || lastError?.includes("ECONNREFUSED") || lastError?.includes("WebSocket connection closed") || false);
+
+  const handleRetryConnect = () => {
+    void nodeService.reconnect();
+  };
 
   const [currentView, setCurrentView] = useState<ViewName>("chat");
 
@@ -47,6 +55,9 @@ export function App() {
             <div className="loading-error">
               <p>Unable to connect. The relay may be unreachable.</p>
               <p className="loading-error-hint">Check your relay URL in Settings &gt; App, or ensure the relay server is running.</p>
+              <button className="primary" onClick={handleRetryConnect}>
+                Retry Connection
+              </button>
             </div>
           )}
         </div>
@@ -74,6 +85,8 @@ export function App() {
           nodeStatus={nodeStatus}
           humanProfile={humanProfile}
           peerId={peerId}
+          relayUnreachable={isRelayUnreachable}
+          onRetryConnect={handleRetryConnect}
         />
 
         <ErrorBoundary>
