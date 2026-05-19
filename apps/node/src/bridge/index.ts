@@ -43,6 +43,9 @@ export function createBridge(options: CreateBridgeOptions): {
   if (!config.enabled) {
     return { agentPeerId: options.identity.agentPeerId, stop: async () => {}, _handleMessage: async () => {} };
   }
+  if (!config.secret) {
+    throw new Error("Bridge requires a shared secret when enabled");
+  }
 
   const agentId = options.identity.agentCredential.agentId;
 
@@ -128,7 +131,7 @@ export function createBridge(options: CreateBridgeOptions): {
     // We intentionally do NOT process synchronous replies from forwardToAgent —
     // agents like HomeClaw send replies via _reply_to_bridge which POSTs to
     // /bridge/send, and processing both paths would cause duplicate messages.
-    void (async () => {
+    const fwdPromise = (async () => {
       try {
         const fwdStartTime = Date.now();
         await forwardToAgent(config, {
@@ -159,6 +162,7 @@ export function createBridge(options: CreateBridgeOptions): {
         });
       }
     })();
+    void fwdPromise;
   };
 
   return {

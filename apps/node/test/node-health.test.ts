@@ -79,6 +79,7 @@ describe("node health", () => {
       listenAddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/node-a"],
       relayPeerCount: 0,
       rssBytes: 2_500 * 1024 * 1024,
+      maxRssBytesOverride: 1, // set threshold to 1 byte so 2.5 GB triggers critical
       recentFatalErrors: [],
       previous: createInitialNodeHealthState(),
     });

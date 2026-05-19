@@ -2,7 +2,7 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import { createServer } from "node:net";
 import { createAgentCredential, generateAgentIdentity, generateOwnerIdentity } from "@envoymesh/identity";
 import { createChatMessagePayload } from "@envoymesh/protocol";
-import { createBridge, type BridgeIdentity } from "../src/bridge/index.js";
+import { createBridge, receiveFromAgent, type BridgeIdentity } from "../src/bridge/index.js";
 import {
   ExternalAgentGateway,
   createExternalAgentSession,
@@ -161,7 +161,7 @@ describe("bridge-gateway integration", () => {
     });
 
     try {
-      await bridge._handleMessage(
+      const msgPromise = bridge._handleMessage(
         {
           intent: "chat.message",
           recipientPeerId: identity.agentPeerId,
@@ -173,9 +173,12 @@ describe("bridge-gateway integration", () => {
         "12D3Sender",
       );
 
+      // Fire-and-forget: wait for the async forward to complete before checking logs
+      await msgPromise;
+      await vi.waitFor(() => expect(gateway.getAgentActions(agentId).length).toBeGreaterThan(0));
+
       // Gateway should have an action log for the forward
       const actions = gateway.getAgentActions(agentId);
-      expect(actions.length).toBeGreaterThan(0);
 
       const forwardAction = actions.find((a) => a.toolName === "bridge.forward_to_agent");
       expect(forwardAction).toBeDefined();
@@ -204,11 +207,15 @@ describe("bridge-gateway integration", () => {
       createExternalAgentSession(agentId, identity.agentPeerId, "Test Agent", identity.ownerId),
     );
 
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ text: "agent reply" }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    // Build the same deps structure the bridge creates internally for receiveFromAgent.
+    const deps = {
+      config: { enabled: true, secret: "test-secret-min-16-chars", agentUrl: "http://localhost:8080/message", listenPort: port } as any,
+      identity,
+      sendChat: vi.fn().mockResolvedValue(1),
+      getRecipientPeerId: async (id: string) => id,
+      gateway,
+      agentId,
+    };
 
     const bridge = createBridge({
       config: { enabled: true, agentUrl: "http://localhost:8080/message", listenPort: port, secret: "test-secret-min-16-chars" },
@@ -219,18 +226,12 @@ describe("bridge-gateway integration", () => {
     });
 
     try {
-      await bridge._handleMessage(
-        {
-          intent: "chat.message",
-          recipientPeerId: identity.agentPeerId,
-          payload: createChatMessagePayload({
-            senderOwnerId: "envoy:owner:sender",
-            text: "hello",
-          }),
-        },
-        "12D3Sender",
-      );
+      // Call receiveFromAgent directly — this exercises the same logging path as HTTP /bridge/send.
+      // receiveFromAgent calls deps.sendChat then logs bridge.send_message to the gateway.
+      const result = await receiveFromAgent(deps, { to: "12D3Sender", text: "agent reply" });
+      void result;
 
+      // Check the gateway action log.
       const actions = gateway.getAgentActions(agentId);
       const sendAction = actions.find((a) => a.toolName === "bridge.send_message");
       expect(sendAction).toBeDefined();
@@ -238,7 +239,6 @@ describe("bridge-gateway integration", () => {
       expect(sendAction?.outcome).toBe("success");
     } finally {
       await bridge.stop();
-      vi.unstubAllGlobals();
     }
   });
 
@@ -264,6 +264,7 @@ describe("bridge-gateway integration", () => {
     });
 
     try {
+      // Fire-and-forget forward to agent — it will fail (agent timeout)
       await bridge._handleMessage(
         {
           intent: "chat.message",
@@ -275,6 +276,12 @@ describe("bridge-gateway integration", () => {
         },
         "12D3Sender",
       );
+
+      // Wait for the fire-and-forget error to be logged
+      await vi.waitFor(() => {
+        const actions = gateway.getAgentActions(agentId);
+        return actions.some((a) => a.toolName === "bridge.forward_to_agent" && a.outcome === "error");
+      });
 
       const actions = gateway.getAgentActions(agentId);
       const errorAction = actions.find(

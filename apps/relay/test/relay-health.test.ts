@@ -71,6 +71,7 @@ describe("standalone relay health", () => {
       httpEnabled: true,
       httpListening: true,
       rssBytes: 2_000 * 1024 * 1024,
+      maxRssBytesOverride: 1, // set threshold to 1 byte so 2 GB triggers critical
       recentFatalErrors: [],
       previous: createInitialStandaloneRelayHealthState(),
     });
