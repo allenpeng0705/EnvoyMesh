@@ -10,6 +10,8 @@ type EventHandler = (data: unknown) => void;
  * WebSocket client that connects to the node's WsServer and provides
  * a typed interface for NodeService operations.
  */
+export type ConnectionChangeHandler = (status: 'connected' | 'disconnected') => void;
+
 export class WsClient {
   private ws: WebSocket | null = null;
   private readonly handlers = new Map<string, Set<EventHandler>>();
@@ -22,9 +24,28 @@ export class WsClient {
   private reconnectAttempts = 0;
   private readonly maxReconnectDelay = 60000; // 1 minute max
   private lastPong = 0;
+  private _statusCallbacks = new Set<ConnectionChangeHandler>();
+  private _lastError: string | null = null;
+  private _connectTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(url: string = "ws://localhost:3030/ws") {
     this.url = url;
+  }
+
+  /**
+   * Register a persistent callback for connection state changes.
+   * Returns an unsubscribe function.
+   */
+  onStatusChange(cb: ConnectionChangeHandler): () => void {
+    this._statusCallbacks.add(cb);
+    return () => { this._statusCallbacks.delete(cb); };
+  }
+
+  /**
+   * Get the last connection error message, if any.
+   */
+  getLastError(): string | null {
+    return this._lastError;
   }
 
   /**
@@ -32,28 +53,58 @@ export class WsClient {
    */
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
+      let resolved = false;
       try {
         this.ws = new WebSocket(this.url);
 
+        // 15-second connection timeout
+        this._connectTimeout = setTimeout(() => {
+          if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+            const err = "Connection timed out after 15s. Relay may be unreachable.";
+            this._lastError = err;
+            this.ws.close();
+            resolved = true;
+            reject(new Error(err));
+          }
+        }, 15000);
+
         this.ws.onopen = () => {
           console.log("[ws-client] Connected");
+          if (this._connectTimeout) {
+            clearTimeout(this._connectTimeout);
+            this._connectTimeout = null;
+          }
           this.reconnectAttempts = 0;
+          this._lastError = null;
+          resolved = true;
           // Notify waitForConnection handlers
           const handlers = this.handlers.get("connected");
           if (handlers) {
             handlers.forEach((h) => (h as () => void)());
           }
+          // Notify persistent status callbacks
+          this._statusCallbacks.forEach((cb) => cb('connected'));
           resolve();
         };
 
         this.ws.onclose = () => {
           console.log("[ws-client] Disconnected");
+          if (this._connectTimeout) {
+            clearTimeout(this._connectTimeout);
+            this._connectTimeout = null;
+          }
+          // Notify persistent status callbacks
+          this._statusCallbacks.forEach((cb) => cb('disconnected'));
+          // If onopen never fired (e.g. connection refused), reject the promise
+          if (!resolved) {
+            resolved = true;
+            reject(new Error("WebSocket connection closed before opening"));
+          }
           this.scheduleReconnect();
         };
 
         this.ws.onerror = (error) => {
           console.error("[ws-client] Error:", error);
-          reject(new Error("WebSocket connection failed"));
         };
 
         this.ws.onmessage = (event) => {
@@ -69,6 +120,10 @@ export class WsClient {
    * Disconnect from the WebSocket server
    */
   disconnect(): void {
+    if (this._connectTimeout) {
+      clearTimeout(this._connectTimeout);
+      this._connectTimeout = null;
+    }
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -78,6 +133,8 @@ export class WsClient {
       this.ws = null;
     }
     this.reconnectAttempts = 0;
+    // Notify persistent status callbacks
+    this._statusCallbacks.forEach((cb) => cb('disconnected'));
   }
 
   /**

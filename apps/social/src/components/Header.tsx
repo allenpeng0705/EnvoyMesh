@@ -4,6 +4,8 @@ import type {
   NodeStatus,
 } from "@envoymesh/api";
 import type { ViewName } from "../App.js";
+import { useTheme } from "../context/ThemeContext.js";
+import { DarkModeIcon, LightModeIcon } from "../icons.js";
 
 interface HeaderProps {
   currentView: ViewName;
@@ -15,6 +17,8 @@ interface HeaderProps {
   nodeStatus: NodeStatus;
   humanProfile: HumanProfile | null;
   peerId: string;
+  relayUnreachable?: boolean;
+  onRetryConnect?: () => void;
 }
 
 export function Header({
@@ -27,7 +31,18 @@ export function Header({
   nodeStatus,
   humanProfile,
   peerId,
+  relayUnreachable,
+  onRetryConnect,
 }: HeaderProps) {
+  const { theme, resolved, setTheme } = useTheme();
+
+  const cycleTheme = () => {
+    if (theme === "system") setTheme("dark");
+    else if (theme === "dark") setTheme("light");
+    else setTheme("system");
+  };
+
+  const themeLabel = theme === "system" ? "Auto" : theme === "dark" ? "Dark" : "Light";
   const displayLabel =
     humanProfile?.displayName ||
     humanProfile?.username ||
@@ -72,6 +87,12 @@ export function Header({
         </button>
       </nav>
       <div className="header-right">
+        {relayUnreachable && isPublicNetwork && (
+          <button className="relay-warning" onClick={onRetryConnect} title="Relay unreachable — tap to retry">
+            <span className="relay-warning-dot" />
+            Relay unreachable
+          </button>
+        )}
         {isPublicNetwork ? (
           <div className={`network-status ${connectionStatus?.online ? 'public' : 'checking'}`}>
             <span className="status-indicator" />
@@ -83,6 +104,14 @@ export function Header({
             <span>Private</span>
           </div>
         )}
+        <button
+          className="theme-toggle-btn"
+          onClick={cycleTheme}
+          title={`Theme: ${themeLabel}`}
+          aria-label={`Theme: ${themeLabel}. Click to change.`}
+        >
+          {resolved === "dark" ? <LightModeIcon size={16} /> : <DarkModeIcon size={16} />}
+        </button>
         <span className="node-status">{nodeStatus}</span>
         <span className="node-name" title={peerId && !peerId.startsWith("envoy_") ? peerId : ""}>
           {displayLabel}

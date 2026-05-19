@@ -1706,6 +1706,7 @@ class NodeServiceImpl implements NodeService {
 
       this._nodeStatus = "running";
       this.emit("node:status", { status: this._nodeStatus, peerId: this._mesh.peerId });
+      this.emit("node:online", { peerId: this._mesh.peerId, multiaddrs: this._mesh.multiaddrs.map(a => a.toString()) });
 
       // Wait longer for DHT to connect to bootstrap peers and stabilize routing table
       // DHT provide operations require the routing table to be populated
@@ -1945,6 +1946,7 @@ class NodeServiceImpl implements NodeService {
 
     this._nodeStatus = "offline";
     this.emit("node:status", { status: this._nodeStatus });
+    this.emit("node:offline", { peerId: this._profile?.device?.deviceId ?? "" });
   }
 
   // ============================================

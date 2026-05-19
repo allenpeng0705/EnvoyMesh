@@ -1,10 +1,38 @@
 import { useNodeState } from "../../context/NodeStateContext.js";
+import { useTheme } from "../../context/ThemeContext.js";
+import type { ThemeMode } from "../../context/ThemeContext.js";
 
 export function SettingsAppTab() {
   const { appSettings, setAppSettings } = useNodeState();
+  const { theme, setTheme } = useTheme();
+
+  const themeOptions: { value: ThemeMode; label: string; desc: string }[] = [
+    { value: "system", label: "System", desc: "Follow your device settings" },
+    { value: "light", label: "Light", desc: "Always use light appearance" },
+    { value: "dark", label: "Dark", desc: "Always use dark appearance" },
+  ];
 
   return (
     <section className="settings-section">
+      <div className="settings-card">
+        <h4>Appearance</h4>
+        <div className="settings-radio-group">
+          {themeOptions.map((opt) => (
+            <label
+              key={opt.value}
+              className={`settings-radio-option ${theme === opt.value ? "active" : ""}`}
+              onClick={() => setTheme(opt.value)}
+            >
+              <span className={`settings-radio ${theme === opt.value ? "checked" : ""}`} />
+              <div className="radio-content">
+                <div className="mode-title">{opt.label}</div>
+                <div className="field-desc">{opt.desc}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+      </div>
+
       <div className="settings-card">
         <h4>Connection</h4>
         <div className="settings-row">

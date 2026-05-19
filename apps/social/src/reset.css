@@ -63,3 +63,20 @@ button {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-slate-400, #94a3b8);
 }
+
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: var(--color-slate-600);
+}
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-slate-500);
+}
+
+/* Selection styling */
+::selection {
+  background: var(--color-primary-subtle);
+  color: var(--color-text);
+}
+:root[data-theme="dark"] ::selection {
+  background: rgba(45, 212, 168, 0.3);
+  color: var(--color-text);
+}

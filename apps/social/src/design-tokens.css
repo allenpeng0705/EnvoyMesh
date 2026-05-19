@@ -25,6 +25,7 @@
   /* == Semantic colors == */
   --color-success: #10b981;
   --color-success-subtle: #ecfdf5;
+  --color-success-hover: #059669;
   --color-warning: #f59e0b;
   --color-warning-subtle: #fffbeb;
   --color-danger: #ef4444;
@@ -80,6 +81,13 @@
   --shadow-glow-lg: 0 0 40px rgba(7, 193, 96, 0.2);
   --message-outgoing-overlay: rgba(255, 255, 255, 0.15);
   --message-code-bg: rgba(127, 127, 127, 0.15);
+
+  /* == Outgoing message overlays (white on green in light mode) == */
+  --message-outgoing-code-bg: rgba(255, 255, 255, 0.15);
+  --message-outgoing-link: rgba(255, 255, 255, 0.9);
+  --message-outgoing-time: rgba(255, 255, 255, 0.6);
+  --message-outgoing-quote-border: rgba(255, 255, 255, 0.6);
+  --message-outgoing-code-border: rgba(255, 255, 255, 0.2);
 
   /* == Spacing (4px base) == */
   --space-0: 0;
@@ -150,6 +158,7 @@
 
     --color-success: #34d399;
     --color-success-subtle: #022c22;
+    --color-success-hover: #10b981;
     --color-warning: #fbbf24;
     --color-warning-subtle: #451a03;
     --color-danger: #f87171;
@@ -266,6 +275,7 @@
 
   --color-success: #10b981;
   --color-success-subtle: #ecfdf5;
+  --color-success-hover: #059669;
   --color-warning: #f59e0b;
   --color-warning-subtle: #fffbeb;
   --color-danger: #ef4444;

@@ -84,8 +84,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  font-weight: 700;
+  color: var(--color-primary-on);
+  font-weight: var(--font-bold);
   font-size: 14px;
 }
 
@@ -105,8 +105,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   border: none;
   background: transparent;
   color: var(--color-text-muted, #64748b);
@@ -124,8 +124,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   border: none;
   background: transparent;
   color: var(--color-primary, #07C160);
@@ -146,8 +146,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   border: none;
   background: transparent;
   color: var(--color-text-muted, #64748b);
@@ -272,6 +272,14 @@ body {
 
 .tab-label {
   line-height: 1.2;
+}
+
+/* ---- Keyboard avoidance ---- */
+.keyboard-visible .bottom-tabs {
+  display: none;
+}
+.keyboard-visible .mobile-content {
+  padding-bottom: 0;
 }
 
 /* ---- View transitions ---- */

@@ -110,6 +110,17 @@ function createWsNodeServiceClient(
   let connected = false;
   let readyReceived = false;
 
+  // Subscribe to persistent connection status changes (handles reconnects)
+  wsClient.onStatusChange((status) => {
+    const isConnected = status === 'connected';
+    connected = isConnected;
+    connectCb(isConnected);
+    if (!isConnected) {
+      readyReceived = false;
+      readyCb(false);
+    }
+  });
+
   const client: NodeServiceClient = {
     get isConnected() { return connected; },
     get isReady() { return readyReceived; },
@@ -117,27 +128,19 @@ function createWsNodeServiceClient(
 
     async connect() {
       await wsClient.connect();
-      connected = true;
-      connectCb(true);
+      // Status callback handles connectCb via onStatusChange
     },
 
     disconnect() {
       wsClient.disconnect();
-      connected = false;
-      readyReceived = false;
-      connectCb(false);
-      readyCb(false);
+      // Status callback handles connectCb/readyCb via onStatusChange
     },
 
     async reconnect() {
       wsClient.disconnect();
-      connected = false;
-      readyReceived = false;
-      connectCb(false);
-      readyCb(false);
+      // Status callback handles connectCb/readyCb via onStatusChange
       await wsClient.connect();
-      connected = true;
-      connectCb(true);
+      // Status callback handles connectCb via onStatusChange on open
     },
 
     async getProfile() { return wsClient.rpc("getProfile"); },

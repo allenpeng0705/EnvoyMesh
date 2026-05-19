@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#f8fafc" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <script>
+      (function(){
+        var t = "system";
+        try { var s = localStorage.getItem("envoy-theme"); if (s === "light" || s === "dark" || s === "system") t = s; } catch(e) {}
+        if (t === "system") t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      })();
+    </script>
     <title>EnvoyMesh</title>
   </head>
   <body>

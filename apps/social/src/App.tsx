@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useNodeState } from "./context/NodeStateContext.js";
+import { useNodeService } from "./hooks/useNodeService.js";
+import { ToastProvider } from "./hooks/useToast.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { Header } from "./components/Header.js";
 import { SetupView } from "./components/views/SetupView.js";
@@ -24,51 +26,69 @@ export function App() {
     connectionStatus,
   } = useNodeState();
 
+  const nodeService = useNodeService();
+  const reconnectAttempts = nodeService.reconnectAttempts;
+
   const [currentView, setCurrentView] = useState<ViewName>("chat");
 
   const isPublicNetwork = (nodeConfig?.bootstrapPresets ?? []).length > 0;
 
-  // ---- Loading ----
-  if (!isConnected) {
-    return (
-      <div className="app">
-        <div className="loading">Connecting to Envoy...</div>
+  // ---- Wrap return content ----
+  const content = !isConnected ? (
+    <div className="app">
+      <div className="loading">
+        <div className="loading-content">
+          <div className="loading-spinner" />
+          <h2>Connecting to EnvoyMesh</h2>
+          {reconnectAttempts > 0 && (
+            <p className="loading-attempts">Reconnect attempt {reconnectAttempts}{"\u2026"}</p>
+          )}
+          {reconnectAttempts > 3 && (
+            <div className="loading-error">
+              <p>Unable to connect. The relay may be unreachable.</p>
+              <p className="loading-error-hint">Check your relay URL in Settings &gt; App, or ensure the relay server is running.</p>
+            </div>
+          )}
+        </div>
       </div>
-    );
-  }
+    </div>
+  ) : nodeStatus === "offline" ? (
+    <SetupView />
+  ) : null;
 
-  // ---- Setup (node not initialized) ----
-  if (nodeStatus === "offline") {
-    return <SetupView />;
+  if (content) {
+    return <ToastProvider>{content}</ToastProvider>;
   }
 
   // ---- Main app ----
   return (
-    <div className="app">
-      <Header
-        currentView={currentView}
-        onNavigate={(v) => { setCurrentView(v); }}
-        inboxCount={pendingHellOs.length}
-        bondsCount={bonds.length}
-        isPublicNetwork={isPublicNetwork}
-        connectionStatus={connectionStatus}
-        nodeStatus={nodeStatus}
-        humanProfile={humanProfile}
-        peerId={peerId}
-      />
+    <ToastProvider>
+      <div className="app">
+        <Header
+          currentView={currentView}
+          onNavigate={(v) => { setCurrentView(v); }}
+          inboxCount={pendingHellOs.length}
+          bondsCount={bonds.length}
+          isPublicNetwork={isPublicNetwork}
+          connectionStatus={connectionStatus}
+          nodeStatus={nodeStatus}
+          humanProfile={humanProfile}
+          peerId={peerId}
+        />
 
-      <ErrorBoundary>
-        <main className="main">
-          {currentView === "chat" && <ChatView />}
-          {currentView === "contacts" && <ContactsView />}
-          {currentView === "search" && <SearchView />}
-          {currentView === "profile" && <ProfileView />}
-          {currentView === "settings" && <SettingsView />}
-          {currentView === "inbox" && <InboxView />}
-        </main>
-      </ErrorBoundary>
+        <ErrorBoundary>
+          <main className="main">
+            {currentView === "chat" && <ChatView />}
+            {currentView === "contacts" && <ContactsView />}
+            {currentView === "search" && <SearchView />}
+            {currentView === "profile" && <ProfileView />}
+            {currentView === "settings" && <SettingsView />}
+            {currentView === "inbox" && <InboxView />}
+          </main>
+        </ErrorBoundary>
 
-    </div>
+      </div>
+    </ToastProvider>
   );
 }
 

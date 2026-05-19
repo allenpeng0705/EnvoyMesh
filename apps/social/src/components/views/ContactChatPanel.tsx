@@ -53,6 +53,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
 
   const [chatInput, setChatInput] = useState("");
   const [isSendingChat, setIsSendingChat] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const lastChatSendRef = useRef<{ at: number; contact: string; text: string } | null>(null);
 
   // Peer connection info (locally cached)
@@ -105,11 +106,15 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     lastChatSendRef.current = { at: now, contact: selectedContact, text };
 
     setIsSendingChat(true);
+    setSendError(null);
     try {
       await nodeService.sendChat(selectedContact, text);
       setChatInput("");
     } catch (error) {
+      const msg = error instanceof Error ? error.message : "Failed to send message";
       console.error("[ContactChatPanel] sendChat failed:", error);
+      setSendError(msg);
+      setTimeout(() => setSendError(null), 5000);
     } finally {
       setIsSendingChat(false);
     }
@@ -197,6 +202,12 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
       </div>
       <footer className="chat-input">
+        {sendError && <div className="chat-send-error">{sendError}</div>}
+        {chatInput.trim() && !isSendingChat && (
+          <div className="typing-indicator">
+            <span /><span /><span />
+          </div>
+        )}
         <input
           type="text"
           placeholder="Type a message..."

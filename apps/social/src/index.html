@@ -6,6 +6,14 @@
     <title>EnvoyMesh</title>
     <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0b1120" media="(prefers-color-scheme: dark)" />
+    <script>
+      (function(){
+        var t = "system";
+        try { var s = localStorage.getItem("envoy-theme"); if (s === "light" || s === "dark" || s === "system") t = s; } catch(e) {}
+        if (t === "system") t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      })();
+    </script>
     <link rel="stylesheet" href="./reset.css" />
     <link rel="stylesheet" href="./design-tokens.css" />
     <link rel="stylesheet" href="./styles.css" />
