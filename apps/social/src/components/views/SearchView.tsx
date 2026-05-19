@@ -19,6 +19,7 @@ export function SearchView() {
     if (!effectiveQuery) return;
     setIsSearching(true);
     setSearchResults([]);
+    const startedAt = Date.now();
     try {
       let results: PeerSearchResult[];
       const query = effectiveQuery;
@@ -31,6 +32,11 @@ export function SearchView() {
           interests: [q],
           username: q,
         });
+      }
+      // Ensure the progress UI is visible for at least 800ms
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < 800) {
+        await new Promise((r) => setTimeout(r, 800 - elapsed));
       }
       setSearchResults(results);
     } catch (error) {
@@ -158,16 +164,19 @@ export function SearchView() {
             </li>
           ))}
         </ul>
-      ) : searchQuery.trim() ? (
+      ) : searchQuery.trim() && !isSearching ? (
         <div className="search-empty">
+          <div className="empty-state-icon">
+            <SearchIcon size={32} />
+          </div>
           <p>No peers found for "{searchQuery}"</p>
           <small>
             {searchMode === "peerId"
               ? "Check if the peer ID is correct. You may need to be connected to them first."
-              : "Try a different interest or check your connection to the network."}
+              : "No peers are advertising this interest on the network yet. Make sure you're connected to a relay and have set your profile interests."}
           </small>
         </div>
-      ) : (
+      ) : !isSearching ? (
         <div className="empty-state">
           <div className="empty-state-icon">
             <SearchIcon size={40} />
@@ -175,7 +184,7 @@ export function SearchView() {
           <div className="empty-state-title">Discover people</div>
           <div className="empty-state-desc">Find peers by interest, username, or Peer ID</div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

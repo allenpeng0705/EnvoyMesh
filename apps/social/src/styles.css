@@ -3179,15 +3179,16 @@ button:disabled {
 
 .progress-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--color-primary), var(--color-primary));
-  animation: progress 1.5s ease-in-out infinite;
-  width: 60%;
+  width: 30%;
+  background: var(--color-primary);
+  border-radius: 2px;
+  animation: progress-indeterminate 1.4s ease-in-out infinite;
 }
 
-@keyframes progress {
-  0% { width: 20%; margin-left: 0; }
-  50% { width: 60%; margin-left: 40%; }
-  100% { width: 20%; margin-left: 80%; }
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(250%); }
+  100% { transform: translateX(-100%); }
 }
 
 .progress-text {

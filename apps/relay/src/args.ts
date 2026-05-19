@@ -7,6 +7,7 @@ export interface RelayArgs {
   dhtClientMode: boolean;
   httpPort: number | null;
   enableRendezvous: boolean;
+  wsAuthToken: string;
 }
 
 export function parseRelayArgs(argv: string[]): RelayArgs {
@@ -20,6 +21,7 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     dhtClientMode: true,
     httpPort: 15432,
     enableRendezvous: true,
+    wsAuthToken: "",
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -37,6 +39,8 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
       args.enableDht = false;
     } else if (arg === "--no-rendezvous") {
       args.enableRendezvous = false;
+    } else if (arg === "--ws-auth-token") {
+      args.wsAuthToken = getValue(argv, ++i, arg);
     } else if (arg === "--http-port") {
       const port = parseInt(getValue(argv, ++i, arg), 10);
       if (isNaN(port) || port < 1 || port > 65535) {
@@ -69,6 +73,11 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     args.advertiseAddrs.push(
       ...envAdvertise.split(",").map((s) => s.trim()).filter(Boolean)
     );
+  }
+
+  const envWsAuthToken = process.env.ENVOYMESH_WS_AUTH_TOKEN?.trim();
+  if (envWsAuthToken) {
+    args.wsAuthToken = envWsAuthToken;
   }
 
   return args;
@@ -120,6 +129,9 @@ Options:
                          Env: ENVOYMESH_BOOTSTRAP_PEERS (comma-separated)
   --no-dht              Disable DHT discovery.
   --no-rendezvous       Disable rendezvous capability registry.
+  --ws-auth-token <token>  Shared token for /ws/client auth. When set, clients
+                           must pass ?token=<token> in the WebSocket URL.
+                           Env: ENVOYMESH_WS_AUTH_TOKEN
   --http-port <port>    HTTP info endpoint port. Default: 15432 (optional).
                          Returns {peerId, addrs} at /info and OK at /health
   --help, -h            Show this help.

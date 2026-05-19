@@ -429,6 +429,15 @@ try {
 
       // ---- /ws/client — direct client envelope routing (mobile standalone) ----
       if (url.pathname === "/ws/client") {
+        // Optional auth token check
+        if (args.wsAuthToken) {
+          const token = url.searchParams.get("token") ?? "";
+          if (token !== args.wsAuthToken) {
+            socket.write("HTTP/1.1 401 Unauthorized\r\n\r\nInvalid or missing token");
+            socket.destroy();
+            return;
+          }
+        }
         if (directClients.size >= MAX_DIRECT_CLIENTS) {
           socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\nToo many direct clients");
           socket.destroy();
@@ -679,38 +688,53 @@ try {
 
           // ---- rendezvous.query — search capabilities ----
           if (intent === "rendezvous.query") {
-            try {
-              const queryPayload = parseRendezvousQueryPayload(payload);
-              const matches = capabilityRegistry ? capabilityRegistry.query(queryPayload) : [];
-              const responsePayload = createRendezvousResponsePayload({ matches });
-              const correlationId = (envelope.correlationId as string) ?? "";
-              const response = {
-                version: "0.1",
-                messageId: randomUUID(),
-                correlationId,
-                createdAt: new Date().toISOString(),
-                senderPeerId: mesh.peerId,
-                senderPublicKey: RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
-                senderRole: "agent",
-                recipientPeerId: senderPeerId,
-                recipientRole: "agent",
-                intent: "rendezvous.response",
-                signature: RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
-                payload: responsePayload,
-              };
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify(response));
-              }
-              console.log(`[relay] direct-client: rendezvous.query from ${senderPeerId} → ${matches.length} matches`);
-            } catch (err) {
-              console.error(`[relay] direct-client: failed to handle rendezvous.query:`, err);
-              // Send empty response on error
+            const handleQuery = async () => {
               try {
-                const responsePayload = createRendezvousResponsePayload({ matches: [] });
+                const queryPayload = parseRendezvousQueryPayload(payload);
+                const matches: Array<{ peerId: string; multiaddr: string; capabilities: Array<{ tag: string }> }> = [];
+
+                // 1. Search local rendezvous registry
+                if (capabilityRegistry) {
+                  const localMatches = capabilityRegistry.query(queryPayload);
+                  for (const m of localMatches) {
+                    matches.push({
+                      peerId: m.peerId,
+                      multiaddr: m.multiaddr,
+                      capabilities: m.capabilities as Array<{ tag: string }>,
+                    });
+                  }
+                }
+
+                // 2. Search DHT for the tag (public libp2p network discovery)
+                const searchTag = ("tag" in queryPayload.match) ? queryPayload.match.tag : undefined;
+                if (searchTag && args.enableDht) {
+                  // Search for the exact tag topic and username variant
+                  const topics = [searchTag, `username:${searchTag}`];
+                  for (const topic of topics) {
+                    try {
+                      const dhtPeers = await mesh.findCapabilityTopicProviders(topic, {
+                        limit: queryPayload.maxResults ?? 10,
+                        queryTimeoutMs: 3000,
+                      });
+                      for (const p of dhtPeers) {
+                        // Skip if already in results
+                        if (matches.some((m) => m.peerId === p.peerId)) continue;
+                        matches.push({
+                          peerId: p.peerId,
+                          multiaddr: p.multiaddrs[0] ?? `/p2p/${p.peerId}`,
+                          capabilities: [{ tag: topic }],
+                        });
+                      }
+                    } catch { /* DHT search timeout or unavailable — continue */ }
+                  }
+                }
+
+                const responsePayload = createRendezvousResponsePayload({ matches });
+                const correlationId = (envelope.correlationId as string) ?? "";
                 const response = {
                   version: "0.1",
                   messageId: randomUUID(),
-                  correlationId: (envelope.correlationId as string) ?? "",
+                  correlationId,
                   createdAt: new Date().toISOString(),
                   senderPeerId: mesh.peerId,
                   senderPublicKey: RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
@@ -724,8 +748,32 @@ try {
                 if (ws.readyState === WebSocket.OPEN) {
                   ws.send(JSON.stringify(response));
                 }
-              } catch { /* ignore */ }
-            }
+                console.log(`[relay] direct-client: rendezvous.query from ${senderPeerId} → ${matches.length} matches (registry + DHT)`);
+              } catch (err) {
+                console.error(`[relay] direct-client: failed to handle rendezvous.query:`, err);
+                try {
+                  const responsePayload = createRendezvousResponsePayload({ matches: [] });
+                  const response = {
+                    version: "0.1",
+                    messageId: randomUUID(),
+                    correlationId: (envelope.correlationId as string) ?? "",
+                    createdAt: new Date().toISOString(),
+                    senderPeerId: mesh.peerId,
+                    senderPublicKey: RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
+                    senderRole: "agent",
+                    recipientPeerId: senderPeerId,
+                    recipientRole: "agent",
+                    intent: "rendezvous.response",
+                    signature: RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
+                    payload: responsePayload,
+                  };
+                  if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify(response));
+                  }
+                } catch { /* ignore */ }
+              }
+            };
+            handleQuery();
             return;
           }
         } catch (err) {

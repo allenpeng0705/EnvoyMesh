@@ -159,7 +159,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     // Connection status (libp2p peer ID, multiaddrs, etc.)
     nodeService.getConnectionStatus().then((status) => {
       setConnectionStatus(status);
-      if (status.peerId && !status.peerId.startsWith("envoy_")) {
+      if (status.peerId && (status.peerId.startsWith("envoy_agent_") || !status.peerId.startsWith("envoy_"))) {
         setPeerId(status.peerId);
       }
     }).catch(() => {});
@@ -197,7 +197,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isConnected) return;
     const unsub = nodeService.on("node:online", (data) => {
-      if (data.peerId && !data.peerId.startsWith("envoy_")) {
+      if (data.peerId && (data.peerId.startsWith("envoy_agent_") || !data.peerId.startsWith("envoy_"))) {
         setPeerId(data.peerId);
       }
     });
