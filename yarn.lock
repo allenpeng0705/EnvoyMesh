@@ -432,6 +432,7 @@
     "@envoymesh/mobile-storage" "0.1.0"
     "@envoymesh/mobile-vault" "0.1.0"
     "@envoymesh/models" "0.1.0"
+    "@envoymesh/network" "0.1.0"
     "@envoymesh/protocol" "0.1.0"
     "@libp2p/bootstrap" "^12.0.19"
     "@libp2p/circuit-relay-v2" "^4.2.3"
@@ -482,6 +483,7 @@
   version "0.1.0"
   resolved "file:packages/models"
   dependencies:
+    "@envoymesh/api" "0.1.0"
     "@envoymesh/protocol" "0.1.0"
 
 "@envoymesh/network@0.1.0", "@envoymesh/network@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/network":

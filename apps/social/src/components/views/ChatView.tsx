@@ -1,26 +1,26 @@
-import { useState } from "react";
 import { ChatSidebar } from "./ChatSidebar.js";
 import { AIChatPanel } from "./AIChatPanel.js";
 import { ContactChatPanel } from "./ContactChatPanel.js";
 import { ChatIcon } from "../../icons.js";
 
 /**
- * ChatView is a layout shell that manages `selectedContact` state and
- * delegates to ChatSidebar / AIChatPanel / ContactChatPanel.
- *
- * The "selectedContact" can be:
- *  - null       → "Select a contact" prompt
- *  - "__envoy_ai__" → AI chat panel
- *  - ownerId    → Human-to-human chat
+ * ChatView is a layout shell: sidebar + AI or contact thread.
+ * Selection is lifted to App when provided so switching views preserves the thread.
  */
-export function ChatView() {
-  const [selectedContact, setSelectedContact] = useState<string | null>(null);
+export interface ChatViewProps {
+  selectedContact: string | null;
+  onSelectedContactChange: (id: string | null) => void;
+  /** Sidebar "N new" opens full Inbox view */
+  onNavigateToInbox?: () => void;
+}
 
+export function ChatView({ selectedContact, onSelectedContactChange, onNavigateToInbox }: ChatViewProps) {
   return (
     <div className="chat-view">
       <ChatSidebar
         selectedContact={selectedContact}
-        onSelectContact={setSelectedContact}
+        onSelectContact={onSelectedContactChange}
+        onNavigateToInbox={onNavigateToInbox}
       />
       <section className="chat-area">
         {selectedContact === "__envoy_ai__" ? (
@@ -28,7 +28,7 @@ export function ChatView() {
         ) : selectedContact ? (
           <ContactChatPanel
             selectedContact={selectedContact}
-            onSelectContact={setSelectedContact}
+            onSelectContact={onSelectedContactChange}
           />
         ) : (
           <div className="no-chat-selected">

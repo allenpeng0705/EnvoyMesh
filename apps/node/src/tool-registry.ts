@@ -18,11 +18,16 @@ import {
   createChatMessagePayload,
   createKnowledgeQueryPayload,
   createDiscoveryRequestPayload,
+  parseDiscoveryResponsePayload,
+  createBroadcastRequestPayload,
+  createSocialIntroSyncPayload,
   createShareRequestPayload,
   type AgentCredential,
   type EnvoyIntent,
+  type SocialIntroSyncPayload,
+  type Sensitivity,
 } from "@envoymesh/protocol";
-import type { Sensitivity } from "@envoymesh/protocol";
+import { PUBLISHED_LIB_CAPABILITY } from "./discovery-inbound.js";
 
 /**
  * Sensitivity ceiling for a tool.
@@ -74,8 +79,10 @@ export interface ToolDefinition {
  */
 export class ToolRegistry {
   private tools = new Map<string, ToolDefinition>();
+  private readonly enableTrustIntroTools: boolean;
 
-  constructor() {
+  constructor(enableTrustIntroTools = false) {
+    this.enableTrustIntroTools = enableTrustIntroTools;
     this.registerDefaultTools();
   }
 
@@ -123,15 +130,23 @@ export class ToolRegistry {
     // Discovery tools
     this.register({
       name: "discovery.search",
-      description: "Search for peers in the network",
+      description: "Send discovery.request to a specific contact and wait for discovery.response (same stream)",
       paramSchema: {
         type: "object",
         properties: {
-          interests: { type: "array", items: { type: "string" }, description: "Interests to search for" },
-          queryText: { type: "string", description: "Text query" },
-          maxResults: { type: "number", description: "Maximum results to return" },
+          targetOwnerId: { type: "string", description: "Bonded contact owner id to query" },
+          requestedTagHashes: { type: "array", items: { type: "string" }, description: "Topic / tag hashes to match" },
+          requestedCapabilities: { type: "array", items: { type: "string" }, description: "Capabilities to match" },
+          fileTitleQuery: { type: "string", description: "Published library title/path substring (FS-D)" },
+          requestedContentHashPrefixes: {
+            type: "array",
+            items: { type: "string" },
+            description: "Content hash prefixes (FS-D)",
+          },
+          maxResults: { type: "number", description: "Max matches per responder (default 5)" },
+          timeoutMs: { type: "number", description: "RPC wait timeout (default 25000)" },
         },
-        required: [],
+        required: ["targetOwnerId"],
       },
       sensitivityCeiling: "public",
       requiresApproval: false,
@@ -193,6 +208,34 @@ export class ToolRegistry {
       sensitivityCeiling: "private",
       requiresApproval: false,
       intent: undefined, // Local operation, not mesh
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.library_list",
+      description: "List documents in the local vault (including published flags when the hook is configured)",
+      paramSchema: { type: "object", properties: {}, required: [] },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.library_discover",
+      description:
+        "Query bonded contacts for published library metadata (FS-D). Requires discoverPublishedLibrary hook from the runtime.",
+      paramSchema: {
+        type: "object",
+        properties: {
+          fileTitleQuery: { type: "string" },
+          contentHashPrefix: { type: "string" },
+          maxResultsPerPeer: { type: "number" },
+          targetOwnerIds: { type: "array", items: { type: "string" }, description: "Optional subset of owner ids" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "friends",
+      requiresApproval: false,
       isMeshTool: false,
     });
 
@@ -615,6 +658,88 @@ export class ToolRegistry {
       requiresApproval: false,
       isMeshTool: false,
     });
+
+    if (this.enableTrustIntroTools) {
+      this.register({
+        name: "mesh.intro.matching_context",
+        description:
+          "Return Trust-mode friend-matching preferences text plus a redacted owner profile summary for ranking intros",
+        paramSchema: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+        sensitivityCeiling: "private",
+        requiresApproval: false,
+        isMeshTool: false,
+      });
+
+      this.register({
+        name: "mesh.intro.sync",
+        description:
+          "Send social.intro.sync to another authorized agent (Trust mode coordination — non-binding)",
+        paramSchema: {
+          type: "object",
+          properties: {
+            recipientAgentPeerId: { type: "string", description: "Libp2p peer id of the counterparty agent" },
+            counterpartyOwnerId: { type: "string", description: "Owner id for bond/policy lookup" },
+            introCorrelationId: { type: "string", description: "Correlation id shared across intro messages" },
+            interest: {
+              type: "string",
+              enum: ["explore", "decline", "request-human-review", "withdraw"],
+              description: "Coordination signal",
+            },
+            profileFragmentRefs: {
+              type: "array",
+              items: { type: "string" },
+              description: "Opaque fragment refs when fragments are not inlined",
+            },
+            counterpartyOwnerIdHint: { type: "string", description: "Optional hint for the peer agent" },
+            noteToCounterpartyAgent: { type: "string", description: "Short note for the peer agent" },
+          },
+          required: ["recipientAgentPeerId", "counterpartyOwnerId", "introCorrelationId", "interest"],
+        },
+        sensitivityCeiling: "friends",
+        requiresApproval: false,
+        intent: "social.intro.sync",
+        isMeshTool: true,
+      });
+
+      this.register({
+        name: "mesh.intro.broadcast_search",
+        description:
+          "Issue broadcast.request via relay mesh for capability/tag discovery (Trust-mode matching helper)",
+        paramSchema: {
+          type: "object",
+          properties: {
+            requestedCapabilities: {
+              type: "array",
+              items: { type: "string" },
+              description: "Capability strings to match",
+            },
+            requestedTagHashes: {
+              type: "array",
+              items: { type: "string" },
+              description: "Topic tag hashes to match",
+            },
+            ttl: { type: "number", description: "Relay hop TTL (default 1)" },
+            maxResponses: { type: "number", description: "Max broadcast responses (default 10)" },
+            timeoutMs: { type: "number", description: "Collection timeout ms" },
+            requestedSensitivity: {
+              type: "string",
+              enum: ["public", "friends", "private"],
+              description: "Sensitivity floor",
+            },
+            queryId: { type: "string", description: "Optional stable query id (default random UUID)" },
+          },
+          required: [],
+        },
+        sensitivityCeiling: "public",
+        requiresApproval: false,
+        intent: "broadcast.request",
+        isMeshTool: true,
+      });
+    }
   }
 
   /**
@@ -664,6 +789,15 @@ export interface MeshToolContext {
   };
   agentCredential: AgentCredential;
   mesh?: EnvoyMesh; // Optional - may not be available in all contexts
+  /** Trust-mode intro tooling — callers load prefs/profile from node config */
+  trustIntro?: {
+    trustModeEnabled: boolean;
+    friendMatchingPreferencesText?: string;
+    humanProfileSummary?: { displayName?: string; bio?: string };
+  };
+  /** Optional FS-D hooks — populated when the agent runtime is wired to NodeService. */
+  listLibraryItems?: () => Promise<unknown>;
+  discoverPublishedLibrary?: (params: Record<string, unknown> | undefined) => Promise<unknown>;
 }
 
 /**
@@ -675,7 +809,7 @@ export async function executeTool(
   context: MeshToolContext,
   vaultSearchFn?: (query: string, limit?: number) => Promise<unknown>,
 ): Promise<ToolResult> {
-  const registry = new ToolRegistry();
+  const registry = new ToolRegistry(context.trustIntro?.trustModeEnabled ?? false);
   const tool = registry.get(toolName);
 
   if (!tool) {
@@ -712,6 +846,62 @@ export async function executeTool(
       return await executeMeshTool(tool, params, context, correlationId, startTime);
     } else if (toolName === "vault.search") {
       return await executeVaultSearch(params, vaultSearchFn, correlationId, startTime);
+    } else if (toolName === "mesh.library_list") {
+      if (!context.listLibraryItems) {
+        return {
+          ok: false,
+          error: "listLibraryItems is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const items = await context.listLibraryItems();
+      return {
+        ok: true,
+        result: { items },
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.library_discover") {
+      if (!context.discoverPublishedLibrary) {
+        return {
+          ok: false,
+          error: "discoverPublishedLibrary is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const peers = await context.discoverPublishedLibrary(params);
+      return {
+        ok: true,
+        result: { peers },
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.intro.matching_context") {
+      if (!context.trustIntro?.trustModeEnabled) {
+        return {
+          ok: false,
+          error: "Trust mode disabled — mesh.intro.* tools are unavailable",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      return {
+        ok: true,
+        result: {
+          friendMatchingPreferencesText: context.trustIntro.friendMatchingPreferencesText ?? "",
+          humanProfileSummary: context.trustIntro.humanProfileSummary ?? {},
+        },
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
     } else {
       return {
         ok: false,
@@ -754,7 +944,7 @@ async function executeMeshTool(
   }
 
   const targetOwnerId = params.targetOwnerId as string | undefined;
-  if (tool.intent !== "discovery.request" && !targetOwnerId) {
+  if (tool.intent !== "broadcast.request" && !targetOwnerId) {
     return {
       ok: false,
       error: `Missing required parameter: targetOwnerId`,
@@ -877,28 +1067,77 @@ async function executeMeshTool(
     }
 
     case "discovery.request": {
+      if (!targetOwnerId) {
+        return {
+          ok: false,
+          error: "targetOwnerId is required for discovery.search",
+          toolName: tool.name,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const peerRecordsForDisc = await context.peerDirectoryStore.listPeerRecords();
+      const targetPeerDisc = peerRecordsForDisc.find((p) => p.ownerId === targetOwnerId);
+      const transportPeerId = targetPeerDisc?.peerId;
+      if (!transportPeerId) {
+        return {
+          ok: false,
+          error: `Contact not found: ${targetOwnerId}`,
+          toolName: tool.name,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const recipientEnvelopePeerId = targetPeerDisc?.devicePublicKeyPem
+        ? derivePeerId(targetPeerDisc.devicePublicKeyPem)
+        : targetOwnerId.startsWith("envoy_")
+          ? targetOwnerId
+          : transportPeerId;
+      const tagHashes = (params.requestedTagHashes as string[] | undefined) ?? [];
+      let caps = (params.requestedCapabilities as string[] | undefined) ?? [];
+      const fileTitleQuery = params.fileTitleQuery as string | undefined;
+      const hashPrefixes = params.requestedContentHashPrefixes as string[] | undefined;
+      if (
+        tagHashes.length === 0 &&
+        caps.length === 0 &&
+        !fileTitleQuery?.trim() &&
+        (!hashPrefixes || hashPrefixes.length === 0)
+      ) {
+        caps = [...caps, PUBLISHED_LIB_CAPABILITY];
+      }
       const envelope = signUnsignedEnvelope(
         createUnsignedEnvelope({
           senderPeerId,
           senderPublicKey: context.agentIdentity.publicKeyPem,
           senderRole: "agent",
+          recipientPeerId: recipientEnvelopePeerId,
+          recipientRole: "human",
           intent: "discovery.request",
           payload: createDiscoveryRequestPayload({
             requesterOwnerId: context.ownerIdentity.ownerId,
-            requestedCapabilities: (params.interests as string[]) ?? [],
-            maxResults: params.maxResults as number | undefined,
+            requestedTagHashes: tagHashes,
+            requestedCapabilities: caps,
+            maxResults: (params.maxResults as number | undefined) ?? 5,
+            requestedSensitivity:
+              (params.requestedSensitivity as "public" | "friends" | "private" | undefined) ?? "public",
+            fileTitleQuery,
+            requestedContentHashPrefixes: hashPrefixes,
           }),
           agentCredential: context.agentCredential,
         }),
         context.agentIdentity.privateKeyPem,
       );
 
-      // Broadcast to relay for discovery
-      await context.mesh.send(targetPeerId ?? "", envelope, {});
-
+      const reply = await context.mesh.sendExpectReply(transportPeerId, envelope, {
+        timeoutMs: (params.timeoutMs as number | undefined) ?? 25_000,
+      });
+      const result =
+        reply.intent === "discovery.response"
+          ? parseDiscoveryResponsePayload(reply.payload)
+          : { unexpectedIntent: reply.intent, envelope: reply };
       return {
         ok: true,
-        result: { searching: true, messageId: envelope.messageId },
+        result,
         toolName: tool.name,
         correlationId,
         latencyMs: Date.now() - startTime,
@@ -977,6 +1216,90 @@ async function executeMeshTool(
       };
     }
 
+    case "social.intro.sync": {
+      const recipientAgentPeerId = params.recipientAgentPeerId as string;
+      const counterpartyOwnerId = params.counterpartyOwnerId as string;
+      const bond = await context.trustStore.getTrustRecord(counterpartyOwnerId);
+      const bondLevel = bond?.level ?? "public";
+      const decision = evaluatePolicy({
+        peerId: counterpartyOwnerId,
+        bondLevel,
+        intent: "social.intro.sync",
+      });
+      if (decision.action === "deny") {
+        return {
+          ok: false,
+          error: `Policy denied: ${decision.reason}`,
+          toolName: tool.name,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+
+      const envelope = signUnsignedEnvelope(
+        createUnsignedEnvelope({
+          senderPeerId,
+          senderPublicKey: context.agentIdentity.publicKeyPem,
+          senderRole: "agent",
+          recipientPeerId: recipientAgentPeerId,
+          recipientRole: "agent",
+          intent: "social.intro.sync",
+          payload: createSocialIntroSyncPayload({
+            introCorrelationId: params.introCorrelationId as string,
+            ownerId: context.ownerIdentity.ownerId,
+            counterpartyOwnerIdHint: params.counterpartyOwnerIdHint as string | undefined,
+            profileFragmentRefs: (params.profileFragmentRefs as string[]) ?? [],
+            interest: params.interest as SocialIntroSyncPayload["interest"],
+            noteToCounterpartyAgent: params.noteToCounterpartyAgent as string | undefined,
+          }),
+          agentCredential: context.agentCredential,
+        }),
+        context.agentIdentity.privateKeyPem,
+      );
+
+      await context.mesh.send(recipientAgentPeerId, envelope, {});
+      return {
+        ok: true,
+        result: { sent: true, messageId: envelope.messageId },
+        toolName: tool.name,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    }
+
+    case "broadcast.request": {
+      const envelope = signUnsignedEnvelope(
+        createUnsignedEnvelope({
+          senderPeerId,
+          senderPublicKey: context.agentIdentity.publicKeyPem,
+          senderRole: "agent",
+          intent: "broadcast.request",
+          payload: createBroadcastRequestPayload({
+            queryId: (params.queryId as string) ?? randomUUID(),
+            ttl: params.ttl as number | undefined,
+            maxResponses: params.maxResponses as number | undefined,
+            requestedTagHashes: (params.requestedTagHashes as string[]) ?? [],
+            requestedCapabilities: (params.requestedCapabilities as string[]) ?? [],
+            requestedSensitivity:
+              (params.requestedSensitivity as "public" | "friends" | "private") ?? "public",
+            senderOwnerId: context.ownerIdentity.ownerId,
+            timeoutMs: params.timeoutMs as number | undefined,
+          }),
+          agentCredential: context.agentCredential,
+        }),
+        context.agentIdentity.privateKeyPem,
+      );
+
+      await context.mesh.send("", envelope, {});
+      return {
+        ok: true,
+        result: { broadcastSent: true, messageId: envelope.messageId },
+        toolName: tool.name,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    }
+
     default:
       return {
         ok: false,
@@ -1023,7 +1346,7 @@ async function executeVaultSearch(
 /**
  * Get a list of all available tools (for mesh.list-tools).
  */
-export function listAgentTools(): ToolDefinition[] {
-  const registry = new ToolRegistry();
+export function listAgentTools(opts?: { trustModeEnabled?: boolean }): ToolDefinition[] {
+  const registry = new ToolRegistry(opts?.trustModeEnabled ?? false);
   return registry.listTools();
 }

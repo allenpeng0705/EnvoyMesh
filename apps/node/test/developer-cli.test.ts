@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { normalizeDeveloperCliArgv, parseDeveloperCliArgs, runDeveloperCli } from "../src/developer-cli.js";
+import { createNodeConfigStore } from "../src/node-config-store.js";
 
 let profileDir: string;
 let vaultDir: string;
@@ -242,17 +243,58 @@ describe("developer CLI", () => {
     );
     const result = await runDeveloperCli(["connectivity-status", "--profile", profileDir]);
     expect(result.exitCode).toBe(0);
-    expect(result.lines[0]).toBe("Connectivity status");
-    expect(result.lines[1]).toContain("profile=wan-default");
-    expect(result.lines[1]).toContain("discoveredPeers=1");
-    expect(result.lines[1]).toContain("bootstrapFail=1");
-    expect(result.lines[1]).toContain("reprobeFail=1");
+    const statusIdx = result.lines.indexOf("Connectivity status");
+    expect(statusIdx).toBeGreaterThanOrEqual(0);
+    expect(result.lines[statusIdx + 1]).toContain("Persisted node-config:");
+    const dense = result.lines.find(
+      (line) => line.startsWith("profile=") && line.includes("discoveredPeers="),
+    );
+    expect(dense).toBeDefined();
+    expect(dense).toContain("profile=wan-default");
+    expect(dense).toContain("discoveredPeers=1");
+    expect(dense).toContain("bootstrapFail=1");
+    expect(dense).toContain("reprobeFail=1");
     expect(result.lines.join("\n")).toContain("warning 2026-04-27T10:00:02.000Z");
     expect(result.lines.join("\n")).toContain("bootstrapFail 2026-04-27T10:00:03.000Z");
     expect(result.lines.join("\n")).toContain("reprobeFail 2026-04-27T10:00:04.000Z");
     expect(result.lines.join("\n")).toContain("Libp2p peers reported");
     expect(result.lines.join("\n")).toContain("peer=peer-a");
     expect(result.lines.join("\n")).toContain("discovery-seeds.json");
+  });
+
+  it("connectivity-status shows persisted bootstrapPresets from node-config.json", async () => {
+    await createNodeConfigStore(profileDir).save({
+      version: "0.1",
+      profileDir,
+      discoveryProfile: "wan-default",
+      relayEnabled: true,
+      relayServerEnabled: false,
+      advertiseAddrs: [],
+      bootstrapPeers: ["/ip4/198.51.100.2/tcp/4001/p2p/12D3KooWTestBootstrap"],
+      bootstrapPresets: ["public-libp2p", "cn-relay"],
+      configuredRelays: [],
+      modelProviders: { mode: "mock" },
+      chatAssistEnabled: false,
+      contactAiPreferences: [],
+      updatedAt: new Date().toISOString(),
+    });
+    const store = createLocalTaskStore(profileDir);
+    await store.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        protocol: "connectivity.profile",
+        outcome: "record",
+        summary: "connectivity profile=wan-default mdns=true dht=true relay=true autonat=true dcutr=true bootstrap=2",
+        createdAt: "2026-04-27T10:00:00.000Z",
+      }),
+    );
+    const result = await runDeveloperCli(["connectivity-status", "--profile", profileDir]);
+    expect(result.exitCode).toBe(0);
+    const joined = result.lines.join("\n");
+    expect(joined).toContain("bootstrapPresets=public-libp2p,cn-relay");
+    expect(joined).toContain("explicitBootstrapPeers=1");
+    expect(joined).toContain("relay=true");
+    expect(joined).toContain("relayServer=false");
   });
 
   it("connectivity-status --rich prepends ascii Stage D panel", async () => {

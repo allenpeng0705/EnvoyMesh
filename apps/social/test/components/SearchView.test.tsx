@@ -9,14 +9,20 @@ import { describe, it, expect } from "vitest";
 
 describe("SearchView — logic", () => {
   it("search mode defaults to interest", () => {
-    let mode: "interest" | "peerId" = "interest";
+    let mode: "interest" | "peerId" | "library" = "interest";
     expect(mode).toBe("interest");
   });
 
   it("search mode can switch to peerId", () => {
-    let mode: "interest" | "peerId" = "interest";
+    let mode: "interest" | "peerId" | "library" = "interest";
     mode = "peerId";
     expect(mode).toBe("peerId");
+  });
+
+  it("search mode can switch to library discovery", () => {
+    let mode: "interest" | "peerId" | "library" = "interest";
+    mode = "library";
+    expect(mode).toBe("library");
   });
 
   it("search mode can switch back to interest", () => {

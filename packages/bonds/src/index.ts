@@ -66,6 +66,9 @@ const capabilityRequirements: Partial<Record<EnvoyIntent, Capability[][]>> = {
   "bond.challenge.response": [["message.send"]],
   "discovery.request": [["mesh.discovery"], ["message.send"]],
   "discovery.response": [["mesh.discovery"], ["message.send"]],
+  "social.intro.sync": [["message.send"]],
+  "social.intro.propose": [["message.send"], ["ui.channel"]],
+  "social.intro.owner-ready": [["message.send"]],
   "chat.message": [["message.send"]],
   "knowledge.query": [["vault.retrieve"]],
   "knowledge.response": [["message.send"]],
@@ -131,6 +134,14 @@ function evaluatePublicPolicy(intent: EnvoyIntent): PolicyDecision {
     return { action: "challenge", challengeType: "referral_or_manual_approval" };
   }
 
+  if (intent === "social.intro.sync") {
+    return { action: "allow", maxSensitivity: "public" };
+  }
+
+  if (intent === "social.intro.propose") {
+    return { action: "challenge", challengeType: "referral_or_manual_approval" };
+  }
+
   if (intent === "system.ping") {
     return { action: "allow", maxSensitivity: "public" };
   }
@@ -141,6 +152,14 @@ function evaluatePublicPolicy(intent: EnvoyIntent): PolicyDecision {
 function evaluateReferredPolicy(request: PolicyRequest): PolicyDecision {
   if (request.intent === "knowledge.query") {
     return limitSensitivity(request.requestedSensitivity, "public");
+  }
+
+  if (
+    request.intent === "social.intro.sync" ||
+    request.intent === "social.intro.propose" ||
+    request.intent === "social.intro.owner-ready"
+  ) {
+    return { action: "allow", maxSensitivity: "public" };
   }
 
   if (request.intent === "system.ping" || request.intent === "bond.request") {

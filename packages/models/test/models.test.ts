@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildModelProviders,
+  normalizeOpenAiCompatibleBaseUrl,
   createDefaultModelProviderPolicies,
   createLiteLlmProvider,
   createMockModelProvider,
@@ -8,6 +10,7 @@ import {
   evaluateModelProvider,
   evaluateSemanticFirewall,
   routeModelRequest,
+  runOwnerApprovedKnowledgeQuery,
   selectModelProvider,
 } from "../src/index.js";
 
@@ -332,5 +335,60 @@ describe("model router", () => {
     });
     expect(result.decision).toMatchObject({ action: "allow" });
     expect(result.response?.text).toBe("Ollama answer");
+  });
+});
+
+describe("normalizeOpenAiCompatibleBaseUrl", () => {
+  it("appends /v1 when missing", () => {
+    expect(normalizeOpenAiCompatibleBaseUrl("http://127.0.0.1:11434")).toBe("http://127.0.0.1:11434/v1");
+    expect(normalizeOpenAiCompatibleBaseUrl("http://192.168.1.10:4000/")).toBe("http://192.168.1.10:4000/v1");
+  });
+
+  it("does not double-append /v1", () => {
+    expect(normalizeOpenAiCompatibleBaseUrl("http://127.0.0.1:11434/v1")).toBe("http://127.0.0.1:11434/v1");
+    expect(normalizeOpenAiCompatibleBaseUrl("https://api.openai.com/v1")).toBe("https://api.openai.com/v1");
+  });
+});
+
+describe("buildModelProviders trustedLocalAssist", () => {
+  it("relaxes anthropic policy for chat-assist-style callers", () => {
+    const providers = buildModelProviders(
+      {
+        mode: "anthropic-compatible",
+        apiKey: "test-key",
+        modelName: "claude-sonnet-4-20250514",
+      },
+      false,
+      { trustedLocalAssist: true },
+    );
+    expect(providers).toHaveLength(1);
+    expect(providers[0]?.policy.requiresOwnerApproval).toBe(false);
+    expect(providers[0]?.policy.allowedSensitivity).toContain("private");
+  });
+});
+
+describe("owner knowledge query helpers", () => {
+  it("buildModelProviders returns mock provider for mock mode", () => {
+    const providers = buildModelProviders({ mode: "mock" }, false);
+    expect(providers).toHaveLength(1);
+    expect(providers[0]?.policy.providerId).toBe("local.mock");
+  });
+
+  it("runOwnerApprovedKnowledgeQuery uses mock provider", async () => {
+    const text = await runOwnerApprovedKnowledgeQuery({
+      query: "hello",
+      requesterPeerId: "peer-a",
+      modelProviders: { mode: "mock" },
+    });
+    expect(text).toBe("Mock model response.");
+  });
+
+  it("runOwnerApprovedKnowledgeQuery returns disabled message when models disabled", async () => {
+    const text = await runOwnerApprovedKnowledgeQuery({
+      query: "hello",
+      requesterPeerId: "peer-a",
+      modelProviders: { mode: "disabled" },
+    });
+    expect(text).toContain("disabled");
   });
 });

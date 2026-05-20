@@ -1,10 +1,24 @@
 # Live Connectivity Testing
 
-For the **stages A–D POC** (what each step tests — single reference), see [poc-discovery-connectivity](./poc-discovery-connectivity.md). This page keeps **additional** procedures (desktop smoke, DCUtR notes, data-path checks).
+For the **stages A–D POC** (what each step tests — single reference), see [poc-discovery-connectivity](./poc-discovery-connectivity.md). **Operator bootstrap / relay defaults** (preset names, community relay, org-owned path) are summarized in **[operator-relay-fleet.md](./operator-relay-fleet.md)**.
 
-These checks prove the Phase 4 network behavior that cannot be reliably tested in the current runner. Run them on a real machine after disabling VPN/firewall rules that block LAN multicast or inbound TCP.
+These checks prove Phase 4 network behavior that cannot be reliably tested in the current runner. Run them on a real machine after disabling VPN/firewall rules that block LAN multicast or inbound TCP.
 
 The smoke script is intentionally opt-in. It is not part of `npm test` because mDNS, DHT, relay, AutoNAT, and DCUtR depend on real network interfaces and peer reachability.
+
+## WAN / relay proving track (overview)
+
+| § | What it proves | Primary command / procedure |
+|---|----------------|------------------------------|
+| [§1](#1-prove-local-mdns-discovery) | LAN mDNS + signed `system.ping` | `connectivity:smoke --mode mdns` |
+| [§2](#2-prove-dht-and-bootstrap-discovery) | DHT + bootstrap stack + ≥1 remote peer | `--mode advanced --bootstrap …` |
+| [§3](#3-prove-relay-addressing) | Relay-style `/p2p-circuit` address observed locally | `--expect-relay-address` |
+| [§4](#4-prove-envoymesh-relay-address-switching) | **Full** `relay.checkin` / `relay.lookup` / circuit dial (two NAT clients + relay) | Manual multi-machine + `relay-status`, `connectivity-status`, audit `p2p.trace` |
+| [§5](#5-prove-dcutr-hole-punching) | DCUtR / punch (needs two NATs + relay) | Procedure notes + same smoke prerequisites |
+| [§6](#6-desktop-distribution-and-data-path-smoke) | Desktop / data path | App + voucher smoke |
+| [§7](#7-non-lan-fallback-wan-first-profile) | **Shipped defaults:** `wan-default`, `--bootstrap-preset`, strict probes | `node:dev` + `connectivity-status` |
+
+**Completion:** Exit criteria for “WAN proof captured” in [implementation-plan.md](./implementation-plan.md) are satisfied when an operator runs **§2–§4** (as applicable to their topology) on target OSes, captures **`relay.checkin` / `relay.lookup`** success lines from audit (`--include-p2p-trace`), and records date + software version. Cross-NAT **§4.5** is the gold standard for relay-mediated NAT ↔ NAT.
 
 ## 1. Prove Local mDNS Discovery
 
@@ -294,7 +308,7 @@ npm run node:dev -- --profile ./data/primary --discovery-profile wan-default --b
 
 On Windows use a dedicated profile folder, for example **`%USERPROFILE%\envoymesh\win_profile`** (PowerShell: `"$env:USERPROFILE\envoymesh\win_profile"`).
 
-`wan-default` enables DHT client mode, relay transport, AutoNAT, and DCUtR. `--bootstrap-preset public-libp2p` adds a managed public bootstrap set, and `--bootstrap` can append your own peers. If no bootstrap peers are configured, node startup continues but emits a connectivity warning in logs/audit.
+`wan-default` enables DHT client mode, relay transport, AutoNAT, and DCUtR. `--bootstrap-preset public-libp2p` adds the managed public preset set (see **[operator-relay-fleet.md](./operator-relay-fleet.md)** for all shipped preset ids and the **`cn-relay`** community relay), and `--bootstrap` can append your own peers. If no bootstrap peers are configured, node startup continues but emits a connectivity warning in logs/audit.
 
 For stricter rollout environments, require successful bootstrap probes at startup:
 
@@ -310,7 +324,7 @@ Inspect connectivity diagnostics:
 npm run cli -w @envoymesh/node -- connectivity-status --profile ./data/primary
 ```
 
-Expected output includes:
+The command prints **persisted `node-config.json` discovery fields** (profile, `bootstrapPresets`, explicit bootstrap peer count, relay flags) when the file exists, then audit-derived counts (same source the node uses for traces). Expected output includes:
 
 - active discovery profile (`lan-fast` or `wan-default`)
 - bootstrap peer count

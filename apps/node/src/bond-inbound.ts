@@ -92,6 +92,13 @@ export async function handleInboundBondIntent(
         return { ok: false, reason: "bond.request requester cannot equal local owner" };
       }
 
+      if (envelope.senderRole === "agent" && envelope.agentCredential) {
+        const ref = payload.ownerCommitmentRef?.trim();
+        if (!ref) {
+          return { ok: false, reason: "bond.request from agent requires ownerCommitmentRef" };
+        }
+      }
+
       const bondLevel = await trustBondLevel(trustStore, payload.requesterOwnerId);
       const policy = evaluatePolicy({
         peerId: envelope.senderPeerId,
@@ -249,10 +256,46 @@ export async function handleInboundBondIntent(
 
     if (envelope.intent === "bond.accept") {
       console.log(`[bond-inbound] handling bond.accept from ${remotePeerId}`);
-      const payload = parseBondAcceptPayload(envelope.payload);
+      let payload;
+      try {
+        payload = parseBondAcceptPayload(envelope.payload);
+      } catch (parseErr) {
+        const detail = parseErr instanceof Error ? parseErr.message : String(parseErr);
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "message.rejected",
+            intent: envelope.intent,
+            messageId: envelope.messageId,
+            correlationId,
+            remotePeerId,
+            direction: "inbound",
+            verificationStatus: "rejected",
+            latencyMs: Date.now() - receivedAt,
+            outcome: "deny",
+            summary: `bond.accept: malformed payload (${detail})`,
+            createdAt: envelope.createdAt,
+          }),
+        );
+        return { ok: false, reason: `invalid bond payload: bond.accept (${detail})` };
+      }
       console.log(`[bond-inbound] bond.accept payload: responderOwnerId=${payload.responderOwnerId}, requesterOwnerId=${payload.requesterOwnerId}, message=${payload.message}`);
 
       if (payload.requesterOwnerId !== profile.owner.ownerId) {
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "message.rejected",
+            intent: envelope.intent,
+            messageId: envelope.messageId,
+            correlationId,
+            remotePeerId,
+            direction: "inbound",
+            verificationStatus: "rejected",
+            latencyMs: Date.now() - receivedAt,
+            outcome: "deny",
+            summary: `bond.accept: requesterOwnerId mismatch (got ${payload.requesterOwnerId})`,
+            createdAt: envelope.createdAt,
+          }),
+        );
         return { ok: false, reason: "bond.accept requesterOwnerId does not match local owner" };
       }
 
@@ -274,6 +317,22 @@ export async function handleInboundBondIntent(
         note: payload.message ?? undefined,
         now: new Date().toISOString(),
       });
+
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.verified",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "verified",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "allow",
+          summary: `bond.accept responder=${payload.responderOwnerId} requester=${payload.requesterOwnerId}`,
+          createdAt: envelope.createdAt,
+        }),
+      );
 
       // Emit bond:established to notify UI to refresh contacts
       if (emitBondEstablished) {

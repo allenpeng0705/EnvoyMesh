@@ -8,98 +8,13 @@ import {
 } from "@envoymesh/protocol";
 import { evaluatePolicy } from "@envoymesh/bonds";
 import { searchVaultWithAudit, type VaultIndex } from "@envoymesh/vault";
-import {
-  createMockModelProvider,
-  createOllamaLiteLlmProvider,
-  createLiteLlmProvider,
-  createOpenAiProvider,
-  createAnthropicProvider,
-  routeModelRequest,
-  type ModelProvider,
-} from "@envoymesh/models";
+import { buildModelProviders, routeModelRequest } from "@envoymesh/models";
 import type { ModelProviderConfig } from "@envoymesh/api";
 import { ZodError } from "zod";
 
 export type KnowledgeQueryInboundResult =
   | { ok: true; responsePayload: KnowledgeResponsePayload }
   | { ok: false; reason: string };
-
-/**
- * Build the list of model providers from the node's model provider configuration.
- * Environment variables can override config values:
- * - ENVOY_MODEL_MODE: overrides config.mode (e.g., "openai-compatible", "mock")
- * - ENVOY_MODEL_ENDPOINT: overrides config.endpoint
- * - ENVOY_MODEL_API_KEY: overrides config.apiKey
- * - ENVOY_MODEL_NAME: overrides config.modelName
- * @param ownerApproved - If true, cloud providers allow higher sensitivity for local owner queries
- */
-function buildModelProviders(config: ModelProviderConfig, ownerApproved: boolean = false): ModelProvider[] {
-  // Allow environment variables to override config
-  console.log(`[buildModelProviders] ENVOY_MODEL_MODE=${process.env.ENVOY_MODEL_MODE}`);
-  const effectiveConfig: ModelProviderConfig = {
-    ...config,
-    mode: (process.env.ENVOY_MODEL_MODE as ModelProviderConfig["mode"]) ?? config.mode,
-    endpoint: process.env.ENVOY_MODEL_ENDPOINT ?? config.endpoint,
-    apiKey: process.env.ENVOY_MODEL_API_KEY ?? config.apiKey,
-    modelName: process.env.ENVOY_MODEL_NAME ?? config.modelName,
-  };
-  console.log(`[buildModelProviders] effectiveConfig.mode=${effectiveConfig.mode}, endpoint=${effectiveConfig.endpoint}, apiKey=${effectiveConfig.apiKey ? "***" : "undefined"}`);
-
-  switch (effectiveConfig.mode) {
-    case "disabled":
-      return [];
-    case "mock":
-      return [
-        createMockModelProvider({
-          providerId: "local.mock",
-          providerType: "local",
-        }),
-      ];
-    case "ollama":
-      return [
-        createOllamaLiteLlmProvider({
-          providerId: `local.ollama.${effectiveConfig.modelName ?? "llama3.1"}`,
-          modelName: effectiveConfig.modelName ?? "llama3.1",
-          endpoint: effectiveConfig.endpoint ?? "http://127.0.0.1:11434",
-        }),
-      ];
-    case "litellm":
-      return [
-        createLiteLlmProvider({
-          providerId: `cloud.${effectiveConfig.modelName ?? "litellm-model"}`,
-          providerType: effectiveConfig.requireApprovalForCloud !== false ? "cloud" : "local",
-          modelName: effectiveConfig.modelName ?? "gpt-4o-mini",
-          endpoint: effectiveConfig.endpoint ?? "http://127.0.0.1:4000/v1",
-          apiKey: effectiveConfig.apiKey,
-        }),
-      ];
-    case "openai-compatible":
-      return [
-        createOpenAiProvider({
-          providerId: "cloud.openai-compatible",
-          modelName: effectiveConfig.modelName ?? "gpt-4o-mini",
-          apiKey: effectiveConfig.apiKey,
-          endpoint: effectiveConfig.endpoint ?? "https://api.openai.com/v1",
-          // For local self-queries, allow higher sensitivity since owner is approving
-          policy: ownerApproved ? {
-            allowedSensitivity: ["public", "friends", "trusted", "private"],
-            requiresOwnerApproval: false,
-          } : undefined,
-        }),
-      ];
-    case "anthropic-compatible":
-      return [
-        createAnthropicProvider({
-          providerId: "cloud.anthropic-compatible",
-          modelName: effectiveConfig.modelName ?? "claude-sonnet-4-20250514",
-          apiKey: effectiveConfig.apiKey,
-          endpoint: effectiveConfig.endpoint ?? "https://api.anthropic.com",
-        }),
-      ];
-    default:
-      return [createMockModelProvider({ providerId: "local.mock" })];
-  }
-}
 
 /**
  * Resolve the owner ID for a sender using the peer directory.
@@ -124,7 +39,7 @@ async function resolveSenderOwnerId(
  * 4. Evaluate bond policy via @envoymesh/bonds
  * 5. If denied/approval_required: audit and return rejection
  * 6. Search vault (within allowed sensitivity ceiling)
- * 7. Route prompt through model router (mock provider)
+ * 7. Route prompt through model router (`routeModelRequest`)
  * 8. Audit policy, vault, model routing decisions
  * 9. Return signed knowledge.response payload for the caller to send
  */

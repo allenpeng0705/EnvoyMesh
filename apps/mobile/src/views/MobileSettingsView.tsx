@@ -4,7 +4,7 @@
  * Three-tab layout (Node / AI / App) via segmented control.
  * Simplified versions of the desktop settings tabs.
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNodeState } from "@envoymesh/social/context/NodeStateContext.js";
 import { useNodeService } from "@envoymesh/social/hooks/useNodeService.js";
 import { BridgeIcon } from "@envoymesh/social/icons.js";
@@ -17,20 +17,29 @@ interface MobileSettingsViewProps {
 
 export function MobileSettingsView({ onBack }: MobileSettingsViewProps) {
   const nodeService = useNodeService();
-  const { nodeConfig, nodeStatus, peerId, connectionStatus, bridgeStatus, refreshNodeConfig } =
+  const { nodeConfig, nodeStatus, peerId, connectionStatus, bridgeStatus, refreshNodeConfig, refreshConnectionStatus } =
     useNodeState();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("node");
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (activeTab !== "node") return;
+    void refreshConnectionStatus();
+    const id = setInterval(() => {
+      void refreshConnectionStatus();
+    }, 8000);
+    return () => clearInterval(id);
+  }, [activeTab, refreshConnectionStatus]);
+
   const handleSaveConfig = useCallback(async () => {
     setSaving(true);
     try {
-      await refreshNodeConfig();
+      await Promise.all([refreshNodeConfig(), refreshConnectionStatus()]);
     } finally {
       setSaving(false);
     }
-  }, [refreshNodeConfig]);
+  }, [refreshNodeConfig, refreshConnectionStatus]);
 
   return (
     <div className="mv-settings">
@@ -72,6 +81,19 @@ export function MobileSettingsView({ onBack }: MobileSettingsViewProps) {
                   {connectionStatus?.online ? "Online" : "Offline"}
                 </span>
               </div>
+              {connectionStatus?.lastError && (
+                <>
+                  <div className="mv-section-row mv-diag-error-meta">
+                    <span className="mv-section-label">Last error (diagnostics)</span>
+                    <span className="mv-section-value">
+                      {connectionStatus.lastErrorAt ?? "—"}
+                    </span>
+                  </div>
+                  <div className="mv-section-row mv-diag-error-text">
+                    <span className="mv-section-value">{connectionStatus.lastError}</span>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="mv-section-group">

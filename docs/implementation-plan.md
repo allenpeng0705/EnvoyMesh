@@ -2,7 +2,7 @@
 
 This is the living plan for EnvoyMesh. Update it whenever scope changes, decisions are made, or milestones are completed.
 
-**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · [EMP](./protocol-standard.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Redesign strategy](./redesign-strategy.md)**
+**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · [EMP](./protocol-standard.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Live connectivity testing](./live-connectivity-testing.md)** · **[Operator relay fleet](./operator-relay-fleet.md)** · **[SQLite adoption](./sqlite-adoption.md)** · **[P2P file sharing (design plan)](./p2p-file-sharing-plan.md)** · **[Trust mode & bilateral social mediation](./trust-mode-social-protocol.md)** · **[Trust mode implementation plan](./trust-mode-implementation-plan.md)** · **[Redesign strategy](./redesign-strategy.md)**
 
 ## Status Legend
 
@@ -26,6 +26,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Coverage vs UserStory & design](#coverage-vs-userstory-and-design-docs)
 - [Open questions](#open-questions)
 - [Changelog (this document)](#changelog-this-document)
+- [P2P file & document sharing (FS phases A–E)](./p2p-file-sharing-plan.md)
 
 **Phases**
 
@@ -47,6 +48,8 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 8 — Agentic normal node, LLM first](#phase-8-agentic-normal-node-llm-first)
 - [Phase 9 — AI-Augmented Agent](#phase-9-ai-augmented-agent)
 - [Phase 10 — HomeClaw App P2P integration](#phase-10-homeclaw-app-p2p-integration)
+- [Phase 11 — Mobile Social App & Mobile Node](#phase-11-mobile-social-app--mobile-node-capacitor)
+- [Phase 12 — Trust mode & bilateral social mediation](#phase-12-trust-mode--bilateral-social-mediation-design-first)
 
 ## Current Direction
 
@@ -84,7 +87,7 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 | Identity birth (Scenario 1) | 1, 4A | `[x]` Signed envelopes, owner/device split, device certs · `[ ]` DID as first-class product (beyond directional docs) |
 | Blind discovery (Scenario 2) | 4, **4E**, **WAN follow-on**, **4F** | `[x]` Transport discovery (mDNS, optional DHT/relay/DCUtR), Agent Card types, signed `discovery.request/response`, trust+rate-gated inbound handling, ranked digest baseline (`morning-report`) · `[ ]` global DHT capability “topic/provider” advertisement path (distinct from `discovery.request`); QUIC preference; richer narrative ranking/UX iteration |
 | Broadcast & kill (Scenario 3) | 4B, **4D** | `[x]` Local mandate/propose expiry, cancel / satisfied, first completed result + `closeOnFirstCompletedResult`, `correlationId`, audits · `[x]` Hop TTL / gossip-wide cancel / collect-N (Phase 4D extended) |
-| Social handshake (Scenario 4) | 2, 4B, 7 | `[x]` Trust store, bonds/policy, approvals, mandates, A2A tasks, **EMP `bond.*` payloads + inbound bond path + CLI `bond.request`** · `[ ]` Rich referral / owner queue UX beyond audit |
+| Social handshake (Scenario 4) | 2, 4B, 7, **12** | `[x]` Trust store, bonds/policy, approvals, mandates, A2A tasks, **EMP `bond.*` payloads + inbound bond path + CLI `bond.request`** · `[x]` **Design:** [Trust mode & bilateral social mediation](./trust-mode-social-protocol.md) · `[x]` Phase **12 A–F**: `@envoymesh/protocol` **`social.intro.*`** + **`bond.request`** refs; node inbound + Social Trust/inbox + **`mesh.intro.*`** tools + **`sendHello`** linkage + [EMP appendix](./protocol-standard.md#appendix-a-trust-mode-social-mediation-socialintro) + [Epic TM](./scenarios.md#epic-tm-trust-mode) + Phase **F** hardening (`friendMatchingPreferencesSigned`, **`social.intro.*`** rate limits + nonce replay, **`bond.accept`** audit) + integration smoke (**`trust-mode-intro-bond-flow.test.ts`**, **`npm run smoke:local`**) |
 | Intent-based file share (Scenario 5) | 5, Scenario 6 pick | `[x]` Shared vault, indexing, search, policy hooks, audit · `[x]` Voucher + verified P2P chunk stream (`/envoymesh/data/0.1.0`) |
 | Communication roles (Scenario 6) | Scenario 6 pick, Open questions | `[x]` Required envelope roles (`senderRole`/`recipientRole`), strict role-policy enforcement, and hard split for `/envoymesh/chat/0.1.0` vs `/envoymesh/message/0.1.0` (plus `/envoymesh/data/0.1.0`) · `[ ]` Broader H2A product semantics beyond current strict role/channel policy |
 | **Story A** (multi-device collaborator) | 4A, 5, 6, 7 | `[x]` Primary/Satellite **protocol** profiles, P2P, vault-backed tasks, pairing + primary-offline defer baseline (`Phase 4A`) · `[ ]` Thin mobile / satellite app **parked** |
@@ -110,6 +113,7 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 - `[x]` Distributed state direction: evaluate `loro` and `yjs` when shared social/task state is ready.
 - `[x]` Decentralized identity direction: Ed25519 first, DIDKit/DIDs later.
 - `[x]` Mobile v1 direction: Thin UI Mode only; phone acts as secure UI/control channel to Primary Envoy.
+- `[x]` Trust mode social (design): Agents may assist introductions using tiered **owner-signed** profile disclosure; **`bond.*` tier upgrades remain human-committed**. Spec: [trust-mode-social-protocol.md](./trust-mode-social-protocol.md); implementation tracked as [Phase 12](#phase-12-trust-mode--bilateral-social-mediation-design-first).
 - `[ ]` Storage: start with files for config, then add SQLite for records and audit.
 - `[x]` P2P transport: start with local libp2p/mDNS after core schemas are stable.
 - `[x]` First UI: developer CLI plus initial Electron dashboard for local operator tasks; richer composition flows later.
@@ -214,7 +218,7 @@ Goal: two Envoy nodes can discover and talk on the same machine or LAN.
 Exit criteria:
 
 - `[x]` Two nodes can exchange signed application messages over `/envoymesh/message/0.1.0` in CI and local dev.
-- `[ ]` Live mDNS and wide-area connectivity proofs completed per `docs/live-connectivity-testing.md` on target OSes and configured peers (blocked items: Phase 4 `[!]`).
+- `[~]` Live mDNS and wide-area connectivity proofs completed per `docs/live-connectivity-testing.md` on target OSes and configured peers (runbook + checklist shipped; operator execution of §1–§4 still required for sign-off: Phase 4 `[!]`).
 
 ## Phase 4 (WAN follow-on): Rendezvous, Relay, And NAT Traversal
 
@@ -222,9 +226,9 @@ Goal: make EnvoyMesh **WAN-first** behind NAT by shipping the standard “coordi
 
 This is intentionally separate from “LAN fast path” work: WAN reliability is dominated by **rendezvous and published dialable addresses**, not multicast convenience.
 
-- `[ ]` Define an **operator bootstrap + relay fleet** baseline (2–3 regions) with stable DNS multiaddrs and documented key rotation expectations.
-- `[ ]` Ship **defaults + operator presets** as a product concern (not “only code”): documented hosted preset names, rotation/runbook, and a supported path for org-owned bootstraps + relays (so production does not implicitly depend on random public community relays).
-- `[ ]` Ship a **default org preset** story (signed/governed preset list or documented operator injection path) so production installs do not depend solely on public community bootstraps.
+- `[x]` Define an **operator bootstrap + relay fleet** baseline (preset catalog, **EnvoyMesh community relay** `cn-relay`, rotation expectations, org-owned injection path) — documented in [operator-relay-fleet.md](./operator-relay-fleet.md). *(Ongoing: operate regional DNS-named relays outside the repo as your product requires.)*
+- `[x]` Ship **defaults + operator presets** as a product concern: documented preset names and runbook; code sources `DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS`, `bootstrap-resolver` `KNOWN_PRESETS`, CLI `--bootstrap-preset` / `--bootstrap-presets-file`.
+- `[~]` Ship a **default org preset** story: **supported** path via **`--bootstrap-presets-file`** + explicit `--bootstrap` — documented in [operator-relay-fleet.md](./operator-relay-fleet.md) §4. *(Not shipped: signed/governed global preset list verified by trust anchors — future hardening.)*
 - `[ ]` Validate **circuit relay v2** end-to-end: reservation, `/p2p-circuit` multiaddrs observed, relayed dials succeed under symmetric NAT / strict outbound-only networks.
 - `[ ]` Validate **DCUtR** upgrade path where supported (relay-coordinated punch) and document expected failure modes when punch is impossible.
 - `[ ]` Validate **AutoNAT / observed address** publishing path so peers learn externally meaningful multiaddrs (not only loopback/LAN-only).
@@ -233,8 +237,8 @@ This is intentionally separate from “LAN fast path” work: WAN reliability is
 
 Exit criteria:
 
-- `[ ]` Two nodes on different home networks (NAT) can establish **relay-mediated** connectivity using only the shipped operator defaults + invite/pairing cold start (no manual per-message multiaddr copying).
-- `[ ]` Live WAN proof captured in `docs/live-connectivity-testing.md` with repeatable commands and expected audit `p2p.trace` signatures.
+- `[~]` Two nodes on different home networks (NAT) can establish **relay-mediated** connectivity using **shipped operator defaults** + invite/pairing cold start — procedure in [live-connectivity-testing.md §4](./live-connectivity-testing.md#4-prove-envoymesh-relay-address-switching); **field proof** remains operator QA.
+- `[~]` Live WAN proof captured in `docs/live-connectivity-testing.md` with repeatable commands and expected audit `p2p.trace` signatures — §overview + §4.5; operator sign-off still required.
 
 ## Phase 4F: WAN Capability Topics And Transport Hardening
 
@@ -1109,32 +1113,20 @@ Agent capabilities:
 - Proactive triggers based on time, events, topics
 - All actions audited; sensitive actions require approval
 
-### Archive (historical snapshot — do not use for status)
+### Archive (historical snapshot — narratives only)
 
-**Source of truth** for shipped vs open work is the **phase checklists** above (`Phase 0`–`Phase 9`, **Open questions**, **Coverage**). This block is a compact merge of the old “Recently completed” + “Immediate tasks” lists so we do not maintain duplicate checklines.
+**Do not infer Phase 9 status from this subsection.** Detailed exit criteria live in **[Phase 9: AI-Augmented Agent](#phase-9-ai-augmented-agent)** and **[Exit Criteria (Phase 9)](#exit-criteria-phase-9)** above.
+
+The older **“next planning pulls”** list briefly showed **`[~]` on 9B–9F** while modules landed; daemon/runtime wiring for 9B–9J and **Phase 9 complete** followed in **[Changelog (this document)](#changelog-this-document)** (2026-05-07 — 2026-05-13). Treat those `[~]` lines as **historical backlog**, not current gaps.
+
+**Source of truth** for shipped vs open work remains the **phase checklists** (`Phase 0`–`Phase 9`), **Open questions**, and **Coverage** below.
 
 - `[x]` **Phase 8 complete:** real `knowledge.query` with vault+model routing, model provider config (mock/ollama/litellm/OpenAI-compatible/Anthropic-compatible), LLM chat drafts, capability manifests, contact-scoped matching, tool registry, sandbox hardening, anonymous discovery with queue, relay-assisted broadcast, local reputation + official credentials, bounded autonomy with kill switch.
 - `[x]` **Docs:** `docs/scenarios.md`, `docs/UserStory.md`, `docs/alignment-review.md` in place as story / alignment spine.
 - `[x]` **Monorepo bootstrap:** npm workspaces, `packages/protocol`, `packages/identity`, `packages/bonds`, `packages/network`, `apps/node` entry, first tests, two-node signed ping.
 - `[x]` **Runtime slice:** EMP owner/device split, certified `system.signal`, Agent Card + mandate schemas, CLI (profile, audit, tasks, approvals, peers, vault), persisted trust store, `@envoymesh/local-store`, Social + Tauri (Electron retired); `npm run typecheck`, `npm test`, `npm run social:build && npm run node:build && npm run tauri:build` for native bundles.
 - `[!]` **Live connectivity proofs** outside the default CI runner (mDNS / DHT / relay / DCUtR) — same as Phase 4 `[!]` items and [live-connectivity-testing.md](./live-connectivity-testing.md).
-
-### Next planning pulls (from [scenarios](./scenarios.md), [UserStory](./UserStory.md); [alignment](./alignment-review.md))
-
-- `[x]` **Phase 9A** — agent identity: own peer ID, key pair, credential signed by owner, revocation via expiration.
-- `[~]` **Phase 9B** — tool registry: extensible mesh intent → tool mapping and executor exist; daemon/API wiring remains partial.
-- `[~]` **Phase 9C** — memory & context: conversation-context, relationship-context, profile-context, vault-context, graph-context modules exist; model prompt injection remains partial.
-- `[~]` **Phase 9D** — mode controller exists; live reactive/proactive scheduler wiring remains partial.
-- `[~]` **Phase 9E** — session management exists; inbound chat integration remains partial.
-- `[~]` **Phase 9F** — style adapter exists; live chat draft/agent response integration remains partial.
-- `[x]` **Phase 8F–8G** — local tool registry and constrained OpenClaw/HomeClaw adapter boundary.
-- `[x]` **Phase 8H** — stronger sandbox and egress hardening before public/anonymous traffic grows.
-- `[x]` **Phase 8I** — anonymous discovery toggle and fast path.
-- `[x]` **Phase 8J** — relay-assisted broadcast substrate.
-- `[x]` **Phase 8K** — local reputation and official credentials.
-- `[x]` **Phase 8L** — bounded autonomy, digests, and kill switch.
-- `[x]` **Phase 9K** — P2P bridge for external agents: HTTP callback server + P2P handler, self-contained in `apps/node/src/bridge/`.
-- `[~]` **Cross-network P2P readiness (post-LAN gate):** relay graph baseline is shipped; live multi-machine relay/DCUtR validation and operator defaults remain open but do not block Phase 8A.
+- **`[~]` Cross-network P2P readiness:** relay graph baseline is shipped; live multi-machine relay/DCUtR validation and operator defaults remain open ([scenarios](./scenarios.md), [alignment](./alignment-review.md)).
 
 ## Coverage vs UserStory and design docs
 
@@ -1146,6 +1138,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | Scenario 3 / US-C2 — **hop TTL, gossip cancel, collect-N** | Phase **4D** + 4D follow-on | TTL enforcement in guard, peer tracking in journal, auto-populate forwardToPeerIds on cancel, relay fan-out for task.cancel, collect-N threshold met. | `[x]` |
 | Scenario 3 — **local expiry / cancel / first result / correlation** | Phase **4D** + 4C | CLI + `task-runtime-state` + audits. | `[x]` |
 | Scenario 4 — **bond + proof-of-context on wire** | Phase **4B** Batch 6 + 2 / 4A | Batch 6 **`[x]`**; trust/approvals + policy today. | `[x]` |
+| UserStory / Scenario 4 — **Trust mode (agent-assisted intros, human bond commit)** | **Phase 12** + [trust-mode-social-protocol.md](./trust-mode-social-protocol.md) | Design **`[x]`** · protocol + runtime/UI/tools **`[x]`** · EMP appendix + scenario IDs (**Phase E**) **`[x]`** · Phase **12 F** hardening + intro→bond integration smoke **`[x]`** | `[x]` |
 | Scenario 5 — **vault path** | Phase 5 | Indexing, policy, audit. | `[x]` |
 | Scenario 5 — **voucher + verified P2P chunk stream** | Phase 5 + Scenario 6 pick | `/envoymesh/data/0.1.0` voucher + chunk stream shipped. | `[x]` |
 | Scenario 6 — **roles, `/chat` `/agent` `/data`** | Scenario 6 pick + **Open questions** | Strict roles + `/chat`/`/message`/`/data` split baseline shipped; WAN fallback diagnostics/profile baseline shipped (`wan-default`, connectivity telemetry + CLI/dashboard visibility); broader H2A product semantics remain open. | `[~]` |
@@ -1186,7 +1179,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | Status | Topic | Why it matters | Notes |
 |--------|-------|----------------|-------|
 | `[ ]` | **pnpm migration** | Repo scale, install determinism | Discretionary; no trigger metric locked. |
-| `[ ]` | **SQLite introduction** | Audit/query/reporting at scale | **Direction** is “when needs justify”; no milestone date. |
+| `[~]` | **SQLite introduction** | Audit/query/reporting at scale | Gate and triggers in [sqlite-adoption.md](./sqlite-adoption.md); migration TBD when thresholds met. |
 | `[ ]` | **libp2p `PeerID` vs Envoy cryptographic identity** | Discovery logs, multi-key stories, DID mapping | Still open in [detailed-design.md](./detailed-design.md); affects addressing docs. |
 | `[ ]` | **Cloud model providers (first)** | Vendor keys, compliance, rate limits | `packages/models` is pluggable; product default unset. |
 | `[ ]` | **Default policy for redacted / non-public context to cloud** | Story C and semantic firewall | Tied to approvals + redaction pipeline; not normative in EMP yet. |
@@ -1206,7 +1199,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 - `[~]` **Phase 4A** — device pairing; primary-offline defer / owner surface baseline shipped. *Thin mobile channel: **parked** (see Prioritization).*
 - `[x]` **Scenario 6 vertical (first)** — voucher + `/envoymesh/data` shipped (Scenario 5).
 - `[x]` **Scenario 6 vertical (next baseline)** — explicit role fields + strict `/chat` vs `/message` split with rejection semantics.
-- `[ ]` **Phase 8** — agentic normal node roadmap: real `knowledge.query`, chat assist, capability manifest, local tool registry, sandbox, anonymous discovery, broadcast, reputation, official credentials, bounded autonomy.
+- `[x]` **Phase 8** — agentic normal node roadmap (`knowledge.query` path, chat assist, manifests, tool registry, sandbox, discovery/broadcast, reputation trajectory, autonomy controls); see changelog + Phase 8 section below.
 - `[~]` **Cross-network P2P rollout** — WAN-first profile, bootstrap/relay strategy, relay graph routing, diagnostics, and non-LAN smoke.
 - `[ ]` **Stories D / E** — multi-hop discovery, commerce, receipts (no dedicated phase yet; add when scenarios are scoped).
 - `[ ]` **Optional vault** — content-addressing, IPFS/Filecoin paths (Phase 5 open items).
@@ -1760,7 +1753,7 @@ Tasks:
 
 ## Phase 11: Mobile Social App & Mobile Node (Capacitor)
 
-**Goal:** Create a mobile-native EnvoyMesh app (iOS + Android) using Capacitor.js. The Social UI (React/Vite SPA) and Node runtime run **in-process** within a single WebView — no child process, no WebSocket server, direct JS function calls between UI and node. Networking is relay-only (outbound WebSocket to relays).
+**Goal:** Create a mobile-native EnvoyMesh app (iOS + Android) using Capacitor.js. The Social UI (React/Vite SPA) and Node runtime run **in-process** within a single WebView — no child process, no WebSocket server, direct JS function calls between UI and node. **Transport:** outbound fleet-relay WebSocket (`/ws/client` on the relay binary) for framed envelopes, plus **optional** in-browser libp2p (WebSocket + DHT client + circuit relay) for mesh features — not TCP/QUIC listeners.
 
 ### Architecture
 
@@ -1774,7 +1767,7 @@ Tasks:
 │  └──────────────┘                    └──────┘ │
 │                                               │
 │  ┌──────────────────────────────────────────┐ │
-│  │  mobile-node (relay-only)                │ │
+│  │  mobile-node (relay `/ws/client` + optional browser libp2p)          │ │
 │  │  - WebSocket transport (outbound only)   │ │
 │  │  - No TCP/QUIC/mDNS                      │ │
 │  │  - SQLite storage via Capacitor plugin   │ │
@@ -1878,6 +1871,8 @@ apps/mobile/src/
 
 **Goal:** In-process `NodeService` implementation with relay-only WebSocket transport. Runs in the same WebView as the Social UI — no child process.
 
+**Manual QA:** See [`docs/mobile-smoke-checklist.md`](./mobile-smoke-checklist.md) for device smoke steps (bond challenge, hello queue, DHT stop-advertise, diagnostics).
+
 **Implementation:** `packages/mobile-node/src/index.ts`
 
 - `MobileNode` class implementing `NodeService` interface
@@ -1898,6 +1893,9 @@ apps/mobile/src/
 - `[x]` Signed envelope sending: construct `UnsignedEnvoyEnvelope` → sign → send
 - `[x]` Relay checkin on connect + 30s interval (`_startRelayCheckin`)
 - `[x]` Inbound message routing: parse → verify → route by intent (chat, bond, p2p)
+- `[x]` Inbound **bond.request** / **bond.accept:** `evaluatePolicy` (`@envoymesh/bonds`), pending hello map, **`hello:request`** event, **`acceptHello` / `declineHello`** + outbound **`bond.accept`** (desktop `NodeService` parity)
+- `[x]` Inbound **`bond.challenge`** / **`bond.challenge.response`:** policy verification + logging (no JSONL audit)
+- `[x]` Outbound **`sendHello`:** signed **`bond.request`** over mesh or relay; **`peer_directory.libp2pPeerId`** for owner→dial-id routing
 - `[x]` SecureStorage for private key persistence (iOS Keychain / Android Keystore)
 - `[x]` Identity state persistence: standalone auto-persist, shared via `persistSharedIdentity()`
 - `[x]` Dependency injection: `MobileNodeConfig` accepts `database`, `vault`, `secureStorage`
@@ -2056,10 +2054,48 @@ interface ImportIdentityResponse {
 
 *Bond wire work* (payloads + inbound + CLI) is Phase **4B** Batch 6 **`[x]`**; *Phase 4E discovery baseline* (`discovery.request/response`, trust/rate gating, audit correlation) is **`[x]`**; *Phase 4 LAN identity match baseline* (`system.signal` owner→peer directory + owner-id target resolution) is **`[x]`**; *semantic firewall* v1 is Phase **6** **`[x]`**; *morning report* under Phase **7**. *Hop TTL / gossip cancel / collect-N* now complete under Phase **4D** extended.
 
+---
+
+## Phase 12: Trust mode & bilateral social mediation (design first)
+
+**Goal:** Let authorized **agents** help owners discover and vet people using **owner-signed profile material** and structured intro threads, while **humans retain exclusive commit** for `bond.request` / `bond.accept`. Support **two-sided** agent mediation (Alice’s agent ↔ Bob’s agent) with **two human gates**.
+
+**Design reference:** [trust-mode-social-protocol.md](./trust-mode-social-protocol.md) (definitions, profile tiers, EMP intents `social.intro.*`, `HumanProfileFragmentPayload`, bond payload linkage, bonds tier rules, ordered backlog).
+
+**Status:** Phases **A–F** shipped — see [trust-mode-implementation-plan.md](./trust-mode-implementation-plan.md).
+
+### Tasks
+
+- `[x]` Author and link [trust-mode-social-protocol.md](./trust-mode-social-protocol.md) (product + EMP extensions + implementation backlog).
+- `[x]` Dedicated signed **`HumanProfileFragmentPayload`** + **`humanProfileFragmentForSigning()`** in `@envoymesh/protocol` (tiered disclosure path **B**).
+- `[x]` EMP intents **`social.intro.sync`**, **`social.intro.propose`**, **`social.intro.owner-ready`** + envelope role policy + unit tests.
+- `[x]` Extend **`bond.request`** with optional **`introCorrelationId`** / **`ownerCommitmentRef`** (backward compatible).
+- `[x]` **`@envoymesh/bonds`**: capability map + **`evaluatePolicy`** tier rules for **`social.intro.*`**.
+- `[x]` **`apps/node`** inbound **`social.intro.*`** (`social-intro-inbound.ts`), dispatcher, audits; **`trustModeEnabled`** + **`friendMatchingPreferencesText`** config + credential-bearing agent **`bond.request`** gate (Phase A — [trust-mode-implementation-plan.md](./trust-mode-implementation-plan.md)).
+- `[x]` Inbound gate: **`bond.request`** from **`senderRole: agent`** with **`agentCredential`** requires **`ownerCommitmentRef`** (device-signed hello without credential unchanged).
+- `[x]` Phase **B–D**: Social Settings + **`social.intro:propose`** push + RPC pending intros + **`mesh.intro.*`** tools + **`sendHello`** intro linkage (`apps/social`, `packages/api`, `packages/mobile-node`, `apps/node`).
+- `[x]` [protocol-standard.md](./protocol-standard.md) appendix + [scenarios.md](./scenarios.md) Epic TM + [alignment-review.md](./alignment-review.md) (**Phase E**).
+- `[x]` Phase **F**: signed **`FriendMatchingPreferences`** (`@envoymesh/protocol` + verify in **`@envoymesh/identity`** / **`updateNodeConfig`**), per-peer **`social.intro.*`** rate limits + **`social.intro.owner-ready`** nonce replay guard; integration test **`trust-mode-intro-bond-flow.test.ts`** + **`bond.accept`** inbound audit (`npm run smoke:local`).
+
+### Exit criteria
+
+- `[x]` Two-node or integration test: discovery → intro sync → owner approval → **`bond.request`** / **`bond.accept`** path with correlated audits (`apps/node/test/trust-mode-intro-bond-flow.test.ts`; owner approval simulated via **`ownerCommitmentRef`** on credential-bearing **`bond.request`**).
+- `[x]` Negative test: credential-bearing **`bond.request`** without **`ownerCommitmentRef`** rejected at inbound handler (`bond-inbound.test.ts`).
+- `[x]` Documentation: protocol-standard / EMP appendix + traceable scenario IDs (**US-TM1–TM4**) updated for Trust-mode intents.
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-05-19 | **P2P file sharing design:** Added [p2p-file-sharing-plan.md](./p2p-file-sharing-plan.md) — scope, inventory vs gaps, `NodeService`/`share.*`/vault alignment, Social Library UI, phased roadmap **FS-A–FS-E**, testing, open questions; linked from this plan’s Related strip and On this page. |
+| 2026-05-21 | **WAN / operator docs:** [operator-relay-fleet.md](./operator-relay-fleet.md) (bootstrap **preset** catalog, **cn-relay**, rotation, org **`--bootstrap-presets-file`**); [live-connectivity-testing.md](./live-connectivity-testing.md) WAN proving **track table** + exit sign-off; [sqlite-adoption.md](./sqlite-adoption.md) adoption **gate**; Phase 4 WAN follow-on checklist + key-decision SQLite row updated. |
+| 2026-05-20 | **Docs / backlog housekeeping:** Align [next-step.md](./next-step.md) with Phase 8 shipped (`knowledge.query` inbound + model router wiring); reconcile backlog row **Phase 8** → **`[x]`**; Phase 12 Phase F verification adds `bond-inbound-extended.test.ts`; clarify `handleInboundKnowledgeQuery` flow docstring (was “mock provider”). |
+| 2026-05-19 | **Phase 12 Phase F + integration smoke:** **`FriendMatchingPreferencesPayload`** + signing/verification (`@envoymesh/protocol`, `@envoymesh/identity`); optional **`friendMatchingPreferencesSigned`** on node config with **`updateNodeConfig`** validation; **`social-intro-inbound`** rate limits (**`SOCIAL_INTRO_RATE_LIMIT_MAX_PER_PEER`**) + **`social.intro.owner-ready`** nonce replay rejection; **`bond.accept`** inbound **`message.verified`** audit with **`correlationId`**; **`apps/node/test/trust-mode-intro-bond-flow.test.ts`** + **`apps/node/src/local-two-node-smoke.ts`** (`npm run smoke:local`). |
+| 2026-05-19 | **Phase 12 Phase E:** [protocol-standard.md](./protocol-standard.md) — intent subsections + Appendix A (Trust-mode mediation); [scenarios.md](./scenarios.md) Epic TM (**US-TM1–US-TM4**); [alignment-review.md](./alignment-review.md) snapshot **2026-05-19** + Trust-mode rows; [trust-mode-implementation-plan.md](./trust-mode-implementation-plan.md) Phase E marked shipped. |
+| 2026-05-19 | **Phase 12 Phases B–D:** Social Settings Trust mode + friend prefs; **`social.intro:propose`** WS event + **`listPendingSocialIntroProposals`** / **`approveSocialIntroCommitment`** / **`declineSocialIntroProposal`** RPC; **`sendHello`** optional **`introProposalMessageId`** attaches **`introCorrelationId`** + **`ownerCommitmentRef`** (desktop + mobile-node); **`mesh.intro.matching_context`** / **`mesh.intro.sync`** / **`mesh.intro.broadcast_search`** tools behind **`trustModeEnabled`** (`listAgentTools` / **`executeTool`** **`trustIntro`** context); inbox UI + tests. See [trust-mode-implementation-plan.md](./trust-mode-implementation-plan.md). |
+| 2026-05-19 | **Phase 12 Phase A (node runtime):** `trustModeEnabled`, `friendMatchingPreferencesText` on `NodeConfig` / `PersistedNodeConfig`; `handleInboundSocialIntroIntent` (`social-intro-inbound.ts`) + `index.ts` dispatcher; inbound **`bond.request`** from credential-bearing agents requires **`ownerCommitmentRef`**; tests `social-intro-inbound.test.ts`, `bond-inbound.test.ts`; [trust-mode-implementation-plan.md](./trust-mode-implementation-plan.md). |
+| 2026-05-19 | **Phase 12 protocol baseline:** `@envoymesh/protocol` — `HumanProfileFragmentPayloadSchema`, intents **`social.intro.sync`** / **`social.intro.propose`** / **`social.intro.owner-ready`**, optional **`bond.request`** fields **`introCorrelationId`** / **`ownerCommitmentRef`**, envelope role policy + tests. **`@envoymesh/bonds`** — capability requirements + **`evaluatePolicy`** for public/referred. Design doc [trust-mode-social-protocol.md](./trust-mode-social-protocol.md) backlog updated. |
+| 2026-05-19 | **Phase 12 (design):** Added [trust-mode-social-protocol.md](./trust-mode-social-protocol.md) — Trust mode (human-in-the-loop bonding), tiered owner-signed profile disclosure, bilateral agent-mediated intros, proposed EMP intents (`social.intro.sync`, `social.intro.propose`), bond linkage hooks, bond-engine notes, ordered implementation backlog. New **Phase 12** section in this plan; traceability + coverage rows updated; Related-doc strip links the design doc. |
 | 2026-05-07 | **Phase 9B complete:** Created `ToolRegistry` class in `apps/node/src/tool-registry.ts` with extensible tool definitions mapping mesh intents to tools; default tools registered: `chat.send`, `knowledge.query`, `discovery.search`, `share.send`, `bond.send_hello`, `vault.search`; `executeTool()` function with `MeshToolContext` for policy-gated mesh operations; `listAgentTools()` for `mesh.list-tools` capability; added `tool.called` to `AuditEventType` and `local` to `AuditDirection` in `@envoymesh/local-store`; 18 unit tests covering registry operations, default tools, and tool definitions. Phase 9B exit criteria: all `[x]`. |
 | 2026-05-07 | **Phase 9C complete:** Created `ContextManager` in `apps/node/src/context-manager.ts` with context tools for AI agent; `conversation-context` reads chat history from `LocalChatLogStore`; `relationship-context` reads trust records; `profile-context` reads human profile; `vault-context` searches vault documents; `graph-context` stubbed for future knowledge graph; `listContextTools()` returns all context tool descriptors; 19 unit tests. Phase 9C exit criteria: all `[x]` (context injection to model prompts deferred to agent runtime integration). |
 | 2026-05-07 | **Phase 9D complete:** Created `ModeController` in `apps/node/src/mode-controller.ts` with reactive/proactive mode management; `AgentModeConfig` interface with mode, defaultMode, schedules, offline threshold, per-contact overrides; `markOwnerConnected()`, `markOwnerDisconnected()`, `checkOfflineTransition()`, `checkScheduleTransition()` for mode switching; `buildSetModeTool()`, `buildGetModeTool()`, `buildSetContactModeTool()` for owner configuration; mode transitions audited; 33 unit tests. Phase 9D exit criteria: all `[x]`. |

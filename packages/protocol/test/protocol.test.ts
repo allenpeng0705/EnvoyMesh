@@ -29,6 +29,11 @@ import {
   createRelayRegisterResponsePayload,
   createRelaySummaryPayload,
   createRendezvousRegisterPayload,
+  createSocialIntroOwnerReadyPayload,
+  createSocialIntroProposePayload,
+  createSocialIntroSyncPayload,
+  createFriendMatchingPreferencesPayload,
+  createHumanProfileFragmentPayload,
   createRendezvousQueryPayload,
   createRendezvousResponsePayload,
   createUnsignedDeviceRevocationRecord,
@@ -51,6 +56,8 @@ import {
   deviceRevocationRecordForSigning,
   EnvoyEnvelopeSchema,
   envelopeForSigning,
+  FriendMatchingPreferencesPayloadSchema,
+  friendMatchingPreferencesForSigning,
   parseAgentCard,
   parseAgentCardRequestPayload,
   parseAgentCardResponsePayload,
@@ -58,6 +65,11 @@ import {
   parseBondChallengePayload,
   parseBondChallengeResponsePayload,
   parseBondRequestPayload,
+  parseFriendMatchingPreferencesPayload,
+  parseHumanProfileFragmentPayload,
+  parseSocialIntroOwnerReadyPayload,
+  parseSocialIntroProposePayload,
+  parseSocialIntroSyncPayload,
   parseChatMessagePayload,
   parseDiscoveryRequestPayload,
   parseDiscoveryResponsePayload,
@@ -91,6 +103,8 @@ import {
   parseSystemSignalPayload,
   type ProofOfIntent,
   HumanProfilePayloadSchema,
+  humanProfileFragmentForSigning,
+  HumanProfileFragmentPayloadSchema,
   createHumanProfilePayload,
   humanProfileForSigning,
   SimpleTagCapabilitySchema,
@@ -120,6 +134,14 @@ describe("protocol", () => {
     });
     expect(parseBondRequestPayload(request)).toEqual(request);
 
+    const withIntro = createBondRequestPayload({
+      requesterOwnerId: "envoy:owner:alice",
+      introCorrelationId: "intro-corr-1",
+      ownerCommitmentRef: "approval-queue:id-99",
+      requestedLevel: "referred",
+    });
+    expect(parseBondRequestPayload(withIntro)).toEqual(withIntro);
+
     const challenge = createBondChallengePayload({
       challengerOwnerId: "envoy:owner:bob",
       targetOwnerId: "envoy:owner:alice",
@@ -134,6 +156,80 @@ describe("protocol", () => {
       proofOfContext: "ok",
     });
     expect(parseBondChallengeResponsePayload(response)).toEqual(response);
+  });
+
+  it("roundtrips Trust-mode profile fragment and social.intro payloads", () => {
+    const fragment = createHumanProfileFragmentPayload({
+      ownerId: "envoy:owner:alice",
+      purpose: "trust-mode-intro",
+      expiresAt: "2027-01-01T00:00:00.000Z",
+      displayName: "Alice",
+      bio: "Builder.",
+      hobbies: ["mesh"],
+      tags: ["rust"],
+      signature: "sig-placeholder",
+    });
+    expect(parseHumanProfileFragmentPayload(fragment)).toEqual(fragment);
+    expect(humanProfileFragmentForSigning(fragment)).toEqual({
+      version: "0.1",
+      ownerId: "envoy:owner:alice",
+      purpose: "trust-mode-intro",
+      expiresAt: "2027-01-01T00:00:00.000Z",
+      displayName: "Alice",
+      bio: "Builder.",
+      hobbies: ["mesh"],
+      tags: ["rust"],
+    });
+    expect(HumanProfileFragmentPayloadSchema.safeParse({ ...fragment, signature: "" }).success).toBe(false);
+
+    const sync = createSocialIntroSyncPayload({
+      introCorrelationId: "corr-intro",
+      ownerId: "envoy:owner:alice",
+      interest: "explore",
+      profileFragmentRefs: ["sha256:abc"],
+      noteToCounterpartyAgent: "match on hiking",
+    });
+    expect(parseSocialIntroSyncPayload(sync)).toEqual(sync);
+
+    const propose = createSocialIntroProposePayload({
+      introCorrelationId: "corr-intro",
+      candidateOwnerId: "envoy:owner:bob",
+      candidatePeerId: "peer-bob",
+      profileFragment: fragment,
+      rationale: "Suggested: shared tags (non-binding).",
+    });
+    expect(parseSocialIntroProposePayload(propose)).toEqual(propose);
+
+    const ready = createSocialIntroOwnerReadyPayload({
+      introCorrelationId: "corr-intro",
+      ownerId: "envoy:owner:alice",
+      nonce: "nonce-1",
+      expiresAt: "2027-01-02T00:00:00.000Z",
+    });
+    expect(parseSocialIntroOwnerReadyPayload(ready)).toEqual(ready);
+
+    const fmp = createFriendMatchingPreferencesPayload({
+      ownerId: "envoy:owner:alice",
+      text: "Looking for collaborators.",
+      expiresAt: "2027-01-01T00:00:00.000Z",
+      signature: "sig",
+    });
+    expect(parseFriendMatchingPreferencesPayload(fmp)).toEqual(fmp);
+    expect(friendMatchingPreferencesForSigning(fmp)).toEqual({
+      version: "0.1",
+      ownerId: "envoy:owner:alice",
+      text: "Looking for collaborators.",
+      expiresAt: "2027-01-01T00:00:00.000Z",
+    });
+    expect(FriendMatchingPreferencesPayloadSchema.safeParse({ ...fmp, signature: "" }).success).toBe(false);
+
+    expect(() =>
+      createSocialIntroProposePayload({
+        introCorrelationId: "c",
+        candidateOwnerId: "envoy:owner:bob",
+        candidatePeerId: "peer-bob",
+      }),
+    ).toThrow(/profileFragment or profileFragmentRef/);
   });
 
   it("roundtrips discovery payloads", () => {
@@ -370,6 +466,85 @@ describe("protocol", () => {
         },
       }),
     ).toThrow(/cannot involve system role/);
+  });
+
+  it("enforces role pairings for social.intro intents", () => {
+    createUnsignedEnvelope({
+      senderPeerId: "peer-agent-a",
+      senderPublicKey: "pk-a",
+      senderRole: "agent",
+      recipientPeerId: "peer-agent-b",
+      recipientRole: "agent",
+      intent: "social.intro.sync",
+      payload: createSocialIntroSyncPayload({
+        introCorrelationId: "ic",
+        ownerId: "envoy:owner:a",
+        interest: "explore",
+      }),
+    });
+
+    createUnsignedEnvelope({
+      senderPeerId: "peer-agent-a",
+      senderPublicKey: "pk-a",
+      senderRole: "agent",
+      recipientPeerId: "peer-human-b",
+      recipientRole: "human",
+      intent: "social.intro.propose",
+      payload: createSocialIntroProposePayload({
+        introCorrelationId: "ic",
+        candidateOwnerId: "envoy:owner:bob",
+        candidatePeerId: "peer-bob",
+        profileFragmentRef: "frag-ref-1",
+      }),
+    });
+
+    createUnsignedEnvelope({
+      senderPeerId: "peer-human-a",
+      senderPublicKey: "pk-a",
+      senderRole: "human",
+      recipientPeerId: "peer-agent-own",
+      recipientRole: "agent",
+      intent: "social.intro.owner-ready",
+      payload: createSocialIntroOwnerReadyPayload({
+        introCorrelationId: "ic",
+        ownerId: "envoy:owner:a",
+        nonce: "n",
+        expiresAt: "2027-01-01T00:00:00.000Z",
+      }),
+    });
+
+    expect(() =>
+      createUnsignedEnvelope({
+        senderPeerId: "peer-human-a",
+        senderPublicKey: "pk-a",
+        senderRole: "human",
+        recipientPeerId: "peer-agent-b",
+        recipientRole: "agent",
+        intent: "social.intro.sync",
+        payload: createSocialIntroSyncPayload({
+          introCorrelationId: "ic",
+          ownerId: "envoy:owner:a",
+          interest: "explore",
+        }),
+      }),
+    ).toThrow(/social.intro.sync requires senderRole=agent/);
+
+    expect(() =>
+      createUnsignedEnvelope({
+        senderPeerId: "peer-agent-a",
+        senderPublicKey: "pk-a",
+        senderRole: "agent",
+        recipientPeerId: "peer-agent-b",
+        recipientRole: "agent",
+        intent: "social.intro.propose",
+        payload: createSocialIntroProposePayload({
+          introCorrelationId: "ic",
+          candidateOwnerId: "envoy:owner:bob",
+          candidatePeerId: "peer-bob",
+          profileFragmentRef: "ref",
+        }),
+      }),
+    ).toThrow(/social.intro.propose requires recipientRole=human/);
   });
 
   it("defaults mandate closeOnFirstCompletedResult to false", () => {

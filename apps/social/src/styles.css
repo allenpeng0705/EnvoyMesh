@@ -74,6 +74,69 @@ body {
   background: transparent;
 }
 
+.header-nav-more {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.header-nav-more-trigger {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  transition: all 0.15s ease;
+}
+
+.header-nav-more-trigger:hover {
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+.header-nav-more-trigger.open,
+.header-nav-more-trigger.related-active {
+  color: var(--color-primary);
+}
+
+.header-nav-more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 11rem;
+  padding: var(--space-1);
+  background: var(--color-surface-overlay);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: var(--z-overlay);
+}
+
+.header-nav-more-menu button {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.header-nav-more-menu button:hover {
+  background: var(--color-primary-subtle);
+}
+
+.header-nav-more-menu button.active {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
 .header-right {
   display: flex;
   align-items: center;
@@ -334,6 +397,10 @@ body {
   transition: background var(--transition-fast);
 }
 
+.contact-list button:has(.contact-thread-meta) {
+  align-items: flex-start;
+}
+
 .contact-list button:hover {
   background: var(--color-primary-subtle);
 }
@@ -363,13 +430,50 @@ body {
   flex-shrink: 0;
 }
 
-.contact-list button .name {
+.contact-list button .contact-thread-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.125rem;
+}
+
+.contact-list button .contact-thread-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.contact-list button .contact-thread-title-row .name {
+  flex: 1;
+  min-width: 0;
+}
+
+.contact-thread-time {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  font-weight: var(--font-normal);
+  color: var(--color-text-muted);
+}
+
+.contact-list button > .name {
   font-size: var(--text-base);
   font-weight: var(--font-medium);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+  min-width: 0;
+}
+
+.contact-list button .preview {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .contact-list button .ai-access-badge {
@@ -489,12 +593,14 @@ body {
   display: none;
 }
 
-.message .message-text {
+.message .message-text,
+.mv-message .message-text {
   font-size: var(--text-base);
   line-height: var(--leading-normal);
 }
 
-.message.outgoing .message-text {
+.message.outgoing .message-text,
+.mv-message.outgoing .message-text {
   color: var(--color-primary-on);
 }
 
@@ -516,7 +622,8 @@ body {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   font-size: 0.85em;
 }
-.message.outgoing .message-text code {
+.message.outgoing .message-text code,
+.mv-message.outgoing .message-text code {
   background: var(--message-outgoing-overlay);
 }
 
@@ -529,7 +636,8 @@ body {
   overflow-x: auto;
   margin: 0.5rem 0;
 }
-.message.outgoing .message-text pre {
+.message.outgoing .message-text pre,
+.mv-message.outgoing .message-text pre {
   background: var(--message-outgoing-overlay);
   border-color: rgba(255, 255, 255, 0.2);
 }
@@ -563,7 +671,8 @@ body {
   background: rgba(7, 193, 96,0.05);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
-.message.outgoing .message-text blockquote {
+.message.outgoing .message-text blockquote,
+.mv-message.outgoing .message-text blockquote {
   border-left-color: rgba(255, 255, 255, 0.6);
   background: var(--message-outgoing-overlay);
 }
@@ -573,7 +682,8 @@ body {
   color: var(--color-primary);
   text-decoration: underline;
 }
-.message.outgoing .message-text a {
+.message.outgoing .message-text a,
+.mv-message.outgoing .message-text a {
   color: rgba(255, 255, 255, 0.9);
 }
 
@@ -693,6 +803,11 @@ body {
   cursor: not-allowed;
 }
 
+.chat-input input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
 .no-chat-selected {
   display: flex;
   flex-direction: column;
@@ -769,6 +884,13 @@ body {
 
 .contacts-header h2 {
   margin-bottom: 0;
+}
+
+.contacts-view-hint {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin: 0 0 1rem;
+  line-height: var(--leading-relaxed);
 }
 
 .around-me-toggle {
@@ -930,6 +1052,32 @@ body {
   transform: translateY(-1px);
 }
 
+.contact-card-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  border-radius: var(--radius-md);
+}
+
+.contact-card-main:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.contact-card-main:disabled {
+  cursor: default;
+}
+
 .contact-card .avatar.large {
   width: 48px;
   height: 48px;
@@ -990,6 +1138,101 @@ body {
   font-size: var(--text-xl);
   font-weight: 600;
   margin-bottom: 1rem;
+}
+
+/* Library View */
+.library-view {
+  padding: 1.5rem;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.library-view > h2 {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.library-view-hint {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  margin-bottom: 1rem;
+}
+
+.library-view-toolbar {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.library-view-search {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.library-view-error {
+  color: var(--color-danger);
+  margin-bottom: 0.5rem;
+}
+
+.library-view-empty {
+  color: var(--color-text-muted);
+}
+
+.library-view-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.library-view-table th,
+.library-view-table td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.library-view-path {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+  word-break: break-all;
+}
+
+.library-share-panel {
+  margin-top: 1.5rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  max-width: 480px;
+}
+
+.library-share-title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+
+.library-share-label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.library-share-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
 }
 
 .search-mode-tabs {
@@ -1160,7 +1403,7 @@ body {
 }
 
 
-/* Chat tab has-inbox indicator */
+/* Chat / Inbox nav badge */
 .has-inbox {
   position: relative;
 }
@@ -1276,6 +1519,27 @@ body {
   background: var(--color-primary-subtle);
   padding: 0.125rem 0.375rem;
   border-radius: var(--radius-full);
+}
+
+.inbox-count-btn {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-primary);
+  background: var(--color-primary-subtle);
+  padding: 0.25rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: background var(--transition-fast), transform 0.1s ease;
+}
+
+.inbox-count-btn:hover {
+  background: var(--color-primary-subtle);
+  filter: brightness(0.97);
+}
+
+.inbox-count-btn:active {
+  transform: scale(0.98);
 }
 
 /* AI View */
@@ -1426,6 +1690,12 @@ body {
   border-radius: var(--radius-md);
   font-size: var(--text-base);
   background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.ai-input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
 }
 
 .ai-input:focus-visible {
@@ -1471,6 +1741,24 @@ body {
 .inbox-header h2 {
   font-size: var(--text-2xl);
   font-weight: 600;
+}
+
+.inbox-header-row {
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.inbox-section-title {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 1.25rem 0 var(--space-2);
+}
+
+.inbox-item-stranger {
+  border-left: 3px solid var(--color-warning);
 }
 
 .clear-inbox {
@@ -1875,6 +2163,24 @@ body {
 
 .settings-list dd {
   font-size: var(--text-sm);
+}
+
+.settings-diagnostics-error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--color-destructive, #b91c1c);
+}
+
+.settings-diagnostics-error code {
+  font-size: var(--text-xs);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.settings-diagnostics-time {
+  font-size: var(--text-2xs);
+  color: var(--color-text-muted);
 }
 
 .settings-input,
@@ -2790,6 +3096,8 @@ button:disabled {
 
 /* Ensure input fields use proper surface in dark mode */
 :root[data-theme="dark"] .chat-input input,
+:root[data-theme="dark"] .mv-chat-input input,
+:root[data-theme="dark"] .ai-input,
 :root[data-theme="dark"] .search-bar input,
 :root[data-theme="dark"] .settings-input,
 :root[data-theme="dark"] .settings-select,
@@ -2800,7 +3108,8 @@ button:disabled {
 }
 
 /* Incoming messages in dark mode */
-:root[data-theme="dark"] .message.incoming {
+:root[data-theme="dark"] .message.incoming,
+:root[data-theme="dark"] .mv-message.incoming {
   background: var(--color-surface-overlay);
 }
 
@@ -2856,6 +3165,12 @@ button:disabled {
   }
 
   .header-nav button {
+    padding: 0.5rem 0.75rem;
+    font-size: var(--text-sm);
+    white-space: nowrap;
+  }
+
+  .header-nav-more-trigger {
     padding: 0.5rem 0.75rem;
     font-size: var(--text-sm);
     white-space: nowrap;

@@ -8,6 +8,9 @@
  * 4. Try to restore from persisted identity (no QR re-scan needed)
  * 5. Fall back to standalone init (shows onboarding UI)
  * 6. Start the node (connect relays)
+ *
+ * If SQLite contains identity metadata but SecureStorage/keychain restore fails,
+ * we **do not** create a second standalone identity (avoids split-brain state).
  */
 import { MobileNode } from "@envoymesh/mobile-node";
 import { CapacitorSqliteDatabase } from "./capacitor-sqlite-database.js";
@@ -40,17 +43,21 @@ export async function bootstrapMobileApp(config: MobileAppConfig): Promise<Mobil
     secureStorage,
   });
 
-  // 4. Try to restore from persisted identity
   try {
     await node.restoreFromSecureStorage();
-    // Identity restored — start the node
     await node.startNode();
     return node;
-  } catch {
-    // No persisted identity — fall through to standalone init
+  } catch (err) {
+    const persisted = await node.loadPersistedIdentity();
+    if (persisted) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Identity metadata is present in SQLite but restore failed (${msg}). ` +
+        `Clear app data or fix SecureStorage, then relaunch — a new identity will not be created automatically.`,
+      );
+    }
   }
 
-  // 5. Fresh init (standalone — UI should show onboarding / QR scan)
   await node.initNode(config.profileDir);
   await node.startNode();
   return node;

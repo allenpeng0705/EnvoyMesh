@@ -1,6 +1,7 @@
 import * as http from "node:http";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { parseChatMessagePayload } from "@envoymesh/protocol";
+import type { SubmitAgentShareProposalParams } from "@envoymesh/api";
 import type { ExternalAgentGateway } from "../external-agent-gateway.js";
 import type { BridgeConfig } from "./config.js";
 import { BridgeConfigSchema } from "./config.js";
@@ -28,6 +29,8 @@ export interface CreateBridgeOptions {
   onSelfSendEnvelope?: (envelope: any, remotePeerId: string) => Promise<void>;
   /** Gateway for external agent session management and action logging (Phase 9I). */
   gateway?: ExternalAgentGateway;
+  /** Persist agent-proposed vault shares for owner review (FS-E). */
+  submitAgentShareProposal?: (params: SubmitAgentShareProposalParams) => Promise<unknown>;
 }
 
 /**
@@ -43,9 +46,7 @@ export function createBridge(options: CreateBridgeOptions): {
   if (!config.enabled) {
     return { agentPeerId: options.identity.agentPeerId, stop: async () => {}, _handleMessage: async () => {} };
   }
-  if (!config.secret) {
-    throw new Error("Bridge requires a shared secret when enabled");
-  }
+  const secretTrimmed = config.secret?.trim() ?? "";
 
   const agentId = options.identity.agentCredential.agentId;
 
@@ -68,14 +69,19 @@ export function createBridge(options: CreateBridgeOptions): {
 
   // --- HTTP server: agent → P2P ---
   const server = http.createServer(async (req, res) => {
-    if (req.method !== "POST" || req.url !== "/bridge/send") {
+    if (req.method !== "POST") {
+      res.writeHead(404).end();
+      return;
+    }
+    const path = (req.url ?? "").split("?")[0] ?? "";
+    if (path !== "/bridge/send" && path !== "/bridge/agent-share-proposal") {
       res.writeHead(404).end();
       return;
     }
 
-    if (config.secret) {
+    if (secretTrimmed) {
       const auth = req.headers["authorization"];
-      if (auth !== `Bearer ${config.secret}`) {
+      if (auth !== `Bearer ${secretTrimmed}`) {
         res.writeHead(401).end(JSON.stringify({ ok: false, reason: "unauthorized" }));
         return;
       }
@@ -87,7 +93,46 @@ export function createBridge(options: CreateBridgeOptions): {
       return;
     }
 
-    const httpStartTime = Date.now();
+    if (path === "/bridge/agent-share-proposal") {
+      if (!options.submitAgentShareProposal) {
+        res.writeHead(501).end(JSON.stringify({ ok: false, reason: "submitAgentShareProposal not configured" }));
+        return;
+      }
+      try {
+        const raw = await readBody(req, MAX_BRIDGE_BODY_BYTES);
+        const body = JSON.parse(raw) as Record<string, unknown>;
+        const targetOwnerId = body.targetOwnerId;
+        const vaultRelativePath = body.vaultRelativePath;
+        const sensitivity = body.sensitivity;
+        const summary = body.summary;
+        if (typeof targetOwnerId !== "string" || !targetOwnerId.trim()) {
+          res.writeHead(400).end(JSON.stringify({ ok: false, reason: "targetOwnerId required" }));
+          return;
+        }
+        if (typeof vaultRelativePath !== "string" || !vaultRelativePath.trim()) {
+          res.writeHead(400).end(JSON.stringify({ ok: false, reason: "vaultRelativePath required" }));
+          return;
+        }
+        if (sensitivity !== "public" && sensitivity !== "friends" && sensitivity !== "private") {
+          res.writeHead(400).end(JSON.stringify({ ok: false, reason: "sensitivity must be public|friends|private" }));
+          return;
+        }
+        const proposal = await options.submitAgentShareProposal({
+          targetOwnerId: targetOwnerId.trim(),
+          vaultRelativePath: vaultRelativePath.trim(),
+          sensitivity,
+          summary: typeof summary === "string" ? summary : undefined,
+        });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, proposal }));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Internal error";
+        console.error(`[bridge] agent-share-proposal failed:`, msg);
+        res.writeHead(500).end(JSON.stringify({ ok: false, reason: msg }));
+      }
+      return;
+    }
+
     try {
       const raw = await readBody(req, MAX_BRIDGE_BODY_BYTES);
       const { to, text } = JSON.parse(raw);
@@ -108,7 +153,10 @@ export function createBridge(options: CreateBridgeOptions): {
   });
 
   server.listen(config.listenPort, "127.0.0.1", () => {
-    console.log(`[bridge] HTTP server on http://127.0.0.1:${config.listenPort}/bridge/send`);
+    console.log(
+      `[bridge] HTTP on http://127.0.0.1:${config.listenPort}/bridge/send ` +
+        `and /bridge/agent-share-proposal`,
+    );
   });
 
   // --- P2P handler: P2P → agent ---

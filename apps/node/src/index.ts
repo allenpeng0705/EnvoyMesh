@@ -78,6 +78,9 @@ import {
   createSystemSignalPayload,
   createKnowledgeResponsePayload,
   createSharePreviewPayload,
+  parseShareRequestPayload,
+  parseSharePreviewPayload,
+  parseShareAcceptPayload,
   createUnsignedEnvelope,
   createBondAcceptPayload,
   createHumanProfilePayload,
@@ -106,6 +109,7 @@ import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
+import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
 import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates, processDiscoveryQueue } from "./discovery-inbound.js";
 import { handleInboundBroadcastRequest, handleInboundBroadcastResponse } from "./broadcast-inbound.js";
 import { handleInboundTaskFeedback, handleInboundOfficialCredential } from "./reputation-inbound.js";
@@ -248,6 +252,8 @@ try {
     }
   } catch { /* ignore — persisted config may not exist yet */ }
 }
+/** Bridge UI + registration when HTTP bridge is enabled (secret optional → see bridge/index.ts localhost auth) */
+const bridgeHttpReady = bridgeConfig.enabled;
 const discoverySeedStore = createDiscoverySeedStore(args.profileDir);
 const taskRuntimeStore = createTaskRuntimeStateStore(args.profileDir);
 const resolvedArgs = await resolveNodeArgsTargetsByOwnerId(args, peerDirectoryStore);
@@ -834,7 +840,24 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     return;
   }
 
-  // ── share.preview / share.request ──────────────────────────────────────────
+  // ── share.preview (requester links preview id to outbound push send) ─────
+  if (envelope.intent === "share.preview") {
+    try {
+      const previewPayload = parseSharePreviewPayload(envelope.payload);
+      if (
+        nodeService instanceof NodeServiceImpl &&
+        previewPayload.isFileTransfer &&
+        !previewPayload.refused
+      ) {
+        nodeService.linkOutboundSharePreviewFromInbound(envelope.messageId, previewPayload.inReplyTo);
+      }
+    } catch {
+      // ignore invalid preview payloads for helper linkage
+    }
+    return;
+  }
+
+  // ── share.request → responder sends signed share.preview ─────────────────
   if (envelope.intent === "share.request") {
     const capabilityManifest = await capabilityManifestStore.loadManifest();
     const share = await handleInboundShareRequest({
@@ -847,6 +870,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       peerDirectoryStore,
       profile,
       vaultIndex,
+      vaultDir: vaultDirForNode,
       modelProviders: currentModelProviders,
       capabilityManifest,
     });
@@ -896,10 +920,47 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         createdAt: signedResponse.createdAt,
       }),
     );
+    let shareRequestPayload: ReturnType<typeof parseShareRequestPayload> | null = null;
+    try {
+      shareRequestPayload = parseShareRequestPayload(envelope.payload);
+    } catch {
+      shareRequestPayload = null;
+    }
+    if (
+      shareRequestPayload?.requestType === "file" &&
+      nodeService instanceof NodeServiceImpl
+    ) {
+      if (shareRequestPayload.fileOrigin === "responder") {
+        nodeService.registerResponderFileSendAfterPreview(
+          signedResponse.messageId,
+          shareRequestPayload.relativePath,
+          envelope.senderPeerId,
+        );
+      }
+      if (shareRequestPayload.fileOrigin === "sender") {
+        void nodeService.recordInboundPushShareOffer({
+          shareId: signedResponse.messageId,
+          senderPeerId: envelope.senderPeerId,
+          previewText: share.responsePayload.previewText,
+          sensitivity: share.responsePayload.sensitivity as "public" | "friends" | "private",
+          relativePath: shareRequestPayload.relativePath ?? "",
+        });
+      }
+    }
     return;
   }
 
   if (envelope.intent === "share.accept") {
+    if (nodeService instanceof NodeServiceImpl) {
+      try {
+        const acc = parseShareAcceptPayload(envelope.payload);
+        if (!acc.accept) {
+          nodeService.clearPendingShareStateForPreview(acc.inReplyTo);
+        }
+      } catch {
+        // ignore parse errors; handleInboundShareAccept will reject
+      }
+    }
     const share = await handleInboundShareAccept({
       envelope,
       remotePeerId,
@@ -915,9 +976,14 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       console.warn(`[share.accept denied] ${share.reason}`);
       return;
     }
-    // share.accept acknowledged — caller (the requester) will now receive the actual
-    // content via knowledge.response or initiate /envoymesh/data/0.1.0 transfer.
-    // The share.accept is recorded in the share event log for audit correlation.
+    if (nodeService instanceof NodeServiceImpl) {
+      await nodeService.maybeSendShareFileForInboundAccept({
+        envelope,
+        remotePeerId,
+        taskStore,
+        vaultDir: vaultDirForNode,
+      });
+    }
     console.log(`[share.accept] peer=${remotePeerId} proceeding with content share`);
     return;
   }
@@ -937,6 +1003,8 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       anonymousDiscoveryMode: nodeConfig?.anonymousDiscoveryMode ?? "off",
       anonymousIntentAllowlist: nodeConfig?.anonymousIntentAllowlist,
       anonymousSensitivityCeiling: nodeConfig?.anonymousSensitivityCeiling ?? "public",
+      vaultDir: vaultDirForNode,
+      profileDir: args.profileDir,
     });
     if (!discovery.ok) {
       await taskStore.appendAuditEvent(
@@ -968,7 +1036,12 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         correlationId,
       });
       const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
-      const latencyMs = await mesh.send(remotePeerId, signedResponse);
+      let latencyMs = 0;
+      if (replyWithEnvelope) {
+        await replyWithEnvelope(signedResponse);
+      } else {
+        latencyMs = await mesh.send(remotePeerId, signedResponse);
+      }
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.sent",
@@ -1684,6 +1757,51 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
   }
 
   if (
+    envelope.intent === "social.intro.sync" ||
+    envelope.intent === "social.intro.propose" ||
+    envelope.intent === "social.intro.owner-ready"
+  ) {
+    const nodeCfg = await nodeService.getNodeConfig();
+    const intro = await handleInboundSocialIntroIntent({
+      envelope,
+      profile,
+      remotePeerId,
+      receivedAt,
+      correlationId,
+      taskStore,
+      trustStore,
+      trustModeEnabled: nodeCfg.trustModeEnabled ?? false,
+      onSocialIntroPropose: (data) => {
+        if (nodeService instanceof NodeServiceImpl) {
+          nodeService.storePendingSocialIntroProposal({
+            ...data,
+            commitmentApproved: false,
+          });
+        }
+      },
+    });
+    if (!intro.ok) {
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.rejected",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "rejected",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "deny",
+          summary: `Rejected social intro message: ${intro.reason}.`,
+          createdAt: envelope.createdAt,
+        }),
+      );
+      console.warn(`[rejected social.intro] ${envelope.intent}: ${intro.reason}`);
+    }
+    return;
+  }
+
+  if (
     envelope.intent === "bond.request" ||
     envelope.intent === "bond.accept" ||
     envelope.intent === "bond.challenge" ||
@@ -1909,11 +2027,58 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
   console.log(`[verified message] ${envelope.intent} from ${envelope.senderPeerId}`);
 });
 
+const nodeService = createNodeService(
+  undefined,
+  trustStore,
+  peerDirectoryStore,
+  humanProfileStore,
+  args.profileDir,
+  profile,
+  effectiveBootstrapPeers,
+  vaultDirForNode,
+);
+if (nodeService instanceof NodeServiceImpl) {
+  nodeService.bindCliTaskStore(taskStore);
+  nodeService.bindExternalMesh(mesh);
+  void nodeService.resyncBondedContactReachabilityTags();
+  // Load model provider config from persisted config
+  const nodeConfig = await nodeService.getNodeConfig();
+  currentModelProviders = nodeConfig.modelProviders;
+  // Restore relay pairing proxy URL from persisted config (Phase 10A relay bridge)
+  if (nodeConfig.relayPublicWsUrl) {
+    nodeService.setRelayPublicWsUrl(nodeConfig.relayPublicWsUrl);
+  }
+  // Environment variable can override chat assist setting
+  currentChatAssistEnabled = process.env.ENVOY_CHAT_ASSIST_ENABLED === "true" ? true : nodeConfig.chatAssistEnabled;
+  // Load autonomous policy config
+  currentAutonomousKillSwitch = nodeConfig.autonomousKillSwitch ?? false;
+  currentAutonomousPolicies = nodeConfig.autonomousPolicies ?? [];
+  // Load AI settings
+  currentAiSettings = nodeConfig.aiSettings;
+  // Load contact AI preferences into a Map for fast lookup
+  currentContactAiPrefs = new Map(
+    (nodeConfig.contactAiPreferences ?? []).map((p: ContactAiPreferences) => [p.peerOwnerId, { aiAccessLevel: p.aiAccessLevel, knowledgeAccess: p.knowledgeAccess, priority: p.priority }]),
+  );
+  console.log(`[model] provider mode=${currentModelProviders.mode}`);
+  console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
+  console.log(`[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`);
+}
+
 installEnvoyDataTransferReceiver({
   mesh,
   peerDirectoryStore,
   taskStore,
   vaultDir: vaultDirForNode,
+  resolveInboundRelativePath:
+    nodeService instanceof NodeServiceImpl
+      ? (remotePeerId, voucherRelativePath) =>
+          nodeService.resolveInboundDataTransferRelativePath(remotePeerId, voucherRelativePath)
+      : undefined,
+  onInboundVaultWriteCommitted:
+    nodeService instanceof NodeServiceImpl
+      ? (remotePeerId, voucherSourceRelativePath) =>
+          nodeService.consumeInboundDataTransferSaveMapping(remotePeerId, voucherSourceRelativePath)
+      : undefined,
 });
 
 await mesh.start();
@@ -1977,41 +2142,6 @@ rateLimitCleanupInterval = setInterval(() => {
 }, 60_000);
 
 startEventLoopLagMonitor();
-
-const nodeService = createNodeService(
-  undefined,
-  trustStore,
-  peerDirectoryStore,
-  humanProfileStore,
-  args.profileDir,
-  profile,
-  effectiveBootstrapPeers,
-);
-if (nodeService instanceof NodeServiceImpl) {
-  nodeService.bindExternalMesh(mesh);
-  void nodeService.resyncBondedContactReachabilityTags();
-  // Load model provider config from persisted config
-  const nodeConfig = await nodeService.getNodeConfig();
-  currentModelProviders = nodeConfig.modelProviders;
-  // Restore relay pairing proxy URL from persisted config (Phase 10A relay bridge)
-  if (nodeConfig.relayPublicWsUrl) {
-    nodeService.setRelayPublicWsUrl(nodeConfig.relayPublicWsUrl);
-  }
-  // Environment variable can override chat assist setting
-  currentChatAssistEnabled = process.env.ENVOY_CHAT_ASSIST_ENABLED === "true" ? true : nodeConfig.chatAssistEnabled;
-  // Load autonomous policy config
-  currentAutonomousKillSwitch = nodeConfig.autonomousKillSwitch ?? false;
-  currentAutonomousPolicies = nodeConfig.autonomousPolicies ?? [];
-  // Load AI settings
-  currentAiSettings = nodeConfig.aiSettings;
-  // Load contact AI preferences into a Map for fast lookup
-  currentContactAiPrefs = new Map(
-    (nodeConfig.contactAiPreferences ?? []).map((p) => [p.peerOwnerId, { aiAccessLevel: p.aiAccessLevel, knowledgeAccess: p.knowledgeAccess, priority: p.priority }]),
-  );
-  console.log(`[model] provider mode=${currentModelProviders.mode}`);
-  console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
-  console.log(`[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`);
-}
 
 // Start WebSocket server for app connections
 const modeController = new ModeController(createDefaultModeConfig(), taskStore);
@@ -2131,6 +2261,10 @@ modeTransitionTimer = setInterval(() => {
 // Wire NodeService events to WebSocket server
 nodeService.on("hello:request", (data) => wsServer.emitEvent("hello:request", data));
 nodeService.on("hello:response", (data) => wsServer.emitEvent("hello:response", data));
+nodeService.on("social.intro:propose", (data) => wsServer.emitEvent("social.intro:propose", data));
+nodeService.on("share:offered", (data) => wsServer.emitEvent("share:offered", data));
+nodeService.on("share:accepted", (data) => wsServer.emitEvent("share:accepted", data));
+nodeService.on("share:declined", (data) => wsServer.emitEvent("share:declined", data));
 nodeService.on("chat:message", (data) => wsServer.emitEvent("chat:message", data));
 nodeService.on("chat:draft", (data) => wsServer.emitEvent("chat:draft", data));
 nodeService.on("bond:established", (data) => {
@@ -2172,6 +2306,7 @@ const bridge = createBridge({
   mesh,
   getRecipientPeerId,
   gateway,
+  submitAgentShareProposal: (params) => nodeService.submitAgentShareProposal(params),
   onSelfSendEnvelope: async (envelope, _remotePeerId) => {
     // Deliver bridge agent reply locally — emit chat:message + persist to log
     const payload = parseChatMessagePayload(envelope.payload);
@@ -2210,8 +2345,8 @@ if (nodeService instanceof NodeServiceImpl) {
 }
 
 // Emit bridge status for Social UI and register bridge agent in peer directory.
-// bridgeConfig.enabled was already merged with the UI toggle at startup (see above).
-if (nodeService instanceof NodeServiceImpl && bridgeConfig.enabled) {
+// Requires enabled + non-empty secret so UI matches an actually listening HTTP bridge.
+if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
   nodeService.setBridgeStatus({
     enabled: true,
     agentPeerId: bridge.agentPeerId,

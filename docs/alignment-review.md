@@ -6,7 +6,7 @@ This document records how **narrative requirements** ([UserStory.md](./UserStory
 
 **Major redesign:** When architecture shifts meaningfully, refresh this review and bump the snapshot date — see [redesign strategy](./redesign-strategy.md).
 
-**Review snapshot:** 2026-04-26 (update when major milestones land).
+**Review snapshot:** 2026-05-19 (update when major milestones land).
 
 ---
 
@@ -22,6 +22,7 @@ This document records how **narrative requirements** ([UserStory.md](./UserStory
 | **Communication roles (chat vs agent vs data streams)** | **Weak** — design assumes separate sub-protocols and role-tagged traffic; runtime today centers on **`/envoymesh/message/0.1.0`** plus task/ping/signal paths. |
 | **Voucher + verifiable chunked file transfer** | **Weak** — shared vault + search + policy direction match the *intent*; **voucher protocol** and **P2P verified chunk stream** are not implemented. |
 | **Semantic firewall, Wasm agent, smart inbox / morning report** | **Weak / future** — envelope guard + audits exist; **LLM injection middleware**, **Wasm isolation**, and **consumer-grade inbox** are largely ahead of code. |
+| **Trust mode / Phase 12 (`social.intro.*`, intro inbox, bond linkage)** | **Strong partial** — `@envoymesh/protocol` intents + **`bond.request`** optional refs shipped; node inbound + credential-bearing gate + Social Trust/inbox + gated **`mesh.intro.*`** tools; [EMP Appendix A](./protocol-standard.md#appendix-a-trust-mode-social-mediation-socialintro) + [US-TM1–TM4](./scenarios.md#epic-tm-trust-mode); Phase **F** hardening (`friendMatchingPreferencesSigned`, **`social.intro.*`** rate limits + nonce replay, **`bond.accept`** audits) + integration smoke (**`npm run smoke:local`**) shipped. |
 
 **Bottom line:** Implementation **aligns well** with the vision of a **local-first, signed, mandate-bound agent mesh with trust, vault, and correlated auditing**. It **does not yet align** with the most **differentiating mesh layers** in the user stories (scaled discovery, full broadcast semantics on the wire, complete role-mode coverage, commerce, multi-hop anonymity).
 
@@ -34,7 +35,7 @@ This document records how **narrative requirements** ([UserStory.md](./UserStory
 | **1 Identity birth** | Stable identity (directionally DID); all app messages signed; decentralized verify | Owner + device keys, device certificates, signed envelopes, `system.signal`; DID-style docs are directional | **Aligned** (crypto path); DID **document** not end-to-end product |
 | **2 Blind discovery** | Minimal / hashed discovery; agent-card match | mDNS; optional DHT/bootstrap/relay/DCUtR; agent card **types** and card intents; **no** gossip topic discovery UX | **Design ahead of code** |
 | **3 Broadcast & kill** | Hop TTL, expiry, correlation cancel, thresholds | Mandate `expiresAt`; optional `task.propose` `expiresAt`; `correlationId` + rich audit; `task-runtime-state.json` (cancel / satisfied / `closeOnFirstCompletedResult`); CLI flags — see Phase 4D in implementation plan | **Partial** |
-| **4 Social handshake** | Bond + proof of context; policy; defer to owner | Trust store, bonds/policy for sensitive actions, approval queue, dashboard; **no** full bond-request + referral **protocol** as a dedicated flow | **Partial** |
+| **4 Social handshake** | Bond + proof of context; policy; defer to owner | Trust store, bonds/policy, approvals; EMP **`bond.request`** payload + inbound path + CLI; **Trust mode**: **`social.intro.*`**, intro inbox / **`ownerCommitmentRef`** linkage on **`bond.request`** when approving intros ([scenarios.md](./scenarios.md) Epic TM); Phase **12 F** hardening + **`npm run smoke:local`** integration scenario | **Partial → strong partial** |
 | **5 Intent-based file share** | Voucher; virtual view; CID-like chunks over P2P | `shared_vault`, indexing/search, vault audit, policy hooks | **Directionally aligned**; **not** voucher + verified **transfer** protocol |
 | **6 Communication roles** | Roles; `/chat`, `/agent`, `/data` style split | Single primary message protocol; tasks + system intents | **Not aligned yet** — explicit **EMP / roadmap** choice needed |
 
@@ -58,7 +59,7 @@ This document records how **narrative requirements** ([UserStory.md](./UserStory
 | Tier | Stories | Fit vs repo |
 |------|---------|-------------|
 | **P0** | US-A1, US-C1, US-G1, US-D2 | **Strong** — identity, correlation, audits, inbound rejects align with shipped work. |
-| **P1** | US-C2, US-D1, US-F2 | **Mixed** — US-C2 **partially** shipped (local termination slice); US-D1 / rich A2A “shadow” still **partial**. |
+| **P1** | US-C2, US-D1, US-F2, US-TM1–TM4 | **Mixed** — US-C2 **partially** shipped (local termination slice); US-D1 / rich A2A “shadow” still **partial**. **Trust mode** stories US-TM1–TM4 align with Phase **12 A–E** (`trust-mode-implementation-plan.md`). |
 | **P2** | US-E1–E2, US-F1, US-F3–F4 | **Early** — vault/dashboard help; file **transfer** protocol and full chat/agent role split **not** there. |
 | **P3** | US-B1–B2, US-F5, US-A2 | **Mostly future** — discovery at scale, LLM firewall, multi-device UX. |
 
@@ -103,5 +104,7 @@ This review names gaps; **resolved vs open vs backlog** Q&A is maintained in one
 
 | Date | Change |
 |------|--------|
+| 2026-05-19 | Phase **12 F**: Trust-mode hardening + **`npm run smoke:local`** intro→bond scenario; executive summary + Scenario 4 rows refreshed. |
+| 2026-05-19 | Snapshot bump; executive summary + Scenario 4 + P1 tiers updated for **Phase 12 Trust mode** (EMP Appendix A, Epic TM **US-TM1–TM4**). |
 | 2026-04-26 | Initial alignment review published. |
 | 2026-04-26 | Linked canonical **Open questions** and **Coverage vs UserStory** trackers in [implementation-plan.md](./implementation-plan.md). |

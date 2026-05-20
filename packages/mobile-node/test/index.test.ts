@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import { MobileNode, createMobileNode } from "../src/index.js";
+import { MobileNode, createMobileNode, toRelayDirectClientWsUrl } from "../src/index.js";
 import type { MobileNodeConfig } from "../src/index.js";
 import type { SecureStorage } from "@envoymesh/mobile-storage";
 
@@ -44,6 +44,32 @@ describe("MobileNode", () => {
     });
   });
 
+  describe("toRelayDirectClientWsUrl", () => {
+    it("replaces trailing /ws with /ws/client once (no doubling)", () => {
+      expect(toRelayDirectClientWsUrl("ws://relay.example.com:15432/ws")).toBe(
+        "ws://relay.example.com:15432/ws/client",
+      );
+    });
+    it("appends /ws/client when URL has no path", () => {
+      expect(toRelayDirectClientWsUrl("ws://relay.example.com:9000")).toBe(
+        "ws://relay.example.com:9000/ws/client",
+      );
+    });
+    it("leaves /ws/client URLs unchanged", () => {
+      expect(toRelayDirectClientWsUrl("ws://relay.example.com:9000/ws/client")).toBe(
+        "ws://relay.example.com:9000/ws/client",
+      );
+    });
+    it("strips trailing slashes before rewriting", () => {
+      expect(toRelayDirectClientWsUrl("ws://relay.example.com:15432/ws///")).toBe(
+        "ws://relay.example.com:15432/ws/client",
+      );
+    });
+    it("returns empty string for whitespace-only URL", () => {
+      expect(toRelayDirectClientWsUrl("   ")).toBe("");
+    });
+  });
+
   // -----------------------------------------------------------------------
   // Standalone identity
   // -----------------------------------------------------------------------
@@ -79,6 +105,29 @@ describe("MobileNode", () => {
       const result = await fresh.initNode("/fresh-profile");
       expect(result.ownerId).toMatch(/^envoy:owner:/);
       expect(result.deviceId).toMatch(/^envoy:device:/);
+    });
+  });
+
+  describe("shareFile (FS-C)", () => {
+    it("rejects when the node is not running", async () => {
+      node = new MobileNode(makeConfig());
+      await node.initStandalone("/test-profile");
+      await expect(
+        node.shareFile("envoy:owner:test", { path: "x.md", sensitivity: "public" }),
+      ).rejects.toThrow(/Start the node first/);
+    });
+
+    it("rejects traversal in vault path before resolving peer", async () => {
+      node = new MobileNode(makeConfig());
+      await node.initStandalone("/test-profile");
+      await node.startNode();
+      try {
+        await expect(
+          node.shareFile("envoy:owner:test", { path: "../secret.md", sensitivity: "public" }),
+        ).rejects.toThrow(/Invalid vault path/);
+      } finally {
+        await node.stopNode();
+      }
     });
   });
 
@@ -124,6 +173,24 @@ describe("MobileNode", () => {
       expect(state.owner.ownerId).toBe(owner.ownerId);
       expect(state.device.deviceId).not.toBe(owner.ownerId);
       expect(state.device.deviceId).toMatch(/^envoy:device:/);
+    });
+
+    it("importOwnerIdentity reuses opts.device (pairWithHomeNode must not regenerate device)", async () => {
+      node = new MobileNode(makeConfig());
+      const { generateOwnerIdentity, generateDeviceIdentity } = await import("@envoymesh/mobile-identity");
+      const owner = generateOwnerIdentity();
+      const pinned = generateDeviceIdentity();
+
+      await node.importOwnerIdentity(
+        "/shared-profile",
+        owner.privateKeyPem,
+        owner.publicKeyPem,
+        "home-node-peer-id",
+        { device: pinned },
+      );
+
+      expect(node.state.device.deviceId).toBe(pinned.deviceId);
+      expect(node.state.device.publicKeyPem).toBe(pinned.publicKeyPem);
     });
   });
 
@@ -195,24 +262,118 @@ describe("MobileNode", () => {
 
   describe("bond management", () => {
     beforeEach(async () => {
-      node = new MobileNode(makeConfig());
+      node = new MobileNode(makeConfig({ relayUrls: [] }));
       await node.initStandalone("/test-profile");
+      await node.startNode();
     });
 
-    it("sendHello returns a hello response", async () => {
+    it("sendHello sends bond.request (relay) and returns optimistic accept", async () => {
+      const broadcastSpy = vi.spyOn(node as any, "_broadcastToRelaySockets");
+      const targetPeer = "12D3KooWTestBondHelloPeerId1111111111111111";
       const result = await node.sendHello(
-        "envoy:owner:target",
+        targetPeer,
         { displayName: "Me", interests: ["tech"], whatShares: ["knowledge"] },
         "Hello!",
       );
-      expect(result).toBeDefined();
       expect(result.decision).toBe("accept");
       expect(result.messageId).toBeTruthy();
+      expect(broadcastSpy).toHaveBeenCalled();
+      const raw = broadcastSpy.mock.calls[0][0] as string;
+      const sent = JSON.parse(raw);
+      expect(sent.intent).toBe("bond.request");
+      expect(sent.payload.requesterOwnerId).toBe(node.state.owner.ownerId);
+      broadcastSpy.mockRestore();
+    });
+
+    it("sendHello throws when target peer id cannot be resolved", async () => {
+      await expect(
+        node.sendHello("envoy:owner:no_mapping", {
+          displayName: "X",
+          interests: [],
+          whatShares: [],
+        }, "Hi"),
+      ).rejects.toThrow(/peer not found/i);
     });
 
     it("getBonds returns bond list from trust store", async () => {
       const bonds = await node.getBonds();
       expect(Array.isArray(bonds)).toBe(true);
+    });
+
+    it("storePendingHelloRequest records a pending accept (same as desktop NodeService)", () => {
+      node.storePendingHelloRequest({
+        messageId: "m1",
+        sender: { nodeId: "n1", ownerId: "o1", displayName: "X" },
+        message: "hi",
+        timestamp: new Date().toISOString(),
+      });
+      const pending = (node as any)._pendingHelloRequests.get("m1");
+      expect(pending?.requesterOwnerId).toBe("o1");
+      expect(pending?.remotePeerId).toBe("n1");
+    });
+
+    it("acceptHello applies a pending bond and clears the queue", async () => {
+      node.storePendingHelloRequest({
+        messageId: "acc1",
+        sender: {
+          nodeId: "12D3KooWRemote",
+          ownerId: "envoy:owner:alice",
+          displayName: "Alice",
+        },
+        message: "Please add me",
+        timestamp: new Date().toISOString(),
+      });
+      await node.acceptHello("acc1");
+      expect((node as any)._pendingHelloRequests.has("acc1")).toBe(false);
+      const bonds = await node.getBonds();
+      expect(bonds.find((b) => b.peerOwnerId === "envoy:owner:alice")).toMatchObject({
+        level: "direct",
+        libp2pPeerId: "12D3KooWRemote",
+      });
+    });
+
+    it("declineHello drops a pending request without creating a bond", async () => {
+      node.storePendingHelloRequest({
+        messageId: "dec1",
+        sender: {
+          nodeId: "12D3KooWRemote",
+          ownerId: "envoy:owner:bob",
+          displayName: "Bob",
+        },
+        message: "Hi",
+        timestamp: new Date().toISOString(),
+      });
+      await node.declineHello("dec1", "no thanks");
+      expect((node as any)._pendingHelloRequests.has("dec1")).toBe(false);
+      const bonds = await node.getBonds();
+      expect(bonds.find((b) => b.peerOwnerId === "envoy:owner:bob")).toBeUndefined();
+    });
+
+    it("blockPeer sets trust level to blocked", async () => {
+      const oid = "envoy:owner:blocktest";
+      await (node as any)._trustStore.set({
+        peerOwnerId: oid,
+        displayName: "Bob",
+        level: "direct",
+        createdAt: new Date().toISOString(),
+      });
+      await node.blockPeer(oid);
+      const bonds = await node.getBonds();
+      const b = bonds.find((x) => x.peerOwnerId === oid);
+      expect(b?.level).toBe("blocked");
+    });
+
+    it("unblockPeer removes trust entry", async () => {
+      const oid = "envoy:owner:unblock";
+      await (node as any)._trustStore.set({
+        peerOwnerId: oid,
+        displayName: "Bob",
+        level: "blocked",
+        createdAt: new Date().toISOString(),
+      });
+      await node.unblockPeer(oid);
+      const bonds = await node.getBonds();
+      expect(bonds.find((x) => x.peerOwnerId === oid)).toBeUndefined();
     });
   });
 
@@ -224,6 +385,30 @@ describe("MobileNode", () => {
     beforeEach(async () => {
       node = new MobileNode(makeConfig());
       await node.initStandalone("/test-profile");
+    });
+
+    it("forwardEnvelope rejects malformed JSON", async () => {
+      await expect(node.forwardEnvelope({ version: "0.1" } as Record<string, unknown>)).rejects.toThrow(
+        /invalid envelope/i,
+      );
+    });
+
+    it("forwardEnvelope rejects tampered signed envelope", async () => {
+      const { createUnsignedEnvelope, createChatMessagePayload } = await import("@envoymesh/protocol");
+      const { derivePeerId, signUnsignedEnvelope: signEnv } = await import("@envoymesh/mobile-identity");
+      const unsigned = createUnsignedEnvelope({
+        intent: "chat.message",
+        senderPeerId: derivePeerId(node.state.device.publicKeyPem),
+        senderPublicKey: node.state.device.publicKeyPem,
+        recipientPeerId: "envoy_peer_rcpt",
+        payload: createChatMessagePayload({
+          senderOwnerId: node.state.owner.ownerId,
+          text: "original",
+        }),
+      });
+      const signed = signEnv(unsigned, node.state.device.privateKeyPem) as Record<string, unknown>;
+      const tampered = { ...signed, payload: { ...(signed.payload as object), text: "tampered" } };
+      await expect(node.forwardEnvelope(tampered)).rejects.toThrow(/verification failed/i);
     });
 
     it("sendChat does not throw", async () => {
@@ -249,16 +434,17 @@ describe("MobileNode", () => {
       node = new MobileNode(makeConfig());
     });
 
-    it("getNodeConfig returns relay URLs and profile directory", async () => {
+    it("getNodeConfig returns configured relays and profile directory", async () => {
       const config = await node.getNodeConfig();
-      expect(config.relayUrls).toEqual(["ws://relay.example.com:9000"]);
+      expect(config.configuredRelays).toHaveLength(1);
+      expect(config.configuredRelays[0]?.addr).toBe("ws://relay.example.com:9000");
       expect(config.profileDir).toBe("/test-profile");
     });
 
     it("listRelays returns the configured relay URLs", async () => {
       const relays = await node.listRelays();
       expect(relays).toHaveLength(1);
-      expect(relays[0].url).toBe("ws://relay.example.com:9000");
+      expect(relays[0]?.addr).toBe("ws://relay.example.com:9000");
     });
   });
 
@@ -329,9 +515,14 @@ describe("MobileNode", () => {
       node = new MobileNode(makeConfig());
     });
 
-    it("knowledgeQuery returns mobile-unavailable message", async () => {
+    it("knowledgeQuery throws when node not initialized", async () => {
+      await expect(node.knowledgeQuery("What is EnvoyMesh?")).rejects.toThrow("Node not initialized");
+    });
+
+    it("knowledgeQuery routes via configured providers after init (default mock)", async () => {
+      await node.initStandalone("/test-profile");
       const answer = await node.knowledgeQuery("What is EnvoyMesh?");
-      expect(answer).toContain("not available on mobile");
+      expect(answer).toContain("Mock model response");
     });
   });
 
@@ -733,6 +924,28 @@ describe("MobileNode", () => {
       (node as any)._mesh = undefined;
     });
 
+    it("advertiseTopic normalizes topic and delegates to _advertiseTopicsOnDht", async () => {
+      const spy = vi.spyOn(node as any, "_advertiseTopicsOnDht").mockResolvedValue(undefined);
+      await node.advertiseTopic("  Music ");
+      expect(spy).toHaveBeenCalledWith(["music"]);
+      spy.mockRestore();
+    });
+
+    it("advertiseTopic throws for whitespace-only topic", async () => {
+      await expect(node.advertiseTopic("   ")).rejects.toThrow(/empty topic/i);
+    });
+
+    it("stopAdvertiseTopic calls cancelReprovide when libp2p exposes it", async () => {
+      const cancelReprovide = vi.fn().mockResolvedValue(undefined);
+      (node as any)._mesh = { contentRouting: { cancelReprovide } };
+      const origCid = (node as any)._capabilityTopicCid;
+      (node as any)._capabilityTopicCid = vi.fn().mockResolvedValue({ toString: () => "bafytestcid" });
+      await node.stopAdvertiseTopic("music");
+      expect(cancelReprovide).toHaveBeenCalled();
+      (node as any)._capabilityTopicCid = origCid;
+      (node as any)._mesh = undefined;
+    });
+
     it("searchPeers merges DHT results with trust store results when searching by displayName", async () => {
       // Add a bonded peer to trust store
       await (node as any)._trustStore.set({
@@ -942,6 +1155,7 @@ describe("MobileNode", () => {
       const parsed = JSON.parse(sent!);
       expect(parsed.intent).toBe("chat.message");
       expect(parsed.payload.text).toBe("hello via relay");
+      expect(parsed.payload.senderOwnerId).toBe(node.state.owner.ownerId);
     });
 
     it("sends chat via mesh when trust store has libp2pPeerId", async () => {
@@ -989,6 +1203,7 @@ describe("MobileNode", () => {
       expect(sentData).toBeTruthy();
       const parsed = JSON.parse(sentData!);
       expect(parsed.payload.text).toBe("hello via mesh");
+      expect(parsed.payload.senderOwnerId).toBe(node.state.owner.ownerId);
 
       // Restore
       (node as any)._sendViaMesh = originalSendViaMesh;
@@ -1100,6 +1315,7 @@ describe("MobileNode", () => {
       const envelope = JSON.parse(aliceSentData!);
       expect(envelope.intent).toBe("chat.message");
       expect(envelope.payload.text).toBe("Hello Bob!");
+      expect(envelope.payload.senderOwnerId).toBe(alice.state.owner.ownerId);
 
       // Verify alice's own local chat event fired
       const aliceHistory = await alice.listChatHistory(bob.state.owner.ownerId);
@@ -1130,9 +1346,20 @@ describe("MobileNode", () => {
 
       await alice.initStandalone("/alice");
       await bob.initStandalone("/bob");
+      await alice.startNode();
+      await bob.startNode();
+
+      const { derivePeerId } = await import("@envoymesh/mobile-identity");
+      const aliceWireId = derivePeerId(alice.state.device.publicKeyPem);
+      await (bob as any)._peerDirectory.set({
+        ownerId: alice.state.owner.ownerId,
+        multiaddrs: [],
+        lastSeen: new Date().toISOString(),
+        libp2pPeerId: aliceWireId,
+      });
 
       // Before the bond exists, _sendToRelay should NOT have libp2pPeerId
-      // Simulate bob sending alice a hello to establish a bond
+      // Simulate bob sending alice a hello to establish routing
       await bob.sendHello(alice.state.owner.ownerId, {
         displayName: "Bob",
         interests: ["music"],

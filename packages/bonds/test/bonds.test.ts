@@ -56,6 +56,41 @@ describe("bonds", () => {
     });
   });
 
+  it("allows public peers to exchange social.intro.sync", () => {
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "public",
+        intent: "social.intro.sync",
+      }),
+    ).toEqual({ action: "allow", maxSensitivity: "public" });
+  });
+
+  it("challenges public peers sending social.intro.propose", () => {
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "public",
+        intent: "social.intro.propose",
+      }),
+    ).toEqual({
+      action: "challenge",
+      challengeType: "referral_or_manual_approval",
+    });
+  });
+
+  it("allows referred peers to use Trust-mode social intents", () => {
+    for (const intent of ["social.intro.sync", "social.intro.propose", "social.intro.owner-ready"] as const) {
+      expect(
+        evaluatePolicy({
+          peerId: "peer-a",
+          bondLevel: "referred",
+          intent,
+        }),
+      ).toEqual({ action: "allow", maxSensitivity: "public" });
+    }
+  });
+
   it("denies blocked peers", () => {
     expect(
       evaluatePolicy({
@@ -77,6 +112,15 @@ describe("bonds", () => {
     ).toEqual({
       action: "approval_required",
       reason: "raw file sharing requires approval",
+    });
+  });
+
+  it("requires messaging capability for social.intro.sync", () => {
+    expect(evaluateCapability("social.intro.sync", ["message.send"])).toEqual({ action: "allow" });
+    expect(evaluateCapability("social.intro.sync", ["vault.retrieve"])).toEqual({
+      action: "deny",
+      reason: "missing capability for social.intro.sync",
+      requiredCapabilities: ["message.send"],
     });
   });
 

@@ -21,7 +21,7 @@ import {
 import { resolve } from "node:path";
 import { decodeWanJoinInviteV1, encodeWanJoinInviteV1, type WanJoinInviteV1 } from "./wan-invite.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
-import { createNodeConfigStore } from "./node-config-store.js";
+import { createNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
 import {
   formatCapabilityDiscoveryRows,
   formatDiscoverySeedRows,
@@ -323,7 +323,8 @@ Commands:
   audit          Inspect audit events.
   tasks          Inspect task journal entries.
   approvals      Inspect or update owner approval queue.
-  connectivity-status Show discovery/connectivity diagnostics: audit summaries plus discovered peer ids,
+  connectivity-status Show discovery/connectivity diagnostics: persisted node-config (discovery profile, bootstrap
+                        preset ids, explicit bootstrap peer count, relay flags), audit summaries plus discovered peer ids,
                          capability-topic traces, and persisted discovery-seeds.json rows.
   pairing        Pairing-focused queue/actions (list/approve/reject/retry/timeline).
   relay-status   Show local relay manager snapshot from runtime audit events.
@@ -634,8 +635,21 @@ async function listObservedPeers(args: DeveloperCliArgs): Promise<DeveloperCliRe
   ]);
 }
 
+function formatPersistedDiscoveryConfigLine(config: PersistedNodeConfig | undefined): string {
+  if (!config) {
+    return "Persisted node-config: (none — no node-config.json on disk; runtime may use CLI/env defaults until saved)";
+  }
+  const presets =
+    config.bootstrapPresets.length > 0 ? config.bootstrapPresets.join(",") : "(empty — may resolve to CLI defaults)";
+  const nPeers = config.bootstrapPeers?.length ?? 0;
+  return `Persisted node-config: discoveryProfile=${config.discoveryProfile} bootstrapPresets=${presets} explicitBootstrapPeers=${nPeers} relay=${config.relayEnabled} relayServer=${config.relayServerEnabled}`;
+}
+
 async function showConnectivityStatus(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
-  const events = await createLocalTaskStore(args.profileDir).readAuditEvents();
+  const [events, persisted] = await Promise.all([
+    createLocalTaskStore(args.profileDir).readAuditEvents(),
+    createNodeConfigStore(args.profileDir).load(),
+  ]);
   const analysis = analyzeConnectivityStageD(events);
   const traces = events.filter((event) => event.type === "p2p.trace");
   const warningEvents = traces.filter((event) => event.protocol === "connectivity.warning");
@@ -647,6 +661,8 @@ async function showConnectivityStatus(args: DeveloperCliArgs): Promise<Developer
   const capabilityRows = formatCapabilityDiscoveryRows(events, 12);
   const seedRecords = await createDiscoverySeedStore(args.profileDir).listSeedRecords();
 
+  const persistedLine = formatPersistedDiscoveryConfigLine(persisted);
+
   const denseLine = `profile=${analysis.discoveryProfile} bootstrapPeers=${analysis.bootstrapPeerCount} discoveredPeers=${analysis.discoveredPeerCount} relayDiscoveries=${analysis.relayDiscoveryCount} bootstrapOk=${analysis.bootstrapProbeSuccessCount} bootstrapFail=${analysis.bootstrapProbeFailureCount} reprobeOk=${analysis.reprobeOkCount} reprobeFail=${analysis.reprobeFailCount} warnings=${analysis.warningCount}`;
 
   const sections: string[] = [];
@@ -656,6 +672,7 @@ async function showConnectivityStatus(args: DeveloperCliArgs): Promise<Developer
 
   sections.push(
     "Connectivity status",
+    persistedLine,
     denseLine,
     analysis.lastCheckpointAt ? `lastCheckpoint=${analysis.lastCheckpointAt}` : "lastCheckpoint=none",
     ...last(bootstrapFail, 5).map((event) => `bootstrapFail ${event.createdAt} ${event.summary}`),

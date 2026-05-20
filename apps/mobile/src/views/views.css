@@ -40,6 +40,17 @@
   margin-bottom: var(--space-4);
 }
 
+/* One-line explanation for tab roles (Chats vs Contacts) */
+.mv-tab-hint {
+  margin: 0;
+  padding: var(--space-2) var(--space-4) var(--space-1);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border-bottom: 0.5px solid var(--color-border-subtle);
+}
+
 .mv-empty-state-cta {
   display: inline-flex;
   align-items: center;
@@ -240,6 +251,21 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.mv-contact-name-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.mv-contact-time {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  color: var(--color-text-muted);
 }
 
 .mv-contact-preview {
@@ -372,6 +398,11 @@
   outline: none;
   min-height: 40px;
   transition: border-color var(--transition-fast);
+}
+
+.mv-chat-input input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
 }
 
 .mv-chat-input input:focus {
@@ -900,6 +931,40 @@
   font-size: var(--text-xl);
   color: var(--color-text-subtle);
   flex-shrink: 0;
+}
+
+/* Connection diagnostics (last node error — non-interactive rows) */
+
+.mv-section-row.mv-diag-error-meta,
+.mv-section-row.mv-diag-error-text {
+  cursor: default;
+}
+
+.mv-section-row.mv-diag-error-meta:active,
+.mv-section-row.mv-diag-error-text:active {
+  background: var(--color-surface-elevated);
+}
+
+.mv-section-row.mv-diag-error-text {
+  align-items: flex-start;
+  min-height: auto;
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-3);
+}
+
+.mv-diag-error-meta .mv-section-value {
+  font-size: var(--text-2xs);
+  color: var(--color-text-muted);
+}
+
+.mv-diag-error-text .mv-section-value {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font-size: var(--text-xs);
+  word-break: break-word;
+  white-space: pre-wrap;
+  color: var(--color-destructive, #b91c1c);
 }
 
 /* Tags inside section rows */

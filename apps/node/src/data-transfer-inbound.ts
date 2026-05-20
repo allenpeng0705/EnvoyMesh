@@ -11,8 +11,17 @@ export function installEnvoyDataTransferReceiver(input: {
   peerDirectoryStore: LocalPeerDirectoryStore;
   taskStore: LocalTaskStore;
   vaultDir: string;
+  /**
+   * After voucher verification, choose the vault-relative path for the written file.
+   * Default: use the path from the signed voucher.
+   */
+  resolveInboundRelativePath?: (remotePeerId: string, voucherRelativePath: string) => string;
+  /**
+   * Called only after a successful verified write (so a pending save-path override can be cleared).
+   */
+  onInboundVaultWriteCommitted?: (remotePeerId: string, voucherSourceRelativePath: string) => void;
 }): void {
-  const { mesh, peerDirectoryStore, taskStore, vaultDir } = input;
+  const { mesh, peerDirectoryStore, taskStore, vaultDir, resolveInboundRelativePath, onInboundVaultWriteCommitted } = input;
 
   mesh.onDataTransfer(async ({ remotePeerId, voucher: rawVoucher, chunks }) => {
     const createdAt = new Date().toISOString();
@@ -115,9 +124,15 @@ export function installEnvoyDataTransferReceiver(input: {
       return;
     }
 
+    const sourceNorm = parsed.relativePath.replace(/^[\\/]+/, "");
+    let relForVault = sourceNorm;
+    if (resolveInboundRelativePath) {
+      relForVault = resolveInboundRelativePath(remotePeerId, parsed.relativePath).replace(/^[\\/]+/, "");
+    }
+
     let targetPath: string;
     try {
-      targetPath = safeResolvedVaultFile(vaultDir, parsed.relativePath);
+      targetPath = safeResolvedVaultFile(vaultDir, relForVault);
     } catch {
       await taskStore.appendAuditEvent(
         createAuditEvent({
@@ -135,6 +150,7 @@ export function installEnvoyDataTransferReceiver(input: {
 
     await mkdir(dirname(targetPath), { recursive: true });
     await writeFile(targetPath, combined, { mode: 0o600 });
+    onInboundVaultWriteCommitted?.(remotePeerId, sourceNorm);
     await taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.verified",
@@ -142,11 +158,11 @@ export function installEnvoyDataTransferReceiver(input: {
         remotePeerId,
         direction: "inbound",
         outcome: "allow",
-        summary: `[data] wrote ${parsed.relativePath} (${parsed.totalBytes} bytes)`,
+        summary: `[data] wrote ${relForVault} (${parsed.totalBytes} bytes)`,
         createdAt,
       }),
     );
-    console.log(`[data transfer] wrote ${parsed.relativePath} from ${remotePeerId}`);
+    console.log(`[data transfer] wrote ${relForVault} from ${remotePeerId}`);
   });
 }
 

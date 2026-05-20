@@ -92,11 +92,47 @@ export interface HelloResponse {
   timestamp: string;
 }
 
+/** Inbound Trust-mode row + WS payload (`social.intro:propose`). */
+export interface SocialIntroProposal {
+  messageId: string;
+  introCorrelationId: string;
+  candidateOwnerId: string;
+  candidatePeerId: string;
+  agentPeerId: string;
+  agentOwnerId: string;
+  rationale?: string;
+  receivedAt: string;
+  /** True after {@link NodeService.approveSocialIntroCommitment}; opaque ref stays server-side until hello send. */
+  commitmentApproved?: boolean;
+}
+
+/** Optional flags for {@link NodeService.sendHello} (Trust-mode bond linkage). */
+export interface SendHelloOptions {
+  /** Matches {@link SocialIntroProposal.messageId}; requires prior approveSocialIntroCommitment. */
+  introProposalMessageId?: string;
+}
+
 // ============================================
 // Bond Types
 // ============================================
 
 export type BondLevel = "direct" | "referred" | "public" | "blocked";
+
+/** Lower is stronger trust — useful for sorting contacts / discovery results. */
+export function bondTrustRank(level: BondLevel): number {
+  switch (level) {
+    case "direct":
+      return 0;
+    case "referred":
+      return 1;
+    case "public":
+      return 2;
+    case "blocked":
+      return 99;
+    default:
+      return 50;
+  }
+}
 
 export interface BondRecord {
   peerOwnerId: string;
@@ -188,6 +224,81 @@ export interface ShareOffer {
   sensitivity: "public" | "friends" | "private";
   preview?: string;
   timestamp: string;
+  /**
+   * Sender vault-relative path for this file (push offers). Used with {@link NodeService.acceptShare}
+   * when remapping the local save path (must match the voucher’s `relativePath` on receive).
+   */
+  senderVaultRelativePath?: string;
+}
+
+/** Query for {@link NodeService.listLibraryItems} */
+export interface ListLibraryItemsParams {
+  /** Case-insensitive substring match on title or relative path */
+  query?: string;
+}
+
+/** One indexed file in the local shared vault (supported extensions only) */
+export interface LibraryItem {
+  documentId: string;
+  relativePath: string;
+  title: string;
+  extension: string;
+  byteLength: number;
+  contentHash: string;
+  updatedAt: string;
+  /** True when the document is included in the published discovery manifest (see `setLibraryItemPublished`). */
+  published: boolean;
+}
+
+// ----- Published library discovery (FS-D) -----
+
+export interface DiscoverPublishedLibraryParams {
+  /** Substring match on published title or vault path (evaluated by the responder). */
+  fileTitleQuery?: string;
+  /** Prefix match on base64url content hash (optional). */
+  contentHashPrefix?: string;
+  maxResultsPerPeer?: number;
+  timeoutMsPerPeer?: number;
+  /** When set, only these bonded peers are queried. */
+  targetOwnerIds?: string[];
+}
+
+export interface PublishedLibraryFileHit {
+  documentId: string;
+  title: string;
+  relativePath: string;
+  contentHash: string;
+  byteLength?: number;
+}
+
+export interface DiscoverPublishedLibraryPeerResult {
+  peerOwnerId: string;
+  displayName?: string;
+  libp2pPeerId: string;
+  bondLevel: BondLevel;
+  bondRank: number;
+  files: PublishedLibraryFileHit[];
+  latencyMs: number;
+  error?: string;
+}
+
+// ----- Agent-assisted flows (FS-E) -----
+
+export interface AgentShareProposal {
+  proposalId: string;
+  createdAt: string;
+  targetOwnerId: string;
+  vaultRelativePath: string;
+  sensitivity: "public" | "friends" | "private";
+  summary?: string;
+}
+
+/** Parameters for {@link NodeService.submitAgentShareProposal} (persisted record adds id + timestamp). */
+export interface SubmitAgentShareProposalParams {
+  targetOwnerId: string;
+  vaultRelativePath: string;
+  sensitivity: "public" | "friends" | "private";
+  summary?: string;
 }
 
 // ============================================
@@ -200,6 +311,10 @@ export interface ConnectionStatus {
   multiaddrs: string[];
   connectedRelays: string[];
   bondedPeers: number;
+  /** Last transport / routing failure (best-effort; cleared on successful `startNode()`). */
+  lastError?: string;
+  /** ISO timestamp for {@link lastError}. */
+  lastErrorAt?: string;
 }
 
 /**
@@ -220,6 +335,8 @@ export interface NodeServiceEvents {
   // Connection events
   "hello:request": HelloRequest;
   "hello:response": HelloResponse;
+  /** Agent-mediated intro propose surfaced to owner inbox (Trust mode). */
+  "social.intro:propose": SocialIntroProposal;
   "bond:established": { peerOwnerId: string; displayName?: string };
   "bond:revoked": { peerOwnerId: string };
   "bond:blocked": { peerOwnerId: string };
@@ -232,6 +349,8 @@ export interface NodeServiceEvents {
 
   // File sharing events
   "share:offered": ShareOffer;
+  /** Agent suggested sharing a vault file — owner confirms via share or dismisses (FS-E). */
+  "share:agent-proposed": AgentShareProposal;
   "share:accepted": { shareId: string; savePath: string };
   "share:declined": { shareId: string };
 
@@ -278,12 +397,34 @@ export interface NodeService {
   /**
    * Send a hello request to establish connection
    */
-  sendHello(targetOwnerId: string, profile: HelloProfile, message: string): Promise<HelloResponse>;
+  sendHello(
+    targetOwnerId: string,
+    profile: HelloProfile,
+    message: string,
+    options?: SendHelloOptions,
+  ): Promise<HelloResponse>;
 
   /**
    * Accept a pending hello request
    */
   acceptHello(messageId: string): Promise<void>;
+
+  /**
+   * Trust mode — persist inbound {@link SocialIntroProposal} and notify listeners / WS clients.
+   */
+  storePendingSocialIntroProposal(proposal: SocialIntroProposal): void;
+
+  /**
+   * Pending intro proposes awaiting owner review (memory-only; survives until approve/decline/send).
+   */
+  listPendingSocialIntroProposals(): Promise<SocialIntroProposal[]>;
+
+  /**
+   * Owner approved bonding after reviewing an intro; generates opaque {@link ownerCommitmentRef} for the next hello.
+   */
+  approveSocialIntroCommitment(messageId: string): Promise<{ ownerCommitmentRef: string }>;
+
+  declineSocialIntroProposal(messageId: string): Promise<void>;
 
   /**
    * Store pending hello request from inbound bond.inbound.
@@ -393,6 +534,11 @@ export interface NodeService {
   // ----- File Sharing -----
 
   /**
+   * Pending inbound file share offers (preview message id = {@link ShareOffer.shareId}).
+   */
+  listPendingShareOffers(): Promise<ShareOffer[]>;
+
+  /**
    * Offer a file to a peer
    */
   shareFile(
@@ -409,6 +555,37 @@ export interface NodeService {
    * Decline incoming file share
    */
   declineShare(shareId: string): Promise<void>;
+
+  /**
+   * List documents in the local shared vault (same files used for vault RAG indexing).
+   */
+  listLibraryItems(params?: ListLibraryItemsParams): Promise<LibraryItem[]>;
+
+  /**
+   * Mark a vault document as published for metadata-only `discovery.request` matches (no file bytes).
+   */
+  setLibraryItemPublished(documentId: string, published: boolean): Promise<void>;
+
+  /**
+   * Query bonded contacts for published library metadata (`libraryMatches` in `discovery.response`).
+   * Peers are queried in trust order (direct first). Requires an online mesh route to each peer.
+   */
+  discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]>;
+
+  // ----- Agent-assisted (FS-E placeholder) -----
+
+  /**
+   * Pending agent-proposed file shares awaiting owner action (FS-E — empty until wired to agent runtime).
+   */
+  listAgentShareProposals(): Promise<AgentShareProposal[]>;
+
+  dismissAgentShareProposal(proposalId: string): Promise<void>;
+
+  /**
+   * Record an agent-proposed file share for owner review (bridge HTTP or future agent runtime).
+   * Persists and emits `share:agent-proposed`.
+   */
+  submitAgentShareProposal(params: SubmitAgentShareProposalParams): Promise<AgentShareProposal>;
 
   // ----- Node Configuration -----
 

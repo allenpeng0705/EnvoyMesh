@@ -5,16 +5,16 @@ import { createChatMessagePayload, EnvoyEnvelopeSchema } from "@envoymesh/protoc
 import { createBridge, type BridgeIdentity } from "../src/bridge/index.js";
 
 describe("bridge runtime", () => {
-  it("requires a shared secret when enabled", async () => {
+  it("starts HTTP bridge without Bearer auth when secret is omitted", async () => {
     const port = await getFreePort();
-    expect(() =>
-      createBridge({
-        config: { enabled: true, agentUrl: "http://localhost:8080/message", listenPort: port },
-        identity: makeBridgeIdentity(),
-        mesh: makeMesh(),
-        getRecipientPeerId: async () => null,
-      }),
-    ).toThrow("Bridge requires a shared secret when enabled");
+    const bridge = createBridge({
+      config: { enabled: true, agentUrl: "http://localhost:8080/message", listenPort: port },
+      identity: makeBridgeIdentity(),
+      mesh: makeMesh(),
+      getRecipientPeerId: async () => null,
+    });
+    expect(bridge.agentPeerId).toBeTruthy();
+    await bridge.stop();
   });
 
   it("forwards addressed P2P chat to the agent", async () => {

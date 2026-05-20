@@ -1,11 +1,17 @@
-import { generateDeviceIdentity, generateOwnerIdentity } from "@envoymesh/identity";
-import { createDeviceCertificate } from "@envoymesh/identity";
+import {
+  createAgentCredential,
+  createDeviceCertificate,
+  derivePeerId,
+  generateAgentIdentity,
+  generateDeviceIdentity,
+  generateOwnerIdentity,
+} from "@envoymesh/identity";
 import {
   createLocalTaskStore,
   createLocalTrustStore,
   type NodeProfile,
 } from "@envoymesh/local-store";
-import { createUnsignedEnvelope, type EnvoyEnvelope } from "@envoymesh/protocol";
+import { createUnsignedEnvelope, createBondRequestPayload, type EnvoyEnvelope } from "@envoymesh/protocol";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -38,10 +44,14 @@ function testProfile(): NodeProfile {
 }
 
 function signedEnvelope(profile: NodeProfile, intent: EnvoyEnvelope["intent"], payload: unknown): EnvoyEnvelope {
+  const bondIntent = intent.startsWith("bond.");
   return {
     ...createUnsignedEnvelope({
       senderPeerId: "peer-remote",
       senderPublicKey: profile.device.publicKeyPem,
+      ...(bondIntent
+        ? { senderRole: "human" as const, recipientRole: "human" as const }
+        : {}),
       intent,
       payload,
       createdAt: "2026-04-27T10:00:00.000Z",
@@ -143,6 +153,10 @@ describe("handleInboundBondIntent", () => {
     if (!result.ok) {
       expect(result.reason).toContain("requesterOwnerId");
     }
+    const audits = await taskStore.readAuditEvents();
+    expect(audits).toHaveLength(1);
+    expect(audits[0].type).toBe("message.rejected");
+    expect(audits[0].summary).toContain("requesterOwnerId mismatch");
   });
 
   it("rejects bond.challenge when targetOwnerId does not match local owner", async () => {
@@ -168,5 +182,53 @@ describe("handleInboundBondIntent", () => {
     });
 
     expect(result.ok).toBe(false);
+  });
+
+  it("rejects bond.request from agent without ownerCommitmentRef", async () => {
+    const profile = testProfile();
+    const taskStore = createLocalTaskStore(profileDir);
+    const trustStore = createLocalTrustStore(profileDir);
+    const strangerOwner = generateOwnerIdentity();
+    const strangerAgent = generateAgentIdentity(strangerOwner.ownerId);
+    const credential = createAgentCredential({
+      owner: strangerOwner,
+      agent: strangerAgent,
+      scope: ["bond.request"],
+    });
+    const envelope: EnvoyEnvelope = {
+      ...createUnsignedEnvelope({
+        senderPeerId: strangerAgent.agentPeerId,
+        senderPublicKey: strangerAgent.publicKeyPem,
+        senderRole: "agent",
+        recipientPeerId: derivePeerId(profile.device.publicKeyPem),
+        recipientRole: "human",
+        intent: "bond.request",
+        payload: createBondRequestPayload({
+          requesterOwnerId: strangerOwner.ownerId,
+          message: "Agent-mediated hello",
+          requestedLevel: "referred",
+        }),
+        agentCredential: credential,
+        createdAt: "2026-04-27T10:00:00.000Z",
+        messageId: "bond-agent-no-ref",
+      }),
+      signature: "signature",
+    };
+
+    const result = await handleInboundBondIntent({
+      envelope,
+      profile,
+      remotePeerId: "libp2p-remote",
+      receivedAt: Date.now(),
+      correlationId: undefined,
+      taskStore,
+      trustStore,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "bond.request from agent requires ownerCommitmentRef",
+    });
+    expect(await taskStore.readAuditEvents()).toHaveLength(0);
   });
 });

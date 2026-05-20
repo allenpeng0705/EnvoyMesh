@@ -242,7 +242,7 @@ npm exec -w @envoymesh/<package> -- tsc -p tsconfig.json
 # Run the node app
 npm run node:dev
 
-# Local two-node smoke test (launches two nodes, runs scenarios)
+# Local Trust-mode smoke (vitest integration: intro → bond flow)
 npm run smoke:local
 
 # View CLI help

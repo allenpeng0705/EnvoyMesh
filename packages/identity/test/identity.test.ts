@@ -37,7 +37,9 @@ import {
   isDeviceRevoked,
   verifyMandate,
   verifyProofOfIntent,
-} from "../src/index.js";
+  signFriendMatchingPreferences,
+  verifyFriendMatchingPreferences,
+} from "@envoymesh/identity";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -430,6 +432,21 @@ describe("identity", () => {
     });
 
     expect(verifyProofOfIntent(proof, mandate, otherCertificate, owner.publicKeyPem)).toBe(false);
+  });
+
+  it("signs and verifies FriendMatchingPreferences payloads", () => {
+    const owner = generateOwnerIdentity();
+    const signed = signFriendMatchingPreferences(
+      {
+        version: "0.1",
+        ownerId: owner.ownerId,
+        text: "Hiking buddies nearby.",
+        expiresAt: "2030-06-01T00:00:00.000Z",
+      },
+      owner.privateKeyPem,
+    );
+    expect(verifyFriendMatchingPreferences(signed, owner.publicKeyPem)).toBe(true);
+    expect(verifyFriendMatchingPreferences({ ...signed, text: "tampered" }, owner.publicKeyPem)).toBe(false);
   });
 });
 

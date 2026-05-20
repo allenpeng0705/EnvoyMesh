@@ -31,7 +31,10 @@ import {
   type DataTransferVoucher,
   dataTransferVoucherForSigning,
   humanProfileForSigning,
+  friendMatchingPreferencesForSigning,
+  createFriendMatchingPreferencesPayload,
   type HumanProfilePayload,
+  type FriendMatchingPreferencesPayload,
 } from "@envoymesh/protocol";
 import {
   createHash,
@@ -654,6 +657,29 @@ export function verifyHumanProfile(
     return false;
   }
   return verifyCanonicalPayload(humanProfileForSigning(profile), profile.signature, ownerPublicKeyPem);
+}
+
+export function signFriendMatchingPreferences(
+  payload: Omit<FriendMatchingPreferencesPayload, "signature">,
+  ownerPrivateKeyPem: string,
+): FriendMatchingPreferencesPayload {
+  const signature = signCanonicalPayload(payload, ownerPrivateKeyPem);
+  return createFriendMatchingPreferencesPayload({
+    ownerId: payload.ownerId,
+    text: payload.text,
+    expiresAt: payload.expiresAt,
+    signature,
+  });
+}
+
+export function verifyFriendMatchingPreferences(
+  prefs: FriendMatchingPreferencesPayload,
+  ownerPublicKeyPem: string,
+): boolean {
+  if (deriveOwnerId(ownerPublicKeyPem) !== prefs.ownerId) {
+    return false;
+  }
+  return verifyCanonicalPayload(friendMatchingPreferencesForSigning(prefs), prefs.signature, ownerPublicKeyPem);
 }
 
 function randomCertificateId(): string {

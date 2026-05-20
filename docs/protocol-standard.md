@@ -470,6 +470,8 @@ Requests a social trust relationship.
 
 Executable payload shape: **`BondRequestPayloadSchema`** in `@envoymesh/protocol` (e.g. **`requesterOwnerId`**, optional **`proofOfContext`**, **`requestedLevel`**).
 
+**Trust-mode linkage (optional, Phase 12):** payloads MAY include **`introCorrelationId`** (ties the handshake to an intro thread; often mirrored on the envelope **`correlationId`**) and **`ownerCommitmentRef`** (opaque id proving the owner reviewed an intro — required when **`bond.request`** is sent by a credential-bearing **agent** per inbound policy). See [Appendix A: Trust-mode social mediation](#appendix-a-trust-mode-social-mediation-socialintro).
+
 Purpose:
 
 - Ask to become a direct friend or referred peer.
@@ -486,6 +488,45 @@ Executable payload shape: **`BondChallengePayloadSchema`** in `@envoymesh/protoc
 Responds to a bond challenge (nonces / proofs as designed).
 
 Executable payload shape: **`BondChallengeResponsePayloadSchema`** in `@envoymesh/protocol` (e.g. optional **`message`**, optional **`signedProof`**, **`challengedByOwnerId`**).
+
+### `social.intro.sync`
+
+Agent-to-agent coordination for Trust-mode intros (**non-binding** — does not establish a bond).
+
+Executable payload shape: **`SocialIntroSyncPayloadSchema`** in `@envoymesh/protocol` ( **`introCorrelationId`**, **`ownerId`**, **`interest`** ∈ {`explore`|`decline`|`request-human-review`|`withdraw`}, optional **`counterpartyOwnerIdHint`**, **`profileFragmentRefs`**, **`noteToCounterpartyAgent`**).
+
+Envelope roles (normative in current implementation): **`senderRole=agent`**, **`recipientRole=agent`**. Agent senders SHOULD carry **`agentCredential`**; receivers validate **`agentCredential.ownerId`** against payload **`ownerId`**.
+
+Purpose:
+
+- Align two sides’ agents before a human sees a formal **`social.intro.propose`**.
+- Share opaque fragment refs or coordination signals without claiming a bond outcome.
+
+### `social.intro.propose`
+
+Agent-to-human: proposes introducing a **candidate** peer using owner-signed profile material or an opaque reference.
+
+Executable payload shape: **`SocialIntroProposePayloadSchema`** in `@envoymesh/protocol` — requires **`introCorrelationId`**, **`candidateOwnerId`**, **`candidatePeerId`**, and either **`profileFragment`** or **`profileFragmentRef`**; optional **`rationale`**.
+
+**`HumanProfileFragmentPayload`** (when inlined): bounded disclosure snippet signed by the profile owner (**`purpose`**, **`expiresAt`**, optional **`displayName`** / **`bio`** / **`hobbies`** / **`tags`**, **`signature`**). Normative schema: **`HumanProfileFragmentPayloadSchema`** in `@envoymesh/protocol`.
+
+Envelope roles: **`senderRole=agent`**, **`recipientRole=human`**. **`agentCredential`** is required for validated inbound paths.
+
+Purpose:
+
+- Surface a vetted candidate to the owner’s UI / inbox while keeping biography grounded in signed material.
+
+### `social.intro.owner-ready`
+
+Human-to-agent or human-to-human: signals that an owner has reviewed an intro thread and is willing to proceed toward bonding (does not replace **`bond.request`** / **`bond.accept`**).
+
+Executable payload shape: **`SocialIntroOwnerReadyPayloadSchema`** in `@envoymesh/protocol` (**`introCorrelationId`**, **`ownerId`**, **`nonce`**, **`expiresAt`**).
+
+Envelope roles: **`senderRole=human`**, **`recipientRole`** ∈ {**`agent`**, **`human`**}.
+
+Purpose:
+
+- Timestamp-bound owner intent before an outbound **`bond.request`** carries **`ownerCommitmentRef`**.
 
 ### `discovery.request`
 
@@ -658,6 +699,104 @@ Purpose:
 - Sync device certificates and revocations.
 - Later sync CRDT state.
 
+<a id="appendix-a-trust-mode-social-mediation-socialintro"></a>
+
+## Appendix A: Trust-mode social mediation (`social.intro.*`)
+
+This appendix normatively summarizes **Phase 12** Trust-mode intents shipped in `@envoymesh/protocol` and enforced in **`@envoymesh/bonds`** + `apps/node`. Product narrative, tier rules, and backlog live in [trust-mode-social-protocol.md](./trust-mode-social-protocol.md) and [trust-mode-implementation-plan.md](./trust-mode-implementation-plan.md).
+
+### Human vs agent commitment
+
+- **Agents** MAY coordinate via **`social.intro.sync`**, **`social.intro.propose`**, and (with owner involvement) **`social.intro.owner-ready`**.
+- **Bonding** still uses **`bond.request`** / **`bond.accept`** (or challenge flows). Humans retain exclusive **commit** unless policy explicitly allows agent-mediated **`bond.request`** with **`ownerCommitmentRef`**.
+
+### Profile fragments
+
+**`HumanProfileFragmentPayload`** is a **tier-B** disclosure: short-lived, purpose-tagged, owner-signed structured fields. Receivers MUST reject **`social.intro.propose`** fragments past **`expiresAt`**.
+
+### Bond payload linkage
+
+**`bond.request`** MAY carry:
+
+| Field | Meaning |
+|-------|---------|
+| **`introCorrelationId`** | Same identifier used across **`social.intro.*`** messages for one intro thread. |
+| **`ownerCommitmentRef`** | Opaque handle (e.g. UUID) proving UI/approval-layer commitment before bond.
+
+Inbound nodes SHOULD reject **`bond.request`** from **`senderRole=agent`** when **`agentCredential`** is present and **`ownerCommitmentRef`** is absent (device-signed hello-style **`bond.request`** without credential remains valid).
+
+### Discovery helpers
+
+Trust-mode tooling MAY emit **`discovery.request`** and **`broadcast.request`** for matching; those intents are defined elsewhere in this document and share the usual EMP envelope rules.
+
+### Audit
+
+Inbound outcomes SHOULD be recorded as **`message.verified`** / **`message.rejected`** with intent, **`correlationId`**, and **`remotePeerId`** where applicable — see node audit types in `@envoymesh/local-store`.
+
+<a id="appendix-b-canonical-capability-vocabularies"></a>
+
+## Appendix B: Canonical capability vocabularies
+
+EMP uses **several capability namespaces** for different jobs: **cryptographically bound device powers**, **agent intent scope**, and **advertised discovery / matching** metadata. Use the right namespace so policy, matching, and audits stay consistent.
+
+**Normative source of truth for device capability strings:** `CapabilitySchema` in `@envoymesh/protocol` (Zod enum). If this appendix and the package diverge, the **package wins** until the spec is updated.
+
+### B.1 Device certificate & `system.signal` capabilities
+
+These strings appear on **owner-signed device certificates** and in **`system.signal`** payloads. A device MUST NOT assert a capability the owner did not grant; verifying peers SHOULD reject operations that require a capability the sender’s certificate does not include (see also **intent ↔ capability** below).
+
+| Capability | Intended meaning |
+|------------|------------------|
+| `mesh.listen` | Accept inbound mesh / libp2p listens appropriate to the implementation. |
+| `mesh.discovery` | Participate in discovery (mDNS/DHT/rendezvous-style lookups as implemented). |
+| `mesh.relay` | Relay or forward traffic for others (relay-class nodes). |
+| `ui.channel` | Satellite / UI control channel pairing (human-facing device role). |
+| `approval.prompt` | Surface owner approvals (risky actions, pairing, etc.). |
+| `message.send` | Send signed EMP envelopes over the mesh/chat channels. |
+| `message.store_encrypted` | Store encrypted message material where local policy allows. |
+| `vault.index` | Maintain or query a vault index. |
+| `vault.retrieve` | Read vault payloads for knowledge / tooling (often paired with indexing). |
+| `model.local` | Run models locally on this device class. |
+| `model.cloud.request` | Invoke cloud-hosted models according to owner policy. |
+| `task.execute` | Execute delegated / agent-directed tasks locally. |
+| `device.sync` | Synchronize owner state across authorized devices. |
+
+**Pairing hint:** `device.pair.request` carries **`requestedCapabilities`** as the **same enum** (`CapabilitySchema`), so satellites and primaries negotiate a bounded subset explicitly.
+
+### B.2 Intent ↔ required device capabilities (bond engine)
+
+For a **subset** of intents, **`@envoymesh/bonds`** defines **`evaluateCapability`**: sending that intent requires the acting device certificate to satisfy **at least one** of the listed capability sets (each set is AND; alternatives are OR). Example: `discovery.request` allows either `mesh.discovery` **or** `message.send`; `chat.message` requires `message.send`.
+
+Implementations SHOULD keep this mapping in sync with EMP when adding intents. **Authoritative runtime table:** `capabilityRequirements` in `@envoymesh/bonds` (partial map — intents omitted there are not guarded by this layer today).
+
+Matching requests (discovery, introductions) SHOULD still use **B.4** advertisement tags where the goal is peer fit, not device authorization.
+
+### B.3 Agent credential `scope`
+
+**Agent credentials** carry **`scope: string[]`** listing **EMP intent names** the agent is allowed to use (e.g. `chat.message`, `knowledge.query`, `bond.request`). These are **not** the same strings as **B.1** device capabilities: they label **which intents** are delegated to the agent, while the **device certificate** lists **what the device** may do.
+
+- Use intent strings **exactly** as registered in **`EnvoyIntentSchema`** (`@envoymesh/protocol`).
+- Receiving nodes SHOULD reject envelopes where **`senderRole=agent`** and the intent is not in the verified credential’s **`scope`** (see `@envoymesh/identity` verification rules).
+
+### B.4 Discovery & rendezvous matching (`CapabilityUnion`)
+
+**`HumanProfilePayload.capabilities`** (optional, max 20 entries) uses **`CapabilityUnion`**:
+
+| Form | Use |
+|------|-----|
+| `{ "tag": "<string>" }` | Stable machine-readable label for matching (`rendezvous.register` / `rendezvous.query` use the same union). Prefer **stable, lowercase identifiers** (e.g. `coding-help`, `document-search`). Product-specific catalogs MAY use a prefixed convention (e.g. `topic:climate-policy`) once documented here. |
+| `{ "type": "<string>", "params"? }` | Structured offers or needs (e.g. translation with `{ "from": "en", "to": "fr" }`). |
+| `{ "descriptor": "<natural language>" }` | Experimental / human or model-generated blurbs; matchers SHOULD NOT rely on descriptors alone for security decisions. |
+
+**Relay paths** (`relay.checkin`, **`RelayPeerCandidate`**, **`RelayLookupPayload`**) carry **`capabilities: string[]`**. Those strings are opaque at the relay but implementations SHOULD reuse **B.4 `tag`** identifiers (or **`B.1`** names when advertising mesh powers) where useful so lookups stay consistent across nodes.
+
+### B.5 `AgentCard` capabilities
+
+**`AgentCard.capabilities`** and **`AgentCardRequestPayload.requestedCapabilities`** are **free-form strings** in the schema. For interoperability:
+
+- When describing **what the agent can do on the mesh**, prefer **B.1** capability names or a documented **B.4** tag vocabulary.
+- When describing **tooling**, use stable short identifiers documented in release notes or this appendix.
+
 ## Envelope Requirements
 
 Every EMP message must include:
@@ -680,6 +819,9 @@ Normative role requirements in current implementation:
 - Envelope fields **`senderRole`** and **`recipientRole`** are required.
 - **`chat.message`** requires `senderRole=human` and `recipientRole=human`.
 - **`task.*`** and **`report.create`** require `senderRole=agent` and `recipientRole=agent`.
+- **`social.intro.sync`** requires `senderRole=agent` and `recipientRole=agent`.
+- **`social.intro.propose`** requires `senderRole=agent` and `recipientRole=human`.
+- **`social.intro.owner-ready`** requires `senderRole=human` and `recipientRole` ∈ {`agent`, `human`}.
 - Violations are rejected during schema validation and are also rejected at runtime if received.
 
 Protocol/channel split (hard enforcement):
@@ -737,24 +879,9 @@ Revocation records should be signed by the owner identity and synced to all auth
 
 ## Capability Model
 
-Capabilities describe what a device or peer can do.
+Capabilities describe **what a device may do** (owner-signed **`CapabilitySchema`**), **which intents an agent may use** (credential **`scope`**), and **what a human/agent advertises for discovery** (`HumanProfilePayload` **`CapabilityUnion`**, relay strings — see **[Appendix B: Canonical capability vocabularies](#appendix-b-canonical-capability-vocabularies)**).
 
-Examples:
-
-- `mesh.listen`
-- `mesh.discovery`
-- `mesh.relay`
-- `ui.channel`
-- `approval.prompt`
-- `message.send`
-- `vault.index`
-- `vault.retrieve`
-- `model.local`
-- `model.cloud.request`
-- `task.execute`
-- `device.sync`
-
-Every intent should declare required capabilities. Authorization requires both trust level and capability.
+Device authorization SHOULD require both **trust level** (bonds) and **device capabilities** where `evaluateCapability` applies; agents additionally require **`scope`** checks for delegated intents.
 
 ## Versioning
 

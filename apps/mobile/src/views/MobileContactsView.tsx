@@ -10,7 +10,12 @@ import { useNodeService } from "@envoymesh/social/hooks/useNodeService.js";
 import type { HelloProfile } from "@envoymesh/api";
 import { ChatIcon, SearchIcon } from "@envoymesh/social/icons.js";
 
-export function MobileContactsView() {
+export interface MobileContactsViewProps {
+  onOpenChat?: (peerOwnerId: string) => void;
+  onGoDiscover?: () => void;
+}
+
+export function MobileContactsView({ onOpenChat, onGoDiscover }: MobileContactsViewProps) {
   const nodeService = useNodeService();
   const { bonds, humanProfile, discoveredPeers, sendHello } = useNodeState();
 
@@ -45,7 +50,7 @@ export function MobileContactsView() {
           <div className="mv-empty-state-icon"><ChatIcon size={48} /></div>
           <div className="mv-empty-state-title">No contacts yet</div>
           <div className="mv-empty-state-desc">Use Discover to find people and start connecting</div>
-          <button className="mv-empty-state-cta">
+          <button type="button" className="mv-empty-state-cta" onClick={() => onGoDiscover?.()}>
             <SearchIcon size={16} />
             Discover people
           </button>
@@ -56,6 +61,9 @@ export function MobileContactsView() {
 
   return (
     <div className="mv-contacts">
+      <p className="mv-tab-hint">
+        Bonded contacts and nearby peers. Tap to chat — swipe left on a row to remove a bond.
+      </p>
       {/* Around Me section */}
       {discoveredPeers.length > 0 && (
         <>
@@ -91,7 +99,18 @@ export function MobileContactsView() {
       <div className="mv-contacts-list">
         {bonds.map((contact) => (
           <div key={contact.peerOwnerId} className="mv-swipe-row">
-            <div className="mv-contacts-row mv-swipe-content">
+            <div
+              className="mv-contacts-row mv-swipe-content"
+              role="button"
+              tabIndex={0}
+              onClick={() => onOpenChat?.(contact.peerOwnerId)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onOpenChat?.(contact.peerOwnerId);
+                }
+              }}
+            >
               <div className="mv-contacts-avatar">
                 {contact.displayName?.[0] ?? "?"}
               </div>

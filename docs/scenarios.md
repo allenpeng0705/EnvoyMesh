@@ -142,6 +142,58 @@ This document is the **scenario backlog** for EnvoyMesh: short, testable user st
 
 ---
 
+<a id="epic-tm-trust-mode"></a>
+
+## Epic TM — Trust mode (agent-assisted intros)
+
+Stories trace Phase **12** ([trust-mode-social-protocol.md](./trust-mode-social-protocol.md), [trust-mode-implementation-plan.md](./trust-mode-implementation-plan.md), EMP [Appendix A](./protocol-standard.md#appendix-a-trust-mode-social-mediation-socialintro)).
+
+### US-TM1: Toggle Trust mode and persist friend-matching prefs
+
+**As an** owner, **I want** Trust mode and optional friend-seeking notes stored in node config **so that** intros and matching tools only run when I opt in.
+
+**Acceptance notes**
+
+- **`trustModeEnabled`** and **`friendMatchingPreferencesText`** round-trip via **`getNodeConfig`** / **`updateNodeConfig`** (desktop + mobile parity where exposed).
+- With Trust mode off, inbound **`social.intro.*`** does not establish policy-visible threads beyond deny/audit expectations defined in node tests.
+
+**Status:** *Implemented (partial)* — `apps/node` persistence + Social Settings; verify `social-intro-inbound.test.ts` when Trust mode toggled.
+
+### US-TM2: Surface inbound **`social.intro.propose`** to owner inbox
+
+**As an** owner, **I want** agent-proposed intros to appear in Social **Inbox** with WebSocket **`social.intro:propose`** **so that** I can approve or decline without silent drops.
+
+**Acceptance notes**
+
+- **`listPendingSocialIntroProposals`** returns pending rows (`introCorrelationId`, candidate ids, fragment/ref summary).
+- **`declineSocialIntroProposal`** clears or marks declined per RPC behavior; **`approveSocialIntroCommitment`** yields an **`ownerCommitmentRef`** for bonding.
+
+**Status:** *Implemented (partial)* — `apps/social` Inbox + `apps/node` WS/RPC; audit expectations in `social-intro-inbound.test.ts`.
+
+### US-TM3: **`sendHello`** carries intro linkage into **`bond.request`**
+
+**As an** owner, **after** approving an intro, **I want** **`bond.request`** to include **`introCorrelationId`** and **`ownerCommitmentRef`** **so that** credential-bearing agents cannot bypass human commitment.
+
+**Acceptance notes**
+
+- **`sendHello(..., { introProposalMessageId })`** (or equivalent) attaches refs matching the approved pending row.
+- Inbound rejects credential-bearing **`bond.request`** without **`ownerCommitmentRef`** (`bond-inbound.test.ts`).
+
+**Status:** *Implemented (partial)* — `NodeServiceImpl`, **`MobileNode`**, JSON-RPC + **`DirectCallClient`** paths.
+
+### US-TM4: Trust-mode **`mesh.intro.*`** tools gated on config
+
+**As an** agent runtime author, **I want** **`mesh.intro.matching_context`**, **`mesh.intro.sync`**, and **`mesh.intro.broadcast_search`** listed only when **`trustModeEnabled`** **so that** matching cannot run accidentally.
+
+**Acceptance notes**
+
+- **`listAgentTools({ trustModeEnabled: false })`** omits intro tools; **`true`** includes them (`tool-registry.test.ts`).
+- **`executeTool`** requires **`MeshToolContext.trustIntro`** population for matching-context payloads.
+
+**Status:** *Implemented (partial)*.
+
+---
+
 ## Epic E — File and data sharing
 
 ### US-E1: Share only a slice of my vault
@@ -259,7 +311,7 @@ Order should stay consistent with the [implementation plan](./implementation-pla
 | Priority | Stories | Rationale |
 |----------|---------|-----------|
 | **P0** | US-A1, US-C1, US-G1, US-D2 | Identity, correlated tasks, auditability, safe defaults. |
-| **P1** | US-C2, US-D1, US-F2 | Bounded broadcasts and trust UX unlock real multi-peer use. |
+| **P1** | US-C2, US-D1, US-F2, US-TM1–TM4 | Bounded broadcasts and trust UX unlock real multi-peer use; Trust-mode prefs + inbox + bond linkage tracked under Epic TM. |
 | **P2** | US-E1–E2, US-F1, US-F3–F4 | Data plane + human-facing channels. |
 | **P3** | US-B1–B2, US-F5, US-A2 | Scale discovery and harden AI-mediated paths. |
 
@@ -269,6 +321,7 @@ Order should stay consistent with the [implementation plan](./implementation-pla
 
 | Date | Change |
 |------|--------|
+| 2026-05-19 | **Epic TM:** Trust-mode scenario IDs **US-TM1–US-TM4** (config, inbox/WS/RPC, **`sendHello`** linkage, gated **`mesh.intro.*`** tools); P1 prioritization hint updated. EMP appendix: [protocol-standard.md § Appendix A](./protocol-standard.md#appendix-a-trust-mode-social-mediation-socialintro). |
 | 2026-04-26 | Initial scenarios backlog derived from architecture discussions. |
 
 When a story ships, add a short **Implementation** subsection under it (file paths, flags, protocol version) or link to the PR — keep this file the **narrative source of truth** for *why* features exist.

@@ -5,6 +5,8 @@
 
 /* ---- Light Theme (default) ---- */
 :root {
+  color-scheme: light dark;
+
   /* == Primary (WeChat Green) == */
   --color-primary: #07C160;
   --color-primary-hover: #06AD56;
@@ -197,6 +199,8 @@
     --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.4);
     --shadow-glow: 0 0 20px rgba(7, 193, 96, 0.25);
     --shadow-glow-lg: 0 0 40px rgba(7, 193, 96, 0.3);
+
+    color-scheme: dark;
   }
 }
 
@@ -256,9 +260,12 @@
   --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.4);
   --shadow-glow: 0 0 20px rgba(7, 193, 96, 0.25);
   --shadow-glow-lg: 0 0 40px rgba(7, 193, 96, 0.3);
+
+  color-scheme: dark;
 }
 
 :root[data-theme="light"] {
+  color-scheme: light;
   --color-primary: #07C160;
   --color-primary-hover: #06AD56;
   --color-primary-active: #05944A;

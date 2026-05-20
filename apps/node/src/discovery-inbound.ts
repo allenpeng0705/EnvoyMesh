@@ -16,8 +16,100 @@ import {
   parseDiscoveryResponsePayload,
   type DiscoveryResponsePayload,
   type EnvoyEnvelope,
+  type LibraryFileMatch,
   type RelayPeerInfo,
 } from "@envoymesh/protocol";
+import { matchPublishedLibraryDocuments } from "./discovery-library-match.js";
+import { createPublishedLibraryStore } from "./published-library-store.js";
+
+/** Requesting this capability (alone or with file/hash selectors) enables published-library metadata in the response. */
+export const PUBLISHED_LIB_CAPABILITY = "envoymesh.published-library";
+
+type DiscoveryMatchRow = {
+  ownerId: string;
+  peerId: string;
+  matchedTagHashes: string[];
+  matchedCapabilities: string[];
+  libraryMatches?: LibraryFileMatch[];
+};
+
+function allowsPublicPublishedLibraryQuery(
+  payload: ReturnType<typeof parseDiscoveryRequestPayload>,
+): boolean {
+  if (payload.requestedTagHashes.length > 0) {
+    return false;
+  }
+  for (const c of payload.requestedCapabilities) {
+    if (c !== PUBLISHED_LIB_CAPABILITY) {
+      return false;
+    }
+  }
+  return (
+    payload.requestedCapabilities.includes(PUBLISHED_LIB_CAPABILITY) ||
+    Boolean(payload.fileTitleQuery?.trim()) ||
+    (payload.requestedContentHashPrefixes?.length ?? 0) > 0
+  );
+}
+
+async function mergePublishedLibraryMatches(input: {
+  vaultDir?: string;
+  profileDir?: string;
+  loadPublishedDocumentIds?: () => Promise<Set<string>>;
+  payload: ReturnType<typeof parseDiscoveryRequestPayload>;
+  profile: NodeProfile;
+  matches: DiscoveryMatchRow[];
+}): Promise<void> {
+  const { vaultDir, profileDir, loadPublishedDocumentIds, payload, profile, matches } = input;
+  if (!vaultDir) {
+    return;
+  }
+
+  const wantsLib =
+    payload.requestedCapabilities.includes(PUBLISHED_LIB_CAPABILITY) ||
+    Boolean(payload.fileTitleQuery?.trim()) ||
+    (payload.requestedContentHashPrefixes?.length ?? 0) > 0;
+  if (!wantsLib) {
+    return;
+  }
+
+  let published: Set<string>;
+  if (loadPublishedDocumentIds) {
+    published = await loadPublishedDocumentIds();
+  } else if (profileDir) {
+    published = await createPublishedLibraryStore(profileDir).loadDocumentIds();
+  } else {
+    return;
+  }
+  if (published.size === 0) {
+    return;
+  }
+
+  const libraryMatches = await matchPublishedLibraryDocuments({
+    vaultDir,
+    publishedIds: published,
+    fileTitleQuery: payload.fileTitleQuery,
+    contentHashPrefixes: payload.requestedContentHashPrefixes,
+    maxResults: payload.maxResults,
+  });
+  if (libraryMatches.length === 0) {
+    return;
+  }
+
+  if (matches.length === 0) {
+    matches.push({
+      ownerId: profile.owner.ownerId,
+      peerId: derivePeerId(profile.device.publicKeyPem),
+      matchedTagHashes: [],
+      matchedCapabilities: payload.requestedCapabilities.includes(PUBLISHED_LIB_CAPABILITY)
+        ? [PUBLISHED_LIB_CAPABILITY]
+        : [],
+      libraryMatches,
+    });
+    return;
+  }
+
+  matches[0]!.libraryMatches = libraryMatches;
+}
 
 export type DiscoveryInboundResult =
   | { ok: true; responsePayload?: DiscoveryResponsePayload }
@@ -53,6 +145,8 @@ export interface QueuedDiscoveryRequest {
   anonymousIntentAllowlist?: readonly string[];
   anonymousSensitivityCeiling?: "public" | "friends";
   queuedAt: number;
+  vaultDir?: string;
+  profileDir?: string;
 }
 
 // Per-remotePeerId FIFO queue for anonymous discovery requests that exceed rate limit
@@ -167,8 +261,27 @@ export async function handleInboundDiscoveryIntent(input: {
   anonymousSensitivityCeiling?: "public" | "friends";
   /** If true, this request came from the queue - bypass rate limit check */
   fromQueue?: boolean;
+  vaultDir?: string;
+  profileDir?: string;
+  loadPublishedDocumentIds?: () => Promise<Set<string>>;
 }): Promise<DiscoveryInboundResult> {
-  const { envelope, profile, remotePeerId, receivedAt, correlationId, taskStore, trustStore, capabilityManifest, anonymousDiscoveryMode = "off", anonymousIntentAllowlist, anonymousSensitivityCeiling, fromQueue = false } = input;
+  const {
+    envelope,
+    profile,
+    remotePeerId,
+    receivedAt,
+    correlationId,
+    taskStore,
+    trustStore,
+    capabilityManifest,
+    anonymousDiscoveryMode = "off",
+    anonymousIntentAllowlist,
+    anonymousSensitivityCeiling,
+    fromQueue = false,
+    vaultDir,
+    profileDir,
+    loadPublishedDocumentIds,
+  } = input;
 
   try {
     if (envelope.intent === "discovery.request") {
@@ -197,6 +310,8 @@ export async function handleInboundDiscoveryIntent(input: {
             anonymousIntentAllowlist,
             anonymousSensitivityCeiling,
             queuedAt,
+            vaultDir,
+            profileDir,
           };
 
           const enqueued = enqueueDiscoveryRequest(queued);
@@ -256,7 +371,7 @@ export async function handleInboundDiscoveryIntent(input: {
 
       // If no manifest exists, fall back to legacy behavior (trust-level gate only)
       if (!capabilityManifest) {
-        if (trustLevel === "public") {
+        if (trustLevel === "public" && !allowsPublicPublishedLibraryQuery(payload)) {
           const denyReason = `discovery.request requires referred/direct trust (got ${trustLevel})`;
           await auditDiscoveryDeny({ taskStore, envelope, remotePeerId, receivedAt, correlationId, trustLevel, reason: denyReason });
           return { ok: false, reason: denyReason };
@@ -269,7 +384,7 @@ export async function handleInboundDiscoveryIntent(input: {
         );
         const hasTagMatch = payload.requestedTagHashes.length > 0;
         const hasCapabilityMatch = matchedCapabilities.length > 0;
-        const matches =
+        let matches: DiscoveryMatchRow[] =
           hasTagMatch || hasCapabilityMatch
             ? [
                 {
@@ -280,6 +395,15 @@ export async function handleInboundDiscoveryIntent(input: {
                 },
               ]
             : [];
+
+        await mergePublishedLibraryMatches({
+          vaultDir,
+          profileDir,
+          loadPublishedDocumentIds,
+          payload,
+          profile,
+          matches,
+        });
 
         await auditDiscoveryMatch({
           taskStore,
@@ -308,9 +432,11 @@ export async function handleInboundDiscoveryIntent(input: {
 
       // 1. Visibility gate
       if (capabilityManifest.visibility === "contacts-only" && trustLevel === "public") {
-        const denyReason = `manifest visibility=contacts-only rejects public trust requester`;
-        await auditDiscoveryDeny({ taskStore, envelope, remotePeerId, receivedAt, correlationId, trustLevel, reason: denyReason, hasManifest: true });
-        return { ok: false, reason: denyReason };
+        if (!allowsPublicPublishedLibraryQuery(payload)) {
+          const denyReason = `manifest visibility=contacts-only rejects public trust requester`;
+          await auditDiscoveryDeny({ taskStore, envelope, remotePeerId, receivedAt, correlationId, trustLevel, reason: denyReason, hasManifest: true });
+          return { ok: false, reason: denyReason };
+        }
       }
 
       // 2. Sensitivity ceiling check (requests above ceiling are not answered)
@@ -336,7 +462,7 @@ export async function handleInboundDiscoveryIntent(input: {
       const hasCapabilityMatch = matchedCapabilities.length > 0;
       const hasTagMatch = payload.requestedTagHashes.length > 0;
 
-      const matches =
+      let matches: DiscoveryMatchRow[] =
         hasTagMatch || hasCapabilityMatch
           ? [
               {
@@ -347,6 +473,15 @@ export async function handleInboundDiscoveryIntent(input: {
               },
             ]
           : [];
+
+      await mergePublishedLibraryMatches({
+        vaultDir,
+        profileDir,
+        loadPublishedDocumentIds,
+        payload,
+        profile,
+        matches,
+      });
 
       await auditDiscoveryMatch({
         taskStore,
@@ -709,6 +844,8 @@ export async function processDiscoveryQueue(
       anonymousIntentAllowlist: queued.anonymousIntentAllowlist,
       anonymousSensitivityCeiling: queued.anonymousSensitivityCeiling,
       fromQueue: true,
+      vaultDir: queued.vaultDir,
+      profileDir: queued.profileDir,
     });
 
     // If successful, send the discovery.response back to the peer

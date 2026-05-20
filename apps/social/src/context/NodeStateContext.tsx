@@ -10,6 +10,7 @@ import {
   useNodeService,
   useBonds,
   useHelloRequests,
+  useSocialIntroProposals,
 } from "../hooks/useNodeService.js";
 import {
   loadAppSettings,
@@ -31,6 +32,8 @@ import type {
   NodeStatus,
   PeerSearchResult,
   RelayConfig,
+  SendHelloOptions,
+  SocialIntroProposal,
 } from "@envoymesh/api";
 
 // ---------------------------------------------------------------------------
@@ -52,6 +55,7 @@ interface NodeStateValue {
   // Social
   bonds: BondRecord[];
   pendingHellOs: HelloRequest[];
+  pendingIntroProposals: SocialIntroProposal[];
   connectionStatus: ConnectionStatus | null;
 
   // Discovery
@@ -73,10 +77,18 @@ interface NodeStateValue {
   setAppSettings: (settings: AppSettings) => void;
   refreshNodeConfig: () => Promise<void>;
   refreshHumanProfile: () => Promise<void>;
+  refreshConnectionStatus: () => Promise<void>;
   acceptHello: (messageId: string) => Promise<void>;
   declineHello: (messageId: string, reason?: string) => Promise<void>;
+  approveIntroCommitment: (messageId: string) => Promise<void>;
+  declineIntroProposal: (messageId: string) => Promise<void>;
   setContactAiModes: (modes: Record<string, AssistantMode>) => void;
-  sendHello: (targetOwnerId: string, profile: HelloProfile, message: string) => Promise<void>;
+  sendHello: (
+    targetOwnerId: string,
+    profile: HelloProfile,
+    message: string,
+    opts?: SendHelloOptions,
+  ) => Promise<void>;
   removePendingMessage: (messageId: string) => void;
   clearPendingMessages: () => void;
 }
@@ -91,6 +103,11 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
   const nodeService = useNodeService();
   const bonds = useBonds();
   const { requests: pendingHellOs, accept: acceptHello, decline: declineHello } = useHelloRequests();
+  const {
+    proposals: pendingIntroProposals,
+    approveCommitment: approveIntroCommitmentHook,
+    decline: declineIntroProposalHook,
+  } = useSocialIntroProposals();
 
   // --- Connection state ---
   const [isConnected, setIsConnected] = useState(false);
@@ -307,6 +324,18 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     }
   }, [nodeService]);
 
+  const refreshConnectionStatus = useCallback(async () => {
+    try {
+      const status = await nodeService.getConnectionStatus();
+      setConnectionStatus(status);
+      if (status.peerId && (status.peerId.startsWith("envoy_agent_") || !status.peerId.startsWith("envoy_"))) {
+        setPeerId(status.peerId);
+      }
+    } catch (e) {
+      console.error("[NodeState] refreshConnectionStatus failed:", e);
+    }
+  }, [nodeService]);
+
   const wrappedSetAppSettings = useCallback((settings: AppSettings) => {
     setAppSettings(settings);
     saveAppSettings(settings);
@@ -318,10 +347,29 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const sendHello = useCallback(
-    async (targetOwnerId: string, profile: HelloProfile, message: string) => {
-      await nodeService.sendHello(targetOwnerId, profile, message);
+    async (
+      targetOwnerId: string,
+      profile: HelloProfile,
+      message: string,
+      opts?: SendHelloOptions,
+    ) => {
+      await nodeService.sendHello(targetOwnerId, profile, message, opts);
     },
     [nodeService],
+  );
+
+  const approveIntroCommitment = useCallback(
+    async (messageId: string) => {
+      await approveIntroCommitmentHook(messageId);
+    },
+    [approveIntroCommitmentHook],
+  );
+
+  const declineIntroProposal = useCallback(
+    async (messageId: string) => {
+      await declineIntroProposalHook(messageId);
+    },
+    [declineIntroProposalHook],
   );
 
   const removePendingMessage = useCallback((messageId: string) => {
@@ -344,6 +392,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     humanProfile,
     bonds,
     pendingHellOs,
+    pendingIntroProposals,
     connectionStatus,
     discoveredPeers,
     pendingMessages,
@@ -353,8 +402,11 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     setAppSettings: wrappedSetAppSettings,
     refreshNodeConfig,
     refreshHumanProfile,
+    refreshConnectionStatus,
     acceptHello,
     declineHello,
+    approveIntroCommitment,
+    declineIntroProposal,
     setContactAiModes: wrappedSetContactAiModes,
     sendHello,
     removePendingMessage,

@@ -11,6 +11,7 @@
     }
   },
   "dependencies": {
+    "@envoymesh/api": "0.1.0",
     "@envoymesh/protocol": "0.1.0"
   }
 }

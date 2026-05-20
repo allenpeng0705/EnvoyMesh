@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useNodeService } from "../../hooks/useNodeService.js";
+import { useModelProviderUiScope, useNodeService, useShareOffers, useAgentShareProposals } from "../../hooks/useNodeService.js";
 import QRCode from "qrcode";
 import {
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
@@ -14,8 +14,11 @@ import type {
 } from "@envoymesh/api";
 
 export function SettingsNodeTab() {
+  const modelProviderUiScope = useModelProviderUiScope();
+  const cloudOnlyMobile = modelProviderUiScope === "cloud-only";
   const nodeService = useNodeService();
-  const { nodeConfig, nodeStatus, peerId, bridgeStatus, refreshNodeConfig } = useNodeState();
+  const { nodeConfig, nodeStatus, peerId, bridgeStatus, refreshNodeConfig, connectionStatus, refreshConnectionStatus } =
+    useNodeState();
 
   // Local state mirrors nodeConfig fields for debounced editing
   const [newRelayAddr, setNewRelayAddr] = useState("");
@@ -34,13 +37,61 @@ export function SettingsNodeTab() {
     }
   }, [nodeConfig?.bootstrapPresets]);
 
+  useEffect(() => {
+    if (nodeConfig?.friendMatchingPreferencesText !== undefined) {
+      setFriendMatchingDraft(nodeConfig.friendMatchingPreferencesText ?? "");
+    }
+  }, [nodeConfig?.friendMatchingPreferencesText]);
+
+  useEffect(() => {
+    void refreshConnectionStatus();
+  }, [refreshConnectionStatus]);
+
   const isPublicNetwork = bootstrapPresets.length > 0;
   const relays = (nodeConfig?.configuredRelays ?? []) as RelayConfig[];
+
+  const modelMode = nodeConfig?.modelProviders?.mode ?? "mock";
+  const modelProviderHints = useMemo(() => {
+    switch (modelMode) {
+      case "ollama":
+        return {
+          endpointPlaceholder: "http://127.0.0.1:11434/v1",
+          hint: "Use Ollama’s OpenAI-compatible base URL (must end with /v1). On a phone, use your computer’s LAN IP instead of 127.0.0.1. EnvoyMesh normalizes bare http://host:11434 to …/v1 automatically.",
+          apiKeyHint: "Leave empty for typical local Ollama.",
+        };
+      case "litellm":
+        return {
+          endpointPlaceholder: "http://127.0.0.1:4000/v1",
+          hint: "Point at LiteLLM’s HTTP API (OpenAI-compatible), usually ending with /v1. Mobile: prefer http://<home-LAN-ip>:4000/v1 so the device can reach your proxy.",
+          apiKeyHint: "Optional: LiteLLM master key if configured.",
+        };
+      case "openai-compatible":
+        return {
+          endpointPlaceholder: "https://api.openai.com/v1",
+          hint: "Any Chat Completions–compatible API; base URL should include /v1.",
+          apiKeyHint: "Usually required unless your gateway injects auth.",
+        };
+      case "anthropic-compatible":
+        return {
+          endpointPlaceholder: "https://api.anthropic.com",
+          hint: "Anthropic Messages API host only — do not add /v1 here (the client appends /v1/messages).",
+          apiKeyHint: "Anthropic API key.",
+        };
+      default:
+        return {
+          endpointPlaceholder: "",
+          hint: "",
+          apiKeyHint: "",
+        };
+    }
+  }, [modelMode]);
 
   // QR pairing state
   const [pairingQR, setPairingQR] = useState<string | null>(null); // data URL
   const [pairingUri, setPairingUri] = useState<string>("");
   const [pairingLoading, setPairingLoading] = useState(false);
+
+  const [friendMatchingDraft, setFriendMatchingDraft] = useState("");
 
   const handleShowPairingQR = useCallback(async () => {
     setPairingLoading(true);
@@ -78,8 +129,80 @@ export function SettingsNodeTab() {
     await refreshNodeConfig();
   };
 
+  const { offers: pendingShareOffers, accept: acceptShareOffer, decline: declineShareOffer } =
+    useShareOffers();
+
+  const { proposals: agentShareProposals, dismiss: dismissAgentShareProposalUi } = useAgentShareProposals();
+
   return (
     <>
+      {pendingShareOffers.length > 0 && (
+        <section className="settings-section">
+          <h3>Incoming file shares</h3>
+          <p className="section-desc">Accept to fetch the file into your shared vault (same path as offered).</p>
+          <ul className="settings-list" style={{ listStyle: "none", padding: 0 }}>
+            {pendingShareOffers.map((o) => (
+              <li
+                key={o.shareId}
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "0.5rem",
+                  alignItems: "center",
+                  marginBottom: "0.75rem",
+                  padding: "0.5rem",
+                  border: "1px solid var(--border-subtle, #333)",
+                  borderRadius: "6px",
+                }}
+              >
+                <span>
+                  <strong>{o.senderDisplayName}</strong> — {o.filename}
+                </span>
+                <button type="button" onClick={() => void acceptShareOffer(o.shareId)}>
+                  Accept
+                </button>
+                <button type="button" onClick={() => void declineShareOffer(o.shareId)}>
+                  Decline
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {agentShareProposals.length > 0 && (
+        <section className="settings-section">
+          <h3>Agent-proposed shares</h3>
+          <p className="section-desc">
+            Your AI agent suggested these vault files for outbound sharing. Confirm from Inbox or dismiss here.
+          </p>
+          <ul className="settings-list" style={{ listStyle: "none", padding: 0 }}>
+            {agentShareProposals.map((p) => (
+              <li
+                key={p.proposalId}
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "0.5rem",
+                  alignItems: "center",
+                  marginBottom: "0.75rem",
+                  padding: "0.5rem",
+                  border: "1px solid var(--border-subtle, #333)",
+                  borderRadius: "6px",
+                }}
+              >
+                <span>
+                  <code>{p.vaultRelativePath}</code> → {p.targetOwnerId} ({p.sensitivity})
+                </span>
+                <button type="button" onClick={() => void dismissAgentShareProposalUi(p.proposalId)}>
+                  Dismiss
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="settings-section">
         <h3>Node Control</h3>
         <dl className="settings-list">
@@ -96,6 +219,15 @@ export function SettingsNodeTab() {
               {peerId && !peerId.startsWith("envoy_") ? peerId : "Not connected"}
             </code>
           </dd>
+          {connectionStatus?.lastError && (
+            <>
+              <dt>Last node error</dt>
+              <dd className="settings-diagnostics-error">
+                <span className="settings-diagnostics-time">{connectionStatus.lastErrorAt ?? ""}</span>
+                <code>{connectionStatus.lastError}</code>
+              </dd>
+            </>
+          )}
         </dl>
         <div className="node-controls">
           {nodeStatus === "running" ? (
@@ -249,7 +381,9 @@ export function SettingsNodeTab() {
       <section className="settings-section">
         <h3>AI / Model Provider</h3>
         <p className="section-desc">
-          Configure the AI model provider for knowledge queries and chat assistance.
+          {cloudOnlyMobile
+            ? "On this device, configure a cloud API (OpenAI-compatible or Anthropic). Local engines such as Ollama or LiteLLM are not exposed in the mobile UI — use your desktop node for those."
+            : "Configure the AI model provider for knowledge queries and chat assistance. For local Ollama/LiteLLM URLs and LAN HTTP notes, see docs/mobile-local-models.md."}
         </p>
         <dl className="settings-list">
           <dt>Provider Mode</dt>
@@ -267,15 +401,29 @@ export function SettingsNodeTab() {
               <option value="mock">Mock (testing only)</option>
               <option value="openai-compatible">OpenAI-Compatible</option>
               <option value="anthropic-compatible">Anthropic-Compatible</option>
-              <option value="ollama">Ollama (local)</option>
-              <option value="litellm">LiteLLM (local/cloud)</option>
+              {!cloudOnlyMobile && (
+                <>
+                  <option value="ollama">Ollama (local)</option>
+                  <option value="litellm">LiteLLM (local/cloud)</option>
+                </>
+              )}
               <option value="disabled">Disabled</option>
             </select>
           </dd>
           <dt>Endpoint URL</dt>
           <dd>
-            <input type="text" className="settings-input" placeholder="https://api.minimaxi.com/v1"
-              value={modelEndpoint} onChange={(e) => setModelEndpoint(e.target.value)} />
+            <input
+              type="text"
+              className="settings-input"
+              placeholder={modelProviderHints.endpointPlaceholder || "https://api.example.com/v1"}
+              value={modelEndpoint}
+              onChange={(e) => setModelEndpoint(e.target.value)}
+            />
+            {modelProviderHints.hint ? (
+              <p className="settings-hint" style={{ marginTop: "6px" }}>
+                {modelProviderHints.hint}
+              </p>
+            ) : null}
           </dd>
           <dt>Model Name</dt>
           <dd>
@@ -286,6 +434,11 @@ export function SettingsNodeTab() {
           <dd>
             <input type="password" className="settings-input" placeholder="sk-..."
               value={modelApiKey} onChange={(e) => setModelApiKey(e.target.value)} />
+            {modelProviderHints.apiKeyHint ? (
+              <p className="settings-hint" style={{ marginTop: "6px" }}>
+                {modelProviderHints.apiKeyHint}
+              </p>
+            ) : null}
           </dd>
         </dl>
       </section>
@@ -383,6 +536,63 @@ export function SettingsNodeTab() {
             Cancel
           </button>
           {settingsSaveStatus === "error" && <span className="settings-save-error">Save failed</span>}
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h3>Trust mode & matching</h3>
+        <p className="section-desc">
+          Allow agent-mediated intros (<code>social.intro.*</code>). Use preferences below so your agent can align discovery with what you say you&apos;re looking for — never invented biography.
+        </p>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>Trust mode</strong>
+            <span className="toggle-desc">Enable inbound/outbound Trust-mode intro intents</span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={nodeConfig?.trustModeEnabled ?? false}
+              onChange={async (e) => {
+                await updateNodeConfig({ trustModeEnabled: e.target.checked });
+              }}
+            />
+            <span className="toggle-slider" />
+          </label>
+        </div>
+        <dl className="settings-list">
+          <dt>Friend matching preferences</dt>
+          <dd>
+            <textarea
+              className="settings-input"
+              rows={5}
+              placeholder="Topics, traits, boundaries — plain language for your agent (max 4096 chars)."
+              value={friendMatchingDraft}
+              onChange={(e) => setFriendMatchingDraft(e.target.value)}
+            />
+            <p className="settings-hint" style={{ marginTop: "6px" }}>
+              Saved separately from provider keys — edit and tap Save preferences when ready.
+            </p>
+          </dd>
+        </dl>
+        <div className="settings-buttons">
+          <button
+            type="button"
+            className="settings-save-btn"
+            onClick={async () => {
+              await updateNodeConfig({ friendMatchingPreferencesText: friendMatchingDraft });
+            }}
+          >
+            Save preferences
+          </button>
+          <button
+            type="button"
+            className="settings-cancel-btn"
+            onClick={() =>
+              setFriendMatchingDraft(nodeConfig?.friendMatchingPreferencesText ?? "")}
+          >
+            Reset
+          </button>
         </div>
       </section>
 

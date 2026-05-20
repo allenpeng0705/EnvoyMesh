@@ -48,6 +48,9 @@ export const EnvoyIntentSchema = z.enum([
   "share.preview",
   "share.request",
   "share.accept",
+  "social.intro.owner-ready",
+  "social.intro.propose",
+  "social.intro.sync",
   "broadcast.request",
   "broadcast.response",
   "broadcast.cancel",
@@ -429,6 +432,50 @@ export function humanProfileForSigning(payload: HumanProfilePayload): Omit<Human
   return unsigned;
 }
 
+/** Purpose tag for tiered disclosure (Trust mode); signed by owner key like full HumanProfile. */
+export const HumanProfileFragmentPurposeSchema = z.enum(["discovery-card", "trust-mode-intro"]);
+
+export const HumanProfileFragmentPayloadSchema = z.object({
+  version: z.literal("0.1"),
+  ownerId: z.string().min(1),
+  purpose: HumanProfileFragmentPurposeSchema,
+  expiresAt: z.string().datetime(),
+  displayName: z.string().min(1).max(120).optional(),
+  bio: z.string().max(500).optional(),
+  hobbies: z.array(z.string().min(1).max(50)).max(10).optional(),
+  tags: z.array(z.string().min(1).max(64)).max(20).optional(),
+  signature: z.string().min(1),
+});
+
+export type HumanProfileFragmentPayload = z.infer<typeof HumanProfileFragmentPayloadSchema>;
+
+export function humanProfileFragmentForSigning(
+  payload: HumanProfileFragmentPayload,
+): Omit<HumanProfileFragmentPayload, "signature"> {
+  const { signature: _signature, ...unsigned } = payload;
+  return unsigned;
+}
+
+/** Owner-signed friend-matching criteria (Trust mode Phase F); canonical-signed like HumanProfile. */
+export const FRIEND_MATCHING_PREFERENCES_TEXT_MAX = 4096;
+
+export const FriendMatchingPreferencesPayloadSchema = z.object({
+  version: z.literal("0.1"),
+  ownerId: z.string().min(1),
+  text: z.string().min(1).max(FRIEND_MATCHING_PREFERENCES_TEXT_MAX),
+  expiresAt: z.string().datetime(),
+  signature: z.string().min(1),
+});
+
+export type FriendMatchingPreferencesPayload = z.infer<typeof FriendMatchingPreferencesPayloadSchema>;
+
+export function friendMatchingPreferencesForSigning(
+  payload: FriendMatchingPreferencesPayload,
+): Omit<FriendMatchingPreferencesPayload, "signature"> {
+  const { signature: _signature, ...unsigned } = payload;
+  return unsigned;
+}
+
 /** First-class EMP payload for `knowledge.query` (vault-backed retrieval is still mock/offline in node). */
 export const KnowledgeQueryPayloadSchema = z.object({
   query: z.string().min(1).max(4096),
@@ -486,6 +533,11 @@ export const ShareRequestPayloadSchema = z.object({
   requestedSensitivity: SensitivitySchema.default("public"),
   /** Correlation ID linking this request to a discovery match. */
   correlationId: z.string().optional(),
+  /**
+   * `responder` (default): `relativePath` is in the **receiver's** vault (pull).
+   * `sender`: `relativePath` is in the **sender's** vault (push offer); receiver previews without a local file.
+   */
+  fileOrigin: z.enum(["responder", "sender"]).default("responder"),
 });
 
 export type ShareRequestPayload = z.infer<typeof ShareRequestPayloadSchema>;
@@ -511,7 +563,54 @@ export const BondRequestPayloadSchema = z.object({
   message: z.string().max(1024).optional(),
   proofOfContext: z.string().max(4096).optional(),
   requestedLevel: BondRequestedLevelSchema.default("direct"),
+  /** Links this bond handshake to a Trust-mode intro thread (same id may appear as envelope correlationId). */
+  introCorrelationId: z.string().min(1).max(128).optional(),
+  /** Opaque handle proving owner reviewed an intro (e.g. approval-queue id); verified locally/product-layer. */
+  ownerCommitmentRef: z.string().min(1).max(256).optional(),
 });
+
+/** Agent→agent coordination for Trust-mode intros (non-binding). */
+export const SocialIntroInterestSchema = z.enum([
+  "explore",
+  "decline",
+  "request-human-review",
+  "withdraw",
+]);
+
+export const SocialIntroSyncPayloadSchema = z.object({
+  introCorrelationId: z.string().min(1),
+  ownerId: z.string().min(1),
+  counterpartyOwnerIdHint: z.string().min(1).optional(),
+  profileFragmentRefs: z.array(z.string().min(1)).max(16).default([]),
+  interest: SocialIntroInterestSchema,
+  noteToCounterpartyAgent: z.string().max(1024).optional(),
+});
+
+/** Agent→human: candidate intro with owner-signed fragment or opaque ref (Trust mode). */
+export const SocialIntroProposePayloadSchema = z
+  .object({
+    introCorrelationId: z.string().min(1),
+    candidateOwnerId: z.string().min(1),
+    candidatePeerId: z.string().min(1),
+    profileFragment: HumanProfileFragmentPayloadSchema.optional(),
+    profileFragmentRef: z.string().min(1).max(256).optional(),
+    rationale: z.string().max(2048).optional(),
+  })
+  .refine((value) => value.profileFragment !== undefined || value.profileFragmentRef !== undefined, {
+    message: "social.intro.propose requires profileFragment or profileFragmentRef",
+  });
+
+/** Human→human or human→agent: owner readiness before emitting bond.request (envelope signature covers payload). */
+export const SocialIntroOwnerReadyPayloadSchema = z.object({
+  introCorrelationId: z.string().min(1),
+  ownerId: z.string().min(1),
+  nonce: z.string().min(1),
+  expiresAt: z.string().datetime(),
+});
+
+export type SocialIntroSyncPayload = z.infer<typeof SocialIntroSyncPayloadSchema>;
+export type SocialIntroProposePayload = z.infer<typeof SocialIntroProposePayloadSchema>;
+export type SocialIntroOwnerReadyPayload = z.infer<typeof SocialIntroOwnerReadyPayloadSchema>;
 
 export const BondChallengePayloadSchema = z.object({
   challengeId: z.string().min(1),
@@ -566,17 +665,36 @@ export const DiscoveryRequestPayloadSchema = z
     maxResults: z.number().int().min(1).max(20).default(5),
     /** Requested sensitivity level. If absent, defaults to "public". */
     requestedSensitivity: z.enum(["public", "friends", "private"]).optional(),
+    /** FS-D: optional substring match on published library title or path (responder-side). */
+    fileTitleQuery: z.string().max(200).optional(),
+    /** FS-D: prefix match on content hash (base64url) for published documents. */
+    requestedContentHashPrefixes: z.array(z.string().min(4).max(128)).max(8).optional(),
   })
   .refine(
-    (value) => value.requestedTagHashes.length > 0 || value.requestedCapabilities.length > 0,
-    "discovery.request requires at least one tag hash or capability",
+    (value) =>
+      value.requestedTagHashes.length > 0 ||
+      value.requestedCapabilities.length > 0 ||
+      Boolean(value.fileTitleQuery?.trim()) ||
+      (value.requestedContentHashPrefixes?.length ?? 0) > 0,
+    "discovery.request requires tag hashes, capabilities, a file title query, or content hash prefixes",
   );
+
+export const LibraryFileMatchSchema = z.object({
+  documentId: z.string().min(1),
+  title: z.string(),
+  relativePath: z.string(),
+  contentHash: z.string(),
+  byteLength: z.number().int().nonnegative().optional(),
+  sensitivity: z.enum(["public", "friends", "private"]).optional(),
+});
 
 export const DiscoveryMatchSchema = z.object({
   ownerId: z.string().min(1),
   peerId: z.string().min(1),
   matchedTagHashes: z.array(z.string().min(1)).default([]),
   matchedCapabilities: z.array(z.string().min(1)).default([]),
+  /** FS-D: metadata-only matches for published vault documents (no bytes transferred). */
+  libraryMatches: z.array(LibraryFileMatchSchema).optional(),
 });
 
 export const DiscoveryResponsePayloadSchema = z.object({
@@ -1132,6 +1250,7 @@ export type BondRequestPayload = z.infer<typeof BondRequestPayloadSchema>;
 export type BondChallengePayload = z.infer<typeof BondChallengePayloadSchema>;
 export type BondChallengeResponsePayload = z.infer<typeof BondChallengeResponsePayloadSchema>;
 export type DiscoveryRequestPayload = z.infer<typeof DiscoveryRequestPayloadSchema>;
+export type LibraryFileMatch = z.infer<typeof LibraryFileMatchSchema>;
 export type DiscoveryMatch = z.infer<typeof DiscoveryMatchSchema>;
 export type DiscoveryResponsePayload = z.infer<typeof DiscoveryResponsePayloadSchema>;
 export type BroadcastRequestPayload = z.infer<typeof BroadcastRequestPayloadSchema>;
@@ -1313,6 +1432,26 @@ export function parseShareAcceptPayload(input: unknown): ShareAcceptPayload {
 
 export function parseBondRequestPayload(input: unknown): BondRequestPayload {
   return BondRequestPayloadSchema.parse(input);
+}
+
+export function parseHumanProfileFragmentPayload(input: unknown): HumanProfileFragmentPayload {
+  return HumanProfileFragmentPayloadSchema.parse(input);
+}
+
+export function parseFriendMatchingPreferencesPayload(input: unknown): FriendMatchingPreferencesPayload {
+  return FriendMatchingPreferencesPayloadSchema.parse(input);
+}
+
+export function parseSocialIntroSyncPayload(input: unknown): SocialIntroSyncPayload {
+  return SocialIntroSyncPayloadSchema.parse(input);
+}
+
+export function parseSocialIntroProposePayload(input: unknown): SocialIntroProposePayload {
+  return SocialIntroProposePayloadSchema.parse(input);
+}
+
+export function parseSocialIntroOwnerReadyPayload(input: unknown): SocialIntroOwnerReadyPayload {
+  return SocialIntroOwnerReadyPayloadSchema.parse(input);
 }
 
 export function parseBondChallengePayload(input: unknown): BondChallengePayload {
@@ -1579,6 +1718,7 @@ export interface CreateShareRequestPayloadInput {
   relativePath?: string;
   requestedSensitivity?: Sensitivity;
   correlationId?: string;
+  fileOrigin?: "responder" | "sender";
 }
 
 export function createShareRequestPayload(input: CreateShareRequestPayloadInput): ShareRequestPayload {
@@ -1588,6 +1728,7 @@ export function createShareRequestPayload(input: CreateShareRequestPayloadInput)
     relativePath: input.relativePath,
     requestedSensitivity: input.requestedSensitivity ?? "public",
     correlationId: input.correlationId,
+    fileOrigin: input.fileOrigin ?? "responder",
   });
 }
 
@@ -1609,6 +1750,8 @@ export interface CreateBondRequestPayloadInput {
   message?: string;
   proofOfContext?: string;
   requestedLevel?: BondRequestedLevel;
+  introCorrelationId?: string;
+  ownerCommitmentRef?: string;
 }
 
 export function createBondRequestPayload(input: CreateBondRequestPayloadInput): BondRequestPayload {
@@ -1618,6 +1761,115 @@ export function createBondRequestPayload(input: CreateBondRequestPayloadInput): 
     message: input.message,
     proofOfContext: input.proofOfContext,
     requestedLevel: input.requestedLevel,
+    introCorrelationId: input.introCorrelationId,
+    ownerCommitmentRef: input.ownerCommitmentRef,
+  });
+}
+
+export interface CreateHumanProfileFragmentPayloadInput {
+  ownerId: string;
+  purpose: HumanProfileFragmentPayload["purpose"];
+  expiresAt: string;
+  displayName?: string;
+  bio?: string;
+  hobbies?: string[];
+  tags?: string[];
+  /** Placeholder until caller signs with owner key via identity.signCanonicalPayload */
+  signature?: string;
+}
+
+export function createHumanProfileFragmentPayload(
+  input: CreateHumanProfileFragmentPayloadInput,
+): HumanProfileFragmentPayload {
+  return HumanProfileFragmentPayloadSchema.parse({
+    version: "0.1",
+    ownerId: input.ownerId,
+    purpose: input.purpose,
+    expiresAt: input.expiresAt,
+    displayName: input.displayName,
+    bio: input.bio,
+    hobbies: input.hobbies,
+    tags: input.tags,
+    signature: input.signature ?? "",
+  });
+}
+
+export interface CreateFriendMatchingPreferencesPayloadInput {
+  ownerId: string;
+  text: string;
+  expiresAt: string;
+  signature: string;
+}
+
+export function createFriendMatchingPreferencesPayload(
+  input: CreateFriendMatchingPreferencesPayloadInput,
+): FriendMatchingPreferencesPayload {
+  return FriendMatchingPreferencesPayloadSchema.parse({
+    version: "0.1",
+    ownerId: input.ownerId,
+    text: input.text,
+    expiresAt: input.expiresAt,
+    signature: input.signature,
+  });
+}
+
+export interface CreateSocialIntroSyncPayloadInput {
+  introCorrelationId: string;
+  ownerId: string;
+  counterpartyOwnerIdHint?: string;
+  profileFragmentRefs?: string[];
+  interest: SocialIntroSyncPayload["interest"];
+  noteToCounterpartyAgent?: string;
+}
+
+export function createSocialIntroSyncPayload(input: CreateSocialIntroSyncPayloadInput): SocialIntroSyncPayload {
+  return SocialIntroSyncPayloadSchema.parse({
+    introCorrelationId: input.introCorrelationId,
+    ownerId: input.ownerId,
+    counterpartyOwnerIdHint: input.counterpartyOwnerIdHint,
+    profileFragmentRefs: input.profileFragmentRefs ?? [],
+    interest: input.interest,
+    noteToCounterpartyAgent: input.noteToCounterpartyAgent,
+  });
+}
+
+export interface CreateSocialIntroProposePayloadInput {
+  introCorrelationId: string;
+  candidateOwnerId: string;
+  candidatePeerId: string;
+  profileFragment?: HumanProfileFragmentPayload;
+  profileFragmentRef?: string;
+  rationale?: string;
+}
+
+export function createSocialIntroProposePayload(
+  input: CreateSocialIntroProposePayloadInput,
+): SocialIntroProposePayload {
+  return SocialIntroProposePayloadSchema.parse({
+    introCorrelationId: input.introCorrelationId,
+    candidateOwnerId: input.candidateOwnerId,
+    candidatePeerId: input.candidatePeerId,
+    profileFragment: input.profileFragment,
+    profileFragmentRef: input.profileFragmentRef,
+    rationale: input.rationale,
+  });
+}
+
+export interface CreateSocialIntroOwnerReadyPayloadInput {
+  introCorrelationId: string;
+  ownerId: string;
+  nonce: string;
+  expiresAt: string;
+}
+
+export function createSocialIntroOwnerReadyPayload(
+  input: CreateSocialIntroOwnerReadyPayloadInput,
+): SocialIntroOwnerReadyPayload {
+  return SocialIntroOwnerReadyPayloadSchema.parse({
+    introCorrelationId: input.introCorrelationId,
+    ownerId: input.ownerId,
+    nonce: input.nonce,
+    expiresAt: input.expiresAt,
   });
 }
 
@@ -1669,6 +1921,8 @@ export interface CreateDiscoveryRequestPayloadInput {
   requestedCapabilities?: string[];
   maxResults?: number;
   requestedSensitivity?: "public" | "friends" | "private";
+  fileTitleQuery?: string;
+  requestedContentHashPrefixes?: string[];
 }
 
 export function createDiscoveryRequestPayload(
@@ -1680,6 +1934,8 @@ export function createDiscoveryRequestPayload(
     requestedCapabilities: input.requestedCapabilities ?? [],
     maxResults: input.maxResults,
     requestedSensitivity: input.requestedSensitivity,
+    fileTitleQuery: input.fileTitleQuery,
+    requestedContentHashPrefixes: input.requestedContentHashPrefixes,
   });
 }
 
@@ -2413,6 +2669,48 @@ function evaluateEnvelopeRolePolicy(
       return {
         ok: false,
         reason: "chat.message cannot involve system role",
+      };
+    }
+    return { ok: true };
+  }
+
+  if (intent === "social.intro.sync") {
+    if (senderRole !== "agent" || recipientRole !== "agent") {
+      return {
+        ok: false,
+        reason: "social.intro.sync requires senderRole=agent and recipientRole=agent",
+      };
+    }
+    return { ok: true };
+  }
+
+  if (intent === "social.intro.propose") {
+    if (senderRole !== "agent") {
+      return {
+        ok: false,
+        reason: "social.intro.propose requires senderRole=agent",
+      };
+    }
+    if (recipientRole !== "human") {
+      return {
+        ok: false,
+        reason: "social.intro.propose requires recipientRole=human",
+      };
+    }
+    return { ok: true };
+  }
+
+  if (intent === "social.intro.owner-ready") {
+    if (senderRole !== "human") {
+      return {
+        ok: false,
+        reason: "social.intro.owner-ready requires senderRole=human",
+      };
+    }
+    if (recipientRole !== "agent" && recipientRole !== "human") {
+      return {
+        ok: false,
+        reason: "social.intro.owner-ready requires recipientRole=agent or recipientRole=human",
       };
     }
     return { ok: true };

@@ -168,6 +168,18 @@ export async function buildVaultIndex(options: BuildVaultIndexOptions): Promise<
 
 export async function listSupportedVaultFiles(rootDir: string): Promise<string[]> {
   const absoluteRoot = resolve(rootDir);
+  try {
+    const st = await stat(absoluteRoot);
+    if (!st.isDirectory()) {
+      return [];
+    }
+  } catch (error) {
+    const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
+    if (code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
   const entries = await walkVaultDirectory(absoluteRoot);
 
   return entries

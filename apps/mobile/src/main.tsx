@@ -55,7 +55,7 @@ async function main(): Promise<void> {
   const directClient = createDirectCallClient(mobileNode);
 
   createRoot(document.getElementById("root")!).render(
-    <NodeServiceProvider clientFactory={() => directClient}>
+    <NodeServiceProvider clientFactory={() => directClient} modelProviderUiScope="cloud-only">
       <NodeStateProvider>
         <ThemeProvider>
           <ErrorBoundary>

@@ -19,40 +19,66 @@ import type {
   PeerSearchResult,
   RelayConfig,
   SearchQuery,
+  SendHelloOptions,
+  SocialIntroProposal,
   NodeStatus,
   InitNodeOptions,
   NodeInitResult,
   HomeClawCoreProxyParams,
   HomeClawCoreProxyResult,
+  LibraryItem,
+  ListLibraryItemsParams,
+  ShareOffer,
   PairDeviceParams,
   PairDeviceResult,
   PairSharedIdentityParams,
   PairSharedIdentityResult,
+  AgentShareProposal,
+  SubmitAgentShareProposalParams,
+  DiscoverPublishedLibraryParams,
+  DiscoverPublishedLibraryPeerResult,
+  PublishedLibraryFileHit,
 } from "@envoymesh/api";
+
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
+  bondTrustRank,
 } from "@envoymesh/api";
 
 import {
   createBondAcceptPayload,
+  createBondRequestPayload,
   createChatMessagePayload,
   createHumanProfilePayload,
+  createShareAcceptPayload,
+  createShareRequestPayload,
   createUnsignedEnvelope,
   parseBondAcceptPayload,
   parseBondRequestPayload,
   parseChatMessagePayload,
   parseEnvelope,
+  parseShareAcceptPayload,
+  createDiscoveryRequestPayload,
+  parseDiscoveryResponsePayload,
   createRendezvousRegisterPayload,
   createRendezvousQueryPayload,
   RendezvousResponsePayloadSchema,
   createKnowledgeQueryPayload,
+  parseFriendMatchingPreferencesPayload,
   type HumanProfilePayload,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
-import { createDeviceCertificate, derivePeerId, encryptOwnerKeyForDevice, signHumanProfile, signUnsignedEnvelope } from "@envoymesh/identity";
+import {
+  createDeviceCertificate,
+  derivePeerId,
+  encryptOwnerKeyForDevice,
+  signHumanProfile,
+  signUnsignedEnvelope,
+  verifyFriendMatchingPreferences,
+} from "@envoymesh/identity";
 import {
   createAuditEvent,
   deriveCorrelationIdFromEnvelope,
@@ -83,17 +109,28 @@ import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-s
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
 import { createTaskDispatcher } from "./task-dispatcher.js";
+import { buildVaultIndex } from "@envoymesh/vault";
 import {
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
   DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME,
   type EnvoyMeshOptions,
 } from "@envoymesh/network";
-import { join } from "node:path";
+import { stat } from "node:fs/promises";
+import { basename, join } from "node:path";
+import { sendVaultFileViaDataTransfer } from "./node-file-share.js";
+import { isSafeVaultPath } from "./share-inbound.js";
+import { createPublishedLibraryStore } from "./published-library-store.js";
+import { createAgentShareProposalStore } from "./agent-share-proposal-store.js";
+import { PUBLISHED_LIB_CAPABILITY } from "./discovery-inbound.js";
+import { loadBridgeIdentity } from "./bridge/identity-store.js";
+import type { MeshToolContext } from "./tool-registry.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { executeHomeClawCoreProxy } from "./homeclaw-core-proxy.js";
+
+const MAX_FRIEND_MATCHING_PREFS_CHARS = 4096;
 
 /** Unblocks when an underlying `fs.readFile` or mutex never settles (seen on some Windows setups). */
 function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -133,6 +170,9 @@ class NodeServiceImpl implements NodeService {
   private readonly _configStore: ReturnType<typeof createNodeConfigStore>;
   private readonly _profileDir: string;
   private readonly _cliBootstrapPeers: readonly string[];
+  /** Root directory for {@link listLibraryItems} (ENVOYMESH_VAULT or shared_vault). */
+  private readonly _vaultDir: string;
+  private _agentShareProposalStore: ReturnType<typeof createAgentShareProposalStore> | undefined;
 
   // App-managed mode stores
   private _taskStore: LocalTaskStore | undefined;
@@ -158,6 +198,10 @@ class NodeServiceImpl implements NodeService {
   /** Persistent session token store for long-lived pairings (no QR re-scan). */
   private readonly _sessionTokenStore: SessionTokenStore | null;
 
+  /** Best-effort last failure for {@link getConnectionStatus} (cleared on successful {@link startNode}). */
+  private _lastNodeError?: string;
+  private _lastNodeErrorAt?: string;
+
   // Pending hello requests (messageId -> info) awaiting user acceptance
   private readonly _pendingHelloRequests = new Map<string, {
     remotePeerId: string;
@@ -167,6 +211,30 @@ class NodeServiceImpl implements NodeService {
     requestedLevel: string;
     createdAt: string;
   }>();
+
+  /** Trust-mode intro proposes — memory-only inbox until approve / hello / decline */
+  private readonly _pendingSocialIntroProposals = new Map<
+    string,
+    SocialIntroProposal & { ownerCommitmentRef?: string }
+  >();
+
+  /** Outbound push: our `share.request` message id → until we receive `share.preview`. */
+  private readonly _pendingPushShareByRequestMsgId = new Map<
+    string,
+    { relativePath: string; toPeerId: string }
+  >();
+  /** After inbound `share.preview`: preview message id → send file to peer (we are holder). */
+  private readonly _pendingFileSendByPreviewMsgId = new Map<
+    string,
+    { relativePath: string; toPeerId: string }
+  >();
+  /** Inbound push offers waiting for accept/decline — keyed by preview message id. */
+  private readonly _pendingInboundShareOffers = new Map<string, ShareOffer>();
+  /**
+   * Pending vault-relative rename on receive: key `senderPeerId + \\n + voucher source path`
+   * (matches {@link DataTransferVoucher} `relativePath` from sender).
+   */
+  private readonly _pendingDataTransferSavePath = new Map<string, string>();
 
   // Event listeners - stored for later emission
   private readonly listeners = new Map<keyof NodeServiceEvents, Set<(...args: any[]) => void>>();
@@ -195,6 +263,165 @@ class NodeServiceImpl implements NodeService {
     }
   }
 
+  storePendingSocialIntroProposal(proposal: SocialIntroProposal): void {
+    const { commitmentApproved: _ca, ...rest } = proposal;
+    void _ca;
+    if (this._pendingSocialIntroProposals.has(rest.messageId)) {
+      return;
+    }
+    this._pendingSocialIntroProposals.set(rest.messageId, {
+      ...rest,
+      ownerCommitmentRef: undefined,
+    });
+    this.emit("social.intro:propose", { ...rest, commitmentApproved: false });
+  }
+
+  async listPendingSocialIntroProposals(): Promise<SocialIntroProposal[]> {
+    return [...this._pendingSocialIntroProposals.values()].map((row) => {
+      const { ownerCommitmentRef, ...pub } = row;
+      return {
+        ...pub,
+        commitmentApproved: Boolean(ownerCommitmentRef),
+      };
+    });
+  }
+
+  async approveSocialIntroCommitment(messageId: string): Promise<{ ownerCommitmentRef: string }> {
+    const row = this._pendingSocialIntroProposals.get(messageId);
+    if (!row) {
+      throw new Error(`No pending intro proposal for messageId=${messageId}`);
+    }
+    if (!row.ownerCommitmentRef) {
+      row.ownerCommitmentRef = randomUUID();
+    }
+    return { ownerCommitmentRef: row.ownerCommitmentRef };
+  }
+
+  async declineSocialIntroProposal(messageId: string): Promise<void> {
+    this._pendingSocialIntroProposals.delete(messageId);
+  }
+
+  /**
+   * CLI (`index.ts`) wires the same on-disk audit store as inbound handlers so
+   * share/data-transfer paths can append audits before `startNode()` exists.
+   */
+  bindCliTaskStore(taskStore: LocalTaskStore): void {
+    this._taskStore = taskStore;
+  }
+
+  /** Inbound `share.preview` on the original requester (push) — links preview id to pending send. */
+  linkOutboundSharePreviewFromInbound(previewMessageId: string, inReplyToRequestMsgId: string): void {
+    const pending = this._pendingPushShareByRequestMsgId.get(inReplyToRequestMsgId);
+    if (!pending) return;
+    this._pendingFileSendByPreviewMsgId.set(previewMessageId, pending);
+    this._pendingPushShareByRequestMsgId.delete(inReplyToRequestMsgId);
+  }
+
+  /** We hold the file (responder); after sending preview, wait for requester's `share.accept`. */
+  registerResponderFileSendAfterPreview(
+    previewMessageId: string,
+    relativePath: string | undefined,
+    requesterPeerId: string,
+  ): void {
+    const rel = relativePath?.replace(/^[\\/]+/, "") ?? "";
+    if (!rel.trim()) return;
+    this._pendingFileSendByPreviewMsgId.set(previewMessageId, {
+      relativePath: rel,
+      toPeerId: requesterPeerId,
+    });
+  }
+
+  async recordInboundPushShareOffer(input: {
+    shareId: string;
+    senderPeerId: string;
+    previewText: string;
+    sensitivity: "public" | "friends" | "private";
+    relativePath: string;
+  }): Promise<void> {
+    const records = await this._peerDirectoryStore.listPeerRecords();
+    const rec = records.find((r) => r.peerId === input.senderPeerId);
+    const displayName = rec?.ownerId
+      ? rec.ownerId.replace(/^envoy:owner:/, "").slice(0, 10)
+      : `${input.senderPeerId.slice(0, 12)}…`;
+    const filename = basename(input.relativePath) || "file";
+    const offer: ShareOffer = {
+      shareId: input.shareId,
+      senderNodeId: input.senderPeerId,
+      senderDisplayName: displayName,
+      filename,
+      mimeType: "application/octet-stream",
+      sizeBytes: 0,
+      sensitivity: input.sensitivity,
+      preview: input.previewText,
+      timestamp: new Date().toISOString(),
+      senderVaultRelativePath: input.relativePath.replace(/^[\\/]+/, "") || undefined,
+    };
+    this._pendingInboundShareOffers.set(input.shareId, offer);
+    this.emit("share:offered", offer);
+  }
+
+  clearPendingShareStateForPreview(previewMessageId: string): void {
+    this._pendingFileSendByPreviewMsgId.delete(previewMessageId);
+    const offer = this._pendingInboundShareOffers.get(previewMessageId);
+    if (offer?.senderVaultRelativePath) {
+      this._pendingDataTransferSavePath.delete(
+        `${offer.senderNodeId}\n${offer.senderVaultRelativePath.replace(/^[\\/]+/, "")}`,
+      );
+    }
+    this._pendingInboundShareOffers.delete(previewMessageId);
+  }
+
+  /**
+   * Map verified voucher path → local vault-relative path when the owner chose a different name/location.
+   */
+  resolveInboundDataTransferRelativePath(remotePeerId: string, voucherRelativePath: string): string {
+    const norm = voucherRelativePath.replace(/^[\\/]+/, "");
+    const o = this._pendingDataTransferSavePath.get(`${remotePeerId}\n${norm}`);
+    return o ?? norm;
+  }
+
+  consumeInboundDataTransferSaveMapping(remotePeerId: string, voucherSourceRelativePath: string): void {
+    const norm = voucherSourceRelativePath.replace(/^[\\/]+/, "");
+    this._pendingDataTransferSavePath.delete(`${remotePeerId}\n${norm}`);
+  }
+
+  async maybeSendShareFileForInboundAccept(input: {
+    envelope: EnvoyEnvelope;
+    remotePeerId: string;
+    taskStore: LocalTaskStore;
+    vaultDir: string;
+  }): Promise<void> {
+    let payload: ReturnType<typeof parseShareAcceptPayload>;
+    try {
+      payload = parseShareAcceptPayload(input.envelope.payload);
+    } catch {
+      return;
+    }
+    if (!payload.accept) return;
+    const previewId = payload.inReplyTo;
+    const pending = this._pendingFileSendByPreviewMsgId.get(previewId);
+    if (!pending) return;
+    if (pending.toPeerId !== input.remotePeerId) {
+      console.warn(
+        `[share] file send skipped: peer mismatch for preview=${previewId.slice(0, 12)}…`,
+      );
+      return;
+    }
+    const mesh = this._reachableMesh();
+    const profile = this._profile;
+    if (!mesh || !profile) return;
+
+    await sendVaultFileViaDataTransfer({
+      mesh,
+      profile,
+      taskStore: input.taskStore,
+      vaultDir: input.vaultDir,
+      relativePath: pending.relativePath,
+      toPeerId: input.remotePeerId,
+    });
+    this._pendingFileSendByPreviewMsgId.delete(previewId);
+  }
+
   constructor(
     mesh: EnvoyMesh | undefined,
     trustStore: LocalTrustStore,
@@ -203,6 +430,7 @@ class NodeServiceImpl implements NodeService {
     profileDir: string | undefined,
     profile?: NodeProfile,
     cliBootstrapPeers: readonly string[] = [],
+    vaultDir?: string,
   ) {
     this._mesh = mesh;
     this._trustStore = trustStore;
@@ -210,6 +438,7 @@ class NodeServiceImpl implements NodeService {
     this._humanProfileStore = humanProfileStore;
     this._profileDir = profileDir ?? "/tmp/unknown";
     this._cliBootstrapPeers = cliBootstrapPeers;
+    this._vaultDir = vaultDir ?? process.env.ENVOYMESH_VAULT ?? join(process.cwd(), "shared_vault");
     this._configStore = profileDir ? createNodeConfigStore(profileDir) : createStubNodeConfigStore();
     this._chatLogStore =
       profileDir && profileDir !== "/tmp/unknown" ? createLocalChatLogStore(profileDir) : null;
@@ -591,17 +820,48 @@ class NodeServiceImpl implements NodeService {
   // Bond Management
   // ============================================
 
-  async sendHello(targetOwnerId: string, profile: HelloProfile, message: string): Promise<HelloResponse> {
+  async sendHello(
+    targetOwnerId: string,
+    profile: HelloProfile,
+    message: string,
+    options?: SendHelloOptions,
+  ): Promise<HelloResponse> {
     this._assertOnline();
     const mesh = this._requireMesh();
     const selfProfile = this._requireProfile();
 
-    // Find the target peer's peerId - first check peer directory, then try direct peerId
+    let introCorrelationId: string | undefined;
+    let ownerCommitmentRef: string | undefined;
+    let pendingIntro: (SocialIntroProposal & { ownerCommitmentRef?: string }) | undefined;
+
+    if (options?.introProposalMessageId) {
+      pendingIntro = this._pendingSocialIntroProposals.get(options.introProposalMessageId);
+      if (!pendingIntro) {
+        throw new Error(`No pending intro proposal for messageId=${options.introProposalMessageId}`);
+      }
+      if (!pendingIntro.ownerCommitmentRef) {
+        throw new Error("Approve the intro commitment before sending hello");
+      }
+      if (pendingIntro.candidateOwnerId.trim() !== targetOwnerId.trim()) {
+        throw new Error("Intro proposal candidate does not match hello target owner id");
+      }
+      introCorrelationId = pendingIntro.introCorrelationId;
+      ownerCommitmentRef = pendingIntro.ownerCommitmentRef;
+    }
+
+    // Find the target peer's peerId — Trust-mode intros prefer candidatePeerId from the proposal row
     const peerRecords = await this._peerDirectoryStore.listPeerRecords();
-    const matchedRecord =
+    let matchedRecord =
       peerRecords.find((r) => r.ownerId === targetOwnerId) ??
       peerRecords.find((r) => r.peerId === targetOwnerId);
     let targetPeerId = matchedRecord?.peerId;
+
+    if (pendingIntro?.candidatePeerId) {
+      targetPeerId = pendingIntro.candidatePeerId;
+      matchedRecord =
+        peerRecords.find((r) => r.ownerId === pendingIntro.candidateOwnerId) ??
+        peerRecords.find((r) => r.peerId === pendingIntro.candidatePeerId);
+    }
 
     // If not found in peer directory, maybe targetOwnerId IS a peerId (for DHT discovered peers)
     if (!targetPeerId) {
@@ -616,7 +876,6 @@ class NodeServiceImpl implements NodeService {
 
     console.log(`[node-service] sendHello to ${targetPeerId} (message: ${message})`);
 
-    const { createBondRequestPayload } = await import("@envoymesh/protocol");
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({
         senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
@@ -629,6 +888,8 @@ class NodeServiceImpl implements NodeService {
           message: `[HELLO] ${message}`,
           proofOfContext: `displayName:${profile.displayName}`,
           requestedLevel: "direct",
+          introCorrelationId,
+          ownerCommitmentRef,
         }),
       }),
       selfProfile.device.privateKeyPem,
@@ -639,6 +900,10 @@ class NodeServiceImpl implements NodeService {
       console.log(`[node-service] sendHello dialHints count=${dialHints.length}`);
       await mesh.send(targetPeerId, envelope, { dialHints });
       console.log(`[node-service] Hello sent successfully to ${targetPeerId}`);
+
+      if (options?.introProposalMessageId) {
+        this._pendingSocialIntroProposals.delete(options.introProposalMessageId);
+      }
 
       // Always record owner ↔ peerId after a successful bond.request (refresh if already present).
       try {
@@ -833,6 +1098,47 @@ class NodeServiceImpl implements NodeService {
       config,
       cliBootstrapPeers: this._cliBootstrapPeers,
     });
+  }
+
+  private async _resolvePeerTransportForOwner(targetOwnerId: string): Promise<{
+    transportPeerId: string;
+    recipientEnvelopePeerId: string | undefined;
+    listenAddrs: string[] | undefined;
+  }> {
+    let targetPeer: Awaited<ReturnType<LocalPeerDirectoryStore["getPeerByOwnerId"]>>;
+    try {
+      targetPeer = await raceWithTimeout(
+        this._peerDirectoryStore.getPeerByOwnerId(targetOwnerId),
+        25_000,
+        "getPeerByOwnerId",
+      );
+    } catch (err) {
+      throw err;
+    }
+    if (!targetPeer) {
+      const records = await raceWithTimeout(this._peerDirectoryStore.listPeerRecords(), 25_000, "listPeerRecords");
+      targetPeer =
+        records.find((r) => r.ownerId === targetOwnerId) ??
+        records.find((r) => r.peerId === targetOwnerId) ??
+        undefined;
+    }
+    if (!targetPeer?.peerId) {
+      throw new Error(`Peer not found for owner: ${targetOwnerId}`);
+    }
+    const transportPeerId = targetPeer.peerId;
+    if (transportPeerId.startsWith("envoy_")) {
+      throw new Error(`Peer directory has Envoy envelope id for this owner (not libp2p).`);
+    }
+    const recipientEnvelopePeerId = targetPeer.devicePublicKeyPem
+      ? derivePeerId(targetPeer.devicePublicKeyPem)
+      : targetOwnerId.startsWith("envoy_")
+        ? targetOwnerId
+        : undefined;
+    return {
+      transportPeerId,
+      recipientEnvelopePeerId,
+      listenAddrs: targetPeer.listenAddrs,
+    };
   }
 
   private _persistChatMessage(threadPeerOwnerId: string, msg: ChatMessage): void {
@@ -1287,16 +1593,346 @@ class NodeServiceImpl implements NodeService {
   // File Sharing
   // ============================================
 
-  async shareFile(_targetOwnerId: string, _file: { path: string; sensitivity: "public" | "friends" | "private" }): Promise<void> {
-    throw new Error("Not yet implemented");
+  async listLibraryItems(params?: ListLibraryItemsParams): Promise<LibraryItem[]> {
+    const index = await buildVaultIndex({ rootDir: this._vaultDir });
+    const publishedIds = await createPublishedLibraryStore(this._profileDir).loadDocumentIds();
+    const q = params?.query?.trim().toLowerCase();
+    let docs = index.documents;
+    if (q) {
+      docs = docs.filter(
+        (d) =>
+          d.title.toLowerCase().includes(q) ||
+          d.relativePath.toLowerCase().includes(q),
+      );
+    }
+    return docs.map((d) => ({
+      documentId: d.documentId,
+      relativePath: d.relativePath,
+      title: d.title,
+      extension: d.extension,
+      byteLength: d.byteLength,
+      contentHash: d.contentHash,
+      updatedAt: d.updatedAt,
+      published: publishedIds.has(d.documentId),
+    }));
   }
 
-  async acceptShare(_shareId: string, _savePath: string): Promise<void> {
-    throw new Error("Not yet implemented");
+  async setLibraryItemPublished(documentId: string, published: boolean): Promise<void> {
+    await createPublishedLibraryStore(this._profileDir).setPublished(documentId, published);
   }
 
-  async declineShare(_shareId: string): Promise<void> {
-    throw new Error("Not yet implemented");
+  async discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]> {
+    this._assertOnline();
+    this.recordOwnerActivity();
+    const mesh = this._requireMesh();
+    const profile = this._requireProfile();
+
+    const bonds = (await this.getBonds()).filter((b) => b.level !== "blocked");
+    let targets = bonds;
+    if (params?.targetOwnerIds && params.targetOwnerIds.length > 0) {
+      const allow = new Set(params.targetOwnerIds);
+      targets = bonds.filter((b) => allow.has(b.peerOwnerId));
+    }
+    targets = [...targets].sort((a, b) => bondTrustRank(a.level) - bondTrustRank(b.level));
+
+    const results: DiscoverPublishedLibraryPeerResult[] = [];
+    const maxResults = params?.maxResultsPerPeer ?? 5;
+    const timeoutMs = params?.timeoutMsPerPeer ?? 15_000;
+
+    for (const bond of targets) {
+      const started = Date.now();
+      try {
+        const { transportPeerId, recipientEnvelopePeerId, listenAddrs } = await this._resolvePeerTransportForOwner(
+          bond.peerOwnerId,
+        );
+        const dialHints = await raceWithTimeout(
+          this._dialHintsForChat(transportPeerId, listenAddrs),
+          30_000,
+          "_dialHintsForChat",
+        );
+        const unsigned = createUnsignedEnvelope({
+          senderPeerId: derivePeerId(profile.device.publicKeyPem),
+          senderPublicKey: profile.device.publicKeyPem,
+          senderRole: "human",
+          recipientPeerId: recipientEnvelopePeerId,
+          recipientRole: "human",
+          intent: "discovery.request",
+          payload: createDiscoveryRequestPayload({
+            requesterOwnerId: profile.owner.ownerId,
+            requestedTagHashes: [],
+            requestedCapabilities: [PUBLISHED_LIB_CAPABILITY],
+            maxResults,
+            requestedSensitivity: "public",
+            fileTitleQuery: params?.fileTitleQuery,
+            requestedContentHashPrefixes: params?.contentHashPrefix ? [params.contentHashPrefix] : undefined,
+          }),
+          correlationId: randomUUID(),
+        });
+        const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+        const reply = await mesh.sendExpectReply(transportPeerId, envelope, { timeoutMs, dialHints });
+        const latencyMs = Date.now() - started;
+        if (reply.intent !== "discovery.response") {
+          results.push({
+            peerOwnerId: bond.peerOwnerId,
+            displayName: bond.displayName,
+            libp2pPeerId: transportPeerId,
+            bondLevel: bond.level,
+            bondRank: bondTrustRank(bond.level),
+            files: [],
+            latencyMs,
+            error: `unexpected reply intent ${reply.intent}`,
+          });
+          continue;
+        }
+        const resp = parseDiscoveryResponsePayload(reply.payload);
+        const files: PublishedLibraryFileHit[] = resp.matches.flatMap((m) =>
+          (m.libraryMatches ?? []).map((f) => ({
+            documentId: f.documentId,
+            title: f.title,
+            relativePath: f.relativePath,
+            contentHash: f.contentHash,
+            byteLength: f.byteLength,
+          })),
+        );
+        results.push({
+          peerOwnerId: bond.peerOwnerId,
+          displayName: bond.displayName,
+          libp2pPeerId: transportPeerId,
+          bondLevel: bond.level,
+          bondRank: bondTrustRank(bond.level),
+          files,
+          latencyMs,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        results.push({
+          peerOwnerId: bond.peerOwnerId,
+          displayName: bond.displayName,
+          libp2pPeerId: bond.libp2pPeerId ?? "",
+          bondLevel: bond.level,
+          bondRank: bondTrustRank(bond.level),
+          files: [],
+          latencyMs: Date.now() - started,
+          error: msg,
+        });
+      }
+    }
+    return results;
+  }
+
+  async listAgentShareProposals(): Promise<AgentShareProposal[]> {
+    return this._getAgentShareProposalStore().list();
+  }
+
+  async dismissAgentShareProposal(proposalId: string): Promise<void> {
+    await this._getAgentShareProposalStore().remove(proposalId);
+  }
+
+  async submitAgentShareProposal(params: SubmitAgentShareProposalParams): Promise<AgentShareProposal> {
+    const proposal: AgentShareProposal = {
+      proposalId: randomUUID(),
+      createdAt: new Date().toISOString(),
+      targetOwnerId: params.targetOwnerId.trim(),
+      vaultRelativePath: params.vaultRelativePath.replace(/^[\\/]+/, ""),
+      sensitivity: params.sensitivity,
+      summary: params.summary?.trim() || undefined,
+    };
+    await this._getAgentShareProposalStore().upsert(proposal);
+    this.emit("share:agent-proposed", proposal);
+    return proposal;
+  }
+
+  private _getAgentShareProposalStore(): ReturnType<typeof createAgentShareProposalStore> {
+    if (!this._agentShareProposalStore) {
+      this._agentShareProposalStore = createAgentShareProposalStore(this._profileDir);
+    }
+    return this._agentShareProposalStore;
+  }
+
+  async listPendingShareOffers(): Promise<ShareOffer[]> {
+    return [...this._pendingInboundShareOffers.values()];
+  }
+
+  async shareFile(
+    targetOwnerId: string,
+    file: { path: string; sensitivity: "public" | "friends" | "private" },
+  ): Promise<void> {
+    this._assertOnline();
+    this.recordOwnerActivity();
+    const mesh = this._requireMesh();
+    const profile = this._requireProfile();
+    if (!this._taskStore) {
+      throw new Error("Task store not initialized — node is not fully wired");
+    }
+
+    let targetPeer: Awaited<ReturnType<LocalPeerDirectoryStore["getPeerByOwnerId"]>>;
+    try {
+      targetPeer = await raceWithTimeout(
+        this._peerDirectoryStore.getPeerByOwnerId(targetOwnerId),
+        25_000,
+        "getPeerByOwnerId",
+      );
+    } catch (err) {
+      throw err;
+    }
+    if (!targetPeer) {
+      const records = await raceWithTimeout(
+        this._peerDirectoryStore.listPeerRecords(),
+        25_000,
+        "listPeerRecords",
+      );
+      targetPeer =
+        records.find((r) => r.ownerId === targetOwnerId) ??
+        records.find((r) => r.peerId === targetOwnerId) ??
+        undefined;
+    }
+    if (!targetPeer?.peerId) {
+      throw new Error(`Peer not found for owner: ${targetOwnerId}`);
+    }
+    const transportPeerId = targetPeer.peerId;
+    if (transportPeerId.startsWith("envoy_")) {
+      throw new Error(
+        `Peer directory has Envoy envelope id for this owner (not libp2p).`,
+      );
+    }
+    const recipientEnvelopePeerId = targetPeer.devicePublicKeyPem
+      ? derivePeerId(targetPeer.devicePublicKeyPem)
+      : targetOwnerId.startsWith("envoy_")
+        ? targetOwnerId
+        : undefined;
+
+    const norm = file.path.replace(/^[\\/]+/, "");
+    if (!isSafeVaultPath(this._vaultDir, norm)) {
+      throw new Error("Invalid vault path");
+    }
+    await stat(join(this._vaultDir, norm)).catch(() => {
+      throw new Error("File not found in vault");
+    });
+
+    let dialHints: string[];
+    try {
+      dialHints = await raceWithTimeout(
+        this._dialHintsForChat(transportPeerId, targetPeer.listenAddrs),
+        30_000,
+        "_dialHintsForChat",
+      );
+    } catch (err) {
+      throw err;
+    }
+
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "human",
+      recipientPeerId: recipientEnvelopePeerId,
+      recipientRole: "human",
+      intent: "share.request",
+      payload: createShareRequestPayload({
+        requestType: "file",
+        relativePath: norm,
+        requestedSensitivity: file.sensitivity,
+        fileOrigin: "sender",
+      }),
+    });
+    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
+    await mesh.send(transportPeerId, envelope as any, { dialHints });
+    this._pendingPushShareByRequestMsgId.set(envelope.messageId, {
+      relativePath: norm,
+      toPeerId: transportPeerId,
+    });
+  }
+
+  async acceptShare(shareId: string, savePath: string): Promise<void> {
+    this._assertOnline();
+    this.recordOwnerActivity();
+    const mesh = this._requireMesh();
+    const profile = this._requireProfile();
+    const offer = this._pendingInboundShareOffers.get(shareId);
+    if (!offer) {
+      throw new Error(`No pending share offer for id=${shareId}`);
+    }
+
+    const saveNorm = savePath.trim().replace(/^[\\/]+/, "");
+    const srcKey = offer.senderVaultRelativePath?.replace(/^[\\/]+/, "") ?? "";
+    if (saveNorm) {
+      if (!srcKey) {
+        throw new Error("Cannot set save path: sender vault path unknown for this offer");
+      }
+      if (!isSafeVaultPath(this._vaultDir, saveNorm)) {
+        throw new Error("Invalid save path");
+      }
+      this._pendingDataTransferSavePath.set(`${offer.senderNodeId}\n${srcKey}`, saveNorm);
+    }
+
+    let dialHints: string[];
+    try {
+      dialHints = await raceWithTimeout(
+        this._dialHintsForChat(offer.senderNodeId, undefined),
+        30_000,
+        "_dialHintsForChat",
+      );
+    } catch (err) {
+      throw err;
+    }
+    const records = await this._peerDirectoryStore.listPeerRecords();
+    const rec = records.find((r) => r.peerId === offer.senderNodeId);
+    const recipientEnvelopePeerId = rec?.devicePublicKeyPem
+      ? derivePeerId(rec.devicePublicKeyPem)
+      : undefined;
+
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "human",
+      recipientPeerId: recipientEnvelopePeerId,
+      recipientRole: "human",
+      intent: "share.accept",
+      payload: createShareAcceptPayload({ inReplyTo: shareId, accept: true }),
+    });
+    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
+    await mesh.send(offer.senderNodeId, envelope as any, { dialHints });
+    this._pendingInboundShareOffers.delete(shareId);
+    const emitPath = saveNorm || srcKey || offer.filename;
+    this.emit("share:accepted", { shareId, savePath: emitPath });
+  }
+
+  async declineShare(shareId: string): Promise<void> {
+    this._assertOnline();
+    this.recordOwnerActivity();
+    const mesh = this._requireMesh();
+    const profile = this._requireProfile();
+    const offer = this._pendingInboundShareOffers.get(shareId);
+    if (!offer) {
+      throw new Error(`No pending share offer for id=${shareId}`);
+    }
+    let dialHints: string[];
+    try {
+      dialHints = await raceWithTimeout(
+        this._dialHintsForChat(offer.senderNodeId, undefined),
+        30_000,
+        "_dialHintsForChat",
+      );
+    } catch (err) {
+      throw err;
+    }
+    const records = await this._peerDirectoryStore.listPeerRecords();
+    const rec = records.find((r) => r.peerId === offer.senderNodeId);
+    const recipientEnvelopePeerId = rec?.devicePublicKeyPem
+      ? derivePeerId(rec.devicePublicKeyPem)
+      : undefined;
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "human",
+      recipientPeerId: recipientEnvelopePeerId,
+      recipientRole: "human",
+      intent: "share.accept",
+      payload: createShareAcceptPayload({ inReplyTo: shareId, accept: false }),
+    });
+    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
+    await mesh.send(offer.senderNodeId, envelope as any, { dialHints });
+    this._pendingInboundShareOffers.delete(shareId);
+    this.emit("share:declined", { shareId });
   }
 
   // ============================================
@@ -1343,6 +1979,9 @@ class NodeServiceImpl implements NodeService {
         relayPublicWsUrl: config.relayPublicWsUrl ?? this._relayPublicWsUrl,
         bridgeEnabled: config.bridgeEnabled ?? true,
         homeClawCoreBaseUrl: config.homeClawCoreBaseUrl,
+        trustModeEnabled: config.trustModeEnabled ?? false,
+        friendMatchingPreferencesText: config.friendMatchingPreferencesText,
+        friendMatchingPreferencesSigned: config.friendMatchingPreferencesSigned,
       };
     }
     return {
@@ -1368,10 +2007,42 @@ class NodeServiceImpl implements NodeService {
       relayPublicWsUrl: this._relayPublicWsUrl,
       bridgeEnabled: true,
       homeClawCoreBaseUrl: undefined,
+      trustModeEnabled: false,
+      friendMatchingPreferencesText: undefined,
     };
   }
 
   async updateNodeConfig(config: Partial<NodeConfig>): Promise<void> {
+    let validatedSigned: import("@envoymesh/protocol").FriendMatchingPreferencesPayload | undefined;
+    if (config.friendMatchingPreferencesSigned !== undefined) {
+      const profile = this._profile;
+      if (!profile) {
+        throw new Error("friendMatchingPreferencesSigned: node profile not initialized");
+      }
+      const parsed = parseFriendMatchingPreferencesPayload(config.friendMatchingPreferencesSigned);
+      const expMs = new Date(parsed.expiresAt).getTime();
+      if (!Number.isFinite(expMs) || expMs <= Date.now()) {
+        throw new Error("friendMatchingPreferencesSigned: expiresAt must be in the future");
+      }
+      if (parsed.ownerId !== profile.owner.ownerId) {
+        throw new Error("friendMatchingPreferencesSigned: ownerId does not match local owner");
+      }
+      if (!verifyFriendMatchingPreferences(parsed, profile.owner.publicKeyPem)) {
+        throw new Error("friendMatchingPreferencesSigned: invalid signature");
+      }
+      validatedSigned = parsed;
+    }
+
+    if (
+      validatedSigned === undefined &&
+      config.friendMatchingPreferencesText !== undefined &&
+      config.friendMatchingPreferencesText.length > MAX_FRIEND_MATCHING_PREFS_CHARS
+    ) {
+      throw new Error(
+        `friendMatchingPreferencesText exceeds ${MAX_FRIEND_MATCHING_PREFS_CHARS} characters (${config.friendMatchingPreferencesText.length})`,
+      );
+    }
+
     const current = (await this._configStore.load()) ?? {
       version: "0.1" as const,
       profileDir: this._profileDir,
@@ -1427,6 +2098,20 @@ class NodeServiceImpl implements NodeService {
       ...(config.homeClawCoreBaseUrl !== undefined && {
         homeClawCoreBaseUrl: config.homeClawCoreBaseUrl,
       }),
+      ...(config.trustModeEnabled !== undefined && { trustModeEnabled: config.trustModeEnabled }),
+      ...(validatedSigned !== undefined && {
+        friendMatchingPreferencesSigned: validatedSigned,
+        friendMatchingPreferencesText: validatedSigned.text.trim(),
+      }),
+      ...(validatedSigned === undefined &&
+        config.friendMatchingPreferencesText !== undefined && {
+          friendMatchingPreferencesText:
+            config.friendMatchingPreferencesText.trim().length === 0
+              ? undefined
+              : config.friendMatchingPreferencesText.trim(),
+          /** Plain-text edits replace owner-signed prefs so UI and crypto-backed doc cannot drift. */
+          friendMatchingPreferencesSigned: undefined,
+        }),
       updatedAt: new Date().toISOString(),
     };
 
@@ -1701,6 +2386,8 @@ class NodeServiceImpl implements NodeService {
 
       // Start mesh
       await this._mesh.start();
+      this._lastNodeError = undefined;
+      this._lastNodeErrorAt = undefined;
 
       void this._resyncBondedContactReachabilityTags();
 
@@ -1715,6 +2402,7 @@ class NodeServiceImpl implements NodeService {
       }, 15000);
     } catch (error) {
       console.error("[node-service] startNode failed:", error);
+      this._recordNodeError("startNode", error);
       if (this._advertiseInterestsStartupTimeout) {
         clearTimeout(this._advertiseInterestsStartupTimeout);
         this._advertiseInterestsStartupTimeout = undefined;
@@ -1974,6 +2662,10 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   getConnectionStatus(): ConnectionStatus {
+    const diagnostics = {
+      lastError: this._lastNodeError ?? undefined,
+      lastErrorAt: this._lastNodeErrorAt ?? undefined,
+    };
     if (!this._mesh || this._nodeStatus !== "running") {
       return {
         online: false,
@@ -1981,6 +2673,7 @@ class NodeServiceImpl implements NodeService {
         multiaddrs: [],
         connectedRelays: [],
         bondedPeers: 0,
+        ...diagnostics,
       };
     }
     return {
@@ -1989,7 +2682,14 @@ class NodeServiceImpl implements NodeService {
       multiaddrs: this._mesh.multiaddrs,
       connectedRelays: [],
       bondedPeers: 0,
+      ...diagnostics,
     };
+  }
+
+  private _recordNodeError(context: string, err: unknown): void {
+    const msg = err instanceof Error ? err.message : String(err);
+    this._lastNodeError = `${context}: ${msg}`;
+    this._lastNodeErrorAt = new Date().toISOString();
   }
 
   setBridgeStatus(status: BridgeStatus): void {
@@ -2531,6 +3231,50 @@ class NodeServiceImpl implements NodeService {
   }
 
   // ============================================
+  // Agent tool execution context (mesh.library_*, etc.)
+  // ============================================
+
+  /**
+   * Build a {@link MeshToolContext} for {@link executeTool} when the bridge agent identity exists.
+   * Returns null if the task store or profile is missing, or bridge identity was never created.
+   */
+  async getMeshToolContext(): Promise<MeshToolContext | null> {
+    if (!this._taskStore) return null;
+    const profile = this._profile;
+    if (!profile) return null;
+    const bridgeIdentity = await loadBridgeIdentity(this._profileDir);
+    if (!bridgeIdentity) return null;
+    const config = await this._configStore.load();
+    let humanProfileSummary: { displayName?: string; bio?: string } | undefined;
+    try {
+      const hp = await this._humanProfileStore.loadHumanProfile();
+      if (hp) humanProfileSummary = { displayName: hp.displayName, bio: hp.bio };
+    } catch { /* ignore */ }
+    return {
+      trustStore: this._trustStore,
+      peerDirectoryStore: this._peerDirectoryStore,
+      taskStore: this._taskStore,
+      agentIdentity: {
+        agentId: bridgeIdentity.agentCredential.agentId,
+        agentPeerId: bridgeIdentity.agentPeerId,
+        privateKeyPem: bridgeIdentity.agentPrivateKeyPem,
+        publicKeyPem: bridgeIdentity.agentPublicKeyPem,
+      },
+      ownerIdentity: { ownerId: profile.owner.ownerId },
+      agentCredential: bridgeIdentity.agentCredential,
+      mesh: this._mesh,
+      trustIntro: {
+        trustModeEnabled: config?.trustModeEnabled ?? false,
+        friendMatchingPreferencesText: config?.friendMatchingPreferencesText,
+        humanProfileSummary,
+      },
+      listLibraryItems: () => this.listLibraryItems(),
+      discoverPublishedLibrary: (p) =>
+        this.discoverPublishedLibrary(p as DiscoverPublishedLibraryParams | undefined),
+    };
+  }
+
+  // ============================================
   // Internal: Emit events to listeners
   // ============================================
 
@@ -2582,8 +3326,18 @@ export function createNodeService(
   profileDir: string,
   profile?: NodeProfile,
   cliBootstrapPeers?: readonly string[],
+  vaultDir?: string,
 ): NodeService {
-  return new NodeServiceImpl(mesh, trustStore, peerDirectoryStore, humanProfileStore, profileDir, profile, cliBootstrapPeers);
+  return new NodeServiceImpl(
+    mesh,
+    trustStore,
+    peerDirectoryStore,
+    humanProfileStore,
+    profileDir,
+    profile,
+    cliBootstrapPeers,
+    vaultDir,
+  );
 }
 
 // Export the class for testing

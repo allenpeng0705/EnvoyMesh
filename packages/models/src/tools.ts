@@ -16,7 +16,12 @@
  */
 
 import type { Sensitivity } from "@envoymesh/protocol";
-import { randomUUID } from "node:crypto";
+
+function toolAuditRandomId(): string {
+  const c = globalThis.crypto as Crypto | undefined;
+  if (c?.randomUUID) return c.randomUUID();
+  return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 11)}`;
+}
 
 // ─── Tool descriptor ───────────────────────────────────────────────────────────
 
@@ -211,7 +216,7 @@ export class LocalToolRegistry {
     if (!tool) {
       const auditEvent: ToolCallAuditEvent = {
         version: "0.1",
-        eventId: `tool_${randomUUID()}`,
+        eventId: `tool_${toolAuditRandomId()}`,
         createdAt: now,
         toolName: request.toolName,
         outcome: "deny",
@@ -234,7 +239,7 @@ export class LocalToolRegistry {
 
     const auditEvent: ToolCallAuditEvent = {
       version: "0.1",
-      eventId: `tool_${randomUUID()}`,
+      eventId: `tool_${toolAuditRandomId()}`,
       createdAt: now,
       toolName: tool.name,
       outcome: policyDecision.action,

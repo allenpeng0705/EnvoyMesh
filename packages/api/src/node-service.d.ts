@@ -116,6 +116,8 @@ export interface ShareOffer {
     sensitivity: "public" | "friends" | "private";
     preview?: string;
     timestamp: string;
+    /** Sender vault-relative path (push offers); used when remapping `acceptShare` save path. */
+    senderVaultRelativePath?: string;
 }
 export interface ConnectionStatus {
     online: boolean;
@@ -123,6 +125,10 @@ export interface ConnectionStatus {
     multiaddrs: string[];
     connectedRelays: string[];
     bondedPeers: number;
+    /** Last transport / routing failure (best-effort; cleared on successful `startNode()`). */
+    lastError?: string;
+    /** ISO timestamp for {@link lastError}. */
+    lastErrorAt?: string;
 }
 /**
  * Connection info for a specific peer (direct P2P vs relay-mediated).
@@ -308,6 +314,10 @@ export interface NodeService {
      * Creates a default manifest if none exists.
      */
     updateCapabilityManifest(params: UpdateCapabilityManifestParams): Promise<CapabilityManifest>;
+    /**
+     * Pending inbound file share offers (preview id).
+     */
+    listPendingShareOffers(): Promise<ShareOffer[]>;
     /**
      * Offer a file to a peer
      */

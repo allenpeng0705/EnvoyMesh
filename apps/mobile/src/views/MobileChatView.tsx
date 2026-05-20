@@ -9,6 +9,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useNodeState } from "@envoymesh/social/context/NodeStateContext.js";
 import { useNodeService } from "@envoymesh/social/hooks/useNodeService.js";
 import { useChatMessages } from "@envoymesh/social/hooks/useNodeService.js";
+import { useChatThreadPreviews } from "@envoymesh/social/hooks/useChatThreadPreviews.js";
 import { contactLabel, peerDisplayLabel } from "@envoymesh/social/lib/display.js";
 import { Markdown } from "@envoymesh/social/components/Markdown.js";
 import { ChatIcon, SendIcon, CheckIcon, CloseIcon, BridgeIcon } from "@envoymesh/social/icons.js";
@@ -40,7 +41,16 @@ const groupMessagesByDate = (msgs: ChatMessage[]): [string, ChatMessage[]][] => 
 
 const AI_CONTACT_ID = "__envoy_ai__";
 
-export function MobileChatView() {
+export interface MobileChatViewProps {
+  /** When set (e.g. from Contacts), open this bonded peer's thread */
+  focusPeerId?: string | null;
+  onFocusPeerConsumed?: () => void;
+}
+
+export function MobileChatView({
+  focusPeerId = null,
+  onFocusPeerConsumed,
+}: MobileChatViewProps) {
   const nodeService = useNodeService();
   const {
     bonds,
@@ -48,16 +58,14 @@ export function MobileChatView() {
     pendingHellOs,
     pendingMessages,
     humanProfile,
-    peerId,
-    nodeConfig,
     sendHello,
     acceptHello,
     declineHello,
     clearPendingMessages,
   } = useNodeState();
 
-  const [selectedContact, setSelectedContact] = useState<string | null>(null);
-  const [showContacts, setShowContacts] = useState(true);
+  const [selectedContact, setSelectedContact] = useState<string | null>(() => focusPeerId ?? null);
+  const [showContacts, setShowContacts] = useState(() => !focusPeerId);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [lastSent, setLastSent] = useState<Record<string, number>>({});
@@ -73,6 +81,13 @@ export function MobileChatView() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (focusPeerId == null) return;
+    setSelectedContact(focusPeerId);
+    setShowContacts(false);
+    onFocusPeerConsumed?.();
+  }, [focusPeerId, onFocusPeerConsumed]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -151,10 +166,16 @@ export function MobileChatView() {
     [messages],
   );
 
+  const bondPeerIds = useMemo(() => bonds.map((b) => b.peerOwnerId), [bonds]);
+  const threadPreviews = useChatThreadPreviews(bondPeerIds);
+
   // ---- No contact selected ----
   if (!selectedContact) {
     return (
       <div className="mv-chat">
+        <p className="mv-tab-hint">
+          Threads and alerts — bonds and discovery live under Contacts.
+        </p>
         {/* Contact list */}
         <div className={`mv-chat-contacts${showContacts ? "" : " collapsed"}`}>
           {/* AI contact */}
@@ -214,20 +235,27 @@ export function MobileChatView() {
           ))}
 
           {/* Bonded contacts */}
-          {bonds.map((contact) => (
-            <button
-              key={contact.peerOwnerId}
-              className="mv-contact-row"
-              onClick={() => { setSelectedContact(contact.peerOwnerId); setShowContacts(false); }}
-            >
-              <div className="mv-contact-avatar">
-                {contact.displayName?.[0] ?? "?"}
-              </div>
-              <div className="mv-contact-info">
-                <div className="mv-contact-name">{contactLabel(contact)}</div>
-              </div>
-            </button>
-          ))}
+          {bonds.map((contact) => {
+            const pv = threadPreviews[contact.peerOwnerId];
+            return (
+              <button
+                key={contact.peerOwnerId}
+                className="mv-contact-row"
+                onClick={() => { setSelectedContact(contact.peerOwnerId); setShowContacts(false); }}
+              >
+                <div className="mv-contact-avatar">
+                  {contact.displayName?.[0] ?? "?"}
+                </div>
+                <div className="mv-contact-info">
+                  <div className="mv-contact-name-row">
+                    <div className="mv-contact-name">{contactLabel(contact)}</div>
+                    {pv ? <span className="mv-contact-time">{pv.timeLabel}</span> : null}
+                  </div>
+                  {pv ? <div className="mv-contact-preview">{pv.text}</div> : null}
+                </div>
+              </button>
+            );
+          })}
 
           {/* Bridge agent */}
           {bridgeStatus?.enabled && (
@@ -297,7 +325,7 @@ export function MobileChatView() {
             className={`mv-message ${msg.role === "user" ? "outgoing" : "incoming"}`}
           >
             {msg.role === "ai" && <div className="mv-message-sender">Envoy AI</div>}
-            <Markdown text={msg.text} className="mv-message-text" />
+            <Markdown text={msg.text} className="message-text" />
           </div>
         ))}
 
@@ -315,7 +343,7 @@ export function MobileChatView() {
                   {!outgoing && (
                     <div className="mv-message-sender">{peerDisplayLabel(msg.sender)}</div>
                   )}
-                  <Markdown text={msg.content.text} className="mv-message-text" />
+                  <Markdown text={msg.content.text} className="message-text" />
                   <div className="mv-message-time">
                     {new Date(msg.metadata?.timestamp ?? Date.now()).toLocaleTimeString([], {
                       hour: "2-digit",

@@ -28,6 +28,8 @@ export interface PeerDirectoryEntry {
   ownerId: string;
   multiaddrs: string[];
   lastSeen: string;
+  /** Known transport peer id (libp2p / device id) for routing envelopes when bonded or discovered. */
+  libp2pPeerId?: string;
 }
 
 export interface ConfigEntry {
@@ -84,12 +86,19 @@ export function createMobilePeerDirectory(db: MobileDatabase): MobilePeerDirecto
         ownerId: String(r.ownerId ?? ""),
         multiaddrs: JSON.parse(String(r.multiaddrs ?? "[]")),
         lastSeen: String(r.lastSeen ?? ""),
+        libp2pPeerId: r.libp2pPeerId != null ? String(r.libp2pPeerId) : undefined,
       };
     },
     async set(entry) {
       await db.execute(
-        "INSERT OR REPLACE INTO peer_directory (ownerId, multiaddrs, lastSeen) VALUES (?, ?, ?)",
-        [entry.ownerId, JSON.stringify(entry.multiaddrs), entry.lastSeen],
+        `INSERT OR REPLACE INTO peer_directory (ownerId, multiaddrs, lastSeen, libp2pPeerId)
+         VALUES (?, ?, ?, ?)` as string,
+        [
+          entry.ownerId,
+          JSON.stringify(entry.multiaddrs),
+          entry.lastSeen,
+          entry.libp2pPeerId ?? null,
+        ],
       );
     },
     async delete(ownerId) {
@@ -101,6 +110,7 @@ export function createMobilePeerDirectory(db: MobileDatabase): MobilePeerDirecto
         ownerId: String(r.ownerId ?? ""),
         multiaddrs: JSON.parse(String(r.multiaddrs ?? "[]")),
         lastSeen: String(r.lastSeen ?? ""),
+        libp2pPeerId: r.libp2pPeerId != null ? String(r.libp2pPeerId) : undefined,
       }));
     },
   };
@@ -216,7 +226,8 @@ export function mobileStorageSchema(): string[] {
     `CREATE TABLE IF NOT EXISTS peer_directory (
       ownerId TEXT PRIMARY KEY,
       multiaddrs TEXT NOT NULL,
-      lastSeen TEXT NOT NULL
+      lastSeen TEXT NOT NULL,
+      libp2pPeerId TEXT
     )`,
     `CREATE TABLE IF NOT EXISTS trust_store (
       peerOwnerId TEXT PRIMARY KEY,
@@ -270,6 +281,18 @@ export function mobileStorageSchema(): string[] {
     )`,
     `CREATE INDEX IF NOT EXISTS idx_chat_thread ON chat_messages(threadPeerOwnerId, timestamp DESC)`,
   ];
+}
+
+/**
+ * Idempotent migrations for existing SQLite databases (new columns, etc.).
+ * Safe to call after {@link mobileStorageSchema} on upgrade.
+ */
+export async function migrateMobileStorageSchema(db: MobileDatabase): Promise<void> {
+  try {
+    await db.execute("ALTER TABLE peer_directory ADD COLUMN libp2pPeerId TEXT");
+  } catch {
+    /* column already exists */
+  }
 }
 
 // ---------------------------------------------------------------------------

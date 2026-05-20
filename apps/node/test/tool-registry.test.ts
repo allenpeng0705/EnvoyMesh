@@ -76,15 +76,16 @@ describe("ToolRegistry", () => {
       });
 
       const tools = registry.listTools();
-      // 33 default tools + 2 additional = 35
-      expect(tools).toHaveLength(35);
+      // 35 default tools + 2 additional = 37
+      expect(tools).toHaveLength(37);
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "bond.send_hello", "chat.send", "discovery.search", "knowledge.query",
           "mesh.acknowledge-escalation", "mesh.add-trigger", "mesh.approve",
           "mesh.escalate", "mesh.get-contact-disclosure", "mesh.get-digest",
           "mesh.get-digest-config", "mesh.get-external-agent", "mesh.get-mode",
-          "mesh.get-style", "mesh.list-all-approvals", "mesh.list-external-agent-actions",
+          "mesh.get-style", "mesh.library_discover", "mesh.library_list", "mesh.list-all-approvals",
+          "mesh.list-external-agent-actions",
           "mesh.list-external-sessions", "mesh.list-pending", "mesh.list-sessions",
           "mesh.list-triggers", "mesh.reject", "mesh.reject-all", "mesh.remove-trigger",
           "mesh.revoke-external-agent", "mesh.session-summary", "mesh.set-contact-disclosure",
@@ -98,8 +99,8 @@ describe("ToolRegistry", () => {
     it("default tools are pre-registered", () => {
       const registry = new ToolRegistry();
       const tools = registry.listTools();
-      // Default tools: 6 core + 4 gateway + 3 mode + 3 session + 4 style + 4 trigger + 6 approval + 3 digest = 33
-      expect(tools.length).toBe(33);
+      // Default tools: 6 core + 4 gateway + 3 mode + 3 session + 4 style + 4 trigger + 6 approval + 3 digest + 2 library = 35
+      expect(tools.length).toBe(35);
     });
   });
 
@@ -216,6 +217,18 @@ describe("listAgentTools", () => {
         expect(tool.intent).toBeUndefined();
       }
     }
+  });
+
+  it("excludes mesh.intro.* tools when trust mode off", () => {
+    const tools = listAgentTools();
+    expect(tools.some((t) => t.name.startsWith("mesh.intro."))).toBe(false);
+  });
+
+  it("includes mesh.intro.* tools when trustModeEnabled", () => {
+    const tools = listAgentTools({ trustModeEnabled: true });
+    expect(tools.some((t) => t.name === "mesh.intro.matching_context")).toBe(true);
+    expect(tools.some((t) => t.name === "mesh.intro.sync")).toBe(true);
+    expect(tools.some((t) => t.name === "mesh.intro.broadcast_search")).toBe(true);
   });
 });
 

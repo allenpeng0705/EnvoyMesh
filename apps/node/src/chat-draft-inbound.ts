@@ -1,14 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createAuditEvent, type LocalTaskStore, type LocalTrustStore, type LocalPeerDirectoryStore, type NodeProfile, type ChatDraftStore, type LocalChatLogStore, type HumanProfileStore } from "@envoymesh/local-store";
-import {
-  createMockModelProvider,
-  createOllamaLiteLlmProvider,
-  createLiteLlmProvider,
-  createOpenAiProvider,
-  createAnthropicProvider,
-  routeModelRequest,
-  type ModelProvider,
-} from "@envoymesh/models";
+import { buildModelProviders, routeModelRequest, type ModelProvider } from "@envoymesh/models";
 import { searchVault, type VaultIndex } from "@envoymesh/vault";
 import type { AiIdentity, AiRule, ModelProviderConfig } from "@envoymesh/api";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
@@ -29,80 +21,6 @@ export interface ChatDraftResult {
 export interface ChatDraftFailure {
   ok: false;
   reason: string;
-}
-
-/**
- * Build the list of model providers from the node's model provider configuration.
- * Environment variables can override config values:
- * - ENVOY_MODEL_MODE: overrides config.mode (e.g., "openai-compatible", "mock")
- * - ENVOY_MODEL_ENDPOINT: overrides config.endpoint
- * - ENVOY_MODEL_API_KEY: overrides config.apiKey
- * - ENVOY_MODEL_NAME: overrides config.modelName
- */
-function buildModelProviders(config: ModelProviderConfig): ModelProvider[] {
-  // Allow environment variables to override config
-  const effectiveConfig: ModelProviderConfig = {
-    ...config,
-    mode: (process.env.ENVOY_MODEL_MODE as ModelProviderConfig["mode"]) ?? config.mode,
-    endpoint: process.env.ENVOY_MODEL_ENDPOINT ?? config.endpoint,
-    apiKey: process.env.ENVOY_MODEL_API_KEY ?? config.apiKey,
-    modelName: process.env.ENVOY_MODEL_NAME ?? config.modelName,
-  };
-
-  switch (effectiveConfig.mode) {
-    case "disabled":
-      return [];
-    case "mock":
-      return [createMockModelProvider({ providerId: "local.mock", providerType: "local" })];
-    case "ollama":
-      return [
-        createOllamaLiteLlmProvider({
-          providerId: `local.ollama.${effectiveConfig.modelName ?? "llama3.1"}`,
-          modelName: effectiveConfig.modelName ?? "llama3.1",
-          endpoint: effectiveConfig.endpoint ?? "http://127.0.0.1:11434",
-        }),
-      ];
-    case "litellm":
-      return [
-        createLiteLlmProvider({
-          providerId: `cloud.${effectiveConfig.modelName ?? "litellm-model"}`,
-          providerType: effectiveConfig.requireApprovalForCloud !== false ? "cloud" : "local",
-          modelName: effectiveConfig.modelName ?? "gpt-4o-mini",
-          endpoint: effectiveConfig.endpoint ?? "http://127.0.0.1:4000/v1",
-          apiKey: effectiveConfig.apiKey,
-        }),
-      ];
-    case "openai-compatible":
-      return [
-        createOpenAiProvider({
-          providerId: "cloud.openai-compatible",
-          modelName: effectiveConfig.modelName ?? "gpt-4o-mini",
-          apiKey: effectiveConfig.apiKey,
-          endpoint: effectiveConfig.endpoint ?? "https://api.openai.com/v1",
-          // Allow higher sensitivity for local chat assist since owner is using their own node
-          policy: {
-            allowedSensitivity: ["public", "friends", "trusted", "private"],
-            requiresOwnerApproval: false,
-          },
-        }),
-      ];
-    case "anthropic-compatible":
-      return [
-        createAnthropicProvider({
-          providerId: "cloud.anthropic-compatible",
-          modelName: effectiveConfig.modelName ?? "claude-sonnet-4-20250514",
-          apiKey: effectiveConfig.apiKey,
-          endpoint: effectiveConfig.endpoint ?? "https://api.anthropic.com",
-          // Allow higher sensitivity for local chat assist since owner is using their own node
-          policy: {
-            allowedSensitivity: ["public", "friends", "trusted", "private"],
-            requiresOwnerApproval: false,
-          },
-        }),
-      ];
-    default:
-      return [createMockModelProvider({ providerId: "local.mock" })];
-  }
 }
 
 /**
@@ -247,7 +165,7 @@ export async function generateChatDraft(input: {
   });
 
   // Build model providers
-  const providers = buildModelProviders(modelProviders);
+  const providers = buildModelProviders(modelProviders, false, { trustedLocalAssist: true });
   console.log(`[chat-draft] ENVOY_MODEL_MODE=${process.env.ENVOY_MODEL_MODE}`);
   console.log(`[chat-draft] providers.length=${providers.length}`);
   if (providers.length === 0) {

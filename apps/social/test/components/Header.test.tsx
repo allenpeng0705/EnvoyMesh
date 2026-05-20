@@ -38,7 +38,7 @@ describe("Header", () => {
   const baseProps = {
     currentView: "chat" as ViewName,
     onNavigate: vi.fn(),
-    inboxCount: 0,
+    inboxActivityCount: 0,
     bondsCount: 0,
     isPublicNetwork: false,
     connectionStatus: null,
@@ -52,23 +52,39 @@ describe("Header", () => {
     expect(screen.getByText("Envoy")).toBeDefined();
   });
 
-  it("renders navigation buttons", () => {
+  it("renders primary navigation", () => {
     renderHeader(baseProps);
-    expect(screen.getByText("Chat")).toBeDefined();
-    expect(screen.getByText("Search")).toBeDefined();
-    expect(screen.getByText("Profile")).toBeDefined();
-    expect(screen.getByText("Settings")).toBeDefined();
+    expect(screen.getByRole("button", { name: /^chat$/i })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^inbox$/i })).toBeDefined();
+    expect(screen.getByText(/contacts \(0\)/i)).toBeDefined();
+    expect(screen.getByRole("button", { name: /^search$/i })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^more$/i })).toBeDefined();
   });
 
-  it("calls onNavigate when nav button is clicked", () => {
+  it("opens Profile from More menu", () => {
     const onNavigate = vi.fn();
     renderHeader({ ...baseProps, onNavigate });
-    fireEvent.click(screen.getByText("Profile"));
+    fireEvent.click(screen.getByRole("button", { name: /^more$/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^profile$/i }));
     expect(onNavigate).toHaveBeenCalledWith("profile");
   });
 
+  it("calls onNavigate when Chat is clicked", () => {
+    const onNavigate = vi.fn();
+    renderHeader({ ...baseProps, onNavigate });
+    fireEvent.click(screen.getByRole("button", { name: /^chat$/i }));
+    expect(onNavigate).toHaveBeenCalledWith("chat");
+  });
+
+  it("calls onNavigate when Inbox is clicked", () => {
+    const onNavigate = vi.fn();
+    renderHeader({ ...baseProps, onNavigate });
+    fireEvent.click(screen.getByRole("button", { name: /^inbox$/i }));
+    expect(onNavigate).toHaveBeenCalledWith("inbox");
+  });
+
   it("shows inbox badge count", () => {
-    renderHeader({ ...baseProps, inboxCount: 3 });
+    renderHeader({ ...baseProps, inboxActivityCount: 3 });
     expect(screen.getByText("3")).toBeDefined();
   });
 
@@ -82,7 +98,7 @@ describe("Header", () => {
       ...baseProps,
       humanProfile: {
         displayName: "Alice", username: "alice", updatedAt: "", signature: "",
-        ownerId: "", version: "0.1", profileVisibility: "public",
+        ownerId: "envoy:owner:alice", version: "0.1", profileVisibility: "public",
       },
     });
     expect(screen.getByText("Alice")).toBeDefined();

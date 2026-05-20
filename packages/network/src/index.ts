@@ -753,12 +753,14 @@ export class EnvoyMesh {
   async sendExpectReply(
     target: string,
     envelope: EnvoyEnvelope,
-    options?: { timeoutMs?: number },
+    options?: { timeoutMs?: number; dialHints?: string[] },
   ): Promise<EnvoyEnvelope> {
     validateEnvelopeProtocol(ENVOY_MESSAGE_PROTOCOL, envelope);
-    const dialTarget = this._normalizeDialTarget(target);
     const timeoutMs = options?.timeoutMs ?? 30_000;
-    const stream: any = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_MESSAGE_PROTOCOL);
+    const sendOptions: MeshOutboundOptions | undefined = options?.dialHints?.length
+      ? { dialHints: options.dialHints }
+      : undefined;
+    const { stream } = await this.openOutboundStream(target, ENVOY_MESSAGE_PROTOCOL, sendOptions);
     const remotePeerId = stream.connection?.remotePeer?.toString();
     if (remotePeerId) {
       this.emitP2pDebug({
@@ -1487,7 +1489,7 @@ export class EnvoyMesh {
 
 export { collectStreamBytes } from "./codec.js";
 export { decodeEnvelope, encodeEnvelope };
-export { voucherJsonBytesFromObject } from "./data-framing.js";
+export { voucherJsonBytesFromObject, encodeDataTransferBody, parseInboundDataTransferBody, MAX_DATA_INBOUND_BYTES } from "./data-framing.js";
 export { CAPABILITY_TOPIC_NAMESPACE, cidForCapabilityTopic } from "./capability-topic.js";
 export { expandListenAddressesWithQuic, quicListenFromTcpListen } from "./quic-listen.js";
 export { CapabilityRegistry, type CapabilityRegistryOptions, type CapabilityRegistryVerbosity } from "./capability-registry.js";

@@ -30,6 +30,8 @@ export default defineConfig({
       "@envoymesh/api": resolve(repoRoot, "packages/api/src/index.ts"),
       "@envoymesh/protocol": resolve(repoRoot, "packages/protocol/src/index.ts"),
 
+      "@envoymesh/models": resolve(repoRoot, "packages/models/src/index.ts"),
+
       // Mobile packages (pure TS, no native deps)
       "@envoymesh/mobile-identity": resolve(repoRoot, "packages/mobile-identity/src/index.ts"),
       "@envoymesh/mobile-node": resolve(repoRoot, "packages/mobile-node/src/index.ts"),

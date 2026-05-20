@@ -25,7 +25,7 @@ export function Markdown({ text, className }: MarkdownProps) {
   }, [text]);
 
   return (
-    <span
+    <div
       className={className}
       dangerouslySetInnerHTML={{ __html: html }}
     />

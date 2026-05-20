@@ -54,10 +54,14 @@ function signedEnvelope(
   intent: EnvoyEnvelope["intent"],
   payload: unknown,
 ): EnvoyEnvelope {
+  const bondIntent = intent.startsWith("bond.");
   return {
     ...createUnsignedEnvelope({
       senderPeerId: "peer-remote",
       senderPublicKey: profile.device.publicKeyPem,
+      ...(bondIntent
+        ? { senderRole: "human" as const, recipientRole: "human" as const }
+        : {}),
       intent,
       payload,
       createdAt: "2026-05-06T10:00:00.000Z",
@@ -279,6 +283,10 @@ describe("handleInboundBondIntent — bond.accept", () => {
     if (!result.ok) {
       expect(result.reason).toContain("requesterOwnerId");
     }
+    const audits = await taskStore.readAuditEvents();
+    expect(audits.some((a) => a.type === "message.rejected" && a.summary.includes("requesterOwnerId mismatch"))).toBe(
+      true,
+    );
   });
 });
 
@@ -414,6 +422,8 @@ describe("handleInboundBondIntent — error handling", () => {
     if (!result.ok) {
       expect(result.reason).toContain("invalid bond payload");
     }
+    const audits = await taskStore.readAuditEvents();
+    expect(audits.some((a) => a.type === "message.rejected" && a.intent === "bond.accept")).toBe(true);
   });
 });
 

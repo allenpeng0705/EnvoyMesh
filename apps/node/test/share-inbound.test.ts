@@ -69,6 +69,7 @@ describe("handleInboundShareRequest", () => {
       peerDirectoryStore,
       profile,
       vaultIndex: null,
+      vaultDir: join(profileDir, "shared_vault"),
       modelProviders: { mode: "mock" },
     });
 
@@ -106,6 +107,7 @@ describe("handleInboundShareRequest", () => {
       peerDirectoryStore,
       profile,
       vaultIndex: null,
+      vaultDir: join(profileDir, "shared_vault"),
       modelProviders: { mode: "mock" },
     });
 
@@ -137,6 +139,7 @@ describe("handleInboundShareRequest", () => {
       peerDirectoryStore,
       profile,
       vaultIndex: null,
+      vaultDir: join(profileDir, "shared_vault"),
       modelProviders: { mode: "mock" },
     });
 
@@ -174,6 +177,7 @@ describe("handleInboundShareRequest", () => {
       peerDirectoryStore,
       profile,
       vaultIndex: null,
+      vaultDir: join(profileDir, "shared_vault"),
       modelProviders: { mode: "mock" },
     });
 
@@ -215,6 +219,7 @@ describe("handleInboundShareRequest", () => {
       peerDirectoryStore,
       profile,
       vaultIndex: null,
+      vaultDir: join(profileDir, "shared_vault"),
       modelProviders: { mode: "mock" },
     });
 
@@ -254,6 +259,7 @@ describe("handleInboundShareRequest", () => {
       peerDirectoryStore,
       profile,
       vaultIndex: null,
+      vaultDir: join(profileDir, "shared_vault"),
       modelProviders: { mode: "mock" },
     });
 
@@ -302,6 +308,7 @@ describe("handleInboundShareRequest", () => {
       peerDirectoryStore,
       profile,
       vaultIndex: null,
+      vaultDir: join(profileDir, "shared_vault"),
       modelProviders: { mode: "mock" },
       capabilityManifest: manifest,
     });

@@ -10,7 +10,11 @@ function contactLabel(contact: Partial<BondRecord> & { peerOwnerId: string }): s
   return contact.peerOwnerId;
 }
 
-export function ContactsView() {
+export interface ContactsViewProps {
+  onOpenChat?: (peerOwnerId: string) => void;
+}
+
+export function ContactsView({ onOpenChat }: ContactsViewProps) {
   const nodeService = useNodeService();
   const { bonds, discoveredPeers, humanProfile, sendHello } = useNodeState();
   const [showAroundMe, setShowAroundMe] = useState(false);
@@ -79,24 +83,39 @@ export function ContactsView() {
       {bonds.length === 0 && !showAroundMe ? (
         <p className="empty">No contacts yet. Use Search to find people, or check Around Me for discovered peers.</p>
       ) : (
-        <ul className="contact-cards">
-          {bonds.map((contact) => (
-            <li key={contact.peerOwnerId} className="contact-card">
-              <span className="avatar large">{contactLabel(contact).charAt(0) || "?"}</span>
-              <div className="contact-info">
-                <strong>{contactLabel(contact)}</strong>
-                <span className="bond-level">{contact.level}</span>
-              </div>
-              <button
-                className="remove-contact"
-                onClick={() => handleRevokeBond(contact.peerOwnerId)}
-                title="Remove contact"
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
+        <>
+          {bonds.length > 0 && onOpenChat && (
+            <p className="contacts-view-hint">Tap a contact to open Chat. Use × to remove a bond.</p>
+          )}
+          <ul className="contact-cards">
+            {bonds.map((contact) => (
+              <li key={contact.peerOwnerId} className="contact-card">
+                <button
+                  type="button"
+                  className="contact-card-main"
+                  onClick={() => onOpenChat?.(contact.peerOwnerId)}
+                  disabled={!onOpenChat}
+                  aria-label={`Open chat with ${contactLabel(contact)}`}
+                >
+                  <span className="avatar large">{contactLabel(contact).charAt(0) || "?"}</span>
+                  <div className="contact-info">
+                    <strong>{contactLabel(contact)}</strong>
+                    <span className="bond-level">{contact.level}</span>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="remove-contact"
+                  onClick={() => handleRevokeBond(contact.peerOwnerId)}
+                  title="Remove contact"
+                  aria-label={`Remove ${contactLabel(contact)}`}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );

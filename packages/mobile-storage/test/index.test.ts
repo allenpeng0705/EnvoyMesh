@@ -94,6 +94,18 @@ describe("mobile-storage", () => {
       expect(retrieved).toBeUndefined();
     });
 
+    it("stores and retrieves libp2pPeerId for routing", async () => {
+      const entry = {
+        ownerId: "envoy:owner:withpeer",
+        multiaddrs: [],
+        lastSeen: "2026-05-17T10:00:00.000Z",
+        libp2pPeerId: "12D3KooWAbcd",
+      };
+      await peerDirectory.set(entry);
+      const retrieved = await peerDirectory.get(entry.ownerId);
+      expect(retrieved).toEqual(entry);
+    });
+
     it("lists all peers", async () => {
       const e1 = { ownerId: "a", multiaddrs: ["/ip4/1.1.1.1/tcp/1"], lastSeen: "2026-01-01T00:00:00.000Z" };
       const e2 = { ownerId: "b", multiaddrs: ["/ip4/2.2.2.2/tcp/2"], lastSeen: "2026-01-02T00:00:00.000Z" };

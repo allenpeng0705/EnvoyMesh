@@ -82,8 +82,24 @@ export class DirectCallClient implements NodeServiceClient {
     targetOwnerId: string,
     profile: Parameters<NodeService["sendHello"]>[1],
     message: string,
+    options?: Parameters<NodeService["sendHello"]>[3],
   ) {
+    if (options !== undefined) {
+      return this._ns.sendHello(targetOwnerId, profile, message, options);
+    }
     return this._ns.sendHello(targetOwnerId, profile, message);
+  }
+
+  async listPendingSocialIntroProposals() {
+    return this._ns.listPendingSocialIntroProposals();
+  }
+
+  async approveSocialIntroCommitment(messageId: string) {
+    return this._ns.approveSocialIntroCommitment(messageId);
+  }
+
+  async declineSocialIntroProposal(messageId: string) {
+    return this._ns.declineSocialIntroProposal(messageId);
   }
 
   async acceptHello(messageId: string) {
@@ -164,6 +180,46 @@ export class DirectCallClient implements NodeServiceClient {
 
   async knowledgeQuery(question: string) {
     return this._ns.knowledgeQuery(question);
+  }
+
+  async listLibraryItems(params?: Parameters<NodeService["listLibraryItems"]>[0]) {
+    return this._ns.listLibraryItems(params);
+  }
+
+  async setLibraryItemPublished(documentId: string, published: boolean) {
+    return this._ns.setLibraryItemPublished(documentId, published);
+  }
+
+  async discoverPublishedLibrary(params?: Parameters<NodeService["discoverPublishedLibrary"]>[0]) {
+    return this._ns.discoverPublishedLibrary(params);
+  }
+
+  async listAgentShareProposals() {
+    return this._ns.listAgentShareProposals();
+  }
+
+  async dismissAgentShareProposal(proposalId: string) {
+    return this._ns.dismissAgentShareProposal(proposalId);
+  }
+
+  async submitAgentShareProposal(params: Parameters<NodeService["submitAgentShareProposal"]>[0]) {
+    return this._ns.submitAgentShareProposal(params);
+  }
+
+  async listPendingShareOffers() {
+    return this._ns.listPendingShareOffers();
+  }
+
+  async shareFile(targetOwnerId: string, file: Parameters<NodeService["shareFile"]>[1]) {
+    return this._ns.shareFile(targetOwnerId, file);
+  }
+
+  async acceptShare(shareId: string, savePath: string) {
+    return this._ns.acceptShare(shareId, savePath);
+  }
+
+  async declineShare(shareId: string) {
+    return this._ns.declineShare(shareId);
   }
 
   // -----------------------------------------------------------------------

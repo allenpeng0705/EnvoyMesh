@@ -8,7 +8,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { MobileDatabase } from "@envoymesh/mobile-storage";
-import { mobileStorageSchema } from "@envoymesh/mobile-storage";
+import { mobileStorageSchema, migrateMobileStorageSchema } from "@envoymesh/mobile-storage";
 
 /** Convert raw SQLite rows (array-of-arrays on iOS, array-of-objects elsewhere)
  *  into a uniform Record<string, unknown>[]. */
@@ -72,9 +72,11 @@ export class CapacitorSqliteDatabase implements MobileDatabase {
 
   /** Run all schema migration statements. */
   async initializeSchema(): Promise<void> {
+    await this.open();
     for (const stmt of mobileStorageSchema()) {
       await this._conn.execute(stmt);
     }
+    await migrateMobileStorageSchema(this);
   }
 
   private async _ensureOpen(): Promise<void> {

@@ -1,4 +1,4 @@
-import { type AgentCredential, type AuthChallengePayload, type AuthChallengeResponsePayload, type Capability, type DeviceCertificate, type DeviceProfile, type DeviceRevocationRecord, type DeviceRevocationReason, type EnvoyEnvelope, type EnvoyIntent, type Mandate, type ProofOfIntent, type PublicIdentity, type UnsignedMandate, type UnsignedEnvoyEnvelope, type UnsignedDataTransferVoucher, type DataTransferVoucher, type HumanProfilePayload } from "@envoymesh/protocol";
+import { type AgentCredential, type AuthChallengePayload, type AuthChallengeResponsePayload, type Capability, type DeviceCertificate, type DeviceProfile, type DeviceRevocationRecord, type DeviceRevocationReason, type EnvoyEnvelope, type EnvoyIntent, type Mandate, type ProofOfIntent, type PublicIdentity, type UnsignedMandate, type UnsignedEnvoyEnvelope, type UnsignedDataTransferVoucher, type DataTransferVoucher, type HumanProfilePayload, type FriendMatchingPreferencesPayload } from "@envoymesh/protocol";
 export interface EnvoyKeyPair {
     publicKeyPem: string;
     privateKeyPem: string;
@@ -141,4 +141,6 @@ export declare function createSignedDataTransferVoucher(input: {
 export declare function verifyDataTransferVoucher(voucher: DataTransferVoucher, devicePublicKeyPem: string): boolean;
 export declare function signHumanProfile(payload: Omit<HumanProfilePayload, "signature">, ownerPrivateKeyPem: string): HumanProfilePayload;
 export declare function verifyHumanProfile(profile: HumanProfilePayload, ownerPublicKeyPem: string): boolean;
+export declare function signFriendMatchingPreferences(payload: Omit<FriendMatchingPreferencesPayload, "signature">, ownerPrivateKeyPem: string): FriendMatchingPreferencesPayload;
+export declare function verifyFriendMatchingPreferences(prefs: FriendMatchingPreferencesPayload, ownerPublicKeyPem: string): boolean;
 //# sourceMappingURL=index.d.ts.map

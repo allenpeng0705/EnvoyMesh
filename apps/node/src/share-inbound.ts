@@ -1,4 +1,3 @@
-import { derivePeerId } from "@envoymesh/identity";
 import {
   createAuditEvent,
   createShareEvent,
@@ -18,15 +17,6 @@ import {
 } from "@envoymesh/protocol";
 import { evaluatePolicy } from "@envoymesh/bonds";
 import { searchVaultWithAudit, type VaultIndex } from "@envoymesh/vault";
-import {
-  createMockModelProvider,
-  createOllamaLiteLlmProvider,
-  createLiteLlmProvider,
-  createOpenAiProvider,
-  createAnthropicProvider,
-  routeModelRequest,
-  type ModelProvider,
-} from "@envoymesh/models";
 import type { ModelProviderConfig } from "@envoymesh/api";
 import { ZodError } from "zod";
 
@@ -40,53 +30,6 @@ export type ShareAcceptResult =
 
 /** Sensitivity levels that require owner approval before raw file transfer. */
 const APPROVAL_REQUIRED_SENSITIVITIES = new Set(["private", "trusted"]);
-
-function buildModelProviders(config: ModelProviderConfig): ModelProvider[] {
-  switch (config.mode) {
-    case "disabled":
-      return [];
-    case "mock":
-      return [createMockModelProvider({ providerId: "local.mock", providerType: "local" })];
-    case "ollama":
-      return [
-        createOllamaLiteLlmProvider({
-          providerId: `local.ollama.${config.modelName ?? "llama3.1"}`,
-          modelName: config.modelName ?? "llama3.1",
-          endpoint: config.endpoint ?? "http://127.0.0.1:11434",
-        }),
-      ];
-    case "litellm":
-      return [
-        createLiteLlmProvider({
-          providerId: `cloud.${config.modelName ?? "litellm-model"}`,
-          providerType: config.requireApprovalForCloud !== false ? "cloud" : "local",
-          modelName: config.modelName ?? "gpt-4o-mini",
-          endpoint: config.endpoint ?? "http://127.0.0.1:4000/v1",
-          apiKey: config.apiKey,
-        }),
-      ];
-    case "openai-compatible":
-      return [
-        createOpenAiProvider({
-          providerId: "cloud.openai-compatible",
-          modelName: config.modelName ?? "gpt-4o-mini",
-          apiKey: config.apiKey,
-          endpoint: config.endpoint ?? "https://api.openai.com/v1",
-        }),
-      ];
-    case "anthropic-compatible":
-      return [
-        createAnthropicProvider({
-          providerId: "cloud.anthropic-compatible",
-          modelName: config.modelName ?? "claude-sonnet-4-20250514",
-          apiKey: config.apiKey,
-          endpoint: config.endpoint ?? "https://api.anthropic.com",
-        }),
-      ];
-    default:
-      return [createMockModelProvider({ providerId: "local.mock" })];
-  }
-}
 
 async function resolveSenderOwnerId(
   senderPeerId: string,
@@ -121,10 +64,12 @@ export async function handleInboundShareRequest(input: {
   peerDirectoryStore: LocalPeerDirectoryStore;
   profile: NodeProfile;
   vaultIndex: VaultIndex | null;
+  /** Used to validate `file`+`responder` paths on this node */
+  vaultDir: string;
   modelProviders: ModelProviderConfig;
   capabilityManifest?: CapabilityManifest;
 }): Promise<SharePreviewResult> {
-  const { envelope, remotePeerId, receivedAt, correlationId, taskStore, trustStore, peerDirectoryStore, profile, vaultIndex, modelProviders, capabilityManifest } = input;
+  const { envelope, remotePeerId, receivedAt, correlationId, taskStore, trustStore, peerDirectoryStore, profile, vaultIndex, vaultDir, modelProviders: _modelProviders, capabilityManifest } = input;
 
   let payload: ReturnType<typeof parseShareRequestPayload>;
   try {
@@ -135,6 +80,15 @@ export async function handleInboundShareRequest(input: {
         ? error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ")
         : "invalid share.request payload";
     return { ok: false, reason };
+  }
+
+  if (payload.requestType === "file") {
+    if (!payload.relativePath?.trim()) {
+      return { ok: false, reason: "file share requires relativePath" };
+    }
+    if (payload.fileOrigin === "responder" && !isSafeVaultPath(vaultDir, payload.relativePath)) {
+      return { ok: false, reason: "unsafe or invalid vault relativePath" };
+    }
   }
 
   // 1. Audit inbound

@@ -47,7 +47,7 @@ export type JsonRpcEvent = {
 export declare const WS_PROTOCOL_VERSION = "envoy/ws-api/0.1.0";
 export declare const WS_PORT = 3030;
 export declare const WS_PATH = "/ws";
-export type RpcMethods = "getProfile" | "getHumanProfile" | "updateHumanProfile" | "sendHello" | "acceptHello" | "declineHello" | "blockPeer" | "unblockPeer" | "revokeBond" | "getBonds" | "sendChat" | "listChatHistory" | "markRead" | "getChatDrafts" | "deleteChatDraft" | "searchPeers" | "advertiseTopic" | "stopAdvertiseTopic" | "getCapabilityManifest" | "updateCapabilityManifest" | "shareFile" | "acceptShare" | "declineShare" | "getConnectionStatus" | "getPeerConnectionInfo" | "knowledgeQuery" | "getBridgeStatus" | "getPairingPayload" | "pairDevice" | "getNodeConfig" | "updateNodeConfig" | "listRelays" | "addRelay" | "removeRelay" | "initNode" | "getNodeStatus" | "startNode" | "stopNode" | "forwardEnvelope"
+export type RpcMethods = "getProfile" | "getHumanProfile" | "updateHumanProfile" | "sendHello" | "acceptHello" | "declineHello" | "blockPeer" | "unblockPeer" | "revokeBond" | "getBonds" | "listPendingSocialIntroProposals" | "approveSocialIntroCommitment" | "declineSocialIntroProposal" | "sendChat" | "listChatHistory" | "markRead" | "getChatDrafts" | "deleteChatDraft" | "searchPeers" | "advertiseTopic" | "stopAdvertiseTopic" | "getCapabilityManifest" | "updateCapabilityManifest" | "shareFile" | "acceptShare" | "declineShare" | "listPendingShareOffers" | "listLibraryItems" | "setLibraryItemPublished" | "discoverPublishedLibrary" | "listAgentShareProposals" | "dismissAgentShareProposal" | "submitAgentShareProposal" | "getConnectionStatus" | "getPeerConnectionInfo" | "knowledgeQuery" | "getBridgeStatus" | "getPairingPayload" | "pairDevice" | "pairSharedIdentity" | "getNodeConfig" | "updateNodeConfig" | "listRelays" | "addRelay" | "removeRelay" | "initNode" | "getNodeStatus" | "startNode" | "stopNode" | "forwardEnvelope"
 /** HTTP proxy from mobile Companion to HomeClaw Core on the home LAN (SSR-safe paths only). */
  | "homeclawCoreProxy" | "homeClawCoreWsOpen" | "homeClawCoreWsSend" | "homeClawCoreWsClose" | "on" | "off" | "home_claw_core_ws_open" | "home_claw_core_ws_send" | "home_claw_core_ws_close";
 export interface RelayConfig {
@@ -149,6 +149,14 @@ export interface NodeConfig {
      * Override when Core listens elsewhere. Used only by `homeclawCoreProxy`.
      */
     homeClawCoreBaseUrl?: string;
+    /**
+     * Trust mode (Phase 12): allow inbound/outbound agent-assisted intros (`social.intro.*`) when true.
+     */
+    trustModeEnabled?: boolean;
+    /** Human-authored friend-matching preferences text (bounded length). */
+    friendMatchingPreferencesText?: string;
+    /** Owner-signed preferences (Phase F); verified on save. */
+    friendMatchingPreferencesSigned?: import("@envoymesh/protocol").FriendMatchingPreferencesPayload;
 }
 /**
  * Domain in which the node operates autonomously on behalf of the owner.
@@ -300,7 +308,7 @@ export type ModelProviderMode = "mock" | "ollama" | "litellm" | "openai-compatib
 export interface ModelProviderConfig {
     /** Provider mode. When "disabled", no model calls are made. Default: "mock". */
     mode: ModelProviderMode;
-    /** Endpoint for ollama/litellm providers (e.g. "http://127.0.0.1:11434"). */
+    /** Base URL for OpenAI-compatible `/chat/completions` (include `/v1`): Ollama `http://127.0.0.1:11434/v1`, LiteLLM `http://127.0.0.1:4000/v1`. Bare host roots are normalized at runtime. Anthropic mode uses API host without `/v1` (e.g. `https://api.anthropic.com`). */
     endpoint?: string;
     /** Model name for ollama (e.g. "llama3.1") or litellm (e.g. "gpt-4o-mini"). */
     modelName?: string;
@@ -532,6 +540,11 @@ export interface UpdateNodeConfigParams {
     relayPublicWsUrl?: string;
     /** Enable/disable the agent bridge (takes effect on next node start). */
     bridgeEnabled?: boolean;
+    /** Enable Trust-mode intros (`social.intro.*` gate). */
+    trustModeEnabled?: boolean;
+    /** Owner criteria text for friend matching (bounded length). */
+    friendMatchingPreferencesText?: string;
+    friendMatchingPreferencesSigned?: import("@envoymesh/protocol").FriendMatchingPreferencesPayload;
 }
 export interface ListRelaysParams {
 }

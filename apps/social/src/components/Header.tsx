@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type {
   ConnectionStatus,
   HumanProfile,
@@ -10,7 +11,8 @@ import { DarkModeIcon, LightModeIcon } from "../icons.js";
 interface HeaderProps {
   currentView: ViewName;
   onNavigate: (view: ViewName) => void;
-  inboxCount: number;
+  /** Hello requests + stranger chat pings — shown on Inbox only */
+  inboxActivityCount: number;
   bondsCount: number;
   isPublicNetwork: boolean;
   connectionStatus: ConnectionStatus | null;
@@ -24,7 +26,7 @@ interface HeaderProps {
 export function Header({
   currentView,
   onNavigate,
-  inboxCount,
+  inboxActivityCount,
   bondsCount,
   isPublicNetwork,
   connectionStatus,
@@ -35,6 +37,25 @@ export function Header({
   onRetryConnect,
 }: HeaderProps) {
   const { theme, resolved, setTheme } = useTheme();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (moreRef.current?.contains(e.target as Node)) return;
+      setMoreOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [moreOpen]);
 
   const cycleTheme = () => {
     if (theme === "system") setTheme("dark");
@@ -48,55 +69,101 @@ export function Header({
     humanProfile?.username ||
     (peerId && !peerId.startsWith("envoy_") ? `${peerId.slice(0, 8)}\u2026` : "Peer");
 
+  const openMoreNav = (view: ViewName) => {
+    onNavigate(view);
+    setMoreOpen(false);
+  };
+
   return (
     <header className="header">
       <div className="header-left">
         <img src="/assets/logo.svg" alt="Envoy" className="logo" />
         <span className="logo-text">Envoy</span>
       </div>
-      <nav className="header-nav">
+      <nav className="header-nav" aria-label="Primary">
         <button
-          className={`${currentView === "chat" ? "active" : ""} ${inboxCount > 0 ? "has-inbox" : ""}`}
+          type="button"
+          className={currentView === "chat" ? "active" : ""}
           onClick={() => onNavigate("chat")}
+          aria-current={currentView === "chat" ? "page" : undefined}
         >
-          Chat {inboxCount > 0 && <span className="inbox-badge">{inboxCount}</span>}
+          Chat
         </button>
         <button
+          type="button"
+          className={`${currentView === "inbox" ? "active" : ""} ${inboxActivityCount > 0 ? "has-inbox" : ""}`}
+          onClick={() => onNavigate("inbox")}
+          aria-current={currentView === "inbox" ? "page" : undefined}
+        >
+          Inbox
+          {inboxActivityCount > 0 && (
+            <span className="inbox-badge">{inboxActivityCount > 99 ? "99+" : inboxActivityCount}</span>
+          )}
+        </button>
+        <button
+          type="button"
           className={currentView === "contacts" ? "active" : ""}
           onClick={() => onNavigate("contacts")}
+          aria-current={currentView === "contacts" ? "page" : undefined}
         >
           Contacts ({bondsCount})
         </button>
         <button
+          type="button"
           className={currentView === "search" ? "active" : ""}
           onClick={() => onNavigate("search")}
+          aria-current={currentView === "search" ? "page" : undefined}
         >
           Search
         </button>
         <button
-          className={currentView === "profile" ? "active" : ""}
-          onClick={() => onNavigate("profile")}
+          type="button"
+          className={currentView === "library" ? "active" : ""}
+          onClick={() => onNavigate("library")}
+          aria-current={currentView === "library" ? "page" : undefined}
         >
-          Profile
+          Library
         </button>
-        <button
-          className={currentView === "settings" ? "active" : ""}
-          onClick={() => onNavigate("settings")}
-        >
-          Settings
-        </button>
+        <div className="header-nav-more" ref={moreRef}>
+          <button
+            type="button"
+            className={`header-nav-more-trigger${moreOpen ? " open" : ""}${currentView === "profile" || currentView === "settings" ? " related-active" : ""}`}
+            aria-expanded={moreOpen}
+            aria-haspopup="menu"
+            aria-controls="header-more-menu"
+            id="header-more-button"
+            onClick={() => setMoreOpen((o) => !o)}
+          >
+            More
+          </button>
+          {moreOpen && (
+            <div
+              className="header-nav-more-menu"
+              id="header-more-menu"
+              role="menu"
+              aria-labelledby="header-more-button"
+            >
+              <button type="button" role="menuitem" className={currentView === "profile" ? "active" : ""} onClick={() => openMoreNav("profile")}>
+                Profile
+              </button>
+              <button type="button" role="menuitem" className={currentView === "settings" ? "active" : ""} onClick={() => openMoreNav("settings")}>
+                Settings
+              </button>
+            </div>
+          )}
+        </div>
       </nav>
       <div className="header-right">
         {relayUnreachable && isPublicNetwork && (
-          <button className="relay-warning" onClick={onRetryConnect} title="Relay unreachable — tap to retry">
+          <button type="button" className="relay-warning" onClick={onRetryConnect} title="Relay unreachable — tap to retry">
             <span className="relay-warning-dot" />
             Relay unreachable
           </button>
         )}
         {isPublicNetwork ? (
-          <div className={`network-status ${connectionStatus?.online ? 'public' : 'checking'}`}>
+          <div className={`network-status ${connectionStatus?.online ? "public" : "checking"}`}>
             <span className="status-indicator" />
-            <span>{connectionStatus?.online ? 'Public Network' : 'Connecting...'}</span>
+            <span>{connectionStatus?.online ? "Public Network" : "Connecting..."}</span>
           </div>
         ) : (
           <div className="network-status private">
@@ -105,6 +172,7 @@ export function Header({
           </div>
         )}
         <button
+          type="button"
           className="theme-toggle-btn"
           onClick={cycleTheme}
           title={`Theme: ${themeLabel}`}

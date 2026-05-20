@@ -95,6 +95,7 @@ describe("handleInboundShareRequest — approval_required path", () => {
       peerDirectoryStore,
       profile,
       vaultIndex: null,
+      vaultDir: join(profileDir, "shared_vault"),
       modelProviders: { mode: "mock" },
     });
 
@@ -136,6 +137,7 @@ describe("handleInboundShareRequest — approval_required path", () => {
       peerDirectoryStore,
       profile,
       vaultIndex: null,
+      vaultDir: join(profileDir, "shared_vault"),
       modelProviders: { mode: "mock" },
     });
 
@@ -176,6 +178,7 @@ describe("handleInboundShareRequest — approval_required path", () => {
       peerDirectoryStore,
       profile,
       vaultIndex: null,
+      vaultDir: join(profileDir, "shared_vault"),
       modelProviders: { mode: "mock" },
     });
 
@@ -220,6 +223,7 @@ describe("handleInboundShareRequest — preview text", () => {
       peerDirectoryStore,
       profile,
       vaultIndex: null,
+      vaultDir: join(profileDir, "shared_vault"),
       modelProviders: { mode: "mock" },
     });
 
@@ -261,6 +265,7 @@ describe("handleInboundShareRequest — preview text", () => {
       peerDirectoryStore,
       profile,
       vaultIndex: null,
+      vaultDir: join(profileDir, "shared_vault"),
       modelProviders: { mode: "mock" },
     });
 

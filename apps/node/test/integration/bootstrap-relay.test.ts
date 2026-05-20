@@ -37,7 +37,10 @@ import {
 
 const TEST_CONFIG = parseTestConfig();
 
-describe("Relay Bootstrap Integration Tests", () => {
+/** Hits a WAN relay (default in helpers). Off by default so `npm test` does not depend on public infra. */
+const RUN_WAN_RELAY_TESTS = process.env.RUN_WAN_RELAY_TESTS === "1";
+
+describe.skipIf(!RUN_WAN_RELAY_TESTS)("Relay Bootstrap Integration Tests", () => {
   // Track all test nodes for cleanup
   const testNodes: TestNode[] = [];
 

@@ -37,6 +37,14 @@ describe("vault", () => {
     expect(isSupportedVaultFile("secret.pdf")).toBe(false);
   });
 
+  it("lists no files when vault directory does not exist yet", async () => {
+    const missing = join(workspaceDir, "nonexistent-vault");
+    expect(await listSupportedVaultFiles(missing)).toEqual([]);
+    const index = await buildVaultIndex({ rootDir: missing });
+    expect(index.documents).toEqual([]);
+    expect(index.chunks).toEqual([]);
+  });
+
   it("lists supported files recursively and ignores unsupported files", async () => {
     await writeFile(join(vaultDir, "notes", "distributed.md"), "Distributed systems notes");
     await writeFile(join(vaultDir, "profile.json"), "{\"name\":\"Alice\"}");

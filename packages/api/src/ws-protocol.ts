@@ -27,6 +27,8 @@
  *    { event: "connected", data: { peerId: "...", multiaddrs: [...] } }
  */
 
+import type { FriendMatchingPreferencesPayload } from "@envoymesh/protocol";
+
 // ============================================
 // Message Types
 // ============================================
@@ -79,6 +81,9 @@ export type RpcMethods =
   | "unblockPeer"
   | "revokeBond"
   | "getBonds"
+  | "listPendingSocialIntroProposals"
+  | "approveSocialIntroCommitment"
+  | "declineSocialIntroProposal"
   // Messaging
   | "sendChat"
   | "listChatHistory"
@@ -96,6 +101,13 @@ export type RpcMethods =
   | "shareFile"
   | "acceptShare"
   | "declineShare"
+  | "listPendingShareOffers"
+  | "listLibraryItems"
+  | "setLibraryItemPublished"
+  | "discoverPublishedLibrary"
+  | "listAgentShareProposals"
+  | "dismissAgentShareProposal"
+  | "submitAgentShareProposal"
   // Connection Status
   | "getConnectionStatus"
   | "getPeerConnectionInfo"
@@ -239,6 +251,18 @@ export interface NodeConfig {
    * Override when Core listens elsewhere. Used only by `homeclawCoreProxy`.
    */
   homeClawCoreBaseUrl?: string;
+  /**
+   * Trust mode (Phase 12): allow inbound/outbound agent-assisted intros (`social.intro.*`) when true.
+   * Default false — intents are rejected at the node boundary when disabled.
+   */
+  trustModeEnabled?: boolean;
+  /**
+   * Human-authored brief for “what kind of friend I want” (matching criteria for the agent).
+   * Max length enforced server-side (typically 4096 chars). Ignored when {@link friendMatchingPreferencesSigned} is set (signed doc supplies text).
+   */
+  friendMatchingPreferencesText?: string;
+  /** Optional owner-signed matching preferences (Phase F); verified on `updateNodeConfig`. */
+  friendMatchingPreferencesSigned?: FriendMatchingPreferencesPayload;
 }
 
 /**
@@ -415,7 +439,7 @@ export type ModelProviderMode = "mock" | "ollama" | "litellm" | "openai-compatib
 export interface ModelProviderConfig {
   /** Provider mode. When "disabled", no model calls are made. Default: "mock". */
   mode: ModelProviderMode;
-  /** Endpoint for ollama/litellm providers (e.g. "http://127.0.0.1:11434"). */
+  /** Base URL for OpenAI-compatible `/chat/completions` (include `/v1`): Ollama `http://127.0.0.1:11434/v1`, LiteLLM `http://127.0.0.1:4000/v1`. Bare host roots are normalized at runtime. Anthropic mode uses API host without `/v1` (e.g. `https://api.anthropic.com`). */
   endpoint?: string;
   /** Model name for ollama (e.g. "llama3.1") or litellm (e.g. "gpt-4o-mini"). */
   modelName?: string;
@@ -713,6 +737,12 @@ export interface UpdateNodeConfigParams {
   relayPublicWsUrl?: string;
   /** Enable/disable the agent bridge (takes effect on next node start). */
   bridgeEnabled?: boolean;
+  /** Enable Trust-mode intros (`social.intro.*` gate). Default false. */
+  trustModeEnabled?: boolean;
+  /** Owner criteria text for friend matching (bounded length). */
+  friendMatchingPreferencesText?: string;
+  /** Owner-signed preferences (validated server-side). When set, overrides plain text from signature payload. */
+  friendMatchingPreferencesSigned?: FriendMatchingPreferencesPayload;
 }
 
 export interface ListRelaysParams {}

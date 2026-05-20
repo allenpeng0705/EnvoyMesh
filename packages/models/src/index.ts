@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import type { ModelProviderConfig } from "@envoymesh/api";
 import type { Sensitivity } from "@envoymesh/protocol";
 import {
   evaluateSemanticFirewall,
@@ -8,6 +8,12 @@ import {
   type EgressScanResult,
   type EgressSecretMatch,
 } from "./semantic-firewall.js";
+
+function modelAuditRandomId(): string {
+  const c = globalThis.crypto as Crypto | undefined;
+  if (c?.randomUUID) return c.randomUUID();
+  return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 11)}`;
+}
 
 export {
   evaluateSemanticFirewall,
@@ -266,7 +272,7 @@ export function createOllamaLiteLlmProvider(
     providerId: input.providerId ?? `local.${modelName}`,
     providerType: "local",
     modelName,
-    endpoint: input.endpoint ?? "http://127.0.0.1:4000/v1",
+    endpoint: input.endpoint ?? "http://127.0.0.1:11434/v1",
     fetchImplementation: input.fetchImplementation,
     policy: {
       enabled: true,
@@ -391,6 +397,174 @@ export function createAnthropicProvider(input: CreateAnthropicProviderInput = {}
       };
     },
   };
+}
+
+function readEnvoyModelEnv(key: string): string | undefined {
+  try {
+    const env = typeof process !== "undefined" ? process.env : undefined;
+    const v = env?.[key];
+    return typeof v === "string" && v.length > 0 ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Normalizes bases for providers that POST `${base}/chat/completions` (OpenAI-compatible API).
+ * Legacy configs often omit `/v1`; Ollama exposes compat at `http://host:11434/v1`.
+ */
+export function normalizeOpenAiCompatibleBaseUrl(endpoint: string): string {
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  if (!trimmed) return trimmed;
+  if (/\/v1$/i.test(trimmed)) return trimmed;
+  return `${trimmed}/v1`;
+}
+
+export interface BuildModelProvidersOptions {
+  /**
+   * Chat-assist / trusted-node paths: relax cloud provider policies so drafts work without per-call owner approval.
+   */
+  trustedLocalAssist?: boolean;
+}
+
+/**
+ * Build model providers from node UI config.
+ * Environment variables override config when set (desktop/dev):
+ * ENVOY_MODEL_MODE, ENVOY_MODEL_ENDPOINT, ENVOY_MODEL_API_KEY, ENVOY_MODEL_NAME
+ *
+ * @param ownerApproved — When true, cloud OpenAI-compatible provider allows higher sensitivity for local owner queries.
+ */
+export function buildModelProviders(
+  config: ModelProviderConfig,
+  ownerApproved: boolean = false,
+  options?: BuildModelProvidersOptions,
+): ModelProvider[] {
+  const effectiveConfig: ModelProviderConfig = {
+    ...config,
+    mode: (readEnvoyModelEnv("ENVOY_MODEL_MODE") as ModelProviderConfig["mode"]) ?? config.mode,
+    endpoint: readEnvoyModelEnv("ENVOY_MODEL_ENDPOINT") ?? config.endpoint,
+    apiKey: readEnvoyModelEnv("ENVOY_MODEL_API_KEY") ?? config.apiKey,
+    modelName: readEnvoyModelEnv("ENVOY_MODEL_NAME") ?? config.modelName,
+  };
+
+  const relaxedCloudPolicy: Partial<ModelProviderPolicy> | undefined =
+    ownerApproved || options?.trustedLocalAssist
+      ? {
+          allowedSensitivity: ["public", "friends", "trusted", "private"],
+          requiresOwnerApproval: false,
+        }
+      : undefined;
+
+  switch (effectiveConfig.mode) {
+    case "disabled":
+      return [];
+    case "mock":
+      return [
+        createMockModelProvider({
+          providerId: "local.mock",
+          providerType: "local",
+        }),
+      ];
+    case "ollama": {
+      const base =
+        normalizeOpenAiCompatibleBaseUrl(
+          effectiveConfig.endpoint ?? "http://127.0.0.1:11434/v1",
+        );
+      return [
+        createOllamaLiteLlmProvider({
+          providerId: `local.ollama.${effectiveConfig.modelName ?? "llama3.1"}`,
+          modelName: effectiveConfig.modelName ?? "llama3.1",
+          endpoint: base,
+        }),
+      ];
+    }
+    case "litellm": {
+      const base = normalizeOpenAiCompatibleBaseUrl(
+        effectiveConfig.endpoint ?? "http://127.0.0.1:4000/v1",
+      );
+      return [
+        createLiteLlmProvider({
+          providerId: `cloud.${effectiveConfig.modelName ?? "litellm-model"}`,
+          providerType: effectiveConfig.requireApprovalForCloud !== false ? "cloud" : "local",
+          modelName: effectiveConfig.modelName ?? "gpt-4o-mini",
+          endpoint: base,
+          apiKey: effectiveConfig.apiKey,
+        }),
+      ];
+    }
+    case "openai-compatible": {
+      const rawEndpoint = effectiveConfig.endpoint ?? "https://api.openai.com/v1";
+      const base = normalizeOpenAiCompatibleBaseUrl(rawEndpoint);
+      return [
+        createOpenAiProvider({
+          providerId: "cloud.openai-compatible",
+          modelName: effectiveConfig.modelName ?? "gpt-4o-mini",
+          apiKey: effectiveConfig.apiKey,
+          endpoint: base,
+          policy: relaxedCloudPolicy,
+        }),
+      ];
+    }
+    case "anthropic-compatible":
+      return [
+        createAnthropicProvider({
+          providerId: "cloud.anthropic-compatible",
+          modelName: effectiveConfig.modelName ?? "claude-sonnet-4-20250514",
+          apiKey: effectiveConfig.apiKey,
+          endpoint: effectiveConfig.endpoint ?? "https://api.anthropic.com",
+          policy: relaxedCloudPolicy,
+        }),
+      ];
+    default:
+      return [createMockModelProvider({ providerId: "local.mock" })];
+  }
+}
+
+/**
+ * Owner-initiated knowledge query (AI tab / local ask): same prompt + routing shape as desktop
+ * inbound handler with vault empty and bond level self — no vault snippets or audit trail.
+ */
+export async function runOwnerApprovedKnowledgeQuery(input: {
+  query: string;
+  requesterPeerId: string;
+  modelProviders: ModelProviderConfig;
+}): Promise<string> {
+  const { query, requesterPeerId, modelProviders } = input;
+  const ownerApproved = true;
+  /** Matches bondLevel `"self"` policy (`evaluatePolicy`) max sensitivity */
+  const allowedSensitivity = "private" satisfies Sensitivity;
+
+  if (modelProviders.mode === "disabled") {
+    return "The model provider is currently disabled. Please enable a model provider to answer knowledge queries.";
+  }
+
+  const promptContext = "(No vault documents found — answering from general knowledge)";
+  const injectedContext = "";
+  const prompt = `You are answering a knowledge query from a contact on the EnvoyMesh P2P network.\n\
+Answer only based on the provided context. If the context does not contain relevant information, say so.\n\
+Do not make up information. Keep the answer concise (2-4 sentences).\n\
+Sensitivity level of this answer: ${allowedSensitivity}.\n\n\
+Context:\n${promptContext}\n${injectedContext}\n\
+Query: ${query}`;
+
+  const effectiveSensitivity: Sensitivity =
+    modelProviders.mode === "openai-compatible" || modelProviders.mode === "anthropic-compatible"
+      ? ownerApproved ? "friends" : "public"
+      : allowedSensitivity;
+
+  const providers = buildModelProviders(modelProviders, ownerApproved);
+  const modelResult = await routeModelRequest(
+    {
+      taskType: "knowledge.query",
+      prompt,
+      sensitivity: effectiveSensitivity,
+      requesterPeerId,
+      ownerApproved,
+    },
+    providers,
+  );
+
+  return modelResult.response?.text ?? "Model unavailable.";
 }
 
 export function evaluateModelProvider(
@@ -523,7 +697,7 @@ export function createModelRoutingAuditEvent(
 
   return {
     version: "0.1",
-    eventId: input.eventId ?? `model_audit_${randomUUID()}`,
+    eventId: input.eventId ?? `model_audit_${modelAuditRandomId()}`,
     createdAt: input.createdAt ?? new Date().toISOString(),
     providerId: provider?.providerId,
     providerType: provider?.providerType,

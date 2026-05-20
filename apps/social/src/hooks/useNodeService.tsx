@@ -1,9 +1,12 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { createWsClient } from "../ws-client.js";
 import type {
+  AgentShareProposal,
   BondRecord,
   BridgeStatus,
   ChatMessage,
+  DiscoverPublishedLibraryParams,
+  DiscoverPublishedLibraryPeerResult,
   PairingPayload,
   ConnectionStatus,
   CreateHumanProfileInput,
@@ -17,7 +20,13 @@ import type {
   PeerSearchResult,
   RelayConfig,
   SearchQuery,
+  SendHelloOptions,
+  ShareOffer,
+  SocialIntroProposal,
+  SubmitAgentShareProposalParams,
   NodeStatus,
+  LibraryItem,
+  ListLibraryItemsParams,
 } from "@envoymesh/api";
 
 type InitNodeOptions = {
@@ -52,12 +61,20 @@ export interface NodeServiceClient {
   updateHumanProfile(input: CreateHumanProfileInput): Promise<HumanProfile>;
 
   // Bond Management
-  sendHello(targetOwnerId: string, profile: HelloProfile, message: string): Promise<HelloResponse>;
+  sendHello(
+    targetOwnerId: string,
+    profile: HelloProfile,
+    message: string,
+    options?: SendHelloOptions,
+  ): Promise<HelloResponse>;
   acceptHello(messageId: string): Promise<void>;
   declineHello(messageId: string, reason?: string): Promise<void>;
   blockPeer(peerOwnerId: string): Promise<void>;
   revokeBond(peerOwnerId: string): Promise<void>;
   getBonds(): Promise<BondRecord[]>;
+  listPendingSocialIntroProposals(): Promise<SocialIntroProposal[]>;
+  approveSocialIntroCommitment(messageId: string): Promise<{ ownerCommitmentRef: string }>;
+  declineSocialIntroProposal(messageId: string): Promise<void>;
 
   // Messaging
   sendChat(targetOwnerId: string, text: string): Promise<void>;
@@ -69,7 +86,7 @@ export interface NodeServiceClient {
   stopAdvertiseTopic(topic: string): Promise<void>;
 
   // Connection Status
-  getConnectionStatus(): Promise<{ online: boolean; peerId: string; multiaddrs: string[]; connectedRelays: string[]; bondedPeers: number }>;
+  getConnectionStatus(): Promise<ConnectionStatus>;
   getPeerConnectionInfo(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
 
   // Agent Bridge
@@ -78,6 +95,23 @@ export interface NodeServiceClient {
 
   // AI / Knowledge Query
   knowledgeQuery(question: string): Promise<string>;
+
+  // Shared vault library
+  listLibraryItems(params?: ListLibraryItemsParams): Promise<LibraryItem[]>;
+  setLibraryItemPublished(documentId: string, published: boolean): Promise<void>;
+  discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]>;
+  listAgentShareProposals(): Promise<AgentShareProposal[]>;
+  dismissAgentShareProposal(proposalId: string): Promise<void>;
+  submitAgentShareProposal(
+    params: SubmitAgentShareProposalParams,
+  ): Promise<AgentShareProposal>;
+  listPendingShareOffers(): Promise<ShareOffer[]>;
+  shareFile(
+    targetOwnerId: string,
+    file: { path: string; sensitivity: "public" | "friends" | "private" },
+  ): Promise<void>;
+  acceptShare(shareId: string, savePath: string): Promise<void>;
+  declineShare(shareId: string): Promise<void>;
 
   // Node Configuration
   getNodeConfig(): Promise<NodeConfig>;
@@ -98,6 +132,15 @@ export interface NodeServiceClient {
 }
 
 const NodeServiceContext = createContext<NodeServiceClient | null>(null);
+
+/** Mobile shell only exposes cloud-friendly provider modes in Settings; desktop uses full. */
+export type ModelProviderUiScope = "full" | "cloud-only";
+
+const ModelProviderUiScopeContext = createContext<ModelProviderUiScope>("full");
+
+export function useModelProviderUiScope(): ModelProviderUiScope {
+  return useContext(ModelProviderUiScopeContext);
+}
 
 type WsClientType = ReturnType<typeof createWsClient>;
 
@@ -147,9 +190,27 @@ function createWsNodeServiceClient(
     async getProfile() { return wsClient.rpc("getProfile"); },
     async getHumanProfile() { return wsClient.rpc("getHumanProfile"); },
     async updateHumanProfile(input: CreateHumanProfileInput) { return wsClient.rpc("updateHumanProfile", input as unknown as Record<string, unknown>); },
-    async sendHello(targetOwnerId: string, profile: HelloProfile, message: string) { return wsClient.rpc("sendHello", { targetOwnerId, profile, message }); },
+    async sendHello(targetOwnerId: string, profile: HelloProfile, message: string, options?: SendHelloOptions) {
+      return wsClient.rpc("sendHello", {
+        targetOwnerId,
+        profile,
+        message,
+        ...(options?.introProposalMessageId
+          ? { introProposalMessageId: options.introProposalMessageId }
+          : {}),
+      });
+    },
     async acceptHello(messageId: string) { return wsClient.rpc("acceptHello", { messageId }); },
     async declineHello(messageId: string, reason?: string) { return wsClient.rpc("declineHello", { messageId, reason }); },
+    async listPendingSocialIntroProposals() {
+      return wsClient.rpc("listPendingSocialIntroProposals") as Promise<SocialIntroProposal[]>;
+    },
+    async approveSocialIntroCommitment(messageId: string) {
+      return wsClient.rpc("approveSocialIntroCommitment", { messageId }) as Promise<{ ownerCommitmentRef: string }>;
+    },
+    async declineSocialIntroProposal(messageId: string) {
+      return wsClient.rpc("declineSocialIntroProposal", { messageId });
+    },
     async blockPeer(peerOwnerId: string) { return wsClient.rpc("blockPeer", { peerOwnerId }); },
     async revokeBond(peerOwnerId: string) { return wsClient.rpc("revokeBond", { peerOwnerId }); },
     async getBonds() { return wsClient.rpc("getBonds"); },
@@ -162,6 +223,41 @@ function createWsNodeServiceClient(
     async getBridgeStatus() { return wsClient.rpc("getBridgeStatus"); },
     async getPairingPayload() { return wsClient.rpc("getPairingPayload"); },
     async knowledgeQuery(question: string) { return wsClient.rpc("knowledgeQuery", { question }) as Promise<string>; },
+    async listLibraryItems(params?: ListLibraryItemsParams) {
+      return wsClient.rpc("listLibraryItems", (params ?? {}) as Record<string, unknown>) as Promise<LibraryItem[]>;
+    },
+    async setLibraryItemPublished(documentId: string, published: boolean) {
+      return wsClient.rpc("setLibraryItemPublished", { documentId, published });
+    },
+    async discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams) {
+      return wsClient.rpc(
+        "discoverPublishedLibrary",
+        (params ?? {}) as Record<string, unknown>,
+      ) as Promise<DiscoverPublishedLibraryPeerResult[]>;
+    },
+    async listAgentShareProposals() {
+      return wsClient.rpc("listAgentShareProposals") as Promise<AgentShareProposal[]>;
+    },
+    async dismissAgentShareProposal(proposalId: string) {
+      return wsClient.rpc("dismissAgentShareProposal", { proposalId });
+    },
+    async submitAgentShareProposal(params: SubmitAgentShareProposalParams) {
+      return wsClient.rpc("submitAgentShareProposal", params as unknown as Record<string, unknown>) as Promise<
+        AgentShareProposal
+      >;
+    },
+    async listPendingShareOffers() {
+      return wsClient.rpc("listPendingShareOffers") as Promise<ShareOffer[]>;
+    },
+    async shareFile(targetOwnerId: string, file: { path: string; sensitivity: "public" | "friends" | "private" }) {
+      return wsClient.rpc("shareFile", { targetOwnerId, file } as Record<string, unknown>);
+    },
+    async acceptShare(shareId: string, savePath: string) {
+      return wsClient.rpc("acceptShare", { shareId, savePath });
+    },
+    async declineShare(shareId: string) {
+      return wsClient.rpc("declineShare", { shareId });
+    },
     async advertiseTopic(topic: string) { return wsClient.rpc("advertiseTopic", { topic }); },
     async stopAdvertiseTopic(topic: string) { return wsClient.rpc("stopAdvertiseTopic", { topic }); },
     async updateNodeConfig(config: Partial<NodeConfig>) { return wsClient.rpc("updateNodeConfig", config); },
@@ -186,10 +282,13 @@ function createWsNodeServiceClient(
 export function NodeServiceProvider({
   children,
   clientFactory,
+  modelProviderUiScope = "full",
 }: {
   children: ReactNode;
   /** Provide a custom client factory for in-process/mobile usage. Defaults to WebSocket. */
   clientFactory?: () => NodeServiceClient;
+  /** Capacitor/mobile: hide local engines (Ollama/LiteLLM) in Settings — cloud APIs only. */
+  modelProviderUiScope?: ModelProviderUiScope;
 }) {
   const [client, setClient] = useState<NodeServiceClient | null>(null);
   const [connected, setConnected] = useState(false);
@@ -257,9 +356,11 @@ export function NodeServiceProvider({
   }) as NodeServiceClient;
 
   return (
-    <NodeServiceContext.Provider value={ctx}>
-      {children}
-    </NodeServiceContext.Provider>
+    <ModelProviderUiScopeContext.Provider value={modelProviderUiScope}>
+      <NodeServiceContext.Provider value={ctx}>
+        {children}
+      </NodeServiceContext.Provider>
+    </ModelProviderUiScopeContext.Provider>
   );
 }
 
@@ -311,6 +412,39 @@ export function useBonds() {
   return bonds;
 }
 
+export function useSocialIntroProposals() {
+  const client = useNodeService();
+  const [proposals, setProposals] = useState<SocialIntroProposal[]>([]);
+
+  useEffect(() => {
+    if (!client.isConnected) return;
+
+    void client.listPendingSocialIntroProposals().then(setProposals).catch(console.error);
+
+    const unsub = client.on("social.intro:propose", (data) => {
+      setProposals((prev) => {
+        if (prev.some((p) => p.messageId === data.messageId)) return prev;
+        return [...prev, data];
+      });
+    });
+
+    return unsub;
+  }, [client]);
+
+  const approveCommitment = async (messageId: string) => {
+    await client.approveSocialIntroCommitment(messageId);
+    const fresh = await client.listPendingSocialIntroProposals();
+    setProposals(fresh);
+  };
+
+  const decline = async (messageId: string) => {
+    await client.declineSocialIntroProposal(messageId);
+    setProposals((prev) => prev.filter((p) => p.messageId !== messageId));
+  };
+
+  return { proposals, approveCommitment, decline };
+}
+
 export function useHelloRequests() {
   const client = useNodeService();
   const [requests, setRequests] = useState<HelloRequest[]>([]);
@@ -336,6 +470,75 @@ export function useHelloRequests() {
   };
 
   return { requests, accept, decline };
+}
+
+export function useShareOffers() {
+  const client = useNodeService();
+  const [offers, setOffers] = useState<ShareOffer[]>([]);
+
+  useEffect(() => {
+    if (!client.isConnected) return;
+
+    void client.listPendingShareOffers().then(setOffers).catch(console.error);
+
+    const unsubOffered = client.on("share:offered", () => {
+      void client.listPendingShareOffers().then(setOffers).catch(console.error);
+    });
+    const unsubAccepted = client.on("share:accepted", () => {
+      void client.listPendingShareOffers().then(setOffers).catch(console.error);
+    });
+    const unsubDeclined = client.on("share:declined", () => {
+      void client.listPendingShareOffers().then(setOffers).catch(console.error);
+    });
+
+    return () => {
+      unsubOffered();
+      unsubAccepted();
+      unsubDeclined();
+    };
+  }, [client]);
+
+  const accept = async (shareId: string) => {
+    await client.acceptShare(shareId, "");
+    const fresh = await client.listPendingShareOffers();
+    setOffers(fresh);
+  };
+
+  const decline = async (shareId: string) => {
+    await client.declineShare(shareId);
+    const fresh = await client.listPendingShareOffers();
+    setOffers(fresh);
+  };
+
+  return { offers, accept, decline };
+}
+
+export function useAgentShareProposals() {
+  const client = useNodeService();
+  const [proposals, setProposals] = useState<AgentShareProposal[]>([]);
+
+  useEffect(() => {
+    if (!client.isConnected) return;
+
+    void client.listAgentShareProposals().then(setProposals).catch(console.error);
+
+    const unsub = client.on("share:agent-proposed", (data) => {
+      setProposals((prev) => {
+        const p = data as AgentShareProposal;
+        if (prev.some((x) => x.proposalId === p.proposalId)) return prev;
+        return [...prev, p];
+      });
+    });
+
+    return unsub;
+  }, [client]);
+
+  const dismiss = async (proposalId: string) => {
+    await client.dismissAgentShareProposal(proposalId);
+    setProposals((prev) => prev.filter((p) => p.proposalId !== proposalId));
+  };
+
+  return { proposals, dismiss };
 }
 
 /** Thread key = contact's owner id (bonds use `peerOwnerId`). */

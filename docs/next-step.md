@@ -36,7 +36,7 @@ Use this file as the **design rationale**. Use [implementation-plan.md](./implem
 - Trust policy and capability evaluation in `packages/bonds/src/index.ts`.
 - Audit and local stores in `packages/local-store/src/index.ts`.
 
-Important current gap: `knowledge.query` is still a mock inbound handler, and `routeModelRequest()` is not wired into the node runtime yet. This is the best first integration point.
+**Inbound `knowledge.query` is wired:** see `apps/node/src/knowledge-query-inbound.ts` (policy gate, vault search, `routeModelRequest()` from `@envoymesh/models`, signed `knowledge.response`, audits). Implementation checklist for Phase 8A–8L is in [implementation-plan.md](./implementation-plan.md). **Higher-level gaps** called out there include live WAN proofs (relay/DCUtR/AutoNAT), operator relay fleet defaults (now summarized in **[operator-relay-fleet.md](./operator-relay-fleet.md)** and the [live connectivity](./live-connectivity-testing.md) track), SQLite at scale when audit/query needs justify it (**[sqlite-adoption.md](./sqlite-adoption.md)** triggers), and global DHT-style capability advertisement (distinct from signed `discovery.request`).
 
 ## Target Topology
 
@@ -387,12 +387,12 @@ Official nodes can receive priority in matching, but they still use signed EMP m
 
 ## Design Roadmap
 
-Each round should be independently testable. Do not implement all future architecture at once. The canonical implementation checklist lives in [implementation-plan.md](./implementation-plan.md) Phase 8; the order below explains **why** the work is sequenced this way.
+Each round should be independently testable. Do not implement all future architecture at once. Phase **8A–8L** are **`[x]`** in [implementation-plan.md](./implementation-plan.md); the table below preserves **why** that sequence made sense during design.
 
 | Phase | Design step | Why this order |
 |-------|-------------|----------------|
-| 8A | Real `knowledge.query`: policy gate → vault search/read → model router → signed `knowledge.response` → audit | Smallest useful LLM feature; uses existing mock handler and existing packages. |
-| 8B | Model provider configuration | Keeps 8A testable with mock/local defaults first, then makes provider selection configurable. |
+| 8A | Real `knowledge.query`: policy gate → vault search/read → model router → signed `knowledge.response` → audit | Smallest useful LLM slice; exercised end-to-end in `apps/node/src/knowledge-query-inbound.ts`. |
+| 8B | Model provider configuration | Keeps routing testable behind explicit provider/config choices before widening traffic. |
 | 8C | LLM-assisted chat, draft first | Adds user-facing help without letting the model impersonate the owner. |
 | 8D | Capability manifest for contact-scoped matching | Gives the node a cheap, owner-approved self-description before discovery grows. |
 | 8E | Safe match-to-share workflow | Ensures matches produce previews and consented direct sharing, not raw-data leaks. |
@@ -408,7 +408,7 @@ Ordering rule: direct bonded-contact workflows come first; public/anonymous/broa
 
 ## Missing Topics To Keep In View
 
-These are important, but should not block Phase 8A.
+These are important, but should not block core agent/UI iteration on bonded paths (Phase 8 shipped).
 
 - Queue priorities: chat/contact/active tasks before anonymous discovery.
 - Resource budgets: model cost, CPU, memory, time, and network bandwidth.
@@ -425,6 +425,6 @@ These are important, but should not block Phase 8A.
 
 ## Immediate Recommendation
 
-Start with Phase 8A.
+**Phase 8 (agentic normal node) is landed** — see `[x]` Phase 8 rows in [implementation-plan.md](./implementation-plan.md). Prefer **incremental pulls** from the prioritized gaps there (notably WAN live-validation, relay operator defaults, and discovery/capability advertisement) rather than re-specifying the Brain path.
 
-The current system already has the right place for it: `apps/node/src/knowledge-query-inbound.ts` is a mock handler, and `@envoymesh/models` already has a model router and semantic firewall. Replacing the mock with a policy-gated vault + model + signed response path gives EnvoyMesh its first real "Brain" while staying small, secure, and testable.
+For product narrative, EnvoyMesh already runs a policy-gated **vault + model router + signed `knowledge.response`** inbound path (`knowledge-query-inbound.ts`).

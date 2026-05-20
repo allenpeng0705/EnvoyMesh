@@ -130,10 +130,9 @@ describe("ExternalAgentGateway", () => {
     it("updates last activity time", async () => {
       const session = createExternalAgentSession("agent-1", "peer-1", "Test", "owner-1");
       gateway.registerAgent(session);
-      const before = session.lastActivityAt;
+      const before = gateway.getAgent("agent-1")!.lastActivityAt;
 
-      // Wait a millisecond to ensure different timestamp
-      await new Promise((r) => setTimeout(r, 1));
+      await new Promise((r) => setTimeout(r, 50));
       gateway.touchAgent("agent-1");
       expect(gateway.getAgent("agent-1")?.lastActivityAt).not.toBe(before);
     });

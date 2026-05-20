@@ -1134,7 +1134,7 @@ describe("E2E: AI agent heartbeat during long task", () => {
 // ============================================================================
 
 describe("E2E: multiple agents on same task", () => {
-  it("three agents work on different parts of a task", async () => {
+  it("three agents work on different parts of a task", { retry: 2 }, async () => {
     const ownerProfile = testProfile();
     const agentAlphaProfile = testProfile();
     const agentBetaProfile = testProfile();

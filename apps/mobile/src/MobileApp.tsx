@@ -7,7 +7,7 @@
  * 4-tab layout (WeChat-style): Chats | Contacts | Discover | Me
  * Settings is accessed from the "Me" tab via a gear icon.
  */
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { useNodeState } from "@envoymesh/social/context/NodeStateContext.js";
 import { useTheme } from "@envoymesh/social/context/ThemeContext.js";
 import { ErrorBoundary } from "@envoymesh/social/components/ErrorBoundary.js";
@@ -73,11 +73,6 @@ function TabButton({ icon, label, active, onClick, id, badge }: TabButtonProps) 
 // Helpers
 // ---------------------------------------------------------------------------
 
-function shortPeerId(peerId: string | undefined): string {
-  if (!peerId) return "";
-  return peerId.length > 12 ? peerId.slice(0, 6) + "..." + peerId.slice(-4) : peerId;
-}
-
 const TAB_TITLES: Record<TabId, string> = {
   chat: "Chats",
   contacts: "Contacts",
@@ -85,16 +80,36 @@ const TAB_TITLES: Record<TabId, string> = {
   me: "Me",
 };
 
+function tabPanelClass(activeTab: TabId, panelTab: TabId): string {
+  return `mobile-tab-panel${activeTab === panelTab ? " mobile-tab-panel-active" : ""}`;
+}
+
 // ---------------------------------------------------------------------------
 // MobileApp
 // ---------------------------------------------------------------------------
 
 export function MobileApp() {
-  const { isConnected, nodeStatus, peerId, pendingHellOs } = useNodeState();
-  const { resolved, setTheme } = useTheme();
+  const { isConnected, nodeStatus, pendingHellOs, pendingMessages } = useNodeState();
+  const { theme, resolved, setTheme } = useTheme();
   const [currentTab, setCurrentTab] = useState<TabId>("chat");
   const [meView, setMeView] = useState<MeView>("profile");
+  /** Contacts tab taps "open chat" — merges into focused thread while Chats stays mounted */
+  const [chatFocusPeerId, setChatFocusPeerId] = useState<string | null>(null);
 
+  const handleContactsOpenChat = useCallback((peerOwnerId: string) => {
+    setChatFocusPeerId(peerOwnerId);
+    setCurrentTab("chat");
+  }, []);
+
+  const handleChatFocusConsumed = useCallback(() => setChatFocusPeerId(null), []);
+
+  const cycleTheme = () => {
+    if (theme === "system") setTheme("dark");
+    else if (theme === "dark") setTheme("light");
+    else setTheme("system");
+  };
+
+  const themeLabel = theme === "system" ? "Auto" : theme === "dark" ? "Dark" : "Light";
   const isDark = resolved === "dark";
 
   // -- Loading ---------------------------------------------------------------
@@ -162,12 +177,12 @@ export function MobileApp() {
           )}
           <button
             className="top-bar-theme-btn"
-            onClick={() => setTheme(isDark ? "light" : "dark")}
-            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            onClick={cycleTheme}
+            title={`Theme: ${themeLabel}`}
+            aria-label={`Theme: ${themeLabel}. Tap to cycle Auto, Dark, and Light.`}
           >
             {isDark ? <LightModeIcon size={18} /> : <DarkModeIcon size={18} />}
           </button>
-          <span className="top-bar-peer">{shortPeerId(peerId)}</span>
           <div className="top-bar-status" />
         </div>
       </header>
@@ -175,21 +190,31 @@ export function MobileApp() {
       {/* Main content area */}
       <main className="mobile-content">
         <ErrorBoundary>
-          {currentTab === "chat" && <MobileChatView key="chat" />}
-          {currentTab === "contacts" && <MobileContactsView key="contacts" />}
-          {currentTab === "discover" && <MobileDiscoverView key="discover" />}
-          {currentTab === "me" && meView === "profile" && (
-            <MobileProfileView
-              key="profile"
-              onNavigateSettings={() => setMeView("settings")}
+          <div className={tabPanelClass(currentTab, "chat")} aria-hidden={currentTab !== "chat"}>
+            <MobileChatView
+              focusPeerId={chatFocusPeerId}
+              onFocusPeerConsumed={handleChatFocusConsumed}
             />
-          )}
-          {currentTab === "me" && meView === "settings" && (
-            <MobileSettingsView
-              key="settings"
-              onBack={() => setMeView("profile")}
-            />
-          )}
+          </div>
+          <div className={tabPanelClass(currentTab, "contacts")} aria-hidden={currentTab !== "contacts"}>
+            {currentTab === "contacts" ? (
+              <MobileContactsView
+                onOpenChat={handleContactsOpenChat}
+                onGoDiscover={() => setCurrentTab("discover")}
+              />
+            ) : null}
+          </div>
+          <div className={tabPanelClass(currentTab, "discover")} aria-hidden={currentTab !== "discover"}>
+            {currentTab === "discover" ? <MobileDiscoverView /> : null}
+          </div>
+          <div className={tabPanelClass(currentTab, "me")} aria-hidden={currentTab !== "me"}>
+            {currentTab === "me" && meView === "profile" && (
+              <MobileProfileView onNavigateSettings={() => setMeView("settings")} />
+            )}
+            {currentTab === "me" && meView === "settings" && (
+              <MobileSettingsView onBack={() => setMeView("profile")} />
+            )}
+          </div>
         </ErrorBoundary>
       </main>
 
@@ -198,7 +223,7 @@ export function MobileApp() {
         <TabButton
           id="chat" icon={<ChatIcon size={22} />} label="Chats"
           active={currentTab === "chat"} onClick={(id) => { setCurrentTab(id); }}
-          badge={pendingHellOs.length}
+          badge={pendingHellOs.length + pendingMessages.length}
         />
         <TabButton
           id="contacts" icon={<ContactsIcon size={22} />} label="Contacts"

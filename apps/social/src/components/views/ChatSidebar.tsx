@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import type {
@@ -7,18 +7,21 @@ import type {
 } from "@envoymesh/api";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { ChatIcon, BridgeIcon } from "../../icons.js";
+import { useChatThreadPreviews } from "../../hooks/useChatThreadPreviews.js";
 
 interface ChatSidebarProps {
   selectedContact: string | null;
   onSelectContact: (id: string | null) => void;
+  onNavigateToInbox?: () => void;
 }
 
-export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarProps) {
+export function ChatSidebar({ selectedContact, onSelectContact, onNavigateToInbox }: ChatSidebarProps) {
   const nodeService = useNodeService();
   const {
     bonds,
     bridgeStatus,
     pendingHellOs,
+    pendingIntroProposals,
     pendingMessages,
     humanProfile,
     nodeConfig,
@@ -76,19 +79,30 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
     } catch (e) { console.error(e); }
   };
 
-  const totalPending = pendingHellOs.length + pendingMessages.length;
+  const totalPending = pendingHellOs.length + pendingIntroProposals.length + pendingMessages.length;
+
+  const bondPeerIds = useMemo(() => bonds.map((b) => b.peerOwnerId), [bonds]);
+  const threadPreviews = useChatThreadPreviews(bondPeerIds);
 
   return (
     <aside className="contact-list">
       <div className="contact-list-header">
         <h3>Chats</h3>
         {totalPending > 0 && (
-          <span className="inbox-count">{totalPending} new</span>
+          <button
+            type="button"
+            className="inbox-count-btn"
+            onClick={() => onNavigateToInbox?.()}
+            aria-label={`Open inbox, ${totalPending} new`}
+          >
+            {totalPending} new
+          </button>
         )}
       </div>
 
       {/* Envoy AI contact */}
       <button
+        type="button"
         className={`${selectedContact === "__envoy_ai__" ? "active" : ""}`}
         onClick={() => onSelectContact("__envoy_ai__")}
       >
@@ -99,6 +113,7 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
       {/* Bridge agent contact — appears when external agent bridge is enabled */}
       {bridgeStatus?.enabled && (
         <button
+          type="button"
           className={selectedContact === bridgeStatus.agentPeerId ? "active" : ""}
           onClick={() => onSelectContact(bridgeStatus.agentPeerId)}
         >
@@ -153,7 +168,7 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
       )}
 
       {/* Bonded contacts */}
-      {bonds.length === 0 && pendingHellOs.length === 0 && pendingMessages.length === 0 ? (
+      {bonds.length === 0 && pendingHellOs.length === 0 && pendingIntroProposals.length === 0 && pendingMessages.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">
             <ChatIcon size={32} />
@@ -164,20 +179,30 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
       ) : (
         <>
           <div className="contact-list-section-label">Contacts</div>
-          {bonds.map((contact) => (
-            <button
-              key={contact.peerOwnerId}
-              className={selectedContact === contact.peerOwnerId ? "active" : ""}
-              onClick={() => onSelectContact(contact.peerOwnerId)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setContextMenu({ ownerId: contact.peerOwnerId, x: e.clientX, y: e.clientY });
-              }}
-            >
-              <span className="avatar">{contact.displayName?.[0] ?? "?"}</span>
-              <span className="name">{contactLabel(contact)}</span>
-            </button>
-          ))}
+          {bonds.map((contact) => {
+            const pv = threadPreviews[contact.peerOwnerId];
+            return (
+              <button
+                key={contact.peerOwnerId}
+                type="button"
+                className={selectedContact === contact.peerOwnerId ? "active" : ""}
+                onClick={() => onSelectContact(contact.peerOwnerId)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenu({ ownerId: contact.peerOwnerId, x: e.clientX, y: e.clientY });
+                }}
+              >
+                <span className="avatar">{contact.displayName?.[0] ?? "?"}</span>
+                <span className="contact-thread-meta">
+                  <span className="contact-thread-title-row">
+                    <span className="name">{contactLabel(contact)}</span>
+                    {pv && <span className="contact-thread-time">{pv.timeLabel}</span>}
+                  </span>
+                  {pv && <span className="preview">{pv.text}</span>}
+                </span>
+              </button>
+            );
+          })}
         </>
       )}
 

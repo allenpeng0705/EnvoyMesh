@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useNodeState } from "./context/NodeStateContext.js";
 import { useNodeService } from "./hooks/useNodeService.js";
-import type { NodeServiceClient } from "./hooks/useNodeService.js";
 import { ToastProvider } from "./hooks/useToast.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { Header } from "./components/Header.js";
@@ -12,8 +11,9 @@ import { SearchView } from "./components/views/SearchView.js";
 import { ProfileView } from "./components/views/ProfileView.js";
 import { SettingsView } from "./components/views/SettingsView.js";
 import { InboxView } from "./components/views/InboxView.js";
+import { LibraryView } from "./components/views/LibraryView.js";
 
-export type ViewName = "chat" | "contacts" | "search" | "profile" | "settings" | "inbox";
+export type ViewName = "chat" | "contacts" | "search" | "library" | "profile" | "settings" | "inbox";
 
 export function App() {
   const {
@@ -24,6 +24,8 @@ export function App() {
     humanProfile,
     bonds,
     pendingHellOs,
+    pendingIntroProposals,
+    pendingMessages,
     connectionStatus,
   } = useNodeState();
 
@@ -38,6 +40,7 @@ export function App() {
   };
 
   const [currentView, setCurrentView] = useState<ViewName>("chat");
+  const [chatSelectedContact, setChatSelectedContact] = useState<string | null>(null);
 
   const isPublicNetwork = (nodeConfig?.bootstrapPresets ?? []).length > 0;
 
@@ -78,7 +81,7 @@ export function App() {
         <Header
           currentView={currentView}
           onNavigate={(v) => { setCurrentView(v); }}
-          inboxCount={pendingHellOs.length}
+          inboxActivityCount={pendingHellOs.length + pendingIntroProposals.length + pendingMessages.length}
           bondsCount={bonds.length}
           isPublicNetwork={isPublicNetwork}
           connectionStatus={connectionStatus}
@@ -91,9 +94,23 @@ export function App() {
 
         <ErrorBoundary>
           <main className="main">
-            {currentView === "chat" && <ChatView />}
-            {currentView === "contacts" && <ContactsView />}
+            {currentView === "chat" && (
+              <ChatView
+                selectedContact={chatSelectedContact}
+                onSelectedContactChange={setChatSelectedContact}
+                onNavigateToInbox={() => setCurrentView("inbox")}
+              />
+            )}
+            {currentView === "contacts" && (
+              <ContactsView
+                onOpenChat={(peerOwnerId) => {
+                  setChatSelectedContact(peerOwnerId);
+                  setCurrentView("chat");
+                }}
+              />
+            )}
             {currentView === "search" && <SearchView />}
+            {currentView === "library" && <LibraryView />}
             {currentView === "profile" && <ProfileView />}
             {currentView === "settings" && <SettingsView />}
             {currentView === "inbox" && <InboxView />}

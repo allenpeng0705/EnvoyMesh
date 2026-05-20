@@ -5,8 +5,9 @@ import {
   createLocalTrustStore,
   type NodeProfile,
 } from "@envoymesh/local-store";
-import { createUnsignedEnvelope, type EnvoyEnvelope } from "@envoymesh/protocol";
-import { mkdtemp, rm } from "node:fs/promises";
+import { createUnsignedEnvelope, createDiscoveryRequestPayload, type EnvoyEnvelope } from "@envoymesh/protocol";
+import { buildVaultIndex } from "@envoymesh/vault";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -118,6 +119,59 @@ describe("handleInboundDiscoveryIntent", () => {
       ok: false,
       reason: "anonymous discovery mode is contacts-only; public callers are rejected",
     });
+  });
+
+  it("answers public discovery.request with published library metadata when title query matches (FS-D)", async () => {
+    const vaultDir = await mkdtemp(join(tmpdir(), "envoy-discovery-vault-"));
+    try {
+      await mkdir(join(vaultDir, "notes"), { recursive: true });
+      await writeFile(join(vaultDir, "notes", "hello.md"), "# Hello\n", "utf8");
+      const index = await buildVaultIndex({ rootDir: vaultDir });
+      const docId = index.documents[0]!.documentId;
+      await writeFile(
+        join(profileDir, "published-library.json"),
+        `${JSON.stringify({ documentIds: [docId] }, null, 2)}\n`,
+        "utf8",
+      );
+
+      const profile = testProfile();
+      const taskStore = createLocalTaskStore(profileDir);
+      const trustStore = createLocalTrustStore(profileDir);
+
+      const envelope = signedEnvelope(
+        profile,
+        "discovery.request",
+        createDiscoveryRequestPayload({
+          requesterOwnerId: "envoy:owner:stranger",
+          requestedTagHashes: [],
+          requestedCapabilities: [],
+          fileTitleQuery: "hello",
+          maxResults: 5,
+        }),
+      );
+
+      const result = await handleInboundDiscoveryIntent({
+        envelope,
+        profile,
+        remotePeerId: "libp2p-stranger",
+        receivedAt: Date.now(),
+        correlationId: undefined,
+        taskStore,
+        trustStore,
+        anonymousDiscoveryMode: "public-preview",
+        vaultDir,
+        profileDir,
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok && result.responsePayload) {
+        const libs = result.responsePayload.matches[0]?.libraryMatches;
+        expect(libs?.length).toBe(1);
+        expect(libs?.[0]?.title).toBe("hello");
+      }
+    } finally {
+      await rm(vaultDir, { recursive: true, force: true });
+    }
   });
 });
 

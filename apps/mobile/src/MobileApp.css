@@ -186,6 +186,23 @@ body {
 .mobile-content {
   flex: 1 1 0%;
   min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Tab panels: inactive hidden; active fills space and scrolls (matches former .mobile-content scrolling) */
+.mobile-tab-panel {
+  display: none;
+  flex: 1 1 0%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mobile-tab-panel.mobile-tab-panel-active {
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
@@ -290,4 +307,10 @@ body {
 @keyframes mobileFadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-content > * {
+    animation: none;
+  }
 }

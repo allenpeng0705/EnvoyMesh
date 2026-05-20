@@ -1,4 +1,10 @@
-import type { NodeService, RpcMethods, HomeClawCoreProxyParams } from "@envoymesh/api";
+import type {
+  NodeService,
+  RpcMethods,
+  HomeClawCoreProxyParams,
+  ListLibraryItemsParams,
+  DiscoverPublishedLibraryParams,
+} from "@envoymesh/api";
 
 /**
  * Route a JSON-RPC method call to the appropriate NodeService method.
@@ -23,6 +29,9 @@ export async function routeRpcMethod(
         params.targetOwnerId as string,
         params.profile as any,
         params.message as string,
+        params.introProposalMessageId
+          ? { introProposalMessageId: params.introProposalMessageId as string }
+          : undefined,
       );
     case "acceptHello":
       return ns.acceptHello(params.messageId as string);
@@ -36,6 +45,12 @@ export async function routeRpcMethod(
       return ns.revokeBond(params.peerOwnerId as string);
     case "getBonds":
       return ns.getBonds();
+    case "listPendingSocialIntroProposals":
+      return ns.listPendingSocialIntroProposals();
+    case "approveSocialIntroCommitment":
+      return ns.approveSocialIntroCommitment(params.messageId as string);
+    case "declineSocialIntroProposal":
+      return ns.declineSocialIntroProposal(params.messageId as string);
     case "sendChat":
       return ns.sendChat(params.targetOwnerId as string, params.text as string);
     case "listChatHistory":
@@ -45,11 +60,30 @@ export async function routeRpcMethod(
     case "searchPeers":
       return ns.searchPeers(params as any);
     case "shareFile":
-      return ns.shareFile(params.targetOwnerId as string, params as any);
+      return ns.shareFile(params.targetOwnerId as string, params.file as any);
     case "acceptShare":
       return ns.acceptShare(params.shareId as string, params.savePath as string);
     case "declineShare":
       return ns.declineShare(params.shareId as string);
+    case "listPendingShareOffers":
+      return ns.listPendingShareOffers();
+    case "listLibraryItems":
+      return ns.listLibraryItems(params as ListLibraryItemsParams | undefined);
+    case "setLibraryItemPublished":
+      return ns.setLibraryItemPublished(params.documentId as string, params.published as boolean);
+    case "discoverPublishedLibrary":
+      return ns.discoverPublishedLibrary(params as DiscoverPublishedLibraryParams | undefined);
+    case "listAgentShareProposals":
+      return ns.listAgentShareProposals();
+    case "dismissAgentShareProposal":
+      return ns.dismissAgentShareProposal(params.proposalId as string);
+    case "submitAgentShareProposal":
+      return ns.submitAgentShareProposal({
+        targetOwnerId: params.targetOwnerId as string,
+        vaultRelativePath: params.vaultRelativePath as string,
+        sensitivity: params.sensitivity as "public" | "friends" | "private",
+        summary: params.summary as string | undefined,
+      });
     case "getConnectionStatus":
       return ns.getConnectionStatus();
     case "getPeerConnectionInfo":
