@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { createWsClient } from "../ws-client.js";
+import { loadAppSettings } from "../lib/storage.js";
 import type {
   AgentShareProposal,
   BondRecord,
@@ -27,6 +28,10 @@ import type {
   NodeStatus,
   LibraryItem,
   ListLibraryItemsParams,
+  ExportLibraryItemToIpfsResult,
+  VerifyLibraryItemIpfsGatewayParams,
+  VerifyLibraryItemIpfsGatewayResult,
+  IpfsEngineStatus,
 } from "@envoymesh/api";
 
 type InitNodeOptions = {
@@ -99,6 +104,11 @@ export interface NodeServiceClient {
   // Shared vault library
   listLibraryItems(params?: ListLibraryItemsParams): Promise<LibraryItem[]>;
   setLibraryItemPublished(documentId: string, published: boolean): Promise<void>;
+  exportLibraryItemToIpfs(documentId: string): Promise<ExportLibraryItemToIpfsResult>;
+  getIpfsEngineStatus(): Promise<IpfsEngineStatus>;
+  verifyLibraryItemIpfsGateway(
+    params: VerifyLibraryItemIpfsGatewayParams,
+  ): Promise<VerifyLibraryItemIpfsGatewayResult>;
   discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]>;
   listAgentShareProposals(): Promise<AgentShareProposal[]>;
   dismissAgentShareProposal(proposalId: string): Promise<void>;
@@ -133,24 +143,44 @@ export interface NodeServiceClient {
 
 const NodeServiceContext = createContext<NodeServiceClient | null>(null);
 
+/** True when WebSocket/mobile transport is up (daemon may still be stopped). Separate from mesh "online". */
+const TransportWsContext = createContext(false);
+
+export function useTransportWsOpen(): boolean {
+  return useContext(TransportWsContext);
+}
+
 /** Mobile shell only exposes cloud-friendly provider modes in Settings; desktop uses full. */
 export type ModelProviderUiScope = "full" | "cloud-only";
 
+/** How Social talks to NodeService — WebSocket desktop vs in-process Capacitor DirectCallClient. */
+export type NodeClientTransport = "websocket" | "direct-call";
+
 const ModelProviderUiScopeContext = createContext<ModelProviderUiScope>("full");
+const NodeClientTransportContext = createContext<NodeClientTransport>("websocket");
 
 export function useModelProviderUiScope(): ModelProviderUiScope {
   return useContext(ModelProviderUiScopeContext);
+}
+
+export function useNodeClientTransport(): NodeClientTransport {
+  return useContext(NodeClientTransportContext);
+}
+
+/** True when running the Capacitor mobile app (DirectCallClient → MobileNode). */
+export function useIsInProcessMobileNode(): boolean {
+  return useNodeClientTransport() === "direct-call";
 }
 
 type WsClientType = ReturnType<typeof createWsClient>;
 
 /** Build a NodeServiceClient that talks to a local WsServer via WebSocket (desktop). */
 function createWsNodeServiceClient(
+  wsUrl: string,
   connectCb: (connected: boolean) => void,
   readyCb: (ready: boolean) => void,
-  reconnectAttemptsCb: (n: number) => void,
 ): { client: NodeServiceClient; wsClient: WsClientType } {
-  const wsClient = createWsClient();
+  const wsClient = createWsClient(wsUrl);
   let connected = false;
   let readyReceived = false;
 
@@ -172,7 +202,7 @@ function createWsNodeServiceClient(
 
     async connect() {
       await wsClient.connect();
-      // Status callback handles connectCb via onStatusChange
+      connectCb(wsClient.isConnected());
     },
 
     disconnect() {
@@ -228,6 +258,17 @@ function createWsNodeServiceClient(
     },
     async setLibraryItemPublished(documentId: string, published: boolean) {
       return wsClient.rpc("setLibraryItemPublished", { documentId, published });
+    },
+    async exportLibraryItemToIpfs(documentId: string) {
+      return wsClient.rpc("exportLibraryItemToIpfs", { documentId }) as Promise<ExportLibraryItemToIpfsResult>;
+    },
+    async getIpfsEngineStatus() {
+      return wsClient.rpc("getIpfsEngineStatus", {}) as Promise<IpfsEngineStatus>;
+    },
+    async verifyLibraryItemIpfsGateway(params: VerifyLibraryItemIpfsGatewayParams) {
+      return wsClient.rpc("verifyLibraryItemIpfsGateway", params as unknown as Record<string, unknown>) as Promise<
+        VerifyLibraryItemIpfsGatewayResult
+      >;
     },
     async discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams) {
       return wsClient.rpc(
@@ -297,49 +338,95 @@ export function NodeServiceProvider({
   const [lastError, setLastError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
+
     if (clientFactory) {
-      // Mobile / in-process: use the provided factory
       const nodeService = clientFactory();
       setClient(nodeService);
-      nodeService.connect().then(() => {
-        setConnected(true);
-        setReady(true);
-      }).catch(console.error);
-      return () => { nodeService.disconnect(); };
+      void nodeService
+        .connect()
+        .then(() => {
+          if (!active) return;
+          setConnected(true);
+          setReady(true);
+        })
+        .catch((err) => {
+          if (!active) return;
+          console.error("[NodeServiceProvider] connect failed:", err);
+          setConnected(false);
+        });
+      return () => {
+        active = false;
+        nodeService.disconnect();
+      };
     }
 
-    // Desktop: use WebSocket client
-    const { client: nodeService, wsClient } = createWsNodeServiceClient(setConnected, setReady, setReconnectAttempts);
+    const wsUrl = loadAppSettings().wsUrl.trim() || "ws://localhost:3030/ws";
+    const { client: nodeService, wsClient } = createWsNodeServiceClient(
+      wsUrl,
+      (open) => {
+        if (active) setConnected(open);
+      },
+      (isReady) => {
+        if (active) setReady(isReady);
+      },
+    );
 
-    // Subscribe to wsClient lastError changes
-    wsClient.onStatusChange(() => {
+    const unsubStatus = wsClient.onStatusChange(() => {
+      if (!active) return;
       setLastError(wsClient.getLastError());
+      setConnected(wsClient.isConnected());
     });
 
-    // Auto-connect on mount
-    nodeService.connect().catch(console.error);
+    void nodeService
+      .connect()
+      .then(() => {
+        if (!active) return;
+        setConnected(wsClient.isConnected());
+        setLastError(wsClient.getLastError());
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("[NodeServiceProvider] WebSocket connect failed:", err);
+        setConnected(false);
+        setLastError(err instanceof Error ? err.message : String(err));
+      });
 
-    // Subscribe to node:ready event
-    wsClient.on("node:ready", () => {
-      setReady(true);
+    const unsubReady = wsClient.on("node:ready", () => {
+      if (active) setReady(true);
     });
 
-    // Update reconnect attempts and lastError periodically
     const reconnectInterval = setInterval(() => {
+      if (!active) return;
       setReconnectAttempts(wsClient.getReconnectAttempts());
       setLastError(wsClient.getLastError());
+      setConnected(wsClient.isConnected());
     }, 1000);
 
     setClient(nodeService);
 
     return () => {
+      active = false;
       clearInterval(reconnectInterval);
+      unsubStatus();
+      unsubReady();
       nodeService.disconnect();
+      setConnected(false);
+      setReady(false);
     };
   }, [clientFactory]);
 
   if (!client) {
-    return <div className="loading">Connecting...</div>;
+    return (
+      <div className="app">
+        <div className="loading">
+          <div className="loading-content">
+            <div className="loading-spinner" />
+            <h2>Starting Envoy Social</h2>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // Proxy delegates all calls to the real client while overriding connection-tracked
@@ -355,12 +442,18 @@ export function NodeServiceProvider({
     },
   }) as NodeServiceClient;
 
+  const nodeClientTransport: NodeClientTransport = clientFactory ? "direct-call" : "websocket";
+
   return (
-    <ModelProviderUiScopeContext.Provider value={modelProviderUiScope}>
-      <NodeServiceContext.Provider value={ctx}>
-        {children}
-      </NodeServiceContext.Provider>
-    </ModelProviderUiScopeContext.Provider>
+    <TransportWsContext.Provider value={connected}>
+      <NodeClientTransportContext.Provider value={nodeClientTransport}>
+        <ModelProviderUiScopeContext.Provider value={modelProviderUiScope}>
+          <NodeServiceContext.Provider value={ctx}>
+            {children}
+          </NodeServiceContext.Provider>
+        </ModelProviderUiScopeContext.Provider>
+      </NodeClientTransportContext.Provider>
+    </TransportWsContext.Provider>
   );
 }
 
@@ -387,10 +480,11 @@ export function useConnectionStatus() {
 
 export function useBonds() {
   const client = useNodeService();
+  const wsOpen = useTransportWsOpen();
   const [bonds, setBonds] = useState<BondRecord[]>([]);
 
   useEffect(() => {
-    if (!client.isConnected) return;
+    if (!wsOpen || !client.isConnected) return;
 
     // Initial load
     client.getBonds().then(setBonds).catch(console.error);
@@ -407,17 +501,18 @@ export function useBonds() {
       unsubEstablished();
       unsubRevoked();
     };
-  }, [client]);
+  }, [client, wsOpen]);
 
   return bonds;
 }
 
 export function useSocialIntroProposals() {
   const client = useNodeService();
+  const wsOpen = useTransportWsOpen();
   const [proposals, setProposals] = useState<SocialIntroProposal[]>([]);
 
   useEffect(() => {
-    if (!client.isConnected) return;
+    if (!wsOpen || !client.isConnected) return;
 
     void client.listPendingSocialIntroProposals().then(setProposals).catch(console.error);
 
@@ -429,7 +524,7 @@ export function useSocialIntroProposals() {
     });
 
     return unsub;
-  }, [client]);
+  }, [client, wsOpen]);
 
   const approveCommitment = async (messageId: string) => {
     await client.approveSocialIntroCommitment(messageId);
@@ -447,17 +542,18 @@ export function useSocialIntroProposals() {
 
 export function useHelloRequests() {
   const client = useNodeService();
+  const wsOpen = useTransportWsOpen();
   const [requests, setRequests] = useState<HelloRequest[]>([]);
 
   useEffect(() => {
-    if (!client.isConnected) return;
+    if (!wsOpen || !client.isConnected) return;
 
     const unsub = client.on("hello:request", (data) => {
       setRequests((prev) => [...prev, data as HelloRequest]);
     });
 
     return unsub;
-  }, [client]);
+  }, [client, wsOpen]);
 
   const accept = async (messageId: string) => {
     await client.acceptHello(messageId);

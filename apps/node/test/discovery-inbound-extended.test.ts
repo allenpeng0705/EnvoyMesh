@@ -194,6 +194,47 @@ describe("handleInboundDiscoveryIntent — error handling", () => {
 
     expect(result.ok).toBe(false);
   });
+
+  it("returns error when discovery.response libraryMatches cid exceeds max length", async () => {
+    const profile = testProfile();
+    const taskStore = createLocalTaskStore(profileDir);
+    const tooLongCid = "b".repeat(129);
+
+    const envelope = signedEnvelope(profile, "discovery.response", {
+      requestMessageId: "disc-req-cid",
+      responderOwnerId: "envoy:owner:responder",
+      matches: [
+        {
+          ownerId: "envoy:owner:responder",
+          peerId: "peer-responder",
+          matchedTagHashes: [],
+          matchedCapabilities: ["envoymesh.published-library"],
+          libraryMatches: [
+            {
+              documentId: "doc-1",
+              title: "oversized cid",
+              relativePath: "x.md",
+              contentHash: "hash",
+              cid: tooLongCid,
+            },
+          ],
+        },
+      ],
+      truncated: false,
+    });
+
+    const result = await handleInboundDiscoveryIntent({
+      envelope,
+      profile,
+      remotePeerId: "libp2p-responder",
+      receivedAt: Date.now(),
+      correlationId: "corr-oversized-cid",
+      taskStore,
+      trustStore: {} as any,
+    });
+
+    expect(result.ok).toBe(false);
+  });
 });
 
 describe("handleInboundRelayPeersIntent — relay.peers.response", () => {

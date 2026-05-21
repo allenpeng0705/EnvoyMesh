@@ -116,23 +116,9 @@ export interface SendHelloOptions {
 // Bond Types
 // ============================================
 
-export type BondLevel = "direct" | "referred" | "public" | "blocked";
+import type { BondLevel } from "./bond-trust-rank.js";
 
-/** Lower is stronger trust — useful for sorting contacts / discovery results. */
-export function bondTrustRank(level: BondLevel): number {
-  switch (level) {
-    case "direct":
-      return 0;
-    case "referred":
-      return 1;
-    case "public":
-      return 2;
-    case "blocked":
-      return 99;
-    default:
-      return 50;
-  }
-}
+export type { BondLevel } from "./bond-trust-rank.js";
 
 export interface BondRecord {
   peerOwnerId: string;
@@ -237,7 +223,7 @@ export interface ListLibraryItemsParams {
   query?: string;
 }
 
-/** One indexed file in the local shared vault (supported extensions only) */
+/** One file in the local shared vault (all regular files listed; binary files have integrity hashes but no text chunks). */
 export interface LibraryItem {
   documentId: string;
   relativePath: string;
@@ -248,6 +234,49 @@ export interface LibraryItem {
   updatedAt: string;
   /** True when the document is included in the published discovery manifest (see `setLibraryItemPublished`). */
   published: boolean;
+  /** Latest Kubo-aligned IPFS export for this document, when present. */
+  publishedExternal?: PublishedExternalRecord;
+}
+
+/** Persisted metadata from an explicit owner-approved IPFS export (Kubo `ipfs add` root CID). */
+export interface PublishedExternalRecord {
+  exportRevision: number;
+  exportedAt: string;
+  cid: string;
+  ipfsInteropRecipe: string;
+  kuboVersion: string;
+  contentHash: string;
+}
+
+export interface ExportLibraryItemToIpfsResult extends PublishedExternalRecord {
+  documentId: string;
+  relativePath: string;
+}
+
+/** Managed/bundled Kubo sidecar status (desktop). */
+export interface IpfsEngineStatus {
+  available: boolean;
+  running: boolean;
+  managed: boolean;
+  kuboVersion?: string;
+  errorHint?: string;
+}
+
+export interface VerifyLibraryItemIpfsGatewayParams {
+  documentId: string;
+  /** Optional gateway base URL; must be in `externalPublish.gatewayAllowlist`. */
+  gatewayUrl?: string;
+}
+
+export interface VerifyLibraryItemIpfsGatewayResult {
+  documentId: string;
+  relativePath: string;
+  cid: string;
+  gatewayUrl: string;
+  contentHashMatches: boolean;
+  fetchedBytes: number;
+  expectedContentHash: string;
+  fetchedContentHash: string;
 }
 
 // ----- Published library discovery (FS-D) -----
@@ -269,6 +298,8 @@ export interface PublishedLibraryFileHit {
   relativePath: string;
   contentHash: string;
   byteLength?: number;
+  /** Kubo root CID when the peer included it in discovery metadata. */
+  cid?: string;
 }
 
 export interface DiscoverPublishedLibraryPeerResult {
@@ -565,6 +596,23 @@ export interface NodeService {
    * Mark a vault document as published for metadata-only `discovery.request` matches (no file bytes).
    */
   setLibraryItemPublished(documentId: string, published: boolean): Promise<void>;
+
+  /**
+   * Export a vault document to IPFS via Kubo `ipfs add` (interop recipe v1).
+   * Requires `externalPublish.allowIpfs` in node config. Desktop only.
+   */
+  exportLibraryItemToIpfs(documentId: string): Promise<ExportLibraryItemToIpfsResult>;
+
+  /** Kubo sidecar / managed daemon status (desktop IPFS export). */
+  getIpfsEngineStatus(): Promise<IpfsEngineStatus>;
+
+  /**
+   * Fetch exported content from an allowlisted IPFS gateway and verify bytes match vault contentHash.
+   * Desktop only; requires `externalPublish.allowIpfs` and a non-empty gateway allowlist.
+   */
+  verifyLibraryItemIpfsGateway(
+    params: VerifyLibraryItemIpfsGatewayParams,
+  ): Promise<VerifyLibraryItemIpfsGatewayResult>;
 
   /**
    * Query bonded contacts for published library metadata (`libraryMatches` in `discovery.response`).

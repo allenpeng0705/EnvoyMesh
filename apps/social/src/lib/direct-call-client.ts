@@ -190,6 +190,18 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.setLibraryItemPublished(documentId, published);
   }
 
+  async exportLibraryItemToIpfs(documentId: string) {
+    return this._ns.exportLibraryItemToIpfs(documentId);
+  }
+
+  async getIpfsEngineStatus() {
+    return this._ns.getIpfsEngineStatus();
+  }
+
+  async verifyLibraryItemIpfsGateway(params: Parameters<NodeService["verifyLibraryItemIpfsGateway"]>[0]) {
+    return this._ns.verifyLibraryItemIpfsGateway(params);
+  }
+
   async discoverPublishedLibrary(params?: Parameters<NodeService["discoverPublishedLibrary"]>[0]) {
     return this._ns.discoverPublishedLibrary(params);
   }

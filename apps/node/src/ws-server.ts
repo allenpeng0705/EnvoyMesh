@@ -194,6 +194,24 @@ export class WsServer {
       multiaddrs: status.multiaddrs,
     });
 
+    // desktop clients register `on("node:status")` via RPC asynchronously; daemon may have
+    // emitted running before WsServer listeners existed — replay snapshot after subscriptions settle.
+    setTimeout(() => {
+      try {
+        const impl = this.nodeService as NodeServiceImpl;
+        const cs = impl.getConnectionStatus();
+        const payload: { status: ReturnType<NodeServiceImpl["getNodeStatus"]>; peerId?: string } = {
+          status: impl.getNodeStatus(),
+        };
+        if (cs.peerId) payload.peerId = cs.peerId;
+        if (ws.readyState === WebSocket.OPEN) {
+          this.emitEvent("node:status", payload);
+        }
+      } catch (e) {
+        console.warn("[ws-server] deferred node:status snapshot failed:", e);
+      }
+    }, 350);
+
     // Send node:ready after a short delay to indicate node is fully initialized
     setTimeout(() => {
       this.sendEvent(ws, "node:ready", { timestamp: Date.now() });

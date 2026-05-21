@@ -2039,8 +2039,8 @@ const nodeService = createNodeService(
 );
 if (nodeService instanceof NodeServiceImpl) {
   nodeService.bindCliTaskStore(taskStore);
-  nodeService.bindExternalMesh(mesh);
-  void nodeService.resyncBondedContactReachabilityTags();
+  // bindExternalMesh + resyncBondedContactReachabilityTags run after mesh.start()
+  // (mesh.peerId requires libp2p to be up).
   // Load model provider config from persisted config
   const nodeConfig = await nodeService.getNodeConfig();
   currentModelProviders = nodeConfig.modelProviders;
@@ -2084,6 +2084,11 @@ installEnvoyDataTransferReceiver({
 await mesh.start();
 meshStarted = true;
 lastKnownLibp2pPeerId = mesh.peerId;
+
+if (nodeService instanceof NodeServiceImpl) {
+  nodeService.bindExternalMesh(mesh);
+  void nodeService.resyncBondedContactReachabilityTags();
+}
 
 if (args.enableRelayServer) {
   rendezvousRegistry = new CapabilityRegistry({ verbosity: "minimal", logPrefix: "[node-rendezvous]" });
@@ -2848,6 +2853,8 @@ async function shutdown(): Promise<void> {
     clearInterval(modeTransitionTimer);
     modeTransitionTimer = undefined;
   }
+  const { shutdownKuboIpfsEngine } = await import("./kubo-ipfs-engine.js");
+  await shutdownKuboIpfsEngine();
   await mesh.stop();
   meshStarted = false;
   process.exit(0);

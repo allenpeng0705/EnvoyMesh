@@ -11,6 +11,7 @@ import {
   useBonds,
   useHelloRequests,
   useSocialIntroProposals,
+  useTransportWsOpen,
 } from "../hooks/useNodeService.js";
 import {
   loadAppSettings,
@@ -40,9 +41,25 @@ import type {
 // Shared state
 // ---------------------------------------------------------------------------
 
+function parseNodeStatusFromRpc(result: unknown): NodeStatus | null {
+  if (typeof result === "string") {
+    return result as NodeStatus;
+  }
+  if (result && typeof result === "object" && "status" in result) {
+    const status = (result as { status?: unknown }).status;
+    if (typeof status === "string") {
+      return status as NodeStatus;
+    }
+  }
+  return null;
+}
+
 interface NodeStateValue {
   // Connection
+  /** WebSocket/mobile transport connected to node's API (daemon may still be stopped). */
   isConnected: boolean;
+  /** False until the first getNodeStatus completes after transport is up. */
+  nodeStatusHydrated: boolean;
   nodeStatus: NodeStatus;
   peerId: string;
 
@@ -110,8 +127,10 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
   } = useSocialIntroProposals();
 
   // --- Connection state ---
-  const [isConnected, setIsConnected] = useState(false);
+  /** Transport (WS) connected — used for splash vs setup vs main app gates. */
+  const wsTransportOpen = useTransportWsOpen();
   const [nodeStatus, setNodeStatus] = useState<NodeStatus>("offline");
+  const [nodeStatusHydrated, setNodeStatusHydrated] = useState(false);
   const [peerId, setPeerId] = useState("");
 
   // --- Config & identity ---
@@ -132,54 +151,55 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
   // --- Agent bridge ---
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus | null>(null);
 
-  // -----------------------------------------------------------------------
-  // Event-driven connection tracking (replaces 100ms polling)
-  // -----------------------------------------------------------------------
   useEffect(() => {
-    setIsConnected(nodeService.isConnected);
+    if (!wsTransportOpen) {
+      setNodeStatusHydrated(false);
+      return;
+    }
 
-    const unsubOnline = nodeService.on("node:online", () => setIsConnected(true));
-    const unsubOffline = nodeService.on("node:offline", () => setIsConnected(false));
-    const unsubStatus = nodeService.on("node:status", (data) => {
-      if (data.status === "running") setIsConnected(true);
-      if (data.status === "offline" || data.status === "stopping") setIsConnected(false);
-    });
+    let cancelled = false;
+    void nodeService
+      .getNodeStatus()
+      .then((result) => {
+        if (cancelled) return;
+        const status = parseNodeStatusFromRpc(result);
+        if (status) setNodeStatus(status);
+      })
+      .catch(() => { /* node may not be initialized yet */ })
+      .finally(() => {
+        if (!cancelled) setNodeStatusHydrated(true);
+      });
 
     return () => {
-      unsubOnline();
-      unsubOffline();
-      unsubStatus();
+      cancelled = true;
     };
+  }, [nodeService, wsTransportOpen]);
+
+  const refreshConnectionStatus = useCallback(async () => {
+    try {
+      const status = await nodeService.getConnectionStatus();
+      setConnectionStatus(status);
+      if (status.peerId && (status.peerId.startsWith("envoy_agent_") || !status.peerId.startsWith("envoy_"))) {
+        setPeerId(status.peerId);
+      }
+    } catch (e) {
+      console.error("[NodeState] refreshConnectionStatus failed:", e);
+    }
   }, [nodeService]);
 
   // -----------------------------------------------------------------------
-  // Load node state on connect
+  // Load node state once transport is up
   // -----------------------------------------------------------------------
   useEffect(() => {
-    if (!isConnected) return;
-
-    // Node status
-    nodeService.getNodeStatus()
-      .then((result) => {
-        setNodeStatus(result.status);
-        if (result.status === "running") {
-          setIsConnected(true);
-        }
-      })
-      .catch(() => { /* node may not be initialized yet */ });
+    if (!wsTransportOpen) return;
 
     // Config + relays
     nodeService.getNodeConfig().then((config) => {
       setNodeConfig(config);
     }).catch(() => {});
 
-    // Connection status (libp2p peer ID, multiaddrs, etc.)
-    nodeService.getConnectionStatus().then((status) => {
-      setConnectionStatus(status);
-      if (status.peerId && (status.peerId.startsWith("envoy_agent_") || !status.peerId.startsWith("envoy_"))) {
-        setPeerId(status.peerId);
-      }
-    }).catch(() => {});
+    // Connection status (may be offline until startNode completes; node:online / node:status refresh later)
+    void refreshConnectionStatus();
 
     // Human profile
     nodeService.getHumanProfile().then((profile) => {
@@ -190,40 +210,72 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     nodeService.getBridgeStatus().then((status) => {
       if (status.enabled) setBridgeStatus(status);
     }).catch(() => {});
-  }, [nodeService, isConnected]);
+  }, [nodeService, wsTransportOpen, refreshConnectionStatus]);
 
   // -----------------------------------------------------------------------
-  // Subscribe to ongoing events
+  // Subscribe to ongoing events (require transport — handler registration uses RPC `on`)
   // -----------------------------------------------------------------------
 
   // node:status — keep track of node lifecycle
   useEffect(() => {
-    if (!isConnected) return;
+    if (!wsTransportOpen) return;
     const unsub = nodeService.on("node:status", (data) => {
       setNodeStatus(data.status);
+      setNodeStatusHydrated(true);
       if (data.peerId) setPeerId(data.peerId);
-      // If node stopped, re-fetch status to show setup screen
-      if (data.status === "offline" || data.status === "stopping") {
-        setIsConnected(false);
+      if (data.status === "running" || data.status === "offline") {
+        void refreshConnectionStatus();
       }
     });
     return unsub;
-  }, [nodeService, isConnected]);
+  }, [nodeService, wsTransportOpen, refreshConnectionStatus]);
 
-  // node:online — update connection info
+  // node:online — mesh is up (sync RPC snapshot; avoids stale offline from pre-start fetch)
   useEffect(() => {
-    if (!isConnected) return;
+    if (!wsTransportOpen) return;
     const unsub = nodeService.on("node:online", (data) => {
       if (data.peerId && (data.peerId.startsWith("envoy_agent_") || !data.peerId.startsWith("envoy_"))) {
         setPeerId(data.peerId);
       }
+      void refreshConnectionStatus();
     });
     return unsub;
-  }, [nodeService, isConnected]);
+  }, [nodeService, wsTransportOpen, refreshConnectionStatus]);
+
+  // node:offline — mesh torn down
+  useEffect(() => {
+    if (!wsTransportOpen) return;
+    const unsub = nodeService.on("node:offline", () => {
+      void refreshConnectionStatus();
+    });
+    return unsub;
+  }, [nodeService, wsTransportOpen, refreshConnectionStatus]);
+
+  /** Relay + bootstrap can delay snapshots; reconcile while RPC says offline but lifecycle says mesh is running. */
+  useEffect(() => {
+    if (!wsTransportOpen) return;
+    if (nodeStatus !== "running") return;
+    if (connectionStatus?.online === true) return;
+
+    let cancelled = false;
+    let ticks = 0;
+    const maxTicks = 20;
+    const iv = window.setInterval(() => {
+      if (cancelled) return;
+      ticks += 1;
+      void refreshConnectionStatus();
+      if (ticks >= maxTicks) window.clearInterval(iv);
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(iv);
+    };
+  }, [wsTransportOpen, nodeStatus, connectionStatus?.online, refreshConnectionStatus]);
 
   // config:updated — keep nodeConfig in sync
   useEffect(() => {
-    if (!isConnected) return;
+    if (!wsTransportOpen) return;
     const unsub = nodeService.on("config:updated", (data) => {
       setNodeConfig((prev) => {
         if (!prev) return prev;
@@ -239,20 +291,20 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       });
     });
     return unsub;
-  }, [nodeService, isConnected]);
+  }, [nodeService, wsTransportOpen]);
 
   // bridge:status — keep bridge state in sync
   useEffect(() => {
-    if (!isConnected) return;
+    if (!wsTransportOpen) return;
     const unsub = nodeService.on("bridge:status", (data) => {
       setBridgeStatus(data);
     });
     return unsub;
-  }, [nodeService, isConnected]);
+  }, [nodeService, wsTransportOpen]);
 
   // peer:discovered — track nearby peers
   useEffect(() => {
-    if (!isConnected) return;
+    if (!wsTransportOpen) return;
     const unsub = nodeService.on("peer:discovered", (data) => {
       setDiscoveredPeers((prev) => {
         if (bonds.some((b) => b.peerOwnerId === data.ownerId)) return prev;
@@ -261,11 +313,11 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       });
     });
     return unsub;
-  }, [nodeService, isConnected, bonds]);
+  }, [nodeService, wsTransportOpen, bonds]);
 
   // chat:message from unbonded peers → pending messages
   useEffect(() => {
-    if (!isConnected) return;
+    if (!wsTransportOpen) return;
     const unsub = nodeService.on("chat:message", (msg) => {
       // Skip local echo (sent receipts)
       if (msg.metadata?.deliveryReceipt === "sent") return;
@@ -285,11 +337,11 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       });
     });
     return unsub;
-  }, [nodeService, isConnected, bonds, peerId]);
+  }, [nodeService, wsTransportOpen, bonds, peerId]);
 
   // bond:established — remove pending messages from that peer
   useEffect(() => {
-    if (!isConnected) return;
+    if (!wsTransportOpen) return;
     const unsub = nodeService.on("bond:established", (data) => {
       setPendingMessages((prev) =>
         prev.filter(
@@ -300,7 +352,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       );
     });
     return unsub;
-  }, [nodeService, isConnected]);
+  }, [nodeService, wsTransportOpen]);
 
   // -----------------------------------------------------------------------
   // Helper functions
@@ -321,18 +373,6 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       if (profile) setHumanProfile(profile);
     } catch (e) {
       console.error("[NodeState] refreshHumanProfile failed:", e);
-    }
-  }, [nodeService]);
-
-  const refreshConnectionStatus = useCallback(async () => {
-    try {
-      const status = await nodeService.getConnectionStatus();
-      setConnectionStatus(status);
-      if (status.peerId && (status.peerId.startsWith("envoy_agent_") || !status.peerId.startsWith("envoy_"))) {
-        setPeerId(status.peerId);
-      }
-    } catch (e) {
-      console.error("[NodeState] refreshConnectionStatus failed:", e);
     }
   }, [nodeService]);
 
@@ -385,7 +425,8 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
   // -----------------------------------------------------------------------
 
   const value: NodeStateValue = {
-    isConnected,
+    isConnected: wsTransportOpen,
+    nodeStatusHydrated,
     nodeStatus,
     peerId,
     nodeConfig,

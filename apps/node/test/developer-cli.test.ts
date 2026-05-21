@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { normalizeDeveloperCliArgv, parseDeveloperCliArgs, runDeveloperCli } from "../src/developer-cli.js";
+import { kuboIpfsCliAvailableSync } from "../src/kubo-ipfs-export.js";
 import { createNodeConfigStore } from "../src/node-config-store.js";
 
 let profileDir: string;
@@ -51,6 +52,27 @@ describe("developer CLI", () => {
       vaultDir: "./shared_vault",
       query: "distributed systems",
       limit: 5,
+    });
+
+    expect(
+      parseDeveloperCliArgs([
+        "vault-ipfs-fingerprint",
+        "--vault",
+        "./shared_vault",
+        "--relative-path",
+        "docs/readme.md",
+      ]),
+    ).toMatchObject({
+      command: "vault-ipfs-fingerprint",
+      vaultRelativePath: "docs/readme.md",
+      vaultDir: "./shared_vault",
+    });
+
+    expect(
+      parseDeveloperCliArgs(["vault-ipfs-fingerprint", "--file", "/tmp/export.bin"]),
+    ).toMatchObject({
+      command: "vault-ipfs-fingerprint",
+      ipfsFingerprintFile: "/tmp/export.bin",
     });
   });
 
@@ -548,6 +570,50 @@ describe("developer CLI", () => {
     const manifest = JSON.parse(await readFile(outputPath, "utf8")) as { documents: Array<{ relativePath: string }> };
     expect(manifest.documents.some((doc) => doc.relativePath === "notes.md")).toBe(true);
   });
+
+  it("vault-ipfs-fingerprint requires --file or --relative-path", async () => {
+    await expect(runDeveloperCli(["vault-ipfs-fingerprint", "--vault", vaultDir])).rejects.toThrow(/--file|relative-path/);
+  });
+
+  it("vault-ipfs-fingerprint rejects --file combined with --relative-path", async () => {
+    await expect(
+      runDeveloperCli(["vault-ipfs-fingerprint", "--vault", vaultDir, "--relative-path", "x.md", "--file", "/x"]),
+    ).rejects.toThrow(/either --file|not both/);
+  });
+
+  it("vault-ipfs-fingerprint errors when vault-relative path is missing", async () => {
+    await expect(
+      runDeveloperCli(["vault-ipfs-fingerprint", "--vault", vaultDir, "--relative-path", "missing.txt"]),
+    ).rejects.toThrow(/not found/i);
+  });
+
+  it("vault-ipfs-fingerprint rejects vault-relative path outside vault root", async () => {
+    await expect(
+      runDeveloperCli(["vault-ipfs-fingerprint", "--vault", vaultDir, "--relative-path", "../outside.txt"]),
+    ).rejects.toThrow(/outside the shared vault root/i);
+  });
+
+  it.skipIf(process.env.ENVOYMESH_IPFS_CLI_TEST !== "1")(
+    "vault-ipfs-fingerprint prints Kubo CID when integration env is enabled",
+    async () => {
+      await writeFile(join(vaultDir, "interop.txt"), "envoymesh ipfs recipe v1 smoke");
+      if (!kuboIpfsCliAvailableSync()) {
+        throw new Error("ENVOYMESH_IPFS_CLI_TEST=1 expects `ipfs` on PATH");
+      }
+
+      const result = await runDeveloperCli([
+        "vault-ipfs-fingerprint",
+        "--vault",
+        vaultDir,
+        "--relative-path",
+        "interop.txt",
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.lines.join("\n")).toMatch(/cid=[a-zA-Z0-9]+/);
+      expect(result.lines.some((line) => line.startsWith("ipfsInteropRecipe="))).toBe(true);
+    },
+  );
 
   it("sets, lists, and removes trust records", async () => {
     const saved = await runDeveloperCli([

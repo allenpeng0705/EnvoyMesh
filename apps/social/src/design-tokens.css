@@ -1,41 +1,14 @@
 /* ==========================================================================
    EnvoyMesh Design Tokens
-   Light + dark mode, spacing, typography, shadows, radii, animation
+   Unified semantic system — light & dark share the same token names.
+   Components use --color-* / --msg-* / --chat-* only (no theme branches in CSS).
    ========================================================================== */
 
-/* ---- Light Theme (default) ---- */
+/* ---- Shared structure (theme-independent) ---- */
 :root {
   color-scheme: light dark;
 
-  /* == Primary (WeChat Green) == */
-  --color-primary: #07C160;
-  --color-primary-hover: #06AD56;
-  --color-primary-active: #05944A;
-  --color-primary-subtle: #E8F8EF;
-  --color-primary-on: #ffffff;
-
-  /* == Secondary (Teal) — AI, knowledge, success == */
-  --color-secondary: #0d9488;
-  --color-secondary-hover: #0f766e;
-  --color-secondary-subtle: #f0fdfa;
-  --color-secondary-on: #ffffff;
-
-  /* == Accent (Amber) — warnings, pending, relay == */
-  --color-accent: #d97706;
-  --color-accent-subtle: #fffbeb;
-
-  /* == Semantic colors == */
-  --color-success: #10b981;
-  --color-success-subtle: #ecfdf5;
-  --color-success-hover: #059669;
-  --color-warning: #f59e0b;
-  --color-warning-subtle: #fffbeb;
-  --color-danger: #ef4444;
-  --color-danger-subtle: #fef2f2;
-  --color-info: #3b82f6;
-  --color-info-subtle: #eff6ff;
-
-  /* == Neutral palette (Slate) == */
+  /* Slate reference palette (fixed; do not invert per theme) */
   --color-slate-50: #f8fafc;
   --color-slate-100: #f1f5f9;
   --color-slate-200: #e2e8f0;
@@ -48,74 +21,37 @@
   --color-slate-900: #0f172a;
   --color-slate-950: #020617;
 
-  /* == Surfaces == */
-  --color-bg: var(--color-slate-50);
-  --color-surface: var(--color-slate-50);
-  --color-surface-elevated: #ffffff;
-  --color-surface-overlay: #ffffff;
-
-  /* == Borders == */
-  --color-border: var(--color-slate-200);
-  --color-border-subtle: var(--color-slate-100);
-
-  /* == Text == */
-  --color-text: var(--color-slate-900);
-  --color-text-muted: var(--color-slate-500);
-  --color-text-subtle: var(--color-slate-400);
-
-  /* == Radii == */
-  --radius-xs: 0.25rem;   /* 4px */
-  --radius-sm: 0.375rem;  /* 6px */
-  --radius-md: 0.5rem;    /* 8px */
-  --radius-lg: 0.75rem;   /* 12px */
-  --radius-xl: 1rem;      /* 16px */
-  --radius-2xl: 1.25rem;  /* 20px */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
   --radius-full: 9999px;
 
-  /* == Shadows == */
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.08);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.05);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.04);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.08), 0 8px 10px -6px rgb(0 0 0 / 0.04);
-  --shadow-ring: 0 0 0 3px var(--color-primary-subtle);
-  --shadow-glow: 0 0 20px rgba(7, 193, 96, 0.15);
-  --shadow-glow-lg: 0 0 40px rgba(7, 193, 96, 0.2);
-  --message-outgoing-overlay: rgba(255, 255, 255, 0.15);
-  --message-code-bg: rgba(127, 127, 127, 0.15);
-
-  /* == Outgoing message overlays (white on green in light mode) == */
-  --message-outgoing-code-bg: rgba(255, 255, 255, 0.15);
-  --message-outgoing-link: rgba(255, 255, 255, 0.9);
-  --message-outgoing-time: rgba(255, 255, 255, 0.6);
-  --message-outgoing-quote-border: rgba(255, 255, 255, 0.6);
-  --message-outgoing-code-border: rgba(255, 255, 255, 0.2);
-
-  /* == Spacing (4px base) == */
   --space-0: 0;
-  --space-1: 0.25rem;  /* 4px */
-  --space-2: 0.5rem;   /* 8px */
-  --space-3: 0.75rem;  /* 12px */
-  --space-4: 1rem;     /* 16px */
-  --space-5: 1.25rem;  /* 20px */
-  --space-6: 1.5rem;   /* 24px */
-  --space-8: 2rem;     /* 32px */
-  --space-10: 2.5rem;  /* 40px */
-  --space-12: 3rem;    /* 48px */
-  --space-16: 4rem;    /* 64px */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
 
-  /* == Typography == */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
-  --text-2xs: 0.625rem;   /* 10px */
-  --text-xs: 0.6875rem;   /* 11px */
-  --text-sm: 0.8125rem;   /* 13px */
-  --text-base: 0.9375rem; /* 15px */
-  --text-lg: 1.125rem;    /* 18px */
-  --text-xl: 1.25rem;     /* 20px */
-  --text-2xl: 1.5rem;     /* 24px */
-  --text-3xl: 2rem;       /* 32px */
+  --text-2xs: 0.625rem;
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 2rem;
 
   --font-normal: 400;
   --font-medium: 500;
@@ -126,151 +62,30 @@
   --leading-normal: 1.5;
   --leading-relaxed: 1.625;
 
-  /* == Animation == */
   --transition-fast: 150ms ease;
   --transition-normal: 200ms ease;
   --transition-slow: 300ms ease;
 
-  /* == Z-index == */
   --z-sidebar: 10;
   --z-header: 20;
   --z-overlay: 30;
   --z-modal: 40;
   --z-tooltip: 50;
   --z-toast: 60;
-}
 
-/* ---- Dark Theme ---- */
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Primary — brighter green for dark bg */
-    --color-primary: #2DD4A8;
-    --color-primary-hover: #34D399;
-    --color-primary-active: #10B981;
-    --color-primary-subtle: #022C22;
-    --color-primary-on: #0f172a;
+  /* Device safe areas (notches / home indicator); needs viewport-fit=cover on mobile */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 
-    --color-secondary: #2dd4bf;
-    --color-secondary-hover: #14b8a6;
-    --color-secondary-subtle: #042f2e;
-    --color-secondary-on: #0f172a;
-
-    --color-accent: #fbbf24;
-    --color-accent-subtle: #451a03;
-
-    --color-success: #34d399;
-    --color-success-subtle: #022c22;
-    --color-success-hover: #10b981;
-    --color-warning: #fbbf24;
-    --color-warning-subtle: #451a03;
-    --color-danger: #f87171;
-    --color-danger-subtle: #450a0a;
-    --color-info: #60a5fa;
-    --color-info-subtle: #172554;
-
-    --color-slate-50: #020617;
-    --color-slate-100: #0f172a;
-    --color-slate-200: #1e293b;
-    --color-slate-300: #334155;
-    --color-slate-400: #475569;
-    --color-slate-500: #64748b;
-    --color-slate-600: #94a3b8;
-    --color-slate-700: #cbd5e1;
-    --color-slate-800: #e2e8f0;
-    --color-slate-900: #f1f5f9;
-    --color-slate-950: #f8fafc;
-
-    --color-bg: #000000;
-    --color-surface: #0a0a0a;
-    --color-surface-elevated: #141414;
-    --color-surface-overlay: #1c1c1c;
-
-    --color-border: #262626;
-    --color-border-subtle: #1a1a1a;
-
-    --color-text: var(--color-slate-900);
-    --color-text-muted: var(--color-slate-500);
-    --color-text-subtle: var(--color-slate-400);
-
-    --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.3);
-    --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.4);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
-    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.3);
-    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.4);
-    --shadow-glow: 0 0 20px rgba(7, 193, 96, 0.25);
-    --shadow-glow-lg: 0 0 40px rgba(7, 193, 96, 0.3);
-
-    color-scheme: dark;
-  }
-}
-
-/* Manual dark mode override (higher specificity) */
-:root[data-theme="dark"] {
-  --color-primary: #2DD4A8;
-  --color-primary-hover: #34D399;
-  --color-primary-active: #10B981;
-  --color-primary-subtle: #022C22;
-  --color-primary-on: #0f172a;
-
-  --color-secondary: #2dd4bf;
-  --color-secondary-hover: #14b8a6;
-  --color-secondary-subtle: #042f2e;
-  --color-secondary-on: #0f172a;
-
-  --color-accent: #fbbf24;
-  --color-accent-subtle: #451a03;
-
-  --color-success: #34d399;
-  --color-success-subtle: #022c22;
-  --color-warning: #fbbf24;
-  --color-warning-subtle: #451a03;
-  --color-danger: #f87171;
-  --color-danger-subtle: #450a0a;
-  --color-info: #60a5fa;
-  --color-info-subtle: #172554;
-
-  --color-slate-50: #020617;
-  --color-slate-100: #0f172a;
-  --color-slate-200: #1e293b;
-  --color-slate-300: #334155;
-  --color-slate-400: #475569;
-  --color-slate-500: #64748b;
-  --color-slate-600: #94a3b8;
-  --color-slate-700: #cbd5e1;
-  --color-slate-800: #e2e8f0;
-  --color-slate-900: #f1f5f9;
-  --color-slate-950: #f8fafc;
-
-  --color-bg: #000000;
-  --color-surface: #0a0a0a;
-  --color-surface-elevated: #141414;
-  --color-surface-overlay: #1c1c1c;
-
-  --color-border: #262626;
-  --color-border-subtle: #1a1a1a;
-
-  --color-text: var(--color-slate-900);
-  --color-text-muted: var(--color-slate-500);
-  --color-text-subtle: var(--color-slate-400);
-
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.3);
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.4);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.3);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.4);
-  --shadow-glow: 0 0 20px rgba(7, 193, 96, 0.25);
-  --shadow-glow-lg: 0 0 40px rgba(7, 193, 96, 0.3);
-
-  color-scheme: dark;
-}
-
-:root[data-theme="light"] {
-  color-scheme: light;
-  --color-primary: #07C160;
-  --color-primary-hover: #06AD56;
-  --color-primary-active: #05944A;
-  --color-primary-subtle: #E8F8EF;
+  /* == Light theme (default) == */
+  --color-primary: #07c160;
+  --color-primary-hover: #06ad56;
+  --color-primary-active: #05944a;
+  --color-primary-subtle: #e8f8ef;
   --color-primary-on: #ffffff;
+  --color-on-primary-subtle: #047857;
 
   --color-secondary: #0d9488;
   --color-secondary-hover: #0f766e;
@@ -279,6 +94,7 @@
 
   --color-accent: #d97706;
   --color-accent-subtle: #fffbeb;
+  --color-on-accent-subtle: #b45309;
 
   --color-success: #10b981;
   --color-success-subtle: #ecfdf5;
@@ -287,38 +103,317 @@
   --color-warning-subtle: #fffbeb;
   --color-danger: #ef4444;
   --color-danger-subtle: #fef2f2;
-  --color-info: #3b82f6;
+  --color-info: #2563eb;
   --color-info-subtle: #eff6ff;
 
-  --color-slate-50: #f8fafc;
-  --color-slate-100: #f1f5f9;
-  --color-slate-200: #e2e8f0;
-  --color-slate-300: #cbd5e1;
-  --color-slate-400: #94a3b8;
-  --color-slate-500: #64748b;
-  --color-slate-600: #475569;
-  --color-slate-700: #334155;
-  --color-slate-800: #1e293b;
-  --color-slate-900: #0f172a;
-  --color-slate-950: #020617;
+  /* Thread / message role accents */
+  --color-role-human: #3b82f6;
+  --color-role-agent: #7c3aed;
+  --color-role-ai: #0d9488;
+  --color-role-peer: #64748b;
+  --color-role-pending: #d97706;
+  --color-on-role: #ffffff;
 
-  --color-bg: var(--color-slate-50);
-  --color-surface: var(--color-slate-50);
+  --msg-peer-border: var(--color-info);
+  --msg-agent-border: var(--color-role-agent);
+  --msg-agent-bg-tint: rgba(124, 58, 237, 0.08);
+  --msg-agent-border-soft: rgba(124, 58, 237, 0.22);
+  --msg-ai-border: var(--color-role-ai);
+  --msg-ai-border-soft: rgba(13, 148, 136, 0.28);
+
+  /* Surfaces & text */
+  --color-bg: var(--color-slate-100);
+  --color-surface: #ffffff;
   --color-surface-elevated: #ffffff;
   --color-surface-overlay: #ffffff;
-
   --color-border: var(--color-slate-200);
-  --color-border-subtle: var(--color-slate-100);
+  --color-border-subtle: var(--color-slate-200);
 
   --color-text: var(--color-slate-900);
-  --color-text-muted: var(--color-slate-500);
-  --color-text-subtle: var(--color-slate-400);
+  --color-text-muted: var(--color-slate-600);
+  --color-text-subtle: var(--color-slate-500);
+  --color-text-inverse: #ffffff;
 
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.08);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.05);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.04);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.08), 0 8px 10px -6px rgb(0 0 0 / 0.04);
-  --shadow-glow: 0 0 20px rgba(7, 193, 96, 0.15);
-  --shadow-glow-lg: 0 0 40px rgba(7, 193, 96, 0.2);
+  --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+  --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.08), 0 1px 2px -1px rgb(15 23 42 / 0.06);
+  --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.05);
+  --shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.08), 0 4px 6px -4px rgb(15 23 42 / 0.04);
+  --shadow-xl: 0 20px 25px -5px rgb(15 23 42 / 0.08), 0 8px 10px -6px rgb(15 23 42 / 0.04);
+  --shadow-ring: 0 0 0 3px var(--color-primary-subtle);
+  --shadow-glow: 0 0 20px rgb(7 193 96 / 0.12);
+  --shadow-glow-lg: 0 0 40px rgb(7 193 96 / 0.16);
+  --shadow-composer: 0 -4px 24px rgb(15 23 42 / 0.06);
+
+  --message-outgoing-overlay: rgb(255 255 255 / 0.15);
+  --message-code-bg: rgb(100 116 139 / 0.12);
+  --message-outgoing-code-bg: rgb(255 255 255 / 0.15);
+  --message-outgoing-link: rgb(255 255 255 / 0.92);
+  --message-outgoing-time: rgb(255 255 255 / 0.78);
+  --message-outgoing-quote-border: rgb(255 255 255 / 0.55);
+  --message-outgoing-code-border: rgb(255 255 255 / 0.22);
+  --message-incoming-quote-bg: rgb(7 193 96 / 0.06);
+
+  --chat-canvas-bg: var(--color-bg);
+  --chat-canvas-glow: rgb(7 193 96 / 0.04);
+
+  --avatar-human-from: #3b82f6;
+  --avatar-human-to: #6366f1;
+  --avatar-agent-from: #7c3aed;
+  --avatar-agent-to: #a855f7;
+  --avatar-ai-from: #0d9488;
+  --avatar-ai-to: #14b8a6;
+  --avatar-peer-from: #64748b;
+  --avatar-peer-to: #94a3b8;
+  --avatar-pending-from: #f59e0b;
+  --avatar-pending-to: #fbbf24;
+}
+
+/* ---- Dark theme (lighter slate — comfortable dim, not black) ---- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-primary: #34d399;
+    --color-primary-hover: #4ade80;
+    --color-primary-active: #10b981;
+    --color-primary-subtle: #14532d;
+    --color-primary-on: #ffffff;
+    --color-on-primary-subtle: #6ee7b7;
+
+    --color-secondary: #2dd4bf;
+    --color-secondary-hover: #5eead4;
+    --color-secondary-subtle: #134e4a;
+    --color-secondary-on: #ffffff;
+
+    --color-accent: #fbbf24;
+    --color-accent-subtle: #78350f;
+    --color-on-accent-subtle: #fde68a;
+
+    --color-success: #4ade80;
+    --color-success-subtle: #14532d;
+    --color-success-hover: #22c55e;
+    --color-warning: #fbbf24;
+    --color-warning-subtle: #78350f;
+    --color-danger: #fca5a5;
+    --color-danger-subtle: #7f1d1d;
+    --color-info: #93c5fd;
+    --color-info-subtle: #1e3a5f;
+
+    --color-role-human: #93c5fd;
+    --color-role-agent: #c4b5fd;
+    --color-role-ai: #5eead4;
+    --color-role-peer: #cbd5e1;
+    --color-role-pending: #fcd34d;
+
+    --msg-peer-border: var(--color-info);
+    --msg-agent-border: var(--color-role-agent);
+    --msg-agent-bg-tint: rgb(167 139 250 / 0.14);
+    --msg-agent-border-soft: rgb(167 139 250 / 0.35);
+    --msg-ai-border: var(--color-role-ai);
+    --msg-ai-border-soft: rgb(94 234 212 / 0.35);
+
+    --color-bg: #1e293b;
+    --color-surface: #334155;
+    --color-surface-elevated: #475569;
+    --color-surface-overlay: #64748b;
+    --color-border: #64748b;
+    --color-border-subtle: #475569;
+
+    --color-text: #f8fafc;
+    --color-text-muted: #e2e8f0;
+    --color-text-subtle: #cbd5e1;
+    --color-text-inverse: #0f172a;
+
+    --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.15);
+    --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.2), 0 1px 2px -1px rgb(0 0 0 / 0.15);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.22), 0 2px 4px -2px rgb(0 0 0 / 0.15);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.18);
+    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.3), 0 8px 10px -6px rgb(0 0 0 / 0.2);
+    --shadow-glow: 0 0 20px rgb(52 211 153 / 0.12);
+    --shadow-glow-lg: 0 0 40px rgb(52 211 153 / 0.16);
+    --shadow-composer: 0 -4px 24px rgb(0 0 0 / 0.2);
+
+    --message-outgoing-overlay: rgb(255 255 255 / 0.14);
+    --message-code-bg: rgb(15 23 42 / 0.35);
+    --message-outgoing-time: rgb(255 255 255 / 0.82);
+    --message-incoming-quote-bg: rgb(52 211 153 / 0.08);
+
+    --chat-canvas-bg: var(--color-bg);
+    --chat-canvas-glow: rgb(52 211 153 / 0.05);
+
+    --avatar-human-from: #60a5fa;
+    --avatar-human-to: #818cf8;
+    --avatar-agent-from: #a78bfa;
+    --avatar-agent-to: #c4b5fd;
+    --avatar-ai-from: #2dd4bf;
+    --avatar-ai-to: #5eead4;
+    --avatar-peer-from: #94a3b8;
+    --avatar-peer-to: #cbd5e1;
+    --avatar-pending-from: #fbbf24;
+    --avatar-pending-to: #fde68a;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-primary: #34d399;
+  --color-primary-hover: #4ade80;
+  --color-primary-active: #10b981;
+  --color-primary-subtle: #14532d;
+  --color-primary-on: #ffffff;
+  --color-on-primary-subtle: #6ee7b7;
+
+  --color-secondary: #2dd4bf;
+  --color-secondary-hover: #5eead4;
+  --color-secondary-subtle: #134e4a;
+  --color-secondary-on: #ffffff;
+
+  --color-accent: #fbbf24;
+  --color-accent-subtle: #78350f;
+  --color-on-accent-subtle: #fde68a;
+
+  --color-success: #4ade80;
+  --color-success-subtle: #14532d;
+  --color-success-hover: #22c55e;
+  --color-warning: #fbbf24;
+  --color-warning-subtle: #78350f;
+  --color-danger: #fca5a5;
+  --color-danger-subtle: #7f1d1d;
+  --color-info: #93c5fd;
+  --color-info-subtle: #1e3a5f;
+
+  --color-role-human: #93c5fd;
+  --color-role-agent: #c4b5fd;
+  --color-role-ai: #5eead4;
+  --color-role-peer: #cbd5e1;
+  --color-role-pending: #fcd34d;
+
+  --msg-peer-border: var(--color-info);
+  --msg-agent-border: var(--color-role-agent);
+  --msg-agent-bg-tint: rgb(167 139 250 / 0.14);
+  --msg-agent-border-soft: rgb(167 139 250 / 0.35);
+  --msg-ai-border: var(--color-role-ai);
+  --msg-ai-border-soft: rgb(94 234 212 / 0.35);
+
+  --color-bg: #1e293b;
+  --color-surface: #334155;
+  --color-surface-elevated: #475569;
+  --color-surface-overlay: #64748b;
+  --color-border: #64748b;
+  --color-border-subtle: #475569;
+
+  --color-text: #f8fafc;
+  --color-text-muted: #e2e8f0;
+  --color-text-subtle: #cbd5e1;
+  --color-text-inverse: #0f172a;
+
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.15);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.2), 0 1px 2px -1px rgb(0 0 0 / 0.15);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.22), 0 2px 4px -2px rgb(0 0 0 / 0.15);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.18);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.3), 0 8px 10px -6px rgb(0 0 0 / 0.2);
+  --shadow-glow: 0 0 20px rgb(52 211 153 / 0.12);
+  --shadow-glow-lg: 0 0 40px rgb(52 211 153 / 0.16);
+  --shadow-composer: 0 -4px 24px rgb(0 0 0 / 0.2);
+
+  --message-outgoing-overlay: rgb(255 255 255 / 0.14);
+  --message-code-bg: rgb(15 23 42 / 0.35);
+  --message-outgoing-time: rgb(255 255 255 / 0.82);
+  --message-incoming-quote-bg: rgb(52 211 153 / 0.08);
+
+  --chat-canvas-bg: var(--color-bg);
+  --chat-canvas-glow: rgb(52 211 153 / 0.05);
+
+  --avatar-human-from: #60a5fa;
+  --avatar-human-to: #818cf8;
+  --avatar-agent-from: #a78bfa;
+  --avatar-agent-to: #c4b5fd;
+  --avatar-ai-from: #2dd4bf;
+  --avatar-ai-to: #5eead4;
+  --avatar-peer-from: #94a3b8;
+  --avatar-peer-to: #cbd5e1;
+  --avatar-pending-from: #fbbf24;
+  --avatar-pending-to: #fde68a;
+}
+
+/* Explicit light override (when user picks Light while OS is dark) */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-primary: #07c160;
+  --color-primary-hover: #06ad56;
+  --color-primary-active: #05944a;
+  --color-primary-subtle: #e8f8ef;
+  --color-primary-on: #ffffff;
+  --color-on-primary-subtle: #047857;
+
+  --color-secondary: #0d9488;
+  --color-secondary-hover: #0f766e;
+  --color-secondary-subtle: #f0fdfa;
+  --color-secondary-on: #ffffff;
+
+  --color-accent: #d97706;
+  --color-accent-subtle: #fffbeb;
+  --color-on-accent-subtle: #b45309;
+
+  --color-success: #10b981;
+  --color-success-subtle: #ecfdf5;
+  --color-success-hover: #059669;
+  --color-warning: #f59e0b;
+  --color-warning-subtle: #fffbeb;
+  --color-danger: #ef4444;
+  --color-danger-subtle: #fef2f2;
+  --color-info: #2563eb;
+  --color-info-subtle: #eff6ff;
+
+  --color-role-human: #3b82f6;
+  --color-role-agent: #7c3aed;
+  --color-role-ai: #0d9488;
+  --color-role-peer: #64748b;
+  --color-role-pending: #d97706;
+
+  --msg-peer-border: var(--color-info);
+  --msg-agent-border: var(--color-role-agent);
+  --msg-agent-bg-tint: rgba(124, 58, 237, 0.08);
+  --msg-agent-border-soft: rgba(124, 58, 237, 0.22);
+  --msg-ai-border: var(--color-role-ai);
+  --msg-ai-border-soft: rgba(13, 148, 136, 0.28);
+
+  --color-bg: var(--color-slate-100);
+  --color-surface: #ffffff;
+  --color-surface-elevated: #ffffff;
+  --color-surface-overlay: #ffffff;
+  --color-border: var(--color-slate-200);
+  --color-border-subtle: var(--color-slate-200);
+
+  --color-text: var(--color-slate-900);
+  --color-text-muted: var(--color-slate-600);
+  --color-text-subtle: var(--color-slate-500);
+  --color-text-inverse: #ffffff;
+
+  --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+  --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.08), 0 1px 2px -1px rgb(15 23 42 / 0.06);
+  --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.05);
+  --shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.08), 0 4px 6px -4px rgb(15 23 42 / 0.04);
+  --shadow-xl: 0 20px 25px -5px rgb(15 23 42 / 0.08), 0 8px 10px -6px rgb(15 23 42 / 0.04);
+  --shadow-glow: 0 0 20px rgb(7 193 96 / 0.12);
+  --shadow-glow-lg: 0 0 40px rgb(7 193 96 / 0.16);
+  --shadow-composer: 0 -4px 24px rgb(15 23 42 / 0.06);
+
+  --message-outgoing-overlay: rgb(255 255 255 / 0.15);
+  --message-code-bg: rgb(100 116 139 / 0.12);
+  --message-outgoing-time: rgb(255 255 255 / 0.78);
+  --message-incoming-quote-bg: rgb(7 193 96 / 0.06);
+
+  --chat-canvas-bg: var(--color-bg);
+  --chat-canvas-glow: rgb(7 193 96 / 0.04);
+
+  --avatar-human-from: #3b82f6;
+  --avatar-human-to: #6366f1;
+  --avatar-agent-from: #7c3aed;
+  --avatar-agent-to: #a855f7;
+  --avatar-ai-from: #0d9488;
+  --avatar-ai-to: #14b8a6;
+  --avatar-peer-from: #64748b;
+  --avatar-peer-to: #94a3b8;
+  --avatar-pending-from: #f59e0b;
+  --avatar-pending-to: #fbbf24;
 }

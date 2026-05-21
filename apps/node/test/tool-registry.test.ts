@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { createLocalTaskStore } from "@envoymesh/local-store";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   ToolRegistry,
+  executeTool,
   listAgentTools,
   type ToolDefinition,
   type ToolParams,
@@ -76,15 +81,16 @@ describe("ToolRegistry", () => {
       });
 
       const tools = registry.listTools();
-      // 35 default tools + 2 additional = 37
-      expect(tools).toHaveLength(37);
+      // 37 default tools + 2 additional = 39
+      expect(tools).toHaveLength(39);
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "bond.send_hello", "chat.send", "discovery.search", "knowledge.query",
           "mesh.acknowledge-escalation", "mesh.add-trigger", "mesh.approve",
           "mesh.escalate", "mesh.get-contact-disclosure", "mesh.get-digest",
           "mesh.get-digest-config", "mesh.get-external-agent", "mesh.get-mode",
-          "mesh.get-style", "mesh.library_discover", "mesh.library_list", "mesh.list-all-approvals",
+          "mesh.get-style", "mesh.library_discover", "mesh.library_export_ipfs",
+          "mesh.library_list", "mesh.library_verify_ipfs_gateway", "mesh.list-all-approvals",
           "mesh.list-external-agent-actions",
           "mesh.list-external-sessions", "mesh.list-pending", "mesh.list-sessions",
           "mesh.list-triggers", "mesh.reject", "mesh.reject-all", "mesh.remove-trigger",
@@ -99,8 +105,8 @@ describe("ToolRegistry", () => {
     it("default tools are pre-registered", () => {
       const registry = new ToolRegistry();
       const tools = registry.listTools();
-      // Default tools: 6 core + 4 gateway + 3 mode + 3 session + 4 style + 4 trigger + 6 approval + 3 digest + 2 library = 35
-      expect(tools.length).toBe(35);
+      // Default tools: 6 core + 4 gateway + 3 mode + 3 session + 4 style + 4 trigger + 6 approval + 3 digest + 4 library = 37
+      expect(tools.length).toBe(37);
     });
   });
 
@@ -229,6 +235,117 @@ describe("listAgentTools", () => {
     expect(tools.some((t) => t.name === "mesh.intro.matching_context")).toBe(true);
     expect(tools.some((t) => t.name === "mesh.intro.sync")).toBe(true);
     expect(tools.some((t) => t.name === "mesh.intro.broadcast_search")).toBe(true);
+  });
+});
+
+describe("executeTool — IPFS library hooks", () => {
+  it("mesh.library_export_ipfs requires approval", () => {
+    const tool = listAgentTools().find((t) => t.name === "mesh.library_export_ipfs");
+    expect(tool?.requiresApproval).toBe(true);
+  });
+
+  it("mesh.library_export_ipfs delegates to context hook", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-tool-ipfs-"));
+    try {
+      const taskStore = createLocalTaskStore(profileDir);
+      const result = await executeTool(
+        "mesh.library_export_ipfs",
+        { documentId: "doc-1" },
+        {
+          trustStore: {} as never,
+          peerDirectoryStore: {} as never,
+          taskStore,
+          agentIdentity: {} as never,
+          ownerIdentity: { ownerId: "envoy:owner:test" },
+          agentCredential: {} as never,
+          exportLibraryItemToIpfs: async (documentId) => ({
+            documentId,
+            cid: "bafyfromtool",
+            exportRevision: 1,
+          }),
+        },
+      );
+      expect(result.ok).toBe(true);
+      expect((result.result as { cid?: string })?.cid).toBe("bafyfromtool");
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  it("mesh.library_export_ipfs requires documentId", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-tool-ipfs-"));
+    try {
+      const taskStore = createLocalTaskStore(profileDir);
+      const result = await executeTool(
+        "mesh.library_export_ipfs",
+        {},
+        {
+          trustStore: {} as never,
+          peerDirectoryStore: {} as never,
+          taskStore,
+          agentIdentity: {} as never,
+          ownerIdentity: { ownerId: "envoy:owner:test" },
+          agentCredential: {} as never,
+          exportLibraryItemToIpfs: async () => ({ cid: "bafy" }),
+        },
+      );
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/documentId is required/i);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  it("mesh.library_verify_ipfs_gateway delegates to context hook", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-tool-ipfs-"));
+    try {
+      const taskStore = createLocalTaskStore(profileDir);
+      const result = await executeTool(
+        "mesh.library_verify_ipfs_gateway",
+        { documentId: "doc-1", gatewayUrl: "https://ipfs.io" },
+        {
+          trustStore: {} as never,
+          peerDirectoryStore: {} as never,
+          taskStore,
+          agentIdentity: {} as never,
+          ownerIdentity: { ownerId: "envoy:owner:test" },
+          agentCredential: {} as never,
+          verifyLibraryItemIpfsGateway: async (params) => ({
+            documentId: params.documentId,
+            contentHashMatches: true,
+            gatewayUrl: "https://ipfs.io/ipfs/bafy",
+            fetchedBytes: 12,
+          }),
+        },
+      );
+      expect(result.ok).toBe(true);
+      expect((result.result as { fetchedBytes?: number })?.fetchedBytes).toBe(12);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  it("mesh.library_verify_ipfs_gateway requires configured hook", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-tool-ipfs-"));
+    try {
+      const taskStore = createLocalTaskStore(profileDir);
+      const result = await executeTool(
+        "mesh.library_verify_ipfs_gateway",
+        { documentId: "doc-1" },
+        {
+          trustStore: {} as never,
+          peerDirectoryStore: {} as never,
+          taskStore,
+          agentIdentity: {} as never,
+          ownerIdentity: { ownerId: "envoy:owner:test" },
+          agentCredential: {} as never,
+        },
+      );
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/verifyLibraryItemIpfsGateway/);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
   });
 });
 

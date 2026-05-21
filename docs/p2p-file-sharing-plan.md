@@ -2,7 +2,7 @@
 
 **Status:** **FS-A** · **FS-B** · **FS-C** · **FS-D (UI + RPC + tools + mobile publish)** shipped; **FS-E (stub APIs)** started.
 
-**Related:** [Implementation plan](./implementation-plan.md) (Scenario 5, Phase 5) · [Protocol standard](./protocol-standard.md) · [Live connectivity testing](./live-connectivity-testing.md) (data channel / vouchers) · [User stories](./UserStory.md) · [Scenarios](./scenarios.md).
+**Related:** [Implementation plan](./implementation-plan.md) (Scenario 5, Phase 5) · [Protocol standard](./protocol-standard.md) · [Live connectivity testing](./live-connectivity-testing.md) (data channel / vouchers) · [External distribution — IPFS plan](./external-distribution-ipfs-plan.md) · [User stories](./UserStory.md) · [Scenarios](./scenarios.md).
 
 ---
 
@@ -209,7 +209,7 @@ Update **`ws-protocol`** RPC union + desktop WS handler + **MobileNode** stubs �
 
 ### Phase FS-D — Publish + discovery
 
-**Shipped:** `published-library.json` (desktop + **mobile** Data directory); `NodeService.setLibraryItemPublished` / `listLibraryItems.published`; inbound `discovery.request` **`libraryMatches`**; **`NodeService.discoverPublishedLibrary`** (bond-ordered, `sendExpectReply` + same-stream **`replyWithEnvelope`** on the node); **Social → Discover → “Published files”** tab; RPC / **`NodeServiceClient`** / **`DirectCallClient`**; agent tools **`mesh.library_list`**, **`mesh.library_discover`**, **`discovery.search`** fixed (targeted RPC); **`bondTrustRank`** helper.
+**Shipped:** `published-library.json` (desktop + **mobile** Data directory); `NodeService.setLibraryItemPublished` / `listLibraryItems.published`; inbound `discovery.request` **`libraryMatches`** (optional **`cid`** when peer has IPFS export); **`NodeService.discoverPublishedLibrary`** (bond-ordered, `sendExpectReply` + same-stream **`replyWithEnvelope`** on the node); **Social → Discover → “Published files”** tab; RPC / **`NodeServiceClient`** / **`DirectCallClient`**; agent tools **`mesh.library_list`**, **`mesh.library_discover`**, **`mesh.library_export_ipfs`**, **`mesh.library_verify_ipfs_gateway`**, **`discovery.search`** fixed (targeted RPC); **`bondTrustRank`** helper.
 
 **Mobile:** **`discoverPublishedLibrary`** uses same-stream **`/envoymesh/message`** request/response (parity with desktop `sendExpectReply`); publish manifest via Capacitor Filesystem at `envoymesh_profile/published-library.json`.
 

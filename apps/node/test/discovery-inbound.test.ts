@@ -173,6 +173,81 @@ describe("handleInboundDiscoveryIntent", () => {
       await rm(vaultDir, { recursive: true, force: true });
     }
   });
+
+  it("includes IPFS cid in libraryMatches when published-external export matches vault bytes (F3)", async () => {
+    const vaultDir = await mkdtemp(join(tmpdir(), "envoy-discovery-vault-cid-"));
+    try {
+      await writeFile(join(vaultDir, "export.md"), "export me", "utf8");
+      const index = await buildVaultIndex({ rootDir: vaultDir });
+      const doc = index.documents[0]!;
+      await writeFile(
+        join(profileDir, "published-library.json"),
+        `${JSON.stringify({ documentIds: [doc.documentId] }, null, 2)}\n`,
+        "utf8",
+      );
+      await writeFile(
+        join(profileDir, "published-external.json"),
+        `${JSON.stringify(
+          {
+            version: "0.1",
+            exports: {
+              [doc.documentId]: {
+                exportRevision: 1,
+                exportedAt: new Date().toISOString(),
+                cid: "bafybeigdyrzt5sfp7ud17ehd8yfg4dpfyfm5dqn7q",
+                ipfsInteropRecipe: "kubo-ipfs-export-v1",
+                kuboVersion: "0.24.0",
+                contentHash: doc.contentHash,
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
+
+      const profile = testProfile();
+      const taskStore = createLocalTaskStore(profileDir);
+      const trustStore = createLocalTrustStore(profileDir);
+      await trustStore.setTrustRecord({
+        peerOwnerId: "envoy:owner:friend",
+        level: "direct",
+      });
+
+      const envelope = signedEnvelope(
+        profile,
+        "discovery.request",
+        createDiscoveryRequestPayload({
+          requesterOwnerId: "envoy:owner:friend",
+          requestedTagHashes: [],
+          requestedCapabilities: ["envoymesh.published-library"],
+          maxResults: 5,
+        }),
+      );
+
+      const result = await handleInboundDiscoveryIntent({
+        envelope,
+        profile,
+        remotePeerId: "libp2p-friend",
+        receivedAt: Date.now(),
+        correlationId: undefined,
+        taskStore,
+        trustStore,
+        anonymousDiscoveryMode: "contacts-only",
+        vaultDir,
+        profileDir,
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok && result.responsePayload) {
+        const hit = result.responsePayload.matches[0]?.libraryMatches?.[0];
+        expect(hit?.cid).toBe("bafybeigdyrzt5sfp7ud17ehd8yfg4dpfyfm5dqn7q");
+      }
+    } finally {
+      await rm(vaultDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("handleInboundRelayPeersIntent", () => {

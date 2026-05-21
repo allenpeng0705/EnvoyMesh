@@ -3,14 +3,26 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, relative, resolve, sep } from "node:path";
 
 export const DEFAULT_SHARED_VAULT_DIR = "shared_vault";
-export const SUPPORTED_VAULT_EXTENSIONS = [".txt", ".md", ".json"] as const;
 
-export type SupportedVaultExtension = (typeof SUPPORTED_VAULT_EXTENSIONS)[number];
+/**
+ * Extensions we UTF-8 read and chunk for full-text vault search.
+ * Other files appear in manifests / library listings with integrity hash + byte size only (binary-safe).
+ */
+export const VAULT_TEXT_CHUNK_EXTENSIONS = [".txt", ".md", ".json"] as const;
+
+export type VaultTextChunkExtension = (typeof VAULT_TEXT_CHUNK_EXTENSIONS)[number];
+
+/** @deprecated Use {@link VAULT_TEXT_CHUNK_EXTENSIONS} — kept for callers that relied on this name */
+export const SUPPORTED_VAULT_EXTENSIONS = VAULT_TEXT_CHUNK_EXTENSIONS;
+
+/** @deprecated Prefer {@link VaultTextChunkExtension} */
+export type SupportedVaultExtension = VaultTextChunkExtension;
 
 export interface VaultDocumentMetadata {
   documentId: string;
   relativePath: string;
-  extension: SupportedVaultExtension;
+  /** Lower-case extension incl. dot (e.g. `.pdf`) or empty string when none */
+  extension: string;
   title: string;
   byteLength: number;
   contentHash: string;
@@ -141,22 +153,39 @@ export async function buildVaultIndex(options: BuildVaultIndexOptions): Promise<
     assertPathInsideVault(rootDir, filePath);
 
     const fileStat = await stat(filePath);
-    const content = await readFile(filePath, "utf8");
     const relativePath = toVaultRelativePath(rootDir, filePath);
-    const extension = extname(filePath) as SupportedVaultExtension;
-    const documentId = createDocumentId(relativePath, content);
-    const metadata: VaultDocumentMetadata = {
-      documentId,
-      relativePath,
-      extension,
-      title: titleFromRelativePath(relativePath),
-      byteLength: Buffer.byteLength(content, "utf8"),
-      contentHash: hashContent(content),
-      updatedAt: fileStat.mtime.toISOString(),
-    };
+    const extension = extname(filePath).toLowerCase();
+    const raw = await readFile(filePath);
 
-    documents.push(metadata);
-    chunks.push(...chunkDocument(metadata, content, options.maxChunkChars ?? defaultMaxChunkChars));
+    if (isVaultTextChunkExtension(extension)) {
+      const contentString = raw.toString("utf8");
+      const contentHashLegacy = hashContent(contentString);
+      const documentId = createLegacyUtf8ChunkDocumentId(relativePath, contentString);
+      const metadata: VaultDocumentMetadata = {
+        documentId,
+        relativePath,
+        extension,
+        title: titleFromRelativePath(relativePath),
+        byteLength: raw.byteLength,
+        contentHash: contentHashLegacy,
+        updatedAt: fileStat.mtime.toISOString(),
+      };
+      documents.push(metadata);
+      chunks.push(...chunkDocument(metadata, contentString, options.maxChunkChars ?? defaultMaxChunkChars));
+    } else {
+      const contentHashBin = hashBufferSha256Base64Url(raw);
+      const documentId = createBinaryIntegrityDocumentId(relativePath, contentHashBin);
+      const metadata: VaultDocumentMetadata = {
+        documentId,
+        relativePath,
+        extension,
+        title: titleFromRelativePath(relativePath),
+        byteLength: raw.byteLength,
+        contentHash: contentHashBin,
+        updatedAt: fileStat.mtime.toISOString(),
+      };
+      documents.push(metadata);
+    }
   }
 
   return {
@@ -183,12 +212,27 @@ export async function listSupportedVaultFiles(rootDir: string): Promise<string[]
   const entries = await walkVaultDirectory(absoluteRoot);
 
   return entries
-    .filter((filePath) => isSupportedVaultFile(filePath))
+    .filter((filePath) => shouldIncludeVaultFileInIndex(filePath))
     .sort((left, right) => left.localeCompare(right));
 }
 
+/** Regular files indexed for library/metadata; skips dotfiles (e.g. `.DS_Store`). */
+export function shouldIncludeVaultFileInIndex(filePath: string): boolean {
+  return !basename(filePath).startsWith(".");
+}
+
+/**
+ * Extensions we UTF-decode and chunk for full-text vault search (.txt / .md / .json).
+ * @deprecated This used to imply "eligible for indexing" — indexing now includes binary files via {@link shouldIncludeVaultFileInIndex}.
+ */
 export function isSupportedVaultFile(filePath: string): boolean {
-  return SUPPORTED_VAULT_EXTENSIONS.includes(extname(filePath) as SupportedVaultExtension);
+  return isVaultTextChunkExtension(extname(filePath));
+}
+
+/** True when this extension receives UTF-8 chunking / legacy content-hash semantics (.txt / .md / .json). */
+export function isVaultTextChunkExtension(extension: string): boolean {
+  const e = extension.toLowerCase();
+  return (VAULT_TEXT_CHUNK_EXTENSIONS as readonly string[]).includes(e);
 }
 
 export function assertPathInsideVault(rootDir: string, candidatePath: string): void {
@@ -357,8 +401,16 @@ function toVaultRelativePath(rootDir: string, filePath: string): string {
   return relative(rootDir, filePath).split(sep).join("/");
 }
 
-function createDocumentId(relativePath: string, content: string): string {
-  return `doc_${hashContent(`${relativePath}\n${content}`).slice(0, 24)}`;
+function hashBufferSha256Base64Url(buffer: Buffer): string {
+  return createHash("sha256").update(buffer).digest("base64url");
+}
+
+function createLegacyUtf8ChunkDocumentId(relativePath: string, utf8Content: string): string {
+  return `doc_${hashContent(`${relativePath}\n${utf8Content}`).slice(0, 24)}`;
+}
+
+function createBinaryIntegrityDocumentId(relativePath: string, fileSha256Base64Url: string): string {
+  return `doc_${hashContent(`${relativePath}\nBINARY\n${fileSha256Base64Url}`).slice(0, 24)}`;
 }
 
 function hashContent(content: string): string {

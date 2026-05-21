@@ -27,6 +27,8 @@ export class WsClient {
   private _statusCallbacks = new Set<ConnectionChangeHandler>();
   private _lastError: string | null = null;
   private _connectTimeout: ReturnType<typeof setTimeout> | null = null;
+  /** True after {@link disconnect} — blocks auto-reconnect and stale close handlers. */
+  private _disposed = false;
 
   constructor(url: string = "ws://localhost:3030/ws") {
     this.url = url;
@@ -38,7 +40,12 @@ export class WsClient {
    */
   onStatusChange(cb: ConnectionChangeHandler): () => void {
     this._statusCallbacks.add(cb);
-    return () => { this._statusCallbacks.delete(cb); };
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      cb("connected");
+    }
+    return () => {
+      this._statusCallbacks.delete(cb);
+    };
   }
 
   /**
@@ -52,6 +59,9 @@ export class WsClient {
    * Connect to the WebSocket server
    */
   connect(): Promise<void> {
+    if (this._disposed) {
+      return Promise.reject(new Error("WebSocket client has been disposed"));
+    }
     return new Promise((resolve, reject) => {
       let resolved = false;
       try {
@@ -93,18 +103,21 @@ export class WsClient {
             clearTimeout(this._connectTimeout);
             this._connectTimeout = null;
           }
-          // Notify persistent status callbacks
-          this._statusCallbacks.forEach((cb) => cb('disconnected'));
-          // If onopen never fired (e.g. connection refused), reject the promise
+          this._statusCallbacks.forEach((cb) => cb("disconnected"));
           if (!resolved) {
             resolved = true;
-            reject(new Error("WebSocket connection closed before opening"));
+            const err = this._lastError ?? "WebSocket connection closed before opening";
+            reject(new Error(err));
           }
-          this.scheduleReconnect();
+          if (!this._disposed) {
+            this.scheduleReconnect();
+          }
         };
 
-        this.ws.onerror = (error) => {
-          console.error("[ws-client] Error:", error);
+        this.ws.onerror = () => {
+          const err = `WebSocket error connecting to ${this.url}`;
+          console.error("[ws-client]", err);
+          this._lastError = err;
         };
 
         this.ws.onmessage = (event) => {
@@ -120,6 +133,7 @@ export class WsClient {
    * Disconnect from the WebSocket server
    */
   disconnect(): void {
+    this._disposed = true;
     if (this._connectTimeout) {
       clearTimeout(this._connectTimeout);
       this._connectTimeout = null;
@@ -128,13 +142,17 @@ export class WsClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    const socket = this.ws;
+    this.ws = null;
+    if (socket) {
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.close();
     }
     this.reconnectAttempts = 0;
-    // Notify persistent status callbacks
-    this._statusCallbacks.forEach((cb) => cb('disconnected'));
+    this._statusCallbacks.forEach((cb) => cb("disconnected"));
   }
 
   /**
@@ -205,15 +223,33 @@ export class WsClient {
     }
     handlers.add(handler);
 
-    // Tell server we want this event
-    void this.rpc("on", { event });
+    const registerOnServer = (): void => {
+      if (this._disposed || !this.isConnected()) return;
+      void this.rpc("on", { event }).catch((err) => {
+        console.warn(`[ws-client] subscribe ${event} failed:`, err);
+      });
+    };
 
-    // Return unsubscribe function
+    if (this.isConnected()) {
+      registerOnServer();
+    } else {
+      const unsubConnect = this.onStatusChange((status) => {
+        if (status === "connected") {
+          unsubConnect();
+          registerOnServer();
+        }
+      });
+    }
+
     return () => {
       handlers?.delete(handler);
       if (handlers?.size === 0) {
         this.handlers.delete(event);
-        void this.rpc("off", { event });
+        if (this.isConnected()) {
+          void this.rpc("off", { event }).catch((err) => {
+            console.warn(`[ws-client] unsubscribe ${event} failed:`, err);
+          });
+        }
       }
     };
   }
@@ -279,7 +315,7 @@ export class WsClient {
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectTimer) return;
+    if (this._disposed || this.reconnectTimer) return;
 
     // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 60s (cap)
     const delay = Math.min(

@@ -239,6 +239,39 @@ export class ToolRegistry {
       isMeshTool: false,
     });
 
+    this.register({
+      name: "mesh.library_export_ipfs",
+      description:
+        "Export a vault document to IPFS via Kubo ipfs add (interop recipe v1). Requires exportLibraryItemToIpfs hook and externalPublish.allowIpfs.",
+      paramSchema: {
+        type: "object",
+        properties: {
+          documentId: { type: "string", description: "Vault document id from mesh.library_list" },
+        },
+        required: ["documentId"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: true,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.library_verify_ipfs_gateway",
+      description:
+        "Fetch exported content from an allowlisted IPFS gateway and verify bytes match vault contentHash.",
+      paramSchema: {
+        type: "object",
+        properties: {
+          documentId: { type: "string" },
+          gatewayUrl: { type: "string", description: "Optional gateway base; must be in allowlist" },
+        },
+        required: ["documentId"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
     // External agent management tools (Phase 9I)
     this.register({
       name: "mesh.list-external-sessions",
@@ -798,6 +831,11 @@ export interface MeshToolContext {
   /** Optional FS-D hooks — populated when the agent runtime is wired to NodeService. */
   listLibraryItems?: () => Promise<unknown>;
   discoverPublishedLibrary?: (params: Record<string, unknown> | undefined) => Promise<unknown>;
+  exportLibraryItemToIpfs?: (documentId: string) => Promise<unknown>;
+  verifyLibraryItemIpfsGateway?: (params: {
+    documentId: string;
+    gatewayUrl?: string;
+  }) => Promise<unknown>;
 }
 
 /**
@@ -878,6 +916,65 @@ export async function executeTool(
       return {
         ok: true,
         result: { peers },
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.library_export_ipfs") {
+      if (!context.exportLibraryItemToIpfs) {
+        return {
+          ok: false,
+          error: "exportLibraryItemToIpfs is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const documentId = params.documentId as string | undefined;
+      if (!documentId?.trim()) {
+        return {
+          ok: false,
+          error: "documentId is required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const exportResult = await context.exportLibraryItemToIpfs(documentId.trim());
+      return {
+        ok: true,
+        result: exportResult,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.library_verify_ipfs_gateway") {
+      if (!context.verifyLibraryItemIpfsGateway) {
+        return {
+          ok: false,
+          error: "verifyLibraryItemIpfsGateway is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const documentId = params.documentId as string | undefined;
+      if (!documentId?.trim()) {
+        return {
+          ok: false,
+          error: "documentId is required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const verifyResult = await context.verifyLibraryItemIpfsGateway({
+        documentId: documentId.trim(),
+        gatewayUrl: params.gatewayUrl as string | undefined,
+      });
+      return {
+        ok: true,
+        result: verifyResult,
         toolName,
         correlationId,
         latencyMs: Date.now() - startTime,

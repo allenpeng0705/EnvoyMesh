@@ -3,7 +3,7 @@
  */
 import React from "react";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { Header } from "../../src/components/Header.js";
 import { ThemeProvider } from "../../src/context/ThemeContext.js";
 import type { ViewName } from "../../src/App.js";
@@ -54,19 +54,27 @@ describe("Header", () => {
 
   it("renders primary navigation", () => {
     renderHeader(baseProps);
-    expect(screen.getByRole("button", { name: /^chat$/i })).toBeDefined();
-    expect(screen.getByRole("button", { name: /^inbox$/i })).toBeDefined();
-    expect(screen.getByText(/contacts \(0\)/i)).toBeDefined();
-    expect(screen.getByRole("button", { name: /^search$/i })).toBeDefined();
-    expect(screen.getByRole("button", { name: /^more$/i })).toBeDefined();
+    const nav = screen.getByRole("navigation", { name: /primary/i });
+    expect(within(nav).getByRole("button", { name: /^chat$/i })).toBeDefined();
+    expect(within(nav).getByText(/contacts \(0\)/i)).toBeDefined();
+    expect(within(nav).getByRole("button", { name: /^library$/i })).toBeDefined();
+    expect(within(nav).getByRole("button", { name: /^settings$/i })).toBeDefined();
+    expect(within(nav).queryByRole("button", { name: /^profile$/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /^profile$/i })).toBeDefined();
   });
 
-  it("opens Profile from More menu", () => {
+  it("navigates to Profile when Profile control is clicked", () => {
     const onNavigate = vi.fn();
     renderHeader({ ...baseProps, onNavigate });
-    fireEvent.click(screen.getByRole("button", { name: /^more$/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /^profile$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^profile$/i }));
     expect(onNavigate).toHaveBeenCalledWith("profile");
+  });
+
+  it("navigates to Settings when Settings is clicked", () => {
+    const onNavigate = vi.fn();
+    renderHeader({ ...baseProps, onNavigate });
+    fireEvent.click(screen.getByRole("button", { name: /^settings$/i }));
+    expect(onNavigate).toHaveBeenCalledWith("settings");
   });
 
   it("calls onNavigate when Chat is clicked", () => {
@@ -76,15 +84,10 @@ describe("Header", () => {
     expect(onNavigate).toHaveBeenCalledWith("chat");
   });
 
-  it("calls onNavigate when Inbox is clicked", () => {
+  it("shows inbox activity on Chat control", () => {
     const onNavigate = vi.fn();
-    renderHeader({ ...baseProps, onNavigate });
-    fireEvent.click(screen.getByRole("button", { name: /^inbox$/i }));
-    expect(onNavigate).toHaveBeenCalledWith("inbox");
-  });
-
-  it("shows inbox badge count", () => {
-    renderHeader({ ...baseProps, inboxActivityCount: 3 });
+    renderHeader({ ...baseProps, onNavigate, inboxActivityCount: 3 });
+    expect(screen.getByRole("button", { name: /3 items in inbox/i })).toBeDefined();
     expect(screen.getByText("3")).toBeDefined();
   });
 
@@ -93,7 +96,7 @@ describe("Header", () => {
     expect(screen.getByText("Contacts (5)")).toBeDefined();
   });
 
-  it("shows peer display name", () => {
+  it("shows display name on Profile nav when profile has displayName", () => {
     renderHeader({
       ...baseProps,
       humanProfile: {
@@ -101,12 +104,13 @@ describe("Header", () => {
         ownerId: "envoy:owner:alice", version: "0.1", profileVisibility: "public",
       },
     });
-    expect(screen.getByText("Alice")).toBeDefined();
+    expect(screen.getByRole("button", { name: /^alice$/i })).toBeDefined();
   });
 
-  it("shows truncated peerId", () => {
+  it("Profile control shows truncated peer id in title when no display name", () => {
     renderHeader({ ...baseProps, humanProfile: null, peerId: "12D3KooWAbCdEfGhIj" });
-    expect(screen.getByText("12D3KooW\u2026")).toBeDefined();
+    const profileBtn = screen.getByRole("button", { name: /^profile$/i });
+    expect(profileBtn.getAttribute("title")).toContain("12D3KooWAbCdEfGhIj");
   });
 
   it("shows node status", () => {

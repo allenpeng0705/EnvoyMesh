@@ -77,6 +77,6 @@ button {
   color: var(--color-text);
 }
 :root[data-theme="dark"] ::selection {
-  background: rgba(45, 212, 168, 0.3);
+  background: rgb(52 211 153 / 0.35);
   color: var(--color-text);
 }

@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from "react";
 import type {
   ConnectionStatus,
   HumanProfile,
@@ -11,7 +10,7 @@ import { DarkModeIcon, LightModeIcon } from "../icons.js";
 interface HeaderProps {
   currentView: ViewName;
   onNavigate: (view: ViewName) => void;
-  /** Hello requests + stranger chat pings — shown on Inbox only */
+  /** Hello requests + stranger chat pings — badge on Chat */
   inboxActivityCount: number;
   bondsCount: number;
   isPublicNetwork: boolean;
@@ -37,25 +36,6 @@ export function Header({
   onRetryConnect,
 }: HeaderProps) {
   const { theme, resolved, setTheme } = useTheme();
-  const [moreOpen, setMoreOpen] = useState(false);
-  const moreRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!moreOpen) return;
-    const onDocMouseDown = (e: MouseEvent) => {
-      if (moreRef.current?.contains(e.target as Node)) return;
-      setMoreOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMoreOpen(false);
-    };
-    document.addEventListener("mousedown", onDocMouseDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocMouseDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [moreOpen]);
 
   const cycleTheme = () => {
     if (theme === "system") setTheme("dark");
@@ -64,15 +44,28 @@ export function Header({
   };
 
   const themeLabel = theme === "system" ? "Auto" : theme === "dark" ? "Dark" : "Light";
-  const displayLabel =
-    humanProfile?.displayName ||
-    humanProfile?.username ||
-    (peerId && !peerId.startsWith("envoy_") ? `${peerId.slice(0, 8)}\u2026` : "Peer");
 
-  const openMoreNav = (view: ViewName) => {
-    onNavigate(view);
-    setMoreOpen(false);
-  };
+  /** Mesh exists only after successful start — avoid stuck "Connecting" when snapshot lags behind node:status. */
+  const publicConnectivityReady =
+    nodeStatus === "running" ||
+    Boolean(connectionStatus?.online);
+  const publicConnectivityLabel =
+    publicConnectivityReady
+      ? "Public Network"
+      : nodeStatus === "starting" || nodeStatus === "stopping"
+        ? "Starting…"
+        : "Connecting…";
+  const publicStatusTitle =
+    isPublicNetwork && !publicConnectivityReady && connectionStatus?.lastError?.trim()
+      ? connectionStatus.lastError
+      : undefined;
+  const displayNameTrimmed = humanProfile?.displayName?.trim();
+  const profileButtonLabel =
+    displayNameTrimmed && displayNameTrimmed.length > 0 ? displayNameTrimmed : "Profile";
+  const profileButtonTitle =
+    peerId && !peerId.startsWith("envoy_")
+      ? `Open profile (${peerId})`
+      : "Open profile";
 
   return (
     <header className="header">
@@ -83,21 +76,20 @@ export function Header({
       <nav className="header-nav" aria-label="Primary">
         <button
           type="button"
-          className={currentView === "chat" ? "active" : ""}
+          className={`${currentView === "chat" ? "active" : ""} ${inboxActivityCount > 0 ? "has-inbox" : ""}`}
           onClick={() => onNavigate("chat")}
           aria-current={currentView === "chat" ? "page" : undefined}
+          aria-label={
+            inboxActivityCount > 0
+              ? `Chat — ${inboxActivityCount} item${inboxActivityCount === 1 ? "" : "s"} in inbox`
+              : "Chat"
+          }
         >
           Chat
-        </button>
-        <button
-          type="button"
-          className={`${currentView === "inbox" ? "active" : ""} ${inboxActivityCount > 0 ? "has-inbox" : ""}`}
-          onClick={() => onNavigate("inbox")}
-          aria-current={currentView === "inbox" ? "page" : undefined}
-        >
-          Inbox
           {inboxActivityCount > 0 && (
-            <span className="inbox-badge">{inboxActivityCount > 99 ? "99+" : inboxActivityCount}</span>
+            <span className="inbox-badge" aria-hidden>
+              {inboxActivityCount > 99 ? "99+" : inboxActivityCount}
+            </span>
           )}
         </button>
         <button
@@ -110,48 +102,20 @@ export function Header({
         </button>
         <button
           type="button"
-          className={currentView === "search" ? "active" : ""}
-          onClick={() => onNavigate("search")}
-          aria-current={currentView === "search" ? "page" : undefined}
-        >
-          Search
-        </button>
-        <button
-          type="button"
           className={currentView === "library" ? "active" : ""}
           onClick={() => onNavigate("library")}
           aria-current={currentView === "library" ? "page" : undefined}
         >
           Library
         </button>
-        <div className="header-nav-more" ref={moreRef}>
-          <button
-            type="button"
-            className={`header-nav-more-trigger${moreOpen ? " open" : ""}${currentView === "profile" || currentView === "settings" ? " related-active" : ""}`}
-            aria-expanded={moreOpen}
-            aria-haspopup="menu"
-            aria-controls="header-more-menu"
-            id="header-more-button"
-            onClick={() => setMoreOpen((o) => !o)}
-          >
-            More
-          </button>
-          {moreOpen && (
-            <div
-              className="header-nav-more-menu"
-              id="header-more-menu"
-              role="menu"
-              aria-labelledby="header-more-button"
-            >
-              <button type="button" role="menuitem" className={currentView === "profile" ? "active" : ""} onClick={() => openMoreNav("profile")}>
-                Profile
-              </button>
-              <button type="button" role="menuitem" className={currentView === "settings" ? "active" : ""} onClick={() => openMoreNav("settings")}>
-                Settings
-              </button>
-            </div>
-          )}
-        </div>
+        <button
+          type="button"
+          className={currentView === "settings" ? "active" : ""}
+          onClick={() => onNavigate("settings")}
+          aria-current={currentView === "settings" ? "page" : undefined}
+        >
+          Settings
+        </button>
       </nav>
       <div className="header-right">
         {relayUnreachable && isPublicNetwork && (
@@ -161,9 +125,12 @@ export function Header({
           </button>
         )}
         {isPublicNetwork ? (
-          <div className={`network-status ${connectionStatus?.online ? "public" : "checking"}`}>
+          <div
+            className={`network-status ${publicConnectivityReady ? "public" : "checking"}`}
+            title={publicStatusTitle}
+          >
             <span className="status-indicator" />
-            <span>{connectionStatus?.online ? "Public Network" : "Connecting..."}</span>
+            <span>{publicConnectivityLabel}</span>
           </div>
         ) : (
           <div className="network-status private">
@@ -181,12 +148,18 @@ export function Header({
           {resolved === "dark" ? <LightModeIcon size={16} /> : <DarkModeIcon size={16} />}
         </button>
         <span className="node-status">{nodeStatus}</span>
-        <span className="node-name" title={peerId && !peerId.startsWith("envoy_") ? peerId : ""}>
-          {displayLabel}
-        </span>
         {connectionStatus && connectionStatus.bondedPeers > 0 && (
           <span className="peer-count">{connectionStatus.bondedPeers} peers</span>
         )}
+        <button
+          type="button"
+          className={`header-profile-btn${currentView === "profile" ? " active" : ""}`}
+          onClick={() => onNavigate("profile")}
+          aria-current={currentView === "profile" ? "page" : undefined}
+          title={profileButtonTitle}
+        >
+          {profileButtonLabel}
+        </button>
       </div>
     </header>
   );

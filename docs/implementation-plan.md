@@ -400,8 +400,8 @@ Goal: the Envoy can answer only from owner-approved data.
 - `[x]` Add simple search.
 - `[x]` Enforce vault root path restrictions.
 - `[x]` Audit vault access.
-- `[ ]` Add optional content-addressing metadata for vault documents.
-- `[ ]` Add owner-approved IPFS export/pinning workflow later.
+- `[x]` Add optional content-addressing metadata for vault documents (integrity hashes + IPFS `publishedExternal`; see [external-distribution-ipfs-plan](./external-distribution-ipfs-plan.md) F1–F4).
+- `[x]` Add owner-approved IPFS export workflow (Kubo `ipfs add`, discovery CID overlay, gateway verify — see [external-distribution-ipfs-plan](./external-distribution-ipfs-plan.md) F1–F4).
 - `[ ]` Add Filecoin backup/persistence provider later, behind policy and approvals.
 
 Exit criteria:
@@ -409,7 +409,7 @@ Exit criteria:
 - `[x]` Files outside the vault cannot be queried.
 - `[x]` Trusted peers can receive approved summaries when policy allows.
 - `[x]` Raw file transfer remains disabled by default.
-- `[ ]` Shared content can be referenced by **exact content identity** before external publishing is allowed (depends on optional CA / export work in Phase 5 checkboxes).
+- `[x]` Shared content can be referenced by **exact content identity** (`contentHash` on library items; IPFS CID after explicit export).
 
 ## Phase 6: Model Router
 
@@ -1202,7 +1202,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 - `[x]` **Phase 8** — agentic normal node roadmap (`knowledge.query` path, chat assist, manifests, tool registry, sandbox, discovery/broadcast, reputation trajectory, autonomy controls); see changelog + Phase 8 section below.
 - `[~]` **Cross-network P2P rollout** — WAN-first profile, bootstrap/relay strategy, relay graph routing, diagnostics, and non-LAN smoke.
 - `[ ]` **Stories D / E** — multi-hop discovery, commerce, receipts (no dedicated phase yet; add when scenarios are scoped).
-- `[ ]` **Optional vault** — content-addressing, IPFS/Filecoin paths (Phase 5 open items).
+- `[x]` **Optional vault / IPFS** — content-addressing + owner-approved Kubo export, discovery CID, gateway verify ([external-distribution-ipfs-plan](./external-distribution-ipfs-plan.md) F1–F4); Filecoin later.
 
 ---
 

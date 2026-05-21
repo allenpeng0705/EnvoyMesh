@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { AiSettings, AnonymousDiscoveryMode, AutonomousPolicy, ContactAiPreferences, DiscoveryProfile, ModelProviderConfig, RelayConfig } from "@envoymesh/api";
+import type { AiSettings, AnonymousDiscoveryMode, AutonomousPolicy, ContactAiPreferences, DiscoveryProfile, ExternalPublishConfig, ModelProviderConfig, RelayConfig } from "@envoymesh/api";
 import type { FriendMatchingPreferencesPayload } from "@envoymesh/protocol";
 
 const NODE_CONFIG_FILE = "node-config.json";
@@ -58,6 +58,8 @@ export interface PersistedNodeConfig {
   friendMatchingPreferencesText?: string;
   /** Owner-signed matching preferences (optional Phase F). */
   friendMatchingPreferencesSigned?: FriendMatchingPreferencesPayload;
+  /** External distribution policy (IPFS export gate). */
+  externalPublish?: ExternalPublishConfig;
 }
 
 export interface NodeConfigStore {

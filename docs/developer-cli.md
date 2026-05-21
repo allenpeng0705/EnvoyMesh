@@ -59,13 +59,21 @@ Lists remote libp2p peer IDs observed in audit events. This is a developer view,
 npm run cli -w @envoymesh/node -- vault-index --vault ./shared_vault
 ```
 
-Builds a transient index of supported shared vault files and prints document/chunk counts.
+Builds a transient index of all normal (non-dotfile) vault files and prints document/chunk counts. Binary files appear as documents with integrity hashes only; `.txt`/`.md`/`.json` are chunked for `vault-search`.
 
 ```bash
 npm run cli -w @envoymesh/node -- vault-search --vault ./shared_vault --query "distributed systems"
 ```
 
 Searches the transient shared vault index and prints matching document chunks.
+
+```bash
+npm run cli -w @envoymesh/node -- vault-ipfs-fingerprint --vault ./shared_vault --relative-path notes/export.md
+# or fingerprint any arbitrary file snapshot:
+npm run cli -w @envoymesh/node -- vault-ipfs-fingerprint --file ./build/release.tar.gz
+```
+
+Runs Kubo **`ipfs add`** with EnvoyMesh **interop recipe v1** (`--cid-version 1 --pin=false -Q`), printing the UnixFS-aligned root CID, recipe id (`kubo-ipfs-export-v1`), and Kubo CLI version (`ipfs version -n`). Kubo must be installed and reachable on `PATH`; a typical machine also needs `ipfs daemon` running for **`ipfs add`** to succeed. See [envoymesh-with-kubo.md](./envoymesh-with-kubo.md) for install, run, and packaging options. Automated tests skip real Kubo calls unless **`ENVOYMESH_IPFS_CLI_TEST=1`**.
 
 ```bash
 npm run cli -w @envoymesh/node -- trust
@@ -92,6 +100,8 @@ Reads the latest local `relay.manager.snapshot` audit row and prints relay ident
 
 - `--profile <dir>`: Profile directory. Default: `./data/default`.
 - `--vault <dir>`: Shared vault directory. Default: `shared_vault`.
+- `--file <path>`: File snapshot for `vault-ipfs-fingerprint`.
+- `--relative-path <vaultRel>`: Vault-relative document path for `vault-ipfs-fingerprint` (`--vault`).
 - `--query <text>`: Search query for `vault-search`.
 - `--limit <n>`: Maximum rows to print. Default: `20`.
 - `--audit-correlation <id>`: Substring filter for audit listings (matches `correlationId` and `taskId`).

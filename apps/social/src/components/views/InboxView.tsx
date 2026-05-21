@@ -4,7 +4,12 @@ import { useNodeService, useAgentShareProposals } from "../../hooks/useNodeServi
 import type { HelloProfile, HelloRequest, ChatMessage, SocialIntroProposal } from "@envoymesh/api";
 import { peerDisplayLabel } from "../../lib/display.js";
 
-export function InboxView() {
+export interface InboxViewProps {
+  /** When nested under Chat → Inbox, omit duplicate page title */
+  embedded?: boolean;
+}
+
+export function InboxView({ embedded = false }: InboxViewProps) {
   const {
     pendingHellOs,
     pendingIntroProposals,
@@ -113,10 +118,12 @@ export function InboxView() {
 
   if (empty) {
     return (
-      <div className="inbox-view">
-        <div className="inbox-header">
-          <h2>Inbox</h2>
-        </div>
+      <div className={`inbox-view${embedded ? " inbox-view--embedded" : ""}`}>
+        {!embedded && (
+          <div className="inbox-header">
+            <h2>Inbox</h2>
+          </div>
+        )}
         <div className="inbox-empty">
           <p>No pending activity</p>
           <small>Hello requests, Trust-mode intro proposals, agent share suggestions, and messages from people you haven&apos;t bonded with yet appear here.</small>
@@ -126,9 +133,9 @@ export function InboxView() {
   }
 
   return (
-    <div className="inbox-view">
+    <div className={`inbox-view${embedded ? " inbox-view--embedded" : ""}`}>
       <div className="inbox-header inbox-header-row">
-        <h2>Inbox</h2>
+        {!embedded && <h2>Inbox</h2>}
         {pendingMessages.length > 0 && (
           <button type="button" className="clear-inbox" onClick={clearPendingMessages}>
             Clear strangers

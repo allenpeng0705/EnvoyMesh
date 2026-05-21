@@ -71,6 +71,15 @@ export async function routeRpcMethod(
       return ns.listLibraryItems(params as ListLibraryItemsParams | undefined);
     case "setLibraryItemPublished":
       return ns.setLibraryItemPublished(params.documentId as string, params.published as boolean);
+    case "exportLibraryItemToIpfs":
+      return ns.exportLibraryItemToIpfs(params.documentId as string);
+    case "getIpfsEngineStatus":
+      return ns.getIpfsEngineStatus();
+    case "verifyLibraryItemIpfsGateway":
+      return ns.verifyLibraryItemIpfsGateway({
+        documentId: params.documentId as string,
+        gatewayUrl: params.gatewayUrl as string | undefined,
+      });
     case "discoverPublishedLibrary":
       return ns.discoverPublishedLibrary(params as DiscoverPublishedLibraryParams | undefined);
     case "listAgentShareProposals":

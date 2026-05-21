@@ -1,5 +1,6 @@
 import { buildVaultIndex } from "@envoymesh/vault";
 import type { LibraryFileMatch } from "@envoymesh/protocol";
+import type { PublishedExternalRecord } from "./published-external-store.js";
 
 export async function matchPublishedLibraryDocuments(input: {
   vaultDir: string;
@@ -7,6 +8,7 @@ export async function matchPublishedLibraryDocuments(input: {
   fileTitleQuery?: string;
   contentHashPrefixes?: string[];
   maxResults: number;
+  externalExports?: Map<string, PublishedExternalRecord>;
 }): Promise<LibraryFileMatch[]> {
   const index = await buildVaultIndex({ rootDir: input.vaultDir });
   let docs = index.documents.filter((d) => input.publishedIds.has(d.documentId));
@@ -23,12 +25,20 @@ export async function matchPublishedLibraryDocuments(input: {
     docs = docs.filter((d) => prefs.some((p) => d.contentHash.toLowerCase().startsWith(p.toLowerCase())));
   }
 
-  return docs.slice(0, input.maxResults).map((d) => ({
-    documentId: d.documentId,
-    title: d.title,
-    relativePath: d.relativePath,
-    contentHash: d.contentHash,
-    byteLength: d.byteLength,
-    sensitivity: "public" as const,
-  }));
+  const exports = input.externalExports;
+
+  return docs.slice(0, input.maxResults).map((d) => {
+    const exportRecord = exports?.get(d.documentId);
+    const cid =
+      exportRecord && exportRecord.contentHash === d.contentHash ? exportRecord.cid : undefined;
+    return {
+      documentId: d.documentId,
+      title: d.title,
+      relativePath: d.relativePath,
+      contentHash: d.contentHash,
+      byteLength: d.byteLength,
+      sensitivity: "public" as const,
+      ...(cid ? { cid } : {}),
+    };
+  });
 }

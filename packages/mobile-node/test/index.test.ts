@@ -1402,4 +1402,21 @@ describe("MobileNode", () => {
       ).resolves.toBeUndefined();
     });
   });
+
+  describe("IPFS export (desktop-only)", () => {
+    beforeEach(async () => {
+      node = new MobileNode(makeConfig());
+      await node.initStandalone("/test-profile");
+    });
+
+    it("exportLibraryItemToIpfs throws desktop-only error", async () => {
+      await expect(node.exportLibraryItemToIpfs("doc-1")).rejects.toThrow(/Kubo on desktop/i);
+    });
+
+    it("verifyLibraryItemIpfsGateway throws desktop-only error", async () => {
+      await expect(
+        node.verifyLibraryItemIpfsGateway({ documentId: "doc-1" }),
+      ).rejects.toThrow(/desktop node/i);
+    });
+  });
 });

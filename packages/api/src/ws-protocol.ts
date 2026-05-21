@@ -104,6 +104,9 @@ export type RpcMethods =
   | "listPendingShareOffers"
   | "listLibraryItems"
   | "setLibraryItemPublished"
+  | "exportLibraryItemToIpfs"
+  | "getIpfsEngineStatus"
+  | "verifyLibraryItemIpfsGateway"
   | "discoverPublishedLibrary"
   | "listAgentShareProposals"
   | "dismissAgentShareProposal"
@@ -173,6 +176,14 @@ export interface HomeClawCoreProxyResult {
   headers: Record<string, string>;
   bodyBase64?: string;
   error?: string;
+}
+
+/** Policy for optional external distribution (IPFS gateways, etc.). */
+export interface ExternalPublishConfig {
+  /** Master gate for IPFS export RPC/CLI paths. Default false. */
+  allowIpfs: boolean;
+  /** Optional HTTP gateway host allowlist for future fetch helpers; empty = deny automated gateway use. */
+  gatewayAllowlist?: string[];
 }
 
 export interface NodeConfig {
@@ -263,6 +274,8 @@ export interface NodeConfig {
   friendMatchingPreferencesText?: string;
   /** Optional owner-signed matching preferences (Phase F); verified on `updateNodeConfig`. */
   friendMatchingPreferencesSigned?: FriendMatchingPreferencesPayload;
+  /** Optional external distribution policy (IPFS export gate). Default: IPFS export disabled. */
+  externalPublish?: ExternalPublishConfig;
 }
 
 /**

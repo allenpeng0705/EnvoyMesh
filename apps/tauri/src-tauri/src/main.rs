@@ -1,9 +1,6 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
-use std::path::PathBuf;
 use tauri::{Manager, State};
 use tracing::{info, error, Level};
 use tracing_subscriber::FmtSubscriber;
@@ -12,17 +9,14 @@ use tracing_subscriber::FmtSubscriber;
 struct NodeProcess(Mutex<Option<std::process::Child>>);
 
 fn get_repo_root() -> PathBuf {
-    // CARGO_MANIFEST_DIR is the directory containing this crate (apps/tauri/src-tauri)
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| std::env::current_dir().expect("Failed to get current dir"));
-    // manifest_dir = /path/to/EnvoyMesh/apps/tauri/src-tauri
-    // go up: src-tauri -> tauri -> apps -> EnvoyMesh (3 levels)
-    let monorepo_root = manifest_dir
-        .parent().unwrap()  // apps/tauri
-        .parent().unwrap()  // apps
-        .parent().unwrap(); // EnvoyMesh
-    monorepo_root.to_path_buf()
+    manifest_dir
+        .parent().unwrap()
+        .parent().unwrap()
+        .parent().unwrap()
+        .to_path_buf()
 }
 
 fn get_node_path(repo_root: &PathBuf) -> PathBuf {
@@ -33,12 +27,37 @@ fn get_social_ui_path(repo_root: &PathBuf) -> PathBuf {
     repo_root.join("apps/social/src/dist/index.html")
 }
 
+fn bundled_ipfs_candidates(repo_root: &PathBuf, resource_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(dir) = resource_dir {
+        #[cfg(windows)]
+        paths.push(dir.join("kubo").join("ipfs.exe"));
+        #[cfg(not(windows))]
+        paths.push(dir.join("kubo").join("ipfs"));
+    }
+    #[cfg(windows)]
+    paths.push(repo_root.join("apps/tauri/resources/kubo/ipfs.exe"));
+    #[cfg(not(windows))]
+    {
+        paths.push(repo_root.join("apps/tauri/resources/kubo/ipfs"));
+    }
+    paths
+}
+
+fn resolve_bundled_ipfs_exe(repo_root: &PathBuf, resource_dir: Option<&Path>) -> Option<PathBuf> {
+    for path in bundled_ipfs_candidates(repo_root, resource_dir) {
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    None
+}
+
 fn is_port_in_use(port: u16) -> bool {
     std::net::TcpListener::bind(format!("127.0.0.1:{}", port)).is_err()
 }
 
 fn main() {
-    // Initialize logging
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .finish();
@@ -47,18 +66,14 @@ fn main() {
 
     info!("Starting EnvoyMesh Tauri app");
 
-    // Check if port 3030 is already in use (another node running)
     if is_port_in_use(3030) {
         info!("Port 3030 is already in use. Another node may be running.");
-        info!("Please stop other instances before starting a new one.");
-        // Continue anyway - the user might want to connect to existing node
     }
 
     let repo_root = get_repo_root();
     let node_path = get_node_path(&repo_root);
     let ui_path = get_social_ui_path(&repo_root);
 
-    // Verify required files exist
     if !node_path.exists() {
         error!("Node binary not found at: {:?}", node_path);
         error!("Please run 'npm run node:build' first");
@@ -81,7 +96,6 @@ fn main() {
 
             let app_data_dir = app.path().app_data_dir()
                 .expect("Failed to get app data dir");
-
             std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data dir");
             info!("App data directory: {:?}", app_data_dir);
 
@@ -89,22 +103,38 @@ fn main() {
             std::fs::create_dir_all(&profile_dir).expect("Failed to create profile dir");
             info!("Profile directory: {:?}", profile_dir);
 
-            // Spawn node process
+            let ipfs_repo_dir = profile_dir.join("ipfs-kubo");
+            std::fs::create_dir_all(&ipfs_repo_dir).ok();
+            info!("IPFS repo directory: {:?}", ipfs_repo_dir);
+
+            let resource_dir = app.path().resource_dir().ok();
+            let bundled_ipfs = resolve_bundled_ipfs_exe(&repo_root, resource_dir.as_deref());
+            if let Some(ref exe) = bundled_ipfs {
+                info!("Bundled Kubo sidecar: {:?}", exe);
+            } else {
+                info!("No bundled Kubo sidecar — node will use ipfs on PATH if present");
+            }
+
             let node_state: State<NodeProcess> = app.state();
             let mut node_child = node_state.0.lock().unwrap();
 
             let node_exe = std::env::var("ENVOYMESH_NODE_EXE").unwrap_or_else(|_| "node".to_string());
-
             info!("Spawning node process...");
 
-            match Command::new(&node_exe)
+            let mut command = Command::new(&node_exe);
+            command
                 .arg(node_path.clone())
                 .env("ENVOYMESH_PROFILE", profile_dir.to_str().unwrap_or("./data/default"))
+                .env("ENVOYMESH_IPFS_PATH", ipfs_repo_dir)
                 .env("RUST_LOG", "info")
                 .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-            {
+                .stderr(Stdio::piped());
+
+            if let Some(exe) = bundled_ipfs {
+                command.env("ENVOYMESH_IPFS_EXE", exe);
+            }
+
+            match command.spawn() {
                 Ok(child) => {
                     info!("Node process spawned successfully");
                     *node_child = Some(child);
@@ -122,7 +152,6 @@ fn main() {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 info!("Window close requested, shutting down...");
 
-                // Kill node process
                 let app = window.app_handle();
                 let node_state: State<NodeProcess> = app.state();
                 let mut node_child = node_state.0.lock().unwrap();
@@ -132,7 +161,6 @@ fn main() {
                     info!("Node process killed");
                 }
 
-                // Exit the app
                 std::process::exit(0);
             }
         })

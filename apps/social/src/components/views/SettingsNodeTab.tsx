@@ -1,7 +1,14 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useModelProviderUiScope, useNodeService, useShareOffers, useAgentShareProposals } from "../../hooks/useNodeService.js";
+import {
+  useIsInProcessMobileNode,
+  useModelProviderUiScope,
+  useNodeService,
+  useShareOffers,
+  useAgentShareProposals,
+} from "../../hooks/useNodeService.js";
 import QRCode from "qrcode";
+import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
 import {
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
 } from "@envoymesh/api";
@@ -11,11 +18,13 @@ import type {
   RelayConfig,
   AutonomousDomain,
   AutonomousPolicy,
+  IpfsEngineStatus,
 } from "@envoymesh/api";
 
 export function SettingsNodeTab() {
   const modelProviderUiScope = useModelProviderUiScope();
   const cloudOnlyMobile = modelProviderUiScope === "cloud-only";
+  const isMobileNode = useIsInProcessMobileNode();
   const nodeService = useNodeService();
   const { nodeConfig, nodeStatus, peerId, bridgeStatus, refreshNodeConfig, connectionStatus, refreshConnectionStatus } =
     useNodeState();
@@ -29,19 +38,50 @@ export function SettingsNodeTab() {
   const [bootstrapPresets, setBootstrapPresets] = useState<string[]>(
     nodeConfig?.bootstrapPresets ?? [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
   );
+  const bootstrapPresetsSavingRef = useRef(0);
+  const [bootstrapPresetSyncNonce, setBootstrapPresetSyncNonce] = useState(0);
+
+  const [friendMatchingDraft, setFriendMatchingDraft] = useState("");
+  const [gatewayAllowlistDraft, setGatewayAllowlistDraft] = useState("");
+  const [ipfsEngineStatus, setIpfsEngineStatus] = useState<IpfsEngineStatus | null>(null);
 
   // Sync local state when nodeConfig loads/changes (async load after mount)
   useEffect(() => {
-    if (nodeConfig?.bootstrapPresets) {
-      setBootstrapPresets(nodeConfig.bootstrapPresets);
-    }
-  }, [nodeConfig?.bootstrapPresets]);
+    if (bootstrapPresetsSavingRef.current > 0) return;
+    const fromServer = nodeConfig?.bootstrapPresets;
+    if (fromServer === undefined) return;
+    setBootstrapPresets((prev) => {
+      if (prev.length === fromServer.length && prev.every((p, i) => p === fromServer[i])) {
+        return prev;
+      }
+      return [...fromServer];
+    });
+  }, [nodeConfig?.bootstrapPresets, bootstrapPresetSyncNonce]);
 
   useEffect(() => {
     if (nodeConfig?.friendMatchingPreferencesText !== undefined) {
       setFriendMatchingDraft(nodeConfig.friendMatchingPreferencesText ?? "");
     }
   }, [nodeConfig?.friendMatchingPreferencesText]);
+
+  useEffect(() => {
+    setGatewayAllowlistDraft((nodeConfig?.externalPublish?.gatewayAllowlist ?? []).join("\n"));
+  }, [nodeConfig?.externalPublish?.gatewayAllowlist]);
+
+  useEffect(() => {
+    if (isMobileNode) return;
+    void nodeService
+      .getIpfsEngineStatus()
+      .then(setIpfsEngineStatus)
+      .catch(() =>
+        setIpfsEngineStatus({
+          available: false,
+          running: false,
+          managed: false,
+          errorHint: "Could not read IPFS engine status",
+        }),
+      );
+  }, [isMobileNode, nodeService, nodeConfig?.externalPublish?.allowIpfs]);
 
   useEffect(() => {
     void refreshConnectionStatus();
@@ -91,8 +131,6 @@ export function SettingsNodeTab() {
   const [pairingUri, setPairingUri] = useState<string>("");
   const [pairingLoading, setPairingLoading] = useState(false);
 
-  const [friendMatchingDraft, setFriendMatchingDraft] = useState("");
-
   const handleShowPairingQR = useCallback(async () => {
     setPairingLoading(true);
     try {
@@ -128,6 +166,80 @@ export function SettingsNodeTab() {
     await nodeService.updateNodeConfig(partial);
     await refreshNodeConfig();
   };
+
+  const enableMdns = nodeConfig?.enableMdns ?? true;
+  const mdnsToggle = useOptimisticToggle(enableMdns, async (enableMdnsNext) => {
+    await nodeService.updateNodeConfig({ enableMdns: enableMdnsNext });
+    try { await nodeService.stopNode(); } catch {}
+    try { await nodeService.waitForConnection(15000); } catch {}
+    try { await nodeService.startNode(); } catch {}
+    await refreshNodeConfig();
+  });
+
+  const chatAssistToggle = useOptimisticToggle(
+    nodeConfig?.chatAssistEnabled ?? false,
+    async (chatAssistEnabled) => {
+      await updateNodeConfig({ chatAssistEnabled });
+    },
+  );
+
+  const socialAutoSend = !!(nodeConfig?.autonomousPolicies ?? []).find((p) => p.domain === "social")?.autoSendChat;
+
+  const autoSendChatToggle = useOptimisticToggle(socialAutoSend, async (next) => {
+    const currentPolicies = nodeConfig?.autonomousPolicies ?? [];
+    const existingSocial = currentPolicies.find((p) => p.domain === "social");
+    let updatedPolicies: AutonomousPolicy[];
+    if (existingSocial) {
+      updatedPolicies = currentPolicies.map((p) =>
+        p.domain === "social" ? { ...p, autoSendChat: next } : p
+      );
+    } else {
+      updatedPolicies = [
+        ...currentPolicies,
+        {
+          domain: "social" as AutonomousDomain,
+          maxSensitivity: "friends",
+          autoAnswer: next,
+          autoSendChat: next,
+        },
+      ];
+    }
+    await updateNodeConfig({ autonomousPolicies: updatedPolicies });
+  });
+
+  const killSwitchToggle = useOptimisticToggle(
+    nodeConfig?.autonomousKillSwitch ?? false,
+    async (autonomousKillSwitch) => {
+      await updateNodeConfig({ autonomousKillSwitch });
+    },
+  );
+
+  const trustModeToggle = useOptimisticToggle(
+    nodeConfig?.trustModeEnabled ?? false,
+    async (trustModeEnabled) => {
+      await updateNodeConfig({ trustModeEnabled });
+    },
+  );
+
+  const ipfsExportToggle = useOptimisticToggle(
+    nodeConfig?.externalPublish?.allowIpfs ?? false,
+    async (allowIpfs) => {
+      await updateNodeConfig({
+        externalPublish: {
+          allowIpfs,
+          gatewayAllowlist: nodeConfig?.externalPublish?.gatewayAllowlist ?? [],
+        },
+      });
+    },
+  );
+
+  const bridgeEnabledToggle = useOptimisticToggle(
+    nodeConfig?.bridgeEnabled ?? false,
+    async (bridgeEnabled) => {
+      await nodeService.updateNodeConfig({ bridgeEnabled });
+      await refreshNodeConfig();
+    },
+  );
 
   const { offers: pendingShareOffers, accept: acceptShareOffer, decline: declineShareOffer } =
     useShareOffers();
@@ -251,17 +363,10 @@ export function SettingsNodeTab() {
           <label className="toggle-switch">
             <input
               type="checkbox"
-              checked={nodeConfig?.enableMdns ?? true}
-              onChange={async (e) => {
-                const newValue = e.target.checked;
-                await nodeService.updateNodeConfig({ enableMdns: newValue });
-                try { await nodeService.stopNode(); } catch {}
-                try { await nodeService.waitForConnection(15000); } catch {}
-                try { await nodeService.startNode(); } catch {}
-                await refreshNodeConfig();
-              }}
+              checked={mdnsToggle.checked}
+              onChange={mdnsToggle.onCheckboxChange}
             />
-            <span className="toggle-slider" />
+            <span className="slider" />
           </label>
         </div>
       </section>
@@ -282,27 +387,35 @@ export function SettingsNodeTab() {
               <input
                 type="checkbox"
                 checked={bootstrapPresets.includes(preset.id)}
-                onChange={async () => {
-                  const updated = bootstrapPresets.includes(preset.id)
-                    ? bootstrapPresets.filter(p => p !== preset.id)
-                    : [...bootstrapPresets, preset.id];
-                  setBootstrapPresets(updated);
-                  await nodeService.updateNodeConfig({ bootstrapPresets: updated });
+                onChange={async (e) => {
+                  bootstrapPresetsSavingRef.current += 1;
+                  setBootstrapPresetSyncNonce((n) => n + 1);
                   try {
-                    await nodeService.stopNode();
-                    await nodeService.startNode();
-                    await new Promise<void>((resolve, reject) => {
-                      const timeout = setTimeout(() => reject(new Error("Node restart timeout")), 15000);
-                      const unsub = nodeService.on("node:status", (data) => {
-                        if (data.status === "running") {
-                          clearTimeout(timeout);
-                          unsub();
-                          resolve();
-                        }
+                    const checked = e.target.checked;
+                    const updated = checked
+                      ? [...new Set([...bootstrapPresets, preset.id])]
+                      : bootstrapPresets.filter((p) => p !== preset.id);
+                    setBootstrapPresets(updated);
+                    await nodeService.updateNodeConfig({ bootstrapPresets: updated });
+                    try {
+                      await nodeService.stopNode();
+                      await nodeService.startNode();
+                      await new Promise<void>((resolve, reject) => {
+                        const timeout = setTimeout(() => reject(new Error("Node restart timeout")), 15000);
+                        const unsub = nodeService.on("node:status", (data) => {
+                          if (data.status === "running") {
+                            clearTimeout(timeout);
+                            unsub();
+                            resolve();
+                          }
+                        });
                       });
-                    });
-                  } catch {}
-                  await refreshNodeConfig();
+                    } catch {}
+                    await refreshNodeConfig();
+                  } finally {
+                    bootstrapPresetsSavingRef.current -= 1;
+                    setBootstrapPresetSyncNonce((n) => n + 1);
+                  }
                 }}
               />
               <span className="preset-info">
@@ -453,11 +566,9 @@ export function SettingsNodeTab() {
             <span className="toggle-desc">AI suggests message drafts while typing</span>
           </div>
           <label className="toggle-switch">
-            <input type="checkbox" checked={nodeConfig?.chatAssistEnabled ?? false}
-              onChange={async (e) => {
-                await updateNodeConfig({ chatAssistEnabled: e.target.checked });
-              }} />
-            <span className="toggle-slider" />
+            <input type="checkbox" checked={chatAssistToggle.checked}
+              onChange={chatAssistToggle.onCheckboxChange} />
+            <span className="slider" />
           </label>
         </div>
 
@@ -468,24 +579,9 @@ export function SettingsNodeTab() {
           </div>
           <label className="toggle-switch">
             <input type="checkbox"
-              checked={(nodeConfig?.autonomousPolicies ?? []).find(p => p.domain === "social")?.autoSendChat ?? false}
-              onChange={async (e) => {
-                const currentPolicies = nodeConfig?.autonomousPolicies ?? [];
-                const existingSocial = currentPolicies.find(p => p.domain === "social");
-                let updatedPolicies: AutonomousPolicy[];
-                if (existingSocial) {
-                  updatedPolicies = currentPolicies.map(p =>
-                    p.domain === "social" ? { ...p, autoSendChat: e.target.checked } : p
-                  );
-                } else {
-                  updatedPolicies = [
-                    ...currentPolicies,
-                    { domain: "social" as AutonomousDomain, maxSensitivity: "friends", autoAnswer: e.target.checked, autoSendChat: e.target.checked },
-                  ];
-                }
-                await updateNodeConfig({ autonomousPolicies: updatedPolicies });
-              }} />
-            <span className="toggle-slider" />
+              checked={autoSendChatToggle.checked}
+              onChange={autoSendChatToggle.onCheckboxChange} />
+            <span className="slider" />
           </label>
         </div>
 
@@ -495,11 +591,9 @@ export function SettingsNodeTab() {
             <span className="toggle-desc">Master toggle - pause all autonomous AI actions</span>
           </div>
           <label className="toggle-switch">
-            <input type="checkbox" checked={nodeConfig?.autonomousKillSwitch ?? false}
-              onChange={async (e) => {
-                await updateNodeConfig({ autonomousKillSwitch: e.target.checked });
-              }} />
-            <span className="toggle-slider" />
+            <input type="checkbox" checked={killSwitchToggle.checked}
+              onChange={killSwitchToggle.onCheckboxChange} />
+            <span className="slider" />
           </label>
         </div>
 
@@ -539,6 +633,93 @@ export function SettingsNodeTab() {
         </div>
       </section>
 
+      {isMobileNode ? (
+        <section className="settings-section">
+          <h3>External distribution (IPFS)</h3>
+          <p className="section-desc">
+            IPFS export and gateway verify require Kubo on your home desktop node. This mobile app can display CIDs from library discovery when bonded peers publish them.
+          </p>
+        </section>
+      ) : (
+        <section className="settings-section">
+          <h3>External distribution (IPFS)</h3>
+          <p className="section-desc">
+            When enabled, Library can export vault files to IPFS and persist the root CID locally.
+            EnvoyMesh starts the bundled IPFS engine automatically on first export — no separate install or terminal commands.
+          </p>
+          <dl className="settings-list">
+            <dt>IPFS engine</dt>
+            <dd>
+              {ipfsEngineStatus == null ? (
+                <span className="settings-hint">Checking…</span>
+              ) : ipfsEngineStatus.available ? (
+                <span className="settings-hint">
+                  {ipfsEngineStatus.running
+                    ? `Ready${ipfsEngineStatus.kuboVersion ? ` (Kubo ${ipfsEngineStatus.kuboVersion})` : ""}${
+                        ipfsEngineStatus.managed ? " — managed by EnvoyMesh" : ""
+                      }`
+                    : "Available — starts automatically when you export"}
+                </span>
+              ) : (
+                <span className="settings-hint" role="alert">
+                  {ipfsEngineStatus.errorHint ?? "IPFS engine unavailable"}
+                </span>
+              )}
+            </dd>
+          </dl>
+          <div className="settings-toggle-row">
+            <div className="toggle-info">
+              <strong>Allow IPFS export</strong>
+              <span className="toggle-desc">Gate explicit vault → IPFS export actions (default off)</span>
+            </div>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={ipfsExportToggle.checked}
+                onChange={ipfsExportToggle.onCheckboxChange}
+              />
+              <span className="slider" />
+            </label>
+          </div>
+          <dl className="settings-list">
+            <dt>Gateway allowlist</dt>
+            <dd>
+              <textarea
+                className="settings-input"
+                rows={3}
+                placeholder={"https://ipfs.io\nhttps://dweb.link"}
+                value={gatewayAllowlistDraft}
+                onChange={(e) => setGatewayAllowlistDraft(e.target.value)}
+              />
+              <p className="settings-hint" style={{ marginTop: "6px" }}>
+                One HTTPS gateway base per line. Required for Library “Verify on gateway” (automated fetch compares bytes to vault hash).
+              </p>
+              <button
+                type="button"
+                className="settings-button"
+                style={{ marginTop: "8px" }}
+                onClick={() => {
+                  void (async () => {
+                    const gatewayAllowlist = gatewayAllowlistDraft
+                      .split(/\r?\n/)
+                      .map((line) => line.trim())
+                      .filter(Boolean);
+                    await updateNodeConfig({
+                      externalPublish: {
+                        allowIpfs: nodeConfig?.externalPublish?.allowIpfs ?? false,
+                        gatewayAllowlist,
+                      },
+                    });
+                  })();
+                }}
+              >
+                Save gateway allowlist
+              </button>
+            </dd>
+          </dl>
+        </section>
+      )}
+
       <section className="settings-section">
         <h3>Trust mode & matching</h3>
         <p className="section-desc">
@@ -552,12 +733,10 @@ export function SettingsNodeTab() {
           <label className="toggle-switch">
             <input
               type="checkbox"
-              checked={nodeConfig?.trustModeEnabled ?? false}
-              onChange={async (e) => {
-                await updateNodeConfig({ trustModeEnabled: e.target.checked });
-              }}
+              checked={trustModeToggle.checked}
+              onChange={trustModeToggle.onCheckboxChange}
             />
-            <span className="toggle-slider" />
+            <span className="slider" />
           </label>
         </div>
         <dl className="settings-list">
@@ -661,13 +840,10 @@ export function SettingsNodeTab() {
           <label className="toggle-switch">
             <input
               type="checkbox"
-              checked={nodeConfig?.bridgeEnabled ?? false}
-              onChange={async (e) => {
-                await nodeService.updateNodeConfig({ bridgeEnabled: e.target.checked });
-                await refreshNodeConfig();
-              }}
+              checked={bridgeEnabledToggle.checked}
+              onChange={bridgeEnabledToggle.onCheckboxChange}
             />
-            <span className="toggle-slider" />
+            <span className="slider" />
           </label>
         </div>
 

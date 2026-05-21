@@ -38,6 +38,10 @@ import type {
   DiscoverPublishedLibraryParams,
   DiscoverPublishedLibraryPeerResult,
   PublishedLibraryFileHit,
+  ExportLibraryItemToIpfsResult,
+  IpfsEngineStatus,
+  VerifyLibraryItemIpfsGatewayParams,
+  VerifyLibraryItemIpfsGatewayResult,
 } from "@envoymesh/api";
 
 import { randomUUID } from "node:crypto";
@@ -121,6 +125,11 @@ import { basename, join } from "node:path";
 import { sendVaultFileViaDataTransfer } from "./node-file-share.js";
 import { isSafeVaultPath } from "./share-inbound.js";
 import { createPublishedLibraryStore } from "./published-library-store.js";
+import { createPublishedExternalStore } from "./published-external-store.js";
+import { exportVaultDocumentToIpfs } from "./vault-ipfs-export-service.js";
+import { getKuboIpfsEngineStatus } from "./kubo-ipfs-engine.js";
+import { verifyVaultDocumentIpfsGateway } from "./vault-ipfs-gateway-verify.js";
+import { normalizeGatewayBaseUrl } from "./ipfs-gateway.js";
 import { createAgentShareProposalStore } from "./agent-share-proposal-store.js";
 import { PUBLISHED_LIB_CAPABILITY } from "./discovery-inbound.js";
 import { loadBridgeIdentity } from "./bridge/identity-store.js";
@@ -1596,6 +1605,7 @@ class NodeServiceImpl implements NodeService {
   async listLibraryItems(params?: ListLibraryItemsParams): Promise<LibraryItem[]> {
     const index = await buildVaultIndex({ rootDir: this._vaultDir });
     const publishedIds = await createPublishedLibraryStore(this._profileDir).loadDocumentIds();
+    const externalExports = await createPublishedExternalStore(this._profileDir).loadAll();
     const q = params?.query?.trim().toLowerCase();
     let docs = index.documents;
     if (q) {
@@ -1614,11 +1624,53 @@ class NodeServiceImpl implements NodeService {
       contentHash: d.contentHash,
       updatedAt: d.updatedAt,
       published: publishedIds.has(d.documentId),
+      publishedExternal: externalExports.get(d.documentId),
     }));
   }
 
   async setLibraryItemPublished(documentId: string, published: boolean): Promise<void> {
     await createPublishedLibraryStore(this._profileDir).setPublished(documentId, published);
+  }
+
+  async exportLibraryItemToIpfs(documentId: string): Promise<ExportLibraryItemToIpfsResult> {
+    this.recordOwnerActivity();
+    if (!this._taskStore) {
+      throw new Error("Task store not initialized — node is not fully wired");
+    }
+    const config = await this.getNodeConfig();
+    const allowIpfs = config.externalPublish?.allowIpfs ?? false;
+    const taskStore = this._taskStore;
+    return exportVaultDocumentToIpfs({
+      vaultDir: this._vaultDir,
+      profileDir: this._profileDir,
+      documentId,
+      allowIpfs,
+      appendAudit: (event) => taskStore.appendAuditEvent(event),
+    });
+  }
+
+  async getIpfsEngineStatus(): Promise<IpfsEngineStatus> {
+    return getKuboIpfsEngineStatus(this._profileDir);
+  }
+
+  async verifyLibraryItemIpfsGateway(
+    params: VerifyLibraryItemIpfsGatewayParams,
+  ): Promise<VerifyLibraryItemIpfsGatewayResult> {
+    this.recordOwnerActivity();
+    if (!this._taskStore) {
+      throw new Error("Task store not initialized — node is not fully wired");
+    }
+    const config = await this.getNodeConfig();
+    const taskStore = this._taskStore;
+    return verifyVaultDocumentIpfsGateway({
+      vaultDir: this._vaultDir,
+      profileDir: this._profileDir,
+      documentId: params.documentId,
+      allowIpfs: config.externalPublish?.allowIpfs ?? false,
+      gatewayAllowlist: config.externalPublish?.gatewayAllowlist,
+      gatewayUrl: params.gatewayUrl,
+      appendAudit: (event) => taskStore.appendAuditEvent(event),
+    });
   }
 
   async discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]> {
@@ -1692,6 +1744,7 @@ class NodeServiceImpl implements NodeService {
             relativePath: f.relativePath,
             contentHash: f.contentHash,
             byteLength: f.byteLength,
+            cid: f.cid,
           })),
         );
         results.push({
@@ -1982,6 +2035,7 @@ class NodeServiceImpl implements NodeService {
         trustModeEnabled: config.trustModeEnabled ?? false,
         friendMatchingPreferencesText: config.friendMatchingPreferencesText,
         friendMatchingPreferencesSigned: config.friendMatchingPreferencesSigned,
+        externalPublish: config.externalPublish ?? { allowIpfs: false },
       };
     }
     return {
@@ -2009,6 +2063,7 @@ class NodeServiceImpl implements NodeService {
       homeClawCoreBaseUrl: undefined,
       trustModeEnabled: false,
       friendMatchingPreferencesText: undefined,
+      externalPublish: { allowIpfs: false },
     };
   }
 
@@ -2099,6 +2154,15 @@ class NodeServiceImpl implements NodeService {
         homeClawCoreBaseUrl: config.homeClawCoreBaseUrl,
       }),
       ...(config.trustModeEnabled !== undefined && { trustModeEnabled: config.trustModeEnabled }),
+      ...(config.externalPublish !== undefined && {
+        externalPublish: {
+          allowIpfs: config.externalPublish.allowIpfs ?? false,
+          gatewayAllowlist: (config.externalPublish.gatewayAllowlist ?? [])
+            .map((entry) => normalizeGatewayBaseUrl(entry))
+            .filter(Boolean)
+            .slice(0, 10),
+        },
+      }),
       ...(validatedSigned !== undefined && {
         friendMatchingPreferencesSigned: validatedSigned,
         friendMatchingPreferencesText: validatedSigned.text.trim(),
@@ -3271,6 +3335,8 @@ class NodeServiceImpl implements NodeService {
       listLibraryItems: () => this.listLibraryItems(),
       discoverPublishedLibrary: (p) =>
         this.discoverPublishedLibrary(p as DiscoverPublishedLibraryParams | undefined),
+      exportLibraryItemToIpfs: (documentId) => this.exportLibraryItemToIpfs(documentId),
+      verifyLibraryItemIpfsGateway: (p) => this.verifyLibraryItemIpfsGateway(p),
     };
   }
 

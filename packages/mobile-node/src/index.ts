@@ -118,7 +118,30 @@ function _normalizeMobileStoredOpenAiEndpoint(mp: ModelProviderConfig): ModelPro
 
 function _randomUUID(): string { return crypto.randomUUID(); }
 
-const _MOBILE_VAULT_LIBRARY_EXT = new Set([".txt", ".md", ".json"]);
+const _MOBILE_VAULT_CHUNK_TEXT_EXTENSIONS = new Set([".txt", ".md", ".json"]);
+
+async function _mobileVaultLibraryFingerprint(
+  relativePath: string,
+  content: Uint8Array,
+  extWithDot: string,
+): Promise<{ documentId: string; contentHash: string }> {
+  const contentSha256Base64Url = await _sha256Base64Url(content);
+
+  let documentKeyUtf8: string;
+  let contentHash: string;
+
+  if (_MOBILE_VAULT_CHUNK_TEXT_EXTENSIONS.has(extWithDot)) {
+    const text = new TextDecoder().decode(content);
+    documentKeyUtf8 = `${relativePath}\n${text}`;
+    contentHash = await _sha256Base64Url(new TextEncoder().encode(text));
+  } else {
+    documentKeyUtf8 = `${relativePath}\nBINARY\n${contentSha256Base64Url}`;
+    contentHash = contentSha256Base64Url;
+  }
+
+  const fingerprintDigestFull = await _sha256Base64Url(new TextEncoder().encode(documentKeyUtf8));
+  return { documentId: `doc_${fingerprintDigestFull.slice(0, 24)}`, contentHash };
+}
 
 function _mobileVaultRelativePath(absoluteVaultPath: string): string {
   return absoluteVaultPath.replace(/^\/+/, "");
@@ -1395,14 +1418,15 @@ export class MobileNode implements NodeService {
     const publishedIds = await loadMobilePublishedDocumentIds();
     const items: LibraryItem[] = [];
     for (const absPath of paths.sort((a, b) => a.localeCompare(b))) {
+      if (_mobileVaultBasename(absPath).startsWith(".")) continue;
       const ext = _mobileVaultExtension(absPath);
-      if (!_MOBILE_VAULT_LIBRARY_EXT.has(ext)) continue;
       const relativePath = _mobileVaultRelativePath(absPath);
       const entry = await this._vault.readFile(absPath);
-      const text = new TextDecoder().decode(entry.content);
-      const hashFull = await _sha256Base64Url(new TextEncoder().encode(`${relativePath}\n${text}`));
-      const documentId = `doc_${hashFull.slice(0, 24)}`;
-      const contentHash = await _sha256Base64Url(entry.content);
+      const { documentId, contentHash } = await _mobileVaultLibraryFingerprint(
+        relativePath,
+        entry.content,
+        ext,
+      );
       const title = _mobileVaultTitle(absPath);
       if (q && !title.toLowerCase().includes(q) && !relativePath.toLowerCase().includes(q)) continue;
       items.push({
@@ -1427,6 +1451,26 @@ export class MobileNode implements NodeService {
       cur.delete(documentId);
     }
     await saveMobilePublishedDocumentIds(cur);
+  }
+
+  async exportLibraryItemToIpfs(_documentId: string): Promise<never> {
+    throw new Error("IPFS export requires Kubo on desktop — mobile shows CIDs from discovery only");
+  }
+
+  async getIpfsEngineStatus(): Promise<import("@envoymesh/api").IpfsEngineStatus> {
+    return {
+      available: false,
+      running: false,
+      managed: false,
+      errorHint: "IPFS export runs on the home desktop node",
+    };
+  }
+
+  async verifyLibraryItemIpfsGateway(_params: {
+    documentId: string;
+    gatewayUrl?: string;
+  }): Promise<never> {
+    throw new Error("IPFS gateway verify requires desktop node with gateway allowlist");
   }
 
   async discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]> {
@@ -1514,6 +1558,7 @@ export class MobileNode implements NodeService {
             relativePath: f.relativePath,
             contentHash: f.contentHash,
             byteLength: f.byteLength,
+            cid: f.cid,
           })),
         );
         results.push({

@@ -679,6 +679,9 @@ export const DiscoveryRequestPayloadSchema = z
     "discovery.request requires tag hashes, capabilities, a file title query, or content hash prefixes",
   );
 
+/** Max length for optional IPFS CID on published-library discovery matches (F3 inbound guard). */
+export const LIBRARY_FILE_MATCH_CID_MAX_LENGTH = 128;
+
 export const LibraryFileMatchSchema = z.object({
   documentId: z.string().min(1),
   title: z.string(),
@@ -686,6 +689,8 @@ export const LibraryFileMatchSchema = z.object({
   contentHash: z.string(),
   byteLength: z.number().int().nonnegative().optional(),
   sensitivity: z.enum(["public", "friends", "private"]).optional(),
+  /** Kubo `ipfs add` root CID when the responder has exported this revision (metadata only). */
+  cid: z.string().min(1).max(LIBRARY_FILE_MATCH_CID_MAX_LENGTH).optional(),
 });
 
 export const DiscoveryMatchSchema = z.object({

@@ -37,6 +37,10 @@ jobs:
       - name: npm ci
         run: npm ci
 
+      - name: Fetch Kubo sidecar
+        shell: bash
+        run: ./scripts/fetch-kubo-sidecar.sh
+
       - name: Build Node + Social (Tauri prerequisites)
         run: |
           npm run social:build

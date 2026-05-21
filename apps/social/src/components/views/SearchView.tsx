@@ -5,7 +5,7 @@ import { SUGGESTED_TOPICS } from "../../lib/display.js";
 import { SearchIcon } from "../../icons.js";
 import { bondTrustRank, type DiscoverPublishedLibraryPeerResult, type HelloProfile, type PeerSearchResult } from "@envoymesh/api";
 
-export function SearchView() {
+export function SearchView({ embedded = false }: { embedded?: boolean }) {
   const nodeService = useNodeService();
   const { humanProfile, sendHello } = useNodeState();
 
@@ -100,8 +100,8 @@ export function SearchView() {
   };
 
   return (
-    <div className="search-view">
-      <h2>Discover</h2>
+    <div className={`search-view${embedded ? " search-view--embedded" : ""}`}>
+      {!embedded && <h2>Discover</h2>}
       <div className="search-mode-tabs">
         <button
           className={searchMode === "interest" ? "active" : ""}
@@ -214,6 +214,20 @@ export function SearchView() {
                                 <span className="library-discovery-hash" title={f.contentHash}>
                                   {" "}
                                   · {f.contentHash.slice(0, 12)}…
+                                </span>
+                              ) : null}
+                              {f.cid ? (
+                                <span className="library-discovery-hash" title={f.cid}>
+                                  {" "}
+                                  · IPFS {f.cid.slice(0, 12)}…
+                                  <button
+                                    type="button"
+                                    className="secondary"
+                                    style={{ marginLeft: "0.35rem", fontSize: "0.85em" }}
+                                    onClick={() => void navigator.clipboard.writeText(f.cid!)}
+                                  >
+                                    Copy CID
+                                  </button>
                                 </span>
                               ) : null}
                             </li>

@@ -83,12 +83,13 @@ describe("mergeStyleProfile", () => {
     expect(merged.vocabulary).toContain("baz");
   });
 
-  it("updates timestamp", async () => {
-    const existing = createEmptyStyleProfile();
-    // Wait a ms to ensure different timestamp
-    await new Promise((r) => setTimeout(r, 1));
+  it("updates timestamp", () => {
+    const existing: StyleProfile = {
+      ...createEmptyStyleProfile(),
+      updatedAt: "2020-01-01T00:00:00.000Z",
+    };
     const merged = mergeStyleProfile(existing, { sentenceLength: 10 });
-    expect(merged.updatedAt).not.toBe(existing.updatedAt);
+    expect(Date.parse(merged.updatedAt)).toBeGreaterThan(Date.parse(existing.updatedAt));
   });
 });
 

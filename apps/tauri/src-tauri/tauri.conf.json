@@ -29,7 +29,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": []
+    "icon": [],
+    "resources": {
+      "resources/kubo/**": "kubo/"
+    }
   },
   "plugins": {
     "shell": {

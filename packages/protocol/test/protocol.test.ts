@@ -73,6 +73,8 @@ import {
   parseChatMessagePayload,
   parseDiscoveryRequestPayload,
   parseDiscoveryResponsePayload,
+  LibraryFileMatchSchema,
+  LIBRARY_FILE_MATCH_CID_MAX_LENGTH,
   parseDevicePairApprovePayload,
   parseDevicePairDeferredPayload,
   parseDevicePairRequestPayload,
@@ -254,6 +256,54 @@ describe("protocol", () => {
       ],
     });
     expect(parseDiscoveryResponsePayload(response)).toEqual(response);
+  });
+
+  it("rejects libraryMatches cid longer than inbound max (F3)", () => {
+    const tooLong = "b".repeat(LIBRARY_FILE_MATCH_CID_MAX_LENGTH + 1);
+    expect(() =>
+      LibraryFileMatchSchema.parse({
+        documentId: "doc-1",
+        title: "t",
+        relativePath: "a.md",
+        contentHash: "hash",
+        cid: tooLong,
+      }),
+    ).toThrow();
+    expect(
+      LibraryFileMatchSchema.parse({
+        documentId: "doc-1",
+        title: "t",
+        relativePath: "a.md",
+        contentHash: "hash",
+        cid: "bafyvalid",
+      }).cid,
+    ).toBe("bafyvalid");
+  });
+
+  it("roundtrips discovery.response with libraryMatches cid (F3)", () => {
+    const response = createDiscoveryResponsePayload({
+      requestMessageId: "msg-lib",
+      responderOwnerId: "envoy:owner:alice",
+      matches: [
+        {
+          ownerId: "envoy:owner:alice",
+          peerId: "peer-a",
+          matchedTagHashes: [],
+          matchedCapabilities: ["envoymesh.published-library"],
+          libraryMatches: [
+            {
+              documentId: "doc-1",
+              title: "Published notes",
+              relativePath: "notes.md",
+              contentHash: "abc123hash",
+              cid: "bafybeigdyrzt5sfp7udm7r",
+            },
+          ],
+        },
+      ],
+    });
+    const parsed = parseDiscoveryResponsePayload(response);
+    expect(parsed.matches[0]?.libraryMatches?.[0]?.cid).toBe("bafybeigdyrzt5sfp7udm7r");
   });
 
   it("roundtrips relay checkin and lookup payloads", () => {

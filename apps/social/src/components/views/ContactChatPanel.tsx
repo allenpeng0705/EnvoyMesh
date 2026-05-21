@@ -4,6 +4,13 @@ import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
 import type { ChatMessage } from "@envoymesh/api";
 import type { AssistantMode } from "../../lib/storage.js";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
+import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
+import {
+  messageVisualVariant,
+  resolveChatThreadKind,
+  threadKindLabel,
+} from "../../lib/chat-thread-kind.js";
+import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { Markdown } from "../Markdown.js";
 import { EditIcon, ChatIcon, BridgeIcon } from "../../icons.js";
 
@@ -129,22 +136,31 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   // Group messages by date for date separators
   const messageGroups = useMemo(() => groupMessagesByDate(messages), [messages]);
 
+  const threadKind = resolveChatThreadKind(selectedContact, bridgeStatus?.agentPeerId);
+  const displayName =
+    selectedContact === bridgeStatus?.agentPeerId
+      ? (bridgeStatus.agentName ?? "My Agent")
+      : contactLabel(
+          bonds.find((c) => c.peerOwnerId === selectedContact) ?? { peerOwnerId: selectedContact },
+        );
+  const headerInitial = displayName.trim().charAt(0).toUpperCase() || "?";
+
   return (
     <>
       <header className="chat-header has-assistant-switch">
         <div className="chat-header-left">
-          <span className="chat-name">
-            {selectedContact === bridgeStatus?.agentPeerId
-              ? (bridgeStatus.agentName ?? "My Agent")
-              : contactLabel(
-                  bonds.find((c) => c.peerOwnerId === selectedContact) ?? { peerOwnerId: selectedContact },
-                )}
+          <span className={`chat-header-avatar kind-${threadKind}`} aria-hidden>
+            {headerInitial}
           </span>
-          {appSettings.showConnectionStatus && peerConnectionInfo[selectedContact] && (
-            <span className={`connection-type ${peerConnectionInfo[selectedContact].direct ? "p2p" : "relay"}`}>
-              {peerConnectionInfo[selectedContact].direct ? "P2P" : "Relay"}
-            </span>
-          )}
+          <div className="chat-header-titles">
+            <span className="chat-name">{displayName}</span>
+            <span className={`chat-header-kind kind-${threadKind}`}>{threadKindLabel(threadKind)}</span>
+            {appSettings.showConnectionStatus && peerConnectionInfo[selectedContact] && (
+              <span className={`connection-type ${peerConnectionInfo[selectedContact].direct ? "p2p" : "relay"}`}>
+                {peerConnectionInfo[selectedContact].direct ? "P2P" : "Relay"}
+              </span>
+            )}
+          </div>
         </div>
         <div className="chat-header-right">
           <div className="assistant-switch" title={`Current: ${currentAiMode.charAt(0).toUpperCase() + currentAiMode.slice(1)}`}>
@@ -186,13 +202,39 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           messageGroups.map(([dateKey, msgs]) => (
             <div key={dateKey}>
               <div className="date-separator"><span>{fmtDateLabel(msgs[0].metadata.timestamp)}</span></div>
-              {msgs.map((msg) => {
-                const outgoing = isOutgoing(msg);
+              {buildMessageStacks(msgs, (a, b) => isOutgoing(a) === isOutgoing(b)).map((stack) => {
+                const outgoing = isOutgoing(stack[0]);
+                const variant = messageVisualVariant(outgoing, threadKind);
+                const senderInitial = peerDisplayLabel(stack[0].sender).charAt(0).toUpperCase() || "?";
                 return (
-                  <div key={msg.messageId} className={`message ${outgoing ? "outgoing" : "incoming"}`}>
-                    {!outgoing && <span className="message-sender">{peerDisplayLabel(msg.sender)}</span>}
-                    <Markdown text={msg.content.text} className="message-text" />
-                    <span className="message-time">{new Date(msg.metadata.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                  <div
+                    key={stack[0].messageId}
+                    className={`message-stack-row ${outgoing ? "is-outgoing" : "is-incoming"}`}
+                  >
+                    {!outgoing && (
+                      <span
+                        className={`message-stack-avatar ${threadKind === "agent" ? "agent" : "peer"}`}
+                        aria-hidden
+                      >
+                        {senderInitial}
+                      </span>
+                    )}
+                    <div className="message-stack-bubbles">
+                      {stack.map((msg, index) => (
+                        <ChatMessageBubble
+                          key={msg.messageId}
+                          variant={variant}
+                          position={stackPosition(index, stack.length)}
+                          senderLabel={peerDisplayLabel(msg.sender)}
+                          timeLabel={new Date(msg.metadata.timestamp).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        >
+                          <Markdown text={msg.content.text} className="message-text" />
+                        </ChatMessageBubble>
+                      ))}
+                    </div>
                   </div>
                 );
               })}

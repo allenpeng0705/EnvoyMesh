@@ -12,10 +12,9 @@ import { useChatThreadPreviews } from "../../hooks/useChatThreadPreviews.js";
 interface ChatSidebarProps {
   selectedContact: string | null;
   onSelectContact: (id: string | null) => void;
-  onNavigateToInbox?: () => void;
 }
 
-export function ChatSidebar({ selectedContact, onSelectContact, onNavigateToInbox }: ChatSidebarProps) {
+export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarProps) {
   const nodeService = useNodeService();
   const {
     bonds,
@@ -79,8 +78,6 @@ export function ChatSidebar({ selectedContact, onSelectContact, onNavigateToInbo
     } catch (e) { console.error(e); }
   };
 
-  const totalPending = pendingHellOs.length + pendingIntroProposals.length + pendingMessages.length;
-
   const bondPeerIds = useMemo(() => bonds.map((b) => b.peerOwnerId), [bonds]);
   const threadPreviews = useChatThreadPreviews(bondPeerIds);
 
@@ -88,37 +85,37 @@ export function ChatSidebar({ selectedContact, onSelectContact, onNavigateToInbo
     <aside className="contact-list">
       <div className="contact-list-header">
         <h3>Chats</h3>
-        {totalPending > 0 && (
-          <button
-            type="button"
-            className="inbox-count-btn"
-            onClick={() => onNavigateToInbox?.()}
-            aria-label={`Open inbox, ${totalPending} new`}
-          >
-            {totalPending} new
-          </button>
-        )}
       </div>
 
       {/* Envoy AI contact */}
       <button
         type="button"
-        className={`${selectedContact === "__envoy_ai__" ? "active" : ""}`}
+        className={`thread-row thread-row--ai ${selectedContact === "__envoy_ai__" ? "active" : ""}`}
         onClick={() => onSelectContact("__envoy_ai__")}
       >
-        <span className="avatar ai-avatar">AI</span>
-        <span className="name">Envoy AI</span>
+        <span className="thread-avatar" aria-hidden>AI</span>
+        <span className="thread-meta">
+          <span className="thread-title-row">
+            <span className="thread-title">Envoy AI</span>
+          </span>
+          <span className="thread-subtitle">Knowledge assistant</span>
+        </span>
       </button>
 
       {/* Bridge agent contact — appears when external agent bridge is enabled */}
       {bridgeStatus?.enabled && (
         <button
           type="button"
-          className={selectedContact === bridgeStatus.agentPeerId ? "active" : ""}
+          className={`thread-row thread-row--agent ${selectedContact === bridgeStatus.agentPeerId ? "active" : ""}`}
           onClick={() => onSelectContact(bridgeStatus.agentPeerId)}
         >
-          <span className="avatar">AG</span>
-          <span className="name">{bridgeStatus.agentName ?? "My Agent"}</span>
+          <span className="thread-avatar" aria-hidden>AG</span>
+          <span className="thread-meta">
+            <span className="thread-title-row">
+              <span className="thread-title">{bridgeStatus.agentName ?? "My Agent"}</span>
+            </span>
+            <span className="thread-subtitle">HomeClaw bridge</span>
+          </span>
         </button>
       )}
 
@@ -131,14 +128,19 @@ export function ChatSidebar({ selectedContact, onSelectContact, onNavigateToInbo
           {pendingHellOs.map((request) => (
             <button
               key={request.messageId}
-              className="pending-contact"
+              type="button"
+              className="thread-row thread-row--pending"
               onClick={() => handleAcceptHello(request.messageId)}
             >
-              <span className="avatar">{request.profile.displayName[0]}</span>
-              <div className="name-group">
-                <span className="name">{request.profile.displayName}</span>
-                <span className="preview">Tap to accept</span>
-              </div>
+              <span className="thread-avatar" aria-hidden>
+                {request.profile.displayName[0]?.toUpperCase() ?? "?"}
+              </span>
+              <span className="thread-meta">
+                <span className="thread-title-row">
+                  <span className="thread-title">{request.profile.displayName}</span>
+                </span>
+                <span className="thread-subtitle">Tap to accept hello</span>
+              </span>
             </button>
           ))}
         </>
@@ -151,14 +153,19 @@ export function ChatSidebar({ selectedContact, onSelectContact, onNavigateToInbo
           {pendingMessages.map((msg) => (
             <button
               key={msg.messageId}
-              className="pending-contact"
+              type="button"
+              className="thread-row thread-row--pending"
               onClick={() => handleSayHello(msg.sender.ownerId ?? msg.sender.nodeId)}
             >
-              <span className="avatar">{peerDisplayLabel(msg.sender).charAt(0) || "?"}</span>
-              <div className="name-group">
-                <span className="name">{peerDisplayLabel(msg.sender)}</span>
-                <span className="preview">{msg.content?.text?.slice(0, 40) ?? ""}</span>
-              </div>
+              <span className="thread-avatar" aria-hidden>
+                {peerDisplayLabel(msg.sender).charAt(0).toUpperCase() || "?"}
+              </span>
+              <span className="thread-meta">
+                <span className="thread-title-row">
+                  <span className="thread-title">{peerDisplayLabel(msg.sender)}</span>
+                </span>
+                <span className="thread-subtitle">{msg.content?.text?.slice(0, 48) ?? "New message"}</span>
+              </span>
             </button>
           ))}
           <button className="clear-pending-btn" onClick={clearPendingMessages}>
@@ -174,7 +181,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onNavigateToInbo
             <ChatIcon size={32} />
           </div>
           <div className="empty-state-title">No contacts yet</div>
-          <div className="empty-state-desc">Search to find people and start connecting</div>
+          <div className="empty-state-desc">Discover people in Contacts and start connecting</div>
         </div>
       ) : (
         <>
@@ -185,20 +192,22 @@ export function ChatSidebar({ selectedContact, onSelectContact, onNavigateToInbo
               <button
                 key={contact.peerOwnerId}
                 type="button"
-                className={selectedContact === contact.peerOwnerId ? "active" : ""}
+                className={`thread-row thread-row--contact ${selectedContact === contact.peerOwnerId ? "active" : ""}`}
                 onClick={() => onSelectContact(contact.peerOwnerId)}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setContextMenu({ ownerId: contact.peerOwnerId, x: e.clientX, y: e.clientY });
                 }}
               >
-                <span className="avatar">{contact.displayName?.[0] ?? "?"}</span>
-                <span className="contact-thread-meta">
-                  <span className="contact-thread-title-row">
-                    <span className="name">{contactLabel(contact)}</span>
-                    {pv && <span className="contact-thread-time">{pv.timeLabel}</span>}
+                <span className="thread-avatar" aria-hidden>
+                  {(contact.displayName?.[0] ?? "?").toUpperCase()}
+                </span>
+                <span className="thread-meta">
+                  <span className="thread-title-row">
+                    <span className="thread-title">{contactLabel(contact)}</span>
+                    {pv ? <span className="thread-time">{pv.timeLabel}</span> : null}
                   </span>
-                  {pv && <span className="preview">{pv.text}</span>}
+                  <span className="thread-subtitle">{pv?.text ?? "No messages yet"}</span>
                 </span>
               </button>
             );

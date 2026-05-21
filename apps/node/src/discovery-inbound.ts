@@ -21,6 +21,7 @@ import {
 } from "@envoymesh/protocol";
 import { matchPublishedLibraryDocuments } from "./discovery-library-match.js";
 import { createPublishedLibraryStore } from "./published-library-store.js";
+import { createPublishedExternalStore } from "./published-external-store.js";
 
 /** Requesting this capability (alone or with file/hash selectors) enables published-library metadata in the response. */
 export const PUBLISHED_LIB_CAPABILITY = "envoymesh.published-library";
@@ -84,12 +85,17 @@ async function mergePublishedLibraryMatches(input: {
     return;
   }
 
+  const externalExports = profileDir
+    ? await createPublishedExternalStore(profileDir).loadAll()
+    : new Map();
+
   const libraryMatches = await matchPublishedLibraryDocuments({
     vaultDir,
     publishedIds: published,
     fileTitleQuery: payload.fileTitleQuery,
     contentHashPrefixes: payload.requestedContentHashPrefixes,
     maxResults: payload.maxResults,
+    externalExports,
   });
   if (libraryMatches.length === 0) {
     return;

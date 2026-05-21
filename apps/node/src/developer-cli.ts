@@ -12,12 +12,14 @@ import {
   type TrustRecord,
 } from "@envoymesh/local-store";
 import {
+  assertPathInsideVault,
   buildVaultIndex,
   DEFAULT_SHARED_VAULT_DIR,
   searchVault,
   writeVaultContentManifestFile,
   type VaultIndex,
 } from "@envoymesh/vault";
+import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { decodeWanJoinInviteV1, encodeWanJoinInviteV1, type WanJoinInviteV1 } from "./wan-invite.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
@@ -28,6 +30,12 @@ import {
   formatPeerDiscoveryRows,
 } from "./discovery-report.js";
 import { formatConnectivityRichPanel } from "./connectivity-status-rich.js";
+import {
+  IPFSInteropRecipeV1Id,
+  kuboIpfsAddFileInteropRecipeV1,
+  ipfsInteropRecipeV1CliTemplate,
+} from "./kubo-ipfs-export.js";
+import { ensureKuboIpfsReady } from "./kubo-ipfs-engine.js";
 
 export type DeveloperCliCommand =
   | "profile"
@@ -36,6 +44,7 @@ export type DeveloperCliCommand =
   | "vault-index"
   | "vault-search"
   | "vault-manifest"
+  | "vault-ipfs-fingerprint"
   | "audit"
   | "tasks"
   | "approvals"
@@ -66,6 +75,10 @@ export interface DeveloperCliArgs {
   displayName?: string;
   note?: string;
   manifestOutputPath?: string;
+  /** vault-ipfs-fingerprint: arbitrary file resolved against cwd unless absolute */
+  ipfsFingerprintFile?: string;
+  /** vault-ipfs-fingerprint: path under --vault (requires --vault) */
+  vaultRelativePath?: string;
   machineAName?: string;
   machineBName?: string;
   outputFormat?: "text" | "json";
@@ -177,6 +190,10 @@ export async function runDeveloperCli(argv: string[]): Promise<DeveloperCliResul
     return writeVaultManifest(args);
   }
 
+  if (args.command === "vault-ipfs-fingerprint") {
+    return fingerprintVaultFileIpfsInterop(args);
+  }
+
   if (args.command === "morning-report") {
     return showMorningReport(args);
   }
@@ -245,6 +262,10 @@ export function parseDeveloperCliArgs(rawArgv: string[]): DeveloperCliArgs {
       args.note = readValue(argv, ++index, arg);
     } else if (arg === "--output") {
       args.manifestOutputPath = readValue(argv, ++index, arg);
+    } else if (arg === "--file") {
+      args.ipfsFingerprintFile = readValue(argv, ++index, arg);
+    } else if (arg === "--relative-path") {
+      args.vaultRelativePath = readValue(argv, ++index, arg);
     } else if (arg === "--format") {
       args.outputFormat = parseOutputFormat(readValue(argv, ++index, arg));
     } else if (arg === "--rich") {
@@ -320,6 +341,7 @@ Commands:
   vault-index    Build and summarize the shared vault index.
   vault-search   Search the shared vault metadata/chunks.
   vault-manifest Write a content-addressed vault manifest JSON (--output).
+  vault-ipfs-fingerprint Print Kubo ipfs-add root CID for a file (interop recipe v1).
   audit          Inspect audit events.
   tasks          Inspect task journal entries.
   approvals      Inspect or update owner approval queue.
@@ -344,6 +366,8 @@ Options:
   --level <level>   Trust level: direct, referred, public, blocked.
   --name <text>     Display name for trust records.
   --note <text>     Note for trust records.
+  --file <path>     vault-ipfs-fingerprint: file to fingerprint (alternative to --relative-path).
+  --relative-path <vaultRel> vault-ipfs-fingerprint: vault-relative file path (--vault).
   --output <path>   Output file path (required for vault-manifest; optional for pairing timeline / smoke-checklist).
   --format <text|json> Output format (pairing timeline and relay-status).
   --rich           connectivity-status only: print ASCII Stage D snapshot panel above the usual summary.
@@ -817,6 +841,62 @@ async function writeVaultManifest(args: DeveloperCliArgs): Promise<DeveloperCliR
   ]);
 }
 
+function normalizeVaultRelativePathForInterop(input: string): string {
+  return input.replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+async function fingerprintVaultFileIpfsInterop(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
+  if (args.ipfsFingerprintFile && args.vaultRelativePath) {
+    throw new Error("vault-ipfs-fingerprint: specify either --file or --relative-path, not both");
+  }
+
+  const vaultRootResolved = resolve(args.vaultDir);
+  let absFilePath: string;
+
+  if (args.ipfsFingerprintFile) {
+    absFilePath = resolve(args.ipfsFingerprintFile);
+  } else if (args.vaultRelativePath) {
+    const rel = normalizeVaultRelativePathForInterop(args.vaultRelativePath);
+    absFilePath = resolve(vaultRootResolved, rel);
+    assertPathInsideVault(vaultRootResolved, absFilePath);
+  } else {
+    throw new Error(
+      "vault-ipfs-fingerprint requires --file <path> or --relative-path <path> (--vault resolves relative vault paths)",
+    );
+  }
+
+  try {
+    const st = await stat(absFilePath);
+    if (!st.isFile()) {
+      throw new Error(`vault-ipfs-fingerprint expects a regular file (${absFilePath})`);
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(`vault-ipfs-fingerprint: file not found (${absFilePath})`);
+    }
+    throw err;
+  }
+
+  await ensureKuboIpfsReady({ profileDir: args.profileDir });
+
+  const outcome = kuboIpfsAddFileInteropRecipeV1(absFilePath, args.profileDir);
+  if (!outcome.ok || !outcome.cid) {
+    const hint = outcome.errorHint ?? `ipfs add failed (exit)`;
+    const detail = outcome.stderr.trim() ? `\n${outcome.stderr.trim()}` : "";
+    throw new Error(`${hint}${detail}`);
+  }
+
+  const invokedRecipe = `${ipfsInteropRecipeV1CliTemplate().replace("<absoluteFile>", absFilePath)}`;
+
+  return ok([
+    `ipfsInteropRecipe=${IPFSInteropRecipeV1Id}`,
+    `kuboVersion=${outcome.kuboVersion}`,
+    `recipe=${invokedRecipe}`,
+    `file=${absFilePath}`,
+    `cid=${outcome.cid}`,
+  ]);
+}
+
 async function generateSmokeChecklist(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
   const machineA = args.machineAName ?? "machine-a";
   const machineB = args.machineBName ?? "machine-b";
@@ -946,6 +1026,7 @@ function parseDeveloperCliCommand(value: string): DeveloperCliCommand {
     value === "vault-index" ||
     value === "vault-search" ||
     value === "vault-manifest" ||
+    value === "vault-ipfs-fingerprint" ||
     value === "audit" ||
     value === "tasks" ||
     value === "approvals" ||

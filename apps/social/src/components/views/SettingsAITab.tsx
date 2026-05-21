@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
+import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
 import type {
   AiIdentityMode,
   AiRule,
@@ -107,6 +108,27 @@ export function SettingsAITab() {
 
   const currentStatus = aiSettings.status;
 
+  const onlineAssistantToggle = useOptimisticToggle(
+    currentStatus.onlineAssistantEnabled,
+    async (onlineAssistantEnabled) => {
+      await updateAiSettings({ status: { ...currentStatus, onlineAssistantEnabled } });
+    },
+  );
+  const offlineAgentToggle = useOptimisticToggle(
+    currentStatus.offlineAgentEnabled,
+    async (offlineAgentEnabled) => {
+      await updateAiSettings({ status: { ...currentStatus, offlineAgentEnabled } });
+    },
+  );
+
+  const isOnlineManual = currentStatus.isOnlineManual ?? true;
+  const manualStatusToggle = useOptimisticToggle(
+    isOnlineManual,
+    async (next) => {
+      await updateAiSettings({ status: { ...currentStatus, isOnlineManual: next } });
+    },
+  );
+
   return (
     <section className="settings-section">
       <h3>AI Assistant Settings</h3>
@@ -119,13 +141,9 @@ export function SettingsAITab() {
           <span className="toggle-desc">Suggest drafts when you are online</span>
         </div>
         <label className="toggle-switch">
-          <input type="checkbox" checked={currentStatus.onlineAssistantEnabled}
-            onChange={async (e) => {
-              await updateAiSettings({
-                status: { ...currentStatus, onlineAssistantEnabled: e.target.checked },
-              });
-            }} />
-          <span className="toggle-slider" />
+          <input type="checkbox" checked={onlineAssistantToggle.checked}
+            onChange={onlineAssistantToggle.onCheckboxChange} />
+          <span className="slider" />
         </label>
       </div>
 
@@ -135,13 +153,9 @@ export function SettingsAITab() {
           <span className="toggle-desc">Handle chats when you are away</span>
         </div>
         <label className="toggle-switch">
-          <input type="checkbox" checked={currentStatus.offlineAgentEnabled}
-            onChange={async (e) => {
-              await updateAiSettings({
-                status: { ...currentStatus, offlineAgentEnabled: e.target.checked },
-              });
-            }} />
-          <span className="toggle-slider" />
+          <input type="checkbox" checked={offlineAgentToggle.checked}
+            onChange={offlineAgentToggle.onCheckboxChange} />
+          <span className="slider" />
         </label>
       </div>
 
@@ -170,11 +184,9 @@ export function SettingsAITab() {
             <span className="toggle-desc">Set whether you appear online or away</span>
           </div>
           <label className="toggle-switch">
-            <input type="checkbox" checked={currentStatus.isOnlineManual ?? true}
-              onChange={async (e) => {
-                await updateAiSettings({ status: { ...currentStatus, isOnlineManual: e.target.checked } });
-              }} />
-            <span className="toggle-slider" />
+            <input type="checkbox" checked={manualStatusToggle.checked}
+              onChange={manualStatusToggle.onCheckboxChange} />
+            <span className="slider" />
           </label>
         </div>
       )}

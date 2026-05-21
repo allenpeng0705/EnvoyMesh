@@ -6,13 +6,13 @@ import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { App } from "./App.js";
 
 createRoot(document.getElementById("root")!).render(
-  <NodeServiceProvider>
-    <NodeStateProvider>
-      <ThemeProvider>
-        <ErrorBoundary>
+  <ErrorBoundary>
+    <NodeServiceProvider>
+      <NodeStateProvider>
+        <ThemeProvider>
           <App />
-        </ErrorBoundary>
-      </ThemeProvider>
-    </NodeStateProvider>
-  </NodeServiceProvider>,
+        </ThemeProvider>
+      </NodeStateProvider>
+    </NodeServiceProvider>
+  </ErrorBoundary>,
 );
