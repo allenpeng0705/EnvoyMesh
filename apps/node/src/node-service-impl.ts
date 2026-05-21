@@ -577,10 +577,12 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   private _requireMesh(): EnvoyMesh {
-    if (!this._mesh) {
+    // Support both CLI path (_mesh) and Tauri/mobile path (_externalMesh via bindExternalMesh)
+    const mesh = this._mesh ?? this._externalMesh;
+    if (!mesh) {
       throw new Error("Node is not running. Call startNode() first.");
     }
-    return this._mesh;
+    return mesh;
   }
 
   /**
