@@ -1,6 +1,6 @@
 # AI Document Backbone — detailed design & implementation plan
 
-**Status:** **ADB-A–F shipped** (2026-05-21) · human paths **FS-A–D shipped** · agent paths **FS-E partial** · see §8 for phase exit criteria and test coverage.
+**Status:** **ADB-A–F shipped** (2026-05-21) · human paths **FS-A–D shipped** · agent paths **FS-E shipped** (IPFS/Helia dual-engine export + discover complete) · see §8 for phase exit criteria and test coverage.
 
 **Related:** [P2P file sharing plan](./p2p-file-sharing-plan.md) (FS phases) · [External distribution — IPFS](./external-distribution-ipfs-plan.md) · [EnvoyMesh with Kubo/Helia](./envoymesh-with-kubo-helia.md) · [Implementation plan](./implementation-plan.md) · [Agentic next step](./next-step.md) · [Protocol standard](./protocol-standard.md) · [User stories](./UserStory.md) · [Scenarios](./scenarios.md)
 

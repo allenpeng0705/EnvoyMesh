@@ -1,6 +1,6 @@
 # P2P file & document sharing — design and implementation plan
 
-**Status:** **FS-A** · **FS-B** · **FS-C** · **FS-D (UI + RPC + tools + mobile publish)** shipped; **FS-E (stub APIs)** started.
+**Status:** **FS-A** · **FS-B** · **FS-C** · **FS-D** · **FS-E** all shipped (2026-05-21 IPFS/Helia ship completes ADB epic).
 
 **Related:** [Implementation plan](./implementation-plan.md) (Scenario 5, Phase 5) · [Protocol standard](./protocol-standard.md) · [Live connectivity testing](./live-connectivity-testing.md) (data channel / vouchers) · [External distribution — IPFS plan](./external-distribution-ipfs-plan.md) · **[AI Document Backbone (detailed design)](./ai-document-backbone-plan.md)** · [User stories](./UserStory.md) · [Scenarios](./scenarios.md).
 
