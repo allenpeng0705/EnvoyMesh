@@ -50,8 +50,22 @@ import {
   type SecureStorage,
 } from "@envoymesh/mobile-storage";
 import { evaluatePolicy, type BondLevel as PolicyBondLevel } from "@envoymesh/bonds";
+import { cidForCapabilityTopic } from "#network/capability-topic-cid";
+import { ENVOY_CHAT_PROTOCOL, ENVOY_MESSAGE_PROTOCOL } from "#network/protocols";
 import { installMobileDataTransferReceiver, sendMobileVaultFileDataTransfer } from "./data-transfer.js";
 import { loadMobilePublishedDocumentIds, saveMobilePublishedDocumentIds } from "./mobile-published-library.js";
+import { loadMobileExternalPublish, saveMobileExternalPublish } from "./mobile-external-publish.js";
+import { loadMobilePublishedExternalMap } from "./mobile-published-external.js";
+import { exportMobileLibraryDocumentToIpfs } from "./mobile-ipfs-export.js";
+import { verifyMobileLibraryDocumentIpfsGateway } from "./mobile-ipfs-gateway-verify.js";
+import {
+  mobileVaultBasename,
+  mobileVaultExtension,
+  mobileVaultLibraryFingerprint,
+  mobileVaultRelativePath,
+  mobileVaultTitle,
+} from "./mobile-vault-fingerprint.js";
+import { readHeliaPackageVersionSync } from "@envoymesh/ipfs-helia/browser";
 import {
   listMobileAgentShareProposals,
   removeMobileAgentShareProposal,
@@ -80,7 +94,7 @@ import {
   parseBondChallengeResponsePayload,
   type BondChallengePayload,
 } from "@envoymesh/protocol";
-import { bondTrustRank } from "@envoymesh/api";
+import { bondTrustRank, runDocumentAgentTurn as runDocumentAgentTurnLoop } from "@envoymesh/api";
 import { normalizeOpenAiCompatibleBaseUrl, runOwnerApprovedKnowledgeQuery } from "@envoymesh/models";
 import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from "@libp2p/crypto/keys";
 import type { PrivateKey } from "@libp2p/interface";
@@ -96,11 +110,17 @@ import type {
   HumanProfile,
   LibraryItem,
   ListLibraryItemsParams,
+  ImportToLibraryParams,
+  ImportToLibraryResult,
+  VerifyLibraryItemIpfsGatewayParams,
+  VerifyLibraryItemIpfsGatewayResult,
   ModelProviderConfig,
   NodeService,
   NodeServiceEvents,
   PublishedLibraryFileHit,
   SubmitAgentShareProposalParams,
+  DocumentAgentTurnResult,
+  TransferStatus,
   NodeConfig,
   PairSharedIdentityResult,
   PeerSearchResult,
@@ -118,64 +138,6 @@ function _normalizeMobileStoredOpenAiEndpoint(mp: ModelProviderConfig): ModelPro
 
 function _randomUUID(): string { return crypto.randomUUID(); }
 
-const _MOBILE_VAULT_CHUNK_TEXT_EXTENSIONS = new Set([".txt", ".md", ".json"]);
-
-async function _mobileVaultLibraryFingerprint(
-  relativePath: string,
-  content: Uint8Array,
-  extWithDot: string,
-): Promise<{ documentId: string; contentHash: string }> {
-  const contentSha256Base64Url = await _sha256Base64Url(content);
-
-  let documentKeyUtf8: string;
-  let contentHash: string;
-
-  if (_MOBILE_VAULT_CHUNK_TEXT_EXTENSIONS.has(extWithDot)) {
-    const text = new TextDecoder().decode(content);
-    documentKeyUtf8 = `${relativePath}\n${text}`;
-    contentHash = await _sha256Base64Url(new TextEncoder().encode(text));
-  } else {
-    documentKeyUtf8 = `${relativePath}\nBINARY\n${contentSha256Base64Url}`;
-    contentHash = contentSha256Base64Url;
-  }
-
-  const fingerprintDigestFull = await _sha256Base64Url(new TextEncoder().encode(documentKeyUtf8));
-  return { documentId: `doc_${fingerprintDigestFull.slice(0, 24)}`, contentHash };
-}
-
-function _mobileVaultRelativePath(absoluteVaultPath: string): string {
-  return absoluteVaultPath.replace(/^\/+/, "");
-}
-
-function _mobileVaultBasename(path: string): string {
-  const s = path.replace(/^\/+/, "");
-  const parts = s.split("/");
-  return parts[parts.length - 1] ?? s;
-}
-
-function _mobileVaultTitle(path: string): string {
-  const base = _mobileVaultBasename(path);
-  const i = base.lastIndexOf(".");
-  return i > 0 ? base.slice(0, i) : base;
-}
-
-function _mobileVaultExtension(path: string): string {
-  const base = _mobileVaultBasename(path);
-  const i = base.lastIndexOf(".");
-  return i >= 0 ? base.slice(i).toLowerCase() : "";
-}
-
-async function _sha256Base64Url(data: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", data as BufferSource);
-  const bytes = new Uint8Array(digest);
-  let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-/** Match `@envoymesh/network` protocol IDs (avoid importing the full mesh package). */
-const ENVOY_CHAT_PROTOCOL = "/envoymesh/chat/0.1.0";
-const ENVOY_MESSAGE_PROTOCOL = "/envoymesh/message/0.1.0";
 /** Same capability string as desktop `PUBLISHED_LIB_CAPABILITY` (apps/node). */
 const MOBILE_PUBLISHED_LIB_CAPABILITY = "envoymesh.published-library";
 
@@ -1386,7 +1348,7 @@ export class MobileNode implements NodeService {
       return;
     }
     try {
-      const cid = await this._capabilityTopicCid(t);
+      const cid = await cidForCapabilityTopic(t);
       const cr = this._mesh.contentRouting as {
         cancelReprovide?: (c: unknown) => Promise<void>;
       };
@@ -1416,18 +1378,19 @@ export class MobileNode implements NodeService {
     const paths = await this._vault.listFiles("/");
     const q = params?.query?.trim().toLowerCase();
     const publishedIds = await loadMobilePublishedDocumentIds();
+    const publishedExternal = await loadMobilePublishedExternalMap(this._profileDir);
     const items: LibraryItem[] = [];
     for (const absPath of paths.sort((a, b) => a.localeCompare(b))) {
-      if (_mobileVaultBasename(absPath).startsWith(".")) continue;
-      const ext = _mobileVaultExtension(absPath);
-      const relativePath = _mobileVaultRelativePath(absPath);
+      if (mobileVaultBasename(absPath).startsWith(".")) continue;
+      const ext = mobileVaultExtension(absPath);
+      const relativePath = mobileVaultRelativePath(absPath);
       const entry = await this._vault.readFile(absPath);
-      const { documentId, contentHash } = await _mobileVaultLibraryFingerprint(
+      const { documentId, contentHash } = await mobileVaultLibraryFingerprint(
         relativePath,
         entry.content,
         ext,
       );
-      const title = _mobileVaultTitle(absPath);
+      const title = mobileVaultTitle(absPath);
       if (q && !title.toLowerCase().includes(q) && !relativePath.toLowerCase().includes(q)) continue;
       items.push({
         documentId,
@@ -1438,6 +1401,7 @@ export class MobileNode implements NodeService {
         contentHash,
         updatedAt: new Date().toISOString(),
         published: publishedIds.has(documentId),
+        publishedExternal: publishedExternal.get(documentId),
       });
     }
     return items;
@@ -1453,24 +1417,81 @@ export class MobileNode implements NodeService {
     await saveMobilePublishedDocumentIds(cur);
   }
 
-  async exportLibraryItemToIpfs(_documentId: string): Promise<never> {
-    throw new Error("IPFS export requires Kubo on desktop — mobile shows CIDs from discovery only");
+  async exportLibraryItemToIpfs(documentId: string): Promise<import("@envoymesh/api").ExportLibraryItemToIpfsResult> {
+    const ownerId = this._state?.owner.ownerId;
+    if (!ownerId) {
+      throw new Error("Node not initialized — call initNode() first");
+    }
+    const externalPublish = loadMobileExternalPublish(ownerId);
+    return exportMobileLibraryDocumentToIpfs({
+      vault: this._vault,
+      profileDir: this._profileDir,
+      documentId,
+      allowIpfs: externalPublish.allowIpfs,
+      ipfsExportEngine: externalPublish.ipfsExportEngine,
+    });
   }
 
   async getIpfsEngineStatus(): Promise<import("@envoymesh/api").IpfsEngineStatus> {
+    let heliaVersion: string | undefined;
+    let heliaAvailable = true;
+    let heliaError: string | undefined;
+    try {
+      heliaVersion = readHeliaPackageVersionSync();
+    } catch (err) {
+      heliaAvailable = false;
+      heliaError = err instanceof Error ? err.message : "Helia engine unavailable";
+    }
     return {
       available: false,
       running: false,
       managed: false,
-      errorHint: "IPFS export runs on the home desktop node",
+      errorHint: "Kubo runs on the home desktop node",
+      helia: {
+        available: heliaAvailable,
+        heliaVersion,
+        errorHint: heliaError,
+      },
     };
   }
 
-  async verifyLibraryItemIpfsGateway(_params: {
-    documentId: string;
-    gatewayUrl?: string;
-  }): Promise<never> {
-    throw new Error("IPFS gateway verify requires desktop node with gateway allowlist");
+  async verifyLibraryItemIpfsGateway(
+    params: VerifyLibraryItemIpfsGatewayParams,
+  ): Promise<VerifyLibraryItemIpfsGatewayResult> {
+    const ownerId = this._state?.owner.ownerId;
+    if (!ownerId) {
+      throw new Error("Node not initialized — call initNode() first");
+    }
+    const externalPublish = loadMobileExternalPublish(ownerId);
+    return verifyMobileLibraryDocumentIpfsGateway({
+      vault: this._vault,
+      profileDir: this._profileDir,
+      documentId: params.documentId,
+      allowIpfs: externalPublish.allowIpfs,
+      gatewayAllowlist: externalPublish.gatewayAllowlist,
+      gatewayUrl: params.gatewayUrl,
+    });
+  }
+
+  async importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult> {
+    this._assertNodeRunning();
+    const norm = params.relativePath.trim().replace(/^[\\/]+/, "");
+    this._validateRelativeVaultPathForShare(norm);
+    const binary = atob(params.contentBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const vaultPath = norm.startsWith("/") ? norm : `/${norm}`;
+    await this._vault.writeFile(vaultPath, bytes, params.mimeType);
+    const items = await this.listLibraryItems();
+    const item = items.find((d) => d.relativePath === norm);
+    if (!item) {
+      throw new Error(`Imported file not indexed: ${norm}`);
+    }
+    return {
+      documentId: item.documentId,
+      relativePath: item.relativePath,
+      sizeBytes: item.byteLength,
+    };
   }
 
   async discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]> {
@@ -1821,6 +1842,9 @@ export class MobileNode implements NodeService {
     const mpRaw = this._state?.owner.ownerId ? this._aiPrefs.modelProviders : { mode: "mock" as const };
     const mp = this._state?.owner.ownerId ? _normalizeMobileStoredOpenAiEndpoint(mpRaw) : mpRaw;
     const chatAssist = Boolean(this._state?.owner.ownerId && this._aiPrefs.chatAssistEnabled);
+    const externalPublish = this._state?.owner.ownerId
+      ? loadMobileExternalPublish(this._state.owner.ownerId)
+      : { allowIpfs: false, gatewayAllowlist: [], ipfsExportEngine: "helia" as const };
     return {
       profileDir: this._profileDir,
       discoveryProfile: "wan-default",
@@ -1842,6 +1866,7 @@ export class MobileNode implements NodeService {
       autonomousKillSwitch: false,
       autonomousPolicies: [],
       contactAiPreferences: [],
+      externalPublish,
     };
   }
 
@@ -1902,6 +1927,10 @@ export class MobileNode implements NodeService {
       } catch {
         /* ignore */
       }
+    }
+
+    if (oid != null && config.externalPublish !== undefined) {
+      saveMobileExternalPublish(oid, config.externalPublish);
     }
   }
   async listRelays(): Promise<RelayConfig[]> {
@@ -2018,6 +2047,103 @@ export class MobileNode implements NodeService {
       requesterPeerId: peerId,
       modelProviders: cfg.modelProviders,
     });
+  }
+
+  async runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult> {
+    if (!this._state) {
+      throw new Error("Node not initialized");
+    }
+    const self = this;
+    return runDocumentAgentTurnLoop({
+      message,
+      listLibraryItems: (query) => self.listLibraryItems(query ? { query } : undefined),
+      getBonds: () => self.getBonds(),
+      knowledgeQuery: (q) => self.knowledgeQuery(q),
+      discoverPublishedLibrary: (p) => self.discoverPublishedLibrary(p),
+      sendChat: (targetOwnerId, text) => self.sendChat(targetOwnerId, text),
+      executeTool: async (toolName, params) => {
+        try {
+          if (toolName === "mesh.library_list") {
+            const items = await self.listLibraryItems();
+            return { ok: true, result: { items }, toolName, correlationId: "", latencyMs: 0 };
+          }
+          if (toolName === "mesh.library_discover") {
+            const peers = await self.discoverPublishedLibrary({
+              fileTitleQuery: params.fileTitleQuery as string | undefined,
+              contentHashPrefix: params.contentHashPrefix as string | undefined,
+            });
+            return { ok: true, result: { peers }, toolName, correlationId: "", latencyMs: 0 };
+          }
+          if (toolName === "mesh.library_publish") {
+            const documentId = params.documentId as string;
+            const published = params.published !== false;
+            await self.setLibraryItemPublished(documentId, published);
+            return { ok: true, result: { documentId, published }, toolName, correlationId: "", latencyMs: 0 };
+          }
+          if (toolName === "mesh.share_propose") {
+            const proposal = await self.submitAgentShareProposal({
+              targetOwnerId: params.targetOwnerId as string,
+              vaultRelativePath: params.vaultRelativePath as string,
+              sensitivity: (params.sensitivity as "public" | "friends" | "private") ?? "friends",
+              summary: params.summary as string | undefined,
+            });
+            return { ok: true, result: proposal, toolName, correlationId: "", latencyMs: 0 };
+          }
+          if (toolName === "mesh.library_request_share") {
+            const { runLibraryRequestShare } = await import("@envoymesh/api");
+            const outcome = await runLibraryRequestShare(
+              {
+                getBonds: () => self.getBonds(),
+                discoverPublishedLibrary: (p) => self.discoverPublishedLibrary(p),
+                sendChat: (targetOwnerId, text) => self.sendChat(targetOwnerId, text),
+              },
+              {
+                targetOwnerHint: params.targetOwnerHint as string,
+                fileTitleQuery: params.fileTitleQuery as string | undefined,
+                relativePath: params.relativePath as string | undefined,
+                contentHashPrefix: params.contentHashPrefix as string | undefined,
+              },
+            );
+            if (!outcome.ok) {
+              return { ok: false, error: outcome.error, toolName, correlationId: "", latencyMs: 0 };
+            }
+            return { ok: true, result: outcome.result, toolName, correlationId: "", latencyMs: 0 };
+          }
+          if (toolName === "mesh.transfer_status") {
+            const correlationId = params.correlationId as string | undefined;
+            if (correlationId?.trim()) {
+              return { ok: true, result: { status: undefined }, toolName, correlationId: "", latencyMs: 0 };
+            }
+            return { ok: true, result: { transfers: [] }, toolName, correlationId: "", latencyMs: 0 };
+          }
+          if (toolName === "mesh.share_list_pending") {
+            const offers = await self.listPendingShareOffers();
+            return { ok: true, result: { offers }, toolName, correlationId: "", latencyMs: 0 };
+          }
+          if (toolName === "mesh.share_list_proposals") {
+            const proposals = await self.listAgentShareProposals();
+            return { ok: true, result: { proposals }, toolName, correlationId: "", latencyMs: 0 };
+          }
+          return { ok: false, error: `Unsupported tool on mobile: ${toolName}`, toolName, correlationId: "", latencyMs: 0 };
+        } catch (error) {
+          return {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+            toolName,
+            correlationId: "",
+            latencyMs: 0,
+          };
+        }
+      },
+    });
+  }
+
+  async listActiveTransfers(): Promise<TransferStatus[]> {
+    return [];
+  }
+
+  async getTransferStatus(_correlationId: string): Promise<TransferStatus | undefined> {
+    return undefined;
   }
 
   // -----------------------------------------------------------------------
@@ -3205,23 +3331,10 @@ export class MobileNode implements NodeService {
     }
   }
 
-  /**
-   * Compute the DHT provider CID for a capability topic.
-   * Inlined from @envoymesh/network/capability-topic to avoid bundling node:crypto.
-   */
-  private async _capabilityTopicCid(topic: string): Promise<any> {
-    const { CID } = await import("multiformats/cid");
-    const { sha256 } = await import("multiformats/hashes/sha2");
-    const normalized = topic.trim();
-    const bytes = new TextEncoder().encode(`envoymesh:cap:v1:${normalized}`);
-    const digest = await sha256.digest(bytes);
-    return CID.createV1(0x55, digest);
-  }
-
   /** Search the DHT for capability topic providers. */
   private async _searchDhtTopic(topic: string, limit: number): Promise<Array<{ peerId: string; multiaddrs: string[] }>> {
     if (!this._mesh) return [];
-    const cid = await this._capabilityTopicCid(topic);
+    const cid = await cidForCapabilityTopic(topic);
     const results: Array<{ peerId: string; multiaddrs: string[] }> = [];
     const signal = AbortSignal.timeout(5000);
     try {
@@ -3247,7 +3360,7 @@ export class MobileNode implements NodeService {
     if (!this._mesh) return;
     for (const topic of topics) {
       try {
-        const cid = await this._capabilityTopicCid(topic);
+        const cid = await cidForCapabilityTopic(topic);
         await this._mesh.contentRouting.provide(cid);
         console.log(`[mobile-node] DHT advertised topic: ${topic}`);
       } catch (err) {

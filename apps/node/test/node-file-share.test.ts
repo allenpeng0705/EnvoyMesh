@@ -8,6 +8,7 @@
  */
 import { createDeviceCertificate, generateDeviceIdentity, generateOwnerIdentity } from "@envoymesh/identity";
 import { createLocalTaskStore } from "@envoymesh/local-store";
+import { ENVOY_DATA_PROTOCOL } from "@envoymesh/network/protocols";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -221,7 +222,7 @@ describe("sendVaultFileViaDataTransfer", () => {
     const dataAudit = audits.find((a) => a.intent === "sync.state" && a.remotePeerId === "12D3KooRecipient");
     expect(dataAudit).toBeDefined();
     expect(dataAudit!.type).toBe("message.sent");
-    expect(dataAudit!.protocol).toBe("/envoymesh/data/0.1.0");
+    expect(dataAudit!.protocol).toBe(ENVOY_DATA_PROTOCOL);
     expect(dataAudit!.outcome).toBe("record");
     expect(dataAudit!.summary).toContain("Sent data transfer");
     expect(dataAudit!.summary).toContain("audit.txt");

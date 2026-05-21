@@ -34,6 +34,7 @@ import {
   verifyDeviceCertificate,
   verifyDeviceRevocationRecord,
   verifyEnvelope,
+  verifyInboundEnvelope,
   isDeviceRevoked,
   verifyMandate,
   verifyProofOfIntent,
@@ -543,6 +544,37 @@ describe("agent identity", () => {
     const envelope = signUnsignedEnvelope(unsigned, agent.privateKeyPem);
 
     expect(verifyAgentEnvelope(envelope, owner.publicKeyPem)).toBe(true);
+    expect(verifyInboundEnvelope(envelope)).toBe(true);
+  });
+
+  it("verifyInboundEnvelope accepts agent discovery.request but verifyEnvelope rejects agentPeerId mismatch", () => {
+    const owner = generateOwnerIdentity();
+    const agent = generateAgentIdentity(owner.ownerId);
+    const credential = createAgentCredential({
+      owner,
+      agent,
+      scope: ["discovery.request"],
+    });
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: agent.agentPeerId,
+      senderPublicKey: agent.publicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: "envoy_peer_b",
+      recipientRole: "human",
+      intent: "discovery.request",
+      payload: {
+        requesterOwnerId: owner.ownerId,
+        requestedTagHashes: [],
+        requestedCapabilities: [],
+        maxResults: 5,
+        requestedSensitivity: "public",
+        fileTitleQuery: "notes",
+      },
+      agentCredential: credential,
+    });
+    const envelope = signUnsignedEnvelope(unsigned, agent.privateKeyPem);
+    expect(verifyEnvelope(envelope)).toBe(false);
+    expect(verifyInboundEnvelope(envelope)).toBe(true);
   });
 
   it("rejects agent envelope when intent not in scope", () => {

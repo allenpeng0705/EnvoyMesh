@@ -22,7 +22,7 @@ import {
   generateDeviceIdentity,
   generateOwnerIdentity,
   signUnsignedEnvelope,
-  verifyEnvelope,
+  verifyInboundEnvelope,
 } from "@envoymesh/identity";
 import {
   createChatMessagePayload,
@@ -66,7 +66,7 @@ describe("E2E relay-mediated chat", () => {
     const receivedMessages: { text: string; senderOwnerId: string }[] = [];
 
     receiver.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "chat.message") {
         const payload = parseChatMessagePayload(envelope.payload);
         receivedMessages.push({
@@ -119,7 +119,7 @@ describe("E2E relay-mediated chat", () => {
     const receivedMessages: string[] = [];
 
     receiver.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "chat.message") {
         const payload = parseChatMessagePayload(envelope.payload);
         receivedMessages.push(payload.text);

@@ -11,6 +11,18 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js"
+    },
+    "./data-framing": {
+      "types": "./dist/src/data-framing.d.ts",
+      "import": "./dist/src/data-framing.js"
+    },
+    "./protocols": {
+      "types": "./dist/src/protocols.d.ts",
+      "import": "./dist/src/protocols.js"
+    },
+    "./capability-topic-cid": {
+      "types": "./dist/src/capability-topic-cid.d.ts",
+      "import": "./dist/src/capability-topic-cid.js"
     }
   },
   "dependencies": {

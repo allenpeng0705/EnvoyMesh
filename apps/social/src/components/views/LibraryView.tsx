@@ -1,35 +1,36 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
-import type { BondRecord, LibraryItem } from "@envoymesh/api";
+import { useToast } from "../../hooks/useToast.js";
+import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
+import type { LibraryItem } from "@envoymesh/api";
 
 export function LibraryView() {
   const nodeService = useNodeService();
   const { nodeConfig } = useNodeState();
+  const { showToast } = useToast();
   const isMobileNode = useIsInProcessMobileNode();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const ipfsExportEngine = nodeConfig?.externalPublish?.ipfsExportEngine ?? (isMobileNode ? "helia" : "kubo");
   const ipfsPolicyEnabled = nodeConfig?.externalPublish?.allowIpfs ?? false;
-  const ipfsDesktopActionsEnabled = ipfsPolicyEnabled && !isMobileNode;
+  const ipfsMobileHeliaEnabled =
+    isMobileNode && ipfsPolicyEnabled && ipfsExportEngine === "helia";
+  const ipfsHeliaPrimaryEnabled =
+    ipfsPolicyEnabled && !isMobileNode && ipfsExportEngine === "helia";
+  const ipfsExportActionsEnabled = ipfsPolicyEnabled && (!isMobileNode || ipfsMobileHeliaEnabled);
   const ipfsGatewayVerifyEnabled =
-    (nodeConfig?.externalPublish?.gatewayAllowlist?.length ?? 0) > 0 && !isMobileNode;
+    ipfsPolicyEnabled && (nodeConfig?.externalPublish?.gatewayAllowlist?.length ?? 0) > 0;
   const [query, setQuery] = useState("");
   const [rawItems, setRawItems] = useState<LibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
 
   const [shareFor, setShareFor] = useState<LibraryItem | null>(null);
-  const [bonds, setBonds] = useState<BondRecord[]>([]);
-  const [targetOwnerId, setTargetOwnerId] = useState("");
-  const [shareSensitivity, setShareSensitivity] = useState<"public" | "friends" | "private">("friends");
-  const [shareBusy, setShareBusy] = useState(false);
-  const [shareErr, setShareErr] = useState<string | null>(null);
   const [ipfsBusyId, setIpfsBusyId] = useState<string | null>(null);
   const [ipfsVerifyBusyId, setIpfsVerifyBusyId] = useState<string | null>(null);
   const [ipfsErr, setIpfsErr] = useState<string | null>(null);
   const [ipfsOk, setIpfsOk] = useState<string | null>(null);
-
-  useEffect(() => {
-    void nodeService.getBonds().then(setBonds).catch(() => setBonds([]));
-  }, [nodeService]);
 
   const items = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -57,12 +58,135 @@ export function LibraryView() {
     void load();
   }, [load]);
 
+  const handleImportFile = async (file: File) => {
+    setImportBusy(true);
+    setError(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+      const contentBase64 = btoa(binary);
+      const relativePath = `imports/${file.name.replace(/^[\\/]+/, "")}`;
+      const result = await nodeService.importToLibrary({
+        relativePath,
+        contentBase64,
+        mimeType: file.type || undefined,
+      });
+      showToast(`Imported ${result.relativePath}`, "success");
+      await load();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      showToast(msg, "error");
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  const renderRowActions = (row: LibraryItem) => (
+    <>
+      <label className="library-published-toggle">
+        <input
+          type="checkbox"
+          checked={row.published}
+          onChange={(e) => {
+            void (async () => {
+              try {
+                await nodeService.setLibraryItemPublished(row.documentId, e.target.checked);
+                await load();
+              } catch (err) {
+                console.error(err);
+              }
+            })();
+          }}
+        />{" "}
+        {row.published ? "Published" : "Private"}
+      </label>
+      {ipfsExportActionsEnabled && (
+        <div className="library-row-ipfs">
+          {row.publishedExternal ? (
+            <>
+              <code className="library-view-path" title={row.publishedExternal.cid}>
+                {row.publishedExternal.cid.slice(0, 12)}…
+              </code>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  void navigator.clipboard.writeText(row.publishedExternal!.cid);
+                  setIpfsOk("CID copied");
+                  setIpfsErr(null);
+                }}
+              >
+                Copy CID
+              </button>
+            </>
+          ) : null}
+          <button
+            type="button"
+            className="secondary"
+            disabled={ipfsBusyId === row.documentId}
+            onClick={() => {
+              void (async () => {
+                setIpfsErr(null);
+                setIpfsOk(null);
+                setIpfsBusyId(row.documentId);
+                try {
+                  await nodeService.exportLibraryItemToIpfs(row.documentId);
+                  showToast("IPFS export complete", "success");
+                  await load();
+                } catch (err) {
+                  setIpfsErr(err instanceof Error ? err.message : String(err));
+                } finally {
+                  setIpfsBusyId(null);
+                }
+              })();
+            }}
+          >
+            {ipfsBusyId === row.documentId ? "Exporting…" : row.publishedExternal ? "Re-export" : "Export"}
+          </button>
+          {ipfsGatewayVerifyEnabled && row.publishedExternal && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={ipfsVerifyBusyId === row.documentId}
+              onClick={() => {
+                void (async () => {
+                  setIpfsErr(null);
+                  setIpfsOk(null);
+                  setIpfsVerifyBusyId(row.documentId);
+                  try {
+                    const result = await nodeService.verifyLibraryItemIpfsGateway({
+                      documentId: row.documentId,
+                    });
+                    setIpfsOk(`Gateway verified (${result.fetchedBytes} bytes) — ${result.gatewayUrl}`);
+                    showToast("Gateway content matches vault hash", "success");
+                  } catch (err) {
+                    setIpfsErr(err instanceof Error ? err.message : String(err));
+                  } finally {
+                    setIpfsVerifyBusyId(null);
+                  }
+                })();
+              }}
+            >
+              {ipfsVerifyBusyId === row.documentId ? "Verifying…" : "Verify gateway"}
+            </button>
+          )}
+        </div>
+      )}
+      <button type="button" className="secondary" onClick={() => setShareFor(row)}>
+        Share…
+      </button>
+    </>
+  );
+
   return (
     <div className="library-view">
       <h2>Library</h2>
       <p className="library-view-hint">
-        Files under your shared vault appear here — any type can be published or offered for P2P share. Only .md /
-        .txt / .json are full-text searchable for vault RAG.
+        Files in your shared vault — publish metadata for discovery, export to IPFS, or offer P2P shares.
+        Only .md / .txt / .json are full-text searchable for vault RAG.
       </p>
       <div className="library-view-toolbar">
         <input
@@ -76,13 +200,36 @@ export function LibraryView() {
         <button type="button" className="secondary" onClick={() => void load()} disabled={loading}>
           {loading ? "Loading…" : "Refresh"}
         </button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={importBusy}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {importBusy ? "Importing…" : "Import file…"}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) void handleImportFile(file);
+          }}
+        />
       </div>
       {error && <p className="library-view-error" role="alert">{error}</p>}
       {ipfsErr && <p className="library-view-error" role="alert">{ipfsErr}</p>}
       {ipfsOk && <p className="library-view-hint" role="status">{ipfsOk}</p>}
-      {isMobileNode && (
+      {isMobileNode && !ipfsMobileHeliaEnabled && (
         <p className="library-view-hint">
-          IPFS export and gateway verify run on your home desktop node (Kubo). Use Discover to view and copy CIDs that bonded peers publish.
+          IPFS export on mobile uses in-process Helia. Enable it under Settings → Node → External distribution.
+        </p>
+      )}
+      {isMobileNode && ipfsMobileHeliaEnabled && (
+        <p className="library-view-hint">
+          Export uses in-process Helia on this device. Add a gateway allowlist in Settings to verify CIDs over HTTP.
         </p>
       )}
       {!isMobileNode && !ipfsPolicyEnabled && (
@@ -90,227 +237,68 @@ export function LibraryView() {
           IPFS export is off. Enable it under Settings → Node → External distribution when you want CIDs for vault files.
         </p>
       )}
-      {!isMobileNode && ipfsPolicyEnabled && (
+      {!isMobileNode && ipfsPolicyEnabled && ipfsHeliaPrimaryEnabled && (
         <p className="library-view-hint">
-          Export starts the IPFS engine automatically on first use — no separate Kubo install required when using the desktop app bundle.
+          Export uses in-process Helia — no Kubo daemon required. Switch back to Kubo in Settings if you need the bundled sidecar.
+        </p>
+      )}
+      {!isMobileNode && ipfsPolicyEnabled && !ipfsHeliaPrimaryEnabled && (
+        <p className="library-view-hint">
+          Export starts the IPFS engine automatically on first use when using the desktop app bundle.
         </p>
       )}
       {!loading && !error && items.length === 0 && (
         <p className="library-view-empty">
           {rawItems.length === 0
-            ? "No documents in the vault yet. Add files under your shared vault folder (or set ENVOYMESH_VAULT)."
+            ? "No documents yet. Import a file or add files to your shared vault folder."
             : "No entries match your filter."}
         </p>
       )}
       {items.length > 0 && (
-        <table className="library-view-table">
-          <thead>
-            <tr>
-              <th scope="col">Title</th>
-              <th scope="col">Path</th>
-              <th scope="col">Size</th>
-              <th scope="col">Updated</th>
-              <th scope="col">Published</th>
-              {ipfsDesktopActionsEnabled && <th scope="col">IPFS</th>}
-              <th scope="col">Share</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((row) => (
-              <tr key={row.documentId}>
-                <td>{row.title}</td>
-                <td className="library-view-path">{row.relativePath}</td>
-                <td>{formatBytes(row.byteLength)}</td>
-                <td>{formatDate(row.updatedAt)}</td>
-                <td>
-                  <label className="library-published-toggle">
-                    <input
-                      type="checkbox"
-                      checked={row.published}
-                      onChange={(e) => {
-                        void (async () => {
-                          try {
-                            await nodeService.setLibraryItemPublished(row.documentId, e.target.checked);
-                            await load();
-                          } catch (err) {
-                            console.error(err);
-                          }
-                        })();
-                      }}
-                    />{" "}
-                    {row.published ? "Yes" : "No"}
-                  </label>
-                </td>
-                {ipfsDesktopActionsEnabled && (
-                  <td>
-                    {row.publishedExternal ? (
-                      <>
-                        <code className="library-view-path" title={row.publishedExternal.cid}>
-                          {row.publishedExternal.cid.slice(0, 12)}…
-                        </code>
-                        <button
-                          type="button"
-                          className="secondary"
-                          style={{ marginLeft: "0.5rem" }}
-                          onClick={() => {
-                            void navigator.clipboard.writeText(row.publishedExternal!.cid);
-                            setIpfsOk("CID copied");
-                            setIpfsErr(null);
-                          }}
-                        >
-                          Copy CID
-                        </button>
-                      </>
-                    ) : (
-                      <span className="library-view-hint">—</span>
-                    )}
-                    <button
-                      type="button"
-                      className="secondary"
-                      style={{ marginLeft: "0.5rem" }}
-                      disabled={ipfsBusyId === row.documentId}
-                      onClick={() => {
-                        void (async () => {
-                          setIpfsErr(null);
-                          setIpfsOk(null);
-                          setIpfsBusyId(row.documentId);
-                          try {
-                            await nodeService.exportLibraryItemToIpfs(row.documentId);
-                            await load();
-                          } catch (err) {
-                            setIpfsErr(err instanceof Error ? err.message : String(err));
-                          } finally {
-                            setIpfsBusyId(null);
-                          }
-                        })();
-                      }}
-                    >
-                      {ipfsBusyId === row.documentId ? "Exporting…" : row.publishedExternal ? "Re-export" : "Export"}
-                    </button>
-                    {ipfsGatewayVerifyEnabled && row.publishedExternal && (
-                      <button
-                        type="button"
-                        className="secondary"
-                        style={{ marginLeft: "0.5rem" }}
-                        disabled={ipfsVerifyBusyId === row.documentId}
-                        onClick={() => {
-                          void (async () => {
-                            setIpfsErr(null);
-                            setIpfsOk(null);
-                            setIpfsVerifyBusyId(row.documentId);
-                            try {
-                              const result = await nodeService.verifyLibraryItemIpfsGateway({
-                                documentId: row.documentId,
-                              });
-                              setIpfsOk(
-                                `Gateway verified (${result.fetchedBytes} bytes) — ${result.gatewayUrl}`,
-                              );
-                            } catch (err) {
-                              setIpfsErr(err instanceof Error ? err.message : String(err));
-                            } finally {
-                              setIpfsVerifyBusyId(null);
-                            }
-                          })();
-                        }}
-                      >
-                        {ipfsVerifyBusyId === row.documentId ? "Verifying…" : "Verify gateway"}
-                      </button>
-                    )}
-                  </td>
-                )}
-                <td>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => {
-                      setShareFor(row);
-                      setShareErr(null);
-                      const direct = bonds.find((b) => b.level !== "blocked");
-                      if (direct) setTargetOwnerId(direct.peerOwnerId);
-                    }}
-                  >
-                    Share…
-                  </button>
-                </td>
+        <>
+          <table className="library-view-table">
+            <thead>
+              <tr>
+                <th scope="col">Title</th>
+                <th scope="col">Path</th>
+                <th scope="col">Size</th>
+                <th scope="col">Updated</th>
+                <th scope="col">Actions</th>
               </tr>
+            </thead>
+            <tbody>
+              {items.map((row) => (
+                <tr key={row.documentId}>
+                  <td>{row.title}</td>
+                  <td className="library-view-path">{row.relativePath}</td>
+                  <td>{formatBytes(row.byteLength)}</td>
+                  <td>{formatDate(row.updatedAt)}</td>
+                  <td className="library-view-actions">{renderRowActions(row)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <ul className="library-view-cards" aria-label="Library files">
+            {items.map((row) => (
+              <li key={row.documentId} className="library-view-card">
+                <div className="library-view-card-head">
+                  <strong>{row.title}</strong>
+                  <span className="library-view-card-meta">{formatBytes(row.byteLength)}</span>
+                </div>
+                <div className="library-view-path">{row.relativePath}</div>
+                <div className="library-view-card-meta">{formatDate(row.updatedAt)}</div>
+                <div className="library-view-card-actions">{renderRowActions(row)}</div>
+              </li>
             ))}
-          </tbody>
-        </table>
+          </ul>
+        </>
       )}
       {shareFor && (
-        <div className="library-share-panel" role="dialog" aria-label="Share from library">
-          <h3 className="library-share-title">Share “{shareFor.title}”</h3>
-          <p className="library-view-hint">
-            Sends a <code>share.request</code> to a bonded contact; they accept in Incoming file shares (Settings → Node on desktop).
-          </p>
-          {shareErr && (
-            <p className="library-view-error" role="alert">
-              {shareErr}
-            </p>
-          )}
-          <label className="library-share-label" htmlFor="library-share-contact">
-            Bonded contact
-          </label>
-          <select
-            id="library-share-contact"
-            className="library-view-search"
-            value={targetOwnerId}
-            onChange={(e) => setTargetOwnerId(e.target.value)}
-          >
-            <option value="">Select a contact…</option>
-            {bonds
-              .filter((b) => b.level !== "blocked")
-              .map((b) => (
-                <option key={b.peerOwnerId} value={b.peerOwnerId}>
-                  {b.displayName?.trim() || b.peerOwnerId}
-                </option>
-              ))}
-          </select>
-          <label className="library-share-label" htmlFor="library-share-sens">
-            Sensitivity
-          </label>
-          <select
-            id="library-share-sens"
-            className="library-view-search"
-            value={shareSensitivity}
-            onChange={(e) =>
-              setShareSensitivity(e.target.value as "public" | "friends" | "private")
-            }
-          >
-            <option value="public">public</option>
-            <option value="friends">friends</option>
-            <option value="private">private</option>
-          </select>
-          <div className="library-share-actions">
-            <button
-              type="button"
-              disabled={shareBusy || !targetOwnerId}
-              onClick={() => {
-                void (async () => {
-                  if (!shareFor || !targetOwnerId) return;
-                  setShareBusy(true);
-                  setShareErr(null);
-                  try {
-                    await nodeService.shareFile(targetOwnerId, {
-                      path: shareFor.relativePath,
-                      sensitivity: shareSensitivity,
-                    });
-                    setShareFor(null);
-                  } catch (e) {
-                    setShareErr(e instanceof Error ? e.message : String(e));
-                  } finally {
-                    setShareBusy(false);
-                  }
-                })();
-              }}
-            >
-              {shareBusy ? "Sending…" : "Send share request"}
-            </button>
-            <button type="button" className="secondary" onClick={() => setShareFor(null)} disabled={shareBusy}>
-              Cancel
-            </button>
-          </div>
-        </div>
+        <ShareFileDialog
+          libraryItem={shareFor}
+          onClose={() => setShareFor(null)}
+          onShared={() => setShareFor(null)}
+        />
       )}
     </div>
   );

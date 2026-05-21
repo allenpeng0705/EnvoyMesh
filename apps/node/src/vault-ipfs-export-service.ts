@@ -1,15 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
+import type { ExternalPublishConfig } from "@envoymesh/api";
 import { createAuditEvent, type AuditEvent } from "@envoymesh/local-store";
 import { assertPathInsideVault, buildVaultIndex } from "@envoymesh/vault";
 import {
-  IPFSInteropRecipeV1Id,
-  kuboIpfsAddFileInteropRecipeV1,
-} from "./kubo-ipfs-export.js";
-import { ensureKuboIpfsReady } from "./kubo-ipfs-engine.js";
+  addFileViaHeliaExportEngine,
+  addFileViaPrimaryIpfsExportEngine,
+  ensurePrimaryIpfsExportEngineReady,
+  isHeliaShadowSelection,
+  resolveIpfsExportEngineSelection,
+} from "./ipfs-export-router.js";
 import {
   createPublishedExternalStore,
+  type PublishedExternalExportFields,
   type PublishedExternalRecord,
 } from "./published-external-store.js";
 
@@ -23,6 +27,7 @@ export async function exportVaultDocumentToIpfs(input: {
   profileDir: string;
   documentId: string;
   allowIpfs: boolean;
+  externalPublish?: Pick<ExternalPublishConfig, "ipfsExportEngine">;
   appendAudit: (event: AuditEvent) => Promise<void>;
 }): Promise<ExportVaultDocumentToIpfsResult> {
   if (!input.allowIpfs) {
@@ -44,6 +49,10 @@ export async function exportVaultDocumentToIpfs(input: {
     throw new Error(`Expected a regular file: ${doc.relativePath}`);
   }
 
+  const engineSelection = resolveIpfsExportEngineSelection({
+    externalPublish: input.externalPublish,
+  });
+
   const correlationId = randomUUID();
   const startedAt = Date.now();
 
@@ -53,13 +62,20 @@ export async function exportVaultDocumentToIpfs(input: {
       correlationId,
       direction: "local",
       outcome: "record",
-      summary: `IPFS export started documentId=${input.documentId} path=${doc.relativePath} recipe=${IPFSInteropRecipeV1Id}`,
+      summary: `IPFS export started documentId=${input.documentId} path=${doc.relativePath} engine=${engineSelection}`,
     }),
   );
 
-  await ensureKuboIpfsReady({ profileDir: input.profileDir });
+  await ensurePrimaryIpfsExportEngineReady({
+    profileDir: input.profileDir,
+    selection: engineSelection,
+  });
 
-  const outcome = kuboIpfsAddFileInteropRecipeV1(absFilePath, input.profileDir);
+  const outcome = await addFileViaPrimaryIpfsExportEngine({
+    absFilePath,
+    profileDir: input.profileDir,
+    selection: engineSelection,
+  });
 
   if (!outcome.ok || !outcome.cid) {
     const hint = outcome.errorHint ?? "ipfs add failed";
@@ -70,18 +86,71 @@ export async function exportVaultDocumentToIpfs(input: {
         direction: "local",
         outcome: "deny",
         latencyMs: Date.now() - startedAt,
-        summary: `IPFS export failed documentId=${input.documentId} kuboVersion=${outcome.kuboVersion} recipe=${IPFSInteropRecipeV1Id} error=${hint}`,
+        summary: `IPFS export failed documentId=${input.documentId} engine=${outcome.engineId} engineVersion=${outcome.engineVersion} recipe=${outcome.ipfsInteropRecipe} error=${hint}`,
       }),
     );
     throw new Error(hint);
   }
 
-  const record = await createPublishedExternalStore(input.profileDir).recordExport(input.documentId, {
+  const exportFields: PublishedExternalExportFields = {
     cid: outcome.cid,
-    ipfsInteropRecipe: IPFSInteropRecipeV1Id,
-    kuboVersion: outcome.kuboVersion,
+    ipfsInteropRecipe: outcome.ipfsInteropRecipe,
+    kuboVersion: outcome.engineId === "kubo" ? outcome.engineVersion : "",
     contentHash: doc.contentHash,
-  });
+    ...(outcome.engineId === "helia" && { heliaVersion: outcome.engineVersion }),
+  };
+
+  if (isHeliaShadowSelection(engineSelection)) {
+    await input.appendAudit(
+      createAuditEvent({
+        type: "vault.ipfs_export.helia_shadow.started",
+        correlationId,
+        direction: "local",
+        outcome: "record",
+        summary: `Helia shadow export started documentId=${input.documentId} kuboCid=${outcome.cid}`,
+      }),
+    );
+
+    const heliaOutcome = await addFileViaHeliaExportEngine({
+      absFilePath,
+      profileDir: input.profileDir,
+    });
+
+    if (heliaOutcome.ok && heliaOutcome.cid) {
+      exportFields.cidHelia = heliaOutcome.cid;
+      exportFields.heliaVersion = heliaOutcome.engineVersion;
+
+      const parityMatched = heliaOutcome.cid === outcome.cid;
+      await input.appendAudit(
+        createAuditEvent({
+          type: parityMatched
+            ? "vault.ipfs_export.helia_parity.matched"
+            : "vault.ipfs_export.helia_parity.mismatched",
+          correlationId,
+          direction: "local",
+          outcome: "record",
+          summary: parityMatched
+            ? `Helia shadow parity matched documentId=${input.documentId} cid=${outcome.cid}`
+            : `Helia shadow parity mismatched documentId=${input.documentId} kuboCid=${outcome.cid} heliaCid=${heliaOutcome.cid}`,
+        }),
+      );
+    } else {
+      await input.appendAudit(
+        createAuditEvent({
+          type: "vault.ipfs_export.helia_parity.mismatched",
+          correlationId,
+          direction: "local",
+          outcome: "record",
+          summary: `Helia shadow export failed documentId=${input.documentId} kuboCid=${outcome.cid} error=${heliaOutcome.errorHint ?? "unknown"}`,
+        }),
+      );
+    }
+  }
+
+  const record = await createPublishedExternalStore(input.profileDir).recordExport(
+    input.documentId,
+    exportFields,
+  );
 
   await input.appendAudit(
     createAuditEvent({
@@ -90,7 +159,7 @@ export async function exportVaultDocumentToIpfs(input: {
       direction: "local",
       outcome: "record",
       latencyMs: Date.now() - startedAt,
-      summary: `IPFS export completed documentId=${input.documentId} cid=${outcome.cid} kuboVersion=${outcome.kuboVersion} recipe=${IPFSInteropRecipeV1Id} revision=${record.exportRevision}`,
+      summary: `IPFS export completed documentId=${input.documentId} cid=${outcome.cid} engine=${outcome.engineId} engineVersion=${outcome.engineVersion} recipe=${outcome.ipfsInteropRecipe} revision=${record.exportRevision}${record.cidHelia ? ` cidHelia=${record.cidHelia}` : ""}`,
     }),
   );
 

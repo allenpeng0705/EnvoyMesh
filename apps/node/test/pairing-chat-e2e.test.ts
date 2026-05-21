@@ -4,7 +4,7 @@ import {
   generateDeviceIdentity,
   generateOwnerIdentity,
   signUnsignedEnvelope,
-  verifyEnvelope,
+  verifyInboundEnvelope,
 } from "@envoymesh/identity";
 import {
   createBondAcceptPayload,
@@ -40,7 +40,7 @@ describe("E2E pairing and chat workflow", () => {
 
     // Challenger's message handler
     challenger.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       challengerReceived.push(envelope.intent);
 
       if (envelope.intent === "bond.challenge.response") {
@@ -72,7 +72,7 @@ describe("E2E pairing and chat workflow", () => {
 
     // Target's message handler
     target.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       targetReceived.push(envelope.intent);
 
       if (envelope.intent === "bond.challenge") {
@@ -177,12 +177,12 @@ describe("E2E pairing and chat workflow", () => {
     const challengerReceived: string[] = [];
 
     challenger.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       challengerReceived.push(envelope.intent);
     });
 
     target.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
 
       if (envelope.intent === "bond.challenge") {
         const challenge = parseBondChallengePayload(envelope.payload);

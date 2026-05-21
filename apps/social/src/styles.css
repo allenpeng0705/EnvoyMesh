@@ -1333,6 +1333,76 @@ textarea::placeholder {
   flex-wrap: wrap;
 }
 
+.library-view-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.library-row-ipfs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.library-view-cards {
+  display: none;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  gap: 0.75rem;
+}
+
+.library-view-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  background: var(--color-surface);
+}
+
+.library-view-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.library-view-card-meta {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.library-view-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.chat-input .chat-share-file-btn {
+  flex-shrink: 0;
+  min-width: 2.5rem;
+  padding: 0.35rem 0.5rem;
+}
+
+@media (max-width: 768px) {
+  .library-view {
+    padding: 1rem;
+    max-width: none;
+  }
+
+  .library-view-table {
+    display: none;
+  }
+
+  .library-view-cards {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
 .search-mode-tabs {
   display: inline-flex;
   margin-bottom: 1rem;

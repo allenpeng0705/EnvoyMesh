@@ -1,0 +1,60 @@
+name: ci-ipfs-helia-parity
+
+on:
+  pull_request:
+    paths:
+      - "apps/node/src/kubo-ipfs-export.ts"
+      - "apps/node/src/helia-ipfs-export.ts"
+      - "apps/node/src/ipfs-export-*.ts"
+      - "apps/node/test/**/ipfs*.test.ts"
+      - "apps/node/test/**/kubo*.test.ts"
+      - "apps/node/test/**/helia*.test.ts"
+      - "apps/node/test/fixtures/**"
+      - "apps/node/package.json"
+      - ".github/workflows/ci-ipfs-helia-parity.yml"
+      - ".github/workflows/ci-ipfs-kubo.yml"
+  workflow_dispatch:
+
+jobs:
+  helia-kubo-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Kubo
+        run: |
+          KUBO_VERSION=0.32.1
+          curl -fsSL "https://dist.ipfs.tech/kubo/v${KUBO_VERSION}/kubo_v${KUBO_VERSION}_linux-amd64.tar.gz" -o kubo.tgz
+          tar -xzf kubo.tgz
+          echo "$PWD/kubo" >> "$GITHUB_PATH"
+
+      - name: Initialize and start Kubo daemon
+        run: |
+          ipfs init --profile=test 2>/dev/null || true
+          ipfs config Addresses.API /ip4/127.0.0.1/tcp/5001
+          ipfs config Addresses.Gateway /ip4/127.0.0.1/tcp/8080
+          ipfs daemon &
+          for i in $(seq 1 30); do
+            ipfs id >/dev/null 2>&1 && break
+            sleep 1
+          done
+          ipfs id
+
+      - name: Kubo golden interop tests
+        env:
+          ENVOYMESH_IPFS_CLI_TEST: "1"
+        run: npx vitest run apps/node/test/ipfs-kubo-golden.test.ts
+
+      - name: Helia / Kubo CID parity tests
+        env:
+          ENVOYMESH_HELIA_PARITY_TEST: "1"
+        run: npx vitest run apps/node/test/ipfs-helia-kubo-parity.test.ts

@@ -29,7 +29,7 @@ describe.skipIf(process.env.ENVOYMESH_IPFS_CLI_TEST !== "1")("Kubo IPFS golden i
     expect(second.ok).toBe(true);
     expect(first.cid).toBeTruthy();
     expect(second.cid).toBe(first.cid);
-    expect(first.cid).toMatch(/^bafy/i);
+    expect(first.cid).toMatch(/^baf/i);
 
     const direct = spawnSync("ipfs", [...KUBO_EXPORT_ADD_CLI_ARGS_V1, fixturePath], {
       encoding: "utf8",

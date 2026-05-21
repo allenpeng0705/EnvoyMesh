@@ -4,7 +4,7 @@ import {
   generateDeviceIdentity,
   generateOwnerIdentity,
   signUnsignedEnvelope,
-  verifyEnvelope,
+  verifyInboundEnvelope,
 } from "@envoymesh/identity";
 import {
   createBondChallengePayload,
@@ -35,14 +35,14 @@ describe("bond challenge-response over EnvoyMesh", () => {
     const targetReceived: string[] = [];
 
     challenger.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "bond.challenge.response") {
         challengerReceived.push(envelope.intent);
       }
     });
 
     target.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "bond.challenge") {
         targetReceived.push(envelope.intent);
 
@@ -110,14 +110,14 @@ describe("bond challenge-response over EnvoyMesh", () => {
     const challengerReceived: string[] = [];
 
     challenger.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "bond.challenge.response") {
         challengerReceived.push(envelope.intent);
       }
     });
 
     target.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "bond.challenge") {
         // Target rejects the challenge
         const challenge = parseBondChallengePayload(envelope.payload);
@@ -178,14 +178,14 @@ describe("bond challenge-response over EnvoyMesh", () => {
     let receivedResponse: ReturnType<typeof parseBondChallengeResponsePayload> | null = null;
 
     challenger.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "bond.challenge.response") {
         receivedResponse = parseBondChallengeResponsePayload(envelope.payload);
       }
     });
 
     target.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "bond.challenge") {
         receivedChallenge = parseBondChallengePayload(envelope.payload);
 

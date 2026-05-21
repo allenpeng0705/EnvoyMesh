@@ -2,7 +2,7 @@
 
 **Status:** **FS-A** · **FS-B** · **FS-C** · **FS-D (UI + RPC + tools + mobile publish)** shipped; **FS-E (stub APIs)** started.
 
-**Related:** [Implementation plan](./implementation-plan.md) (Scenario 5, Phase 5) · [Protocol standard](./protocol-standard.md) · [Live connectivity testing](./live-connectivity-testing.md) (data channel / vouchers) · [External distribution — IPFS plan](./external-distribution-ipfs-plan.md) · [User stories](./UserStory.md) · [Scenarios](./scenarios.md).
+**Related:** [Implementation plan](./implementation-plan.md) (Scenario 5, Phase 5) · [Protocol standard](./protocol-standard.md) · [Live connectivity testing](./live-connectivity-testing.md) (data channel / vouchers) · [External distribution — IPFS plan](./external-distribution-ipfs-plan.md) · **[AI Document Backbone (detailed design)](./ai-document-backbone-plan.md)** · [User stories](./UserStory.md) · [Scenarios](./scenarios.md).
 
 ---
 
@@ -223,6 +223,8 @@ Update **`ws-protocol`** RPC union + desktop WS handler + **MobileNode** stubs �
 
 **Exit:** Owner sees agent-proposed shares, can send or dismiss; agent tools can use library hooks with a loaded tool context.
 
+**Next (ADB epic):** Full AI Document Backbone — native **Envoy AI** tool-calling (Settings → Node/AI), publish/find/share orchestration, transfer status. Bridge optional. See **[AI Document Backbone plan](./ai-document-backbone-plan.md)** (phases **ADB-A–F**).
+
 ---
 
 ## 9. Testing strategy
@@ -247,6 +249,7 @@ Update **`ws-protocol`** RPC union + desktop WS handler + **MobileNode** stubs �
 
 | Date | Change |
 |------|--------|
+| 2026-05-20 | Linked **[AI Document Backbone plan](./ai-document-backbone-plan.md)** — detailed agent publish/find/share design and **ADB-A–F** roadmap. |
 | 2026-05-21 | **FS-D/E:** Mobile `discoverPublishedLibrary`; published-library **`published-library-discovery`** smoke; agent share persistence + Inbox/Settings + bridge **`/bridge/agent-share-proposal`**; Library publish toggle; Discover hash prefix + hash snippet; **`getMeshToolContext`**. |
 | 2026-05-20 | **FS-D:** Discover “Published files” tab, `discoverPublishedLibrary`, `replyWithEnvelope` discovery, `sendExpectReply` dial hints, mobile published manifest, tools **`mesh.library_*`**, FS-E stubs. |
 | 2026-05-20 | **FS-A implemented:** library list API, desktop + mobile `NodeService`, Social Library view, tests (`library-list.test.ts`). |

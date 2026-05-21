@@ -111,7 +111,7 @@ describe("applyStyleAdaptation", () => {
 
   it("adds exclamation based on usage", () => {
     const profile = createEmptyStyleProfile();
-    profile.exclamationUsage = 0.9;
+    profile.exclamationUsage = 1;
     profile.emojiUsage = 0;
     const result = applyStyleAdaptation("This is great.", profile);
     expect(result).toContain("!");

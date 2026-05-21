@@ -11,6 +11,7 @@ import { createDirectCallClient } from "@envoymesh/social/lib/direct-call-client
 import { NodeServiceProvider } from "@envoymesh/social/hooks/useNodeService.js";
 import { NodeStateProvider } from "@envoymesh/social/context/NodeStateContext.js";
 import { ThemeProvider } from "@envoymesh/social/context/ThemeContext.js";
+import { ToastProvider } from "@envoymesh/social/hooks/useToast.js";
 import { ErrorBoundary } from "@envoymesh/social/components/ErrorBoundary.js";
 import { MobileApp } from "./MobileApp.js";
 import "@envoymesh/social/reset.css";
@@ -58,9 +59,11 @@ async function main(): Promise<void> {
     <NodeServiceProvider clientFactory={() => directClient} modelProviderUiScope="cloud-only">
       <NodeStateProvider>
         <ThemeProvider>
-          <ErrorBoundary>
-            <MobileApp />
-          </ErrorBoundary>
+          <ToastProvider>
+            <ErrorBoundary>
+              <MobileApp />
+            </ErrorBoundary>
+          </ToastProvider>
         </ThemeProvider>
       </NodeStateProvider>
     </NodeServiceProvider>,

@@ -36,6 +36,13 @@ import {
   ipfsInteropRecipeV1CliTemplate,
 } from "./kubo-ipfs-export.js";
 import { ensureKuboIpfsReady } from "./kubo-ipfs-engine.js";
+import {
+  HELIA_UNIXFS_EXPORT_RECIPE_V1_ID,
+  heliaUnixfsAddFileInteropRecipeV1,
+  heliaUnixfsExportRecipeV1Description,
+} from "./helia-ipfs-export.js";
+
+export type IpfsFingerprintEngine = "kubo" | "helia";
 
 export type DeveloperCliCommand =
   | "profile"
@@ -79,6 +86,8 @@ export interface DeveloperCliArgs {
   ipfsFingerprintFile?: string;
   /** vault-ipfs-fingerprint: path under --vault (requires --vault) */
   vaultRelativePath?: string;
+  /** vault-ipfs-fingerprint: export engine (default kubo). */
+  ipfsFingerprintEngine?: IpfsFingerprintEngine;
   machineAName?: string;
   machineBName?: string;
   outputFormat?: "text" | "json";
@@ -266,6 +275,8 @@ export function parseDeveloperCliArgs(rawArgv: string[]): DeveloperCliArgs {
       args.ipfsFingerprintFile = readValue(argv, ++index, arg);
     } else if (arg === "--relative-path") {
       args.vaultRelativePath = readValue(argv, ++index, arg);
+    } else if (arg === "--engine") {
+      args.ipfsFingerprintEngine = parseIpfsFingerprintEngine(readValue(argv, ++index, arg));
     } else if (arg === "--format") {
       args.outputFormat = parseOutputFormat(readValue(argv, ++index, arg));
     } else if (arg === "--rich") {
@@ -341,7 +352,7 @@ Commands:
   vault-index    Build and summarize the shared vault index.
   vault-search   Search the shared vault metadata/chunks.
   vault-manifest Write a content-addressed vault manifest JSON (--output).
-  vault-ipfs-fingerprint Print Kubo ipfs-add root CID for a file (interop recipe v1).
+  vault-ipfs-fingerprint Print IPFS root CID for a file (Kubo or Helia interop recipe v1).
   audit          Inspect audit events.
   tasks          Inspect task journal entries.
   approvals      Inspect or update owner approval queue.
@@ -368,6 +379,7 @@ Options:
   --note <text>     Note for trust records.
   --file <path>     vault-ipfs-fingerprint: file to fingerprint (alternative to --relative-path).
   --relative-path <vaultRel> vault-ipfs-fingerprint: vault-relative file path (--vault).
+  --engine <kubo|helia> vault-ipfs-fingerprint: export engine. Default: kubo
   --output <path>   Output file path (required for vault-manifest; optional for pairing timeline / smoke-checklist).
   --format <text|json> Output format (pairing timeline and relay-status).
   --rich           connectivity-status only: print ASCII Stage D snapshot panel above the usual summary.
@@ -877,6 +889,26 @@ async function fingerprintVaultFileIpfsInterop(args: DeveloperCliArgs): Promise<
     throw err;
   }
 
+  const engine = args.ipfsFingerprintEngine ?? "kubo";
+
+  if (engine === "helia") {
+    const outcome = await heliaUnixfsAddFileInteropRecipeV1(absFilePath);
+    if (!outcome.ok || !outcome.cid) {
+      const hint = outcome.errorHint ?? "Helia UnixFS export failed";
+      const detail = outcome.stderr?.trim() ? `\n${outcome.stderr.trim()}` : "";
+      throw new Error(`${hint}${detail}`);
+    }
+
+    return ok([
+      `ipfsInteropRecipe=${HELIA_UNIXFS_EXPORT_RECIPE_V1_ID}`,
+      `heliaVersion=${outcome.heliaVersion}`,
+      `recipe=${heliaUnixfsExportRecipeV1Description()}`,
+      `engine=helia`,
+      `file=${absFilePath}`,
+      `cid=${outcome.cid}`,
+    ]);
+  }
+
   await ensureKuboIpfsReady({ profileDir: args.profileDir });
 
   const outcome = kuboIpfsAddFileInteropRecipeV1(absFilePath, args.profileDir);
@@ -892,6 +924,7 @@ async function fingerprintVaultFileIpfsInterop(args: DeveloperCliArgs): Promise<
     `ipfsInteropRecipe=${IPFSInteropRecipeV1Id}`,
     `kuboVersion=${outcome.kuboVersion}`,
     `recipe=${invokedRecipe}`,
+    `engine=kubo`,
     `file=${absFilePath}`,
     `cid=${outcome.cid}`,
   ]);
@@ -1072,6 +1105,13 @@ function parseOutputFormat(value: string): DeveloperCliArgs["outputFormat"] {
     return value;
   }
   throw new Error(`Invalid format: ${value}`);
+}
+
+function parseIpfsFingerprintEngine(value: string): IpfsFingerprintEngine {
+  if (value === "kubo" || value === "helia") {
+    return value;
+  }
+  throw new Error(`Invalid --engine value: ${value} (expected kubo or helia)`);
 }
 
 function parsePairingTimelineStatus(value: string): DeveloperCliArgs["pairingStatusFilter"] {

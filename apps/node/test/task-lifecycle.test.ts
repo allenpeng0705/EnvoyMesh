@@ -4,7 +4,7 @@ import {
   generateDeviceIdentity,
   generateOwnerIdentity,
   signUnsignedEnvelope,
-  verifyEnvelope,
+  verifyInboundEnvelope,
 } from "@envoymesh/identity";
 import type { ProofOfIntent } from "@envoymesh/protocol";
 import {
@@ -42,12 +42,12 @@ describe("task lifecycle over EnvoyMesh", () => {
     const receiverReceived: string[] = [];
 
     sender.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       senderReceived.push(envelope.intent);
     });
 
     receiver.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       receiverReceived.push(envelope.intent);
 
       // Auto-respond to task.intents based on state
@@ -199,7 +199,7 @@ describe("task lifecycle over EnvoyMesh", () => {
     let senderReceivedNegotiate = false;
 
     sender.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "task.result") {
         receivedResult = parseTaskResultPayload(envelope.payload);
       } else if (envelope.intent === "task.negotiate") {
@@ -208,7 +208,7 @@ describe("task lifecycle over EnvoyMesh", () => {
     });
 
     receiver.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "task.propose") {
         const propose = parseTaskProposePayload(envelope.payload);
 

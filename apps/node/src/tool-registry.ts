@@ -28,6 +28,9 @@ import {
   type Sensitivity,
 } from "@envoymesh/protocol";
 import { PUBLISHED_LIB_CAPABILITY } from "./discovery-inbound.js";
+import { runLibraryRequestShare } from "@envoymesh/api";
+import type { BondRecord, DiscoverPublishedLibraryPeerResult, DocumentAutonomyPolicy } from "@envoymesh/api";
+import { canAutonomousShareFile } from "@envoymesh/api";
 
 /**
  * Sensitivity ceiling for a tool.
@@ -240,9 +243,95 @@ export class ToolRegistry {
     });
 
     this.register({
+      name: "mesh.library_publish",
+      description: "Publish or unpublish a vault document in the bonded discovery catalog (metadata only)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          documentId: { type: "string", description: "Vault document id from mesh.library_list" },
+          published: { type: "boolean", description: "true to publish, false to unpublish (default true)" },
+        },
+        required: ["documentId"],
+      },
+      sensitivityCeiling: "public",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.share_propose",
+      description: "Propose sharing a vault file with a bonded contact (creates Inbox item for owner approval)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          targetOwnerId: { type: "string", description: "Recipient owner id" },
+          vaultRelativePath: { type: "string", description: "Vault-relative path of the file to share" },
+          sensitivity: { type: "string", enum: ["public", "friends", "private"] },
+          summary: { type: "string", description: "Optional note shown in Inbox" },
+        },
+        required: ["targetOwnerId", "vaultRelativePath"],
+      },
+      sensitivityCeiling: "friends",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.library_request_share",
+      description:
+        "After discovery, ask a bonded contact to share a published file via chat (metadata only — bytes require their share accept)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          targetOwnerHint: { type: "string", description: "Bonded contact display name or owner id" },
+          fileTitleQuery: { type: "string", description: "Title or path fragment to match in their published catalog" },
+          relativePath: { type: "string" },
+          contentHashPrefix: { type: "string" },
+        },
+        required: ["targetOwnerHint"],
+      },
+      sensitivityCeiling: "friends",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.transfer_status",
+      description: "Get file transfer status by correlation id, or list active transfers when correlationId is omitted",
+      paramSchema: {
+        type: "object",
+        properties: {
+          correlationId: { type: "string", description: "Share / transfer correlation id" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "friends",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.share_list_pending",
+      description: "List inbound share offers waiting in Inbox",
+      paramSchema: { type: "object", properties: {}, required: [] },
+      sensitivityCeiling: "friends",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.share_list_proposals",
+      description: "List agent-proposed outbound shares awaiting owner approval",
+      paramSchema: { type: "object", properties: {}, required: [] },
+      sensitivityCeiling: "friends",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
       name: "mesh.library_export_ipfs",
       description:
-        "Export a vault document to IPFS via Kubo ipfs add (interop recipe v1). Requires exportLibraryItemToIpfs hook and externalPublish.allowIpfs.",
+        "Export a vault document to IPFS (Kubo, Helia, or shadow mode per externalPublish.ipfsExportEngine). Requires exportLibraryItemToIpfs and externalPublish.allowIpfs.",
       paramSchema: {
         type: "object",
         properties: {
@@ -836,6 +925,25 @@ export interface MeshToolContext {
     documentId: string;
     gatewayUrl?: string;
   }) => Promise<unknown>;
+  setLibraryItemPublished?: (documentId: string, published: boolean) => Promise<void>;
+  submitAgentShareProposal?: (params: {
+    targetOwnerId: string;
+    vaultRelativePath: string;
+    sensitivity: "public" | "friends" | "private";
+    summary?: string;
+  }) => Promise<unknown>;
+  getBonds?: () => Promise<BondRecord[]>;
+  sendChat?: (targetOwnerId: string, text: string) => Promise<void>;
+  listActiveTransfers?: () => Promise<unknown>;
+  getTransferStatus?: (correlationId: string) => Promise<unknown>;
+  listPendingShareOffers?: () => Promise<unknown>;
+  listAgentShareProposals?: () => Promise<unknown>;
+  documentAutonomy?: DocumentAutonomyPolicy;
+  shareFile?: (params: {
+    targetOwnerId: string;
+    vaultRelativePath: string;
+    sensitivity: "public" | "friends" | "private";
+  }) => Promise<void>;
 }
 
 /**
@@ -918,6 +1026,218 @@ export async function executeTool(
         result: { peers },
         toolName,
         correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.library_publish") {
+      if (!context.setLibraryItemPublished) {
+        return {
+          ok: false,
+          error: "setLibraryItemPublished is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const documentId = params.documentId as string | undefined;
+      if (!documentId?.trim()) {
+        return {
+          ok: false,
+          error: "documentId is required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const published = params.published !== false;
+      await context.setLibraryItemPublished(documentId.trim(), published);
+      return {
+        ok: true,
+        result: { documentId: documentId.trim(), published },
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.share_propose") {
+      if (!context.submitAgentShareProposal) {
+        return {
+          ok: false,
+          error: "submitAgentShareProposal is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const targetOwnerId = params.targetOwnerId as string | undefined;
+      const vaultRelativePath = params.vaultRelativePath as string | undefined;
+      if (!targetOwnerId?.trim() || !vaultRelativePath?.trim()) {
+        return {
+          ok: false,
+          error: "targetOwnerId and vaultRelativePath are required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const sensitivity = (params.sensitivity as "public" | "friends" | "private") ?? "friends";
+      const bondLevel =
+        (await context.getBonds?.())?.find((b) => b.peerOwnerId === targetOwnerId.trim())?.level ?? "public";
+      if (
+        context.documentAutonomy &&
+        context.shareFile &&
+        canAutonomousShareFile({
+          policy: context.documentAutonomy,
+          bondLevel,
+          sensitivity,
+        })
+      ) {
+        await context.shareFile({
+          targetOwnerId: targetOwnerId.trim(),
+          vaultRelativePath: vaultRelativePath.trim(),
+          sensitivity,
+        });
+        return {
+          ok: true,
+          result: { autoShared: true, targetOwnerId: targetOwnerId.trim(), vaultRelativePath: vaultRelativePath.trim() },
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const proposal = await context.submitAgentShareProposal({
+        targetOwnerId: targetOwnerId.trim(),
+        vaultRelativePath: vaultRelativePath.trim(),
+        sensitivity,
+        summary: params.summary as string | undefined,
+      });
+      return {
+        ok: true,
+        result: proposal,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.library_request_share") {
+      if (!context.discoverPublishedLibrary || !context.sendChat || !context.getBonds) {
+        return {
+          ok: false,
+          error: "discoverPublishedLibrary, sendChat, and getBonds must be configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const targetOwnerHint = params.targetOwnerHint as string | undefined;
+      if (!targetOwnerHint?.trim()) {
+        return {
+          ok: false,
+          error: "targetOwnerHint is required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const outcome = await runLibraryRequestShare(
+        {
+          getBonds: context.getBonds,
+          discoverPublishedLibrary: async (p): Promise<DiscoverPublishedLibraryPeerResult[]> =>
+            (await context.discoverPublishedLibrary!(p as Record<string, unknown> | undefined)) as DiscoverPublishedLibraryPeerResult[],
+          sendChat: context.sendChat,
+        },
+        {
+          targetOwnerHint: targetOwnerHint.trim(),
+          fileTitleQuery: params.fileTitleQuery as string | undefined,
+          relativePath: params.relativePath as string | undefined,
+          contentHashPrefix: params.contentHashPrefix as string | undefined,
+        },
+      );
+      if (!outcome.ok) {
+        return {
+          ok: false,
+          error: outcome.error,
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      return {
+        ok: true,
+        result: outcome.result,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.transfer_status") {
+      const correlationId = params.correlationId as string | undefined;
+      if (correlationId?.trim()) {
+        if (!context.getTransferStatus) {
+          return {
+            ok: false,
+            error: "getTransferStatus is not configured on this tool context",
+            toolName,
+            correlationId: randomUUID(),
+            latencyMs: Date.now() - startTime,
+          };
+        }
+        const status = await context.getTransferStatus(correlationId.trim());
+        return {
+          ok: true,
+          result: { status },
+          toolName,
+          correlationId: randomUUID(),
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      if (!context.listActiveTransfers) {
+        return {
+          ok: false,
+          error: "listActiveTransfers is not configured on this tool context",
+          toolName,
+          correlationId: randomUUID(),
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const transfers = await context.listActiveTransfers();
+      return {
+        ok: true,
+        result: { transfers },
+        toolName,
+        correlationId: randomUUID(),
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.share_list_pending") {
+      if (!context.listPendingShareOffers) {
+        return {
+          ok: false,
+          error: "listPendingShareOffers is not configured on this tool context",
+          toolName,
+          correlationId: randomUUID(),
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const offers = await context.listPendingShareOffers();
+      return {
+        ok: true,
+        result: { offers },
+        toolName,
+        correlationId: randomUUID(),
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.share_list_proposals") {
+      if (!context.listAgentShareProposals) {
+        return {
+          ok: false,
+          error: "listAgentShareProposals is not configured on this tool context",
+          toolName,
+          correlationId: randomUUID(),
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const proposals = await context.listAgentShareProposals();
+      return {
+        ok: true,
+        result: { proposals },
+        toolName,
+        correlationId: randomUUID(),
         latencyMs: Date.now() - startTime,
       };
     } else if (toolName === "mesh.library_export_ipfs") {
@@ -1143,6 +1463,7 @@ async function executeMeshTool(
           recipientPeerId: targetPeerId,
           recipientRole: "human",
           intent: "knowledge.query",
+          correlationId,
           payload: createKnowledgeQueryPayload({
             query: params.query as string,
             requestedSensitivity: (params.requestedSensitivity as Sensitivity) ?? "public",
@@ -1210,6 +1531,7 @@ async function executeMeshTool(
           recipientPeerId: recipientEnvelopePeerId,
           recipientRole: "human",
           intent: "discovery.request",
+          correlationId,
           payload: createDiscoveryRequestPayload({
             requesterOwnerId: context.ownerIdentity.ownerId,
             requestedTagHashes: tagHashes,
@@ -1264,6 +1586,7 @@ async function executeMeshTool(
             requestType: "file",
             relativePath: params.path as string,
             requestedSensitivity: (params.sensitivity as "public" | "friends" | "private") ?? "friends",
+            fileOrigin: "sender",
           }),
           agentCredential: context.agentCredential,
         }),

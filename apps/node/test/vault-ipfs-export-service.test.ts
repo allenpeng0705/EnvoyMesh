@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as kubo from "../src/kubo-ipfs-export.js";
+import * as heliaRouter from "../src/ipfs-export-router.js";
 import { exportVaultDocumentToIpfs } from "../src/vault-ipfs-export-service.js";
 import { createPublishedExternalStore } from "../src/published-external-store.js";
 
@@ -164,5 +165,111 @@ describe("exportVaultDocumentToIpfs", () => {
         appendAudit: async () => {},
       }),
     ).rejects.toThrow(/not found/i);
+  });
+
+  it("persists Helia export metadata when helia-only engine is selected", async () => {
+    await writeFile(join(vaultDir, "helia-primary.txt"), "helia canonical");
+    const helia = await import("../src/ipfs-export-engine-helia.js");
+    vi.spyOn(helia.heliaExportEngine, "addFile").mockResolvedValue({
+      ok: true,
+      cid: "bafyhelia",
+      engineId: "helia",
+      engineVersion: "6.1.4",
+      ipfsInteropRecipe: "helia-unixfs-export-v1",
+    });
+
+    const index = await import("@envoymesh/vault").then((m) => m.buildVaultIndex({ rootDir: vaultDir }));
+    const doc = index.documents[0]!;
+    const audits: string[] = [];
+
+    const result = await exportVaultDocumentToIpfs({
+      vaultDir,
+      profileDir,
+      documentId: doc.documentId,
+      allowIpfs: true,
+      externalPublish: { ipfsExportEngine: "helia" },
+      appendAudit: async (event) => {
+        audits.push(event.type);
+      },
+    });
+
+    expect(result.cid).toBe("bafyhelia");
+    expect(result.kuboVersion).toBe("");
+    expect(result.heliaVersion).toBe("6.1.4");
+    expect(audits).toEqual(["vault.ipfs_export.started", "vault.ipfs_export.completed"]);
+  });
+
+  it("shadow mode persists Kubo cid and records Helia parity when matched", async () => {
+    await writeFile(join(vaultDir, "shadow.txt"), "helia shadow parity");
+    vi.spyOn(kubo, "kuboIpfsAddFileInteropRecipeV1").mockReturnValue({
+      ok: true,
+      cid: "bafykubo",
+      kuboVersion: "0.32.1",
+      stderr: "",
+    });
+    vi.spyOn(heliaRouter, "addFileViaHeliaExportEngine").mockResolvedValue({
+      ok: true,
+      cid: "bafykubo",
+      engineId: "helia",
+      engineVersion: "6.1.4",
+      ipfsInteropRecipe: "helia-unixfs-export-v1",
+    });
+
+    const index = await import("@envoymesh/vault").then((m) => m.buildVaultIndex({ rootDir: vaultDir }));
+    const doc = index.documents[0]!;
+    const audits: string[] = [];
+
+    const result = await exportVaultDocumentToIpfs({
+      vaultDir,
+      profileDir,
+      documentId: doc.documentId,
+      allowIpfs: true,
+      externalPublish: { ipfsExportEngine: "kubo-with-helia-shadow" },
+      appendAudit: async (event) => {
+        audits.push(event.type);
+      },
+    });
+
+    expect(result.cid).toBe("bafykubo");
+    expect(result.cidHelia).toBe("bafykubo");
+    expect(result.heliaVersion).toBe("6.1.4");
+    expect(audits).toContain("vault.ipfs_export.helia_shadow.started");
+    expect(audits).toContain("vault.ipfs_export.helia_parity.matched");
+  });
+
+  it("shadow mode audits mismatch without changing canonical cid", async () => {
+    await writeFile(join(vaultDir, "mismatch.txt"), "helia shadow mismatch");
+    vi.spyOn(kubo, "kuboIpfsAddFileInteropRecipeV1").mockReturnValue({
+      ok: true,
+      cid: "bafykubo",
+      kuboVersion: "0.32.1",
+      stderr: "",
+    });
+    vi.spyOn(heliaRouter, "addFileViaHeliaExportEngine").mockResolvedValue({
+      ok: true,
+      cid: "bafyhelia",
+      engineId: "helia",
+      engineVersion: "6.1.4",
+      ipfsInteropRecipe: "helia-unixfs-export-v1",
+    });
+
+    const index = await import("@envoymesh/vault").then((m) => m.buildVaultIndex({ rootDir: vaultDir }));
+    const doc = index.documents[0]!;
+    const audits: string[] = [];
+
+    const result = await exportVaultDocumentToIpfs({
+      vaultDir,
+      profileDir,
+      documentId: doc.documentId,
+      allowIpfs: true,
+      externalPublish: { ipfsExportEngine: "kubo-with-helia-shadow" },
+      appendAudit: async (event) => {
+        audits.push(event.type);
+      },
+    });
+
+    expect(result.cid).toBe("bafykubo");
+    expect(result.cidHelia).toBe("bafyhelia");
+    expect(audits).toContain("vault.ipfs_export.helia_parity.mismatched");
   });
 });

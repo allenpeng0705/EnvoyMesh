@@ -14,6 +14,7 @@
     { "path": "../../packages/vault" },
     { "path": "../../packages/local-store" },
     { "path": "../../packages/api" },
-    { "path": "../../packages/models" }
+    { "path": "../../packages/models" },
+    { "path": "../../packages/ipfs-helia" }
   ]
 }

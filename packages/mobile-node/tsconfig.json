@@ -4,12 +4,18 @@
     "composite": true,
     "outDir": "./dist",
     "rootDir": ".",
-    "lib": ["ES2022", "DOM"]
+    "lib": ["ES2022", "DOM"],
+    "paths": {
+      "#network/data-framing": ["../network/src/data-framing.ts"],
+      "#network/protocols": ["../network/src/protocols.ts"],
+      "#network/capability-topic-cid": ["../network/src/capability-topic-cid.ts"]
+    }
   },
   "include": ["src"],
   "references": [
     { "path": "../protocol" },
     { "path": "../api" },
+    { "path": "../ipfs-helia" },
     { "path": "../bonds" },
     { "path": "../models" },
     { "path": "../mobile-identity" },

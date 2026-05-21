@@ -107,6 +107,7 @@ export type RpcMethods =
   | "exportLibraryItemToIpfs"
   | "getIpfsEngineStatus"
   | "verifyLibraryItemIpfsGateway"
+  | "importToLibrary"
   | "discoverPublishedLibrary"
   | "listAgentShareProposals"
   | "dismissAgentShareProposal"
@@ -116,6 +117,9 @@ export type RpcMethods =
   | "getPeerConnectionInfo"
   // AI / Knowledge Query
   | "knowledgeQuery"
+  | "runDocumentAgentTurn"
+  | "listActiveTransfers"
+  | "getTransferStatus"
   // Agent Bridge
   | "getBridgeStatus"
   | "getPairingPayload"
@@ -184,6 +188,8 @@ export interface ExternalPublishConfig {
   allowIpfs: boolean;
   /** Optional HTTP gateway host allowlist for future fetch helpers; empty = deny automated gateway use. */
   gatewayAllowlist?: string[];
+  /** Active IPFS export engine. Default "kubo". Helia is in-process (desktop H6+, mobile H5+). */
+  ipfsExportEngine?: "kubo" | "helia" | "kubo-with-helia-shadow";
 }
 
 export interface NodeConfig {
@@ -384,7 +390,11 @@ export interface AiSettings {
   defaultModeForNewContacts: "manual" | "assistant" | "auto";
   /** AI rules for trigger-action behavior. Default: empty */
   rules: AiRule[];
+  /** Document publish/share autonomy for Envoy AI (ADB-F). Default: proposals-only tier 0. */
+  documentAutonomy?: import("./document-autonomy.js").DocumentAutonomyPolicy;
 }
+
+export type { DocumentAutonomyPolicy } from "./document-autonomy.js";
 
 /**
  * AI Rule — defines trigger-action behavior for AI responses.

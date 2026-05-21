@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNodeState } from "./context/NodeStateContext.js";
 import { useNodeService } from "./hooks/useNodeService.js";
+import { useInboxActivityCount } from "./hooks/useInboxActivityCount.js";
 import { ToastProvider } from "./hooks/useToast.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { Header } from "./components/Header.js";
@@ -79,11 +80,10 @@ export function App() {
     nodeConfig,
     humanProfile,
     bonds,
-    pendingHellOs,
-    pendingIntroProposals,
-    pendingMessages,
     connectionStatus,
   } = useNodeState();
+
+  const inboxActivityCount = useInboxActivityCount();
 
   const nodeService = useNodeService();
   const reconnectAttempts = nodeService.reconnectAttempts;
@@ -146,7 +146,7 @@ export function App() {
               if (v === "chat") setChatPanelMode("threads");
               if (v === "contacts") setContactsPanelMode("list");
             }}
-            inboxActivityCount={pendingHellOs.length + pendingIntroProposals.length + pendingMessages.length}
+            inboxActivityCount={inboxActivityCount}
             bondsCount={bonds.length}
             isPublicNetwork={isPublicNetwork}
             connectionStatus={connectionStatus}
@@ -166,9 +166,7 @@ export function App() {
                 onSelectedContactChange={setChatSelectedContact}
                 panelMode={chatPanelMode}
                 onPanelModeChange={setChatPanelMode}
-                inboxActivityCount={
-                  pendingHellOs.length + pendingIntroProposals.length + pendingMessages.length
-                }
+                inboxActivityCount={inboxActivityCount}
               />
             )}
             {currentView === "contacts" && (

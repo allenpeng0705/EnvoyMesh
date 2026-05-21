@@ -4,7 +4,7 @@ import {
   generateDeviceIdentity,
   generateOwnerIdentity,
   signUnsignedEnvelope,
-  verifyEnvelope,
+  verifyInboundEnvelope,
 } from "@envoymesh/identity";
 import {
   auditEventForDispatcherDecision,
@@ -47,7 +47,7 @@ describe("A2A lifecycle over EnvoyMesh", () => {
     const receiverDispatcher = createTaskDispatcher();
 
     receiver.onMessage(async ({ envelope, remotePeerId }) => {
-      if (!verifyEnvelope(envelope)) {
+      if (!verifyInboundEnvelope(envelope)) {
         return;
       }
 
@@ -112,7 +112,7 @@ describe("A2A lifecycle over EnvoyMesh", () => {
     const receiverStore = createLocalTaskStore(receiverProfileDir);
 
     receiver.onMessage(async ({ envelope, remotePeerId }) => {
-      if (!verifyEnvelope(envelope) || envelope.intent !== "device.pair.request") {
+      if (!verifyInboundEnvelope(envelope) || envelope.intent !== "device.pair.request") {
         return;
       }
       const payload = parseDevicePairRequestPayload(envelope.payload);

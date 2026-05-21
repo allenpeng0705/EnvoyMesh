@@ -3,6 +3,7 @@
  */
 
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import * as capabilityTopicCid from "#network/capability-topic-cid";
 import { MobileNode, createMobileNode, toRelayDirectClientWsUrl } from "../src/index.js";
 import type { MobileNodeConfig } from "../src/index.js";
 import type { SecureStorage } from "@envoymesh/mobile-storage";
@@ -903,10 +904,8 @@ describe("MobileNode", () => {
 
     it("_advertiseTopicsOnDht calls contentRouting.provide for each topic when mesh is available", async () => {
       const provideSpy = vi.fn().mockResolvedValue(undefined);
-      // Mock _capabilityTopicCid to avoid jsdom TextEncoder issues
       const mockCid = { toString: () => "bafytest" };
-      const origCid = (node as any)._capabilityTopicCid;
-      (node as any)._capabilityTopicCid = vi.fn().mockResolvedValue(mockCid);
+      const cidSpy = vi.spyOn(capabilityTopicCid, "cidForCapabilityTopic").mockResolvedValue(mockCid as any);
 
       (node as any)._mesh = {
         contentRouting: { provide: provideSpy },
@@ -919,8 +918,7 @@ describe("MobileNode", () => {
       expect(provideSpy).toHaveBeenCalledTimes(2);
       expect(provideSpy).toHaveBeenCalledWith(mockCid);
 
-      // Restore
-      (node as any)._capabilityTopicCid = origCid;
+      cidSpy.mockRestore();
       (node as any)._mesh = undefined;
     });
 
@@ -938,11 +936,11 @@ describe("MobileNode", () => {
     it("stopAdvertiseTopic calls cancelReprovide when libp2p exposes it", async () => {
       const cancelReprovide = vi.fn().mockResolvedValue(undefined);
       (node as any)._mesh = { contentRouting: { cancelReprovide } };
-      const origCid = (node as any)._capabilityTopicCid;
-      (node as any)._capabilityTopicCid = vi.fn().mockResolvedValue({ toString: () => "bafytestcid" });
+      const mockCid = { toString: () => "bafytestcid" };
+      const cidSpy = vi.spyOn(capabilityTopicCid, "cidForCapabilityTopic").mockResolvedValue(mockCid as any);
       await node.stopAdvertiseTopic("music");
-      expect(cancelReprovide).toHaveBeenCalled();
-      (node as any)._capabilityTopicCid = origCid;
+      expect(cancelReprovide).toHaveBeenCalledWith(mockCid);
+      cidSpy.mockRestore();
       (node as any)._mesh = undefined;
     });
 
@@ -1403,20 +1401,28 @@ describe("MobileNode", () => {
     });
   });
 
-  describe("IPFS export (desktop-only)", () => {
-    beforeEach(async () => {
+  describe("IPFS export", () => {
+    it("exportLibraryItemToIpfs throws when allowIpfs is false", async () => {
       node = new MobileNode(makeConfig());
       await node.initStandalone("/test-profile");
+      await expect(node.exportLibraryItemToIpfs("doc-1")).rejects.toThrow(/disabled/i);
     });
 
-    it("exportLibraryItemToIpfs throws desktop-only error", async () => {
-      await expect(node.exportLibraryItemToIpfs("doc-1")).rejects.toThrow(/Kubo on desktop/i);
+    it("getIpfsEngineStatus reports Helia available on mobile", async () => {
+      node = new MobileNode(makeConfig());
+      await node.initStandalone("/test-profile");
+      const status = await node.getIpfsEngineStatus();
+      expect(status.available).toBe(false);
+      expect(status.helia?.available).toBe(true);
+      expect(status.helia?.heliaVersion).toBeTruthy();
     });
 
-    it("verifyLibraryItemIpfsGateway throws desktop-only error", async () => {
+    it("verifyLibraryItemIpfsGateway rejects when IPFS is disabled", async () => {
+      node = new MobileNode(makeConfig());
+      await node.initStandalone("/test-profile");
       await expect(
         node.verifyLibraryItemIpfsGateway({ documentId: "doc-1" }),
-      ).rejects.toThrow(/desktop node/i);
+      ).rejects.toThrow(/disabled/i);
     });
   });
 });

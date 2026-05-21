@@ -6,10 +6,9 @@ import { createUnsignedDataTransferVoucher } from "@envoymesh/protocol";
 import { createAuditEvent, type LocalTaskStore } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { voucherJsonBytesFromObject } from "@envoymesh/network";
-import type { NodeProfile } from "@envoymesh/api";
+import { ENVOY_DATA_PROTOCOL } from "@envoymesh/network/protocols";
+import type { NodeProfile, TransferStatus } from "@envoymesh/api";
 import { isSafeVaultPath } from "./share-inbound.js";
-
-const ENVOY_DATA_PROTOCOL = "/envoymesh/data/0.1.0";
 
 /** Read a vault file and send it as verified chunks to `toPeerId` (FS-B). */
 export async function sendVaultFileViaDataTransfer(input: {
@@ -19,8 +18,13 @@ export async function sendVaultFileViaDataTransfer(input: {
   vaultDir: string;
   relativePath: string;
   toPeerId: string;
+  transferHooks?: {
+    onUpdate: (status: Partial<TransferStatus> & { correlationId: string }) => void;
+    correlationId: string;
+    remotePeerOwnerId?: string;
+  };
 }): Promise<void> {
-  const { mesh, profile, taskStore, vaultDir, relativePath, toPeerId } = input;
+  const { mesh, profile, taskStore, vaultDir, relativePath, toPeerId, transferHooks } = input;
   const norm = relativePath.replace(/^[\\/]+/, "");
   if (!isSafeVaultPath(vaultDir, norm)) {
     throw new Error("Unsafe vault path for data transfer");
@@ -28,6 +32,16 @@ export async function sendVaultFileViaDataTransfer(input: {
   const filePath = join(vaultDir, norm);
   const content = await readFile(filePath);
   const hash = createHash("sha256").update(content).digest("base64url");
+  transferHooks?.onUpdate({
+    correlationId: transferHooks.correlationId,
+    phase: "transferring",
+    totalBytes: content.byteLength,
+    bytesTransferred: 0,
+    remotePeerId: toPeerId,
+    remotePeerOwnerId: transferHooks.remotePeerOwnerId,
+    vaultRelativePath: norm,
+    updatedAt: new Date().toISOString(),
+  });
   const unsignedVoucher = createUnsignedDataTransferVoucher({
     issuerPeerId: mesh.peerId,
     issuerOwnerId: profile.owner.ownerId,
@@ -47,6 +61,16 @@ export async function sendVaultFileViaDataTransfer(input: {
     chunks.push(content.subarray(offset, Math.min(offset + chunkSize, content.length)));
   }
   const latencyMs = await mesh.sendDataTransfer(toPeerId, voucherUtf8, chunks);
+  transferHooks?.onUpdate({
+    correlationId: transferHooks.correlationId,
+    phase: "verified",
+    totalBytes: content.byteLength,
+    bytesTransferred: content.byteLength,
+    remotePeerId: toPeerId,
+    remotePeerOwnerId: transferHooks.remotePeerOwnerId,
+    vaultRelativePath: norm,
+    updatedAt: new Date().toISOString(),
+  });
   const createdAt = new Date().toISOString();
   await taskStore.appendAuditEvent(
     createAuditEvent({

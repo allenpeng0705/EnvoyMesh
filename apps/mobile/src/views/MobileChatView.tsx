@@ -8,11 +8,14 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useNodeState } from "@envoymesh/social/context/NodeStateContext.js";
 import { useNodeService } from "@envoymesh/social/hooks/useNodeService.js";
+import { useInboxActivityCount } from "@envoymesh/social/hooks/useInboxActivityCount.js";
 import { useChatMessages } from "@envoymesh/social/hooks/useNodeService.js";
 import { useChatThreadPreviews } from "@envoymesh/social/hooks/useChatThreadPreviews.js";
+import { InboxView } from "@envoymesh/social/components/views/InboxView.js";
+import { ShareFileDialog } from "@envoymesh/social/components/file-share/ShareFileDialog.js";
 import { contactLabel, peerDisplayLabel } from "@envoymesh/social/lib/display.js";
 import { Markdown } from "@envoymesh/social/components/Markdown.js";
-import { ChatIcon, SendIcon, CheckIcon, CloseIcon, BridgeIcon } from "@envoymesh/social/icons.js";
+import { ChatIcon, SendIcon, CheckIcon, CloseIcon, BridgeIcon, P2PIcon } from "@envoymesh/social/icons.js";
 import type { ChatMessage, HelloProfile } from "@envoymesh/api";
 
 // ---- Date helpers (same logic as ContactChatPanel) ----
@@ -41,6 +44,8 @@ const groupMessagesByDate = (msgs: ChatMessage[]): [string, ChatMessage[]][] => 
 
 const AI_CONTACT_ID = "__envoy_ai__";
 
+type ChatPanelMode = "threads" | "inbox";
+
 export interface MobileChatViewProps {
   /** When set (e.g. from Contacts), open this bonded peer's thread */
   focusPeerId?: string | null;
@@ -65,7 +70,10 @@ export function MobileChatView({
   } = useNodeState();
 
   const [selectedContact, setSelectedContact] = useState<string | null>(() => focusPeerId ?? null);
+  const [panelMode, setPanelMode] = useState<ChatPanelMode>("threads");
   const [showContacts, setShowContacts] = useState(() => !focusPeerId);
+  const [shareOpen, setShareOpen] = useState(false);
+  const inboxActivityCount = useInboxActivityCount();
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [lastSent, setLastSent] = useState<Record<string, number>>({});
@@ -171,8 +179,54 @@ export function MobileChatView({
 
   // ---- No contact selected ----
   if (!selectedContact) {
+    if (panelMode === "inbox") {
+      return (
+        <div className="mv-chat">
+          <div className="mv-chat-primary-tabs" aria-label="Chat or inbox">
+            <button
+              type="button"
+              onClick={() => setPanelMode("threads")}
+            >
+              Chats
+            </button>
+            <button
+              type="button"
+              className={`active${inboxActivityCount > 0 ? " has-inbox-tab" : ""}`}
+            >
+              Inbox
+              {inboxActivityCount > 0 ? (
+                <span className="inbox-badge">{inboxActivityCount > 99 ? "99+" : inboxActivityCount}</span>
+              ) : null}
+            </button>
+          </div>
+          <div className="mv-chat-inbox-panel">
+            <InboxView embedded />
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="mv-chat">
+        <div className="mv-chat-primary-tabs" aria-label="Chat or inbox">
+          <button
+            type="button"
+            className="active"
+            onClick={() => setPanelMode("threads")}
+          >
+            Chats
+          </button>
+          <button
+            type="button"
+            className={inboxActivityCount > 0 ? "has-inbox-tab" : ""}
+            onClick={() => setPanelMode("inbox")}
+          >
+            Inbox
+            {inboxActivityCount > 0 ? (
+              <span className="inbox-badge">{inboxActivityCount > 99 ? "99+" : inboxActivityCount}</span>
+            ) : null}
+          </button>
+        </div>
         <p className="mv-tab-hint">
           Threads and alerts — bonds and discovery live under Contacts.
         </p>
@@ -373,6 +427,22 @@ export function MobileChatView({
 
       {/* Input bar */}
       <div className="mv-chat-input">
+        {shareOpen && selectedContact !== AI_CONTACT_ID && (
+          <ShareFileDialog
+            targetOwnerId={selectedContact}
+            onClose={() => setShareOpen(false)}
+          />
+        )}
+        {selectedContact !== AI_CONTACT_ID && (
+          <button
+            type="button"
+            className="mv-chat-share-btn"
+            aria-label="Share a vault file"
+            onClick={() => setShareOpen(true)}
+          >
+            <P2PIcon size={20} />
+          </button>
+        )}
         <input
           ref={inputRef}
           type="text"

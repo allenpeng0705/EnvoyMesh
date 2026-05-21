@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAPABILITY_TOPIC_NAMESPACE, cidForCapabilityTopic } from "../src/capability-topic.js";
+import { CAPABILITY_TOPIC_NAMESPACE, cidForCapabilityTopic } from "../src/capability-topic-cid.js";
 
 describe("cidForCapabilityTopic", () => {
   it("is deterministic for the same topic string", async () => {

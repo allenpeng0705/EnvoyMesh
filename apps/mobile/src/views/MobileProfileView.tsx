@@ -14,9 +14,10 @@ import type { CreateHumanProfileInput } from "@envoymesh/api";
 
 interface MobileProfileViewProps {
   onNavigateSettings?: () => void;
+  onNavigateLibrary?: () => void;
 }
 
-export function MobileProfileView({ onNavigateSettings }: MobileProfileViewProps) {
+export function MobileProfileView({ onNavigateSettings, onNavigateLibrary }: MobileProfileViewProps) {
   const nodeService = useNodeService();
   const { humanProfile, peerId, bonds, nodeStatus, refreshNodeConfig, refreshHumanProfile } = useNodeState();
 
@@ -330,6 +331,15 @@ export function MobileProfileView({ onNavigateSettings }: MobileProfileViewProps
       {/* Settings link */}
       <div className="mv-section-group">
         <div className="mv-section-group-title">App</div>
+        <div
+          className="mv-section-row"
+          onClick={onNavigateLibrary}
+          role="button"
+          tabIndex={0}
+        >
+          <span className="mv-section-label">Library</span>
+          <span className="mv-section-row-chevron">&#8250;</span>
+        </div>
         <div
           className="mv-section-row"
           onClick={onNavigateSettings}

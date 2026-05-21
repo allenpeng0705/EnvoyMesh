@@ -20,8 +20,22 @@ export function installEnvoyDataTransferReceiver(input: {
    * Called only after a successful verified write (so a pending save-path override can be cleared).
    */
   onInboundVaultWriteCommitted?: (remotePeerId: string, voucherSourceRelativePath: string) => void;
+  /** ADB-D: notify runtime when inbound bytes are verified and written. */
+  onInboundTransferVerified?: (input: {
+    remotePeerId: string;
+    relativePath: string;
+    totalBytes: number;
+  }) => void;
 }): void {
-  const { mesh, peerDirectoryStore, taskStore, vaultDir, resolveInboundRelativePath, onInboundVaultWriteCommitted } = input;
+  const {
+    mesh,
+    peerDirectoryStore,
+    taskStore,
+    vaultDir,
+    resolveInboundRelativePath,
+    onInboundVaultWriteCommitted,
+    onInboundTransferVerified,
+  } = input;
 
   mesh.onDataTransfer(async ({ remotePeerId, voucher: rawVoucher, chunks }) => {
     const createdAt = new Date().toISOString();
@@ -151,6 +165,11 @@ export function installEnvoyDataTransferReceiver(input: {
     await mkdir(dirname(targetPath), { recursive: true });
     await writeFile(targetPath, combined, { mode: 0o600 });
     onInboundVaultWriteCommitted?.(remotePeerId, sourceNorm);
+    onInboundTransferVerified?.({
+      remotePeerId,
+      relativePath: relForVault,
+      totalBytes: parsed.totalBytes,
+    });
     await taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.verified",

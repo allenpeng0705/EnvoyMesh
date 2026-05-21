@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useNodeService, useAgentShareProposals } from "../../hooks/useNodeService.js";
+import { useNodeService, useAgentShareProposals, useShareOffers } from "../../hooks/useNodeService.js";
+import { IncomingShareOffersSection } from "../file-share/IncomingShareOffersSection.js";
 import type { HelloProfile, HelloRequest, ChatMessage, SocialIntroProposal } from "@envoymesh/api";
 import { peerDisplayLabel } from "../../lib/display.js";
 
@@ -25,6 +26,7 @@ export function InboxView({ embedded = false }: InboxViewProps) {
 
   const nodeService = useNodeService();
   const { proposals: agentShareProposals, dismiss: dismissAgentShare } = useAgentShareProposals();
+  const { offers: pendingShareOffers } = useShareOffers();
 
   const [introSaveStatus, setIntroSaveStatus] = useState<string | null>(null);
   const [agentShareBusy, setAgentShareBusy] = useState<string | null>(null);
@@ -114,7 +116,8 @@ export function InboxView({ embedded = false }: InboxViewProps) {
     pendingHellOs.length === 0 &&
     pendingIntroProposals.length === 0 &&
     pendingMessages.length === 0 &&
-    agentShareProposals.length === 0;
+    agentShareProposals.length === 0 &&
+    pendingShareOffers.length === 0;
 
   if (empty) {
     return (
@@ -126,7 +129,7 @@ export function InboxView({ embedded = false }: InboxViewProps) {
         )}
         <div className="inbox-empty">
           <p>No pending activity</p>
-          <small>Hello requests, Trust-mode intro proposals, agent share suggestions, and messages from people you haven&apos;t bonded with yet appear here.</small>
+          <small>Hello requests, Trust-mode intro proposals, incoming file shares, agent share suggestions, and messages from people you haven&apos;t bonded with yet appear here.</small>
         </div>
       </div>
     );
@@ -185,6 +188,8 @@ export function InboxView({ embedded = false }: InboxViewProps) {
           </ul>
         </>
       )}
+
+      <IncomingShareOffersSection embedded />
 
       {agentShareProposals.length > 0 && (
         <>

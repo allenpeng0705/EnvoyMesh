@@ -19,6 +19,7 @@ import type {
   AutonomousDomain,
   AutonomousPolicy,
   IpfsEngineStatus,
+  ExternalPublishConfig,
 } from "@envoymesh/api";
 
 export function SettingsNodeTab() {
@@ -69,7 +70,6 @@ export function SettingsNodeTab() {
   }, [nodeConfig?.externalPublish?.gatewayAllowlist]);
 
   useEffect(() => {
-    if (isMobileNode) return;
     void nodeService
       .getIpfsEngineStatus()
       .then(setIpfsEngineStatus)
@@ -81,7 +81,7 @@ export function SettingsNodeTab() {
           errorHint: "Could not read IPFS engine status",
         }),
       );
-  }, [isMobileNode, nodeService, nodeConfig?.externalPublish?.allowIpfs]);
+  }, [nodeService, nodeConfig?.externalPublish?.allowIpfs, isMobileNode]);
 
   useEffect(() => {
     void refreshConnectionStatus();
@@ -221,13 +221,24 @@ export function SettingsNodeTab() {
     },
   );
 
+  const currentExternalPublish = useMemo(
+    () => ({
+      allowIpfs: nodeConfig?.externalPublish?.allowIpfs ?? false,
+      gatewayAllowlist: nodeConfig?.externalPublish?.gatewayAllowlist ?? [],
+      ipfsExportEngine: isMobileNode
+        ? ("helia" as const)
+        : (nodeConfig?.externalPublish?.ipfsExportEngine ?? "kubo"),
+    }),
+    [nodeConfig?.externalPublish, isMobileNode],
+  );
+
   const ipfsExportToggle = useOptimisticToggle(
-    nodeConfig?.externalPublish?.allowIpfs ?? false,
+    currentExternalPublish.allowIpfs,
     async (allowIpfs) => {
       await updateNodeConfig({
         externalPublish: {
+          ...currentExternalPublish,
           allowIpfs,
-          gatewayAllowlist: nodeConfig?.externalPublish?.gatewayAllowlist ?? [],
         },
       });
     },
@@ -241,77 +252,23 @@ export function SettingsNodeTab() {
     },
   );
 
-  const { offers: pendingShareOffers, accept: acceptShareOffer, decline: declineShareOffer } =
-    useShareOffers();
-
-  const { proposals: agentShareProposals, dismiss: dismissAgentShareProposalUi } = useAgentShareProposals();
+  const { offers: pendingShareOffers } = useShareOffers();
+  const { proposals: agentShareProposals } = useAgentShareProposals();
 
   return (
     <>
-      {pendingShareOffers.length > 0 && (
+      {(pendingShareOffers.length > 0 || agentShareProposals.length > 0) && (
         <section className="settings-section">
-          <h3>Incoming file shares</h3>
-          <p className="section-desc">Accept to fetch the file into your shared vault (same path as offered).</p>
-          <ul className="settings-list" style={{ listStyle: "none", padding: 0 }}>
-            {pendingShareOffers.map((o) => (
-              <li
-                key={o.shareId}
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "0.5rem",
-                  alignItems: "center",
-                  marginBottom: "0.75rem",
-                  padding: "0.5rem",
-                  border: "1px solid var(--border-subtle, #333)",
-                  borderRadius: "6px",
-                }}
-              >
-                <span>
-                  <strong>{o.senderDisplayName}</strong> — {o.filename}
-                </span>
-                <button type="button" onClick={() => void acceptShareOffer(o.shareId)}>
-                  Accept
-                </button>
-                <button type="button" onClick={() => void declineShareOffer(o.shareId)}>
-                  Decline
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {agentShareProposals.length > 0 && (
-        <section className="settings-section">
-          <h3>Agent-proposed shares</h3>
+          <h3>File sharing</h3>
           <p className="section-desc">
-            Your AI agent suggested these vault files for outbound sharing. Confirm from Inbox or dismiss here.
+            {pendingShareOffers.length > 0
+              ? `${pendingShareOffers.length} incoming file share${pendingShareOffers.length === 1 ? "" : "s"}. `
+              : ""}
+            {agentShareProposals.length > 0
+              ? `${agentShareProposals.length} agent share suggestion${agentShareProposals.length === 1 ? "" : "s"}. `
+              : ""}
+            Open Chat → Inbox to accept, send, or dismiss.
           </p>
-          <ul className="settings-list" style={{ listStyle: "none", padding: 0 }}>
-            {agentShareProposals.map((p) => (
-              <li
-                key={p.proposalId}
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "0.5rem",
-                  alignItems: "center",
-                  marginBottom: "0.75rem",
-                  padding: "0.5rem",
-                  border: "1px solid var(--border-subtle, #333)",
-                  borderRadius: "6px",
-                }}
-              >
-                <span>
-                  <code>{p.vaultRelativePath}</code> → {p.targetOwnerId} ({p.sensitivity})
-                </span>
-                <button type="button" onClick={() => void dismissAgentShareProposalUi(p.proposalId)}>
-                  Dismiss
-                </button>
-              </li>
-            ))}
-          </ul>
         </section>
       )}
 
@@ -637,8 +594,43 @@ export function SettingsNodeTab() {
         <section className="settings-section">
           <h3>External distribution (IPFS)</h3>
           <p className="section-desc">
-            IPFS export and gateway verify require Kubo on your home desktop node. This mobile app can display CIDs from library discovery when bonded peers publish them.
+            On mobile, Library export uses in-process Helia (no Kubo). Gateway verify still requires your home desktop node.
           </p>
+          <dl className="settings-list">
+            <dt>IPFS engine</dt>
+            <dd>
+              {ipfsEngineStatus == null ? (
+                <span className="settings-hint">Checking…</span>
+              ) : ipfsEngineStatus.helia?.available ? (
+                <span className="settings-hint">
+                  Helia in-process
+                  {ipfsEngineStatus.helia.heliaVersion ? ` (${ipfsEngineStatus.helia.heliaVersion})` : ""}
+                </span>
+              ) : (
+                <span className="settings-hint" role="alert">
+                  {ipfsEngineStatus.helia?.errorHint ?? "Helia engine unavailable"}
+                </span>
+              )}
+            </dd>
+            <dt>Export engine</dt>
+            <dd>
+              <span className="settings-hint">Helia (mobile only)</span>
+            </dd>
+          </dl>
+          <div className="settings-toggle-row">
+            <div className="toggle-info">
+              <strong>Allow IPFS export</strong>
+              <span className="toggle-desc">Gate explicit vault → IPFS export in Library (default off)</span>
+            </div>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={ipfsExportToggle.checked}
+                onChange={ipfsExportToggle.onCheckboxChange}
+              />
+              <span className="slider" />
+            </label>
+          </div>
         </section>
       ) : (
         <section className="settings-section">
@@ -650,21 +642,81 @@ export function SettingsNodeTab() {
           <dl className="settings-list">
             <dt>IPFS engine</dt>
             <dd>
-              {ipfsEngineStatus == null ? (
-                <span className="settings-hint">Checking…</span>
-              ) : ipfsEngineStatus.available ? (
-                <span className="settings-hint">
-                  {ipfsEngineStatus.running
-                    ? `Ready${ipfsEngineStatus.kuboVersion ? ` (Kubo ${ipfsEngineStatus.kuboVersion})` : ""}${
-                        ipfsEngineStatus.managed ? " — managed by EnvoyMesh" : ""
-                      }`
-                    : "Available — starts automatically when you export"}
-                </span>
+              {currentExternalPublish.ipfsExportEngine === "helia" ? (
+                <>
+                  {ipfsEngineStatus == null ? (
+                    <span className="settings-hint">Checking…</span>
+                  ) : ipfsEngineStatus.helia?.available ? (
+                    <span className="settings-hint">
+                      Helia in-process (primary)
+                      {ipfsEngineStatus.helia.heliaVersion ? ` (${ipfsEngineStatus.helia.heliaVersion})` : ""}
+                    </span>
+                  ) : (
+                    <span className="settings-hint" role="alert">
+                      {ipfsEngineStatus.helia?.errorHint ?? "Helia engine unavailable"}
+                    </span>
+                  )}
+                  <span className="settings-hint" style={{ display: "block", marginTop: "4px" }}>
+                    {ipfsEngineStatus?.kubo?.available
+                      ? `Kubo also available${ipfsEngineStatus.kubo.kuboVersion ? ` (${ipfsEngineStatus.kubo.kuboVersion})` : ""} — switch engine to use it`
+                      : ipfsEngineStatus?.kubo?.errorHint ?? "Kubo not required for Helia export"}
+                  </span>
+                </>
               ) : (
-                <span className="settings-hint" role="alert">
-                  {ipfsEngineStatus.errorHint ?? "IPFS engine unavailable"}
-                </span>
+                <>
+                  {ipfsEngineStatus == null ? (
+                    <span className="settings-hint">Checking…</span>
+                  ) : ipfsEngineStatus.available ? (
+                    <span className="settings-hint">
+                      {ipfsEngineStatus.running
+                        ? `Kubo ready${ipfsEngineStatus.kuboVersion ? ` (${ipfsEngineStatus.kuboVersion})` : ""}${
+                            ipfsEngineStatus.managed ? " — managed by EnvoyMesh" : ""
+                          }`
+                        : "Kubo available — starts automatically when you export"}
+                    </span>
+                  ) : (
+                    <span className="settings-hint" role="alert">
+                      {ipfsEngineStatus.errorHint ?? "Kubo engine unavailable"}
+                    </span>
+                  )}
+                  {ipfsEngineStatus?.helia != null && (
+                    <span className="settings-hint" style={{ display: "block", marginTop: "4px" }}>
+                      {ipfsEngineStatus.helia.available
+                        ? `Helia in-process${ipfsEngineStatus.helia.heliaVersion ? ` (${ipfsEngineStatus.helia.heliaVersion})` : ""}`
+                        : ipfsEngineStatus.helia.errorHint ?? "Helia unavailable"}
+                    </span>
+                  )}
+                </>
               )}
+            </dd>
+            <dt>Export engine</dt>
+            <dd>
+              <select
+                className="settings-input"
+                value={currentExternalPublish.ipfsExportEngine}
+                onChange={(e) => {
+                  const ipfsExportEngine = e.target.value as NonNullable<
+                    ExternalPublishConfig["ipfsExportEngine"]
+                  >;
+                  void updateNodeConfig({
+                    externalPublish: {
+                      ...currentExternalPublish,
+                      ipfsExportEngine,
+                    },
+                  });
+                }}
+              >
+                <option value="kubo">Kubo (default)</option>
+                <option value="kubo-with-helia-shadow">Kubo + Helia shadow</option>
+                <option value="helia">Helia (in-process)</option>
+              </select>
+              <p className="settings-hint" style={{ marginTop: "6px" }}>
+                {currentExternalPublish.ipfsExportEngine === "helia"
+                  ? "Helia produces the canonical CID in-process — no Kubo sidecar required. CIDs match Kubo when both use the interop recipe (CI parity gate)."
+                  : currentExternalPublish.ipfsExportEngine === "kubo-with-helia-shadow"
+                    ? "Shadow mode runs Helia in-process after Kubo export and records parity in audit logs. Canonical CID stays Kubo."
+                    : "Kubo uses the bundled sidecar or ipfs on PATH; starts automatically on first export."}
+              </p>
             </dd>
           </dl>
           <div className="settings-toggle-row">
@@ -706,7 +758,7 @@ export function SettingsNodeTab() {
                       .filter(Boolean);
                     await updateNodeConfig({
                       externalPublish: {
-                        allowIpfs: nodeConfig?.externalPublish?.allowIpfs ?? false,
+                        ...currentExternalPublish,
                         gatewayAllowlist,
                       },
                     });

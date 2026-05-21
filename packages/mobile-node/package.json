@@ -6,11 +6,17 @@
   "exports": {
     ".": "./dist/src/index.js"
   },
+  "imports": {
+    "#network/data-framing": "@envoymesh/network/data-framing",
+    "#network/protocols": "@envoymesh/network/protocols",
+    "#network/capability-topic-cid": "@envoymesh/network/capability-topic-cid"
+  },
   "dependencies": {
     "@capacitor/filesystem": "^6.0.0",
     "@chainsafe/libp2p-noise": "^17.0.0",
     "@chainsafe/libp2p-yamux": "^8.0.0",
     "@envoymesh/api": "0.1.0",
+    "@envoymesh/ipfs-helia": "0.1.0",
     "@envoymesh/bonds": "0.1.0",
     "@envoymesh/mobile-identity": "0.1.0",
     "@envoymesh/mobile-storage": "0.1.0",

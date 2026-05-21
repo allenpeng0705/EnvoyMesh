@@ -31,6 +31,8 @@ import type {
   ExportLibraryItemToIpfsResult,
   VerifyLibraryItemIpfsGatewayParams,
   VerifyLibraryItemIpfsGatewayResult,
+  ImportToLibraryParams,
+  ImportToLibraryResult,
   IpfsEngineStatus,
 } from "@envoymesh/api";
 
@@ -100,6 +102,7 @@ export interface NodeServiceClient {
 
   // AI / Knowledge Query
   knowledgeQuery(question: string): Promise<string>;
+  runDocumentAgentTurn(message: string): Promise<import("@envoymesh/api").DocumentAgentTurnResult>;
 
   // Shared vault library
   listLibraryItems(params?: ListLibraryItemsParams): Promise<LibraryItem[]>;
@@ -109,6 +112,7 @@ export interface NodeServiceClient {
   verifyLibraryItemIpfsGateway(
     params: VerifyLibraryItemIpfsGatewayParams,
   ): Promise<VerifyLibraryItemIpfsGatewayResult>;
+  importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult>;
   discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]>;
   listAgentShareProposals(): Promise<AgentShareProposal[]>;
   dismissAgentShareProposal(proposalId: string): Promise<void>;
@@ -253,6 +257,9 @@ function createWsNodeServiceClient(
     async getBridgeStatus() { return wsClient.rpc("getBridgeStatus"); },
     async getPairingPayload() { return wsClient.rpc("getPairingPayload"); },
     async knowledgeQuery(question: string) { return wsClient.rpc("knowledgeQuery", { question }) as Promise<string>; },
+    async runDocumentAgentTurn(message: string) {
+      return wsClient.rpc("runDocumentAgentTurn", { message }) as Promise<import("@envoymesh/api").DocumentAgentTurnResult>;
+    },
     async listLibraryItems(params?: ListLibraryItemsParams) {
       return wsClient.rpc("listLibraryItems", (params ?? {}) as Record<string, unknown>) as Promise<LibraryItem[]>;
     },
@@ -268,6 +275,11 @@ function createWsNodeServiceClient(
     async verifyLibraryItemIpfsGateway(params: VerifyLibraryItemIpfsGatewayParams) {
       return wsClient.rpc("verifyLibraryItemIpfsGateway", params as unknown as Record<string, unknown>) as Promise<
         VerifyLibraryItemIpfsGatewayResult
+      >;
+    },
+    async importToLibrary(params: ImportToLibraryParams) {
+      return wsClient.rpc("importToLibrary", params as unknown as Record<string, unknown>) as Promise<
+        ImportToLibraryResult
       >;
     },
     async discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams) {
@@ -594,8 +606,8 @@ export function useShareOffers() {
     };
   }, [client]);
 
-  const accept = async (shareId: string) => {
-    await client.acceptShare(shareId, "");
+  const accept = async (shareId: string, savePath = "") => {
+    await client.acceptShare(shareId, savePath);
     const fresh = await client.listPendingShareOffers();
     setOffers(fresh);
   };

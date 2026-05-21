@@ -25,6 +25,9 @@ jobs:
       - name: Unit and integration tests
         run: npm test
 
+      - name: Mobile Capacitor production build
+        run: npm run build -w @envoymesh/mobile
+
       - name: Local two-node smoke rehearsal
         run: npm run smoke:local
 

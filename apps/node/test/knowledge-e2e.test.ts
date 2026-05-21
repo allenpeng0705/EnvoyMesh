@@ -17,7 +17,7 @@ import {
   generateDeviceIdentity,
   generateOwnerIdentity,
   signUnsignedEnvelope,
-  verifyEnvelope,
+  verifyInboundEnvelope,
 } from "@envoymesh/identity";
 import {
   createBondAcceptPayload,
@@ -78,7 +78,7 @@ describe("E2E knowledge query between bonded peers", () => {
     // Alice's handler
     const alice = await startMesh();
     alice.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       aliceReceived.push(envelope.intent);
 
       if (envelope.intent === "knowledge.response") {
@@ -91,7 +91,7 @@ describe("E2E knowledge query between bonded peers", () => {
     // Bob's handler — processes knowledge.query and responds
     const bob = await startMesh();
     bob.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       bobReceived.push(envelope.intent);
 
       if (envelope.intent === "bond.challenge") {

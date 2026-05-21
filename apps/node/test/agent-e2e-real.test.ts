@@ -8,7 +8,7 @@
  * Run with: TEST_RELAY_ADDR=/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo npx vitest run apps/node/test/agent-e2e-real.test.ts
  */
 
-import { derivePeerId, generateDeviceIdentity, generateOwnerIdentity, signUnsignedEnvelope, verifyEnvelope } from "@envoymesh/identity";
+import { derivePeerId, generateDeviceIdentity, generateOwnerIdentity, signUnsignedEnvelope, verifyInboundEnvelope } from "@envoymesh/identity";
 import { createChatMessagePayload, createKnowledgeQueryPayload, createUnsignedEnvelope, parseChatMessagePayload } from "@envoymesh/protocol";
 import { describe, expect, it, afterEach } from "vitest";
 import { EnvoyMesh } from "@envoymesh/network";
@@ -107,7 +107,7 @@ describe("E2E: Rendezvous registration through relay", () => {
     const received: string[] = [];
 
     mesh.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       received.push(envelope.intent);
       console.log(`[test] Received intent: ${envelope.intent}`);
     });
@@ -168,7 +168,7 @@ describe("E2E: Heartbeat through relay", () => {
     const ownerReceived: string[] = [];
 
     ownerMesh.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       ownerReceived.push(envelope.intent);
       console.log(`[test] Owner received: ${envelope.intent}`);
     });
@@ -796,13 +796,13 @@ describe("E2E: Chat message exchange", () => {
     const mesh2Received: string[] = [];
 
     mesh1.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       mesh1Received.push(envelope.intent);
       console.log(`[test] Mesh1 received: ${envelope.intent}`);
     });
 
     mesh2.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       mesh2Received.push(envelope.intent);
       console.log(`[test] Mesh2 received: ${envelope.intent}`);
     });
@@ -868,7 +868,7 @@ describe("E2E: Chat message exchange", () => {
     const mesh2Received: string[] = [];
 
     mesh2.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       mesh2Received.push(envelope.intent);
       if (envelope.intent === "chat.message") {
         const payload = parseChatMessagePayload(envelope.payload);
@@ -921,7 +921,7 @@ describe("E2E: Task result", () => {
     const ownerReceived: string[] = [];
 
     ownerMesh.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       ownerReceived.push(envelope.intent);
       console.log(`[test] Owner received: ${envelope.intent}`);
     });
@@ -965,7 +965,7 @@ describe("E2E: Task result", () => {
     const ownerReceived: string[] = [];
 
     ownerMesh.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       ownerReceived.push(envelope.intent);
     });
 
@@ -1012,7 +1012,7 @@ describe("E2E: Task cancellation", () => {
     const agentReceived: string[] = [];
 
     agentMesh.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       agentReceived.push(envelope.intent);
       console.log(`[test] Agent received: ${envelope.intent}`);
     });
@@ -1056,7 +1056,7 @@ describe("E2E: Task cancellation", () => {
     const agentReceived: string[] = [];
 
     agentMesh.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       agentReceived.push(envelope.intent);
     });
 
@@ -1110,7 +1110,7 @@ describe("E2E: Multiple heartbeats", () => {
     const ownerReceived: string[] = [];
 
     ownerMesh.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       ownerReceived.push(envelope.intent);
     });
 
@@ -1157,7 +1157,7 @@ describe("E2E: Multiple heartbeats", () => {
     const ownerReceived: string[] = [];
 
     ownerMesh.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       ownerReceived.push(envelope.intent);
     });
 
@@ -1208,7 +1208,7 @@ describe("E2E: Peer discovery", () => {
     const mesh2Received: string[] = [];
 
     mesh2.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       mesh2Received.push(envelope.intent);
       console.log(`[test] Mesh2 received: ${envelope.intent}`);
     });
@@ -1250,7 +1250,7 @@ describe("E2E: Peer discovery", () => {
     const mesh1Received: string[] = [];
 
     mesh1.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       mesh1Received.push(envelope.intent);
       console.log(`[test] Mesh1 received: ${envelope.intent}`);
     });
@@ -1303,7 +1303,7 @@ describe("E2E: Bond/trust relationships", () => {
     const mesh2Received: string[] = [];
 
     mesh2.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       mesh2Received.push(envelope.intent);
       console.log(`[test] Mesh2 received: ${envelope.intent}`);
     });
@@ -1346,7 +1346,7 @@ describe("E2E: Bond/trust relationships", () => {
     const mesh1Received: string[] = [];
 
     mesh1.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       mesh1Received.push(envelope.intent);
       console.log(`[test] Mesh1 received: ${envelope.intent}`);
     });
@@ -1395,7 +1395,7 @@ describe("E2E: Share operations", () => {
     const mesh2Received: string[] = [];
 
     mesh2.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       mesh2Received.push(envelope.intent);
       console.log(`[test] Mesh2 received: ${envelope.intent}`);
     });
@@ -1439,7 +1439,7 @@ describe("E2E: Share operations", () => {
     const mesh1Received: string[] = [];
 
     mesh1.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       mesh1Received.push(envelope.intent);
       console.log(`[test] Mesh1 received: ${envelope.intent}`);
     });
@@ -1482,7 +1482,7 @@ describe("E2E: Share operations", () => {
     const mesh1Received: string[] = [];
 
     mesh1.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       mesh1Received.push(envelope.intent);
       console.log(`[test] Mesh1 received: ${envelope.intent}`);
     });
@@ -1534,17 +1534,17 @@ describe("E2E: Multi-node chat", () => {
     const mesh3Received: string[] = [];
 
     mesh1.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       mesh1Received.push(envelope.intent);
     });
 
     mesh2.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       mesh2Received.push(envelope.intent);
     });
 
     mesh3.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       mesh3Received.push(envelope.intent);
     });
 
@@ -1629,7 +1629,7 @@ describe("E2E: Multi-node chat", () => {
     const mesh2Received: string[] = [];
 
     mesh2.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       mesh2Received.push(envelope.intent);
     });
 
@@ -1679,7 +1679,7 @@ describe("E2E: Relay operations", () => {
     const relayReceived: string[] = [];
 
     relayMesh.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       relayReceived.push(envelope.intent);
       console.log(`[test] Relay received: ${envelope.intent}`);
     });

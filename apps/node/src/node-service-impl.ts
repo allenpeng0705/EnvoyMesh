@@ -42,7 +42,12 @@ import type {
   IpfsEngineStatus,
   VerifyLibraryItemIpfsGatewayParams,
   VerifyLibraryItemIpfsGatewayResult,
+  ImportToLibraryParams,
+  ImportToLibraryResult,
+  TransferStatus,
 } from "@envoymesh/api";
+import type { DocumentAgentTurnResult } from "@envoymesh/api";
+import { runDocumentAgentTurn as runDocumentAgentTurnLoop, normalizeDocumentAutonomyPolicy } from "@envoymesh/api";
 
 import { randomUUID } from "node:crypto";
 import {
@@ -82,6 +87,8 @@ import {
   signHumanProfile,
   signUnsignedEnvelope,
   verifyFriendMatchingPreferences,
+  createAgentCredential,
+  generateAgentIdentity,
 } from "@envoymesh/identity";
 import {
   createAuditEvent,
@@ -113,7 +120,9 @@ import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-s
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
 import { createTaskDispatcher } from "./task-dispatcher.js";
-import { buildVaultIndex } from "@envoymesh/vault";
+import { buildVaultIndex, assertPathInsideVault } from "@envoymesh/vault";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import {
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
@@ -123,23 +132,41 @@ import {
 import { stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { sendVaultFileViaDataTransfer } from "./node-file-share.js";
+import { TransferTracker } from "./transfer-tracker.js";
 import { isSafeVaultPath } from "./share-inbound.js";
 import { createPublishedLibraryStore } from "./published-library-store.js";
 import { createPublishedExternalStore } from "./published-external-store.js";
 import { exportVaultDocumentToIpfs } from "./vault-ipfs-export-service.js";
-import { getKuboIpfsEngineStatus } from "./kubo-ipfs-engine.js";
+import {
+  getIpfsEngineStatus,
+  normalizeIpfsExportEngineSelection,
+  resolveIpfsExportEngineSelection,
+} from "./ipfs-export-router.js";
 import { verifyVaultDocumentIpfsGateway } from "./vault-ipfs-gateway-verify.js";
 import { normalizeGatewayBaseUrl } from "./ipfs-gateway.js";
 import { createAgentShareProposalStore } from "./agent-share-proposal-store.js";
 import { PUBLISHED_LIB_CAPABILITY } from "./discovery-inbound.js";
-import { loadBridgeIdentity } from "./bridge/identity-store.js";
+import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
+import type { BridgeIdentity } from "./bridge/pipe.js";
 import type { MeshToolContext } from "./tool-registry.js";
+import { executeTool } from "./tool-registry.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { executeHomeClawCoreProxy } from "./homeclaw-core-proxy.js";
 
 const MAX_FRIEND_MATCHING_PREFS_CHARS = 4096;
+
+/** Intents allowed on the native / bridge agent credential for document + mesh tools. */
+const NATIVE_AGENT_TOOL_SCOPE = [
+  "chat.message",
+  "knowledge.query",
+  "discovery.request",
+  "discovery.response",
+  "share.request",
+  "share.preview",
+  "share.accept",
+] as const;
 
 /** Unblocks when an underlying `fs.readFile` or mutex never settles (seen on some Windows setups). */
 function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -239,11 +266,19 @@ class NodeServiceImpl implements NodeService {
   >();
   /** Inbound push offers waiting for accept/decline — keyed by preview message id. */
   private readonly _pendingInboundShareOffers = new Map<string, ShareOffer>();
-  /**
-   * Pending vault-relative rename on receive: key `senderPeerId + \\n + voucher source path`
+  /** Pending vault-relative rename on receive: key `senderPeerId + \\n + voucher source path`
    * (matches {@link DataTransferVoucher} `relativePath` from sender).
    */
   private readonly _pendingDataTransferSavePath = new Map<string, string>();
+  /** Share / data-transfer correlation ids for progress tracking (ADB-D). */
+  private readonly _transferTracker = new TransferTracker();
+  private readonly _correlationByRequestMsgId = new Map<string, string>();
+  private readonly _correlationByPreviewMsgId = new Map<string, string>();
+  /** Inbound accept waiting for bytes — keyed by preview/share id. */
+  private readonly _inboundTransferByShareId = new Map<
+    string,
+    { senderNodeId: string; senderVaultRelativePath: string; savePath: string; senderOwnerId?: string }
+  >();
 
   // Event listeners - stored for later emission
   private readonly listeners = new Map<keyof NodeServiceEvents, Set<(...args: any[]) => void>>();
@@ -318,12 +353,67 @@ class NodeServiceImpl implements NodeService {
     this._taskStore = taskStore;
   }
 
+  private _upsertTransferStatus(status: TransferStatus): TransferStatus {
+    const saved = this._transferTracker.upsert(status);
+    this.emit("share:progress", saved);
+    return saved;
+  }
+
+  async listActiveTransfers(): Promise<TransferStatus[]> {
+    return this._transferTracker.listActive();
+  }
+
+  async getTransferStatus(correlationId: string): Promise<TransferStatus | undefined> {
+    return this._transferTracker.get(correlationId);
+  }
+
+  /** Called from data-transfer-inbound after verified inbound write. */
+  notifyInboundTransferVerified(input: {
+    remotePeerId: string;
+    relativePath: string;
+    totalBytes: number;
+  }): void {
+    for (const [shareId, pending] of this._inboundTransferByShareId.entries()) {
+      if (pending.senderNodeId !== input.remotePeerId) continue;
+      if (pending.savePath !== input.relativePath && pending.senderVaultRelativePath !== input.relativePath) {
+        continue;
+      }
+      const correlationId = this._correlationByPreviewMsgId.get(shareId) ?? shareId;
+      this._upsertTransferStatus({
+        correlationId,
+        phase: "verified",
+        bytesTransferred: input.totalBytes,
+        totalBytes: input.totalBytes,
+        remotePeerId: input.remotePeerId,
+        remotePeerOwnerId: pending.senderOwnerId,
+        vaultRelativePath: input.relativePath,
+        updatedAt: new Date().toISOString(),
+      });
+      this._inboundTransferByShareId.delete(shareId);
+      return;
+    }
+    this._upsertTransferStatus({
+      correlationId: `inbound:${input.remotePeerId}:${input.relativePath}`,
+      phase: "verified",
+      bytesTransferred: input.totalBytes,
+      totalBytes: input.totalBytes,
+      remotePeerId: input.remotePeerId,
+      vaultRelativePath: input.relativePath,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   /** Inbound `share.preview` on the original requester (push) — links preview id to pending send. */
   linkOutboundSharePreviewFromInbound(previewMessageId: string, inReplyToRequestMsgId: string): void {
     const pending = this._pendingPushShareByRequestMsgId.get(inReplyToRequestMsgId);
     if (!pending) return;
     this._pendingFileSendByPreviewMsgId.set(previewMessageId, pending);
     this._pendingPushShareByRequestMsgId.delete(inReplyToRequestMsgId);
+    const correlationId = this._correlationByRequestMsgId.get(inReplyToRequestMsgId);
+    if (correlationId) {
+      this._correlationByPreviewMsgId.set(previewMessageId, correlationId);
+      this._correlationByRequestMsgId.delete(inReplyToRequestMsgId);
+    }
   }
 
   /** We hold the file (responder); after sending preview, wait for requester's `share.accept`. */
@@ -420,6 +510,16 @@ class NodeServiceImpl implements NodeService {
     const profile = this._profile;
     if (!mesh || !profile) return;
 
+    const correlationId =
+      this._correlationByPreviewMsgId.get(previewId) ?? input.envelope.correlationId ?? previewId;
+    this._upsertTransferStatus({
+      correlationId,
+      phase: "transferring",
+      remotePeerId: input.remotePeerId,
+      vaultRelativePath: pending.relativePath,
+      updatedAt: new Date().toISOString(),
+    });
+
     await sendVaultFileViaDataTransfer({
       mesh,
       profile,
@@ -427,6 +527,10 @@ class NodeServiceImpl implements NodeService {
       vaultDir: input.vaultDir,
       relativePath: pending.relativePath,
       toPeerId: input.remotePeerId,
+      transferHooks: {
+        correlationId,
+        onUpdate: (status) => this._upsertTransferStatus(status as TransferStatus),
+      },
     });
     this._pendingFileSendByPreviewMsgId.delete(previewId);
   }
@@ -1645,12 +1749,17 @@ class NodeServiceImpl implements NodeService {
       profileDir: this._profileDir,
       documentId,
       allowIpfs,
+      externalPublish: config.externalPublish,
       appendAudit: (event) => taskStore.appendAuditEvent(event),
     });
   }
 
   async getIpfsEngineStatus(): Promise<IpfsEngineStatus> {
-    return getKuboIpfsEngineStatus(this._profileDir);
+    const config = await this.getNodeConfig();
+    return getIpfsEngineStatus({
+      profileDir: this._profileDir,
+      selection: resolveIpfsExportEngineSelection({ externalPublish: config.externalPublish }),
+    });
   }
 
   async verifyLibraryItemIpfsGateway(
@@ -1671,6 +1780,29 @@ class NodeServiceImpl implements NodeService {
       gatewayUrl: params.gatewayUrl,
       appendAudit: (event) => taskStore.appendAuditEvent(event),
     });
+  }
+
+  async importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult> {
+    this.recordOwnerActivity();
+    const norm = params.relativePath.trim().replace(/^[\\/]+/, "");
+    if (!norm || norm.includes("..") || norm.includes("~")) {
+      throw new Error("Invalid vault path");
+    }
+    const abs = resolve(this._vaultDir, norm);
+    assertPathInsideVault(this._vaultDir, abs);
+    const bytes = Buffer.from(params.contentBase64, "base64");
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, bytes, { mode: 0o600 });
+    const index = await buildVaultIndex({ rootDir: this._vaultDir });
+    const doc = index.documents.find((d) => d.relativePath === norm);
+    if (!doc) {
+      throw new Error(`Imported file not indexed: ${norm}`);
+    }
+    return {
+      documentId: doc.documentId,
+      relativePath: doc.relativePath,
+      sizeBytes: doc.byteLength,
+    };
   }
 
   async discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]> {
@@ -1873,6 +2005,7 @@ class NodeServiceImpl implements NodeService {
       throw err;
     }
 
+    const correlationId = randomUUID();
     const unsigned = createUnsignedEnvelope({
       senderPeerId: derivePeerId(profile.device.publicKeyPem),
       senderPublicKey: profile.device.publicKeyPem,
@@ -1886,12 +2019,22 @@ class NodeServiceImpl implements NodeService {
         requestedSensitivity: file.sensitivity,
         fileOrigin: "sender",
       }),
+      correlationId,
     });
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
     await mesh.send(transportPeerId, envelope as any, { dialHints });
     this._pendingPushShareByRequestMsgId.set(envelope.messageId, {
       relativePath: norm,
       toPeerId: transportPeerId,
+    });
+    this._correlationByRequestMsgId.set(envelope.messageId, correlationId);
+    this._upsertTransferStatus({
+      correlationId,
+      phase: "negotiating",
+      remotePeerOwnerId: targetOwnerId,
+      remotePeerId: transportPeerId,
+      vaultRelativePath: norm,
+      updatedAt: new Date().toISOString(),
     });
   }
 
@@ -1944,6 +2087,21 @@ class NodeServiceImpl implements NodeService {
     });
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
     await mesh.send(offer.senderNodeId, envelope as any, { dialHints });
+    this._correlationByPreviewMsgId.set(shareId, shareId);
+    this._inboundTransferByShareId.set(shareId, {
+      senderNodeId: offer.senderNodeId,
+      senderVaultRelativePath: srcKey,
+      savePath: saveNorm || srcKey || offer.filename,
+      senderOwnerId: rec?.ownerId,
+    });
+    this._upsertTransferStatus({
+      correlationId: shareId,
+      phase: "negotiating",
+      remotePeerId: offer.senderNodeId,
+      remotePeerOwnerId: rec?.ownerId,
+      vaultRelativePath: saveNorm || srcKey || offer.filename,
+      updatedAt: new Date().toISOString(),
+    });
     this._pendingInboundShareOffers.delete(shareId);
     const emitPath = saveNorm || srcKey || offer.filename;
     this.emit("share:accepted", { shareId, savePath: emitPath });
@@ -2035,7 +2193,15 @@ class NodeServiceImpl implements NodeService {
         trustModeEnabled: config.trustModeEnabled ?? false,
         friendMatchingPreferencesText: config.friendMatchingPreferencesText,
         friendMatchingPreferencesSigned: config.friendMatchingPreferencesSigned,
-        externalPublish: config.externalPublish ?? { allowIpfs: false },
+        externalPublish: config.externalPublish
+          ? {
+              allowIpfs: config.externalPublish.allowIpfs ?? false,
+              gatewayAllowlist: config.externalPublish.gatewayAllowlist ?? [],
+              ipfsExportEngine: normalizeIpfsExportEngineSelection(
+                config.externalPublish.ipfsExportEngine,
+              ),
+            }
+          : { allowIpfs: false },
       };
     }
     return {
@@ -2161,6 +2327,11 @@ class NodeServiceImpl implements NodeService {
             .map((entry) => normalizeGatewayBaseUrl(entry))
             .filter(Boolean)
             .slice(0, 10),
+          ipfsExportEngine: normalizeIpfsExportEngineSelection(
+            config.externalPublish.ipfsExportEngine ??
+              current.externalPublish?.ipfsExportEngine ??
+              "kubo",
+          ),
         },
       }),
       ...(validatedSigned !== undefined && {
@@ -3294,38 +3465,79 @@ class NodeServiceImpl implements NodeService {
     return result.responsePayload.answer;
   }
 
+  async runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult> {
+    this.recordOwnerActivity();
+    const context = await this.getToolExecutionContext();
+    if (!context) {
+      throw new Error("Node not initialized");
+    }
+    return runDocumentAgentTurnLoop({
+      message,
+      listLibraryItems: (query) => this.listLibraryItems(query ? { query } : undefined),
+      getBonds: () => this.getBonds(),
+      executeTool: (toolName, params) => executeTool(toolName, params, context),
+      knowledgeQuery: (question) => this.knowledgeQuery(question),
+      discoverPublishedLibrary: (p) => this.discoverPublishedLibrary(p),
+      sendChat: (targetOwnerId, text) => this.sendChat(targetOwnerId, text),
+    });
+  }
+
   // ============================================
   // Agent tool execution context (mesh.library_*, etc.)
   // ============================================
 
   /**
-   * Build a {@link MeshToolContext} for {@link executeTool} when the bridge agent identity exists.
-   * Returns null if the task store or profile is missing, or bridge identity was never created.
+   * Ensure persisted agent identity for tool signing (bridge file or lazy create).
    */
-  async getMeshToolContext(): Promise<MeshToolContext | null> {
+  private async _ensureAgentIdentity(): Promise<BridgeIdentity | null> {
+    const profile = this._profile;
+    if (!profile) return null;
+    let identity = await loadBridgeIdentity(this._profileDir);
+    if (identity) return identity;
+    const agent = generateAgentIdentity(profile.owner.ownerId);
+    identity = {
+      agentPeerId: agent.agentPeerId,
+      agentPublicKeyPem: agent.publicKeyPem,
+      agentPrivateKeyPem: agent.privateKeyPem,
+      ownerId: profile.owner.ownerId,
+      agentCredential: createAgentCredential({
+        owner: profile.owner,
+        agent,
+        scope: [...NATIVE_AGENT_TOOL_SCOPE],
+      }),
+    };
+    await saveBridgeIdentity(this._profileDir, identity);
+    return identity;
+  }
+
+  /**
+   * Build {@link MeshToolContext} for native Envoy AI and optional bridge agents.
+   */
+  async getToolExecutionContext(): Promise<MeshToolContext | null> {
     if (!this._taskStore) return null;
     const profile = this._profile;
     if (!profile) return null;
-    const bridgeIdentity = await loadBridgeIdentity(this._profileDir);
-    if (!bridgeIdentity) return null;
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!agentIdentity) return null;
     const config = await this._configStore.load();
     let humanProfileSummary: { displayName?: string; bio?: string } | undefined;
     try {
       const hp = await this._humanProfileStore.loadHumanProfile();
       if (hp) humanProfileSummary = { displayName: hp.displayName, bio: hp.bio };
     } catch { /* ignore */ }
+    const documentAutonomy = normalizeDocumentAutonomyPolicy(config?.aiSettings?.documentAutonomy);
     return {
       trustStore: this._trustStore,
       peerDirectoryStore: this._peerDirectoryStore,
       taskStore: this._taskStore,
       agentIdentity: {
-        agentId: bridgeIdentity.agentCredential.agentId,
-        agentPeerId: bridgeIdentity.agentPeerId,
-        privateKeyPem: bridgeIdentity.agentPrivateKeyPem,
-        publicKeyPem: bridgeIdentity.agentPublicKeyPem,
+        agentId: agentIdentity.agentCredential.agentId,
+        agentPeerId: agentIdentity.agentPeerId,
+        privateKeyPem: agentIdentity.agentPrivateKeyPem,
+        publicKeyPem: agentIdentity.agentPublicKeyPem,
       },
       ownerIdentity: { ownerId: profile.owner.ownerId },
-      agentCredential: bridgeIdentity.agentCredential,
+      agentCredential: agentIdentity.agentCredential,
       mesh: this._mesh,
       trustIntro: {
         trustModeEnabled: config?.trustModeEnabled ?? false,
@@ -3337,7 +3549,28 @@ class NodeServiceImpl implements NodeService {
         this.discoverPublishedLibrary(p as DiscoverPublishedLibraryParams | undefined),
       exportLibraryItemToIpfs: (documentId) => this.exportLibraryItemToIpfs(documentId),
       verifyLibraryItemIpfsGateway: (p) => this.verifyLibraryItemIpfsGateway(p),
+      setLibraryItemPublished: (documentId, published) => this.setLibraryItemPublished(documentId, published),
+      submitAgentShareProposal: (params) => this.submitAgentShareProposal(params),
+      getBonds: () => this.getBonds(),
+      sendChat: (targetOwnerId, text) => this.sendChat(targetOwnerId, text),
+      listActiveTransfers: () => this.listActiveTransfers(),
+      getTransferStatus: (correlationId) => this.getTransferStatus(correlationId),
+      listPendingShareOffers: () => this.listPendingShareOffers(),
+      listAgentShareProposals: () => this.listAgentShareProposals(),
+      documentAutonomy,
+      shareFile: (params) =>
+        this.shareFile(params.targetOwnerId, {
+          path: params.vaultRelativePath,
+          sensitivity: params.sensitivity,
+        }),
     };
+  }
+
+  /**
+   * @deprecated Prefer {@link getToolExecutionContext} — alias for bridge-era callers.
+   */
+  async getMeshToolContext(): Promise<MeshToolContext | null> {
+    return this.getToolExecutionContext();
   }
 
   // ============================================

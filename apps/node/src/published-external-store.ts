@@ -9,6 +9,8 @@ export interface PublishedExternalRecord {
   kuboVersion: string;
   /** Vault content hash at export time (staleness detection). */
   contentHash: string;
+  cidHelia?: string;
+  heliaVersion?: string;
 }
 
 interface PublishedExternalFile {
@@ -16,13 +18,15 @@ interface PublishedExternalFile {
   exports: Record<string, PublishedExternalRecord>;
 }
 
+export type PublishedExternalExportFields = Pick<
+  PublishedExternalRecord,
+  "cid" | "ipfsInteropRecipe" | "kuboVersion" | "contentHash" | "cidHelia" | "heliaVersion"
+>;
+
 export interface PublishedExternalStore {
   loadAll(): Promise<Map<string, PublishedExternalRecord>>;
   get(documentId: string): Promise<PublishedExternalRecord | undefined>;
-  recordExport(
-    documentId: string,
-    fields: Pick<PublishedExternalRecord, "cid" | "ipfsInteropRecipe" | "kuboVersion" | "contentHash">,
-  ): Promise<PublishedExternalRecord>;
+  recordExport(documentId: string, fields: PublishedExternalExportFields): Promise<PublishedExternalRecord>;
 }
 
 export function createPublishedExternalStore(profileDir: string): PublishedExternalStore {

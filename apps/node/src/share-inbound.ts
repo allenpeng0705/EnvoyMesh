@@ -33,10 +33,13 @@ const APPROVAL_REQUIRED_SENSITIVITIES = new Set(["private", "trusted"]);
 
 async function resolveSenderOwnerId(
   senderPeerId: string,
+  remotePeerId: string,
   peerDirectoryStore: LocalPeerDirectoryStore,
 ): Promise<string | undefined> {
   const records = await peerDirectoryStore.listPeerRecords();
-  const match = records.find((r) => r.peerId === senderPeerId);
+  const match =
+    records.find((r) => r.peerId === senderPeerId) ??
+    records.find((r) => r.peerId === remotePeerId);
   return match?.ownerId;
 }
 
@@ -109,7 +112,7 @@ export async function handleInboundShareRequest(input: {
   );
 
   // 2. Policy check: resolve sender's owner ID, look up bond level
-  const senderOwnerId = await resolveSenderOwnerId(envelope.senderPeerId, peerDirectoryStore);
+  const senderOwnerId = await resolveSenderOwnerId(envelope.senderPeerId, remotePeerId, peerDirectoryStore);
   const bondLevel = senderOwnerId
     ? (await trustStore.getTrustRecord(senderOwnerId))?.level ?? "public"
     : "public";
@@ -256,7 +259,7 @@ export async function handleInboundShareAccept(input: {
     return { ok: false, reason };
   }
 
-  const senderOwnerId = await resolveSenderOwnerId(envelope.senderPeerId, peerDirectoryStore);
+  const senderOwnerId = await resolveSenderOwnerId(envelope.senderPeerId, remotePeerId, peerDirectoryStore);
 
   await taskStore.appendShareEvent(
     createShareEvent({

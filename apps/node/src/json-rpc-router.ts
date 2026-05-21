@@ -80,6 +80,12 @@ export async function routeRpcMethod(
         documentId: params.documentId as string,
         gatewayUrl: params.gatewayUrl as string | undefined,
       });
+    case "importToLibrary":
+      return ns.importToLibrary({
+        relativePath: params.relativePath as string,
+        contentBase64: params.contentBase64 as string,
+        mimeType: params.mimeType as string | undefined,
+      });
     case "discoverPublishedLibrary":
       return ns.discoverPublishedLibrary(params as DiscoverPublishedLibraryParams | undefined);
     case "listAgentShareProposals":
@@ -125,6 +131,12 @@ export async function routeRpcMethod(
       return { success: true };
     case "knowledgeQuery":
       return ns.knowledgeQuery(params.question as string);
+    case "runDocumentAgentTurn":
+      return ns.runDocumentAgentTurn(params.message as string);
+    case "listActiveTransfers":
+      return ns.listActiveTransfers();
+    case "getTransferStatus":
+      return ns.getTransferStatus(params.correlationId as string);
     case "getBridgeStatus":
       return ns.getBridgeStatus();
     case "getPairingPayload":

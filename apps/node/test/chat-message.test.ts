@@ -5,6 +5,7 @@ import {
   generateOwnerIdentity,
   signUnsignedEnvelope,
   verifyEnvelope,
+  verifyInboundEnvelope,
 } from "@envoymesh/identity";
 import {
   createChatMessagePayload,
@@ -43,7 +44,7 @@ describe("chat.message over EnvoyMesh", () => {
           return;
         }
 
-        if (!verifyEnvelope(envelope)) {
+        if (!verifyInboundEnvelope(envelope)) {
           resolve(null);
           return;
         }
@@ -91,7 +92,7 @@ describe("chat.message over EnvoyMesh", () => {
       if (envelope.intent !== "chat.message") {
         return;
       }
-      if (!verifyEnvelope(envelope)) {
+      if (!verifyInboundEnvelope(envelope)) {
         return;
       }
       const payload = parseChatMessagePayload(envelope.payload);

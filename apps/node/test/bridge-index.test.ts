@@ -112,6 +112,46 @@ describe("bridge runtime", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("forwards discovery.response to external agent as async mesh reply", async () => {
+    const port = await getFreePort();
+    const identity = makeBridgeIdentity();
+    const agentFetch = vi.fn().mockResolvedValue({ ok: true, text: async () => "" });
+    vi.stubGlobal("fetch", agentFetch);
+
+    const bridge = createBridge({
+      config: {
+        enabled: true,
+        agentUrl: "http://localhost:8080/message",
+        listenPort: port,
+      },
+      identity,
+      mesh: makeMesh(),
+      getRecipientPeerId: async (id) => id,
+    });
+
+    try {
+      await bridge._handleMessage(
+        {
+          intent: "discovery.response",
+          recipientPeerId: identity.agentPeerId,
+          senderPeerId: "envoy_agent_peer",
+          messageId: "msg-disc",
+          correlationId: "corr-disc",
+          payload: { requestMessageId: "req-1", responderOwnerId: "envoy:owner:responder", matches: [], truncated: false },
+        },
+        "12D3Peer",
+      );
+
+      await vi.waitFor(() => expect(agentFetch).toHaveBeenCalledTimes(1), { timeout: 3000 });
+      const body = JSON.parse(String(agentFetch.mock.calls[0]![1]?.body));
+      expect(body.type).toBe("mesh.async_reply");
+      expect(body.intent).toBe("discovery.response");
+    } finally {
+      await bridge.stop();
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 function makeBridgeIdentity(): BridgeIdentity {

@@ -9,6 +9,7 @@
     { "path": "./packages/models" },
     { "path": "./packages/local-store" },
     { "path": "./packages/api" },
+    { "path": "./packages/ipfs-helia" },
     { "path": "./apps/node" },
     { "path": "./apps/relay" },
     { "path": "./apps/social" },

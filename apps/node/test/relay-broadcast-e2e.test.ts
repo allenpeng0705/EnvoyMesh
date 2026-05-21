@@ -19,7 +19,7 @@ import {
   generateDeviceIdentity,
   generateOwnerIdentity,
   signUnsignedEnvelope,
-  verifyEnvelope,
+  verifyInboundEnvelope,
 } from "@envoymesh/identity";
 import {
   createBroadcastRequestPayload,
@@ -68,7 +68,7 @@ describe("E2E relay-assisted broadcast", () => {
 
     // Alice listens for broadcast.response
     alice.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "broadcast.response") {
         const payload = parseBroadcastResponsePayload(envelope.payload);
         aliceReceivedResponses.push({
@@ -80,7 +80,7 @@ describe("E2E relay-assisted broadcast", () => {
 
     // Bob sets up his handler to process broadcast.request and respond
     bob.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "broadcast.request") {
         const payload = parseBroadcastRequestPayload(envelope.payload);
 
@@ -172,7 +172,7 @@ describe("E2E relay-assisted broadcast", () => {
     const aliceReceivedResponses: string[] = [];
 
     alice.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "broadcast.response") {
         const payload = parseBroadcastResponsePayload(envelope.payload);
         aliceReceivedResponses.push(payload.responderOwnerId);
@@ -181,7 +181,7 @@ describe("E2E relay-assisted broadcast", () => {
 
     // Bob's handler - matches
     bob.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "broadcast.request") {
         const payload = parseBroadcastRequestPayload(envelope.payload);
         const bobTaskStore = createLocalTaskStore(profileDir + "-bob");
@@ -221,7 +221,7 @@ describe("E2E relay-assisted broadcast", () => {
 
     // Carol's handler - doesn't match (no task.execute)
     carol.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "broadcast.request") {
         const payload = parseBroadcastRequestPayload(envelope.payload);
         const carolTaskStore = createLocalTaskStore(profileDir + "-carol");

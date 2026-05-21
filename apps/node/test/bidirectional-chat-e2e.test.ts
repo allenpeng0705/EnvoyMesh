@@ -4,7 +4,7 @@ import {
   generateDeviceIdentity,
   generateOwnerIdentity,
   signUnsignedEnvelope,
-  verifyEnvelope,
+  verifyInboundEnvelope,
 } from "@envoymesh/identity";
 import {
   createChatMessagePayload,
@@ -32,7 +32,7 @@ describe("E2E bidirectional chat", () => {
     const bobReceived: string[] = [];
 
     alice.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "chat.message") {
         const payload = parseChatMessagePayload(envelope.payload);
         aliceReceived.push(payload.text);
@@ -40,7 +40,7 @@ describe("E2E bidirectional chat", () => {
     });
 
     bob.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "chat.message") {
         const payload = parseChatMessagePayload(envelope.payload);
         bobReceived.push(payload.text);
@@ -102,7 +102,7 @@ describe("E2E bidirectional chat", () => {
     const bobReceived: string[] = [];
 
     alice.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "chat.message") {
         const payload = parseChatMessagePayload(envelope.payload);
         aliceReceived.push(payload.text);
@@ -110,7 +110,7 @@ describe("E2E bidirectional chat", () => {
     });
 
     bob.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "chat.message") {
         const payload = parseChatMessagePayload(envelope.payload);
         bobReceived.push(payload.text);
@@ -184,7 +184,7 @@ describe("E2E multi-peer chat", () => {
     const recipient2Received: string[] = [];
 
     recipient1.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "chat.message") {
         const payload = parseChatMessagePayload(envelope.payload);
         recipient1Received.push(payload.text);
@@ -192,7 +192,7 @@ describe("E2E multi-peer chat", () => {
     });
 
     recipient2.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "chat.message") {
         const payload = parseChatMessagePayload(envelope.payload);
         recipient2Received.push(payload.text);

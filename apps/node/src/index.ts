@@ -134,6 +134,7 @@ import { WsServer } from "./ws-server.js";
 import type { ModelProviderConfig } from "@envoymesh/api";
 import { evaluateInboundEnvelopeRolePolicy } from "./role-policy.js";
 import { createBridge } from "./bridge/index.js";
+import { executeTool as runRegistryTool, listAgentTools } from "./tool-registry.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
 import type { BridgeConfig } from "./bridge/config.js";
 import { BridgeConfigSchema } from "./bridge/config.js";
@@ -276,6 +277,7 @@ let currentChatAssistEnabled = false;
 // Autonomous policy configuration — loaded from persisted config after nodeService is created
 let currentAutonomousKillSwitch = false;
 let currentAutonomousPolicies: readonly AutonomousPolicy[] = [];
+let currentTrustModeEnabled = false;
 
 // AI Settings — identity mode, online/offline behavior (loaded from persisted config)
 let currentAiSettings: AiSettings | undefined;
@@ -934,13 +936,13 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         nodeService.registerResponderFileSendAfterPreview(
           signedResponse.messageId,
           shareRequestPayload.relativePath,
-          envelope.senderPeerId,
+          remotePeerId,
         );
       }
       if (shareRequestPayload.fileOrigin === "sender") {
         void nodeService.recordInboundPushShareOffer({
           shareId: signedResponse.messageId,
-          senderPeerId: envelope.senderPeerId,
+          senderPeerId: remotePeerId,
           previewText: share.responsePayload.previewText,
           sensitivity: share.responsePayload.sensitivity as "public" | "friends" | "private",
           relativePath: shareRequestPayload.relativePath ?? "",
@@ -985,6 +987,15 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       });
     }
     console.log(`[share.accept] peer=${remotePeerId} proceeding with content share`);
+    return;
+  }
+
+  if (
+    bridgeIdentity &&
+    (envelope.intent === "discovery.response" || envelope.intent === "knowledge.response") &&
+    envelope.recipientPeerId === bridgeIdentity.agentPeerId
+  ) {
+    void bridgeHandleMessage(envelope, remotePeerId);
     return;
   }
 
@@ -2053,6 +2064,7 @@ if (nodeService instanceof NodeServiceImpl) {
   // Load autonomous policy config
   currentAutonomousKillSwitch = nodeConfig.autonomousKillSwitch ?? false;
   currentAutonomousPolicies = nodeConfig.autonomousPolicies ?? [];
+  currentTrustModeEnabled = nodeConfig.trustModeEnabled ?? false;
   // Load AI settings
   currentAiSettings = nodeConfig.aiSettings;
   // Load contact AI preferences into a Map for fast lookup
@@ -2078,6 +2090,10 @@ installEnvoyDataTransferReceiver({
     nodeService instanceof NodeServiceImpl
       ? (remotePeerId, voucherSourceRelativePath) =>
           nodeService.consumeInboundDataTransferSaveMapping(remotePeerId, voucherSourceRelativePath)
+      : undefined,
+  onInboundTransferVerified:
+    nodeService instanceof NodeServiceImpl
+      ? (input) => nodeService.notifyInboundTransferVerified(input)
       : undefined,
 });
 
@@ -2312,6 +2328,17 @@ const bridge = createBridge({
   getRecipientPeerId,
   gateway,
   submitAgentShareProposal: (params) => nodeService.submitAgentShareProposal(params),
+  listTools: () => listAgentTools({ trustModeEnabled: currentTrustModeEnabled }),
+  executeTool: async (toolName, params) => {
+    if (!(nodeService instanceof NodeServiceImpl)) {
+      throw new Error("NodeService not ready");
+    }
+    const ctx = await nodeService.getToolExecutionContext();
+    if (!ctx) {
+      throw new Error("Tool execution context unavailable");
+    }
+    return runRegistryTool(toolName, params, ctx);
+  },
   onSelfSendEnvelope: async (envelope, _remotePeerId) => {
     // Deliver bridge agent reply locally — emit chat:message + persist to log
     const payload = parseChatMessagePayload(envelope.payload);

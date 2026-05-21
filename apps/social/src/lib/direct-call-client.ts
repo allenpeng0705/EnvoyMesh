@@ -182,6 +182,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.knowledgeQuery(question);
   }
 
+  async runDocumentAgentTurn(message: string) {
+    return this._ns.runDocumentAgentTurn(message);
+  }
+
   async listLibraryItems(params?: Parameters<NodeService["listLibraryItems"]>[0]) {
     return this._ns.listLibraryItems(params);
   }
@@ -200,6 +204,10 @@ export class DirectCallClient implements NodeServiceClient {
 
   async verifyLibraryItemIpfsGateway(params: Parameters<NodeService["verifyLibraryItemIpfsGateway"]>[0]) {
     return this._ns.verifyLibraryItemIpfsGateway(params);
+  }
+
+  async importToLibrary(params: Parameters<NodeService["importToLibrary"]>[0]) {
+    return this._ns.importToLibrary(params);
   }
 
   async discoverPublishedLibrary(params?: Parameters<NodeService["discoverPublishedLibrary"]>[0]) {

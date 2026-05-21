@@ -406,6 +406,14 @@ export function verifyEnvelope(envelope: EnvoyEnvelope): boolean {
   );
 }
 
+/** Inbound verification: agent envelopes use {@link verifyAgentEnvelope}; device/human use {@link verifyEnvelope}. */
+export function verifyInboundEnvelope(envelope: EnvoyEnvelope): boolean {
+  if (envelope.senderRole === "agent" && envelope.agentCredential) {
+    return verifyAgentEnvelope(envelope);
+  }
+  return verifyEnvelope(envelope);
+}
+
 /**
  * Verify an envelope sent by an agent.
  * Checks:

@@ -71,9 +71,15 @@ Searches the transient shared vault index and prints matching document chunks.
 npm run cli -w @envoymesh/node -- vault-ipfs-fingerprint --vault ./shared_vault --relative-path notes/export.md
 # or fingerprint any arbitrary file snapshot:
 npm run cli -w @envoymesh/node -- vault-ipfs-fingerprint --file ./build/release.tar.gz
+# Helia in-process fingerprint (no Kubo daemon):
+npm run cli -w @envoymesh/node -- vault-ipfs-fingerprint --file ./build/release.tar.gz --engine helia
 ```
 
-Runs Kubo **`ipfs add`** with EnvoyMesh **interop recipe v1** (`--cid-version 1 --pin=false -Q`), printing the UnixFS-aligned root CID, recipe id (`kubo-ipfs-export-v1`), and Kubo CLI version (`ipfs version -n`). Kubo must be installed and reachable on `PATH`; a typical machine also needs `ipfs daemon` running for **`ipfs add`** to succeed. See [envoymesh-with-kubo.md](./envoymesh-with-kubo.md) for install, run, and packaging options. Automated tests skip real Kubo calls unless **`ENVOYMESH_IPFS_CLI_TEST=1`**.
+**Kubo (default):** runs **`ipfs add`** with EnvoyMesh **interop recipe v1** (`--cid-version 1 --pin=false -Q`), printing the UnixFS-aligned root CID, recipe id (`kubo-ipfs-export-v1`), and Kubo CLI version (`ipfs version -n`). Kubo must be installed and reachable on `PATH`; a typical machine also needs `ipfs daemon` running for **`ipfs add`** to succeed. See [envoymesh-with-kubo-helia.md](./envoymesh-with-kubo-helia.md) for install, run, and packaging options.
+
+**Helia (`--engine helia`):** runs `@helia/unixfs` **addBytes** in an in-memory blockstore (recipe `helia-unixfs-export-v1`). No Kubo install or daemon. Kubo vs Helia CID parity is validated in H3 golden CI — see [helia-ipfs-integration-plan.md](./helia-ipfs-integration-plan.md).
+
+Automated tests skip real Kubo calls unless **`ENVOYMESH_IPFS_CLI_TEST=1`**. Helia/Kubo CID parity tests require **`ENVOYMESH_HELIA_PARITY_TEST=1`** (or the Kubo flag) plus Kubo on `PATH` with `ipfs daemon` running — see CI workflow `ci-ipfs-helia-parity.yml`.
 
 ```bash
 npm run cli -w @envoymesh/node -- trust

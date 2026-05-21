@@ -26,7 +26,13 @@ import {
   parseVoucherJsonObject,
 } from "./data-framing.js";
 import {
-  cidForCapabilityTopic,
+  CLIENT_PROXY_PROTOCOL,
+  ENVOY_CHAT_PROTOCOL,
+  ENVOY_DATA_PROTOCOL,
+  ENVOY_MESSAGE_PROTOCOL,
+} from "./protocols.js";
+import { cidForCapabilityTopic } from "./capability-topic-cid.js";
+import {
   createSignedCapabilityTopicRecord,
   verifySignedCapabilityTopicRecord,
   encodeCapabilityTopicRecordToMultiaddr,
@@ -35,11 +41,6 @@ import { expandListenAddressesWithQuic } from "./quic-listen.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key.js";
 
 export { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, loadOrCreateLibp2pPrivateKey } from "./libp2p-key.js";
-
-export const ENVOY_MESSAGE_PROTOCOL = "/envoymesh/message/0.1.0";
-export const ENVOY_CHAT_PROTOCOL = "/envoymesh/chat/0.1.0";
-export const ENVOY_DATA_PROTOCOL = "/envoymesh/data/0.1.0";
-export const CLIENT_PROXY_PROTOCOL = "/envoymesh/client-proxy/0.1.0";
 
 /** Prefix `keep-alive-*` triggers libp2p reconnect-on-disconnect queue for bonded contacts */
 const CONTACT_KEEP_ALIVE_PEER_TAG = `${KEEP_ALIVE}-envoymesh-contact`;
@@ -1489,8 +1490,19 @@ export class EnvoyMesh {
 
 export { collectStreamBytes } from "./codec.js";
 export { decodeEnvelope, encodeEnvelope };
-export { voucherJsonBytesFromObject, encodeDataTransferBody, parseInboundDataTransferBody, MAX_DATA_INBOUND_BYTES } from "./data-framing.js";
-export { CAPABILITY_TOPIC_NAMESPACE, cidForCapabilityTopic } from "./capability-topic.js";
+export {
+  voucherJsonBytesFromObject,
+  encodeDataTransferBody,
+  parseInboundDataTransferBody,
+  MAX_DATA_INBOUND_BYTES,
+} from "./data-framing.js";
+export {
+  CLIENT_PROXY_PROTOCOL,
+  ENVOY_CHAT_PROTOCOL,
+  ENVOY_DATA_PROTOCOL,
+  ENVOY_MESSAGE_PROTOCOL,
+} from "./protocols.js";
+export { CAPABILITY_TOPIC_NAMESPACE, cidForCapabilityTopic } from "./capability-topic-cid.js";
 export { expandListenAddressesWithQuic, quicListenFromTcpListen } from "./quic-listen.js";
 export { CapabilityRegistry, type CapabilityRegistryOptions, type CapabilityRegistryVerbosity } from "./capability-registry.js";
 

@@ -81,8 +81,8 @@ describe("ToolRegistry", () => {
       });
 
       const tools = registry.listTools();
-      // 37 default tools + 2 additional = 39
-      expect(tools).toHaveLength(39);
+      // 43 default tools + 2 additional = 45
+      expect(tools).toHaveLength(45);
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "bond.send_hello", "chat.send", "discovery.search", "knowledge.query",
@@ -90,13 +90,15 @@ describe("ToolRegistry", () => {
           "mesh.escalate", "mesh.get-contact-disclosure", "mesh.get-digest",
           "mesh.get-digest-config", "mesh.get-external-agent", "mesh.get-mode",
           "mesh.get-style", "mesh.library_discover", "mesh.library_export_ipfs",
-          "mesh.library_list", "mesh.library_verify_ipfs_gateway", "mesh.list-all-approvals",
+          "mesh.library_list", "mesh.library_publish", "mesh.library_request_share", "mesh.library_verify_ipfs_gateway",
+          "mesh.list-all-approvals",
           "mesh.list-external-agent-actions",
           "mesh.list-external-sessions", "mesh.list-pending", "mesh.list-sessions",
           "mesh.list-triggers", "mesh.reject", "mesh.reject-all", "mesh.remove-trigger",
           "mesh.revoke-external-agent", "mesh.session-summary", "mesh.set-contact-disclosure",
           "mesh.set-contact-mode", "mesh.set-digest-schedule", "mesh.set-mode",
-          "mesh.set-style", "mesh.update-trigger", "share.send", "tool.1", "tool.2",
+          "mesh.set-style", "mesh.share_list_pending", "mesh.share_list_proposals", "mesh.share_propose",
+          "mesh.transfer_status", "mesh.update-trigger", "share.send", "tool.1", "tool.2",
           "vault.search",
         ].sort(),
       );
@@ -105,8 +107,8 @@ describe("ToolRegistry", () => {
     it("default tools are pre-registered", () => {
       const registry = new ToolRegistry();
       const tools = registry.listTools();
-      // Default tools: 6 core + 4 gateway + 3 mode + 3 session + 4 style + 4 trigger + 6 approval + 3 digest + 4 library = 37
-      expect(tools.length).toBe(37);
+      // Default tools: prior 40 + mesh.transfer_status + mesh.share_list_pending + mesh.share_list_proposals = 43
+      expect(tools.length).toBe(43);
     });
   });
 
@@ -196,6 +198,8 @@ describe("listAgentTools", () => {
     expect(tools.some((t) => t.name === "share.send")).toBe(true);
     expect(tools.some((t) => t.name === "bond.send_hello")).toBe(true);
     expect(tools.some((t) => t.name === "vault.search")).toBe(true);
+    expect(tools.some((t) => t.name === "mesh.library_publish")).toBe(true);
+    expect(tools.some((t) => t.name === "mesh.share_propose")).toBe(true);
   });
 
   it("each tool has required fields", () => {

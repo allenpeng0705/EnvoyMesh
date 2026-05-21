@@ -15,7 +15,27 @@ const workspaceRoot = join(here, "..", "..", "..");
 const relativeTests = [
   join("apps", "node", "test", "trust-mode-intro-bond-flow.test.ts"),
   join("apps", "node", "test", "file-share-e2e.test.ts"),
+  join("apps", "node", "test", "library-import-e2e.test.ts"),
+  join("apps", "node", "test", "share-inbox-e2e.test.ts"),
+  join("apps", "node", "test", "two-node-file-share-e2e.test.ts"),
+  join("apps", "node", "test", "document-agent-loop-integration.test.ts"),
+  join("apps", "node", "test", "document-agent-e2e.test.ts"),
+  join("apps", "node", "test", "document-agent-golden-path-e2e.test.ts"),
+  join("apps", "node", "test", "document-agent-discovery-request.test.ts"),
+  join("apps", "node", "test", "transfer-status-e2e.test.ts"),
+  join("apps", "node", "test", "document-autonomy-enforcement.test.ts"),
+  join("apps", "node", "test", "document-autonomy-libp2p-e2e.test.ts"),
+  join("apps", "node", "test", "bridge-async-mesh-reply.test.ts"),
+  join("apps", "node", "test", "bridge-execute-tool.test.ts"),
+  join("apps", "node", "test", "bridge-discovery-async-e2e.test.ts"),
+  join("apps", "node", "test", "discovery-search-agent-e2e.test.ts"),
+  join("apps", "node", "test", "knowledge-query-agent-e2e.test.ts"),
+  join("apps", "node", "test", "document-autonomy-referred-e2e.test.ts"),
+  join("apps", "node", "test", "document-agent-publish-unpublish-e2e.test.ts"),
+  join("apps", "node", "test", "bridge-knowledge-async-e2e.test.ts"),
+  join("apps", "node", "test", "json-rpc-document-agent.test.ts"),
   join("apps", "node", "test", "agent-share-proposal-store.test.ts"),
+  join("packages", "mobile-node", "test", "document-agent-mobile-e2e.test.ts"),
 ];
 
 console.log("[smoke:local-two-node] Running integration tests via vitest…\n");

@@ -60,8 +60,8 @@ export function AIChatPanel() {
     setIsAiLoading(true);
 
     try {
-      const answer = await nodeService.knowledgeQuery(question);
-      setAiMessages((prev) => [...prev, { role: "ai", text: answer, timestamp: new Date().toISOString() }]);
+      const turn = await nodeService.runDocumentAgentTurn(question);
+      setAiMessages((prev) => [...prev, { role: "ai", text: turn.answer, timestamp: new Date().toISOString() }]);
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Failed to get AI response";
       setAiMessages((prev) => [...prev, { role: "ai", text: `Error: ${msg}`, timestamp: new Date().toISOString() }]);

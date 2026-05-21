@@ -6,7 +6,7 @@
 
 **Interop target:** **maximum compatibility with Kubo-style tooling** (`ipfs` CLI, IPFS Desktop, pinning services speaking the same IPLD UnixFS conventions). Envoy’s canonical published CID MUST be the **UnixFS file DAG root** obtained by **`ipfs add`** on the exported bytes using a **versioned, fixed export recipe** ([§6](#6-maximum-interoperability-kubo--unixfs-root-cids)).
 
-**Related:** [p2p-file-sharing-plan](./p2p-file-sharing-plan.md) · [roadmap](./roadmap.md) · [implementation plan](./implementation-plan.md) (Phase 5) · [protocol-standard](./protocol-standard.md) · **[envoymesh-with-kubo](./envoymesh-with-kubo.md)** (operational runbook + packaging)
+**Related:** [p2p-file-sharing-plan](./p2p-file-sharing-plan.md) · [roadmap](./roadmap.md) · [implementation plan](./implementation-plan.md) (Phase 5) · [protocol-standard](./protocol-standard.md) · **[envoymesh-with-kubo-helia](./envoymesh-with-kubo-helia.md)** (operational runbook + packaging)
 
 ---
 

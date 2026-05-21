@@ -7,6 +7,11 @@ on:
       - "tauri-v*"
       - "desktop-v*"
   workflow_dispatch:
+    inputs:
+      build_slim:
+        description: "Also build Helia-only slim bundles (no Kubo sidecar)"
+        type: boolean
+        default: false
 
 jobs:
   native:
@@ -55,4 +60,49 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: envoymesh-${{ matrix.os }}-bundle
+          path: apps/tauri/src-tauri/target/release/bundle/
+
+  native-slim:
+    if: github.event_name == 'workflow_dispatch' && inputs.build_slim == true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Apt dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Build Node + Social (Tauri prerequisites)
+        run: |
+          npm run social:build
+          npm run node:build
+
+      - name: Tauri bundle (Helia-only slim — no Kubo sidecar)
+        run: npm run build:slim -w @envoymesh/tauri
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload slim bundle artifacts (unsigned)
+        uses: actions/upload-artifact@v4
+        with:
+          name: envoymesh-${{ matrix.os }}-bundle-slim
           path: apps/tauri/src-tauri/target/release/bundle/

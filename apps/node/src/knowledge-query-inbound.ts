@@ -21,11 +21,17 @@ export type KnowledgeQueryInboundResult =
  * Returns undefined if the sender is not a known contact.
  */
 async function resolveSenderOwnerId(
-  senderPeerId: string,
+  envelope: EnvoyEnvelope,
+  remotePeerId: string,
   peerDirectoryStore: LocalPeerDirectoryStore,
 ): Promise<string | undefined> {
+  if (envelope.agentCredential?.ownerId) {
+    return envelope.agentCredential.ownerId;
+  }
   const records = await peerDirectoryStore.listPeerRecords();
-  const match = records.find((r) => r.peerId === senderPeerId);
+  const match =
+    records.find((r) => r.peerId === envelope.senderPeerId) ??
+    records.find((r) => r.peerId === remotePeerId);
   return match?.ownerId;
 }
 
@@ -108,7 +114,7 @@ export async function handleInboundKnowledgeQuery(input: {
   if (isLocalSelfQuery) {
     bondLevel = "self";
   } else {
-    senderOwnerId = await resolveSenderOwnerId(envelope.senderPeerId, peerDirectoryStore);
+    senderOwnerId = await resolveSenderOwnerId(envelope, remotePeerId, peerDirectoryStore);
     bondLevel = senderOwnerId
       ? (await trustStore.getTrustRecord(senderOwnerId))?.level ?? "public"
       : "public";

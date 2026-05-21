@@ -8,6 +8,8 @@ import type {
   DeviceIdentity,
   OwnerIdentity,
 } from "@envoymesh/identity";
+import type { DocumentAgentTurnResult } from "./document-agent-loop.js";
+import type { TransferStatus } from "./transfer-status.js";
 import type {
   BridgeStatus,
   NodeConfig,
@@ -238,7 +240,7 @@ export interface LibraryItem {
   publishedExternal?: PublishedExternalRecord;
 }
 
-/** Persisted metadata from an explicit owner-approved IPFS export (Kubo `ipfs add` root CID). */
+/** Persisted metadata from an explicit owner-approved IPFS export (canonical root CID). */
 export interface PublishedExternalRecord {
   exportRevision: number;
   exportedAt: string;
@@ -246,6 +248,9 @@ export interface PublishedExternalRecord {
   ipfsInteropRecipe: string;
   kuboVersion: string;
   contentHash: string;
+  /** Helia shadow export CID when engine runs in compare mode (H4). */
+  cidHelia?: string;
+  heliaVersion?: string;
 }
 
 export interface ExportLibraryItemToIpfsResult extends PublishedExternalRecord {
@@ -255,11 +260,24 @@ export interface ExportLibraryItemToIpfsResult extends PublishedExternalRecord {
 
 /** Managed/bundled Kubo sidecar status (desktop). */
 export interface IpfsEngineStatus {
+  /** Primary export engine availability (Kubo or Helia depending on selection). */
   available: boolean;
   running: boolean;
   managed: boolean;
   kuboVersion?: string;
   errorHint?: string;
+  /** In-process Helia engine (shadow mode / dual status). */
+  helia?: {
+    available: boolean;
+    heliaVersion?: string;
+    errorHint?: string;
+  };
+  /** Kubo sidecar / CLI when Helia is primary (secondary status). */
+  kubo?: {
+    available: boolean;
+    kuboVersion?: string;
+    errorHint?: string;
+  };
 }
 
 export interface VerifyLibraryItemIpfsGatewayParams {
@@ -277,6 +295,21 @@ export interface VerifyLibraryItemIpfsGatewayResult {
   fetchedBytes: number;
   expectedContentHash: string;
   fetchedContentHash: string;
+}
+
+/** Import a file into the local shared vault (desktop folder or mobile filesystem vault). */
+export interface ImportToLibraryParams {
+  /** Vault-relative path (e.g. `imports/photo.jpg`). */
+  relativePath: string;
+  /** Raw file bytes, base64-encoded. */
+  contentBase64: string;
+  mimeType?: string;
+}
+
+export interface ImportToLibraryResult {
+  documentId: string;
+  relativePath: string;
+  sizeBytes: number;
 }
 
 // ----- Published library discovery (FS-D) -----
@@ -382,6 +415,8 @@ export interface NodeServiceEvents {
   "share:offered": ShareOffer;
   /** Agent suggested sharing a vault file — owner confirms via share or dismisses (FS-E). */
   "share:agent-proposed": AgentShareProposal;
+  /** File transfer progress for UI and agent visibility (ADB-D). */
+  "share:progress": TransferStatus;
   "share:accepted": { shareId: string; savePath: string };
   "share:declined": { shareId: string };
 
@@ -608,11 +643,16 @@ export interface NodeService {
 
   /**
    * Fetch exported content from an allowlisted IPFS gateway and verify bytes match vault contentHash.
-   * Desktop only; requires `externalPublish.allowIpfs` and a non-empty gateway allowlist.
+   * Requires `externalPublish.allowIpfs` and a non-empty gateway allowlist (desktop Kubo or mobile Helia).
    */
   verifyLibraryItemIpfsGateway(
     params: VerifyLibraryItemIpfsGatewayParams,
   ): Promise<VerifyLibraryItemIpfsGatewayResult>;
+
+  /**
+   * Write bytes into the local shared vault at a relative path (import from file picker).
+   */
+  importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult>;
 
   /**
    * Query bonded contacts for published library metadata (`libraryMatches` in `discovery.response`).
@@ -634,6 +674,14 @@ export interface NodeService {
    * Persists and emits `share:agent-proposed`.
    */
   submitAgentShareProposal(params: SubmitAgentShareProposalParams): Promise<AgentShareProposal>;
+
+  /**
+   * Active file transfers (negotiating or transferring). Completed transfers remain queryable by correlation id.
+   */
+  listActiveTransfers(): Promise<TransferStatus[]>;
+
+  /** Lookup transfer status by correlation id from share / data-transfer flows. */
+  getTransferStatus(correlationId: string): Promise<TransferStatus | undefined>;
 
   // ----- Node Configuration -----
 
@@ -762,6 +810,11 @@ export interface NodeService {
    * Returns the AI's response text.
    */
   knowledgeQuery(question: string): Promise<string>;
+
+  /**
+   * Native Envoy AI turn: routes document intents to tools, falls back to vault knowledgeQuery.
+   */
+  runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult>;
 
   // ----- Activity Tracking -----
 

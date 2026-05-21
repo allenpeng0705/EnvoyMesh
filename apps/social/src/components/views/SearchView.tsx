@@ -126,7 +126,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
       {searchMode === "library" ? (
         <>
           <p className="library-view-hint" style={{ marginBottom: "0.75rem" }}>
-            Search <strong>bonded contacts</strong> for published library metadata (titles and paths only — no file bytes). Peers must have published documents in Settings → Node on desktop (or mobile manifest).
+            Search <strong>bonded contacts</strong> for published library metadata (titles and paths only — no file bytes). Contacts publish files from Library or Settings → Node.
           </p>
           <div className="search-bar" style={{ marginBottom: "0.5rem" }}>
             <input

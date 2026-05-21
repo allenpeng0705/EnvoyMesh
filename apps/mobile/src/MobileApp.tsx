@@ -9,8 +9,10 @@
  */
 import { useCallback, useState, type ReactNode } from "react";
 import { useNodeState } from "@envoymesh/social/context/NodeStateContext.js";
+import { useInboxActivityCount } from "@envoymesh/social/hooks/useInboxActivityCount.js";
 import { useTheme } from "@envoymesh/social/context/ThemeContext.js";
 import { ErrorBoundary } from "@envoymesh/social/components/ErrorBoundary.js";
+import { LibraryView } from "@envoymesh/social/components/views/LibraryView.js";
 import { MobileChatView } from "./views/MobileChatView.js";
 import { MobileContactsView } from "./views/MobileContactsView.js";
 import { MobileDiscoverView } from "./views/MobileDiscoverView.js";
@@ -34,7 +36,7 @@ import "./MobileApp.css";
 type TabId = "chat" | "contacts" | "discover" | "me";
 
 /** Sub-views within the "Me" tab */
-type MeView = "profile" | "settings";
+type MeView = "profile" | "settings" | "library";
 
 interface TabButtonProps {
   id: TabId;
@@ -89,7 +91,8 @@ function tabPanelClass(activeTab: TabId, panelTab: TabId): string {
 // ---------------------------------------------------------------------------
 
 export function MobileApp() {
-  const { isConnected, nodeStatus, pendingHellOs, pendingMessages } = useNodeState();
+  const { isConnected, nodeStatus } = useNodeState();
+  const inboxActivityCount = useInboxActivityCount();
   const { theme, resolved, setTheme } = useTheme();
   const [currentTab, setCurrentTab] = useState<TabId>("chat");
   const [meView, setMeView] = useState<MeView>("profile");
@@ -158,6 +161,17 @@ export function MobileApp() {
               </button>
               <span className="top-bar-title">Settings</span>
             </>
+          ) : currentTab === "me" && meView === "library" ? (
+            <>
+              <button
+                className="top-bar-back-btn"
+                onClick={() => setMeView("profile")}
+                aria-label="Back to profile"
+              >
+                &#8592;
+              </button>
+              <span className="top-bar-title">Library</span>
+            </>
           ) : (
             <>
               <div className="top-bar-logo">E</div>
@@ -209,10 +223,18 @@ export function MobileApp() {
           </div>
           <div className={tabPanelClass(currentTab, "me")} aria-hidden={currentTab !== "me"}>
             {currentTab === "me" && meView === "profile" && (
-              <MobileProfileView onNavigateSettings={() => setMeView("settings")} />
+              <MobileProfileView
+                onNavigateSettings={() => setMeView("settings")}
+                onNavigateLibrary={() => setMeView("library")}
+              />
             )}
             {currentTab === "me" && meView === "settings" && (
               <MobileSettingsView onBack={() => setMeView("profile")} />
+            )}
+            {currentTab === "me" && meView === "library" && (
+              <div className="mv-library-shell">
+                <LibraryView />
+              </div>
             )}
           </div>
         </ErrorBoundary>
@@ -223,7 +245,7 @@ export function MobileApp() {
         <TabButton
           id="chat" icon={<ChatIcon size={22} />} label="Chats"
           active={currentTab === "chat"} onClick={(id) => { setCurrentTab(id); }}
-          badge={pendingHellOs.length + pendingMessages.length}
+          badge={inboxActivityCount}
         />
         <TabButton
           id="contacts" icon={<ContactsIcon size={22} />} label="Contacts"

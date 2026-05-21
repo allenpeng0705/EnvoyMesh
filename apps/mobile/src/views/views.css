@@ -1158,6 +1158,65 @@
   background: var(--color-surface-overlay);
 }
 
+/* Chat / Inbox tabs (mirrors desktop chat-view-primary-tabs) */
+.mv-chat-primary-tabs {
+  display: flex;
+  gap: 0.5rem;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.mv-chat-primary-tabs button {
+  position: relative;
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-weight: var(--font-medium);
+}
+
+.mv-chat-primary-tabs button.active {
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
+}
+
+.mv-chat-primary-tabs .inbox-badge {
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: var(--color-danger);
+  color: #fff;
+  font-size: var(--text-xs);
+}
+
+.mv-chat-inbox-panel {
+  flex: 1;
+  overflow: auto;
+}
+
+.mv-chat-share-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.mv-library-shell {
+  flex: 1;
+  overflow: auto;
+}
+
+.mv-library-shell .library-view {
+  padding: var(--space-4);
+  max-width: none;
+}
+
 /* ==========================================================================
    Reduced motion
    ========================================================================== */

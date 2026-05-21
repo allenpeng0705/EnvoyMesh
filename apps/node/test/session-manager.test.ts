@@ -105,16 +105,15 @@ describe("FileSessionStore", () => {
     const store = new FileSessionStore(tempDir);
 
     const session1 = createConversationSession("owner-1", "Alice", "First");
-    // Wait a millisecond to ensure different timestamps
-    await new Promise((r) => setTimeout(r, 1));
     const session2 = createConversationSession("owner-2", "Bob", "Second");
+    session1.lastInteraction = "2026-01-01T00:00:00.000Z";
+    session2.lastInteraction = "2026-01-02T00:00:00.000Z";
 
     await store.saveSession(session1);
     await store.saveSession(session2);
 
     const sessions = await store.listSessions();
     expect(sessions).toHaveLength(2);
-    // Most recent first (session2 created later)
     expect(sessions[0].contactOwnerId).toBe("owner-2");
   });
 

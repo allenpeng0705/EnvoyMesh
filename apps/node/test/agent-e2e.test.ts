@@ -16,7 +16,7 @@ import {
   generateDeviceIdentity,
   generateOwnerIdentity,
   signUnsignedEnvelope,
-  verifyEnvelope,
+  verifyInboundEnvelope,
 } from "@envoymesh/identity";
 import {
   createBondAcceptPayload,
@@ -79,14 +79,14 @@ describe("E2E: AI agent task workflow", () => {
     // Owner mesh
     const owner = await startMesh();
     owner.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       ownerReceived.push(envelope.intent);
     });
 
     // Agent mesh
     const agent = await startMesh();
     agent.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       agentReceived.push(envelope.intent);
 
       if (envelope.intent === "task.mandate") {
@@ -222,13 +222,13 @@ describe("E2E: AI agent task workflow", () => {
 
     const owner = await startMesh();
     owner.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       ownerReceived.push(envelope.intent);
     });
 
     const agent = await startMesh();
     agent.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       agentReceived.push(envelope.intent);
 
       if (envelope.intent === "task.propose") {
@@ -373,7 +373,7 @@ describe("E2E: AI agent task workflow", () => {
 
     const alice = await startMesh();
     alice.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       aliceReceived.push(envelope.intent);
 
       if (envelope.intent === "knowledge.response") {
@@ -383,7 +383,7 @@ describe("E2E: AI agent task workflow", () => {
 
     const bob = await startMesh();
     bob.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       bobReceived.push(envelope.intent);
 
       if (envelope.intent === "bond.challenge") {
@@ -554,7 +554,7 @@ describe("E2E: task collect-N coordination", () => {
 
     const owner = await startMesh();
     owner.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       ownerReceived.push(envelope.intent);
 
       if (envelope.intent === "task.result") {
@@ -566,7 +566,7 @@ describe("E2E: task collect-N coordination", () => {
     const agent2 = await startMesh();
 
     agent1.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "task.mandate") {
         // Agent 1 sends result
         setTimeout(async () => {
@@ -594,7 +594,7 @@ describe("E2E: task collect-N coordination", () => {
     });
 
     agent2.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       if (envelope.intent === "task.mandate") {
         // Agent 2 sends result
         setTimeout(async () => {
@@ -689,7 +689,7 @@ describe("E2E: agent-to-agent task negotiation", () => {
 
     const alice = await startMesh();
     alice.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       aliceReceived.push(envelope.intent);
 
       if (envelope.intent === "task.negotiate") {
@@ -719,7 +719,7 @@ describe("E2E: agent-to-agent task negotiation", () => {
 
     const bob = await startMesh();
     bob.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       bobReceived.push(envelope.intent);
 
       if (envelope.intent === "task.propose") {
@@ -859,14 +859,14 @@ describe("E2E: task broadcast with TTL", () => {
     // Originator sends mandate with TTL=2
     const originator = await startMesh();
     originator.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       originatorReceived.push(envelope.intent);
     });
 
     // Relay
     const relay = await startMesh();
     relay.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       relayReceived.push(envelope.intent);
 
       if (envelope.intent === "task.mandate") {
@@ -889,7 +889,7 @@ describe("E2E: task broadcast with TTL", () => {
     // Final recipient
     const finalRecipient = await startMesh();
     finalRecipient.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       finalRecipientReceived.push(envelope.intent);
 
       if (envelope.intent === "task.mandate") {
@@ -977,7 +977,7 @@ describe("E2E: AI agent heartbeat during long task", () => {
 
     const owner = await startMesh();
     owner.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       ownerReceived.push(envelope.intent);
 
       if (envelope.intent === "task.heartbeat") {
@@ -987,7 +987,7 @@ describe("E2E: AI agent heartbeat during long task", () => {
 
     const agent = await startMesh();
     agent.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       agentReceived.push(envelope.intent);
 
       if (envelope.intent === "task.accept") {
@@ -1145,7 +1145,7 @@ describe("E2E: multiple agents on same task", () => {
 
     const owner = await startMesh();
     owner.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       ownerReceived.push(envelope.intent);
 
       if (envelope.intent === "task.result") {
@@ -1156,7 +1156,7 @@ describe("E2E: multiple agents on same task", () => {
     // Agent Alpha - does research
     const agentAlpha = await startMesh();
     agentAlpha.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
 
       if (envelope.intent === "task.mandate" && envelope.recipientPeerId === agentAlpha.peerId) {
         setTimeout(async () => {
@@ -1186,7 +1186,7 @@ describe("E2E: multiple agents on same task", () => {
     // Agent Beta - does analysis
     const agentBeta = await startMesh();
     agentBeta.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
 
       if (envelope.intent === "task.mandate" && envelope.recipientPeerId === agentBeta.peerId) {
         setTimeout(async () => {
@@ -1216,7 +1216,7 @@ describe("E2E: multiple agents on same task", () => {
     // Agent Gamma - writes report
     const agentGamma = await startMesh();
     agentGamma.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
 
       if (envelope.intent === "task.mandate" && envelope.recipientPeerId === agentGamma.peerId) {
         setTimeout(async () => {
@@ -1296,13 +1296,13 @@ describe("E2E: task with deadline pressure", () => {
 
     const owner = await startMesh();
     owner.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       ownerReceived.push(envelope.intent);
     });
 
     const agent = await startMesh();
     agent.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       agentReceived.push(envelope.intent);
 
       if (envelope.intent === "task.accept") {

@@ -8,7 +8,9 @@ import type {
   AiRuleActionType,
   AiRuleCategory,
   AiSettings,
+  DocumentAutonomyPolicy,
 } from "@envoymesh/api";
+import { DEFAULT_DOCUMENT_AUTONOMY_POLICY, normalizeDocumentAutonomyPolicy } from "@envoymesh/api";
 
 // ---------------------------------------------------------------------------
 // "Add Rule" form — now fully controlled via React state (fixes the
@@ -47,6 +49,7 @@ function defaultAiSettings(): AiSettings {
     identity: { mode: "transparent" },
     defaultModeForNewContacts: "manual",
     rules: [],
+    documentAutonomy: { ...DEFAULT_DOCUMENT_AUTONOMY_POLICY },
   };
 }
 
@@ -54,6 +57,7 @@ export function SettingsAITab() {
   const nodeService = useNodeService();
   const { nodeConfig, refreshNodeConfig } = useNodeState();
   const aiSettings = nodeConfig?.aiSettings ?? defaultAiSettings();
+  const documentAutonomy = normalizeDocumentAutonomyPolicy(aiSettings.documentAutonomy);
 
   const [ruleForm, setRuleForm] = useState<RuleFormState>(EMPTY_RULE_FORM);
 
@@ -224,6 +228,46 @@ export function SettingsAITab() {
         <option value="assistant">Assistant (AI suggests drafts)</option>
         <option value="auto">Auto-Reply (AI responds automatically, requires trust)</option>
       </select>
+
+      <h4>Document Autonomy</h4>
+      <p className="field-desc">
+        Controls how Envoy AI handles library publish and file share workflows. Default is proposals-only (Inbox).
+      </p>
+      <div className="form-group">
+        <label>Share autonomy tier</label>
+        <select
+          className="settings-select"
+          value={documentAutonomy.maxAutonomousShareTier}
+          onChange={async (e) => {
+            const tier = Number(e.target.value) as DocumentAutonomyPolicy["maxAutonomousShareTier"];
+            await updateAiSettings({
+              documentAutonomy: { ...documentAutonomy, maxAutonomousShareTier: tier },
+            });
+          }}
+        >
+          <option value={0}>Tier 0 — proposals only (Inbox approval)</option>
+          <option value={1}>Tier 1 — delegated (publish helpers; share still proposed)</option>
+          <option value={2}>Tier 2 — auto-share to direct bonds (≤ friends sensitivity)</option>
+        </select>
+      </div>
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>Autonomous publish metadata</strong>
+          <span className="toggle-desc">Allow agent to publish public library metadata without extra prompts</span>
+        </div>
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={documentAutonomy.allowAutonomousPublish}
+            onChange={async (e) => {
+              await updateAiSettings({
+                documentAutonomy: { ...documentAutonomy, allowAutonomousPublish: e.target.checked },
+              });
+            }}
+          />
+          <span className="slider" />
+        </label>
+      </div>
 
       <h4>AI Rules</h4>
       <p className="field-desc">Rules define how the AI responds to specific triggers.</p>

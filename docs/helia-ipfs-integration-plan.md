@@ -1,12 +1,12 @@
 # Helia IPFS integration plan (dual-engine, Kubo-safe)
 
-**Status:** Design / backlog — **does not replace** the shipped Kubo engine.
+**Status:** H1–H6 shipped (dual-engine complete).
 
 **Implementation scope:** **H1–H6** only. Kubo deprecation is **out of scope** — both engines remain supported indefinitely.
 
 **Strategy:** Introduce Helia as a **second IPFS export engine** behind a small abstraction. The owner **configures and switches** the active engine at any time (Settings or `node-config.json`). Kubo is the **default**; Helia unlocks after parity CI. Shadow mode runs both for comparison. Switching engines does **not** uninstall the other — both stay available on the node.
 
-**Related:** [external-distribution-ipfs-plan](./external-distribution-ipfs-plan.md) · [envoymesh-with-kubo](./envoymesh-with-kubo.md) · [developer-cli](./developer-cli.md)
+**Related:** [external-distribution-ipfs-plan](./external-distribution-ipfs-plan.md) · [envoymesh-with-kubo-helia](./envoymesh-with-kubo-helia.md) · [developer-cli](./developer-cli.md)
 
 ---
 
@@ -282,30 +282,30 @@ Execute in order. Each phase has a **verification gate** before the next. **H7 (
 
 ---
 
-### H3 — Golden parity CI
+### H3 — Golden parity CI (shipped)
 
 **Work:**
 
-1. `apps/node/test/ipfs-helia-kubo-parity.test.ts` — same fixtures as `ipfs-kubo-golden.test.ts`.
-2. CI job `ci-ipfs-helia-parity.yml` (or extend `ci-ipfs-kubo.yml`): runs Kubo + Helia, asserts CIDs match.
-3. Document mismatches in test output for recipe tuning.
+1. `apps/node/test/ipfs-helia-kubo-parity.test.ts` — small frozen fixture + generated 300 KiB multi-chunk file.
+2. CI: `ci-ipfs-helia-parity.yml` + parity step in `ci-ipfs-kubo.yml` (Kubo 0.32.1, linux-amd64).
+3. Helia recipe tuned: `chunkSize=262144`, `fanout=174`, `shardSplitStrategy=links-bytes`, `rawLeaves=true`.
 
-**Verify:** CI green on linux-amd64; macOS arm64 in release matrix before desktop Helia-primary.
+**Verify:** `ENVOYMESH_HELIA_PARITY_TEST=1 npx vitest run apps/node/test/ipfs-helia-kubo-parity.test.ts` (requires Kubo daemon).
 
-**Gate:** No user-facing Helia primary until this passes.
+**Gate:** No user-facing Helia primary until CI parity is green on PRs touching IPFS export code.
 
 ---
 
-### H4 — Shadow mode on desktop
+### H4 — Shadow mode on desktop (shipped)
 
 **Work:**
 
-1. Implement `helia-ipfs-engine.ts` (profile blockstore, lazy init).
-2. Router: `kubo-with-helia-shadow` runs both; audit `vault.ipfs_export.helia_parity.matched|mismatched`.
-3. Extend `published-external.json` with optional `cidHelia`, `heliaVersion` (backward compatible readers ignore).
-4. Config + Settings UI: engine dropdown wired to `updateNodeConfig` (switchable at runtime).
+1. `helia-ipfs-engine.ts` + `ipfs-export-engine-helia.ts` — in-process Helia; `{profile}/helia-blocks` dir.
+2. Router shadow path: `kubo-with-helia-shadow` runs Kubo then Helia; audit parity events.
+3. `published-external.json` optional `cidHelia`, `heliaVersion`.
+4. Settings → **Export engine** dropdown: Kubo | Kubo + Helia shadow.
 
-**Verify:** Export still persists Kubo `cid` as canonical in shadow mode; owner can switch to/from shadow mode without restart.
+**Verify:** Shadow export keeps Kubo `cid` canonical; mismatch visible in audit JSONL.
 
 ---
 
@@ -328,7 +328,7 @@ Execute in order. Each phase has a **verification gate** before the next. **H7 (
 
 1. Enable **Helia** in Settings engine dropdown when CI matrix green (alongside Kubo and shadow — all three switchable).
 2. Tauri: optional **slim** build flavor without Kubo sidecar (separate artifact; **default build bundles both** so owners can switch back to Kubo).
-3. Document engine switching in [envoymesh-with-kubo](./envoymesh-with-kubo.md) and operator runbooks.
+3. Document engine switching in [envoymesh-with-kubo-helia](./envoymesh-with-kubo-helia.md) and operator runbooks.
 
 **Verify:** Switch Kubo → Helia → Kubo on same profile; re-export produces correct CIDs; discovery, gateway verify, and agent tools work for exports from either engine.
 

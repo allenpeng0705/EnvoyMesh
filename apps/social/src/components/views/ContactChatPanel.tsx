@@ -12,7 +12,8 @@ import {
 } from "../../lib/chat-thread-kind.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { Markdown } from "../Markdown.js";
-import { EditIcon, ChatIcon, BridgeIcon } from "../../icons.js";
+import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
+import { EditIcon, ChatIcon, BridgeIcon, P2PIcon } from "../../icons.js";
 
 interface ContactChatPanelProps {
   selectedContact: string;
@@ -60,6 +61,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
 
   const [chatInput, setChatInput] = useState("");
   const [isSendingChat, setIsSendingChat] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const lastChatSendRef = useRef<{ at: number; contact: string; text: string } | null>(null);
 
@@ -245,11 +247,26 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
       </div>
       <footer className="chat-input">
         {sendError && <div className="chat-send-error">{sendError}</div>}
+        {shareOpen && (
+          <ShareFileDialog
+            targetOwnerId={selectedContact}
+            onClose={() => setShareOpen(false)}
+          />
+        )}
         {chatInput.trim() && !isSendingChat && (
           <div className="typing-indicator">
             <span /><span /><span />
           </div>
         )}
+        <button
+          type="button"
+          className="secondary chat-share-file-btn"
+          title="Share a vault file"
+          aria-label="Share a vault file"
+          onClick={() => setShareOpen(true)}
+        >
+          <P2PIcon size={18} />
+        </button>
         <input
           type="text"
           placeholder="Type a message..."

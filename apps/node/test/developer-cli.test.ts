@@ -12,7 +12,7 @@ import {
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeDeveloperCliArgv, parseDeveloperCliArgs, runDeveloperCli } from "../src/developer-cli.js";
 import { kuboIpfsCliAvailableSync } from "../src/kubo-ipfs-export.js";
 import { createNodeConfigStore } from "../src/node-config-store.js";
@@ -73,6 +73,13 @@ describe("developer CLI", () => {
     ).toMatchObject({
       command: "vault-ipfs-fingerprint",
       ipfsFingerprintFile: "/tmp/export.bin",
+    });
+
+    expect(
+      parseDeveloperCliArgs(["vault-ipfs-fingerprint", "--file", "/tmp/export.bin", "--engine", "helia"]),
+    ).toMatchObject({
+      command: "vault-ipfs-fingerprint",
+      ipfsFingerprintEngine: "helia",
     });
   });
 
@@ -591,6 +598,31 @@ describe("developer CLI", () => {
     await expect(
       runDeveloperCli(["vault-ipfs-fingerprint", "--vault", vaultDir, "--relative-path", "../outside.txt"]),
     ).rejects.toThrow(/outside the shared vault root/i);
+  });
+
+  it("vault-ipfs-fingerprint prints Helia CID with --engine helia", async () => {
+    await writeFile(join(vaultDir, "helia.txt"), "helia fingerprint smoke");
+    const helia = await import("../src/helia-ipfs-export.js");
+    vi.spyOn(helia, "heliaUnixfsAddFileInteropRecipeV1").mockResolvedValue({
+      ok: true,
+      cid: "bafyheliafingerprint",
+      heliaVersion: "6.1.4",
+    });
+
+    const result = await runDeveloperCli([
+      "vault-ipfs-fingerprint",
+      "--vault",
+      vaultDir,
+      "--relative-path",
+      "helia.txt",
+      "--engine",
+      "helia",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.lines).toContain("ipfsInteropRecipe=helia-unixfs-export-v1");
+    expect(result.lines).toContain("engine=helia");
+    expect(result.lines).toContain("cid=bafyheliafingerprint");
   });
 
   it.skipIf(process.env.ENVOYMESH_IPFS_CLI_TEST !== "1")(

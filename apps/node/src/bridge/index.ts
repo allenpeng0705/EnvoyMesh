@@ -1,10 +1,16 @@
 import * as http from "node:http";
 import type { EnvoyMesh } from "@envoymesh/network";
-import { parseChatMessagePayload } from "@envoymesh/protocol";
+import {
+  parseChatMessagePayload,
+  parseDiscoveryResponsePayload,
+  parseKnowledgeResponsePayload,
+} from "@envoymesh/protocol";
 import type { SubmitAgentShareProposalParams } from "@envoymesh/api";
 import type { ExternalAgentGateway } from "../external-agent-gateway.js";
+import type { ToolDefinition, ToolResult } from "../tool-registry.js";
 import type { BridgeConfig } from "./config.js";
 import { BridgeConfigSchema } from "./config.js";
+import { forwardAsyncMeshReply } from "./async-mesh-reply.js";
 import {
   forwardToAgent,
   receiveFromAgent,
@@ -16,6 +22,7 @@ export type { BridgeConfig } from "./config.js";
 export type { BridgeIdentity } from "./pipe.js";
 export { BridgeConfigSchema } from "./config.js";
 export { forwardToAgent, receiveFromAgent } from "./pipe.js";
+export { forwardAsyncMeshReply, resetBridgeAsyncReplyRateLimitForTests } from "./async-mesh-reply.js";
 
 const MAX_BRIDGE_BODY_BYTES = 64 * 1024;
 
@@ -31,6 +38,10 @@ export interface CreateBridgeOptions {
   gateway?: ExternalAgentGateway;
   /** Persist agent-proposed vault shares for owner review (FS-E). */
   submitAgentShareProposal?: (params: SubmitAgentShareProposalParams) => Promise<unknown>;
+  /** Run ToolRegistry tools for external agents (ADB-E). */
+  executeTool?: (toolName: string, params: Record<string, unknown>) => Promise<ToolResult>;
+  /** List registered agent tools. */
+  listTools?: () => ToolDefinition[];
 }
 
 /**
@@ -67,14 +78,37 @@ export function createBridge(options: CreateBridgeOptions): {
     agentId,
   };
 
-  // --- HTTP server: agent → P2P ---
+  // --- HTTP server: agent → P2P / tools ---
   const server = http.createServer(async (req, res) => {
+    const path = (req.url ?? "").split("?")[0] ?? "";
+
+    if (req.method === "GET" && path === "/bridge/list-tools") {
+      if (secretTrimmed) {
+        const auth = req.headers["authorization"];
+        if (auth !== `Bearer ${secretTrimmed}`) {
+          res.writeHead(401).end(JSON.stringify({ ok: false, reason: "unauthorized" }));
+          return;
+        }
+      }
+      if (!options.listTools) {
+        res.writeHead(501).end(JSON.stringify({ ok: false, reason: "listTools not configured" }));
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, tools: options.listTools() }));
+      return;
+    }
+
     if (req.method !== "POST") {
       res.writeHead(404).end();
       return;
     }
-    const path = (req.url ?? "").split("?")[0] ?? "";
-    if (path !== "/bridge/send" && path !== "/bridge/agent-share-proposal") {
+
+    if (
+      path !== "/bridge/send" &&
+      path !== "/bridge/agent-share-proposal" &&
+      path !== "/bridge/execute-tool"
+    ) {
       res.writeHead(404).end();
       return;
     }
@@ -133,6 +167,36 @@ export function createBridge(options: CreateBridgeOptions): {
       return;
     }
 
+    if (path === "/bridge/execute-tool") {
+      if (!options.executeTool) {
+        res.writeHead(501).end(JSON.stringify({ ok: false, reason: "executeTool not configured" }));
+        return;
+      }
+      try {
+        const raw = await readBody(req, MAX_BRIDGE_BODY_BYTES);
+        const body = JSON.parse(raw) as Record<string, unknown>;
+        const toolName = body.toolName;
+        const params = body.params;
+        if (typeof toolName !== "string" || !toolName.trim()) {
+          res.writeHead(400).end(JSON.stringify({ ok: false, reason: "toolName required" }));
+          return;
+        }
+        const result = await options.executeTool(
+          toolName.trim(),
+          params && typeof params === "object" && !Array.isArray(params)
+            ? (params as Record<string, unknown>)
+            : {},
+        );
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: result.ok, result }));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Internal error";
+        console.error(`[bridge] execute-tool failed:`, msg);
+        res.writeHead(500).end(JSON.stringify({ ok: false, reason: msg }));
+      }
+      return;
+    }
+
     try {
       const raw = await readBody(req, MAX_BRIDGE_BODY_BYTES);
       const { to, text } = JSON.parse(raw);
@@ -154,20 +218,66 @@ export function createBridge(options: CreateBridgeOptions): {
 
   server.listen(config.listenPort, "127.0.0.1", () => {
     console.log(
-      `[bridge] HTTP on http://127.0.0.1:${config.listenPort}/bridge/send ` +
-        `and /bridge/agent-share-proposal`,
+      `[bridge] HTTP on http://127.0.0.1:${config.listenPort}/bridge/send, ` +
+        `/bridge/agent-share-proposal, /bridge/execute-tool, GET /bridge/list-tools`,
     );
   });
 
   // --- P2P handler: P2P → agent ---
   const bridgeHandler = async (envelope: any, remotePeerId: string) => {
     console.log(`[bridge] inbound intent=${envelope.intent} from=${envelope.senderPeerId?.slice(0, 20)} to=${envelope.recipientPeerId?.slice(0, 20)}`);
-    if (envelope.intent !== "chat.message") {
-      console.log(`[bridge] skipping non-chat intent: ${envelope.intent}`);
-      return;
-    }
     if (envelope.recipientPeerId !== options.identity.agentPeerId) {
       console.log(`[bridge] message for different recipient: ${envelope.recipientPeerId} !== ${options.identity.agentPeerId}`);
+      return;
+    }
+
+    if (envelope.intent === "discovery.response" || envelope.intent === "knowledge.response") {
+      void (async () => {
+        const fwdStartTime = Date.now();
+        try {
+          const payload =
+            envelope.intent === "discovery.response"
+              ? parseDiscoveryResponsePayload(envelope.payload)
+              : parseKnowledgeResponsePayload(envelope.payload);
+          await forwardAsyncMeshReply(config, {
+            intent: envelope.intent,
+            correlationId: envelope.correlationId,
+            senderPeerId: envelope.senderPeerId,
+            remotePeerId,
+            messageId: envelope.messageId,
+            payload,
+          });
+          options.gateway?.logAction({
+            agentId: agentId ?? "unknown",
+            toolName: "bridge.forward_async_mesh_reply",
+            params: { intent: envelope.intent, correlationId: envelope.correlationId },
+            outcome: "success",
+            requiresApproval: false,
+            durationMs: Date.now() - fwdStartTime,
+          });
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          console.error(`[bridge] async mesh reply forward failed (${envelope.intent}):`, err);
+          options.gateway?.logAction({
+            agentId: agentId ?? "unknown",
+            toolName: "bridge.forward_async_mesh_reply",
+            params: {
+              intent: envelope.intent,
+              correlationId: envelope.correlationId,
+              messageId: envelope.messageId,
+            },
+            outcome: "error",
+            error: errorMessage,
+            requiresApproval: false,
+            durationMs: Date.now() - fwdStartTime,
+          });
+        }
+      })();
+      return;
+    }
+
+    if (envelope.intent !== "chat.message") {
+      console.log(`[bridge] skipping unsupported intent: ${envelope.intent}`);
       return;
     }
 

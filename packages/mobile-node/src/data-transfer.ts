@@ -1,16 +1,18 @@
 /**
  * Verified inbound / outbound vault file transfer over libp2p `/envoymesh/data/0.1.0`
  * (parity with `apps/node` + `@envoymesh/network` framing).
+ *
+ * Import browser-safe subpaths via `#network/*` only — not `@envoymesh/network` (node:crypto).
  */
 import { byteStream } from "@libp2p/utils";
 import type { Libp2p } from "libp2p";
 import {
-  ENVOY_DATA_PROTOCOL,
-  MAX_DATA_INBOUND_BYTES,
   encodeDataTransferBody,
+  MAX_DATA_INBOUND_BYTES,
   parseInboundDataTransferBody,
   voucherJsonBytesFromObject,
-} from "@envoymesh/network";
+} from "#network/data-framing";
+import { ENVOY_DATA_PROTOCOL } from "#network/protocols";
 import {
   createUnsignedDataTransferVoucher,
   parseDataTransferVoucher,

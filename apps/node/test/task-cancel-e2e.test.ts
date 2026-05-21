@@ -4,7 +4,7 @@ import {
   generateDeviceIdentity,
   generateOwnerIdentity,
   signUnsignedEnvelope,
-  verifyEnvelope,
+  verifyInboundEnvelope,
 } from "@envoymesh/identity";
 import {
   createTaskAcceptPayload,
@@ -42,12 +42,12 @@ describe("E2E task cancel flow", () => {
     let receivedCancel: ReturnType<typeof parseTaskCancelPayload> | null = null;
 
     sender.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       receiverReceived.push(envelope.intent);
     });
 
     receiver.onMessage(async ({ envelope }) => {
-      if (!verifyEnvelope(envelope)) return;
+      if (!verifyInboundEnvelope(envelope)) return;
       receiverReceived.push(envelope.intent);
 
       if (envelope.intent === "task.propose") {
