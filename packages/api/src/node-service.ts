@@ -391,6 +391,49 @@ export interface PeerConnectionInfo {
   relayPeerId?: string;
 }
 
+export interface ChatDiagnosticsContact {
+  peerOwnerId: string;
+  peerFound: boolean;
+  transportPeerId?: string;
+  storedListenAddrs: number;
+  dialHintCount: number;
+  sampleDialHints: string[];
+  badPublicBootstrapHints: number;
+  connection?: PeerConnectionInfo;
+}
+
+export interface ChatDiagnostics {
+  checkedAt: string;
+  nodeOnline: boolean;
+  localPeerId: string;
+  relayEnabled: boolean;
+  relayClientSchedulerActive: boolean;
+  relayControlTargets: string[];
+  lastRelayCheckin?: {
+    at: string;
+    source: "node-service" | "cli";
+    results: Array<{ target: string; ok: boolean; error?: string }>;
+  };
+  lastRelayLookup?: {
+    at: string;
+    source: "node-service" | "cli";
+    ok: boolean;
+    peerCount: number;
+    circuitAddrsStored: number;
+    error?: string;
+  };
+  connectionStats: {
+    totalPeers: number;
+    totalConnections: number;
+    circuitPeers: number;
+    circuitConnections: number;
+  };
+  discoverySeedCount: number;
+  circuitSeedCount: number;
+  contact?: ChatDiagnosticsContact;
+  hints: string[];
+}
+
 // ============================================
 // NodeService Interface
 // ============================================
@@ -802,6 +845,12 @@ export interface NodeService {
    * @param peerOwnerId The owner's peer ID (e.g., envoy:owner:...)
    */
   getPeerConnectionInfo(peerOwnerId: string): Promise<PeerConnectionInfo>;
+
+  /**
+   * Operator diagnostics for cross-NAT chat: relay cycles, dial hints, and human-readable hints.
+   * @param peerOwnerId Optional bonded contact owner id to inspect dial hints for.
+   */
+  getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics>;
 
   // ----- AI / Knowledge Query -----
 

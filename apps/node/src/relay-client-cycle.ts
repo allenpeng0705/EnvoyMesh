@@ -17,6 +17,7 @@ import type { NodeProfile } from "@envoymesh/api";
 import type { InboundMessageGuard } from "./inbound-guard.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import { logClientRelayLookupResponse, logRelayReachableAddrsForCheckin } from "./relay-checkin-log.js";
+import { recordRelayCheckinCycle, recordRelayLookupResult, type RelayCheckinAttempt } from "./relay-diagnostics-state.js";
 
 const RELAY_CLIENT_CYCLE_INTERVAL_MS = 30_000;
 const RELAY_LOOKUP_REPLY_TIMEOUT_MS = 30_000;
@@ -47,7 +48,7 @@ export interface RelayClientCycleDeps {
   discoverySeedStore: DiscoverySeedStore;
 }
 
-async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): Promise<void> {
+async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): Promise<RelayCheckinAttempt[]> {
   const { mesh, profile } = deps;
   const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
   const payload = createRelayCheckinPayload({
@@ -70,6 +71,7 @@ async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): 
     ownerId: profile.owner.ownerId,
     addrs: payload.relayReachableAddrs,
   });
+  const results: RelayCheckinAttempt[] = [];
   for (const target of targets) {
     try {
       const signedEnvelope = signUnsignedEnvelope(
@@ -85,17 +87,20 @@ async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): 
       );
       await mesh.send(target, signedEnvelope);
       console.log(`[relay-client] relay.checkin ok target=${target}`);
+      results.push({ target, ok: true });
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       console.warn(`[relay-client] relay.checkin failed target=${target} error=${detail}`);
+      results.push({ target, ok: false, error: detail });
     }
   }
+  return results;
 }
 
 async function applyRelayLookupResponse(
   envelope: EnvoyEnvelope,
   deps: RelayClientCycleDeps,
-): Promise<void> {
+): Promise<number> {
   const payload = parseRelayLookupResponsePayload(envelope.payload);
   const flat = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
   logClientRelayLookupResponse({
@@ -107,10 +112,16 @@ async function applyRelayLookupResponse(
     await deps.discoverySeedStore.upsertMany(flat, "relay-peers");
     console.log(`[relay-client] relay.lookup stored ${flat.length} circuit multiaddr(s)`);
   }
+  return flat.length;
 }
 
 async function queryRelayLookup(deps: RelayClientCycleDeps, targets: string[]): Promise<void> {
   const { mesh, profile, inboundGuard } = deps;
+  let bestLookup:
+    | { ok: true; peerCount: number; circuitAddrsStored: number }
+    | { ok: false; error: string }
+    | undefined;
+
   for (const target of targets) {
     try {
       const payload = createRelayLookupPayload({
@@ -138,19 +149,41 @@ async function queryRelayLookup(deps: RelayClientCycleDeps, targets: string[]): 
       });
       const guardDecision = inboundGuard.inspect(reply);
       if (guardDecision.action === "reject") {
-        console.warn(`[relay-client] relay.lookup rejected target=${target} reason=${guardDecision.reason}`);
+        const reason = guardDecision.reason ?? "rejected";
+        console.warn(`[relay-client] relay.lookup rejected target=${target} reason=${reason}`);
+        bestLookup = { ok: false, error: reason };
         continue;
       }
       if (guardDecision.envelope.intent !== "relay.lookup.response") {
-        console.warn(`[relay-client] relay.lookup unexpected intent=${guardDecision.envelope.intent} target=${target}`);
+        const msg = `unexpected intent ${guardDecision.envelope.intent}`;
+        console.warn(`[relay-client] relay.lookup ${msg} target=${target}`);
+        bestLookup = { ok: false, error: msg };
         continue;
       }
-      await applyRelayLookupResponse(guardDecision.envelope, deps);
+      const responsePayload = parseRelayLookupResponsePayload(guardDecision.envelope.payload);
+      const circuitAddrsStored = await applyRelayLookupResponse(guardDecision.envelope, deps);
       console.log(`[relay-client] relay.lookup ok target=${target}`);
+      bestLookup = {
+        ok: true,
+        peerCount: responsePayload.peers.length,
+        circuitAddrsStored,
+      };
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       console.warn(`[relay-client] relay.lookup failed target=${target} error=${detail}`);
+      bestLookup = { ok: false, error: detail };
     }
+  }
+
+  if (bestLookup) {
+    recordRelayLookupResult({
+      source: "node-service",
+      targets,
+      ok: bestLookup.ok,
+      peerCount: bestLookup.ok ? bestLookup.peerCount : 0,
+      circuitAddrsStored: bestLookup.ok ? bestLookup.circuitAddrsStored : 0,
+      error: bestLookup.ok ? undefined : bestLookup.error,
+    });
   }
 }
 
@@ -160,7 +193,8 @@ export async function runRelayClientCycle(deps: RelayClientCycleDeps): Promise<v
     console.warn("[relay-client] no relay control targets configured (need cn-relay or a --relay-server bootstrap addr)");
     return;
   }
-  await sendRelayCheckin(deps, targets);
+  const checkinResults = await sendRelayCheckin(deps, targets);
+  recordRelayCheckinCycle({ source: "node-service", targets, results: checkinResults });
   await queryRelayLookup(deps, targets);
 }
 

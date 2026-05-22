@@ -170,6 +170,7 @@ import {
 } from "./node-health.js";
 import { createClientProxyHandler } from "./client-proxy-handler.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
+import { recordRelayCheckinCycle, recordRelayLookupResult } from "./relay-diagnostics-state.js";
 
 const args = parseNodeArgs(process.argv.slice(2));
 const profile = await loadOrCreateNodeProfile(args.profileDir);
@@ -3059,6 +3060,7 @@ async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<voi
   const targets = relayControlTargets();
   const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
   const capabilities = relayCheckinCapabilities(profile.deviceCertificate.capabilities);
+  const checkinResults: Array<{ target: string; ok: boolean; error?: string }> = [];
   if (targets.length > 0) {
     logRelayReachableAddrsForCheckin({
       prefix: "[relay-checkin]",
@@ -3097,11 +3099,16 @@ async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<voi
       const latencyMs = await mesh.send(target, signedEnvelope);
       noteRelaySuccess(relayClientState, relayHintFromAddr(target));
       await appendRelayTrace("relay.checkin.ok", target, `relay checkin ok source=${source} target=${target}`, latencyMs);
+      checkinResults.push({ target, ok: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       noteRelayFailure(relayClientState, relayHintFromAddr(target));
       await appendRelayTrace("relay.checkin.fail", target, `relay checkin failed source=${source} target=${target} error=${message}`);
+      checkinResults.push({ target, ok: false, error: message });
     }
+  }
+  if (targets.length > 0) {
+    recordRelayCheckinCycle({ source: "cli", targets, results: checkinResults });
   }
 }
 
@@ -3461,6 +3468,11 @@ async function runRelaySummaryCycle(source: "startup" | "periodic"): Promise<voi
 
 async function runRelayLookupCycle(source: "startup" | "periodic"): Promise<void> {
   const targets = relayControlTargets();
+  let bestLookup:
+    | { ok: true; peerCount: number; circuitAddrsStored: number }
+    | { ok: false; error: string }
+    | undefined;
+
   for (const target of targets) {
     const payload = createRelayLookupPayload({
       queryId: `relay_lookup_${randomUUID()}`,
@@ -3494,6 +3506,7 @@ async function runRelayLookupCycle(source: "startup" | "periodic"): Promise<void
           target,
           `relay lookup reply rejected source=${source} target=${target} reason=${guardDecision.reason}`,
         );
+        bestLookup = { ok: false, error: guardDecision.reason ?? "rejected" };
         continue;
       }
       const env = guardDecision.envelope;
@@ -3504,12 +3517,19 @@ async function runRelayLookupCycle(source: "startup" | "periodic"): Promise<void
           target,
           `relay lookup unexpected intent source=${source} target=${target} intent=${env.intent}`,
         );
+        bestLookup = { ok: false, error: `unexpected intent ${env.intent}` };
         continue;
       }
       const responsePayload = parseRelayLookupResponsePayload(env.payload);
       await processRelayLookupResponse(responsePayload);
       noteRelaySuccess(relayClientState, relayHintFromAddr(target));
       await appendRelayTrace("relay.lookup.ok", target, `relay lookup ok source=${source} target=${target}`, latencyMs);
+      const flat = dedupeAddrs(responsePayload.peers.flatMap((peer) => peer.multiaddrs));
+      bestLookup = {
+        ok: true,
+        peerCount: responsePayload.peers.length,
+        circuitAddrsStored: flat.length,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       try {
@@ -3521,6 +3541,7 @@ async function runRelayLookupCycle(source: "startup" | "periodic"): Promise<void
           `relay lookup ok (legacy send after expectReply: ${message}) source=${source} target=${target}`,
           latencyMs,
         );
+        bestLookup = { ok: true, peerCount: 0, circuitAddrsStored: 0 };
       } catch (fallbackError) {
         const fb = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
         noteRelayFailure(relayClientState, relayHintFromAddr(target));
@@ -3529,8 +3550,20 @@ async function runRelayLookupCycle(source: "startup" | "periodic"): Promise<void
           target,
           `relay lookup failed source=${source} target=${target} expectReply=${message} legacySend=${fb}`,
         );
+        bestLookup = { ok: false, error: `${message}; legacySend=${fb}` };
       }
     }
+  }
+
+  if (bestLookup) {
+    recordRelayLookupResult({
+      source: "cli",
+      targets,
+      ok: bestLookup.ok,
+      peerCount: bestLookup.ok ? bestLookup.peerCount : 0,
+      circuitAddrsStored: bestLookup.ok ? bestLookup.circuitAddrsStored : 0,
+      error: bestLookup.ok ? undefined : bestLookup.error,
+    });
   }
 }
 

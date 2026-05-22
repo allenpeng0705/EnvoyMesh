@@ -1998,6 +1998,40 @@ export class MobileNode implements NodeService {
     return { connected: true, direct: false, relayPeerId: this._relayUrls[0] };
   }
 
+  async getChatDiagnostics(peerOwnerId?: string) {
+    return {
+      checkedAt: new Date().toISOString(),
+      nodeOnline: this._status === "running",
+      localPeerId: this._state?.agent?.agentPeerId ?? "",
+      relayEnabled: true,
+      relayClientSchedulerActive: false,
+      relayControlTargets: this._relayUrls,
+      connectionStats: {
+        totalPeers: 0,
+        totalConnections: 0,
+        circuitPeers: 0,
+        circuitConnections: 0,
+      },
+      discoverySeedCount: 0,
+      circuitSeedCount: 0,
+      contact: peerOwnerId
+        ? {
+            peerOwnerId,
+            peerFound: false,
+            storedListenAddrs: 0,
+            dialHintCount: 0,
+            sampleDialHints: [],
+            badPublicBootstrapHints: 0,
+          }
+        : undefined,
+      hints: [
+        this._status === "running"
+          ? "Mobile relay-only mode — detailed chat diagnostics are limited on this build."
+          : "Node is offline — start the node before sending chat.",
+      ],
+    };
+  }
+
   // -----------------------------------------------------------------------
   // Agent bridge
   // -----------------------------------------------------------------------

@@ -4,6 +4,7 @@ import type {
   BridgeStatus,
   PairingPayload,
   ChatMessage,
+  ChatDiagnostics,
   ConnectionStatus,
   CreateHumanProfileInput,
   HelloProfile,
@@ -152,6 +153,7 @@ import type { BridgeIdentity } from "./bridge/pipe.js";
 import type { MeshToolContext } from "./tool-registry.js";
 import { executeTool } from "./tool-registry.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
+import { buildChatDiagnostics } from "./chat-diagnostics.js";
 import { startRelayClientScheduler } from "./relay-client-cycle.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
@@ -2933,7 +2935,8 @@ class NodeServiceImpl implements NodeService {
       lastError: this._lastNodeError ?? undefined,
       lastErrorAt: this._lastNodeErrorAt ?? undefined,
     };
-    if (!this._mesh || this._nodeStatus !== "running") {
+    const mesh = this._reachableMesh();
+    if (!mesh || this._nodeStatus !== "running") {
       return {
         online: false,
         peerId: "",
@@ -2945,9 +2948,9 @@ class NodeServiceImpl implements NodeService {
     }
     return {
       online: true,
-      peerId: this._mesh.peerId,
-      multiaddrs: this._mesh.multiaddrs,
-      connectedRelays: [],
+      peerId: mesh.peerId,
+      multiaddrs: mesh.multiaddrs,
+      connectedRelays: mesh.getConnectionStats().circuitPeerIds,
       bondedPeers: 0,
       ...diagnostics,
     };
@@ -3439,7 +3442,8 @@ class NodeServiceImpl implements NodeService {
   }
 
   async getPeerConnectionInfo(peerOwnerId: string): Promise<PeerConnectionInfo> {
-    if (!this._mesh) {
+    const mesh = this._reachableMesh();
+    if (!mesh) {
       return { connected: false, direct: false };
     }
 
@@ -3449,7 +3453,26 @@ class NodeServiceImpl implements NodeService {
       return { connected: false, direct: false };
     }
 
-    return this._mesh.getPeerConnectionInfo(peerRecord.peerId);
+    return mesh.getPeerConnectionInfo(peerRecord.peerId);
+  }
+
+  async getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics> {
+    const mesh = this._reachableMesh();
+    const config = await this.getNodeConfig();
+    return buildChatDiagnostics({
+      mesh,
+      nodeOnline: Boolean(mesh && this._nodeStatus === "running"),
+      localPeerId: mesh?.peerId ?? "",
+      profileDir: this._profileDir,
+      config: await this._configStore.load(),
+      relayEnabled: config.relayEnabled,
+      relayClientSchedulerActive: Boolean(this._stopRelayClientScheduler),
+      relayBootstrapPeers: this._relayBootstrapPeers,
+      configStore: this._configStore,
+      peerDirectoryStore: this._peerDirectoryStore,
+      discoverySeedStore: this._discoverySeedStore,
+      peerOwnerId,
+    });
   }
 
   async knowledgeQuery(question: string): Promise<string> {

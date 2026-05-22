@@ -10,6 +10,7 @@ import type {
   DiscoverPublishedLibraryPeerResult,
   PairingPayload,
   ConnectionStatus,
+  ChatDiagnostics,
   CreateHumanProfileInput,
   HelloProfile,
   HelloRequest,
@@ -95,6 +96,7 @@ export interface NodeServiceClient {
   // Connection Status
   getConnectionStatus(): Promise<ConnectionStatus>;
   getPeerConnectionInfo(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
+  getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics>;
 
   // Agent Bridge
   getBridgeStatus(): Promise<BridgeStatus>;
@@ -254,6 +256,9 @@ function createWsNodeServiceClient(
     async getNodeConfig() { return wsClient.rpc("getNodeConfig"); },
     async getConnectionStatus() { return wsClient.rpc("getConnectionStatus"); },
     async getPeerConnectionInfo(peerOwnerId: string) { return wsClient.rpc("getPeerConnectionInfo", { peerOwnerId }); },
+    async getChatDiagnostics(peerOwnerId?: string) {
+      return wsClient.rpc("getChatDiagnostics", peerOwnerId ? { peerOwnerId } : {});
+    },
     async getBridgeStatus() { return wsClient.rpc("getBridgeStatus"); },
     async getPairingPayload() { return wsClient.rpc("getPairingPayload"); },
     async knowledgeQuery(question: string) { return wsClient.rpc("knowledgeQuery", { question }) as Promise<string>; },

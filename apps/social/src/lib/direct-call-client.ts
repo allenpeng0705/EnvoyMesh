@@ -162,6 +162,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getPeerConnectionInfo(peerOwnerId);
   }
 
+  async getChatDiagnostics(peerOwnerId?: string) {
+    return this._ns.getChatDiagnostics(peerOwnerId);
+  }
+
   // -----------------------------------------------------------------------
   // Agent Bridge
   // -----------------------------------------------------------------------

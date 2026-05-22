@@ -20,6 +20,7 @@ import type {
   AutonomousPolicy,
   IpfsEngineStatus,
   ExternalPublishConfig,
+  ChatDiagnostics,
 } from "@envoymesh/api";
 
 export function SettingsNodeTab() {
@@ -27,7 +28,7 @@ export function SettingsNodeTab() {
   const cloudOnlyMobile = modelProviderUiScope === "cloud-only";
   const isMobileNode = useIsInProcessMobileNode();
   const nodeService = useNodeService();
-  const { nodeConfig, nodeStatus, peerId, bridgeStatus, refreshNodeConfig, connectionStatus, refreshConnectionStatus } =
+  const { nodeConfig, nodeStatus, peerId, bridgeStatus, refreshNodeConfig, connectionStatus, refreshConnectionStatus, bonds } =
     useNodeState();
 
   // Local state mirrors nodeConfig fields for debounced editing
@@ -45,6 +46,10 @@ export function SettingsNodeTab() {
   const [friendMatchingDraft, setFriendMatchingDraft] = useState("");
   const [gatewayAllowlistDraft, setGatewayAllowlistDraft] = useState("");
   const [ipfsEngineStatus, setIpfsEngineStatus] = useState<IpfsEngineStatus | null>(null);
+  const [chatDiagContact, setChatDiagContact] = useState("");
+  const [chatDiagnostics, setChatDiagnostics] = useState<ChatDiagnostics | null>(null);
+  const [chatDiagLoading, setChatDiagLoading] = useState(false);
+  const [chatDiagError, setChatDiagError] = useState<string | null>(null);
 
   // Sync local state when nodeConfig loads/changes (async load after mount)
   useEffect(() => {
@@ -86,6 +91,11 @@ export function SettingsNodeTab() {
   useEffect(() => {
     void refreshConnectionStatus();
   }, [refreshConnectionStatus]);
+
+  useEffect(() => {
+    if (chatDiagContact || bonds.length === 0) return;
+    setChatDiagContact(bonds[0]!.peerOwnerId);
+  }, [bonds, chatDiagContact]);
 
   const isPublicNetwork = bootstrapPresets.length > 0;
   const relays = (nodeConfig?.configuredRelays ?? []) as RelayConfig[];
@@ -305,6 +315,113 @@ export function SettingsNodeTab() {
             <button onClick={handleStartNode}>Start Node</button>
           )}
         </div>
+      </section>
+
+      <section className="settings-section">
+        <h3>Chat connectivity diagnostics</h3>
+        <p className="section-desc">
+          Check relay registration, circuit dial hints, and likely causes when cross-NAT chat fails.
+        </p>
+        <dl className="settings-list">
+          <dt>Contact (optional)</dt>
+          <dd>
+            <select
+              className="settings-input"
+              value={chatDiagContact}
+              onChange={(e) => setChatDiagContact(e.target.value)}
+            >
+              <option value="">Node only (no contact dial hints)</option>
+              {bonds.map((bond) => (
+                <option key={bond.peerOwnerId} value={bond.peerOwnerId}>
+                  {bond.displayName ?? bond.peerOwnerId}
+                </option>
+              ))}
+            </select>
+          </dd>
+        </dl>
+        <button
+          type="button"
+          className="settings-button"
+          disabled={chatDiagLoading || nodeStatus !== "running"}
+          onClick={() => {
+            setChatDiagLoading(true);
+            setChatDiagError(null);
+            void nodeService
+              .getChatDiagnostics(chatDiagContact || undefined)
+              .then(setChatDiagnostics)
+              .catch((err) => {
+                setChatDiagnostics(null);
+                setChatDiagError(err instanceof Error ? err.message : String(err));
+              })
+              .finally(() => setChatDiagLoading(false));
+          }}
+        >
+          {chatDiagLoading ? "Running…" : "Run chat diagnostics"}
+        </button>
+        {chatDiagError && (
+          <p className="settings-diagnostics-error" style={{ marginTop: "8px" }}>
+            {chatDiagError}
+          </p>
+        )}
+        {chatDiagnostics && (
+          <div className="settings-diagnostics-panel" style={{ marginTop: "12px" }}>
+            <ul className="settings-diagnostics-hints">
+              {chatDiagnostics.hints.map((hint) => (
+                <li key={hint}>{hint}</li>
+              ))}
+            </ul>
+            <dl className="settings-list" style={{ marginTop: "12px" }}>
+              <dt>Relay control targets</dt>
+              <dd>{chatDiagnostics.relayControlTargets.length}</dd>
+              <dt>Last relay.checkin</dt>
+              <dd>
+                {chatDiagnostics.lastRelayCheckin
+                  ? `${chatDiagnostics.lastRelayCheckin.results.filter((r) => r.ok).length}/${chatDiagnostics.lastRelayCheckin.results.length} ok (${chatDiagnostics.lastRelayCheckin.source})`
+                  : "none yet"}
+              </dd>
+              <dt>Last relay.lookup</dt>
+              <dd>
+                {chatDiagnostics.lastRelayLookup
+                  ? chatDiagnostics.lastRelayLookup.ok
+                    ? `${chatDiagnostics.lastRelayLookup.peerCount} peers, ${chatDiagnostics.lastRelayLookup.circuitAddrsStored} circuit addr(s)`
+                    : `failed: ${chatDiagnostics.lastRelayLookup.error ?? "unknown"}`
+                  : "none yet"}
+              </dd>
+              <dt>Connections</dt>
+              <dd>
+                total={chatDiagnostics.connectionStats.totalPeers}/{chatDiagnostics.connectionStats.totalConnections},
+                circuit={chatDiagnostics.connectionStats.circuitPeers}/{chatDiagnostics.connectionStats.circuitConnections}
+              </dd>
+              <dt>Discovery seeds</dt>
+              <dd>
+                {chatDiagnostics.discoverySeedCount} total, {chatDiagnostics.circuitSeedCount} circuit
+              </dd>
+              {chatDiagnostics.contact && (
+                <>
+                  <dt>Contact dial hints</dt>
+                  <dd>
+                    {chatDiagnostics.contact.dialHintCount}
+                    {chatDiagnostics.contact.badPublicBootstrapHints > 0
+                      ? ` (${chatDiagnostics.contact.badPublicBootstrapHints} bad public bootstrap)`
+                      : ""}
+                  </dd>
+                  {chatDiagnostics.contact.sampleDialHints.length > 0 && (
+                    <>
+                      <dt>Sample hints</dt>
+                      <dd>
+                        {chatDiagnostics.contact.sampleDialHints.map((hint) => (
+                          <code key={hint} style={{ display: "block", marginBottom: "4px", wordBreak: "break-all" }}>
+                            {hint}
+                          </code>
+                        ))}
+                      </dd>
+                    </>
+                  )}
+                </>
+              )}
+            </dl>
+          </div>
+        )}
       </section>
 
       <section className="settings-section">
