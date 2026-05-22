@@ -1,9 +1,23 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { AiSettings, AnonymousDiscoveryMode, AutonomousPolicy, ContactAiPreferences, DiscoveryProfile, ExternalPublishConfig, ModelProviderConfig, RelayConfig } from "@envoymesh/api";
+import {
+  DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
+} from "@envoymesh/api";
+import type {
+  AiSettings,
+  AnonymousDiscoveryMode,
+  AutonomousPolicy,
+  ContactAiPreferences,
+  DiscoveryProfile,
+  ExternalPublishConfig,
+  ModelProviderConfig,
+  RelayConfig,
+} from "@envoymesh/api";
 import type { FriendMatchingPreferencesPayload } from "@envoymesh/protocol";
 
 const NODE_CONFIG_FILE = "node-config.json";
+const warnedInvalidConfigPaths = new Set<string>();
 
 export interface PersistedNodeConfig {
   version: "0.1";
@@ -68,6 +82,24 @@ export interface NodeConfigStore {
   exists(): Promise<boolean>;
 }
 
+export function createDefaultPersistedNodeConfig(profileDir: string): PersistedNodeConfig {
+  return {
+    version: "0.1",
+    profileDir,
+    discoveryProfile: "wan-default",
+    relayEnabled: true,
+    relayServerEnabled: false,
+    advertiseAddrs: [],
+    bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
+    bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
+    configuredRelays: [],
+    modelProviders: { mode: "mock" },
+    chatAssistEnabled: false,
+    contactAiPreferences: [],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export function createNodeConfigStore(profileDir: string): NodeConfigStore {
   const path = join(profileDir, NODE_CONFIG_FILE);
 
@@ -76,11 +108,21 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
       try {
         const raw = await readFile(path, "utf8");
         const parsed = JSON.parse(raw) as unknown;
-        if (!isValidNodeConfig(parsed)) {
-          console.warn(`[node-config] ${path} has invalid shape, treating as uninitialized`);
-          return undefined;
+        if (isValidNodeConfig(parsed)) {
+          return parsed;
         }
-        return parsed;
+        const reason = describeNodeConfigValidationFailure(parsed);
+        const migrated = tryMigrateNodeConfig(parsed, profileDir);
+        if (migrated) {
+          console.warn(`[node-config] ${path} invalid (${reason}); migrated and repaired`);
+          await writeFile(path, JSON.stringify(migrated, null, 2) + "\n", { mode: 0o600 });
+          return migrated;
+        }
+        if (!warnedInvalidConfigPaths.has(path)) {
+          console.warn(`[node-config] ${path} has invalid shape (${reason}), treating as uninitialized`);
+          warnedInvalidConfigPaths.add(path);
+        }
+        return undefined;
       } catch (error) {
         if (isMissingFileError(error)) {
           return undefined;
@@ -110,6 +152,93 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
       }
     },
   };
+}
+
+function tryMigrateNodeConfig(value: unknown, profileDir: string): PersistedNodeConfig | undefined {
+  if (value === null || typeof value !== "object") {
+    return undefined;
+  }
+  const file = value as Record<string, unknown>;
+  const defaults = createDefaultPersistedNodeConfig(profileDir);
+  const merged: PersistedNodeConfig = {
+    ...defaults,
+    ...(file as Partial<PersistedNodeConfig>),
+    version: "0.1",
+    profileDir,
+    discoveryProfile:
+      file.discoveryProfile === "lan-fast" || file.discoveryProfile === "wan-default"
+        ? file.discoveryProfile
+        : defaults.discoveryProfile,
+    relayEnabled: typeof file.relayEnabled === "boolean" ? file.relayEnabled : defaults.relayEnabled,
+    relayServerEnabled:
+      typeof file.relayServerEnabled === "boolean" ? file.relayServerEnabled : defaults.relayServerEnabled,
+    advertiseAddrs: Array.isArray(file.advertiseAddrs)
+      ? file.advertiseAddrs.filter((a): a is string => typeof a === "string")
+      : defaults.advertiseAddrs,
+    bootstrapPeers: Array.isArray(file.bootstrapPeers)
+      ? file.bootstrapPeers.filter((a): a is string => typeof a === "string")
+      : defaults.bootstrapPeers,
+    bootstrapPresets: Array.isArray(file.bootstrapPresets)
+      ? file.bootstrapPresets.filter((a): a is string => typeof a === "string")
+      : defaults.bootstrapPresets,
+    configuredRelays: Array.isArray(file.configuredRelays)
+      ? (file.configuredRelays as RelayConfig[])
+      : defaults.configuredRelays,
+    modelProviders: isValidModelProviders(file.modelProviders)
+      ? (file.modelProviders as ModelProviderConfig)
+      : defaults.modelProviders,
+    chatAssistEnabled:
+      typeof file.chatAssistEnabled === "boolean" ? file.chatAssistEnabled : defaults.chatAssistEnabled,
+    contactAiPreferences: Array.isArray(file.contactAiPreferences)
+      ? (file.contactAiPreferences as ContactAiPreferences[])
+      : defaults.contactAiPreferences,
+    updatedAt: typeof file.updatedAt === "string" ? file.updatedAt : defaults.updatedAt,
+  };
+  if (!isValidNodeConfig(merged)) {
+    return undefined;
+  }
+  return merged;
+}
+
+export function describeNodeConfigValidationFailure(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return "not an object";
+  }
+  const file = value as Record<string, unknown>;
+  if (file.version !== "0.1") {
+    return `version=${String(file.version)} (expected "0.1")`;
+  }
+  if (typeof file.profileDir !== "string") {
+    return "missing profileDir string";
+  }
+  if (file.discoveryProfile !== "lan-fast" && file.discoveryProfile !== "wan-default") {
+    return `discoveryProfile=${String(file.discoveryProfile)}`;
+  }
+  if (typeof file.relayEnabled !== "boolean") {
+    return "missing relayEnabled boolean";
+  }
+  if (typeof file.relayServerEnabled !== "boolean") {
+    return "missing relayServerEnabled boolean";
+  }
+  if (!Array.isArray(file.advertiseAddrs)) {
+    return "missing advertiseAddrs array";
+  }
+  if (!Array.isArray(file.bootstrapPeers)) {
+    return "missing bootstrapPeers array";
+  }
+  if (!Array.isArray(file.bootstrapPresets)) {
+    return "missing bootstrapPresets array";
+  }
+  if (!Array.isArray(file.configuredRelays)) {
+    return "missing configuredRelays array";
+  }
+  if (!isValidModelProviders(file.modelProviders)) {
+    return `invalid modelProviders.mode=${String((file.modelProviders as Record<string, unknown> | undefined)?.mode)}`;
+  }
+  if (typeof file.chatAssistEnabled !== "boolean") {
+    return "missing chatAssistEnabled boolean";
+  }
+  return "unknown validation failure";
 }
 
 function isValidNodeConfig(value: unknown): value is PersistedNodeConfig {

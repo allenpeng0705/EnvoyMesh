@@ -152,6 +152,8 @@ import type { BridgeIdentity } from "./bridge/pipe.js";
 import type { MeshToolContext } from "./tool-registry.js";
 import { executeTool } from "./tool-registry.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
+import { startRelayClientScheduler } from "./relay-client-cycle.js";
+import { startNodeStatsInterval } from "./node-stats-log.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { executeHomeClawCoreProxy } from "./homeclaw-core-proxy.js";
@@ -206,7 +208,6 @@ class NodeServiceImpl implements NodeService {
   private readonly _capabilityManifestStore: CapabilityManifestStore | null;
   private readonly _configStore: ReturnType<typeof createNodeConfigStore>;
   private readonly _profileDir: string;
-  private readonly _cliBootstrapPeers: readonly string[];
   /** Root directory for {@link listLibraryItems} (ENVOYMESH_VAULT or shared_vault). */
   private readonly _vaultDir: string;
   private _agentShareProposalStore: ReturnType<typeof createAgentShareProposalStore> | undefined;
@@ -543,7 +544,6 @@ class NodeServiceImpl implements NodeService {
     humanProfileStore: HumanProfileStore,
     profileDir: string | undefined,
     profile?: NodeProfile,
-    cliBootstrapPeers: readonly string[] = [],
     vaultDir?: string,
   ) {
     this._mesh = mesh;
@@ -551,7 +551,6 @@ class NodeServiceImpl implements NodeService {
     this._peerDirectoryStore = peerDirectoryStore;
     this._humanProfileStore = humanProfileStore;
     this._profileDir = profileDir ?? "/tmp/unknown";
-    this._cliBootstrapPeers = cliBootstrapPeers;
     this._vaultDir = vaultDir ?? process.env.ENVOYMESH_VAULT ?? join(process.cwd(), "shared_vault");
     this._configStore = profileDir ? createNodeConfigStore(profileDir) : createStubNodeConfigStore();
     this._chatLogStore =
@@ -729,6 +728,10 @@ class NodeServiceImpl implements NodeService {
    */
   private _advertiseInterestsTimer?: ReturnType<typeof setInterval>;
   private _advertiseInterestsStartupTimeout?: ReturnType<typeof setTimeout>;
+  private _stopRelayClientScheduler?: () => void;
+  private _stopNodeStatsLogging?: () => void;
+  private _nodeProcessStartedAtMs = Date.now();
+  private _relayBootstrapPeers: string[] = [];
 
   private async _advertiseInterests(interests: string[], username: string): Promise<void> {
     // Stop any existing advertising timer
@@ -1212,7 +1215,7 @@ class NodeServiceImpl implements NodeService {
       peerListenAddrs,
       discoverySeedStore: this._discoverySeedStore,
       config,
-      cliBootstrapPeers: this._cliBootstrapPeers,
+      profileDir: this._profileDir,
     });
   }
 
@@ -2633,6 +2636,24 @@ class NodeServiceImpl implements NodeService {
 
       void this._resyncBondedContactReachabilityTags();
 
+      this._relayBootstrapPeers = bootstrapPeers;
+      if (config.relayEnabled && this._inboundGuard && this._discoverySeedStore) {
+        this._stopRelayClientScheduler?.();
+        this._stopRelayClientScheduler = startRelayClientScheduler({
+          mesh: this._mesh,
+          profile: this._profile!,
+          bootstrapPeers,
+          inboundGuard: this._inboundGuard,
+          discoverySeedStore: this._discoverySeedStore,
+        });
+      }
+
+      this._nodeProcessStartedAtMs = Date.now();
+      this._stopNodeStatsLogging?.();
+      this._stopNodeStatsLogging = startNodeStatsInterval(this._mesh, {
+        processStartedAtMs: this._nodeProcessStartedAtMs,
+      });
+
       this._nodeStatus = "running";
       this.emit("node:status", { status: this._nodeStatus, peerId: this._mesh.peerId });
       this.emit("node:online", { peerId: this._mesh.peerId, multiaddrs: this._mesh.multiaddrs.map(a => a.toString()) });
@@ -2767,7 +2788,6 @@ class NodeServiceImpl implements NodeService {
               peerListenAddrs: requesterDir?.listenAddrs,
               discoverySeedStore: this._discoverySeedStore,
               config: await this._configStore.load(),
-              cliBootstrapPeers: this._cliBootstrapPeers,
             });
             const latencyMs = await mesh.send(requesterPeerId, signedAccept, { dialHints: autoHints });
             await taskStore.appendAuditEvent(
@@ -2856,6 +2876,11 @@ class NodeServiceImpl implements NodeService {
     this.emit("node:status", { status: this._nodeStatus });
 
     try {
+      this._stopRelayClientScheduler?.();
+      this._stopRelayClientScheduler = undefined;
+      this._stopNodeStatsLogging?.();
+      this._stopNodeStatsLogging = undefined;
+      this._relayBootstrapPeers = [];
       if (this._mesh) {
         await this._mesh.stop();
         this._mesh = undefined;
@@ -3602,7 +3627,12 @@ class NodeServiceImpl implements NodeService {
 
   recordOwnerActivity(): void {
     this.lastActivityTimestamp = Date.now();
-    console.log(`[activity] owner activity recorded, isOnline=${this.isOwnerOnline()}`);
+    void this.logOwnerActivityRecorded();
+  }
+
+  private async logOwnerActivityRecorded(): Promise<void> {
+    const online = await this.isOwnerOnline();
+    console.log(`[activity] owner activity recorded, isOnline=${online}`);
   }
 
   async isOwnerOnline(): Promise<boolean> {
@@ -3631,7 +3661,6 @@ export function createNodeService(
   humanProfileStore: HumanProfileStore,
   profileDir: string,
   profile?: NodeProfile,
-  cliBootstrapPeers?: readonly string[],
   vaultDir?: string,
 ): NodeService {
   return new NodeServiceImpl(
@@ -3641,7 +3670,6 @@ export function createNodeService(
     humanProfileStore,
     profileDir,
     profile,
-    cliBootstrapPeers,
     vaultDir,
   );
 }

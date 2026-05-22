@@ -39,8 +39,18 @@ import {
 } from "./capability-topic.js";
 import { expandListenAddressesWithQuic } from "./quic-listen.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key.js";
+import {
+  DEFAULT_CLIENT_MAX_CONNECTIONS,
+  scanLibp2pConnectionStats,
+  type MeshConnectionStats,
+} from "./connection-stats.js";
 
 export { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, loadOrCreateLibp2pPrivateKey } from "./libp2p-key.js";
+export {
+  DEFAULT_CLIENT_MAX_CONNECTIONS,
+  scanLibp2pConnectionStats,
+  type MeshConnectionStats,
+} from "./connection-stats.js";
 
 /** Prefix `keep-alive-*` triggers libp2p reconnect-on-disconnect queue for bonded contacts */
 const CONTACT_KEEP_ALIVE_PEER_TAG = `${KEEP_ALIVE}-envoymesh-contact`;
@@ -180,6 +190,11 @@ export interface EnvoyMeshOptions {
    * When omitted, libp2p generates a new ephemeral identity each process start (Peer ID changes every restart).
    */
   libp2pPrivateKeyPath?: string;
+  /**
+   * libp2p connection-manager cap. Defaults to {@link DEFAULT_CLIENT_MAX_CONNECTIONS} for client
+   * nodes; relay-server nodes stay uncapped unless set explicitly.
+   */
+  maxConnections?: number;
 }
 
 export interface CapabilityTopicProviderRecord {
@@ -211,8 +226,6 @@ export class EnvoyMesh {
   private readonly handlers = new Set<MeshMessageHandler>();
   private readonly dataHandlers = new Set<MeshDataTransferHandler>();
   private readonly peerDiscoveryHandlers = new Set<MeshPeerDiscoveryHandler>();
-  /** Peer IDs of clients connected via this relay server (when enableRelayServer is true). */
-  private readonly relayConnectedPeers = new Set<string>();
   private relayDebugTimer?: ReturnType<typeof setInterval>;
   private node?: Libp2p;
   private reachabilityLogHandlers?: {
@@ -270,6 +283,13 @@ export class EnvoyMesh {
       console.log(`[p2p] libp2p private key file: ${this.options.libp2pPrivateKeyPath}`);
     }
 
+    const maxConnections =
+      this.options.maxConnections ??
+      (this.options.enableRelayServer ? undefined : DEFAULT_CLIENT_MAX_CONNECTIONS);
+    if (maxConnections != null && this.options.enableP2pDebug) {
+      console.log(`[p2p] connectionManager.maxConnections=${maxConnections}`);
+    }
+
     this.node = await createLibp2p({
       ...(libp2pPrivateKey != null ? { privateKey: libp2pPrivateKey } : {}),
       connectionMonitor: {
@@ -277,6 +297,7 @@ export class EnvoyMesh {
         abortConnectionOnPingFailure: true,
       },
       connectionManager: {
+        ...(maxConnections != null ? { maxConnections } : {}),
         reconnectRetries: 10,
         reconnectRetryInterval: 2000,
         reconnectBackoffFactor: 1.5,
@@ -432,35 +453,36 @@ export class EnvoyMesh {
     });
   }
 
+  /** Live libp2p connection-manager snapshot (open connections only). */
+  getConnectionStats(): MeshConnectionStats {
+    if (!this.node) {
+      return {
+        totalPeerIds: 0,
+        totalConnections: 0,
+        circuitPeerIds: [],
+        circuitConnections: 0,
+      };
+    }
+
+    try {
+      const connections = (this.node as { connectionManager?: { connections?: Iterable<[unknown, unknown]> } })
+        .connectionManager?.connections;
+      return scanLibp2pConnectionStats(connections);
+    } catch {
+      return {
+        totalPeerIds: 0,
+        totalConnections: 0,
+        circuitPeerIds: [],
+        circuitConnections: 0,
+      };
+    }
+  }
+
   /**
-   * Returns peer IDs observed on relay/circuit connections.
+   * Returns peer IDs with at least one open `/p2p-circuit` connection (relay paths or relay-server clients).
    */
   getConnectedRelayPeerIds(): string[] {
-    const allPeers = new Set<string>();
-
-    for (const peerId of this.relayConnectedPeers) {
-      allPeers.add(peerId);
-    }
-
-    if (this.node) {
-      try {
-        const connections = (this.node as any).connectionManager?.connections;
-        if (connections) {
-          for (const [peerIdStr, conns] of connections) {
-            const hasRelayConnection = Array.isArray(conns)
-              ? conns.some((conn) => (conn?.remoteAddr?.toString?.() ?? "").includes("/p2p-circuit"))
-              : false;
-            if (hasRelayConnection) {
-              allPeers.add(String(peerIdStr));
-            }
-          }
-        }
-      } catch {
-        // Connection manager API may vary
-      }
-    }
-
-    const result = [...allPeers];
+    const result = this.getConnectionStats().circuitPeerIds;
     if (this.options.enableP2pDebug) {
       console.log(`[relay-tracked] getConnectedRelayPeerIds returning: ${JSON.stringify(result)}`);
     }
@@ -1362,67 +1384,37 @@ export class EnvoyMesh {
       return;
     }
 
-    // Track relay-connected peers when relay transport or relay server is enabled
-    const relayTrackingEnabled = this.options.enableRelay || this.options.enableRelayServer;
-    if (relayTrackingEnabled) {
-      typedNode.addEventListener("peer:connect", (event: any) => {
-        const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
-        this.relayConnectedPeers.add(remotePeerId);
-        if (this.options.enableP2pDebug) {
-          console.log(`[relay-tracked] peer:connect ${remotePeerId} (total: ${this.relayConnectedPeers.size})`);
-        }
-      });
-
-      typedNode.addEventListener("peer:disconnect", (event: any) => {
-        const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
-        this.relayConnectedPeers.delete(remotePeerId);
-        if (this.options.enableP2pDebug) {
-          console.log(`[relay-tracked] peer:disconnect ${remotePeerId} (total: ${this.relayConnectedPeers.size})`);
-        }
-      });
-
-      // Also track using connectionManager for relay connections which may not fire peer:connect
-      if (this.node) {
-        this.relayDebugTimer = setInterval(() => {
-          try {
-            const cmap = (this.node as any).connectionManager;
-            let relayCount = 0;
-            let totalCount = 0;
-            let peersList: string[] = [];
-            if (cmap?.connections) {
-              // connections is a Map-like structure
-              try {
-                for (const [peerIdStr, conns] of cmap.connections) {
-                  peersList.push(String(peerIdStr));
-                  totalCount += conns.length;
-                  for (const conn of conns) {
-                    const remoteAddr = conn?.remoteAddr?.toString?.() ?? "";
-                    const connDir = conn?.stat?.direction ?? "unknown";
-                    if (remoteAddr.includes("/p2p-circuit")) {
-                      this.relayConnectedPeers.add(String(peerIdStr));
-                      relayCount++;
-                    }
-                    if (this.options.enableP2pDebug) {
-                      console.log(`[relay-debug] conn peer=${peerIdStr} dir=${connDir} addr=${remoteAddr}`);
-                    }
-                  }
-                }
-              } catch (e) {
-                if (this.options.enableP2pDebug) {
-                  console.log(`[relay-debug] connectionManager iteration failed: ${e}`);
-                }
-              }
+    const relayDebugEnabled =
+      this.options.enableP2pDebug && (this.options.enableRelay || this.options.enableRelayServer);
+    if (relayDebugEnabled && this.node) {
+      this.relayDebugTimer = setInterval(() => {
+        try {
+          const stats = this.getConnectionStats();
+          if (this.options.enableRelayDebugSummary) {
+            console.log(
+              `[relay-debug] SUMMARY: circuitPeers=${stats.circuitPeerIds.length} circuitConns=${stats.circuitConnections} totalPeers=${stats.totalPeerIds} totalConns=${stats.totalConnections}`,
+            );
+            return;
+          }
+          const cmap = (this.node as { connectionManager?: { connections?: Map<string, unknown[]> } })
+            .connectionManager;
+          if (!cmap?.connections) {
+            return;
+          }
+          for (const [peerIdStr, conns] of cmap.connections) {
+            if (!Array.isArray(conns)) {
+              continue;
             }
-            if (this.options.enableP2pDebug && this.options.enableRelayDebugSummary) {
-              console.log(`[relay-debug] SUMMARY: peers=${peersList.join(",")} total=${totalCount} relay=${relayCount} tracked=${this.relayConnectedPeers.size}`);
-            }
-          } catch (e) {
-            if (this.options.enableP2pDebug) {
-              console.log(`[relay-debug] error: ${e}`);
+            for (const conn of conns) {
+              const remoteAddr = (conn as { remoteAddr?: { toString?: () => string } })?.remoteAddr?.toString?.() ?? "";
+              const connDir = (conn as { stat?: { direction?: string } })?.stat?.direction ?? "unknown";
+              console.log(`[relay-debug] conn peer=${peerIdStr} dir=${connDir} addr=${remoteAddr}`);
             }
           }
-        }, 5000);
-      }
+        } catch (e) {
+          console.log(`[relay-debug] error: ${e}`);
+        }
+      }, 5000);
     }
 
     if (!this.options.enableP2pDebug) {
@@ -1563,6 +1555,17 @@ export function isUnusableBootstrapMultiaddr(addr: string): boolean {
   return false;
 }
 
+/** True for libp2p project's public DHT bootstrap dnsaddr multiaddrs (not EnvoyMesh circuit relays). */
+export function isPublicLibp2pBootstrapMultiaddr(addr: string): boolean {
+  const a = addr.trim();
+  return (
+    a.includes("bootstrap.libp2p.io") ||
+    a.includes("/dnsaddr/bootstrap.libp2p.io/") ||
+    a.includes("/dnsaddr/am6.bootstrap.libp2p.io/") ||
+    a.includes("/dnsaddr/am7.bootstrap.libp2p.io/")
+  );
+}
+
 /** Keep only multiaddrs suitable for libp2p bootstrap and relay control-plane dials. */
 export function filterBootstrapMultiaddrs(addrs: string[]): string[] {
   const seen = new Set<string>();
@@ -1576,6 +1579,11 @@ export function filterBootstrapMultiaddrs(addrs: string[]): string[] {
     out.push(a);
   }
   return out;
+}
+
+/** Bootstrap addrs that speak Envoy relay.checkin / relay.lookup (exclude public libp2p DHT nodes). */
+export function filterRelayControlTargets(addrs: string[]): string[] {
+  return filterBootstrapMultiaddrs(addrs).filter((a) => !isPublicLibp2pBootstrapMultiaddr(a));
 }
 
 /** Returns true if the multiaddr uses QUIC (udp port + quic-v1). */

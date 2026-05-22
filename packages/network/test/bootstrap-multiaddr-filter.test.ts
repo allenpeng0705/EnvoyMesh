@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   filterBootstrapMultiaddrs,
+  filterRelayControlTargets,
   isDockerBridgeGatewayDialHint,
+  isPublicLibp2pBootstrapMultiaddr,
   isUnusableBootstrapMultiaddr,
 } from "../src/index.js";
 
@@ -30,6 +32,24 @@ describe("bootstrap multiaddr filter", () => {
     expect(isDockerBridgeGatewayDialHint("/ip4/172.17.0.1/tcp/4001/p2p/x")).toBe(true);
     expect(isDockerBridgeGatewayDialHint("/ip4/172.31.0.1/tcp/4001/p2p/x")).toBe(true);
     expect(isDockerBridgeGatewayDialHint("/ip4/192.168.1.1/tcp/4001/p2p/x")).toBe(false);
+  });
+
+  it("detects public libp2p bootstrap dnsaddr multiaddrs", () => {
+    expect(
+      isPublicLibp2pBootstrapMultiaddr(
+        "/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf",
+      ),
+    ).toBe(true);
+    expect(isPublicLibp2pBootstrapMultiaddr(relay)).toBe(false);
+  });
+
+  it("filterRelayControlTargets excludes public libp2p bootstrap nodes", () => {
+    expect(
+      filterRelayControlTargets([
+        relay,
+        "/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf",
+      ]),
+    ).toEqual([relay]);
   });
 
   it("filterBootstrapMultiaddrs dedupes and drops unusable entries", () => {

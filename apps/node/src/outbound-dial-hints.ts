@@ -3,11 +3,15 @@
  * Drops loopback/non-routable listen addrs recorded for the *remote* peer (they dial localhost on this machine),
  * merges discovery seeds + relay circuit paths — same ingredients as outbound chat.
  */
-import { isDockerBridgeGatewayDialHint, isLoopbackOrUnspecifiedDialHint } from "@envoymesh/network";
+import {
+  isDockerBridgeGatewayDialHint,
+  isLoopbackOrUnspecifiedDialHint,
+  isPublicLibp2pBootstrapMultiaddr,
+} from "@envoymesh/network";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
-import type { PersistedNodeConfig } from "./node-config-store.js";
-import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
+import { createDefaultPersistedNodeConfig, type PersistedNodeConfig } from "./node-config-store.js";
+import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR, DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS } from "@envoymesh/api";
 
 function relayCircuitToPeer(relayBaseMultiaddr: string, targetPeerId: string): string | undefined {
   const s = relayBaseMultiaddr.trim().replace(/\/$/, "");
@@ -36,12 +40,48 @@ function dedupeDialHints(addrs: string[]): string[] {
   return ordered;
 }
 
+/** Envoy/community relay bases for synthetic `/p2p-circuit/` dial hints — not libp2p public DHT bootstrap nodes. */
+function relayBasesForCircuitDial(input: {
+  config: PersistedNodeConfig | undefined;
+  profileDir?: string;
+}): string[] {
+  const config =
+    input.config ??
+    (input.profileDir ? createDefaultPersistedNodeConfig(input.profileDir) : undefined);
+  const bases: string[] = [];
+  for (const relay of config?.configuredRelays ?? []) {
+    if (relay.enabled && relay.addr?.trim()) {
+      bases.push(relay.addr.trim());
+    }
+  }
+  for (const addr of config?.bootstrapPeers ?? []) {
+    const t = addr.trim();
+    if (t && !isPublicLibp2pBootstrapMultiaddr(t)) {
+      bases.push(t);
+    }
+  }
+  const envBootstrap =
+    process.env.ENVOYMESH_BOOTSTRAP_PEERS?.split(/[,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean) ?? [];
+  for (const addr of envBootstrap) {
+    if (!isPublicLibp2pBootstrapMultiaddr(addr)) {
+      bases.push(addr);
+    }
+  }
+  const cfgPresets = config?.bootstrapPresets ?? [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS];
+  if (cfgPresets.includes("cn-relay") || config?.relayEnabled !== false) {
+    bases.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+  }
+  return dedupeDialHints(bases);
+}
+
 export async function buildOutboundDialHints(input: {
   recipientPeerId: string;
   peerListenAddrs: string[] | undefined;
   discoverySeedStore: DiscoverySeedStore | undefined;
   config: PersistedNodeConfig | undefined;
-  cliBootstrapPeers: readonly string[];
+  profileDir?: string;
 }): Promise<string[]> {
   const raw = (input.peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
   /** Never dial the remote peer's loopback or local docker-bridge IP from our machine. */
@@ -56,24 +96,10 @@ export async function buildOutboundDialHints(input: {
   }
 
   const seeds = await store.listSeedAddrs();
-  const envBootstrap =
-    process.env.ENVOYMESH_BOOTSTRAP_PEERS?.split(/[,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean) ?? [];
-
-  const extraRelays: string[] = [
-    ...input.cliBootstrapPeers,
-    ...envBootstrap,
-    ...(input.config?.bootstrapPeers ?? []),
-    ...(input.config?.configuredRelays?.filter((r) => r.enabled && r.addr).map((r) => r.addr) ?? []),
-  ];
-
-  const cfgPresets = input.config?.bootstrapPresets ?? [];
-  if (cfgPresets.includes("cn-relay")) {
-    extraRelays.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
-  }
-
-  const relayPool = dedupeDialHints([...seeds, ...extraRelays]);
+  const relayPool = dedupeDialHints([
+    ...seeds.filter((s) => s.includes("/p2p-circuit/")),
+    ...relayBasesForCircuitDial({ config: input.config, profileDir: input.profileDir }),
+  ]);
 
   const recipientPeerId = input.recipientPeerId.trim();
   out = [...nonLoopListen];

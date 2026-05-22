@@ -46,6 +46,7 @@ import {
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
   filterBootstrapMultiaddrs,
+  filterRelayControlTargets,
   voucherJsonBytesFromObject,
   type P2pDebugEvent,
 } from "@envoymesh/network";
@@ -168,6 +169,7 @@ import {
   type NodeHealthState,
 } from "./node-health.js";
 import { createClientProxyHandler } from "./client-proxy-handler.js";
+import { startNodeStatsInterval } from "./node-stats-log.js";
 
 const args = parseNodeArgs(process.argv.slice(2));
 const profile = await loadOrCreateNodeProfile(args.profileDir);
@@ -476,7 +478,7 @@ let relayHealthTimer: ReturnType<typeof setTimeout> | undefined;
 let nodeHealthTimer: ReturnType<typeof setTimeout> | undefined;
 let eventLoopLagTimer: ReturnType<typeof setInterval> | undefined;
 let discoveryQueueTimer: ReturnType<typeof setTimeout> | undefined;
-let statsIntervalTimer: ReturnType<typeof setInterval> | undefined;
+let stopNodeStatsLogging: (() => void) | undefined;
 let rateLimitCleanupInterval: ReturnType<typeof setInterval> | undefined;
 let rendezvousSweeper: ReturnType<typeof setInterval> | undefined;
 let modeTransitionTimer: ReturnType<typeof setInterval> | undefined;
@@ -1925,7 +1927,6 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           peerListenAddrs: requesterDir?.listenAddrs,
           discoverySeedStore,
           config: undefined,
-          cliBootstrapPeers: effectiveBootstrapPeers,
         });
         const latencyMs = await mesh.send(requesterPeerId, signedAccept, { dialHints });
         await taskStore.appendAuditEvent(
@@ -2048,7 +2049,6 @@ const nodeService = createNodeService(
   humanProfileStore,
   args.profileDir,
   profile,
-  effectiveBootstrapPeers,
   vaultDirForNode,
 );
 if (nodeService instanceof NodeServiceImpl) {
@@ -2122,29 +2122,10 @@ if (args.bootstrapPeers.length > 0) {
 console.log("Envoy node started");
 
 // Start periodic self-monitoring stats (crash prevention)
-statsIntervalTimer = setInterval(() => {
-  try {
-    const uptimeSeconds = Math.floor((Date.now() - processStartedAt) / 1000);
-    const relayPeers = mesh.getConnectedRelayPeerIds();
-    const rss = process.memoryUsage?.()?.rss ?? 0;
-    const rssMB = Math.floor(rss / 1024 / 1024);
-
-    // Log self-checkpoint
-    if (uptimeSeconds % 300 < 60 || rssMB > 1024) {
-      // Every 5 minutes or if memory > 1GB, log a checkpoint
-      console.log(
-        `[node-stats] uptime=${uptimeSeconds}s relayPeers=${relayPeers.length} memory=${rssMB}MB`,
-      );
-    }
-
-    // Warn if memory is growing unbounded (potential leak)
-    if (rssMB > 2048) {
-      console.warn(`[node-stats] WARNING: memory usage ${rssMB}MB exceeds 2GB - possible leak`);
-    }
-  } catch (err) {
-    console.error("[node-stats] stats interval error:", err);
-  }
-}, 60_000);
+stopNodeStatsLogging = startNodeStatsInterval(mesh, {
+  processStartedAtMs: processStartedAt,
+  relayRosterSize: () => relayRoster.entries().length,
+});
 
 // Periodic cleanup of expired rate limit entries
 rateLimitCleanupInterval = setInterval(() => {
@@ -2867,10 +2848,8 @@ async function shutdown(): Promise<void> {
     clearInterval(eventLoopLagTimer);
     eventLoopLagTimer = undefined;
   }
-  if (statsIntervalTimer) {
-    clearInterval(statsIntervalTimer);
-    statsIntervalTimer = undefined;
-  }
+  stopNodeStatsLogging?.();
+  stopNodeStatsLogging = undefined;
   if (rateLimitCleanupInterval) {
     clearInterval(rateLimitCleanupInterval);
     rateLimitCleanupInterval = undefined;
@@ -4218,7 +4197,7 @@ function relayDialMultiaddrsForCircuitRelay(mesh: EnvoyMesh, advertiseAddrs: str
 }
 
 function relayControlTargets(): string[] {
-  return filterBootstrapMultiaddrs(
+  return filterRelayControlTargets(
     dedupeAddrs([
       ...relayClientState.activeRelays.flatMap((relay) => relay.multiaddrs),
       ...effectiveBootstrapPeers,
