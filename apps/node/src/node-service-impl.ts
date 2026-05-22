@@ -127,6 +127,7 @@ import {
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
   DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME,
+  filterBootstrapMultiaddrs,
   type EnvoyMeshOptions,
 } from "@envoymesh/network";
 import { stat } from "node:fs/promises";
@@ -2560,7 +2561,7 @@ class NodeServiceImpl implements NodeService {
       // Compute effective bootstrap peers
       // Must resolve bootstrapPresets to actual multiaddresses for mesh connectivity
       const peerRecords = await this._peerDirectoryStore.listPeerRecords();
-      const peerDirAddrs = peerRecords.flatMap((r) => r.listenAddrs);
+      const peerDirAddrCount = peerRecords.reduce((n, r) => n + r.listenAddrs.length, 0);
       const seedAddrs = await this._discoverySeedStore.listSeedAddrs();
 
       // Resolve bootstrap presets to actual multiaddresses
@@ -2577,12 +2578,16 @@ class NodeServiceImpl implements NodeService {
         }
       }
 
-      const allBootstrapAddrs = [...config.bootstrapPeers, ...resolvedPresetAddrs, ...peerDirAddrs, ...seedAddrs];
-      // Filter out any undefined, empty, or invalid multiaddr strings
-      const validBootstrapPeers = allBootstrapAddrs.filter((addr): addr is string => {
-        return typeof addr === "string" && addr.trim().length > 0 && addr.startsWith("/");
-      });
-      const bootstrapPeers = [...new Set(validBootstrapPeers)];
+      const rawBootstrapAddrs = [...config.bootstrapPeers, ...resolvedPresetAddrs, ...seedAddrs].filter(
+        (addr): addr is string =>
+          typeof addr === "string" && addr.trim().length > 0 && addr.startsWith("/"),
+      );
+      const bootstrapPeers = filterBootstrapMultiaddrs([...new Set(rawBootstrapAddrs)]);
+      if (rawBootstrapAddrs.length !== bootstrapPeers.length || peerDirAddrCount > 0) {
+        console.log(
+          `[node-service] bootstrap addrs: kept=${bootstrapPeers.length} filtered=${rawBootstrapAddrs.length - bootstrapPeers.length} peer-dir-skipped=${peerDirAddrCount} (contact listen addrs use dial hints only)`,
+        );
+      }
 
       console.log(`[node-service] Bootstrap peers resolved: ${bootstrapPeers.length} addresses`);
       for (const bp of bootstrapPeers) {

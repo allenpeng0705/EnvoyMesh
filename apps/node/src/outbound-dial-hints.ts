@@ -3,7 +3,7 @@
  * Drops loopback/non-routable listen addrs recorded for the *remote* peer (they dial localhost on this machine),
  * merges discovery seeds + relay circuit paths — same ingredients as outbound chat.
  */
-import { isLoopbackOrUnspecifiedDialHint } from "@envoymesh/network";
+import { isDockerBridgeGatewayDialHint, isLoopbackOrUnspecifiedDialHint } from "@envoymesh/network";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
@@ -44,8 +44,10 @@ export async function buildOutboundDialHints(input: {
   cliBootstrapPeers: readonly string[];
 }): Promise<string[]> {
   const raw = (input.peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
-  /** Never dial the remote peer's loopback IP from our machine — it hits 127.0.0.1 here and fails (ECONNREFUSED). */
-  const nonLoopListen = raw.filter((a) => !isLoopbackOrUnspecifiedDialHint(a));
+  /** Never dial the remote peer's loopback or local docker-bridge IP from our machine. */
+  const nonLoopListen = raw.filter(
+    (a) => !isLoopbackOrUnspecifiedDialHint(a) && !isDockerBridgeGatewayDialHint(a),
+  );
 
   let out = [...nonLoopListen];
   const store = input.discoverySeedStore;

@@ -1537,6 +1537,47 @@ export function isLoopbackOrUnspecifiedDialHint(addr: string): boolean {
   );
 }
 
+/**
+ * Docker Desktop / bridge interface gateways libp2p announces when listening on 0.0.0.0.
+ * Dialing these from the host does not reach a remote libp2p peer.
+ */
+export function isDockerBridgeGatewayDialHint(addr: string): boolean {
+  return /\/ip4\/172\.(1[7-9]|2\d|3[01])\.0\.1\//.test(addr);
+}
+
+/** True when a multiaddr must not be used as bootstrap / relay.checkin target. */
+export function isUnusableBootstrapMultiaddr(addr: string): boolean {
+  const a = addr.trim();
+  if (!a.startsWith("/")) {
+    return true;
+  }
+  if (isLoopbackOrUnspecifiedDialHint(a)) {
+    return true;
+  }
+  if (isDockerBridgeGatewayDialHint(a)) {
+    return true;
+  }
+  if (!a.includes("/p2p/")) {
+    return true;
+  }
+  return false;
+}
+
+/** Keep only multiaddrs suitable for libp2p bootstrap and relay control-plane dials. */
+export function filterBootstrapMultiaddrs(addrs: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of addrs) {
+    const a = raw.trim();
+    if (!a || isUnusableBootstrapMultiaddr(a) || seen.has(a)) {
+      continue;
+    }
+    seen.add(a);
+    out.push(a);
+  }
+  return out;
+}
+
 /** Returns true if the multiaddr uses QUIC (udp port + quic-v1). */
 export function isQuicDialHint(addr: string): boolean {
   return addr.includes("/quic-v1");

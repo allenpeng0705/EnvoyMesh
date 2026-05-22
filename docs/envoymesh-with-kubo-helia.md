@@ -350,18 +350,10 @@ You do **not** need IPFS Desktop, `ipfs init`, or a separate `ipfs daemon` termi
 
 **Setup (one time):**
 
-1. **If using Kubo engine:** install Kubo so the **same shell that runs the node** can execute `ipfs`:
+1. **If using Kubo engine:** install Kubo so the **same shell that runs the node** can execute `ipfs` — see [§4.3](#43-installing-kubo-browser--nodedev) for macOS, Linux, and Windows steps.
 
    ```bash
    ipfs version -n   # must succeed in the terminal you use for node:dev
-   ```
-
-   Download from [github.com/ipfs/kubo/releases](https://github.com/ipfs/kubo/releases) or use IPFS Desktop (if `ipfs` is on PATH).
-
-   Optional: point at a specific binary instead of PATH:
-
-   ```bash
-   export ENVOYMESH_IPFS_EXE=/path/to/ipfs
    ```
 
    **If using Helia engine:** skip Kubo install — select **Helia (in-process)** in Settings.
@@ -441,10 +433,111 @@ Power users may still use a global `~/.ipfs` repo with IPFS Desktop. EnvoyMesh *
 export ENVOYMESH_IPFS_PATH=$HOME/.ipfs
 ```
 
-If you use **Helia** or EnvoyMesh’s managed Kubo engine, skip manual steps. To confirm Kubo is visible to the node (Kubo engine):
+If you use **Helia** or EnvoyMesh’s managed Kubo engine, skip manual repo steps. For installing the `ipfs` binary itself, see [§4.3](#43-installing-kubo-browser--nodedev).
+
+---
+
+### 4.3 Installing Kubo (browser + node:dev)
+
+**When you need this:** Social UI in a **browser** with **Export engine = Kubo** (or Kubo + Helia shadow) and `npm run node:dev`. You do **not** need a separate Kubo install for:
+
+- **Tauri desktop** — Kubo is bundled as a sidecar ([§3.1](#31-tauri-desktop-app-recommended-for-end-users))
+- **Helia engine** — export runs in-process; select **Helia** in Settings instead
+- **Mobile** — Helia only ([§3.3](#33-mobile-helia-in-process--no-kubo))
+
+EnvoyMesh only needs the **`ipfs` CLI** on the machine that runs the node. It does **not** require you to run `ipfs init` or `ipfs daemon` manually — the managed engine creates `{profile}/ipfs-kubo` and starts the daemon on first export ([§9.3](#93-option-c--envoy-managed-kubo-daemon)).
+
+**Upstream reference:** [Install Kubo — IPFS Docs](https://docs.ipfs.tech/install/) · [Kubo releases](https://github.com/ipfs/kubo/releases)
+
+**Version note:** EnvoyMesh CI and Tauri sidecars pin **Kubo 0.32.1** (`./scripts/fetch-kubo-sidecar.sh`). Newer Kubo versions usually work for export, but use **0.32.1** if you want to match golden/parity tests exactly.
+
+#### Option 1 — Repo sidecar (no system install)
+
+Fetch the same binary Tauri bundles and point the node at it:
 
 ```bash
+./scripts/fetch-kubo-sidecar.sh 0.32.1
+export ENVOYMESH_IPFS_EXE="$PWD/apps/tauri/resources/kubo/ipfs"   # macOS/Linux
+# Windows (PowerShell): $env:ENVOYMESH_IPFS_EXE = "$PWD\apps\tauri\resources\kubo\ipfs.exe"
+
+npm run node:dev
+```
+
+#### Option 2 — macOS
+
+**Homebrew** (convenient; version may differ from CI pin):
+
+```bash
+brew install ipfs
 ipfs version -n
+```
+
+**Official tarball** (matches CI pin — pick `darwin-arm64` or `darwin-amd64`):
+
+```bash
+KUBO_VERSION=0.32.1
+ARCH=$(uname -m); case "$ARCH" in arm64|aarch64) ARCH=arm64;; *) ARCH=amd64;; esac
+curl -fsSL "https://dist.ipfs.tech/kubo/v${KUBO_VERSION}/kubo_v${KUBO_VERSION}_darwin-${ARCH}.tar.gz" -o /tmp/kubo.tgz
+tar -xzf /tmp/kubo.tgz -C /tmp
+sudo install -m 755 /tmp/kubo/ipfs /usr/local/bin/ipfs
+ipfs version -n
+```
+
+**IPFS Desktop:** install from [docs.ipfs.tech/install/ipfs-desktop](https://docs.ipfs.tech/install/ipfs-desktop/) — works if `ipfs` is on PATH in the terminal where you run `node:dev`.
+
+#### Option 3 — Linux
+
+**Official tarball** (replace `linux-amd64` with `linux-arm64` on ARM):
+
+```bash
+KUBO_VERSION=0.32.1
+curl -fsSL "https://dist.ipfs.tech/kubo/v${KUBO_VERSION}/kubo_v${KUBO_VERSION}_linux-amd64.tar.gz" -o /tmp/kubo.tgz
+tar -xzf /tmp/kubo.tgz -C /tmp
+sudo install -m 755 /tmp/kubo/ipfs /usr/local/bin/ipfs
+ipfs version -n
+```
+
+Distro packages (Debian/Ubuntu, Arch, etc.) are listed in the [official install guide](https://docs.ipfs.tech/install/command-line/#install-official-binary). Prefer the tarball above if you need **0.32.1** exactly.
+
+#### Option 4 — Windows
+
+1. Download `kubo_v0.32.1_windows-amd64.zip` (or `windows-arm64`) from [dist.ipfs.tech/kubo/v0.32.1](https://dist.ipfs.tech/kubo/v0.32.1/).
+2. Extract `ipfs.exe` to a folder on your PATH, **or** set before starting the node:
+
+   ```powershell
+   $env:ENVOYMESH_IPFS_EXE = "C:\path\to\ipfs.exe"
+   npm run node:dev
+   ```
+
+3. Verify in the **same** terminal:
+
+   ```powershell
+   ipfs version -n
+   ```
+
+**IPFS Desktop** is also supported if `ipfs.exe` is on PATH for the shell running `node:dev`.
+
+#### After install — verify and run
+
+1. In the terminal that will run the node:
+
+   ```bash
+   ipfs version -n   # must print a semver (e.g. 0.32.1)
+   ```
+
+2. Start the node (and Social UI per [§3.2](#32-social-app-in-browser--nodejs-dev--power-users)):
+
+   ```bash
+   npm run node:dev
+   ```
+
+3. In the browser UI: **Settings → Node → External distribution** → **Allow IPFS export**, export engine **Kubo**. **Library → Export** should initialize `{profile}/ipfs-kubo` and start the managed daemon automatically.
+
+**If `ipfs` is not on PATH** but the binary exists elsewhere:
+
+```bash
+export ENVOYMESH_IPFS_EXE=/absolute/path/to/ipfs
+npm run node:dev
 ```
 
 ---
@@ -556,7 +649,7 @@ EnvoyMesh profile data and Kubo repo live **under the same profile tree** by def
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | **Browser UI:** Export fails / WebSocket error | Node not running | Start `npm run node:dev`; confirm port 3030 |
-| **Browser UI:** “IPFS engine is not available” (Kubo) | Kubo not on PATH for **node** process | Install Kubo; run `ipfs version -n` in the **same terminal** as `node:dev`, or set `ENVOYMESH_IPFS_EXE`, or switch to **Helia** engine |
+| **Browser UI:** “IPFS engine is not available” (Kubo) | Kubo not on PATH for **node** process | Follow [§4.3](#43-installing-kubo-browser--nodedev); run `ipfs version -n` in the **same terminal** as `node:dev`, or set `ENVOYMESH_IPFS_EXE`, or switch to **Helia** engine |
 | **Browser UI:** Helia unavailable | Helia deps failed to load | Check node logs; confirm `@envoymesh/ipfs-helia` build |
 | **Tauri:** “IPFS engine is not available” (Kubo) | Sidecar missing from bundle | Run `./scripts/fetch-kubo-sidecar.sh` before Tauri build; or use Helia engine / slim build |
 | `IPFS engine did not start in time` | Kubo daemon failed or port busy | Retry export; set `ENVOYMESH_IPFS_API_PORT` if 5017 is taken; or switch to Helia |
@@ -578,7 +671,7 @@ The **Go vs TypeScript split** is stable at runtime (Kubo subprocess + HTTP for 
 
 ### 9.1 Option A — Separate Kubo install (browser + node:dev)
 
-**How:** Install Kubo on PATH for the machine running `npm run node:dev`. Managed engine handles repo + daemon ([§3.2](#32-social-app-in-browser--nodejs-dev--power-users)).
+**How:** Install Kubo on PATH for the machine running `npm run node:dev` ([§4.3](#43-installing-kubo-browser--nodedev)). Managed engine handles repo + daemon ([§3.2](#32-social-app-in-browser--nodejs-dev--power-users)).
 
 | Pros | Cons |
 |------|------|
@@ -652,7 +745,7 @@ The **Go vs TypeScript split** is stable at runtime (Kubo subprocess + HTTP for 
 | **Social in browser (dev)** | [§3.2](#32-social-app-in-browser--nodejs-dev--power-users) — Kubo on PATH + managed engine, or Helia in-process |
 | **Tauri desktop “it just works” (Kubo)** | [§3.1](#31-tauri-desktop-app-recommended-for-end-users) — Option B + C |
 | **Tauri Helia-only (no Go binary)** | Slim build + Helia engine ([§1.1](#11-export-engine-switching-kubo--helia-dual-engine)) |
-| **Minimal installer, IPFS rare** | Option A or Helia engine — document Kubo install for node only if using Kubo |
+| **Minimal installer, IPFS rare** | Option A or Helia engine — [§4.3](#43-installing-kubo-browser--nodedev) if using Kubo on browser+node |
 | **Mobile** | Helia in-process ([§3.3](#33-mobile-helia-in-process--no-kubo)) |
 
 ---

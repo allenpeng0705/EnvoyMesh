@@ -45,6 +45,7 @@ import {
   ENVOY_DATA_PROTOCOL,
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
+  filterBootstrapMultiaddrs,
   voucherJsonBytesFromObject,
   type P2pDebugEvent,
 } from "@envoymesh/network";
@@ -328,11 +329,13 @@ const persistedSeedAddrs = await discoverySeedStore.listSeedAddrs();
 const resolvedBootstrapResults = await resolveBootstrapAddresses(args.bootstrapPeers);
 const resolvedBootstrapPeers = resolvedBootstrapResults.flatMap((r) => r.resolved);
 
-const effectiveBootstrapPeers = dedupeAddrs([
-  ...resolvedBootstrapPeers,
-  ...peerDirectorySeedAddrs,
-  ...persistedSeedAddrs,
-]);
+const rawBootstrapPeers = dedupeAddrs([...resolvedBootstrapPeers, ...persistedSeedAddrs]);
+const effectiveBootstrapPeers = filterBootstrapMultiaddrs(rawBootstrapPeers);
+if (rawBootstrapPeers.length !== effectiveBootstrapPeers.length || peerDirectorySeedAddrs.length > 0) {
+  console.log(
+    `[connectivity] bootstrap addrs: kept=${effectiveBootstrapPeers.length} filtered=${rawBootstrapPeers.length - effectiveBootstrapPeers.length} peer-dir-skipped=${peerDirectorySeedAddrs.length} (contact listen addrs use dial hints only)`,
+  );
+}
 const libp2pPrivateKeyPath = join(args.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME);
 const mesh = new EnvoyMesh({
   listen: args.listen,
@@ -4215,10 +4218,12 @@ function relayDialMultiaddrsForCircuitRelay(mesh: EnvoyMesh, advertiseAddrs: str
 }
 
 function relayControlTargets(): string[] {
-  return dedupeAddrs([
-    ...relayClientState.activeRelays.flatMap((relay) => relay.multiaddrs),
-    ...effectiveBootstrapPeers,
-  ]);
+  return filterBootstrapMultiaddrs(
+    dedupeAddrs([
+      ...relayClientState.activeRelays.flatMap((relay) => relay.multiaddrs),
+      ...effectiveBootstrapPeers,
+    ]),
+  );
 }
 
 function buildRelayManagerRuntimeState(): RelayManagerRuntimeState {
