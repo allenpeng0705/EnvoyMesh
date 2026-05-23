@@ -18,13 +18,14 @@ export async function sendVaultFileViaDataTransfer(input: {
   vaultDir: string;
   relativePath: string;
   toPeerId: string;
+  dialHints?: string[];
   transferHooks?: {
     onUpdate: (status: Partial<TransferStatus> & { correlationId: string }) => void;
     correlationId: string;
     remotePeerOwnerId?: string;
   };
 }): Promise<void> {
-  const { mesh, profile, taskStore, vaultDir, relativePath, toPeerId, transferHooks } = input;
+  const { mesh, profile, taskStore, vaultDir, relativePath, toPeerId, dialHints, transferHooks } = input;
   const norm = relativePath.replace(/^[\\/]+/, "");
   if (!isSafeVaultPath(vaultDir, norm)) {
     throw new Error("Unsafe vault path for data transfer");
@@ -60,7 +61,12 @@ export async function sendVaultFileViaDataTransfer(input: {
   for (let offset = 0; offset < content.length; offset += chunkSize) {
     chunks.push(content.subarray(offset, Math.min(offset + chunkSize, content.length)));
   }
-  const latencyMs = await mesh.sendDataTransfer(toPeerId, voucherUtf8, chunks);
+  const latencyMs = await mesh.sendDataTransfer(
+    toPeerId,
+    voucherUtf8,
+    chunks,
+    dialHints?.length ? { dialHints } : undefined,
+  );
   transferHooks?.onUpdate({
     correlationId: transferHooks.correlationId,
     phase: "verified",

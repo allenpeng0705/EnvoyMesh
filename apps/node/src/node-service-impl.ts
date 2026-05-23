@@ -410,7 +410,12 @@ class NodeServiceImpl implements NodeService {
   /** Inbound `share.preview` on the original requester (push) — links preview id to pending send. */
   linkOutboundSharePreviewFromInbound(previewMessageId: string, inReplyToRequestMsgId: string): void {
     const pending = this._pendingPushShareByRequestMsgId.get(inReplyToRequestMsgId);
-    if (!pending) return;
+    if (!pending) {
+      console.warn(
+        `[share] preview ${previewMessageId.slice(0, 12)}…: no pending push send for request ${inReplyToRequestMsgId.slice(0, 12)}…`,
+      );
+      return;
+    }
     this._pendingFileSendByPreviewMsgId.set(previewMessageId, pending);
     this._pendingPushShareByRequestMsgId.delete(inReplyToRequestMsgId);
     const correlationId = this._correlationByRequestMsgId.get(inReplyToRequestMsgId);
@@ -503,7 +508,12 @@ class NodeServiceImpl implements NodeService {
     if (!payload.accept) return;
     const previewId = payload.inReplyTo;
     const pending = this._pendingFileSendByPreviewMsgId.get(previewId);
-    if (!pending) return;
+    if (!pending) {
+      console.warn(
+        `[share] share.accept for preview ${previewId.slice(0, 12)}…: no pending file send (preview not linked?)`,
+      );
+      return;
+    }
     if (pending.toPeerId !== input.remotePeerId) {
       console.warn(
         `[share] file send skipped: peer mismatch for preview=${previewId.slice(0, 12)}…`,
@@ -513,6 +523,23 @@ class NodeServiceImpl implements NodeService {
     const mesh = this._reachableMesh();
     const profile = this._profile;
     if (!mesh || !profile) return;
+
+    const peerRecords = await this._peerDirectoryStore.listPeerRecords();
+    const rec = peerRecords.find((r) => r.peerId === input.remotePeerId);
+    let dialHints: string[];
+    try {
+      dialHints = await raceWithTimeout(
+        this._dialHintsForChat(input.remotePeerId, rec?.listenAddrs),
+        30_000,
+        "_dialHintsForChat",
+      );
+    } catch (err) {
+      console.error(
+        `[share] dial hints failed for data transfer to ${input.remotePeerId.slice(0, 12)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+      throw err;
+    }
 
     const correlationId =
       this._correlationByPreviewMsgId.get(previewId) ?? input.envelope.correlationId ?? previewId;
@@ -531,8 +558,10 @@ class NodeServiceImpl implements NodeService {
       vaultDir: input.vaultDir,
       relativePath: pending.relativePath,
       toPeerId: input.remotePeerId,
+      dialHints,
       transferHooks: {
         correlationId,
+        remotePeerOwnerId: rec?.ownerId,
         onUpdate: (status) => this._upsertTransferStatus(status as TransferStatus),
       },
     });
@@ -2068,18 +2097,19 @@ class NodeServiceImpl implements NodeService {
       this._pendingDataTransferSavePath.set(`${offer.senderNodeId}\n${srcKey}`, saveNorm);
     }
 
+    const records = await this._peerDirectoryStore.listPeerRecords();
+    const rec = records.find((r) => r.peerId === offer.senderNodeId);
+
     let dialHints: string[];
     try {
       dialHints = await raceWithTimeout(
-        this._dialHintsForChat(offer.senderNodeId, undefined),
+        this._dialHintsForChat(offer.senderNodeId, rec?.listenAddrs),
         30_000,
         "_dialHintsForChat",
       );
     } catch (err) {
       throw err;
     }
-    const records = await this._peerDirectoryStore.listPeerRecords();
-    const rec = records.find((r) => r.peerId === offer.senderNodeId);
     const recipientEnvelopePeerId = rec?.devicePublicKeyPem
       ? derivePeerId(rec.devicePublicKeyPem)
       : undefined;
@@ -2095,6 +2125,7 @@ class NodeServiceImpl implements NodeService {
     });
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
     await mesh.send(offer.senderNodeId, envelope as any, { dialHints });
+    void this._tagBondedContactReachability(offer.senderNodeId);
     this._correlationByPreviewMsgId.set(shareId, shareId);
     this._inboundTransferByShareId.set(shareId, {
       senderNodeId: offer.senderNodeId,
@@ -2124,18 +2155,18 @@ class NodeServiceImpl implements NodeService {
     if (!offer) {
       throw new Error(`No pending share offer for id=${shareId}`);
     }
+    const records = await this._peerDirectoryStore.listPeerRecords();
+    const rec = records.find((r) => r.peerId === offer.senderNodeId);
     let dialHints: string[];
     try {
       dialHints = await raceWithTimeout(
-        this._dialHintsForChat(offer.senderNodeId, undefined),
+        this._dialHintsForChat(offer.senderNodeId, rec?.listenAddrs),
         30_000,
         "_dialHintsForChat",
       );
     } catch (err) {
       throw err;
     }
-    const records = await this._peerDirectoryStore.listPeerRecords();
-    const rec = records.find((r) => r.peerId === offer.senderNodeId);
     const recipientEnvelopePeerId = rec?.devicePublicKeyPem
       ? derivePeerId(rec.devicePublicKeyPem)
       : undefined;

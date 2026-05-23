@@ -130,7 +130,7 @@ export interface InboundDataTransfer {
 
 export type MeshDataTransferHandler = (message: InboundDataTransfer) => Promise<void> | void;
 
-/** Options for {@link EnvoyMesh.send}, {@link EnvoyMesh.sendChat}, and other outbound envelope sends. */
+/** Options for {@link EnvoyMesh.send}, {@link EnvoyMesh.sendChat}, {@link EnvoyMesh.sendDataTransfer}, etc. */
 export interface MeshOutboundOptions {
   /**
    * Extra multiaddrs to try (e.g. from `system.signal` in the peer directory) when a bare `/p2p/…`
@@ -1078,10 +1078,22 @@ export class EnvoyMesh {
     return Date.now() - startedAt;
   }
 
-  async sendDataTransfer(target: string, voucherUtf8: Uint8Array, chunks: Uint8Array[]): Promise<number> {
-    const dialTarget = this._normalizeDialTarget(target);
+  async sendDataTransfer(
+    target: string,
+    voucherUtf8: Uint8Array,
+    chunks: Uint8Array[],
+    sendOptions?: MeshOutboundOptions,
+  ): Promise<number> {
     const startedAt = Date.now();
-    const stream: any = await this.requireNode().dialProtocol(dialTarget as any, ENVOY_DATA_PROTOCOL);
+    let stream: any;
+    try {
+      const opened = await this.openOutboundStream(target, ENVOY_DATA_PROTOCOL, sendOptions);
+      stream = opened.stream;
+    } catch (dialError) {
+      const errorMsg = dialError instanceof Error ? dialError.message : String(dialError);
+      console.error(`[network] outbound ${ENVOY_DATA_PROTOCOL} dial failed for ${target}: ${errorMsg}`);
+      throw dialError;
+    }
     const remotePeerId = stream.connection?.remotePeer?.toString();
     if (remotePeerId) {
       this.emitP2pDebug({
