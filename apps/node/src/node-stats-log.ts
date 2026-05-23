@@ -18,13 +18,21 @@ export function logNodeRuntimeStats(mesh: EnvoyMesh, context: NodeStatsLogContex
   const rosterPart = rosterSize != null ? ` relayRoster=${rosterSize}` : "";
 
   if (uptimeSeconds % 300 < 60 || rssMB > 1024) {
+    const extMB = Math.floor((mem.external ?? 0) / 1024 / 1024);
+    const abMB = Math.floor((mem.arrayBuffers ?? 0) / 1024 / 1024);
+    const dialPart = conn.dialQueueLength != null ? ` dialQueue=${conn.dialQueueLength}` : "";
     console.log(
-      `[node-stats] uptime=${uptimeSeconds}s circuitPeers=${conn.circuitPeerIds.length} circuitConns=${conn.circuitConnections} totalPeers=${conn.totalPeerIds} totalConns=${conn.totalConnections}${rosterPart} memoryRss=${rssMB}MB heapUsed=${heapMB}MB`,
+      `[node-stats] uptime=${uptimeSeconds}s circuitPeers=${conn.circuitPeerIds.length} circuitConns=${conn.circuitConnections} totalPeers=${conn.totalPeerIds} totalConns=${conn.totalConnections}${rosterPart}${dialPart} memoryRss=${rssMB}MB heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB`,
     );
   }
 
   if (rssMB > 2048) {
-    console.warn(`[node-stats] WARNING: memory usage ${rssMB}MB exceeds 2GB - possible leak`);
+    const extMB = Math.floor((mem.external ?? 0) / 1024 / 1024);
+    const abMB = Math.floor((mem.arrayBuffers ?? 0) / 1024 / 1024);
+    const dialPart = conn.dialQueueLength != null ? ` dialQueue=${conn.dialQueueLength}` : "";
+    console.warn(
+      `[node-stats] WARNING: memory usage ${rssMB}MB exceeds 2GB (heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB totalConns=${conn.totalConnections}${dialPart}) — may be libp2p/GC pressure, not necessarily a leak`,
+    );
   }
 }
 

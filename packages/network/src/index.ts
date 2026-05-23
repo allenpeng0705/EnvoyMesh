@@ -41,7 +41,8 @@ import { expandListenAddressesWithQuic } from "./quic-listen.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key.js";
 import {
   DEFAULT_CLIENT_MAX_CONNECTIONS,
-  scanLibp2pConnectionStats,
+  scanLibp2pConnectionsFlat,
+  scanLibp2pConnectionsMap,
   type MeshConnectionStats,
 } from "./connection-stats.js";
 
@@ -49,6 +50,8 @@ export { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, loadOrCreateLibp2pPrivateKey } fro
 export {
   DEFAULT_CLIENT_MAX_CONNECTIONS,
   scanLibp2pConnectionStats,
+  scanLibp2pConnectionsFlat,
+  scanLibp2pConnectionsMap,
   type MeshConnectionStats,
 } from "./connection-stats.js";
 
@@ -465,9 +468,23 @@ export class EnvoyMesh {
     }
 
     try {
-      const connections = (this.node as { connectionManager?: { connections?: Iterable<[unknown, unknown]> } })
-        .connectionManager?.connections;
-      return scanLibp2pConnectionStats(connections);
+      const node = this.node as Libp2p & {
+        getConnections?: () => Array<{ status?: string; remoteAddr?: { toString?: () => string }; remotePeer?: { toString?: () => string } }>;
+        getDialQueue?: () => unknown[];
+      };
+      const flat = node.getConnections?.();
+      const stats =
+        flat != null
+          ? scanLibp2pConnectionsFlat(flat)
+          : scanLibp2pConnectionsMap(
+              (this.node as { connectionManager?: { getConnectionsMap?: () => Map<string, unknown[]> } })
+                .connectionManager?.getConnectionsMap?.() as Map<string, { status?: string; remoteAddr?: { toString?: () => string }; remotePeer?: { toString?: () => string } }[]> | undefined,
+            );
+      const dialQueueLength = node.getDialQueue?.().length;
+      if (dialQueueLength != null) {
+        stats.dialQueueLength = dialQueueLength;
+      }
+      return stats;
     } catch {
       return {
         totalPeerIds: 0,
@@ -500,18 +517,19 @@ export class EnvoyMesh {
     }
 
     try {
-      const connections = (this.node as any).connectionManager?.connections;
-      if (!connections) {
+      const node = this.node as Libp2p & {
+        getConnections?: (peerId?: ReturnType<typeof peerIdFromString>) => Array<{
+          status?: string;
+          remoteAddr?: { toString?: () => string };
+        }>;
+      };
+      const pid = peerIdFromString(peerId);
+      const conns = node.getConnections?.(pid) ?? [];
+      if (conns.length === 0) {
         return { connected: false, direct: false };
       }
 
-      const conns = connections.get(peerId);
-      if (!conns || !Array.isArray(conns) || conns.length === 0) {
-        return { connected: false, direct: false };
-      }
-
-      // Find the best (direct) connection
-      const openConns = conns.filter((c) => c?.status === "open");
+      const openConns = conns.filter((c) => c?.status === "open" || c?.status === undefined);
       if (openConns.length === 0) {
         return { connected: false, direct: false };
       }

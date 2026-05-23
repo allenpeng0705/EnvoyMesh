@@ -6,10 +6,13 @@ export interface MeshConnectionStats {
   totalConnections: number;
   circuitPeerIds: string[];
   circuitConnections: number;
+  /** Pending outbound dials in libp2p queue (if available). */
+  dialQueueLength?: number;
 }
 
 type Libp2pConnectionLike = {
   remoteAddr?: { toString?: () => string };
+  remotePeer?: { toString?: () => string };
   status?: string;
 };
 
@@ -21,9 +24,91 @@ function remoteAddrIncludesCircuit(conn: Libp2pConnectionLike | undefined): bool
   return (conn?.remoteAddr?.toString?.() ?? "").includes("/p2p-circuit");
 }
 
+function aggregatePeerConnectionStats(
+  peerConns: Iterable<[string, Libp2pConnectionLike[]]>,
+): MeshConnectionStats {
+  const circuitPeerIds: string[] = [];
+  let totalConnections = 0;
+  let circuitConnections = 0;
+  let totalPeerIds = 0;
+
+  for (const [peerIdStr, conns] of peerConns) {
+    if (!Array.isArray(conns) || conns.length === 0) {
+      continue;
+    }
+
+    const openConns = conns.filter((conn) => isOpenConnection(conn));
+    if (openConns.length === 0) {
+      continue;
+    }
+
+    totalPeerIds += 1;
+    totalConnections += openConns.length;
+
+    const hasCircuit = openConns.some((conn) => remoteAddrIncludesCircuit(conn));
+    if (hasCircuit) {
+      circuitPeerIds.push(String(peerIdStr));
+      circuitConnections += openConns.filter((conn) => remoteAddrIncludesCircuit(conn)).length;
+    }
+  }
+
+  return {
+    totalPeerIds,
+    totalConnections,
+    circuitPeerIds,
+    circuitConnections,
+  };
+}
+
 /**
- * Scan libp2p connection-manager state. Only open connections with `/p2p-circuit` in
- * `remoteAddr` count as circuit peers (Envoy relay paths and relay-server clients).
+ * Scan libp2p `getConnections()` output (libp2p v3+ API).
+ */
+export function scanLibp2pConnectionsFlat(
+  connections: Libp2pConnectionLike[] | undefined,
+): MeshConnectionStats {
+  if (!connections?.length) {
+    return {
+      totalPeerIds: 0,
+      totalConnections: 0,
+      circuitPeerIds: [],
+      circuitConnections: 0,
+    };
+  }
+
+  const byPeer = new Map<string, Libp2pConnectionLike[]>();
+  for (const conn of connections) {
+    if (!isOpenConnection(conn)) {
+      continue;
+    }
+    const peerIdStr = conn.remotePeer?.toString?.() ?? "unknown";
+    const list = byPeer.get(peerIdStr) ?? [];
+    list.push(conn);
+    byPeer.set(peerIdStr, list);
+  }
+
+  return aggregatePeerConnectionStats(byPeer.entries());
+}
+
+/**
+ * Scan libp2p connection-manager peer map (`getConnectionsMap()`).
+ */
+export function scanLibp2pConnectionsMap(
+  connections: Map<string, Libp2pConnectionLike[]> | undefined,
+): MeshConnectionStats {
+  if (!connections) {
+    return {
+      totalPeerIds: 0,
+      totalConnections: 0,
+      circuitPeerIds: [],
+      circuitConnections: 0,
+    };
+  }
+  return aggregatePeerConnectionStats(connections.entries());
+}
+
+/**
+ * @deprecated Prefer {@link scanLibp2pConnectionsFlat} or {@link scanLibp2pConnectionsMap}.
+ * Legacy shape: iterable of `[peerId, connections[]]`.
  */
 export function scanLibp2pConnectionStats(
   connections: Iterable<[unknown, unknown]> | undefined,
@@ -37,37 +122,11 @@ export function scanLibp2pConnectionStats(
     };
   }
 
-  const circuitPeerIds: string[] = [];
-  let totalConnections = 0;
-  let circuitConnections = 0;
-  let totalPeerIds = 0;
-
+  const map = new Map<string, Libp2pConnectionLike[]>();
   for (const [peerIdStr, conns] of connections) {
-    if (!Array.isArray(conns) || conns.length === 0) {
-      continue;
-    }
-
-    const openConns = conns.filter((conn) => isOpenConnection(conn as Libp2pConnectionLike));
-    if (openConns.length === 0) {
-      continue;
-    }
-
-    totalPeerIds += 1;
-    totalConnections += openConns.length;
-
-    const hasCircuit = openConns.some((conn) => remoteAddrIncludesCircuit(conn as Libp2pConnectionLike));
-    if (hasCircuit) {
-      circuitPeerIds.push(String(peerIdStr));
-      circuitConnections += openConns.filter((conn) =>
-        remoteAddrIncludesCircuit(conn as Libp2pConnectionLike),
-      ).length;
+    if (Array.isArray(conns)) {
+      map.set(String(peerIdStr), conns as Libp2pConnectionLike[]);
     }
   }
-
-  return {
-    totalPeerIds,
-    totalConnections,
-    circuitPeerIds,
-    circuitConnections,
-  };
+  return aggregatePeerConnectionStats(map.entries());
 }
