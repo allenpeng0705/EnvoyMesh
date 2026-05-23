@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
@@ -115,8 +116,17 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
         const migrated = tryMigrateNodeConfig(parsed, profileDir);
         if (migrated) {
           console.warn(`[node-config] ${path} invalid (${reason}); migrated and repaired`);
-          await writeFile(path, JSON.stringify(migrated, null, 2) + "\n", { mode: 0o600 });
+          await writeNodeConfigFile(path, migrated);
           return migrated;
+        }
+        const salvaged = tryMigrateNodeConfig(
+          { ...createDefaultPersistedNodeConfig(profileDir), ...(parsed as Record<string, unknown>) },
+          profileDir,
+        );
+        if (salvaged) {
+          console.warn(`[node-config] ${path} invalid (${reason}); repaired with defaults`);
+          await writeNodeConfigFile(path, salvaged);
+          return salvaged;
         }
         if (!warnedInvalidConfigPaths.has(path)) {
           console.warn(`[node-config] ${path} has invalid shape (${reason}), treating as uninitialized`);
@@ -133,14 +143,11 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
     },
 
     async save(config) {
-      await mkdir(dirname(path), { recursive: true });
-      // Ensure profileDir is set correctly
-      const toSave: PersistedNodeConfig = {
+      await writeNodeConfigFile(path, {
         ...config,
         profileDir,
         updatedAt: new Date().toISOString(),
-      };
-      await writeFile(path, JSON.stringify(toSave, null, 2) + "\n", { mode: 0o600 });
+      });
     },
 
     async exists() {
@@ -300,6 +307,32 @@ function isMissingFileError(error: unknown): boolean {
     return code === "ENOENT" || code === "ENOTFOUND";
   }
   return false;
+}
+
+async function writeNodeConfigFile(path: string, config: PersistedNodeConfig): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const payload = JSON.stringify(config, null, 2) + "\n";
+  const tmp = join(dirname(path), `.node-config.${randomUUID()}.tmp`);
+  try {
+    await writeFile(tmp, payload, { mode: 0o600 });
+    if (process.platform === "win32") {
+      try {
+        await unlink(path);
+      } catch (error) {
+        if (!isMissingFileError(error)) {
+          throw error;
+        }
+      }
+    }
+    await rename(tmp, path);
+  } catch (error) {
+    try {
+      await unlink(tmp);
+    } catch {
+      // best effort
+    }
+    throw error;
+  }
 }
 
 /**

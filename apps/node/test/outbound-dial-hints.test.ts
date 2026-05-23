@@ -61,4 +61,27 @@ describe("buildOutboundDialHints", () => {
       await rm(profileDir, { recursive: true, force: true });
     }
   });
+
+  it("drops stale public libp2p bootstrap seeds from discovery-seeds.json", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-seeds-"));
+    try {
+      const seedStore = createDiscoverySeedStore(profileDir);
+      await seedStore.upsertSuccess(publicAm7, "bootstrap-probe");
+      await seedStore.upsertSuccess(
+        "/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf/p2p-circuit/p2p/12D3KooWTarget",
+        "relay.lookup",
+      );
+
+      const hints = await buildOutboundDialHints({
+        recipientPeerId: "12D3KooWTarget",
+        peerListenAddrs: [],
+        discoverySeedStore: seedStore,
+        config: undefined,
+      });
+
+      expect(hints.some((h) => h.includes("bootstrap.libp2p.io"))).toBe(false);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
 });

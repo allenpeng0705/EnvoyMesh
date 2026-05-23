@@ -18,7 +18,7 @@
     "tauri:build:linux": "npm run build:linux -w @envoymesh/tauri --",
     "social:dev": "npm run dev -w @envoymesh/social --",
     "social:build": "npm run build -w @envoymesh/social --",
-    "node:build": "npm exec -w @envoymesh/node -- tsc -p tsconfig.json",
+    "node:build": "tsc -b apps/node",
     "test": "vitest run",
     "typecheck": "tsc -b",
     "smoke:multimachine:guide": "npm run cli -w @envoymesh/node -- smoke-checklist --machine-a primary --machine-b satellite",
