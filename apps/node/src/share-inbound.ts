@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import {
   createAuditEvent,
   createShareEvent,
@@ -343,7 +344,6 @@ export function isSafeVaultPath(vaultDir: string, relativePath: string): boolean
   if (path.includes("..")) return false;
   if (path.startsWith("/")) return false;
   // Must be inside vault dir — resolved path must still start with vaultDir
-  const { resolve } = require("node:path") as typeof import("node:path");
   try {
     const fullPath = resolve(vaultDir, path);
     return fullPath.startsWith(vaultDir.replace(/[\/\\]+$/, ""));
