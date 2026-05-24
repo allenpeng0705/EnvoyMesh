@@ -56,6 +56,7 @@ import { installMobileDataTransferReceiver, sendMobileVaultFileDataTransfer } fr
 import { loadMobilePublishedDocumentIds, saveMobilePublishedDocumentIds } from "./mobile-published-library.js";
 import { loadMobileExternalPublish, saveMobileExternalPublish } from "./mobile-external-publish.js";
 import { loadMobileNodePrefs, saveMobileNodePrefs, type MobileNodePrefs } from "./mobile-node-prefs.js";
+import { generateMobileChatDraft } from "./mobile-chat-draft.js";
 import { loadMobilePublishedExternalMap } from "./mobile-published-external.js";
 import { exportMobileLibraryDocumentToIpfs } from "./mobile-ipfs-export.js";
 import { verifyMobileLibraryDocumentIpfsGateway } from "./mobile-ipfs-gateway-verify.js";
@@ -102,6 +103,7 @@ import type { PrivateKey } from "@libp2p/interface";
 import type {
   AgentShareProposal,
   BondRecord,
+  ChatDraft,
   CreateHumanProfileInput,
   DiscoverPublishedLibraryParams,
   DiscoverPublishedLibraryPeerResult,
@@ -331,6 +333,9 @@ export class MobileNode implements NodeService {
   private readonly _transportByEnvoyPeerId = new Map<string, string>();
   /** Inbound `chat.message` payload `senderOwnerId` keyed by device envelope id. */
   private readonly _ownerIdByEnvoyDevicePeerId = new Map<string, string>();
+
+  /** Inbound chat drafts keyed by thread owner id (for cloud-assisted replies). */
+  private readonly _chatDrafts = new Map<string, ChatDraft[]>();
 
   // Libp2p mesh (browser-mode: WebSocket transport + DHT client + circuit relay)
   private _mesh?: import("libp2p").Libp2p;
@@ -2121,6 +2126,57 @@ export class MobileNode implements NodeService {
     });
   }
 
+  async getChatDrafts(threadPeerOwnerId?: string): Promise<ChatDraft[]> {
+    if (threadPeerOwnerId) {
+      return [...(this._chatDrafts.get(threadPeerOwnerId) ?? [])];
+    }
+    return [...this._chatDrafts.values()].flat();
+  }
+
+  async deleteChatDraft(draftId: string): Promise<void> {
+    for (const [threadId, drafts] of this._chatDrafts.entries()) {
+      const next = drafts.filter((d) => d.draftId !== draftId);
+      if (next.length === drafts.length) continue;
+      if (next.length === 0) this._chatDrafts.delete(threadId);
+      else this._chatDrafts.set(threadId, next);
+      return;
+    }
+  }
+
+  private async _maybeGenerateInboundChatDraft(input: {
+    senderOwnerId: string;
+    senderDisplayName: string;
+    chatText: string;
+    messageId: string;
+    remotePeerId: string;
+  }): Promise<void> {
+    if (!this._state) return;
+    this._loadAiPrefsIfNeeded();
+    const cfg = await this.getNodeConfig();
+    const bond = await this._trustStore.get(input.senderOwnerId);
+    const bondLevel = bond?.level ?? "public";
+    const result = await generateMobileChatDraft({
+      senderOwnerId: input.senderOwnerId,
+      senderDisplayName: input.senderDisplayName,
+      chatText: input.chatText,
+      messageId: input.messageId,
+      remotePeerId: input.remotePeerId,
+      bondLevel,
+      modelProviders: cfg.modelProviders,
+      chatAssistEnabled: cfg.chatAssistEnabled,
+      aiSettings: cfg.aiSettings,
+      contactAiPreferences: cfg.contactAiPreferences,
+      ownerDisplayName: this._state.owner.ownerId,
+    });
+    if (!result.ok) return;
+    const list = this._chatDrafts.get(input.senderOwnerId) ?? [];
+    this._chatDrafts.set(input.senderOwnerId, [...list, result.draft]);
+    this._events.emit("chat:draft", {
+      threadPeerOwnerId: input.senderOwnerId,
+      draft: result.draft,
+    });
+  }
+
   async runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult> {
     if (!this._state) {
       throw new Error("Node not initialized");
@@ -2979,8 +3035,9 @@ export class MobileNode implements NodeService {
       const payload = (msg.payload as Record<string, unknown>) ?? {};
 
       if (intent === "chat.message") {
+        let chatPayload: ReturnType<typeof parseChatMessagePayload> | undefined;
         try {
-          const chatPayload = parseChatMessagePayload(msg.payload);
+          chatPayload = parseChatMessagePayload(msg.payload);
           const sp = String(msg.senderPeerId ?? "");
           if (chatPayload.senderOwnerId && sp) {
             this._ownerIdByEnvoyDevicePeerId.set(sp, chatPayload.senderOwnerId);
@@ -2988,28 +3045,37 @@ export class MobileNode implements NodeService {
         } catch {
           /* optional */
         }
-        // Persist to chat log — threaded by senderPeerId (peerId namespace).
-        // NOTE: Outbound chat is threaded by targetOwnerId (ownerId namespace).
-        // The envelope does not carry senderOwnerId, so a unified view needs
-        // a peerId→ownerId mapping from the trust store. ISSUE #6.
         const ts = (msg.createdAt as string) ?? new Date().toISOString();
         const senderPeerId = (msg.senderPeerId as string) ?? "";
+        const senderOwnerId =
+          chatPayload?.senderOwnerId ??
+          this._ownerIdByEnvoyDevicePeerId.get(senderPeerId) ??
+          senderPeerId;
+        const chatText = chatPayload?.text ?? String(payload.text ?? "");
         this._chatLog.append(senderPeerId, {
           messageId: (msg.messageId as string) ?? _randomUUID(),
-          sender: { ownerId: senderPeerId, displayName: senderPeerId },
+          sender: { ownerId: senderOwnerId, displayName: senderOwnerId },
           recipient: { ownerId: owner.ownerId, displayName: "Me" },
-          content: { text: String(payload.text ?? "") },
+          content: { text: chatText },
           metadata: { timestamp: ts, deliveryReceipt: "delivered" },
           signature: msg.signature as string,
         }).catch(() => {});
-        // Emit chat event for UI
         this._events.emit("chat:message", {
           messageId: msg.messageId as string,
-          sender: { nodeId: senderPeerId, displayName: senderPeerId, ownerId: senderPeerId },
+          sender: { nodeId: senderPeerId, displayName: senderOwnerId, ownerId: senderOwnerId },
           recipient: { nodeId: agent.agentPeerId, ownerId: owner.ownerId },
-          content: { text: String(payload.text ?? "") },
+          content: { text: chatText },
           metadata: { timestamp: ts },
           signature: msg.signature as string,
+        });
+        void this._trustStore.get(senderOwnerId).then((bond) => {
+          void this._maybeGenerateInboundChatDraft({
+            senderOwnerId,
+            senderDisplayName: bond?.displayName ?? senderOwnerId,
+            chatText,
+            messageId: (msg.messageId as string) ?? _randomUUID(),
+            remotePeerId: senderPeerId,
+          });
         });
       } else if (intent === "bond.request") {
         void this._handleInboundBondRequest(msg).catch((err) =>
