@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useNodeService } from "../../hooks/useNodeService.js";
-import { DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS, DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
+import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR, defaultBootstrapPresetsForDiscoveryProfile } from "@envoymesh/api";
+import type { DiscoveryProfile } from "@envoymesh/api";
 
 export function SetupView() {
   const nodeService = useNodeService();
 
   const [setupProfileDir, setSetupProfileDir] = useState("./data/default");
-  const [setupDiscoveryProfile, setSetupDiscoveryProfile] = useState<"lan-fast" | "wan-default">("wan-default");
+  const [setupDiscoveryProfile, setSetupDiscoveryProfile] = useState<DiscoveryProfile>("contacts-only");
   const [setupBootstrapPeers, setSetupBootstrapPeers] = useState<string>(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
   const [isInitializing, setIsInitializing] = useState(false);
 
@@ -22,7 +23,7 @@ export function SetupView() {
       await nodeService.initNode(setupProfileDir, {
         discoveryProfile: setupDiscoveryProfile,
         bootstrapPeers,
-        bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
+        bootstrapPresets: [...defaultBootstrapPresetsForDiscoveryProfile(setupDiscoveryProfile)],
       });
 
       await nodeService.startNode();
@@ -56,9 +57,10 @@ export function SetupView() {
             <label>Discovery Profile</label>
             <select
               value={setupDiscoveryProfile}
-              onChange={(e) => setSetupDiscoveryProfile(e.target.value as "lan-fast" | "wan-default")}
+              onChange={(e) => setSetupDiscoveryProfile(e.target.value as DiscoveryProfile)}
             >
               <option value="lan-fast">LAN Fast (local network only)</option>
+              <option value="contacts-only">Contacts only (relay, no public libp2p swarm)</option>
               <option value="wan-default">WAN Default (connect to wider network)</option>
             </select>
           </div>

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import "./dom-event-polyfill.js";
 import { loadOrCreateNodeProfile } from "@envoymesh/local-store";
+import type { DiscoveryProfile } from "@envoymesh/api";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, EnvoyMesh, type DiscoveredMeshPeer } from "@envoymesh/network";
 import {
@@ -48,7 +49,7 @@ interface PeerInfo {
 
 function parseArgs(argv: string[]): {
   profileDir: string;
-  discoveryProfile: "lan-fast" | "wan-default";
+  discoveryProfile: DiscoveryProfile;
   bootstrapPeers: string[];
   enableMdns: boolean;
   enableDht: boolean;

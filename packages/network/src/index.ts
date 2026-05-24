@@ -41,6 +41,7 @@ import { expandListenAddressesWithQuic } from "./quic-listen.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key.js";
 import {
   DEFAULT_CLIENT_MAX_CONNECTIONS,
+  DEFAULT_MDNS_INTERVAL_MS,
   scanLibp2pConnectionsFlat,
   scanLibp2pConnectionsMap,
   type MeshConnectionStats,
@@ -49,6 +50,7 @@ import {
 export { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, loadOrCreateLibp2pPrivateKey } from "./libp2p-key.js";
 export {
   DEFAULT_CLIENT_MAX_CONNECTIONS,
+  DEFAULT_MDNS_INTERVAL_MS,
   scanLibp2pConnectionStats,
   scanLibp2pConnectionsFlat,
   scanLibp2pConnectionsMap,
@@ -1305,7 +1307,7 @@ export class EnvoyMesh {
     return [
       ...(this.options.enableMdns === false
         ? []
-        : [mdns({ interval: this.options.mdnsIntervalMs ?? 1000 })]),
+        : [mdns({ interval: this.options.mdnsIntervalMs ?? DEFAULT_MDNS_INTERVAL_MS })]),
       ...(this.options.bootstrapPeers && this.options.bootstrapPeers.length > 0
         ? [
             bootstrap({

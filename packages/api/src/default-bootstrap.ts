@@ -19,3 +19,38 @@ export const DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR =
 export const DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT = 15432
 
 export type DefaultPublicBootstrapPresetId = (typeof DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS)[number]
+
+/** Relay-only bootstraps for bonded-contact / relay-first nodes (no public libp2p swarm). */
+export const DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS = ["cn-relay"] as const
+
+export type DiscoveryBootstrapProfile = "lan-fast" | "wan-default" | "contacts-only"
+
+/** Default bootstrap preset ids for a discovery profile (before explicit operator overrides). */
+export function defaultBootstrapPresetsForDiscoveryProfile(
+  profile: DiscoveryBootstrapProfile,
+): readonly string[] {
+  if (profile === "contacts-only") {
+    return DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS
+  }
+  if (profile === "wan-default") {
+    return DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS
+  }
+  return []
+}
+
+const PUBLIC_LIBP2P_PRESET_PREFIX = "public-libp2p"
+
+/** Strip public-libp2p swarm presets; ensure cn-relay remains for relay reachability. */
+export function normalizeBootstrapPresetsForContactsOnly(presets: readonly string[]): string[] {
+  const trimmed = presets.map((p) => p.trim()).filter(Boolean)
+  const publicOnly = new Set<string>(DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS)
+  const hasOnlyPublicDefaults = trimmed.length > 0 && trimmed.every((p) => publicOnly.has(p))
+  if (hasOnlyPublicDefaults || trimmed.length === 0) {
+    return [...DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS]
+  }
+  const withoutPublic = trimmed.filter((p) => !p.startsWith(PUBLIC_LIBP2P_PRESET_PREFIX))
+  if (!withoutPublic.includes("cn-relay")) {
+    return ["cn-relay", ...withoutPublic]
+  }
+  return withoutPublic
+}

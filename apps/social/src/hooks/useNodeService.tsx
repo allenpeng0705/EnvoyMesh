@@ -38,7 +38,7 @@ import type {
 } from "@envoymesh/api";
 
 type InitNodeOptions = {
-  discoveryProfile?: "lan-fast" | "wan-default";
+  discoveryProfile?: "lan-fast" | "wan-default" | "contacts-only";
   relayEnabled?: boolean;
   relayServerEnabled?: boolean;
   advertiseAddrs?: string[];

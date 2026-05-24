@@ -6,7 +6,7 @@ export interface NodeYamlConfig {
   profile?: string;
   listen?: string[];
   discovery?: {
-    profile?: "lan-fast" | "wan-default";
+    profile?: "lan-fast" | "wan-default" | "contacts-only";
     connectivityStrict?: boolean;
     mdns?: boolean;
     dht?: boolean;

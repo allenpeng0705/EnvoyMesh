@@ -80,9 +80,32 @@ export function createDiscoverySeedStore(profileDir: string): DiscoverySeedStore
     },
 
     async upsertMany(addrs, source, at) {
-      for (const addr of addrs) {
-        await this.upsertSuccess(addr, source, at);
+      const trimmed = [...new Set(addrs.map((addr) => addr.trim()).filter(Boolean))];
+      if (trimmed.length === 0) {
+        return;
       }
+
+      await enqueueWrite(async () => {
+        const now = at ?? new Date().toISOString();
+        const file = await readDiscoverySeedFile(path);
+        for (const addr of trimmed) {
+          const existing = file.records.find((record) => record.addr === addr);
+          if (existing) {
+            existing.lastSuccessAt = now;
+            existing.source = source;
+          } else {
+            file.records.push({
+              addr,
+              source,
+              lastSuccessAt: now,
+            });
+          }
+        }
+        file.records = file.records
+          .sort((left, right) => right.lastSuccessAt.localeCompare(left.lastSuccessAt))
+          .slice(0, MAX_DISCOVERY_SEEDS);
+        await writeDiscoverySeedFile(path, file);
+      });
     },
   };
 }

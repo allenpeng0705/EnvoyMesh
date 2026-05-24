@@ -75,7 +75,7 @@ export interface HomeClawCoreProxyResult {
 }
 export interface NodeConfig {
     profileDir: string;
-    discoveryProfile: "lan-fast" | "wan-default";
+    discoveryProfile: DiscoveryProfile;
     enableMdns?: boolean;
     relayEnabled: boolean;
     relayServerEnabled: boolean;
@@ -317,7 +317,7 @@ export interface ModelProviderConfig {
     /** If true, cloud providers require explicit owner approval per request. Default: true. */
     requireApprovalForCloud?: boolean;
 }
-export type DiscoveryProfile = "lan-fast" | "wan-default";
+export type DiscoveryProfile = "lan-fast" | "wan-default" | "contacts-only";
 export type NodeStatus = "offline" | "starting" | "running" | "stopping";
 export interface InitNodeOptions {
     discoveryProfile?: DiscoveryProfile;

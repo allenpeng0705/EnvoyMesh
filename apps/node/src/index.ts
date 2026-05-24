@@ -147,6 +147,13 @@ import {
   DEFAULT_AGENT_CAPABILITIES,
 } from "./external-agent-gateway.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
+import {
+  peerDiscoverySourceFromMultiaddrs,
+  shouldPersistPeerDiscoverySeeds,
+  shouldRecordPeerDiscoveryAudit,
+  shouldRunCapabilityTopicFind,
+  seedAddrsForDiscoveryProfile,
+} from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses } from "./bootstrap-resolver.js";
 import {
   addRelayCandidates,
@@ -348,7 +355,10 @@ async function dialHintsForTransportPeer(
 let wsServerForEvents: WsServer | null = null;
 const peerDirectoryRecords = await peerDirectoryStore.listPeerRecords();
 const peerDirectorySeedAddrs = peerDirectoryRecords.flatMap((record) => record.listenAddrs);
-const persistedSeedAddrs = await discoverySeedStore.listSeedAddrs();
+const persistedSeedAddrs = seedAddrsForDiscoveryProfile(
+  args.discoveryProfile,
+  await discoverySeedStore.listSeedRecords(),
+);
 
 // Resolve domain-based bootstrap addresses to multiaddrs
 const resolvedBootstrapResults = await resolveBootstrapAddresses(args.bootstrapPeers);
@@ -555,21 +565,25 @@ let nodeHealthSnapshot: NodeHealthSnapshot | undefined;
 let libp2pRepairInProgress = false;
 
 mesh.onPeerDiscovered(async (peer) => {
-  const source = peer.multiaddrs.some((addr) => addr.includes("/p2p-circuit")) ? "relay" : "unknown";
+  const source = peerDiscoverySourceFromMultiaddrs(peer.multiaddrs);
   if (args.peerDiscoveryLog) {
     console.log(`[peer-discovery] peer=${peer.peerId} source=${source} addrs=${peer.multiaddrs.length}`);
   }
-  await taskStore.appendAuditEvent(
-    createAuditEvent({
-      type: "p2p.trace",
-      remotePeerId: peer.peerId,
-      direction: "inbound",
-      protocol: "peer.discovery",
-      outcome: "record",
-      summary: `discovery peer=${peer.peerId} source=${source} addrs=${peer.multiaddrs.length}`,
-    }),
-  );
-  if (peer.multiaddrs.length > 0) {
+  if (
+    shouldRecordPeerDiscoveryAudit(peer.peerId, source, { force: args.peerDiscoveryLog })
+  ) {
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "p2p.trace",
+        remotePeerId: peer.peerId,
+        direction: "inbound",
+        protocol: "peer.discovery",
+        outcome: "record",
+        summary: `discovery peer=${peer.peerId} source=${source} addrs=${peer.multiaddrs.length}`,
+      }),
+    );
+  }
+  if (shouldPersistPeerDiscoverySeeds(args.discoveryProfile, source) && peer.multiaddrs.length > 0) {
     await discoverySeedStore.upsertMany(peer.multiaddrs, "peer.discovery");
   }
 });
@@ -2986,23 +3000,27 @@ async function runCapabilityDiscoveryCycle(source: "startup" | "periodic"): Prom
           multiaddrs: string[];
         }>
       | undefined;
-    try {
-      providers = await mesh.findCapabilityTopicProviders(topic, {
-        queryTimeoutMs: CAPABILITY_DISCOVERY_QUERY_TIMEOUT_MS,
-        limit: CAPABILITY_DISCOVERY_MAX_PROVIDERS,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "p2p.trace",
-          direction: "outbound",
-          protocol: "discovery.capability.find.fail",
-          outcome: "record",
-          summary: `capability find failed topic=${topic} source=${source} error=${message}`,
-        }),
-      );
-      continue;
+    if (shouldRunCapabilityTopicFind(args.discoveryProfile)) {
+      try {
+        providers = await mesh.findCapabilityTopicProviders(topic, {
+          queryTimeoutMs: CAPABILITY_DISCOVERY_QUERY_TIMEOUT_MS,
+          limit: CAPABILITY_DISCOVERY_MAX_PROVIDERS,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "p2p.trace",
+            direction: "outbound",
+            protocol: "discovery.capability.find.fail",
+            outcome: "record",
+            summary: `capability find failed topic=${topic} source=${source} error=${message}`,
+          }),
+        );
+        continue;
+      }
+    } else {
+      providers = [];
     }
 
     const remoteProviders = providers.filter((provider) => provider.peerId !== mesh.peerId);

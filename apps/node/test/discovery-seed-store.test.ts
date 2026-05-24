@@ -38,6 +38,21 @@ describe("discovery seed store", () => {
     expect(addrs).toEqual(["/ip4/3.3.3.3/tcp/4001/p2p/peer-c"]);
   });
 
+  it("batch upsertMany persists every address in one update", async () => {
+    const store = createDiscoverySeedStore(profileDir);
+    await store.upsertMany(
+      [
+        "/ip4/10.0.0.1/tcp/4001/p2p/p-1",
+        "/ip4/10.0.0.2/tcp/4001/p2p/p-2",
+        "/ip4/10.0.0.3/tcp/4001/p2p/p-3",
+      ],
+      "peer.discovery",
+    );
+    const addrs = await store.listSeedAddrs();
+    expect(addrs).toHaveLength(3);
+    expect(new Set(addrs).size).toBe(3);
+  });
+
   it("recovers from corrupt discovery-seeds.json and writes a backup", async () => {
     await writeFile(
       join(profileDir, "discovery-seeds.json"),

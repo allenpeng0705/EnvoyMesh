@@ -55,6 +55,8 @@ import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
+  defaultBootstrapPresetsForDiscoveryProfile,
+  normalizeBootstrapPresetsForContactsOnly,
   bondTrustRank,
 } from "@envoymesh/api";
 
@@ -118,6 +120,7 @@ import {
 } from "@envoymesh/local-store";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
+import { seedAddrsForDiscoveryProfile } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
 import { createTaskDispatcher } from "./task-dispatcher.js";
@@ -128,6 +131,7 @@ import {
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
   DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME,
+  DEFAULT_MDNS_INTERVAL_MS,
   filterBootstrapMultiaddrs,
   filterUsableOutboundPeerDialHints,
   ENVOY_CHAT_PROTOCOL,
@@ -2412,6 +2416,10 @@ class NodeServiceImpl implements NodeService {
       this._relayPublicWsUrl = config.relayPublicWsUrl;
     }
 
+    if (updated.discoveryProfile === "contacts-only") {
+      updated.bootstrapPresets = normalizeBootstrapPresetsForContactsOnly(updated.bootstrapPresets);
+    }
+
     await this._configStore.save(updated);
     this.emit("node:status", {
       status: this._nodeStatus,
@@ -2558,7 +2566,9 @@ class NodeServiceImpl implements NodeService {
       relayServerEnabled: options?.relayServerEnabled ?? false,
       advertiseAddrs: options?.advertiseAddrs ?? [],
       bootstrapPeers: options?.bootstrapPeers ?? [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
-      bootstrapPresets: options?.bootstrapPresets ?? [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
+      bootstrapPresets:
+        options?.bootstrapPresets ??
+        [...defaultBootstrapPresetsForDiscoveryProfile(options?.discoveryProfile ?? "wan-default")],
       configuredRelays: [],
       modelProviders: { mode: "mock" },
       chatAssistEnabled: false,
@@ -2616,7 +2626,10 @@ class NodeServiceImpl implements NodeService {
       // Must resolve bootstrapPresets to actual multiaddresses for mesh connectivity
       const peerRecords = await this._peerDirectoryStore.listPeerRecords();
       const peerDirAddrCount = peerRecords.reduce((n, r) => n + r.listenAddrs.length, 0);
-      const seedAddrs = await this._discoverySeedStore.listSeedAddrs();
+      const seedAddrs = seedAddrsForDiscoveryProfile(
+        config.discoveryProfile,
+        await this._discoverySeedStore.listSeedRecords(),
+      );
 
       // Resolve bootstrap presets to actual multiaddresses
       const resolvedPresetAddrs: string[] = [];
@@ -2665,6 +2678,7 @@ class NodeServiceImpl implements NodeService {
         listen: ["/ip4/0.0.0.0/tcp/0"],
         advertiseAddrs: config.advertiseAddrs,
         enableMdns: config.enableMdns ?? true, // mDNS for local discovery (default true, can be disabled for testing)
+        mdnsIntervalMs: DEFAULT_MDNS_INTERVAL_MS,
         enableDht: true, // Always enable DHT for topic-based discovery
         dhtClientMode: true,
         bootstrapPeers,

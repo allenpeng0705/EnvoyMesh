@@ -2,6 +2,7 @@ import type { Sensitivity } from "@envoymesh/protocol";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
+  normalizeBootstrapPresetsForContactsOnly,
 } from "@envoymesh/api";
 import { mergeBootstrapPresetYamlFiles, type BootstrapPresetRegistry } from "./bootstrap-presets-file.js";
 import { loadNodeYamlConfig } from "./node-config.js";
@@ -10,7 +11,7 @@ import { applyJoinInviteToNodeArgs } from "./wan-invite.js";
 export interface NodeArgs {
   configPath?: string;
   profileDir: string;
-  discoveryProfile: "lan-fast" | "wan-default";
+  discoveryProfile: "lan-fast" | "wan-default" | "contacts-only";
   connectivityStrict: boolean;
   bootstrapPresets: string[];
   bootstrapPresetsFiles: string[];
@@ -286,7 +287,7 @@ Usage:
 Options:
   --config <path>      Load node options from YAML config file.
   --profile <dir>       Profile directory for Envoy identity. Default: ./data/default (env: ENVOYMESH_PROFILE; useful on Windows if npm eats --flags)
-  --discovery-profile <p>  Discovery defaults: lan-fast|wan-default. Env: ENVOYMESH_DISCOVERY_PROFILE
+  --discovery-profile <p>  Discovery defaults: lan-fast|wan-default|contacts-only. Env: ENVOYMESH_DISCOVERY_PROFILE
   --connectivity-strict    Fail startup when wan-default bootstrap connectivity cannot be established. Env: ENVOYMESH_CONNECTIVITY_STRICT=1
   --listen <multiaddr>  Listen multiaddr. Default: /ip4/0.0.0.0/tcp/0
   --advertise-addr <multiaddr>  Reachable relay base address for relay.lookup /p2p-circuit/ paths (public IP or DNS, same TCP port as clients use). Repeatable. Env: ENVOYMESH_ADVERTISE_ADDRS (comma-separated). YAML: discovery.advertiseAddrs. Strongly recommended for --relay-server on WAN/cloud.
@@ -404,7 +405,7 @@ function parsePositiveInteger(value: string, flag: string): number {
 }
 
 function parseDiscoveryProfile(value: string): NodeArgs["discoveryProfile"] {
-  if (value === "lan-fast" || value === "wan-default") {
+  if (value === "lan-fast" || value === "wan-default" || value === "contacts-only") {
     return value;
   }
   throw new Error(`Invalid discovery profile: ${value}`);
@@ -441,7 +442,7 @@ export function normalizeWin32NpmArgv(argv: string[]): string[] {
     out.push("--listen", argv[i]);
     i += 1;
   }
-  if (i < argv.length && (argv[i] === "wan-default" || argv[i] === "lan-fast")) {
+  if (i < argv.length && (argv[i] === "wan-default" || argv[i] === "lan-fast" || argv[i] === "contacts-only")) {
     out.push("--discovery-profile", argv[i]);
     i += 1;
   }
@@ -470,6 +471,9 @@ export function normalizeWin32NpmArgv(argv: string[]): string[] {
 
 function applyDiscoveryProfileDefaults(args: NodeArgs, customPresetRegistry: BootstrapPresetRegistry): void {
   args.bootstrapPresets = [...new Set(args.bootstrapPresets)];
+  if (args.discoveryProfile === "contacts-only") {
+    args.bootstrapPresets = normalizeBootstrapPresetsForContactsOnly(args.bootstrapPresets);
+  }
   for (const preset of args.bootstrapPresets) {
     args.bootstrapPeers = dedupePeers([...args.bootstrapPeers, ...bootstrapPeersForPreset(preset, customPresetRegistry)]);
   }
@@ -570,9 +574,11 @@ function applyEnvironmentArgs(args: NodeArgs): void {
     .filter(Boolean);
   const envDiscoveryProfile = (process.env.ENVOYMESH_DISCOVERY_PROFILE ?? "").trim();
 
-  if (envDiscoveryProfile === "wan-default") {
-    args.discoveryProfile = envDiscoveryProfile;
-  } else if (envDiscoveryProfile === "lan-fast") {
+  if (
+    envDiscoveryProfile === "wan-default" ||
+    envDiscoveryProfile === "lan-fast" ||
+    envDiscoveryProfile === "contacts-only"
+  ) {
     args.discoveryProfile = envDiscoveryProfile;
   }
   args.bootstrapPresets.push(...envBootstrapPresets);

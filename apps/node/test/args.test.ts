@@ -404,6 +404,15 @@ my-org:
     expect(() => parseNodeArgs(["--bootstrap-preset", "unknown-preset"])).toThrow("Unknown bootstrap preset");
   });
 
+  it("contacts-only profile strips public-libp2p presets and keeps cn-relay", () => {
+    const args = parseNodeArgs(["--discovery-profile", "contacts-only"]);
+    expect(args.discoveryProfile).toBe("contacts-only");
+    expect(args.bootstrapPresets).toEqual(["cn-relay"]);
+    expect(args.bootstrapPeers.some((peer) => peer.includes("bootstrap.libp2p.io"))).toBe(false);
+    expect(args.enableRelay).toBe(true);
+    expect(args.enableDht).toBe(true);
+  });
+
   it("applies join-invite token", () => {
     const token = Buffer.from(
       JSON.stringify({

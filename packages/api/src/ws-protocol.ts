@@ -196,7 +196,7 @@ export interface ExternalPublishConfig {
 
 export interface NodeConfig {
   profileDir: string;
-  discoveryProfile: "lan-fast" | "wan-default";
+  discoveryProfile: DiscoveryProfile;
   enableMdns?: boolean; // mDNS for local discovery (default true)
   relayEnabled: boolean;
   relayServerEnabled: boolean;
@@ -474,7 +474,7 @@ export interface ModelProviderConfig {
   requireApprovalForCloud?: boolean;
 }
 
-export type DiscoveryProfile = "lan-fast" | "wan-default";
+export type DiscoveryProfile = "lan-fast" | "wan-default" | "contacts-only";
 
 export type NodeStatus = "offline" | "starting" | "running" | "stopping";
 

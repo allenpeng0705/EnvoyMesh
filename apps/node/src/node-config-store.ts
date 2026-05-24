@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
+  defaultBootstrapPresetsForDiscoveryProfile,
+  normalizeBootstrapPresetsForContactsOnly,
 } from "@envoymesh/api";
 import type {
   AiSettings,
@@ -173,7 +175,9 @@ function tryMigrateNodeConfig(value: unknown, profileDir: string): PersistedNode
     version: "0.1",
     profileDir,
     discoveryProfile:
-      file.discoveryProfile === "lan-fast" || file.discoveryProfile === "wan-default"
+      file.discoveryProfile === "lan-fast" ||
+      file.discoveryProfile === "wan-default" ||
+      file.discoveryProfile === "contacts-only"
         ? file.discoveryProfile
         : defaults.discoveryProfile,
     relayEnabled: typeof file.relayEnabled === "boolean" ? file.relayEnabled : defaults.relayEnabled,
@@ -201,6 +205,9 @@ function tryMigrateNodeConfig(value: unknown, profileDir: string): PersistedNode
       : defaults.contactAiPreferences,
     updatedAt: typeof file.updatedAt === "string" ? file.updatedAt : defaults.updatedAt,
   };
+  if (merged.discoveryProfile === "contacts-only") {
+    merged.bootstrapPresets = normalizeBootstrapPresetsForContactsOnly(merged.bootstrapPresets);
+  }
   if (!isValidNodeConfig(merged)) {
     return undefined;
   }
@@ -218,7 +225,7 @@ export function describeNodeConfigValidationFailure(value: unknown): string {
   if (typeof file.profileDir !== "string") {
     return "missing profileDir string";
   }
-  if (file.discoveryProfile !== "lan-fast" && file.discoveryProfile !== "wan-default") {
+  if (file.discoveryProfile !== "lan-fast" && file.discoveryProfile !== "wan-default" && file.discoveryProfile !== "contacts-only") {
     return `discoveryProfile=${String(file.discoveryProfile)}`;
   }
   if (typeof file.relayEnabled !== "boolean") {
@@ -259,7 +266,7 @@ function isValidNodeConfig(value: unknown): value is PersistedNodeConfig {
   if (typeof file.profileDir !== "string") {
     return false;
   }
-  if (file.discoveryProfile !== "lan-fast" && file.discoveryProfile !== "wan-default") {
+  if (file.discoveryProfile !== "lan-fast" && file.discoveryProfile !== "wan-default" && file.discoveryProfile !== "contacts-only") {
     return false;
   }
   if (typeof file.relayEnabled !== "boolean") {

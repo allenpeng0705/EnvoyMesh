@@ -9,4 +9,11 @@ export declare const DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR: "/ip4/47.93.1
 /** HTTP info port exposed by the community relay (serves WebSocket client-proxy on /ws). */
 export declare const DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT = 15432;
 export type DefaultPublicBootstrapPresetId = (typeof DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS)[number];
+/** Relay-only bootstraps for bonded-contact / relay-first nodes (no public libp2p swarm). */
+export declare const DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS: readonly ["cn-relay"];
+export type DiscoveryBootstrapProfile = "lan-fast" | "wan-default" | "contacts-only";
+/** Default bootstrap preset ids for a discovery profile (before explicit operator overrides). */
+export declare function defaultBootstrapPresetsForDiscoveryProfile(profile: DiscoveryBootstrapProfile): readonly string[];
+/** Strip public-libp2p swarm presets; ensure cn-relay remains for relay reachability. */
+export declare function normalizeBootstrapPresetsForContactsOnly(presets: readonly string[]): string[];
 //# sourceMappingURL=default-bootstrap.d.ts.map
