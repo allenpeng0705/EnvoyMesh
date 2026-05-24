@@ -17,6 +17,7 @@ import {
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
 import { evaluatePolicy } from "@envoymesh/bonds";
+import { derivePeerId } from "@envoymesh/identity";
 import { searchVaultWithAudit, type VaultIndex } from "@envoymesh/vault";
 import type { ModelProviderConfig } from "@envoymesh/api";
 import { ZodError } from "zod";
@@ -32,16 +33,26 @@ export type ShareAcceptResult =
 /** Sensitivity levels that require owner approval before raw file transfer. */
 const APPROVAL_REQUIRED_SENSITIVITIES = new Set(["private", "trusted"]);
 
-async function resolveSenderOwnerId(
+/** Resolve owner id from libp2p peer id and/or envelope device `senderPeerId`. */
+export async function resolveSenderOwnerId(
   senderPeerId: string,
   remotePeerId: string,
   peerDirectoryStore: LocalPeerDirectoryStore,
 ): Promise<string | undefined> {
   const records = await peerDirectoryStore.listPeerRecords();
-  const match =
-    records.find((r) => r.peerId === senderPeerId) ??
-    records.find((r) => r.peerId === remotePeerId);
-  return match?.ownerId;
+  for (const r of records) {
+    if (!r.ownerId) {
+      continue;
+    }
+    if (r.peerId === senderPeerId || r.peerId === remotePeerId) {
+      return r.ownerId;
+    }
+    const pem = r.devicePublicKeyPem?.trim();
+    if (pem && derivePeerId(pem) === senderPeerId) {
+      return r.ownerId;
+    }
+  }
+  return undefined;
 }
 
 /**

@@ -117,7 +117,7 @@ import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCirc
 import { handleInboundBroadcastRequest, handleInboundBroadcastResponse } from "./broadcast-inbound.js";
 import { handleInboundTaskFeedback, handleInboundOfficialCredential } from "./reputation-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
-import { handleInboundShareRequest, handleInboundShareAccept } from "./share-inbound.js";
+import { handleInboundShareRequest, handleInboundShareAccept, resolveSenderOwnerId } from "./share-inbound.js";
 import { generateChatDraft } from "./chat-draft-inbound.js";
 import { ModeController, createDefaultModeConfig } from "./mode-controller.js";
 import { FileSessionStore, SessionManager } from "./session-manager.js";
@@ -1012,9 +1012,15 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         );
       }
       if (shareRequestPayload.fileOrigin === "sender") {
+        const senderOwnerId = await resolveSenderOwnerId(
+          envelope.senderPeerId,
+          remotePeerId,
+          peerDirectoryStore,
+        );
         void nodeService.recordInboundPushShareOffer({
           shareId: signedResponse.messageId,
           senderPeerId: remotePeerId,
+          senderOwnerId,
           previewText: share.responsePayload.previewText,
           sensitivity: share.responsePayload.sensitivity as "public" | "friends" | "private",
           relativePath: shareRequestPayload.relativePath ?? "",

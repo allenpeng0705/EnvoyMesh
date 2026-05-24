@@ -207,6 +207,8 @@ export interface SearchQuery {
 export interface ShareOffer {
   shareId: string;
   senderNodeId: string;
+  /** Owner id when known — routes post-transfer chat log to the bonded contact thread. */
+  senderOwnerId?: string;
   senderDisplayName: string;
   filename: string;
   mimeType: string;

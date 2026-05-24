@@ -481,19 +481,27 @@ class NodeServiceImpl implements NodeService {
   async recordInboundPushShareOffer(input: {
     shareId: string;
     senderPeerId: string;
+    senderOwnerId?: string;
     previewText: string;
     sensitivity: "public" | "friends" | "private";
     relativePath: string;
   }): Promise<void> {
     const records = await this._peerDirectoryStore.listPeerRecords();
     const rec = records.find((r) => r.peerId === input.senderPeerId);
-    const displayName = rec?.ownerId
-      ? rec.ownerId.replace(/^envoy:owner:/, "").slice(0, 10)
-      : `${input.senderPeerId.slice(0, 12)}…`;
+    const senderOwnerId = input.senderOwnerId ?? rec?.ownerId;
+    const trust = senderOwnerId
+      ? await this._trustStore.getTrustRecord(senderOwnerId)
+      : undefined;
+    const displayName =
+      trust?.displayName?.trim() ||
+      (senderOwnerId
+        ? senderOwnerId.replace(/^envoy:owner:/, "").slice(0, 10)
+        : `${input.senderPeerId.slice(0, 12)}…`);
     const filename = basename(input.relativePath) || "file";
     const offer: ShareOffer = {
       shareId: input.shareId,
       senderNodeId: input.senderPeerId,
+      senderOwnerId,
       senderDisplayName: displayName,
       filename,
       mimeType: "application/octet-stream",
@@ -2312,6 +2320,7 @@ class NodeServiceImpl implements NodeService {
 
     const records = await this._peerDirectoryStore.listPeerRecords();
     const rec = records.find((r) => r.peerId === offer.senderNodeId);
+    const senderOwnerId = offer.senderOwnerId ?? rec?.ownerId;
 
     let dialHints: string[];
     try {
@@ -2344,13 +2353,13 @@ class NodeServiceImpl implements NodeService {
       senderNodeId: offer.senderNodeId,
       senderVaultRelativePath: srcKey,
       savePath: saveNorm || srcKey || offer.filename,
-      senderOwnerId: rec?.ownerId,
+      senderOwnerId,
     });
     this._upsertTransferStatus({
       correlationId: shareId,
       phase: "negotiating",
       remotePeerId: offer.senderNodeId,
-      remotePeerOwnerId: rec?.ownerId,
+      remotePeerOwnerId: senderOwnerId,
       vaultRelativePath: saveNorm || srcKey || offer.filename,
       updatedAt: new Date().toISOString(),
     });
