@@ -25,8 +25,8 @@ describe("connectivity-tuning", () => {
     expect(discoveryProfileDefaultEnableMdns("contacts-only")).toBe(true);
   });
 
-  it("lazy capability discovery defaults true for wan-default", () => {
-    expect(resolveLazyCapabilityDiscovery("wan-default")).toBe(true);
+  it("lazy capability discovery defaults false (periodic DHT find enabled)", () => {
+    expect(resolveLazyCapabilityDiscovery("wan-default")).toBe(false);
     expect(resolveLazyCapabilityDiscovery("relay-only")).toBe(false);
   });
 

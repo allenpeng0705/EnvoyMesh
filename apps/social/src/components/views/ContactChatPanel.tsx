@@ -59,14 +59,12 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     contactAiModes,
     setContactAiModes,
     connectionStatus,
-    appSettings,
   } = useNodeState();
 
-  const showConnectionStatus = appSettings.showConnectionStatus;
   const { messages, isOutgoing } = useChatMessages(selectedContact);
   const { info: peerReachability, checking: reachabilityChecking } = usePeerReachability(
     selectedContact,
-    showConnectionStatus,
+    true,
   );
   const [pendingOutbound, setPendingOutbound] = useState<ChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -227,12 +225,10 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           <div className="chat-header-titles">
             <span className="chat-name">{displayName}</span>
             <span className={`chat-header-kind kind-${threadKind}`}>{threadKindLabel(threadKind)}</span>
-            {showConnectionStatus ? (
-              <span className={`contact-reachability ${reachabilityClass}`} title="P2P path to this contact">
-                <span className="contact-reachability-dot" aria-hidden />
-                {peerReachabilityLabel(peerReachability)}
-              </span>
-            ) : null}
+            <span className={`contact-reachability ${reachabilityClass}`} title="P2P path to this contact">
+              <span className="contact-reachability-dot" aria-hidden />
+              {peerReachabilityLabel(peerReachability)}
+            </span>
           </div>
         </div>
         <div className="chat-header-right">
@@ -343,7 +339,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         )}
       <footer className="chat-input">
         {sendError && <div className="chat-send-error">{sendError}</div>}
-        {showConnectionStatus && !contactReachable && nodeMeshOnline && !reachabilityChecking && (
+        {!contactReachable && nodeMeshOnline && !reachabilityChecking && (
           <div className="chat-reachability-hint">
             Contact is offline — sending will try to connect and may take longer.
           </div>

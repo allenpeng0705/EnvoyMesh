@@ -43,8 +43,8 @@ export function discoveryProfileDefaultEnableMdns(_profile: DiscoveryProfile): b
   return true;
 }
 
-export function defaultLazyCapabilityDiscovery(profile: DiscoveryProfile): boolean {
-  return profile === "wan-default";
+export function defaultLazyCapabilityDiscovery(_profile: DiscoveryProfile): boolean {
+  return false;
 }
 
 export function defaultIdleTimerStretch(_profile: DiscoveryProfile): boolean {

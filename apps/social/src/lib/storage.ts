@@ -30,7 +30,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   wsUrl: "ws://localhost:3030/ws",
   autoConnect: true,
   notificationsEnabled: true,
-  showConnectionStatus: false,
+  showConnectionStatus: true,
 };
 
 const APP_SETTINGS_KEY = "envoymesh:app-settings";

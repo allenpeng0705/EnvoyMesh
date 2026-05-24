@@ -126,7 +126,7 @@ import {
 } from "@envoymesh/local-store";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
-import { seedAddrsForDiscoveryProfile } from "./peer-discovery-telemetry.js";
+import { seedAddrsForDiscoveryProfile, peerDiscoverySourceFromMultiaddrs, shouldPersistPeerDiscoverySeeds } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
 import { createTaskDispatcher } from "./task-dispatcher.js";
@@ -169,7 +169,7 @@ import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { buildChatDiagnostics } from "./chat-diagnostics.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
-import { recordMeshActivity, resolveConnectivityRuntime } from "./connectivity-runtime.js";
+import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
@@ -867,6 +867,7 @@ class NodeServiceImpl implements NodeService {
   private _advertiseInterestsTimer?: ReturnType<typeof setInterval>;
   private _advertiseInterestsStartupTimeout?: ReturnType<typeof setTimeout>;
   private _stopRelayClientScheduler?: () => void;
+  private _capabilityDiscoveryTimer?: ReturnType<typeof setTimeout>;
   private _stopNodeStatsLogging?: () => void;
   private _nodeProcessStartedAtMs = Date.now();
   private _relayBootstrapPeers: string[] = [];
@@ -2510,7 +2511,7 @@ class NodeServiceImpl implements NodeService {
       trustModeEnabled: false,
       friendMatchingPreferencesText: undefined,
       externalPublish: { allowIpfs: false },
-      lazyCapabilityDiscovery: true,
+      lazyCapabilityDiscovery: false,
       idleTimerStretch: false,
     };
   }
@@ -2933,7 +2934,7 @@ class NodeServiceImpl implements NodeService {
       console.log(`[node-service] DHT configuration: discoveryProfile=${config.discoveryProfile}, bootstrapPresets=${config.bootstrapPresets?.length ?? 0}`);
       const connectivityRuntime = resolveConnectivityRuntime({
         profile: config.discoveryProfile,
-        enableMdns: config.enableMdns,
+        enableMdns: resolveEnableMdns(config.discoveryProfile, config.enableMdns),
         tuning: {
           maxConnections: config.maxConnections,
           mdnsIntervalMs: config.mdnsIntervalMs,
@@ -2998,6 +2999,11 @@ class NodeServiceImpl implements NodeService {
           ...relayDeps,
           intervalMs: DEFAULT_RELAY_CLIENT_CYCLE_INTERVAL_MS,
         });
+      }
+
+      if (this._taskStore && this._discoverySeedStore) {
+        void this._runCapabilityDiscoveryCycle("startup", { connectivityRuntime });
+        this._startCapabilityDiscoveryScheduler(connectivityRuntime);
       }
 
       this._nodeProcessStartedAtMs = Date.now();
@@ -3202,6 +3208,19 @@ class NodeServiceImpl implements NodeService {
 
     mesh.onPeerDiscovered(async ({ peerId, multiaddrs }) => {
       try {
+        const config = await this._configStore.load();
+        const discoveryProfile = config?.discoveryProfile ?? "wan-default";
+        const source = peerDiscoverySourceFromMultiaddrs(multiaddrs);
+        if (
+          shouldPersistPeerDiscoverySeeds(discoveryProfile, source) &&
+          multiaddrs.length > 0 &&
+          this._discoverySeedStore
+        ) {
+          await this._discoverySeedStore.upsertMany(multiaddrs, "peer.discovery");
+        }
+        if (multiaddrs.length > 0) {
+          await this._peerDirectoryStore.mergeListenAddrsForPeerId(peerId, multiaddrs);
+        }
         // Note: Do NOT create peer directory records here from mDNS discovery.
         // mDNS only provides peerId + multiaddrs, not owner identity.
         // Peer directory records should only be created when we receive actual identity
@@ -3223,6 +3242,67 @@ class NodeServiceImpl implements NodeService {
     });
   }
 
+  private async _runCapabilityDiscoveryCycle(
+    source: "startup" | "periodic" | "on-demand",
+    opts: { connectivityRuntime: ResolvedConnectivityRuntime; runFind?: boolean },
+  ): Promise<void> {
+    const mesh = this._mesh;
+    const profile = this._profile;
+    if (!mesh || !profile || !this._taskStore || !this._discoverySeedStore) {
+      return;
+    }
+    const config = await this._configStore.load();
+    if (!config) {
+      return;
+    }
+    const { connectivityRuntime } = opts;
+    const topics = buildAutoCapabilityTopics(profile.deviceCertificate.capabilities);
+    await runCapabilityDiscoveryCycle({
+      mesh,
+      profile: config.discoveryProfile,
+      topics,
+      taskStore: this._taskStore,
+      discoverySeedStore: this._discoverySeedStore,
+      enableDht: connectivityRuntime.enableDht,
+      options: {
+        source,
+        runFind:
+          opts.runFind ??
+          (source === "on-demand"
+            ? true
+            : shouldRunPeriodicCapabilityFind(connectivityRuntime)),
+      },
+    });
+  }
+
+  private _startCapabilityDiscoveryScheduler(connectivityRuntime: ResolvedConnectivityRuntime): void {
+    if (this._capabilityDiscoveryTimer) {
+      clearTimeout(this._capabilityDiscoveryTimer);
+      this._capabilityDiscoveryTimer = undefined;
+    }
+    if (!connectivityRuntime.enableDht || !this._profile) {
+      return;
+    }
+    const topics = buildAutoCapabilityTopics(this._profile.deviceCertificate.capabilities);
+    if (topics.length === 0) {
+      return;
+    }
+
+    const schedule = (): void => {
+      const jitter = Math.floor(Math.random() * connectivityRuntime.capabilityDiscoveryJitterMs);
+      this._capabilityDiscoveryTimer = setTimeout(() => {
+        void this._runCapabilityDiscoveryCycle("periodic", { connectivityRuntime })
+          .catch((err) => console.warn("[node-service] capability discovery cycle failed:", err))
+          .finally(() => {
+            if (this._mesh) {
+              schedule();
+            }
+          });
+      }, connectivityRuntime.capabilityDiscoveryIntervalMsEffective() + jitter);
+    };
+    schedule();
+  }
+
   async stopNode(): Promise<void> {
     if (this._nodeStatus === "offline") {
       return;
@@ -3234,6 +3314,10 @@ class NodeServiceImpl implements NodeService {
     try {
       this._stopRelayClientScheduler?.();
       this._stopRelayClientScheduler = undefined;
+      if (this._capabilityDiscoveryTimer) {
+        clearTimeout(this._capabilityDiscoveryTimer);
+        this._capabilityDiscoveryTimer = undefined;
+      }
       this._stopNodeStatsLogging?.();
       this._stopNodeStatsLogging = undefined;
       this._relayBootstrapPeers = [];
