@@ -14,6 +14,9 @@ describe("default bootstrap presets", () => {
     expect(defaultBootstrapPresetsForDiscoveryProfile("contacts-only")).toEqual(
       DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS,
     );
+    expect(defaultBootstrapPresetsForDiscoveryProfile("relay-only")).toEqual(
+      DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS,
+    );
     expect(defaultBootstrapPresetsForDiscoveryProfile("lan-fast")).toEqual([]);
   });
 

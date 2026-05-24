@@ -117,6 +117,10 @@ export async function routeRpcMethod(
       return ns.warmContactConnection(params.peerOwnerId as string);
     case "getChatDiagnostics":
       return ns.getChatDiagnostics(params.peerOwnerId as string | undefined);
+    case "runCapabilityDiscovery":
+      return ns.runCapabilityDiscovery({
+        find: params.find as boolean | undefined,
+      });
     case "getNodeConfig":
       return ns.getNodeConfig();
     case "updateNodeConfig":

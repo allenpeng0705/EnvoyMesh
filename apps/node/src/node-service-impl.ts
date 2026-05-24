@@ -59,6 +59,10 @@ import {
   defaultBootstrapPresetsForDiscoveryProfile,
   normalizeBootstrapPresetsForContactsOnly,
   bondTrustRank,
+  clampConnectivityTuningInput,
+  resolveEnableMdns,
+  resolveIdleTimerStretch,
+  resolveLazyCapabilityDiscovery,
 } from "@envoymesh/api";
 
 import {
@@ -132,7 +136,6 @@ import {
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
   DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME,
-  DEFAULT_MDNS_INTERVAL_MS,
   filterBootstrapMultiaddrs,
   filterUsableOutboundPeerDialHints,
   ENVOY_CHAT_PROTOCOL,
@@ -164,6 +167,8 @@ import { executeTool } from "./tool-registry.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { buildChatDiagnostics } from "./chat-diagnostics.js";
 import { startRelayClientScheduler } from "./relay-client-cycle.js";
+import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
+import { recordMeshActivity, resolveConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
@@ -1493,6 +1498,7 @@ class NodeServiceImpl implements NodeService {
     this._assertOnline();
     // Record owner activity when they send a message (keeps them "online" in automatic mode)
     this.recordOwnerActivity();
+    recordMeshActivity();
     const mesh = this._requireMesh();
     const selfProfile = this._requireProfile();
 
@@ -2431,7 +2437,7 @@ class NodeServiceImpl implements NodeService {
       return {
         profileDir: config.profileDir,
         discoveryProfile: config.discoveryProfile,
-        enableMdns: config.enableMdns ?? true,
+        enableMdns: resolveEnableMdns(config.discoveryProfile, config.enableMdns),
         relayEnabled: config.relayEnabled,
         relayServerEnabled: config.relayServerEnabled,
         configuredRelays: config.configuredRelays,
@@ -2465,12 +2471,21 @@ class NodeServiceImpl implements NodeService {
               ),
             }
           : { allowIpfs: false },
+        maxConnections: config.maxConnections,
+        mdnsIntervalMs: config.mdnsIntervalMs,
+        capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
+        lazyCapabilityDiscovery: resolveLazyCapabilityDiscovery(config.discoveryProfile, {
+          lazyCapabilityDiscovery: config.lazyCapabilityDiscovery,
+        }),
+        idleTimerStretch: resolveIdleTimerStretch(config.discoveryProfile, {
+          idleTimerStretch: config.idleTimerStretch,
+        }),
       };
     }
     return {
       profileDir: this._profileDir,
       discoveryProfile: "wan-default" as const,
-      enableMdns: true,
+      enableMdns: false,
       relayEnabled: true,
       relayServerEnabled: false,
       configuredRelays: [],
@@ -2494,7 +2509,45 @@ class NodeServiceImpl implements NodeService {
       trustModeEnabled: false,
       friendMatchingPreferencesText: undefined,
       externalPublish: { allowIpfs: false },
+      lazyCapabilityDiscovery: true,
+      idleTimerStretch: true,
     };
+  }
+
+  async runCapabilityDiscovery(params?: { find?: boolean }): Promise<void> {
+    this._assertOnline();
+    const mesh = this._requireMesh();
+    const profile = this._requireProfile();
+    const config = (await this._configStore.load())!;
+    const discoveryProfile = config.discoveryProfile;
+    const runtime = resolveConnectivityRuntime({
+      profile: discoveryProfile,
+      enableMdns: config.enableMdns,
+      tuning: {
+        maxConnections: config.maxConnections,
+        mdnsIntervalMs: config.mdnsIntervalMs,
+        capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
+        lazyCapabilityDiscovery: config.lazyCapabilityDiscovery,
+        idleTimerStretch: config.idleTimerStretch,
+      },
+    });
+    if (!this._taskStore || !this._discoverySeedStore) {
+      throw new Error("Node stores not initialized");
+    }
+    const topics = buildAutoCapabilityTopics(profile.deviceCertificate.capabilities);
+    await runCapabilityDiscoveryCycle({
+      mesh,
+      profile: discoveryProfile,
+      topics,
+      taskStore: this._taskStore,
+      discoverySeedStore: this._discoverySeedStore,
+      enableDht: runtime.enableDht,
+      options: {
+        source: "on-demand",
+        runFind: params?.find !== false,
+      },
+    });
+    recordMeshActivity();
   }
 
   async updateNodeConfig(config: Partial<NodeConfig>): Promise<void> {
@@ -2619,9 +2672,18 @@ class NodeServiceImpl implements NodeService {
       this._relayPublicWsUrl = config.relayPublicWsUrl;
     }
 
-    if (updated.discoveryProfile === "contacts-only") {
+    if (updated.discoveryProfile === "contacts-only" || updated.discoveryProfile === "relay-only") {
       updated.bootstrapPresets = normalizeBootstrapPresetsForContactsOnly(updated.bootstrapPresets);
     }
+
+    const tuningPatch = clampConnectivityTuningInput({
+      maxConnections: config.maxConnections,
+      mdnsIntervalMs: config.mdnsIntervalMs,
+      capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
+      lazyCapabilityDiscovery: config.lazyCapabilityDiscovery,
+      idleTimerStretch: config.idleTimerStretch,
+    });
+    Object.assign(updated, tuningPatch);
 
     await this._configStore.save(updated);
     this.emit("node:status", {
@@ -2868,27 +2930,41 @@ class NodeServiceImpl implements NodeService {
       // DHT is always enabled when using wan-default discovery profile (for topic-based peer discovery)
       // Bootstrap presets affect peer connectivity, not DHT availability
       console.log(`[node-service] DHT configuration: discoveryProfile=${config.discoveryProfile}, bootstrapPresets=${config.bootstrapPresets?.length ?? 0}`);
-      console.log(`[node-service] Creating EnvoyMesh with enableDht=true`);
+      const connectivityRuntime = resolveConnectivityRuntime({
+        profile: config.discoveryProfile,
+        enableMdns: config.enableMdns,
+        tuning: {
+          maxConnections: config.maxConnections,
+          mdnsIntervalMs: config.mdnsIntervalMs,
+          capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
+          lazyCapabilityDiscovery: config.lazyCapabilityDiscovery,
+          idleTimerStretch: config.idleTimerStretch,
+        },
+      });
+      console.log(`[node-service] Creating EnvoyMesh with enableDht=${connectivityRuntime.enableDht}`);
       console.log(`[node-service] config object:`, JSON.stringify({
         discoveryProfile: config.discoveryProfile,
         relayEnabled: config.relayEnabled,
         relayServerEnabled: config.relayServerEnabled,
         bootstrapPeers: config.bootstrapPeers,
         bootstrapPresets: config.bootstrapPresets,
+        maxConnections: connectivityRuntime.maxConnections,
+        lazyCapabilityDiscovery: connectivityRuntime.lazyCapabilityDiscovery,
       }));
 
       const meshOptions: EnvoyMeshOptions = {
         listen: ["/ip4/0.0.0.0/tcp/0"],
         advertiseAddrs: config.advertiseAddrs,
-        enableMdns: config.enableMdns ?? true, // mDNS for local discovery (default true, can be disabled for testing)
-        mdnsIntervalMs: DEFAULT_MDNS_INTERVAL_MS,
-        enableDht: true, // Always enable DHT for topic-based discovery
+        enableMdns: connectivityRuntime.enableMdns,
+        mdnsIntervalMs: connectivityRuntime.mdnsIntervalMs,
+        enableDht: connectivityRuntime.enableDht,
         dhtClientMode: true,
         bootstrapPeers,
         enableRelay: config.relayEnabled,
         enableRelayServer: config.relayServerEnabled,
         enableAutoNat: true,
         enableDcutr: true,
+        maxConnections: connectivityRuntime.maxConnections,
         libp2pPrivateKeyPath: join(config.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME),
       };
 
@@ -2913,6 +2989,7 @@ class NodeServiceImpl implements NodeService {
           bootstrapPeers,
           inboundGuard: this._inboundGuard,
           discoverySeedStore: this._discoverySeedStore,
+          intervalMs: () => connectivityRuntime.relayCycleIntervalMs(),
         });
       }
 

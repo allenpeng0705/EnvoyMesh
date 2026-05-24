@@ -3,6 +3,7 @@ import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
   normalizeBootstrapPresetsForContactsOnly,
+  type ConnectivityTuning,
 } from "@envoymesh/api";
 import { mergeBootstrapPresetYamlFiles, type BootstrapPresetRegistry } from "./bootstrap-presets-file.js";
 import { loadNodeYamlConfig } from "./node-config.js";
@@ -12,8 +13,11 @@ import type { PersistedNodeConfig } from "./node-config-store.js";
 export interface NodeArgs {
   configPath?: string;
   profileDir: string;
-  discoveryProfile: "lan-fast" | "wan-default" | "contacts-only";
+  discoveryProfile: "lan-fast" | "wan-default" | "relay-only" | "contacts-only";
   connectivityStrict: boolean;
+  /** Set when CLI/YAML/persisted config explicitly sets mDNS on or off. */
+  enableMdnsExplicit: boolean;
+  connectivityTuning: ConnectivityTuning;
   bootstrapPresets: string[];
   bootstrapPresetsFiles: string[];
   listen: string[];
@@ -87,6 +91,8 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     profileDir: "./data/default",
     discoveryProfile: "wan-default",
     connectivityStrict: false,
+    enableMdnsExplicit: false,
+    connectivityTuning: {},
     bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
     bootstrapPresetsFiles: [],
     listen: ["/ip4/0.0.0.0/tcp/0"],
@@ -137,6 +143,10 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.advertiseAddrs.push(readValue(argv, ++index, arg));
     } else if (arg === "--no-mdns") {
       args.enableMdns = false;
+      args.enableMdnsExplicit = true;
+    } else if (arg === "--mdns") {
+      args.enableMdns = true;
+      args.enableMdnsExplicit = true;
     } else if (arg === "--dht") {
       args.enableDht = true;
     } else if (arg === "--dht-client") {
@@ -406,7 +416,12 @@ function parsePositiveInteger(value: string, flag: string): number {
 }
 
 function parseDiscoveryProfile(value: string): NodeArgs["discoveryProfile"] {
-  if (value === "lan-fast" || value === "wan-default" || value === "contacts-only") {
+  if (
+    value === "lan-fast" ||
+    value === "wan-default" ||
+    value === "relay-only" ||
+    value === "contacts-only"
+  ) {
     return value;
   }
   throw new Error(`Invalid discovery profile: ${value}`);
@@ -443,7 +458,7 @@ export function normalizeWin32NpmArgv(argv: string[]): string[] {
     out.push("--listen", argv[i]);
     i += 1;
   }
-  if (i < argv.length && (argv[i] === "wan-default" || argv[i] === "lan-fast" || argv[i] === "contacts-only")) {
+  if (i < argv.length && (argv[i] === "wan-default" || argv[i] === "lan-fast" || argv[i] === "relay-only" || argv[i] === "contacts-only")) {
     out.push("--discovery-profile", argv[i]);
     i += 1;
   }
@@ -472,7 +487,7 @@ export function normalizeWin32NpmArgv(argv: string[]): string[] {
 
 function applyDiscoveryProfileDefaults(args: NodeArgs, customPresetRegistry: BootstrapPresetRegistry): void {
   args.bootstrapPresets = [...new Set(args.bootstrapPresets)];
-  if (args.discoveryProfile === "contacts-only") {
+  if (args.discoveryProfile === "contacts-only" || args.discoveryProfile === "relay-only") {
     args.bootstrapPresets = normalizeBootstrapPresetsForContactsOnly(args.bootstrapPresets);
   }
   for (const preset of args.bootstrapPresets) {
@@ -481,11 +496,18 @@ function applyDiscoveryProfileDefaults(args: NodeArgs, customPresetRegistry: Boo
   if (args.discoveryProfile === "lan-fast") {
     return;
   }
-  args.enableDht = true;
-  args.dhtClientMode = true;
   args.enableRelay = true;
   args.enableAutoNat = true;
   args.enableDcutr = true;
+  if (args.discoveryProfile === "relay-only") {
+    args.enableDht = false;
+  } else {
+    args.enableDht = true;
+    args.dhtClientMode = true;
+  }
+  if (!args.enableMdnsExplicit) {
+    args.enableMdns = false;
+  }
   if ((process.env.ENVOYMESH_CONNECTIVITY_STRICT ?? "").trim() === "1") {
     args.connectivityStrict = true;
   }
@@ -500,6 +522,22 @@ export function applyPersistedDiscoveryConfig(
   args.discoveryProfile = config.discoveryProfile;
   if (config.enableMdns !== undefined) {
     args.enableMdns = config.enableMdns;
+    args.enableMdnsExplicit = true;
+  }
+  if (config.maxConnections !== undefined) {
+    args.connectivityTuning.maxConnections = config.maxConnections;
+  }
+  if (config.mdnsIntervalMs !== undefined) {
+    args.connectivityTuning.mdnsIntervalMs = config.mdnsIntervalMs;
+  }
+  if (config.capabilityDiscoveryIntervalMs !== undefined) {
+    args.connectivityTuning.capabilityDiscoveryIntervalMs = config.capabilityDiscoveryIntervalMs;
+  }
+  if (config.lazyCapabilityDiscovery !== undefined) {
+    args.connectivityTuning.lazyCapabilityDiscovery = config.lazyCapabilityDiscovery;
+  }
+  if (config.idleTimerStretch !== undefined) {
+    args.connectivityTuning.idleTimerStretch = config.idleTimerStretch;
   }
   if (typeof config.relayEnabled === "boolean") {
     args.enableRelay = config.relayEnabled;

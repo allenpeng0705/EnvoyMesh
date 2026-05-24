@@ -37,6 +37,7 @@ class MockNodeService implements Partial<NodeService> {
 
   // Search
   searchPeers = vi.fn().mockResolvedValue([]);
+  runCapabilityDiscovery = vi.fn().mockResolvedValue(undefined);
   advertiseTopic = vi.fn().mockResolvedValue(undefined);
   stopAdvertiseTopic = vi.fn().mockResolvedValue(undefined);
 

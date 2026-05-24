@@ -10,6 +10,7 @@ import {
 import QRCode from "qrcode";
 import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
 import {
+  DEFAULT_CLIENT_MAX_CONNECTIONS,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
   defaultBootstrapPresetsForDiscoveryProfile,
 } from "@envoymesh/api";
@@ -109,8 +110,8 @@ export function SettingsNodeTab() {
     setChatDiagContact(bonds[0]!.peerOwnerId);
   }, [bonds, chatDiagContact]);
 
-  const isPublicLibp2pDiscovery =
-    (nodeConfig?.discoveryProfile ?? "wan-default") !== "contacts-only";
+  const discoveryProfile: DiscoveryProfile = nodeConfig?.discoveryProfile ?? "wan-default";
+  const isPublicLibp2pDiscovery = discoveryProfile === "wan-default";
   const isPublicNetwork = bootstrapPresets.length > 0;
   const relays = (nodeConfig?.configuredRelays ?? []) as RelayConfig[];
 
@@ -213,13 +214,13 @@ export function SettingsNodeTab() {
   }, [nodeService, refreshNodeConfig, refreshConnectionStatus]);
 
   const publicLibp2pToggle = useOptimisticToggle(isPublicLibp2pDiscovery, async (enabled) => {
-    const discoveryProfile: DiscoveryProfile = enabled ? "wan-default" : "contacts-only";
-    const bootstrapPresets = [...defaultBootstrapPresetsForDiscoveryProfile(discoveryProfile)];
+    const nextProfile: DiscoveryProfile = enabled ? "wan-default" : "contacts-only";
+    const bootstrapPresets = [...defaultBootstrapPresetsForDiscoveryProfile(nextProfile)];
     bootstrapPresetsSavingRef.current += 1;
     setBootstrapPresetSyncNonce((n) => n + 1);
     try {
       setBootstrapPresets(bootstrapPresets);
-      await nodeService.updateNodeConfig({ discoveryProfile, bootstrapPresets });
+      await nodeService.updateNodeConfig({ discoveryProfile: nextProfile, bootstrapPresets });
       await restartNodeAfterConnectivityChange();
     } finally {
       bootstrapPresetsSavingRef.current -= 1;
@@ -228,7 +229,25 @@ export function SettingsNodeTab() {
     }
   });
 
-  const enableMdns = nodeConfig?.enableMdns ?? true;
+  const setDiscoveryProfile = useCallback(
+    async (nextProfile: DiscoveryProfile) => {
+      const presets = [...defaultBootstrapPresetsForDiscoveryProfile(nextProfile)];
+      bootstrapPresetsSavingRef.current += 1;
+      setBootstrapPresetSyncNonce((n) => n + 1);
+      try {
+        setBootstrapPresets(presets);
+        await nodeService.updateNodeConfig({ discoveryProfile: nextProfile, bootstrapPresets: presets });
+        await restartNodeAfterConnectivityChange();
+      } finally {
+        bootstrapPresetsSavingRef.current -= 1;
+        setBootstrapPresetSyncNonce((n) => n + 1);
+        await refreshNodeConfig();
+      }
+    },
+    [nodeService, restartNodeAfterConnectivityChange, refreshNodeConfig],
+  );
+
+  const enableMdns = nodeConfig?.enableMdns ?? false;
   const mdnsToggle = useOptimisticToggle(enableMdns, async (enableMdnsNext) => {
     await nodeService.updateNodeConfig({ enableMdns: enableMdnsNext });
     try { await nodeService.stopNode(); } catch {}
@@ -497,10 +516,110 @@ export function SettingsNodeTab() {
       </section>
 
       <section className="settings-section">
+        <h3>Discovery profile</h3>
+        <p className="section-desc">
+          Controls how much background mesh work your node does. Restart the node after changing.
+        </p>
+        <label className="settings-field">
+          <span className="settings-field-label">Profile</span>
+          <select
+            className="settings-select"
+            value={discoveryProfile}
+            onChange={(e) => void setDiscoveryProfile(e.target.value as DiscoveryProfile)}
+          >
+            <option value="wan-default">Full WAN — DHT + public libp2p bootstrap</option>
+            <option value="relay-only">Relay-only WAN — no DHT (lower CPU/RAM)</option>
+            <option value="contacts-only">Contacts only — relay + bonded peers</option>
+          </select>
+        </label>
+        <p className="section-desc muted">
+          {discoveryProfile === "wan-default"
+            ? "Global peer discovery via public libp2p bootstrap and DHT. Lazy find skips background DHT queries until you open Search."
+            : discoveryProfile === "relay-only"
+              ? "Reach peers through Envoy relay without Kad-DHT. Good middle ground for always-on home nodes."
+              : "No public swarm discovery — chat with existing contacts via relay."}
+        </p>
+      </section>
+
+      <section className="settings-section">
+        <h3>Resource tuning</h3>
+        <p className="section-desc">
+          Reduce CPU and memory while staying on WAN. Takes effect after node restart.
+        </p>
+        <label className="settings-field">
+          <span className="settings-field-label">Max connections</span>
+          <input
+            type="number"
+            min={10}
+            max={500}
+            className="settings-input-narrow"
+            defaultValue={nodeConfig?.maxConnections ?? DEFAULT_CLIENT_MAX_CONNECTIONS}
+            key={`maxConn-${nodeConfig?.maxConnections ?? DEFAULT_CLIENT_MAX_CONNECTIONS}`}
+            onBlur={async (e) => {
+              const v = Number(e.target.value);
+              if (!Number.isFinite(v)) return;
+              await nodeService.updateNodeConfig({ maxConnections: v });
+              await refreshNodeConfig();
+            }}
+          />
+        </label>
+        <label className="settings-field">
+          <span className="settings-field-label">Capability cycle (seconds)</span>
+          <input
+            type="number"
+            min={30}
+            max={600}
+            className="settings-input-narrow"
+            defaultValue={Math.round((nodeConfig?.capabilityDiscoveryIntervalMs ?? 90_000) / 1000)}
+            key={`capInt-${nodeConfig?.capabilityDiscoveryIntervalMs ?? 90_000}`}
+            onBlur={async (e) => {
+              const sec = Number(e.target.value);
+              if (!Number.isFinite(sec)) return;
+              await nodeService.updateNodeConfig({ capabilityDiscoveryIntervalMs: sec * 1000 });
+              await refreshNodeConfig();
+            }}
+          />
+        </label>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>Lazy DHT find</strong>
+            <span className="toggle-desc">Skip background DHT queries; run when Search is open</span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={nodeConfig?.lazyCapabilityDiscovery ?? discoveryProfile === "wan-default"}
+              onChange={async (e) => {
+                await nodeService.updateNodeConfig({ lazyCapabilityDiscovery: e.target.checked });
+                await refreshNodeConfig();
+              }}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>Idle timer stretch</strong>
+            <span className="toggle-desc">Slow relay/capability timers when no recent chat activity</span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={nodeConfig?.idleTimerStretch ?? true}
+              onChange={async (e) => {
+                await nodeService.updateNodeConfig({ idleTimerStretch: e.target.checked });
+                await refreshNodeConfig();
+              }}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+      </section>
+
+      <section className="settings-section">
         <h3>Public network discovery</h3>
         <p className="section-desc">
-          When enabled, your node joins the public libp2p bootstrap network to discover new peers globally.
-          Turn off to use relay and bonded contacts only (lower CPU and memory on Windows).
+          Quick toggle for full public libp2p vs contacts-only. Use the profile selector above for relay-only WAN.
         </p>
         <div className="settings-toggle-row">
           <div className="toggle-info">

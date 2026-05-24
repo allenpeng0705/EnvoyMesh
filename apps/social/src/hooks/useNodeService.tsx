@@ -13,6 +13,7 @@ import type {
   ConnectionStatus,
   ChatDiagnostics,
   CreateHumanProfileInput,
+  DiscoveryProfile,
   HelloProfile,
   HelloRequest,
   HelloResponse,
@@ -39,7 +40,7 @@ import type {
 } from "@envoymesh/api";
 
 type InitNodeOptions = {
-  discoveryProfile?: "lan-fast" | "wan-default" | "contacts-only";
+  discoveryProfile?: DiscoveryProfile;
   relayEnabled?: boolean;
   relayServerEnabled?: boolean;
   advertiseAddrs?: string[];
@@ -101,6 +102,7 @@ export interface NodeServiceClient {
   getPeerConnectionInfo(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
   warmContactConnection(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
   getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics>;
+  runCapabilityDiscovery(params?: { find?: boolean }): Promise<void>;
 
   // Agent Bridge
   getBridgeStatus(): Promise<BridgeStatus>;
@@ -277,6 +279,9 @@ function createWsNodeServiceClient(
     },
     async deleteChatDraft(draftId: string) { return wsClient.rpc("deleteChatDraft", { draftId }); },
     async searchPeers(query: SearchQuery) { return wsClient.rpc("searchPeers", query as unknown as Record<string, unknown>); },
+    async runCapabilityDiscovery(params?: { find?: boolean }) {
+      return wsClient.rpc("runCapabilityDiscovery", params ?? {});
+    },
     async getNodeConfig() { return wsClient.rpc("getNodeConfig"); },
     async getConnectionStatus() { return wsClient.rpc("getConnectionStatus"); },
     async getPeerConnectionInfo(peerOwnerId: string) { return wsClient.rpc("getPeerConnectionInfo", { peerOwnerId }); },

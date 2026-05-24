@@ -1338,6 +1338,10 @@ export class MobileNode implements NodeService {
     });
   }
 
+  async runCapabilityDiscovery(_params?: { find?: boolean }): Promise<void> {
+    // Mobile relay-only transport — no background DHT capability cycle.
+  }
+
   async advertiseTopic(topic: string): Promise<void> {
     const t = String(topic).trim().toLowerCase();
     if (!t) throw new Error("advertiseTopic: empty topic");

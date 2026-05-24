@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
+  DEFAULT_CLIENT_MAX_CONNECTIONS,
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
   defaultBootstrapPresetsForDiscoveryProfile,
@@ -11,6 +12,7 @@ import type {
   AiSettings,
   AnonymousDiscoveryMode,
   AutonomousPolicy,
+  ConnectivityTuning,
   ContactAiPreferences,
   DiscoveryProfile,
   ExternalPublishConfig,
@@ -21,6 +23,17 @@ import type { FriendMatchingPreferencesPayload } from "@envoymesh/protocol";
 
 const NODE_CONFIG_FILE = "node-config.json";
 const warnedInvalidConfigPaths = new Set<string>();
+
+const VALID_DISCOVERY_PROFILES = new Set<DiscoveryProfile>([
+  "lan-fast",
+  "wan-default",
+  "relay-only",
+  "contacts-only",
+]);
+
+function isValidDiscoveryProfile(value: unknown): value is DiscoveryProfile {
+  return typeof value === "string" && VALID_DISCOVERY_PROFILES.has(value as DiscoveryProfile);
+}
 
 export interface PersistedNodeConfig {
   version: "0.1";
@@ -77,6 +90,16 @@ export interface PersistedNodeConfig {
   friendMatchingPreferencesSigned?: FriendMatchingPreferencesPayload;
   /** External distribution policy (IPFS export gate). */
   externalPublish?: ExternalPublishConfig;
+  /** libp2p connection cap (client nodes). Default 50. */
+  maxConnections?: number;
+  /** mDNS interval in ms. Default 10_000. */
+  mdnsIntervalMs?: number;
+  /** Background capability discovery cycle interval in ms. Default 90_000. */
+  capabilityDiscoveryIntervalMs?: number;
+  /** Skip periodic DHT capability find; Search triggers on-demand find. */
+  lazyCapabilityDiscovery?: boolean;
+  /** Stretch relay/capability/bootstrap timers when idle. */
+  idleTimerStretch?: boolean;
 }
 
 export interface NodeConfigStore {
@@ -90,6 +113,7 @@ export function createDefaultPersistedNodeConfig(profileDir: string): PersistedN
     version: "0.1",
     profileDir,
     discoveryProfile: "wan-default",
+    enableMdns: false,
     relayEnabled: true,
     relayServerEnabled: false,
     advertiseAddrs: [],
@@ -99,6 +123,7 @@ export function createDefaultPersistedNodeConfig(profileDir: string): PersistedN
     modelProviders: { mode: "mock" },
     chatAssistEnabled: false,
     contactAiPreferences: [],
+    maxConnections: DEFAULT_CLIENT_MAX_CONNECTIONS,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -174,10 +199,7 @@ function tryMigrateNodeConfig(value: unknown, profileDir: string): PersistedNode
     ...(file as Partial<PersistedNodeConfig>),
     version: "0.1",
     profileDir,
-    discoveryProfile:
-      file.discoveryProfile === "lan-fast" ||
-      file.discoveryProfile === "wan-default" ||
-      file.discoveryProfile === "contacts-only"
+    discoveryProfile: isValidDiscoveryProfile(file.discoveryProfile)
         ? file.discoveryProfile
         : defaults.discoveryProfile,
     relayEnabled: typeof file.relayEnabled === "boolean" ? file.relayEnabled : defaults.relayEnabled,
@@ -205,7 +227,7 @@ function tryMigrateNodeConfig(value: unknown, profileDir: string): PersistedNode
       : defaults.contactAiPreferences,
     updatedAt: typeof file.updatedAt === "string" ? file.updatedAt : defaults.updatedAt,
   };
-  if (merged.discoveryProfile === "contacts-only") {
+  if (merged.discoveryProfile === "contacts-only" || merged.discoveryProfile === "relay-only") {
     merged.bootstrapPresets = normalizeBootstrapPresetsForContactsOnly(merged.bootstrapPresets);
   }
   if (!isValidNodeConfig(merged)) {
@@ -225,7 +247,7 @@ export function describeNodeConfigValidationFailure(value: unknown): string {
   if (typeof file.profileDir !== "string") {
     return "missing profileDir string";
   }
-  if (file.discoveryProfile !== "lan-fast" && file.discoveryProfile !== "wan-default" && file.discoveryProfile !== "contacts-only") {
+  if (!isValidDiscoveryProfile(file.discoveryProfile)) {
     return `discoveryProfile=${String(file.discoveryProfile)}`;
   }
   if (typeof file.relayEnabled !== "boolean") {
@@ -266,7 +288,7 @@ function isValidNodeConfig(value: unknown): value is PersistedNodeConfig {
   if (typeof file.profileDir !== "string") {
     return false;
   }
-  if (file.discoveryProfile !== "lan-fast" && file.discoveryProfile !== "wan-default" && file.discoveryProfile !== "contacts-only") {
+  if (!isValidDiscoveryProfile(file.discoveryProfile)) {
     return false;
   }
   if (typeof file.relayEnabled !== "boolean") {

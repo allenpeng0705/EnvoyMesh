@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { SUGGESTED_TOPICS } from "../../lib/display.js";
@@ -20,6 +20,12 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
   const [librarySearching, setLibrarySearching] = useState(false);
   const [libraryErr, setLibraryErr] = useState<string | null>(null);
 
+  useEffect(() => {
+    void nodeService.runCapabilityDiscovery({ find: true }).catch(() => {
+      /* optional — lazy DHT may be disabled */
+    });
+  }, [nodeService]);
+
   const handleSearch = async (overrideQuery?: string) => {
     const effectiveQuery = (overrideQuery ?? searchQuery).trim();
     if (!effectiveQuery) return;
@@ -27,6 +33,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     setSearchResults([]);
     const startedAt = Date.now();
     try {
+      await nodeService.runCapabilityDiscovery({ find: true }).catch(() => {});
       let results: PeerSearchResult[];
       const query = effectiveQuery;
 

@@ -150,6 +150,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.searchPeers(query);
   }
 
+  async runCapabilityDiscovery(params?: Parameters<NodeService["runCapabilityDiscovery"]>[0]) {
+    return this._ns.runCapabilityDiscovery(params);
+  }
+
   async advertiseTopic(topic: string) {
     return this._ns.advertiseTopic(topic);
   }

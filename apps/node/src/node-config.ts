@@ -6,7 +6,7 @@ export interface NodeYamlConfig {
   profile?: string;
   listen?: string[];
   discovery?: {
-    profile?: "lan-fast" | "wan-default" | "contacts-only";
+    profile?: "lan-fast" | "wan-default" | "relay-only" | "contacts-only";
     connectivityStrict?: boolean;
     mdns?: boolean;
     dht?: boolean;
@@ -70,9 +70,14 @@ function parseDiscoveryConfig(parsed: Record<string, unknown>, configPath: strin
   const output: NonNullable<NodeYamlConfig["discovery"]> = {};
 
   if (parsed.profile !== undefined) {
-    if (parsed.profile !== "lan-fast" && parsed.profile !== "wan-default") {
+    if (
+      parsed.profile !== "lan-fast" &&
+      parsed.profile !== "wan-default" &&
+      parsed.profile !== "relay-only" &&
+      parsed.profile !== "contacts-only"
+    ) {
       throw new Error(
-        `Invalid node config at ${configPath}: discovery.profile must be lan-fast or wan-default`,
+        `Invalid node config at ${configPath}: discovery.profile must be lan-fast, wan-default, relay-only, or contacts-only`,
       );
     }
     output.profile = parsed.profile;

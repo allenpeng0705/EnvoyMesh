@@ -23,13 +23,13 @@ export type DefaultPublicBootstrapPresetId = (typeof DEFAULT_PUBLIC_LIBP2P_BOOTS
 /** Relay-only bootstraps for bonded-contact / relay-first nodes (no public libp2p swarm). */
 export const DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS = ["cn-relay"] as const
 
-export type DiscoveryBootstrapProfile = "lan-fast" | "wan-default" | "contacts-only"
+export type DiscoveryBootstrapProfile = "lan-fast" | "wan-default" | "relay-only" | "contacts-only"
 
 /** Default bootstrap preset ids for a discovery profile (before explicit operator overrides). */
 export function defaultBootstrapPresetsForDiscoveryProfile(
   profile: DiscoveryBootstrapProfile,
 ): readonly string[] {
-  if (profile === "contacts-only") {
+  if (profile === "contacts-only" || profile === "relay-only") {
     return DEFAULT_CONTACTS_ONLY_BOOTSTRAP_PRESETS
   }
   if (profile === "wan-default") {

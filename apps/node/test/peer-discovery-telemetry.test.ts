@@ -30,6 +30,8 @@ describe("peer-discovery-telemetry", () => {
     expect(shouldPersistPeerDiscoverySeeds("wan-default", "unknown")).toBe(true);
     expect(shouldPersistPeerDiscoverySeeds("contacts-only", "unknown")).toBe(false);
     expect(shouldPersistPeerDiscoverySeeds("contacts-only", "relay")).toBe(true);
+    expect(shouldPersistPeerDiscoverySeeds("relay-only", "unknown")).toBe(false);
+    expect(shouldPersistPeerDiscoverySeeds("relay-only", "relay")).toBe(true);
   });
 
   it("filters persisted seeds for contacts-only profile", () => {
@@ -41,8 +43,9 @@ describe("peer-discovery-telemetry", () => {
     expect(addrs).toEqual(["/ip4/1.1.1.1/tcp/4001/p2p/relay"]);
   });
 
-  it("skips capability topic find on contacts-only profile", () => {
+  it("skips capability topic find on contacts-only and relay-only profiles", () => {
     expect(shouldRunCapabilityTopicFind("wan-default")).toBe(true);
     expect(shouldRunCapabilityTopicFind("contacts-only")).toBe(false);
+    expect(shouldRunCapabilityTopicFind("relay-only")).toBe(false);
   });
 });

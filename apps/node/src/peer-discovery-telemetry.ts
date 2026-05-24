@@ -55,10 +55,10 @@ export function shouldPersistPeerDiscoverySeeds(
   profile: DiscoveryProfile,
   source: PeerDiscoverySource,
 ): boolean {
-  if (profile !== "contacts-only") {
-    return true;
+  if (profile === "contacts-only" || profile === "relay-only") {
+    return source === "relay";
   }
-  return source === "relay";
+  return true;
 }
 
 const CONTACTS_ONLY_EXCLUDED_SEED_SOURCES = new Set<DiscoverySeedSource>([
@@ -70,7 +70,7 @@ export function seedAddrsForDiscoveryProfile(
   profile: DiscoveryProfile,
   records: ReadonlyArray<{ addr: string; source: DiscoverySeedSource }>,
 ): string[] {
-  if (profile !== "contacts-only") {
+  if (profile !== "contacts-only" && profile !== "relay-only") {
     return records.map((record) => record.addr);
   }
   return records
@@ -79,5 +79,5 @@ export function seedAddrsForDiscoveryProfile(
 }
 
 export function shouldRunCapabilityTopicFind(profile: DiscoveryProfile): boolean {
-  return profile !== "contacts-only";
+  return profile === "wan-default";
 }

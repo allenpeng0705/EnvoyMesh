@@ -1,3 +1,4 @@
+export * from "./connectivity-tuning.js";
 export * from "./default-bootstrap.js";
 export * from "./node-service.js";
 export * from "./bond-target.js";

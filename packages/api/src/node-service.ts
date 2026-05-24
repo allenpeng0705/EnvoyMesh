@@ -626,6 +626,11 @@ export interface NodeService {
   searchPeers(query: SearchQuery): Promise<PeerSearchResult[]>;
 
   /**
+   * Run DHT capability discovery on demand (used when lazy mode skips periodic find).
+   */
+  runCapabilityDiscovery(params?: { find?: boolean }): Promise<void>;
+
+  /**
    * Advertise a topic on the DHT so other peers can discover you
    * @param topic The topic string to advertise (e.g., "music", "tech")
    */

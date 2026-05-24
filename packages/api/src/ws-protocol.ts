@@ -120,6 +120,7 @@ export type RpcMethods =
   | "getPeerConnectionInfo"
   | "warmContactConnection"
   | "getChatDiagnostics"
+  | "runCapabilityDiscovery"
   // AI / Knowledge Query
   | "knowledgeQuery"
   | "runDocumentAgentTurn"
@@ -287,6 +288,16 @@ export interface NodeConfig {
   friendMatchingPreferencesSigned?: FriendMatchingPreferencesPayload;
   /** Optional external distribution policy (IPFS export gate). Default: IPFS export disabled. */
   externalPublish?: ExternalPublishConfig;
+  /** libp2p connection cap (client nodes). Default 50. */
+  maxConnections?: number;
+  /** mDNS interval in ms. Default 10_000. */
+  mdnsIntervalMs?: number;
+  /** Background capability discovery cycle interval in ms. Default 90_000. */
+  capabilityDiscoveryIntervalMs?: number;
+  /** Skip periodic DHT capability find; Search triggers on-demand find. Default true for wan-default. */
+  lazyCapabilityDiscovery?: boolean;
+  /** Stretch relay/capability/bootstrap timers when idle. Default true for WAN profiles. */
+  idleTimerStretch?: boolean;
 }
 
 /**
@@ -477,7 +488,7 @@ export interface ModelProviderConfig {
   requireApprovalForCloud?: boolean;
 }
 
-export type DiscoveryProfile = "lan-fast" | "wan-default" | "contacts-only";
+export type DiscoveryProfile = "lan-fast" | "wan-default" | "relay-only" | "contacts-only";
 
 export type NodeStatus = "offline" | "starting" | "running" | "stopping";
 
@@ -779,6 +790,16 @@ export interface UpdateNodeConfigParams {
   friendMatchingPreferencesText?: string;
   /** Owner-signed preferences (validated server-side). When set, overrides plain text from signature payload. */
   friendMatchingPreferencesSigned?: FriendMatchingPreferencesPayload;
+  maxConnections?: number;
+  mdnsIntervalMs?: number;
+  capabilityDiscoveryIntervalMs?: number;
+  lazyCapabilityDiscovery?: boolean;
+  idleTimerStretch?: boolean;
+}
+
+export interface RunCapabilityDiscoveryParams {
+  /** When true, run DHT find even if lazy mode would skip periodic find. Default true. */
+  find?: boolean;
 }
 
 export interface ListRelaysParams {}
