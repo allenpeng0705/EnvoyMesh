@@ -2431,6 +2431,7 @@ class NodeServiceImpl implements NodeService {
       return {
         profileDir: config.profileDir,
         discoveryProfile: config.discoveryProfile,
+        enableMdns: config.enableMdns ?? true,
         relayEnabled: config.relayEnabled,
         relayServerEnabled: config.relayServerEnabled,
         configuredRelays: config.configuredRelays,
@@ -2445,6 +2446,7 @@ class NodeServiceImpl implements NodeService {
         trustAnchorPublicKeys: config.trustAnchorPublicKeys ?? {},
         autonomousKillSwitch: config.autonomousKillSwitch ?? false,
         autonomousPolicies: config.autonomousPolicies ?? [],
+        aiSettings: config.aiSettings,
         contactAiPreferences: config.contactAiPreferences ?? [],
         bridgeStatus: this._bridgeStatus ?? undefined,
         companionPairingAutoAcceptWithToken: config.companionPairingAutoAcceptWithToken ?? false,
@@ -2468,6 +2470,7 @@ class NodeServiceImpl implements NodeService {
     return {
       profileDir: this._profileDir,
       discoveryProfile: "wan-default" as const,
+      enableMdns: true,
       relayEnabled: true,
       relayServerEnabled: false,
       configuredRelays: [],

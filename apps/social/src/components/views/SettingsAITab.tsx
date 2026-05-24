@@ -219,7 +219,10 @@ export function SettingsAITab() {
       </div>
 
       <h4>Default Mode for New Contacts</h4>
-      <p className="field-desc">The default AI mode when you start a chat with a new contact.</p>
+      <p className="field-desc">
+        Default AI mode when you open a chat with someone who has no per-contact override.
+        To change mode for an existing contact, use the Manual / Assistant / Auto buttons in that chat&apos;s header.
+      </p>
       <select className="settings-select" value={aiSettings.defaultModeForNewContacts}
         onChange={async (e) => {
           await updateAiSettings({ defaultModeForNewContacts: e.target.value as "manual" | "assistant" | "auto" });

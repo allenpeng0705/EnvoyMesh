@@ -28,6 +28,7 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
     acceptHello,
     declineHello,
     clearPendingMessages,
+    refreshNodeConfig,
   } = useNodeState();
 
   const [contextMenu, setContextMenu] = useState<{ ownerId: string; x: number; y: number } | null>(null);
@@ -55,7 +56,7 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
       priority: existingPref?.priority ?? "high",
     }];
     await nodeService.updateNodeConfig({ contactAiPreferences: newPrefs });
-    await nodeService.getNodeConfig().catch(() => {});
+    await refreshNodeConfig();
   };
 
   const handleAcceptHello = async (messageId: string) => {

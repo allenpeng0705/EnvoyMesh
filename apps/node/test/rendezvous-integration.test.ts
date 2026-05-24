@@ -363,6 +363,45 @@ describe("NodeServiceImpl - Discovery Configuration", () => {
       const config = await nodeService.getNodeConfig();
       expect(config.discoveryProfile).toBe("wan-default");
     });
+
+    it("should return persisted enableMdns and aiSettings", async () => {
+      const configStore = createTestConfigStore({
+        version: "0.1",
+        profileDir: "/tmp/test",
+        discoveryProfile: "wan-default" as const,
+        enableMdns: false,
+        relayEnabled: true,
+        relayServerEnabled: false,
+        advertiseAddrs: [],
+        bootstrapPeers: [],
+        bootstrapPresets: [],
+        configuredRelays: [],
+        modelProviders: { mode: "mock" as const },
+        chatAssistEnabled: false,
+        contactAiPreferences: [],
+        aiSettings: {
+          status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" },
+          identity: { mode: "defensive" },
+          defaultModeForNewContacts: "assistant",
+          rules: [],
+        },
+        updatedAt: new Date().toISOString(),
+      });
+
+      const nodeService = new NodeServiceImpl(
+        undefined,
+        createMockTrustStore(),
+        createMockPeerDirectoryStore(),
+        createMockHumanProfileStore(),
+        undefined,
+      );
+      setConfigStore(nodeService, configStore);
+
+      const config = await nodeService.getNodeConfig();
+      expect(config.enableMdns).toBe(false);
+      expect(config.aiSettings?.defaultModeForNewContacts).toBe("assistant");
+      expect(config.aiSettings?.identity.mode).toBe("defensive");
+    });
   });
 });
 

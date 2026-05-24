@@ -20,8 +20,9 @@ export class WsClient {
     reject: (error: Error) => void;
   }>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly url: string;
+  private url: string;
   private reconnectAttempts = 0;
+  private autoReconnectEnabled = true;
   private readonly maxReconnectDelay = 60000; // 1 minute max
   private lastPong = 0;
   private _statusCallbacks = new Set<ConnectionChangeHandler>();
@@ -32,6 +33,20 @@ export class WsClient {
 
   constructor(url: string = "ws://localhost:3030/ws") {
     this.url = url;
+  }
+
+  /** Update the target WebSocket URL (applied on next connect/reconnect). */
+  setUrl(url: string): void {
+    this.url = url.trim() || this.url;
+  }
+
+  /** When false, connection drops are not auto-retried (manual connect only). */
+  setAutoReconnectEnabled(enabled: boolean): void {
+    this.autoReconnectEnabled = enabled;
+    if (!enabled && this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
   }
 
   /**
@@ -130,10 +145,9 @@ export class WsClient {
   }
 
   /**
-   * Disconnect from the WebSocket server
+   * Close the socket without disposing the client (for reconnect / URL change).
    */
-  disconnect(): void {
-    this._disposed = true;
+  closeConnection(): void {
     if (this._connectTimeout) {
       clearTimeout(this._connectTimeout);
       this._connectTimeout = null;
@@ -151,8 +165,26 @@ export class WsClient {
       socket.onmessage = null;
       socket.close();
     }
-    this.reconnectAttempts = 0;
     this._statusCallbacks.forEach((cb) => cb("disconnected"));
+  }
+
+  /** Close and reopen; optionally switch URL. Resets disposed state for manual retry. */
+  async reconnectTo(url?: string): Promise<void> {
+    if (url !== undefined) {
+      this.setUrl(url);
+    }
+    this.closeConnection();
+    this._disposed = false;
+    await this.connect();
+  }
+
+  /**
+   * Disconnect from the WebSocket server and dispose the client.
+   */
+  disconnect(): void {
+    this._disposed = true;
+    this.closeConnection();
+    this.reconnectAttempts = 0;
   }
 
   /**
@@ -315,7 +347,7 @@ export class WsClient {
   }
 
   private scheduleReconnect(): void {
-    if (this._disposed || this.reconnectTimer) return;
+    if (this._disposed || this.reconnectTimer || !this.autoReconnectEnabled) return;
 
     // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 60s (cap)
     const delay = Math.min(

@@ -5,14 +5,14 @@ import { useNodeService } from "./useNodeService.js";
 const POLL_MS = 8_000;
 
 /** Live libp2p reachability for a bonded contact (direct P2P or relay circuit). */
-export function usePeerReachability(peerOwnerId: string | null) {
+export function usePeerReachability(peerOwnerId: string | null, enabled = true) {
   const nodeService = useNodeService();
   const [info, setInfo] = useState<PeerConnectionInfo | null>(null);
   const [checking, setChecking] = useState(false);
 
   const refresh = useCallback(
     async (opts?: { warm?: boolean }) => {
-      if (!peerOwnerId || !nodeService.isConnected) {
+      if (!enabled || !peerOwnerId || !nodeService.isConnected) {
         setInfo(null);
         return;
       }
@@ -28,12 +28,13 @@ export function usePeerReachability(peerOwnerId: string | null) {
         setChecking(false);
       }
     },
-    [nodeService, peerOwnerId],
+    [enabled, nodeService, peerOwnerId],
   );
 
   useEffect(() => {
-    if (!peerOwnerId || !nodeService.isConnected) {
+    if (!enabled || !peerOwnerId || !nodeService.isConnected) {
       setInfo(null);
+      setChecking(false);
       return;
     }
     void refresh({ warm: true });
@@ -41,7 +42,7 @@ export function usePeerReachability(peerOwnerId: string | null) {
       void refresh();
     }, POLL_MS);
     return () => clearInterval(id);
-  }, [peerOwnerId, nodeService.isConnected, refresh]);
+  }, [enabled, peerOwnerId, nodeService.isConnected, refresh]);
 
   return { info, checking, refresh };
 }

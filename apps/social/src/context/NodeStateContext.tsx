@@ -12,8 +12,11 @@ import {
   useHelloRequests,
   useSocialIntroProposals,
   useTransportWsOpen,
+  useDesktopConnectionPrefsSync,
 } from "../hooks/useNodeService.js";
+import { useChatNotifications } from "../hooks/useChatNotifications.js";
 import {
+  DEFAULT_APP_SETTINGS,
   loadAppSettings,
   saveAppSettings,
   loadContactAiModes,
@@ -118,6 +121,7 @@ const NodeStateContext = createContext<NodeStateValue | null>(null);
 
 export function NodeStateProvider({ children }: { children: ReactNode }) {
   const nodeService = useNodeService();
+  const connectionPrefsSync = useDesktopConnectionPrefsSync();
   const bonds = useBonds();
   const { requests: pendingHellOs, accept: acceptHello, decline: declineHello } = useHelloRequests();
   const {
@@ -147,6 +151,14 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
 
   // --- Per-contact AI modes ---
   const [contactAiModes, setContactAiModesState] = useState<Record<string, AssistantMode>>(loadContactAiModes);
+
+  useChatNotifications({
+    enabled: appSettings.notificationsEnabled,
+    nodeService,
+    wsOpen: wsTransportOpen,
+    bonds,
+    peerId,
+  });
 
   // --- Agent bridge ---
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus | null>(null);
@@ -379,7 +391,11 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
   const wrappedSetAppSettings = useCallback((settings: AppSettings) => {
     setAppSettings(settings);
     saveAppSettings(settings);
-  }, []);
+    connectionPrefsSync?.updatePrefs({
+      wsUrl: settings.wsUrl.trim() || DEFAULT_APP_SETTINGS.wsUrl,
+      autoConnect: settings.autoConnect,
+    });
+  }, [connectionPrefsSync]);
 
   const wrappedSetContactAiModes = useCallback((modes: Record<string, AssistantMode>) => {
     setContactAiModesState(modes);

@@ -43,6 +43,7 @@ export function SettingsNodeTab() {
     nodeConfig?.bootstrapPresets ?? [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
   );
   const bootstrapPresetsSavingRef = useRef(0);
+  const modelProviderFieldsDirtyRef = useRef(false);
   const [bootstrapPresetSyncNonce, setBootstrapPresetSyncNonce] = useState(0);
 
   const [friendMatchingDraft, setFriendMatchingDraft] = useState("");
@@ -54,6 +55,15 @@ export function SettingsNodeTab() {
   const [chatDiagError, setChatDiagError] = useState<string | null>(null);
 
   // Sync local state when nodeConfig loads/changes (async load after mount)
+  useEffect(() => {
+    if (settingsSaveStatus === "saving" || modelProviderFieldsDirtyRef.current) return;
+    const mp = nodeConfig?.modelProviders;
+    if (!mp) return;
+    setModelEndpoint(mp.endpoint ?? "");
+    setModelName(mp.modelName ?? "");
+    setModelApiKey(mp.apiKey ?? "");
+  }, [nodeConfig?.modelProviders, settingsSaveStatus]);
+
   useEffect(() => {
     if (bootstrapPresetsSavingRef.current > 0) return;
     const fromServer = nodeConfig?.bootstrapPresets;
@@ -296,7 +306,7 @@ export function SettingsNodeTab() {
   );
 
   const bridgeEnabledToggle = useOptimisticToggle(
-    nodeConfig?.bridgeEnabled ?? false,
+    nodeConfig?.bridgeEnabled ?? true,
     async (bridgeEnabled) => {
       await nodeService.updateNodeConfig({ bridgeEnabled });
       await refreshNodeConfig();
@@ -670,7 +680,10 @@ export function SettingsNodeTab() {
               className="settings-input"
               placeholder={modelProviderHints.endpointPlaceholder || "https://api.example.com/v1"}
               value={modelEndpoint}
-              onChange={(e) => setModelEndpoint(e.target.value)}
+              onChange={(e) => {
+                modelProviderFieldsDirtyRef.current = true;
+                setModelEndpoint(e.target.value);
+              }}
             />
             {modelProviderHints.hint ? (
               <p className="settings-hint" style={{ marginTop: "6px" }}>
@@ -681,12 +694,18 @@ export function SettingsNodeTab() {
           <dt>Model Name</dt>
           <dd>
             <input type="text" className="settings-input" placeholder="MiniMax-M2.7"
-              value={modelName} onChange={(e) => setModelName(e.target.value)} />
+              value={modelName} onChange={(e) => {
+                modelProviderFieldsDirtyRef.current = true;
+                setModelName(e.target.value);
+              }} />
           </dd>
           <dt>API Key</dt>
           <dd>
             <input type="password" className="settings-input" placeholder="sk-..."
-              value={modelApiKey} onChange={(e) => setModelApiKey(e.target.value)} />
+              value={modelApiKey} onChange={(e) => {
+                modelProviderFieldsDirtyRef.current = true;
+                setModelApiKey(e.target.value);
+              }} />
             {modelProviderHints.apiKeyHint ? (
               <p className="settings-hint" style={{ marginTop: "6px" }}>
                 {modelProviderHints.apiKeyHint}
@@ -751,6 +770,7 @@ export function SettingsNodeTab() {
                     apiKey: modelApiKey,
                   },
                 });
+                modelProviderFieldsDirtyRef.current = false;
                 setSettingsSaveStatus("saved");
                 setTimeout(() => setSettingsSaveStatus("idle"), 2000);
               } catch {
@@ -762,6 +782,7 @@ export function SettingsNodeTab() {
           </button>
           <button type="button" className="settings-cancel-btn"
             onClick={() => {
+              modelProviderFieldsDirtyRef.current = false;
               setModelEndpoint(nodeConfig?.modelProviders?.endpoint ?? "");
               setModelName(nodeConfig?.modelProviders?.modelName ?? "");
               setModelApiKey(nodeConfig?.modelProviders?.apiKey ?? "");

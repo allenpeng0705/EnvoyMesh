@@ -1,6 +1,6 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { createWsClient } from "../ws-client.js";
-import { loadAppSettings } from "../lib/storage.js";
+import { DEFAULT_APP_SETTINGS, loadAppSettings } from "../lib/storage.js";
 import type {
   AgentShareProposal,
   BondRecord,
@@ -184,13 +184,29 @@ export function useIsInProcessMobileNode(): boolean {
 
 type WsClientType = ReturnType<typeof createWsClient>;
 
+export interface DesktopConnectionPrefs {
+  wsUrl: string;
+  autoConnect: boolean;
+}
+
+const DesktopConnectionPrefsContext = createContext<{
+  updatePrefs: (patch: Partial<DesktopConnectionPrefs>) => void;
+} | null>(null);
+
+/** Sync App-tab connection settings into the WebSocket client (desktop only). */
+export function useDesktopConnectionPrefsSync() {
+  return useContext(DesktopConnectionPrefsContext);
+}
+
 /** Build a NodeServiceClient that talks to a local WsServer via WebSocket (desktop). */
 function createWsNodeServiceClient(
   wsUrl: string,
   connectCb: (connected: boolean) => void,
   readyCb: (ready: boolean) => void,
+  autoConnect: boolean,
 ): { client: NodeServiceClient; wsClient: WsClientType } {
   const wsClient = createWsClient(wsUrl);
+  wsClient.setAutoReconnectEnabled(autoConnect);
   let connected = false;
   let readyReceived = false;
 
@@ -221,10 +237,7 @@ function createWsNodeServiceClient(
     },
 
     async reconnect() {
-      wsClient.disconnect();
-      // Status callback handles connectCb/readyCb via onStatusChange
-      await wsClient.connect();
-      // Status callback handles connectCb via onStatusChange on open
+      await wsClient.reconnectTo();
     },
 
     async getProfile() { return wsClient.rpc("getProfile"); },
@@ -370,6 +383,21 @@ export function NodeServiceProvider({
   const [ready, setReady] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
+  const wsClientRef = useRef<WsClientType | null>(null);
+  const [connectionPrefs, setConnectionPrefs] = useState<DesktopConnectionPrefs>(() => {
+    const settings = loadAppSettings();
+    return {
+      wsUrl: settings.wsUrl.trim() || DEFAULT_APP_SETTINGS.wsUrl,
+      autoConnect: settings.autoConnect,
+    };
+  });
+
+  const updateConnectionPrefs = useCallback((patch: Partial<DesktopConnectionPrefs>) => {
+    setConnectionPrefs((prev) => ({
+      wsUrl: patch.wsUrl?.trim() || prev.wsUrl,
+      autoConnect: patch.autoConnect ?? prev.autoConnect,
+    }));
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -395,16 +423,17 @@ export function NodeServiceProvider({
       };
     }
 
-    const wsUrl = loadAppSettings().wsUrl.trim() || "ws://localhost:3030/ws";
     const { client: nodeService, wsClient } = createWsNodeServiceClient(
-      wsUrl,
+      connectionPrefs.wsUrl,
       (open) => {
         if (active) setConnected(open);
       },
       (isReady) => {
         if (active) setReady(isReady);
       },
+      connectionPrefs.autoConnect,
     );
+    wsClientRef.current = wsClient;
 
     const unsubStatus = wsClient.onStatusChange(() => {
       if (!active) return;
@@ -412,19 +441,24 @@ export function NodeServiceProvider({
       setConnected(wsClient.isConnected());
     });
 
-    void nodeService
-      .connect()
-      .then(() => {
-        if (!active) return;
-        setConnected(wsClient.isConnected());
-        setLastError(wsClient.getLastError());
-      })
-      .catch((err) => {
-        if (!active) return;
-        console.error("[NodeServiceProvider] WebSocket connect failed:", err);
-        setConnected(false);
-        setLastError(err instanceof Error ? err.message : String(err));
-      });
+    if (connectionPrefs.autoConnect) {
+      void nodeService
+        .connect()
+        .then(() => {
+          if (!active) return;
+          setConnected(wsClient.isConnected());
+          setLastError(wsClient.getLastError());
+        })
+        .catch((err) => {
+          if (!active) return;
+          console.error("[NodeServiceProvider] WebSocket connect failed:", err);
+          setConnected(false);
+          setLastError(err instanceof Error ? err.message : String(err));
+        });
+    } else {
+      setConnected(false);
+      setReady(false);
+    }
 
     const unsubReady = wsClient.on("node:ready", () => {
       if (active) setReady(true);
@@ -444,11 +478,30 @@ export function NodeServiceProvider({
       clearInterval(reconnectInterval);
       unsubStatus();
       unsubReady();
+      wsClientRef.current = null;
       nodeService.disconnect();
       setConnected(false);
       setReady(false);
     };
-  }, [clientFactory]);
+  }, [clientFactory, connectionPrefs.wsUrl]);
+
+  const prevAutoConnectRef = useRef(connectionPrefs.autoConnect);
+  useEffect(() => {
+    if (clientFactory) return;
+    const wsClient = wsClientRef.current;
+    if (!wsClient) return;
+    if (prevAutoConnectRef.current === connectionPrefs.autoConnect) return;
+    prevAutoConnectRef.current = connectionPrefs.autoConnect;
+
+    wsClient.setAutoReconnectEnabled(connectionPrefs.autoConnect);
+    if (connectionPrefs.autoConnect) {
+      void wsClient.reconnectTo();
+    } else {
+      wsClient.closeConnection();
+      setConnected(false);
+      setReady(false);
+    }
+  }, [clientFactory, connectionPrefs.autoConnect]);
 
   if (!client) {
     return (
@@ -479,15 +532,17 @@ export function NodeServiceProvider({
   const nodeClientTransport: NodeClientTransport = clientFactory ? "direct-call" : "websocket";
 
   return (
-    <TransportWsContext.Provider value={connected}>
-      <NodeClientTransportContext.Provider value={nodeClientTransport}>
-        <ModelProviderUiScopeContext.Provider value={modelProviderUiScope}>
-          <NodeServiceContext.Provider value={ctx}>
-            {children}
-          </NodeServiceContext.Provider>
-        </ModelProviderUiScopeContext.Provider>
-      </NodeClientTransportContext.Provider>
-    </TransportWsContext.Provider>
+    <DesktopConnectionPrefsContext.Provider value={{ updatePrefs: updateConnectionPrefs }}>
+      <TransportWsContext.Provider value={connected}>
+        <NodeClientTransportContext.Provider value={nodeClientTransport}>
+          <ModelProviderUiScopeContext.Provider value={modelProviderUiScope}>
+            <NodeServiceContext.Provider value={ctx}>
+              {children}
+            </NodeServiceContext.Provider>
+          </ModelProviderUiScopeContext.Provider>
+        </NodeClientTransportContext.Provider>
+      </TransportWsContext.Provider>
+    </DesktopConnectionPrefsContext.Provider>
   );
 }
 

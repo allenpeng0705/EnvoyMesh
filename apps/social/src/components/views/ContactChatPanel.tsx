@@ -58,10 +58,15 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     contactAiModes,
     setContactAiModes,
     connectionStatus,
+    appSettings,
   } = useNodeState();
 
+  const showConnectionStatus = appSettings.showConnectionStatus;
   const { messages, isOutgoing } = useChatMessages(selectedContact);
-  const { info: peerReachability, checking: reachabilityChecking } = usePeerReachability(selectedContact);
+  const { info: peerReachability, checking: reachabilityChecking } = usePeerReachability(
+    selectedContact,
+    showConnectionStatus,
+  );
   const [pendingOutbound, setPendingOutbound] = useState<ChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -170,7 +175,9 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     }
   };
 
-  const currentAiMode: AssistantMode = contactAiModes[selectedContact] ?? "manual";
+  const defaultContactAiMode: AssistantMode =
+    nodeConfig?.aiSettings?.defaultModeForNewContacts ?? "manual";
+  const currentAiMode: AssistantMode = contactAiModes[selectedContact] ?? defaultContactAiMode;
   const aiAccessLevel = getContactAiAccessLevel(selectedContact);
   const isAssistantAllowed = aiAccessLevel === "assistant_only" || aiAccessLevel === "full";
   const isAutoAllowed =
@@ -207,10 +214,12 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           <div className="chat-header-titles">
             <span className="chat-name">{displayName}</span>
             <span className={`chat-header-kind kind-${threadKind}`}>{threadKindLabel(threadKind)}</span>
-            <span className={`contact-reachability ${reachabilityClass}`} title="P2P path to this contact">
-              <span className="contact-reachability-dot" aria-hidden />
-              {peerReachabilityLabel(peerReachability)}
-            </span>
+            {showConnectionStatus ? (
+              <span className={`contact-reachability ${reachabilityClass}`} title="P2P path to this contact">
+                <span className="contact-reachability-dot" aria-hidden />
+                {peerReachabilityLabel(peerReachability)}
+              </span>
+            ) : null}
           </div>
         </div>
         <div className="chat-header-right">

@@ -55,6 +55,7 @@ import { ENVOY_CHAT_PROTOCOL, ENVOY_MESSAGE_PROTOCOL } from "#network/protocols"
 import { installMobileDataTransferReceiver, sendMobileVaultFileDataTransfer } from "./data-transfer.js";
 import { loadMobilePublishedDocumentIds, saveMobilePublishedDocumentIds } from "./mobile-published-library.js";
 import { loadMobileExternalPublish, saveMobileExternalPublish } from "./mobile-external-publish.js";
+import { loadMobileNodePrefs, saveMobileNodePrefs, type MobileNodePrefs } from "./mobile-node-prefs.js";
 import { loadMobilePublishedExternalMap } from "./mobile-published-external.js";
 import { exportMobileLibraryDocumentToIpfs } from "./mobile-ipfs-export.js";
 import { verifyMobileLibraryDocumentIpfsGateway } from "./mobile-ipfs-gateway-verify.js";
@@ -341,11 +342,15 @@ export class MobileNode implements NodeService {
   /** Best-effort last failure for diagnostics ({@link getConnectionStatus}). */
   private _lastNodeError: string | null = null;
   private _lastNodeErrorAt: string | null = null;
-  /** Cached AI prefs loaded from localStorage (`modelProviders`, `chatAssistEnabled`). */
+  /** Cached node prefs loaded from localStorage (model, AI settings, autonomy, etc.). */
   private _aiPrefsOwnerId: string | null = null;
-  private _aiPrefs: { modelProviders: ModelProviderConfig; chatAssistEnabled: boolean } = {
+  private _aiPrefs: MobileNodePrefs = {
     modelProviders: { mode: "mock" },
     chatAssistEnabled: false,
+    autonomousKillSwitch: false,
+    autonomousPolicies: [],
+    trustModeEnabled: false,
+    contactAiPreferences: [],
   };
   constructor(config: MobileNodeConfig) {
     this._profileDir = config.profileDir;
@@ -1819,43 +1824,20 @@ export class MobileNode implements NodeService {
     if (!oid) return;
     if (this._aiPrefsOwnerId === oid) return;
     this._aiPrefsOwnerId = oid;
-    const defaults = {
-      modelProviders: { mode: "mock" as const },
-      chatAssistEnabled: false,
+    const loaded = loadMobileNodePrefs(oid);
+    this._aiPrefs = {
+      ...loaded,
+      modelProviders: _normalizeMobileStoredOpenAiEndpoint(loaded.modelProviders),
     };
-    try {
-      const raw =
-        typeof localStorage !== "undefined"
-          ? localStorage.getItem(`envoymesh_mobile_node_prefs_${oid}`)
-          : null;
-      if (!raw) {
-        this._aiPrefs = defaults;
-        return;
-      }
-      const parsed = JSON.parse(raw) as Partial<{
-        modelProviders: ModelProviderConfig;
-        chatAssistEnabled: boolean;
-      }>;
-      let mpSource: ModelProviderConfig = parsed.modelProviders ?? defaults.modelProviders;
-      let migratedLocalToMock = false;
-      if (mpSource.mode === "ollama" || mpSource.mode === "litellm") {
-        mpSource = { mode: "mock" };
-        migratedLocalToMock = true;
-      }
-      this._aiPrefs = {
-        modelProviders: _normalizeMobileStoredOpenAiEndpoint(mpSource),
-        chatAssistEnabled: parsed.chatAssistEnabled ?? defaults.chatAssistEnabled,
-      };
-      if (migratedLocalToMock) {
-        try {
-          localStorage.setItem(`envoymesh_mobile_node_prefs_${oid}`, JSON.stringify(this._aiPrefs));
-        } catch {
-          /* ignore */
-        }
-      }
-    } catch {
-      this._aiPrefs = defaults;
+    if (loaded.modelProviders.mode === "ollama" || loaded.modelProviders.mode === "litellm") {
+      saveMobileNodePrefs(oid, { modelProviders: this._aiPrefs.modelProviders });
     }
+  }
+
+  private _persistAiPrefs(): void {
+    const oid = this._state?.owner.ownerId;
+    if (!oid) return;
+    saveMobileNodePrefs(oid, this._aiPrefs);
   }
 
   async getNodeConfig(): Promise<NodeConfig> {
@@ -1884,9 +1866,12 @@ export class MobileNode implements NodeService {
       anonymousDiscoveryMode: "off",
       anonymousSensitivityCeiling: "public",
       trustAnchorPublicKeys: {},
-      autonomousKillSwitch: false,
-      autonomousPolicies: [],
-      contactAiPreferences: [],
+      autonomousKillSwitch: this._aiPrefs.autonomousKillSwitch,
+      autonomousPolicies: [...this._aiPrefs.autonomousPolicies],
+      aiSettings: this._aiPrefs.aiSettings,
+      contactAiPreferences: [...this._aiPrefs.contactAiPreferences],
+      trustModeEnabled: this._aiPrefs.trustModeEnabled,
+      friendMatchingPreferencesText: this._aiPrefs.friendMatchingPreferencesText,
       externalPublish,
     };
   }
@@ -1927,27 +1912,55 @@ export class MobileNode implements NodeService {
     }
 
     const oid = this._state?.owner.ownerId;
-    if (oid != null && (config.modelProviders !== undefined || config.chatAssistEnabled !== undefined)) {
+    if (
+      oid != null &&
+      (config.modelProviders !== undefined ||
+        config.chatAssistEnabled !== undefined ||
+        config.aiSettings !== undefined ||
+        config.autonomousKillSwitch !== undefined ||
+        config.autonomousPolicies !== undefined ||
+        config.trustModeEnabled !== undefined ||
+        config.friendMatchingPreferencesText !== undefined ||
+        config.contactAiPreferences !== undefined)
+    ) {
       this._loadAiPrefsIfNeeded();
-      const mergedMp: ModelProviderConfig = {
-        ...this._aiPrefs.modelProviders,
-        ...(config.modelProviders ?? {}),
-      };
-      if (mergedMp.mode === "ollama" || mergedMp.mode === "litellm") {
-        throw new Error(
-          "Mobile supports cloud model APIs only (OpenAI-compatible or Anthropic). Configure Ollama or LiteLLM on your desktop node.",
-        );
+      if (config.modelProviders !== undefined || config.chatAssistEnabled !== undefined) {
+        const mergedMp: ModelProviderConfig = {
+          ...this._aiPrefs.modelProviders,
+          ...(config.modelProviders ?? {}),
+        };
+        if (mergedMp.mode === "ollama" || mergedMp.mode === "litellm") {
+          throw new Error(
+            "Mobile supports cloud model APIs only (OpenAI-compatible or Anthropic). Configure Ollama or LiteLLM on your desktop node.",
+          );
+        }
+        this._aiPrefs.modelProviders = _normalizeMobileStoredOpenAiEndpoint(mergedMp);
+        if (config.chatAssistEnabled !== undefined) {
+          this._aiPrefs.chatAssistEnabled = config.chatAssistEnabled;
+        }
       }
-      const next = {
-        modelProviders: _normalizeMobileStoredOpenAiEndpoint(mergedMp),
-        chatAssistEnabled: config.chatAssistEnabled ?? this._aiPrefs.chatAssistEnabled,
-      };
-      this._aiPrefs = next;
-      try {
-        localStorage.setItem(`envoymesh_mobile_node_prefs_${oid}`, JSON.stringify(next));
-      } catch {
-        /* ignore */
+      if (config.aiSettings !== undefined) {
+        this._aiPrefs.aiSettings = config.aiSettings;
       }
+      if (config.autonomousKillSwitch !== undefined) {
+        this._aiPrefs.autonomousKillSwitch = config.autonomousKillSwitch;
+      }
+      if (config.autonomousPolicies !== undefined) {
+        this._aiPrefs.autonomousPolicies = [...config.autonomousPolicies];
+      }
+      if (config.trustModeEnabled !== undefined) {
+        this._aiPrefs.trustModeEnabled = config.trustModeEnabled;
+      }
+      if (config.friendMatchingPreferencesText !== undefined) {
+        this._aiPrefs.friendMatchingPreferencesText =
+          config.friendMatchingPreferencesText.trim().length === 0
+            ? undefined
+            : config.friendMatchingPreferencesText.trim();
+      }
+      if (config.contactAiPreferences !== undefined) {
+        this._aiPrefs.contactAiPreferences = [...config.contactAiPreferences];
+      }
+      this._persistAiPrefs();
     }
 
     if (oid != null && config.externalPublish !== undefined) {

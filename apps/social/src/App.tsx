@@ -23,11 +23,15 @@ function ConnectingSplash({
   lastError,
   isRelayUnreachable,
   onRetryConnect,
+  autoConnect,
+  wsUrl,
 }: {
   reconnectAttempts: number;
   lastError: string | null;
   isRelayUnreachable: boolean;
   onRetryConnect: () => void;
+  autoConnect: boolean;
+  wsUrl: string;
 }) {
   return (
     <div className="app">
@@ -36,13 +40,20 @@ function ConnectingSplash({
           <div className="loading-spinner" />
           <h2>Connecting to EnvoyMesh</h2>
           <p className="loading-attempts">
-            {reconnectAttempts > 0
-              ? `Reconnect attempt ${reconnectAttempts}\u2026`
-              : "Waiting for node WebSocket (ws://localhost:3030/ws)\u2026"}
+            {!autoConnect && reconnectAttempts === 0
+              ? "Auto-connect is off. Click Retry when you are ready to connect."
+              : reconnectAttempts > 0
+                ? `Reconnect attempt ${reconnectAttempts}\u2026`
+                : `Waiting for node WebSocket (${wsUrl})\u2026`}
           </p>
-          {(isRelayUnreachable || lastError) && (
+          {(isRelayUnreachable || lastError || !autoConnect) && (
             <div className="loading-error">
-              <p>{lastError ?? "Unable to connect. Is the node running?"}</p>
+              <p>
+                {lastError ??
+                  (!autoConnect
+                    ? "Not connected to the node backend."
+                    : "Unable to connect. Is the node running?")}
+              </p>
               <p className="loading-error-hint">
                 Start the node with <code>npm run node:dev</code> (WebSocket on port 3030), then retry.
               </p>
@@ -81,6 +92,7 @@ export function App() {
     humanProfile,
     bonds,
     connectionStatus,
+    appSettings,
   } = useNodeState();
 
   const inboxActivityCount = useInboxActivityCount();
@@ -114,6 +126,8 @@ export function App() {
           lastError={lastError}
           isRelayUnreachable={isRelayUnreachable}
           onRetryConnect={handleRetryConnect}
+          autoConnect={appSettings.autoConnect}
+          wsUrl={appSettings.wsUrl.trim() || "ws://localhost:3030/ws"}
         />
       </ToastProvider>
     );

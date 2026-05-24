@@ -1,10 +1,38 @@
+import { useState, useEffect } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useTheme } from "../../context/ThemeContext.js";
+import { DEFAULT_APP_SETTINGS } from "../../lib/storage.js";
 import type { ThemeMode } from "../../context/ThemeContext.js";
+
+function notificationPermissionHint(): string | null {
+  if (typeof Notification === "undefined") {
+    return "Browser notifications are not available in this environment.";
+  }
+  if (Notification.permission === "denied") {
+    return "Notifications are blocked in your browser. Enable them in site settings to receive alerts.";
+  }
+  return null;
+}
 
 export function SettingsAppTab() {
   const { appSettings, setAppSettings } = useNodeState();
   const { theme, setTheme } = useTheme();
+  const [wsUrlDraft, setWsUrlDraft] = useState(appSettings.wsUrl);
+  const [notificationHint, setNotificationHint] = useState<string | null>(() =>
+    appSettings.notificationsEnabled ? notificationPermissionHint() : null,
+  );
+
+  useEffect(() => {
+    setWsUrlDraft(appSettings.wsUrl);
+  }, [appSettings.wsUrl]);
+
+  useEffect(() => {
+    if (!appSettings.notificationsEnabled) {
+      setNotificationHint(null);
+      return;
+    }
+    setNotificationHint(notificationPermissionHint());
+  }, [appSettings.notificationsEnabled]);
 
   const themeOptions: { value: ThemeMode; label: string; desc: string }[] = [
     { value: "system", label: "System", desc: "Follow your device settings" },
@@ -44,9 +72,33 @@ export function SettingsAppTab() {
         <input
           type="text"
           className="settings-input"
-          value={appSettings.wsUrl}
-          onChange={(e) => setAppSettings({ ...appSettings, wsUrl: e.target.value })}
+          value={wsUrlDraft}
+          onChange={(e) => setWsUrlDraft(e.target.value)}
         />
+        <div className="settings-buttons" style={{ marginTop: "8px" }}>
+          <button
+            type="button"
+            className="settings-save-btn"
+            onClick={() => {
+              setAppSettings({
+                ...appSettings,
+                wsUrl: wsUrlDraft.trim() || DEFAULT_APP_SETTINGS.wsUrl,
+              });
+            }}
+          >
+            Apply URL
+          </button>
+          <button
+            type="button"
+            className="settings-cancel-btn"
+            onClick={() => setWsUrlDraft(appSettings.wsUrl)}
+          >
+            Reset
+          </button>
+        </div>
+        <p className="settings-hint" style={{ marginTop: "6px" }}>
+          Reconnects automatically when you apply a new URL (no page reload required).
+        </p>
       </div>
 
       <div className="settings-card">
@@ -74,11 +126,31 @@ export function SettingsAppTab() {
             <input
               type="checkbox"
               checked={appSettings.notificationsEnabled}
-              onChange={(e) => setAppSettings({ ...appSettings, notificationsEnabled: e.target.checked })}
+              onChange={(e) => {
+                void (async () => {
+                  const enabled = e.target.checked;
+                  if (
+                    enabled &&
+                    typeof Notification !== "undefined" &&
+                    Notification.permission === "default"
+                  ) {
+                    await Notification.requestPermission();
+                  }
+                  setAppSettings({ ...appSettings, notificationsEnabled: enabled });
+                  setNotificationHint(
+                    enabled ? notificationPermissionHint() : null,
+                  );
+                })();
+              }}
             />
             <span className="slider" />
           </label>
         </div>
+        {notificationHint ? (
+          <p className="settings-hint" role="alert" style={{ marginTop: "6px" }}>
+            {notificationHint}
+          </p>
+        ) : null}
         <div className="settings-row">
           <div>
             <div className="settings-row-label">Connection Status</div>
