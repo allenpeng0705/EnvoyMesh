@@ -1,7 +1,7 @@
 import { toString } from "uint8arrays";
 
 /** Cap for inbound voucher JSON + chunk payload (defense in depth). */
-export const MAX_DATA_INBOUND_BYTES = 16 * 1024 * 1024;
+export const MAX_DATA_INBOUND_BYTES = 64 * 1024 * 1024;
 
 function readU32BE(buffer: Uint8Array, offset: number): number {
   return new DataView(buffer.buffer, buffer.byteOffset + offset, 4).getUint32(0, false);
@@ -68,6 +68,47 @@ export function parseInboundDataTransferBody(buffer: Uint8Array): { voucherUtf8:
   }
 
   return { voucherUtf8, chunks };
+}
+
+/** Read an entire libp2p byte stream (may arrive in multiple `read()` chunks). */
+export async function readAllFromByteStream(
+  stream: {
+    read(options?: { bytes?: number }): Promise<
+      Uint8Array | null | { subarray(start?: number, end?: number): Uint8Array; byteLength: number }
+    >;
+  },
+  maxBytes = MAX_DATA_INBOUND_BYTES,
+): Promise<Uint8Array> {
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const raw = await stream.read();
+    if (raw === null) {
+      break;
+    }
+    const bytes = raw instanceof Uint8Array ? raw : raw.subarray();
+    if (bytes.byteLength === 0) {
+      continue;
+    }
+    total += bytes.byteLength;
+    if (total > maxBytes) {
+      throw new Error(`data transfer exceeds size cap ${maxBytes}`);
+    }
+    parts.push(bytes);
+  }
+  if (parts.length === 0) {
+    return new Uint8Array(0);
+  }
+  if (parts.length === 1) {
+    return parts[0]!;
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.byteLength;
+  }
+  return out;
 }
 
 export function voucherJsonBytesFromObject(voucher: unknown): Uint8Array {

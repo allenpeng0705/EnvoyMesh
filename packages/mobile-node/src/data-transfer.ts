@@ -10,6 +10,7 @@ import {
   encodeDataTransferBody,
   MAX_DATA_INBOUND_BYTES,
   parseInboundDataTransferBody,
+  readAllFromByteStream,
   voucherJsonBytesFromObject,
 } from "#network/data-framing";
 import { ENVOY_DATA_PROTOCOL } from "#network/protocols";
@@ -64,9 +65,8 @@ export function installMobileDataTransferReceiver(mesh: Libp2p, hooks: MobileDat
   void mesh.handle(ENVOY_DATA_PROTOCOL, async (stream: any, connection: any) => {
     const remotePeerId = connection.remotePeer.toString();
     try {
-      const raw = await byteStream(stream).read();
-      if (raw === null || raw.byteLength === 0 || raw.byteLength > MAX_DATA_INBOUND_BYTES) return;
-      const bytes = raw instanceof Uint8Array ? raw : (raw as import("uint8arraylist").Uint8ArrayList).subarray();
+      const bytes = await readAllFromByteStream(byteStream(stream), MAX_DATA_INBOUND_BYTES);
+      if (bytes.byteLength === 0) return;
       const { voucherUtf8, chunks } = parseInboundDataTransferBody(bytes);
       let parsed;
       try {

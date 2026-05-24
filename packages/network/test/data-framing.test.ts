@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   encodeDataTransferBody,
   parseInboundDataTransferBody,
+  readAllFromByteStream,
   voucherJsonBytesFromObject,
   parseVoucherJsonObject,
   MAX_DATA_INBOUND_BYTES,
@@ -125,10 +126,9 @@ describe("parseInboundDataTransferBody", () => {
     expect(() => parseInboundDataTransferBody(truncated)).toThrow("invalid data transfer chunk length");
   });
 
-  it("throws when total payload bytes exceed 16MB cap", () => {
+  it("throws when total payload bytes exceed cap", () => {
     const voucher = new TextEncoder().encode('{"x":1}');
-    // Build chunk that exceeds cap: cap is 16MB, use 17MB chunk
-    const overCap = new Uint8Array(17 * 1024 * 1024).fill(0x01);
+    const overCap = new Uint8Array(MAX_DATA_INBOUND_BYTES + 1).fill(0x01);
     const encoded = encodeDataTransferBody(voucher, [overCap]);
     expect(() => parseInboundDataTransferBody(encoded)).toThrow("data transfer exceeds size cap");
   });
@@ -143,6 +143,33 @@ describe("parseInboundDataTransferBody", () => {
     expect(parsed.chunks).toHaveLength(0);
     const v = JSON.parse(new TextDecoder().decode(parsed.voucherUtf8));
     expect(v).toEqual({ chunks: false });
+  });
+});
+
+describe("readAllFromByteStream", () => {
+  it("concatenates multiple read() chunks before parse", async () => {
+    const voucher = new TextEncoder().encode('{"multi":true}');
+    const chunk = new Uint8Array(128 * 1024).fill(0xab);
+    const encoded = encodeDataTransferBody(voucher, [chunk]);
+    const splitAt = 4096;
+    let call = 0;
+    const stream = {
+      async read() {
+        if (call === 0) {
+          call++;
+          return encoded.subarray(0, splitAt);
+        }
+        if (call === 1) {
+          call++;
+          return encoded.subarray(splitAt);
+        }
+        return null;
+      },
+    };
+    const bytes = await readAllFromByteStream(stream);
+    const parsed = parseInboundDataTransferBody(bytes);
+    expect(parsed.chunks).toHaveLength(1);
+    expect(parsed.chunks[0]!.byteLength).toBe(chunk.byteLength);
   });
 });
 

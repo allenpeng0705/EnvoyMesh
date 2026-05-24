@@ -24,6 +24,7 @@ import {
   MAX_DATA_INBOUND_BYTES,
   parseInboundDataTransferBody,
   parseVoucherJsonObject,
+  readAllFromByteStream,
 } from "./data-framing.js";
 import {
   CLIENT_PROXY_PROTOCOL,
@@ -358,20 +359,14 @@ export class EnvoyMesh {
       });
 
       try {
-        const raw = await byteStream(stream).read();
-        if (raw === null || raw.byteLength === 0) {
+        const streamIo = byteStream(stream);
+        const bytes = await readAllFromByteStream(streamIo, MAX_DATA_INBOUND_BYTES);
+        if (bytes.byteLength === 0) {
           console.warn(
             `[data transfer] inbound stream empty from ${remotePeerId.slice(0, 12)}…`,
           );
           return;
         }
-        if (raw.byteLength > MAX_DATA_INBOUND_BYTES) {
-          console.warn(
-            `[data transfer] inbound body ${raw.byteLength} bytes exceeds cap ${MAX_DATA_INBOUND_BYTES} from ${remotePeerId.slice(0, 12)}…`,
-          );
-          return;
-        }
-        const bytes = raw instanceof Uint8Array ? raw : (raw as Uint8ArrayList).subarray();
         const { voucherUtf8, chunks } = parseInboundDataTransferBody(bytes);
         const voucher = parseVoucherJsonObject(voucherUtf8);
         await this.dispatchData({
@@ -1598,6 +1593,7 @@ export {
   voucherJsonBytesFromObject,
   encodeDataTransferBody,
   parseInboundDataTransferBody,
+  readAllFromByteStream,
   MAX_DATA_INBOUND_BYTES,
 } from "./data-framing.js";
 export {
