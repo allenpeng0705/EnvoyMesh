@@ -27,8 +27,9 @@ const REMOTE_PEER = "12D3KooTestSenderPeerId";
 
 function createInboundStream(body: Uint8Array) {
   const emitter = new EventEmitter();
-  queueMicrotask(() => emitter.emit("message", { data: body.subarray() }));
-  return {
+  const stream = {
+    remoteWriteStatus: "writable" as "writable" | "closed",
+    readBufferLength: 0,
     addEventListener(type: string, listener: (...args: unknown[]) => void) {
       emitter.on(type, listener);
     },
@@ -40,9 +41,17 @@ function createInboundStream(body: Uint8Array) {
     log: { error: () => {} },
     status: "open" as const,
     close: async () => {},
-    closeRead: () => {},
+    closeRead: () => {
+      stream.remoteWriteStatus = "closed";
+      queueMicrotask(() => emitter.emit("remoteCloseWrite"));
+    },
     abort: () => {},
   };
+  queueMicrotask(() => {
+    emitter.emit("message", { data: body.subarray() });
+    stream.closeRead();
+  });
+  return stream;
 }
 
 function createWritableCaptureStream() {

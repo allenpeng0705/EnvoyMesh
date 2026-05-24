@@ -44,7 +44,7 @@ function createService(): NodeServiceImpl {
   const trustStore = createLocalTrustStore(profileDir);
   const peerDirectory = createLocalPeerDirectoryStore(profileDir);
   const human = createHumanProfileStore(profileDir);
-  const svc = new NodeServiceImpl(undefined, trustStore, peerDirectory, human, profileDir, undefined, [], vaultDir);
+  const svc = new NodeServiceImpl(undefined, trustStore, peerDirectory, human, profileDir, undefined, vaultDir);
   svc.bindCliTaskStore(createLocalTaskStore(profileDir));
   return svc;
 }
@@ -54,7 +54,7 @@ describe("NodeServiceImpl IPFS RPC", () => {
     const trustStore = createLocalTrustStore(profileDir);
     const peerDirectory = createLocalPeerDirectoryStore(profileDir);
     const human = createHumanProfileStore(profileDir);
-    const svc = new NodeServiceImpl(undefined, trustStore, peerDirectory, human, profileDir, undefined, [], vaultDir);
+    const svc = new NodeServiceImpl(undefined, trustStore, peerDirectory, human, profileDir, undefined, vaultDir);
 
     await expect(svc.exportLibraryItemToIpfs("doc-1")).rejects.toThrow(/Task store not initialized/i);
   });

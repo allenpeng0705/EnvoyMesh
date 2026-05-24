@@ -104,7 +104,6 @@ describe("E2E share inbox accept + inbound write", () => {
       humanProfileStore,
       profileDir,
       profile,
-      [],
       vaultDir,
     );
     node.bindCliTaskStore(taskStore);

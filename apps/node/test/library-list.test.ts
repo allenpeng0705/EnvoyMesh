@@ -31,7 +31,7 @@ describe("NodeServiceImpl listLibraryItems (FS-A)", () => {
     const trustStore = createLocalTrustStore(profileDir);
     const peerDirectory = createLocalPeerDirectoryStore(profileDir);
     const human = createHumanProfileStore(profileDir);
-    const svc = new NodeServiceImpl(undefined, trustStore, peerDirectory, human, profileDir, undefined, [], missingVault);
+    const svc = new NodeServiceImpl(undefined, trustStore, peerDirectory, human, profileDir, undefined, missingVault);
     const items = await svc.listLibraryItems();
     expect(items).toEqual([]);
   });
@@ -40,7 +40,7 @@ describe("NodeServiceImpl listLibraryItems (FS-A)", () => {
     const trustStore = createLocalTrustStore(profileDir);
     const peerDirectory = createLocalPeerDirectoryStore(profileDir);
     const human = createHumanProfileStore(profileDir);
-    const svc = new NodeServiceImpl(undefined, trustStore, peerDirectory, human, profileDir, undefined, [], vaultDir);
+    const svc = new NodeServiceImpl(undefined, trustStore, peerDirectory, human, profileDir, undefined, vaultDir);
 
     const index = await buildVaultIndex({ rootDir: vaultDir });
     expect(index.documents).toHaveLength(1);
@@ -64,7 +64,7 @@ describe("NodeServiceImpl listLibraryItems (FS-A)", () => {
     const trustStore = createLocalTrustStore(profileDir);
     const peerDirectory = createLocalPeerDirectoryStore(profileDir);
     const human = createHumanProfileStore(profileDir);
-    const svc = new NodeServiceImpl(undefined, trustStore, peerDirectory, human, profileDir, undefined, [], vaultDir);
+    const svc = new NodeServiceImpl(undefined, trustStore, peerDirectory, human, profileDir, undefined, vaultDir);
 
     const items = await svc.listLibraryItems();
     expect(items).toHaveLength(1);

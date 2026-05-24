@@ -31,7 +31,7 @@ function createService(): NodeServiceImpl {
   const trustStore = createLocalTrustStore(profileDir);
   const peerDirectory = createLocalPeerDirectoryStore(profileDir);
   const human = createHumanProfileStore(profileDir);
-  return new NodeServiceImpl(undefined, trustStore, peerDirectory, human, profileDir, undefined, [], vaultDir);
+  return new NodeServiceImpl(undefined, trustStore, peerDirectory, human, profileDir, undefined, vaultDir);
 }
 
 describe("E2E library import", () => {

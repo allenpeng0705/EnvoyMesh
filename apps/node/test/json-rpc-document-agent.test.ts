@@ -107,7 +107,6 @@ describe("routeRpcMethod — document agent integration", () => {
       createHumanProfileStore(profileDir),
       profileDir,
       profile,
-      [],
       vaultDir,
     );
     node.bindCliTaskStore(createLocalTaskStore(profileDir));

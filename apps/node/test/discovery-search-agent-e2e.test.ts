@@ -91,7 +91,6 @@ async function createTestNode(): Promise<TestNode> {
     human,
     profileDir,
     profile,
-    [],
     vaultDir,
   );
   service.bindCliTaskStore(taskStore);

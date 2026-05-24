@@ -395,8 +395,7 @@ describe("isSafeVaultPath", () => {
   });
 
   it("handles empty path", () => {
-    // Empty path resolves to vaultDir itself, which starts with vaultDir → true (edge case)
-    expect(isSafeVaultPath(vaultDir, "")).toBe(true);
+    expect(isSafeVaultPath(vaultDir, "")).toBe(false);
   });
 
   it("blocks path that resolves outside vault after normalization", () => {

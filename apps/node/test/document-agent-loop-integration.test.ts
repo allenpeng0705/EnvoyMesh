@@ -63,7 +63,6 @@ describe("NodeServiceImpl.runDocumentAgentTurn", () => {
       human,
       profileDir,
       profile,
-      [],
       vaultDir,
     );
     node.bindCliTaskStore(taskStore);
@@ -84,7 +83,6 @@ describe("NodeServiceImpl.runDocumentAgentTurn", () => {
       createHumanProfileStore(profileDir),
       profileDir,
       profile,
-      [],
       vaultDir,
     );
     node.bindCliTaskStore(taskStore);
