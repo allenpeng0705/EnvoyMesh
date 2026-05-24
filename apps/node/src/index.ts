@@ -656,6 +656,14 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       .mergeListenAddrsForPeerId(remotePeerId, [trimmed])
       .catch((err) => console.warn(`[peer-directory] mergeListenAddrsForPeerId failed:`, err));
   }
+  if (envelope.senderRole === "human" && envelope.senderPublicKey?.trim()) {
+    void peerDirectoryStore
+      .mergeInboundDeviceBinding({
+        peerId: remotePeerId,
+        devicePublicKeyPem: envelope.senderPublicKey,
+      })
+      .catch((err) => console.warn(`[peer-directory] mergeInboundDeviceBinding failed:`, err));
+  }
   const correlationId = deriveCorrelationIdFromEnvelope(envelope);
   const rolePolicyDecision = evaluateInboundEnvelopeRolePolicy(envelope);
   if (!rolePolicyDecision.ok) {

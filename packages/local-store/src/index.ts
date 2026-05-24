@@ -26,6 +26,7 @@ import {
 } from "@envoymesh/protocol";
 import {
   createDeviceCertificate,
+  deriveDeviceId,
   derivePeerId,
   generateDeviceIdentity,
   generateOwnerIdentity,
@@ -1117,6 +1118,16 @@ export interface LocalPeerDirectoryStore {
   /** Append dialable multiaddrs learned from inbound libp2p connections (e.g. relay circuit path). */
   mergeListenAddrsForPeerId(peerId: string, addrs: string[]): Promise<void>;
   /**
+   * Learn device signing key from a verified inbound human envelope (`senderPublicKey`).
+   * Repairs placeholder rows created by {@link ensurePeerFromInboundChat} (`deviceId: chat-inbound`,
+   * no `devicePublicKeyPem`) so inbound data-transfer vouchers can be verified.
+   */
+  mergeInboundDeviceBinding(input: {
+    peerId: string;
+    devicePublicKeyPem: string;
+    ownerId?: string;
+  }): Promise<void>;
+  /**
    * Ensure a row exists for a peer learned on the wire: inbound `chat.message`, any inbound
    * `bond.request` / `bond.accept`, manual `acceptHello`, or outbound `sendHello` after send.
    * Updates `peerId` / listen addrs when the row already exists so bonds always reflect current libp2p id.
@@ -1505,6 +1516,33 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         }
         record.listenAddrs = merged;
         record.lastSeenAt = new Date().toISOString();
+        await writePeerDirectoryFileAtomic(directoryPath, file);
+      });
+    },
+
+    async mergeInboundDeviceBinding(input) {
+      const peerId = input.peerId.trim();
+      const pem = input.devicePublicKeyPem;
+      const ownerId = input.ownerId?.trim();
+      if (!peerId || !pem.trim()) {
+        return;
+      }
+      const deviceId = deriveDeviceId(pem);
+      await withDirectory(async (file) => {
+        const seenAt = new Date().toISOString();
+        let record =
+          file.records.find((r) => r.peerId === peerId) ??
+          (ownerId ? file.records.find((r) => r.ownerId === ownerId) : undefined);
+        if (!record) {
+          return;
+        }
+        record.peerId = peerId;
+        record.devicePublicKeyPem = pem;
+        record.deviceId = deviceId;
+        if (ownerId) {
+          record.ownerId = ownerId;
+        }
+        record.lastSeenAt = seenAt;
         await writePeerDirectoryFileAtomic(directoryPath, file);
       });
     },

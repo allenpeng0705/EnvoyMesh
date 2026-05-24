@@ -1,5 +1,10 @@
-import { verifyDataTransferVoucher } from "@envoymesh/identity";
-import { createAuditEvent, type LocalPeerDirectoryStore, type LocalTaskStore } from "@envoymesh/local-store";
+import { deriveDeviceId, verifyDataTransferVoucher } from "@envoymesh/identity";
+import {
+  createAuditEvent,
+  type LocalPeerDirectoryStore,
+  type LocalTaskStore,
+  type PeerDirectoryRecord,
+} from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { parseDataTransferVoucher } from "@envoymesh/protocol";
 import { createHash } from "node:crypto";
@@ -43,6 +48,7 @@ export function installEnvoyDataTransferReceiver(input: {
     try {
       parsed = parseDataTransferVoucher(rawVoucher);
     } catch {
+      console.warn(`[data transfer] rejected: invalid voucher payload from ${remotePeerId.slice(0, 12)}…`);
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
@@ -58,6 +64,7 @@ export function installEnvoyDataTransferReceiver(input: {
     }
 
     if (new Date(parsed.expiresAt).getTime() < Date.now()) {
+      console.warn(`[data transfer] rejected: voucher expired from ${remotePeerId.slice(0, 12)}…`);
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
@@ -73,10 +80,18 @@ export function installEnvoyDataTransferReceiver(input: {
     }
 
     const peers = await peerDirectoryStore.listPeerRecords();
-    const peer = peers.find((record) => record.peerId === remotePeerId);
+    let peer =
+      peers.find((record) => record.peerId === remotePeerId) ??
+      (parsed.issuerOwnerId
+        ? peers.find((record) => record.ownerId === parsed.issuerOwnerId)
+        : undefined);
     const deviceKey = peer?.devicePublicKeyPem;
 
     if (!deviceKey || !verifyDataTransferVoucher(parsed, deviceKey)) {
+      console.warn(
+        `[data transfer] rejected: voucher signature could not be verified for ${remotePeerId.slice(0, 12)}…` +
+          (deviceKey ? "" : " (no devicePublicKeyPem in peer directory — chat-only bond?)"),
+      );
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
@@ -91,7 +106,13 @@ export function installEnvoyDataTransferReceiver(input: {
       return;
     }
 
-    if (parsed.issuerPeerId !== remotePeerId || parsed.issuerDeviceId !== peer.deviceId) {
+    const expectedDeviceId = expectedIssuerDeviceId(peer, deviceKey);
+    if (parsed.issuerPeerId !== remotePeerId || parsed.issuerDeviceId !== expectedDeviceId) {
+      console.warn(
+        `[data transfer] rejected: voucher issuer mismatch for ${remotePeerId.slice(0, 12)}… ` +
+          `(issuerPeer=${parsed.issuerPeerId.slice(0, 12)}… issuerDevice=${parsed.issuerDeviceId.slice(0, 20)}… ` +
+          `expectedDevice=${expectedDeviceId.slice(0, 20)}…)`,
+      );
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
@@ -108,6 +129,9 @@ export function installEnvoyDataTransferReceiver(input: {
 
     const combined = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
     if (combined.length !== parsed.totalBytes) {
+      console.warn(
+        `[data transfer] rejected: byte length ${combined.length} != voucher ${parsed.totalBytes} from ${remotePeerId.slice(0, 12)}…`,
+      );
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
@@ -124,6 +148,7 @@ export function installEnvoyDataTransferReceiver(input: {
 
     const hash = createHash("sha256").update(combined).digest("base64url");
     if (hash !== parsed.contentHash) {
+      console.warn(`[data transfer] rejected: content hash mismatch from ${remotePeerId.slice(0, 12)}…`);
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
@@ -148,6 +173,9 @@ export function installEnvoyDataTransferReceiver(input: {
     try {
       targetPath = safeResolvedVaultFile(vaultDir, relForVault);
     } catch {
+      console.warn(
+        `[data transfer] rejected: unsafe vault path "${relForVault}" from ${remotePeerId.slice(0, 12)}…`,
+      );
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
@@ -181,8 +209,12 @@ export function installEnvoyDataTransferReceiver(input: {
         createdAt,
       }),
     );
-    console.log(`[data transfer] wrote ${relForVault} from ${remotePeerId}`);
+    console.log(`[data transfer] wrote ${relForVault} (${parsed.totalBytes} bytes) from ${remotePeerId}`);
   });
+}
+
+function expectedIssuerDeviceId(_peer: PeerDirectoryRecord | undefined, devicePublicKeyPem: string): string {
+  return deriveDeviceId(devicePublicKeyPem);
 }
 
 function safeResolvedVaultFile(rootDir: string, relativePath: string): string {

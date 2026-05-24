@@ -359,7 +359,16 @@ export class EnvoyMesh {
 
       try {
         const raw = await byteStream(stream).read();
-        if (raw === null || raw.byteLength === 0 || raw.byteLength > MAX_DATA_INBOUND_BYTES) {
+        if (raw === null || raw.byteLength === 0) {
+          console.warn(
+            `[data transfer] inbound stream empty from ${remotePeerId.slice(0, 12)}…`,
+          );
+          return;
+        }
+        if (raw.byteLength > MAX_DATA_INBOUND_BYTES) {
+          console.warn(
+            `[data transfer] inbound body ${raw.byteLength} bytes exceeds cap ${MAX_DATA_INBOUND_BYTES} from ${remotePeerId.slice(0, 12)}…`,
+          );
           return;
         }
         const bytes = raw instanceof Uint8Array ? raw : (raw as Uint8ArrayList).subarray();

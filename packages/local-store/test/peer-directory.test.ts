@@ -1,5 +1,6 @@
+import { generateDeviceIdentity } from "@envoymesh/identity";
 import { createLocalPeerDirectoryStore } from "../src/index.js";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -100,6 +101,42 @@ describe("peer directory store", () => {
     expect(found?.peerId).toBe("12D3KooWChatBob");
     expect(found?.deviceId).toBe("chat-inbound");
     expect(found?.listenAddrs.length).toBe(1);
+  });
+
+  it("mergeInboundDeviceBinding repairs chat-inbound placeholder with device signing key", async () => {
+    const store = createLocalPeerDirectoryStore(profileDir);
+    const device = generateDeviceIdentity();
+
+    await writeFile(
+      join(profileDir, "peer-directory.json"),
+      JSON.stringify(
+        {
+          version: "0.1",
+          records: [
+            {
+              version: "0.1",
+              ownerId: "envoy:owner:alice",
+              peerId: "12D3KooWAlice",
+              deviceId: "chat-inbound",
+              lastSeenAt: new Date().toISOString(),
+              listenAddrs: [],
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      { mode: 0o600 },
+    );
+
+    await store.mergeInboundDeviceBinding({
+      peerId: "12D3KooWAlice",
+      devicePublicKeyPem: device.publicKeyPem,
+    });
+
+    const found = await store.getPeerByOwnerId("envoy:owner:alice");
+    expect(found?.devicePublicKeyPem).toBe(device.publicKeyPem);
+    expect(found?.deviceId).toBe(device.deviceId);
   });
 
   it("repairs corrupted record when upsertPeerFromSignal receives proper ownerId", async () => {

@@ -190,4 +190,84 @@ describe("inbound data transfer + savePath remapping", () => {
     node.consumeInboundDataTransferSaveMapping(SENDER, "src/from.txt");
     expect(node.resolveInboundDataTransferRelativePath(SENDER, "src/from.txt")).toBe("src/from.txt");
   });
+
+  it("accepts voucher after mergeInboundDeviceBinding repairs chat-inbound peer row", async () => {
+    const aliceDevice = generateDeviceIdentity();
+    const aliceOwner = generateOwnerIdentity();
+    const REMOTE = "12D3KooWChatInboundSender";
+
+    const taskStore = createLocalTaskStore(profileDir);
+    const peerDirectoryStore = createLocalPeerDirectoryStore(profileDir);
+    await mkdir(vaultDir, { recursive: true });
+    await writeFile(
+      join(profileDir, PEER_DIRECTORY_JSON),
+      JSON.stringify(
+        {
+          version: "0.1",
+          records: [
+            {
+              version: "0.1",
+              ownerId: aliceOwner.ownerId,
+              peerId: REMOTE,
+              deviceId: "chat-inbound",
+              lastSeenAt: new Date().toISOString(),
+              listenAddrs: [],
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      { mode: 0o600 },
+    );
+    await peerDirectoryStore.mergeInboundDeviceBinding({
+      peerId: REMOTE,
+      devicePublicKeyPem: aliceDevice.publicKeyPem,
+    });
+
+    type Handler = (x: {
+      remotePeerId: string;
+      voucher: DataTransferVoucher;
+      chunks: Uint8Array[];
+    }) => Promise<void>;
+    const handlers: Handler[] = [];
+    const fakeMesh = {
+      onDataTransfer(h: Handler) {
+        handlers.push(h);
+        return () => {};
+      },
+    };
+
+    installEnvoyDataTransferReceiver({
+      mesh: fakeMesh as any,
+      peerDirectoryStore,
+      taskStore,
+      vaultDir,
+    });
+
+    const body = Buffer.from("chat-inbound-bond-fix", "utf8");
+    const hash = createHash("sha256").update(body).digest("base64url");
+    const unsigned = createUnsignedDataTransferVoucher({
+      issuerPeerId: REMOTE,
+      issuerOwnerId: aliceOwner.ownerId,
+      issuerDeviceId: aliceDevice.deviceId,
+      relativePath: "imports/fixed.txt",
+      totalBytes: body.length,
+      contentHash: hash,
+    });
+    const signed = createSignedDataTransferVoucher({
+      unsigned: unsigned as any,
+      devicePrivateKeyPem: aliceDevice.privateKeyPem,
+    });
+
+    expect(handlers.length).toBe(1);
+    await handlers[0]!({
+      remotePeerId: REMOTE,
+      voucher: signed,
+      chunks: [new Uint8Array(body)],
+    });
+
+    const out = await readFile(join(vaultDir, "imports/fixed.txt"), "utf8");
+    expect(out).toBe("chat-inbound-bond-fix");
+  });
 });
