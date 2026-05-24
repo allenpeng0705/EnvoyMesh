@@ -7,6 +7,7 @@ import {
 import { mergeBootstrapPresetYamlFiles, type BootstrapPresetRegistry } from "./bootstrap-presets-file.js";
 import { loadNodeYamlConfig } from "./node-config.js";
 import { applyJoinInviteToNodeArgs } from "./wan-invite.js";
+import type { PersistedNodeConfig } from "./node-config-store.js";
 
 export interface NodeArgs {
   configPath?: string;
@@ -488,6 +489,27 @@ function applyDiscoveryProfileDefaults(args: NodeArgs, customPresetRegistry: Boo
   if ((process.env.ENVOYMESH_CONNECTIVITY_STRICT ?? "").trim() === "1") {
     args.connectivityStrict = true;
   }
+}
+
+/** Apply Social/Tauri persisted node-config discovery fields before libp2p starts (CLI `index.ts` path). */
+export function applyPersistedDiscoveryConfig(
+  args: NodeArgs,
+  config: PersistedNodeConfig,
+  customPresetRegistry: BootstrapPresetRegistry = new Map(),
+): void {
+  args.discoveryProfile = config.discoveryProfile;
+  if (config.enableMdns !== undefined) {
+    args.enableMdns = config.enableMdns;
+  }
+  if (typeof config.relayEnabled === "boolean") {
+    args.enableRelay = config.relayEnabled;
+  }
+  if (typeof config.relayServerEnabled === "boolean") {
+    args.enableRelayServer = config.relayServerEnabled;
+  }
+  args.bootstrapPresets = [...config.bootstrapPresets];
+  args.bootstrapPeers = [...config.bootstrapPeers];
+  applyDiscoveryProfileDefaults(args, customPresetRegistry);
 }
 
 function applyConfigFileArgs(args: NodeArgs, argv: string[]): void {

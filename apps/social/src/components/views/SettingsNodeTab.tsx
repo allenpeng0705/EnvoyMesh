@@ -11,8 +11,10 @@ import QRCode from "qrcode";
 import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
 import {
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
+  defaultBootstrapPresetsForDiscoveryProfile,
 } from "@envoymesh/api";
 import type {
+  DiscoveryProfile,
   ModelProviderMode,
   NodeConfig,
   RelayConfig,
@@ -97,6 +99,8 @@ export function SettingsNodeTab() {
     setChatDiagContact(bonds[0]!.peerOwnerId);
   }, [bonds, chatDiagContact]);
 
+  const isPublicLibp2pDiscovery =
+    (nodeConfig?.discoveryProfile ?? "wan-default") !== "contacts-only";
   const isPublicNetwork = bootstrapPresets.length > 0;
   const relays = (nodeConfig?.configuredRelays ?? []) as RelayConfig[];
 
@@ -176,6 +180,43 @@ export function SettingsNodeTab() {
     await nodeService.updateNodeConfig(partial);
     await refreshNodeConfig();
   };
+
+  const restartNodeAfterConnectivityChange = useCallback(async () => {
+    try {
+      await nodeService.stopNode();
+      await nodeService.startNode();
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("Node restart timeout")), 15000);
+        const unsub = nodeService.on("node:status", (data) => {
+          if (data.status === "running") {
+            clearTimeout(timeout);
+            unsub();
+            resolve();
+          }
+        });
+      });
+    } catch {
+      /* desktop may need a full app restart when libp2p is owned by the CLI shell */
+    }
+    await refreshNodeConfig();
+    await refreshConnectionStatus();
+  }, [nodeService, refreshNodeConfig, refreshConnectionStatus]);
+
+  const publicLibp2pToggle = useOptimisticToggle(isPublicLibp2pDiscovery, async (enabled) => {
+    const discoveryProfile: DiscoveryProfile = enabled ? "wan-default" : "contacts-only";
+    const bootstrapPresets = [...defaultBootstrapPresetsForDiscoveryProfile(discoveryProfile)];
+    bootstrapPresetsSavingRef.current += 1;
+    setBootstrapPresetSyncNonce((n) => n + 1);
+    try {
+      setBootstrapPresets(bootstrapPresets);
+      await nodeService.updateNodeConfig({ discoveryProfile, bootstrapPresets });
+      await restartNodeAfterConnectivityChange();
+    } finally {
+      bootstrapPresetsSavingRef.current -= 1;
+      setBootstrapPresetSyncNonce((n) => n + 1);
+      await refreshNodeConfig();
+    }
+  });
 
   const enableMdns = nodeConfig?.enableMdns ?? true;
   const mdnsToggle = useOptimisticToggle(enableMdns, async (enableMdnsNext) => {
@@ -446,9 +487,43 @@ export function SettingsNodeTab() {
       </section>
 
       <section className="settings-section">
-        <h3>Public Network (libp2p)</h3>
+        <h3>Public network discovery</h3>
         <p className="section-desc">
-          Enable to connect to the public libp2p network and discover peers globally.
+          When enabled, your node joins the public libp2p bootstrap network to discover new peers globally.
+          Turn off to use relay and bonded contacts only (lower CPU and memory on Windows).
+        </p>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>Public libp2p discovery</strong>
+            <span className="toggle-desc">
+              {isPublicLibp2pDiscovery
+                ? `Profile: wan-default (${bootstrapPresets.length} bootstrap preset(s))`
+                : "Profile: contacts-only (cn-relay + your configured relays)"}
+            </span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={publicLibp2pToggle.checked}
+              onChange={publicLibp2pToggle.onCheckboxChange}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+        {!isPublicLibp2pDiscovery ? (
+          <p className="section-desc muted">
+            Stranger / global mesh discovery is reduced. Chat with existing contacts still works via relay.
+            On desktop, fully quit and reopen the app if connectivity does not change after toggling.
+          </p>
+        ) : null}
+      </section>
+
+      <section className="settings-section">
+        <h3>Bootstrap presets (advanced)</h3>
+        <p className="section-desc">
+          {isPublicLibp2pDiscovery
+            ? "Fine-tune which public bootstrap sets are used when public libp2p discovery is on."
+            : "Turn on public libp2p discovery above to edit public bootstrap presets."}
         </p>
         <div className="bootstrap-presets">
           {[
@@ -460,8 +535,10 @@ export function SettingsNodeTab() {
             <label key={preset.id} className="preset-checkbox">
               <input
                 type="checkbox"
+                disabled={!isPublicLibp2pDiscovery}
                 checked={bootstrapPresets.includes(preset.id)}
                 onChange={async (e) => {
+                  if (!isPublicLibp2pDiscovery) return;
                   bootstrapPresetsSavingRef.current += 1;
                   setBootstrapPresetSyncNonce((n) => n + 1);
                   try {
@@ -470,22 +547,11 @@ export function SettingsNodeTab() {
                       ? [...new Set([...bootstrapPresets, preset.id])]
                       : bootstrapPresets.filter((p) => p !== preset.id);
                     setBootstrapPresets(updated);
-                    await nodeService.updateNodeConfig({ bootstrapPresets: updated });
-                    try {
-                      await nodeService.stopNode();
-                      await nodeService.startNode();
-                      await new Promise<void>((resolve, reject) => {
-                        const timeout = setTimeout(() => reject(new Error("Node restart timeout")), 15000);
-                        const unsub = nodeService.on("node:status", (data) => {
-                          if (data.status === "running") {
-                            clearTimeout(timeout);
-                            unsub();
-                            resolve();
-                          }
-                        });
-                      });
-                    } catch {}
-                    await refreshNodeConfig();
+                    await nodeService.updateNodeConfig({
+                      discoveryProfile: "wan-default",
+                      bootstrapPresets: updated,
+                    });
+                    await restartNodeAfterConnectivityChange();
                   } finally {
                     bootstrapPresetsSavingRef.current -= 1;
                     setBootstrapPresetSyncNonce((n) => n + 1);

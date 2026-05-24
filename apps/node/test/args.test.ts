@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { normalizeWin32NpmArgv, parseNodeArgs } from "../src/args.js";
+import { normalizeWin32NpmArgv, parseNodeArgs, applyPersistedDiscoveryConfig } from "../src/args.js";
+import { createDefaultPersistedNodeConfig } from "../src/node-config-store.js";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
@@ -411,6 +412,24 @@ my-org:
     expect(args.bootstrapPeers.some((peer) => peer.includes("bootstrap.libp2p.io"))).toBe(false);
     expect(args.enableRelay).toBe(true);
     expect(args.enableDht).toBe(true);
+  });
+
+  it("applyPersistedDiscoveryConfig overrides CLI defaults from node-config.json", () => {
+    const args = parseNodeArgs([]);
+    expect(args.discoveryProfile).toBe("wan-default");
+    const profileDir = mkdtempSync(join(tmpdir(), "envoymesh-args-persist-"));
+    try {
+      const persisted = createDefaultPersistedNodeConfig(profileDir);
+      persisted.discoveryProfile = "contacts-only";
+      persisted.bootstrapPresets = ["cn-relay"];
+      persisted.bootstrapPeers = [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR];
+      applyPersistedDiscoveryConfig(args, persisted);
+      expect(args.discoveryProfile).toBe("contacts-only");
+      expect(args.bootstrapPresets).toEqual(["cn-relay"]);
+      expect(args.bootstrapPeers.some((peer) => peer.includes("bootstrap.libp2p.io"))).toBe(false);
+    } finally {
+      rmSync(profileDir, { recursive: true, force: true });
+    }
   });
 
   it("applies join-invite token", () => {

@@ -107,7 +107,7 @@ import { buildVaultIndex } from "@envoymesh/vault";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parseNodeArgs } from "./args.js";
+import { parseNodeArgs, applyPersistedDiscoveryConfig } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
@@ -192,6 +192,13 @@ const chatDraftStore = createChatDraftStore(args.profileDir);
 const capabilityManifestStore = createCapabilityManifestStore(args.profileDir);
 const reputationStore = createLocalPeerReputationStore(args.profileDir);
 const nodeConfigStore = createNodeConfigStore(args.profileDir);
+const persistedNodeConfig = await nodeConfigStore.load();
+if (persistedNodeConfig) {
+  applyPersistedDiscoveryConfig(args, persistedNodeConfig);
+  console.log(
+    `[connectivity] persisted profile=${persistedNodeConfig.discoveryProfile} presets=${persistedNodeConfig.bootstrapPresets.join(",") || "(none)"}`,
+  );
+}
 
 // External Agent Gateway — manages external agent sessions, capabilities, and action logging
 const gateway = new ExternalAgentGateway();

@@ -7,7 +7,7 @@ export function SetupView() {
   const nodeService = useNodeService();
 
   const [setupProfileDir, setSetupProfileDir] = useState("./data/default");
-  const [setupDiscoveryProfile, setSetupDiscoveryProfile] = useState<DiscoveryProfile>("contacts-only");
+  const [setupDiscoveryProfile, setSetupDiscoveryProfile] = useState<DiscoveryProfile>("wan-default");
   const [setupBootstrapPeers, setSetupBootstrapPeers] = useState<string>(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
   const [isInitializing, setIsInitializing] = useState(false);
 
