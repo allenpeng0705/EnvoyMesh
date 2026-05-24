@@ -60,6 +60,7 @@ import {
   normalizeBootstrapPresetsForContactsOnly,
   bondTrustRank,
   clampConnectivityTuningInput,
+  DEFAULT_RELAY_CLIENT_CYCLE_INTERVAL_MS,
   resolveEnableMdns,
   resolveIdleTimerStretch,
   resolveLazyCapabilityDiscovery,
@@ -166,7 +167,7 @@ import type { MeshToolContext } from "./tool-registry.js";
 import { executeTool } from "./tool-registry.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { buildChatDiagnostics } from "./chat-diagnostics.js";
-import { startRelayClientScheduler } from "./relay-client-cycle.js";
+import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
@@ -2485,7 +2486,7 @@ class NodeServiceImpl implements NodeService {
     return {
       profileDir: this._profileDir,
       discoveryProfile: "wan-default" as const,
-      enableMdns: false,
+      enableMdns: true,
       relayEnabled: true,
       relayServerEnabled: false,
       configuredRelays: [],
@@ -2510,7 +2511,7 @@ class NodeServiceImpl implements NodeService {
       friendMatchingPreferencesText: undefined,
       externalPublish: { allowIpfs: false },
       lazyCapabilityDiscovery: true,
-      idleTimerStretch: true,
+      idleTimerStretch: false,
     };
   }
 
@@ -2964,7 +2965,9 @@ class NodeServiceImpl implements NodeService {
         enableRelayServer: config.relayServerEnabled,
         enableAutoNat: true,
         enableDcutr: true,
-        maxConnections: connectivityRuntime.maxConnections,
+        ...(connectivityRuntime.maxConnections != null
+          ? { maxConnections: connectivityRuntime.maxConnections }
+          : {}),
         libp2pPrivateKeyPath: join(config.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME),
       };
 
@@ -2983,13 +2986,17 @@ class NodeServiceImpl implements NodeService {
       this._relayBootstrapPeers = bootstrapPeers;
       if (config.relayEnabled && this._inboundGuard && this._discoverySeedStore) {
         this._stopRelayClientScheduler?.();
-        this._stopRelayClientScheduler = startRelayClientScheduler({
+        const relayDeps = {
           mesh: this._mesh,
           profile: this._profile!,
           bootstrapPeers,
           inboundGuard: this._inboundGuard,
           discoverySeedStore: this._discoverySeedStore,
-          intervalMs: () => connectivityRuntime.relayCycleIntervalMs(),
+        };
+        await runRelayClientCycle(relayDeps);
+        this._stopRelayClientScheduler = startRelayClientScheduler({
+          ...relayDeps,
+          intervalMs: DEFAULT_RELAY_CLIENT_CYCLE_INTERVAL_MS,
         });
       }
 

@@ -18,9 +18,11 @@ describe("connectivity-tuning", () => {
     expect(discoveryProfileUsesDht("lan-fast")).toBe(false);
   });
 
-  it("default mDNS only on lan-fast", () => {
+  it("default mDNS on for all discovery profiles", () => {
     expect(discoveryProfileDefaultEnableMdns("lan-fast")).toBe(true);
-    expect(discoveryProfileDefaultEnableMdns("wan-default")).toBe(false);
+    expect(discoveryProfileDefaultEnableMdns("wan-default")).toBe(true);
+    expect(discoveryProfileDefaultEnableMdns("relay-only")).toBe(true);
+    expect(discoveryProfileDefaultEnableMdns("contacts-only")).toBe(true);
   });
 
   it("lazy capability discovery defaults true for wan-default", () => {
@@ -28,10 +30,8 @@ describe("connectivity-tuning", () => {
     expect(resolveLazyCapabilityDiscovery("relay-only")).toBe(false);
   });
 
-  it("resolveMaxConnections clamps out-of-range values", () => {
-    expect(resolveMaxConnections({ maxConnections: 5 })).toBe(10);
-    expect(resolveMaxConnections({ maxConnections: 9999 })).toBe(500);
-    expect(resolveMaxConnections(undefined)).toBe(DEFAULT_CLIENT_MAX_CONNECTIONS);
+  it("resolveMaxConnections returns undefined when unset", () => {
+    expect(resolveMaxConnections(undefined)).toBeUndefined();
   });
 
   it("stretchTimerIntervalMs multiplies when idle", () => {

@@ -247,7 +247,7 @@ export function SettingsNodeTab() {
     [nodeService, restartNodeAfterConnectivityChange, refreshNodeConfig],
   );
 
-  const enableMdns = nodeConfig?.enableMdns ?? false;
+  const enableMdns = nodeConfig?.enableMdns ?? true;
   const mdnsToggle = useOptimisticToggle(enableMdns, async (enableMdnsNext) => {
     await nodeService.updateNodeConfig({ enableMdns: enableMdnsNext });
     try { await nodeService.stopNode(); } catch {}

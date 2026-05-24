@@ -2,7 +2,6 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
-  DEFAULT_CLIENT_MAX_CONNECTIONS,
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
   defaultBootstrapPresetsForDiscoveryProfile,
@@ -90,7 +89,7 @@ export interface PersistedNodeConfig {
   friendMatchingPreferencesSigned?: FriendMatchingPreferencesPayload;
   /** External distribution policy (IPFS export gate). */
   externalPublish?: ExternalPublishConfig;
-  /** libp2p connection cap (client nodes). Default 50. */
+  /** libp2p connection cap (client nodes). Omitted uses network default (150). */
   maxConnections?: number;
   /** mDNS interval in ms. Default 10_000. */
   mdnsIntervalMs?: number;
@@ -113,7 +112,7 @@ export function createDefaultPersistedNodeConfig(profileDir: string): PersistedN
     version: "0.1",
     profileDir,
     discoveryProfile: "wan-default",
-    enableMdns: false,
+    enableMdns: true,
     relayEnabled: true,
     relayServerEnabled: false,
     advertiseAddrs: [],
@@ -123,7 +122,6 @@ export function createDefaultPersistedNodeConfig(profileDir: string): PersistedN
     modelProviders: { mode: "mock" },
     chatAssistEnabled: false,
     contactAiPreferences: [],
-    maxConnections: DEFAULT_CLIENT_MAX_CONNECTIONS,
     updatedAt: new Date().toISOString(),
   };
 }

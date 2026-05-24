@@ -343,7 +343,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         )}
       <footer className="chat-input">
         {sendError && <div className="chat-send-error">{sendError}</div>}
-        {!contactReachable && nodeMeshOnline && !reachabilityChecking && (
+        {showConnectionStatus && !contactReachable && nodeMeshOnline && !reachabilityChecking && (
           <div className="chat-reachability-hint">
             Contact is offline — sending will try to connect and may take longer.
           </div>

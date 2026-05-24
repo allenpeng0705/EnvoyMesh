@@ -505,9 +505,6 @@ function applyDiscoveryProfileDefaults(args: NodeArgs, customPresetRegistry: Boo
     args.enableDht = true;
     args.dhtClientMode = true;
   }
-  if (!args.enableMdnsExplicit) {
-    args.enableMdns = false;
-  }
   if ((process.env.ENVOYMESH_CONNECTIVITY_STRICT ?? "").trim() === "1") {
     args.connectivityStrict = true;
   }

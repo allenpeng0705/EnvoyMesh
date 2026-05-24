@@ -199,11 +199,11 @@ export async function runRelayClientCycle(deps: RelayClientCycleDeps): Promise<v
 }
 
 export function startRelayClientScheduler(
-  deps: RelayClientCycleDeps & { intervalMs?: () => number },
+  deps: RelayClientCycleDeps & { intervalMs?: number },
 ): () => void {
   let cycleRunning = false;
   let stopped = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  const interval = deps.intervalMs ?? RELAY_CLIENT_CYCLE_INTERVAL_MS;
 
   const tick = async (): Promise<void> => {
     if (stopped || cycleRunning) {
@@ -219,22 +219,13 @@ export function startRelayClientScheduler(
     }
   };
 
-  const scheduleNext = (): void => {
-    if (stopped) {
-      return;
-    }
-    const delay = deps.intervalMs?.() ?? RELAY_CLIENT_CYCLE_INTERVAL_MS;
-    timer = setTimeout(() => {
-      void tick().finally(scheduleNext);
-    }, delay);
-  };
-
-  void tick().finally(scheduleNext);
+  void tick();
+  const timer = setInterval(() => {
+    void tick();
+  }, interval);
 
   return () => {
     stopped = true;
-    if (timer) {
-      clearTimeout(timer);
-    }
+    clearInterval(timer);
   };
 }

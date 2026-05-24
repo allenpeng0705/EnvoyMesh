@@ -1,5 +1,5 @@
 /** Default libp2p connection cap for client nodes (relay-server nodes stay uncapped). */
-export const DEFAULT_CLIENT_MAX_CONNECTIONS = 50;
+export const DEFAULT_CLIENT_MAX_CONNECTIONS = 150;
 
 /** Default mDNS browse interval — lower values increase LAN multicast CPU use. */
 export const DEFAULT_MDNS_INTERVAL_MS = 10_000;

@@ -1,7 +1,7 @@
 import type { DiscoveryProfile } from "./ws-protocol.js";
 
 /** libp2p connection-manager cap for client nodes (relay-server nodes are uncapped). */
-export const DEFAULT_CLIENT_MAX_CONNECTIONS = 50;
+export const DEFAULT_CLIENT_MAX_CONNECTIONS = 150;
 export const MIN_CLIENT_MAX_CONNECTIONS = 10;
 export const MAX_CLIENT_MAX_CONNECTIONS = 500;
 
@@ -23,7 +23,7 @@ export const IDLE_TIMER_STRETCH_MULTIPLIER = 4;
 export const IDLE_MESH_ACTIVITY_THRESHOLD_MS = 5 * 60 * 1000;
 
 export interface ConnectivityTuning {
-  /** Max libp2p connections (client nodes). Default 50. */
+  /** Max libp2p connections (client nodes). Omitted from mesh options when unset (uses network default). */
   maxConnections?: number;
   /** mDNS query interval in ms. Default 10_000. */
   mdnsIntervalMs?: number;
@@ -39,24 +39,24 @@ export function discoveryProfileUsesDht(profile: DiscoveryProfile): boolean {
   return profile === "wan-default";
 }
 
-export function discoveryProfileDefaultEnableMdns(profile: DiscoveryProfile): boolean {
-  return profile === "lan-fast";
+export function discoveryProfileDefaultEnableMdns(_profile: DiscoveryProfile): boolean {
+  return true;
 }
 
 export function defaultLazyCapabilityDiscovery(profile: DiscoveryProfile): boolean {
   return profile === "wan-default";
 }
 
-export function defaultIdleTimerStretch(profile: DiscoveryProfile): boolean {
-  return profile !== "lan-fast";
+export function defaultIdleTimerStretch(_profile: DiscoveryProfile): boolean {
+  return false;
 }
 
-export function resolveMaxConnections(tuning?: ConnectivityTuning): number {
+export function resolveMaxConnections(tuning?: ConnectivityTuning): number | undefined {
   const raw = tuning?.maxConnections;
   if (typeof raw === "number" && Number.isFinite(raw)) {
     return Math.min(MAX_CLIENT_MAX_CONNECTIONS, Math.max(MIN_CLIENT_MAX_CONNECTIONS, Math.round(raw)));
   }
-  return DEFAULT_CLIENT_MAX_CONNECTIONS;
+  return undefined;
 }
 
 export function resolveMdnsIntervalMs(tuning?: ConnectivityTuning): number {

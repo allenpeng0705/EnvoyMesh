@@ -33,7 +33,7 @@ export interface ResolvedConnectivityRuntime {
   profile: DiscoveryProfile;
   enableMdns: boolean;
   enableDht: boolean;
-  maxConnections: number;
+  maxConnections?: number;
   mdnsIntervalMs: number;
   capabilityDiscoveryIntervalMs: number;
   capabilityDiscoveryJitterMs: number;

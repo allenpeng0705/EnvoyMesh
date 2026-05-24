@@ -408,7 +408,7 @@ const mesh = new EnvoyMesh({
   enableQuic: args.enableQuic,
   enableP2pDebug: args.p2pDebug,
   enableRelayDebugSummary: args.relayDebugSummary,
-  maxConnections: connectivityRuntime.maxConnections,
+  ...(connectivityRuntime.maxConnections != null ? { maxConnections: connectivityRuntime.maxConnections } : {}),
   libp2pPrivateKeyPath,
   onP2pDebug: (event) => {
     void appendP2pTrace(event);
