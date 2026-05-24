@@ -165,7 +165,6 @@ describe("inbound data transfer + savePath remapping", () => {
       humanProfileStore,
       profileDir,
       profile,
-      [],
       vaultDir,
     );
     node.bindCliTaskStore(taskStore);

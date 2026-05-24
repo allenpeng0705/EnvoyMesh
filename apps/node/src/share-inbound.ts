@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import {
   createAuditEvent,
   createShareEvent,
@@ -343,10 +343,14 @@ export function isSafeVaultPath(vaultDir: string, relativePath: string): boolean
   const path = relativePath.replace(/\\/g, "/");
   if (path.includes("..")) return false;
   if (path.startsWith("/")) return false;
-  // Must be inside vault dir — resolved path must still start with vaultDir
   try {
-    const fullPath = resolve(vaultDir, path);
-    return fullPath.startsWith(vaultDir.replace(/[\/\\]+$/, ""));
+    const base = resolve(String(vaultDir));
+    const candidate = resolve(base, path);
+    const rel = relative(base, candidate);
+    if (rel.startsWith("..") || rel.split(sep).includes("..") || rel === "") {
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }

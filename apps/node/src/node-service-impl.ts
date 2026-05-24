@@ -135,6 +135,7 @@ import {
   filterBootstrapMultiaddrs,
   filterUsableOutboundPeerDialHints,
   ENVOY_CHAT_PROTOCOL,
+  ENVOY_DATA_PROTOCOL,
   type EnvoyMeshOptions,
 } from "@envoymesh/network";
 import { stat } from "node:fs/promises";
@@ -273,6 +274,17 @@ class NodeServiceImpl implements NodeService {
   private readonly _pendingFileSendByPreviewMsgId = new Map<
     string,
     { relativePath: string; toPeerId: string }
+  >();
+  /** `share.accept` arrived before inbound `share.preview` linked the pending send. */
+  private readonly _deferredShareAcceptByPreviewId = new Map<
+    string,
+    {
+      envelope: EnvoyEnvelope;
+      remotePeerId: string;
+      taskStore: LocalTaskStore;
+      vaultDir: string;
+      inboundConnectionAddrs?: string[];
+    }
   >();
   /** Inbound push offers waiting for accept/decline — keyed by preview message id. */
   private readonly _pendingInboundShareOffers = new Map<string, ShareOffer>();
@@ -432,6 +444,16 @@ class NodeServiceImpl implements NodeService {
       this._correlationByPreviewMsgId.set(previewMessageId, correlationId);
       this._correlationByRequestMsgId.delete(inReplyToRequestMsgId);
     }
+    const deferred = this._deferredShareAcceptByPreviewId.get(previewMessageId);
+    if (deferred) {
+      this._deferredShareAcceptByPreviewId.delete(previewMessageId);
+      void this.maybeSendShareFileForInboundAccept(deferred).catch((err) => {
+        console.error(
+          `[share] deferred file transfer failed for preview ${previewMessageId.slice(0, 12)}…:`,
+          err instanceof Error ? err.message : err,
+        );
+      });
+    }
   }
 
   /** We hold the file (responder); after sending preview, wait for requester's `share.accept`. */
@@ -507,6 +529,8 @@ class NodeServiceImpl implements NodeService {
     remotePeerId: string;
     taskStore: LocalTaskStore;
     vaultDir: string;
+    /** Live circuit/LAN addr from the inbound `share.accept` stream — often the only routable hint cross-NAT. */
+    inboundConnectionAddrs?: string[];
   }): Promise<void> {
     let payload: ReturnType<typeof parseShareAcceptPayload>;
     try {
@@ -519,8 +543,9 @@ class NodeServiceImpl implements NodeService {
     const pending = this._pendingFileSendByPreviewMsgId.get(previewId);
     if (!pending) {
       console.warn(
-        `[share] share.accept for preview ${previewId.slice(0, 12)}…: no pending file send (preview not linked?)`,
+        `[share] share.accept for preview ${previewId.slice(0, 12)}…: deferring until preview is linked`,
       );
+      this._deferredShareAcceptByPreviewId.set(previewId, input);
       return;
     }
     if (pending.toPeerId !== input.remotePeerId) {
@@ -535,10 +560,11 @@ class NodeServiceImpl implements NodeService {
 
     const peerRecords = await this._peerDirectoryStore.listPeerRecords();
     const rec = peerRecords.find((r) => r.peerId === input.remotePeerId);
+    const listenAddrs = this._mergeConnectionDialHints(rec?.listenAddrs, input.inboundConnectionAddrs);
     let dialHints: string[];
     try {
       dialHints = await raceWithTimeout(
-        this._dialHintsForChat(input.remotePeerId, rec?.listenAddrs),
+        this._dialHintsForChat(input.remotePeerId, listenAddrs),
         30_000,
         "_dialHintsForChat",
       );
@@ -563,6 +589,12 @@ class NodeServiceImpl implements NodeService {
     console.log(
       `[share] data transfer start: ${pending.relativePath} → ${input.remotePeerId.slice(0, 12)}… (${dialHints.length} dial hints)`,
     );
+    const reachability = await mesh.ensurePeerReachable(input.remotePeerId, ENVOY_DATA_PROTOCOL, { dialHints });
+    if (!reachability.connected) {
+      console.warn(
+        `[share] data channel not reachable for ${input.remotePeerId.slice(0, 12)}…; attempting transfer anyway`,
+      );
+    }
     await sendVaultFileViaDataTransfer({
       mesh,
       profile,
@@ -578,9 +610,32 @@ class NodeServiceImpl implements NodeService {
       },
     });
     this._pendingFileSendByPreviewMsgId.delete(previewId);
+    this._deferredShareAcceptByPreviewId.delete(previewId);
     console.log(
       `[share] data transfer complete: ${pending.relativePath} → ${input.remotePeerId.slice(0, 12)}…`,
     );
+  }
+
+  /** Prefer live inbound connection addrs (circuit paths) ahead of stale peer-directory listen addrs. */
+  private _mergeConnectionDialHints(
+    peerListenAddrs: string[] | undefined,
+    inboundConnectionAddrs: string[] | undefined,
+  ): string[] | undefined {
+    const extra = (inboundConnectionAddrs ?? []).map((a) => a.trim()).filter(Boolean);
+    const stored = (peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
+    if (extra.length === 0 && stored.length === 0) {
+      return undefined;
+    }
+    const seen = new Set<string>();
+    const merged: string[] = [];
+    for (const addr of [...extra, ...stored]) {
+      if (seen.has(addr)) {
+        continue;
+      }
+      seen.add(addr);
+      merged.push(addr);
+    }
+    return merged;
   }
 
   constructor(

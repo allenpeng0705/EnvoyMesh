@@ -974,19 +974,47 @@ export class EnvoyMesh {
     const hintsRaw = sendOptions?.dialHints ?? [];
     const barePeerDial = !target.trim().startsWith("/");
 
-    const dialOnce = async (addr: ReturnType<typeof multiaddr> | string): Promise<{ stream: any; remotePeerId?: string }> => {
-      const stream = await node.dialProtocol(addr as any, protocol);
-      const s = stream as { connection?: { remotePeer?: { toString(): string } } };
-      const remotePeerId = s.connection?.remotePeer?.toString();
-      if (peerIdStr && remotePeerId && remotePeerId !== peerIdStr) {
-        try {
-          await stream.close();
-        } catch {
-          /* ignore */
-        }
-        throw new Error(`connected to ${remotePeerId.slice(0, 12)}…, expected ${peerIdStr.slice(0, 12)}…`);
+    const openStreamOnLimitedConn = async (): Promise<{ stream: any; remotePeerId?: string } | undefined> => {
+      if (!peerIdStr) {
+        return undefined;
       }
-      return { stream, remotePeerId };
+      const limitedExisting = this.findLimitedConnectionToPeer(node, peerIdStr);
+      if (!limitedExisting) {
+        return undefined;
+      }
+      try {
+        const stream = await promiseWithTimeout(
+          limitedExisting.newStream([protocol], { runOnLimitedConnection: true }),
+          NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS,
+          `newStream(limited relay) ${protocol}`,
+        );
+        return { stream, remotePeerId: limitedExisting.remotePeer.toString() };
+      } catch {
+        return undefined;
+      }
+    };
+
+    const dialOnce = async (addr: ReturnType<typeof multiaddr> | string): Promise<{ stream: any; remotePeerId?: string }> => {
+      try {
+        const stream = await node.dialProtocol(addr as any, protocol);
+        const s = stream as { connection?: { remotePeer?: { toString(): string } } };
+        const remotePeerId = s.connection?.remotePeer?.toString();
+        if (peerIdStr && remotePeerId && remotePeerId !== peerIdStr) {
+          try {
+            await stream.close();
+          } catch {
+            /* ignore */
+          }
+          throw new Error(`connected to ${remotePeerId.slice(0, 12)}…, expected ${peerIdStr.slice(0, 12)}…`);
+        }
+        return { stream, remotePeerId };
+      } catch (e) {
+        const viaLimited = await openStreamOnLimitedConn();
+        if (viaLimited) {
+          return viaLimited;
+        }
+        throw e;
+      }
     };
 
     // Peer-ID-less multiaddrs (e.g. WebTransport certhash addresses from the
@@ -1032,6 +1060,10 @@ export class EnvoyMesh {
         } catch (e) {
           lastError = e;
         }
+      }
+      const viaLimited = await openStreamOnLimitedConn();
+      if (viaLimited) {
+        return viaLimited;
       }
       throw lastError instanceof Error ? lastError : new Error(String(lastError));
     }

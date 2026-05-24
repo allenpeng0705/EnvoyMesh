@@ -1049,6 +1049,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           remotePeerId,
           taskStore,
           vaultDir: vaultDirForNode,
+          inboundConnectionAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : undefined,
         });
       } catch (err) {
         console.error(
