@@ -5,6 +5,7 @@ import type {
   AgentShareProposal,
   BondRecord,
   BridgeStatus,
+  ChatDraft,
   ChatMessage,
   DiscoverPublishedLibraryParams,
   DiscoverPublishedLibraryPeerResult,
@@ -87,6 +88,8 @@ export interface NodeServiceClient {
   // Messaging
   sendChat(targetOwnerId: string, text: string): Promise<void>;
   listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
+  getChatDrafts(threadPeerOwnerId?: string): Promise<ChatDraft[]>;
+  deleteChatDraft(draftId: string): Promise<void>;
 
   // Search
   searchPeers(query: SearchQuery): Promise<PeerSearchResult[]>;
@@ -269,6 +272,10 @@ function createWsNodeServiceClient(
     async getBonds() { return wsClient.rpc("getBonds"); },
     async sendChat(targetOwnerId: string, text: string) { return wsClient.rpc("sendChat", { targetOwnerId, text }); },
     async listChatHistory(peerOwnerId: string, limit?: number) { return wsClient.rpc("listChatHistory", { peerOwnerId, limit }) as Promise<ChatMessage[]>; },
+    async getChatDrafts(threadPeerOwnerId?: string) {
+      return wsClient.rpc("getChatDrafts", threadPeerOwnerId ? { threadPeerOwnerId } : {}) as Promise<ChatDraft[]>;
+    },
+    async deleteChatDraft(draftId: string) { return wsClient.rpc("deleteChatDraft", { draftId }); },
     async searchPeers(query: SearchQuery) { return wsClient.rpc("searchPeers", query as unknown as Record<string, unknown>); },
     async getNodeConfig() { return wsClient.rpc("getNodeConfig"); },
     async getConnectionStatus() { return wsClient.rpc("getConnectionStatus"); },

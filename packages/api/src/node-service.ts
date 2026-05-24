@@ -611,6 +611,13 @@ export interface NodeService {
    */
   markRead(targetOwnerId: string, upToMessageId?: string): Promise<void>;
 
+  /**
+   * AI-generated draft replies awaiting human review (not sent until approved).
+   */
+  getChatDrafts(threadPeerOwnerId?: string): Promise<ChatDraft[]>;
+
+  deleteChatDraft(draftId: string): Promise<void>;
+
   // ----- Search / Discovery -----
 
   /**

@@ -32,6 +32,8 @@ class MockNodeService implements Partial<NodeService> {
   // Messaging
   sendChat = vi.fn().mockResolvedValue(undefined);
   listChatHistory = vi.fn().mockResolvedValue([]);
+  getChatDrafts = vi.fn().mockResolvedValue([]);
+  deleteChatDraft = vi.fn().mockResolvedValue(undefined);
 
   // Search
   searchPeers = vi.fn().mockResolvedValue([]);

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
+import { useChatDrafts } from "../../hooks/useChatDrafts.js";
 import { usePeerReachability, peerReachabilityLabel } from "../../hooks/usePeerReachability.js";
 import type { ChatMessage } from "@envoymesh/api";
 import type { AssistantMode } from "../../lib/storage.js";
@@ -184,6 +185,18 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     aiAccessLevel === "full" &&
     (nodeConfig?.autonomousPolicies ?? []).some((p) => p.domain === "social" && p.autoSendChat);
   const isChatAssistEnabled = nodeConfig?.chatAssistEnabled ?? false;
+  const showDraftSuggestions =
+    isChatAssistEnabled && isAssistantAllowed && currentAiMode !== "auto";
+  const { latestDraft, dismissDraft } = useChatDrafts(
+    selectedContact,
+    showDraftSuggestions,
+  );
+
+  const handleUseDraft = () => {
+    if (!latestDraft) return;
+    setChatInput(latestDraft.text);
+    void dismissDraft(latestDraft.draftId);
+  };
 
   const messageGroups = useMemo(() => groupMessagesByDate(displayMessages), [displayMessages]);
 
@@ -307,6 +320,27 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         )}
         <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
       </div>
+      <div className="chat-composer">
+        {latestDraft && (
+          <div className="chat-draft-suggestion" role="region" aria-label="Suggested reply">
+            <div className="chat-draft-suggestion-body">
+              <span className="chat-draft-suggestion-label">Suggested reply</span>
+              <p className="chat-draft-suggestion-text">{latestDraft.text}</p>
+            </div>
+            <div className="chat-draft-suggestion-actions">
+              <button
+                type="button"
+                className="secondary chat-draft-dismiss-btn"
+                onClick={() => void dismissDraft(latestDraft.draftId)}
+              >
+                Dismiss
+              </button>
+              <button type="button" className="chat-draft-use-btn" onClick={handleUseDraft}>
+                Use
+              </button>
+            </div>
+          </div>
+        )}
       <footer className="chat-input">
         {sendError && <div className="chat-send-error">{sendError}</div>}
         {!contactReachable && nodeMeshOnline && !reachabilityChecking && (
@@ -356,6 +390,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           {isSendingChat ? "Sending\u2026" : "Send"}
         </button>
       </footer>
+      </div>
     </>
   );
 }
