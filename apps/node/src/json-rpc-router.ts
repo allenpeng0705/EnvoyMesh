@@ -86,6 +86,12 @@ export async function routeRpcMethod(
         contentBase64: params.contentBase64 as string,
         mimeType: params.mimeType as string | undefined,
       });
+    case "resolveLibraryItemPath":
+      return ns.resolveLibraryItemPath(params.relativePath as string);
+    case "openLibraryItem":
+      return ns.openLibraryItem(params.relativePath as string);
+    case "revealLibraryItemInFileManager":
+      return ns.revealLibraryItemInFileManager(params.relativePath as string);
     case "discoverPublishedLibrary":
       return ns.discoverPublishedLibrary(params as DiscoverPublishedLibraryParams | undefined);
     case "listAgentShareProposals":

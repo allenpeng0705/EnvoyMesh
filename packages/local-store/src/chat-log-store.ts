@@ -23,6 +23,14 @@ export interface ChatLogEnvelope {
   };
   content: {
     text: string;
+    attachments?: Array<{
+      id: string;
+      filename: string;
+      mimeType: string;
+      sizeBytes: number;
+      sensitivity: "public" | "friends" | "private";
+      vaultRelativePath?: string;
+    }>;
   };
   metadata: {
     timestamp: string;

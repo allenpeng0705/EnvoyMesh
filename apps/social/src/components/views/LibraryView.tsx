@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
+import { openVaultLibraryFile, revealVaultLibraryFile } from "../../lib/library-file-actions.js";
 import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
 import type { LibraryItem } from "@envoymesh/api";
 
@@ -31,6 +32,22 @@ export function LibraryView() {
   const [ipfsVerifyBusyId, setIpfsVerifyBusyId] = useState<string | null>(null);
   const [ipfsErr, setIpfsErr] = useState<string | null>(null);
   const [ipfsOk, setIpfsOk] = useState<string | null>(null);
+  const [fileActionBusy, setFileActionBusy] = useState<string | null>(null);
+
+  const runLibraryFileAction = async (relativePath: string, action: "open" | "reveal") => {
+    setFileActionBusy(`${action}:${relativePath}`);
+    try {
+      if (action === "open") {
+        await openVaultLibraryFile(nodeService, relativePath);
+      } else {
+        await revealVaultLibraryFile(nodeService, relativePath);
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : String(err), "error");
+    } finally {
+      setFileActionBusy(null);
+    }
+  };
 
   const items = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -86,6 +103,22 @@ export function LibraryView() {
 
   const renderRowActions = (row: LibraryItem) => (
     <>
+      <button
+        type="button"
+        className="secondary"
+        disabled={fileActionBusy === `open:${row.relativePath}`}
+        onClick={() => void runLibraryFileAction(row.relativePath, "open")}
+      >
+        {fileActionBusy === `open:${row.relativePath}` ? "Opening…" : "Open"}
+      </button>
+      <button
+        type="button"
+        className="secondary"
+        disabled={fileActionBusy === `reveal:${row.relativePath}`}
+        onClick={() => void runLibraryFileAction(row.relativePath, "reveal")}
+      >
+        {fileActionBusy === `reveal:${row.relativePath}` ? "Opening…" : "Show in folder"}
+      </button>
       <label className="library-published-toggle">
         <input
           type="checkbox"

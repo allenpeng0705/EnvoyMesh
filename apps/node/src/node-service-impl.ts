@@ -4,6 +4,7 @@ import type {
   BridgeStatus,
   PairingPayload,
   ChatMessage,
+  ChatAttachment,
   ChatDiagnostics,
   ConnectionStatus,
   CreateHumanProfileInput,
@@ -141,6 +142,7 @@ import {
 import { stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { sendVaultFileViaDataTransfer } from "./node-file-share.js";
+import { openPathWithDefaultApp, revealPathInFileManager } from "./vault-file-open.js";
 import { TransferTracker } from "./transfer-tracker.js";
 import { isSafeVaultPath } from "./share-inbound.js";
 import { createPublishedLibraryStore } from "./published-library-store.js";
@@ -412,6 +414,12 @@ class NodeServiceImpl implements NodeService {
         updatedAt: new Date().toISOString(),
       });
       this._inboundTransferByShareId.delete(shareId);
+      void this._recordFileShareInChat({
+        peerOwnerId: pending.senderOwnerId ?? pending.senderNodeId,
+        outgoing: false,
+        vaultRelativePath: input.relativePath,
+        byteLength: input.totalBytes,
+      });
       return;
     }
     this._upsertTransferStatus({
@@ -614,6 +622,21 @@ class NodeServiceImpl implements NodeService {
     console.log(
       `[share] data transfer complete: ${pending.relativePath} → ${input.remotePeerId.slice(0, 12)}…`,
     );
+    if (rec?.ownerId) {
+      let byteLength = 0;
+      try {
+        const st = await stat(join(input.vaultDir, pending.relativePath));
+        byteLength = st.size;
+      } catch {
+        /* ignore */
+      }
+      void this._recordFileShareInChat({
+        peerOwnerId: rec.ownerId,
+        outgoing: true,
+        vaultRelativePath: pending.relativePath,
+        byteLength,
+      });
+    }
   }
 
   /** Prefer live inbound connection addrs (circuit paths) ahead of stale peer-directory listen addrs. */
@@ -1368,6 +1391,96 @@ class NodeServiceImpl implements NodeService {
     );
   }
 
+  private async _recordFileShareInChat(input: {
+    peerOwnerId: string;
+    outgoing: boolean;
+    vaultRelativePath: string;
+    byteLength: number;
+    sensitivity?: ChatAttachment["sensitivity"];
+  }): Promise<void> {
+    const mesh = this._reachableMesh();
+    const profile = this._profile;
+    if (!mesh || !profile || !this._chatLogStore) {
+      return;
+    }
+
+    let threadPeerOwnerId = input.peerOwnerId.trim();
+    if (threadPeerOwnerId.startsWith("12D3") || threadPeerOwnerId.startsWith("Qm")) {
+      const records = await this._peerDirectoryStore.listPeerRecords();
+      const rec = records.find((r) => r.peerId === threadPeerOwnerId);
+      if (!rec?.ownerId) {
+        return;
+      }
+      threadPeerOwnerId = rec.ownerId;
+    }
+    if (!threadPeerOwnerId) {
+      return;
+    }
+
+    const norm = input.vaultRelativePath.replace(/^[\\/]+/, "");
+    const filename = basename(norm) || "file";
+    const attachment: ChatAttachment = {
+      id: randomUUID(),
+      filename,
+      mimeType: mimeTypeForFilename(filename),
+      sizeBytes: input.byteLength,
+      sensitivity: input.sensitivity ?? "friends",
+      vaultRelativePath: norm,
+    };
+    const text = input.outgoing ? `Shared file ${filename}` : `Received file ${filename}`;
+
+    const [selfHuman, peerTrust] = await Promise.all([
+      this._humanProfileStore.loadHumanProfile(),
+      this._trustStore.getTrustRecord(threadPeerOwnerId),
+    ]);
+
+    let peerTransportId = threadPeerOwnerId;
+    try {
+      const resolved = await this._resolvePeerTransportForOwner(threadPeerOwnerId);
+      peerTransportId = resolved.transportPeerId;
+    } catch {
+      /* owner id only */
+    }
+
+    const timestamp = new Date().toISOString();
+    const msg: ChatMessage = input.outgoing
+      ? {
+          messageId: randomUUID(),
+          sender: {
+            nodeId: mesh.peerId,
+            ownerId: profile.owner.ownerId,
+            displayName: selfHuman?.displayName ?? profile.owner.ownerId,
+          },
+          recipient: {
+            nodeId: peerTransportId,
+            ownerId: threadPeerOwnerId,
+            displayName: peerTrust?.displayName ?? threadPeerOwnerId,
+          },
+          content: { text, attachments: [attachment] },
+          metadata: { timestamp, deliveryReceipt: "sent" },
+          signature: "local-file-share",
+        }
+      : {
+          messageId: randomUUID(),
+          sender: {
+            nodeId: peerTransportId,
+            ownerId: threadPeerOwnerId,
+            displayName: peerTrust?.displayName ?? threadPeerOwnerId,
+          },
+          recipient: {
+            nodeId: mesh.peerId,
+            ownerId: profile.owner.ownerId,
+            displayName: selfHuman?.displayName ?? profile.owner.ownerId,
+          },
+          content: { text, attachments: [attachment] },
+          metadata: { timestamp },
+          signature: "local-file-share",
+        };
+
+    this._persistChatMessage(threadPeerOwnerId, msg);
+    this.emit("chat:message", msg);
+  }
+
   async sendChat(targetOwnerId: string, text: string): Promise<void> {
     this._assertOnline();
     // Record owner activity when they send a message (keeps them "online" in automatic mode)
@@ -1917,6 +2030,29 @@ class NodeServiceImpl implements NodeService {
       relativePath: doc.relativePath,
       sizeBytes: doc.byteLength,
     };
+  }
+
+  async resolveLibraryItemPath(relativePath: string): Promise<{ vaultRelativePath: string; absolutePath: string }> {
+    const norm = relativePath.trim().replace(/^[\\/]+/, "");
+    if (!isSafeVaultPath(this._vaultDir, norm)) {
+      throw new Error("Invalid vault path");
+    }
+    const absolutePath = resolve(this._vaultDir, norm);
+    assertPathInsideVault(this._vaultDir, absolutePath);
+    await stat(absolutePath).catch(() => {
+      throw new Error("File not found in vault");
+    });
+    return { vaultRelativePath: norm, absolutePath };
+  }
+
+  async openLibraryItem(relativePath: string): Promise<void> {
+    const { absolutePath } = await this.resolveLibraryItemPath(relativePath);
+    await openPathWithDefaultApp(absolutePath);
+  }
+
+  async revealLibraryItemInFileManager(relativePath: string): Promise<void> {
+    const { absolutePath } = await this.resolveLibraryItemPath(relativePath);
+    await revealPathInFileManager(absolutePath);
   }
 
   async discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]> {
@@ -3826,6 +3962,35 @@ class NodeServiceImpl implements NodeService {
 
     // Automatic mode: online if had activity within timeout
     return Date.now() - this.lastActivityTimestamp < this.activityTimeoutMs;
+  }
+}
+
+function mimeTypeForFilename(filename: string): string {
+  const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".") + 1).toLowerCase() : "";
+  switch (ext) {
+    case "pdf":
+      return "application/pdf";
+    case "png":
+      return "image/png";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "txt":
+      return "text/plain";
+    case "md":
+      return "text/markdown";
+    case "json":
+      return "application/json";
+    case "html":
+      return "text/html";
+    case "csv":
+      return "text/csv";
+    default:
+      return "application/octet-stream";
   }
 }
 

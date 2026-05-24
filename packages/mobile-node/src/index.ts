@@ -1494,6 +1494,27 @@ export class MobileNode implements NodeService {
     };
   }
 
+  async resolveLibraryItemPath(relativePath: string): Promise<{ vaultRelativePath: string; absolutePath: string }> {
+    this._assertNodeRunning();
+    const norm = relativePath.trim().replace(/^[\\/]+/, "");
+    this._validateRelativeVaultPathForShare(norm);
+    const vaultPath = norm.startsWith("/") ? norm : `/${norm}`;
+    try {
+      await this._vault.readFile(vaultPath);
+    } catch {
+      throw new Error("File not found in vault");
+    }
+    return { vaultRelativePath: norm, absolutePath: vaultPath };
+  }
+
+  async openLibraryItem(_relativePath: string): Promise<void> {
+    throw new Error("Opening files in the system viewer is not supported on mobile yet.");
+  }
+
+  async revealLibraryItemInFileManager(_relativePath: string): Promise<void> {
+    throw new Error("Show in folder is not supported on mobile yet.");
+  }
+
   async discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]> {
     this._assertNodeRunning();
     if (!this._state?.device || !this._state?.owner) {

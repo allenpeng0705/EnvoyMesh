@@ -116,6 +116,9 @@ export interface NodeServiceClient {
     params: VerifyLibraryItemIpfsGatewayParams,
   ): Promise<VerifyLibraryItemIpfsGatewayResult>;
   importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult>;
+  resolveLibraryItemPath(relativePath: string): Promise<{ vaultRelativePath: string; absolutePath: string }>;
+  openLibraryItem(relativePath: string): Promise<void>;
+  revealLibraryItemInFileManager(relativePath: string): Promise<void>;
   discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]>;
   listAgentShareProposals(): Promise<AgentShareProposal[]>;
   dismissAgentShareProposal(proposalId: string): Promise<void>;
@@ -288,6 +291,18 @@ function createWsNodeServiceClient(
       return wsClient.rpc("importToLibrary", params as unknown as Record<string, unknown>) as Promise<
         ImportToLibraryResult
       >;
+    },
+    async resolveLibraryItemPath(relativePath: string) {
+      return wsClient.rpc("resolveLibraryItemPath", { relativePath }) as Promise<{
+        vaultRelativePath: string;
+        absolutePath: string;
+      }>;
+    },
+    async openLibraryItem(relativePath: string) {
+      return wsClient.rpc("openLibraryItem", { relativePath });
+    },
+    async revealLibraryItemInFileManager(relativePath: string) {
+      return wsClient.rpc("revealLibraryItemInFileManager", { relativePath });
     },
     async discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams) {
       return wsClient.rpc(

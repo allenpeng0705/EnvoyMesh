@@ -142,6 +142,8 @@ export interface ChatAttachment {
   mimeType: string;
   sizeBytes: number;
   sensitivity: "public" | "friends" | "private";
+  /** Local vault-relative path — used to open or reveal the file in Library / chat. */
+  vaultRelativePath?: string;
 }
 
 export interface ChatMessage {
@@ -696,6 +698,15 @@ export interface NodeService {
    * Write bytes into the local shared vault at a relative path (import from file picker).
    */
   importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult>;
+
+  /** Resolve a vault-relative path to an absolute path on this device (path safety enforced). */
+  resolveLibraryItemPath(relativePath: string): Promise<{ vaultRelativePath: string; absolutePath: string }>;
+
+  /** Open a vault file with the OS default application. Desktop node only. */
+  openLibraryItem(relativePath: string): Promise<void>;
+
+  /** Reveal a vault file in Finder / Explorer / file manager. Desktop node only. */
+  revealLibraryItemInFileManager(relativePath: string): Promise<void>;
 
   /**
    * Query bonded contacts for published library metadata (`libraryMatches` in `discovery.response`).

@@ -218,6 +218,18 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.importToLibrary(params);
   }
 
+  async resolveLibraryItemPath(relativePath: string) {
+    return this._ns.resolveLibraryItemPath(relativePath);
+  }
+
+  async openLibraryItem(relativePath: string) {
+    return this._ns.openLibraryItem(relativePath);
+  }
+
+  async revealLibraryItemInFileManager(relativePath: string) {
+    return this._ns.revealLibraryItemInFileManager(relativePath);
+  }
+
   async discoverPublishedLibrary(params?: Parameters<NodeService["discoverPublishedLibrary"]>[0]) {
     return this._ns.discoverPublishedLibrary(params);
   }

@@ -755,3 +755,41 @@
     max-width: 92%;
   }
 }
+
+.chat-file-attachment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-elevated, var(--color-surface));
+}
+
+.chat-file-attachment-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.chat-file-attachment-body {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.chat-file-attachment-name {
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.chat-file-attachment-meta {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted);
+}
+
+.chat-file-attachment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

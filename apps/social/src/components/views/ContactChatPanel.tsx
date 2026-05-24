@@ -12,6 +12,7 @@ import {
   threadKindLabel,
 } from "../../lib/chat-thread-kind.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
+import { ChatFileAttachment } from "../ChatFileAttachment.js";
 import { Markdown } from "../Markdown.js";
 import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
 import { EditIcon, ChatIcon, BridgeIcon, P2PIcon } from "../../icons.js";
@@ -283,6 +284,9 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
                           deliveryReceipt={outgoing ? msg.metadata.deliveryReceipt : undefined}
                         >
                           <Markdown text={msg.content.text} className="message-text" />
+                          {msg.content.attachments?.map((attachment) => (
+                            <ChatFileAttachment key={attachment.id} attachment={attachment} />
+                          ))}
                         </ChatMessageBubble>
                       ))}
                     </div>
