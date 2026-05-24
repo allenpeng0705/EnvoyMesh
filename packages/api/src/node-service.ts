@@ -164,7 +164,7 @@ export interface ChatMessage {
   };
   metadata: {
     timestamp: string;
-    deliveryReceipt?: "sent" | "delivered" | "read";
+    deliveryReceipt?: "pending" | "sent" | "delivered" | "read" | "failed";
   };
   signature: string;
 }
@@ -845,6 +845,11 @@ export interface NodeService {
    * @param peerOwnerId The owner's peer ID (e.g., envoy:owner:...)
    */
   getPeerConnectionInfo(peerOwnerId: string): Promise<PeerConnectionInfo>;
+
+  /**
+   * Pre-dial a bonded contact so relay/P2P paths are warm before chat or file share.
+   */
+  warmContactConnection(peerOwnerId: string): Promise<PeerConnectionInfo>;
 
   /**
    * Operator diagnostics for cross-NAT chat: relay cycles, dial hints, and human-readable hints.

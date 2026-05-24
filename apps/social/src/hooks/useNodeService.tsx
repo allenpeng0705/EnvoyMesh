@@ -96,6 +96,7 @@ export interface NodeServiceClient {
   // Connection Status
   getConnectionStatus(): Promise<ConnectionStatus>;
   getPeerConnectionInfo(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
+  warmContactConnection(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
   getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics>;
 
   // Agent Bridge
@@ -256,6 +257,7 @@ function createWsNodeServiceClient(
     async getNodeConfig() { return wsClient.rpc("getNodeConfig"); },
     async getConnectionStatus() { return wsClient.rpc("getConnectionStatus"); },
     async getPeerConnectionInfo(peerOwnerId: string) { return wsClient.rpc("getPeerConnectionInfo", { peerOwnerId }); },
+    async warmContactConnection(peerOwnerId: string) { return wsClient.rpc("warmContactConnection", { peerOwnerId }); },
     async getChatDiagnostics(peerOwnerId?: string) {
       return wsClient.rpc("getChatDiagnostics", peerOwnerId ? { peerOwnerId } : {});
     },

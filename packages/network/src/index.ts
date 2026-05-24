@@ -877,6 +877,36 @@ export class EnvoyMesh {
     return this.sendEnvelopeOnProtocol(target, envelope, ENVOY_CHAT_PROTOCOL, sendOptions);
   }
 
+  /**
+   * Best-effort dial to establish or reuse a libp2p connection before chat/file sends.
+   * Opens and closes one stream on `protocol` (default chat) using the same dial-hint path as {@link sendChat}.
+   */
+  async ensurePeerReachable(
+    target: string,
+    protocol: string = ENVOY_CHAT_PROTOCOL,
+    sendOptions?: MeshOutboundOptions,
+  ): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }> {
+    const peerIdStr = parsePeerIdFromDialTarget(target);
+    if (peerIdStr) {
+      const before = this.getPeerConnectionInfo(peerIdStr);
+      if (before.connected) {
+        return before;
+      }
+    }
+    try {
+      const { stream } = await this.openOutboundStream(target, protocol, sendOptions);
+      try {
+        await stream.close();
+      } catch {
+        /* ignore */
+      }
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
+    }
+    return peerIdStr ? this.getPeerConnectionInfo(peerIdStr) : { connected: false, direct: false };
+  }
+
   private async openOutboundStream(
     target: string,
     protocol: string,

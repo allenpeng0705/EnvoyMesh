@@ -115,6 +115,7 @@ export type RpcMethods =
   // Connection Status
   | "getConnectionStatus"
   | "getPeerConnectionInfo"
+  | "warmContactConnection"
   | "getChatDiagnostics"
   // AI / Knowledge Query
   | "knowledgeQuery"
@@ -733,6 +734,10 @@ export interface PairSharedIdentityResult {
 }
 
 export interface GetPeerConnectionInfoParams {
+  peerOwnerId: string;
+}
+
+export interface WarmContactConnectionParams {
   peerOwnerId: string;
 }
 

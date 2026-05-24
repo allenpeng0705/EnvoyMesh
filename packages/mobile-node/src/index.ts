@@ -1998,6 +1998,10 @@ export class MobileNode implements NodeService {
     return { connected: true, direct: false, relayPeerId: this._relayUrls[0] };
   }
 
+  async warmContactConnection(peerOwnerId: string) {
+    return this.getPeerConnectionInfo(peerOwnerId);
+  }
+
   async getChatDiagnostics(peerOwnerId?: string) {
     return {
       checkedAt: new Date().toISOString(),

@@ -26,7 +26,7 @@ export interface ChatLogEnvelope {
   };
   metadata: {
     timestamp: string;
-    deliveryReceipt?: "sent" | "delivered" | "read";
+    deliveryReceipt?: "pending" | "sent" | "delivered" | "read" | "failed";
   };
   signature: string;
 }

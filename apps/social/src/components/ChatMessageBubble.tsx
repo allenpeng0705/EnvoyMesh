@@ -8,8 +8,17 @@ interface ChatMessageBubbleProps {
   position: MessageStackPosition;
   senderLabel?: string;
   timeLabel?: string;
+  deliveryReceipt?: "pending" | "sent" | "delivered" | "read" | "failed";
   children: ReactNode;
 }
+
+const DELIVERY_LABEL: Record<NonNullable<ChatMessageBubbleProps["deliveryReceipt"]>, string> = {
+  pending: "Sending…",
+  sent: "Sent",
+  delivered: "Delivered",
+  read: "Read",
+  failed: "Failed",
+};
 
 const VARIANT_BADGE: Record<MessageVisualVariant, string> = {
   outgoing: "You",
@@ -25,6 +34,7 @@ export function ChatMessageBubble({
   position,
   senderLabel,
   timeLabel,
+  deliveryReceipt,
   children,
 }: ChatMessageBubbleProps) {
   const showMeta = position === "single" || position === "last";
@@ -33,7 +43,7 @@ export function ChatMessageBubble({
       ? String(senderLabel)
       : VARIANT_BADGE[variant];
 
-  const showMetaRow = showMeta && (badge || timeLabel != null);
+  const showMetaRow = showMeta && (badge || timeLabel != null || deliveryReceipt != null);
 
   return (
     <div className={`message-bubble ${variant} ${stackPositionClass(position)}`}>
@@ -42,6 +52,11 @@ export function ChatMessageBubble({
           {badge ? <span className="message-bubble-badge">{badge}</span> : null}
           {timeLabel != null ? (
             <span className="message-bubble-time">{timeLabel}</span>
+          ) : null}
+          {deliveryReceipt != null ? (
+            <span className={`message-delivery-status status-${deliveryReceipt}`}>
+              {DELIVERY_LABEL[deliveryReceipt]}
+            </span>
           ) : null}
         </div>
       ) : null}

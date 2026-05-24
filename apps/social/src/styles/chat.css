@@ -202,6 +202,64 @@
   flex-shrink: 0;
 }
 
+.contact-reachability {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-top: var(--space-1);
+}
+
+.contact-reachability-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--color-text-muted);
+}
+
+.contact-reachability.online-direct .contact-reachability-dot {
+  background: var(--color-success, #22c55e);
+}
+
+.contact-reachability.online-relay .contact-reachability-dot {
+  background: var(--color-warning, #eab308);
+}
+
+.contact-reachability.offline .contact-reachability-dot {
+  background: var(--color-text-muted);
+}
+
+.contact-reachability.checking .contact-reachability-dot {
+  background: var(--color-text-muted);
+  opacity: 0.6;
+}
+
+.message-delivery-status {
+  font-size: 0.65rem;
+  margin-left: var(--space-1);
+  opacity: 0.85;
+}
+
+.message-delivery-status.status-pending {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.message-delivery-status.status-failed {
+  color: var(--color-danger, #ef4444);
+}
+
+.chat-reachability-hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  padding: var(--space-1) var(--space-2);
+  margin-bottom: var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle, rgba(0, 0, 0, 0.04));
+}
+
 .ai-status {
   font-size: var(--text-xs);
   color: var(--color-text-muted);

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
+import { usePeerReachability, peerReachabilityLabel } from "../../hooks/usePeerReachability.js";
 import type { ChatMessage } from "@envoymesh/api";
 import type { AssistantMode } from "../../lib/storage.js";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
@@ -19,8 +20,6 @@ interface ContactChatPanelProps {
   selectedContact: string;
   onSelectContact: (id: string | null) => void;
 }
-
-// ---- Date formatting helpers ----
 
 function fmtDateLabel(dateStr: string): string {
   const d = new Date(dateStr);
@@ -45,18 +44,24 @@ function groupMessagesByDate(msgs: ChatMessage[]): [string, ChatMessage[]][] {
   return [...groups.entries()];
 }
 
+function isPendingOutgoing(msg: ChatMessage): boolean {
+  return msg.messageId.startsWith("pending-") || msg.metadata.deliveryReceipt === "pending";
+}
+
 export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   const nodeService = useNodeService();
   const {
     bonds,
     nodeConfig,
     bridgeStatus,
-    appSettings,
     contactAiModes,
     setContactAiModes,
+    connectionStatus,
   } = useNodeState();
 
   const { messages, isOutgoing } = useChatMessages(selectedContact);
+  const { info: peerReachability, checking: reachabilityChecking } = usePeerReachability(selectedContact);
+  const [pendingOutbound, setPendingOutbound] = useState<ChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const [chatInput, setChatInput] = useState("");
@@ -65,26 +70,38 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   const [sendError, setSendError] = useState<string | null>(null);
   const lastChatSendRef = useRef<{ at: number; contact: string; text: string } | null>(null);
 
-  // Peer connection info (locally cached)
-  const [peerConnectionInfo, setPeerConnectionInfo] = useState<Record<string, { connected: boolean; direct: boolean; relayPeerId?: string }>>({});
+  const nodeMeshOnline = connectionStatus?.online === true;
+  const contactReachable = peerReachability?.connected === true;
 
-  // Scroll to bottom on new messages
+  const displayMessages = useMemo(() => {
+    const merged = [...messages, ...pendingOutbound];
+    const seen = new Set<string>();
+    const out: ChatMessage[] = [];
+    for (const m of merged) {
+      if (seen.has(m.messageId)) continue;
+      seen.add(m.messageId);
+      out.push(m);
+    }
+    out.sort((a, b) => {
+      const ta = new Date(a.metadata.timestamp).getTime();
+      const tb = new Date(b.metadata.timestamp).getTime();
+      return ta - tb;
+    });
+    return out;
+  }, [messages, pendingOutbound]);
+
+  const isOutgoingMsg = useCallback(
+    (msg: ChatMessage) => isPendingOutgoing(msg) || isOutgoing(msg),
+    [isOutgoing],
+  );
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [displayMessages]);
 
-  // Fetch peer connection info
-  useEffect(() => {
-    if (!appSettings.showConnectionStatus || peerConnectionInfo[selectedContact]) return;
-    nodeService.getPeerConnectionInfo(selectedContact).then((info) => {
-      setPeerConnectionInfo((prev) => ({ ...prev, [selectedContact]: info }));
-    }).catch(() => {});
-  }, [appSettings.showConnectionStatus, selectedContact, nodeService]);
-
-  // AI access
   const getContactAiAccessLevel = useCallback(
     (ownerId: string): "none" | "assistant_only" | "full" =>
-      nodeConfig?.contactAiPreferences?.find(p => p.peerOwnerId === ownerId)?.aiAccessLevel ?? "none",
+      nodeConfig?.contactAiPreferences?.find((p) => p.peerOwnerId === ownerId)?.aiAccessLevel ?? "none",
     [nodeConfig],
   );
 
@@ -92,12 +109,16 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     const text = chatInput.trim();
     if (!text || isSendingChat) return;
 
-    // /ai command routing
+    if (!nodeMeshOnline) {
+      setSendError("Your node is offline — start the node before sending.");
+      setTimeout(() => setSendError(null), 5000);
+      return;
+    }
+
     if (text.startsWith("/ai ")) {
       const question = text.slice(4);
       try {
         const answer = await nodeService.knowledgeQuery(question);
-        // For now, we don't display AI answers inline in ContactChatPanel
         console.log("[ContactChatPanel] AI answer:", answer);
       } catch (e) {
         console.error("[ContactChatPanel] AI query failed:", e);
@@ -106,7 +127,6 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
       return;
     }
 
-    // Duplicate send guard (1.5s)
     const now = Date.now();
     const last = lastChatSendRef.current;
     if (last && last.contact === selectedContact && last.text === text && now - last.at < 1500) {
@@ -114,16 +134,36 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     }
     lastChatSendRef.current = { at: now, contact: selectedContact, text };
 
+    const tempId = `pending-${crypto.randomUUID()}`;
+    const pendingMsg: ChatMessage = {
+      messageId: tempId,
+      sender: { nodeId: "", ownerId: "", displayName: "You" },
+      recipient: { nodeId: "", ownerId: selectedContact, displayName: selectedContact },
+      content: { text },
+      metadata: { timestamp: new Date().toISOString(), deliveryReceipt: "pending" },
+      signature: "",
+    };
+
+    setPendingOutbound((prev) => [...prev, pendingMsg]);
+    setChatInput("");
     setIsSendingChat(true);
     setSendError(null);
+
     try {
       await nodeService.sendChat(selectedContact, text);
-      setChatInput("");
+      setPendingOutbound((prev) => prev.filter((m) => m.messageId !== tempId));
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Failed to send message";
       console.error("[ContactChatPanel] sendChat failed:", error);
+      setPendingOutbound((prev) =>
+        prev.map((m) =>
+          m.messageId === tempId
+            ? { ...m, metadata: { ...m.metadata, deliveryReceipt: "failed" as const } }
+            : m,
+        ),
+      );
       setSendError(msg);
-      setTimeout(() => setSendError(null), 5000);
+      setTimeout(() => setSendError(null), 8000);
     } finally {
       setIsSendingChat(false);
     }
@@ -132,11 +172,12 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   const currentAiMode: AssistantMode = contactAiModes[selectedContact] ?? "manual";
   const aiAccessLevel = getContactAiAccessLevel(selectedContact);
   const isAssistantAllowed = aiAccessLevel === "assistant_only" || aiAccessLevel === "full";
-  const isAutoAllowed = aiAccessLevel === "full" && (nodeConfig?.autonomousPolicies ?? []).some(p => p.domain === "social" && p.autoSendChat);
+  const isAutoAllowed =
+    aiAccessLevel === "full" &&
+    (nodeConfig?.autonomousPolicies ?? []).some((p) => p.domain === "social" && p.autoSendChat);
   const isChatAssistEnabled = nodeConfig?.chatAssistEnabled ?? false;
 
-  // Group messages by date for date separators
-  const messageGroups = useMemo(() => groupMessagesByDate(messages), [messages]);
+  const messageGroups = useMemo(() => groupMessagesByDate(displayMessages), [displayMessages]);
 
   const threadKind = resolveChatThreadKind(selectedContact, bridgeStatus?.agentPeerId);
   const displayName =
@@ -146,6 +187,14 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           bonds.find((c) => c.peerOwnerId === selectedContact) ?? { peerOwnerId: selectedContact },
         );
   const headerInitial = displayName.trim().charAt(0).toUpperCase() || "?";
+
+  const reachabilityClass = contactReachable
+    ? peerReachability?.direct
+      ? "online-direct"
+      : "online-relay"
+    : reachabilityChecking
+      ? "checking"
+      : "offline";
 
   return (
     <>
@@ -157,11 +206,10 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           <div className="chat-header-titles">
             <span className="chat-name">{displayName}</span>
             <span className={`chat-header-kind kind-${threadKind}`}>{threadKindLabel(threadKind)}</span>
-            {appSettings.showConnectionStatus && peerConnectionInfo[selectedContact] && (
-              <span className={`connection-type ${peerConnectionInfo[selectedContact].direct ? "p2p" : "relay"}`}>
-                {peerConnectionInfo[selectedContact].direct ? "P2P" : "Relay"}
-              </span>
-            )}
+            <span className={`contact-reachability ${reachabilityClass}`} title="P2P path to this contact">
+              <span className="contact-reachability-dot" aria-hidden />
+              {peerReachabilityLabel(peerReachability)}
+            </span>
           </div>
         </div>
         <div className="chat-header-right">
@@ -192,7 +240,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         </div>
       </header>
       <div className="messages">
-        {messages.length === 0 ? (
+        {displayMessages.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">
               <ChatIcon size={40} />
@@ -204,8 +252,8 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           messageGroups.map(([dateKey, msgs]) => (
             <div key={dateKey}>
               <div className="date-separator"><span>{fmtDateLabel(msgs[0].metadata.timestamp)}</span></div>
-              {buildMessageStacks(msgs, (a, b) => isOutgoing(a) === isOutgoing(b)).map((stack) => {
-                const outgoing = isOutgoing(stack[0]);
+              {buildMessageStacks(msgs, (a, b) => isOutgoingMsg(a) === isOutgoingMsg(b)).map((stack) => {
+                const outgoing = isOutgoingMsg(stack[0]);
                 const variant = messageVisualVariant(outgoing, threadKind);
                 const senderInitial = peerDisplayLabel(stack[0].sender).charAt(0).toUpperCase() || "?";
                 return (
@@ -232,6 +280,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
                             hour: "2-digit",
                             minute: "2-digit",
                           })}
+                          deliveryReceipt={outgoing ? msg.metadata.deliveryReceipt : undefined}
                         >
                           <Markdown text={msg.content.text} className="message-text" />
                         </ChatMessageBubble>
@@ -247,6 +296,11 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
       </div>
       <footer className="chat-input">
         {sendError && <div className="chat-send-error">{sendError}</div>}
+        {!contactReachable && nodeMeshOnline && !reachabilityChecking && (
+          <div className="chat-reachability-hint">
+            Contact is offline — sending will try to connect and may take longer.
+          </div>
+        )}
         {shareOpen && (
           <ShareFileDialog
             targetOwnerId={selectedContact}
@@ -269,7 +323,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         </button>
         <input
           type="text"
-          placeholder="Type a message..."
+          placeholder={nodeMeshOnline ? "Type a message..." : "Node offline"}
           value={chatInput}
           onChange={(e) => setChatInput(e.target.value)}
           onKeyDown={(e) => {
@@ -279,9 +333,13 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
             }
           }}
           enterKeyHint="send"
-          disabled={isSendingChat}
+          disabled={isSendingChat || !nodeMeshOnline}
         />
-        <button type="button" onClick={() => void handleSendMessage()} disabled={isSendingChat || !chatInput.trim()}>
+        <button
+          type="button"
+          onClick={() => void handleSendMessage()}
+          disabled={isSendingChat || !chatInput.trim() || !nodeMeshOnline}
+        >
           {isSendingChat ? "Sending\u2026" : "Send"}
         </button>
       </footer>

@@ -130,6 +130,7 @@ import {
   DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME,
   filterBootstrapMultiaddrs,
   filterUsableOutboundPeerDialHints,
+  ENVOY_CHAT_PROTOCOL,
   type EnvoyMeshOptions,
 } from "@envoymesh/network";
 import { stat } from "node:fs/promises";
@@ -1385,6 +1386,14 @@ class NodeServiceImpl implements NodeService {
     console.log(
       `[sendChat] transportPeerId=${transportPeerId} envelopeRecipientPeerId=${recipientEnvelopePeerId ?? "(omitted)"} storedListenAddrs=${(targetPeer.listenAddrs ?? []).length} dialHints=${dialHints.length}`,
     );
+
+    void this._tagBondedContactReachability(transportPeerId);
+    const connBefore = mesh.getPeerConnectionInfo(transportPeerId);
+    if (!connBefore.connected) {
+      console.log(`[sendChat] warming path to ${transportPeerId.slice(0, 12)}…`);
+      await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, { dialHints });
+    }
+
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({
         senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
@@ -1408,7 +1417,6 @@ class NodeServiceImpl implements NodeService {
         dialHints,
       });
     }
-    void this._tagBondedContactReachability(transportPeerId);
 
     const emittedMsg = {
       messageId: envelope.messageId,
@@ -3499,6 +3507,39 @@ class NodeServiceImpl implements NodeService {
     }
 
     return mesh.getPeerConnectionInfo(peerRecord.peerId);
+  }
+
+  async warmContactConnection(peerOwnerId: string): Promise<PeerConnectionInfo> {
+    this._assertOnline();
+    const mesh = this._requireMesh();
+    let transportPeerId: string;
+    let listenAddrs: string[] | undefined;
+    try {
+      const resolved = await this._resolvePeerTransportForOwner(peerOwnerId);
+      transportPeerId = resolved.transportPeerId;
+      listenAddrs = resolved.listenAddrs;
+    } catch {
+      return { connected: false, direct: false };
+    }
+
+    void this._tagBondedContactReachability(transportPeerId);
+    const existing = mesh.getPeerConnectionInfo(transportPeerId);
+    if (existing.connected) {
+      return existing;
+    }
+
+    let dialHints: string[];
+    try {
+      dialHints = await raceWithTimeout(
+        this._dialHintsForChat(transportPeerId, listenAddrs),
+        30_000,
+        "_dialHintsForChat",
+      );
+    } catch {
+      return { connected: false, direct: false };
+    }
+
+    return mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, { dialHints });
   }
 
   async getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics> {

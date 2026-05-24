@@ -103,6 +103,8 @@ export async function routeRpcMethod(
       return ns.getConnectionStatus();
     case "getPeerConnectionInfo":
       return ns.getPeerConnectionInfo(params.peerOwnerId as string);
+    case "warmContactConnection":
+      return ns.warmContactConnection(params.peerOwnerId as string);
     case "getChatDiagnostics":
       return ns.getChatDiagnostics(params.peerOwnerId as string | undefined);
     case "getNodeConfig":
