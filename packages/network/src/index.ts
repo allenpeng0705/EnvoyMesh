@@ -945,7 +945,16 @@ export class EnvoyMesh {
     const dialOnce = async (addr: ReturnType<typeof multiaddr> | string): Promise<{ stream: any; remotePeerId?: string }> => {
       const stream = await node.dialProtocol(addr as any, protocol);
       const s = stream as { connection?: { remotePeer?: { toString(): string } } };
-      return { stream, remotePeerId: s.connection?.remotePeer?.toString() };
+      const remotePeerId = s.connection?.remotePeer?.toString();
+      if (peerIdStr && remotePeerId && remotePeerId !== peerIdStr) {
+        try {
+          await stream.close();
+        } catch {
+          /* ignore */
+        }
+        throw new Error(`connected to ${remotePeerId.slice(0, 12)}…, expected ${peerIdStr.slice(0, 12)}…`);
+      }
+      return { stream, remotePeerId };
     };
 
     // Peer-ID-less multiaddrs (e.g. WebTransport certhash addresses from the
@@ -1582,7 +1591,80 @@ export function isUnusableBootstrapMultiaddr(addr: string): boolean {
   if (!a.includes("/p2p/")) {
     return true;
   }
+  if (isBrowserOnlyTransportDialHint(a) || isIncompleteCircuitDialHint(a)) {
+    return true;
+  }
   return false;
+}
+
+/** Browser/WebTransport multiaddrs from the public DHT — not dialable by desktop TCP nodes. */
+export function isBrowserOnlyTransportDialHint(addr: string): boolean {
+  const a = addr.trim();
+  return a.includes("/webtransport/") || a.includes("/certhash/");
+}
+
+/**
+ * Circuit reservation without a final `/p2p/<remotePeer>` hop — dials the relay, not the contact.
+ * Example bad: `…/p2p/<relayId>/p2p-circuit` (no target peer appended).
+ */
+export function isIncompleteCircuitDialHint(addr: string): boolean {
+  const a = addr.trim();
+  if (!a.includes("/p2p-circuit")) {
+    return false;
+  }
+  if (/\/p2p-circuit\/p2p\/[^/]+$/.test(a)) {
+    return false;
+  }
+  return true;
+}
+
+function lastPeerIdFromMultiaddr(addr: string): string | undefined {
+  const m = addr.trim().match(/\/p2p\/([^/]+)$/);
+  return m?.[1];
+}
+
+/**
+ * Filter multiaddrs for outbound dials to a specific libp2p peer.
+ * Drops WebTransport, incomplete circuits, bootstrap nodes, and paths whose final `/p2p/` id ≠ target.
+ */
+export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string): boolean {
+  const a = addr.trim();
+  if (!a.startsWith("/")) {
+    return false;
+  }
+  if (isLoopbackOrUnspecifiedDialHint(a) || isDockerBridgeGatewayDialHint(a)) {
+    return false;
+  }
+  if (isPublicLibp2pBootstrapMultiaddr(a) || a.includes("bootstrap.libp2p.io")) {
+    return false;
+  }
+  if (isBrowserOnlyTransportDialHint(a) || isIncompleteCircuitDialHint(a)) {
+    return false;
+  }
+  if (targetPeerId?.trim()) {
+    const last = lastPeerIdFromMultiaddr(a);
+    if (last && last !== targetPeerId.trim()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of addrs) {
+    const a = raw.trim();
+    if (!a || seen.has(a)) {
+      continue;
+    }
+    if (!isUsableOutboundPeerDialHint(a, targetPeerId)) {
+      continue;
+    }
+    seen.add(a);
+    out.push(a);
+  }
+  return out;
 }
 
 /** True for libp2p project's public DHT bootstrap dnsaddr multiaddrs (not EnvoyMesh circuit relays). */
@@ -1632,16 +1714,31 @@ export function preferNonLoopbackDialHints(hints: string[]): string[] {
 
 /**
  * Sort dial hints by:
- * 1. Prefer QUIC multiaddrs over TCP-only
+ * 1. Prefer complete relay circuits and TCP over browser/WebTransport QUIC
  * 2. Prefer non-loopback / non-unspecified over loopback
  */
 function sortDialHints(hints: string[]): string[] {
   return [...hints].sort((a, b) => {
-    // Primary: QUIC first
-    const quicA = isQuicDialHint(a) ? 0 : 1;
-    const quicB = isQuicDialHint(b) ? 0 : 1;
-    if (quicA !== quicB) return quicA - quicB;
-    // Secondary: non-loopback first
+    const browserA = isBrowserOnlyTransportDialHint(a) ? 1 : 0;
+    const browserB = isBrowserOnlyTransportDialHint(b) ? 1 : 0;
+    if (browserA !== browserB) {
+      return browserA - browserB;
+    }
+    const circuitA = a.includes("/p2p-circuit/p2p/") ? 0 : 1;
+    const circuitB = b.includes("/p2p-circuit/p2p/") ? 0 : 1;
+    if (circuitA !== circuitB) {
+      return circuitA - circuitB;
+    }
+    const tcpA = a.includes("/tcp/") ? 0 : 1;
+    const tcpB = b.includes("/tcp/") ? 0 : 1;
+    if (tcpA !== tcpB) {
+      return tcpA - tcpB;
+    }
+    const quicA = isQuicDialHint(a) ? 1 : 0;
+    const quicB = isQuicDialHint(b) ? 1 : 0;
+    if (quicA !== quicB) {
+      return quicA - quicB;
+    }
     return Number(isLoopbackOrUnspecifiedDialHint(a)) - Number(isLoopbackOrUnspecifiedDialHint(b));
   });
 }

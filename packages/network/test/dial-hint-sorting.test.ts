@@ -51,14 +51,23 @@ describe("dial hint sorting", () => {
   });
 
   describe("preferNonLoopbackDialHints", () => {
-    it("puts QUIC hints before TCP when both are present", () => {
+    it("puts TCP hints before QUIC/WebTransport when both are present", () => {
       const hints = [
-        "/ip4/1.2.3.4/tcp/4000/p2p/12D3KooWTCP",
         "/ip4/1.2.3.4/udp/4001/quic-v1/p2p/12D3KooWQUIC",
+        "/ip4/1.2.3.4/tcp/4000/p2p/12D3KooWTCP",
       ];
       const sorted = preferNonLoopbackDialHints(hints);
-      expect(sorted[0]).toContain("/quic-v1");
-      expect(sorted[1]).toContain("/tcp/");
+      expect(sorted[0]).toContain("/tcp/");
+      expect(sorted[1]).toContain("/quic-v1");
+    });
+
+    it("prefers complete relay circuits over plain TCP", () => {
+      const hints = [
+        "/ip4/1.2.3.4/tcp/4000/p2p/12D3KooWTCP",
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWTCP",
+      ];
+      const sorted = preferNonLoopbackDialHints(hints);
+      expect(sorted[0]).toContain("/p2p-circuit/p2p/");
     });
 
     it("filters loopback when non-loopback exists (QUIC preference does not override loopback filtering)", () => {
@@ -74,15 +83,14 @@ describe("dial hint sorting", () => {
       expect(sorted[0]).toContain("192.168.1.10");
     });
 
-    it("prefers QUIC over TCP when only loopback addresses are available", () => {
-      // When no non-loopback exists, loopback is used; QUIC preference then applies.
+    it("prefers TCP over QUIC when only loopback addresses are available", () => {
       const hints = [
-        "/ip4/127.0.0.1/tcp/4000",
         "/ip4/127.0.0.1/udp/4001/quic-v1",
+        "/ip4/127.0.0.1/tcp/4000",
       ];
       const sorted = preferNonLoopbackDialHints(hints);
-      expect(sorted[0]).toContain("/quic-v1");
-      expect(sorted[1]).toContain("/tcp/");
+      expect(sorted[0]).toContain("/tcp/");
+      expect(sorted[1]).toContain("/quic-v1");
     });
 
     it("preserves order among hints of the same type", () => {
@@ -93,15 +101,14 @@ describe("dial hint sorting", () => {
         "/ip4/2.2.2.2/udp/4003/quic-v1",
       ];
       const sorted = preferNonLoopbackDialHints(hints);
-      // QUIC first, then TCP
-      expect(sorted[0]).toContain("/quic-v1");
-      expect(sorted[0]).toContain("5.6.7.8");
-      expect(sorted[1]).toContain("/quic-v1");
-      expect(sorted[1]).toContain("2.2.2.2");
-      expect(sorted[2]).toContain("/tcp/");
-      expect(sorted[2]).toContain("1.2.3.4");
-      expect(sorted[3]).toContain("/tcp/");
-      expect(sorted[3]).toContain("9.9.9.9");
+      expect(sorted[0]).toContain("/tcp/");
+      expect(sorted[0]).toContain("1.2.3.4");
+      expect(sorted[1]).toContain("/tcp/");
+      expect(sorted[1]).toContain("9.9.9.9");
+      expect(sorted[2]).toContain("/quic-v1");
+      expect(sorted[2]).toContain("5.6.7.8");
+      expect(sorted[3]).toContain("/quic-v1");
+      expect(sorted[3]).toContain("2.2.2.2");
     });
 
     it("returns empty array for empty input", () => {

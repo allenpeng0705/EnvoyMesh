@@ -84,4 +84,27 @@ describe("buildOutboundDialHints", () => {
       await rm(profileDir, { recursive: true, force: true });
     }
   });
+
+  it("drops incomplete WebTransport circuit reservations stored as contact listen addrs", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-wt-"));
+    try {
+      const seedStore = createDiscoverySeedStore(profileDir);
+      const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
+      const badWebTransport =
+        "/ip6/2001:6b0:30:1337:0:feed:babe:beef/udp/4001/quic-v1/webtransport/certhash/uEiADq3Ua4Mo4IrYmAkYXhtJjNxILcwFNKTuLkvaMc8Rkvg/certhash/uEiAJdWXsc8ux3BN5bfKW7pjP4L8Jd-rO5cAM9BVXSVGr0w/p2p/12D3KooWPcsFofqUUJGdpEuCbPgSoPyE8vLqaJN513rMkmMm1Egh/p2p-circuit";
+      await seedStore.upsertSuccess(badWebTransport, "relay.lookup");
+
+      const hints = await buildOutboundDialHints({
+        recipientPeerId: target,
+        peerListenAddrs: [badWebTransport],
+        discoverySeedStore: seedStore,
+        config: undefined,
+      });
+
+      expect(hints.some((h) => h.includes("webtransport"))).toBe(false);
+      expect(hints.some((h) => h.endsWith("/p2p-circuit"))).toBe(false);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
 });

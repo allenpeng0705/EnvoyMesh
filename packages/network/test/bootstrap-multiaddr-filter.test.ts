@@ -28,6 +28,12 @@ describe("bootstrap multiaddr filter", () => {
     expect(isUnusableBootstrapMultiaddr("/ip4/192.168.1.10/tcp/4001")).toBe(true);
   });
 
+  it("rejects WebTransport and incomplete circuit bootstrap addrs", () => {
+    const webTransport =
+      "/ip6/2001:6b0:30:1337:0:feed:babe:beef/udp/4001/quic-v1/webtransport/certhash/uEiA/p2p/12D3KooWRelay/p2p-circuit";
+    expect(isUnusableBootstrapMultiaddr(webTransport)).toBe(true);
+  });
+
   it("detects docker bridge gateway pattern", () => {
     expect(isDockerBridgeGatewayDialHint("/ip4/172.17.0.1/tcp/4001/p2p/x")).toBe(true);
     expect(isDockerBridgeGatewayDialHint("/ip4/172.31.0.1/tcp/4001/p2p/x")).toBe(true);

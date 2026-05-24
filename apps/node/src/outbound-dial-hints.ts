@@ -4,9 +4,8 @@
  * merges discovery seeds + relay circuit paths — same ingredients as outbound chat.
  */
 import {
-  isDockerBridgeGatewayDialHint,
-  isLoopbackOrUnspecifiedDialHint,
   isPublicLibp2pBootstrapMultiaddr,
+  isUsableOutboundPeerDialHint,
 } from "@envoymesh/network";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
@@ -40,19 +39,9 @@ function dedupeDialHints(addrs: string[]): string[] {
   return ordered;
 }
 
-/** Drop public libp2p bootstrap and other unusable multiaddrs from chat dial hints. */
-function isUsableChatDialHint(addr: string): boolean {
-  const t = addr.trim();
-  if (!t) {
-    return false;
-  }
-  if (isLoopbackOrUnspecifiedDialHint(t) || isDockerBridgeGatewayDialHint(t)) {
-    return false;
-  }
-  if (isPublicLibp2pBootstrapMultiaddr(t) || t.includes("bootstrap.libp2p.io")) {
-    return false;
-  }
-  return true;
+/** Drop public libp2p bootstrap, WebTransport, and incomplete circuit multiaddrs. */
+function isUsableChatDialHint(addr: string, targetPeerId: string): boolean {
+  return isUsableOutboundPeerDialHint(addr, targetPeerId);
 }
 
 /** Envoy/community relay bases for synthetic `/p2p-circuit/` dial hints — not libp2p public DHT bootstrap nodes. */
@@ -98,22 +87,22 @@ export async function buildOutboundDialHints(input: {
   config: PersistedNodeConfig | undefined;
   profileDir?: string;
 }): Promise<string[]> {
+  const recipientPeerId = input.recipientPeerId.trim();
   const raw = (input.peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
   /** Never dial the remote peer's loopback or local docker-bridge IP from our machine. */
-  const nonLoopListen = raw.filter(isUsableChatDialHint);
+  const nonLoopListen = raw.filter((a) => isUsableChatDialHint(a, recipientPeerId));
 
   const store = input.discoverySeedStore;
   if (!store) {
     return dedupeDialHints(nonLoopListen);
   }
 
-  const seeds = (await store.listSeedAddrs()).filter(isUsableChatDialHint);
+  const seeds = (await store.listSeedAddrs()).filter((a) => isUsableChatDialHint(a, recipientPeerId));
   const relayPool = dedupeDialHints([
     ...seeds.filter((s) => s.includes("/p2p-circuit/")),
     ...relayBasesForCircuitDial({ config: input.config, profileDir: input.profileDir }),
-  ]).filter(isUsableChatDialHint);
+  ]).filter((a) => isUsableOutboundPeerDialHint(a));
 
-  const recipientPeerId = input.recipientPeerId.trim();
   let out = [...nonLoopListen];
   for (const addr of seeds) {
     if (!addr.includes(recipientPeerId)) {
@@ -138,5 +127,5 @@ export async function buildOutboundDialHints(input: {
     }
   }
 
-  return dedupeDialHints(out.filter(isUsableChatDialHint));
+  return dedupeDialHints(out.filter((a) => isUsableChatDialHint(a, recipientPeerId)));
 }

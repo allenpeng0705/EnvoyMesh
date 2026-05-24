@@ -47,6 +47,7 @@ import {
   EnvoyMesh,
   filterBootstrapMultiaddrs,
   filterRelayControlTargets,
+  filterUsableOutboundPeerDialHints,
   voucherJsonBytesFromObject,
   type P2pDebugEvent,
 } from "@envoymesh/network";
@@ -320,6 +321,27 @@ function recordOwnerActivity(): void {
   lastActivityTimestamp = Date.now();
   modeController.recordOwnerActivity();
   console.log(`[activity] owner activity recorded, online=${isOwnerOnline()}, mode=${modeController.getCurrentMode()}`);
+}
+
+/** Relay-aware dial hints for outbound message/chat to a libp2p transport peer id. */
+async function dialHintsForTransportPeer(
+  transportPeerId: string,
+  extraListenAddrs: string[] = [],
+): Promise<string[]> {
+  const records = await peerDirectoryStore.listPeerRecords();
+  const rec = records.find((r) => r.peerId === transportPeerId);
+  const merged = [
+    ...(rec?.listenAddrs ?? []),
+    ...filterUsableOutboundPeerDialHints(extraListenAddrs, transportPeerId),
+  ];
+  const config = await nodeConfigStore.load();
+  return buildOutboundDialHints({
+    recipientPeerId: transportPeerId,
+    peerListenAddrs: merged,
+    discoverySeedStore,
+    config: config ?? undefined,
+    profileDir: args.profileDir,
+  });
 }
 
 // WebSocket server reference for event emission
@@ -858,6 +880,9 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         !previewPayload.refused
       ) {
         nodeService.linkOutboundSharePreviewFromInbound(envelope.messageId, previewPayload.inReplyTo);
+        console.log(
+          `[share.preview] linked outbound file send for request ${previewPayload.inReplyTo.slice(0, 12)}…`,
+        );
       }
     } catch {
       // ignore invalid preview payloads for helper linkage
@@ -912,7 +937,19 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       correlationId,
     });
     const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
-    const latencyMs = await mesh.send(remotePeerId, signedResponse);
+    let previewDialHints: string[] = [];
+    try {
+      previewDialHints = await dialHintsForTransportPeer(
+        remotePeerId,
+        remoteAddr?.trim() ? [remoteAddr.trim()] : [],
+      );
+    } catch (err) {
+      console.warn(
+        `[share.request] preview dial hints failed for ${remotePeerId.slice(0, 12)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+    const latencyMs = await mesh.send(remotePeerId, signedResponse, { dialHints: previewDialHints });
     await taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.sent",
@@ -985,12 +1022,19 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       return;
     }
     if (nodeService instanceof NodeServiceImpl) {
-      await nodeService.maybeSendShareFileForInboundAccept({
-        envelope,
-        remotePeerId,
-        taskStore,
-        vaultDir: vaultDirForNode,
-      });
+      try {
+        await nodeService.maybeSendShareFileForInboundAccept({
+          envelope,
+          remotePeerId,
+          taskStore,
+          vaultDir: vaultDirForNode,
+        });
+      } catch (err) {
+        console.error(
+          `[share.accept] outbound file transfer failed peer=${remotePeerId.slice(0, 12)}…:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     }
     console.log(`[share.accept] peer=${remotePeerId} proceeding with content share`);
     return;
@@ -1344,7 +1388,9 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       .ensurePeerFromInboundChat({
         ownerId: payload.senderOwnerId,
         peerId: remotePeerId,
-        listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
+        listenAddrs: remoteAddr?.trim()
+          ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId)
+          : [],
       })
       .catch((err) => console.warn(`[peer-directory] ensurePeerFromInboundChat failed:`, err));
     await taskStore.appendAuditEvent(

@@ -129,6 +129,7 @@ import {
   EnvoyMesh,
   DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME,
   filterBootstrapMultiaddrs,
+  filterUsableOutboundPeerDialHints,
   type EnvoyMeshOptions,
 } from "@envoymesh/network";
 import { stat } from "node:fs/promises";
@@ -418,6 +419,9 @@ class NodeServiceImpl implements NodeService {
     }
     this._pendingFileSendByPreviewMsgId.set(previewMessageId, pending);
     this._pendingPushShareByRequestMsgId.delete(inReplyToRequestMsgId);
+    console.log(
+      `[share] linked preview ${previewMessageId.slice(0, 12)}… → file send ${pending.relativePath} to ${pending.toPeerId.slice(0, 12)}…`,
+    );
     const correlationId = this._correlationByRequestMsgId.get(inReplyToRequestMsgId);
     if (correlationId) {
       this._correlationByPreviewMsgId.set(previewMessageId, correlationId);
@@ -551,6 +555,9 @@ class NodeServiceImpl implements NodeService {
       updatedAt: new Date().toISOString(),
     });
 
+    console.log(
+      `[share] data transfer start: ${pending.relativePath} → ${input.remotePeerId.slice(0, 12)}… (${dialHints.length} dial hints)`,
+    );
     await sendVaultFileViaDataTransfer({
       mesh,
       profile,
@@ -566,6 +573,9 @@ class NodeServiceImpl implements NodeService {
       },
     });
     this._pendingFileSendByPreviewMsgId.delete(previewId);
+    console.log(
+      `[share] data transfer complete: ${pending.relativePath} → ${input.remotePeerId.slice(0, 12)}…`,
+    );
   }
 
   constructor(
@@ -2757,7 +2767,9 @@ class NodeServiceImpl implements NodeService {
                 await this._peerDirectoryStore.ensurePeerFromInboundChat({
                   ownerId: payload.requesterOwnerId,
                   peerId: remotePeerId,
-                  listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
+                  listenAddrs: remoteAddr?.trim()
+                    ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId)
+                    : [],
                 });
               } catch (err) {
                 console.error(`[bond:established] failed to store peer in directory:`, err);
@@ -2768,7 +2780,9 @@ class NodeServiceImpl implements NodeService {
                 await this._peerDirectoryStore.ensurePeerFromInboundChat({
                   ownerId: payload.responderOwnerId,
                   peerId: remotePeerId,
-                  listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
+                  listenAddrs: remoteAddr?.trim()
+                    ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId)
+                    : [],
                 });
               } catch (err) {
                 console.error(`[bond:established] failed to store peer from bond.accept:`, err);
