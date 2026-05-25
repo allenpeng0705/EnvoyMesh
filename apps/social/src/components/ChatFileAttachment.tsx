@@ -1,5 +1,5 @@
 import type { ChatAttachment } from "@envoymesh/api";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNodeService } from "../hooks/useNodeService.js";
 import { useToast } from "../hooks/useToast.js";
 import {
@@ -12,11 +12,36 @@ export interface ChatFileAttachmentProps {
   attachment: ChatAttachment;
 }
 
+function isImageMime(mimeType: string): boolean {
+  return mimeType.startsWith("image/");
+}
+
 export function ChatFileAttachment({ attachment }: ChatFileAttachmentProps) {
   const nodeService = useNodeService();
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const vaultPath = attachment.vaultRelativePath?.replace(/^[\\/]+/, "");
+
+  useEffect(() => {
+    if (!vaultPath || !isImageMime(attachment.mimeType)) {
+      setPreviewUrl(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await nodeService.readLibraryItemContent({ relativePath: vaultPath });
+        if (cancelled) return;
+        setPreviewUrl(`data:${result.mimeType};base64,${result.contentBase64}`);
+      } catch {
+        if (!cancelled) setPreviewUrl(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [attachment.mimeType, nodeService, vaultPath]);
 
   const run = async (action: "open" | "reveal") => {
     if (!vaultPath) {
@@ -39,9 +64,18 @@ export function ChatFileAttachment({ attachment }: ChatFileAttachmentProps) {
 
   return (
     <div className="chat-file-attachment">
-      <div className="chat-file-attachment-icon" aria-hidden>
-        📎
-      </div>
+      {previewUrl ? (
+        <img
+          className="chat-file-attachment-preview"
+          src={previewUrl}
+          alt={attachment.filename}
+          loading="lazy"
+        />
+      ) : (
+        <div className="chat-file-attachment-icon" aria-hidden>
+          📎
+        </div>
+      )}
       <div className="chat-file-attachment-body">
         <div className="chat-file-attachment-name">{attachment.filename}</div>
         <div className="chat-file-attachment-meta">

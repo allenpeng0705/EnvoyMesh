@@ -538,6 +538,8 @@ export const ShareRequestPayloadSchema = z.object({
    * `sender`: `relativePath` is in the **sender's** vault (push offer); receiver previews without a local file.
    */
   fileOrigin: z.enum(["responder", "sender"]).default("responder"),
+  /** `chat`: deliver inline in a chat thread (direct bonds may auto-accept). Default: inbox offer. */
+  deliveryChannel: z.enum(["inbox", "chat"]).default("inbox"),
 });
 
 export type ShareRequestPayload = z.infer<typeof ShareRequestPayloadSchema>;
@@ -1724,6 +1726,7 @@ export interface CreateShareRequestPayloadInput {
   requestedSensitivity?: Sensitivity;
   correlationId?: string;
   fileOrigin?: "responder" | "sender";
+  deliveryChannel?: "inbox" | "chat";
 }
 
 export function createShareRequestPayload(input: CreateShareRequestPayloadInput): ShareRequestPayload {
@@ -1734,6 +1737,7 @@ export function createShareRequestPayload(input: CreateShareRequestPayloadInput)
     requestedSensitivity: input.requestedSensitivity ?? "public",
     correlationId: input.correlationId,
     fileOrigin: input.fileOrigin ?? "responder",
+    deliveryChannel: input.deliveryChannel ?? "inbox",
   });
 }
 

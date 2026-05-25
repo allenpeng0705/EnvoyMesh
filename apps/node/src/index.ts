@@ -1096,6 +1096,14 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           sensitivity: share.responsePayload.sensitivity as "public" | "friends" | "private",
           relativePath: shareRequestPayload.relativePath ?? "",
         });
+        if (shareRequestPayload.deliveryChannel === "chat" && nodeService instanceof NodeServiceImpl) {
+          void nodeService.maybeAutoAcceptChatShare({
+            shareId: signedResponse.messageId,
+            senderOwnerId,
+            senderRelativePath: shareRequestPayload.relativePath ?? "",
+            requiresApproval: share.responsePayload.requiresApproval,
+          });
+        }
       }
     }
     return;

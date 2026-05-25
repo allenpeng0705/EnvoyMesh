@@ -50,12 +50,18 @@ import type {
   ImportToLibraryResult,
   RagIndexStatus,
   TransferStatus,
+  SendChatAttachmentParams,
+  SendChatAttachmentResult,
+  ReadLibraryItemContentParams,
+  ReadLibraryItemContentResult,
 } from "@envoymesh/api";
 import type { DocumentAgentTurnResult } from "@envoymesh/api";
 import {
   DEFAULT_RAG_INDEX_STATUS,
   runDocumentAgentTurn as runDocumentAgentTurnLoop,
   normalizeDocumentAutonomyPolicy,
+  MAX_CHAT_ATTACHMENT_BYTES,
+  MAX_LIBRARY_ITEM_PREVIEW_BYTES,
 } from "@envoymesh/api";
 
 import { randomUUID } from "node:crypto";
@@ -143,7 +149,7 @@ import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
 import { createTaskDispatcher } from "./task-dispatcher.js";
 import { buildVaultIndex, assertPathInsideVault } from "@envoymesh/vault";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
   ENVOY_MESSAGE_PROTOCOL,
@@ -294,12 +300,12 @@ class NodeServiceImpl implements NodeService {
   /** Outbound push: our `share.request` message id → until we receive `share.preview`. */
   private readonly _pendingPushShareByRequestMsgId = new Map<
     string,
-    { relativePath: string; toPeerId: string }
+    { relativePath: string; toPeerId: string; deliveryChannel?: "inbox" | "chat" }
   >();
   /** After inbound `share.preview`: preview message id → send file to peer (we are holder). */
   private readonly _pendingFileSendByPreviewMsgId = new Map<
     string,
-    { relativePath: string; toPeerId: string }
+    { relativePath: string; toPeerId: string; deliveryChannel?: "inbox" | "chat" }
   >();
   /** `share.accept` arrived before inbound `share.preview` linked the pending send. */
   private readonly _deferredShareAcceptByPreviewId = new Map<
@@ -469,7 +475,11 @@ class NodeServiceImpl implements NodeService {
       );
       return;
     }
-    this._pendingFileSendByPreviewMsgId.set(previewMessageId, pending);
+    this._pendingFileSendByPreviewMsgId.set(previewMessageId, {
+      relativePath: pending.relativePath,
+      toPeerId: pending.toPeerId,
+      deliveryChannel: pending.deliveryChannel,
+    });
     this._pendingPushShareByRequestMsgId.delete(inReplyToRequestMsgId);
     console.log(
       `[share] linked preview ${previewMessageId.slice(0, 12)}… → file send ${pending.relativePath} to ${pending.toPeerId.slice(0, 12)}…`,
@@ -657,7 +667,7 @@ class NodeServiceImpl implements NodeService {
     console.log(
       `[share] data transfer complete: ${pending.relativePath} → ${input.remotePeerId.slice(0, 12)}…`,
     );
-    if (rec?.ownerId) {
+    if (rec?.ownerId && pending.deliveryChannel !== "chat") {
       let byteLength = 0;
       try {
         const st = await stat(join(input.vaultDir, pending.relativePath));
@@ -1492,6 +1502,8 @@ class NodeServiceImpl implements NodeService {
     vaultRelativePath: string;
     byteLength: number;
     sensitivity?: ChatAttachment["sensitivity"];
+    mimeType?: string;
+    textOverride?: string;
   }): Promise<void> {
     const mesh = this._reachableMesh();
     const profile = this._profile;
@@ -1517,12 +1529,14 @@ class NodeServiceImpl implements NodeService {
     const attachment: ChatAttachment = {
       id: randomUUID(),
       filename,
-      mimeType: mimeTypeForFilename(filename),
+      mimeType: input.mimeType ?? mimeTypeForFilename(filename),
       sizeBytes: input.byteLength,
       sensitivity: input.sensitivity ?? "friends",
       vaultRelativePath: norm,
     };
-    const text = input.outgoing ? `Shared file ${filename}` : `Received file ${filename}`;
+    const text =
+      input.textOverride ??
+      (input.outgoing ? `Shared file ${filename}` : `Received file ${filename}`);
 
     const [selfHuman, peerTrust] = await Promise.all([
       this._humanProfileStore.loadHumanProfile(),
@@ -1753,6 +1767,69 @@ class NodeServiceImpl implements NodeService {
     // Learn owner writing style from sent messages (Phase 9F)
     this._styleAdapter?.learnFromMessage(true, wireText);
     return { messageId: envelope.messageId };
+  }
+
+  async sendChatAttachment(params: SendChatAttachmentParams): Promise<SendChatAttachmentResult> {
+    this._assertOnline();
+    this.recordOwnerActivity();
+    const bytes = Buffer.from(params.contentBase64, "base64");
+    if (bytes.byteLength === 0) {
+      throw new Error("Empty file");
+    }
+    if (bytes.byteLength > MAX_CHAT_ATTACHMENT_BYTES) {
+      throw new Error(`File exceeds ${MAX_CHAT_ATTACHMENT_BYTES} bytes`);
+    }
+
+    const attachmentId = randomUUID();
+    const filename = sanitizeChatFilename(params.filename);
+    const vaultRelativePath = `chat/out/${attachmentId}/${filename}`;
+    const mimeType = params.mimeType?.trim() || mimeTypeForFilename(filename);
+    const sensitivity = params.sensitivity ?? "friends";
+
+    await this.importToLibrary({
+      relativePath: vaultRelativePath,
+      contentBase64: params.contentBase64,
+      mimeType,
+    });
+
+    const { shareRequestMessageId } = await this._shareFileInternal(params.targetOwnerId, {
+      path: vaultRelativePath,
+      sensitivity,
+      deliveryChannel: "chat",
+    });
+
+    void this._recordFileShareInChat({
+      peerOwnerId: params.targetOwnerId,
+      outgoing: true,
+      vaultRelativePath,
+      byteLength: bytes.byteLength,
+      sensitivity,
+      mimeType,
+      textOverride: params.caption?.trim() || `Sent ${filename}`,
+    });
+
+    return { attachmentId, vaultRelativePath, shareRequestMessageId };
+  }
+
+  async readLibraryItemContent(
+    params: ReadLibraryItemContentParams,
+  ): Promise<ReadLibraryItemContentResult> {
+    const maxBytes = Math.min(
+      params.maxBytes ?? MAX_LIBRARY_ITEM_PREVIEW_BYTES,
+      MAX_LIBRARY_ITEM_PREVIEW_BYTES,
+    );
+    const { absolutePath, vaultRelativePath } = await this.resolveLibraryItemPath(params.relativePath);
+    const st = await stat(absolutePath);
+    if (st.size > maxBytes) {
+      throw new Error(`File too large for preview (${st.size} bytes, max ${maxBytes})`);
+    }
+    const content = await readFile(absolutePath);
+    return {
+      contentBase64: content.toString("base64"),
+      mimeType: mimeTypeForFilename(basename(vaultRelativePath)),
+      sizeBytes: st.size,
+      truncated: false,
+    };
   }
 
   async listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]> {
@@ -2364,8 +2441,23 @@ class NodeServiceImpl implements NodeService {
 
   async shareFile(
     targetOwnerId: string,
-    file: { path: string; sensitivity: "public" | "friends" | "private" },
+    file: {
+      path: string;
+      sensitivity: "public" | "friends" | "private";
+      deliveryChannel?: "inbox" | "chat";
+    },
   ): Promise<void> {
+    await this._shareFileInternal(targetOwnerId, file);
+  }
+
+  private async _shareFileInternal(
+    targetOwnerId: string,
+    file: {
+      path: string;
+      sensitivity: "public" | "friends" | "private";
+      deliveryChannel?: "inbox" | "chat";
+    },
+  ): Promise<{ shareRequestMessageId: string }> {
     this._assertOnline();
     this.recordOwnerActivity();
     const mesh = this._requireMesh();
@@ -2442,6 +2534,7 @@ class NodeServiceImpl implements NodeService {
         relativePath: norm,
         requestedSensitivity: file.sensitivity,
         fileOrigin: "sender",
+        deliveryChannel: file.deliveryChannel ?? "inbox",
       }),
       correlationId,
     });
@@ -2450,6 +2543,7 @@ class NodeServiceImpl implements NodeService {
     this._pendingPushShareByRequestMsgId.set(envelope.messageId, {
       relativePath: norm,
       toPeerId: transportPeerId,
+      deliveryChannel: file.deliveryChannel ?? "inbox",
     });
     this._correlationByRequestMsgId.set(envelope.messageId, correlationId);
     this._upsertTransferStatus({
@@ -2460,6 +2554,32 @@ class NodeServiceImpl implements NodeService {
       vaultRelativePath: norm,
       updatedAt: new Date().toISOString(),
     });
+    return { shareRequestMessageId: envelope.messageId };
+  }
+
+  /** Auto-accept chat-channel file shares from direct bonds (skip Inbox). */
+  async maybeAutoAcceptChatShare(input: {
+    shareId: string;
+    senderOwnerId?: string;
+    senderRelativePath: string;
+    requiresApproval: boolean;
+  }): Promise<void> {
+    if (input.requiresApproval || !input.senderOwnerId?.trim()) {
+      return;
+    }
+    const trust = await this._trustStore.getTrustRecord(input.senderOwnerId);
+    if (trust?.level !== "direct") {
+      return;
+    }
+    const savePath = chatInboundVaultPath(input.senderOwnerId, input.senderRelativePath);
+    try {
+      await this.acceptShare(input.shareId, savePath);
+    } catch (err) {
+      console.warn(
+        `[chat-attachment] auto-accept failed for ${input.shareId.slice(0, 12)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 
   async acceptShare(shareId: string, savePath: string): Promise<void> {
@@ -4373,6 +4493,8 @@ function mimeTypeForFilename(filename: string): string {
       return "image/gif";
     case "webp":
       return "image/webp";
+    case "svg":
+      return "image/svg+xml";
     case "txt":
       return "text/plain";
     case "md":
@@ -4386,6 +4508,18 @@ function mimeTypeForFilename(filename: string): string {
     default:
       return "application/octet-stream";
   }
+}
+
+function sanitizeChatFilename(name: string): string {
+  const base = basename(name.trim()) || "file";
+  return base.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 200);
+}
+
+function chatInboundVaultPath(senderOwnerId: string, senderRelativePath: string): string {
+  const safeOwner =
+    senderOwnerId.replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "peer";
+  const filename = sanitizeChatFilename(basename(senderRelativePath));
+  return `chat/in/${safeOwner}/${filename}`;
 }
 
 /**

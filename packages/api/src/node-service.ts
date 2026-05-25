@@ -327,6 +327,39 @@ export interface ImportToLibraryResult {
   sizeBytes: number;
 }
 
+/** Max raw bytes for a chat attachment send (25 MiB). */
+export const MAX_CHAT_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+/** Max bytes returned by {@link NodeService.readLibraryItemContent} for inline previews (5 MiB). */
+export const MAX_LIBRARY_ITEM_PREVIEW_BYTES = 5 * 1024 * 1024;
+
+export interface SendChatAttachmentParams {
+  targetOwnerId: string;
+  filename: string;
+  contentBase64: string;
+  mimeType?: string;
+  caption?: string;
+  sensitivity?: ChatAttachment["sensitivity"];
+}
+
+export interface SendChatAttachmentResult {
+  attachmentId: string;
+  vaultRelativePath: string;
+  shareRequestMessageId: string;
+}
+
+export interface ReadLibraryItemContentParams {
+  relativePath: string;
+  maxBytes?: number;
+}
+
+export interface ReadLibraryItemContentResult {
+  contentBase64: string;
+  mimeType: string;
+  sizeBytes: number;
+  truncated: boolean;
+}
+
 // ----- Published library discovery (FS-D) -----
 
 export interface DiscoverPublishedLibraryParams {
@@ -606,6 +639,16 @@ export interface NodeService {
   sendChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
 
   /**
+   * Send an image or file directly in a chat thread (P2P transfer, auto-accepted for direct bonds).
+   */
+  sendChatAttachment(params: SendChatAttachmentParams): Promise<SendChatAttachmentResult>;
+
+  /**
+   * Read vault file bytes for inline previews (images in chat). Size-capped.
+   */
+  readLibraryItemContent(params: ReadLibraryItemContentParams): Promise<ReadLibraryItemContentResult>;
+
+  /**
    * Forward a pre-signed EnvoyEnvelope from a remote client (e.g. mobile app)
    * into the P2P mesh. The envelope must already be signed by the sender's key.
    * The node validates the envelope schema but does NOT re-sign or inspect payloads.
@@ -697,7 +740,11 @@ export interface NodeService {
    */
   shareFile(
     targetOwnerId: string,
-    file: { path: string; sensitivity: ChatAttachment["sensitivity"] },
+    file: {
+      path: string;
+      sensitivity: ChatAttachment["sensitivity"];
+      deliveryChannel?: "inbox" | "chat";
+    },
   ): Promise<void>;
 
   /**

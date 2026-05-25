@@ -74,40 +74,40 @@ export function ChatMessageBubble({
           ) : null}
         </div>
       ) : null}
-      <div className="message-bubble-body">
-        {(trimmedCopyText || onDelete) ? (
-          <div className="message-bubble-actions">
-            {trimmedCopyText ? (
-              <button
-                type="button"
-                className={`message-copy-btn${copied ? " is-copied" : ""}`}
-                aria-label={copied ? "Copied" : "Copy message"}
-                title={copied ? "Copied" : "Copy message"}
-                onClick={() => void handleCopy()}
-              >
-                <CopyIcon size={14} />
-              </button>
-            ) : null}
-            {onDelete ? (
-              <button
-                type="button"
-                className="message-delete-btn"
-                aria-label="Delete message"
-                title="Delete message"
-                onClick={onDelete}
-              >
-                <RemoveIcon size={14} />
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-        {children}
-      </div>
-      {showDelivery ? (
+      <div className="message-bubble-body">{children}</div>
+      {showDelivery || trimmedCopyText || onDelete ? (
         <div className="message-bubble-footer">
-          <span className={`message-delivery-status status-${deliveryReceipt}`}>
-            {DELIVERY_LABEL[deliveryReceipt]}
-          </span>
+          {showDelivery ? (
+            <span className={`message-delivery-status status-${deliveryReceipt}`}>
+              {DELIVERY_LABEL[deliveryReceipt!]}
+            </span>
+          ) : null}
+          {trimmedCopyText || onDelete ? (
+            <div className="message-bubble-actions">
+              {trimmedCopyText ? (
+                <button
+                  type="button"
+                  className={`message-copy-btn${copied ? " is-copied" : ""}`}
+                  aria-label={copied ? "Copied" : "Copy message"}
+                  title={copied ? "Copied" : "Copy message"}
+                  onClick={() => void handleCopy()}
+                >
+                  <CopyIcon size={14} />
+                </button>
+              ) : null}
+              {onDelete ? (
+                <button
+                  type="button"
+                  className="message-delete-btn"
+                  aria-label="Delete message"
+                  title="Delete message"
+                  onClick={onDelete}
+                >
+                  <RemoveIcon size={14} />
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

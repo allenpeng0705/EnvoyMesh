@@ -25,6 +25,10 @@ import type {
   RelayConfig,
   SearchQuery,
   SendChatResult,
+  SendChatAttachmentParams,
+  SendChatAttachmentResult,
+  ReadLibraryItemContentParams,
+  ReadLibraryItemContentResult,
   SendHelloOptions,
   ShareOffer,
   SocialIntroProposal,
@@ -92,6 +96,8 @@ export interface NodeServiceClient {
 
   // Messaging
   sendChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
+  sendChatAttachment(params: SendChatAttachmentParams): Promise<SendChatAttachmentResult>;
+  readLibraryItemContent(params: ReadLibraryItemContentParams): Promise<ReadLibraryItemContentResult>;
   listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
   deleteChatMessage(peerOwnerId: string, messageId: string): Promise<{ ok: boolean }>;
   clearChatHistory(peerOwnerId: string): Promise<{ deletedCount: number }>;
@@ -140,7 +146,11 @@ export interface NodeServiceClient {
   listPendingShareOffers(): Promise<ShareOffer[]>;
   shareFile(
     targetOwnerId: string,
-    file: { path: string; sensitivity: "public" | "friends" | "private" },
+    file: {
+      path: string;
+      sensitivity: "public" | "friends" | "private";
+      deliveryChannel?: "inbox" | "chat";
+    },
   ): Promise<void>;
   acceptShare(shareId: string, savePath: string): Promise<void>;
   declineShare(shareId: string): Promise<void>;
@@ -283,6 +293,16 @@ function createWsNodeServiceClient(
     async getBonds() { return wsClient.rpc("getBonds"); },
     async sendChat(targetOwnerId: string, text: string) {
       return wsClient.rpc("sendChat", { targetOwnerId, text }, { timeoutMs: 120_000 });
+    },
+    async sendChatAttachment(params: SendChatAttachmentParams) {
+      return wsClient.rpc("sendChatAttachment", params as unknown as Record<string, unknown>, {
+        timeoutMs: 300_000,
+      }) as Promise<SendChatAttachmentResult>;
+    },
+    async readLibraryItemContent(params: ReadLibraryItemContentParams) {
+      return wsClient.rpc("readLibraryItemContent", params as unknown as Record<string, unknown>) as Promise<
+        ReadLibraryItemContentResult
+      >;
     },
     async listChatHistory(peerOwnerId: string, limit?: number) { return wsClient.rpc("listChatHistory", { peerOwnerId, limit }) as Promise<ChatMessage[]>; },
     async deleteChatMessage(peerOwnerId: string, messageId: string) { return wsClient.rpc("deleteChatMessage", { peerOwnerId, messageId }) as Promise<{ ok: boolean }>; },

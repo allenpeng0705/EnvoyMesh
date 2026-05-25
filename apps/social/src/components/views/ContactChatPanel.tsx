@@ -4,7 +4,11 @@ import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
 import { useChatDrafts } from "../../hooks/useChatDrafts.js";
 import { usePeerReachability, peerReachabilityLabel } from "../../hooks/usePeerReachability.js";
 import type { ChatMessage, ContactAiPreferences } from "@envoymesh/api";
-import { contactAiAccessLevelForAssistantMode, stripModelThinking } from "@envoymesh/api";
+import {
+  contactAiAccessLevelForAssistantMode,
+  stripModelThinking,
+  MAX_CHAT_ATTACHMENT_BYTES,
+} from "@envoymesh/api";
 import type { AssistantMode } from "../../lib/storage.js";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
@@ -17,7 +21,7 @@ import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatFileAttachment } from "../ChatFileAttachment.js";
 import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
-import { EditIcon, ChatIcon, BridgeIcon, P2PIcon, RemoveIcon } from "../../icons.js";
+import { EditIcon, ChatIcon, BridgeIcon, P2PIcon, AttachIcon, RemoveIcon } from "../../icons.js";
 import { useToast } from "../../hooks/useToast.js";
 
 interface ContactChatPanelProps {
@@ -75,7 +79,9 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
 
   const [chatInput, setChatInput] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
+  const [attachBusy, setAttachBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastChatSendRef = useRef<{ at: number; contact: string; text: string } | null>(null);
 
   const nodeMeshOnline = connectionStatus?.online === true;
@@ -240,6 +246,48 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     if (!latestDraft) return;
     setChatInput(stripModelThinking(latestDraft.text));
     void dismissDraft(latestDraft.draftId);
+  };
+
+  const fileToBase64 = async (file: File): Promise<string> => {
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+    return btoa(binary);
+  };
+
+  const handleAttachFile = async (file: File) => {
+    if (!nodeMeshOnline) {
+      setSendError("Your node is offline — start the node before sending.");
+      setTimeout(() => setSendError(null), 5000);
+      return;
+    }
+    if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+      showToast(`File is too large (max ${Math.round(MAX_CHAT_ATTACHMENT_BYTES / (1024 * 1024))} MB)`, "error");
+      return;
+    }
+    setAttachBusy(true);
+    setSendError(null);
+    try {
+      const contentBase64 = await fileToBase64(file);
+      const caption = chatInput.trim() || undefined;
+      await nodeService.sendChatAttachment({
+        targetOwnerId: selectedContact,
+        filename: file.name,
+        contentBase64,
+        mimeType: file.type || undefined,
+        caption,
+      });
+      if (caption) setChatInput("");
+      showToast(`Sending ${file.name}…`, "success");
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Failed to send file";
+      setSendError(msg);
+      showToast(msg, "error");
+    } finally {
+      setAttachBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const handleDeleteMessage = async (messageId: string) => {
@@ -446,9 +494,31 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         )}
         <button
           type="button"
+          className="secondary chat-attach-file-btn"
+          title="Send image or file"
+          aria-label="Send image or file"
+          disabled={!nodeMeshOnline || attachBusy}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <AttachIcon size={18} />
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="chat-file-input-hidden"
+          accept="image/*,.pdf,.txt,.md,.json,.csv,.zip"
+          aria-hidden
+          tabIndex={-1}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void handleAttachFile(file);
+          }}
+        />
+        <button
+          type="button"
           className="secondary chat-share-file-btn"
-          title="Share a vault file"
-          aria-label="Share a vault file"
+          title="Share a vault library file"
+          aria-label="Share a vault library file"
           onClick={() => setShareOpen(true)}
         >
           <P2PIcon size={18} />

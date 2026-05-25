@@ -88,6 +88,8 @@ export type RpcMethods =
   | "declineSocialIntroProposal"
   // Messaging
   | "sendChat"
+  | "sendChatAttachment"
+  | "readLibraryItemContent"
   | "listChatHistory"
   | "deleteChatMessage"
   | "clearChatHistory"

@@ -14,3 +14,8 @@ export * from "./transfer-status.js";
 export * from "./ws-protocol.js";
 /** Explicit export: Vite pre-bundle can skip `bondTrustRank` when re-exported only via star from `node-service`. */
 export { bondTrustRank } from "./bond-trust-rank.js";
+/** Explicit export: Vite/Rollup may not trace star re-exports from `node-service`. */
+export {
+  MAX_CHAT_ATTACHMENT_BYTES,
+  MAX_LIBRARY_ITEM_PREVIEW_BYTES,
+} from "./node-service.js";

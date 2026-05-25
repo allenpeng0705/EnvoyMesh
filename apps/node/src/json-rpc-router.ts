@@ -57,6 +57,20 @@ export async function routeRpcMethod(
       return ns.declineSocialIntroProposal(params.messageId as string);
     case "sendChat":
       return ns.sendChat(params.targetOwnerId as string, params.text as string);
+    case "sendChatAttachment":
+      return ns.sendChatAttachment({
+        targetOwnerId: params.targetOwnerId as string,
+        filename: params.filename as string,
+        contentBase64: params.contentBase64 as string,
+        mimeType: params.mimeType as string | undefined,
+        caption: params.caption as string | undefined,
+        sensitivity: params.sensitivity as "public" | "friends" | "private" | undefined,
+      });
+    case "readLibraryItemContent":
+      return ns.readLibraryItemContent({
+        relativePath: params.relativePath as string,
+        maxBytes: params.maxBytes as number | undefined,
+      });
     case "listChatHistory":
       return ns.listChatHistory(params.peerOwnerId as string, params.limit as number | undefined);
     case "deleteChatMessage":

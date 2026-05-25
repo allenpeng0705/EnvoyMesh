@@ -138,6 +138,14 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.sendChat(targetOwnerId, text);
   }
 
+  async sendChatAttachment(params: Parameters<NodeService["sendChatAttachment"]>[0]) {
+    return this._ns.sendChatAttachment(params);
+  }
+
+  async readLibraryItemContent(params: Parameters<NodeService["readLibraryItemContent"]>[0]) {
+    return this._ns.readLibraryItemContent(params);
+  }
+
   async listChatHistory(peerOwnerId: string, limit?: number) {
     return this._ns.listChatHistory(peerOwnerId, limit);
   }

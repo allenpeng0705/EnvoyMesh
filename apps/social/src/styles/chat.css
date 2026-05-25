@@ -239,7 +239,6 @@
 
 .message-delivery-status {
   font-size: 0.65rem;
-  margin-left: var(--space-1);
   opacity: 0.85;
 }
 
@@ -263,7 +262,9 @@
 
 .message-bubble-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--space-1);
   margin-top: var(--space-1);
   padding-right: var(--space-1);
 }
@@ -435,26 +436,23 @@
 }
 
 .message-bubble-actions {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 0.125rem;
+  max-width: 0;
   opacity: 0;
-  transition: opacity var(--transition-fast);
+  overflow: hidden;
+  pointer-events: none;
+  transition:
+    max-width var(--transition-fast),
+    opacity var(--transition-fast);
 }
 
 .message-bubble:hover .message-bubble-actions,
 .message-bubble:focus-within .message-bubble-actions {
+  max-width: 4rem;
   opacity: 1;
-}
-
-@media (hover: none) {
-  .message-bubble-actions {
-    opacity: 0.85;
-  }
+  pointer-events: auto;
 }
 
 .message-copy-btn,
@@ -462,15 +460,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 1.5rem;
+  height: 1.5rem;
   padding: 0;
   border: none;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, currentColor 10%, transparent);
   color: inherit;
   cursor: pointer;
-  transition: background var(--transition-fast), opacity var(--transition-fast);
+  transition: background var(--transition-fast);
 }
 
 .message-copy-btn:hover,
@@ -481,10 +479,6 @@
 
 .message-delete-btn:hover {
   color: var(--color-danger, #ef4444);
-}
-
-.message-bubble-body:has(.message-bubble-actions) {
-  padding-right: 3.5rem;
 }
 
 .message-bubble.outgoing .message-bubble-body ::selection,
@@ -498,10 +492,6 @@
 .message-bubble.ai-incoming .message-bubble-body ::selection {
   background: var(--color-primary-subtle);
   color: var(--color-text);
-}
-
-.message-bubble-body:has(.message-copy-btn) {
-  padding-right: 1.75rem;
 }
 
 .chat-header-clear-btn {
@@ -1040,4 +1030,22 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+.chat-file-attachment-preview {
+  flex: 0 0 100%;
+  max-width: 100%;
+  max-height: 16rem;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.chat-file-input-hidden {
+  display: none;
+}
+
+.chat-attach-file-btn,
+.chat-share-file-btn {
+  flex-shrink: 0;
 }

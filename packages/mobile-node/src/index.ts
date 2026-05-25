@@ -1213,6 +1213,68 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return { messageId: msgId };
   }
 
+  async sendChatAttachment(
+    params: import("@envoymesh/api").SendChatAttachmentParams,
+  ): Promise<import("@envoymesh/api").SendChatAttachmentResult> {
+    const { MAX_CHAT_ATTACHMENT_BYTES } = await import("@envoymesh/api");
+    const binary = atob(params.contentBase64);
+    if (binary.length === 0) {
+      throw new Error("Empty file");
+    }
+    if (binary.length > MAX_CHAT_ATTACHMENT_BYTES) {
+      throw new Error(`File exceeds ${MAX_CHAT_ATTACHMENT_BYTES} bytes`);
+    }
+    const attachmentId = _randomUUID();
+    const filename = params.filename.replace(/^[\\/]+/, "").replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 200) || "file";
+    const vaultRelativePath = `chat/out/${attachmentId}/${filename}`;
+    await this.importToLibrary({
+      relativePath: vaultRelativePath,
+      contentBase64: params.contentBase64,
+      mimeType: params.mimeType,
+    });
+    const { shareRequestMessageId } = await this._shareFileInternal(params.targetOwnerId, {
+      path: vaultRelativePath,
+      sensitivity: params.sensitivity ?? "friends",
+      deliveryChannel: "chat",
+    });
+    return { attachmentId, vaultRelativePath, shareRequestMessageId };
+  }
+
+  async readLibraryItemContent(
+    params: import("@envoymesh/api").ReadLibraryItemContentParams,
+  ): Promise<import("@envoymesh/api").ReadLibraryItemContentResult> {
+    const { MAX_LIBRARY_ITEM_PREVIEW_BYTES } = await import("@envoymesh/api");
+    const maxBytes = Math.min(params.maxBytes ?? MAX_LIBRARY_ITEM_PREVIEW_BYTES, MAX_LIBRARY_ITEM_PREVIEW_BYTES);
+    const norm = params.relativePath.trim().replace(/^[\\/]+/, "");
+    this._validateRelativeVaultPathForShare(norm);
+    const vaultPath = norm.startsWith("/") ? norm : `/${norm}`;
+    const entry = await this._vault.readFile(vaultPath);
+    if (entry.sizeBytes > maxBytes) {
+      throw new Error(`File too large for preview (${entry.sizeBytes} bytes, max ${maxBytes})`);
+    }
+    const bytes = entry.content;
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
+    const ext = norm.includes(".") ? norm.slice(norm.lastIndexOf(".") + 1).toLowerCase() : "";
+    const mimeType =
+      entry.mimeType ??
+      (ext === "png"
+        ? "image/png"
+        : ext === "jpg" || ext === "jpeg"
+          ? "image/jpeg"
+          : ext === "gif"
+            ? "image/gif"
+            : ext === "webp"
+              ? "image/webp"
+              : "application/octet-stream");
+    return {
+      contentBase64: btoa(binary),
+      mimeType,
+      sizeBytes: entry.sizeBytes,
+      truncated: false,
+    };
+  }
+
   /**
    * Forward only after schema + Ed25519 checks. Caller remains responsible for
    * policy (trust tier) — relay or peer may still drop.
@@ -1742,8 +1804,23 @@ You are the owner's personal AI assistant on EnvoyMesh.
 
   async shareFile(
     targetOwnerId: string,
-    file: { path: string; sensitivity: "public" | "friends" | "private" },
+    file: {
+      path: string;
+      sensitivity: "public" | "friends" | "private";
+      deliveryChannel?: "inbox" | "chat";
+    },
   ): Promise<void> {
+    await this._shareFileInternal(targetOwnerId, file);
+  }
+
+  private async _shareFileInternal(
+    targetOwnerId: string,
+    file: {
+      path: string;
+      sensitivity: "public" | "friends" | "private";
+      deliveryChannel?: "inbox" | "chat";
+    },
+  ): Promise<{ shareRequestMessageId: string }> {
     this._assertNodeRunning();
     if (!this._state?.device || !this._state?.owner) {
       throw new Error("Node not initialized — call initNode() first");
@@ -1770,6 +1847,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
         relativePath: norm,
         requestedSensitivity: file.sensitivity,
         fileOrigin: "sender",
+        deliveryChannel: file.deliveryChannel ?? "inbox",
       }),
     });
     const signed = signUnsignedEnvelope(unsigned, this._state.device.privateKeyPem);
@@ -1782,7 +1860,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
           relativePath: norm,
           toPeerId: transportPeerId,
         });
-        return;
+        return { shareRequestMessageId: signed.messageId };
       } catch (err) {
         console.warn(
           "[mobile-node] mesh shareFile failed, falling back to relay:",
@@ -1795,6 +1873,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
       relativePath: norm,
       toPeerId: transportPeerId,
     });
+    return { shareRequestMessageId: signed.messageId };
   }
 
   async acceptShare(shareId: string, savePath: string): Promise<void> {
@@ -3004,6 +3083,21 @@ You are the owner's personal AI assistant on EnvoyMesh.
         sensitivity: effectiveSensitivity as "public" | "friends" | "private",
         relativePath: rel,
       });
+      if (payload.deliveryChannel === "chat" && bondLevel === "direct") {
+        const senderOwnerId = await this._ownerIdForSender(senderPeerId);
+        if (senderOwnerId) {
+          const safeOwner =
+            senderOwnerId.replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "peer";
+          const filename = rel.split(/[/\\]/).pop()?.replace(/[^a-zA-Z0-9._-]+/g, "_") || "file";
+          const savePath = `chat/in/${safeOwner}/${filename}`;
+          void this.acceptShare(signed.messageId, savePath).catch((err) => {
+            console.warn(
+              "[mobile-node] chat attachment auto-accept failed:",
+              err instanceof Error ? err.message : err,
+            );
+          });
+        }
+      }
     }
   }
 
