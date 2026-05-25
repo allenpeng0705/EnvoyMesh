@@ -1,5 +1,8 @@
-import { HierarchicalNSW } from "hnswlib-node";
+import hnswlibNode from "hnswlib-node";
 import type { VectorRecord, VectorSearchHit } from "./vector-store.js";
+
+const { HierarchicalNSW } = hnswlibNode;
+type HierarchicalNSWIndex = InstanceType<typeof HierarchicalNSW>;
 
 export interface CollectionAnnIndex {
   search(queryVector: readonly number[], limit: number): Array<{ label: number; score: number }>;
@@ -9,9 +12,9 @@ export interface CollectionAnnIndex {
 }
 
 export function createCollectionAnnIndex(dimension: number): CollectionAnnIndex {
-  let index: HierarchicalNSW | null = null;
+  let index: HierarchicalNSWIndex | null = null;
 
-  function ensureFresh(maxElements: number): HierarchicalNSW {
+  function ensureFresh(maxElements: number): HierarchicalNSWIndex {
     index = new HierarchicalNSW("cosine", dimension);
     index.initIndex(Math.max(maxElements, 16), 16, 200, 100, true);
     index.setEf(64);
