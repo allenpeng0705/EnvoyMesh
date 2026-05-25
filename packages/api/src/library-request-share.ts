@@ -3,6 +3,7 @@ import type {
   DiscoverPublishedLibraryParams,
   DiscoverPublishedLibraryPeerResult,
   PublishedLibraryFileHit,
+  SendChatResult,
 } from "./node-service.js";
 import { resolveBondTarget } from "./bond-target.js";
 
@@ -17,7 +18,7 @@ export interface LibraryRequestShareInput {
 export interface LibraryRequestShareDeps {
   getBonds: () => Promise<BondRecord[]>;
   discoverPublishedLibrary: (params?: DiscoverPublishedLibraryParams) => Promise<DiscoverPublishedLibraryPeerResult[]>;
-  sendChat: (targetOwnerId: string, text: string) => Promise<void>;
+  sendChat: (targetOwnerId: string, text: string) => Promise<SendChatResult | void>;
 }
 
 export interface LibraryRequestShareResult {

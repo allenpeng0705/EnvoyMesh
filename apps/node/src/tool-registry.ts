@@ -933,7 +933,7 @@ export interface MeshToolContext {
     summary?: string;
   }) => Promise<unknown>;
   getBonds?: () => Promise<BondRecord[]>;
-  sendChat?: (targetOwnerId: string, text: string) => Promise<void>;
+  sendChat?: (targetOwnerId: string, text: string) => Promise<import("@envoymesh/api").SendChatResult | void>;
   listActiveTransfers?: () => Promise<unknown>;
   getTransferStatus?: (correlationId: string) => Promise<unknown>;
   listPendingShareOffers?: () => Promise<unknown>;

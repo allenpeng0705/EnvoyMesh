@@ -85,6 +85,8 @@ export function getEnvoyContactKeepAlivePeerTagName(): string {
  * Reusing them for Envoy app protocols is wrong — we only reuse **unlimited** connections and otherwise dial fresh.
  */
 const NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS = 15_000;
+/** Per-hint dial cap when iterating multiaddrs (fail fast; libp2p default dialTimeout is 15s). */
+const HINT_DIAL_TIMEOUT_MS = 6_000;
 
 function promiseWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -883,6 +885,27 @@ export class EnvoyMesh {
     return this.sendEnvelopeOnProtocol(target, envelope, ENVOY_CHAT_PROTOCOL, sendOptions);
   }
 
+  /** Close all libp2p connections to a peer (used before redial after a stale path). */
+  async closeConnectionsToPeer(peerIdStr: string): Promise<number> {
+    const node = this.requireNode();
+    let closed = 0;
+    try {
+      const pid = peerIdFromString(peerIdStr);
+      const conns = node.getConnections(pid);
+      for (const conn of conns) {
+        try {
+          await conn.close();
+          closed += 1;
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch {
+      /* ignore invalid peer id */
+    }
+    return closed;
+  }
+
   /**
    * Best-effort dial to establish or reuse a libp2p connection before chat/file sends.
    * Opens and closes one stream on `protocol` (default chat) using the same dial-hint path as {@link sendChat}.
@@ -1000,7 +1023,11 @@ export class EnvoyMesh {
 
     const dialOnce = async (addr: ReturnType<typeof multiaddr> | string): Promise<{ stream: any; remotePeerId?: string }> => {
       try {
-        const stream = await node.dialProtocol(addr as any, protocol);
+        const stream = await promiseWithTimeout(
+          node.dialProtocol(addr as any, protocol),
+          HINT_DIAL_TIMEOUT_MS,
+          `dial ${String(addr).slice(0, 64)}`,
+        );
         const s = stream as { connection?: { remotePeer?: { toString(): string } } };
         const remotePeerId = s.connection?.remotePeer?.toString();
         if (peerIdStr && remotePeerId && remotePeerId !== peerIdStr) {
@@ -1783,8 +1810,9 @@ export function preferNonLoopbackDialHints(hints: string[]): string[] {
 
 /**
  * Sort dial hints by:
- * 1. Prefer complete relay circuits and TCP over browser/WebTransport QUIC
- * 2. Prefer non-loopback / non-unspecified over loopback
+ * 1. Prefer direct TCP/LAN paths over relay circuits (LAN + same-network peers)
+ * 2. Prefer TCP over browser/WebTransport QUIC
+ * 3. Prefer non-loopback / non-unspecified over loopback
  */
 function sortDialHints(hints: string[]): string[] {
   return [...hints].sort((a, b) => {
@@ -1793,8 +1821,8 @@ function sortDialHints(hints: string[]): string[] {
     if (browserA !== browserB) {
       return browserA - browserB;
     }
-    const circuitA = a.includes("/p2p-circuit/p2p/") ? 0 : 1;
-    const circuitB = b.includes("/p2p-circuit/p2p/") ? 0 : 1;
+    const circuitA = a.includes("/p2p-circuit/p2p/") ? 1 : 0;
+    const circuitB = b.includes("/p2p-circuit/p2p/") ? 1 : 0;
     if (circuitA !== circuitB) {
       return circuitA - circuitB;
     }

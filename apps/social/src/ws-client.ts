@@ -221,7 +221,11 @@ export class WsClient {
   /**
    * Send an RPC request and wait for response
    */
-  async rpc<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
+  async rpc<T = unknown>(
+    method: string,
+    params?: Record<string, unknown>,
+    opts?: { timeoutMs?: number },
+  ): Promise<T> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error("Not connected to server");
     }
@@ -234,13 +238,13 @@ export class WsClient {
       const request: JsonRpcRequest = { id, method, params };
       this.ws!.send(JSON.stringify(request));
 
-      // Timeout after 30 seconds
+      const timeoutMs = opts?.timeoutMs ?? 30_000;
       setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
-          reject(new Error(`Request ${id} timed out`));
+          reject(new Error(`Request ${method} timed out after ${timeoutMs}ms`));
         }
-      }, 30000);
+      }, timeoutMs);
     });
   }
 

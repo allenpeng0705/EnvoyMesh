@@ -171,6 +171,11 @@ export interface ChatMessage {
   signature: string;
 }
 
+/** Result of an outbound chat send (transport accepted the envelope). */
+export interface SendChatResult {
+  messageId: string;
+}
+
 // ============================================
 // Search / Discovery Types
 // ============================================
@@ -580,7 +585,7 @@ export interface NodeService {
   /**
    * Send a chat message to a bonded peer
    */
-  sendChat(targetOwnerId: string, text: string): Promise<void>;
+  sendChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
 
   /**
    * Forward a pre-signed EnvoyEnvelope from a remote client (e.g. mobile app)

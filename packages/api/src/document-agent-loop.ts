@@ -1,4 +1,4 @@
-import type { BondRecord, DiscoverPublishedLibraryParams, DiscoverPublishedLibraryPeerResult, LibraryItem } from "./node-service.js";
+import type { BondRecord, DiscoverPublishedLibraryParams, DiscoverPublishedLibraryPeerResult, LibraryItem, SendChatResult } from "./node-service.js";
 import { resolveBondTarget } from "./bond-target.js";
 import { runLibraryRequestShare } from "./library-request-share.js";
 
@@ -46,7 +46,7 @@ export interface DocumentAgentTurnDeps {
   /** Required for request_share_from — queries bonded peers' published catalogs. */
   discoverPublishedLibrary?: (params?: DiscoverPublishedLibraryParams) => Promise<DiscoverPublishedLibraryPeerResult[]>;
   /** Required for request_share_from — sends chat.message to contact. */
-  sendChat?: (targetOwnerId: string, text: string) => Promise<void>;
+  sendChat?: (targetOwnerId: string, text: string) => Promise<SendChatResult | void>;
 }
 
 /** Classify owner message into a document workflow (heuristic v1 — no extra LLM call). */

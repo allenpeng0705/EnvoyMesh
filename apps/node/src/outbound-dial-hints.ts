@@ -115,7 +115,8 @@ export async function buildOutboundDialHints(input: {
   }
 
   let synthetic = 0;
-  const maxSynthetic = 32;
+  /** When we have routable direct listen addrs (e.g. mDNS/LAN), skip slow synthetic relay dials. */
+  const maxSynthetic = nonLoopListen.length > 0 ? 0 : 8;
   for (const base of relayPool) {
     if (synthetic >= maxSynthetic) {
       break;

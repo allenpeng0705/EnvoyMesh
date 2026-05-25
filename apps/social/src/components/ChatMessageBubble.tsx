@@ -43,7 +43,8 @@ export function ChatMessageBubble({
       ? String(senderLabel)
       : VARIANT_BADGE[variant];
 
-  const showMetaRow = showMeta && (badge || timeLabel != null || deliveryReceipt != null);
+  const showMetaRow = showMeta && (badge || timeLabel != null);
+  const showDelivery = deliveryReceipt != null;
 
   return (
     <div className={`message-bubble ${variant} ${stackPositionClass(position)}`}>
@@ -53,14 +54,16 @@ export function ChatMessageBubble({
           {timeLabel != null ? (
             <span className="message-bubble-time">{timeLabel}</span>
           ) : null}
-          {deliveryReceipt != null ? (
-            <span className={`message-delivery-status status-${deliveryReceipt}`}>
-              {DELIVERY_LABEL[deliveryReceipt]}
-            </span>
-          ) : null}
         </div>
       ) : null}
       <div className="message-bubble-body">{children}</div>
+      {showDelivery ? (
+        <div className="message-bubble-footer">
+          <span className={`message-delivery-status status-${deliveryReceipt}`}>
+            {DELIVERY_LABEL[deliveryReceipt]}
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

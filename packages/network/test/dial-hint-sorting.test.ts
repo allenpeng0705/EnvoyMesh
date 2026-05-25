@@ -61,13 +61,14 @@ describe("dial hint sorting", () => {
       expect(sorted[1]).toContain("/quic-v1");
     });
 
-    it("prefers complete relay circuits over plain TCP", () => {
+    it("prefers direct TCP over relay circuits when both are present", () => {
       const hints = [
         "/ip4/1.2.3.4/tcp/4000/p2p/12D3KooWTCP",
         "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWTCP",
       ];
       const sorted = preferNonLoopbackDialHints(hints);
-      expect(sorted[0]).toContain("/p2p-circuit/p2p/");
+      expect(sorted[0]).toContain("/tcp/");
+      expect(sorted[0]).not.toContain("/p2p-circuit/");
     });
 
     it("filters loopback when non-loopback exists (QUIC preference does not override loopback filtering)", () => {

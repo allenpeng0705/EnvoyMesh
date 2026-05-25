@@ -247,8 +247,28 @@
   font-style: italic;
 }
 
+.message-delivery-status.status-sent {
+  color: var(--color-text-muted);
+}
+
+.message-delivery-status.status-delivered,
+.message-delivery-status.status-read {
+  color: var(--color-success, #16a34a);
+}
+
 .message-delivery-status.status-failed {
   color: var(--color-danger, #ef4444);
+}
+
+.message-bubble-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-1);
+  padding-right: var(--space-1);
+}
+
+.message-stack-row.is-outgoing .message-bubble-footer {
+  justify-content: flex-end;
 }
 
 .chat-reachability-hint {

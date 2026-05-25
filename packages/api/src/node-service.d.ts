@@ -84,6 +84,9 @@ export interface ChatMessage {
     };
     signature: string;
 }
+export interface SendChatResult {
+    messageId: string;
+}
 export type ProfileVisibility = "public" | "contacts" | "private";
 export interface PeerSearchResult {
     nodeId: string;
@@ -264,7 +267,7 @@ export interface NodeService {
     /**
      * Send a chat message to a bonded peer
      */
-    sendChat(targetOwnerId: string, text: string): Promise<void>;
+    sendChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
     /**
      * Forward a pre-signed EnvoyEnvelope from a remote client (e.g. mobile app)
      * into the P2P mesh. The envelope must already be signed by the sender's key.

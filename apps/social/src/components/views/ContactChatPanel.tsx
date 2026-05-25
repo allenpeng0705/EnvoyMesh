@@ -70,7 +70,6 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const [chatInput, setChatInput] = useState("");
-  const [isSendingChat, setIsSendingChat] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const lastChatSendRef = useRef<{ at: number; contact: string; text: string } | null>(null);
@@ -104,15 +103,26 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [displayMessages]);
 
+  useEffect(() => {
+    setPendingOutbound((prev) =>
+      prev.filter((p) => {
+        if (p.metadata.deliveryReceipt === "pending" || p.metadata.deliveryReceipt === "failed") {
+          return true;
+        }
+        return !messages.some((m) => m.messageId === p.messageId);
+      }),
+    );
+  }, [messages]);
+
   const getContactAiAccessLevel = useCallback(
     (ownerId: string): "none" | "assistant_only" | "full" =>
       nodeConfig?.contactAiPreferences?.find((p) => p.peerOwnerId === ownerId)?.aiAccessLevel ?? "none",
     [nodeConfig],
   );
 
-  const handleSendMessage = async () => {
+  const handleSendMessage = () => {
     const text = chatInput.trim();
-    if (!text || isSendingChat) return;
+    if (!text) return;
 
     if (!nodeMeshOnline) {
       setSendError("Your node is offline — start the node before sending.");
@@ -122,12 +132,14 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
 
     if (text.startsWith("/ai ")) {
       const question = text.slice(4);
-      try {
-        const answer = await nodeService.knowledgeQuery(question);
-        console.log("[ContactChatPanel] AI answer:", answer);
-      } catch (e) {
-        console.error("[ContactChatPanel] AI query failed:", e);
-      }
+      void (async () => {
+        try {
+          const answer = await nodeService.knowledgeQuery(question);
+          console.log("[ContactChatPanel] AI answer:", answer);
+        } catch (e) {
+          console.error("[ContactChatPanel] AI query failed:", e);
+        }
+      })();
       setChatInput("");
       return;
     }
@@ -151,27 +163,36 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
 
     setPendingOutbound((prev) => [...prev, pendingMsg]);
     setChatInput("");
-    setIsSendingChat(true);
     setSendError(null);
 
-    try {
-      await nodeService.sendChat(selectedContact, text);
-      setPendingOutbound((prev) => prev.filter((m) => m.messageId !== tempId));
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : "Failed to send message";
-      console.error("[ContactChatPanel] sendChat failed:", error);
-      setPendingOutbound((prev) =>
-        prev.map((m) =>
-          m.messageId === tempId
-            ? { ...m, metadata: { ...m.metadata, deliveryReceipt: "failed" as const } }
-            : m,
-        ),
-      );
-      setSendError(msg);
-      setTimeout(() => setSendError(null), 8000);
-    } finally {
-      setIsSendingChat(false);
-    }
+    void (async () => {
+      try {
+        const result = await nodeService.sendChat(selectedContact, text);
+        setPendingOutbound((prev) =>
+          prev.map((m) =>
+            m.messageId === tempId
+              ? {
+                  ...m,
+                  messageId: result.messageId,
+                  metadata: { ...m.metadata, deliveryReceipt: "sent" as const },
+                }
+              : m,
+          ),
+        );
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Failed to send message";
+        console.error("[ContactChatPanel] sendChat failed:", error);
+        setPendingOutbound((prev) =>
+          prev.map((m) =>
+            m.messageId === tempId
+              ? { ...m, metadata: { ...m.metadata, deliveryReceipt: "failed" as const } }
+              : m,
+          ),
+        );
+        setSendError(msg);
+        setTimeout(() => setSendError(null), 8000);
+      }
+    })();
   };
 
   const defaultContactAiMode: AssistantMode =
@@ -350,7 +371,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
             onClose={() => setShareOpen(false)}
           />
         )}
-        {chatInput.trim() && !isSendingChat && (
+        {pendingOutbound.some((m) => m.metadata.deliveryReceipt === "pending") && (
           <div className="typing-indicator">
             <span /><span /><span />
           </div>
@@ -372,18 +393,18 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              void handleSendMessage();
+              handleSendMessage();
             }
           }}
           enterKeyHint="send"
-          disabled={isSendingChat || !nodeMeshOnline}
+          disabled={!nodeMeshOnline}
         />
         <button
           type="button"
-          onClick={() => void handleSendMessage()}
-          disabled={isSendingChat || !chatInput.trim() || !nodeMeshOnline}
+          onClick={handleSendMessage}
+          disabled={!chatInput.trim() || !nodeMeshOnline}
         >
-          {isSendingChat ? "Sending\u2026" : "Send"}
+          Send
         </button>
       </footer>
       </div>

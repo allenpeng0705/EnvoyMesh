@@ -24,6 +24,7 @@ import type {
   PeerSearchResult,
   RelayConfig,
   SearchQuery,
+  SendChatResult,
   SendHelloOptions,
   ShareOffer,
   SocialIntroProposal,
@@ -87,7 +88,7 @@ export interface NodeServiceClient {
   declineSocialIntroProposal(messageId: string): Promise<void>;
 
   // Messaging
-  sendChat(targetOwnerId: string, text: string): Promise<void>;
+  sendChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
   listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
   getChatDrafts(threadPeerOwnerId?: string): Promise<ChatDraft[]>;
   deleteChatDraft(draftId: string): Promise<void>;
@@ -272,7 +273,9 @@ function createWsNodeServiceClient(
     async blockPeer(peerOwnerId: string) { return wsClient.rpc("blockPeer", { peerOwnerId }); },
     async revokeBond(peerOwnerId: string) { return wsClient.rpc("revokeBond", { peerOwnerId }); },
     async getBonds() { return wsClient.rpc("getBonds"); },
-    async sendChat(targetOwnerId: string, text: string) { return wsClient.rpc("sendChat", { targetOwnerId, text }); },
+    async sendChat(targetOwnerId: string, text: string) {
+      return wsClient.rpc("sendChat", { targetOwnerId, text }, { timeoutMs: 120_000 });
+    },
     async listChatHistory(peerOwnerId: string, limit?: number) { return wsClient.rpc("listChatHistory", { peerOwnerId, limit }) as Promise<ChatMessage[]>; },
     async getChatDrafts(threadPeerOwnerId?: string) {
       return wsClient.rpc("getChatDrafts", threadPeerOwnerId ? { threadPeerOwnerId } : {}) as Promise<ChatDraft[]>;

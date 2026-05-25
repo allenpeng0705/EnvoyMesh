@@ -35,7 +35,8 @@ describe("buildOutboundDialHints", () => {
       });
 
       expect(hints.some((h) => h.includes("bootstrap.libp2p.io"))).toBe(false);
-      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooW"))).toBe(true);
+      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooW"))).toBe(false);
+      expect(hints.some((h) => h.includes("192.168.1.50"))).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }

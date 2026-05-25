@@ -1134,7 +1134,7 @@ export class MobileNode implements NodeService {
   // Messaging
   // -----------------------------------------------------------------------
 
-  async sendChat(targetOwnerId: string, text: string): Promise<void> {
+  async sendChat(targetOwnerId: string, text: string): Promise<import("@envoymesh/api").SendChatResult> {
     const msgId = _randomUUID();
     const ts = new Date().toISOString();
     // Persist locally — threaded by targetOwnerId (ownerId namespace).
@@ -1159,6 +1159,7 @@ export class MobileNode implements NodeService {
       signature: "",
     });
     await this._dispatchSignedChat(targetOwnerId, text);
+    return { messageId: msgId };
   }
 
   /**

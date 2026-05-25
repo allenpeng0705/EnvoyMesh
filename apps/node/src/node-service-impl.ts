@@ -21,6 +21,7 @@ import type {
   PeerSearchResult,
   RelayConfig,
   SearchQuery,
+  SendChatResult,
   SendHelloOptions,
   SocialIntroProposal,
   NodeStatus,
@@ -1496,7 +1497,31 @@ class NodeServiceImpl implements NodeService {
     this.emit("chat:message", msg);
   }
 
-  async sendChat(targetOwnerId: string, text: string): Promise<void> {
+  private async _deliverChatEnvelope(
+    transportPeerId: string,
+    envelope: EnvoyEnvelope,
+    dialHints: string[],
+  ): Promise<void> {
+    const mesh = this._requireMesh();
+    const sendOnce = async (): Promise<void> => {
+      await mesh.sendChat(transportPeerId, envelope, { dialHints });
+    };
+    try {
+      await sendOnce();
+    } catch (firstErr) {
+      console.warn(
+        `[sendChat] first attempt failed for ${transportPeerId.slice(0, 12)}…, resetting path:`,
+        firstErr instanceof Error ? firstErr.message : firstErr,
+      );
+      const closed = await mesh.closeConnectionsToPeer(transportPeerId);
+      if (closed > 0) {
+        console.log(`[sendChat] closed ${closed} stale connection(s) to ${transportPeerId.slice(0, 12)}…`);
+      }
+      await sendOnce();
+    }
+  }
+
+  async sendChat(targetOwnerId: string, text: string): Promise<SendChatResult> {
     this._assertOnline();
     // Record owner activity when they send a message (keeps them "online" in automatic mode)
     this.recordOwnerActivity();
@@ -1576,11 +1601,6 @@ class NodeServiceImpl implements NodeService {
     );
 
     void this._tagBondedContactReachability(transportPeerId);
-    const connBefore = mesh.getPeerConnectionInfo(transportPeerId);
-    if (!connBefore.connected) {
-      console.log(`[sendChat] warming path to ${transportPeerId.slice(0, 12)}…`);
-      await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, { dialHints });
-    }
 
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({
@@ -1601,9 +1621,7 @@ class NodeServiceImpl implements NodeService {
       console.log(`[sendChat] self-send to ${targetOwnerId}, routing via bridge handler`);
       await this._bridgeChatHandler(envelope, mesh.peerId);
     } else {
-      await mesh.sendChat(transportPeerId, envelope, {
-        dialHints,
-      });
+      await this._deliverChatEnvelope(transportPeerId, envelope, dialHints);
     }
 
     const emittedMsg = {
@@ -1632,6 +1650,7 @@ class NodeServiceImpl implements NodeService {
     this.emit("chat:message", emittedMsg);
     // Learn owner writing style from sent messages (Phase 9F)
     this._styleAdapter?.learnFromMessage(true, text);
+    return { messageId: envelope.messageId };
   }
 
   async listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]> {
