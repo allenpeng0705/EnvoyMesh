@@ -1,3 +1,4 @@
+import "./ensure-node-version.js";
 import "./dom-event-polyfill.js";
 import { evaluateCapability } from "@envoymesh/bonds";
 import {
