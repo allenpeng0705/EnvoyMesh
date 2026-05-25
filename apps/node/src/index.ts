@@ -1438,9 +1438,6 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       .ensurePeerFromInboundChat({
         ownerId: payload.senderOwnerId,
         peerId: remotePeerId,
-        listenAddrs: remoteAddr?.trim()
-          ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId)
-          : [],
       })
       .catch((err) => console.warn(`[peer-directory] ensurePeerFromInboundChat failed:`, err));
     await taskStore.appendAuditEvent(

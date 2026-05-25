@@ -4,6 +4,7 @@
  * merges discovery seeds + relay circuit paths — same ingredients as outbound chat.
  */
 import {
+  isLikelyInboundConnSnapshotDialHint,
   isPublicLibp2pBootstrapMultiaddr,
   isUsableOutboundPeerDialHint,
 } from "@envoymesh/network";
@@ -90,7 +91,9 @@ export async function buildOutboundDialHints(input: {
   const recipientPeerId = input.recipientPeerId.trim();
   const raw = (input.peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
   /** Never dial the remote peer's loopback or local docker-bridge IP from our machine. */
-  const nonLoopListen = raw.filter((a) => isUsableChatDialHint(a, recipientPeerId));
+  const nonLoopListen = raw
+    .filter((a) => isUsableChatDialHint(a, recipientPeerId))
+    .filter((a) => !isLikelyInboundConnSnapshotDialHint(a));
 
   const store = input.discoverySeedStore;
   if (!store) {

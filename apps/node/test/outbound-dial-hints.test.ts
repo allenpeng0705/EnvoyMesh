@@ -108,4 +108,41 @@ describe("buildOutboundDialHints", () => {
       await rm(profileDir, { recursive: true, force: true });
     }
   });
+
+  it("drops ephemeral inbound TCP snapshot ports and still allows relay circuit fallback", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-ephemeral-"));
+    try {
+      const seedStore = createDiscoverySeedStore(profileDir);
+      const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
+      const hints = await buildOutboundDialHints({
+        recipientPeerId: target,
+        peerListenAddrs: [
+          `/ip4/192.168.3.78/tcp/55093/p2p/${target}`,
+          `/ip4/192.168.3.78/tcp/60417/p2p/${target}`,
+        ],
+        discoverySeedStore: seedStore,
+        config: {
+          version: "0.1",
+          profileDir,
+          discoveryProfile: "wan-default",
+          relayEnabled: true,
+          relayServerEnabled: false,
+          advertiseAddrs: [],
+          bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
+          bootstrapPresets: ["cn-relay"],
+          configuredRelays: [],
+          modelProviders: { mode: "mock" },
+          chatAssistEnabled: false,
+          contactAiPreferences: [],
+          updatedAt: new Date().toISOString(),
+        },
+      });
+
+      expect(hints.some((h) => h.includes("55093"))).toBe(false);
+      expect(hints.some((h) => h.includes("60417"))).toBe(false);
+      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooWN67"))).toBe(true);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
 });

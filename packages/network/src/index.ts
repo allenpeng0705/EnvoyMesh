@@ -1060,6 +1060,16 @@ export class EnvoyMesh {
 
     let lastError: unknown = new Error("no outbound dial attempted");
 
+    const dialTarget = this._normalizeDialTarget(target);
+    // Prefer libp2p peer-id dial (peerstore + active conn) before stale multiaddr hints.
+    if (barePeerDial) {
+      try {
+        return await dialOnce(dialTarget);
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
     if (barePeerDial && hasRoutableHint) {
       for (const ma of dialHintsToMultiaddrs(sortDialHints(routableHints), peerIdStr)) {
         try {
@@ -1070,34 +1080,36 @@ export class EnvoyMesh {
       }
     }
 
-    const dialTarget = this._normalizeDialTarget(target);
-    try {
-      return await dialOnce(dialTarget);
-    } catch (firstError) {
-      lastError = firstError;
-      const hints = preferNonLoopbackDialHints(sendOptions?.dialHints ?? []);
-      for (const ma of dialHintsToMultiaddrs(sortDialHints(hints), peerIdStr)) {
-        try {
-          return await dialOnce(ma);
-        } catch (e) {
-          lastError = e;
-        }
+    if (!barePeerDial) {
+      try {
+        return await dialOnce(dialTarget);
+      } catch (firstError) {
+        lastError = firstError;
       }
-      /** Last resort: retry any loopback hints only if bare + routable passes failed */
-      const loopOnly = hintsRaw.filter((h) => isLoopbackOrUnspecifiedDialHint(h));
-      for (const ma of dialHintsToMultiaddrs(sortDialHints(loopOnly), peerIdStr)) {
-        try {
-          return await dialOnce(ma);
-        } catch (e) {
-          lastError = e;
-        }
-      }
-      const viaLimited = await openStreamOnLimitedConn();
-      if (viaLimited) {
-        return viaLimited;
-      }
-      throw lastError instanceof Error ? lastError : new Error(String(lastError));
     }
+
+    const hints = preferNonLoopbackDialHints(sendOptions?.dialHints ?? []);
+    for (const ma of dialHintsToMultiaddrs(sortDialHints(hints), peerIdStr)) {
+      try {
+        return await dialOnce(ma);
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    /** Last resort: retry any loopback hints only if bare + routable passes failed */
+    const loopOnly = hintsRaw.filter((h) => isLoopbackOrUnspecifiedDialHint(h));
+    for (const ma of dialHintsToMultiaddrs(sortDialHints(loopOnly), peerIdStr)) {
+      try {
+        return await dialOnce(ma);
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    const viaLimited = await openStreamOnLimitedConn();
+    if (viaLimited) {
+      return viaLimited;
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 
   private findOpenConnectionToPeer(node: Libp2p, peerIdStr: string): any | undefined {
@@ -1670,6 +1682,28 @@ export function isLoopbackOrUnspecifiedDialHint(addr: string): boolean {
  */
 export function isDockerBridgeGatewayDialHint(addr: string): boolean {
   return /\/ip4\/172\.(1[7-9]|2\d|3[01])\.0\.1\//.test(addr);
+}
+
+/** Stable libp2p listen ports — not ephemeral TCP source ports from inbound connections. */
+const STABLE_LIBP2P_TCP_PORTS = new Set([4001, 4002, 4011, 41641]);
+
+/**
+ * Inbound chat stores `connection.remoteAddr`, which is the remote side's ephemeral
+ * source port on outbound-initiated TCP connections — not a dialable listen address.
+ */
+export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
+  if (!addr.includes("/tcp/")) {
+    return false;
+  }
+  const match = addr.match(/\/tcp\/(\d+)\//);
+  if (!match) {
+    return false;
+  }
+  const port = Number(match[1]);
+  if (STABLE_LIBP2P_TCP_PORTS.has(port)) {
+    return false;
+  }
+  return port >= 32768;
 }
 
 /** True when a multiaddr must not be used as bootstrap / relay.checkin target. */

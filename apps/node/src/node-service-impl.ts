@@ -297,6 +297,9 @@ class NodeServiceImpl implements NodeService {
       inboundConnectionAddrs?: string[];
     }
   >();
+
+  /** Serialize outbound chat streams per libp2p peer to avoid concurrent newStream races. */
+  private readonly _chatSendChains = new Map<string, Promise<void>>();
   /** Inbound push offers waiting for accept/decline — keyed by preview message id. */
   private readonly _pendingInboundShareOffers = new Map<string, ShareOffer>();
   /** Pending vault-relative rename on receive: key `senderPeerId + \\n + voucher source path`
@@ -1504,22 +1507,43 @@ class NodeServiceImpl implements NodeService {
     envelope: EnvoyEnvelope,
     dialHints: string[],
   ): Promise<void> {
-    const mesh = this._requireMesh();
-    const sendOnce = async (): Promise<void> => {
-      await mesh.sendChat(transportPeerId, envelope, { dialHints });
-    };
-    try {
-      await sendOnce();
-    } catch (firstErr) {
-      console.warn(
-        `[sendChat] first attempt failed for ${transportPeerId.slice(0, 12)}…, resetting path:`,
-        firstErr instanceof Error ? firstErr.message : firstErr,
-      );
-      const closed = await mesh.closeConnectionsToPeer(transportPeerId);
-      if (closed > 0) {
-        console.log(`[sendChat] closed ${closed} stale connection(s) to ${transportPeerId.slice(0, 12)}…`);
+    await this._withChatSendLock(transportPeerId, async () => {
+      const mesh = this._requireMesh();
+      const sendOnce = async (): Promise<void> => {
+        await mesh.sendChat(transportPeerId, envelope, { dialHints });
+      };
+      try {
+        await sendOnce();
+      } catch (firstErr) {
+        console.warn(
+          `[sendChat] first attempt failed for ${transportPeerId.slice(0, 12)}…, resetting path:`,
+          firstErr instanceof Error ? firstErr.message : firstErr,
+        );
+        const closed = await mesh.closeConnectionsToPeer(transportPeerId);
+        if (closed > 0) {
+          console.log(`[sendChat] closed ${closed} stale connection(s) to ${transportPeerId.slice(0, 12)}…`);
+        }
+        await sendOnce();
       }
-      await sendOnce();
+    });
+  }
+
+  private async _withChatSendLock<T>(transportPeerId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this._chatSendChains.get(transportPeerId) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const chain = prev.then(() => gate);
+    this._chatSendChains.set(transportPeerId, chain);
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+      if (this._chatSendChains.get(transportPeerId) === chain) {
+        this._chatSendChains.delete(transportPeerId);
+      }
     }
   }
 
@@ -3209,9 +3233,6 @@ class NodeServiceImpl implements NodeService {
           .ensurePeerFromInboundChat({
             ownerId: payload.senderOwnerId,
             peerId: remotePeerId,
-            listenAddrs: remoteAddr?.trim()
-              ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId)
-              : [],
           })
           .catch((err) => console.warn(`[peer-directory] ensurePeerFromInboundChat failed:`, err));
         const incomingMsg: ChatMessage = {

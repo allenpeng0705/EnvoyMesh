@@ -1553,7 +1553,7 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
       if (!ownerId || !peerId) {
         return;
       }
-      const extra = dedupeListenAddrList((input.listenAddrs ?? []).map((a) => a.trim()).filter(Boolean));
+      const extra = filterDialableListenAddrs((input.listenAddrs ?? []).map((a) => a.trim()).filter(Boolean));
       await withDirectory(async (file) => {
         const seenAt = new Date().toISOString();
         let existing = file.records.find((r) => r.ownerId === ownerId);
@@ -1565,7 +1565,9 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
           existing.peerId = peerId;
           existing.lastSeenAt = seenAt;
           if (extra.length > 0) {
-            existing.listenAddrs = dedupeListenAddrList([...existing.listenAddrs, ...extra]);
+            existing.listenAddrs = filterDialableListenAddrs([...existing.listenAddrs, ...extra]).slice(-8);
+          } else {
+            existing.listenAddrs = filterDialableListenAddrs(existing.listenAddrs).slice(-8);
           }
           await writePeerDirectoryFileAtomic(directoryPath, file);
           return;
@@ -1576,7 +1578,7 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
           peerId,
           deviceId: "chat-inbound",
           lastSeenAt: seenAt,
-          listenAddrs: extra,
+          listenAddrs: extra.slice(-8),
         });
         await writePeerDirectoryFileAtomic(directoryPath, file);
       });
@@ -1596,6 +1598,26 @@ function dedupeListenAddrList(addrs: string[]): string[] {
     out.push(t);
   }
   return out;
+}
+
+/** Drop ephemeral TCP source ports captured from inbound connections (not dialable listen addrs). */
+function isLikelyEphemeralTcpSnapshot(addr: string): boolean {
+  if (!addr.includes("/tcp/")) {
+    return false;
+  }
+  const match = addr.match(/\/tcp\/(\d+)\//);
+  if (!match) {
+    return false;
+  }
+  const port = Number(match[1]);
+  if (port === 4001 || port === 4002 || port === 4011 || port === 41641) {
+    return false;
+  }
+  return port >= 32768;
+}
+
+function filterDialableListenAddrs(addrs: string[]): string[] {
+  return dedupeListenAddrList(addrs.filter((a) => !isLikelyEphemeralTcpSnapshot(a)));
 }
 
 export function parseTrustLevel(value: string): TrustRecord["level"] {
