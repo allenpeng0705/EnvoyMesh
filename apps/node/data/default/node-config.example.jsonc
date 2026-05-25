@@ -8,7 +8,9 @@
   // Then edit node-config.json (apiKey, bootstrap peers, AI settings). That file is gitignored.
   //
   // Settings UI save rewrites plain JSON and strips comments — re-copy comments from this file if needed.
+  // Full guide: docs/knowledge-base-and-rag.md (knowledge base, RAG, AI context).
   // Agent persona: {profileDir}/agent-identity.md (Settings → AI), not vault RAG files.
+  // Template: apps/node/data/default/agent-identity.example.md
   // =============================================================================
 
   // Config schema version. Must be "0.1".
