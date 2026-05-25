@@ -1088,16 +1088,17 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           remotePeerId,
           peerDirectoryStore,
         );
-        void nodeService.recordInboundPushShareOffer({
+        await nodeService.recordInboundPushShareOffer({
           shareId: signedResponse.messageId,
           senderPeerId: remotePeerId,
           senderOwnerId,
           previewText: share.responsePayload.previewText,
           sensitivity: share.responsePayload.sensitivity as "public" | "friends" | "private",
           relativePath: shareRequestPayload.relativePath ?? "",
+          deliveryChannel: shareRequestPayload.deliveryChannel,
         });
         if (shareRequestPayload.deliveryChannel === "chat" && nodeService instanceof NodeServiceImpl) {
-          void nodeService.maybeAutoAcceptChatShare({
+          await nodeService.maybeAutoAcceptChatShare({
             shareId: signedResponse.messageId,
             senderOwnerId,
             senderRelativePath: shareRequestPayload.relativePath ?? "",

@@ -506,7 +506,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           ref={fileInputRef}
           type="file"
           className="chat-file-input-hidden"
-          accept="image/*,.pdf,.txt,.md,.json,.csv,.zip"
+          accept="*/*"
           aria-hidden
           tabIndex={-1}
           onChange={(e) => {

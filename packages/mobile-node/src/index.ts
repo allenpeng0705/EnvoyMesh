@@ -2938,6 +2938,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
     previewText: string;
     sensitivity: "public" | "friends" | "private";
     relativePath: string;
+    deliveryChannel?: "inbox" | "chat";
   }): Promise<void> {
     const records = await this._peerDirectory.list();
     let displayName = `${input.senderEnvelopePeerId.slice(0, 12)}…`;
@@ -2962,7 +2963,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
       senderVaultRelativePath: input.relativePath.replace(/^[\\/]+/, "") || undefined,
     };
     this._pendingInboundShareOffers.set(input.shareId, offer);
-    this._events.emit("share:offered", offer);
+    if (input.deliveryChannel !== "chat") {
+      this._events.emit("share:offered", offer);
+    }
   }
 
   private _clearPendingShareStateForPreview(previewMessageId: string): void {
@@ -3015,17 +3018,37 @@ You are the owner's personal AI assistant on EnvoyMesh.
       return;
     }
 
-    let effectiveSensitivity = payload.requestedSensitivity;
-    if (policy.action === "allow" && policy.maxSensitivity) {
-      effectiveSensitivity = policy.maxSensitivity;
-    } else if (policy.action === "approval_required") {
-      effectiveSensitivity = "public";
-    }
+    const chatAttachmentFromBond =
+      payload.fileOrigin === "sender" &&
+      payload.deliveryChannel === "chat" &&
+      bondLevel !== "public" &&
+      bondLevel !== "blocked";
 
-    const requiresApproval =
+    let effectiveSensitivity = payload.requestedSensitivity;
+    let requiresApproval =
       policy.action === "approval_required" ||
       effectiveSensitivity === "friends" ||
       effectiveSensitivity === "private";
+
+    if (chatAttachmentFromBond) {
+      effectiveSensitivity = payload.requestedSensitivity ?? "friends";
+      if (policy.action === "allow" && policy.maxSensitivity) {
+        effectiveSensitivity = policy.maxSensitivity;
+      } else if (bondLevel === "referred") {
+        effectiveSensitivity = "public";
+      }
+      requiresApproval = false;
+    } else {
+      if (policy.action === "allow" && policy.maxSensitivity) {
+        effectiveSensitivity = policy.maxSensitivity;
+      } else if (policy.action === "approval_required") {
+        effectiveSensitivity = "public";
+      }
+      requiresApproval =
+        policy.action === "approval_required" ||
+        effectiveSensitivity === "friends" ||
+        effectiveSensitivity === "private";
+    }
 
     const previewText = _buildSafeSharePreviewText(payload, effectiveSensitivity);
     const previewPayload = createSharePreviewPayload({
@@ -3082,20 +3105,28 @@ You are the owner's personal AI assistant on EnvoyMesh.
         previewText,
         sensitivity: effectiveSensitivity as "public" | "friends" | "private",
         relativePath: rel,
+        deliveryChannel: payload.deliveryChannel,
       });
-      if (payload.deliveryChannel === "chat" && bondLevel === "direct") {
+      if (
+        payload.deliveryChannel === "chat" &&
+        bondLevel !== "public" &&
+        bondLevel !== "blocked" &&
+        !requiresApproval
+      ) {
         const senderOwnerId = await this._ownerIdForSender(senderPeerId);
         if (senderOwnerId) {
           const safeOwner =
             senderOwnerId.replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "peer";
           const filename = rel.split(/[/\\]/).pop()?.replace(/[^a-zA-Z0-9._-]+/g, "_") || "file";
           const savePath = `chat/in/${safeOwner}/${filename}`;
-          void this.acceptShare(signed.messageId, savePath).catch((err) => {
+          try {
+            await this.acceptShare(signed.messageId, savePath);
+          } catch (err) {
             console.warn(
               "[mobile-node] chat attachment auto-accept failed:",
               err instanceof Error ? err.message : err,
             );
-          });
+          }
         }
       }
     }

@@ -155,6 +155,56 @@ export async function handleInboundShareRequest(input: {
     return { ok: false, reason: policyDecision.reason };
   }
 
+  /** Chat-composer attachments from bonded contacts skip Inbox approval. */
+  const chatAttachmentFromBond =
+    payload.requestType === "file" &&
+    payload.fileOrigin === "sender" &&
+    payload.deliveryChannel === "chat" &&
+    bondLevel !== "public" &&
+    bondLevel !== "blocked";
+
+  if (chatAttachmentFromBond) {
+    let effectiveSensitivity = payload.requestedSensitivity ?? "friends";
+    if (policyDecision.action === "allow" && policyDecision.maxSensitivity) {
+      effectiveSensitivity = policyDecision.maxSensitivity;
+    } else if (bondLevel === "referred") {
+      effectiveSensitivity = "public";
+    }
+    if (
+      capabilityManifest &&
+      !sensitivityAllowed(effectiveSensitivity, capabilityManifest.sensitivityCeiling)
+    ) {
+      effectiveSensitivity = capabilityManifest.sensitivityCeiling;
+    }
+    const previewText = buildSafePreviewText(payload, effectiveSensitivity);
+    const responsePayload = createSharePreviewPayload({
+      inReplyTo: envelope.messageId,
+      previewText,
+      sensitivity: effectiveSensitivity,
+      requiresApproval: false,
+      contentHint: `file: ${payload.relativePath}`,
+      isFileTransfer: true,
+    });
+    await taskStore.appendShareEvent(
+      createShareEvent({
+        direction: "outbound",
+        intent: "share.preview",
+        ownerId: profile.owner.ownerId,
+        remotePeerId,
+        correlationId,
+        requestMessageId: envelope.messageId,
+        requestType: payload.requestType,
+        sensitivity: effectiveSensitivity,
+        requiresApproval: false,
+        isFileTransfer: true,
+        outcome: "record",
+        summary: "share.preview sent: chat attachment (auto-accept)",
+        createdAt: envelope.createdAt,
+      }),
+    );
+    return { ok: true, responsePayload };
+  }
+
   if (policyDecision.action === "approval_required") {
     // Will require approval — still send a preview but mark requiresApproval=true
     const maxSens = "public";

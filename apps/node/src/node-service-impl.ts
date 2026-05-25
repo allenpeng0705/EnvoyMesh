@@ -522,6 +522,7 @@ class NodeServiceImpl implements NodeService {
     previewText: string;
     sensitivity: "public" | "friends" | "private";
     relativePath: string;
+    deliveryChannel?: "inbox" | "chat";
   }): Promise<void> {
     const records = await this._peerDirectoryStore.listPeerRecords();
     const rec = records.find((r) => r.peerId === input.senderPeerId);
@@ -549,7 +550,9 @@ class NodeServiceImpl implements NodeService {
       senderVaultRelativePath: input.relativePath.replace(/^[\\/]+/, "") || undefined,
     };
     this._pendingInboundShareOffers.set(input.shareId, offer);
-    this.emit("share:offered", offer);
+    if (input.deliveryChannel !== "chat") {
+      this.emit("share:offered", offer);
+    }
   }
 
   clearPendingShareStateForPreview(previewMessageId: string): void {
@@ -2557,18 +2560,22 @@ class NodeServiceImpl implements NodeService {
     return { shareRequestMessageId: envelope.messageId };
   }
 
-  /** Auto-accept chat-channel file shares from direct bonds (skip Inbox). */
+  /** Auto-accept chat-channel file shares from bonded contacts (skip Inbox). */
   async maybeAutoAcceptChatShare(input: {
     shareId: string;
     senderOwnerId?: string;
     senderRelativePath: string;
     requiresApproval: boolean;
   }): Promise<void> {
-    if (input.requiresApproval || !input.senderOwnerId?.trim()) {
+    if (!input.senderOwnerId?.trim()) {
       return;
     }
     const trust = await this._trustStore.getTrustRecord(input.senderOwnerId);
-    if (trust?.level !== "direct") {
+    const level = trust?.level;
+    if (!level || level === "blocked" || level === "public") {
+      return;
+    }
+    if (input.requiresApproval) {
       return;
     }
     const savePath = chatInboundVaultPath(input.senderOwnerId, input.senderRelativePath);
