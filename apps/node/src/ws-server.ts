@@ -65,6 +65,7 @@ export class WsServer {
         this.emitEvent("share:agent-proposed", data),
       );
       nodeServiceImpl.on("chat:message", (data: unknown) => this.emitEvent("chat:message", data));
+      nodeServiceImpl.on("chat:draft", (data: unknown) => this.emitEvent("chat:draft", data));
       nodeServiceImpl.on("bond:established", (data: unknown) => this.emitEvent("bond:established", data));
       nodeServiceImpl.on("bond:revoked", (data: unknown) => this.emitEvent("bond:revoked", data));
       nodeServiceImpl.on("node:status", (data: unknown) => this.emitEvent("node:status", data));
@@ -170,6 +171,7 @@ export class WsServer {
       "social.intro:propose",
       "share:agent-proposed",
       "chat:message",
+      "chat:draft",
       "bond:established",
       "bond:revoked",
       "node:status",

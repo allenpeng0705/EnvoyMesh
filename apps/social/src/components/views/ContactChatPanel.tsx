@@ -3,7 +3,8 @@ import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
 import { useChatDrafts } from "../../hooks/useChatDrafts.js";
 import { usePeerReachability, peerReachabilityLabel } from "../../hooks/usePeerReachability.js";
-import type { ChatMessage } from "@envoymesh/api";
+import type { ChatMessage, ContactAiPreferences } from "@envoymesh/api";
+import { contactAiAccessLevelForAssistantMode, stripModelThinking } from "@envoymesh/api";
 import type { AssistantMode } from "../../lib/storage.js";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
@@ -13,8 +14,8 @@ import {
   threadKindLabel,
 } from "../../lib/chat-thread-kind.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
+import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatFileAttachment } from "../ChatFileAttachment.js";
-import { Markdown } from "../Markdown.js";
 import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
 import { EditIcon, ChatIcon, BridgeIcon, P2PIcon } from "../../icons.js";
 
@@ -59,6 +60,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     contactAiModes,
     setContactAiModes,
     connectionStatus,
+    refreshNodeConfig,
   } = useNodeState();
 
   const { messages, isOutgoing } = useChatMessages(selectedContact);
@@ -114,10 +116,33 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     );
   }, [messages]);
 
-  const getContactAiAccessLevel = useCallback(
-    (ownerId: string): "none" | "assistant_only" | "full" =>
-      nodeConfig?.contactAiPreferences?.find((p) => p.peerOwnerId === ownerId)?.aiAccessLevel ?? "none",
-    [nodeConfig],
+  const updateContactAiMode = useCallback(
+    async (ownerId: string, mode: AssistantMode) => {
+      setContactAiModes({ ...contactAiModes, [ownerId]: mode });
+
+      const currentPrefs = nodeConfig?.contactAiPreferences ?? [];
+      const existingPref = currentPrefs.find((p) => p.peerOwnerId === ownerId);
+      const otherPrefs = currentPrefs.filter((p) => p.peerOwnerId !== ownerId);
+      const aiAccessLevel = contactAiAccessLevelForAssistantMode(mode);
+      const newPrefs: ContactAiPreferences[] = [
+        ...otherPrefs,
+        {
+          peerOwnerId: ownerId,
+          aiAccessLevel,
+          knowledgeAccess: existingPref?.knowledgeAccess ?? "public",
+          priority: existingPref?.priority ?? "high",
+        },
+      ];
+      const configPatch: { contactAiPreferences: ContactAiPreferences[]; chatAssistEnabled?: boolean } = {
+        contactAiPreferences: newPrefs,
+      };
+      if (mode === "assistant" && !nodeConfig?.chatAssistEnabled) {
+        configPatch.chatAssistEnabled = true;
+      }
+      await nodeService.updateNodeConfig(configPatch);
+      await refreshNodeConfig();
+    },
+    [contactAiModes, nodeConfig, nodeService, refreshNodeConfig, setContactAiModes],
   );
 
   const handleSendMessage = () => {
@@ -198,14 +223,12 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   const defaultContactAiMode: AssistantMode =
     nodeConfig?.aiSettings?.defaultModeForNewContacts ?? "manual";
   const currentAiMode: AssistantMode = contactAiModes[selectedContact] ?? defaultContactAiMode;
-  const aiAccessLevel = getContactAiAccessLevel(selectedContact);
-  const isAssistantAllowed = aiAccessLevel === "assistant_only" || aiAccessLevel === "full";
-  const isAutoAllowed =
-    aiAccessLevel === "full" &&
-    (nodeConfig?.autonomousPolicies ?? []).some((p) => p.domain === "social" && p.autoSendChat);
-  const isChatAssistEnabled = nodeConfig?.chatAssistEnabled ?? false;
-  const showDraftSuggestions =
-    isChatAssistEnabled && isAssistantAllowed && currentAiMode !== "auto";
+  const autoSendEnabled = (nodeConfig?.autonomousPolicies ?? []).some(
+    (p) => p.domain === "social" && p.autoSendChat,
+  );
+  const canDraftAssist = (nodeConfig?.chatAssistEnabled ?? false) || autoSendEnabled;
+  const canAutoSend = autoSendEnabled && !(nodeConfig?.autonomousKillSwitch ?? false);
+  const showDraftSuggestions = canDraftAssist && currentAiMode === "assistant";
   const { latestDraft, dismissDraft } = useChatDrafts(
     selectedContact,
     showDraftSuggestions,
@@ -213,7 +236,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
 
   const handleUseDraft = () => {
     if (!latestDraft) return;
-    setChatInput(latestDraft.text);
+    setChatInput(stripModelThinking(latestDraft.text));
     void dismissDraft(latestDraft.draftId);
   };
 
@@ -253,27 +276,30 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           </div>
         </div>
         <div className="chat-header-right">
-          <div className="assistant-switch" title={`Current: ${currentAiMode.charAt(0).toUpperCase() + currentAiMode.slice(1)}`}>
+          <div className="assistant-switch" aria-label={`AI mode: ${currentAiMode}`}>
             <span className="assistant-switch-label">AI</span>
             <button
               className={`assistant-switch-btn ${currentAiMode === "manual" ? "active" : ""}`}
-              title="Manual: Type yourself"
-              onClick={() => setContactAiModes({ ...contactAiModes, [selectedContact]: "manual" })}
+              title="Manual: type yourself"
+              aria-label="Manual mode"
+              onClick={() => void updateContactAiMode(selectedContact, "manual")}
             ><EditIcon size={16} /></button>
             <button
-              className={`assistant-switch-btn ${currentAiMode === "assistant" ? "active" : ""} ${!isAssistantAllowed || !isChatAssistEnabled ? "disabled" : ""}`}
-              title={!isAssistantAllowed ? "Assistant mode requires AI access for this contact" : isChatAssistEnabled ? "Assistant: AI suggests drafts" : "Chat Assist is disabled"}
+              className={`assistant-switch-btn ${currentAiMode === "assistant" ? "active" : ""} ${!canDraftAssist ? "disabled" : ""}`}
+              title={canDraftAssist ? "Assistant: AI suggests drafts" : "Enable Chat Assist or social auto-send in Settings"}
+              aria-label="Assistant mode"
               onClick={() => {
-                if (!isAssistantAllowed || !isChatAssistEnabled) return;
-                setContactAiModes({ ...contactAiModes, [selectedContact]: "assistant" });
+                if (!canDraftAssist) return;
+                void updateContactAiMode(selectedContact, "assistant");
               }}
             ><ChatIcon size={16} /></button>
             <button
-              className={`assistant-switch-btn ${currentAiMode === "auto" ? "active" : ""} ${!isAutoAllowed ? "disabled" : ""}`}
-              title={isAutoAllowed ? "Auto-Reply: AI responds automatically" : "Auto-Reply requires full AI access for this contact"}
+              className={`assistant-switch-btn ${currentAiMode === "auto" ? "active" : ""} ${!canAutoSend ? "disabled" : ""}`}
+              title={canAutoSend ? "Auto-reply: AI responds automatically" : "Enable social auto-send in Settings"}
+              aria-label="Auto-reply mode"
               onClick={() => {
-                if (!isAutoAllowed) return;
-                setContactAiModes({ ...contactAiModes, [selectedContact]: "auto" });
+                if (!canAutoSend) return;
+                void updateContactAiMode(selectedContact, "auto");
               }}
             ><BridgeIcon size={16} /></button>
           </div>
@@ -322,7 +348,10 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
                           })}
                           deliveryReceipt={outgoing ? msg.metadata.deliveryReceipt : undefined}
                         >
-                          <Markdown text={msg.content.text} className="message-text" />
+                          <ChatMessageText
+                            text={msg.content.text}
+                            allowThinkingToggle={outgoing}
+                          />
                           {msg.content.attachments?.map((attachment) => (
                             <ChatFileAttachment key={attachment.id} attachment={attachment} />
                           ))}
@@ -342,7 +371,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           <div className="chat-draft-suggestion" role="region" aria-label="Suggested reply">
             <div className="chat-draft-suggestion-body">
               <span className="chat-draft-suggestion-label">Suggested reply</span>
-              <p className="chat-draft-suggestion-text">{latestDraft.text}</p>
+              <p className="chat-draft-suggestion-text">{stripModelThinking(latestDraft.text)}</p>
             </div>
             <div className="chat-draft-suggestion-actions">
               <button

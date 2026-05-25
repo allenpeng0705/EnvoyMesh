@@ -5,6 +5,7 @@ import type {
   ContactAiPreferences,
   HelloProfile,
 } from "@envoymesh/api";
+import { resolveContactAiAccessLevel } from "@envoymesh/api";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { ChatIcon, BridgeIcon } from "../../icons.js";
 import { useChatThreadPreviews } from "../../hooks/useChatThreadPreviews.js";
@@ -41,9 +42,12 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
     return () => document.removeEventListener("click", handleClick);
   }, [contextMenu]);
 
-  const getContactAiAccessLevel = (ownerId: string): "none" | "assistant_only" | "full" => {
-    return nodeConfig?.contactAiPreferences?.find(p => p.peerOwnerId === ownerId)?.aiAccessLevel ?? "none";
-  };
+  const getContactAiAccessLevel = (ownerId: string) =>
+    resolveContactAiAccessLevel(
+      ownerId,
+      nodeConfig?.contactAiPreferences,
+      nodeConfig?.aiSettings?.defaultModeForNewContacts,
+    );
 
   const updateContactAiAccessLevel = async (ownerId: string, level: "none" | "assistant_only" | "full") => {
     const currentPrefs = nodeConfig?.contactAiPreferences ?? [];

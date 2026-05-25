@@ -65,6 +65,7 @@ import {
   resolveEnableMdns,
   resolveIdleTimerStretch,
   resolveLazyCapabilityDiscovery,
+  stripModelThinking,
 } from "@envoymesh/api";
 
 import {
@@ -174,6 +175,7 @@ import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabi
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
+import { runInboundChatAssist } from "./inbound-chat-assist.js";
 import { executeHomeClawCoreProxy } from "./homeclaw-core-proxy.js";
 
 const MAX_FRIEND_MATCHING_PREFS_CHARS = 4096;
@@ -1602,6 +1604,8 @@ class NodeServiceImpl implements NodeService {
 
     void this._tagBondedContactReachability(transportPeerId);
 
+    const wireText = stripModelThinking(text);
+
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({
         senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
@@ -1610,7 +1614,7 @@ class NodeServiceImpl implements NodeService {
         intent: "chat.message",
         payload: createChatMessagePayload({
           senderOwnerId: selfProfile.owner.ownerId,
-          text,
+          text: wireText,
         }),
       }),
       selfProfile.device.privateKeyPem,
@@ -1649,7 +1653,7 @@ class NodeServiceImpl implements NodeService {
     this._persistChatMessage(targetOwnerId, emittedMsg);
     this.emit("chat:message", emittedMsg);
     // Learn owner writing style from sent messages (Phase 9F)
-    this._styleAdapter?.learnFromMessage(true, text);
+    this._styleAdapter?.learnFromMessage(true, wireText);
     return { messageId: envelope.messageId };
   }
 
@@ -3201,6 +3205,15 @@ class NodeServiceImpl implements NodeService {
         const payload = parseChatMessagePayload(envelope.payload);
         const senderTrust = await this._trustStore.getTrustRecord(payload.senderOwnerId);
         const selfHuman = await this._humanProfileStore.loadHumanProfile();
+        void this._peerDirectoryStore
+          .ensurePeerFromInboundChat({
+            ownerId: payload.senderOwnerId,
+            peerId: remotePeerId,
+            listenAddrs: remoteAddr?.trim()
+              ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId)
+              : [],
+          })
+          .catch((err) => console.warn(`[peer-directory] ensurePeerFromInboundChat failed:`, err));
         const incomingMsg: ChatMessage = {
           messageId: envelope.messageId,
           sender: {
@@ -3213,7 +3226,7 @@ class NodeServiceImpl implements NodeService {
             ownerId: profile.owner.ownerId,
             displayName: selfHuman?.displayName ?? profile.owner.ownerId,
           },
-          content: { text: payload.text },
+          content: { text: stripModelThinking(payload.text) },
           metadata: { timestamp: envelope.createdAt, deliveryReceipt: "delivered" },
           signature: envelope.signature,
         };
@@ -3221,6 +3234,47 @@ class NodeServiceImpl implements NodeService {
         this.emit("chat:message", incomingMsg);
         if (senderTrust && senderTrust.level !== "blocked") {
           void this._tagBondedContactReachability(remotePeerId);
+        }
+        if (
+          this._taskStore &&
+          this._chatDraftStore &&
+          this._profile &&
+          guardDecision.action === "allow"
+        ) {
+          const receivedAt = Date.now();
+          const correlationId = deriveCorrelationIdFromEnvelope(envelope);
+          void this._configStore.load().then(async (config) => {
+            if (!config || !this._taskStore || !this._chatDraftStore || !this._profile) {
+              return;
+            }
+            const nodeConfig = await this.getNodeConfig();
+            await runInboundChatAssist({
+              envelope: guardDecision.envelope,
+              senderOwnerId: payload.senderOwnerId,
+              chatText: payload.text,
+              remotePeerId,
+              receivedAt,
+              correlationId,
+              config,
+              modelProviders: nodeConfig.modelProviders,
+              profile: this._profile,
+              taskStore: this._taskStore,
+              trustStore: this._trustStore,
+              peerDirectoryStore: this._peerDirectoryStore,
+              draftStore: this._chatDraftStore,
+              chatLogStore: this._chatLogStore,
+              humanProfileStore: this._humanProfileStore,
+              vaultDir: this._vaultDir,
+              styleAdapter: this._styleAdapter,
+              sendChat: (targetOwnerId, text) => this.sendChat(targetOwnerId, text),
+              emitDraft: (threadPeerOwnerId, draft) => {
+                this.emit("chat:draft", {
+                  threadPeerOwnerId,
+                  draft: { ...draft, threadPeerOwnerId },
+                });
+              },
+            });
+          });
         }
       }
     });

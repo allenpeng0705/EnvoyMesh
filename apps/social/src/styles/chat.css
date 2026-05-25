@@ -516,6 +516,49 @@
   padding-bottom: calc(var(--space-2) - 2px);
 }
 
+.chat-message-text {
+  position: relative;
+}
+
+.message-thinking {
+  margin-bottom: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+  border: 1px dashed var(--color-border);
+}
+
+.message-thinking-label {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-muted);
+  margin-bottom: 0.25rem;
+}
+
+.message-thinking-body {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.message-thinking-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  border: none;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+.message-thinking-toggle:hover,
+.message-thinking-toggle.is-open {
+  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
 .contact-list {
   display: flex;
   flex-direction: column;

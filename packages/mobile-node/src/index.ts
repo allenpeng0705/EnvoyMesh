@@ -96,7 +96,7 @@ import {
   parseBondChallengeResponsePayload,
   type BondChallengePayload,
 } from "@envoymesh/protocol";
-import { bondTrustRank, runDocumentAgentTurn as runDocumentAgentTurnLoop } from "@envoymesh/api";
+import { bondTrustRank, runDocumentAgentTurn as runDocumentAgentTurnLoop, stripModelThinking } from "@envoymesh/api";
 import { normalizeOpenAiCompatibleBaseUrl, runOwnerApprovedKnowledgeQuery } from "@envoymesh/models";
 import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from "@libp2p/crypto/keys";
 import type { PrivateKey } from "@libp2p/interface";
@@ -3651,7 +3651,7 @@ export class MobileNode implements NodeService {
       recipientPeerId,
       payload: createChatMessagePayload({
         senderOwnerId: this._state.owner.ownerId,
-        text,
+        text: stripModelThinking(text),
       }),
     });
     const signed = signUnsignedEnvelope(unsigned, this._state.device.privateKeyPem);

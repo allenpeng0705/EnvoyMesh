@@ -127,6 +127,8 @@ import { ApprovalQueue, createApprovalItem } from "./approval-queue.js";
 import { DigestGenerator, createDefaultDigestConfig } from "./digest-generator.js";
 import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
+import { resolveContactAiAccessLevel } from "@envoymesh/api";
+import { stripModelThinking } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
 import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
@@ -1483,7 +1485,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           displayName: selfHuman?.displayName ?? profile.owner.ownerId,
         },
         content: {
-          text: payload.text,
+          text: stripModelThinking(payload.text),
         },
         metadata: {
           timestamp: envelope.createdAt,
@@ -1535,15 +1537,30 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       wsServerForEvents.emitEvent("chat:message", chatMsg);
 
       // Generate a chat draft if chat assist is enabled (async, fire-and-forget)
-      // Also check the contact's AI access level
       const contactPrefs = currentContactAiPrefs.get(payload.senderOwnerId);
-      // If contact has no preferences, use defaultModeForNewContacts setting
-      const defaultMode = currentAiSettings?.defaultModeForNewContacts ?? "manual";
-      const aiAccessLevel = contactPrefs?.aiAccessLevel ?? (defaultMode === "manual" ? "none" : defaultMode === "assistant" ? "assistant_only" : "full");
-      console.log(`[chat] currentChatAssistEnabled=${currentChatAssistEnabled}, bondLevel=${senderTrust?.level}, aiAccessLevel=${aiAccessLevel}, defaultMode=${defaultMode}`);
+      const aiAccessLevel = resolveContactAiAccessLevel(
+        payload.senderOwnerId,
+        contactPrefs
+          ? [{ peerOwnerId: payload.senderOwnerId, ...contactPrefs }]
+          : [],
+        currentAiSettings?.defaultModeForNewContacts,
+      );
+      const autoSendEnabled = currentAutonomousPolicies.some(
+        (p) => p.domain === "social" && p.autoSendChat,
+      );
+      const effectiveChatAssist =
+        currentChatAssistEnabled ||
+        aiAccessLevel === "assistant_only" ||
+        (autoSendEnabled && aiAccessLevel === "full");
+      const allowWhileOwnerOnline =
+        currentAiSettings?.status?.onlineAssistantEnabled === true ||
+        (autoSendEnabled && aiAccessLevel === "full" && !currentAutonomousKillSwitch);
+      console.log(
+        `[chat] effectiveChatAssist=${effectiveChatAssist}, bondLevel=${senderTrust?.level}, aiAccessLevel=${aiAccessLevel}, allowWhileOwnerOnline=${allowWhileOwnerOnline}`,
+      );
 
       // Only generate drafts if AI access level allows it (assistant_only or full)
-      if (currentChatAssistEnabled && (aiAccessLevel === "assistant_only" || aiAccessLevel === "full")) {
+      if (effectiveChatAssist && (aiAccessLevel === "assistant_only" || aiAccessLevel === "full")) {
         const senderDisplayName = senderTrust?.displayName ?? payload.senderOwnerId;
         console.log(`[chat] generating draft for message from ${senderDisplayName}: ${payload.text}`);
         void generateChatDraft({
@@ -1560,7 +1577,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           profile,
           draftStore: chatDraftStore,
           modelProviders: currentModelProviders,
-          chatAssistEnabled: currentChatAssistEnabled,
+          chatAssistEnabled: effectiveChatAssist,
           aiIdentity: currentAiSettings?.identity,
           contactAiAccessLevel: aiAccessLevel,
           knowledgeAccess: contactPrefs?.knowledgeAccess ?? "public",
@@ -1571,8 +1588,13 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           chatLogStore,
           humanProfileStore,
           modeController,
+          allowWhileOwnerOnline,
         }).then(async (result) => {
-          if (result.ok && wsServerForEvents) {
+          if (!result.ok) {
+            console.log(`[chat] draft skipped for ${payload.senderOwnerId}: ${result.reason}`);
+            return;
+          }
+          if (wsServerForEvents) {
             // Apply style adaptation (Phase 9F): match owner's writing voice
             const adapted = styleAdapter.adapt(
               result.draft.text,

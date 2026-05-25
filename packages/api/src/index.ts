@@ -1,4 +1,6 @@
+export * from "./model-thinking.js";
 export * from "./connectivity-tuning.js";
+export * from "./contact-ai-access.js";
 export * from "./default-bootstrap.js";
 export * from "./node-service.js";
 export * from "./bond-target.js";

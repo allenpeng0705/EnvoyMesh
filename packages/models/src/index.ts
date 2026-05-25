@@ -414,8 +414,10 @@ function readEnvoyModelEnv(key: string): string | undefined {
  * Legacy configs often omit `/v1`; Ollama exposes compat at `http://host:11434/v1`.
  */
 export function normalizeOpenAiCompatibleBaseUrl(endpoint: string): string {
-  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  let trimmed = endpoint.trim().replace(/\/+$/, "");
   if (!trimmed) return trimmed;
+  // MiniMax China API lives on api.minimaxi.com; api.minimax.com is a common typo (ENOTFOUND).
+  trimmed = trimmed.replace(/^(https?:\/\/)api\.minimax\.com(?=[:/]|$)/i, "$1api.minimaxi.com");
   if (/\/v1$/i.test(trimmed)) return trimmed;
   return `${trimmed}/v1`;
 }

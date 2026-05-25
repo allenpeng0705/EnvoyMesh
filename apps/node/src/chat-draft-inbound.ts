@@ -62,6 +62,8 @@ export async function generateChatDraft(input: {
   chatLogStore?: LocalChatLogStore | null;
   humanProfileStore?: HumanProfileStore;
   modeController?: ModeController;
+  /** When true, skip reactive-mode guard (auto-reply or online assistant enabled). */
+  allowWhileOwnerOnline?: boolean;
 }): Promise<ChatDraftResult | ChatDraftFailure> {
   const {
     envelope,
@@ -87,6 +89,7 @@ export async function generateChatDraft(input: {
     chatLogStore = null,
     humanProfileStore,
     modeController,
+    allowWhileOwnerOnline = false,
   } = input;
 
   // Guard: chat assist must be enabled
@@ -108,8 +111,14 @@ export async function generateChatDraft(input: {
     return { ok: false, reason: "sender is blocked" };
   }
 
-  // Mode guard (Phase 9D): skip draft in reactive mode when owner is connected
-  if (modeController && modeController.getCurrentMode() === "reactive" && modeController.isOwnerConnected()) {
+  // Mode guard (Phase 9D): skip draft in reactive mode when owner is connected,
+  // unless auto-reply or online assistant explicitly allows it.
+  if (
+    modeController &&
+    modeController.getCurrentMode() === "reactive" &&
+    modeController.isOwnerConnected() &&
+    !allowWhileOwnerOnline
+  ) {
     return { ok: false, reason: "agent is in reactive mode with owner online" };
   }
 

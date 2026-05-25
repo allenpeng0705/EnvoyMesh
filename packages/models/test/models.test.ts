@@ -348,6 +348,11 @@ describe("normalizeOpenAiCompatibleBaseUrl", () => {
     expect(normalizeOpenAiCompatibleBaseUrl("http://127.0.0.1:11434/v1")).toBe("http://127.0.0.1:11434/v1");
     expect(normalizeOpenAiCompatibleBaseUrl("https://api.openai.com/v1")).toBe("https://api.openai.com/v1");
   });
+
+  it("fixes common MiniMax China hostname typo", () => {
+    expect(normalizeOpenAiCompatibleBaseUrl("https://api.minimax.com")).toBe("https://api.minimaxi.com/v1");
+    expect(normalizeOpenAiCompatibleBaseUrl("https://api.minimax.com/v1")).toBe("https://api.minimaxi.com/v1");
+  });
 });
 
 describe("buildModelProviders trustedLocalAssist", () => {

@@ -132,8 +132,8 @@ export function SettingsNodeTab() {
         };
       case "openai-compatible":
         return {
-          endpointPlaceholder: "https://api.openai.com/v1",
-          hint: "Any Chat Completions–compatible API; base URL should include /v1.",
+          endpointPlaceholder: "https://api.minimaxi.com/v1",
+          hint: "Any Chat Completions–compatible API; base URL should include /v1. MiniMax China: https://api.minimaxi.com/v1 (not api.minimax.com). International: https://api.minimax.io/v1.",
           apiKeyHint: "Usually required unless your gateway injects auth.",
         };
       case "anthropic-compatible":

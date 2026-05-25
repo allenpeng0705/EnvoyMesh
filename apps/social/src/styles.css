@@ -3924,6 +3924,7 @@ button:disabled {
   border: 1px solid var(--color-border);
   border-radius: 9999px;
   padding: 0.125rem;
+  overflow: visible;
 }
 
 .assistant-switch-btn {
@@ -3965,7 +3966,8 @@ button:disabled {
 .assistant-switch-btn[title]::after {
   content: attr(title);
   position: absolute;
-  bottom: calc(100% + 4px);
+  top: calc(100% + 6px);
+  bottom: auto;
   left: 50%;
   transform: translateX(-50%);
   padding: 0.25rem 0.5rem;
@@ -3988,9 +3990,10 @@ button:disabled {
 
 .assistant-switch-label {
   font-size: var(--text-xs);
-  font-weight: 500;
+  font-weight: 600;
   color: var(--color-text-muted);
-  margin-right: 0.25rem;
+  padding: 0 0.25rem 0 0.375rem;
+  white-space: nowrap;
 }
 
 @media (max-width: 768px) {
