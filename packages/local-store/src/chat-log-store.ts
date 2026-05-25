@@ -74,6 +74,8 @@ export interface LocalChatLogStore {
   append(threadPeerOwnerId: string, envelope: ChatLogEnvelope): Promise<void>;
   /** Most recent messages in a thread, ascending by timestamp (default newest cap 800). */
   listThread(threadPeerOwnerId: string, limit?: number): Promise<ChatLogEnvelope[]>;
+  /** Scan all stored messages (for RAG backfill). */
+  listAllMessages(limit?: number): Promise<Array<ChatLogEnvelope & { threadPeerOwnerId: string }>>;
 }
 
 function isMissingFileError(error: unknown): boolean {
@@ -146,6 +148,34 @@ export function createLocalChatLogStore(profileDir: string): LocalChatLogStore {
       );
 
       const cap = Math.max(1, Math.min(limit, 5000));
+      return out.length > cap ? out.slice(out.length - cap) : out;
+    },
+
+    async listAllMessages(limit = 5000) {
+      let contents: string;
+      try {
+        contents = await readFile(path, "utf8");
+      } catch (error) {
+        if (isMissingFileError(error)) {
+          return [];
+        }
+        throw error;
+      }
+
+      const lines = contents.split("\n").filter((l) => l.trim().length > 0);
+      const out: Array<ChatLogEnvelope & { threadPeerOwnerId: string }> = [];
+      for (const line of lines) {
+        if (line.length > MAX_JSONL_LINE_CHARS) continue;
+        try {
+          const row = JSON.parse(line) as ChatLogLine;
+          if (row.version === "0.1" && row.messageId && row.threadPeerOwnerId) {
+            out.push({ threadPeerOwnerId: row.threadPeerOwnerId, ...lineToEnvelope(row) });
+          }
+        } catch {
+          /* skip corrupted line */
+        }
+      }
+      const cap = Math.max(1, Math.min(limit, 20_000));
       return out.length > cap ? out.slice(out.length - cap) : out;
     },
   };

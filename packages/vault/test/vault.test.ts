@@ -31,10 +31,11 @@ afterEach(async () => {
 });
 
 describe("vault", () => {
-  it("marks only .txt / .md / .json as vault text-chunk formats (legacy isSupportedVaultFile helper)", () => {
+  it("marks only .txt / .md / .json / .csv as vault text-chunk formats (legacy isSupportedVaultFile helper)", () => {
     expect(isSupportedVaultFile("note.md")).toBe(true);
     expect(isSupportedVaultFile("data.json")).toBe(true);
     expect(isSupportedVaultFile("plain.txt")).toBe(true);
+    expect(isSupportedVaultFile("sheet.csv")).toBe(true);
     expect(isSupportedVaultFile("secret.pdf")).toBe(false);
   });
 
@@ -117,6 +118,14 @@ describe("vault", () => {
     expect(typeof index.documents[0].documentId).toBe("string");
   });
 
+  it("indexes invalid extractable files without chunks", async () => {
+    await writeFile(join(vaultDir, "secret.pdf"), "fake pdf-like bytes");
+
+    const index = await buildVaultIndex({ rootDir: vaultDir });
+    expect(index.documents).toHaveLength(1);
+    expect(index.chunks.filter((chunk) => chunk.relativePath === "secret.pdf")).toHaveLength(0);
+  });
+
   it("searches chunks and returns document metadata", async () => {
     await writeFile(join(vaultDir, "books.md"), "Designing Data-Intensive Applications is a strong systems book.");
     await writeFile(join(vaultDir, "cooking.txt"), "Bread needs flour and time.");
@@ -197,5 +206,13 @@ describe("vault", () => {
     };
 
     expect(chunkDocument(metadata, "   ")).toEqual([]);
+  });
+
+  it("skips files larger than maxFileBytes", async () => {
+    await writeFile(join(vaultDir, "huge.txt"), "x".repeat(200));
+    const index = await buildVaultIndex({ rootDir: vaultDir, maxFileBytes: 64 });
+    expect(index.documents).toHaveLength(1);
+    expect(index.documents[0]?.indexSkippedReason).toContain("max size");
+    expect(index.chunks).toHaveLength(0);
   });
 });

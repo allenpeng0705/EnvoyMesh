@@ -2048,3 +2048,4 @@ export * from "./chat-log-store.js";
 export * from "./chat-draft-store.js";
 export * from "./capability-manifest-store.js";
 export * from "./session-token-store.js";
+export * from "./agent-identity-store.js";

@@ -348,10 +348,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
                           })}
                           deliveryReceipt={outgoing ? msg.metadata.deliveryReceipt : undefined}
                         >
-                          <ChatMessageText
-                            text={msg.content.text}
-                            allowThinkingToggle={outgoing}
-                          />
+                          <ChatMessageText text={msg.content.text} />
                           {msg.content.attachments?.map((attachment) => (
                             <ChatFileAttachment key={attachment.id} attachment={attachment} />
                           ))}

@@ -5,5 +5,11 @@ apps/tauri/src-tauri/target/
 *.tsbuildinfo
 .env
 .env.*
+# Local runtime data (profiles, keys, RAG DB). Exception: committed template only.
 data/
+!apps/node/data/
+apps/node/data/**
+!apps/node/data/default/
+apps/node/data/default/**
+!apps/node/data/default/node-config.example.jsonc
 shared_vault/

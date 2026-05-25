@@ -1,5 +1,6 @@
-import { createAuditEvent, type LocalTaskStore, type LocalTrustStore, type LocalPeerDirectoryStore, type NodeProfile, type LocalChatLogStore, type HumanProfileStore } from "@envoymesh/local-store";
+import { createAuditEvent, type LocalTaskStore, type LocalTrustStore, type LocalPeerDirectoryStore, type NodeProfile, type LocalChatLogStore, type HumanProfileStore, type AgentIdentityStore } from "@envoymesh/local-store";
 import { buildContextInjection } from "./context-injector.js";
+import { loadAgentIdentitySection } from "./agent-identity-context.js";
 import {
   createKnowledgeResponsePayload,
   parseKnowledgeQueryPayload,
@@ -7,10 +8,12 @@ import {
   type KnowledgeResponsePayload,
 } from "@envoymesh/protocol";
 import { evaluatePolicy } from "@envoymesh/bonds";
-import { searchVaultWithAudit, type VaultIndex } from "@envoymesh/vault";
+import type { VaultIndex } from "@envoymesh/vault";
 import { buildModelProviders, routeModelRequest } from "@envoymesh/models";
-import type { ModelProviderConfig } from "@envoymesh/api";
+import type { AiKnowledgeBaseSettings, ModelProviderConfig } from "@envoymesh/api";
 import { ZodError } from "zod";
+import { formatVaultKnowledgeSection, searchVaultKnowledgeBase, type KnowledgeAccessLevel } from "./ai-context.js";
+import type { RagService } from "./rag-service.js";
 
 export type KnowledgeQueryInboundResult =
   | { ok: true; responsePayload: KnowledgeResponsePayload }
@@ -73,8 +76,34 @@ export async function handleInboundKnowledgeQuery(input: {
   chatLogStore?: LocalChatLogStore | null;
   /** Human profile store for owner profile context injection (Phase 9C). */
   humanProfileStore?: HumanProfileStore;
+  /** Owner-editable agent operating instructions (`agent-identity.md`). */
+  agentIdentityStore?: AgentIdentityStore | null;
+  /** Owner knowledge base settings (chat history limits + vault paths). */
+  knowledgeBase?: AiKnowledgeBaseSettings | null;
+  /** Contact knowledge access ceiling for vault snippet filtering. Default: public. */
+  knowledgeAccess?: KnowledgeAccessLevel;
+  ragService?: RagService | null;
 }): Promise<KnowledgeQueryInboundResult> {
-  const { envelope, remotePeerId, receivedAt, correlationId, taskStore, trustStore, peerDirectoryStore, profile, vaultIndex, modelProviders, isLocalSelfQuery = false, ownerApproved = false, chatLogStore = null, humanProfileStore } = input;
+  const {
+    envelope,
+    remotePeerId,
+    receivedAt,
+    correlationId,
+    taskStore,
+    trustStore,
+    peerDirectoryStore,
+    profile,
+    vaultIndex,
+    modelProviders,
+    isLocalSelfQuery = false,
+    ownerApproved = false,
+    chatLogStore = null,
+    humanProfileStore,
+    agentIdentityStore = null,
+    knowledgeBase,
+    knowledgeAccess = isLocalSelfQuery ? "personal" : "public",
+    ragService = null,
+  } = input;
 
   let payload: ReturnType<typeof parseKnowledgeQueryPayload>;
   try {
@@ -170,16 +199,25 @@ export async function handleInboundKnowledgeQuery(input: {
   const maxSens = policyDecision.action === "allow" ? policyDecision.maxSensitivity : "public";
   const allowedSensitivity = maxSens ?? "public";
 
-  // 4. Search vault (best-effort; if vaultIndex is null, skip vault search)
-  let vaultResults: { results: ReturnType<typeof searchVaultWithAudit>["results"]; audited: boolean } = { results: [], audited: false };
+  // 4. Search vault knowledge base (best-effort)
+  let vaultSnippets: Awaited<ReturnType<RagService["searchVaultKnowledgeBase"]>> = [];
+  const knowledgeScope = isLocalSelfQuery ? "owner" : "public";
   if (vaultIndex) {
-    const searchResult = searchVaultWithAudit(vaultIndex, payload.query, {
-      requesterPeerId: remotePeerId,
-      requesterOwnerId: senderOwnerId,
-      createdAt: envelope.createdAt,
-    });
-    vaultResults = { results: searchResult.results, audited: true };
-    // Audit vault search
+    vaultSnippets = ragService
+      ? await ragService.searchVaultKnowledgeBase({
+          vaultIndex,
+          query: payload.query,
+          knowledgeAccess,
+          knowledgeBase,
+          knowledgeScope,
+        })
+      : searchVaultKnowledgeBase({
+          vaultIndex,
+          query: payload.query,
+          knowledgeAccess,
+          knowledgeBase,
+          knowledgeScope,
+        });
     await taskStore.appendAuditEvent(
       createAuditEvent({
         type: "vault.searched",
@@ -191,28 +229,40 @@ export async function handleInboundKnowledgeQuery(input: {
         verificationStatus: "verified",
         latencyMs: Date.now() - receivedAt,
         outcome: "record",
-        summary: `vault search: ${searchResult.results.length} result(s) for query "${preview}"`,
+        summary: `vault search: ${vaultSnippets.length} snippet(s) for query "${preview}"`,
         createdAt: envelope.createdAt,
       }),
     );
   }
 
-  // 5. Build model prompt from vault snippets (if any)
-  const snippets = vaultResults.results.slice(0, 5);
-  const promptContext = snippets.length > 0
-    ? snippets.map((r) => `[From ${r.document.title}]: ${r.chunk.text}`).join("\n\n")
+  const promptContext = vaultSnippets.length > 0
+    ? formatVaultKnowledgeSection(vaultSnippets).replace(/^## Knowledge base\n/, "")
     : "(No vault documents found — answering from general knowledge)";
 
-  // Build rich context injection (Phase 9C): conversation history + relationship + profile
-  const injectedContext = humanProfileStore && senderOwnerId
-    ? await buildContextInjection(senderOwnerId, chatLogStore, trustStore, humanProfileStore)
+  const contextOwnerId = isLocalSelfQuery ? profile.owner.ownerId : senderOwnerId;
+  const injectedContext = humanProfileStore && contextOwnerId
+    ? await buildContextInjection(contextOwnerId, chatLogStore, trustStore, humanProfileStore, {
+        knowledgeBase,
+        ragQuery: payload.query,
+        ragService,
+      })
     : "";
 
+  const externalContext = ragService
+    ? await ragService.getExternalKnowledgeContext({
+        query: payload.query,
+        knowledgeBase,
+        knowledgeScope,
+      })
+    : "";
+
+  const agentIdentitySection = await loadAgentIdentitySection(agentIdentityStore);
+
   const prompt = `You are answering a knowledge query from a contact on the EnvoyMesh P2P network.\n\
-Answer only based on the provided context. If the context does not contain relevant information, say so.\n\
+${agentIdentitySection}Answer only based on the provided context. If the context does not contain relevant information, say so.\n\
 Do not make up information. Keep the answer concise (2-4 sentences).\n\
 Sensitivity level of this answer: ${allowedSensitivity}.\n\n\
-Context:\n${promptContext}\n${injectedContext}\n\
+Context:\n${promptContext}\n${injectedContext}${externalContext}\n\
 Query: ${payload.query}`;
 
   // Cap sensitivity for cloud providers (they only allow "public" by default)
@@ -286,8 +336,8 @@ Query: ${payload.query}`;
 
   // 8. Build and return response payload
   const answer = modelResult.response?.text ?? "Model unavailable.";
-  const matchScore = snippets.length > 0
-    ? Math.min(1, snippets.reduce((sum, r) => sum + r.score, 0) / snippets.length / 10)
+  const matchScore = vaultSnippets.length > 0
+    ? Math.min(1, vaultSnippets.reduce((sum, r) => sum + r.score, 0) / vaultSnippets.length / 10)
     : 0;
 
   const responsePayload = createKnowledgeResponsePayload({

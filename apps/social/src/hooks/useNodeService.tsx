@@ -38,6 +38,7 @@ import type {
   ImportToLibraryParams,
   ImportToLibraryResult,
   IpfsEngineStatus,
+  RagIndexStatus,
 } from "@envoymesh/api";
 
 type InitNodeOptions = {
@@ -70,6 +71,8 @@ export interface NodeServiceClient {
   getProfile(): Promise<NodeProfile>;
   getHumanProfile(): Promise<HumanProfile | undefined>;
   updateHumanProfile(input: CreateHumanProfileInput): Promise<HumanProfile>;
+  getAgentIdentity(): Promise<import("@envoymesh/api").AgentIdentityDocument>;
+  updateAgentIdentity(content: string): Promise<import("@envoymesh/api").AgentIdentityDocument>;
 
   // Bond Management
   sendHello(
@@ -118,6 +121,7 @@ export interface NodeServiceClient {
   setLibraryItemPublished(documentId: string, published: boolean): Promise<void>;
   exportLibraryItemToIpfs(documentId: string): Promise<ExportLibraryItemToIpfsResult>;
   getIpfsEngineStatus(): Promise<IpfsEngineStatus>;
+  getRagIndexStatus(): Promise<RagIndexStatus>;
   verifyLibraryItemIpfsGateway(
     params: VerifyLibraryItemIpfsGatewayParams,
   ): Promise<VerifyLibraryItemIpfsGatewayResult>;
@@ -249,6 +253,8 @@ function createWsNodeServiceClient(
     async getProfile() { return wsClient.rpc("getProfile"); },
     async getHumanProfile() { return wsClient.rpc("getHumanProfile"); },
     async updateHumanProfile(input: CreateHumanProfileInput) { return wsClient.rpc("updateHumanProfile", input as unknown as Record<string, unknown>); },
+    async getAgentIdentity() { return wsClient.rpc("getAgentIdentity"); },
+    async updateAgentIdentity(content: string) { return wsClient.rpc("updateAgentIdentity", { content }); },
     async sendHello(targetOwnerId: string, profile: HelloProfile, message: string, options?: SendHelloOptions) {
       return wsClient.rpc("sendHello", {
         targetOwnerId,
@@ -309,6 +315,9 @@ function createWsNodeServiceClient(
     },
     async getIpfsEngineStatus() {
       return wsClient.rpc("getIpfsEngineStatus", {}) as Promise<IpfsEngineStatus>;
+    },
+    async getRagIndexStatus() {
+      return wsClient.rpc("getRagIndexStatus", {}) as Promise<RagIndexStatus>;
     },
     async verifyLibraryItemIpfsGateway(params: VerifyLibraryItemIpfsGatewayParams) {
       return wsClient.rpc("verifyLibraryItemIpfsGateway", params as unknown as Record<string, unknown>) as Promise<

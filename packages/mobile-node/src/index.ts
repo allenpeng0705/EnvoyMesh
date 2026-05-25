@@ -104,6 +104,7 @@ import type {
   AgentShareProposal,
   BondRecord,
   ChatDraft,
+  AgentIdentityDocument,
   CreateHumanProfileInput,
   DiscoverPublishedLibraryParams,
   DiscoverPublishedLibraryPeerResult,
@@ -914,6 +915,55 @@ export class MobileNode implements NodeService {
     return profile;
   }
 
+  async getAgentIdentity(): Promise<AgentIdentityDocument> {
+    if (!this._state) {
+      throw new Error("Node not initialized — call initNode() first");
+    }
+    try {
+      const raw = localStorage.getItem(`envoymesh_agent_identity_${this._state.owner.ownerId}`);
+      if (raw) {
+        return JSON.parse(raw) as AgentIdentityDocument;
+      }
+    } catch { /* ignore parse errors */ }
+    return {
+      content: `# Agent identity
+
+Describe who your AI assistant is, how it should communicate, and what it can or cannot do.
+
+## Role
+You are the owner's personal AI assistant on EnvoyMesh.
+
+## Tone & style
+- Be concise and helpful
+- Match the owner's communication style when drafting replies
+
+## Boundaries
+- Do not share private vault content with contacts unless explicitly allowed
+- Do not invent facts not supported by conversation or knowledge base
+
+## Capabilities
+- Answer questions from the local knowledge base (Envoy AI chat)
+- Draft replies for contacts when assistant or auto-reply mode is enabled
+- Propose file shares and library publishes (requires approval by default)
+`,
+      updatedAt: new Date(0).toISOString(),
+    };
+  }
+
+  async updateAgentIdentity(content: string): Promise<AgentIdentityDocument> {
+    if (!this._state) {
+      throw new Error("Node not initialized — call initNode() first");
+    }
+    const doc: AgentIdentityDocument = { content, updatedAt: new Date().toISOString() };
+    try {
+      localStorage.setItem(
+        `envoymesh_agent_identity_${this._state.owner.ownerId}`,
+        JSON.stringify(doc),
+      );
+    } catch { /* localStorage may be unavailable */ }
+    return doc;
+  }
+
   private _loadCachedProfile(): void {
     if (!this._state) return;
     try {
@@ -1137,6 +1187,7 @@ export class MobileNode implements NodeService {
   async sendChat(targetOwnerId: string, text: string): Promise<import("@envoymesh/api").SendChatResult> {
     const msgId = _randomUUID();
     const ts = new Date().toISOString();
+    const wireText = stripModelThinking(text);
     // Persist locally — threaded by targetOwnerId (ownerId namespace).
     // NOTE: Inbound chat messages are threaded by senderPeerId (peerId namespace).
     // The two namespaces differ; a unified thread view requires an ownerId→peerId
@@ -1145,7 +1196,7 @@ export class MobileNode implements NodeService {
       messageId: msgId,
       sender: { ownerId: this._state.owner.ownerId, displayName: "Me" },
       recipient: { ownerId: targetOwnerId },
-      content: { text },
+      content: { text: wireText },
       metadata: { timestamp: ts, deliveryReceipt: "sent" },
       signature: "",
     });
@@ -1154,7 +1205,7 @@ export class MobileNode implements NodeService {
       messageId: msgId,
       sender: { nodeId: this._state.agent.agentPeerId, displayName: "Me", ownerId: this._state.owner.ownerId },
       recipient: { nodeId: "", ownerId: targetOwnerId },
-      content: { text },
+      content: { text: wireText },
       metadata: { timestamp: ts, deliveryReceipt: "sent" },
       signature: "",
     });
@@ -1468,6 +1519,11 @@ export class MobileNode implements NodeService {
         errorHint: heliaError,
       },
     };
+  }
+
+  async getRagIndexStatus(): Promise<import("@envoymesh/api").RagIndexStatus> {
+    const { DEFAULT_RAG_INDEX_STATUS } = await import("@envoymesh/api");
+    return { ...DEFAULT_RAG_INDEX_STATUS };
   }
 
   async verifyLibraryItemIpfsGateway(

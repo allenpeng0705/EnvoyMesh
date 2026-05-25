@@ -24,6 +24,10 @@ export async function routeRpcMethod(
       return ns.getHumanProfile();
     case "updateHumanProfile":
       return ns.updateHumanProfile(params as any);
+    case "getAgentIdentity":
+      return ns.getAgentIdentity();
+    case "updateAgentIdentity":
+      return ns.updateAgentIdentity(params.content as string);
     case "sendHello":
       return ns.sendHello(
         params.targetOwnerId as string,
@@ -79,6 +83,8 @@ export async function routeRpcMethod(
       return ns.exportLibraryItemToIpfs(params.documentId as string);
     case "getIpfsEngineStatus":
       return ns.getIpfsEngineStatus();
+    case "getRagIndexStatus":
+      return ns.getRagIndexStatus();
     case "verifyLibraryItemIpfsGateway":
       return ns.verifyLibraryItemIpfsGateway({
         documentId: params.documentId as string,

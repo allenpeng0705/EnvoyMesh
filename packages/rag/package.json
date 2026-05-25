@@ -1,0 +1,17 @@
+{
+  "name": "@envoymesh/rag",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "dependencies": {
+    "@envoymesh/api": "0.1.0",
+    "hnswlib-node": "^3.0.0"
+  }
+}

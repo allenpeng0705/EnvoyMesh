@@ -8,6 +8,7 @@ import type {
   ChatDiagnostics,
   ConnectionStatus,
   CreateHumanProfileInput,
+  AgentIdentityDocument,
   HelloProfile,
   HelloRequest,
   HelloResponse,
@@ -47,10 +48,15 @@ import type {
   VerifyLibraryItemIpfsGatewayResult,
   ImportToLibraryParams,
   ImportToLibraryResult,
+  RagIndexStatus,
   TransferStatus,
 } from "@envoymesh/api";
 import type { DocumentAgentTurnResult } from "@envoymesh/api";
-import { runDocumentAgentTurn as runDocumentAgentTurnLoop, normalizeDocumentAutonomyPolicy } from "@envoymesh/api";
+import {
+  DEFAULT_RAG_INDEX_STATUS,
+  runDocumentAgentTurn as runDocumentAgentTurnLoop,
+  normalizeDocumentAutonomyPolicy,
+} from "@envoymesh/api";
 
 import { randomUUID } from "node:crypto";
 import {
@@ -66,6 +72,7 @@ import {
   resolveIdleTimerStretch,
   resolveLazyCapabilityDiscovery,
   stripModelThinking,
+  buildVaultIndexOptionsFromKnowledgeBase,
 } from "@envoymesh/api";
 
 import {
@@ -108,6 +115,7 @@ import {
   createLocalTrustStore,
   createLocalPeerDirectoryStore,
   createHumanProfileStore,
+  createAgentIdentityStore,
   createLocalChatLogStore,
   createChatDraftStore,
   createTaskRuntimeStateStore,
@@ -121,6 +129,7 @@ import {
   type LocalChatLogStore,
   type ChatDraftStore,
   type HumanProfileStore,
+  type AgentIdentityStore,
   type TaskRuntimeStateStore,
   type RelayStateStore,
   type CapabilityManifestStore,
@@ -177,6 +186,8 @@ import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { runInboundChatAssist } from "./inbound-chat-assist.js";
 import { executeHomeClawCoreProxy } from "./homeclaw-core-proxy.js";
+import { chatLogRowsToViews } from "./ai-context.js";
+import { createRagService, type RagService } from "./rag-service.js";
 
 const MAX_FRIEND_MATCHING_PREFS_CHARS = 4096;
 
@@ -223,6 +234,7 @@ class NodeServiceImpl implements NodeService {
   private readonly _trustStore: LocalTrustStore;
   private readonly _peerDirectoryStore: LocalPeerDirectoryStore;
   private readonly _humanProfileStore: HumanProfileStore;
+  private readonly _agentIdentityStore: AgentIdentityStore | null;
   private readonly _chatLogStore: LocalChatLogStore | null;
   private readonly _chatDraftStore: ChatDraftStore | null;
   private readonly _capabilityManifestStore: CapabilityManifestStore | null;
@@ -230,6 +242,8 @@ class NodeServiceImpl implements NodeService {
   private readonly _profileDir: string;
   /** Root directory for {@link listLibraryItems} (ENVOYMESH_VAULT or shared_vault). */
   private readonly _vaultDir: string;
+  private _ragService: RagService | null = null;
+  private _ragServiceInit: Promise<RagService | null> | null = null;
   private _agentShareProposalStore: ReturnType<typeof createAgentShareProposalStore> | undefined;
 
   // App-managed mode stores
@@ -694,6 +708,8 @@ class NodeServiceImpl implements NodeService {
     this._trustStore = trustStore;
     this._peerDirectoryStore = peerDirectoryStore;
     this._humanProfileStore = humanProfileStore;
+    this._agentIdentityStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createAgentIdentityStore(profileDir) : null;
     this._profileDir = profileDir ?? "/tmp/unknown";
     this._vaultDir = vaultDir ?? process.env.ENVOYMESH_VAULT ?? join(process.cwd(), "shared_vault");
     this._configStore = profileDir ? createNodeConfigStore(profileDir) : createStubNodeConfigStore();
@@ -864,6 +880,21 @@ class NodeServiceImpl implements NodeService {
     }
 
     return signedProfile as HumanProfile;
+  }
+
+  async getAgentIdentity(): Promise<AgentIdentityDocument> {
+    if (!this._agentIdentityStore) {
+      throw new Error("Profile directory not initialized");
+    }
+    return this._agentIdentityStore.load();
+  }
+
+  async updateAgentIdentity(content: string): Promise<AgentIdentityDocument> {
+    this._assertOnline();
+    if (!this._agentIdentityStore) {
+      throw new Error("Profile directory not initialized");
+    }
+    return this._agentIdentityStore.save(content);
   }
 
   /**
@@ -1410,6 +1441,48 @@ class NodeServiceImpl implements NodeService {
     void this._chatLogStore.append(threadPeerOwnerId, msg).catch((err) =>
       console.warn(`[chat-log] append failed for thread=${threadPeerOwnerId}:`, err),
     );
+    void this._getRagService().then((rag) => {
+      if (!rag) return;
+      const view = chatLogRowsToViews([msg])[0];
+      if (!view) return;
+      return rag.indexChatMessage(threadPeerOwnerId, view);
+    }).catch((err) => console.warn(`[rag] chat index failed:`, err));
+  }
+
+  private async _getRagService(): Promise<RagService | null> {
+    if (this._profileDir === "/tmp/unknown") return null;
+    if (this._ragService) return this._ragService;
+    if (!this._ragServiceInit) {
+      this._ragServiceInit = (async () => {
+        const config = await this.getNodeConfig();
+        this._ragService = await createRagService({
+          profileDir: this._profileDir,
+          knowledgeBase: config.aiSettings?.knowledgeBase,
+          modelProviders: config.modelProviders,
+          chatLogStore: this._chatLogStore,
+          onProgress: (progress) => {
+            if (this.hasListeners("rag:reindex")) {
+              this.emit("rag:reindex", progress);
+            }
+          },
+        });
+        if (this._vaultDir) {
+          try {
+            const vaultIndex = await buildVaultIndex(
+              buildVaultIndexOptionsFromKnowledgeBase(this._vaultDir, config.aiSettings?.knowledgeBase),
+            );
+            await this._ragService.reindexVault({
+              vaultIndex,
+              knowledgeBase: config.aiSettings?.knowledgeBase,
+            });
+          } catch (error) {
+            console.warn(`[rag] vault reindex on init failed:`, error);
+          }
+        }
+        return this._ragService;
+      })();
+    }
+    return this._ragServiceInit;
   }
 
   private async _recordFileShareInChat(input: {
@@ -1665,7 +1738,7 @@ class NodeServiceImpl implements NodeService {
         displayName: recipientTrust?.displayName ?? targetOwnerId,
       },
       content: {
-        text,
+        text: wireText,
       },
       metadata: {
         timestamp: envelope.createdAt,
@@ -2050,6 +2123,11 @@ class NodeServiceImpl implements NodeService {
       profileDir: this._profileDir,
       selection: resolveIpfsExportEngineSelection({ externalPublish: config.externalPublish }),
     });
+  }
+
+  async getRagIndexStatus(): Promise<RagIndexStatus> {
+    const rag = await this._getRagService();
+    return rag?.getIndexStatus() ?? DEFAULT_RAG_INDEX_STATUS;
   }
 
   async verifyLibraryItemIpfsGateway(
@@ -3285,6 +3363,7 @@ class NodeServiceImpl implements NodeService {
               draftStore: this._chatDraftStore,
               chatLogStore: this._chatLogStore,
               humanProfileStore: this._humanProfileStore,
+              agentIdentityStore: this._agentIdentityStore,
               vaultDir: this._vaultDir,
               styleAdapter: this._styleAdapter,
               sendChat: (targetOwnerId, text) => this.sendChat(targetOwnerId, text),
@@ -4063,6 +4142,9 @@ class NodeServiceImpl implements NodeService {
     const nodeConfig = await this.getNodeConfig();
     console.log(`[knowledgeQuery] nodeConfig.modelProviders.mode=${nodeConfig.modelProviders.mode}`);
 
+    const vaultIndex = await buildVaultIndex({ rootDir: this._vaultDir });
+    const ragService = await this._getRagService();
+
     const result = await handleInboundKnowledgeQuery({
       envelope,
       remotePeerId: this._mesh.peerId,
@@ -4072,10 +4154,15 @@ class NodeServiceImpl implements NodeService {
       trustStore: this._trustStore,
       peerDirectoryStore: this._peerDirectoryStore,
       profile: this._profile,
-      vaultIndex: null,
+      vaultIndex,
       modelProviders: nodeConfig.modelProviders,
       isLocalSelfQuery: true,
       ownerApproved: true, // Local owner queries are implicitly approved
+      knowledgeBase: nodeConfig.aiSettings?.knowledgeBase,
+      chatLogStore: this._chatLogStore,
+      humanProfileStore: this._humanProfileStore,
+      agentIdentityStore: this._agentIdentityStore,
+      ragService,
     });
 
     if (!result.ok) {

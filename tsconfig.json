@@ -17,6 +17,7 @@
     { "path": "./packages/mobile-storage" },
     { "path": "./packages/mobile-vault" },
     { "path": "./packages/mobile-node" },
+    { "path": "./packages/rag" },
     { "path": "./apps/mobile" }
   ]
 }

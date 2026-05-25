@@ -1,16 +1,35 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, relative, resolve, sep } from "node:path";
+import { extractVaultDocumentText } from "./document-text-extract.js";
+import {
+  chunkDocument,
+  DEFAULT_CHUNK_OVERLAP_CHARS,
+  DEFAULT_MAX_CHUNK_CHARS,
+  type ChunkDocumentOptions,
+} from "./chunk-document.js";
+import {
+  isVaultExtractableExtension,
+  isVaultTextChunkExtension,
+  VAULT_EXTRACTABLE_EXTENSIONS,
+  VAULT_TEXT_CHUNK_EXTENSIONS,
+  type VaultExtractableExtension,
+  type VaultTextChunkExtension,
+} from "./vault-formats.js";
 
 export const DEFAULT_SHARED_VAULT_DIR = "shared_vault";
 
-/**
- * Extensions we UTF-8 read and chunk for full-text vault search.
- * Other files appear in manifests / library listings with integrity hash + byte size only (binary-safe).
- */
-export const VAULT_TEXT_CHUNK_EXTENSIONS = [".txt", ".md", ".json"] as const;
+export {
+  VAULT_EXTRACTABLE_EXTENSIONS,
+  VAULT_TEXT_CHUNK_EXTENSIONS,
+  isVaultExtractableExtension,
+  isVaultSearchableExtension,
+  isVaultTextChunkExtension,
+  type VaultExtractableExtension,
+  type VaultTextChunkExtension,
+} from "./vault-formats.js";
 
-export type VaultTextChunkExtension = (typeof VAULT_TEXT_CHUNK_EXTENSIONS)[number];
+export { extractVaultDocumentText, stripHtmlText, stripRtfText } from "./document-text-extract.js";
 
 /** @deprecated Use {@link VAULT_TEXT_CHUNK_EXTENSIONS} — kept for callers that relied on this name */
 export const SUPPORTED_VAULT_EXTENSIONS = VAULT_TEXT_CHUNK_EXTENSIONS;
@@ -27,6 +46,8 @@ export interface VaultDocumentMetadata {
   byteLength: number;
   contentHash: string;
   updatedAt: string;
+  /** Set when a file is listed but skipped for search indexing (e.g. too large). */
+  indexSkippedReason?: string;
 }
 
 export interface VaultChunk {
@@ -83,9 +104,19 @@ export async function writeVaultContentManifestFile(
   return manifest;
 }
 
+export {
+  chunkDocument,
+  DEFAULT_CHUNK_OVERLAP_CHARS,
+  DEFAULT_MAX_CHUNK_CHARS,
+  type ChunkDocumentOptions,
+} from "./chunk-document.js";
+
 export interface BuildVaultIndexOptions {
   rootDir: string;
   maxChunkChars?: number;
+  chunkOverlapChars?: number;
+  /** Skip text extraction and chunking when file size exceeds this limit. */
+  maxFileBytes?: number;
 }
 
 export interface VaultSearchResult {
@@ -141,13 +172,42 @@ export interface AuditedVaultSearchOptions extends VaultSearchOptions {
   eventId?: string;
 }
 
-const defaultMaxChunkChars = 800;
+const defaultMaxChunkChars = DEFAULT_MAX_CHUNK_CHARS;
+
+function chunkOptionsFromBuild(options: BuildVaultIndexOptions): ChunkDocumentOptions {
+  return {
+    maxChunkChars: options.maxChunkChars ?? defaultMaxChunkChars,
+    overlapChars: options.chunkOverlapChars ?? DEFAULT_CHUNK_OVERLAP_CHARS,
+  };
+}
+
+function metadataOnlyDocument(input: {
+  documentId: string;
+  relativePath: string;
+  extension: string;
+  byteLength: number;
+  contentHash: string;
+  updatedAt: string;
+  indexSkippedReason?: string;
+}): VaultDocumentMetadata {
+  return {
+    documentId: input.documentId,
+    relativePath: input.relativePath,
+    extension: input.extension,
+    title: titleFromRelativePath(input.relativePath),
+    byteLength: input.byteLength,
+    contentHash: input.contentHash,
+    updatedAt: input.updatedAt,
+    indexSkippedReason: input.indexSkippedReason,
+  };
+}
 
 export async function buildVaultIndex(options: BuildVaultIndexOptions): Promise<VaultIndex> {
   const rootDir = resolve(options.rootDir);
   const filePaths = await listSupportedVaultFiles(rootDir);
   const documents: VaultDocumentMetadata[] = [];
   const chunks: VaultChunk[] = [];
+  const chunking = chunkOptionsFromBuild(options);
 
   for (const filePath of filePaths) {
     assertPathInsideVault(rootDir, filePath);
@@ -155,6 +215,25 @@ export async function buildVaultIndex(options: BuildVaultIndexOptions): Promise<
     const fileStat = await stat(filePath);
     const relativePath = toVaultRelativePath(rootDir, filePath);
     const extension = extname(filePath).toLowerCase();
+
+    if (options.maxFileBytes != null && fileStat.size > options.maxFileBytes) {
+      const contentHashBin = hashContent(
+        `${relativePath}\nSKIPPED\n${fileStat.size}\n${fileStat.mtime.toISOString()}`,
+      );
+      documents.push(
+        metadataOnlyDocument({
+          documentId: createBinaryIntegrityDocumentId(relativePath, contentHashBin),
+          relativePath,
+          extension,
+          byteLength: fileStat.size,
+          contentHash: contentHashBin,
+          updatedAt: fileStat.mtime.toISOString(),
+          indexSkippedReason: `file exceeds max size (${options.maxFileBytes} bytes)`,
+        }),
+      );
+      continue;
+    }
+
     const raw = await readFile(filePath);
 
     if (isVaultTextChunkExtension(extension)) {
@@ -171,7 +250,24 @@ export async function buildVaultIndex(options: BuildVaultIndexOptions): Promise<
         updatedAt: fileStat.mtime.toISOString(),
       };
       documents.push(metadata);
-      chunks.push(...chunkDocument(metadata, contentString, options.maxChunkChars ?? defaultMaxChunkChars));
+      chunks.push(...chunkDocument(metadata, contentString, chunking));
+    } else if (isVaultExtractableExtension(extension)) {
+      const contentHashBin = hashBufferSha256Base64Url(raw);
+      const documentId = createBinaryIntegrityDocumentId(relativePath, contentHashBin);
+      const metadata: VaultDocumentMetadata = {
+        documentId,
+        relativePath,
+        extension,
+        title: titleFromRelativePath(relativePath),
+        byteLength: raw.byteLength,
+        contentHash: contentHashBin,
+        updatedAt: fileStat.mtime.toISOString(),
+      };
+      documents.push(metadata);
+      const extracted = await extractVaultDocumentText(extension, raw);
+      if (extracted) {
+        chunks.push(...chunkDocument(metadata, extracted, chunking));
+      }
     } else {
       const contentHashBin = hashBufferSha256Base64Url(raw);
       const documentId = createBinaryIntegrityDocumentId(relativePath, contentHashBin);
@@ -222,17 +318,11 @@ export function shouldIncludeVaultFileInIndex(filePath: string): boolean {
 }
 
 /**
- * Extensions we UTF-decode and chunk for full-text vault search (.txt / .md / .json).
+ * Extensions we UTF-decode directly for full-text vault search (.txt / .md / .json / .csv).
  * @deprecated This used to imply "eligible for indexing" — indexing now includes binary files via {@link shouldIncludeVaultFileInIndex}.
  */
 export function isSupportedVaultFile(filePath: string): boolean {
   return isVaultTextChunkExtension(extname(filePath));
-}
-
-/** True when this extension receives UTF-8 chunking / legacy content-hash semantics (.txt / .md / .json). */
-export function isVaultTextChunkExtension(extension: string): boolean {
-  const e = extension.toLowerCase();
-  return (VAULT_TEXT_CHUNK_EXTENSIONS as readonly string[]).includes(e);
 }
 
 export function assertPathInsideVault(rootDir: string, candidatePath: string): void {
@@ -248,33 +338,6 @@ export function assertPathInsideVault(rootDir: string, candidatePath: string): v
   ) {
     throw new Error("Path is outside the shared vault root");
   }
-}
-
-export function chunkDocument(
-  metadata: VaultDocumentMetadata,
-  content: string,
-  maxChunkChars = defaultMaxChunkChars,
-): VaultChunk[] {
-  const normalized = content.replace(/\s+/g, " ").trim();
-
-  if (!normalized) {
-    return [];
-  }
-
-  const chunks: VaultChunk[] = [];
-  for (let offset = 0; offset < normalized.length; offset += maxChunkChars) {
-    const text = normalized.slice(offset, offset + maxChunkChars);
-    const index = chunks.length;
-    chunks.push({
-      chunkId: `${metadata.documentId}:chunk:${index}`,
-      documentId: metadata.documentId,
-      relativePath: metadata.relativePath,
-      index,
-      text,
-    });
-  }
-
-  return chunks;
 }
 
 export function searchVault(

@@ -6,6 +6,7 @@ import {
   createApprovalRequest,
   createAuditEvent,
   createHumanProfileStore,
+  createAgentIdentityStore,
   createLocalChatLogStore,
   createChatDraftStore,
   createLocalPeerDirectoryStore,
@@ -119,6 +120,8 @@ import { handleInboundTaskFeedback, handleInboundOfficialCredential } from "./re
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { handleInboundShareRequest, handleInboundShareAccept, resolveSenderOwnerId } from "./share-inbound.js";
 import { generateChatDraft } from "./chat-draft-inbound.js";
+import { chatLogRowsToViews } from "./ai-context.js";
+import { createRagService, type RagService } from "./rag-service.js";
 import { ModeController, createDefaultModeConfig } from "./mode-controller.js";
 import { FileSessionStore, SessionManager } from "./session-manager.js";
 import { StyleAdapter } from "./style-adapter.js";
@@ -127,7 +130,7 @@ import { ApprovalQueue, createApprovalItem } from "./approval-queue.js";
 import { DigestGenerator, createDefaultDigestConfig } from "./digest-generator.js";
 import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
-import { resolveContactAiAccessLevel } from "@envoymesh/api";
+import { resolveContactAiAccessLevel, buildVaultIndexOptionsFromKnowledgeBase } from "@envoymesh/api";
 import { stripModelThinking } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
@@ -195,6 +198,7 @@ const taskStore = createLocalTaskStore(args.profileDir);
 const trustStore = createLocalTrustStore(args.profileDir);
 const peerDirectoryStore = createLocalPeerDirectoryStore(args.profileDir);
 const humanProfileStore = createHumanProfileStore(args.profileDir);
+const agentIdentityStore = createAgentIdentityStore(args.profileDir);
 const chatLogStore = createLocalChatLogStore(args.profileDir);
 const chatDraftStore = createChatDraftStore(args.profileDir);
 const capabilityManifestStore = createCapabilityManifestStore(args.profileDir);
@@ -288,11 +292,60 @@ const resolvedArgs = await resolveNodeArgsTargetsByOwnerId(args, peerDirectorySt
 const inboundGuard = createInboundMessageGuard();
 const vaultDirForNode = process.env.ENVOYMESH_VAULT ?? join(process.cwd(), "shared_vault");
 let vaultIndex: Awaited<ReturnType<typeof buildVaultIndex>> | null = null;
+let ragService: RagService | null = null;
+let emitRagReindexProgress: ((progress: import("@envoymesh/api").RagIndexProgress) => void) | undefined;
 try {
   vaultIndex = await buildVaultIndex({ rootDir: vaultDirForNode });
   console.log(`[vault] indexed ${vaultIndex.documents.length} document(s), ${vaultIndex.chunks.length} chunk(s)`);
 } catch (err) {
   console.warn(`[vault] index build failed (vault may be missing or empty):`, err);
+}
+
+async function refreshRagService(): Promise<void> {
+  try {
+    try {
+      vaultIndex = await buildVaultIndex(
+        buildVaultIndexOptionsFromKnowledgeBase(vaultDirForNode, currentAiSettings?.knowledgeBase),
+      );
+    } catch (err) {
+      console.warn(`[vault] index rebuild failed:`, err);
+    }
+
+    if (!ragService) {
+      ragService = await createRagService({
+        profileDir: args.profileDir,
+        knowledgeBase: currentAiSettings?.knowledgeBase,
+        modelProviders: currentModelProviders,
+        chatLogStore,
+        onProgress: (progress) => {
+          emitRagReindexProgress?.(progress);
+        },
+      });
+    } else {
+      await ragService.refreshConfig({
+        knowledgeBase: currentAiSettings?.knowledgeBase,
+        modelProviders: currentModelProviders,
+      });
+      await ragService.backfillChatHistory(chatLogStore);
+    }
+    if (vaultIndex) {
+      await ragService.reindexVault({
+        vaultIndex,
+        knowledgeBase: currentAiSettings?.knowledgeBase,
+      });
+    }
+  } catch (error) {
+    console.warn(`[rag] service refresh failed:`, error);
+  }
+}
+
+function scheduleChatRagIndex(threadOwnerId: string, message: Parameters<typeof chatLogStore.append>[1]): void {
+  if (!ragService) return;
+  const view = chatLogRowsToViews([message])[0];
+  if (!view) return;
+  void ragService.indexChatMessage(threadOwnerId, view).catch((err) =>
+    console.warn(`[rag] chat index failed:`, err),
+  );
 }
 
 // Model provider configuration — loaded from persisted config after nodeService is created
@@ -863,6 +916,9 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       modelProviders: currentModelProviders,
       chatLogStore,
       humanProfileStore,
+      agentIdentityStore,
+      knowledgeBase: currentAiSettings?.knowledgeBase,
+      ragService,
     });
     if (!kq.ok) {
       await taskStore.appendAuditEvent(
@@ -1493,6 +1549,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       void chatLogStore.append(payload.senderOwnerId, chatMsg).catch((err) =>
         console.warn(`[chat.message] chat log append failed:`, err),
       );
+      scheduleChatRagIndex(payload.senderOwnerId, chatMsg);
       // Record message in session manager (Phase 9E): track conversation state, sentiment, escalations
       void sessionManager.recordMessage(
         payload.senderOwnerId,
@@ -1586,6 +1643,8 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           humanProfileStore,
           modeController,
           allowWhileOwnerOnline,
+          knowledgeBase: currentAiSettings?.knowledgeBase,
+          ragService,
         }).then(async (result) => {
           if (!result.ok) {
             console.log(`[chat] draft skipped for ${payload.senderOwnerId}: ${result.reason}`);
@@ -2166,6 +2225,11 @@ const nodeService = createNodeService(
   vaultDirForNode,
 );
 if (nodeService instanceof NodeServiceImpl) {
+  emitRagReindexProgress = (progress) => {
+    if (nodeService.hasListeners("rag:reindex")) {
+      nodeService.emit("rag:reindex", progress);
+    }
+  };
   nodeService.bindCliTaskStore(taskStore);
   // bindExternalMesh + resyncBondedContactReachabilityTags run after mesh.start()
   // (mesh.peerId requires libp2p to be up).
@@ -2191,6 +2255,7 @@ if (nodeService instanceof NodeServiceImpl) {
   console.log(`[model] provider mode=${currentModelProviders.mode}`);
   console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
   console.log(`[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`);
+  await refreshRagService();
 }
 
 installEnvoyDataTransferReceiver({
@@ -2407,6 +2472,7 @@ nodeService.on("config:updated", (data) => {
     console.log(`[ai] identity mode=${currentAiSettings.identity.mode}, onlineAssistant=${currentAiSettings.status.onlineAssistantEnabled}, offlineAgent=${currentAiSettings.status.offlineAgentEnabled}`);
   }
   console.log(`[ai] contact prefs: ${currentContactAiPrefs.size} contacts`);
+  void refreshRagService();
 });
 
 // Bridge: P2P ↔ external agent HTTP pipe

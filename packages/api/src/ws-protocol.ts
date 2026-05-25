@@ -73,6 +73,8 @@ export type RpcMethods =
   | "getProfile"
   | "getHumanProfile"
   | "updateHumanProfile"
+  | "getAgentIdentity"
+  | "updateAgentIdentity"
   // Bond Management
   | "sendHello"
   | "acceptHello"
@@ -106,6 +108,7 @@ export type RpcMethods =
   | "setLibraryItemPublished"
   | "exportLibraryItemToIpfs"
   | "getIpfsEngineStatus"
+  | "getRagIndexStatus"
   | "verifyLibraryItemIpfsGateway"
   | "importToLibrary"
   | "resolveLibraryItemPath"
@@ -406,6 +409,8 @@ export interface AiSettings {
   defaultModeForNewContacts: "manual" | "assistant" | "auto";
   /** AI rules for trigger-action behavior. Default: empty */
   rules: AiRule[];
+  /** Local vault + chat RAG settings for AI context. */
+  knowledgeBase?: import("./ai-knowledge-base.js").AiKnowledgeBaseSettings;
   /** Document publish/share autonomy for Envoy AI (ADB-F). Default: proposals-only tier 0. */
   documentAutonomy?: import("./document-autonomy.js").DocumentAutonomyPolicy;
 }

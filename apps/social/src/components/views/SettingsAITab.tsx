@@ -1,16 +1,27 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
 import type {
   AiIdentityMode,
+  AiKnowledgeBaseSettings,
+  AiRagMode,
   AiRule,
   AiRuleActionType,
   AiRuleCategory,
   AiSettings,
   DocumentAutonomyPolicy,
+  RagIndexStatus,
 } from "@envoymesh/api";
-import { DEFAULT_DOCUMENT_AUTONOMY_POLICY, normalizeDocumentAutonomyPolicy } from "@envoymesh/api";
+import {
+  DEFAULT_AI_KNOWLEDGE_BASE,
+  DEFAULT_AI_KNOWLEDGE_BASE_MAX_FILE_BYTES,
+  DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_OVERLAP_CHARS,
+  DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_SIZE_CHARS,
+  DEFAULT_DOCUMENT_AUTONOMY_POLICY,
+  normalizeDocumentAutonomyPolicy,
+  type AgentIdentityDocument,
+} from "@envoymesh/api";
 
 // ---------------------------------------------------------------------------
 // "Add Rule" form — now fully controlled via React state (fixes the
@@ -43,6 +54,378 @@ const EMPTY_RULE_FORM: RuleFormState = {
   template: "",
 };
 
+function RagIndexStatusPanel() {
+  const nodeService = useNodeService();
+  const [status, setStatus] = useState<RagIndexStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const next = await nodeService.getRagIndexStatus();
+        if (!cancelled) setStatus(next);
+      } catch {
+        if (!cancelled) setStatus(null);
+      }
+    };
+    void refresh();
+    const off = nodeService.on("rag:reindex", (progress) => {
+      setStatus((prev) => ({
+        isIndexing: progress.phase !== "done" && progress.phase !== "idle" && progress.phase !== "error",
+        progress,
+        lastCompletedAt: progress.phase === "done" ? progress.updatedAt : prev?.lastCompletedAt,
+        trackedDocuments: prev?.trackedDocuments ?? 0,
+      }));
+    });
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, 5000);
+    return () => {
+      cancelled = true;
+      off();
+      window.clearInterval(timer);
+    };
+  }, [nodeService]);
+
+  if (!status) return null;
+
+  const { progress } = status;
+  const pct =
+    progress.total > 0 ? Math.min(100, Math.round((progress.processed / progress.total) * 100)) : status.isIndexing ? 0 : 100;
+
+  return (
+    <div className="form-group">
+      <label>Vector index status</label>
+      <div className="settings-status-panel">
+        <div className="settings-progress-bar" aria-hidden="true">
+          <div className="settings-progress-fill" style={{ width: `${pct}%` }} />
+        </div>
+        <p className="field-desc">
+          {status.isIndexing
+            ? `Indexing ${progress.phase}: ${progress.processed}/${progress.total} files`
+            : progress.phase === "done"
+              ? `Up to date — indexed ${progress.indexed}, skipped ${progress.skipped}, removed ${progress.removed}`
+              : progress.phase === "error"
+                ? `Index error: ${progress.message ?? "unknown"}`
+                : "Idle"}
+          {status.lastCompletedAt ? ` · Last run ${new Date(status.lastCompletedAt).toLocaleString()}` : ""}
+          {status.trackedDocuments > 0 ? ` · ${status.trackedDocuments} tracked file(s)` : ""}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function KnowledgeBaseSettings(props: {
+  value: AiKnowledgeBaseSettings;
+  onChange: (next: AiKnowledgeBaseSettings) => Promise<void>;
+}) {
+  const kb = props.value;
+  const patch = async (partial: Partial<AiKnowledgeBaseSettings>) => {
+    await props.onChange({ ...kb, ...partial });
+  };
+
+  return (
+    <>
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>Enable vault knowledge base</strong>
+          <span className="toggle-desc">Inject matching vault snippets into AI prompts</span>
+        </div>
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={kb.enabled !== false}
+            onChange={async (e) => {
+              await patch({ enabled: e.target.checked });
+            }}
+          />
+          <span className="slider" />
+        </label>
+      </div>
+
+      <div className="form-row">
+        <div className="form-group">
+          <label>Retrieval mode</label>
+          <select
+            value={kb.ragMode ?? DEFAULT_AI_KNOWLEDGE_BASE.ragMode}
+            onChange={async (e) => {
+              await patch({ ragMode: e.target.value as AiRagMode });
+            }}
+          >
+            <option value="vector">Vector (embeddings, recommended)</option>
+            <option value="hybrid">Hybrid (vector + keyword fallback)</option>
+            <option value="lexical">Lexical (keywords only)</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Embedding model</label>
+          <input
+            type="text"
+            placeholder="inherit from chat model or e.g. nomic-embed-text"
+            value={kb.embedding?.modelName ?? ""}
+            onChange={async (e) => {
+              await patch({
+                embedding: {
+                  ...kb.embedding,
+                  mode: kb.embedding?.mode ?? "inherit",
+                  modelName: e.target.value.trim() || undefined,
+                },
+              });
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="form-row">
+        <div className="form-group">
+          <label>Recent messages in context</label>
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={kb.recentMessageLimit ?? DEFAULT_AI_KNOWLEDGE_BASE.recentMessageLimit}
+            onChange={async (e) => {
+              await patch({ recentMessageLimit: parseInt(e.target.value, 10) || DEFAULT_AI_KNOWLEDGE_BASE.recentMessageLimit });
+            }}
+          />
+        </div>
+        <div className="form-group">
+          <label>RAG history messages</label>
+          <input
+            type="number"
+            min={0}
+            max={20}
+            value={kb.ragMessageLimit ?? DEFAULT_AI_KNOWLEDGE_BASE.ragMessageLimit}
+            onChange={async (e) => {
+              await patch({ ragMessageLimit: parseInt(e.target.value, 10) || 0 });
+            }}
+          />
+        </div>
+        <div className="form-group">
+          <label>Vault snippets per prompt</label>
+          <input
+            type="number"
+            min={0}
+            max={20}
+            value={kb.vaultSnippetLimit ?? DEFAULT_AI_KNOWLEDGE_BASE.vaultSnippetLimit}
+            onChange={async (e) => {
+              await patch({ vaultSnippetLimit: parseInt(e.target.value, 10) || 0 });
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="form-row">
+        <div className="form-group">
+          <label>Max file size (MB)</label>
+          <input
+            type="number"
+            min={1}
+            max={512}
+            value={Math.round(
+              (kb.maxFileBytes ?? DEFAULT_AI_KNOWLEDGE_BASE.maxFileBytes) / (1024 * 1024),
+            )}
+            onChange={async (e) => {
+              const mb = parseInt(e.target.value, 10) || 25;
+              await patch({ maxFileBytes: mb * 1024 * 1024 });
+            }}
+          />
+        </div>
+        <div className="form-group">
+          <label>Chunk size (chars)</label>
+          <input
+            type="number"
+            min={200}
+            max={4000}
+            value={kb.chunkSizeChars ?? DEFAULT_AI_KNOWLEDGE_BASE.chunkSizeChars}
+            onChange={async (e) => {
+              await patch({
+                chunkSizeChars: parseInt(e.target.value, 10) || DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_SIZE_CHARS,
+              });
+            }}
+          />
+        </div>
+        <div className="form-group">
+          <label>Chunk overlap (chars)</label>
+          <input
+            type="number"
+            min={0}
+            max={1000}
+            value={kb.chunkOverlapChars ?? DEFAULT_AI_KNOWLEDGE_BASE.chunkOverlapChars}
+            onChange={async (e) => {
+              await patch({
+                chunkOverlapChars: parseInt(e.target.value, 10) || DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_OVERLAP_CHARS,
+              });
+            }}
+          />
+        </div>
+      </div>
+
+      <RagIndexStatusPanel />
+
+      <div className="form-group">
+        <label>Public knowledge paths (comma-separated)</label>
+        <input
+          type="text"
+          placeholder="knowledge/public/"
+          value={(kb.publicVaultPaths ?? kb.vaultPaths ?? DEFAULT_AI_KNOWLEDGE_BASE.publicVaultPaths).join(", ")}
+          onChange={async (e) => {
+            const publicVaultPaths = e.target.value
+              .split(",")
+              .map((p) => p.trim())
+              .filter(Boolean);
+            await patch({ publicVaultPaths, vaultPaths: undefined });
+          }}
+        />
+        <p className="field-desc">Used for auto-reply and contact-facing AI only.</p>
+      </div>
+
+      <div className="form-group">
+        <label>Private knowledge paths (comma-separated)</label>
+        <input
+          type="text"
+          placeholder="knowledge/private/"
+          value={(kb.privateVaultPaths ?? DEFAULT_AI_KNOWLEDGE_BASE.privateVaultPaths).join(", ")}
+          onChange={async (e) => {
+            const privateVaultPaths = e.target.value
+              .split(",")
+              .map((p) => p.trim())
+              .filter(Boolean);
+            await patch({ privateVaultPaths });
+          }}
+        />
+        <p className="field-desc">Owner-only: Envoy AI tab and local knowledge queries.</p>
+      </div>
+
+      <div className="form-row">
+        <div className="form-group">
+          <label>External provider</label>
+          <select
+            value={kb.externalProvider ?? "none"}
+            onChange={async (e) => {
+              await patch({
+                externalProvider: e.target.value as "none" | "mcp",
+              });
+            }}
+          >
+            <option value="none">None (local vault only)</option>
+            <option value="mcp">MCP server (e.g. Memex)</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label>MCP server URL</label>
+          <input
+            type="text"
+            placeholder="http://127.0.0.1:PORT/mcp"
+            value={kb.mcpServerUrl ?? ""}
+            disabled={kb.externalProvider !== "mcp"}
+            onChange={async (e) => {
+              await patch({ mcpServerUrl: e.target.value.trim() || undefined });
+            }}
+          />
+        </div>
+      </div>
+
+      {kb.externalProvider === "mcp" && (
+        <div className="form-row">
+          <div className="form-group">
+            <label>MCP search tool</label>
+            <input
+              type="text"
+              placeholder="memex_search"
+              value={kb.mcpSearchTool ?? ""}
+              onChange={async (e) => {
+                await patch({ mcpSearchTool: e.target.value.trim() || undefined });
+              }}
+            />
+          </div>
+          <div className="form-group">
+            <label>MCP API key (optional)</label>
+            <input
+              type="password"
+              value={kb.mcpApiKey ?? ""}
+              onChange={async (e) => {
+                await patch({ mcpApiKey: e.target.value.trim() || undefined });
+              }}
+            />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function AgentIdentityEditor() {
+  const nodeService = useNodeService();
+  const [content, setContent] = useState("");
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void nodeService.getAgentIdentity().then((doc: AgentIdentityDocument) => {
+      if (cancelled) return;
+      setContent(doc.content);
+      setUpdatedAt(doc.updatedAt);
+      setLoading(false);
+    }).catch(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [nodeService]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveMessage(null);
+    try {
+      const doc = await nodeService.updateAgentIdentity(content);
+      setUpdatedAt(doc.updatedAt);
+      setSaveMessage("Saved");
+    } catch (err) {
+      setSaveMessage(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <h4>Agent Operating Instructions</h4>
+      <p className="field-desc">
+        Private markdown injected into every AI prompt (Envoy AI chat, draft replies, knowledge answers).
+        Separate from your public Profile and from vault RAG files. Stored as agent-identity.md in your profile directory.
+      </p>
+      {loading ? (
+        <p className="field-desc">Loading…</p>
+      ) : (
+        <>
+          <div className="form-group">
+            <textarea
+              rows={14}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+            />
+          </div>
+          <div className="form-actions">
+            <button type="button" className="btn-primary" disabled={saving} onClick={() => void handleSave()}>
+              {saving ? "Saving…" : "Save agent identity"}
+            </button>
+            {updatedAt && updatedAt !== new Date(0).toISOString() ? (
+              <span className="field-desc">Last saved {new Date(updatedAt).toLocaleString()}</span>
+            ) : null}
+            {saveMessage ? <span className="field-desc">{saveMessage}</span> : null}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 function defaultAiSettings(): AiSettings {
   return {
     status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" },
@@ -50,6 +433,7 @@ function defaultAiSettings(): AiSettings {
     defaultModeForNewContacts: "manual",
     rules: [],
     documentAutonomy: { ...DEFAULT_DOCUMENT_AUTONOMY_POLICY },
+    knowledgeBase: { ...DEFAULT_AI_KNOWLEDGE_BASE },
   };
 }
 
@@ -218,6 +602,8 @@ export function SettingsAITab() {
         ))}
       </div>
 
+      <AgentIdentityEditor />
+
       <h4>Default Mode for New Contacts</h4>
       <p className="field-desc">
         Default AI mode when you open a chat with someone who has no per-contact override.
@@ -231,6 +617,18 @@ export function SettingsAITab() {
         <option value="assistant">Assistant (AI suggests drafts)</option>
         <option value="auto">Auto-Reply (AI responds automatically, requires trust)</option>
       </select>
+
+      <h4>Knowledge Base</h4>
+      <p className="field-desc">
+        Local vault files are split into public (auto-reply) and private (Envoy AI) partitions,
+        indexed in SQLite with an HNSW ANN index.
+      </p>
+      <KnowledgeBaseSettings
+        value={aiSettings.knowledgeBase ?? { ...DEFAULT_AI_KNOWLEDGE_BASE }}
+        onChange={async (knowledgeBase) => {
+          await updateAiSettings({ knowledgeBase });
+        }}
+      />
 
       <h4>Document Autonomy</h4>
       <p className="field-desc">

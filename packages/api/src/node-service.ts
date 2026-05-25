@@ -9,6 +9,7 @@ import type {
   OwnerIdentity,
 } from "@envoymesh/identity";
 import type { DocumentAgentTurnResult } from "./document-agent-loop.js";
+import type { RagIndexProgress, RagIndexStatus } from "./rag-index-status.js";
 import type { TransferStatus } from "./transfer-status.js";
 import type {
   BridgeStatus,
@@ -60,6 +61,11 @@ export interface CreateHumanProfileInput {
   knowledge?: string[];
   profileVisibility?: "public" | "private";
   capabilities?: CapabilityUnion[];
+}
+
+export interface AgentIdentityDocument {
+  content: string;
+  updatedAt: string;
 }
 
 // ============================================
@@ -469,6 +475,8 @@ export interface NodeServiceEvents {
   "share:agent-proposed": AgentShareProposal;
   /** File transfer progress for UI and agent visibility (ADB-D). */
   "share:progress": TransferStatus;
+  /** Vault vector indexing progress for Settings AI tab. */
+  "rag:reindex": RagIndexProgress;
   "share:accepted": { shareId: string; savePath: string };
   "share:declined": { shareId: string };
 
@@ -509,6 +517,16 @@ export interface NodeService {
    * Update human profile (signs with owner key)
    */
   updateHumanProfile(profile: CreateHumanProfileInput): Promise<HumanProfile>;
+
+  /**
+   * Get owner-editable agent operating instructions (`agent-identity.md` in profile dir).
+   */
+  getAgentIdentity(): Promise<AgentIdentityDocument>;
+
+  /**
+   * Save agent operating instructions.
+   */
+  updateAgentIdentity(content: string): Promise<AgentIdentityDocument>;
 
   // ----- Bond Management -----
 
@@ -704,6 +722,9 @@ export interface NodeService {
 
   /** Kubo sidecar / managed daemon status (desktop IPFS export). */
   getIpfsEngineStatus(): Promise<IpfsEngineStatus>;
+
+  /** Vector RAG vault indexing status (incremental reindex progress). */
+  getRagIndexStatus(): Promise<RagIndexStatus>;
 
   /**
    * Fetch exported content from an allowlisted IPFS gateway and verify bytes match vault contentHash.

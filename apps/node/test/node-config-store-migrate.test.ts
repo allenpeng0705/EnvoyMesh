@@ -39,4 +39,29 @@ describe("node config store migration", () => {
     const raw = await readFile(join(profileDir, "node-config.json"), "utf8");
     expect(raw).toContain("bootstrapPresets");
   });
+
+  it("loads node-config.json with JSONC line and block comments", async () => {
+    const raw = `{
+      // profile comment
+      "version": "0.1",
+      "profileDir": "${profileDir.replace(/\\/g, "\\\\")}",
+      "discoveryProfile": "wan-default",
+      "relayEnabled": true,
+      "relayServerEnabled": false,
+      "advertiseAddrs": [],
+      "bootstrapPeers": [],
+      "bootstrapPresets": ["public-libp2p"],
+      "configuredRelays": [],
+      "modelProviders": { "mode": "mock" },
+      "chatAssistEnabled": false,
+      "contactAiPreferences": [],
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+      /* trailing block ok before close */
+    }`;
+    await writeFile(join(profileDir, "node-config.json"), raw, "utf8");
+
+    const store = createNodeConfigStore(profileDir);
+    const loaded = await store.load();
+    expect(loaded?.discoveryProfile).toBe("wan-default");
+  });
 });

@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { createAuditEvent, type LocalTaskStore, type LocalTrustStore, type LocalPeerDirectoryStore, type NodeProfile, type ChatDraftStore, type LocalChatLogStore, type HumanProfileStore } from "@envoymesh/local-store";
+import { createAuditEvent, type LocalTaskStore, type LocalTrustStore, type LocalPeerDirectoryStore, type NodeProfile, type ChatDraftStore, type LocalChatLogStore, type HumanProfileStore, type AgentIdentityStore } from "@envoymesh/local-store";
 import { buildModelProviders, routeModelRequest, type ModelProvider } from "@envoymesh/models";
-import { searchVault, type VaultIndex } from "@envoymesh/vault";
-import type { AiIdentity, AiRule, ModelProviderConfig } from "@envoymesh/api";
+import type { VaultIndex } from "@envoymesh/vault";
+import type { AiIdentity, AiKnowledgeBaseSettings, AiRule, ModelProviderConfig } from "@envoymesh/api";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
+import { formatVaultKnowledgeSection, searchVaultKnowledgeBase } from "./ai-context.js";
 import { buildContextInjection } from "./context-injector.js";
+import { loadAgentIdentitySection } from "./agent-identity-context.js";
 import type { ModeController } from "./mode-controller.js";
+import type { RagService } from "./rag-service.js";
 
 export interface ChatDraftResult {
   ok: true;
@@ -61,7 +64,10 @@ export async function generateChatDraft(input: {
   ownerDisplayName?: string;
   chatLogStore?: LocalChatLogStore | null;
   humanProfileStore?: HumanProfileStore;
+  agentIdentityStore?: AgentIdentityStore | null;
   modeController?: ModeController;
+  knowledgeBase?: AiKnowledgeBaseSettings | null;
+  ragService?: RagService | null;
   /** When true, skip reactive-mode guard (auto-reply or online assistant enabled). */
   allowWhileOwnerOnline?: boolean;
 }): Promise<ChatDraftResult | ChatDraftFailure> {
@@ -88,7 +94,10 @@ export async function generateChatDraft(input: {
     ownerDisplayName,
     chatLogStore = null,
     humanProfileStore,
+    agentIdentityStore = null,
     modeController,
+    knowledgeBase,
+    ragService = null,
     allowWhileOwnerOnline = false,
   } = input;
 
@@ -237,45 +246,45 @@ Be courteous and professional. If you cannot help, politely explain limitations.
     }
   }
 
-  // Build vault context if rule has vaultQuery
+  // Knowledge base (vault RAG) — message-conditioned + optional rule path override
   let vaultContext = "";
-  if (matchedRule?.action?.vaultQuery && vaultIndex) {
-    const vaultQuery = matchedRule.action.vaultQuery;
-    console.log(`[chat-draft] querying vault: path=${vaultQuery.path}, maxSensitivity=${vaultQuery.maxSensitivity}`);
-
-    // Search vault for relevant content
-    const vaultResults = searchVault(vaultIndex, vaultQuery.path, { limit: 5 });
-
-    // Filter results based on knowledgeAccess sensitivity
-    // Sensitivity hierarchy: public (0) < friends (1) < professional (2) < personal (3)
-    const sensitivityOrder = ["public", "friends", "professional", "personal"];
-    const maxSensitivityIndex = sensitivityOrder.indexOf(vaultQuery.maxSensitivity);
-    const userSensitivityIndex = sensitivityOrder.indexOf(knowledgeAccess);
-
-    const filteredResults = vaultResults.filter((result) => {
-      // Simple heuristic: documents with "personal" in path are personal,
-      // "work" or "professional" or "office" are professional,
-      // "friends" or "shared" are friends, rest is public
-      const path = result.document.relativePath.toLowerCase();
-      let docSensitivity: "public" | "friends" | "professional" | "personal" = "public";
-      if (path.includes("personal") || path.includes("private")) {
-        docSensitivity = "personal";
-      } else if (path.includes("work") || path.includes("professional") || path.includes("office")) {
-        docSensitivity = "professional";
-      } else if (path.includes("friends") || path.includes("shared")) {
-        docSensitivity = "friends";
-      }
-      // Include document if its sensitivity is <= both the rule's max and the user's access level
-      return sensitivityOrder.indexOf(docSensitivity) <= maxSensitivityIndex && sensitivityOrder.indexOf(docSensitivity) <= userSensitivityIndex;
-    });
-
-    if (filteredResults.length > 0) {
-      vaultContext = `\n\nRelevant information from vault:\n`;
-      for (const result of filteredResults.slice(0, 3)) {
-        vaultContext += `- ${result.document.title}: "${result.chunk.text.slice(0, 200)}${result.chunk.text.length > 200 ? "..." : ""}"\n`;
-      }
-      console.log(`[chat-draft] vault returned ${filteredResults.length} results`);
+  let externalContext = "";
+  if (vaultIndex) {
+    const ruleVaultQuery = matchedRule?.action?.vaultQuery;
+    if (ruleVaultQuery) {
+      console.log(
+        `[chat-draft] querying vault: path=${ruleVaultQuery.path}, maxSensitivity=${ruleVaultQuery.maxSensitivity}`,
+      );
     }
+    const vaultResults = ragService
+      ? await ragService.searchVaultKnowledgeBase({
+          vaultIndex,
+          query: chatText,
+          knowledgeAccess: "public",
+          knowledgeBase,
+          knowledgeScope: "public",
+          ruleVaultQuery,
+        })
+      : searchVaultKnowledgeBase({
+          vaultIndex,
+          query: chatText,
+          knowledgeAccess: "public",
+          knowledgeBase,
+          knowledgeScope: "public",
+          ruleVaultQuery,
+        });
+    vaultContext = formatVaultKnowledgeSection(vaultResults);
+    if (vaultResults.length > 0) {
+      console.log(`[chat-draft] knowledge base returned ${vaultResults.length} snippet(s)`);
+    }
+  }
+
+  if (ragService) {
+    externalContext = await ragService.getExternalKnowledgeContext({
+      query: chatText,
+      knowledgeBase,
+      knowledgeScope: "public",
+    });
   }
 
   // Build status and permissions context
@@ -284,17 +293,23 @@ Contact permissions:
 - AI Access Level: ${contactAiAccessLevel}
 - Knowledge Access: ${knowledgeAccess}`;
 
-  // Build rich context injection (Phase 9C): conversation history + relationship + profile
   const injectedContext = humanProfileStore
-    ? await buildContextInjection(senderOwnerId, chatLogStore, trustStore, humanProfileStore)
+    ? await buildContextInjection(senderOwnerId, chatLogStore, trustStore, humanProfileStore, {
+        knowledgeBase,
+        ragQuery: chatText,
+        ragService,
+      })
     : "";
+
+  const agentIdentitySection = await loadAgentIdentitySection(agentIdentityStore);
 
   const prompt = `You are a helpful assistant in a secure P2P messaging app called EnvoyMesh.
 
-${identityInstructions}
+${identityInstructions}${agentIdentitySection}
 ${ruleContext}
 ${statusContext}${injectedContext}
 ${vaultContext}
+${externalContext}
 
 A message was just received from your contact "${senderDisplayName}" (owner ID: ${senderOwnerId}).
 

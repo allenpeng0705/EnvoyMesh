@@ -1,4 +1,7 @@
 export * from "./model-thinking.js";
+export * from "./ai-knowledge-base.js";
+export * from "./ai-embedding-limits.js";
+export * from "./rag-index-status.js";
 export * from "./connectivity-tuning.js";
 export * from "./contact-ai-access.js";
 export * from "./default-bootstrap.js";

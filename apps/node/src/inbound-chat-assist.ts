@@ -4,6 +4,7 @@ import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import {
   type ChatDraftStore,
   type HumanProfileStore,
+  type AgentIdentityStore,
   type LocalChatLogStore,
   type LocalPeerDirectoryStore,
   type LocalTaskStore,
@@ -15,6 +16,8 @@ import { auditAutonomousDecision, evaluateAutonomousPolicy } from "./autonomous-
 import { generateChatDraft } from "./chat-draft-inbound.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 import type { StyleAdapter } from "./style-adapter.js";
+
+import type { RagService } from "./rag-service.js";
 
 export async function runInboundChatAssist(input: {
   envelope: EnvoyEnvelope;
@@ -32,11 +35,13 @@ export async function runInboundChatAssist(input: {
   draftStore: ChatDraftStore;
   chatLogStore: LocalChatLogStore | null;
   humanProfileStore: HumanProfileStore;
+  agentIdentityStore?: AgentIdentityStore | null;
   vaultDir: string;
   styleAdapter: StyleAdapter | null;
   sendChat: (targetOwnerId: string, text: string) => Promise<SendChatResult>;
   emitDraft: (threadPeerOwnerId: string, draft: { draftId: string; text: string; inReplyToMessageId: string; createdAt: string }) => void;
   isOwnerOnline?: () => boolean;
+  ragService?: RagService | null;
 }): Promise<void> {
   const {
     envelope,
@@ -54,11 +59,13 @@ export async function runInboundChatAssist(input: {
     draftStore,
     chatLogStore,
     humanProfileStore,
+    agentIdentityStore = null,
     vaultDir,
     styleAdapter,
     sendChat,
     emitDraft,
     isOwnerOnline = () => true,
+    ragService = null,
   } = input;
 
   const contactPrefs = config.contactAiPreferences ?? [];
@@ -118,7 +125,10 @@ export async function runInboundChatAssist(input: {
     ownerDisplayName: selfHuman?.displayName,
     chatLogStore,
     humanProfileStore,
+    agentIdentityStore,
     allowWhileOwnerOnline,
+    knowledgeBase: config.aiSettings?.knowledgeBase,
+    ragService,
   });
 
   if (!result.ok) {

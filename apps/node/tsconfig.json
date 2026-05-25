@@ -15,6 +15,7 @@
     { "path": "../../packages/local-store" },
     { "path": "../../packages/api" },
     { "path": "../../packages/models" },
+    { "path": "../../packages/rag" },
     { "path": "../../packages/ipfs-helia" }
   ]
 }

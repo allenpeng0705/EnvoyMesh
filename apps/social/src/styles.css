@@ -2413,6 +2413,26 @@ textarea::placeholder {
   color: var(--color-text-muted);
 }
 
+.settings-status-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings-progress-bar {
+  width: 100%;
+  height: 0.5rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-border);
+  overflow: hidden;
+}
+
+.settings-progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.2s ease;
+}
+
 .settings-input,
 .settings-select {
   width: 100%;

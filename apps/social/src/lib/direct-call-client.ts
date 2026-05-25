@@ -74,6 +74,14 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.updateHumanProfile(input);
   }
 
+  async getAgentIdentity() {
+    return this._ns.getAgentIdentity();
+  }
+
+  async updateAgentIdentity(content: string) {
+    return this._ns.updateAgentIdentity(content);
+  }
+
   // -----------------------------------------------------------------------
   // Bond Management
   // -----------------------------------------------------------------------
@@ -220,6 +228,10 @@ export class DirectCallClient implements NodeServiceClient {
 
   async getIpfsEngineStatus() {
     return this._ns.getIpfsEngineStatus();
+  }
+
+  async getRagIndexStatus() {
+    return this._ns.getRagIndexStatus();
   }
 
   async verifyLibraryItemIpfsGateway(params: Parameters<NodeService["verifyLibraryItemIpfsGateway"]>[0]) {

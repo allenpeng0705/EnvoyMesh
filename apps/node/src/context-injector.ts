@@ -2,50 +2,86 @@
  * Context Injector — Phase 9C
  *
  * Gathers conversation, relationship, and profile context for a given peer
- * and returns formatted text to prepend to model prompts. Uses the existing
- * context-manager tool builders from context-manager.ts.
+ * and returns formatted text to prepend to model prompts.
  */
 
+import type { AiKnowledgeBaseSettings } from "@envoymesh/api";
+import { resolveAiKnowledgeBaseSettings } from "@envoymesh/api";
 import type { LocalChatLogStore, LocalTrustStore, HumanProfileStore } from "@envoymesh/local-store";
 import {
-  buildConversationContextTool,
+  formatThreadMessagesSection,
+  loadThreadMessages,
+  searchChatHistoryRag,
+  selectRecentThreadMessages,
+} from "./ai-context.js";
+import type { RagService } from "./rag-service.js";
+import {
   buildRelationshipContextTool,
   buildProfileContextTool,
-  type ConversationContext,
   type RelationshipContext,
   type ProfileContext,
 } from "./context-manager.js";
+
+export interface BuildContextInjectionOptions {
+  knowledgeBase?: AiKnowledgeBaseSettings | null;
+  /** Query for retrieving additional relevant messages from older thread history. */
+  ragQuery?: string;
+  ragService?: RagService | null;
+}
 
 /**
  * Build a context injection string for model prompts.
  *
  * Gathers:
- * - Conversation context: last 5 messages with the sender
+ * - Recent conversation (default 20 messages)
+ * - RAG-retrieved older messages (default 5, query-matched)
  * - Relationship context: bond level, display name, established time
- * - Profile context: owner's display name, bio, interests, knowledge
- *
- * Returns an empty string if no context is available (all stores missing or empty).
+ * - Profile context: owner's display name, bio, interests, knowledge tags
  */
 export async function buildContextInjection(
   senderOwnerId: string,
   chatLogStore: LocalChatLogStore | null,
   trustStore: LocalTrustStore,
   humanProfileStore: HumanProfileStore,
+  options?: BuildContextInjectionOptions,
 ): Promise<string> {
+  const kb = resolveAiKnowledgeBaseSettings(options?.knowledgeBase);
   const sections: string[] = [];
 
-  // Conversation context — last 5 messages
-  const conversationFn = buildConversationContextTool(chatLogStore);
-  const convResult = await conversationFn({ ownerId: senderOwnerId, limit: 5 });
-  if (isConversationContext(convResult) && convResult.recentMessages.length > 0) {
-    const msgs = convResult.recentMessages.map((m) => {
-      const text = m.text.length > 300 ? m.text.slice(0, 297) + "..." : m.text;
-      return `[${m.sender}]: ${text}`;
-    }).join("\n");
-    sections.push(`## Recent conversation with ${convResult.contactDisplayName}\n${msgs}`);
+  if (chatLogStore) {
+    const thread = await loadThreadMessages(chatLogStore, senderOwnerId);
+    const recent = selectRecentThreadMessages(thread, kb.recentMessageLimit);
+    const contactName =
+      (await trustStore.getTrustRecord(senderOwnerId))?.displayName ?? senderOwnerId;
+    const recentSection = formatThreadMessagesSection(
+      `Recent conversation with ${contactName} (latest ${recent.length})`,
+      recent,
+    );
+    if (recentSection) sections.push(recentSection);
+
+    const ragQuery = options?.ragQuery?.trim() ?? "";
+    if (ragQuery && kb.ragMessageLimit > 0) {
+      const ragHits = options?.ragService
+        ? await options.ragService.searchChatHistoryRag({
+            threadOwnerId: senderOwnerId,
+            query: ragQuery,
+            messages: thread,
+            knowledgeBase: options.knowledgeBase,
+            recentLimit: kb.recentMessageLimit,
+            ragLimit: kb.ragMessageLimit,
+          })
+        : searchChatHistoryRag(thread, ragQuery, {
+            recentLimit: kb.recentMessageLimit,
+            ragLimit: kb.ragMessageLimit,
+          });
+      const ragSection = formatThreadMessagesSection(
+        "Related earlier messages (retrieved from history)",
+        ragHits,
+      );
+      if (ragSection) sections.push(ragSection);
+    }
   }
 
-  // Relationship context — bond level, display name
   const relFn = buildRelationshipContextTool(trustStore);
   const relResult = await relFn({ ownerId: senderOwnerId });
   if (isRelationshipContext(relResult)) {
@@ -62,7 +98,6 @@ export async function buildContextInjection(
     sections.push(`## Relationship\n${parts.join("\n")}`);
   }
 
-  // Profile context — owner's own profile
   const profileFn = buildProfileContextTool(humanProfileStore);
   const profileResult = await profileFn({});
   if (isProfileContext(profileResult)) {
@@ -87,11 +122,7 @@ export async function buildContextInjection(
 
   if (sections.length === 0) return "";
 
-  return "\n" + sections.join("\n\n") + "\n";
-}
-
-function isConversationContext(r: unknown): r is ConversationContext {
-  return typeof r === "object" && r !== null && "recentMessages" in r && Array.isArray((r as any).recentMessages);
+  return `\n${sections.join("\n\n")}\n`;
 }
 
 function isRelationshipContext(r: unknown): r is RelationshipContext {

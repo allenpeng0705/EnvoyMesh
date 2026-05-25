@@ -23,6 +23,7 @@ function makeChatLogStore(messages: Array<{ sender: string; text: string }> = []
   return {
     listThread: async (_ownerId: string, _limit: number) =>
       messages.map((m, i) => ({
+        messageId: `msg-${i}`,
         sender: { displayName: m.sender, ownerId: "envoy:owner:test" },
         content: { text: m.text },
         metadata: { timestamp: new Date(Date.now() - (messages.length - i) * 60000).toISOString() },
@@ -83,7 +84,7 @@ describe("buildContextInjection", () => {
       makeTrustStore(),
       makeHumanProfileStore({ displayName: "Me", bio: undefined, hobbies: [], knowledge: [] }),
     );
-    expect(result).toContain("## Recent conversation");
+    expect(result).toContain("## Recent conversation with");
     expect(result).toContain("[Test Contact]: Hello!");
     expect(result).toContain("[Me]: Hi there!");
     expect(result).toContain("[Test Contact]: How are you?");
@@ -192,8 +193,25 @@ describe("buildContextInjection", () => {
       }),
     );
 
-    expect(result).toContain("## Recent conversation");
+    expect(result).toContain("## Recent conversation with");
     expect(result).toContain("## Relationship");
     expect(result).toContain("## Your Profile");
+  });
+
+  it("includes RAG-retrieved older messages when ragQuery is provided", async () => {
+    const messages = Array.from({ length: 22 }, (_, i) => ({
+      sender: "Alice",
+      text: i === 0 ? "We discussed the relay deployment last month" : `Filler ${i}`,
+    }));
+    const chatStore = makeChatLogStore(messages);
+    const result = await buildContextInjection(
+      "envoy:owner:friend",
+      chatStore,
+      makeTrustStore(),
+      makeHumanProfileStore({ displayName: "Me", bio: undefined, hobbies: [], knowledge: [] }),
+      { ragQuery: "relay deployment" },
+    );
+    expect(result).toContain("Related earlier messages");
+    expect(result).toContain("relay deployment");
   });
 });

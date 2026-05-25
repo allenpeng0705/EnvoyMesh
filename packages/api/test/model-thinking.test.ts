@@ -3,7 +3,10 @@ import { parseModelThinking, stripModelThinking } from "../src/model-thinking.js
 
 describe("parseModelThinking", () => {
   it("extracts MiniMax think tags", () => {
-    const raw = "<think>Plan a short greeting.</think>\n\n你好！";
+    const tag = "think";
+    const open = `<${tag}>`;
+    const close = `</${tag}>`;
+    const raw = `${open}Plan a short greeting.${close}\n\n你好！`;
     expect(parseModelThinking(raw)).toEqual({
       thinking: "Plan a short greeting.",
       visibleText: "你好！",

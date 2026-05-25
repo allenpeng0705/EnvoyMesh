@@ -18,6 +18,10 @@ export interface CreateHumanProfileInput {
     profileVisibility?: "public" | "private";
     capabilities?: CapabilityUnion[];
 }
+export interface AgentIdentityDocument {
+    content: string;
+    updatedAt: string;
+}
 export interface HelloProfile {
     displayName: string;
     bio?: string;
@@ -222,6 +226,14 @@ export interface NodeService {
      * Update human profile (signs with owner key)
      */
     updateHumanProfile(profile: CreateHumanProfileInput): Promise<HumanProfile>;
+    /**
+     * Get owner-editable agent operating instructions (`agent-identity.md`).
+     */
+    getAgentIdentity(): Promise<AgentIdentityDocument>;
+    /**
+     * Save agent operating instructions.
+     */
+    updateAgentIdentity(content: string): Promise<AgentIdentityDocument>;
     /**
      * Send a hello request to establish connection
      */

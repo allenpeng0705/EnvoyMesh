@@ -133,7 +133,7 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
     async load() {
       try {
         const raw = await readFile(path, "utf8");
-        const parsed = JSON.parse(raw) as unknown;
+        const parsed = JSON.parse(stripJsonComments(raw)) as unknown;
         if (isValidNodeConfig(parsed)) {
           return parsed;
         }
@@ -334,6 +334,55 @@ function isMissingFileError(error: unknown): boolean {
     return code === "ENOENT" || code === "ENOTFOUND";
   }
   return false;
+}
+
+/** Strip line and block comments so node-config.json can include JSONC-style guidance. */
+export function stripJsonComments(text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i]!;
+    if (ch === '"') {
+      out += ch;
+      i += 1;
+      while (i < text.length) {
+        const current = text[i]!;
+        out += current;
+        if (current === "\\") {
+          i += 1;
+          if (i < text.length) {
+            out += text[i]!;
+            i += 1;
+          }
+          continue;
+        }
+        if (current === '"') {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === "/" && text[i + 1] === "/") {
+      i += 2;
+      while (i < text.length && text[i] !== "\n") {
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === "/" && text[i + 1] === "*") {
+      i += 2;
+      while (i < text.length - 1 && !(text[i] === "*" && text[i + 1] === "/")) {
+        i += 1;
+      }
+      i += 2;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
 }
 
 async function writeNodeConfigFile(path: string, config: PersistedNodeConfig): Promise<void> {

@@ -1,0 +1,239 @@
+{
+  // =============================================================================
+  // EnvoyMesh node-config.example.jsonc (JSONC — // comments OK on load)
+  //
+  // TRACKED in git — safe template with no real secrets.
+  // First-time setup (from repo root):
+  //   cp apps/node/data/default/node-config.example.jsonc apps/node/data/default/node-config.json
+  // Then edit node-config.json (apiKey, bootstrap peers, AI settings). That file is gitignored.
+  //
+  // Settings UI save rewrites plain JSON and strips comments — re-copy comments from this file if needed.
+  // Agent persona: {profileDir}/agent-identity.md (Settings → AI), not vault RAG files.
+  // =============================================================================
+
+  // Config schema version. Must be "0.1".
+  "version": "0.1",
+
+  // Where profile data lives: this file, agent-identity.md, RAG vectors, chat logs, trust store.
+  // Relative to apps/node working directory when running npm run node:dev.
+  "profileDir": "./data/default",
+
+  // How the node finds peers on the network:
+  //   lan-fast       — prioritize mDNS on LAN
+  //   wan-default    — DHT + bootstrap presets + relays (typical internet home node)
+  //   relay-only     — outbound relay connections only (mobile-like)
+  //   contacts-only  — bonded contacts only; minimal anonymous discovery
+  "discoveryProfile": "wan-default",
+
+  // Client: dial via circuit relay when direct connection fails.
+  "relayEnabled": true,
+
+  // Server: this node acts as a relay for other peers (usually false for a normal desktop node).
+  "relayServerEnabled": false,
+
+  // Extra libp2p multiaddrs to advertise (advanced). Empty = auto from listen addrs.
+  "advertiseAddrs": [],
+
+  // Manual libp2p bootstrap multiaddrs (multiaddr strings with /p2p/ peer id).
+  "bootstrapPeers": [],
+
+  // Named bootstrap bundles merged with bootstrapPeers. Examples: public-libp2p, cn-relay, public-libp2p-am6.
+  "bootstrapPresets": ["public-libp2p", "cn-relay"],
+
+  // Custom relay entries: { relayId, addr, enabled, level?, region? }. Usually [] if using presets.
+  "configuredRelays": [],
+
+  // Chat / knowledge.query / Envoy AI LLM (NOT embeddings — see aiSettings.knowledgeBase.embedding).
+  "modelProviders": {
+    // mock | ollama | litellm | openai-compatible | anthropic-compatible | disabled
+    "mode": "openai-compatible",
+
+    // Chat API base URL. OpenAI-style: include /v1 (MiniMax: https://api.minimaxi.com/v1).
+    "endpoint": "https://api.minimaxi.com/v1",
+
+    // Chat model name (NOT the embedding model).
+    "modelName": "MiniMax-M2.7",
+
+    // Replace with your provider key. Prefer env vars in production; this file is gitignored after copy.
+    "apiKey": "YOUR_API_KEY_HERE"
+
+    // Optional: require owner approval per cloud model call. Default true when omitted.
+    // "requireApprovalForCloud": true
+  },
+
+  // Master toggle for inbound chat draft generation (still needs contact aiAccessLevel + chat mode).
+  "chatAssistEnabled": true,
+
+  // Anonymous stranger discovery: off | contacts-only | public-preview | public-auto-answer
+  "anonymousDiscoveryMode": "off",
+
+  // Intents anonymous peers may send when anonymous discovery allows it.
+  "anonymousIntentAllowlist": ["discovery.request"],
+
+  // Max vault sensitivity for anonymous auto-answers: public | friends
+  "anonymousSensitivityCeiling": "public",
+
+  // Emergency stop: true blocks ALL autonomous autoAnswer and autoSendChat across domains.
+  "autonomousKillSwitch": false,
+
+  // Per-domain autonomy for chat/knowledge (NOT file share — see aiSettings.documentAutonomy).
+  "autonomousPolicies": [
+    {
+      // Domain: social | knowledge | ...
+      "domain": "social",
+
+      // Max vault sensitivity the agent may use when answering autonomously: public | friends
+      "maxSensitivity": "friends",
+
+      // Auto-answer knowledge queries without owner prompt.
+      "autoAnswer": false,
+
+      // Auto-send chat messages without owner confirm (requires contact full/auto mode + bonds).
+      "autoSendChat": false
+    }
+  ],
+
+  // Per-contact AI overrides (peerOwnerId = envoy:owner:... from bond list).
+  "contactAiPreferences": [],
+
+  // ISO timestamp; rewritten automatically when Settings saves config.
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+
+  // IPFS / external library export policy.
+  "externalPublish": {
+    // Allow library export to IPFS (RPC/CLI paths).
+    "allowIpfs": false,
+
+    // Allowed HTTP gateway hosts for verify/fetch helpers. [] = deny automated gateway fetch.
+    "gatewayAllowlist": [],
+
+    // kubo | helia | kubo-with-helia-shadow
+    "ipfsExportEngine": "kubo"
+  },
+
+  "aiSettings": {
+    "status": {
+      // When online: suggest draft replies (does not auto-send by itself).
+      "onlineAssistantEnabled": true,
+
+      // When away/offline: allow auto-reply agent (needs autonomousPolicies + contact mode).
+      "offlineAgentEnabled": false,
+
+      // automatic = detect from activity; manual = use isOnlineManual below.
+      "statusMode": "automatic"
+
+      // When statusMode is manual: true = appear online, false = appear away.
+      // "isOnlineManual": true
+    },
+
+    // How AI presents itself in outbound chat (NOT full persona — see agent-identity.md).
+    "identity": {
+      // invisible | transparent | defensive
+      "mode": "transparent"
+
+      // Prefix when mode is transparent or defensive. Default "[AI Agent]".
+      // "transparentPrefix": "[AI Agent]"
+    },
+
+    // Default chat AI mode for new contacts: manual | assistant | auto
+    "defaultModeForNewContacts": "manual",
+
+    // AI rules array (Settings → AI). Each rule: id, enabled, name, category, priority, trigger, action.
+    "rules": [],
+
+    // Envoy AI document agent: library publish + file share autonomy tiers.
+    "documentAutonomy": {
+      // 0 = proposals only (Inbox). 1 = + auto-publish public metadata. 2 = + auto shareFile to bonds.
+      "maxAutonomousShareTier": 0,
+
+      // Bond levels eligible for tier-2 auto share: direct | referred | public | blocked
+      "autonomousShareBondLevels": ["direct"],
+
+      // Max file sensitivity for autonomous share: public | friends
+      "autonomousShareMaxSensitivity": "friends",
+
+      // Tier ≥1: agent may publish library metadata without Inbox step.
+      "allowAutonomousPublish": false,
+
+      // Sensitivity ceiling when allowAutonomousPublish is true (always public today).
+      "autonomousPublishMaxSensitivity": "public"
+    },
+
+    "knowledgeBase": {
+      // Inject vault snippets into AI prompts when true.
+      "enabled": true,
+
+      // vector | hybrid | lexical — vector/hybrid use embeddings; lexical = keywords only.
+      "ragMode": "hybrid",
+
+      // Always include N latest thread messages in AI context.
+      "recentMessageLimit": 20,
+
+      // Extra older messages retrieved by query match from chat history.
+      "ragMessageLimit": 5,
+
+      // Max vault text snippets injected per prompt.
+      "vaultSnippetLimit": 5,
+
+      // Paths under shared_vault/ (contact-safe / auto-reply KB).
+      "publicVaultPaths": ["knowledge/public/"],
+
+      // Paths under shared_vault/ (owner-only: Envoy AI tab, local knowledge.query).
+      "privateVaultPaths": ["knowledge/private/"],
+
+      // Optional indexing limits (defaults: 25 MiB, chunk 800 chars, overlap 120).
+      // "maxFileBytes": 26214400,
+      // "chunkSizeChars": 800,
+      // "chunkOverlapChars": 120,
+
+      // External KB layer: none | mcp (future MCP memex bridge).
+      "externalProvider": "none",
+
+      // When externalProvider is mcp:
+      // "mcpServerUrl": "http://127.0.0.1:8080/mcp",
+      // "mcpSearchTool": "memex_search",
+      // "mcpApiKey": "optional-bearer-token"
+
+      // Vector RAG embeddings (separate API from chat modelProviders).
+      "embedding": {
+        // mock | ollama | openai-compatible | inherit (inherit copies chat endpoint+key, wrong embed model default)
+        "mode": "openai-compatible",
+
+        // Embed API root. OpenAI-shaped: POST {endpoint}/embeddings
+        "endpoint": "https://api.minimaxi.com/v1",
+
+        // Embedding model (embo-01 max 4096 tokens per request — auto-detected if omitted).
+        "modelName": "embo-01",
+
+        // Optional override; if omitted, uses modelProviders.apiKey (same key as chat when copied).
+        // "apiKey": "optional-separate-embed-key",
+
+        // Max tokens per embed call. embo-01 default 4096; caps chunk size + truncates at embed time.
+        "maxInputTokens": 4096
+      }
+    }
+  },
+
+  // Trust mode: agent-assisted introductions (social.intro.* workflows).
+  "trustModeEnabled": false,
+
+  // Public WebSocket URL encoded in mobile pairing QR (relay bridge). ws://host:port/ws
+  // "relayPublicWsUrl": "ws://relay.example.com:15432/ws",
+
+  // mDNS local peer discovery. Default true when omitted.
+  "enableMdns": true
+
+  // ---------------------------------------------------------------------------
+  // Optional fields (omit unless needed)
+  // ---------------------------------------------------------------------------
+  // "bridgeEnabled": false,
+  // "companionPairingAutoAcceptWithToken": false,
+  // "homeClawCoreBaseUrl": "http://127.0.0.1:8080",
+  // "trustAnchorPublicKeys": { "anchor-id": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----" },
+  // "friendMatchingPreferencesText": "Looking for ...",
+  // "maxConnections": 150,
+  // "mdnsIntervalMs": 10000,
+  // "capabilityDiscoveryIntervalMs": 90000,
+  // "lazyCapabilityDiscovery": false,
+  // "idleTimerStretch": false
+}
