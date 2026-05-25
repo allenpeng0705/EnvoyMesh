@@ -17,7 +17,8 @@ import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatFileAttachment } from "../ChatFileAttachment.js";
 import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
-import { EditIcon, ChatIcon, BridgeIcon, P2PIcon } from "../../icons.js";
+import { EditIcon, ChatIcon, BridgeIcon, P2PIcon, RemoveIcon } from "../../icons.js";
+import { useToast } from "../../hooks/useToast.js";
 
 interface ContactChatPanelProps {
   selectedContact: string;
@@ -53,6 +54,7 @@ function isPendingOutgoing(msg: ChatMessage): boolean {
 
 export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   const nodeService = useNodeService();
+  const { showToast } = useToast();
   const {
     bonds,
     nodeConfig,
@@ -63,7 +65,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     refreshNodeConfig,
   } = useNodeState();
 
-  const { messages, isOutgoing } = useChatMessages(selectedContact);
+  const { messages, isOutgoing, removeMessage, clearThread } = useChatMessages(selectedContact);
   const { info: peerReachability, checking: reachabilityChecking } = usePeerReachability(
     selectedContact,
     true,
@@ -240,6 +242,34 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     void dismissDraft(latestDraft.draftId);
   };
 
+  const handleDeleteMessage = async (messageId: string) => {
+    if (messageId.startsWith("pending-")) {
+      setPendingOutbound((prev) => prev.filter((m) => m.messageId !== messageId));
+      return;
+    }
+    if (!window.confirm("Delete this message?")) return;
+    const ok = await removeMessage(messageId);
+    if (ok) {
+      showToast("Message deleted", "success");
+    } else {
+      showToast("Could not delete message", "error");
+    }
+  };
+
+  const handleClearChat = async () => {
+    if (displayMessages.length === 0) return;
+    if (!window.confirm("Clear all messages in this chat? This removes them from your chat history on this device. AI may still use them for context unless “Purge RAG when deleting chat” is on in Settings → AI.")) {
+      return;
+    }
+    const deletedCount = await clearThread();
+    setPendingOutbound([]);
+    if (deletedCount > 0) {
+      showToast(`Cleared ${deletedCount} message${deletedCount === 1 ? "" : "s"}`, "success");
+    } else {
+      showToast("Chat cleared", "success");
+    }
+  };
+
   const messageGroups = useMemo(() => groupMessagesByDate(displayMessages), [displayMessages]);
 
   const threadKind = resolveChatThreadKind(selectedContact, bridgeStatus?.agentPeerId);
@@ -276,6 +306,16 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           </div>
         </div>
         <div className="chat-header-right">
+          <button
+            type="button"
+            className="chat-header-clear-btn"
+            title="Clear all messages"
+            aria-label="Clear all messages"
+            disabled={displayMessages.length === 0}
+            onClick={() => void handleClearChat()}
+          >
+            <RemoveIcon size={16} />
+          </button>
           <div className="assistant-switch" aria-label={`AI mode: ${currentAiMode}`}>
             <span className="assistant-switch-label">AI</span>
             <button
@@ -347,6 +387,8 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
                             minute: "2-digit",
                           })}
                           deliveryReceipt={outgoing ? msg.metadata.deliveryReceipt : undefined}
+                          copyText={stripModelThinking(msg.content.text)}
+                          onDelete={() => void handleDeleteMessage(msg.messageId)}
                         >
                           <ChatMessageText text={msg.content.text} />
                           {msg.content.attachments?.map((attachment) => (

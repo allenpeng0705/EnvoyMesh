@@ -89,6 +89,8 @@ export type RpcMethods =
   // Messaging
   | "sendChat"
   | "listChatHistory"
+  | "deleteChatMessage"
+  | "clearChatHistory"
   | "markRead"
   | "getChatDrafts"
   | "deleteChatDraft"

@@ -324,6 +324,8 @@ export interface MobileChatLogStore {
   append(threadPeerOwnerId: string, entry: ChatLogEntry): Promise<void>;
   /** List most recent messages in a thread, ascending by timestamp. */
   listThread(threadPeerOwnerId: string, limit?: number): Promise<ChatLogEntry[]>;
+  deleteMessage(threadPeerOwnerId: string, messageId: string): Promise<boolean>;
+  clearThread(threadPeerOwnerId: string): Promise<number>;
 }
 
 function _rowToChatLogEntry(row: Record<string, unknown>): ChatLogEntry {
@@ -384,6 +386,34 @@ export function createMobileChatLogStore(db: MobileDatabase): MobileChatLogStore
         [threadPeerOwnerId, Math.max(1, Math.min(limit, 5000))],
       ) as Record<string, unknown>[];
       return rows.map(_rowToChatLogEntry);
+    },
+
+    async deleteMessage(threadPeerOwnerId, messageId) {
+      const thread = threadPeerOwnerId.trim();
+      const id = messageId.trim();
+      if (!thread || !id) return false;
+      const before = await db.query(
+        `SELECT messageId FROM chat_messages WHERE threadPeerOwnerId = ? AND messageId = ? LIMIT 1`,
+        [thread, id],
+      ) as Record<string, unknown>[];
+      if (before.length === 0) return false;
+      await db.execute(
+        `DELETE FROM chat_messages WHERE threadPeerOwnerId = ? AND messageId = ?`,
+        [thread, id],
+      );
+      return true;
+    },
+
+    async clearThread(threadPeerOwnerId) {
+      const thread = threadPeerOwnerId.trim();
+      if (!thread) return 0;
+      const rows = await db.query(
+        `SELECT messageId FROM chat_messages WHERE threadPeerOwnerId = ?`,
+        [thread],
+      ) as Record<string, unknown>[];
+      if (rows.length === 0) return 0;
+      await db.execute(`DELETE FROM chat_messages WHERE threadPeerOwnerId = ?`, [thread]);
+      return rows.length;
     },
   };
 }

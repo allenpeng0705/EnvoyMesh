@@ -39,6 +39,8 @@ import {
 
 export interface RagService {
   indexChatMessage(threadOwnerId: string, message: ThreadMessageView): Promise<void>;
+  removeChatMessage(threadOwnerId: string, messageId: string): Promise<void>;
+  clearChatThread(threadOwnerId: string): Promise<void>;
   backfillChatHistory(chatLogStore: LocalChatLogStore | null): Promise<void>;
   reindexVault(input: {
     vaultIndex: VaultIndex;
@@ -179,6 +181,22 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
       } catch (error) {
         console.warn(`[rag] chat index skipped: ${error}`);
       }
+    },
+
+    async removeChatMessage(threadOwnerId, messageId) {
+      const kb = resolveAiKnowledgeBaseSettings(knowledgeBase);
+      if (kb.ragMode === "lexical") return;
+      const { store: activeStore } = await ensureRuntime();
+      await activeStore.deleteBySourceKey(chatCollectionId(threadOwnerId), messageId);
+      void flushSoon();
+    },
+
+    async clearChatThread(threadOwnerId) {
+      const kb = resolveAiKnowledgeBaseSettings(knowledgeBase);
+      if (kb.ragMode === "lexical") return;
+      const { store: activeStore } = await ensureRuntime();
+      await activeStore.deleteCollection(chatCollectionId(threadOwnerId));
+      void flushSoon();
     },
 
     async backfillChatHistory(chatLogStore) {

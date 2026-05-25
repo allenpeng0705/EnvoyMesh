@@ -629,6 +629,12 @@ export interface NodeService {
    */
   listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
 
+  /** Delete one persisted chat message from a thread (local only). */
+  deleteChatMessage(peerOwnerId: string, messageId: string): Promise<{ ok: boolean }>;
+
+  /** Delete all persisted chat messages in a thread (local only). */
+  clearChatHistory(peerOwnerId: string): Promise<{ deletedCount: number }>;
+
   /**
    * Mark messages as read
    */

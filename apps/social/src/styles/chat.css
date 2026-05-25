@@ -135,6 +135,7 @@
 .chat-header-right {
   display: flex;
   align-items: center;
+  gap: var(--space-2);
   flex-shrink: 0;
   max-width: min(48%, 16rem);
   margin-top: 2px;
@@ -407,8 +408,126 @@
 }
 
 .message-bubble-body {
+  position: relative;
   font-size: var(--text-base);
   line-height: var(--leading-normal);
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+  cursor: text;
+}
+
+.message-bubble-body .message-text,
+.message-bubble-body .ai-message-text {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.message-bubble-meta,
+.message-bubble-footer,
+.message-bubble-badge,
+.message-bubble-time,
+.message-delivery-status,
+.message-copy-btn,
+.message-delete-btn {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.message-bubble-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.message-bubble:hover .message-bubble-actions,
+.message-bubble:focus-within .message-bubble-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .message-bubble-actions {
+    opacity: 0.85;
+  }
+}
+
+.message-copy-btn,
+.message-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  color: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+}
+
+.message-copy-btn:hover,
+.message-copy-btn.is-copied,
+.message-delete-btn:hover {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.message-delete-btn:hover {
+  color: var(--color-danger, #ef4444);
+}
+
+.message-bubble-body:has(.message-bubble-actions) {
+  padding-right: 3.5rem;
+}
+
+.message-bubble.outgoing .message-bubble-body ::selection,
+.message-bubble.ai-outgoing .message-bubble-body ::selection {
+  background: rgb(255 255 255 / 0.35);
+  color: var(--color-primary-on);
+}
+
+.message-bubble.incoming-peer .message-bubble-body ::selection,
+.message-bubble.incoming-agent .message-bubble-body ::selection,
+.message-bubble.ai-incoming .message-bubble-body ::selection {
+  background: var(--color-primary-subtle);
+  color: var(--color-text);
+}
+
+.message-bubble-body:has(.message-copy-btn) {
+  padding-right: 1.75rem;
+}
+
+.chat-header-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0.375rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-elevated);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.chat-header-clear-btn:hover:not(:disabled) {
+  color: var(--color-danger, #ef4444);
+  border-color: color-mix(in srgb, var(--color-danger, #ef4444) 35%, var(--color-border-subtle));
+  background: color-mix(in srgb, var(--color-danger, #ef4444) 8%, var(--color-surface-elevated));
+}
+
+.chat-header-clear-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .message-bubble.outgoing,

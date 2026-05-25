@@ -177,6 +177,25 @@ function KnowledgeBaseSettings(props: {
         </div>
       </div>
 
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>Purge RAG when deleting chat</strong>
+          <span className="toggle-desc">
+            Off (default): deleted messages stay in the vector index for AI context. On: delete/clear also removes chat RAG vectors.
+          </span>
+        </div>
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={kb.purgeChatRagOnDelete === true}
+            onChange={async (e) => {
+              await patch({ purgeChatRagOnDelete: e.target.checked });
+            }}
+          />
+          <span className="slider" />
+        </label>
+      </div>
+
       <div className="form-row">
         <div className="form-group">
           <label>Recent messages in context</label>

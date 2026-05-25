@@ -59,6 +59,10 @@ export async function routeRpcMethod(
       return ns.sendChat(params.targetOwnerId as string, params.text as string);
     case "listChatHistory":
       return ns.listChatHistory(params.peerOwnerId as string, params.limit as number | undefined);
+    case "deleteChatMessage":
+      return ns.deleteChatMessage(params.peerOwnerId as string, params.messageId as string);
+    case "clearChatHistory":
+      return ns.clearChatHistory(params.peerOwnerId as string);
     case "markRead":
       return ns.markRead(params.targetOwnerId as string, params.upToMessageId as string | undefined);
     case "getChatDrafts":

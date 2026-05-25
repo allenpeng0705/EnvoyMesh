@@ -73,6 +73,7 @@ import {
   resolveLazyCapabilityDiscovery,
   stripModelThinking,
   buildVaultIndexOptionsFromKnowledgeBase,
+  resolveAiKnowledgeBaseSettings,
 } from "@envoymesh/api";
 
 import {
@@ -1758,6 +1759,38 @@ class NodeServiceImpl implements NodeService {
     if (!this._chatLogStore) return [];
     const rows = await this._chatLogStore.listThread(peerOwnerId.trim(), limit);
     return rows as ChatMessage[];
+  }
+
+  async deleteChatMessage(peerOwnerId: string, messageId: string): Promise<{ ok: boolean }> {
+    const thread = peerOwnerId.trim();
+    const id = messageId.trim();
+    if (!thread || !id || !this._chatLogStore) {
+      return { ok: false };
+    }
+    const ok = await this._chatLogStore.deleteMessage(thread, id);
+    if (ok && (await this._shouldPurgeChatRagOnDelete())) {
+      const rag = await this._getRagService();
+      await rag?.removeChatMessage(thread, id);
+    }
+    return { ok };
+  }
+
+  async clearChatHistory(peerOwnerId: string): Promise<{ deletedCount: number }> {
+    const thread = peerOwnerId.trim();
+    if (!thread || !this._chatLogStore) {
+      return { deletedCount: 0 };
+    }
+    const deletedCount = await this._chatLogStore.clearThread(thread);
+    if (deletedCount > 0 && (await this._shouldPurgeChatRagOnDelete())) {
+      const rag = await this._getRagService();
+      await rag?.clearChatThread(thread);
+    }
+    return { deletedCount };
+  }
+
+  private async _shouldPurgeChatRagOnDelete(): Promise<boolean> {
+    const config = await this.getNodeConfig();
+    return resolveAiKnowledgeBaseSettings(config.aiSettings?.knowledgeBase).purgeChatRagOnDelete;
   }
 
   async markRead(_targetOwnerId: string, _upToMessageId?: string): Promise<void> {

@@ -1,13 +1,15 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
+import { stripModelThinking } from "@envoymesh/api";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
 import { messageVisualVariant } from "../../lib/chat-thread-kind.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { Markdown } from "../Markdown.js";
-import { ChatIcon } from "../../icons.js";
+import { ChatIcon, RemoveIcon } from "../../icons.js";
 
 interface AiMessage {
+  id: string;
   role: "user" | "ai";
   text: string;
   timestamp: string;
@@ -54,20 +56,51 @@ export function AIChatPanel() {
   const sendAiMessage = async (question: string) => {
     if (!question.trim() || isAiLoading) return;
 
-    const userMsg: AiMessage = { role: "user", text: question.trim(), timestamp: new Date().toISOString() };
+    const userMsg: AiMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      text: question.trim(),
+      timestamp: new Date().toISOString(),
+    };
     setAiMessages((prev) => [...prev, userMsg]);
     setAiInput("");
     setIsAiLoading(true);
 
     try {
       const turn = await nodeService.runDocumentAgentTurn(question);
-      setAiMessages((prev) => [...prev, { role: "ai", text: turn.answer, timestamp: new Date().toISOString() }]);
+      setAiMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "ai",
+          text: turn.answer,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Failed to get AI response";
-      setAiMessages((prev) => [...prev, { role: "ai", text: `Error: ${msg}`, timestamp: new Date().toISOString() }]);
+      setAiMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "ai",
+          text: `Error: ${msg}`,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
     } finally {
       setIsAiLoading(false);
     }
+  };
+
+  const handleDeleteAiMessage = (messageId: string) => {
+    setAiMessages((prev) => prev.filter((msg) => msg.id !== messageId));
+  };
+
+  const handleClearAiChat = () => {
+    if (aiMessages.length === 0) return;
+    if (!window.confirm("Clear this Envoy AI session?")) return;
+    setAiMessages([]);
   };
 
   return (
@@ -81,6 +114,16 @@ export function AIChatPanel() {
           </div>
         </div>
         <div className="chat-header-right">
+          <button
+            type="button"
+            className="chat-header-clear-btn"
+            title="Clear session"
+            aria-label="Clear session"
+            disabled={aiMessages.length === 0}
+            onClick={handleClearAiChat}
+          >
+            <RemoveIcon size={16} />
+          </button>
           <span className="ai-status" title={nodeConfig?.modelProviders?.modelName ?? undefined}>
             {nodeConfig?.modelProviders?.mode === "disabled" ? "AI Disabled" :
              nodeConfig?.modelProviders?.mode === "mock" ? "Mock Mode" :
@@ -111,7 +154,7 @@ export function AIChatPanel() {
                 const variant = messageVisualVariant(outgoing, "ai");
                 return (
                   <div
-                    key={`${dateKey}-${stack[0].timestamp}`}
+                    key={`${dateKey}-${stack[0].id}`}
                     className={`message-stack-row ${outgoing ? "is-outgoing" : "is-incoming"}`}
                   >
                     {!outgoing && (
@@ -120,13 +163,15 @@ export function AIChatPanel() {
                     <div className="message-stack-bubbles">
                       {stack.map((msg, index) => (
                         <ChatMessageBubble
-                          key={`${msg.timestamp}-${index}`}
+                          key={msg.id}
                           variant={variant}
                           position={stackPosition(index, stack.length)}
                           timeLabel={new Date(msg.timestamp).toLocaleTimeString([], {
                             hour: "2-digit",
                             minute: "2-digit",
                           })}
+                          copyText={stripModelThinking(msg.text)}
+                          onDelete={() => handleDeleteAiMessage(msg.id)}
                         >
                           <Markdown text={msg.text} className="message-text" />
                         </ChatMessageBubble>

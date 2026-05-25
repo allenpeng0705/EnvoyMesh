@@ -142,6 +142,14 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.listChatHistory(peerOwnerId, limit);
   }
 
+  async deleteChatMessage(peerOwnerId: string, messageId: string) {
+    return this._ns.deleteChatMessage(peerOwnerId, messageId);
+  }
+
+  async clearChatHistory(peerOwnerId: string) {
+    return this._ns.clearChatHistory(peerOwnerId);
+  }
+
   async getChatDrafts(threadPeerOwnerId?: string) {
     return this._ns.getChatDrafts(threadPeerOwnerId);
   }

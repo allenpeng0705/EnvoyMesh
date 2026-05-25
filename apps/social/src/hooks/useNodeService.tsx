@@ -93,6 +93,8 @@ export interface NodeServiceClient {
   // Messaging
   sendChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
   listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
+  deleteChatMessage(peerOwnerId: string, messageId: string): Promise<{ ok: boolean }>;
+  clearChatHistory(peerOwnerId: string): Promise<{ deletedCount: number }>;
   getChatDrafts(threadPeerOwnerId?: string): Promise<ChatDraft[]>;
   deleteChatDraft(draftId: string): Promise<void>;
 
@@ -283,6 +285,8 @@ function createWsNodeServiceClient(
       return wsClient.rpc("sendChat", { targetOwnerId, text }, { timeoutMs: 120_000 });
     },
     async listChatHistory(peerOwnerId: string, limit?: number) { return wsClient.rpc("listChatHistory", { peerOwnerId, limit }) as Promise<ChatMessage[]>; },
+    async deleteChatMessage(peerOwnerId: string, messageId: string) { return wsClient.rpc("deleteChatMessage", { peerOwnerId, messageId }) as Promise<{ ok: boolean }>; },
+    async clearChatHistory(peerOwnerId: string) { return wsClient.rpc("clearChatHistory", { peerOwnerId }) as Promise<{ deletedCount: number }>; },
     async getChatDrafts(threadPeerOwnerId?: string) {
       return wsClient.rpc("getChatDrafts", threadPeerOwnerId ? { threadPeerOwnerId } : {}) as Promise<ChatDraft[]>;
     },
@@ -894,8 +898,46 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
   const isOutgoing = (msg: ChatMessage) =>
     !!(selfIds?.ownerId && messageIsOutgoing(msg, selfIds.ownerId, selfIds.peerId));
 
+  const removeMessage = useCallback(
+    async (messageId: string) => {
+      if (!selectedContactOwnerId) return false;
+      try {
+        const result = await client.deleteChatMessage(selectedContactOwnerId, messageId);
+        if (result.ok) {
+          setThreads((prev) => ({
+            ...prev,
+            [selectedContactOwnerId]: (prev[selectedContactOwnerId] ?? []).filter(
+              (m) => m.messageId !== messageId,
+            ),
+          }));
+        }
+        return result.ok;
+      } catch (error) {
+        console.error(error);
+        return false;
+      }
+    },
+    [client, selectedContactOwnerId],
+  );
+
+  const clearThread = useCallback(async () => {
+    if (!selectedContactOwnerId) return 0;
+    try {
+      const result = await client.clearChatHistory(selectedContactOwnerId);
+      if (result.deletedCount > 0) {
+        setThreads((prev) => ({ ...prev, [selectedContactOwnerId]: [] }));
+      }
+      return result.deletedCount;
+    } catch (error) {
+      console.error(error);
+      return 0;
+    }
+  }, [client, selectedContactOwnerId]);
+
   return {
     messages: selectedContactOwnerId ? threads[selectedContactOwnerId] ?? [] : [],
     isOutgoing,
+    removeMessage,
+    clearThread,
   };
 }

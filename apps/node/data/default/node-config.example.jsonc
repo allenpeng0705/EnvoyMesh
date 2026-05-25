@@ -177,6 +177,10 @@
       // Max vault text snippets injected per prompt.
       "vaultSnippetLimit": 5,
 
+      // false (default): deleting chat hides messages in UI but keeps chat RAG vectors for AI.
+      // true: delete/clear chat also removes matching vectors from rag-vectors.sqlite.
+      // "purgeChatRagOnDelete": false,
+
       // Paths under shared_vault/ (contact-safe / auto-reply KB).
       "publicVaultPaths": ["knowledge/public/"],
 

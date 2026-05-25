@@ -236,6 +236,23 @@ Defaults: `recentMessageLimit: 20`, `ragMessageLimit: 5` (Settings → AI → Kn
 
 New messages are indexed incrementally via `scheduleChatRagIndex` after append to the chat log.
 
+### Deleting chat vs RAG
+
+When you delete a message or clear a thread in the Social UI, the **chat log** (`chat-messages.jsonl`) is always updated on your node. Whether **vector RAG** is updated too is controlled by `purgeChatRagOnDelete`:
+
+| `purgeChatRagOnDelete` | Chat UI | Chat log | Vector RAG (`chat:{thread}`) |
+|------------------------|---------|----------|------------------------------|
+| **`false` (default)** | Hidden | Removed | **Kept** — AI can still retrieve deleted text for drafts / knowledge |
+| **`true`** | Hidden | Removed | **Removed** — AI forgets those messages |
+
+Set in **Settings → AI → Knowledge Base → Purge RAG when deleting chat**, or in config:
+
+```json
+"purgeChatRagOnDelete": false
+```
+
+Lexical-only mode (`ragMode: lexical`) does not store chat vectors; deleting from the log is enough to drop those messages from lexical RAG.
+
 ---
 
 ## Agent identity vs human profile vs vault
@@ -267,6 +284,7 @@ All under `aiSettings.knowledgeBase` in `node-config.json` (or Settings → AI):
 | `chunkOverlapChars` | 120 | Overlap between chunks |
 | `publicVaultPaths` | `knowledge/public/` | Contact-safe corpus |
 | `privateVaultPaths` | `knowledge/private/` | Owner-only corpus |
+| `purgeChatRagOnDelete` | `false` | Also remove chat vectors when deleting/clearing chat |
 | `embedding.*` | see example | Embedding provider (separate from chat) |
 
 Field-level comments: `apps/node/data/default/node-config.example.jsonc`.

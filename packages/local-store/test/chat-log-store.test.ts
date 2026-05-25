@@ -31,4 +31,20 @@ describe("createLocalChatLogStore", () => {
     const raw = await readFile(join(dir, CHAT_MESSAGES_FILE), "utf8");
     expect(raw.split("\n").filter(Boolean)).toHaveLength(2);
   });
+
+  it("deletes one message and clears a thread", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "envoy-chat-"));
+    const store = createLocalChatLogStore(dir);
+    await store.append("envoy:owner:alice", sample(1));
+    await store.append("envoy:owner:alice", sample(2));
+    await store.append("envoy:owner:bob", sample(3));
+
+    expect(await store.deleteMessage("envoy:owner:alice", "m-1")).toBe(true);
+    expect(await store.deleteMessage("envoy:owner:alice", "missing")).toBe(false);
+    expect((await store.listThread("envoy:owner:alice")).map((m) => m.messageId)).toEqual(["m-2"]);
+
+    expect(await store.clearThread("envoy:owner:alice")).toBe(1);
+    expect(await store.listThread("envoy:owner:alice")).toEqual([]);
+    expect((await store.listThread("envoy:owner:bob")).map((m) => m.messageId)).toEqual(["m-3"]);
+  });
 });

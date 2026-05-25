@@ -1242,6 +1242,16 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return this._chatLog.listThread(peerOwnerId, limit);
   }
 
+  async deleteChatMessage(peerOwnerId: string, messageId: string): Promise<{ ok: boolean }> {
+    const ok = await this._chatLog.deleteMessage(peerOwnerId, messageId);
+    return { ok };
+  }
+
+  async clearChatHistory(peerOwnerId: string): Promise<{ deletedCount: number }> {
+    const deletedCount = await this._chatLog.clearThread(peerOwnerId);
+    return { deletedCount };
+  }
+
   async markRead(_targetOwnerId: string, _upToMessageId?: string): Promise<void> {
     // Mobile chat log has no separate read cursor yet (matches partial NodeService on desktop extras).
   }

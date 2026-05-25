@@ -70,6 +70,11 @@ export interface AiKnowledgeBaseSettings {
   chunkSizeChars?: number;
   /** Overlap between consecutive chunks (characters). Default: 120. */
   chunkOverlapChars?: number;
+  /**
+   * When deleting or clearing chat history, also remove matching chat vectors from RAG.
+   * Default: false — deleted messages stay in the vector index for AI context (hidden from chat UI only).
+   */
+  purgeChatRagOnDelete?: boolean;
 }
 
 export const DEFAULT_AI_KNOWLEDGE_BASE_MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -88,6 +93,7 @@ export const DEFAULT_AI_KNOWLEDGE_BASE: Required<
     | "maxFileBytes"
     | "chunkSizeChars"
     | "chunkOverlapChars"
+    | "purgeChatRagOnDelete"
   >
 > & {
   publicVaultPaths: string[];
@@ -106,6 +112,7 @@ export const DEFAULT_AI_KNOWLEDGE_BASE: Required<
   maxFileBytes: DEFAULT_AI_KNOWLEDGE_BASE_MAX_FILE_BYTES,
   chunkSizeChars: DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_SIZE_CHARS,
   chunkOverlapChars: DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_OVERLAP_CHARS,
+  purgeChatRagOnDelete: false,
 };
 
 export function resolveAiKnowledgeBaseSettings(
@@ -122,6 +129,7 @@ export function resolveAiKnowledgeBaseSettings(
     | "maxFileBytes"
     | "chunkSizeChars"
     | "chunkOverlapChars"
+    | "purgeChatRagOnDelete"
   >
 > & {
   publicVaultPaths: string[];
@@ -173,6 +181,7 @@ export function resolveAiKnowledgeBaseSettings(
       1000,
       DEFAULT_AI_KNOWLEDGE_BASE.chunkOverlapChars,
     ),
+    purgeChatRagOnDelete: input?.purgeChatRagOnDelete ?? DEFAULT_AI_KNOWLEDGE_BASE.purgeChatRagOnDelete,
     externalMcpServer: input?.externalMcpServer?.trim() || undefined,
     mcpServerUrl: input?.mcpServerUrl?.trim() || undefined,
     mcpSearchTool: input?.mcpSearchTool?.trim() || undefined,
