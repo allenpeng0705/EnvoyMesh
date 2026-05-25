@@ -2459,7 +2459,7 @@ const bridge = createBridge({
         ownerId: profile.owner.ownerId,
         displayName: selfHuman?.displayName ?? profile.owner.ownerId,
       },
-      content: { text: payload.text },
+      content: { text: stripModelThinking(payload.text) },
       metadata: { timestamp: envelope.createdAt, deliveryReceipt: "delivered" as const },
       signature: envelope.signature,
     };

@@ -1,4 +1,5 @@
-const THINKING_BLOCK_PATTERN = /<redacted_thinking>[\s\S]*?<\/redacted_thinking>/i;
+const THINKING_TAG = "(?:think|redacted_thinking|thinking)";
+const THINKING_BLOCK_PATTERN = new RegExp(`<${THINKING_TAG}>[\\s\\S]*?<\\/${THINKING_TAG}>`, "i");
 
 export interface ParsedModelThinking {
   /** Combined inner text from all thinking blocks, trimmed; null if none. */
@@ -8,16 +9,20 @@ export interface ParsedModelThinking {
 }
 
 function thinkingBlockRegex(): RegExp {
-  return /<redacted_thinking>[\s\S]*?<\/redacted_thinking>/gi;
+  return new RegExp(`<${THINKING_TAG}>[\\s\\S]*?<\\/${THINKING_TAG}>`, "gi");
+}
+
+function stripTagWrapper(block: string): string {
+  return block
+    .replace(new RegExp(`^<${THINKING_TAG}>`, "i"), "")
+    .replace(new RegExp(`<\\/${THINKING_TAG}>$`, "i"), "")
+    .trim();
 }
 
 function extractThinkingBlocks(text: string): string[] {
   const blocks: string[] = [];
   for (const match of text.matchAll(thinkingBlockRegex())) {
-    const inner = match[0]
-      .replace(new RegExp("^<redacted_thinking>", "i"), "")
-      .replace(new RegExp("<\/redacted_thinking>$", "i"), "")
-      .trim();
+    const inner = stripTagWrapper(match[0]);
     if (inner) blocks.push(inner);
   }
   return blocks;

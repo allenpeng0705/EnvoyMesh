@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { parseModelThinking, stripModelThinking } from "../src/model-thinking.js";
 
-const OPEN = "<redacted_thinking>";
-const CLOSE = "</redacted_thinking>";
-
 describe("parseModelThinking", () => {
-  it("extracts thinking and visible reply", () => {
-    const raw = `${OPEN}Plan a short greeting.${CLOSE}\n\n你好！很高兴收到你的消息。`;
+  it("extracts MiniMax think tags", () => {
+    const raw = "<think>Plan a short greeting.</think>\n\n你好！";
     expect(parseModelThinking(raw)).toEqual({
       thinking: "Plan a short greeting.",
-      visibleText: "你好！很高兴收到你的消息。",
+      visibleText: "你好！",
     });
+  });
+
+  it("extracts redacted_thinking tags", () => {
+    const raw = "<think>notes</think>\n\nReply";
+    expect(parseModelThinking(raw).visibleText).toBe("Reply");
+    expect(parseModelThinking(raw).thinking).toBe("notes");
   });
 
   it("returns null thinking when absent", () => {
@@ -19,17 +22,12 @@ describe("parseModelThinking", () => {
       visibleText: "Hello there",
     });
   });
-
-  it("is case-insensitive for tags", () => {
-    const raw = "<REDACTED_THINKING>notes</REDACTED_THINKING>\n\nReply";
-    expect(parseModelThinking(raw).visibleText).toBe("Reply");
-    expect(parseModelThinking(raw).thinking).toBe("notes");
-  });
 });
 
 describe("stripModelThinking", () => {
-  it("removes all thinking blocks", () => {
-    const raw = `${OPEN}a${CLOSE}${OPEN}b${CLOSE}\n\nHi`;
-    expect(stripModelThinking(raw)).toBe("Hi");
+  it("removes think blocks from real auto-reply shape", () => {
+    const raw =
+      '<think>reasoning here</think>\n\n[AI Agent Draft Reply]\n\n我能帮你回答问题！';
+    expect(stripModelThinking(raw)).toBe("[AI Agent Draft Reply]\n\n我能帮你回答问题！");
   });
 });
