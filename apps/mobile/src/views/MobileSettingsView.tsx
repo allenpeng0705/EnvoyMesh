@@ -7,6 +7,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useNodeState } from "@envoymesh/social/context/NodeStateContext.js";
 import { useNodeService } from "@envoymesh/social/hooks/useNodeService.js";
+import { MobilePairHomeSection } from "./MobilePairHomeSection.js";
 import { BridgeIcon } from "@envoymesh/social/icons.js";
 
 type SettingsTab = "node" | "ai" | "app";
@@ -106,10 +107,11 @@ export function MobileSettingsView({ onBack }: MobileSettingsViewProps) {
               </div>
             </div>
 
+            <MobilePairHomeSection />
+
             <div className="mv-section-group">
               <div className="mv-section-group-title">Network</div>
               <div className="mv-section-row">
-                <span className="mv-section-label">Relay Enabled</span>
                 <span className="mv-section-value">
                   {nodeConfig?.relayEnabled !== false ? "On" : "Off"}
                 </span>

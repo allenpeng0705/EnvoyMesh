@@ -138,6 +138,7 @@ export type RpcMethods =
   | "getPairingPayload"
   | "pairDevice"
   | "pairSharedIdentity"
+  | "pairWithHomeNode"
   // Node Configuration
   | "getNodeConfig"
   | "updateNodeConfig"
@@ -360,6 +361,26 @@ export interface PairingPayload {
   ownerId?: string;
   /** Home node's libp2p peer ID for mobile → home routing (bridge agent transport). */
   homeNodePeerId?: string;
+}
+
+/** Params decoded from an `envoy://pair` URI for mobile shared-identity pairing. */
+export interface PairWithHomeNodeParams {
+  wsUrl: string;
+  token: string;
+  ownerPublicKey: string;
+  ownerId: string;
+  agentPeerId?: string;
+  agentPubKey?: string;
+  relayPeerId?: string;
+  homeNodePeerId?: string;
+  agentName?: string;
+}
+
+/** Result of mobile {@link pairWithHomeNode} after QR pairing succeeds. */
+export interface PairWithHomeNodeResult {
+  sessionToken: string;
+  deviceCertificate: Record<string, unknown>;
+  ownerId: string;
 }
 
 /**

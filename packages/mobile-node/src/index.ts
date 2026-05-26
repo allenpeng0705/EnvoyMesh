@@ -604,21 +604,7 @@ export class MobileNode implements NodeService {
    * @param qrPayload Decoded envoy://pair URI params
    * @returns The complete pairing result including session token
    */
-  async pairWithHomeNode(qrPayload: {
-    wsUrl: string;
-    token: string;
-    ownerPublicKey: string;
-    ownerId: string;
-    agentPeerId?: string;
-    agentPubKey?: string;
-    relayPeerId?: string;
-    homeNodePeerId?: string;
-    agentName?: string;
-  }): Promise<{
-    sessionToken: string;
-    deviceCertificate: Record<string, unknown>;
-    state: MobileNodeState;
-  }> {
+  async pairWithHomeNode(qrPayload: import("@envoymesh/api").PairWithHomeNodeParams): Promise<import("@envoymesh/api").PairWithHomeNodeResult> {
     // 1. Generate device keypair + ECDH key-exchange keypair
     const device = generateDeviceIdentity();
     const ecdhKeyPair = await generateEcdhKeyPair();
@@ -734,7 +720,7 @@ export class MobileNode implements NodeService {
       return {
         sessionToken: response.sessionToken,
         deviceCertificate: response.deviceCertificate,
-        state: this._state,
+        ownerId: response.ownerId,
       };
     } finally {
       clearTimeout(connectTimer);

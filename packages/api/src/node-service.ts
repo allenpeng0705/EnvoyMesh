@@ -32,6 +32,8 @@ import type {
   PairDeviceResult,
   PairSharedIdentityParams,
   PairSharedIdentityResult,
+  PairWithHomeNodeParams,
+  PairWithHomeNodeResult,
 } from "./ws-protocol.js";
 
 // ============================================
@@ -935,6 +937,12 @@ export interface NodeService {
    * (same ownerId as the home node).
    */
   pairSharedIdentity(params: PairSharedIdentityParams): Promise<PairSharedIdentityResult>;
+
+  /**
+   * Mobile-only: scan/paste `envoy://pair` URI and import shared owner identity from home node.
+   * Desktop nodes reject this call.
+   */
+  pairWithHomeNode(params: PairWithHomeNodeParams): Promise<PairWithHomeNodeResult>;
 
   // ----- Connection Status -----
 

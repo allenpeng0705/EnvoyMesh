@@ -4069,6 +4069,10 @@ class NodeServiceImpl implements NodeService {
     return result;
   }
 
+  async pairWithHomeNode(_params: import("@envoymesh/api").PairWithHomeNodeParams): Promise<import("@envoymesh/api").PairWithHomeNodeResult> {
+    throw new Error("pairWithHomeNode is only supported on the mobile app");
+  }
+
   async homeclawCoreProxy(params: HomeClawCoreProxyParams): Promise<HomeClawCoreProxyResult> {
     const cfg = await this.getNodeConfig();
     return executeHomeClawCoreProxy(params, cfg.homeClawCoreBaseUrl);

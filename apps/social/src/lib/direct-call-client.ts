@@ -218,6 +218,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getPairingPayload();
   }
 
+  async pairWithHomeNode(params: Parameters<NodeService["pairWithHomeNode"]>[0]) {
+    return this._ns.pairWithHomeNode(params);
+  }
+
   // -----------------------------------------------------------------------
   // AI / Knowledge Query
   // -----------------------------------------------------------------------

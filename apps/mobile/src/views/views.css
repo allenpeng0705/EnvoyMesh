@@ -1089,6 +1089,52 @@
   background: var(--color-surface-elevated);
 }
 
+.mv-field-label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  margin-bottom: var(--space-2);
+}
+
+.mv-field-desc {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.mv-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  resize: vertical;
+  min-height: 96px;
+}
+
+.mv-pair-actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.mv-field-error {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-danger, #c0392b);
+}
+
+.mv-field-success {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-success, #2e7d32);
+}
+
 /* ==========================================================================
    Settings View
    ========================================================================== */

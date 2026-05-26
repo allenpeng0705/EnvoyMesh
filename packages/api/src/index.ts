@@ -6,6 +6,7 @@ export * from "./connectivity-tuning.js";
 export * from "./contact-ai-access.js";
 export * from "./ai-identity-prefix.js";
 export * from "./autonomous-policy.js";
+export * from "./envoy-pair-uri.js";
 export * from "./default-bootstrap.js";
 export * from "./node-service.js";
 export * from "./bond-target.js";

@@ -119,6 +119,7 @@ export interface NodeServiceClient {
   // Agent Bridge
   getBridgeStatus(): Promise<BridgeStatus>;
   getPairingPayload(): Promise<PairingPayload>;
+  pairWithHomeNode(params: import("@envoymesh/api").PairWithHomeNodeParams): Promise<import("@envoymesh/api").PairWithHomeNodeResult>;
 
   // AI / Knowledge Query
   knowledgeQuery(question: string): Promise<string>;
@@ -324,6 +325,11 @@ function createWsNodeServiceClient(
     },
     async getBridgeStatus() { return wsClient.rpc("getBridgeStatus"); },
     async getPairingPayload() { return wsClient.rpc("getPairingPayload"); },
+    async pairWithHomeNode(params: import("@envoymesh/api").PairWithHomeNodeParams) {
+      return wsClient.rpc("pairWithHomeNode", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").PairWithHomeNodeResult
+      >;
+    },
     async knowledgeQuery(question: string) { return wsClient.rpc("knowledgeQuery", { question }) as Promise<string>; },
     async runDocumentAgentTurn(message: string) {
       return wsClient.rpc("runDocumentAgentTurn", { message }) as Promise<import("@envoymesh/api").DocumentAgentTurnResult>;
