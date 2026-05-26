@@ -34,6 +34,10 @@ import type {
   PairSharedIdentityResult,
   PairWithHomeNodeParams,
   PairWithHomeNodeResult,
+  ListAuthorizedDevicesResult,
+  RevokeAuthorizedDeviceParams,
+  RevokeAuthorizedDeviceResult,
+  ListDeviceRevocationsResult,
 } from "./ws-protocol.js";
 
 // ============================================
@@ -943,6 +947,15 @@ export interface NodeService {
    * Desktop nodes reject this call.
    */
   pairWithHomeNode(params: PairWithHomeNodeParams): Promise<PairWithHomeNodeResult>;
+
+  /** List owner-authorized satellite devices (shared-identity pairing). */
+  listAuthorizedDevices(): Promise<ListAuthorizedDevicesResult>;
+
+  /** Revoke a previously authorized device certificate. */
+  revokeAuthorizedDevice(params: RevokeAuthorizedDeviceParams): Promise<RevokeAuthorizedDeviceResult>;
+
+  /** List signed device revocation records for this owner. */
+  listDeviceRevocations(): Promise<ListDeviceRevocationsResult>;
 
   // ----- Connection Status -----
 

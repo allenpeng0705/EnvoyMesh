@@ -49,6 +49,9 @@ class MockNodeService implements Partial<NodeService> {
   getBridgeStatus = vi.fn().mockResolvedValue({ enabled: true, agentPeerId: "agent-1" });
   getPairingPayload = vi.fn().mockResolvedValue({ wsUrl: "ws://localhost:9001", relayPeerId: "", agentPeerId: "agent-1", agentPubKey: "pk" });
   pairWithHomeNode = vi.fn().mockResolvedValue({ sessionToken: "tok", deviceCertificate: {}, ownerId: "envoy:owner:1" });
+  listAuthorizedDevices = vi.fn().mockResolvedValue({ devices: [] });
+  revokeAuthorizedDevice = vi.fn().mockResolvedValue({ revocation: {} });
+  listDeviceRevocations = vi.fn().mockResolvedValue({ revocations: [] });
 
   // AI
   knowledgeQuery = vi.fn().mockResolvedValue("AI answer");

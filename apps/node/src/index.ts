@@ -17,6 +17,7 @@ import {
   createRelayStateStore,
   createTaskRuntimeStateStore,
   createCapabilityManifestStore,
+  createDeviceAuthorizationStore,
   deriveCorrelationIdFromEnvelope,
   loadOrCreateNodeProfile,
   RELAY_MANAGER_SNAPSHOT_PROTOCOL,
@@ -112,6 +113,7 @@ import { join } from "node:path";
 import { parseNodeArgs, applyPersistedDiscoveryConfig } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
+import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
@@ -205,6 +207,8 @@ const chatDraftStore = createChatDraftStore(args.profileDir);
 const capabilityManifestStore = createCapabilityManifestStore(args.profileDir);
 const reputationStore = createLocalPeerReputationStore(args.profileDir);
 const nodeConfigStore = createNodeConfigStore(args.profileDir);
+const deviceAuthorizationStore = createDeviceAuthorizationStore(args.profileDir);
+bindDeviceAuthorizationStore(deviceAuthorizationStore);
 const persistedNodeConfig = await nodeConfigStore.load();
 if (persistedNodeConfig) {
   applyPersistedDiscoveryConfig(args, persistedNodeConfig);
@@ -1493,7 +1497,50 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
   }
 
   if (envelope.intent === "chat.message") {
-    const payload = parseChatMessagePayload(envelope.payload);
+    let payload: ReturnType<typeof parseChatMessagePayload>;
+    try {
+      payload = parseChatMessagePayload(envelope.payload);
+    } catch (error) {
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.rejected",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "rejected",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "deny",
+          summary: "Rejected chat.message: invalid payload",
+          createdAt: envelope.createdAt,
+        }),
+      );
+      console.warn(`[rejected chat.message] invalid payload from ${remotePeerId}`);
+      return;
+    }
+
+    const deviceAuth = await verifyInboundChatDevice(envelope, payload);
+    if (!deviceAuth.ok) {
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.rejected",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "rejected",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "deny",
+          summary: `Rejected chat.message: ${deviceAuth.reason}`,
+          createdAt: envelope.createdAt,
+        }),
+      );
+      console.warn(`[rejected chat.message] ${deviceAuth.reason} from ${remotePeerId}`);
+      return;
+    }
+
     const senderTrustForReach = await trustStore.getTrustRecord(payload.senderOwnerId);
     if (senderTrustForReach && senderTrustForReach.level !== "blocked") {
       void mesh.tagContactForPersistentReachability(remotePeerId).catch((err) =>
@@ -1540,7 +1587,10 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         sender: {
           nodeId: remotePeerId,
           ownerId: payload.senderOwnerId,
-          displayName: senderTrust?.displayName ?? payload.senderOwnerId,
+          displayName: formatChatSenderDisplayName(
+            senderTrust?.displayName ?? payload.senderOwnerId,
+            payload,
+          ),
         },
         recipient: {
           nodeId: mesh.peerId,

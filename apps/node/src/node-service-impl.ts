@@ -37,6 +37,10 @@ import type {
   PairDeviceResult,
   PairSharedIdentityParams,
   PairSharedIdentityResult,
+  ListAuthorizedDevicesResult,
+  RevokeAuthorizedDeviceParams,
+  RevokeAuthorizedDeviceResult,
+  ListDeviceRevocationsResult,
   AgentShareProposal,
   SubmitAgentShareProposalParams,
   DiscoverPublishedLibraryParams,
@@ -80,6 +84,7 @@ import {
   stripModelThinking,
   buildVaultIndexOptionsFromKnowledgeBase,
   resolveAiKnowledgeBaseSettings,
+  chatMessagePayloadDeviceFields,
 } from "@envoymesh/api";
 
 import {
@@ -129,6 +134,7 @@ import {
   createRelayStateStore,
   createCapabilityManifestStore,
   createSessionTokenStore,
+  createDeviceAuthorizationStore,
   loadOrCreateNodeProfile,
   type LocalTaskStore,
   type LocalTrustStore,
@@ -141,12 +147,14 @@ import {
   type RelayStateStore,
   type CapabilityManifestStore,
   type SessionTokenStore,
+  type DeviceAuthorizationStore,
 } from "@envoymesh/local-store";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
 import { seedAddrsForDiscoveryProfile, peerDiscoverySourceFromMultiaddrs, shouldPersistPeerDiscoverySeeds } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
+import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 import { createTaskDispatcher } from "./task-dispatcher.js";
 import { buildVaultIndex, assertPathInsideVault } from "@envoymesh/vault";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
@@ -276,6 +284,7 @@ class NodeServiceImpl implements NodeService {
 
   /** Persistent session token store for long-lived pairings (no QR re-scan). */
   private readonly _sessionTokenStore: SessionTokenStore | null;
+  private readonly _deviceAuthorizationStore: DeviceAuthorizationStore | null;
 
   /** Best-effort last failure for {@link getConnectionStatus} (cleared on successful {@link startNode}). */
   private _lastNodeError?: string;
@@ -735,6 +744,9 @@ class NodeServiceImpl implements NodeService {
       profileDir && profileDir !== "/tmp/unknown" ? createCapabilityManifestStore(profileDir) : null;
     this._sessionTokenStore =
       profileDir && profileDir !== "/tmp/unknown" ? createSessionTokenStore(profileDir) : null;
+    this._deviceAuthorizationStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createDeviceAuthorizationStore(profileDir) : null;
+    bindDeviceAuthorizationStore(this._deviceAuthorizationStore);
     if (profileDir && profileDir !== "/tmp/unknown") {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
     }
@@ -1730,6 +1742,10 @@ class NodeServiceImpl implements NodeService {
         payload: createChatMessagePayload({
           senderOwnerId: selfProfile.owner.ownerId,
           text: wireText,
+          ...chatMessagePayloadDeviceFields({
+            deviceCertificate: selfProfile.deviceCertificate,
+            ownerPublicKeyPem: selfProfile.owner.publicKeyPem,
+          }),
         }),
       }),
       selfProfile.device.privateKeyPem,
@@ -3464,7 +3480,20 @@ class NodeServiceImpl implements NodeService {
       }
 
       if (intent === "chat.message") {
-        const payload = parseChatMessagePayload(envelope.payload);
+        let payload: ReturnType<typeof parseChatMessagePayload>;
+        try {
+          payload = parseChatMessagePayload(envelope.payload);
+        } catch {
+          console.warn(`[chat.message] invalid payload from ${remotePeerId}`);
+          return;
+        }
+
+        const deviceAuth = await verifyInboundChatDevice(envelope, payload);
+        if (!deviceAuth.ok) {
+          console.warn(`[chat.message] rejected from ${remotePeerId}: ${deviceAuth.reason}`);
+          return;
+        }
+
         const senderTrust = await this._trustStore.getTrustRecord(payload.senderOwnerId);
         const selfHuman = await this._humanProfileStore.loadHumanProfile();
         void this._peerDirectoryStore
@@ -3478,7 +3507,10 @@ class NodeServiceImpl implements NodeService {
           sender: {
             nodeId: remotePeerId,
             ownerId: payload.senderOwnerId,
-            displayName: senderTrust?.displayName ?? payload.senderOwnerId,
+            displayName: formatChatSenderDisplayName(
+              senderTrust?.displayName ?? payload.senderOwnerId,
+              payload,
+            ),
           },
           recipient: {
             nodeId: mesh.peerId,
@@ -4045,6 +4077,17 @@ class NodeServiceImpl implements NodeService {
       });
     }
 
+    if (this._deviceAuthorizationStore) {
+      await this._deviceAuthorizationStore.registerAuthorizedDevice({
+        deviceId: requesterDeviceId,
+        devicePublicKeyPem: requesterDevicePublicKeyPem,
+        certificateId: deviceCert.certificateId,
+        deviceProfile: "satellite",
+        displayName: "Mobile (shared identity)",
+        pairedAt: now,
+      });
+    }
+
     const bridgeStatus = await this.getBridgeStatus();
     const result: PairSharedIdentityResult = {
       sessionToken,
@@ -4071,6 +4114,46 @@ class NodeServiceImpl implements NodeService {
 
   async pairWithHomeNode(_params: import("@envoymesh/api").PairWithHomeNodeParams): Promise<import("@envoymesh/api").PairWithHomeNodeResult> {
     throw new Error("pairWithHomeNode is only supported on the mobile app");
+  }
+
+  async listAuthorizedDevices(): Promise<ListAuthorizedDevicesResult> {
+    if (!this._deviceAuthorizationStore) {
+      return { devices: [] };
+    }
+    const devices = await this._deviceAuthorizationStore.listAuthorizedDevices();
+    return { devices };
+  }
+
+  async revokeAuthorizedDevice(params: RevokeAuthorizedDeviceParams): Promise<RevokeAuthorizedDeviceResult> {
+    const deviceId = params.deviceId?.trim();
+    if (!deviceId) {
+      throw new Error("deviceId is required");
+    }
+    if (!this._deviceAuthorizationStore) {
+      throw new Error("Device authorization store is not available");
+    }
+    const profile = this._requireProfile();
+    const revocation = await this._deviceAuthorizationStore.revokeDevice({
+      owner: {
+        ownerId: profile.owner.ownerId,
+        publicKeyPem: profile.owner.publicKeyPem,
+        privateKeyPem: profile.owner.privateKeyPem,
+      },
+      deviceId,
+      reason: params.reason,
+    });
+    if (this._sessionTokenStore) {
+      await this._sessionTokenStore.removeTokenByDeviceId(deviceId);
+    }
+    return { revocation: revocation as unknown as Record<string, unknown> };
+  }
+
+  async listDeviceRevocations(): Promise<ListDeviceRevocationsResult> {
+    if (!this._deviceAuthorizationStore) {
+      return { revocations: [] };
+    }
+    const revocations = await this._deviceAuthorizationStore.listRevocations();
+    return { revocations: revocations as unknown as Record<string, unknown>[] };
   }
 
   async homeclawCoreProxy(params: HomeClawCoreProxyParams): Promise<HomeClawCoreProxyResult> {

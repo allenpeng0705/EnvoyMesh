@@ -27,7 +27,7 @@
  *    { event: "connected", data: { peerId: "...", multiaddrs: [...] } }
  */
 
-import type { FriendMatchingPreferencesPayload } from "@envoymesh/protocol";
+import type { DeviceProfile, DeviceRevocationReason, FriendMatchingPreferencesPayload } from "@envoymesh/protocol";
 
 // ============================================
 // Message Types
@@ -139,6 +139,9 @@ export type RpcMethods =
   | "pairDevice"
   | "pairSharedIdentity"
   | "pairWithHomeNode"
+  | "listAuthorizedDevices"
+  | "revokeAuthorizedDevice"
+  | "listDeviceRevocations"
   // Node Configuration
   | "getNodeConfig"
   | "updateNodeConfig"
@@ -781,6 +784,33 @@ export interface PairSharedIdentityResult {
   agentPeerId?: string;
   agentPubKey?: string;
   agentName?: string;
+}
+
+export interface AuthorizedDeviceSummary {
+  deviceId: string;
+  certificateId: string;
+  deviceProfile: DeviceProfile;
+  displayName?: string;
+  pairedAt: string;
+  lastSeenAt?: string;
+  revoked: boolean;
+}
+
+export interface ListAuthorizedDevicesResult {
+  devices: AuthorizedDeviceSummary[];
+}
+
+export interface RevokeAuthorizedDeviceParams {
+  deviceId: string;
+  reason?: DeviceRevocationReason;
+}
+
+export interface RevokeAuthorizedDeviceResult {
+  revocation: Record<string, unknown>;
+}
+
+export interface ListDeviceRevocationsResult {
+  revocations: Record<string, unknown>[];
 }
 
 export interface GetPeerConnectionInfoParams {

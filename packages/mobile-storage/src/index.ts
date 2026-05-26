@@ -175,6 +175,7 @@ export interface MobileSessionTokenStore {
   listTokens(): Promise<SessionTokenRecord[]>;
   getTokenByValue(token: string): Promise<SessionTokenRecord | undefined>;
   setToken(record: SessionTokenRecord): Promise<void>;
+  removeTokenByDeviceId(deviceId: string): Promise<void>;
   removeTokensForOwner(ownerId: string): Promise<void>;
 }
 
@@ -191,14 +192,16 @@ export function createMobileSessionTokenStore(db: MobileDatabase): MobileSession
       return _rowToSessionToken(rows[0] as Record<string, unknown>);
     },
     async setToken(record) {
-      // Remove existing token for same owner (one token per owner)
-      await db.execute("DELETE FROM session_tokens WHERE ownerId = ?", [record.ownerId]);
+      await db.execute("DELETE FROM session_tokens WHERE deviceId = ?", [record.deviceId]);
       await db.execute(
         `INSERT INTO session_tokens (token, ownerId, deviceId, displayName, createdAt, lastUsedAt)
          VALUES (?, ?, ?, ?, ?, ?)`,
         [record.token, record.ownerId, record.deviceId,
          record.displayName ?? null, record.createdAt, record.lastUsedAt],
       );
+    },
+    async removeTokenByDeviceId(deviceId) {
+      await db.execute("DELETE FROM session_tokens WHERE deviceId = ?", [deviceId]);
     },
     async removeTokensForOwner(ownerId) {
       await db.execute("DELETE FROM session_tokens WHERE ownerId = ?", [ownerId]);

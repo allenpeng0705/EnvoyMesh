@@ -222,6 +222,18 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.pairWithHomeNode(params);
   }
 
+  async listAuthorizedDevices() {
+    return this._ns.listAuthorizedDevices();
+  }
+
+  async revokeAuthorizedDevice(params: Parameters<NodeService["revokeAuthorizedDevice"]>[0]) {
+    return this._ns.revokeAuthorizedDevice(params);
+  }
+
+  async listDeviceRevocations() {
+    return this._ns.listDeviceRevocations();
+  }
+
   // -----------------------------------------------------------------------
   // AI / Knowledge Query
   // -----------------------------------------------------------------------

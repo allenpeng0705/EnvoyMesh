@@ -189,6 +189,12 @@ export async function routeRpcMethod(
       return ns.pairSharedIdentity(params as any);
     case "pairWithHomeNode":
       return ns.pairWithHomeNode(params as any);
+    case "listAuthorizedDevices":
+      return ns.listAuthorizedDevices();
+    case "revokeAuthorizedDevice":
+      return ns.revokeAuthorizedDevice(params as any);
+    case "listDeviceRevocations":
+      return ns.listDeviceRevocations();
     case "forwardEnvelope":
       return ns.forwardEnvelope(params.envelope as Record<string, unknown>, params.dialHints as string[] | undefined);
     case "homeclawCoreProxy":

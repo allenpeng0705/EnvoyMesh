@@ -251,7 +251,7 @@ describe("MobileNode", () => {
       expect(profile.device.deviceId).toBe(node.state.device.deviceId);
     });
 
-    it("returns null deviceCertificate (created by owner in shared-identity mode)", () => {
+    it("returns null deviceCertificate in standalone mode", () => {
       const profile = node.getProfile();
       expect(profile.deviceCertificate).toBeNull();
     });
@@ -613,6 +613,59 @@ describe("MobileNode", () => {
       expect(persisted.homeNodePeerId).toBe("home-node-peer-id");
       expect(persisted.deviceId).toBeTruthy();
       expect(persisted.agentPeerId).toBeTruthy();
+    });
+
+    it("persistSharedIdentity saves device certificate JSON", async () => {
+      const { generateOwnerIdentity, generateDeviceIdentity, createDeviceCertificate } =
+        await import("@envoymesh/mobile-identity");
+      const owner = generateOwnerIdentity();
+      const device = generateDeviceIdentity();
+      const deviceCertificate = createDeviceCertificate({
+        owner,
+        device,
+        deviceProfile: "satellite",
+        capabilities: ["message.send"],
+      });
+      await node.importOwnerIdentity(
+        "/test-profile",
+        owner.privateKeyPem,
+        owner.publicKeyPem,
+        "home-node-peer-id",
+        { device, deviceCertificate },
+      );
+
+      const persisted = await node.persistSharedIdentity();
+      expect(persisted.deviceCertificateJson).toBeTruthy();
+      expect(node.getProfile().deviceCertificate?.deviceId).toBe(device.deviceId);
+    });
+
+    it("sendChat attaches device certificate in shared-identity mode", async () => {
+      const { generateOwnerIdentity, generateDeviceIdentity, createDeviceCertificate } =
+        await import("@envoymesh/mobile-identity");
+      const owner = generateOwnerIdentity();
+      const device = generateDeviceIdentity();
+      const deviceCertificate = createDeviceCertificate({
+        owner,
+        device,
+        deviceProfile: "satellite",
+        capabilities: ["message.send"],
+      });
+      await node.importOwnerIdentity(
+        "/test-profile",
+        owner.privateKeyPem,
+        owner.publicKeyPem,
+        "home-node-peer-id",
+        { device, deviceCertificate },
+      );
+      await node.startNode();
+
+      const broadcastSpy = vi.spyOn(node as any, "_broadcastToRelaySockets");
+      await node.sendChat("envoy:owner:target", "hello with cert");
+      expect(broadcastSpy).toHaveBeenCalled();
+      const sent = JSON.parse(String(broadcastSpy.mock.calls[0]?.[0]));
+      expect(sent.payload.deviceCertificate?.deviceId).toBe(device.deviceId);
+      expect(sent.payload.ownerPublicKeyPem).toContain("BEGIN PUBLIC KEY");
+      broadcastSpy.mockRestore();
     });
 
     it("restoreSharedIdentity reconstructs full state", async () => {

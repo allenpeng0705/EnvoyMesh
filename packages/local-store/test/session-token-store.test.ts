@@ -72,7 +72,7 @@ describe("session token store", () => {
     expect(reloaded!.lastUsedAt! > old).toBe(true);
   });
 
-  it("upserts by ownerId — replaces existing record for same owner", async () => {
+  it("upserts by deviceId — replaces existing record for same device", async () => {
     const store = createSessionTokenStore(dir);
     await store.setToken(record());
 
@@ -88,10 +88,10 @@ describe("session token store", () => {
     expect(await store.getTokenByValue("tok-002")).toBeDefined();
   });
 
-  it("stores multiple tokens for different owners", async () => {
+  it("stores multiple tokens for different devices", async () => {
     const store = createSessionTokenStore(dir);
-    await store.setToken(record({ ownerId: "envoy:owner:alice", token: "tok-a" }));
-    await store.setToken(record({ ownerId: "envoy:owner:bob", token: "tok-b" }));
+    await store.setToken(record({ ownerId: "envoy:owner:alice", deviceId: "envoy:device:alice-phone", token: "tok-a" }));
+    await store.setToken(record({ ownerId: "envoy:owner:bob", deviceId: "envoy:device:bob-phone", token: "tok-b" }));
 
     const tokens = await store.listTokens();
     expect(tokens).toHaveLength(2);
@@ -101,8 +101,8 @@ describe("session token store", () => {
 
   it("removes all tokens for an owner", async () => {
     const store = createSessionTokenStore(dir);
-    await store.setToken(record({ ownerId: "envoy:owner:alice", token: "tok-a" }));
-    await store.setToken(record({ ownerId: "envoy:owner:bob", token: "tok-b" }));
+    await store.setToken(record({ ownerId: "envoy:owner:alice", deviceId: "envoy:device:alice-phone", token: "tok-a" }));
+    await store.setToken(record({ ownerId: "envoy:owner:bob", deviceId: "envoy:device:bob-phone", token: "tok-b" }));
 
     await store.removeTokensForOwner("envoy:owner:alice");
 
@@ -111,6 +111,25 @@ describe("session token store", () => {
     expect(tokens[0].ownerId).toBe("envoy:owner:bob");
     expect(await store.getTokenByValue("tok-a")).toBeUndefined();
     expect(await store.getTokenByValue("tok-b")).toBeDefined();
+  });
+
+  it("removeTokenByDeviceId removes only the matching device session", async () => {
+    const store = createSessionTokenStore(dir);
+    await store.setToken(record({
+      ownerId: "envoy:owner:alice",
+      deviceId: "envoy:device:phone",
+      token: "tok-phone",
+    }));
+    await store.setToken(record({
+      ownerId: "envoy:owner:alice",
+      deviceId: "envoy:device:tablet",
+      token: "tok-tablet",
+    }));
+
+    await store.removeTokenByDeviceId("envoy:device:phone");
+
+    expect(await store.getTokenByValue("tok-phone")).toBeUndefined();
+    expect(await store.getTokenByValue("tok-tablet")).toBeDefined();
   });
 
   it("removeTokensForOwner is a no-op when owner has no tokens", async () => {
@@ -191,7 +210,7 @@ describe("session token store", () => {
     const owners = Array.from({ length: 20 }, (_, i) => `envoy:owner:peer-${i}`);
     await Promise.all(
       owners.map((ownerId, i) =>
-        store.setToken(record({ ownerId, token: `tok-${i}` })),
+        store.setToken(record({ ownerId, deviceId: `envoy:device:peer-${i}`, token: `tok-${i}` })),
       ),
     );
 
@@ -210,12 +229,12 @@ describe("session token store", () => {
     const store = createSessionTokenStore(dir);
 
     // Seed some tokens
-    await store.setToken(record({ ownerId: "envoy:owner:keep", token: "keep-me" }));
-    await store.setToken(record({ ownerId: "envoy:owner:remove", token: "remove-me" }));
+    await store.setToken(record({ ownerId: "envoy:owner:keep", deviceId: "envoy:device:keep", token: "keep-me" }));
+    await store.setToken(record({ ownerId: "envoy:owner:remove", deviceId: "envoy:device:remove", token: "remove-me" }));
 
     // Concurrently: set a new token while removing another owner
     await Promise.all([
-      store.setToken(record({ ownerId: "envoy:owner:new", token: "new-tok" })),
+      store.setToken(record({ ownerId: "envoy:owner:new", deviceId: "envoy:device:new", token: "new-tok" })),
       store.removeTokensForOwner("envoy:owner:remove"),
     ]);
 
@@ -227,13 +246,13 @@ describe("session token store", () => {
     expect(tokens).toHaveLength(2);
   });
 
-  it("handles setToken with the same ownerId concurrently (last write wins)", async () => {
+  it("handles setToken with the same deviceId concurrently (last write wins)", async () => {
     const store = createSessionTokenStore(dir);
 
     await Promise.all([
-      store.setToken(record({ ownerId: "envoy:owner:alice", token: "tok-a" })),
-      store.setToken(record({ ownerId: "envoy:owner:alice", token: "tok-b" })),
-      store.setToken(record({ ownerId: "envoy:owner:alice", token: "tok-c" })),
+      store.setToken(record({ ownerId: "envoy:owner:alice", deviceId: "envoy:device:alice-phone", token: "tok-a" })),
+      store.setToken(record({ ownerId: "envoy:owner:alice", deviceId: "envoy:device:alice-phone", token: "tok-b" })),
+      store.setToken(record({ ownerId: "envoy:owner:alice", deviceId: "envoy:device:alice-phone", token: "tok-c" })),
     ]);
 
     const tokens = await store.listTokens();

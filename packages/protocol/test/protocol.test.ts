@@ -456,6 +456,27 @@ describe("protocol", () => {
     expect(parseChatMessagePayload(payload)).toEqual(payload);
   });
 
+  it("roundtrips chat.message payload with optional device certificate", () => {
+    const payload = createChatMessagePayload({
+      senderOwnerId: "envoy:owner:alice",
+      text: "hello from phone",
+      ownerPublicKeyPem: "-----BEGIN PUBLIC KEY-----\nowner\n-----END PUBLIC KEY-----",
+      deviceCertificate: {
+        version: "0.1",
+        certificateId: "cert-1",
+        ownerId: "envoy:owner:alice",
+        deviceId: "envoy:device:phone",
+        devicePublicKeyPem: "-----BEGIN PUBLIC KEY-----\nphone\n-----END PUBLIC KEY-----",
+        deviceProfile: "satellite",
+        capabilities: ["message.send"],
+        issuedAt: new Date().toISOString(),
+        expiresAt: null,
+        signature: "sig",
+      },
+    });
+    expect(parseChatMessagePayload(payload)).toEqual(payload);
+  });
+
   it("creates a valid unsigned envelope", () => {
     const envelope = createUnsignedEnvelope({
       senderPeerId: "peer-a",

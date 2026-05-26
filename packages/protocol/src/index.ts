@@ -960,10 +960,31 @@ export const RendezvousResponsePayloadSchema = z.object({
   matches: z.array(RendezvousMatchSchema),
 });
 
-export const ChatMessagePayloadSchema = z.object({
-  senderOwnerId: z.string().min(1),
-  text: z.string().min(1).max(128000),
-});
+export const ChatMessagePayloadSchema = z
+  .object({
+    senderOwnerId: z.string().min(1),
+    text: z.string().min(1).max(128000),
+    /** Owner-signed device certificate when sender is an authorized satellite/primary device. */
+    deviceCertificate: DeviceCertificateSchema.optional(),
+    /** Owner public key PEM — required when deviceCertificate is present (for cert verification). */
+    ownerPublicKeyPem: z.string().min(1).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.deviceCertificate && !value.ownerPublicKeyPem) {
+      ctx.addIssue({
+        code: "custom",
+        message: "ownerPublicKeyPem is required when deviceCertificate is present",
+        path: ["ownerPublicKeyPem"],
+      });
+    }
+    if (value.deviceCertificate && value.deviceCertificate.ownerId !== value.senderOwnerId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "deviceCertificate.ownerId must match senderOwnerId",
+        path: ["deviceCertificate"],
+      });
+    }
+  });
 
 export const MandateActionSchema = z.enum([
   "discover",
@@ -2157,12 +2178,16 @@ export function createRendezvousResponsePayload(
 export interface CreateChatMessagePayloadInput {
   senderOwnerId: string;
   text: string;
+  deviceCertificate?: DeviceCertificate;
+  ownerPublicKeyPem?: string;
 }
 
 export function createChatMessagePayload(input: CreateChatMessagePayloadInput): ChatMessagePayload {
   return ChatMessagePayloadSchema.parse({
     senderOwnerId: input.senderOwnerId,
     text: input.text,
+    deviceCertificate: input.deviceCertificate,
+    ownerPublicKeyPem: input.ownerPublicKeyPem,
   });
 }
 

@@ -30,6 +30,8 @@ import {
   signUnsignedEnvelope,
   signCanonicalPayload,
   verifyEnvelope,
+  verifyAuthorizedDeviceEnvelope,
+  isDeviceRevoked,
   type OwnerIdentity,
   type DeviceIdentity,
   type AgentIdentity,
@@ -94,9 +96,22 @@ import {
   parseBondAcceptPayload,
   parseBondChallengePayload,
   parseBondChallengeResponsePayload,
+  parseDeviceCertificate,
+  parseDeviceRevocationRecord,
   type BondChallengePayload,
+  type DeviceCertificate,
+  type DeviceRevocationRecord,
 } from "@envoymesh/protocol";
-import { bondTrustRank, evaluateAutonomousPolicy, applyAiIdentityToDraftText, runDocumentAgentTurn as runDocumentAgentTurnLoop, stripModelThinking } from "@envoymesh/api";
+import {
+  bondTrustRank,
+  evaluateAutonomousPolicy,
+  applyAiIdentityToDraftText,
+  runDocumentAgentTurn as runDocumentAgentTurnLoop,
+  stripModelThinking,
+  chatMessagePayloadDeviceFields,
+  formatChatSenderDisplayName,
+  verifyInboundChatDeviceAuthorization,
+} from "@envoymesh/api";
 import { normalizeOpenAiCompatibleBaseUrl, runOwnerApprovedKnowledgeQuery } from "@envoymesh/models";
 import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from "@libp2p/crypto/keys";
 import { peerIdFromString } from "@libp2p/peer-id";
@@ -245,6 +260,8 @@ export interface MobileNodeState {
   homeAgentPeerId?: string;
   homeAgentPubKey?: string;
   homeAgentName?: string;
+  /** Owner-signed device certificate (shared-identity / multi-device). */
+  deviceCertificate?: DeviceCertificate;
   profileDir: string;
   relayUrls: string[];
 }
@@ -331,6 +348,7 @@ export class MobileNode implements NodeService {
   private _pendingQueries = new Map<string, { resolve: (r: PeerSearchResult[]) => void; timer: ReturnType<typeof setTimeout> }>();
   private _relayBackoffTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private _relayBackoffs = new Map<string, number>();
+  private _deviceRevocations: DeviceRevocationRecord[] = [];
 
   /** Pending inbound bond.request rows awaiting {@link acceptHello} / {@link declineHello}. */
   private readonly _pendingHelloRequests = new Map<string, {
@@ -455,6 +473,7 @@ export class MobileNode implements NodeService {
       homeAgentPeerId?: string;
       homeAgentPubKey?: string;
       homeAgentName?: string;
+      deviceCertificate?: DeviceCertificate;
     },
   ): Promise<MobileNodeState> {
     const ownerId = deriveOwnerId(ownerPublicKeyPem);
@@ -475,6 +494,7 @@ export class MobileNode implements NodeService {
       homeAgentPeerId: opts?.homeAgentPeerId,
       homeAgentPubKey: opts?.homeAgentPubKey,
       homeAgentName: opts?.homeAgentName,
+      deviceCertificate: opts?.deviceCertificate,
       profileDir,
       relayUrls: this._relayUrls,
     };
@@ -532,6 +552,7 @@ export class MobileNode implements NodeService {
       homeAgentPeerId: persisted.homeAgentPeerId,
       homeAgentPubKey: persisted.homeAgentPubKey,
       homeAgentName: persisted.homeAgentName,
+      deviceCertificate: _parsePersistedDeviceCertificate(persisted.deviceCertificateJson),
       profileDir: this._profileDir,
       relayUrls: persisted.relayUrls,
     };
@@ -570,6 +591,7 @@ export class MobileNode implements NodeService {
       homeAgentPeerId: s.homeAgentPeerId,
       homeAgentPubKey: s.homeAgentPubKey,
       homeAgentName: s.homeAgentName,
+      deviceCertificateJson: s.deviceCertificate ? JSON.stringify(s.deviceCertificate) : undefined,
       relayUrls: [...this._relayUrls],
       createdAt,
       updatedAt: new Date().toISOString(),
@@ -689,6 +711,9 @@ export class MobileNode implements NodeService {
       const homeAgentPeerId = response.agentPeerId ?? qrPayload.agentPeerId;
       const homeAgentPubKey = response.agentPubKey ?? qrPayload.agentPubKey;
       const homeAgentName = response.agentName ?? qrPayload.agentName;
+      const deviceCertificate = response.deviceCertificate
+        ? parseDeviceCertificate(response.deviceCertificate)
+        : undefined;
       await this.importOwnerIdentity(
         this._profileDir,
         ownerPrivateKeyPem,
@@ -699,6 +724,7 @@ export class MobileNode implements NodeService {
           homeAgentPeerId,
           homeAgentPubKey,
           homeAgentName,
+          deviceCertificate,
         },
       );
 
@@ -717,6 +743,13 @@ export class MobileNode implements NodeService {
         });
       }
 
+      void this._syncDeviceRevocationsFromHome().catch((err) =>
+        console.warn(
+          "[mobile-node] device revocation sync after pairing failed:",
+          err instanceof Error ? err.message : err,
+        ),
+      );
+
       return {
         sessionToken: response.sessionToken,
         deviceCertificate: response.deviceCertificate,
@@ -727,6 +760,20 @@ export class MobileNode implements NodeService {
       clearTimeout(rpcTimer);
       try { ws.close(); } catch { /* ignore */ }
     }
+  }
+
+  async listAuthorizedDevices(): Promise<import("@envoymesh/api").ListAuthorizedDevicesResult> {
+    return { devices: [] };
+  }
+
+  async revokeAuthorizedDevice(
+    _params: import("@envoymesh/api").RevokeAuthorizedDeviceParams,
+  ): Promise<import("@envoymesh/api").RevokeAuthorizedDeviceResult> {
+    throw new Error("revokeAuthorizedDevice is only supported on the home node");
+  }
+
+  async listDeviceRevocations(): Promise<import("@envoymesh/api").ListDeviceRevocationsResult> {
+    return { revocations: this._deviceRevocations as unknown as Record<string, unknown>[] };
   }
 
   // -----------------------------------------------------------------------
@@ -888,6 +935,7 @@ export class MobileNode implements NodeService {
     this._status = "starting";
     this._lastNodeError = null;
     this._lastNodeErrorAt = null;
+    await this._loadDeviceRevocations();
     // Load cached profile from localStorage (survives app restarts)
     this._loadCachedProfile();
     // Start relay WebSocket transport (always available)
@@ -900,6 +948,14 @@ export class MobileNode implements NodeService {
     }
     this._status = "running";
     await this._registerHomeBridgeAgentRoute();
+    if (this._state?.sharedIdentity) {
+      void this._syncDeviceRevocationsFromHome().catch((err) =>
+        console.warn(
+          "[mobile-node] device revocation sync failed:",
+          err instanceof Error ? err.message : err,
+        ),
+      );
+    }
     this._events.emit("node:status", { status: "running", peerId: this._state?.agent?.agentPeerId });
     this._events.emit("node:online", { peerId: this._state?.agent?.agentPeerId ?? "", multiaddrs: this._relayUrls });
   }
@@ -936,11 +992,13 @@ export class MobileNode implements NodeService {
   // Identity
   // -----------------------------------------------------------------------
 
-  getProfile() {
+  getProfile(): import("@envoymesh/api").NodeProfile {
     return {
       owner: this._state.owner,
       device: this._state.device,
-      deviceCertificate: null as any, // Created by owner in shared-identity mode
+      deviceCertificate:
+        this._state.deviceCertificate ??
+        (null as unknown as import("@envoymesh/api").NodeProfile["deviceCertificate"]),
     };
   }
 
@@ -1248,6 +1306,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
   // -----------------------------------------------------------------------
 
   async sendChat(targetOwnerId: string, text: string): Promise<import("@envoymesh/api").SendChatResult> {
+    this._assertDeviceNotRevoked();
     const msgId = _randomUUID();
     const ts = new Date().toISOString();
     const wireText = stripModelThinking(text);
@@ -3528,40 +3587,62 @@ You are the owner's personal AI assistant on EnvoyMesh.
         let chatPayload: ReturnType<typeof parseChatMessagePayload> | undefined;
         try {
           chatPayload = parseChatMessagePayload(msg.payload);
-          const sp = String(msg.senderPeerId ?? "");
-          if (chatPayload.senderOwnerId && sp) {
-            this._ownerIdByEnvoyDevicePeerId.set(sp, chatPayload.senderOwnerId);
-          }
         } catch {
-          /* optional */
+          console.warn("[mobile-node] rejected chat.message: invalid payload");
+          return;
+        }
+
+        const deviceAuth = verifyInboundChatDeviceAuthorization(
+          msg as any,
+          chatPayload,
+          verifyAuthorizedDeviceEnvelope,
+        );
+        if (!deviceAuth.ok) {
+          console.warn(`[mobile-node] rejected chat.message: ${deviceAuth.reason}`);
+          return;
+        }
+        if (
+          chatPayload.deviceCertificate &&
+          chatPayload.ownerPublicKeyPem &&
+          isDeviceRevoked(chatPayload.deviceCertificate, this._deviceRevocations, chatPayload.ownerPublicKeyPem)
+        ) {
+          console.warn("[mobile-node] rejected chat.message: device certificate revoked");
+          return;
+        }
+
+        const sp = String(msg.senderPeerId ?? "");
+        if (chatPayload.senderOwnerId && sp) {
+          this._ownerIdByEnvoyDevicePeerId.set(sp, chatPayload.senderOwnerId);
         }
         const ts = (msg.createdAt as string) ?? new Date().toISOString();
         const senderPeerId = (msg.senderPeerId as string) ?? "";
         const senderOwnerId =
-          chatPayload?.senderOwnerId ??
+          chatPayload.senderOwnerId ??
           this._ownerIdByEnvoyDevicePeerId.get(senderPeerId) ??
           senderPeerId;
-        const chatText = chatPayload?.text ?? String(payload.text ?? "");
-        this._chatLog.append(senderPeerId, {
-          messageId: (msg.messageId as string) ?? _randomUUID(),
-          sender: { ownerId: senderOwnerId, displayName: senderOwnerId },
-          recipient: { ownerId: owner.ownerId, displayName: "Me" },
-          content: { text: chatText },
-          metadata: { timestamp: ts, deliveryReceipt: "delivered" },
-          signature: msg.signature as string,
-        }).catch(() => {});
-        this._events.emit("chat:message", {
-          messageId: msg.messageId as string,
-          sender: { nodeId: senderPeerId, displayName: senderOwnerId, ownerId: senderOwnerId },
-          recipient: { nodeId: agent.agentPeerId, ownerId: owner.ownerId },
-          content: { text: chatText },
-          metadata: { timestamp: ts },
-          signature: msg.signature as string,
-        });
+        const chatText = chatPayload.text;
         void this._trustStore.get(senderOwnerId).then((bond) => {
+          const baseName = bond?.displayName ?? senderOwnerId;
+          const senderDisplayName = formatChatSenderDisplayName(baseName, chatPayload);
+          this._chatLog.append(senderPeerId, {
+            messageId: (msg.messageId as string) ?? _randomUUID(),
+            sender: { ownerId: senderOwnerId, displayName: senderDisplayName },
+            recipient: { ownerId: owner.ownerId, displayName: "Me" },
+            content: { text: chatText },
+            metadata: { timestamp: ts, deliveryReceipt: "delivered" },
+            signature: msg.signature as string,
+          }).catch(() => {});
+          this._events.emit("chat:message", {
+            messageId: msg.messageId as string,
+            sender: { nodeId: senderPeerId, displayName: senderDisplayName, ownerId: senderOwnerId },
+            recipient: { nodeId: agent.agentPeerId, ownerId: owner.ownerId },
+            content: { text: chatText },
+            metadata: { timestamp: ts },
+            signature: msg.signature as string,
+          });
           void this._maybeGenerateInboundChatDraft({
             senderOwnerId,
-            senderDisplayName: bond?.displayName ?? senderOwnerId,
+            senderDisplayName,
             chatText,
             messageId: (msg.messageId as string) ?? _randomUUID(),
             remotePeerId: senderPeerId,
@@ -4220,6 +4301,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
    */
   private async _dispatchSignedChat(targetOwnerId: string, text: string): Promise<void> {
     if (!this._state?.device || !this._state?.owner) return;
+    this._assertDeviceNotRevoked();
 
     const recipientPeerId = await this._resolveChatRecipientPeerId(targetOwnerId);
     const unsigned = createUnsignedEnvelope({
@@ -4230,6 +4312,10 @@ You are the owner's personal AI assistant on EnvoyMesh.
       payload: createChatMessagePayload({
         senderOwnerId: this._state.owner.ownerId,
         text: stripModelThinking(text),
+        ...chatMessagePayloadDeviceFields({
+          deviceCertificate: this._state.deviceCertificate,
+          ownerPublicKeyPem: this._state.owner.publicKeyPem,
+        }),
       }),
     });
     const signed = signUnsignedEnvelope(unsigned, this._state.device.privateKeyPem);
@@ -4252,6 +4338,124 @@ You are the owner's personal AI assistant on EnvoyMesh.
     this._broadcastToRelaySockets(data);
   }
 
+  private static readonly _deviceRevocationsConfigKey = "device_revocations_json";
+
+  private async _loadDeviceRevocations(): Promise<void> {
+    try {
+      const rows = await this._db.query(
+        "SELECT value FROM config WHERE key = ?",
+        [MobileNode._deviceRevocationsConfigKey],
+      );
+      if (rows.length === 0) {
+        this._deviceRevocations = [];
+        return;
+      }
+      const raw = String((rows[0] as Record<string, unknown>).value ?? "[]");
+      const parsed = JSON.parse(raw) as unknown[];
+      this._deviceRevocations = Array.isArray(parsed)
+        ? parsed.map((entry) => parseDeviceRevocationRecord(entry))
+        : [];
+    } catch {
+      this._deviceRevocations = [];
+    }
+  }
+
+  private async _saveDeviceRevocations(): Promise<void> {
+    await this._db.execute(
+      "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
+      [MobileNode._deviceRevocationsConfigKey, JSON.stringify(this._deviceRevocations)],
+    );
+  }
+
+  private _assertDeviceNotRevoked(): void {
+    const cert = this._state?.deviceCertificate;
+    const ownerPublicKeyPem = this._state?.owner?.publicKeyPem;
+    if (!cert || !ownerPublicKeyPem) return;
+    if (isDeviceRevoked(cert, this._deviceRevocations, ownerPublicKeyPem)) {
+      throw new Error("This device has been revoked by the home node owner");
+    }
+  }
+
+  private _relayRpcWsUrl(): string | undefined {
+    const raw = this._relayUrls[0]?.trim();
+    if (!raw) return undefined;
+    const trimmed = raw.replace(/\/+$/, "");
+    if (trimmed.includes("/ws/client")) return trimmed.replace(/\/ws\/client$/i, "/ws");
+    if (!/\/ws$/i.test(trimmed)) return `${trimmed}/ws`;
+    return trimmed;
+  }
+
+  private async _syncDeviceRevocationsFromHome(): Promise<void> {
+    const wsUrl = this._relayRpcWsUrl();
+    if (!wsUrl) return;
+    const result = await this._callHomeRpc<{ revocations?: Record<string, unknown>[] }>(
+      "listDeviceRevocations",
+      {},
+      wsUrl,
+    );
+    const records = Array.isArray(result.revocations)
+      ? result.revocations.map((entry) => parseDeviceRevocationRecord(entry))
+      : [];
+    this._deviceRevocations = records;
+    await this._saveDeviceRevocations();
+  }
+
+  private async _callHomeRpc<T>(
+    method: string,
+    params: Record<string, unknown>,
+    wsUrl: string,
+  ): Promise<T> {
+    const ws = new WebSocket(wsUrl);
+    let connectTimer: ReturnType<typeof setTimeout> | undefined;
+    let rpcTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        connectTimer = setTimeout(() => reject(new Error("Connection timeout")), 15000);
+        ws.onopen = () => { clearTimeout(connectTimer); resolve(); };
+        ws.onerror = () => { clearTimeout(connectTimer); reject(new Error("Failed to connect to home node")); };
+      });
+      const requestId = _randomUUID();
+      ws.send(JSON.stringify({ id: requestId, method, params }));
+      return await new Promise<T>((resolve, reject) => {
+        let settled = false;
+        rpcTimer = setTimeout(() => {
+          settled = true;
+          reject(new Error(`${method} timeout`));
+        }, 30000);
+        ws.onmessage = (event) => {
+          if (settled) return;
+          try {
+            const msg = JSON.parse(String(event.data));
+            if (msg.id !== requestId) return;
+            clearTimeout(rpcTimer);
+            settled = true;
+            if (msg.error) {
+              reject(new Error(msg.error.message ?? `${method} failed`));
+            } else {
+              resolve(msg.result as T);
+            }
+          } catch { /* wait for next message */ }
+        };
+        ws.onerror = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(rpcTimer);
+          reject(new Error("WebSocket error"));
+        };
+        ws.onclose = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(rpcTimer);
+          reject(new Error("Connection closed"));
+        };
+      });
+    } finally {
+      clearTimeout(connectTimer);
+      clearTimeout(rpcTimer);
+      try { ws.close(); } catch { /* ignore */ }
+    }
+  }
+
   private async _sendToRelay(msg: Record<string, unknown>): Promise<void> {
     if (!this._state) return;
 
@@ -4270,6 +4474,15 @@ You are the owner's personal AI assistant on EnvoyMesh.
         try { ws.send(data); } catch { /* ignore */ }
       }
     }
+  }
+}
+
+function _parsePersistedDeviceCertificate(json?: string): DeviceCertificate | undefined {
+  if (!json?.trim()) return undefined;
+  try {
+    return parseDeviceCertificate(JSON.parse(json));
+  } catch {
+    return undefined;
   }
 }
 

@@ -35,11 +35,12 @@ export interface SessionTokenStore {
   /** Look up a token by its value. Returns undefined if not found. */
   getTokenByValue(token: string): Promise<SessionTokenRecord | undefined>;
   /**
-   * Upsert a token record by ownerId.
-   * If an existing record for the same ownerId exists, it is replaced.
-   * This is used both for initial creation and for touching lastUsedAt.
+   * Upsert a token record by deviceId.
+   * Replaces any existing record for the same deviceId.
    */
   setToken(record: SessionTokenRecord): Promise<void>;
+  /** Remove the session token for a specific device. */
+  removeTokenByDeviceId(deviceId: string): Promise<void>;
   /** Remove all tokens for a given ownerId (e.g. when bond is revoked). */
   removeTokensForOwner(ownerId: string): Promise<void>;
 }
@@ -145,13 +146,20 @@ export function createSessionTokenStore(profileDir: string): SessionTokenStore {
 
     async setToken(record: SessionTokenRecord): Promise<void> {
       await serialised<void>(async (records) => {
-        const idx = records.findIndex((r) => r.ownerId === record.ownerId);
+        const idx = records.findIndex((r) => r.deviceId === record.deviceId);
         if (idx >= 0) {
           records[idx] = record;
         } else {
           records.push(record);
         }
         return { records, result: undefined };
+      });
+    },
+
+    async removeTokenByDeviceId(deviceId: string): Promise<void> {
+      await serialised<void>(async (records) => {
+        const filtered = records.filter((r) => r.deviceId !== deviceId);
+        return { records: filtered, result: undefined };
       });
     },
 

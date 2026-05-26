@@ -24,6 +24,7 @@ import type {
   IpfsEngineStatus,
   ExternalPublishConfig,
   ChatDiagnostics,
+  AuthorizedDeviceSummary,
 } from "@envoymesh/api";
 
 export function SettingsNodeTab() {
@@ -155,6 +156,46 @@ export function SettingsNodeTab() {
   const [pairingQR, setPairingQR] = useState<string | null>(null); // data URL
   const [pairingUri, setPairingUri] = useState<string>("");
   const [pairingLoading, setPairingLoading] = useState(false);
+  const [authorizedDevices, setAuthorizedDevices] = useState<AuthorizedDeviceSummary[]>([]);
+  const [authorizedDevicesLoading, setAuthorizedDevicesLoading] = useState(false);
+  const [authorizedDevicesError, setAuthorizedDevicesError] = useState<string | null>(null);
+  const [revokingDeviceId, setRevokingDeviceId] = useState<string | null>(null);
+
+  const refreshAuthorizedDevices = useCallback(async () => {
+    if (isMobileNode) return;
+    setAuthorizedDevicesLoading(true);
+    setAuthorizedDevicesError(null);
+    try {
+      const result = await nodeService.listAuthorizedDevices();
+      setAuthorizedDevices(result.devices);
+    } catch (e) {
+      setAuthorizedDevicesError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAuthorizedDevicesLoading(false);
+    }
+  }, [isMobileNode, nodeService]);
+
+  useEffect(() => {
+    if (isMobileNode) return;
+    void refreshAuthorizedDevices();
+  }, [isMobileNode, refreshAuthorizedDevices]);
+
+  const handleRevokeDevice = useCallback(async (deviceId: string) => {
+    if (isMobileNode) return;
+    const label = authorizedDevices.find((d) => d.deviceId === deviceId)?.displayName ?? deviceId;
+    if (!window.confirm(`Revoke device "${label}"? It will no longer be able to send chat as your owner identity.`)) {
+      return;
+    }
+    setRevokingDeviceId(deviceId);
+    try {
+      await nodeService.revokeAuthorizedDevice({ deviceId, reason: "retired" });
+      await refreshAuthorizedDevices();
+    } catch (e) {
+      setAuthorizedDevicesError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRevokingDeviceId(null);
+    }
+  }, [authorizedDevices, isMobileNode, nodeService, refreshAuthorizedDevices]);
 
   const handleShowPairingQR = useCallback(async () => {
     setPairingLoading(true);
@@ -1263,6 +1304,63 @@ export function SettingsNodeTab() {
             </div>
           )}
         </div>
+
+        {!isMobileNode && (
+          <div style={{ marginTop: "16px" }}>
+            <strong>Authorized devices</strong>
+            <p className="settings-hint" style={{ marginTop: 4 }}>
+              Shared-identity satellites paired via QR. Revoking blocks their device certificate on this node.
+            </p>
+            {authorizedDevicesLoading ? (
+              <p className="settings-hint">Loading devices…</p>
+            ) : authorizedDevicesError ? (
+              <p className="settings-hint" style={{ color: "var(--danger-color, #c0392b)" }}>
+                {authorizedDevicesError}
+              </p>
+            ) : authorizedDevices.length === 0 ? (
+              <p className="settings-hint">No paired satellite devices yet.</p>
+            ) : (
+              <ul className="settings-list" style={{ marginTop: 8 }}>
+                {authorizedDevices.map((device) => (
+                  <li
+                    key={device.deviceId}
+                    className="settings-list-item"
+                    style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}
+                  >
+                    <div>
+                      <div>{device.displayName ?? device.deviceProfile}</div>
+                      <div className="settings-hint" style={{ fontSize: "0.75rem" }}>
+                        {device.deviceProfile}
+                        {device.revoked ? " · revoked" : ""}
+                        <br />
+                        <code style={{ fontSize: "0.65rem" }}>{device.deviceId}</code>
+                      </div>
+                    </div>
+                    {!device.revoked && (
+                      <button
+                        type="button"
+                        className="settings-button"
+                        disabled={revokingDeviceId === device.deviceId}
+                        onClick={() => { void handleRevokeDevice(device.deviceId); }}
+                      >
+                        {revokingDeviceId === device.deviceId ? "Revoking…" : "Revoke"}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button
+              type="button"
+              className="settings-button"
+              style={{ marginTop: 8 }}
+              disabled={authorizedDevicesLoading}
+              onClick={() => { void refreshAuthorizedDevices(); }}
+            >
+              Refresh devices
+            </button>
+          </div>
+        )}
       </section>
     </>
   );

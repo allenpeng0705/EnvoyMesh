@@ -120,6 +120,11 @@ export interface NodeServiceClient {
   getBridgeStatus(): Promise<BridgeStatus>;
   getPairingPayload(): Promise<PairingPayload>;
   pairWithHomeNode(params: import("@envoymesh/api").PairWithHomeNodeParams): Promise<import("@envoymesh/api").PairWithHomeNodeResult>;
+  listAuthorizedDevices(): Promise<import("@envoymesh/api").ListAuthorizedDevicesResult>;
+  revokeAuthorizedDevice(
+    params: import("@envoymesh/api").RevokeAuthorizedDeviceParams,
+  ): Promise<import("@envoymesh/api").RevokeAuthorizedDeviceResult>;
+  listDeviceRevocations(): Promise<import("@envoymesh/api").ListDeviceRevocationsResult>;
 
   // AI / Knowledge Query
   knowledgeQuery(question: string): Promise<string>;
@@ -328,6 +333,21 @@ function createWsNodeServiceClient(
     async pairWithHomeNode(params: import("@envoymesh/api").PairWithHomeNodeParams) {
       return wsClient.rpc("pairWithHomeNode", params as unknown as Record<string, unknown>) as Promise<
         import("@envoymesh/api").PairWithHomeNodeResult
+      >;
+    },
+    async listAuthorizedDevices() {
+      return wsClient.rpc("listAuthorizedDevices", {}) as Promise<
+        import("@envoymesh/api").ListAuthorizedDevicesResult
+      >;
+    },
+    async revokeAuthorizedDevice(params: import("@envoymesh/api").RevokeAuthorizedDeviceParams) {
+      return wsClient.rpc("revokeAuthorizedDevice", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").RevokeAuthorizedDeviceResult
+      >;
+    },
+    async listDeviceRevocations() {
+      return wsClient.rpc("listDeviceRevocations", {}) as Promise<
+        import("@envoymesh/api").ListDeviceRevocationsResult
       >;
     },
     async knowledgeQuery(question: string) { return wsClient.rpc("knowledgeQuery", { question }) as Promise<string>; },

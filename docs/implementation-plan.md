@@ -1966,10 +1966,14 @@ interface ImportIdentityResponse {
 - `[x]` `MobileNode.getPairingPayload()` includes `ownerPublicKey` and `ownerId`
 - `[x]` `MobileNode.persistSharedIdentity()` — saves identity + keys to SQLite + SecureStorage
 - `[x]` `MobileNode.restoreFromSecureStorage()` — loads both shared and standalone identities
-- `[ ]` Home node `importIdentity` RPC: signs device certificate, returns encrypted owner key
-- `[ ]` Mobile app UI: "Import Identity" flow (scan QR → device cert → save)
-- `[ ]` Envelope sends include `deviceCertificate` when in shared-identity mode
-- `[ ]` Peers verify device certificates on inbound messages from multi-device owners
+- `[x]` Home node shared-identity pairing RPC (`pairSharedIdentity`: signs device certificate, returns encrypted owner key)
+- `[x]` Mobile app UI: pair/import identity flow (scan QR or paste link → device cert → persist)
+- `[x]` Envelope sends include `deviceCertificate` when device certificate is available (shared-identity mobile + primary desktop)
+- `[x]` Peers verify device certificates on inbound `chat.message` when certificate is present
+- `[x]` Device authorization store (`device-authorization.json`) tracks paired satellites + signed revocations
+- `[x]` NodeService RPC: `listAuthorizedDevices`, `revokeAuthorizedDevice`, `listDeviceRevocations`
+- `[x]` Settings UI lists authorized devices with revoke action (home node)
+- `[x]` Inbound chat rejects revoked device certificates (`isDeviceRevoked` wired on desktop + mobile cache sync)
 
 **Security considerations:**
 
@@ -1981,10 +1985,10 @@ interface ImportIdentityResponse {
 | Replay attacks | Device certificate includes `issuedAt`; freshness verified |
 
 **Exit criteria:**
-- `[ ]` Mobile node with imported identity has same `ownerId` as home node
-- `[ ]` Chat message from mobile appears as "from Alice (iPhone)" on peer's social UI
-- `[ ]` Revoking mobile device does not affect desktop device
-- `[ ]` Bonds created on desktop are visible on mobile (same ownerId)
+- `[x]` Mobile node with imported identity has same `ownerId` as home node
+- `[x]` Chat message from mobile satellite device appears with device profile suffix (e.g. "Alice (satellite)")
+- `[x]` Revoking mobile device does not affect desktop device
+- `[x]` Bonds created on desktop are visible on mobile (same ownerId)
 
 ### 11E: Mobile Storage & Vault
 
