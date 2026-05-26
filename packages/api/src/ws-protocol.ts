@@ -350,12 +350,16 @@ export interface PairingPayload {
   agentPeerId?: string;
   /** Bridge agent public key PEM (optional) */
   agentPubKey?: string;
+  /** Bridge agent display name from bridge-config.json (optional) */
+  agentName?: string;
   /** Pairing token for owner verification (optional) */
   token?: string;
   /** Owner's public key PEM (Phase 11 — for shared-identity pairing, public info safe for QR) */
   ownerPublicKey?: string;
   /** Owner ID e.g. envoy:owner:... (Phase 11 — for shared-identity pairing) */
   ownerId?: string;
+  /** Home node's libp2p peer ID for mobile → home routing (bridge agent transport). */
+  homeNodePeerId?: string;
 }
 
 /**
@@ -721,6 +725,7 @@ export interface PairDeviceResult {
   sessionToken: string;
   agentPeerId?: string;
   agentPubKey?: string;
+  agentName?: string;
 }
 
 // ============================================
@@ -754,6 +759,7 @@ export interface PairSharedIdentityResult {
   ownerId: string;
   agentPeerId?: string;
   agentPubKey?: string;
+  agentName?: string;
 }
 
 export interface GetPeerConnectionInfoParams {

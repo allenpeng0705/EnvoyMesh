@@ -166,9 +166,11 @@ export function SettingsNodeTab() {
       if (payload.relayWsUrl) params.set("relayWsUrl", payload.relayWsUrl);
       if (payload.agentPeerId) params.set("agentPeerId", payload.agentPeerId);
       if (payload.agentPubKey) params.set("agentPubKey", payload.agentPubKey);
+      if (payload.agentName) params.set("agentName", payload.agentName);
       if (payload.token) params.set("token", payload.token);
       if (payload.ownerPublicKey) params.set("ownerPublicKey", payload.ownerPublicKey);
       if (payload.ownerId) params.set("ownerId", payload.ownerId);
+      if (payload.homeNodePeerId) params.set("homeNodePeerId", payload.homeNodePeerId);
       const uri = `envoy://pair?${params.toString()}`;
       setPairingUri(uri);
       const dataUrl = await QRCode.toDataURL(uri, { width: 256, margin: 1 });

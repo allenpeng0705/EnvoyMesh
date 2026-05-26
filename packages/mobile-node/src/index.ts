@@ -56,7 +56,7 @@ import { installMobileDataTransferReceiver, sendMobileVaultFileDataTransfer } fr
 import { loadMobilePublishedDocumentIds, saveMobilePublishedDocumentIds } from "./mobile-published-library.js";
 import { loadMobileExternalPublish, saveMobileExternalPublish } from "./mobile-external-publish.js";
 import { loadMobileNodePrefs, saveMobileNodePrefs, type MobileNodePrefs } from "./mobile-node-prefs.js";
-import { generateMobileChatDraft } from "./mobile-chat-draft.js";
+import { generateMobileChatDraft, resolveMobileContactAiAccessLevel } from "./mobile-chat-draft.js";
 import { loadMobilePublishedExternalMap } from "./mobile-published-external.js";
 import { exportMobileLibraryDocumentToIpfs } from "./mobile-ipfs-export.js";
 import { verifyMobileLibraryDocumentIpfsGateway } from "./mobile-ipfs-gateway-verify.js";
@@ -96,14 +96,17 @@ import {
   parseBondChallengeResponsePayload,
   type BondChallengePayload,
 } from "@envoymesh/protocol";
-import { bondTrustRank, runDocumentAgentTurn as runDocumentAgentTurnLoop, stripModelThinking } from "@envoymesh/api";
+import { bondTrustRank, evaluateAutonomousPolicy, applyAiIdentityToDraftText, runDocumentAgentTurn as runDocumentAgentTurnLoop, stripModelThinking } from "@envoymesh/api";
 import { normalizeOpenAiCompatibleBaseUrl, runOwnerApprovedKnowledgeQuery } from "@envoymesh/models";
 import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from "@libp2p/crypto/keys";
+import { peerIdFromString } from "@libp2p/peer-id";
 import type { PrivateKey } from "@libp2p/interface";
 import type {
   AgentShareProposal,
   BondRecord,
+  ChatAttachment,
   ChatDraft,
+  ChatMessage,
   AgentIdentityDocument,
   CreateHumanProfileInput,
   DiscoverPublishedLibraryParams,
@@ -132,6 +135,8 @@ import type {
   SendHelloOptions,
   ShareOffer,
   SocialIntroProposal,
+  BridgeStatus,
+  PeerConnectionInfo,
 } from "@envoymesh/api";
 
 function _normalizeMobileStoredOpenAiEndpoint(mp: ModelProviderConfig): ModelProviderConfig {
@@ -141,6 +146,34 @@ function _normalizeMobileStoredOpenAiEndpoint(mp: ModelProviderConfig): ModelPro
 }
 
 function _randomUUID(): string { return crypto.randomUUID(); }
+
+function _sanitizeChatFilename(name: string): string {
+  const base = name.trim().split(/[/\\]/).pop() || "file";
+  return base.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 200);
+}
+
+function _mimeTypeForFilename(filename: string): string {
+  const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".") + 1).toLowerCase() : "";
+  if (ext === "png") return "image/png";
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "gif") return "image/gif";
+  if (ext === "webp") return "image/webp";
+  if (ext === "pdf") return "application/pdf";
+  return "application/octet-stream";
+}
+
+/** Home node libp2p peer id from relay-proxy pairing URL (`?target=…`). */
+function _parseHomeNodePeerIdFromWsUrl(wsUrl: string): string | undefined {
+  try {
+    const target = new URL(wsUrl).searchParams.get("target")?.trim();
+    if (target && (target.startsWith("12D3") || target.startsWith("Qm"))) {
+      return target;
+    }
+  } catch {
+    /* ignore */
+  }
+  return undefined;
+}
 
 /** Same capability string as desktop `PUBLISHED_LIB_CAPABILITY` (apps/node). */
 const MOBILE_PUBLISHED_LIB_CAPABILITY = "envoymesh.published-library";
@@ -208,6 +241,10 @@ export interface MobileNodeState {
   sharedIdentity: boolean;
   /** Home node peer ID (if shared identity). */
   homeNodePeerId?: string;
+  /** Home bridge agent peer ID (HomeClaw/OpenClaw via home node). */
+  homeAgentPeerId?: string;
+  homeAgentPubKey?: string;
+  homeAgentName?: string;
   profileDir: string;
   relayUrls: string[];
 }
@@ -322,6 +359,11 @@ export class MobileNode implements NodeService {
     { relativePath: string; toPeerId: string }
   >();
   private readonly _pendingDataTransferSavePath = new Map<string, string>();
+  /** Inbound accept waiting for bytes — keyed by preview/share id. */
+  private readonly _inboundTransferByShareId = new Map<
+    string,
+    { senderNodeId: string; senderVaultRelativePath: string; savePath: string; senderOwnerId?: string }
+  >();
   private readonly _peerDeviceByTransportId = new Map<
     string,
     { devicePublicKeyPem: string; deviceId: string }
@@ -408,7 +450,12 @@ export class MobileNode implements NodeService {
     ownerPublicKeyPem: string,
     homeNodePeerId?: string,
     /** Pairing RPC may already have bound a {@link DeviceIdentity}; must reuse those keys */
-    opts?: { device?: DeviceIdentity },
+    opts?: {
+      device?: DeviceIdentity;
+      homeAgentPeerId?: string;
+      homeAgentPubKey?: string;
+      homeAgentName?: string;
+    },
   ): Promise<MobileNodeState> {
     const ownerId = deriveOwnerId(ownerPublicKeyPem);
     const owner: OwnerIdentity = {
@@ -425,10 +472,14 @@ export class MobileNode implements NodeService {
       owner, device, agent,
       sharedIdentity: true,
       homeNodePeerId,
+      homeAgentPeerId: opts?.homeAgentPeerId,
+      homeAgentPubKey: opts?.homeAgentPubKey,
+      homeAgentName: opts?.homeAgentName,
       profileDir,
       relayUrls: this._relayUrls,
     };
     this._profileDir = profileDir;
+    await this._registerHomeBridgeAgentRoute();
     return this._state;
   }
 
@@ -478,11 +529,15 @@ export class MobileNode implements NodeService {
       },
       sharedIdentity: true,
       homeNodePeerId: persisted.homeNodePeerId,
+      homeAgentPeerId: persisted.homeAgentPeerId,
+      homeAgentPubKey: persisted.homeAgentPubKey,
+      homeAgentName: persisted.homeAgentName,
       profileDir: this._profileDir,
       relayUrls: persisted.relayUrls,
     };
     this._relayUrls.length = 0;
     this._relayUrls.push(...persisted.relayUrls);
+    await this._registerHomeBridgeAgentRoute();
     return this._state;
   }
 
@@ -512,6 +567,9 @@ export class MobileNode implements NodeService {
       agentPeerId: s.agent.agentPeerId,
       agentPublicKeyPem: s.agent.publicKeyPem,
       homeNodePeerId: s.homeNodePeerId,
+      homeAgentPeerId: s.homeAgentPeerId,
+      homeAgentPubKey: s.homeAgentPubKey,
+      homeAgentName: s.homeAgentName,
       relayUrls: [...this._relayUrls],
       createdAt,
       updatedAt: new Date().toISOString(),
@@ -554,6 +612,8 @@ export class MobileNode implements NodeService {
     agentPeerId?: string;
     agentPubKey?: string;
     relayPeerId?: string;
+    homeNodePeerId?: string;
+    agentName?: string;
   }): Promise<{
     sessionToken: string;
     deviceCertificate: Record<string, unknown>;
@@ -636,12 +696,24 @@ export class MobileNode implements NodeService {
       const ownerPrivateKeyPem = await decryptOwnerKeyFromDevice(encrypted, ecdhKeyPair.privateKey);
 
       // 5. Import owner identity
+      const homeNodePeerId =
+        _parseHomeNodePeerIdFromWsUrl(qrPayload.wsUrl) ??
+        qrPayload.homeNodePeerId?.trim() ??
+        undefined;
+      const homeAgentPeerId = response.agentPeerId ?? qrPayload.agentPeerId;
+      const homeAgentPubKey = response.agentPubKey ?? qrPayload.agentPubKey;
+      const homeAgentName = response.agentName ?? qrPayload.agentName;
       await this.importOwnerIdentity(
         this._profileDir,
         ownerPrivateKeyPem,
         response.ownerPublicKey,
-        qrPayload.relayPeerId,
-        { device },
+        homeNodePeerId,
+        {
+          device,
+          homeAgentPeerId,
+          homeAgentPubKey,
+          homeAgentName,
+        },
       );
 
       // 6. Persist to storage (public state → SQLite, private keys → SecureStorage)
@@ -776,11 +848,15 @@ export class MobileNode implements NodeService {
               },
               sharedIdentity: persisted.sharedIdentity,
               homeNodePeerId: persisted.sharedIdentity ? persisted.homeNodePeerId : undefined,
+              homeAgentPeerId: persisted.homeAgentPeerId,
+              homeAgentPubKey: persisted.homeAgentPubKey,
+              homeAgentName: persisted.homeAgentName,
               profileDir: this._profileDir,
               relayUrls: persisted.relayUrls,
             };
             this._relayUrls.length = 0;
             this._relayUrls.push(...persisted.relayUrls);
+            await this._registerHomeBridgeAgentRoute();
             // Profile loaded later in startNode()
             return {
               profileDir: this._profileDir,
@@ -837,6 +913,7 @@ export class MobileNode implements NodeService {
       console.warn("[mobile-node] libp2p start failed, continuing with relay-only mode:", err);
     }
     this._status = "running";
+    await this._registerHomeBridgeAgentRoute();
     this._events.emit("node:status", { status: "running", peerId: this._state?.agent?.agentPeerId });
     this._events.emit("node:online", { peerId: this._state?.agent?.agentPeerId ?? "", multiaddrs: this._relayUrls });
   }
@@ -1225,17 +1302,28 @@ You are the owner's personal AI assistant on EnvoyMesh.
       throw new Error(`File exceeds ${MAX_CHAT_ATTACHMENT_BYTES} bytes`);
     }
     const attachmentId = _randomUUID();
-    const filename = params.filename.replace(/^[\\/]+/, "").replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 200) || "file";
+    const filename = _sanitizeChatFilename(params.filename);
     const vaultRelativePath = `chat/out/${attachmentId}/${filename}`;
+    const mimeType = params.mimeType?.trim() || _mimeTypeForFilename(filename);
+    const sensitivity = params.sensitivity ?? "friends";
     await this.importToLibrary({
       relativePath: vaultRelativePath,
       contentBase64: params.contentBase64,
-      mimeType: params.mimeType,
+      mimeType,
     });
     const { shareRequestMessageId } = await this._shareFileInternal(params.targetOwnerId, {
       path: vaultRelativePath,
-      sensitivity: params.sensitivity ?? "friends",
+      sensitivity,
       deliveryChannel: "chat",
+    });
+    void this._recordFileShareInChat({
+      peerOwnerId: params.targetOwnerId,
+      outgoing: true,
+      vaultRelativePath,
+      byteLength: binary.length,
+      sensitivity,
+      mimeType,
+      textOverride: params.caption?.trim() || `Sent ${filename}`,
     });
     return { attachmentId, vaultRelativePath, shareRequestMessageId };
   }
@@ -1300,8 +1388,27 @@ You are the owner's personal AI assistant on EnvoyMesh.
     throw new Error("Not available on mobile node");
   }
 
-  async listChatHistory(peerOwnerId: string, limit?: number): Promise<any[]> {
-    return this._chatLog.listThread(peerOwnerId, limit);
+  async listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]> {
+    const rows = await this._chatLog.listThread(peerOwnerId, limit);
+    return rows.map((row) => ({
+      messageId: row.messageId,
+      sender: {
+        nodeId: row.sender.ownerId ?? "",
+        displayName: row.sender.displayName,
+        ownerId: row.sender.ownerId,
+      },
+      recipient: {
+        nodeId: row.recipient.ownerId ?? "",
+        displayName: row.recipient.displayName,
+        ownerId: row.recipient.ownerId,
+      },
+      content: {
+        text: row.content.text,
+        ...(row.content.attachments ? { attachments: row.content.attachments } : {}),
+      },
+      metadata: row.metadata,
+      signature: row.signature,
+    }));
   }
 
   async deleteChatMessage(peerOwnerId: string, messageId: string): Promise<{ ok: boolean }> {
@@ -1925,6 +2032,12 @@ You are the owner's personal AI assistant on EnvoyMesh.
     }
 
     this._pendingInboundShareOffers.delete(shareId);
+    this._inboundTransferByShareId.set(shareId, {
+      senderNodeId: offer.senderNodeId,
+      senderVaultRelativePath: srcKey,
+      savePath: saveNorm || srcKey || offer.filename,
+      senderOwnerId: offer.senderOwnerId,
+    });
     const emitPath = saveNorm || srcKey || offer.filename;
     this._events.emit("share:accepted", { shareId, savePath: emitPath });
   }
@@ -2183,12 +2296,46 @@ You are the owner's personal AI assistant on EnvoyMesh.
     };
   }
 
-  async getPeerConnectionInfo(_peerOwnerId: string) {
-    return { connected: true, direct: false, relayPeerId: this._relayUrls[0] };
+  async getPeerConnectionInfo(peerOwnerId: string): Promise<PeerConnectionInfo> {
+    const transportPeerId = await this._resolveChatTransportPeerId(peerOwnerId);
+    if (!transportPeerId) {
+      return { connected: false, direct: false };
+    }
+    if (this._mesh) {
+      return this._meshPeerConnectionInfo(transportPeerId);
+    }
+    return this._relayOnlyReachabilityHint(peerOwnerId);
   }
 
-  async warmContactConnection(peerOwnerId: string) {
-    return this.getPeerConnectionInfo(peerOwnerId);
+  async warmContactConnection(peerOwnerId: string): Promise<PeerConnectionInfo> {
+    const existing = await this.getPeerConnectionInfo(peerOwnerId);
+    if (existing.connected) {
+      return existing;
+    }
+    const transportPeerId = await this._resolveChatTransportPeerId(peerOwnerId);
+    if (!transportPeerId || !this._mesh) {
+      return this._relayOnlyReachabilityHint(peerOwnerId);
+    }
+    try {
+      const stream = await Promise.race([
+        this._mesh.dialProtocol(`/p2p/${transportPeerId}` as any, ENVOY_CHAT_PROTOCOL),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("warmContactConnection timeout")), 8_000),
+        ),
+      ]);
+      try {
+        await stream.close();
+      } catch {
+        /* ignore */
+      }
+    } catch {
+      /* dial failed — fall through to connection check */
+    }
+    const after = this._meshPeerConnectionInfo(transportPeerId);
+    if (after.connected) {
+      return after;
+    }
+    return this._relayOnlyReachabilityHint(peerOwnerId);
   }
 
   async getChatDiagnostics(peerOwnerId?: string) {
@@ -2229,13 +2376,17 @@ You are the owner's personal AI assistant on EnvoyMesh.
   // Agent bridge
   // -----------------------------------------------------------------------
 
-  async getBridgeStatus() {
+  async getBridgeStatus(): Promise<BridgeStatus> {
+    const agentPeerId = this._state?.homeAgentPeerId?.trim() ?? "";
+    const enabled = Boolean(agentPeerId && this._state?.sharedIdentity && this._state?.homeNodePeerId);
+    const agentName = this._state?.homeAgentName?.trim() || "My Agent";
     return {
-      enabled: false,
-      agentPeerId: this._state?.agent?.agentPeerId ?? "",
-      agentUrl: "",
+      enabled,
+      agentPeerId,
+      agentUrl: enabled ? "home-node-bridge" : "",
       listenPort: 0,
-      agentName: "",
+      agentName,
+      agentPublicKeyPem: this._state?.homeAgentPubKey,
     };
   }
 
@@ -2325,6 +2476,31 @@ You are the owner's personal AI assistant on EnvoyMesh.
       threadPeerOwnerId: input.senderOwnerId,
       draft: result.draft,
     });
+
+    const aiAccessLevel = resolveMobileContactAiAccessLevel(
+      input.senderOwnerId,
+      cfg.contactAiPreferences ?? [],
+      cfg.aiSettings,
+    );
+    const requestedSensitivity =
+      bondLevel === "direct" || bondLevel === "referred" ? "friends" : "public";
+    const autoSendPolicy = evaluateAutonomousPolicy({
+      autonomousKillSwitch: cfg.autonomousKillSwitch ?? false,
+      autonomousPolicies: cfg.autonomousPolicies ?? [],
+      domain: "social",
+      action: "auto_send_chat",
+      requestedSensitivity,
+    });
+    if (autoSendPolicy.allowed && aiAccessLevel === "full") {
+      try {
+        await this.sendChat(input.senderOwnerId, result.draft.text);
+      } catch (err) {
+        console.warn(
+          "[mobile-node] chat draft auto-send failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
   }
 
   async runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult> {
@@ -2338,7 +2514,11 @@ You are the owner's personal AI assistant on EnvoyMesh.
       getBonds: () => self.getBonds(),
       knowledgeQuery: (q) => self.knowledgeQuery(q),
       discoverPublishedLibrary: (p) => self.discoverPublishedLibrary(p),
-      sendChat: (targetOwnerId, text) => self.sendChat(targetOwnerId, text),
+      sendChat: async (targetOwnerId, text) => {
+        const cfg = await self.getNodeConfig();
+        const wireText = applyAiIdentityToDraftText(text, cfg.aiSettings?.identity);
+        return self.sendChat(targetOwnerId, wireText);
+      },
       executeTool: async (toolName, params) => {
         try {
           if (toolName === "mesh.library_list") {
@@ -2911,6 +3091,123 @@ You are the owner's personal AI assistant on EnvoyMesh.
     this._pendingDataTransferSavePath.delete(`${remotePeerId}\n${norm}`);
   }
 
+  private _notifyInboundTransferVerified(
+    remotePeerId: string,
+    voucherSourceRelativePath: string,
+    totalBytes: number,
+  ): void {
+    const norm = voucherSourceRelativePath.replace(/^[\\/]+/, "");
+    for (const [shareId, pending] of this._inboundTransferByShareId.entries()) {
+      if (pending.senderNodeId !== remotePeerId) continue;
+      if (pending.savePath !== norm && pending.senderVaultRelativePath !== norm) {
+        continue;
+      }
+      this._inboundTransferByShareId.delete(shareId);
+      void this._recordFileShareInChat({
+        peerOwnerId: pending.senderOwnerId ?? pending.senderNodeId,
+        outgoing: false,
+        vaultRelativePath: pending.savePath,
+        byteLength: totalBytes,
+      }).catch((err) => {
+        console.warn(
+          "[mobile-node] chat attachment record failed:",
+          err instanceof Error ? err.message : err,
+        );
+      });
+      return;
+    }
+  }
+
+  private async _recordFileShareInChat(input: {
+    peerOwnerId: string;
+    outgoing: boolean;
+    vaultRelativePath: string;
+    byteLength: number;
+    sensitivity?: ChatAttachment["sensitivity"];
+    mimeType?: string;
+    textOverride?: string;
+  }): Promise<void> {
+    if (!this._state) return;
+
+    let threadPeerOwnerId = input.peerOwnerId.trim();
+    if (!threadPeerOwnerId) return;
+
+    const norm = input.vaultRelativePath.replace(/^[\\/]+/, "");
+    const filename = norm.split(/[/\\]/).pop() || "file";
+    const attachment: ChatAttachment = {
+      id: _randomUUID(),
+      filename,
+      mimeType: input.mimeType ?? _mimeTypeForFilename(filename),
+      sizeBytes: input.byteLength,
+      sensitivity: input.sensitivity ?? "friends",
+      vaultRelativePath: norm,
+    };
+    const text =
+      input.textOverride ??
+      (input.outgoing ? `Sent ${filename}` : `Received file ${filename}`);
+
+    const bond = await this._trustStore.get(threadPeerOwnerId);
+    const peerTransportId = bond?.libp2pPeerId ?? threadPeerOwnerId;
+    const timestamp = new Date().toISOString();
+    const messageId = _randomUUID();
+
+    const msg: ChatMessage = input.outgoing
+      ? {
+          messageId,
+          sender: {
+            nodeId: this._meshPeerId || this._state.agent.agentPeerId,
+            ownerId: this._state.owner.ownerId,
+            displayName: "Me",
+          },
+          recipient: {
+            nodeId: peerTransportId,
+            ownerId: threadPeerOwnerId,
+            displayName: bond?.displayName ?? threadPeerOwnerId,
+          },
+          content: { text, attachments: [attachment] },
+          metadata: { timestamp, deliveryReceipt: "sent" },
+          signature: "local-file-share",
+        }
+      : {
+          messageId,
+          sender: {
+            nodeId: peerTransportId,
+            ownerId: threadPeerOwnerId,
+            displayName: bond?.displayName ?? threadPeerOwnerId,
+          },
+          recipient: {
+            nodeId: this._meshPeerId || this._state.agent.agentPeerId,
+            ownerId: this._state.owner.ownerId,
+            displayName: "Me",
+          },
+          content: { text, attachments: [attachment] },
+          metadata: { timestamp },
+          signature: "local-file-share",
+        };
+
+    await this._chatLog.append(threadPeerOwnerId, {
+      messageId: msg.messageId,
+      sender: {
+        ownerId: msg.sender.ownerId,
+        displayName: msg.sender.displayName,
+      },
+      recipient: {
+        ownerId: msg.recipient.ownerId,
+        displayName: msg.recipient.displayName,
+      },
+      content: msg.content,
+      metadata: {
+        timestamp: msg.metadata.timestamp,
+        deliveryReceipt:
+          msg.metadata.deliveryReceipt === "delivered" || msg.metadata.deliveryReceipt === "read"
+            ? msg.metadata.deliveryReceipt
+            : "sent",
+      },
+      signature: msg.signature,
+    });
+    this._events.emit("chat:message", msg);
+  }
+
   private _linkOutboundSharePreviewFromInbound(previewMessageId: string, inReplyToRequestMsgId: string): void {
     const pending = this._pendingPushShareByRequestMsgId.get(inReplyToRequestMsgId);
     if (!pending) return;
@@ -2940,11 +3237,21 @@ You are the owner's personal AI assistant on EnvoyMesh.
     relativePath: string;
     deliveryChannel?: "inbox" | "chat";
   }): Promise<void> {
+    const senderOwnerId =
+      (await this._ownerIdForSender(input.senderEnvelopePeerId)) ??
+      (await this._ownerIdForSender(input.senderTransportPeerId));
+    const trust = senderOwnerId ? await this._trustStore.get(senderOwnerId) : undefined;
     const records = await this._peerDirectory.list();
-    let displayName = `${input.senderEnvelopePeerId.slice(0, 12)}…`;
+    let displayName =
+      trust?.displayName?.trim() ||
+      (senderOwnerId
+        ? senderOwnerId.replace(/^envoy:owner:/, "").slice(0, 10)
+        : `${input.senderEnvelopePeerId.slice(0, 12)}…`);
     for (const r of records) {
       if (r.libp2pPeerId && r.libp2pPeerId === input.senderTransportPeerId) {
-        displayName = r.ownerId.replace(/^envoy:owner:/, "").slice(0, 10) || displayName;
+        if (!trust?.displayName) {
+          displayName = r.ownerId.replace(/^envoy:owner:/, "").slice(0, 10) || displayName;
+        }
         break;
       }
     }
@@ -2953,6 +3260,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
     const offer: ShareOffer = {
       shareId: input.shareId,
       senderNodeId: input.senderTransportPeerId || input.senderEnvelopePeerId,
+      senderOwnerId,
       senderDisplayName: displayName,
       filename,
       mimeType: "application/octet-stream",
@@ -3548,7 +3856,10 @@ You are the owner's personal AI assistant on EnvoyMesh.
       vault: this._vault,
       getDevicePublicKeyPemForRemoteLibp2p: (rid) => this._peerDeviceByTransportId.get(rid)?.devicePublicKeyPem,
       resolveInboundRelativePath: (rid, vp) => this._resolveInboundDataTransferRelativePath(rid, vp),
-      onInboundVaultWriteCommitted: (rid, src) => this._consumeInboundDataTransferSaveMapping(rid, src),
+      onInboundVaultWriteCommitted: (rid, src, totalBytes) => {
+        this._consumeInboundDataTransferSaveMapping(rid, src);
+        this._notifyInboundTransferVerified(rid, src, totalBytes);
+      },
     });
 
     // Start with timeout
@@ -3803,6 +4114,96 @@ You are the owner's personal AI assistant on EnvoyMesh.
   }
 
   /**
+   * Register the home bridge agent as a routable virtual contact.
+   * Chat envelopes use the bridge agent peer id; transport dials the home node.
+   */
+  private async _registerHomeBridgeAgentRoute(): Promise<void> {
+    const agentPeerId = this._state?.homeAgentPeerId?.trim();
+    const homeTransport = this._state?.homeNodePeerId?.trim();
+    if (!agentPeerId || !homeTransport || !this._state?.sharedIdentity) {
+      return;
+    }
+    const now = new Date().toISOString();
+    const displayName = this._state?.homeAgentName?.trim() || "My Agent";
+    await this._peerDirectory.set({
+      ownerId: agentPeerId,
+      multiaddrs: [],
+      lastSeen: now,
+      libp2pPeerId: homeTransport,
+    });
+    await this._trustStore.set({
+      peerOwnerId: agentPeerId,
+      displayName,
+      libp2pPeerId: homeTransport,
+      level: "direct",
+      createdAt: now,
+      note: "home-bridge-agent",
+    });
+    const status = await this.getBridgeStatus();
+    this._events.emit("bridge:status", status);
+  }
+
+  /** Relay-only hint when mesh dial info is unavailable (conservative). */
+  private _relayOnlyReachabilityHint(peerOwnerId: string): PeerConnectionInfo {
+    const relayOpen = this._relaySockets.some((ws) => ws.readyState === WebSocket.OPEN);
+    const isHomeBridge = peerOwnerId === this._state?.homeAgentPeerId;
+    if (relayOpen && isHomeBridge && this._state?.homeNodePeerId) {
+      return { connected: false, direct: false, relayPeerId: this._relayUrls[0] };
+    }
+    return { connected: false, direct: false };
+  }
+
+  /** Connection info for a libp2p transport peer (direct vs circuit relay). */
+  private _meshPeerConnectionInfo(transportPeerId: string): PeerConnectionInfo {
+    if (!this._mesh) {
+      return { connected: false, direct: false };
+    }
+    try {
+      const node = this._mesh as import("libp2p").Libp2p & {
+        getConnections?: (peerId?: import("@libp2p/interface").PeerId) => Array<{
+          status?: string;
+          remoteAddr?: { toString?: () => string };
+        }>;
+      };
+      const pid = peerIdFromString(transportPeerId);
+      const conns = node.getConnections?.(pid) ?? [];
+      const openConns = conns.filter((c) => c?.status === "open" || c?.status === undefined);
+      if (openConns.length === 0) {
+        return { connected: false, direct: false };
+      }
+      const directConn = openConns.find(
+        (c) => !(c?.remoteAddr?.toString?.() ?? "").includes("/p2p-circuit"),
+      );
+      if (directConn) {
+        return { connected: true, direct: true };
+      }
+      const remoteAddr = openConns[0]?.remoteAddr?.toString?.() ?? "";
+      const relayMatch = remoteAddr.match(/p2p-circuit\/p2p\/([^/]+)\/p2p\//);
+      return {
+        connected: true,
+        direct: false,
+        relayPeerId: relayMatch?.[1] ?? this._relayUrls[0],
+      };
+    } catch {
+      return { connected: false, direct: false };
+    }
+  }
+
+  /** Resolve libp2p dial target for outbound chat (including home bridge agent). */
+  private async _resolveChatTransportPeerId(targetOwnerId: string): Promise<string | undefined> {
+    const t = targetOwnerId.trim();
+    if (!t) return undefined;
+    const bond = await this._trustStore.get(t);
+    if (bond?.libp2pPeerId?.trim()) return bond.libp2pPeerId.trim();
+    const dir = await this._peerDirectory.get(t);
+    if (dir?.libp2pPeerId?.trim()) return dir.libp2pPeerId.trim();
+    if (t === this._state?.homeAgentPeerId && this._state?.homeNodePeerId?.trim()) {
+      return this._state.homeNodePeerId.trim();
+    }
+    return undefined;
+  }
+
+  /**
    * Map contact selection → envelope `recipientPeerId`. Prefer an `envoy_…` device id
    * stored on the bond (`libp2pPeerId` field name is historical); otherwise use
    * the same thread key (often `envoy:owner:…`) for local/relay best-effort routing.
@@ -3849,11 +4250,10 @@ You are the owner's personal AI assistant on EnvoyMesh.
     const data = JSON.stringify(signed);
 
     if (this._mesh) {
-      const bond = await this._trustStore.get(targetOwnerId);
-      const libp2pPeerId = bond?.libp2pPeerId;
-      if (libp2pPeerId) {
+      const transportPeerId = await this._resolveChatTransportPeerId(targetOwnerId);
+      if (transportPeerId) {
         try {
-          await this._sendViaMesh(libp2pPeerId, data);
+          await this._sendViaMesh(transportPeerId, data);
           return;
         } catch (err) {
           console.warn(

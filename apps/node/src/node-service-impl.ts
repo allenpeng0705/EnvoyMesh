@@ -3873,6 +3873,9 @@ class NodeServiceImpl implements NodeService {
       if (bridgeStatus.agentPublicKeyPem) {
         payload.agentPubKey = bridgeStatus.agentPublicKeyPem;
       }
+      if (bridgeStatus.agentName?.trim()) {
+        payload.agentName = bridgeStatus.agentName.trim();
+      }
     }
 
     // Phase 11: Include owner identity for multi-device shared-identity pairing.
@@ -3881,6 +3884,10 @@ class NodeServiceImpl implements NodeService {
     if (profile) {
       payload.ownerPublicKey = profile.owner.publicKeyPem;
       payload.ownerId = profile.owner.ownerId;
+    }
+
+    if (reachable?.peerId) {
+      payload.homeNodePeerId = reachable.peerId;
     }
 
     return payload;
@@ -3944,6 +3951,9 @@ class NodeServiceImpl implements NodeService {
       result.agentPeerId = bridgeStatus.agentPeerId;
       if (bridgeStatus.agentPublicKeyPem) {
         result.agentPubKey = bridgeStatus.agentPublicKeyPem;
+      }
+      if (bridgeStatus.agentName?.trim()) {
+        result.agentName = bridgeStatus.agentName.trim();
       }
     }
 
@@ -4050,6 +4060,9 @@ class NodeServiceImpl implements NodeService {
       result.agentPeerId = bridgeStatus.agentPeerId;
       if (bridgeStatus.agentPublicKeyPem) {
         result.agentPubKey = bridgeStatus.agentPublicKeyPem;
+      }
+      if (bridgeStatus.agentName?.trim()) {
+        result.agentName = bridgeStatus.agentName.trim();
       }
     }
 

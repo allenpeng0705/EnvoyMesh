@@ -9,6 +9,10 @@ import { SettingsAITab } from "../../src/components/views/SettingsAITab.js";
 
 const updateNodeConfig = vi.fn();
 const refreshNodeConfig = vi.fn();
+const getRagIndexStatus = vi.fn().mockResolvedValue(null);
+const getAgentIdentity = vi.fn().mockResolvedValue({ content: "", updatedAt: null });
+const updateAgentIdentity = vi.fn().mockResolvedValue({ content: "", updatedAt: null });
+const on = vi.fn(() => () => {});
 
 let nodeConfig: {
   aiSettings?: {
@@ -33,6 +37,10 @@ let nodeConfig: {
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
     updateNodeConfig,
+    getRagIndexStatus,
+    getAgentIdentity,
+    updateAgentIdentity,
+    on,
   }),
 }));
 

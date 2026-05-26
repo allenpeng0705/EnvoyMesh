@@ -98,6 +98,7 @@ describe("NodeServiceImpl getPairingPayload", () => {
     const p = await svc.getPairingPayload();
     expect(p.agentPeerId).toBe("envoy_agent_test");
     expect(p.agentPubKey).toBe(agentPem);
+    expect(p.agentName).toBe("HomeClaw");
     // relayPeerId is the RELAY's peer ID, not the home node's
     expect(p.relayPeerId).toBe(communityRelayPeerId());
     expect(p.relayWsUrl).toBe(communityRelayWsUrl());

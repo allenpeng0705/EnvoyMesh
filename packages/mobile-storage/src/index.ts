@@ -262,6 +262,7 @@ export function mobileStorageSchema(): string[] {
       relayUrls TEXT NOT NULL DEFAULT '[]',
       agentPeerId_home TEXT,
       agentPubKey_home TEXT,
+      agentName_home TEXT,
       deviceCertificateJson TEXT,
       sessionToken TEXT,
       createdAt TEXT NOT NULL,
@@ -293,6 +294,16 @@ export async function migrateMobileStorageSchema(db: MobileDatabase): Promise<vo
   } catch {
     /* column already exists */
   }
+  try {
+    await db.execute("ALTER TABLE chat_messages ADD COLUMN attachmentsJson TEXT");
+  } catch {
+    /* column already exists */
+  }
+  try {
+    await db.execute("ALTER TABLE identity_state ADD COLUMN agentName_home TEXT");
+  } catch {
+    /* column already exists */
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +322,14 @@ export interface ChatLogEntry {
   };
   content: {
     text: string;
+    attachments?: Array<{
+      id: string;
+      filename: string;
+      mimeType: string;
+      sizeBytes: number;
+      sensitivity: "public" | "friends" | "private";
+      vaultRelativePath?: string;
+    }>;
   };
   metadata: {
     timestamp: string;
@@ -328,7 +347,18 @@ export interface MobileChatLogStore {
   clearThread(threadPeerOwnerId: string): Promise<number>;
 }
 
+function _parseAttachmentsJson(raw: unknown): ChatLogEntry["content"]["attachments"] {
+  if (typeof raw !== "string" || !raw.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function _rowToChatLogEntry(row: Record<string, unknown>): ChatLogEntry {
+  const attachments = _parseAttachmentsJson(row.attachmentsJson);
   return {
     messageId: String(row.messageId ?? ""),
     sender: {
@@ -339,7 +369,10 @@ function _rowToChatLogEntry(row: Record<string, unknown>): ChatLogEntry {
       ownerId: row.recipientOwnerId != null ? String(row.recipientOwnerId) : undefined,
       displayName: row.recipientDisplayName != null ? String(row.recipientDisplayName) : undefined,
     },
-    content: { text: String(row.textContent ?? "") },
+    content: {
+      text: String(row.textContent ?? ""),
+      ...(attachments ? { attachments } : {}),
+    },
     metadata: {
       timestamp: String(row.timestamp ?? ""),
       deliveryReceipt: _normalizeDeliveryReceipt(row.deliveryReceipt),
@@ -362,8 +395,8 @@ export function createMobileChatLogStore(db: MobileDatabase): MobileChatLogStore
       await db.execute(
         `INSERT OR REPLACE INTO chat_messages
          (messageId, threadPeerOwnerId, senderOwnerId, senderDisplayName,
-          recipientOwnerId, recipientDisplayName, textContent, timestamp, signature, deliveryReceipt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          recipientOwnerId, recipientDisplayName, textContent, timestamp, signature, deliveryReceipt, attachmentsJson)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entry.messageId,
           threadPeerOwnerId,
@@ -375,6 +408,9 @@ export function createMobileChatLogStore(db: MobileDatabase): MobileChatLogStore
           entry.metadata.timestamp,
           entry.signature,
           entry.metadata.deliveryReceipt ?? "sent",
+          entry.content.attachments?.length
+            ? JSON.stringify(entry.content.attachments)
+            : null,
         ],
       );
     },
@@ -436,6 +472,8 @@ export interface PersistedIdentityState {
   homeAgentPeerId?: string;
   /** Home node's agent public key PEM */
   homeAgentPubKey?: string;
+  /** Home bridge agent display name (from bridge-config.json) */
+  homeAgentName?: string;
   /** Owner-signed device certificate (JSON) */
   deviceCertificateJson?: string;
   /** Session token for reconnecting without re-pairing */
@@ -458,8 +496,8 @@ export function createMobileIdentityStateStore(db: MobileDatabase): MobileIdenti
          (id, sharedIdentity, ownerId, ownerPublicKeyPem, deviceId, devicePublicKeyPem,
           agentPeerId, agentPublicKeyPem, homeNodePeerId, relayUrls,
           agentPeerId_home, agentPubKey_home, deviceCertificateJson, sessionToken,
-          createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          createdAt, updatedAt, agentName_home)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           1,
           state.sharedIdentity ? 1 : 0,
@@ -477,6 +515,7 @@ export function createMobileIdentityStateStore(db: MobileDatabase): MobileIdenti
           state.sessionToken ?? null,
           state.createdAt,
           state.updatedAt,
+          state.homeAgentName ?? null,
         ],
       );
     },
@@ -504,6 +543,7 @@ function _rowToIdentityState(row: Record<string, unknown>): PersistedIdentitySta
     relayUrls: JSON.parse(String(row.relayUrls ?? "[]")),
     homeAgentPeerId: row.agentPeerId_home != null ? String(row.agentPeerId_home) : undefined,
     homeAgentPubKey: row.agentPubKey_home != null ? String(row.agentPubKey_home) : undefined,
+    homeAgentName: row.agentName_home != null ? String(row.agentName_home) : undefined,
     deviceCertificateJson: row.deviceCertificateJson != null ? String(row.deviceCertificateJson) : undefined,
     sessionToken: row.sessionToken != null ? String(row.sessionToken) : undefined,
     createdAt: String(row.createdAt ?? ""),

@@ -10,6 +10,7 @@ import { SearchView } from "../../src/components/views/SearchView.js";
 
 const discoverPublishedLibrary = vi.fn();
 const searchPeers = vi.fn();
+const runCapabilityDiscovery = vi.fn().mockResolvedValue(undefined);
 
 const samResults: DiscoverPublishedLibraryPeerResult[] = [
   {
@@ -35,6 +36,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
     discoverPublishedLibrary,
     searchPeers,
+    runCapabilityDiscovery,
   }),
 }));
 

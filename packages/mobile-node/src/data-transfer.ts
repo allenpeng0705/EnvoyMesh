@@ -58,7 +58,11 @@ export interface MobileDataTransferHooks {
   /** Device PEM for voucher signature verification (libp2p sender id). */
   getDevicePublicKeyPemForRemoteLibp2p(remotePeerId: string): string | undefined;
   resolveInboundRelativePath(remotePeerId: string, voucherRelativePath: string): string;
-  onInboundVaultWriteCommitted(remotePeerId: string, voucherSourceRelativePath: string): void;
+  onInboundVaultWriteCommitted(
+    remotePeerId: string,
+    voucherSourceRelativePath: string,
+    totalBytes: number,
+  ): void;
 }
 
 export function installMobileDataTransferReceiver(mesh: Libp2p, hooks: MobileDataTransferHooks): void {
@@ -94,7 +98,7 @@ export function installMobileDataTransferReceiver(mesh: Libp2p, hooks: MobileDat
       if (!isValidMobileVaultRelativePath(relForVault)) return;
 
       await hooks.vault.writeFile(relForVault, combined, "application/octet-stream");
-      hooks.onInboundVaultWriteCommitted(remotePeerId, sourceNorm);
+      hooks.onInboundVaultWriteCommitted(remotePeerId, sourceNorm, combined.length);
     } catch (err) {
       console.warn(
         "[mobile-node] data transfer inbound:",

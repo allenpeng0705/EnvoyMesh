@@ -321,6 +321,8 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   const messageGroups = useMemo(() => groupMessagesByDate(displayMessages), [displayMessages]);
 
   const threadKind = resolveChatThreadKind(selectedContact, bridgeStatus?.agentPeerId);
+  const isHomeBridgeThread =
+    Boolean(bridgeStatus?.enabled) && selectedContact === bridgeStatus?.agentPeerId;
   const displayName =
     selectedContact === bridgeStatus?.agentPeerId
       ? (bridgeStatus.agentName ?? "My Agent")
@@ -349,7 +351,9 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
             <span className={`chat-header-kind kind-${threadKind}`}>{threadKindLabel(threadKind)}</span>
             <span className={`contact-reachability ${reachabilityClass}`} title="P2P path to this contact">
               <span className="contact-reachability-dot" aria-hidden />
-              {peerReachabilityLabel(peerReachability)}
+              {isHomeBridgeThread && !contactReachable && !reachabilityChecking
+                ? "Home offline"
+                : peerReachabilityLabel(peerReachability)}
             </span>
           </div>
         </div>
@@ -478,7 +482,9 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         {sendError && <div className="chat-send-error">{sendError}</div>}
         {!contactReachable && nodeMeshOnline && !reachabilityChecking && (
           <div className="chat-reachability-hint">
-            Contact is offline — sending will try to connect and may take longer.
+            {isHomeBridgeThread
+              ? "Home computer offline — start your home node and bridge agent (HomeClaw/OpenClaw) to reach My Agent."
+              : "Contact is offline — sending will try to connect and may take longer."}
           </div>
         )}
         {shareOpen && (
