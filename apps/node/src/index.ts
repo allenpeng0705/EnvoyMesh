@@ -132,7 +132,7 @@ import { DigestGenerator, createDefaultDigestConfig } from "./digest-generator.j
 import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
 import { resolveContactAiAccessLevel, buildVaultIndexOptionsFromKnowledgeBase } from "@envoymesh/api";
-import { stripModelThinking } from "@envoymesh/api";
+import { stripModelThinking, applyAiIdentityPrefix, resolveAiIdentityPrefix } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
 import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
@@ -1668,7 +1668,11 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
               false,
               "statement",
             );
-            const draftText = adapted.adaptedText;
+            const draftText = applyAiIdentityPrefix(
+              adapted.adaptedText,
+              currentAiSettings?.identity?.mode ?? "transparent",
+              resolveAiIdentityPrefix(currentAiSettings?.identity),
+            );
 
             // Always emit draft event for UI to display
             wsServerForEvents.emitEvent("chat:draft", {
@@ -2502,6 +2506,7 @@ const bridge = createBridge({
   getRecipientPeerId,
   gateway,
   submitAgentShareProposal: (params) => nodeService.submitAgentShareProposal(params),
+  getAiIdentity: () => currentAiSettings?.identity,
   listTools: () => listAgentTools({ trustModeEnabled: currentTrustModeEnabled }),
   executeTool: async (toolName, params) => {
     if (!(nodeService instanceof NodeServiceImpl)) {

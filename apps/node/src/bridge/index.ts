@@ -6,6 +6,7 @@ import {
   parseKnowledgeResponsePayload,
 } from "@envoymesh/protocol";
 import type { SubmitAgentShareProposalParams } from "@envoymesh/api";
+import type { AiIdentity } from "@envoymesh/api";
 import type { ExternalAgentGateway } from "../external-agent-gateway.js";
 import type { ToolDefinition, ToolResult } from "../tool-registry.js";
 import type { BridgeConfig } from "./config.js";
@@ -42,6 +43,8 @@ export interface CreateBridgeOptions {
   executeTool?: (toolName: string, params: Record<string, unknown>) => Promise<ToolResult>;
   /** List registered agent tools. */
   listTools?: () => ToolDefinition[];
+  /** Live AI identity from node config (transparent prefix enforcement). */
+  getAiIdentity?: () => AiIdentity | undefined;
 }
 
 /**
@@ -76,6 +79,7 @@ export function createBridge(options: CreateBridgeOptions): {
     getRecipientPeerId: options.getRecipientPeerId,
     gateway: options.gateway,
     agentId,
+    getAiIdentity: options.getAiIdentity,
   };
 
   // --- HTTP server: agent → P2P / tools ---

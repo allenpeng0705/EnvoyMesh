@@ -44,7 +44,7 @@ describe("mobile-chat-draft", () => {
     }
   });
 
-  it("generateMobileChatDraft uses mock provider when configured", async () => {
+  it("generateMobileChatDraft prefixes transparent identity mode", async () => {
     const result = await generateMobileChatDraft({
       senderOwnerId: "envoy:owner:peer",
       senderDisplayName: "Peer",
@@ -65,8 +65,34 @@ describe("mobile-chat-draft", () => {
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.draft.text).toContain("Mock model response");
+      expect(result.draft.text).toMatch(/^\[AI Agent\]: /);
       expect(result.draft.threadPeerOwnerId).toBe("envoy:owner:peer");
+    }
+  });
+
+  it("generateMobileChatDraft skips prefix in invisible mode", async () => {
+    const result = await generateMobileChatDraft({
+      senderOwnerId: "envoy:owner:peer",
+      senderDisplayName: "Peer",
+      chatText: "Hello there",
+      messageId: "msg-1",
+      remotePeerId: "envoy_peer",
+      bondLevel: "direct",
+      modelProviders: { mode: "mock" },
+      chatAssistEnabled: true,
+      aiSettings: {
+        status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" },
+        identity: { mode: "invisible" },
+        defaultModeForNewContacts: "assistant",
+        rules: [],
+      },
+      contactAiPreferences: [],
+      randomId: () => "draft-1",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.draft.text).toContain("Mock model response");
+      expect(result.draft.text).not.toMatch(/^\[AI Agent\]: /);
     }
   });
 });

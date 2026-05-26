@@ -4,6 +4,8 @@ export * from "./ai-embedding-limits.js";
 export * from "./rag-index-status.js";
 export * from "./connectivity-tuning.js";
 export * from "./contact-ai-access.js";
+export * from "./ai-identity-prefix.js";
+export * from "./autonomous-policy.js";
 export * from "./default-bootstrap.js";
 export * from "./node-service.js";
 export * from "./bond-target.js";

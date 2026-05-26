@@ -3,6 +3,7 @@ import { createAuditEvent, type LocalTaskStore, type LocalTrustStore, type Local
 import { buildModelProviders, routeModelRequest, type ModelProvider } from "@envoymesh/models";
 import type { VaultIndex } from "@envoymesh/vault";
 import type { AiIdentity, AiKnowledgeBaseSettings, AiRule, ModelProviderConfig } from "@envoymesh/api";
+import { applyAiIdentityToDraftText } from "@envoymesh/api";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { formatVaultKnowledgeSection, searchVaultKnowledgeBase } from "./ai-context.js";
 import { buildContextInjection } from "./context-injector.js";
@@ -363,7 +364,11 @@ Write your reply draft below:`;
     };
   }
 
-  const draftText = modelResult.response?.text ?? "";
+  const draftText = applyAiIdentityToDraftText(
+    modelResult.response?.text ?? "",
+    aiIdentity,
+    matchedRule,
+  );
 
   // Generate and save the draft
   const draftId = randomUUID();
@@ -372,7 +377,7 @@ Write your reply draft below:`;
     draftId,
     threadPeerOwnerId: senderOwnerId,
     inReplyToMessageId: envelope.messageId,
-    text: draftText.trim(),
+    text: draftText,
     createdAt,
   };
 
@@ -399,7 +404,7 @@ Write your reply draft below:`;
     ok: true,
     draft: {
       draftId,
-      text: draftText.trim(),
+      text: draftText,
       inReplyToMessageId: envelope.messageId,
       createdAt,
     },

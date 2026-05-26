@@ -10,6 +10,7 @@ import type {
   ContactAiPreferences,
   ModelProviderConfig,
 } from "@envoymesh/api";
+import { applyAiIdentityToDraftText } from "@envoymesh/api";
 
 export type MobileBondLevel = "blocked" | "public" | "referred" | "direct";
 
@@ -206,10 +207,12 @@ Write your reply draft below:`;
     return { ok: false, reason: `model denied: ${reason}` };
   }
 
-  const draftText = modelResult.response?.text?.trim() ?? "";
-  if (!draftText) {
+  const rawDraft = modelResult.response?.text?.trim() ?? "";
+  if (!rawDraft) {
     return { ok: false, reason: "empty model response" };
   }
+
+  const draftText = applyAiIdentityToDraftText(rawDraft, identity, matchedRule);
 
   const draft: ChatDraft = {
     draftId: randomId(),

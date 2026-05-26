@@ -1,7 +1,7 @@
 import { createLocalTaskStore, createLocalTrustStore, createLocalPeerDirectoryStore } from "@envoymesh/local-store";
 import { createUnsignedEnvelope, type EnvoyEnvelope } from "@envoymesh/protocol";
 import { buildVaultIndex } from "@envoymesh/vault";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -184,7 +184,12 @@ describe("handleInboundKnowledgeQuery", () => {
   it("uses vault content in answer when vault index is provided", async () => {
     // Set up vault directory with a document
     const vaultDir = await mkdtemp(join(tmpdir(), "envoymesh-test-vault-"));
-    await writeFile(join(vaultDir, "about.md"), "EnvoyMesh is a decentralized P2P network for AI agents.", { encoding: "utf8" });
+    await mkdir(join(vaultDir, "knowledge/public"), { recursive: true });
+    await writeFile(
+      join(vaultDir, "knowledge/public/about.md"),
+      "EnvoyMesh is a decentralized P2P network for AI agents.",
+      { encoding: "utf8" },
+    );
     const vaultIndex = await buildVaultIndex({ rootDir: vaultDir });
     expect(vaultIndex.documents.length).toBe(1);
     expect(vaultIndex.chunks.length).toBeGreaterThan(0);

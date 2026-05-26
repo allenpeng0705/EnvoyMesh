@@ -1,6 +1,8 @@
 import type { AgentCredential, EnvoyEnvelope } from "@envoymesh/protocol";
 import { createChatMessagePayload, createUnsignedEnvelope } from "@envoymesh/protocol";
 import { signUnsignedEnvelope } from "@envoymesh/identity";
+import type { AiIdentity } from "@envoymesh/api";
+import { applyAiIdentityPrefix, resolveAiIdentityPrefix } from "@envoymesh/api";
 import type { ExternalAgentGateway } from "../external-agent-gateway.js";
 import type { BridgeConfig } from "./config.js";
 
@@ -22,6 +24,8 @@ export interface BridgeDeps {
   gateway?: ExternalAgentGateway;
   /** Agent ID used to key gateway session lookups and action logs. */
   agentId?: string;
+  /** Current AI identity settings (for outbound prefix enforcement). */
+  getAiIdentity?: () => AiIdentity | undefined;
 }
 
 export interface P2PMessage {
@@ -95,6 +99,10 @@ export async function receiveFromAgent(
     text = text.slice(0, MAX_TEXT - 30) + "\n\n[truncated by bridge — reply too long]";
     console.warn(`[bridge] receiveFromAgent: truncated reply from ${text.length} to ~${MAX_TEXT} chars (was ${response.text.length})`);
   }
+
+  const aiIdentity = deps.getAiIdentity?.();
+  const identityMode = aiIdentity?.mode ?? "transparent";
+  text = applyAiIdentityPrefix(text, identityMode, resolveAiIdentityPrefix(aiIdentity));
 
   const unsigned = createUnsignedEnvelope({
     messageId,
