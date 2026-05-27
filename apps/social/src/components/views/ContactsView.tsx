@@ -88,7 +88,9 @@ export function ContactsView({ panelMode, onPanelModeChange, onOpenChat }: Conta
       </div>
 
       {panelMode === "discover" ? (
-        <SearchView embedded />
+        <div className="contacts-discover-shell">
+          <SearchView embedded />
+        </div>
       ) : (
         <>
           <div className="contacts-toolbar">

@@ -45,6 +45,7 @@ The **chat LLM** (`modelProviders` in `node-config.json`) generates replies. A *
 | **Knowledge documents** | `{vaultRoot}/knowledge/public/` and `.../private/` (default; configurable) |
 | **Vault root** | `ENVOYMESH_VAULT` or `apps/node/shared_vault/` |
 | **Node config** | `{profileDir}/node-config.json` (gitignored) |
+| **Config reference (all local files)** | [docs/local-configuration.reference.md](./local-configuration.reference.md) |
 | **Config template** | `apps/node/data/default/node-config.example.jsonc` (committed) |
 | **Agent instructions** | `{profileDir}/agent-identity.md` |
 | **Agent identity template** | `apps/node/data/default/agent-identity.example.md` (committed) |

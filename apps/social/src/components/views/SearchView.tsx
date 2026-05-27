@@ -2,8 +2,22 @@ import { useState, useEffect } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { SUGGESTED_TOPICS } from "../../lib/display.js";
+import {
+  DidImportPanel,
+  MorningReportPanel,
+  MultiHopResultCard,
+  PeerResultCard,
+} from "../discover/DiscoverCards.js";
 import { SearchIcon } from "../../icons.js";
-import { bondTrustRank, type DiscoverPublishedLibraryPeerResult, type HelloProfile, type MorningReportEntry, type PeerSearchResult } from "@envoymesh/api";
+import {
+  bondTrustRank,
+  type DiscoverPublishedLibraryPeerResult,
+  type HelloProfile,
+  type MorningReportEntry,
+  type MultiHopDiscoveryMatch,
+  type MultiHopDiscoverySessionView,
+  type PeerSearchResult,
+} from "@envoymesh/api";
 
 export function SearchView({ embedded = false }: { embedded?: boolean }) {
   const nodeService = useNodeService();
@@ -21,9 +35,9 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
   const [libraryResults, setLibraryResults] = useState<DiscoverPublishedLibraryPeerResult[] | null>(null);
   const [librarySearching, setLibrarySearching] = useState(false);
   const [libraryErr, setLibraryErr] = useState<string | null>(null);
-  const [multiHopResults, setMultiHopResults] = useState<import("@envoymesh/api").MultiHopDiscoveryMatch[] | null>(null);
+  const [multiHopResults, setMultiHopResults] = useState<MultiHopDiscoveryMatch[] | null>(null);
   const [multiHopLoading, setMultiHopLoading] = useState(false);
-  const [multiHopSession, setMultiHopSession] = useState<import("@envoymesh/api").MultiHopDiscoverySessionView | null>(null);
+  const [multiHopSession, setMultiHopSession] = useState<MultiHopDiscoverySessionView | null>(null);
   const [multiHopCorrelationId, setMultiHopCorrelationId] = useState<string | null>(null);
   const [didImportInput, setDidImportInput] = useState("");
   const [didImportBusy, setDidImportBusy] = useState(false);
@@ -45,7 +59,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
   useEffect(() => {
     if (!multiHopCorrelationId) return;
     const unsub = nodeService.on("discovery:multihop-update", (session) => {
-      const data = session as import("@envoymesh/api").MultiHopDiscoverySessionView;
+      const data = session as MultiHopDiscoverySessionView;
       if (data.correlationId !== multiHopCorrelationId) return;
       setMultiHopSession(data);
       setMultiHopResults(data.matches);
@@ -213,7 +227,17 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <div className={`search-view${embedded ? " search-view--embedded" : ""}`}>
-      {!embedded && <h2>Discover</h2>}
+      {!embedded && (
+        <header className="search-view__header">
+          <h2>Discover</h2>
+          <p className="search-view__lede">Find peers by interest, DHT topic, DID, or published library metadata.</p>
+        </header>
+      )}
+      {embedded && (
+        <header className="search-view__header search-view__header--embedded">
+          <h3 className="search-view__embedded-title">Discover peers</h3>
+        </header>
+      )}
       <div className="search-mode-tabs">
         <button
           className={searchMode === "interest" ? "active" : ""}
@@ -452,144 +476,118 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
           )}
 
           {searchMode === "topic" && (
-            <div className="search-bar" style={{ marginTop: "0.75rem" }}>
-              <button
-                type="button"
-                className="search-btn"
-                disabled={multiHopLoading}
-                onClick={() => void handleMultiHopDiscovery()}
-              >
-                {multiHopLoading ? "Querying bonds…" : "Multi-hop bond search (US-MH1)"}
-              </button>
-            </div>
-          )}
-
-          {searchMode === "topic" && multiHopResults !== null && (
-            <>
-              {multiHopSession && (
-                <p className="library-view-hint" style={{ marginTop: "0.75rem" }}>
-                  Aggregated {multiHopSession.matches.length} match(es) across {multiHopSession.bondsQueried} bond(s).
-                  {multiHopSession.pendingForwardApprovals > 0
-                    ? ` ${multiHopSession.pendingForwardApprovals} hop-2 forward approval(s) pending on intermediaries — results refresh automatically.`
-                    : " Hop-2 responses merge as bonded intermediaries approve forwards."}
+            <section className="multihop-panel" aria-labelledby="multihop-discover-heading">
+              <header className="multihop-panel__header">
+                <h4 id="multihop-discover-heading" className="multihop-panel__title">
+                  Bond network search
+                </h4>
+                <p className="multihop-panel__lede">
+                  Query direct bonds to discover peers up to two hops away. Hop-2 results appear after intermediaries approve forwards.
                 </p>
-              )}
-              <ul className="search-results" style={{ marginTop: "0.75rem" }}>
-                {multiHopResults.length === 0 ? (
-                  <li className="search-empty">No matches yet (approvals may be pending for hop 2).</li>
-                ) : (
-                  multiHopResults.map((row) => (
-                    <li key={row.ownerId} className="search-result">
-                      <div className="result-info">
-                        <strong>{row.ownerId.slice(0, 20)}…</strong>
-                        <span className="result-username">
-                          hop={row.hopDistance}
-                          {row.viaDisplayName ? ` · via ${row.viaDisplayName}` : row.viaOwnerId ? ` · via ${row.viaOwnerId.slice(0, 16)}…` : ""}
-                        </span>
-                        {row.trustPath && (
-                          <p className="library-view-hint" title={row.trustPath}>
-                            {row.trustPath}
-                          </p>
-                        )}
-                      </div>
-                      <button type="button" onClick={() => void handleSayHello(row.peerId)}>
-                        Say Hello
-                      </button>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </>
-          )}
-
-          {searchMode === "did" && !searchQuery && (
-            <>
-              <p className="library-view-hint" style={{ marginTop: "0.75rem" }}>
-                Resolves <strong>bonded contacts</strong> from a cached <code>did:key</code> or search by id above.
-                Import an external wallet DID document or <code>did:key</code> below to cache keys for lookup.
-              </p>
-              <div className="search-bar" style={{ marginTop: "0.75rem", flexDirection: "column", alignItems: "stretch" }}>
-                <textarea
-                  className="search-input"
-                  rows={3}
-                  placeholder="Paste did:key:z… or JSON DID document"
-                  value={didImportInput}
-                  onChange={(e) => setDidImportInput(e.target.value)}
-                />
+              </header>
+              <div className="multihop-panel__actions">
                 <button
                   type="button"
-                  className="search-btn"
-                  disabled={didImportBusy || !didImportInput.trim()}
-                  onClick={() => void handleDidImport()}
-                  style={{ marginTop: "0.5rem" }}
+                  className="search-btn multihop-panel__trigger"
+                  disabled={multiHopLoading}
+                  onClick={() => void handleMultiHopDiscovery()}
                 >
-                  {didImportBusy ? "Resolving…" : "Import DID for lookup"}
+                  {multiHopLoading ? (
+                    <>
+                      <span className="search-spinner" aria-hidden />
+                      Scanning bonds…
+                    </>
+                  ) : (
+                    "Search through bonds"
+                  )}
                 </button>
-                {didImportError && (
-                  <p className="settings-diagnostics-error" style={{ marginTop: "0.5rem" }}>
-                    {didImportError}
-                  </p>
-                )}
-                {didImportResult && (
-                  <div className="library-view-hint" style={{ marginTop: "0.5rem" }}>
-                    <strong>Resolved</strong> — {didImportResult.did}
-                    <br />
-                    Owner: <code>{didImportResult.ownerId}</code>
-                  </div>
+                {searchQuery.trim() && (
+                  <span className="multihop-panel__scope">
+                    Capability filter: <code>{searchQuery.trim().toLowerCase()}</code>
+                  </span>
                 )}
               </div>
-            </>
-          )}
 
-          {!morningReportLoading && morningReport && morningReport.length > 0 && (
-            <section className="morning-report-panel" style={{ marginTop: "1.25rem" }}>
-              <h4>Morning report — ranked discovery</h4>
-              <ul className="search-results">
-                {morningReport.map((entry) => (
-                  <li key={entry.ownerId} className="search-result">
-                    <div className="result-info">
-                      <strong>{entry.ownerId.slice(0, 16)}…</strong>
-                      <span className="result-username">
-                        score={entry.score} · trust={entry.trustLevel} · matches={entry.discoveryMatchCount}
-                        {entry.hopDistance !== undefined ? ` · hop=${entry.hopDistance}` : ""}
-                      </span>
-                      <p className="library-view-hint">{entry.reason}</p>
+              {multiHopSession && (
+                <div
+                  className={`multihop-session${multiHopSession.pendingForwardApprovals > 0 ? " multihop-session--pending" : ""}`}
+                  role="status"
+                >
+                  <dl className="multihop-session__stats">
+                    <div>
+                      <dt>Matches</dt>
+                      <dd>{multiHopSession.matches.length}</dd>
                     </div>
-                  </li>
-                ))}
-              </ul>
+                    <div>
+                      <dt>Bonds queried</dt>
+                      <dd>{multiHopSession.bondsQueried}</dd>
+                    </div>
+                    <div>
+                      <dt>Pending approvals</dt>
+                      <dd>{multiHopSession.pendingForwardApprovals}</dd>
+                    </div>
+                  </dl>
+                  {multiHopSession.pendingForwardApprovals > 0 ? (
+                    <p className="multihop-session__status">
+                      Waiting on {multiHopSession.pendingForwardApprovals} hop-2 forward
+                      {multiHopSession.pendingForwardApprovals === 1 ? "" : "s"} — refreshing every few seconds.
+                    </p>
+                  ) : (
+                    <p className="multihop-session__status multihop-session__status--ready">
+                      Session complete — all reachable hop-2 responses merged.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {multiHopResults !== null && (
+                <ul className="search-results multihop-results">
+                  {multiHopResults.length === 0 ? (
+                    <li className="search-empty multihop-results__empty">
+                      <p>No matches yet</p>
+                      <small>
+                        Hop-1 peers appear immediately; hop-2 may still be awaiting intermediary approval.
+                      </small>
+                    </li>
+                  ) : (
+                    multiHopResults.map((row, index) => (
+                      <MultiHopResultCard
+                        key={row.ownerId}
+                        row={row}
+                        index={index}
+                        onSayHello={handleSayHello}
+                      />
+                    ))
+                  )}
+                </ul>
+              )}
             </section>
           )}
 
+          {searchMode === "did" && !searchQuery && (
+            <DidImportPanel
+              input={didImportInput}
+              onInputChange={setDidImportInput}
+              busy={didImportBusy}
+              error={didImportError}
+              result={didImportResult}
+              onImport={() => void handleDidImport()}
+            />
+          )}
+
+          {!morningReportLoading && morningReport && morningReport.length > 0 && (
+            <MorningReportPanel entries={morningReport} />
+          )}
+
           {!isSearching && searchResults.length > 0 ? (
-            <ul className="search-results">
-              {searchResults.map((result) => (
-                <li key={result.nodeId} className="search-result">
-                  <span className="avatar">{result.displayName?.[0] || "?"}</span>
-                  <div className="result-info">
-                    <strong>{result.displayName}</strong>
-                    {result.username && <span className="result-username">@{result.username}</span>}
-                    {result.did && (
-                      <span className="result-username" title={result.did}>
-                        {result.did.slice(0, 24)}…
-                      </span>
-                    )}
-                    {(result.discoverySource || result.trustLevel) && (
-                      <span className="result-username">
-                        {result.discoverySource ? `${result.discoverySource}` : ""}
-                        {result.trustLevel ? ` · trust=${result.trustLevel}` : ""}
-                        {result.signedRecordValid === true ? " · signed ✓" : result.signedRecordValid === false ? " · unsigned" : ""}
-                      </span>
-                    )}
-                    {result.bio && <p>{result.bio}</p>}
-                    {result.interests.length > 0 && (
-                      <span className="interests">{result.interests.join(", ")}</span>
-                    )}
-                  </div>
-                  <button type="button" onClick={() => void handleSayHello(result.nodeId)}>
-                    Say Hello
-                  </button>
-                </li>
+            <ul className="search-results peer-results-list">
+              {searchResults.map((result, index) => (
+                <PeerResultCard
+                  key={result.nodeId}
+                  result={result}
+                  index={index}
+                  onSayHello={handleSayHello}
+                />
               ))}
             </ul>
           ) : searchQuery.trim() && !isSearching ? (

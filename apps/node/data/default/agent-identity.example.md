@@ -6,6 +6,8 @@ Copy to your profile directory as `agent-identity.md`:
 cp apps/node/data/default/agent-identity.example.md apps/node/data/default/agent-identity.md
 ```
 
+**All local config files:** [docs/local-configuration.reference.md](../../../docs/local-configuration.reference.md)
+
 Then edit the copy. `profileDir` comes from `node-config.json` (default: `./data/default` relative to `apps/node` when you run `npm run node:dev`).
 
 | | |

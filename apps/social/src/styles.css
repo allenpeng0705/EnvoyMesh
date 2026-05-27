@@ -1501,6 +1501,238 @@ textarea::placeholder {
   box-shadow: var(--shadow-sm);
 }
 
+/* Multi-hop bond discovery — mesh topology affordances */
+.multihop-panel {
+  margin-top: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-subtle);
+  background:
+    radial-gradient(ellipse 120% 80% at 100% 0%, color-mix(in srgb, var(--color-primary) 10%, transparent), transparent 55%),
+    var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.multihop-panel__header {
+  margin-bottom: var(--space-3);
+}
+
+.multihop-panel__title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.01em;
+}
+
+.multihop-panel__lede {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text-muted);
+  max-width: 36rem;
+}
+
+.multihop-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.multihop-panel__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.multihop-panel__scope {
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+}
+
+.multihop-panel__scope code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-xs);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.multihop-session {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-bg);
+}
+
+.multihop-session--pending {
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border-subtle));
+  animation: multihop-session-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes multihop-session-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 14%, transparent);
+  }
+}
+
+.multihop-session__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.multihop-session__stats > div {
+  text-align: center;
+}
+
+.multihop-session__stats dt {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-subtle);
+}
+
+.multihop-session__stats dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.multihop-session__status {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.multihop-session__status--ready {
+  color: var(--color-success, var(--color-text-muted));
+}
+
+.multihop-results {
+  margin-top: 0;
+}
+
+.multihop-results__empty {
+  padding: var(--space-5) var(--space-4);
+  text-align: center;
+}
+
+.multihop-result {
+  animation: multihop-result-in 0.4s ease backwards;
+  animation-delay: calc(var(--discover-i, var(--multihop-i, 0)) * 60ms);
+}
+
+@keyframes multihop-result-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.multihop-hop-badge {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--font-bold);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+}
+
+.multihop-hop-badge--1 {
+  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg));
+}
+
+.multihop-hop-badge--2 {
+  border-color: color-mix(in srgb, var(--color-secondary, var(--color-primary)) 45%, var(--color-border));
+  color: var(--color-secondary, var(--color-primary));
+  background: color-mix(in srgb, var(--color-secondary, var(--color-primary)) 10%, var(--color-bg));
+}
+
+.multihop-result__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.multihop-result__via {
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+}
+
+.multihop-result__via em {
+  font-style: normal;
+  font-weight: var(--font-medium);
+  color: var(--color-text-muted);
+}
+
+.multihop-trust-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+.multihop-trust-path li {
+  display: flex;
+  align-items: center;
+}
+
+.multihop-trust-path li:not(:last-child)::after {
+  content: "→";
+  margin: 0 0.35rem;
+  color: var(--color-text-subtle);
+  opacity: 0.7;
+}
+
+.multihop-trust-path__node {
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--radius-xs);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-muted);
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multihop-result__hello {
+  flex-shrink: 0;
+}
+
 .search-bar {
   display: flex;
   gap: 0.5rem;

@@ -1,44 +1,74 @@
-# EnvoyMesh node config example
-# Run with:
-#   npm run node:dev -- --config ./envoymesh.node.example.yaml
+# EnvoyMesh node startup YAML (reference template)
 #
-# Precedence:
-#   defaults < YAML config < env vars < CLI flags
+# Copy to a local path (gitignored), e.g.:
+#   cp envoymesh.node.example.yaml envoymesh.node.yaml
+#
+# Run:
+#   npm run node:dev -- --config ./envoymesh.node.yaml
+#
+# Precedence: defaults < node-config.json < this file < env vars < CLI flags
+# AI / autonomy / model keys live in node-config.json — not here.
+#
+# Full field guide: docs/local-configuration.reference.md §3
+# LAN-only variant: envoymesh.node.lan.example.yaml
 
+# Profile directory — same as --profile / ENVOYMESH_PROFILE
 profile: ./data/primary
 
+# libp2p listen multiaddrs. /tcp/0 = ephemeral port assigned by OS.
 listen:
   - /ip4/0.0.0.0/tcp/0
 
 discovery:
-  # lan-fast or wan-default
+  # lan-fast | wan-default | relay-only | contacts-only
   profile: wan-default
 
   # When true, startup fails if all bootstrap probes fail in wan-default mode.
+  # Env override: ENVOYMESH_CONNECTIVITY_STRICT=1
   connectivityStrict: true
 
-  # Discovery transport toggles
+  # Local multicast DNS peer discovery
   mdns: true
+
+  # Kademlia DHT (recommended for wan-default)
   dht: true
   dhtClientMode: true
+
+  # Circuit relay: client dial via relay when direct path fails
   relay: true
+
+  # Act as relay server for other peers (usually false on desktop; true on dedicated relay VM)
   relayServer: false
+
+  # AutoNAT — detect reachable addresses
   autonat: true
+
+  # DCUtR hole punching
   dcutr: true
 
-  # Optional: QUIC transport alongside TCP (adds matching /udp/.../quic-v1 listeners). Env: ENVOYMESH_QUIC=1
+  # QUIC alongside TCP. Adds /udp/.../quic-v1 listeners. Env: ENVOYMESH_QUIC=1
   # quic: true
 
-  # Emit p2p.trace lifecycle telemetry into audit logs
+  # Write p2p.trace lifecycle rows to audit-events.jsonl
   p2pDebug: true
 
-  # Managed bootstrap preset list (supports multiple entries)
+  # Managed bootstrap preset names (merged with bootstrapPeers).
+  # Built-in: public-libp2p, public-libp2p-am6, public-libp2p-am7, cn-relay
   bootstrapPresets:
     - public-libp2p
     - public-libp2p-am6
     - public-libp2p-am7
 
-  # Optional additional explicit bootstrap peers
+  # Extra explicit bootstrap multiaddrs (optional)
   # bootstrapPeers:
   #   - /dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN
-  #   - /dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa
+
+  # Custom preset YAML files — see bootstrap-presets.example.yaml
+  # bootstrapPresetsFiles:
+  #   - ./bootstrap-presets.yaml
+
+  # Reachable relay bases for relay.lookup /p2p-circuit/ paths.
+  # Required when running --relay-server on WAN/cloud. Same as --advertise-addr.
+  # Env: ENVOYMESH_ADVERTISE_ADDRS (comma-separated)
+  # advertiseAddrs:
+  #   - /ip4/203.0.113.10/tcp/4001

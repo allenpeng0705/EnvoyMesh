@@ -1,0 +1,22 @@
+# Custom bootstrap preset definitions (reference template)
+#
+# Copy and edit (gitignored path is fine):
+#   cp bootstrap-presets.example.yaml bootstrap-presets.yaml
+#
+# Load via:
+#   npm run node:dev -- --bootstrap-presets-file ./bootstrap-presets.yaml
+#   discovery.bootstrapPresetsFiles in envoymesh.node.yaml
+#   ENVOYMESH_BOOTSTRAP_PRESETS_FILES=./bootstrap-presets.yaml
+#
+# Then reference preset names in bootstrapPresets / ENVOYMESH_BOOTSTRAP_PRESETS / --bootstrap-preset
+#
+# Full guide: docs/local-configuration.reference.md §4
+
+# Preset name: [a-zA-Z0-9._-]{1,64}
+# Value: non-empty list of libp2p multiaddr strings (must include /p2p/<peerId>)
+
+my-community-relay:
+  - /ip4/203.0.113.10/tcp/4001/p2p/12D3KooWExampleRelayPeerIdHere
+
+my-backup-bootstrap:
+  - /dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN

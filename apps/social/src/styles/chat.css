@@ -380,7 +380,7 @@
   border-radius: var(--radius-lg);
   position: relative;
   animation: messageIn 0.22s ease;
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-sm);
 }
 
 .message-bubble-meta {
@@ -1047,15 +1047,63 @@
     grid-template-rows: auto minmax(0, 1fr);
   }
 
+  .chat-view-primary-tabs {
+    padding-left: calc(var(--space-4) + var(--safe-left));
+    padding-right: calc(var(--space-4) + var(--safe-right));
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+
+  .chat-view-primary-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .chat-view-primary-tabs button {
+    flex-shrink: 0;
+    min-height: 44px;
+  }
+
   .contact-list {
-    max-height: 38vh;
+    max-height: min(38vh, 280px);
     border-right: none;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border-subtle);
     box-shadow: var(--shadow-sm);
+    padding: var(--space-2) calc(var(--space-3) + var(--safe-left)) var(--space-2)
+      calc(var(--space-3) + var(--safe-right));
+    background: var(--color-surface);
+  }
+
+  .contact-list button {
+    border-radius: var(--radius-md);
+    min-height: 48px;
+    transition: background var(--transition-fast);
+  }
+
+  .contact-list button.active,
+  .contact-list button[aria-current="true"] {
+    background: var(--color-primary-subtle);
+    border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+  }
+
+  .chat-input {
+    padding-bottom: calc(var(--space-3) + var(--safe-bottom));
+    padding-left: calc(var(--space-3) + var(--safe-left));
+    padding-right: calc(var(--space-3) + var(--safe-right));
+  }
+
+  .chat-view-inbox-panel {
+    padding-bottom: var(--safe-bottom);
   }
 
   .message-stack-row {
     max-width: 92%;
+  }
+
+  .messages {
+    padding-left: calc(var(--space-4) + var(--safe-left));
+    padding-right: calc(var(--space-4) + var(--safe-right));
   }
 }
 

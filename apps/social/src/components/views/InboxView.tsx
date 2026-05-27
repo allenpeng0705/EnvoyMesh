@@ -151,11 +151,11 @@ export function InboxView({ embedded = false }: InboxViewProps) {
     return (
       <div className={`inbox-view${embedded ? " inbox-view--embedded" : ""}`}>
         {!embedded && (
-          <div className="inbox-header">
+          <header className="inbox-header">
             <h2>Inbox</h2>
-          </div>
+          </header>
         )}
-        <div className="inbox-empty">
+        <div className="inbox-empty inbox-empty--refined">
           <p>No pending activity</p>
           <small>Hello requests, Trust-mode intro proposals, AI approval drafts, incoming file shares, agent share suggestions, and messages from people you haven&apos;t bonded with yet appear here.</small>
         </div>
@@ -165,14 +165,14 @@ export function InboxView({ embedded = false }: InboxViewProps) {
 
   return (
     <div className={`inbox-view${embedded ? " inbox-view--embedded" : ""}`}>
-      <div className="inbox-header inbox-header-row">
-        {!embedded && <h2>Inbox</h2>}
+      <header className="inbox-header inbox-header-row">
+        {!embedded ? <h2>Inbox</h2> : <h3 className="inbox-embedded-title">Inbox</h3>}
         {pendingMessages.length > 0 && (
           <button type="button" className="clear-inbox" onClick={clearPendingMessages}>
             Clear strangers
           </button>
         )}
-      </div>
+      </header>
 
       {introSaveStatus && (
         <p className="settings-hint" style={{ marginBottom: 8 }}>{introSaveStatus}</p>

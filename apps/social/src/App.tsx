@@ -37,30 +37,35 @@ function ConnectingSplash({
 }) {
   return (
     <div className="app">
-      <div className="loading">
-        <div className="loading-content">
-          <div className="loading-spinner" />
-          <h2>Connecting to EnvoyMesh</h2>
-          <p className="loading-attempts">
+      <div className="envoy-splash" role="status" aria-live="polite">
+        <div className="envoy-splash__backdrop" aria-hidden />
+        <div className="envoy-splash__card">
+          <div className="envoy-splash__mesh" aria-hidden />
+          <div className="loading-spinner envoy-splash__spinner" />
+          <h2 className="envoy-splash__title">Connecting to EnvoyMesh</h2>
+          <p className="envoy-splash__detail">
             {!autoConnect && reconnectAttempts === 0
-              ? "Auto-connect is off. Click Retry when you are ready to connect."
+              ? "Auto-connect is off. Use Retry when you are ready."
               : reconnectAttempts > 0
                 ? `Reconnect attempt ${reconnectAttempts}\u2026`
-                : `Waiting for node WebSocket (${wsUrl})\u2026`}
+                : `Opening node channel at ${wsUrl}`}
           </p>
+          {isRelayUnreachable && (
+            <p className="envoy-splash__relay-warn">Relay may be unreachable — check network or relay URL.</p>
+          )}
           {(isRelayUnreachable || lastError || !autoConnect) && (
-            <div className="loading-error">
+            <div className="envoy-splash__error">
               <p>
                 {lastError ??
                   (!autoConnect
                     ? "Not connected to the node backend."
                     : "Unable to connect. Is the node running?")}
               </p>
-              <p className="loading-error-hint">
-                Start the node with <code>npm run node:dev</code> (WebSocket on port 3030), then retry.
+              <p className="envoy-splash__hint">
+                Desktop: start with <code>npm run node:dev</code> (WebSocket port 3030).
               </p>
-              <button type="button" className="primary" onClick={onRetryConnect}>
-                Retry Connection
+              <button type="button" className="primary envoy-splash__retry" onClick={onRetryConnect}>
+                Retry connection
               </button>
             </div>
           )}
@@ -73,11 +78,12 @@ function ConnectingSplash({
 function LoadingNodeSplash() {
   return (
     <div className="app">
-      <div className="loading">
-        <div className="loading-content">
-          <div className="loading-spinner" />
-          <h2>Loading node status</h2>
-          <p className="loading-attempts">Connected to node API…</p>
+      <div className="envoy-splash envoy-splash--compact" role="status" aria-live="polite">
+        <div className="envoy-splash__backdrop" aria-hidden />
+        <div className="envoy-splash__card">
+          <div className="loading-spinner envoy-splash__spinner" />
+          <h2 className="envoy-splash__title">Syncing node</h2>
+          <p className="envoy-splash__detail">Connected to API — loading mesh status…</p>
         </div>
       </div>
     </div>

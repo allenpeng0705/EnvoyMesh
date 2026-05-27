@@ -67,13 +67,20 @@ export function Header({
       ? `Open profile (${peerId})`
       : "Open profile";
 
+  const nodeStatusClass =
+    nodeStatus === "running"
+      ? "running"
+      : nodeStatus === "starting" || nodeStatus === "stopping"
+        ? "transitional"
+        : "offline";
+
   return (
-    <header className="header">
+    <header className="header app-header">
       <div className="header-left">
         <img src="/assets/logo.svg" alt="Envoy" className="logo" />
         <span className="logo-text">Envoy</span>
       </div>
-      <nav className="header-nav" aria-label="Primary">
+      <nav className="header-nav app-header__nav" aria-label="Primary">
         <button
           type="button"
           className={currentView === "assistant" ? "active" : ""}
@@ -133,27 +140,43 @@ export function Header({
           Settings
         </button>
       </nav>
-      <div className="header-right">
-        {relayUnreachable && isPublicNetwork && (
-          <button type="button" className="relay-warning" onClick={onRetryConnect} title="Relay unreachable — tap to retry">
-            <span className="relay-warning-dot" />
-            Relay unreachable
-          </button>
-        )}
-        {isPublicNetwork ? (
-          <div
-            className={`network-status ${publicConnectivityReady ? "public" : "checking"}`}
-            title={publicStatusTitle}
-          >
-            <span className="status-indicator" />
-            <span>{publicConnectivityLabel}</span>
-          </div>
-        ) : (
-          <div className="network-status private">
-            <span className="status-indicator" />
-            <span>Private</span>
-          </div>
-        )}
+      <div className="header-right app-header__meta">
+        <div className="header-status-strip" role="group" aria-label="Node connectivity">
+          {relayUnreachable && isPublicNetwork && (
+            <button
+              type="button"
+              className="relay-warning mesh-status-chip mesh-status-chip--warn"
+              onClick={onRetryConnect}
+              title="Relay unreachable — tap to retry"
+            >
+              <span className="mesh-status-chip__dot" aria-hidden />
+              <span className="mesh-status-chip__label">Relay down</span>
+            </button>
+          )}
+          {isPublicNetwork ? (
+            <div
+              className={`mesh-status-chip network-status ${publicConnectivityReady ? "public mesh-status-chip--ok" : "checking mesh-status-chip--pending"}`}
+              title={publicStatusTitle}
+            >
+              <span className="mesh-status-chip__dot status-indicator" aria-hidden />
+              <span className="mesh-status-chip__label">{publicConnectivityLabel}</span>
+            </div>
+          ) : (
+            <div className="mesh-status-chip network-status private mesh-status-chip--private">
+              <span className="mesh-status-chip__dot status-indicator" aria-hidden />
+              <span className="mesh-status-chip__label">Private mesh</span>
+            </div>
+          )}
+          <span className={`mesh-status-chip node-status mesh-status-chip--node mesh-status-chip--${nodeStatusClass}`}>
+            <span className="mesh-status-chip__dot" aria-hidden />
+            <span className="mesh-status-chip__label">{nodeStatus}</span>
+          </span>
+          {connectionStatus && connectionStatus.bondedPeers > 0 && (
+            <span className="mesh-status-chip peer-count mesh-status-chip--peers">
+              <span className="mesh-status-chip__label">{connectionStatus.bondedPeers} bonded</span>
+            </span>
+          )}
+        </div>
         <button
           type="button"
           className="theme-toggle-btn"
@@ -163,10 +186,6 @@ export function Header({
         >
           {resolved === "dark" ? <LightModeIcon size={16} /> : <DarkModeIcon size={16} />}
         </button>
-        <span className="node-status">{nodeStatus}</span>
-        {connectionStatus && connectionStatus.bondedPeers > 0 && (
-          <span className="peer-count">{connectionStatus.bondedPeers} peers</span>
-        )}
         <button
           type="button"
           className={`header-profile-btn${currentView === "profile" ? " active" : ""}`}
