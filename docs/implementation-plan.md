@@ -1862,14 +1862,14 @@ apps/mobile/src/
 - `[x]` Implement all signing/verification primitives
 - `[x]` Implement all identity derivation functions
 - `[x]` Implement device certificates, agent credentials, envelope ops, mandates, proofs
-- `[ ]` Add cross-verification tests: mobile-identity PEM ↔ identity PEM produce same signatures
-- `[ ]` Add golden fixture tests for envelope interop
+- `[x]` Add cross-verification tests: mobile-identity PEM ↔ identity PEM produce same signatures (`packages/mobile-identity/test/identity-interop.test.ts`)
+- `[x]` Add golden fixture tests for envelope interop (`companion_envelope_interop_golden.json` in mobile-identity + identity)
 
 **Exit criteria:**
 - `[x]` All mobile-identity functions typecheck without `node:crypto` imports
-- `[ ]` `generateEd25519KeyPair()` in mobile-identity produces valid PEM keys
-- `[ ]` `signCanonicalPayload()` / `verifyCanonicalPayload()` round-trip correctly
-- `[ ]` Cross-package: mobile-identity-signed envelope is verified by identity (and vice versa)
+- `[x]` `generateEd25519KeyPair()` in mobile-identity produces valid PEM keys
+- `[x]` `signCanonicalPayload()` / `verifyCanonicalPayload()` round-trip correctly
+- `[x]` Cross-package: mobile-identity-signed envelope is verified by identity (and vice versa)
 
 ### 11C: Mobile Node Runtime
 
@@ -2019,7 +2019,7 @@ interface ImportIdentityResponse {
 - `[x]` `CapacitorFilesystemVault` adapter in `apps/mobile/src/`
 - `[x]` `CapacitorSecureStorage` adapter in `apps/mobile/src/`
 - `[x]` `bootstrapMobileApp()` entry point — opens DB, runs schema, creates node with DI
-- `[ ]` Migration from desktop profile (import JSON files to SQLite)
+- **[-]** Migration from desktop profile (import JSON files to SQLite) — **out of scope** (no backward compatibility; mobile gets identity/contacts via Phase 11D pairing, not bulk JSON import)
 - `[ ]` On-device testing (iOS/Android) — Capacitor plugins require native runtime
 
 **Exit criteria:**

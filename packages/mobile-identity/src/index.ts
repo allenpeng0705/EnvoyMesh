@@ -161,6 +161,14 @@ function base64urlToBytes(base64url: string): Uint8Array {
   return bytes;
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 export function bytesToBase64url(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.length; i++) {
@@ -173,7 +181,7 @@ function rawPublicKeyToPem(rawKey: Uint8Array): string {
   const der = new Uint8Array(ED25519_SPKI_PREFIX.length + rawKey.length);
   der.set(ED25519_SPKI_PREFIX);
   der.set(rawKey, ED25519_SPKI_PREFIX.length);
-  const b64 = bytesToBase64url(der);
+  const b64 = bytesToBase64(der);
   // PEM line-wrap at 64 chars
   const lines: string[] = [];
   for (let i = 0; i < b64.length; i += 64) {
@@ -186,7 +194,7 @@ function rawPrivateKeyToPem(rawKey: Uint8Array): string {
   const der = new Uint8Array(ED25519_PKCS8_PREFIX.length + rawKey.length);
   der.set(ED25519_PKCS8_PREFIX);
   der.set(rawKey, ED25519_PKCS8_PREFIX.length);
-  const b64 = bytesToBase64url(der);
+  const b64 = bytesToBase64(der);
   const lines: string[] = [];
   for (let i = 0; i < b64.length; i += 64) {
     lines.push(b64.slice(i, i + 64));
