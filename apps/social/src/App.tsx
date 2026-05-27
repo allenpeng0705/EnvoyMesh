@@ -11,8 +11,10 @@ import { ContactsView } from "./components/views/ContactsView.js";
 import { ProfileView } from "./components/views/ProfileView.js";
 import { SettingsView } from "./components/views/SettingsView.js";
 import { LibraryView } from "./components/views/LibraryView.js";
+import { ActivityView } from "./components/views/ActivityView.js";
+import { H2AChannelView } from "./components/views/H2AChannelView.js";
 
-export type ViewName = "chat" | "contacts" | "library" | "profile" | "settings";
+export type ViewName = "chat" | "assistant" | "contacts" | "library" | "activity" | "profile" | "settings";
 
 export type ChatPanelMode = "threads" | "inbox";
 
@@ -181,6 +183,16 @@ export function App() {
                 panelMode={chatPanelMode}
                 onPanelModeChange={setChatPanelMode}
                 inboxActivityCount={inboxActivityCount}
+                onOpenAssistant={() => setCurrentView("assistant")}
+              />
+            )}
+            {currentView === "assistant" && (
+              <H2AChannelView
+                onOpenActivity={() => setCurrentView("activity")}
+                onOpenInbox={() => {
+                  setCurrentView("chat");
+                  setChatPanelMode("inbox");
+                }}
               />
             )}
             {currentView === "contacts" && (
@@ -195,6 +207,7 @@ export function App() {
               />
             )}
             {currentView === "library" && <LibraryView />}
+            {currentView === "activity" && <ActivityView />}
             {currentView === "profile" && <ProfileView />}
             {currentView === "settings" && <SettingsView />}
           </main>

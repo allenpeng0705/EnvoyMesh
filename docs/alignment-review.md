@@ -6,7 +6,7 @@ This document records how **narrative requirements** ([UserStory.md](./UserStory
 
 **Major redesign:** When architecture shifts meaningfully, refresh this review and bump the snapshot date — see [redesign strategy](./redesign-strategy.md).
 
-**Review snapshot:** 2026-05-19 (update when major milestones land).
+**Review snapshot:** 2026-05-20 (update when major milestones land).
 
 ---
 
@@ -19,10 +19,11 @@ This document records how **narrative requirements** ([UserStory.md](./UserStory
 | **A2A tasks, mandates, journal, approvals, audits + correlation** | **Strong partial** — matches negotiation, policy, and observability stories for **two-party structured work**. |
 | **Broadcast & kill (full narrative)** | **Partial** — local expiry, cancel closure, first **completed** result closure, and correlation in audits exist; **hop TTL**, **network-wide cancel**, **collect-N**, and **gossip fan-out** do not. |
 | **Semantic / capability discovery** | **Weak** — design assumes gossip or DHT **topic** discovery + agent-card matching; code has **plumbing and schemas**, not the full **product flow**. |
-| **Communication roles (chat vs agent vs data streams)** | **Weak** — design assumes separate sub-protocols and role-tagged traffic; runtime today centers on **`/envoymesh/message/0.1.0`** plus task/ping/signal paths. |
+| **Communication roles (chat vs agent vs data streams)** | **Shipped (15C)** — channel split + honest roles + **Assistant H2A lane** + Appendix D / wire semantics ADR. |
 | **Voucher + verifiable chunked file transfer** | **Weak** — shared vault + search + policy direction match the *intent*; **voucher protocol** and **P2P verified chunk stream** are not implemented. |
 | **Semantic firewall, Wasm agent, smart inbox / morning report** | **Weak / future** — envelope guard + audits exist; **LLM injection middleware**, **Wasm isolation**, and **consumer-grade inbox** are largely ahead of code. |
 | **Trust mode / Phase 12 (`social.intro.*`, intro inbox, bond linkage)** | **Strong partial** — `@envoymesh/protocol` intents + **`bond.request`** optional refs shipped; node inbound + credential-bearing gate + Social Trust/inbox + gated **`mesh.intro.*`** tools; [EMP Appendix A](./protocol-standard.md#appendix-a-trust-mode-social-mediation-socialintro) + [US-TM1–TM4](./scenarios.md#epic-tm-trust-mode); Phase **F** hardening (`friendMatchingPreferencesSigned`, **`social.intro.*`** rate limits + nonce replay, **`bond.accept`** audits) + integration smoke (**`npm run smoke:local`**) shipped. |
+| **Phase 13 actor disclosure & owner visibility** | **Strong partial** — [Epic AV US-AV1–AV4, AV7](./scenarios.md#epic-av--actor-disclosure--owner-visibility) shipped; US-AV5–AV6 blocked on **13C** / wire `report.create`. |
 
 **Bottom line:** Implementation **aligns well** with the vision of a **local-first, signed, mandate-bound agent mesh with trust, vault, and correlated auditing**. It **does not yet align** with the most **differentiating mesh layers** in the user stories (scaled discovery, full broadcast semantics on the wire, complete role-mode coverage, commerce, multi-hop anonymity).
 
@@ -37,7 +38,7 @@ This document records how **narrative requirements** ([UserStory.md](./UserStory
 | **3 Broadcast & kill** | Hop TTL, expiry, correlation cancel, thresholds | Mandate `expiresAt`; optional `task.propose` `expiresAt`; `correlationId` + rich audit; `task-runtime-state.json` (cancel / satisfied / `closeOnFirstCompletedResult`); CLI flags — see Phase 4D in implementation plan | **Partial** |
 | **4 Social handshake** | Bond + proof of context; policy; defer to owner | Trust store, bonds/policy, approvals; EMP **`bond.request`** payload + inbound path + CLI; **Trust mode**: **`social.intro.*`**, intro inbox / **`ownerCommitmentRef`** linkage on **`bond.request`** when approving intros ([scenarios.md](./scenarios.md) Epic TM); Phase **12 F** hardening + **`npm run smoke:local`** integration scenario | **Partial → strong partial** |
 | **5 Intent-based file share** | Voucher; virtual view; CID-like chunks over P2P | `shared_vault`, indexing/search, vault audit, policy hooks | **Directionally aligned**; **not** voucher + verified **transfer** protocol |
-| **6 Communication roles** | Roles; `/chat`, `/agent`, `/data` style split | Single primary message protocol; tasks + system intents | **Not aligned yet** — explicit **EMP / roadmap** choice needed |
+| **6 Communication roles** | Roles; `/chat`, `/agent`, `/data` style split | Channel split + honest AI wire role + Activity feed (Phase **13**); agent-card orchestrator deferred | **Partial → strong partial** |
 
 ---
 
@@ -59,7 +60,7 @@ This document records how **narrative requirements** ([UserStory.md](./UserStory
 | Tier | Stories | Fit vs repo |
 |------|---------|-------------|
 | **P0** | US-A1, US-C1, US-G1, US-D2 | **Strong** — identity, correlation, audits, inbound rejects align with shipped work. |
-| **P1** | US-C2, US-D1, US-F2, US-TM1–TM4 | **Mixed** — US-C2 **partially** shipped (local termination slice); US-D1 / rich A2A “shadow” still **partial**. **Trust mode** stories US-TM1–TM4 align with Phase **12 A–E** (`trust-mode-implementation-plan.md`). |
+| **P1** | US-C2, US-D1, US-F2, US-TM1–TM4, **US-AV1–AV4, US-AV7** | **Mixed** — US-C2 **partially** shipped; Trust mode **US-TM1–TM4** align with Phase **12**. **Phase 13** actor disclosure + Activity feed (**US-AV1–AV4, AV7**) shipped; US-AV5–AV6 deferred (**13C**). |
 | **P2** | US-E1–E2, US-F1, US-F3–F4 | **Early** — vault/dashboard help; file **transfer** protocol and full chat/agent role split **not** there. |
 | **P3** | US-B1–B2, US-F5, US-A2 | **Mostly future** — discovery at scale, LLM firewall, multi-device UX. |
 
@@ -94,9 +95,11 @@ This review names gaps; **resolved vs open vs backlog** Q&A is maintained in one
 
 ## Recommended next steps (engineering)
 
-1. **Keep `UserStory.md` honest** — use the [implementation snapshot](./UserStory.md#implementation-snapshot-vs-repo) table there; refresh both docs after each milestone.  
-2. **Choose one P2-sized vertical** — either **H2H-style chat sub-protocol** or **voucher + chunked `/envoymesh/data`** — to narrow the gap with Stories A/C/E.  
-3. **EMP decision for Scenario 6** — either schedule optional envelope fields for roles / channel, or explicitly mark the illustrative `EnvoyMessage` header as **post-1.0** in EMP text.
+1. **Phase 15B (continued)** — operator sign-off row in [wan-connectivity-signoff.md](./wan-connectivity-signoff.md); QUIC on real hardware; richer WAN diagnostics.
+2. **Phase 15A** — wire DHT capability topics to Search + broadcast substrate ADR.
+3. **Phase 15C** — H2A Social channel + EMP optional role/channel ADR.
+4. **Phase 15D** — SQLite gate metrics; Filecoin only if product confirms scope.
+5. **Keep `UserStory.md` honest** — refresh alignment snapshot after each Phase 15 sub-ship.
 
 ---
 
@@ -104,6 +107,8 @@ This review names gaps; **resolved vs open vs backlog** Q&A is maintained in one
 
 | Date | Change |
 |------|--------|
+| 2026-05-20 | **Phase 15 complete + 15E scoping:** WAN sign-off ledger; parked backlog scope docs. |
+| 2026-05-20 | **Phase 13 complete / Phase 14 start:** US-AV8 Activity filters; friend autopilot + knowledge syndication config; connectivity nightly CI; Pinata pinning stub. |
 | 2026-05-19 | Phase **12 F**: Trust-mode hardening + **`npm run smoke:local`** intro→bond scenario; executive summary + Scenario 4 rows refreshed. |
 | 2026-05-19 | Snapshot bump; executive summary + Scenario 4 + P1 tiers updated for **Phase 12 Trust mode** (EMP Appendix A, Epic TM **US-TM1–TM4**). |
 | 2026-04-26 | Initial alignment review published. |

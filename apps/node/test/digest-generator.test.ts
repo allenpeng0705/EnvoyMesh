@@ -111,6 +111,8 @@ describe("generateSummaryText", () => {
         { from: "reactive", to: "proactive", reason: "owner_disconnect", count: 1 },
       ],
       styleAdaptationsApplied: 2,
+      a2aActivityCount: 0,
+      friendAutopilotPassCount: 0,
       summaryText: "",
     };
 
@@ -145,6 +147,8 @@ describe("generateSummaryText", () => {
       pendingEscalations: [],
       modeTransitions: [],
       styleAdaptationsApplied: 0,
+      a2aActivityCount: 0,
+      friendAutopilotPassCount: 0,
       summaryText: "",
     };
 
@@ -153,6 +157,33 @@ describe("generateSummaryText", () => {
     expect(text).toContain("Total actions: 0");
     expect(text).not.toContain("External Agents");
     expect(text).not.toContain("Pending Approvals");
+  });
+
+  it("includes A2A activity count when present", () => {
+    const digest: DigestSummary = {
+      id: "test-a2a",
+      period: "daily",
+      startDate: new Date().toISOString(),
+      endDate: new Date().toISOString(),
+      generatedAt: new Date().toISOString(),
+      totalActions: 0,
+      actionsByType: [],
+      contactsInteracted: [],
+      newBonds: 0,
+      bondsRevoked: 0,
+      externalAgentActivity: [],
+      proactiveActionsTriggered: [],
+      pendingApprovals: [],
+      pendingEscalations: [],
+      modeTransitions: [],
+      styleAdaptationsApplied: 0,
+      a2aActivityCount: 3,
+      friendAutopilotPassCount: 2,
+      summaryText: "",
+    };
+
+    const text = generateSummaryText(digest);
+    expect(text).toContain("Agent activity (A2A): 3 events");
   });
 });
 
@@ -224,6 +255,15 @@ describe("DigestGenerator", () => {
       const digest = await generator.generateDigest("weekly", {});
 
       expect(digest.period).toBe("weekly");
+    });
+
+    it("passes through a2aActivityCount", async () => {
+      const generator = new DigestGenerator(createDefaultDigestConfig(tempDir));
+
+      const digest = await generator.generateDigest("daily", { a2aActivityCount: 5 });
+
+      expect(digest.a2aActivityCount).toBe(5);
+      expect(digest.summaryText).toContain("Agent activity (A2A): 5 events");
     });
   });
 

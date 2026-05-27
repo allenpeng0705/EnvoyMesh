@@ -20,6 +20,10 @@ export async function routeRpcMethod(
   switch (method as RpcMethods) {
     case "getProfile":
       return ns.getProfile();
+    case "getOwnerDidPresentation":
+      return ns.getOwnerDidPresentation();
+    case "getPeerReputationSummary":
+      return ns.getPeerReputationSummary(params.peerOwnerId as string);
     case "getHumanProfile":
       return ns.getHumanProfile();
     case "updateHumanProfile":
@@ -57,6 +61,8 @@ export async function routeRpcMethod(
       return ns.declineSocialIntroProposal(params.messageId as string);
     case "sendChat":
       return ns.sendChat(params.targetOwnerId as string, params.text as string);
+    case "sendAgentChat":
+      return ns.sendAgentChat(params.targetOwnerId as string, params.text as string);
     case "sendChatAttachment":
       return ns.sendChatAttachment({
         targetOwnerId: params.targetOwnerId as string,
@@ -73,6 +79,40 @@ export async function routeRpcMethod(
       });
     case "listChatHistory":
       return ns.listChatHistory(params.peerOwnerId as string, params.limit as number | undefined);
+    case "listAgentActivity":
+      return ns.listAgentActivity({
+        since: params.since as string | undefined,
+        until: params.until as string | undefined,
+        limit: params.limit as number | undefined,
+        correlationId: params.correlationId as string | undefined,
+        domain: params.domain as import("@envoymesh/api").AgentActivityDomain | undefined,
+        remoteOwnerId: params.remoteOwnerId as string | undefined,
+      });
+    case "listAuditEvents":
+      return ns.listAuditEvents({
+        correlationId: params.correlationId as string | undefined,
+        taskId: params.taskId as string | undefined,
+        since: params.since as string | undefined,
+        until: params.until as string | undefined,
+        limit: params.limit as number | undefined,
+      });
+    case "listTaskJournalEntries":
+      return ns.listTaskJournalEntries({
+        taskId: params.taskId as string | undefined,
+        limit: params.limit as number | undefined,
+      });
+    case "listAgentCards":
+      return ns.listAgentCards();
+    case "getAgentCard":
+      return ns.getAgentCard(params.ownerId as string);
+    case "requestAgentCard":
+      return ns.requestAgentCard(params.targetOwnerId as string);
+    case "listPendingApprovals":
+      return ns.listPendingApprovals();
+    case "approvePendingApproval":
+      return ns.approvePendingApproval(params.itemId as string, params.notes as string | undefined);
+    case "rejectPendingApproval":
+      return ns.rejectPendingApproval(params.itemId as string, params.notes as string | undefined);
     case "deleteChatMessage":
       return ns.deleteChatMessage(params.peerOwnerId as string, params.messageId as string);
     case "clearChatHistory":
@@ -99,6 +139,8 @@ export async function routeRpcMethod(
       return ns.setLibraryItemPublished(params.documentId as string, params.published as boolean);
     case "exportLibraryItemToIpfs":
       return ns.exportLibraryItemToIpfs(params.documentId as string);
+    case "pinLibraryItemExternal":
+      return ns.pinLibraryItemExternal(params.documentId as string);
     case "getIpfsEngineStatus":
       return ns.getIpfsEngineStatus();
     case "getRagIndexStatus":
@@ -141,10 +183,22 @@ export async function routeRpcMethod(
       return ns.warmContactConnection(params.peerOwnerId as string);
     case "getChatDiagnostics":
       return ns.getChatDiagnostics(params.peerOwnerId as string | undefined);
+    case "getConnectivityDiagnostics":
+      return ns.getConnectivityDiagnostics();
     case "runCapabilityDiscovery":
       return ns.runCapabilityDiscovery({
         find: params.find as boolean | undefined,
       });
+    case "discoverCapabilityTopic":
+      return ns.discoverCapabilityTopic(params as any);
+    case "getMorningReport":
+      return ns.getMorningReport({ limit: params.limit as number | undefined });
+    case "requestMultiHopDiscovery":
+      return ns.requestMultiHopDiscovery(params as unknown as import("@envoymesh/api").RequestMultiHopDiscoveryParams);
+    case "getMultiHopDiscoverySession":
+      return ns.getMultiHopDiscoverySession(params.correlationId as string);
+    case "sendSyncStateUpdate":
+      return ns.sendSyncStateUpdate(params as unknown as import("@envoymesh/api").SendSyncStateUpdateParams);
     case "getNodeConfig":
       return ns.getNodeConfig();
     case "updateNodeConfig":
@@ -183,6 +237,13 @@ export async function routeRpcMethod(
       return ns.getBridgeStatus();
     case "getPairingPayload":
       return ns.getPairingPayload();
+    case "createWanJoinInvite":
+      return ns.createWanJoinInvite({
+        expiresInHours: params.expiresInHours as number | undefined,
+        note: params.note as string | undefined,
+      });
+    case "applyWanJoinInvite":
+      return ns.applyWanJoinInvite(String(params.token ?? ""));
     case "pairDevice":
       return ns.pairDevice(params as any);
     case "pairSharedIdentity":

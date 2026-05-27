@@ -1,0 +1,15 @@
+{
+  "version": "0.1",
+  "updatedAt": "2026-05-20T00:00:00.000Z",
+  "attestations": [
+    {
+      "attestationId": "example-attestation-1",
+      "anchorId": "envoymesh-example-anchor",
+      "anchorName": "Example Anchor (documentation only)",
+      "subjectOwnerId": "envoy:owner:REPLACE_ME",
+      "claim": "Example signed attestation — not verified on the wire",
+      "issuedAt": "2026-05-20T00:00:00.000Z",
+      "anchorRef": "https://envoymesh.example/anchors/example"
+    }
+  ]
+}

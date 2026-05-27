@@ -46,7 +46,7 @@ describe("MobileNode.runDocumentAgentTurn (P4)", () => {
       createdAt: new Date().toISOString(),
     });
 
-    const sendChat = vi.spyOn(node, "sendChat").mockResolvedValue(undefined);
+    const sendAgentChat = vi.spyOn(node, "sendAgentChat").mockResolvedValue({ messageId: "msg-1" });
     vi.spyOn(node, "discoverPublishedLibrary").mockResolvedValue([
       {
         peerOwnerId: "envoy:owner:peer",
@@ -69,7 +69,7 @@ describe("MobileNode.runDocumentAgentTurn (P4)", () => {
     const turn = await node.runDocumentAgentTurn("request share from Peer for notes");
     expect(turn.intent).toBe("request_share_from");
     expect(turn.toolsUsed).toContain("mesh.library_request_share");
-    expect(sendChat).toHaveBeenCalledWith("envoy:owner:peer", expect.stringContaining("notes"));
+    expect(sendAgentChat).toHaveBeenCalledWith("envoy:owner:peer", expect.stringContaining("notes"));
     expect(turn.answer).toContain("Peer");
   });
 

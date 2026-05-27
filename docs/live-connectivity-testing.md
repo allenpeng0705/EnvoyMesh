@@ -18,7 +18,7 @@ The smoke script is intentionally opt-in. It is not part of `npm test` because m
 | [§6](#6-desktop-distribution-and-data-path-smoke) | Desktop / data path | App + voucher smoke |
 | [§7](#7-non-lan-fallback-wan-first-profile) | **Shipped defaults:** `wan-default`, `--bootstrap-preset`, strict probes | `node:dev` + `connectivity-status` |
 
-**Completion:** Exit criteria for “WAN proof captured” in [implementation-plan.md](./implementation-plan.md) are satisfied when an operator runs **§2–§4** (as applicable to their topology) on target OSes, captures **`relay.checkin` / `relay.lookup`** success lines from audit (`--include-p2p-trace`), and records date + software version. Cross-NAT **§4.5** is the gold standard for relay-mediated NAT ↔ NAT.
+**Completion:** Exit criteria for “WAN proof captured” in [implementation-plan.md](./implementation-plan.md) are satisfied when an operator runs **§2–§4** (as applicable to their topology) on target OSes, captures **`relay.checkin` / `relay.lookup`** success lines from audit (`--include-p2p-trace`), and records date + software version in **[wan-connectivity-signoff.md](./wan-connectivity-signoff.md)**. Cross-NAT **§4.5** is the gold standard for relay-mediated NAT ↔ NAT.
 
 ## 1. Prove Local mDNS Discovery
 
@@ -330,7 +330,10 @@ The command prints **persisted `node-config.json` discovery fields** (profile, `
 - bootstrap peer count
 - discovered peer count
 - relay-discovery count
+- **WAN connectivity axes** (Phase 15B): bootstrap reachability, relay availability, hole punch (DCUtR), policy block — each with `ok|degraded|fail|unknown|disabled` state
 - recent connectivity warnings and checkpoint hints
+
+Use `--rich` for an ASCII Stage D snapshot panel above the summary. Social **Settings → WAN connectivity diagnostics** shows the same axes when the node is running.
 
 If discovered peers stay at zero:
 

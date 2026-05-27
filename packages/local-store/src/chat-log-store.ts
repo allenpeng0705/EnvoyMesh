@@ -16,6 +16,9 @@ export interface ChatLogEnvelope {
     nodeId: string;
     displayName: string;
     ownerId?: string;
+    actorRole?: "human" | "agent" | "system";
+    agentId?: string;
+    agentVerified?: boolean;
   };
   recipient: {
     nodeId: string;

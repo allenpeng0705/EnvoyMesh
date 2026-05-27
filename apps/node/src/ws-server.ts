@@ -66,6 +66,7 @@ export class WsServer {
       );
       nodeServiceImpl.on("chat:message", (data: unknown) => this.emitEvent("chat:message", data));
       nodeServiceImpl.on("chat:draft", (data: unknown) => this.emitEvent("chat:draft", data));
+      nodeServiceImpl.on("agent:activity", (data: unknown) => this.emitEvent("agent:activity", data));
       nodeServiceImpl.on("bond:established", (data: unknown) => this.emitEvent("bond:established", data));
       nodeServiceImpl.on("bond:revoked", (data: unknown) => this.emitEvent("bond:revoked", data));
       nodeServiceImpl.on("node:status", (data: unknown) => this.emitEvent("node:status", data));
@@ -73,6 +74,10 @@ export class WsServer {
       nodeServiceImpl.on("node:offline", (data: unknown) => this.emitEvent("node:offline", data));
       nodeServiceImpl.on("bridge:status", (data: unknown) => this.emitEvent("bridge:status", data));
       nodeServiceImpl.on("p2p:envelope", (data: unknown) => this.emitEvent("p2p:envelope", data));
+      nodeServiceImpl.on("crdt:sync", (data: unknown) => this.emitEvent("crdt:sync", data));
+      nodeServiceImpl.on("discovery:multihop-update", (data: unknown) =>
+        this.emitEvent("discovery:multihop-update", data),
+      );
     } else {
       console.log(`[ws-server] ERROR: nodeServiceImpl.on is not a function!`);
     }
@@ -172,6 +177,7 @@ export class WsServer {
       "share:agent-proposed",
       "chat:message",
       "chat:draft",
+      "agent:activity",
       "bond:established",
       "bond:revoked",
       "node:status",
@@ -181,6 +187,8 @@ export class WsServer {
       "peer:lost",
       "bridge:status",
       "p2p:envelope",
+      "crdt:sync",
+      "discovery:multihop-update",
       "trigger:fired",
       "digest:ready",
       "homeclawCoreWs:rx",

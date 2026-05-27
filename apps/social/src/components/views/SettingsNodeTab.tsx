@@ -24,7 +24,12 @@ import type {
   IpfsEngineStatus,
   ExternalPublishConfig,
   ChatDiagnostics,
+  ConnectivityDiagnostics,
   AuthorizedDeviceSummary,
+  AgentNotifyMode,
+  A2aChatNotificationMode,
+  AgentActivityDomain,
+  AgentInteractionMode,
 } from "@envoymesh/api";
 
 export function SettingsNodeTab() {
@@ -55,6 +60,9 @@ export function SettingsNodeTab() {
   const [chatDiagnostics, setChatDiagnostics] = useState<ChatDiagnostics | null>(null);
   const [chatDiagLoading, setChatDiagLoading] = useState(false);
   const [chatDiagError, setChatDiagError] = useState<string | null>(null);
+  const [connectivityDiagnostics, setConnectivityDiagnostics] = useState<ConnectivityDiagnostics | null>(null);
+  const [connectivityDiagLoading, setConnectivityDiagLoading] = useState(false);
+  const [connectivityDiagError, setConnectivityDiagError] = useState<string | null>(null);
 
   // Sync local state when nodeConfig loads/changes (async load after mount)
   useEffect(() => {
@@ -156,6 +164,12 @@ export function SettingsNodeTab() {
   const [pairingQR, setPairingQR] = useState<string | null>(null); // data URL
   const [pairingUri, setPairingUri] = useState<string>("");
   const [pairingLoading, setPairingLoading] = useState(false);
+  const [wanJoinQr, setWanJoinQr] = useState<string | null>(null);
+  const [wanJoinUri, setWanJoinUri] = useState<string>("");
+  const [wanJoinLoading, setWanJoinLoading] = useState(false);
+  const [wanInvitePaste, setWanInvitePaste] = useState("");
+  const [wanInviteApplyBusy, setWanInviteApplyBusy] = useState(false);
+  const [wanInviteApplyMsg, setWanInviteApplyMsg] = useState<string | null>(null);
   const [authorizedDevices, setAuthorizedDevices] = useState<AuthorizedDeviceSummary[]>([]);
   const [authorizedDevicesLoading, setAuthorizedDevicesLoading] = useState(false);
   const [authorizedDevicesError, setAuthorizedDevicesError] = useState<string | null>(null);
@@ -222,6 +236,39 @@ export function SettingsNodeTab() {
       setPairingLoading(false);
     }
   }, [nodeService]);
+
+  const handleShowWanJoinInvite = useCallback(async () => {
+    setWanJoinLoading(true);
+    setWanInviteApplyMsg(null);
+    try {
+      const result = await nodeService.createWanJoinInvite({ expiresInHours: 168 });
+      setWanJoinUri(result.uri);
+      const dataUrl = await QRCode.toDataURL(result.uri, { width: 256, margin: 1 });
+      setWanJoinQr(dataUrl);
+    } catch (e) {
+      console.error("Failed to generate WAN join invite:", e);
+      setWanInviteApplyMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setWanJoinLoading(false);
+    }
+  }, [nodeService]);
+
+  const handleApplyWanJoinInvite = useCallback(async () => {
+    setWanInviteApplyBusy(true);
+    setWanInviteApplyMsg(null);
+    try {
+      const result = await nodeService.applyWanJoinInvite(wanInvitePaste);
+      setWanInviteApplyMsg(
+        `Applied invite — ${result.bootstrapPeersAdded} bootstrap peer(s), ${result.bootstrapPresetsAdded} preset(s), ${result.seedsPersisted} seed(s). Restart node if already running.`,
+      );
+      setWanInvitePaste("");
+      await refreshNodeConfig();
+    } catch (e) {
+      setWanInviteApplyMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setWanInviteApplyBusy(false);
+    }
+  }, [nodeService, wanInvitePaste, refreshNodeConfig]);
 
   const handleStartNode = async () => {
     try { await nodeService.startNode(); } catch (e) { console.error(e); }
@@ -344,6 +391,13 @@ export function SettingsNodeTab() {
     },
   );
 
+  const friendAutopilotToggle = useOptimisticToggle(
+    nodeConfig?.friendAutopilotEnabled ?? false,
+    async (friendAutopilotEnabled) => {
+      await updateNodeConfig({ friendAutopilotEnabled });
+    },
+  );
+
   const currentExternalPublish = useMemo(
     () => ({
       allowIpfs: nodeConfig?.externalPublish?.allowIpfs ?? false,
@@ -351,6 +405,8 @@ export function SettingsNodeTab() {
       ipfsExportEngine: isMobileNode
         ? ("helia" as const)
         : (nodeConfig?.externalPublish?.ipfsExportEngine ?? "kubo"),
+      pinningEnabled: nodeConfig?.externalPublish?.pinningEnabled ?? false,
+      pinningProvider: nodeConfig?.externalPublish?.pinningProvider ?? "pinata",
     }),
     [nodeConfig?.externalPublish, isMobileNode],
   );
@@ -533,6 +589,83 @@ export function SettingsNodeTab() {
                 </>
               )}
             </dl>
+          </div>
+        )}
+      </section>
+
+      <section className="settings-section">
+        <h3>WAN connectivity diagnostics</h3>
+        <p className="section-desc">
+          Classifies bootstrap reachability, relay availability, hole punch (DCUtR), and discovery policy blocks.
+        </p>
+        <button
+          type="button"
+          className="settings-button"
+          disabled={connectivityDiagLoading || nodeStatus !== "running"}
+          onClick={() => {
+            setConnectivityDiagLoading(true);
+            setConnectivityDiagError(null);
+            void nodeService
+              .getConnectivityDiagnostics()
+              .then(setConnectivityDiagnostics)
+              .catch((err) => {
+                setConnectivityDiagnostics(null);
+                setConnectivityDiagError(err instanceof Error ? err.message : String(err));
+              })
+              .finally(() => setConnectivityDiagLoading(false));
+          }}
+        >
+          {connectivityDiagLoading ? "Running…" : "Run WAN diagnostics"}
+        </button>
+        {connectivityDiagError && (
+          <p className="settings-diagnostics-error" style={{ marginTop: "8px" }}>
+            {connectivityDiagError}
+          </p>
+        )}
+        {connectivityDiagnostics && (
+          <div className="settings-diagnostics-panel" style={{ marginTop: "12px" }}>
+            <ul className="settings-diagnostics-hints">
+              {connectivityDiagnostics.hints.map((hint) => (
+                <li key={hint}>{hint}</li>
+              ))}
+            </ul>
+            <dl className="settings-list" style={{ marginTop: "12px" }}>
+              <dt>Stage D badge</dt>
+              <dd>
+                {connectivityDiagnostics.stageD.badge} — {connectivityDiagnostics.stageD.badgeExplanation}
+              </dd>
+              <dt>Bootstrap</dt>
+              <dd>
+                {connectivityDiagnostics.axes.bootstrapReachability.state}:{" "}
+                {connectivityDiagnostics.axes.bootstrapReachability.explanation}
+              </dd>
+              <dt>Relay</dt>
+              <dd>
+                {connectivityDiagnostics.axes.relayAvailability.state}:{" "}
+                {connectivityDiagnostics.axes.relayAvailability.explanation}
+              </dd>
+              <dt>Hole punch (DCUtR)</dt>
+              <dd>
+                {connectivityDiagnostics.axes.holePunch.state}: {connectivityDiagnostics.axes.holePunch.explanation}
+              </dd>
+              <dt>Policy block</dt>
+              <dd>
+                {connectivityDiagnostics.axes.policyBlock.state}:{" "}
+                {connectivityDiagnostics.axes.policyBlock.explanation}
+              </dd>
+              <dt>QUIC</dt>
+              <dd>{connectivityDiagnostics.quicEnabled ? "enabled" : "disabled or not in profile trace"}</dd>
+            </dl>
+            {connectivityDiagnostics.signOffChecklist.length > 0 && (
+              <details style={{ marginTop: "12px" }}>
+                <summary>Live multi-machine sign-off checklist</summary>
+                <ol style={{ marginTop: "8px", paddingLeft: "1.25rem" }}>
+                  {connectivityDiagnostics.signOffChecklist.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+              </details>
+            )}
           </div>
         )}
       </section>
@@ -918,6 +1051,73 @@ export function SettingsNodeTab() {
           </label>
         </div>
 
+        <div className="form-group">
+          <label>Chat activity notifications</label>
+          <select
+            value={nodeConfig?.a2aChatNotifications ?? "off"}
+            onChange={(e) => {
+              void updateNodeConfig({
+                a2aChatNotifications: e.target.value as A2aChatNotificationMode,
+              });
+            }}
+          >
+            <option value="off">Off</option>
+            <option value="milestones_only">Milestones only (tasks, reports, approvals)</option>
+            <option value="all_reports">All agent activity</option>
+          </select>
+          <p className="field-desc">
+            Optional local system lines in chat threads when your agent completes work (never sent on the wire).
+          </p>
+        </div>
+
+        <div className="form-group">
+          <label>Agent interaction mode</label>
+          <select
+            value={nodeConfig?.agentInteractionMode ?? "structured_preferred"}
+            onChange={(e) => {
+              void updateNodeConfig({
+                agentInteractionMode: e.target.value as AgentInteractionMode,
+              });
+            }}
+          >
+            <option value="structured_preferred">Structured preferred — skip chat-assist for verified peer agents</option>
+            <option value="chat_ok">Chat OK — allow free-form agent chat assist</option>
+          </select>
+          <p className="field-desc">
+            When structured preferred, inbound chat from verified peer agents does not trigger LLM auto-replies; use task and knowledge intents instead.
+          </p>
+        </div>
+
+        <div className="form-group">
+          <label>Agent visibility by domain</label>
+          <p className="field-desc">
+            Controls Activity feed push and WS notifications. Rows are always stored locally.
+          </p>
+          {(["social", "knowledge", "home", "research"] as AgentActivityDomain[]).map((domain) => (
+            <div className="form-row" key={domain}>
+              <div className="form-group">
+                <label>{domain}</label>
+                <select
+                  value={nodeConfig?.agentVisibility?.[domain] ?? "instant"}
+                  onChange={(e) => {
+                    void updateNodeConfig({
+                      agentVisibility: {
+                        ...(nodeConfig?.agentVisibility ?? {}),
+                        [domain]: e.target.value as AgentNotifyMode,
+                      },
+                    });
+                  }}
+                >
+                  <option value="instant">Instant — show all activity</option>
+                  <option value="brief">Brief — milestones only</option>
+                  <option value="silent">Silent — store only</option>
+                  <option value="approval">Approval — reports and approvals only</option>
+                </select>
+              </div>
+            </div>
+          ))}
+        </div>
+
         <div className="settings-buttons">
           <button type="button" className="settings-save-btn"
             disabled={settingsSaveStatus === "saving"}
@@ -1099,6 +1299,53 @@ export function SettingsNodeTab() {
               <span className="slider" />
             </label>
           </div>
+          {ipfsExportToggle.checked ? (
+            <div className="settings-toggle-row">
+              <div className="toggle-info">
+                <strong>Allow external pinning</strong>
+                <span className="toggle-desc">
+                  Enable Library “Pin to provider” after IPFS export (JWT/token env required)
+                </span>
+              </div>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={currentExternalPublish.pinningEnabled}
+                  onChange={async (e) => {
+                    await updateNodeConfig({
+                      externalPublish: {
+                        ...currentExternalPublish,
+                        pinningEnabled: e.target.checked,
+                      },
+                    });
+                  }}
+                />
+                <span className="slider" />
+              </label>
+            </div>
+          ) : null}
+          {ipfsExportToggle.checked && currentExternalPublish.pinningEnabled ? (
+            <dl className="settings-list">
+              <dt>Pinning provider</dt>
+              <dd>
+                <select
+                  className="settings-input"
+                  value={currentExternalPublish.pinningProvider ?? "pinata"}
+                  onChange={async (e) => {
+                    await updateNodeConfig({
+                      externalPublish: {
+                        ...currentExternalPublish,
+                        pinningProvider: e.target.value as "pinata" | "web3storage",
+                      },
+                    });
+                  }}
+                >
+                  <option value="pinata">Pinata (ENVOYMESH_PINATA_JWT)</option>
+                  <option value="web3storage">web3.storage (ENVOYMESH_WEB3_STORAGE_TOKEN)</option>
+                </select>
+              </dd>
+            </dl>
+          ) : null}
           <dl className="settings-list">
             <dt>Gateway allowlist</dt>
             <dd>
@@ -1157,7 +1404,123 @@ export function SettingsNodeTab() {
             <span className="slider" />
           </label>
         </div>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>Friend autopilot</strong>
+            <span className="toggle-desc">
+              Allow agent tool <code>mesh.intro.run_autopilot</code> (requires Trust mode + owner approval)
+            </span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={friendAutopilotToggle.checked}
+              onChange={friendAutopilotToggle.onCheckboxChange}
+              disabled={!trustModeToggle.checked}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+        {friendAutopilotToggle.checked ? (
+          <dl className="settings-list">
+            <dt>Autopilot schedule</dt>
+            <dd>
+              <select
+                className="settings-input"
+                value={String(nodeConfig?.friendAutopilotIntervalHours ?? 0)}
+                onChange={async (e) => {
+                  await updateNodeConfig({
+                    friendAutopilotIntervalHours: Number(e.target.value) as 0 | 24 | 168,
+                  });
+                }}
+                disabled={!trustModeToggle.checked}
+              >
+                <option value="0">Manual only (agent tool)</option>
+                <option value="24">Daily scheduled pass</option>
+                <option value="168">Weekly scheduled pass</option>
+              </select>
+              <p className="settings-hint" style={{ marginTop: "6px" }}>
+                Scheduled passes run without per-pass approval when autopilot is enabled. Activity rows and digest include pass counts.
+              </p>
+            </dd>
+          </dl>
+        ) : null}
         <dl className="settings-list">
+          <dt>Knowledge syndication ceiling</dt>
+          <dd>
+            <select
+              className="settings-input"
+              value={nodeConfig?.knowledgeSyndicationMaxSensitivity ?? ""}
+              onChange={async (e) => {
+                const value = e.target.value;
+                await nodeService.updateNodeConfig({
+                  knowledgeSyndicationMaxSensitivity:
+                    value === "" ? null : (value as "public" | "friends" | "private"),
+                } as Parameters<typeof nodeService.updateNodeConfig>[0]);
+              }}
+            >
+              <option value="">Bond policy only (no extra cap)</option>
+              <option value="public">Public snippets only</option>
+              <option value="friends">Friends tier</option>
+              <option value="private">Private (trusted peers only)</option>
+            </select>
+            <p className="settings-hint" style={{ marginTop: "6px" }}>
+              Caps vault bytes returned to bonded peers on inbound <code>knowledge.query</code>.
+            </p>
+          </dd>
+          {bonds.length > 0 ? (
+            <>
+              <dt>Per-contact syndication caps</dt>
+              <dd>
+                <ul className="settings-contact-syndication-list">
+                  {bonds.map((bond) => {
+                    const pref = nodeConfig?.contactAiPreferences?.find(
+                      (p) => p.peerOwnerId === bond.peerOwnerId,
+                    );
+                    return (
+                      <li key={bond.peerOwnerId} className="settings-contact-syndication-row">
+                        <span>{bond.displayName || bond.peerOwnerId.slice(0, 20)}</span>
+                        <select
+                          className="settings-input"
+                          value={pref?.syndicationMaxSensitivity ?? ""}
+                          onChange={async (e) => {
+                            const value = e.target.value;
+                            const currentPrefs = nodeConfig?.contactAiPreferences ?? [];
+                            const other = currentPrefs.filter((p) => p.peerOwnerId !== bond.peerOwnerId);
+                            const existing = currentPrefs.find((p) => p.peerOwnerId === bond.peerOwnerId);
+                            await updateNodeConfig({
+                              contactAiPreferences: [
+                                ...other,
+                                {
+                                  peerOwnerId: bond.peerOwnerId,
+                                  aiAccessLevel: existing?.aiAccessLevel ?? "none",
+                                  knowledgeAccess: existing?.knowledgeAccess ?? "public",
+                                  priority: existing?.priority ?? "high",
+                                  ...(value !== ""
+                                    ? {
+                                        syndicationMaxSensitivity: value as
+                                          | "public"
+                                          | "friends"
+                                          | "private",
+                                      }
+                                    : {}),
+                                },
+                              ],
+                            });
+                          }}
+                        >
+                          <option value="">Use global ceiling</option>
+                          <option value="public">Public only</option>
+                          <option value="friends">Friends tier</option>
+                          <option value="private">Private tier</option>
+                        </select>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </dd>
+            </>
+          ) : null}
           <dt>Friend matching preferences</dt>
           <dd>
             <textarea
@@ -1304,6 +1667,80 @@ export function SettingsNodeTab() {
             </div>
           )}
         </div>
+
+        {/* WAN join invite (Phase 15B) — bootstrap cold-start across NAT */}
+        {!isMobileNode ? (
+          <div style={{ marginTop: "16px" }}>
+            <strong>Invite to mesh (WAN)</strong>
+            <p className="settings-hint" style={{ marginTop: 4 }}>
+              Share bootstrap peers + this node&apos;s dial hints for first contact over the internet.
+              Tokens are unsigned — treat like a join URL (short-lived, trusted channel).
+            </p>
+            {!wanJoinQr ? (
+              <button
+                type="button"
+                className="settings-button"
+                onClick={() => { void handleShowWanJoinInvite(); }}
+                disabled={wanJoinLoading}
+              >
+                {wanJoinLoading ? "Generating…" : "Show WAN invite QR"}
+              </button>
+            ) : (
+              <div style={{ textAlign: "center" }}>
+                <img
+                  src={wanJoinQr}
+                  alt="WAN join invite QR"
+                  style={{ width: 256, height: 256, border: "2px solid var(--border-color)", borderRadius: 8 }}
+                />
+                <p className="settings-hint" style={{ marginTop: 8, wordBreak: "break-all", fontSize: "0.75rem" }}>
+                  <code style={{ fontSize: "0.65rem" }}>{wanJoinUri}</code>
+                </p>
+                <button
+                  type="button"
+                  className="settings-button"
+                  onClick={() => { void navigator.clipboard.writeText(wanJoinUri); }}
+                  style={{ marginTop: 4 }}
+                >
+                  Copy link
+                </button>
+                <button
+                  type="button"
+                  className="settings-button"
+                  onClick={() => setWanJoinQr(null)}
+                  style={{ marginTop: 4, marginLeft: 4 }}
+                >
+                  Hide QR
+                </button>
+              </div>
+            )}
+            <dl className="settings-list" style={{ marginTop: 12 }}>
+              <dt>Accept WAN invite</dt>
+              <dd>
+                <textarea
+                  className="settings-input"
+                  rows={3}
+                  placeholder="Paste envoy://join?token=… or raw token"
+                  value={wanInvitePaste}
+                  onChange={(e) => setWanInvitePaste(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="settings-button"
+                  disabled={wanInviteApplyBusy || !wanInvitePaste.trim()}
+                  onClick={() => { void handleApplyWanJoinInvite(); }}
+                  style={{ marginTop: 8 }}
+                >
+                  {wanInviteApplyBusy ? "Applying…" : "Apply invite"}
+                </button>
+                {wanInviteApplyMsg ? (
+                  <p className="settings-hint" style={{ marginTop: 8 }} role="status">
+                    {wanInviteApplyMsg}
+                  </p>
+                ) : null}
+              </dd>
+            </dl>
+          </div>
+        ) : null}
 
         {!isMobileNode && (
           <div style={{ marginTop: "16px" }}>

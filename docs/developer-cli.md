@@ -20,13 +20,19 @@ Shows the owner ID, device ID, device profile, and local device capabilities.
 npm run cli -w @envoymesh/node -- audit --profile ./data/default --limit 20
 ```
 
-Prints recent audit events from `audit-events.jsonl`.
+Prints recent audit events from `audit-events.jsonl` via the secondary `audit-query-index.jsonl` (rebuilt lazily when stale).
 
-By default, `p2p.trace` rows are hidden (they can be very chatty). Include them with `--include-p2p-trace`, and optionally filter with `--audit-correlation <id>` (substring match against `correlationId` and `taskId`).
+By default, `p2p.trace` rows are hidden (they can be very chatty). Include them with `--include-p2p-trace`, and optionally filter with `--audit-correlation <id>` (substring match against `correlationId` and `taskId`). Time bounds: `--since <iso>` and `--until <iso>`.
 
 ```bash
 npm run cli -w @envoymesh/node -- audit --profile ./data/default --audit-correlation task-1 --include-p2p-trace
 ```
+
+```bash
+npm run cli -w @envoymesh/node -- storage-gate --profile ./data/default
+```
+
+Measures audit JSONL file size and full-read vs indexed-query latency against [sqlite-adoption.md](./sqlite-adoption.md) §2 triggers. Use `--format json` for machine-readable output; `--since <iso>` narrows the indexed benchmark window (default last 90 days).
 
 ```bash
 npm run cli -w @envoymesh/node -- tasks --profile ./data/default --limit 20

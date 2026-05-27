@@ -671,6 +671,14 @@ export const DiscoveryRequestPayloadSchema = z
     fileTitleQuery: z.string().max(200).optional(),
     /** FS-D: prefix match on content hash (base64url) for published documents. */
     requestedContentHashPrefixes: z.array(z.string().min(4).max(128)).max(8).optional(),
+    /** Story D (US-MH1): max forward hops including originator tier. Default 1 = direct only. */
+    maxHops: z.number().int().min(0).max(4).default(1),
+    /** Story D (US-MH1): hops already traversed (0 at originator). */
+    currentHop: z.number().int().min(0).max(4).default(0),
+    /** Story D (US-MH2): hide original requester from downstream peers when forwarding. */
+    forwardPrivacy: z.enum(["none", "anonymous"]).default("none"),
+    /** Story D (US-MH2): intermediary owner vouching for anonymous forward tier. */
+    referralOwnerId: z.string().min(1).optional(),
   })
   .refine(
     (value) =>
@@ -702,7 +710,18 @@ export const DiscoveryMatchSchema = z.object({
   matchedCapabilities: z.array(z.string().min(1)).default([]),
   /** FS-D: metadata-only matches for published vault documents (no bytes transferred). */
   libraryMatches: z.array(LibraryFileMatchSchema).optional(),
+  /** Story D: hop distance from original requester (1 = direct bond). */
+  hopDistance: z.number().int().min(1).max(4).optional(),
 });
+
+/** `sync.state` — small signed CRDT / state deltas between owner devices. */
+export const SyncStatePayloadSchema = z.object({
+  scope: z.string().min(1).max(64),
+  updateBase64: z.string().min(1).max(512_000),
+  senderOwnerId: z.string().min(1),
+});
+
+export type SyncStatePayload = z.infer<typeof SyncStatePayloadSchema>;
 
 export const DiscoveryResponsePayloadSchema = z.object({
   requestMessageId: z.string().min(1),
@@ -1953,6 +1972,10 @@ export interface CreateDiscoveryRequestPayloadInput {
   requestedSensitivity?: "public" | "friends" | "private";
   fileTitleQuery?: string;
   requestedContentHashPrefixes?: string[];
+  maxHops?: number;
+  currentHop?: number;
+  forwardPrivacy?: "none" | "anonymous";
+  referralOwnerId?: string;
 }
 
 export function createDiscoveryRequestPayload(
@@ -1966,7 +1989,25 @@ export function createDiscoveryRequestPayload(
     requestedSensitivity: input.requestedSensitivity,
     fileTitleQuery: input.fileTitleQuery,
     requestedContentHashPrefixes: input.requestedContentHashPrefixes,
+    maxHops: input.maxHops,
+    currentHop: input.currentHop,
+    forwardPrivacy: input.forwardPrivacy,
+    referralOwnerId: input.referralOwnerId,
   });
+}
+
+export function parseSyncStatePayload(input: unknown): SyncStatePayload {
+  return SyncStatePayloadSchema.parse(input);
+}
+
+export interface CreateSyncStatePayloadInput {
+  scope: string;
+  updateBase64: string;
+  senderOwnerId: string;
+}
+
+export function createSyncStatePayload(input: CreateSyncStatePayloadInput): SyncStatePayload {
+  return SyncStatePayloadSchema.parse(input);
 }
 
 export interface CreateDiscoveryResponsePayloadInput {

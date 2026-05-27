@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
-import type { BondRecord, HelloProfile } from "@envoymesh/api";
+import type { BondRecord, HelloProfile, PeerReputationSummary } from "@envoymesh/api";
 import type { ContactsPanelMode } from "../../App.js";
 import { SearchView } from "./SearchView.js";
 
@@ -10,6 +10,26 @@ function contactLabel(contact: Partial<BondRecord> & { peerOwnerId: string }): s
   if (d) return d;
   if (contact.libp2pPeerId?.trim()) return contact.libp2pPeerId.trim();
   return contact.peerOwnerId;
+}
+
+function ContactReputationMeta({ peerOwnerId }: { peerOwnerId: string }) {
+  const nodeService = useNodeService();
+  const [summary, setSummary] = useState<PeerReputationSummary | null>(null);
+
+  useEffect(() => {
+    void nodeService.getPeerReputationSummary(peerOwnerId).then(setSummary).catch(() => {});
+  }, [nodeService, peerOwnerId]);
+
+  if (!summary) return null;
+  const parts: string[] = [];
+  if (summary.local) {
+    parts.push(`${summary.local.successfulTasks} ok · ${summary.local.failedTasks} fail`);
+  }
+  if (summary.attestations.length > 0) {
+    parts.push(`${summary.attestations.length} attestation${summary.attestations.length === 1 ? "" : "s"}`);
+  }
+  if (parts.length === 0) return null;
+  return <span className="contact-reputation">{parts.join(" · ")}</span>;
 }
 
 export interface ContactsViewProps {
@@ -131,6 +151,7 @@ export function ContactsView({ panelMode, onPanelModeChange, onOpenChat }: Conta
                       <div className="contact-info">
                         <strong>{contactLabel(contact)}</strong>
                         <span className="bond-level">{contact.level}</span>
+                        <ContactReputationMeta peerOwnerId={contact.peerOwnerId} />
                       </div>
                     </button>
                     <button

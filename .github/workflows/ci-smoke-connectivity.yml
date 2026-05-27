@@ -1,0 +1,42 @@
+name: ci-smoke-connectivity
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+jobs:
+  connectivity-mdns:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Local mDNS connectivity smoke
+        run: npm run connectivity:smoke -w @envoymesh/node -- --mode mdns --timeout-ms 25000
+
+  connectivity-advanced:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Advanced bootstrap connectivity smoke
+        run: npm run connectivity:smoke -w @envoymesh/node -- --mode advanced --bootstrap "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo" --timeout-ms 90000

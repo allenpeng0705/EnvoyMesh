@@ -9,6 +9,7 @@ import type {
   OwnerIdentity,
 } from "@envoymesh/identity";
 import type { DocumentAgentTurnResult } from "./document-agent-loop.js";
+import type { OwnerDidPresentation } from "./owner-did-presentation.js";
 import type { RagIndexProgress, RagIndexStatus } from "./rag-index-status.js";
 import type { TransferStatus } from "./transfer-status.js";
 import type {
@@ -166,6 +167,10 @@ export interface ChatMessage {
     displayName: string;
     /** Envoy owner id (`envoy:owner:…`); `nodeId` remains the libp2p transport id when applicable. */
     ownerId?: string;
+    /** Wire role persisted for Phase 13 actor disclosure (defaults to human when absent). */
+    actorRole?: "human" | "agent" | "system";
+    agentId?: string;
+    agentVerified?: boolean;
   };
   recipient: {
     nodeId: string;
@@ -189,6 +194,117 @@ export interface SendChatResult {
 }
 
 // ============================================
+// Agent Activity Types (Phase 13D — local store, not EMP)
+// ============================================
+
+export type AgentActivityDomain = "social" | "knowledge" | "home" | "research";
+
+export type AgentActivityKind =
+  | "task_started"
+  | "task_progress"
+  | "task_completed"
+  | "task_failed"
+  | "knowledge_answered"
+  | "intro_sync"
+  | "friend_autopilot_pass"
+  | "share_proposed"
+  | "approval_needed"
+  | "report_received";
+
+export interface AgentActivityEvidence {
+  type: string;
+  ref: string;
+}
+
+export interface AgentActivityRecord {
+  activityId: string;
+  correlationId?: string;
+  taskId?: string;
+  domain: AgentActivityDomain;
+  kind: AgentActivityKind;
+  summary: string;
+  remoteOwnerId?: string;
+  remoteAgentId?: string;
+  remoteActorRole?: "agent" | "human";
+  evidence?: AgentActivityEvidence[];
+  requiresOwnerAction?: boolean;
+  createdAt: string;
+}
+
+export interface ListAgentActivityParams {
+  since?: string;
+  until?: string;
+  limit?: number;
+  correlationId?: string;
+  domain?: AgentActivityDomain;
+  remoteOwnerId?: string;
+}
+
+/** Summary of a pending approval queue item (Phase 9H / 13). */
+export interface PendingApprovalSummary {
+  id: string;
+  actionType: string;
+  title: string;
+  description: string;
+  draftContent: string;
+  contactOwnerId?: string;
+  contactDisplayName?: string;
+  priority: string;
+  requestedAt: string;
+}
+
+export interface ApprovePendingApprovalResult {
+  ok: boolean;
+  error?: string;
+  messageId?: string;
+}
+
+export type AgentInteractionMode = "chat_ok" | "structured_preferred";
+
+export interface CachedAgentCardSummary {
+  ownerId: string;
+  displayName: string;
+  capabilities: string[];
+  cachedAt: string;
+  sourceAgentPeerId?: string;
+}
+
+export interface AuditEventSummary {
+  eventId: string;
+  type: string;
+  createdAt: string;
+  intent?: string;
+  taskId?: string;
+  correlationId?: string;
+  remotePeerId?: string;
+  direction?: string;
+  outcome: string;
+  summary: string;
+}
+
+export interface ListAuditEventsParams {
+  correlationId?: string;
+  taskId?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+}
+
+export interface TaskJournalSummary {
+  eventId: string;
+  taskId: string;
+  eventType: string;
+  summary: string;
+  createdAt: string;
+  mandateId?: string;
+}
+
+export interface ListTaskJournalParams {
+  taskId?: string;
+  limit?: number;
+}
+
+// ============================================
 // Search / Discovery Types
 // ============================================
 
@@ -202,9 +318,17 @@ export interface PeerSearchResult {
   bio?: string;
   interests: string[];
   profileVisibility: ProfileVisibility;
+  /** Portable did:key when owner public key is known */
+  did?: string;
+  /** Where this hit came from (local bond, DHT topic, rendezvous, …) */
+  discoverySource?: "local" | "dht-capability-topic" | "dht-peer-routing" | "rendezvous" | "did-lookup";
+  trustLevel?: string;
+  signedRecordValid?: boolean;
 }
 
 export interface SearchQuery {
+  /** Bonded-contact DID or envoy:owner id lookup */
+  did?: string;
   /** Direct peer ID lookup (e.g., "12D3KooWSHXmS7N94yFj1fqoH4anmbNXW6rZBcsGWrW95vEVjZ3Q") */
   peerId?: string;
   /** DHT topic-based discovery - peers advertising this topic will be found */
@@ -215,6 +339,29 @@ export interface SearchQuery {
   username?: string;
   interests?: string[];
   maxResults?: number;
+}
+
+export interface ReputationAttestationSummary {
+  attestationId: string;
+  anchorId: string;
+  anchorName: string;
+  subjectOwnerId: string;
+  claim: string;
+  issuedAt: string;
+  expiresAt?: string;
+  anchorRef?: string;
+}
+
+export interface PeerReputationSummary {
+  peerOwnerId: string;
+  local?: {
+    successfulTasks: number;
+    failedTasks: number;
+    avgLatencyMs: number;
+    abuseFlags: string[];
+    lastUpdated: string;
+  };
+  attestations: ReputationAttestationSummary[];
 }
 
 // ============================================
@@ -277,6 +424,29 @@ export interface PublishedExternalRecord {
 export interface ExportLibraryItemToIpfsResult extends PublishedExternalRecord {
   documentId: string;
   relativePath: string;
+}
+
+export type PinLibraryItemExternalResult =
+  | { ok: true; cid: string; provider: import("./ipfs-pinning.js").IpfsPinningProvider; pinId?: string }
+  | { ok: false; error: string };
+
+export interface CreateWanJoinInviteParams {
+  /** Hours until invite expires (default 168 = 7 days). */
+  expiresInHours?: number;
+  note?: string;
+}
+
+export interface CreateWanJoinInviteResult {
+  token: string;
+  uri: string;
+  invite: import("./wan-join-invite.js").WanJoinInviteV1;
+}
+
+export interface ApplyWanJoinInviteResult {
+  ok: true;
+  bootstrapPeersAdded: number;
+  bootstrapPresetsAdded: number;
+  seedsPersisted: number;
 }
 
 /** Managed/bundled Kubo sidecar status (desktop). */
@@ -488,6 +658,125 @@ export interface ChatDiagnostics {
   hints: string[];
 }
 
+export type WanConnectivityAxisState = "ok" | "degraded" | "fail" | "unknown" | "disabled";
+
+export interface WanConnectivityAxis {
+  state: WanConnectivityAxisState;
+  explanation: string;
+}
+
+export interface ConnectivityStageDSnapshot {
+  discoveryProfile: "lan-fast" | "wan-default" | "unknown";
+  bootstrapPeerCount: number;
+  discoveredPeerCount: number;
+  relayDiscoveryCount: number;
+  bootstrapProbeSuccessCount: number;
+  bootstrapProbeFailureCount: number;
+  reprobeOkCount: number;
+  reprobeFailCount: number;
+  warningCount: number;
+  badge: "ok" | "warn" | "starting" | "unknown";
+  badgeExplanation: string;
+}
+
+export interface ConnectivityDiagnostics {
+  checkedAt: string;
+  nodeOnline: boolean;
+  stageD: ConnectivityStageDSnapshot;
+  axes: {
+    bootstrapReachability: WanConnectivityAxis;
+    relayAvailability: WanConnectivityAxis;
+    holePunch: WanConnectivityAxis;
+    policyBlock: WanConnectivityAxis;
+    features: {
+      relay?: boolean;
+      dcutr?: boolean;
+      dht?: boolean;
+      quic?: boolean;
+    };
+  };
+  quicEnabled: boolean;
+  hints: string[];
+  /** Operator steps for live multi-machine sign-off (Phase 15B). */
+  signOffChecklist: string[];
+}
+
+export interface MorningReportEntry {
+  ownerId: string;
+  peerId?: string;
+  trustLevel: string;
+  score: number;
+  reason: string;
+  lastSeenAt?: string;
+  discoveryMatchCount: number;
+  hopDistance?: number;
+}
+
+export interface DiscoverCapabilityTopicParams {
+  topic: string;
+  maxResults?: number;
+  /** When true, send policy-gated discovery.request to bonded providers only. */
+  followUpDiscovery?: boolean;
+  requestedCapabilities?: string[];
+  /** Story D: max hops for follow-up discovery.request (default 2). */
+  maxHops?: number;
+}
+
+export interface RequestMultiHopDiscoveryParams {
+  requestedCapabilities?: string[];
+  requestedTagHashes?: string[];
+  fileTitleQuery?: string;
+  maxHops?: number;
+  maxBonds?: number;
+}
+
+export interface MultiHopDiscoveryMatch {
+  ownerId: string;
+  peerId: string;
+  hopDistance: number;
+  matchedCapabilities: string[];
+  matchedTagHashes: string[];
+  /** Direct bond used for hop-1 query, or referral for hop-2+. */
+  viaOwnerId?: string;
+  viaDisplayName?: string;
+  referralOwnerId?: string;
+  trustPath?: string;
+}
+
+export interface RequestMultiHopDiscoveryResult {
+  matches: MultiHopDiscoveryMatch[];
+  bondsQueried: number;
+  correlationId: string;
+  pendingForwardApprovals: number;
+  aggregatedMatchCount: number;
+}
+
+export interface MultiHopDiscoverySessionView {
+  correlationId: string;
+  createdAt: string;
+  updatedAt: string;
+  bondsQueried: number;
+  pendingForwardApprovals: number;
+  matches: MultiHopDiscoveryMatch[];
+}
+
+export interface CapabilityTopicProviderHit {
+  peerId: string;
+  multiaddrs: string[];
+  ownerId?: string;
+  displayName?: string;
+  trustLevel?: string;
+  signedRecordValid?: boolean;
+  followUpMatchCount?: number;
+  followUpError?: string;
+  discoverySource: "dht-capability-topic";
+}
+
+export interface DiscoverCapabilityTopicResult {
+  topic: string;
+  providers: CapabilityTopicProviderHit[];
+}
+
 // ============================================
 // NodeService Interface
 // ============================================
@@ -505,6 +794,8 @@ export interface NodeServiceEvents {
   // Chat events
   "chat:message": ChatMessage;
   "chat:draft": { threadPeerOwnerId: string; draft: ChatDraft };
+  /** Owner Activity feed row (Phase 13D — local, not wire). */
+  "agent:activity": AgentActivityRecord;
   "chat:delivered": { messageId: string; timestamp: string };
   "chat:read": { messageId: string; timestamp: string };
 
@@ -523,6 +814,12 @@ export interface NodeServiceEvents {
   "peer:discovered": PeerSearchResult;
   "peer:lost": { nodeId: string };
   "discovery:advertising-complete": { topics: string[]; success: boolean };
+
+  /** Multi-hop discovery aggregation updated (hop-2 forward responses merged). */
+  "discovery:multihop-update": MultiHopDiscoverySessionView;
+
+  /** yjs / CRDT delta from paired owner device (sync.state). */
+  "crdt:sync": { scope: string; updateBase64: string; senderOwnerId: string; remotePeerId: string };
 
   // Connection state
   "node:online": { peerId: string; multiaddrs: string[] };
@@ -546,6 +843,16 @@ export interface NodeService {
    * Get current node's identity and profile
    */
   getProfile(): NodeProfile;
+
+  /**
+   * Portable W3C did:key presentation for the owner (read-only; envoy:owner id remains canonical).
+   */
+  getOwnerDidPresentation(): OwnerDidPresentation;
+
+  /**
+   * Local reputation score + opt-in anchor attestations for a bonded peer.
+   */
+  getPeerReputationSummary(peerOwnerId: string): Promise<PeerReputationSummary>;
 
   /**
    * Get current node's human profile
@@ -645,6 +952,11 @@ export interface NodeService {
   sendChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
 
   /**
+   * Send AI/agent chat with honest wire role (`senderRole=agent` + `agentCredential`).
+   */
+  sendAgentChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
+
+  /**
    * Send an image or file directly in a chat thread (P2P transfer, auto-accepted for direct bonds).
    */
   sendChatAttachment(params: SendChatAttachmentParams): Promise<SendChatAttachmentResult>;
@@ -678,6 +990,33 @@ export interface NodeService {
    */
   listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
 
+  /**
+   * Owner Activity timeline (`agent-activity.jsonl`).
+   */
+  listAgentActivity(params?: ListAgentActivityParams): Promise<AgentActivityRecord[]>;
+
+  /** Filtered audit trail for Activity drill-down (summaries only). */
+  listAuditEvents(params?: ListAuditEventsParams): Promise<AuditEventSummary[]>;
+
+  /** Task journal rows for Activity drill-down. */
+  listTaskJournalEntries(params?: ListTaskJournalParams): Promise<TaskJournalSummary[]>;
+
+  /** Cached peer agent cards (Phase 13C). */
+  listAgentCards(): Promise<CachedAgentCardSummary[]>;
+
+  getAgentCard(ownerId: string): Promise<CachedAgentCardSummary | undefined>;
+
+  /** Send agent.card.request to a bonded peer (response cached on reply). */
+  requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }>;
+
+  /** Pending AI actions awaiting owner approval. */
+  listPendingApprovals(): Promise<PendingApprovalSummary[]>;
+
+  /** Approve and execute a pending action (e.g. send_chat → sendAgentChat). */
+  approvePendingApproval(itemId: string, notes?: string): Promise<ApprovePendingApprovalResult>;
+
+  rejectPendingApproval(itemId: string, notes?: string): Promise<{ ok: boolean; error?: string }>;
+
   /** Delete one persisted chat message from a thread (local only). */
   deleteChatMessage(peerOwnerId: string, messageId: string): Promise<{ ok: boolean }>;
 
@@ -707,6 +1046,43 @@ export interface NodeService {
    * Run DHT capability discovery on demand (used when lazy mode skips periodic find).
    */
   runCapabilityDiscovery(params?: { find?: boolean }): Promise<void>;
+
+  /**
+   * Query DHT capability topics and optionally follow up with policy-gated discovery.request.
+   */
+  discoverCapabilityTopic(params: DiscoverCapabilityTopicParams): Promise<DiscoverCapabilityTopicResult>;
+
+  /**
+   * Ranked discovery digest (morning report) from trust store + discovery events.
+   */
+  getMorningReport(params?: { limit?: number }): Promise<MorningReportEntry[]>;
+
+  /** Story D (US-MH1): query direct bonds with hop-limited discovery.request. */
+  requestMultiHopDiscovery(params: RequestMultiHopDiscoveryParams): Promise<RequestMultiHopDiscoveryResult>;
+
+  /** Fetch aggregated hop-1/2 matches for a multi-hop session. */
+  getMultiHopDiscoverySession(correlationId: string): Promise<MultiHopDiscoverySessionView | undefined>;
+
+  /** Merge async hop-2 discovery.response into an active multi-hop session (originator only). */
+  ingestInboundMultiHopDiscoveryResponse(params: {
+    correlationId: string;
+    responderOwnerId: string;
+    matches: Array<{
+      ownerId: string;
+      peerId: string;
+      hopDistance?: number;
+      matchedCapabilities: string[];
+      matchedTagHashes: string[];
+    }>;
+  }): Promise<void>;
+
+  /** Push yjs CRDT delta to paired owner devices (sync.state). */
+  sendSyncStateUpdate(params: import("./sync-state.js").SendSyncStateUpdateParams): Promise<import("./sync-state.js").SendSyncStateUpdateResult>;
+
+  /**
+   * WAN connectivity axis diagnostics (bootstrap / relay / punch / policy).
+   */
+  getConnectivityDiagnostics(): Promise<ConnectivityDiagnostics>;
 
   /**
    * Advertise a topic on the DHT so other peers can discover you
@@ -778,6 +1154,12 @@ export interface NodeService {
    * Requires `externalPublish.allowIpfs` in node config. Desktop only.
    */
   exportLibraryItemToIpfs(documentId: string): Promise<ExportLibraryItemToIpfsResult>;
+
+  /**
+   * Pin an already-exported library CID via an external provider (Pinata JWT env).
+   * Requires `externalPublish.allowIpfs` and `externalPublish.pinningEnabled`.
+   */
+  pinLibraryItemExternal(documentId: string): Promise<PinLibraryItemExternalResult>;
 
   /** Kubo sidecar / managed daemon status (desktop IPFS export). */
   getIpfsEngineStatus(): Promise<IpfsEngineStatus>;
@@ -918,6 +1300,17 @@ export interface NodeService {
    * HomeClaw mobile app can scan.
    */
   getPairingPayload(): Promise<PairingPayload>;
+
+  /**
+   * Create a WAN join-invite token + `envoy://join?token=…` URI (Phase 15B).
+   * Encodes current bootstrap config and this node's dial hints for cold-start peers.
+   */
+  createWanJoinInvite(params?: CreateWanJoinInviteParams): Promise<CreateWanJoinInviteResult>;
+
+  /**
+   * Apply a WAN join-invite on a running node — merges bootstrap config and discovery seeds.
+   */
+  applyWanJoinInvite(token: string): Promise<ApplyWanJoinInviteResult>;
 
   /**
    * Validate a QR pairing token and create a persistent session token.

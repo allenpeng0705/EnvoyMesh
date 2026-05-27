@@ -797,6 +797,76 @@ Matching requests (discovery, introductions) SHOULD still use **B.4** advertisem
 - When describing **what the agent can do on the mesh**, prefer **B.1** capability names or a documented **B.4** tag vocabulary.
 - When describing **tooling**, use stable short identifiers documented in release notes or this appendix.
 
+<a id="appendix-c-actor-disclosure-and-owner-visibility"></a>
+
+## Appendix C: Actor disclosure & owner visibility (Phase 13)
+
+This appendix summarizes **honest actor roles** on the wire and **owner visibility surfaces** when agents work off-chat. Product narrative: [a2a-actor-visibility-plan.md](./a2a-actor-visibility-plan.md); backlog: [scenarios.md Epic AV](./scenarios.md#epic-av--actor-disclosure--owner-visibility).
+
+### C.1 Wire roles (`senderRole` / `recipientRole`)
+
+| Traffic | Typical `senderRole` | Typical `recipientRole` | Notes |
+|---------|---------------------|-------------------------|-------|
+| Human-typed chat | `human` | `human` or `agent` | Device key signs envelope. |
+| AI auto-send / approved draft / bridge reply | `agent` | `human` | Agent key + **`agentCredential`** required; peers verify credential against owner. |
+| Bilateral A2A (`task.*`, `knowledge.*`, `agent.card.*`) | `agent` | `agent` | Structured intents — not long agent↔agent chat threads. |
+| Owner-facing report (local-only Option A) | — | — | **`emitOwnerReport`** writes Activity locally; no wire envelope to human. |
+
+**UI rule:** `AiIdentityMode` (`invisible` / `transparent` / …) affects **display prefix only**; it MUST NOT downgrade wire `senderRole`.
+
+Inbound peers SHOULD reject `chat.message` with `senderRole=agent` when **`agentCredential`** is missing or fails verification.
+
+### C.2 Owner visibility surfaces
+
+| Surface | Purpose |
+|---------|---------|
+| **Activity feed** | Local timeline of off-chat agent work (`AgentActivityStore` / mobile SQLite). |
+| **Task journal + audit** | Correlation drill-down by `correlationId` / `taskId` (no raw payload dump by default). |
+| **Approval queue** | AI-drafted `send_chat` held until owner approves → executes via `sendAgentChat`. |
+| **Digest** | Aggregated A2A activity counts (Phase 9J extension). |
+| **Optional chat system lines** | `NodeConfig.a2aChatNotifications`: `off` \| `milestones_only` \| `all_reports` — local UI rows only. |
+
+### C.3 Per-domain notify policy
+
+`NodeConfig.agentVisibility` maps each domain (`social`, `knowledge`, `home`, `research`) to:
+
+| Mode | Activity push behavior |
+|------|------------------------|
+| `instant` | Push all rows to WS `agent:activity`. |
+| `brief` | Milestones only (`task_completed`, `task_failed`, `report_received`, `approval_needed`). |
+| `silent` | Store locally; no push. |
+| `approval` | Push `report_received` and `approval_needed` only. |
+
+Rows are **always retained** in the local store regardless of push mode. **`autonomousKillSwitch`** still gates autonomous actions.
+
+## Appendix D: H2A product channel & wire semantics (Phase 15C)
+
+Product narrative: [emp-h2a-channel-adr.md](./emp-h2a-channel-adr.md), [h2a-wire-semantics.md](./h2a-wire-semantics.md).
+
+### D.1 Product lanes
+
+| Lane | Social surface | Wire |
+|------|----------------|------|
+| **Peer human chat** | Chat → contact thread | `chat.message` on `/envoymesh/chat` |
+| **Owner ↔ home agent (H2A)** | **Assistant** view | Local RPC (`runDocumentAgentTurn`, `knowledgeQuery`); Activity rows |
+| **A2A orchestration** | Activity + task journal | `task.*`, `agent.card.*` on `/message`, roles agent↔agent |
+
+Optional envelope field **`channel`** is **not required** in v0.1 — see ADR.
+
+### D.2 Intent → protocol path
+
+| Path | Intents |
+|------|---------|
+| `/envoymesh/chat/0.1.0` | `chat.message` only |
+| `/envoymesh/message/0.1.0` | `knowledge.query`, `discovery.*`, `task.*`, `system.*`, … |
+| `/envoymesh/data/0.1.0` | `share.chunk`, transfer bodies |
+
+Code: `packages/api/src/h2a-wire-semantics.ts` + `packages/network` protocol validation.
+
+### D.3 H2A Activity
+
+Local owner turns append **`AgentActivityRecord`** rows (`knowledge_answered`, `task_progress`, `share_proposed`) with domain `knowledge` or `home` — visible in Assistant rail and Activity feed.
+
 ## Envelope Requirements
 
 Every EMP message must include:
@@ -817,7 +887,7 @@ Every EMP message must include:
 Normative role requirements in current implementation:
 
 - Envelope fields **`senderRole`** and **`recipientRole`** are required.
-- **`chat.message`** requires `senderRole=human` and `recipientRole=human`.
+- **`chat.message`** allows human↔human, human↔agent, agent↔human, and agent↔agent (with `agentCredential` required when `senderRole=agent`).
 - **`task.*`** and **`report.create`** require `senderRole=agent` and `recipientRole=agent`.
 - **`social.intro.sync`** requires `senderRole=agent` and `recipientRole=agent`.
 - **`social.intro.propose`** requires `senderRole=agent` and `recipientRole=human`.

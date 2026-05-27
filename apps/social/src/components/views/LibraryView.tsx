@@ -14,6 +14,8 @@ export function LibraryView() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const ipfsExportEngine = nodeConfig?.externalPublish?.ipfsExportEngine ?? (isMobileNode ? "helia" : "kubo");
   const ipfsPolicyEnabled = nodeConfig?.externalPublish?.allowIpfs ?? false;
+  const ipfsPinningEnabled =
+    ipfsPolicyEnabled && (nodeConfig?.externalPublish?.pinningEnabled ?? false);
   const ipfsMobileHeliaEnabled =
     isMobileNode && ipfsPolicyEnabled && ipfsExportEngine === "helia";
   const ipfsHeliaPrimaryEnabled =
@@ -29,6 +31,7 @@ export function LibraryView() {
 
   const [shareFor, setShareFor] = useState<LibraryItem | null>(null);
   const [ipfsBusyId, setIpfsBusyId] = useState<string | null>(null);
+  const [ipfsPinBusyId, setIpfsPinBusyId] = useState<string | null>(null);
   const [ipfsVerifyBusyId, setIpfsVerifyBusyId] = useState<string | null>(null);
   const [ipfsErr, setIpfsErr] = useState<string | null>(null);
   const [ipfsOk, setIpfsOk] = useState<string | null>(null);
@@ -179,6 +182,34 @@ export function LibraryView() {
           >
             {ipfsBusyId === row.documentId ? "Exporting…" : row.publishedExternal ? "Re-export" : "Export"}
           </button>
+          {ipfsPinningEnabled && row.publishedExternal && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={ipfsPinBusyId === row.documentId}
+              onClick={() => {
+                void (async () => {
+                  setIpfsErr(null);
+                  setIpfsOk(null);
+                  setIpfsPinBusyId(row.documentId);
+                  try {
+                    const result = await nodeService.pinLibraryItemExternal(row.documentId);
+                    if (!result.ok) {
+                      throw new Error(result.error ?? "Pin failed");
+                    }
+                    setIpfsOk(`Pinned via ${result.provider}${result.pinId ? ` (${result.pinId})` : ""}`);
+                    showToast("CID pinned to provider", "success");
+                  } catch (err) {
+                    setIpfsErr(err instanceof Error ? err.message : String(err));
+                  } finally {
+                    setIpfsPinBusyId(null);
+                  }
+                })();
+              }}
+            >
+              {ipfsPinBusyId === row.documentId ? "Pinning…" : "Pin to provider"}
+            </button>
+          )}
           {ipfsGatewayVerifyEnabled && row.publishedExternal && (
             <button
               type="button"

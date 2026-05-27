@@ -32,6 +32,7 @@ import {
   verifyEnvelope,
   verifyAuthorizedDeviceEnvelope,
   isDeviceRevoked,
+  createAgentCredential,
   type OwnerIdentity,
   type DeviceIdentity,
   type AgentIdentity,
@@ -44,6 +45,10 @@ import {
   createMobileSessionTokenStore,
   createMobileIdentityStateStore,
   createMobileChatLogStore,
+  createMobileAgentActivityStore,
+  createMobileAuditJournalStore,
+  createMobileTaskJournalStore,
+  createMobileAgentCardStore,
   createInMemoryDb,
   type MobileSessionTokenStore,
   type MobileDatabase,
@@ -79,6 +84,7 @@ import {
   createBondAcceptPayload,
   createBondRequestPayload,
   createBondChallengeResponsePayload,
+  createAgentCardRequestPayload,
   createUnsignedEnvelope,
   createChatMessagePayload,
   createShareRequestPayload,
@@ -87,6 +93,8 @@ import {
   createRendezvousRegisterPayload,
   createDiscoveryRequestPayload,
   parseDiscoveryResponsePayload,
+  createSyncStatePayload,
+  parseSyncStatePayload,
   parseShareRequestPayload,
   parseSharePreviewPayload,
   parseShareAcceptPayload,
@@ -96,11 +104,15 @@ import {
   parseBondAcceptPayload,
   parseBondChallengePayload,
   parseBondChallengeResponsePayload,
+  parseReportCreatePayload,
   parseDeviceCertificate,
   parseDeviceRevocationRecord,
   type BondChallengePayload,
   type DeviceCertificate,
   type DeviceRevocationRecord,
+  type AgentCredential,
+  type Report,
+  type TaskJournalEntry,
 } from "@envoymesh/protocol";
 import {
   bondTrustRank,
@@ -111,7 +123,24 @@ import {
   chatMessagePayloadDeviceFields,
   formatChatSenderDisplayName,
   verifyInboundChatDeviceAuthorization,
+  chatSenderActorFromEnvelope,
+  applyAiIdentityPrefix,
+  resolveAiIdentityPrefix,
+  mapTaskJournalToActivity,
+  mapOwnerReportToActivity,
+  resolveReportContactOwnerId,
+  shouldPushAgentActivity,
+  ApprovalQueue,
+  createApprovalItem,
+  executeApprovedAction,
+  shouldSkipAgentChatAssist,
+  createTaskDispatcher,
+  isA2ATaskIntent,
+  buildOwnerDidPresentation,
+  parseDidLookupInput,
+  didKeysMatch,
 } from "@envoymesh/api";
+import { handleMobileInboundAgentCardIntent } from "./mobile-agent-card-inbound.js";
 import { normalizeOpenAiCompatibleBaseUrl, runOwnerApprovedKnowledgeQuery } from "@envoymesh/models";
 import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from "@libp2p/crypto/keys";
 import { peerIdFromString } from "@libp2p/peer-id";
@@ -146,12 +175,15 @@ import type {
   NodeConfig,
   PairSharedIdentityResult,
   PeerSearchResult,
+  PeerReputationSummary,
   RelayConfig,
   SendHelloOptions,
   ShareOffer,
   SocialIntroProposal,
   BridgeStatus,
   PeerConnectionInfo,
+  ListAgentActivityParams,
+  AgentActivityRecord,
 } from "@envoymesh/api";
 
 function _normalizeMobileStoredOpenAiEndpoint(mp: ModelProviderConfig): ModelProviderConfig {
@@ -334,6 +366,12 @@ export class MobileNode implements NodeService {
   private readonly _sessionTokenStore: MobileSessionTokenStore;
   private readonly _identityStateStore: MobileIdentityStateStore;
   private readonly _chatLog: ReturnType<typeof createMobileChatLogStore>;
+  private readonly _agentActivity: ReturnType<typeof createMobileAgentActivityStore>;
+  private readonly _auditJournal: ReturnType<typeof createMobileAuditJournalStore>;
+  private readonly _taskJournal: ReturnType<typeof createMobileTaskJournalStore>;
+  private readonly _agentCardStore: ReturnType<typeof createMobileAgentCardStore>;
+  private readonly _taskDispatcher = createTaskDispatcher();
+  private readonly _approvalQueue = new ApprovalQueue();
   private readonly _secureStorage?: SecureStorage;
   private readonly _events = new EventBus();
   private readonly _relayUrls: string[];
@@ -349,6 +387,7 @@ export class MobileNode implements NodeService {
   private _relayBackoffTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private _relayBackoffs = new Map<string, number>();
   private _deviceRevocations: DeviceRevocationRecord[] = [];
+  private _agentCredential: AgentCredential | undefined;
 
   /** Pending inbound bond.request rows awaiting {@link acceptHello} / {@link declineHello}. */
   private readonly _pendingHelloRequests = new Map<string, {
@@ -430,6 +469,10 @@ export class MobileNode implements NodeService {
     this._sessionTokenStore = createMobileSessionTokenStore(this._db);
     this._identityStateStore = createMobileIdentityStateStore(this._db);
     this._chatLog = createMobileChatLogStore(this._db);
+    this._agentActivity = createMobileAgentActivityStore(this._db);
+    this._auditJournal = createMobileAuditJournalStore(this._db);
+    this._taskJournal = createMobileTaskJournalStore(this._db);
+    this._agentCardStore = createMobileAgentCardStore(this._db);
   }
 
   // -----------------------------------------------------------------------
@@ -1002,6 +1045,23 @@ export class MobileNode implements NodeService {
     };
   }
 
+  getOwnerDidPresentation(): import("@envoymesh/api").OwnerDidPresentation {
+    if (!this._state) {
+      throw new Error("Node not initialized — call initNode() first");
+    }
+    return buildOwnerDidPresentation({
+      ownerId: this._state.owner.ownerId,
+      publicKeyPem: this._state.owner.publicKeyPem,
+    });
+  }
+
+  async getPeerReputationSummary(peerOwnerId: string): Promise<PeerReputationSummary> {
+    return {
+      peerOwnerId: peerOwnerId.trim(),
+      attestations: [],
+    };
+  }
+
   async getHumanProfile() {
     return this._humanProfile;
   }
@@ -1335,6 +1395,271 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return { messageId: msgId };
   }
 
+  async sendAgentChat(targetOwnerId: string, text: string): Promise<import("@envoymesh/api").SendChatResult> {
+    this._assertDeviceNotRevoked();
+    if (!this._state?.agent || !this._state?.owner) {
+      throw new Error("Agent identity is not available");
+    }
+    const msgId = _randomUUID();
+    const ts = new Date().toISOString();
+    const cfg = await this.getNodeConfig();
+    let wireText = stripModelThinking(text);
+    wireText = applyAiIdentityPrefix(
+      wireText,
+      cfg.aiSettings?.identity?.mode ?? "transparent",
+      resolveAiIdentityPrefix(cfg.aiSettings?.identity),
+    );
+    const credential = this._ensureAgentCredential();
+    await this._chatLog.append(targetOwnerId, {
+      messageId: msgId,
+      sender: {
+        ownerId: this._state.owner.ownerId,
+        displayName: "Your agent",
+        actorRole: "agent",
+        agentId: credential.agentId,
+        agentVerified: true,
+      },
+      recipient: { ownerId: targetOwnerId },
+      content: { text: wireText },
+      metadata: { timestamp: ts, deliveryReceipt: "sent" },
+      signature: "",
+    });
+    this._events.emit("chat:message", {
+      messageId: msgId,
+      sender: {
+        nodeId: this._state.agent.agentPeerId,
+        displayName: "Your agent",
+        ownerId: this._state.owner.ownerId,
+        actorRole: "agent",
+        agentId: credential.agentId,
+        agentVerified: true,
+      },
+      recipient: { nodeId: "", ownerId: targetOwnerId },
+      content: { text: wireText },
+      metadata: { timestamp: ts, deliveryReceipt: "sent" },
+      signature: "",
+    });
+    await this._dispatchSignedAgentChat(targetOwnerId, wireText, credential);
+    return { messageId: msgId };
+  }
+
+  async listAgentActivity(params?: ListAgentActivityParams): Promise<AgentActivityRecord[]> {
+    return this._agentActivity.list(params);
+  }
+
+  private async _publishAgentActivity(
+    record: AgentActivityRecord,
+    _contactOwnerId?: string,
+  ): Promise<void> {
+    await this._agentActivity.append({
+      activityId: record.activityId,
+      correlationId: record.correlationId,
+      taskId: record.taskId,
+      domain: record.domain,
+      kind: record.kind,
+      summary: record.summary,
+      remoteOwnerId: record.remoteOwnerId,
+      remoteAgentId: record.remoteAgentId,
+      remoteActorRole: record.remoteActorRole,
+      requiresOwnerAction: record.requiresOwnerAction,
+      createdAt: record.createdAt,
+    });
+    const config = await this.getNodeConfig();
+    if (shouldPushAgentActivity(record.kind, config.agentVisibility, record.domain)) {
+      this._events.emit("agent:activity", record);
+    }
+  }
+
+  /** Record inbound A2A task journal row (mobile Activity feed). */
+  async recordInboundTaskActivity(
+    journalEntry: TaskJournalEntry,
+    envelope: {
+      messageId: string;
+      correlationId?: string;
+      senderPeerId: string;
+      senderRole: string;
+    },
+  ): Promise<AgentActivityRecord> {
+    await this._taskJournal.append({
+      eventId: journalEntry.eventId,
+      taskId: journalEntry.taskId,
+      eventType: journalEntry.eventType,
+      summary: journalEntry.summary,
+      createdAt: journalEntry.createdAt,
+      mandateId: journalEntry.mandateId,
+    });
+    const record = mapTaskJournalToActivity(journalEntry, envelope, _randomUUID());
+    await this._publishAgentActivity(record, record.remoteOwnerId);
+    return record;
+  }
+
+  async recordAgentCardCached(ownerId: string, card: import("@envoymesh/protocol").AgentCard): Promise<void> {
+    const record: AgentActivityRecord = {
+      activityId: _randomUUID(),
+      domain: "research",
+      kind: "task_progress",
+      summary: `Learned agent card for ${card.displayName}`,
+      remoteOwnerId: ownerId,
+      remoteActorRole: "agent",
+      createdAt: new Date().toISOString(),
+    };
+    await this._publishAgentActivity(record, ownerId);
+  }
+
+  /** Local-only owner report (Option A). */
+  async emitLocalOwnerReport(
+    report: Report,
+    opts?: { contactOwnerId?: string },
+  ): Promise<AgentActivityRecord> {
+    const localOwnerId = this._state?.owner.ownerId ?? report.ownerId;
+    const contactOwnerId = resolveReportContactOwnerId(
+      report,
+      localOwnerId,
+      opts?.contactOwnerId,
+    );
+    const record = mapOwnerReportToActivity(report, _randomUUID(), localOwnerId);
+    await this._publishAgentActivity(record, contactOwnerId);
+    return record;
+  }
+
+  async listPendingApprovals(): Promise<import("@envoymesh/api").PendingApprovalSummary[]> {
+    return this._approvalQueue.listPending().map((item) => ({
+      id: item.id,
+      actionType: item.actionType,
+      title: item.title,
+      description: item.description,
+      draftContent: item.draftContent,
+      contactOwnerId: item.context.contactOwnerId,
+      contactDisplayName: item.context.contactDisplayName,
+      priority: item.priority,
+      requestedAt: item.requestedAt,
+    }));
+  }
+
+  async approvePendingApproval(
+    itemId: string,
+    notes?: string,
+  ): Promise<import("@envoymesh/api").ApprovePendingApprovalResult> {
+    const approved = this._approvalQueue.approve(itemId.trim(), notes);
+    if (!approved) {
+      return { ok: false, error: "Item not found or not pending" };
+    }
+    const executed = await executeApprovedAction(approved, {
+      sendAgentChat: (targetOwnerId, text) => this.sendAgentChat(targetOwnerId, text),
+    });
+    if (!executed.ok) {
+      return { ok: false, error: executed.reason };
+    }
+    return { ok: true, messageId: executed.messageId };
+  }
+
+  async rejectPendingApproval(
+    itemId: string,
+    notes?: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const rejected = this._approvalQueue.reject(itemId.trim(), notes);
+    if (!rejected) {
+      return { ok: false, error: "Item not found or not pending" };
+    }
+    return { ok: true };
+  }
+
+  async listAuditEvents(
+    params?: import("@envoymesh/api").ListAuditEventsParams,
+  ): Promise<import("@envoymesh/api").AuditEventSummary[]> {
+    const rows = await this._auditJournal.list({
+      correlationId: params?.correlationId,
+      taskId: params?.taskId,
+      since: params?.since,
+      until: params?.until,
+      limit: params?.limit,
+    });
+    return rows.map((row) => ({
+      eventId: row.eventId,
+      type: row.type,
+      createdAt: row.createdAt,
+      intent: row.intent,
+      taskId: row.taskId,
+      correlationId: row.correlationId,
+      remotePeerId: row.remotePeerId,
+      direction: row.direction,
+      outcome: row.outcome,
+      summary: row.summary,
+    }));
+  }
+
+  async listTaskJournalEntries(
+    params?: import("@envoymesh/api").ListTaskJournalParams,
+  ): Promise<import("@envoymesh/api").TaskJournalSummary[]> {
+    const rows = await this._taskJournal.list({
+      taskId: params?.taskId,
+      limit: params?.limit,
+    });
+    return rows.map((row) => ({
+      eventId: row.eventId,
+      taskId: row.taskId,
+      eventType: row.eventType,
+      summary: row.summary,
+      createdAt: row.createdAt,
+      mandateId: row.mandateId,
+    }));
+  }
+
+  async listAgentCards(): Promise<import("@envoymesh/api").CachedAgentCardSummary[]> {
+    const rows = await this._agentCardStore.list();
+    return rows.map((row) => {
+      const card = JSON.parse(row.cardJson) as import("@envoymesh/protocol").AgentCard;
+      return {
+        ownerId: row.ownerId,
+        displayName: card.displayName,
+        capabilities: card.capabilities,
+        cachedAt: row.cachedAt,
+        sourceAgentPeerId: row.sourceAgentPeerId,
+      };
+    });
+  }
+
+  async getAgentCard(ownerId: string): Promise<import("@envoymesh/api").CachedAgentCardSummary | undefined> {
+    const row = await this._agentCardStore.get(ownerId.trim());
+    if (!row) return undefined;
+    const card = JSON.parse(row.cardJson) as import("@envoymesh/protocol").AgentCard;
+    return {
+      ownerId: row.ownerId,
+      displayName: card.displayName,
+      capabilities: card.capabilities,
+      cachedAt: row.cachedAt,
+      sourceAgentPeerId: row.sourceAgentPeerId,
+    };
+  }
+
+  async requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }> {
+    if (!this._state?.agent || !this._state?.owner || !this._state?.device) {
+      return { ok: false, error: "node not initialized" };
+    }
+    try {
+      const credential = this._ensureAgentCredential();
+      const recipientPeerId = await this._resolveChatRecipientPeerId(targetOwnerId.trim());
+      const unsigned = createUnsignedEnvelope({
+        intent: "agent.card.request",
+        senderPeerId: this._state.agent.agentPeerId,
+        senderPublicKey: this._state.agent.publicKeyPem,
+        senderRole: "agent",
+        recipientPeerId,
+        recipientRole: "agent",
+        payload: createAgentCardRequestPayload({
+          requesterOwnerId: this._state.owner.ownerId,
+          requesterDeviceId: deriveDeviceId(this._state.device.publicKeyPem),
+        }),
+        agentCredential: credential,
+      });
+      const signed = signUnsignedEnvelope(unsigned, this._state.agent.privateKeyPem);
+      await this._dispatchSignedAgentEnvelope(targetOwnerId.trim(), signed);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
   async sendChatAttachment(
     params: import("@envoymesh/api").SendChatAttachmentParams,
   ): Promise<import("@envoymesh/api").SendChatAttachmentResult> {
@@ -1479,7 +1804,56 @@ You are the owner's personal AI assistant on EnvoyMesh.
     queryText?: string;
     username?: string;
     interests?: string[];
+    did?: string;
+    maxResults?: number;
   }): Promise<PeerSearchResult[]> {
+    if (query.did?.trim()) {
+      const parsed = parseDidLookupInput(query.did.trim());
+      if (parsed.kind === "invalid") return [];
+
+      const bonds = await this._trustStore.list();
+      const bonded = bonds.filter((b) => b.level !== "blocked");
+      const results: PeerSearchResult[] = [];
+
+      if (this._state) {
+        const selfPresentation = buildOwnerDidPresentation({
+          ownerId: this._state.owner.ownerId,
+          publicKeyPem: this._state.owner.publicKeyPem,
+        });
+        const selfMatch =
+          (parsed.kind === "envoy-owner" && parsed.ownerId === selfPresentation.ownerId) ||
+          (parsed.kind === "did-key" && parsed.did && didKeysMatch(parsed.did, selfPresentation.did));
+        if (selfMatch) {
+          results.push({
+            nodeId: this._meshPeerId ?? selfPresentation.ownerId,
+            ownerId: selfPresentation.ownerId,
+            displayName: selfPresentation.ownerId,
+            interests: [],
+            profileVisibility: "contacts",
+            did: selfPresentation.did,
+            discoverySource: "did-lookup",
+            trustLevel: "self",
+          });
+        }
+      }
+
+      for (const bond of bonded) {
+        if (parsed.kind === "envoy-owner" && parsed.ownerId === bond.peerOwnerId) {
+          results.push({
+            nodeId: bond.libp2pPeerId ?? bond.peerOwnerId,
+            ownerId: bond.peerOwnerId,
+            displayName: bond.displayName ?? bond.peerOwnerId,
+            interests: [],
+            profileVisibility: "contacts",
+            discoverySource: "did-lookup",
+            trustLevel: bond.level,
+          });
+        }
+      }
+
+      return results.slice(0, query.maxResults ?? 20);
+    }
+
     // 1. Search local trust store (bonded peers)
     const bonds = await this._trustStore.list();
     let results: BondRecord[] = bonds;
@@ -1720,6 +2094,16 @@ You are the owner's personal AI assistant on EnvoyMesh.
       allowIpfs: externalPublish.allowIpfs,
       ipfsExportEngine: externalPublish.ipfsExportEngine,
     });
+  }
+
+  async pinLibraryItemExternal(
+    documentId: string,
+  ): Promise<import("@envoymesh/api").PinLibraryItemExternalResult> {
+    void documentId;
+    return {
+      ok: false,
+      error: "External pinning is not available on mobile in this release",
+    };
   }
 
   async getIpfsEngineStatus(): Promise<import("@envoymesh/api").IpfsEngineStatus> {
@@ -2417,6 +2801,150 @@ You are the owner's personal AI assistant on EnvoyMesh.
     };
   }
 
+  async getConnectivityDiagnostics() {
+    return {
+      checkedAt: new Date().toISOString(),
+      nodeOnline: this._status === "running",
+      stageD: {
+        discoveryProfile: "unknown" as const,
+        bootstrapPeerCount: 0,
+        discoveredPeerCount: 0,
+        relayDiscoveryCount: 0,
+        bootstrapProbeSuccessCount: 0,
+        bootstrapProbeFailureCount: 0,
+        reprobeOkCount: 0,
+        reprobeFailCount: 0,
+        warningCount: 0,
+        badge: "unknown" as const,
+        badgeExplanation: "Mobile relay-only — use desktop connectivity-status for WAN axis detail.",
+      },
+      axes: {
+        bootstrapReachability: { state: "unknown" as const, explanation: "Not available on mobile relay-only build." },
+        relayAvailability: {
+          state: this._relayUrls.length > 0 ? ("ok" as const) : ("unknown" as const),
+          explanation:
+            this._relayUrls.length > 0
+              ? `${this._relayUrls.length} relay URL(s) configured.`
+              : "No relay URLs configured.",
+        },
+        holePunch: { state: "disabled" as const, explanation: "DCUtR not used on mobile relay-only transport." },
+        policyBlock: { state: "unknown" as const, explanation: "Audit tail not surfaced on mobile." },
+        features: { relay: true, dcutr: false },
+      },
+      quicEnabled: false,
+      hints: ["Mobile uses relay WebSocket transport — WAN axis diagnostics are best-effort."],
+      signOffChecklist: [],
+    };
+  }
+
+  async discoverCapabilityTopic(params: { topic: string; maxResults?: number; followUpDiscovery?: boolean }) {
+    const topic = params.topic.trim();
+    if (!topic) throw new Error("discoverCapabilityTopic: topic is required");
+    const results = await this.searchPeers({ interests: [topic] });
+    return {
+      topic,
+      providers: results.map((r) => ({
+        peerId: r.nodeId,
+        multiaddrs: [],
+        ownerId: r.ownerId,
+        displayName: r.displayName,
+        trustLevel: r.trustLevel,
+        discoverySource: "dht-capability-topic" as const,
+      })),
+    };
+  }
+
+  async getMorningReport(params?: { limit?: number }) {
+    const bonds = await this._trustStore.list();
+    return bonds.slice(0, params?.limit ?? 10).map((b, index) => ({
+      ownerId: b.peerOwnerId,
+      peerId: b.libp2pPeerId,
+      trustLevel: b.level,
+      score: 100 - index,
+      reason: `trust=${b.level}`,
+      discoveryMatchCount: 0,
+    }));
+  }
+
+  async requestMultiHopDiscovery(
+    params: import("@envoymesh/api").RequestMultiHopDiscoveryParams,
+  ): Promise<import("@envoymesh/api").RequestMultiHopDiscoveryResult> {
+    const bonds = (await this._trustStore.list()).filter((b) => b.level !== "blocked");
+    return {
+      matches: [],
+      bondsQueried: Math.min(bonds.length, params.maxBonds ?? 5),
+      correlationId: _randomUUID(),
+      pendingForwardApprovals: 0,
+      aggregatedMatchCount: 0,
+    };
+  }
+
+  async getMultiHopDiscoverySession(
+    _correlationId: string,
+  ): Promise<import("@envoymesh/api").MultiHopDiscoverySessionView | undefined> {
+    return undefined;
+  }
+
+  async ingestInboundMultiHopDiscoveryResponse(_params: {
+    correlationId: string;
+    responderOwnerId: string;
+    matches: Array<{
+      ownerId: string;
+      peerId: string;
+      hopDistance?: number;
+      matchedCapabilities: string[];
+      matchedTagHashes: string[];
+    }>;
+  }): Promise<void> {
+    return;
+  }
+
+  async sendSyncStateUpdate(
+    params: import("@envoymesh/api").SendSyncStateUpdateParams,
+  ): Promise<import("@envoymesh/api").SendSyncStateUpdateResult> {
+    if (!this._state?.device || !this._state?.owner) {
+      return { ok: false, recipients: 0, error: "node not initialized" };
+    }
+    const scope = params.scope.trim();
+    const updateBase64 = params.updateBase64.trim();
+    if (!scope || !updateBase64) {
+      return { ok: false, recipients: 0, error: "scope and updateBase64 required" };
+    }
+    const payload = createSyncStatePayload({
+      scope,
+      updateBase64,
+      senderOwnerId: this._state.owner.ownerId,
+    });
+    const targets: string[] = [];
+    if (params.targetPeerId?.trim()) {
+      targets.push(params.targetPeerId.trim());
+    } else if (this._state.homeNodePeerId?.trim()) {
+      targets.push(this._state.homeNodePeerId.trim());
+    }
+    if (targets.length === 0) {
+      return { ok: true, recipients: 0 };
+    }
+    let sent = 0;
+    for (const peerId of targets) {
+      const unsigned = createUnsignedEnvelope({
+        intent: "sync.state",
+        senderPeerId: derivePeerId(this._state.device.publicKeyPem),
+        senderPublicKey: this._state.device.publicKeyPem,
+        recipientPeerId: peerId,
+        payload,
+      });
+      const signed = signUnsignedEnvelope(unsigned, this._state.device.privateKeyPem);
+      const wire = JSON.stringify(signed);
+      try {
+        await this._sendViaMesh(peerId, wire);
+      } catch {
+        this._broadcastToRelaySockets(wire);
+      }
+      sent += 1;
+    }
+    return { ok: sent > 0, recipients: sent };
+  }
+
   // -----------------------------------------------------------------------
   // Agent bridge
   // -----------------------------------------------------------------------
@@ -2444,6 +2972,37 @@ You are the owner's personal AI assistant on EnvoyMesh.
       // Include owner identity info for shared-identity transfer
       ownerPublicKey: this._state?.owner?.publicKeyPem,
       ownerId: this._state?.owner?.ownerId,
+    };
+  }
+
+  async createWanJoinInvite(
+    params?: import("@envoymesh/api").CreateWanJoinInviteParams,
+  ): Promise<import("@envoymesh/api").CreateWanJoinInviteResult> {
+    void params;
+    throw new Error("WAN join invites are created on the home node (desktop Settings)");
+  }
+
+  async applyWanJoinInvite(token: string): Promise<import("@envoymesh/api").ApplyWanJoinInviteResult> {
+    const {
+      assertWanJoinInviteNotExpired,
+      decodeWanJoinInviteV1,
+      mergeWanJoinInviteBootstrap,
+      parseEnvoyJoinUri,
+    } = await import("@envoymesh/api");
+    const invite = decodeWanJoinInviteV1(parseEnvoyJoinUri(token));
+    assertWanJoinInviteNotExpired(invite);
+    const before = new Set(this._meshBootstrapPeers);
+    const merged = mergeWanJoinInviteBootstrap({
+      bootstrapPeers: this._meshBootstrapPeers,
+      bootstrapPresets: [],
+      invite,
+    });
+    this._meshBootstrapPeers = merged.bootstrapPeers;
+    return {
+      ok: true,
+      bootstrapPeersAdded: merged.bootstrapPeers.filter((p) => !before.has(p)).length,
+      bootstrapPresetsAdded: 0,
+      seedsPersisted: merged.seedAddrs.length,
     };
   }
 
@@ -2495,10 +3054,21 @@ You are the owner's personal AI assistant on EnvoyMesh.
     chatText: string;
     messageId: string;
     remotePeerId: string;
+    senderRole?: "human" | "agent" | "system";
+    agentVerified?: boolean;
   }): Promise<void> {
     if (!this._state) return;
     this._loadAiPrefsIfNeeded();
     const cfg = await this.getNodeConfig();
+    if (
+      shouldSkipAgentChatAssist({
+        senderRole: input.senderRole ?? "human",
+        agentInteractionMode: cfg.agentInteractionMode,
+        agentVerified: input.agentVerified,
+      })
+    ) {
+      return;
+    }
     const bond = await this._trustStore.get(input.senderOwnerId);
     const bondLevel = bond?.level ?? "public";
     const result = await generateMobileChatDraft({
@@ -2538,13 +3108,26 @@ You are the owner's personal AI assistant on EnvoyMesh.
     });
     if (autoSendPolicy.allowed && aiAccessLevel === "full") {
       try {
-        await this.sendChat(input.senderOwnerId, result.draft.text);
+        await this.sendAgentChat(input.senderOwnerId, result.draft.text);
       } catch (err) {
         console.warn(
           "[mobile-node] chat draft auto-send failed:",
           err instanceof Error ? err.message : err,
         );
       }
+    } else if (result.draft.text) {
+      const item = createApprovalItem(
+        "send_chat",
+        `Reply to ${input.senderDisplayName}`,
+        `AI-drafted reply: "${result.draft.text.slice(0, 80)}${result.draft.text.length > 80 ? "..." : ""}"`,
+        result.draft.text,
+        {
+          contactOwnerId: input.senderOwnerId,
+          contactDisplayName: input.senderDisplayName,
+        },
+        bondLevel === "direct" ? "normal" : "low",
+      );
+      this._approvalQueue.add(item);
     }
   }
 
@@ -2562,7 +3145,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
       sendChat: async (targetOwnerId, text) => {
         const cfg = await self.getNodeConfig();
         const wireText = applyAiIdentityToDraftText(text, cfg.aiSettings?.identity);
-        return self.sendChat(targetOwnerId, wireText);
+        return self.sendAgentChat(targetOwnerId, wireText);
       },
       executeTool: async (toolName, params) => {
         try {
@@ -2598,7 +3181,11 @@ You are the owner's personal AI assistant on EnvoyMesh.
               {
                 getBonds: () => self.getBonds(),
                 discoverPublishedLibrary: (p) => self.discoverPublishedLibrary(p),
-                sendChat: (targetOwnerId, text) => self.sendChat(targetOwnerId, text),
+                sendChat: async (targetOwnerId, text) => {
+                  const cfg = await self.getNodeConfig();
+                  const wireText = applyAiIdentityToDraftText(text, cfg.aiSettings?.identity);
+                  return self.sendAgentChat(targetOwnerId, wireText);
+                },
               },
               {
                 targetOwnerHint: params.targetOwnerHint as string,
@@ -3316,6 +3903,17 @@ You are the owner's personal AI assistant on EnvoyMesh.
       senderVaultRelativePath: input.relativePath.replace(/^[\\/]+/, "") || undefined,
     };
     this._pendingInboundShareOffers.set(input.shareId, offer);
+    void this._publishAgentActivity(
+      {
+        activityId: input.shareId,
+        domain: "social",
+        kind: "share_proposed",
+        summary: `Incoming share: ${filename}`,
+        remoteOwnerId: senderOwnerId,
+        createdAt: offer.timestamp,
+      },
+      senderOwnerId,
+    );
     if (input.deliveryChannel !== "chat") {
       this._events.emit("share:offered", offer);
     }
@@ -3583,7 +4181,20 @@ You are the owner's personal AI assistant on EnvoyMesh.
       const intent = msg.intent as string;
       const payload = (msg.payload as Record<string, unknown>) ?? {};
 
-      if (intent === "chat.message") {
+      if (intent === "sync.state") {
+        try {
+          const syncPayload = parseSyncStatePayload(msg.payload);
+          if (syncPayload.senderOwnerId !== owner.ownerId) return;
+          this._events.emit("crdt:sync", {
+            scope: syncPayload.scope,
+            updateBase64: syncPayload.updateBase64,
+            senderOwnerId: syncPayload.senderOwnerId,
+            remotePeerId: (msg.senderPeerId as string) ?? "",
+          });
+        } catch {
+          console.warn("[mobile-node] rejected sync.state: invalid payload");
+        }
+      } else if (intent === "chat.message") {
         let chatPayload: ReturnType<typeof parseChatMessagePayload> | undefined;
         try {
           chatPayload = parseChatMessagePayload(msg.payload);
@@ -3634,7 +4245,16 @@ You are the owner's personal AI assistant on EnvoyMesh.
           }).catch(() => {});
           this._events.emit("chat:message", {
             messageId: msg.messageId as string,
-            sender: { nodeId: senderPeerId, displayName: senderDisplayName, ownerId: senderOwnerId },
+            sender: {
+              nodeId: senderPeerId,
+              displayName: senderDisplayName,
+              ownerId: senderOwnerId,
+              ...chatSenderActorFromEnvelope(
+                (msg.senderRole as "human" | "agent" | "system") ?? "human",
+                msg.agentCredential as AgentCredential | undefined,
+                true,
+              ),
+            },
             recipient: { nodeId: agent.agentPeerId, ownerId: owner.ownerId },
             content: { text: chatText },
             metadata: { timestamp: ts },
@@ -3646,6 +4266,8 @@ You are the owner's personal AI assistant on EnvoyMesh.
             chatText,
             messageId: (msg.messageId as string) ?? _randomUUID(),
             remotePeerId: senderPeerId,
+            senderRole: (msg.senderRole as "human" | "agent" | "system") ?? "human",
+            agentVerified: Boolean(msg.agentCredential),
           });
         });
       } else if (intent === "bond.request") {
@@ -3687,6 +4309,22 @@ You are the owner's personal AI assistant on EnvoyMesh.
             "[mobile-node] share.accept / data transfer:",
             err instanceof Error ? err.message : err,
           ),
+        );
+      } else if (intent === "agent.card.request" || intent === "agent.card.response") {
+        void this._handleInboundAgentCard(
+          msg,
+          opts?.transportPeerId ?? (msg.senderPeerId as string) ?? "",
+        ).catch((err) =>
+          console.warn("[mobile-node] agent.card handler:", err instanceof Error ? err.message : err),
+        );
+      } else if (
+        isA2ATaskIntent(intent as import("@envoymesh/protocol").EnvoyIntent)
+      ) {
+        void this._handleInboundA2ATask(
+          msg,
+          opts?.transportPeerId ?? (msg.senderPeerId as string) ?? "",
+        ).catch((err) =>
+          console.warn("[mobile-node] A2A task handler:", err instanceof Error ? err.message : err),
         );
       } else if (intent === "rendezvous.response") {
         console.log("[mobile-node] rendezvous.response received, matches:", (payload.matches as any[])?.length);
@@ -4299,6 +4937,212 @@ You are the owner's personal AI assistant on EnvoyMesh.
    * Match desktop `NodeServiceImpl.sendChat`: device keys + {@link createChatMessagePayload},
    * then mesh (if bond has dial id) else relay flood.
    */
+  private _ensureAgentCredential(): AgentCredential {
+    if (this._agentCredential) {
+      return this._agentCredential;
+    }
+    if (!this._state?.owner || !this._state?.agent) {
+      throw new Error("Agent identity is not available");
+    }
+    this._agentCredential = createAgentCredential({
+      owner: {
+        ownerId: this._state.owner.ownerId,
+        publicKeyPem: this._state.owner.publicKeyPem,
+        privateKeyPem: this._state.owner.privateKeyPem,
+      },
+      agent: {
+        agentId: this._state.agent.agentId,
+        agentPeerId: this._state.agent.agentPeerId,
+        publicKeyPem: this._state.agent.publicKeyPem,
+        privateKeyPem: this._state.agent.privateKeyPem,
+      },
+      scope: ["chat.message"],
+    });
+    return this._agentCredential;
+  }
+
+  private async _dispatchSignedAgentChat(
+    targetOwnerId: string,
+    text: string,
+    credential: AgentCredential,
+  ): Promise<void> {
+    if (!this._state?.agent || !this._state?.owner) return;
+    this._assertDeviceNotRevoked();
+
+    const recipientPeerId = await this._resolveChatRecipientPeerId(targetOwnerId);
+    const unsigned = createUnsignedEnvelope({
+      intent: "chat.message",
+      senderPeerId: this._state.agent.agentPeerId,
+      senderPublicKey: this._state.agent.publicKeyPem,
+      senderRole: "agent",
+      recipientPeerId,
+      recipientRole: "human",
+      payload: createChatMessagePayload({
+        senderOwnerId: this._state.owner.ownerId,
+        text: stripModelThinking(text),
+      }),
+      agentCredential: credential,
+    });
+    const signed = signUnsignedEnvelope(unsigned, this._state.agent.privateKeyPem);
+    const data = JSON.stringify(signed);
+
+    if (this._mesh) {
+      const transportPeerId = await this._resolveChatTransportPeerId(targetOwnerId);
+      if (transportPeerId) {
+        try {
+          await this._sendViaMesh(transportPeerId, data);
+          return;
+        } catch (err) {
+          console.warn(
+            "[mobile-node] mesh sendAgentChat failed, falling back to relay:",
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+    }
+    this._broadcastToRelaySockets(data);
+  }
+
+  private async _dispatchSignedAgentEnvelope(
+    targetOwnerId: string,
+    signed: import("@envoymesh/protocol").EnvoyEnvelope,
+  ): Promise<void> {
+    const data = JSON.stringify(signed);
+    if (this._mesh) {
+      const transportPeerId = await this._resolveChatTransportPeerId(targetOwnerId);
+      if (transportPeerId) {
+        try {
+          await this._sendViaMesh(transportPeerId, data);
+          return;
+        } catch (err) {
+          console.warn(
+            "[mobile-node] mesh agent envelope failed, falling back to relay:",
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+    }
+    this._broadcastToRelaySockets(data);
+  }
+
+  private async _handleInboundAgentCard(
+    msg: Record<string, unknown>,
+    remotePeerId: string,
+  ): Promise<void> {
+    if (!this._state?.owner || !this._state?.device || !this._state?.agent) return;
+    const envelope = msg as import("@envoymesh/protocol").EnvoyEnvelope;
+    const receivedAt = Date.now();
+    const correlationId =
+      typeof envelope.correlationId === "string" ? envelope.correlationId : undefined;
+    const result = await handleMobileInboundAgentCardIntent({
+      envelope,
+      ownerId: this._state.owner.ownerId,
+      deviceId: deriveDeviceId(this._state.device.publicKeyPem),
+      displayName: this._state.owner.ownerId,
+      nodeProfile: this._state.deviceCertificate?.deviceProfile ?? "primary",
+      capabilities: this._state.deviceCertificate?.capabilities ?? ["message.send", "task.execute"],
+      remotePeerId,
+      receivedAt,
+      correlationId,
+      trustStore: this._trustStore,
+      agentCardStore: this._agentCardStore,
+      auditJournal: this._auditJournal,
+    });
+    if (!result.ok) {
+      console.warn(`[mobile-node] agent.card denied: ${result.reason}`);
+      return;
+    }
+    if (result.action === "cached") {
+      void this.recordAgentCardCached(result.ownerId, result.card).catch((err) =>
+        console.warn("[mobile-node] agent card activity failed:", err),
+      );
+      return;
+    }
+    if (result.action === "respond") {
+      const credential = this._ensureAgentCredential();
+      const unsigned = createUnsignedEnvelope({
+        senderPeerId: this._state.agent.agentPeerId,
+        senderPublicKey: this._state.agent.publicKeyPem,
+        senderRole: "agent",
+        recipientPeerId: envelope.senderPeerId,
+        recipientRole: "agent",
+        intent: "agent.card.response",
+        payload: result.responsePayload,
+        correlationId,
+        agentCredential: credential,
+      });
+      const signed = signUnsignedEnvelope(unsigned, this._state.agent.privateKeyPem);
+      await this._dispatchSignedAgentEnvelope(
+        envelope.agentCredential?.ownerId ?? envelope.senderPeerId,
+        signed,
+      );
+    }
+  }
+
+  private async _handleInboundA2ATask(
+    msg: Record<string, unknown>,
+    remotePeerId: string,
+  ): Promise<void> {
+    const envelope = msg as import("@envoymesh/protocol").EnvoyEnvelope;
+    const decision = await this._taskDispatcher.dispatch(envelope);
+    const correlationId =
+      typeof envelope.correlationId === "string" ? envelope.correlationId : undefined;
+
+    if (decision.action === "handled") {
+      await this._taskJournal.append({
+        eventId: decision.journalEntry.eventId,
+        taskId: decision.journalEntry.taskId,
+        eventType: decision.journalEntry.eventType,
+        summary: decision.journalEntry.summary,
+        createdAt: decision.journalEntry.createdAt,
+        mandateId: decision.journalEntry.mandateId,
+      });
+      await this._auditJournal.append({
+        eventId: _randomUUID(),
+        type: "task.handled",
+        intent: decision.intent,
+        taskId: decision.taskId,
+        correlationId,
+        remotePeerId,
+        direction: "inbound",
+        outcome: "record",
+        summary: decision.journalEntry.summary,
+        createdAt: envelope.createdAt,
+      });
+      await this.recordInboundTaskActivity(decision.journalEntry, {
+        messageId: envelope.messageId,
+        correlationId,
+        senderPeerId: envelope.senderPeerId,
+        senderRole: envelope.senderRole ?? "agent",
+      });
+      if (decision.intent === "report.create") {
+        try {
+          const reportPayload = parseReportCreatePayload(envelope.payload);
+          await this.emitLocalOwnerReport(reportPayload.report, {
+            contactOwnerId: envelope.agentCredential?.ownerId,
+          });
+        } catch (err) {
+          console.warn("[mobile-node] report.create parse failed:", err);
+        }
+      }
+      return;
+    }
+
+    if (decision.action === "rejected") {
+      await this._auditJournal.append({
+        eventId: _randomUUID(),
+        type: "task.rejected",
+        intent: envelope.intent,
+        correlationId,
+        remotePeerId,
+        direction: "inbound",
+        outcome: "deny",
+        summary: decision.reason,
+        createdAt: envelope.createdAt,
+      });
+    }
+  }
+
   private async _dispatchSignedChat(targetOwnerId: string, text: string): Promise<void> {
     if (!this._state?.device || !this._state?.owner) return;
     this._assertDeviceNotRevoked();

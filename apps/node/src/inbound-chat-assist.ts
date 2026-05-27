@@ -2,6 +2,7 @@ import type { ModelProviderConfig, SendChatResult } from "@envoymesh/api";
 import { resolveContactAiAccessLevel, applyAiIdentityPrefix, resolveAiIdentityPrefix } from "@envoymesh/api";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import {
+  createAuditEvent,
   type ChatDraftStore,
   type HumanProfileStore,
   type AgentIdentityStore,
@@ -11,6 +12,7 @@ import {
   type LocalTrustStore,
   type NodeProfile,
 } from "@envoymesh/local-store";
+import { createApprovalItem, shouldSkipAgentChatAssist, type ApprovalQueue } from "@envoymesh/api";
 import { buildVaultIndex } from "@envoymesh/vault";
 import { auditAutonomousDecision, evaluateAutonomousPolicy } from "./autonomous-inbound.js";
 import { generateChatDraft } from "./chat-draft-inbound.js";
@@ -42,6 +44,7 @@ export async function runInboundChatAssist(input: {
   emitDraft: (threadPeerOwnerId: string, draft: { draftId: string; text: string; inReplyToMessageId: string; createdAt: string }) => void;
   isOwnerOnline?: () => boolean;
   ragService?: RagService | null;
+  approvalQueue?: Pick<ApprovalQueue, "add"> | null;
 }): Promise<void> {
   const {
     envelope,
@@ -66,6 +69,7 @@ export async function runInboundChatAssist(input: {
     emitDraft,
     isOwnerOnline = () => true,
     ragService = null,
+    approvalQueue = null,
   } = input;
 
   const contactPrefs = config.contactAiPreferences ?? [];
@@ -86,6 +90,17 @@ export async function runInboundChatAssist(input: {
     (autoSendEnabled && aiAccessLevel === "full");
 
   if (!effectiveChatAssist || (aiAccessLevel !== "assistant_only" && aiAccessLevel !== "full")) {
+    return;
+  }
+
+  if (
+    shouldSkipAgentChatAssist({
+      senderRole: envelope.senderRole ?? "human",
+      agentInteractionMode: config.agentInteractionMode,
+      agentVerified: envelope.senderRole === "agent" ? Boolean(envelope.agentCredential) : undefined,
+    })
+  ) {
+    console.log(`[chat-assist] skipped for verified peer agent (structured_preferred)`);
     return;
   }
 
@@ -179,5 +194,35 @@ export async function runInboundChatAssist(input: {
     } catch (err) {
       console.warn(`[chat-assist] auto-send failed:`, err);
     }
+  } else if (draftText && approvalQueue) {
+    const item = createApprovalItem(
+      "send_chat",
+      `Reply to ${senderDisplayName}`,
+      `AI-drafted reply: "${draftText.slice(0, 80)}${draftText.length > 80 ? "..." : ""}"`,
+      draftText,
+      {
+        contactOwnerId: senderOwnerId,
+        contactDisplayName: senderDisplayName,
+      },
+      bondLevel === "direct" ? "normal" : "low",
+    );
+    approvalQueue.add(item);
+    const denyReason = autoSendPolicy.allowed ? "policy" : autoSendPolicy.reason;
+    console.log(`[approval] queued draft ${item.id} for owner review (auto-send denied: ${denyReason})`);
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "model.routed",
+        intent: "chat.message",
+        messageId: envelope.messageId,
+        correlationId,
+        remotePeerId,
+        direction: "inbound",
+        verificationStatus: "verified",
+        latencyMs: Date.now() - receivedAt,
+        outcome: "record",
+        summary: `approval queued: ${item.id} action=send_chat contact=${senderOwnerId}`,
+        createdAt: new Date().toISOString(),
+      }),
+    );
   }
 }

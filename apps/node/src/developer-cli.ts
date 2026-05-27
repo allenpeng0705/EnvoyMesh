@@ -1,11 +1,13 @@
 import {
   analyzeConnectivityStageD,
+  analyzeWanConnectivityAxes,
   buildRelayManagerSnapshot,
   buildMorningReportDigest,
   createLocalTaskStore,
   createLocalPeerDirectoryStore,
   createLocalTrustStore,
   loadOrCreateNodeProfile,
+  measureStorageGate,
   parseTrustLevel,
   type ApprovalRequest,
   type AuditEvent,
@@ -58,6 +60,8 @@ export type DeveloperCliCommand =
   | "connectivity-status"
   | "relay-status"
   | "morning-report"
+  | "discover-topic"
+  | "storage-gate"
   | "pairing"
   | "smoke-checklist"
   | "invite"
@@ -103,6 +107,12 @@ export interface DeveloperCliArgs {
   inviteToken?: string;
   /** connectivity-status only: prepend ASCII Stage D snapshot panel */
   connectivityRich?: boolean;
+  /** discover-topic: DHT capability topic string */
+  topic?: string;
+  /** audit / storage-gate: ISO timestamp lower bound (inclusive) */
+  sinceIso?: string;
+  /** audit: ISO timestamp upper bound (exclusive) */
+  untilIso?: string;
 }
 
 export interface DeveloperCliResult {
@@ -207,6 +217,14 @@ export async function runDeveloperCli(argv: string[]): Promise<DeveloperCliResul
     return showMorningReport(args);
   }
 
+  if (args.command === "discover-topic") {
+    return showDiscoverTopicAudit(args);
+  }
+
+  if (args.command === "storage-gate") {
+    return showStorageGate(args);
+  }
+
   if (args.command === "smoke-checklist") {
     return generateSmokeChecklist(args);
   }
@@ -308,6 +326,12 @@ export function parseDeveloperCliArgs(rawArgv: string[]): DeveloperCliArgs {
       args.inviteNote = readValue(argv, ++index, arg);
     } else if (arg === "--invite-token") {
       args.inviteToken = readValue(argv, ++index, arg);
+    } else if (arg === "--topic") {
+      args.topic = readValue(argv, ++index, arg);
+    } else if (arg === "--since") {
+      args.sinceIso = readValue(argv, ++index, arg);
+    } else if (arg === "--until") {
+      args.untilIso = readValue(argv, ++index, arg);
     } else if (arg === "--help" || arg === "-h") {
       printDeveloperCliHelp();
       process.exit(0);
@@ -362,6 +386,8 @@ Commands:
   pairing        Pairing-focused queue/actions (list/approve/reject/retry/timeline).
   relay-status   Show local relay manager snapshot from runtime audit events.
   morning-report Show ranked discovery digest.
+  discover-topic  Show audit + seeds for a DHT capability topic (--topic). Live query: Social Search or RPC.
+  storage-gate    Measure audit JSONL size and query latency vs sqlite-adoption.md §2 triggers.
   smoke-checklist Generate a multi-machine validation checklist.
   invite         WAN join-invite helpers (encode/decode).
 
@@ -369,6 +395,9 @@ Options:
   --profile <dir>   Profile directory. Default: ./data/default
   --vault <dir>     Shared vault directory. Default: shared_vault
   --query <text>    Query for vault-search.
+  --topic <text>    Capability topic for discover-topic.
+  --since <iso>     Time lower bound for audit listings and storage-gate benchmark window.
+  --until <iso>     Time upper bound (exclusive) for audit listings.
   --limit <n>       Max rows to print. Default: 20
   --audit-correlation <id>  Only show audit rows matching correlationId/taskId (substring match).
   --include-p2p-trace         Include p2p.trace rows in audit listings (hidden by default).
@@ -472,12 +501,45 @@ async function showProfile(args: DeveloperCliArgs): Promise<DeveloperCliResult> 
 }
 
 async function listAuditEvents(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
-  const events = await createLocalTaskStore(args.profileDir).readAuditEvents();
+  const store = createLocalTaskStore(args.profileDir);
+  const events = await store.queryAuditEvents({
+    since: args.sinceIso,
+    until: args.untilIso,
+    limit: Math.max(args.limit * 5, 500),
+  });
   const filtered = filterAuditEventsForDeveloperView(args, events);
 
   return ok([
-    `Audit events (${filtered.length} of ${events.length})`,
+    `Audit events (${filtered.length} queried${args.sinceIso || args.untilIso ? ", time-filtered" : ""})`,
     ...last(filtered, args.limit).map(formatAuditEvent),
+  ]);
+}
+
+async function showStorageGate(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
+  const store = createLocalTaskStore(args.profileDir);
+  const report = await measureStorageGate({
+    profileDir: args.profileDir,
+    readAuditEvents: () => store.readAuditEvents(),
+    queryAuditIndex: (params) => store.queryAuditEvents(params),
+    sinceIso: args.sinceIso,
+  });
+
+  if (args.outputFormat === "json") {
+    return ok([JSON.stringify(report, null, 2)]);
+  }
+
+  return ok([
+    `Storage gate: ${report.recommendation}`,
+    `Profile: ${report.profileDir}`,
+    `Measured: ${report.measuredAt}`,
+    ...report.files.map((file) => `${file.path}: ${file.exists ? `${file.bytes} bytes` : "missing"}`),
+    `Audit rows: ${report.benchmark.auditRowCount}; index rows: ${report.benchmark.indexRowCount}`,
+    `Full audit read: ${report.benchmark.fullAuditReadMs.toFixed(1)} ms`,
+    `Indexed 90-day tail query: ${report.benchmark.indexedAuditQueryMs.toFixed(1)} ms`,
+    `SQLite triggers met: ${report.sqliteTriggersMet ? "yes" : "no"}`,
+    ...(report.triggerReasons.length > 0
+      ? report.triggerReasons.map((reason) => `  trigger: ${reason}`)
+      : ["  triggers: none (stay on JSONL + secondary index)"]),
   ]);
 }
 
@@ -687,6 +749,7 @@ async function showConnectivityStatus(args: DeveloperCliArgs): Promise<Developer
     createNodeConfigStore(args.profileDir).load(),
   ]);
   const analysis = analyzeConnectivityStageD(events);
+  const axes = analyzeWanConnectivityAxes(events);
   const traces = events.filter((event) => event.type === "p2p.trace");
   const warningEvents = traces.filter((event) => event.protocol === "connectivity.warning");
   const discoveredEvents = traces.filter((event) => event.protocol === "peer.discovery");
@@ -711,6 +774,13 @@ async function showConnectivityStatus(args: DeveloperCliArgs): Promise<Developer
     persistedLine,
     denseLine,
     analysis.lastCheckpointAt ? `lastCheckpoint=${analysis.lastCheckpointAt}` : "lastCheckpoint=none",
+    "",
+    "WAN connectivity axes:",
+    `  bootstrap=${axes.bootstrapReachability.state} — ${axes.bootstrapReachability.explanation}`,
+    `  relay=${axes.relayAvailability.state} — ${axes.relayAvailability.explanation}`,
+    `  punch=${axes.holePunch.state} — ${axes.holePunch.explanation}`,
+    `  policy=${axes.policyBlock.state} — ${axes.policyBlock.explanation}`,
+    "",
     ...last(bootstrapFail, 5).map((event) => `bootstrapFail ${event.createdAt} ${event.summary}`),
     ...last(reprobeFail, 5).map((event) => `reprobeFail ${event.createdAt} ${event.summary}`),
     ...last(warningEvents, 5).map((event) => `warning ${event.createdAt} ${event.summary}`),
@@ -832,6 +902,29 @@ async function showMorningReport(args: DeveloperCliArgs): Promise<DeveloperCliRe
       (entry) =>
         `score=${entry.score} owner=${entry.ownerId} trust=${entry.trustLevel} peer=${entry.peerId ?? "-"} matches=${entry.discoveryMatchCount} ${entry.reason}`,
     ),
+  ]);
+}
+
+async function showDiscoverTopicAudit(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
+  const topic = args.topic?.trim();
+  if (!topic) {
+    throw new Error("discover-topic requires --topic <capability-topic>");
+  }
+  const events = await createLocalTaskStore(args.profileDir).readAuditEvents();
+  const capabilityRows = formatCapabilityDiscoveryRows(events, args.limit).filter((row) =>
+    row.includes(`topic=${topic}`),
+  );
+  const seedRecords = await createDiscoverySeedStore(args.profileDir).listSeedRecords();
+  const topicSeeds = seedRecords.filter((record) => record.source === "capability-topic").slice(0, args.limit);
+
+  return ok([
+    `Discover topic (audit tail): ${topic}`,
+    "hint: live DHT query requires a running node — use Social Search (By Topic) or JSON-RPC discoverCapabilityTopic.",
+    "",
+    ...(capabilityRows.length > 0 ? capabilityRows : [`  (no discovery.capability.* audit rows for topic=${topic})`]),
+    "",
+    "Persisted capability-topic seeds:",
+    ...formatDiscoverySeedRows(topicSeeds, args.limit),
   ]);
 }
 
@@ -1067,6 +1160,8 @@ function parseDeveloperCliCommand(value: string): DeveloperCliCommand {
     value === "relay-status" ||
     value === "pairing" ||
     value === "morning-report" ||
+    value === "discover-topic" ||
+    value === "storage-gate" ||
     value === "smoke-checklist" ||
     value === "invite" ||
     value === "model-config"

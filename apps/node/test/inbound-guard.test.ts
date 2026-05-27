@@ -107,6 +107,17 @@ describe("inbound message guard", () => {
     });
   });
 
+  it("rejects chat.message with senderRole=agent and no agentCredential", () => {
+    const guard = createInboundMessageGuard();
+    const envelope = signedAgentChatEnvelope();
+    const { agentCredential: _removed, ...withoutCredential } = envelope;
+    void _removed;
+
+    const decision = guard.inspect(withoutCredential as typeof envelope);
+
+    expect(decision.action).toBe("reject");
+  });
+
   it("drops oldest replay entries when maxReplayEntries is exceeded", () => {
     const guard = createInboundMessageGuard({ maxReplayEntries: 2 });
     expect(guard.inspect(signedPingEnvelope("id-a")).action).toBe("allow");

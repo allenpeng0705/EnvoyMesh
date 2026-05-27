@@ -6,6 +6,11 @@ import type {
   ChatMessage,
   ChatAttachment,
   ChatDiagnostics,
+  ConnectivityDiagnostics,
+  CapabilityTopicProviderHit,
+  DiscoverCapabilityTopicParams,
+  DiscoverCapabilityTopicResult,
+  MorningReportEntry,
   ConnectionStatus,
   CreateHumanProfileInput,
   AgentIdentityDocument,
@@ -47,6 +52,10 @@ import type {
   DiscoverPublishedLibraryPeerResult,
   PublishedLibraryFileHit,
   ExportLibraryItemToIpfsResult,
+  PinLibraryItemExternalResult,
+  CreateWanJoinInviteParams,
+  CreateWanJoinInviteResult,
+  ApplyWanJoinInviteResult,
   IpfsEngineStatus,
   VerifyLibraryItemIpfsGatewayParams,
   VerifyLibraryItemIpfsGatewayResult,
@@ -58,6 +67,20 @@ import type {
   SendChatAttachmentResult,
   ReadLibraryItemContentParams,
   ReadLibraryItemContentResult,
+  AgentActivityRecord,
+  ListAgentActivityParams,
+  ListAuditEventsParams,
+  ListTaskJournalParams,
+  AuditEventSummary,
+  TaskJournalSummary,
+  PeerReputationSummary,
+  CachedAgentCardSummary,
+  PendingApprovalSummary,
+  ApprovePendingApprovalResult,
+  RequestMultiHopDiscoveryParams,
+  RequestMultiHopDiscoveryResult,
+  MultiHopDiscoveryMatch,
+  MultiHopDiscoverySessionView,
 } from "@envoymesh/api";
 import type { DocumentAgentTurnResult } from "@envoymesh/api";
 import {
@@ -66,6 +89,16 @@ import {
   normalizeDocumentAutonomyPolicy,
   MAX_CHAT_ATTACHMENT_BYTES,
   MAX_LIBRARY_ITEM_PREVIEW_BYTES,
+  pinCidToProvider,
+  buildEnvoyJoinUri,
+  encodeWanJoinInviteV1,
+  decodeWanJoinInviteV1,
+  assertWanJoinInviteNotExpired,
+  mergeWanJoinInviteBootstrap,
+  parseEnvoyJoinUri,
+  buildOwnerDidPresentation,
+  parseDidLookupInput,
+  didKeysMatch,
 } from "@envoymesh/api";
 
 import { randomUUID } from "node:crypto";
@@ -85,6 +118,13 @@ import {
   buildVaultIndexOptionsFromKnowledgeBase,
   resolveAiKnowledgeBaseSettings,
   chatMessagePayloadDeviceFields,
+  chatSenderActorFromEnvelope,
+  applyAiIdentityPrefix,
+  resolveAiIdentityPrefix,
+  shouldPushAgentActivity,
+  shouldPostA2aChatLine,
+  formatA2aChatSystemLine,
+  resolveReportContactOwnerId,
 } from "@envoymesh/api";
 
 import {
@@ -102,10 +142,13 @@ import {
   parseShareAcceptPayload,
   createDiscoveryRequestPayload,
   parseDiscoveryResponsePayload,
+  createDiscoveryResponsePayload,
+  createSyncStatePayload,
   createRendezvousRegisterPayload,
   createRendezvousQueryPayload,
   RendezvousResponsePayloadSchema,
   createKnowledgeQueryPayload,
+  createAgentCardRequestPayload,
   parseFriendMatchingPreferencesPayload,
   type HumanProfilePayload,
   type EnvoyEnvelope,
@@ -129,17 +172,29 @@ import {
   createHumanProfileStore,
   createAgentIdentityStore,
   createLocalChatLogStore,
+  createLocalAgentActivityStore,
   createChatDraftStore,
   createTaskRuntimeStateStore,
   createRelayStateStore,
   createCapabilityManifestStore,
   createSessionTokenStore,
   createDeviceAuthorizationStore,
+  createAgentCardStore,
+  createContactOwnerKeyStore,
+  createReputationAnchorStore,
+  createMultiHopDiscoveryStore,
+  createLocalPeerReputationStore,
+  type AgentCardStore,
+  type ContactOwnerKeyStore,
+  type ReputationAnchorStore,
+  type MultiHopDiscoveryStore,
+  type PeerReputationStore,
   loadOrCreateNodeProfile,
   type LocalTaskStore,
   type LocalTrustStore,
   type LocalPeerDirectoryStore,
   type LocalChatLogStore,
+  type LocalAgentActivityStore,
   type ChatDraftStore,
   type HumanProfileStore,
   type AgentIdentityStore,
@@ -148,6 +203,7 @@ import {
   type CapabilityManifestStore,
   type SessionTokenStore,
   type DeviceAuthorizationStore,
+  buildMorningReportDigest,
 } from "@envoymesh/local-store";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
@@ -189,10 +245,15 @@ import { createAgentShareProposalStore } from "./agent-share-proposal-store.js";
 import { PUBLISHED_LIB_CAPABILITY } from "./discovery-inbound.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
-import type { MeshToolContext } from "./tool-registry.js";
-import { executeTool } from "./tool-registry.js";
+import { executeTool, type MeshToolContext } from "./tool-registry.js";
+import {
+  buildFriendAutopilotActivityRecord,
+  runFriendAutopilotPass,
+} from "./friend-autopilot-runner.js";
+import { shouldRunScheduledFriendAutopilot } from "@envoymesh/api";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { buildChatDiagnostics } from "./chat-diagnostics.js";
+import { buildConnectivityDiagnostics } from "./connectivity-diagnostics.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -200,6 +261,15 @@ import { startNodeStatsInterval } from "./node-stats-log.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { runInboundChatAssist } from "./inbound-chat-assist.js";
+import { recordTaskJournalActivity, emitOwnerReport } from "./agent-activity-hooks.js";
+import type { Report } from "@envoymesh/protocol";
+import type { DispatcherDecision } from "./task-dispatcher.js";
+import type { ApprovalQueue, DiscoveryForwardApprovalPayload } from "@envoymesh/api";
+import { executeApprovedAction } from "@envoymesh/api";
+import {
+  buildForwardedDiscoveryPayload,
+  queueDiscoveryForwardApproval,
+} from "./discovery-forward.js";
 import { executeHomeClawCoreProxy } from "./homeclaw-core-proxy.js";
 import { chatLogRowsToViews } from "./ai-context.js";
 import { createRagService, type RagService } from "./rag-service.js";
@@ -251,6 +321,8 @@ class NodeServiceImpl implements NodeService {
   private readonly _humanProfileStore: HumanProfileStore;
   private readonly _agentIdentityStore: AgentIdentityStore | null;
   private readonly _chatLogStore: LocalChatLogStore | null;
+  private readonly _agentActivityStore: LocalAgentActivityStore | null;
+  private readonly _agentCardStore: AgentCardStore | null;
   private readonly _chatDraftStore: ChatDraftStore | null;
   private readonly _capabilityManifestStore: CapabilityManifestStore | null;
   private readonly _configStore: ReturnType<typeof createNodeConfigStore>;
@@ -285,6 +357,11 @@ class NodeServiceImpl implements NodeService {
   /** Persistent session token store for long-lived pairings (no QR re-scan). */
   private readonly _sessionTokenStore: SessionTokenStore | null;
   private readonly _deviceAuthorizationStore: DeviceAuthorizationStore | null;
+  private readonly _contactOwnerKeyStore: ContactOwnerKeyStore | null;
+  private readonly _reputationAnchorStore: ReputationAnchorStore | null;
+  private readonly _multihopDiscoveryStore: MultiHopDiscoveryStore | null;
+  private readonly _peerReputationStore: PeerReputationStore | null;
+  private _approvalQueue: ApprovalQueue | null = null;
 
   /** Best-effort last failure for {@link getConnectionStatus} (cleared on successful {@link startNode}). */
   private _lastNodeError?: string;
@@ -417,6 +494,11 @@ class NodeServiceImpl implements NodeService {
    */
   bindCliTaskStore(taskStore: LocalTaskStore): void {
     this._taskStore = taskStore;
+  }
+
+  /** Wire daemon approval queue (index.ts) for RPC + execute-on-approve. */
+  bindApprovalQueue(queue: ApprovalQueue): void {
+    this._approvalQueue = queue;
   }
 
   private _upsertTransferStatus(status: TransferStatus): TransferStatus {
@@ -738,6 +820,10 @@ class NodeServiceImpl implements NodeService {
     this._configStore = profileDir ? createNodeConfigStore(profileDir) : createStubNodeConfigStore();
     this._chatLogStore =
       profileDir && profileDir !== "/tmp/unknown" ? createLocalChatLogStore(profileDir) : null;
+    this._agentActivityStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createLocalAgentActivityStore(profileDir) : null;
+    this._agentCardStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createAgentCardStore(profileDir) : null;
     this._chatDraftStore =
       profileDir && profileDir !== "/tmp/unknown" ? createChatDraftStore(profileDir) : null;
     this._capabilityManifestStore =
@@ -747,6 +833,14 @@ class NodeServiceImpl implements NodeService {
     this._deviceAuthorizationStore =
       profileDir && profileDir !== "/tmp/unknown" ? createDeviceAuthorizationStore(profileDir) : null;
     bindDeviceAuthorizationStore(this._deviceAuthorizationStore);
+    this._contactOwnerKeyStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createContactOwnerKeyStore(profileDir) : null;
+    this._reputationAnchorStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createReputationAnchorStore(profileDir) : null;
+    this._multihopDiscoveryStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createMultiHopDiscoveryStore(profileDir) : null;
+    this._peerReputationStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createLocalPeerReputationStore(profileDir) : null;
     if (profileDir && profileDir !== "/tmp/unknown") {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
     }
@@ -849,6 +943,38 @@ class NodeServiceImpl implements NodeService {
 
   getProfile(): NodeProfile {
     return this._requireProfile();
+  }
+
+  getOwnerDidPresentation() {
+    const profile = this._requireProfile();
+    return buildOwnerDidPresentation({
+      ownerId: profile.owner.ownerId,
+      publicKeyPem: profile.owner.publicKeyPem,
+    });
+  }
+
+  async getPeerReputationSummary(peerOwnerId: string): Promise<PeerReputationSummary> {
+    const id = peerOwnerId.trim();
+    const localRecord = this._peerReputationStore
+      ? await this._peerReputationStore.getReputation(id)
+      : undefined;
+    const attestations = this._reputationAnchorStore
+      ? await this._reputationAnchorStore.listAttestations(id)
+      : [];
+
+    return {
+      peerOwnerId: id,
+      local: localRecord
+        ? {
+            successfulTasks: localRecord.successfulTasks,
+            failedTasks: localRecord.failedTasks,
+            avgLatencyMs: localRecord.avgLatencyMs,
+            abuseFlags: localRecord.abuseFlags,
+            lastUpdated: localRecord.lastUpdated,
+          }
+        : undefined,
+      attestations,
+    };
   }
 
   async getHumanProfile(): Promise<HumanProfile | undefined> {
@@ -1526,6 +1652,13 @@ class NodeServiceImpl implements NodeService {
       return;
     }
 
+    let localPeerId: string;
+    try {
+      localPeerId = mesh.peerId;
+    } catch {
+      return;
+    }
+
     let threadPeerOwnerId = input.peerOwnerId.trim();
     if (threadPeerOwnerId.startsWith("12D3") || threadPeerOwnerId.startsWith("Qm")) {
       const records = await this._peerDirectoryStore.listPeerRecords();
@@ -1571,7 +1704,7 @@ class NodeServiceImpl implements NodeService {
       ? {
           messageId: randomUUID(),
           sender: {
-            nodeId: mesh.peerId,
+            nodeId: localPeerId,
             ownerId: profile.owner.ownerId,
             displayName: selfHuman?.displayName ?? profile.owner.ownerId,
           },
@@ -1592,7 +1725,7 @@ class NodeServiceImpl implements NodeService {
             displayName: peerTrust?.displayName ?? threadPeerOwnerId,
           },
           recipient: {
-            nodeId: mesh.peerId,
+            nodeId: localPeerId,
             ownerId: profile.owner.ownerId,
             displayName: selfHuman?.displayName ?? profile.owner.ownerId,
           },
@@ -1660,73 +1793,22 @@ class NodeServiceImpl implements NodeService {
 
     console.log(`[sendChat] targetOwnerId=${targetOwnerId}, text=${text}`);
 
-    const t0 = Date.now();
-    console.log("[sendChat] step=peer-lookup-start");
-
-    let targetPeer: Awaited<ReturnType<LocalPeerDirectoryStore["getPeerByOwnerId"]>>;
-    try {
-      targetPeer = await raceWithTimeout(
-        this._peerDirectoryStore.getPeerByOwnerId(targetOwnerId),
-        25_000,
-        "getPeerByOwnerId",
-      );
-    } catch (err) {
-      console.log(`[sendChat] peer-lookup-failed after ${Date.now() - t0}ms`, err);
-      throw err;
-    }
-    if (!targetPeer) {
-      const records = await raceWithTimeout(
-        this._peerDirectoryStore.listPeerRecords(),
-        25_000,
-        "listPeerRecords",
-      );
-      targetPeer =
-        records.find((r) => r.ownerId === targetOwnerId) ??
-        records.find((r) => r.peerId === targetOwnerId);
-    }
-    console.log(
-      `[sendChat] step=peer-lookup-done ms=${Date.now() - t0} found=${targetPeer ? "yes" : "no"}`,
-    );
-
-    if (!targetPeer) {
-      throw new Error(`Peer not found for owner: ${targetOwnerId}`);
-    }
-
-    const transportPeerId = targetPeer.peerId;
-    if (transportPeerId.startsWith("envoy_")) {
-      throw new Error(
-        `Peer directory has Envoy envelope id for this owner (not libp2p). Delete peer-directory row or have the contact send again after update.`,
-      );
-    }
-    /** Envelope field: recipient's Envoy device peer id — never the libp2p transport id. */
-    const recipientEnvelopePeerId = targetPeer.devicePublicKeyPem
-      ? derivePeerId(targetPeer.devicePublicKeyPem)
-      : targetOwnerId.startsWith("envoy_")
-        ? targetOwnerId
-        : undefined;
+    const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
+      await this._resolvePeerTransportForOwner(targetOwnerId);
 
     const [selfHuman, recipientTrust] = await Promise.all([
       this._humanProfileStore.loadHumanProfile(),
       this._trustStore.getTrustRecord(targetOwnerId),
     ]);
 
-    const t1 = Date.now();
-    console.log("[sendChat] step=dial-hints-start");
-    let dialHints: string[];
-    try {
-      dialHints = await raceWithTimeout(
-        this._dialHintsForChat(transportPeerId, targetPeer.listenAddrs),
-        30_000,
-        "_dialHintsForChat",
-      );
-    } catch (err) {
-      console.log(`[sendChat] dial-hints-failed after ${Date.now() - t1}ms`, err);
-      throw err;
-    }
-    console.log(`[sendChat] step=dial-hints-done ms=${Date.now() - t1} n=${dialHints.length}`);
+    const dialHints = await raceWithTimeout(
+      this._dialHintsForChat(transportPeerId, listenAddrs),
+      30_000,
+      "_dialHintsForChat",
+    );
 
     console.log(
-      `[sendChat] transportPeerId=${transportPeerId} envelopeRecipientPeerId=${recipientEnvelopePeerId ?? "(omitted)"} storedListenAddrs=${(targetPeer.listenAddrs ?? []).length} dialHints=${dialHints.length}`,
+      `[sendChat] transportPeerId=${transportPeerId} envelopeRecipientPeerId=${recipientEnvelopePeerId ?? "(omitted)"} dialHints=${dialHints.length}`,
     );
 
     void this._tagBondedContactReachability(transportPeerId);
@@ -1737,7 +1819,9 @@ class NodeServiceImpl implements NodeService {
       createUnsignedEnvelope({
         senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
         senderPublicKey: selfProfile.device.publicKeyPem,
+        senderRole: "human",
         recipientPeerId: recipientEnvelopePeerId,
+        recipientRole: "human",
         intent: "chat.message",
         payload: createChatMessagePayload({
           senderOwnerId: selfProfile.owner.ownerId,
@@ -1752,19 +1836,19 @@ class NodeServiceImpl implements NodeService {
     );
 
     if (transportPeerId === mesh.peerId && this._bridgeChatHandler) {
-      // Self-send: route through bridge handler directly (no P2P dial)
       console.log(`[sendChat] self-send to ${targetOwnerId}, routing via bridge handler`);
       await this._bridgeChatHandler(envelope, mesh.peerId);
     } else {
       await this._deliverChatEnvelope(transportPeerId, envelope, dialHints);
     }
 
-    const emittedMsg = {
+    const emittedMsg: ChatMessage = {
       messageId: envelope.messageId,
       sender: {
         nodeId: mesh.peerId,
         ownerId: selfProfile.owner.ownerId,
         displayName: selfHuman?.displayName ?? selfProfile.owner.ownerId,
+        actorRole: "human",
       },
       recipient: {
         nodeId: transportPeerId,
@@ -1783,9 +1867,434 @@ class NodeServiceImpl implements NodeService {
     console.log(`[sendChat] Emitting chat:message locally:`, emittedMsg);
     this._persistChatMessage(targetOwnerId, emittedMsg);
     this.emit("chat:message", emittedMsg);
-    // Learn owner writing style from sent messages (Phase 9F)
     this._styleAdapter?.learnFromMessage(true, wireText);
     return { messageId: envelope.messageId };
+  }
+
+  async sendAgentChat(targetOwnerId: string, text: string): Promise<SendChatResult> {
+    this._assertOnline();
+    recordMeshActivity();
+    const mesh = this._requireMesh();
+    const selfProfile = this._requireProfile();
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!agentIdentity) {
+      throw new Error("Agent identity is not available");
+    }
+
+    console.log(`[sendAgentChat] targetOwnerId=${targetOwnerId}, text=${text.slice(0, 80)}`);
+
+    const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
+      await this._resolvePeerTransportForOwner(targetOwnerId);
+
+    const [selfHuman, recipientTrust, config] = await Promise.all([
+      this._humanProfileStore.loadHumanProfile(),
+      this._trustStore.getTrustRecord(targetOwnerId),
+      this.getNodeConfig(),
+    ]);
+
+    const dialHints = await raceWithTimeout(
+      this._dialHintsForChat(transportPeerId, listenAddrs),
+      30_000,
+      "_dialHintsForChat",
+    );
+
+    void this._tagBondedContactReachability(transportPeerId);
+
+    let wireText = stripModelThinking(text);
+    const aiIdentity = config.aiSettings?.identity;
+    wireText = applyAiIdentityPrefix(
+      wireText,
+      aiIdentity?.mode ?? "transparent",
+      resolveAiIdentityPrefix(aiIdentity),
+    );
+
+    const envelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        senderPeerId: agentIdentity.agentPeerId,
+        senderPublicKey: agentIdentity.agentPublicKeyPem,
+        senderRole: "agent",
+        recipientPeerId: recipientEnvelopePeerId,
+        recipientRole: "human",
+        intent: "chat.message",
+        payload: createChatMessagePayload({
+          senderOwnerId: agentIdentity.ownerId,
+          text: wireText,
+        }),
+        agentCredential: agentIdentity.agentCredential,
+      }),
+      agentIdentity.agentPrivateKeyPem,
+    );
+
+    if (transportPeerId === mesh.peerId && this._bridgeChatHandler) {
+      await this._bridgeChatHandler(envelope, mesh.peerId);
+    } else {
+      await this._deliverChatEnvelope(transportPeerId, envelope, dialHints);
+    }
+
+    const emittedMsg: ChatMessage = {
+      messageId: envelope.messageId,
+      sender: {
+        nodeId: agentIdentity.agentPeerId,
+        ownerId: agentIdentity.ownerId,
+        displayName: selfHuman?.displayName ?? agentIdentity.ownerId,
+        actorRole: "agent",
+        agentId: agentIdentity.agentCredential.agentId,
+        agentVerified: true,
+      },
+      recipient: {
+        nodeId: transportPeerId,
+        ownerId: targetOwnerId,
+        displayName: recipientTrust?.displayName ?? targetOwnerId,
+      },
+      content: { text: wireText },
+      metadata: {
+        timestamp: envelope.createdAt,
+        deliveryReceipt: "sent",
+      },
+      signature: envelope.signature,
+    };
+    this._persistChatMessage(targetOwnerId, emittedMsg);
+    this.emit("chat:message", emittedMsg);
+    return { messageId: envelope.messageId };
+  }
+
+  async listAgentActivity(params?: ListAgentActivityParams): Promise<AgentActivityRecord[]> {
+    if (!this._agentActivityStore) return [];
+    return this._agentActivityStore.list(params);
+  }
+
+  async listAuditEvents(params?: ListAuditEventsParams): Promise<AuditEventSummary[]> {
+    if (!this._taskStore) return [];
+    const limit = Math.max(1, Math.min(params?.limit ?? 100, 500));
+    const rows = await this._taskStore.queryAuditEvents({
+      correlationId: params?.correlationId,
+      taskId: params?.taskId,
+      since: params?.since,
+      until: params?.until,
+      limit,
+    });
+    return rows.map((row) => ({
+      eventId: row.eventId,
+      type: row.type,
+      createdAt: row.createdAt,
+      intent: row.intent,
+      taskId: row.taskId,
+      correlationId: row.correlationId,
+      remotePeerId: row.remotePeerId,
+      direction: row.direction,
+      outcome: row.outcome,
+      summary: row.summary,
+    }));
+  }
+
+  async listTaskJournalEntries(params?: ListTaskJournalParams): Promise<TaskJournalSummary[]> {
+    if (!this._taskStore) return [];
+    const limit = Math.max(1, Math.min(params?.limit ?? 100, 500));
+    let rows = await this._taskStore.readTaskJournalEntries();
+    if (params?.taskId) {
+      rows = rows.filter((row) => row.taskId === params.taskId);
+    }
+    return rows
+      .slice(-limit)
+      .reverse()
+      .map((row) => ({
+        eventId: row.eventId,
+        taskId: row.taskId,
+        eventType: row.eventType,
+        summary: row.summary,
+        createdAt: row.createdAt,
+        mandateId: row.mandateId,
+      }));
+  }
+
+  async listAgentCards(): Promise<CachedAgentCardSummary[]> {
+    if (!this._agentCardStore) return [];
+    const rows = await this._agentCardStore.list();
+    return rows.map((row) => ({
+      ownerId: row.ownerId,
+      displayName: row.card.displayName,
+      capabilities: row.card.capabilities,
+      cachedAt: row.cachedAt,
+      sourceAgentPeerId: row.sourceAgentPeerId,
+    }));
+  }
+
+  async getAgentCard(ownerId: string): Promise<CachedAgentCardSummary | undefined> {
+    if (!this._agentCardStore) return undefined;
+    const row = await this._agentCardStore.get(ownerId.trim());
+    if (!row) return undefined;
+    return {
+      ownerId: row.ownerId,
+      displayName: row.card.displayName,
+      capabilities: row.card.capabilities,
+      cachedAt: row.cachedAt,
+      sourceAgentPeerId: row.sourceAgentPeerId,
+    };
+  }
+
+  async requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }> {
+    this._assertOnline();
+    const agentIdentity = await this._ensureAgentIdentity();
+    if (!agentIdentity) {
+      return { ok: false, error: "agent identity not available" };
+    }
+    const profile = this._requireProfile();
+    const mesh = this._requireMesh();
+    const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
+      await this._resolvePeerTransportForOwner(targetOwnerId.trim());
+    const dialHints = await raceWithTimeout(
+      this._dialHintsForChat(transportPeerId, listenAddrs),
+      30_000,
+      "_dialHintsForChat",
+    );
+    const envelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        senderPeerId: agentIdentity.agentPeerId,
+        senderPublicKey: agentIdentity.agentPublicKeyPem,
+        senderRole: "agent",
+        recipientPeerId: recipientEnvelopePeerId,
+        recipientRole: "agent",
+        intent: "agent.card.request",
+        payload: createAgentCardRequestPayload({
+          requesterOwnerId: profile.owner.ownerId,
+          requesterDeviceId: profile.device.deviceId,
+        }),
+        agentCredential: agentIdentity.agentCredential,
+      }),
+      agentIdentity.agentPrivateKeyPem,
+    );
+    await mesh.send(transportPeerId, envelope, { dialHints });
+    return { ok: true };
+  }
+
+  async recordAgentCardCached(ownerId: string, card: import("@envoymesh/protocol").AgentCard): Promise<void> {
+    if (!this._agentActivityStore) return;
+    const record: AgentActivityRecord = {
+      activityId: randomUUID(),
+      domain: "research",
+      kind: "task_progress",
+      summary: `Learned agent card for ${card.displayName}`,
+      remoteOwnerId: ownerId,
+      remoteActorRole: "agent",
+      createdAt: new Date().toISOString(),
+    };
+    await this._agentActivityStore.append(record);
+    await this._publishAgentActivity(record, ownerId);
+  }
+
+  async recordInboundKnowledgeAnswered(params: {
+    remoteOwnerId?: string;
+    correlationId?: string;
+    queryPreview: string;
+  }): Promise<void> {
+    if (!this._agentActivityStore) return;
+    const record: AgentActivityRecord = {
+      activityId: randomUUID(),
+      correlationId: params.correlationId,
+      domain: "knowledge",
+      kind: "knowledge_answered",
+      summary: `Answered inbound knowledge.query: ${params.queryPreview}`,
+      remoteOwnerId: params.remoteOwnerId,
+      remoteActorRole: "agent",
+      createdAt: new Date().toISOString(),
+    };
+    await this._agentActivityStore.append(record);
+    await this._publishAgentActivity(record, params.remoteOwnerId);
+  }
+
+  async runScheduledFriendAutopilot(): Promise<{ ok: boolean; error?: string }> {
+    const config = await this.getNodeConfig();
+    const intervalHours = config.friendAutopilotIntervalHours ?? 0;
+    if (
+      !shouldRunScheduledFriendAutopilot({
+        friendAutopilotEnabled: config.friendAutopilotEnabled ?? false,
+        trustModeEnabled: config.trustModeEnabled ?? false,
+        intervalHours,
+        lastRunAt: config.friendAutopilotLastRunAt,
+      })
+    ) {
+      return { ok: false, error: "not due" };
+    }
+
+    const correlationId = randomUUID();
+    const pass = await runFriendAutopilotPass({
+      getContext: () => this.getToolExecutionContext(),
+    });
+    await this._recordFriendAutopilotPass({
+      ok: pass.ok,
+      error: pass.error,
+      trigger: "scheduled",
+      correlationId,
+    });
+    await this.updateNodeConfig({ friendAutopilotLastRunAt: new Date().toISOString() });
+    return { ok: pass.ok, error: pass.error };
+  }
+
+  private async _recordFriendAutopilotPass(input: {
+    ok: boolean;
+    error?: string;
+    trigger: "manual" | "scheduled";
+    correlationId?: string;
+  }): Promise<void> {
+    if (!this._agentActivityStore) return;
+    const record = buildFriendAutopilotActivityRecord({
+      correlationId: input.correlationId ?? randomUUID(),
+      ok: input.ok,
+      trigger: input.trigger,
+      error: input.error,
+    });
+    await this._agentActivityStore.append(record);
+    await this._publishAgentActivity(record);
+  }
+
+  async listPendingApprovals(): Promise<PendingApprovalSummary[]> {
+    if (!this._approvalQueue) return [];
+    return this._approvalQueue.listPending().map((item) => ({
+      id: item.id,
+      actionType: item.actionType,
+      title: item.title,
+      description: item.description,
+      draftContent: item.draftContent,
+      contactOwnerId: item.context.contactOwnerId,
+      contactDisplayName: item.context.contactDisplayName,
+      priority: item.priority,
+      requestedAt: item.requestedAt,
+    }));
+  }
+
+  async approvePendingApproval(itemId: string, notes?: string): Promise<ApprovePendingApprovalResult> {
+    if (!this._approvalQueue) {
+      return { ok: false, error: "approval queue not available" };
+    }
+    const approved = this._approvalQueue.approve(itemId.trim(), notes);
+    if (!approved) {
+      return { ok: false, error: "Item not found or not pending" };
+    }
+    const executed = await executeApprovedAction(approved, {
+      sendAgentChat: (targetOwnerId, text) => this.sendAgentChat(targetOwnerId, text),
+      forwardDiscovery: (payload) => this._executeDiscoveryForward(payload),
+    });
+    if (!executed.ok) {
+      return { ok: false, error: executed.reason };
+    }
+    return { ok: true, messageId: executed.messageId };
+  }
+
+  async rejectPendingApproval(itemId: string, notes?: string): Promise<{ ok: boolean; error?: string }> {
+    if (!this._approvalQueue) {
+      return { ok: false, error: "approval queue not available" };
+    }
+    const pending = this._approvalQueue.get(itemId.trim());
+    const rejected = this._approvalQueue.reject(itemId.trim(), notes);
+    if (!rejected) {
+      return { ok: false, error: "Item not found or not pending" };
+    }
+    if (pending?.actionType === "discovery_forward" && this._taskStore) {
+      const correlationId =
+        typeof pending.context.metadata?.correlationId === "string"
+          ? pending.context.metadata.correlationId
+          : undefined;
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.rejected",
+          intent: "discovery.request",
+          correlationId,
+          direction: "inbound",
+          outcome: "deny",
+          summary: `discovery_forward approval declined (US-MH3) item=${itemId.trim()}`,
+        }),
+      );
+    }
+    return { ok: true };
+  }
+
+  private async _publishAgentActivity(
+    record: AgentActivityRecord,
+    contactOwnerId?: string,
+  ): Promise<void> {
+    const config = await this.getNodeConfig();
+    if (shouldPushAgentActivity(record.kind, config.agentVisibility, record.domain)) {
+      this.emit("agent:activity", record);
+    }
+    if (
+      contactOwnerId &&
+      shouldPostA2aChatLine(record.kind, config.a2aChatNotifications)
+    ) {
+      this._emitLocalSystemChatLine(
+        contactOwnerId,
+        formatA2aChatSystemLine({
+          kind: record.kind,
+          summary: record.summary,
+          remoteOwnerId: record.remoteOwnerId,
+          taskId: record.taskId,
+        }),
+      );
+    }
+  }
+
+  private _emitLocalSystemChatLine(threadPeerOwnerId: string, text: string): void {
+    const profile = this._profile;
+    const mesh = this._mesh ?? this._externalMesh;
+    if (!profile) return;
+    const msg: ChatMessage = {
+      messageId: `system-${randomUUID()}`,
+      sender: {
+        nodeId: mesh?.peerId ?? "local",
+        ownerId: profile.owner.ownerId,
+        displayName: "System",
+        actorRole: "system",
+      },
+      recipient: {
+        nodeId: "",
+        ownerId: threadPeerOwnerId,
+      },
+      content: { text },
+      metadata: {
+        timestamp: new Date().toISOString(),
+        deliveryReceipt: "delivered",
+      },
+      signature: "local-system",
+    };
+    this._persistChatMessage(threadPeerOwnerId, msg);
+    this.emit("chat:message", msg);
+  }
+
+  /** Called from daemon inbound handler after A2A task journal append. */
+  async recordInboundTaskActivity(
+    decision: Extract<DispatcherDecision, { action: "handled" }>,
+    envelope: EnvoyEnvelope,
+  ): Promise<void> {
+    if (!this._agentActivityStore) return;
+    await recordTaskJournalActivity(
+      this._agentActivityStore,
+      decision,
+      {
+        messageId: envelope.messageId,
+        correlationId: envelope.correlationId,
+        senderPeerId: envelope.senderPeerId,
+        senderRole: envelope.senderRole,
+      },
+      (record) => {
+        void this._publishAgentActivity(record, record.remoteOwnerId);
+      },
+    );
+  }
+
+  /** Local-only owner report (Option A — no P2P envelope to human). */
+  async emitLocalOwnerReport(
+    report: import("@envoymesh/protocol").Report,
+    opts?: { contactOwnerId?: string },
+  ): Promise<AgentActivityRecord | null> {
+    if (!this._agentActivityStore) return null;
+    const localOwnerId = this._profile?.owner.ownerId ?? report.ownerId;
+    const contactOwnerId = resolveReportContactOwnerId(
+      report,
+      localOwnerId,
+      opts?.contactOwnerId,
+    );
+    return emitOwnerReport(this._agentActivityStore, report, localOwnerId, (record) => {
+      void this._publishAgentActivity(record, contactOwnerId);
+    });
   }
 
   async sendChatAttachment(params: SendChatAttachmentParams): Promise<SendChatAttachmentResult> {
@@ -1900,12 +2409,25 @@ class NodeServiceImpl implements NodeService {
   async searchPeers(query: SearchQuery): Promise<PeerSearchResult[]> {
     const maxResults = query.maxResults ?? 20;
 
+    if (query.did?.trim()) {
+      return this.searchByDid(query.did.trim(), maxResults);
+    }
+
     // 1. Direct peer ID lookup via DHT (if peerId is specified)
     if (query.peerId) {
       return this.searchByPeerId(query.peerId, maxResults);
     }
 
-    // 2. Determine search mode based on network configuration
+    // 2. Explicit DHT capability topic (Phase 15A)
+    if (query.topic?.trim()) {
+      const topicResults = await this.searchByTopic(query.topic.trim(), maxResults);
+      const selfPeerId = this._mesh?.peerId;
+      return topicResults
+        .filter((r) => r.nodeId !== selfPeerId && r.ownerId !== this._profile?.owner.ownerId)
+        .slice(0, maxResults);
+    }
+
+    // 3. Determine search mode based on network configuration
     const config = await this._configStore.load();
     const isPublicNetwork = config?.bootstrapPresets && config.bootstrapPresets.length > 0;
     const isPrivateRelay = config?.relayEnabled && config?.configuredRelays && config.configuredRelays.length > 0;
@@ -1971,6 +2493,72 @@ class NodeServiceImpl implements NodeService {
     return filteredResults.slice(0, maxResults);
   }
 
+  private async searchByDid(input: string, maxResults: number): Promise<PeerSearchResult[]> {
+    const parsed = parseDidLookupInput(input);
+    if (parsed.kind === "invalid") {
+      return [];
+    }
+
+    const trustRecords = await this._trustStore.listTrustRecords();
+    const bonded = trustRecords.filter((row) => row.level !== "blocked");
+    const displayNameByOwner = new Map(
+      bonded.map((row) => [row.peerOwnerId, row.displayName ?? row.peerOwnerId]),
+    );
+    const peerRecords = await this._peerDirectoryStore.listPeerRecords();
+    const peerByOwner = new Map(peerRecords.map((row) => [row.ownerId, row]));
+
+    const results: PeerSearchResult[] = [];
+
+    const pushMatch = (ownerId: string, did?: string, trustLevel?: string) => {
+      const peer = peerByOwner.get(ownerId);
+      const displayName = displayNameByOwner.get(ownerId) ?? ownerId;
+      results.push({
+        nodeId: peer?.peerId ?? ownerId,
+        ownerId,
+        displayName,
+        interests: [],
+        profileVisibility: "contacts",
+        did,
+        discoverySource: "did-lookup",
+        trustLevel,
+      });
+    };
+
+    const selfProfile = this._profile;
+    if (selfProfile) {
+      const selfPresentation = buildOwnerDidPresentation({
+        ownerId: selfProfile.owner.ownerId,
+        publicKeyPem: selfProfile.owner.publicKeyPem,
+      });
+      const selfMatch =
+        (parsed.kind === "envoy-owner" && parsed.ownerId === selfPresentation.ownerId) ||
+        (parsed.kind === "did-key" && parsed.did && didKeysMatch(parsed.did, selfPresentation.did));
+      if (selfMatch) {
+        pushMatch(selfPresentation.ownerId, selfPresentation.did, "self");
+      }
+    }
+
+    for (const bond of bonded) {
+      if (parsed.kind === "envoy-owner" && parsed.ownerId === bond.peerOwnerId) {
+        pushMatch(bond.peerOwnerId, undefined, bond.level);
+        continue;
+      }
+      if (parsed.kind === "did-key" && parsed.did && this._contactOwnerKeyStore) {
+        const keyRow = await this._contactOwnerKeyStore.get(bond.peerOwnerId);
+        if (!keyRow) continue;
+        const presentation = buildOwnerDidPresentation({
+          ownerId: bond.peerOwnerId,
+          publicKeyPem: keyRow.ownerPublicKeyPem,
+        });
+        if (didKeysMatch(parsed.did, presentation.did)) {
+          pushMatch(bond.peerOwnerId, presentation.did, bond.level);
+        }
+      }
+    }
+
+    return results.slice(0, maxResults);
+  }
+
   private async searchByPeerId(peerId: string, maxResults: number): Promise<PeerSearchResult[]> {
     const mesh = this._mesh;
     if (!mesh) {
@@ -2015,19 +2603,568 @@ class NodeServiceImpl implements NodeService {
 
     console.log(`[searchPeers] Searching DHT for topic: "${topic}" (limit: ${maxResults})`);
     try {
-      const providers = await mesh.findCapabilityTopicProviders(topic, { limit: maxResults });
+      const providers = await mesh.findCapabilityTopicProviders(topic, {
+        limit: maxResults,
+        queryTimeoutMs: 8_000,
+      });
       console.log(`[searchPeers] Found ${providers.length} providers for topic "${topic}"`);
-      return providers.map((provider: { peerId: string }) => ({
-        nodeId: provider.peerId,
-        ownerId: provider.peerId,
-        displayName: provider.peerId.slice(0, 12) + "...",
-        interests: [],
-        profileVisibility: "public" as const,
-      }));
+      const trustRecords = await this._trustStore.listTrustRecords();
+      const peerRecords = await this._peerDirectoryStore.listPeerRecords();
+      const trustByPeerId = new Map<string, (typeof trustRecords)[number]>();
+      for (const record of trustRecords) {
+        const peer = peerRecords.find((p) => p.ownerId === record.peerOwnerId);
+        if (peer?.peerId) {
+          trustByPeerId.set(peer.peerId, record);
+        }
+      }
+      if (providers.length > 0 && this._discoverySeedStore) {
+        const addrs = providers.flatMap((p) => p.multiaddrs ?? []);
+        if (addrs.length > 0) {
+          await this._discoverySeedStore.upsertMany(addrs, "capability-topic");
+        }
+      }
+      return providers.map((provider) => {
+        const trust = trustByPeerId.get(provider.peerId);
+        const peerRecord = peerRecords.find((p) => p.peerId === provider.peerId);
+        return {
+          nodeId: provider.peerId,
+          ownerId: peerRecord?.ownerId ?? provider.peerId,
+          displayName: trust?.displayName ?? provider.peerId.slice(0, 12) + "...",
+          interests: [topic],
+          profileVisibility: "public" as const,
+          discoverySource: "dht-capability-topic" as const,
+          trustLevel: trust?.level,
+          signedRecordValid: provider.signedRecord ? true : provider.signedRecordInvalid ? false : undefined,
+        };
+      });
     } catch (err) {
       console.log(`[searchPeers] Topic "${topic}" query failed:`, err instanceof Error ? err.message : err);
       return [];
     }
+  }
+
+  async discoverCapabilityTopic(params: DiscoverCapabilityTopicParams): Promise<DiscoverCapabilityTopicResult> {
+    const topic = params.topic.trim();
+    if (!topic) {
+      throw new Error("discoverCapabilityTopic: topic is required");
+    }
+    const maxResults = params.maxResults ?? 20;
+    const providers = await this.searchByTopic(topic, maxResults);
+    const hits: CapabilityTopicProviderHit[] = [];
+
+    for (const provider of providers) {
+      const hit: CapabilityTopicProviderHit = {
+        peerId: provider.nodeId,
+        multiaddrs: [],
+        ownerId: provider.ownerId,
+        displayName: provider.displayName,
+        trustLevel: provider.trustLevel,
+        signedRecordValid: provider.signedRecordValid,
+        discoverySource: "dht-capability-topic",
+      };
+
+      if (params.followUpDiscovery && provider.trustLevel && provider.trustLevel !== "blocked") {
+        const peerRecord = await this._peerDirectoryStore.getPeerByOwnerId(provider.ownerId);
+        const transportPeerId = peerRecord?.peerId ?? provider.nodeId;
+        if (peerRecord && this._mesh && this._profile) {
+          try {
+            const { recipientEnvelopePeerId } = await this._resolvePeerTransportForOwner(provider.ownerId);
+            const dialHints = await this._dialHintsForChat(transportPeerId, peerRecord.listenAddrs ?? []);
+            const unsigned = createUnsignedEnvelope({
+              senderPeerId: derivePeerId(this._profile.device.publicKeyPem),
+              senderPublicKey: this._profile.device.publicKeyPem,
+              senderRole: "human",
+              recipientPeerId: recipientEnvelopePeerId,
+              recipientRole: "human",
+              intent: "discovery.request",
+              payload: createDiscoveryRequestPayload({
+                requesterOwnerId: this._profile.owner.ownerId,
+                requestedTagHashes: [],
+                requestedCapabilities: params.requestedCapabilities ?? [],
+                maxResults: 5,
+                requestedSensitivity: "public",
+                maxHops: params.maxHops ?? 2,
+                currentHop: 0,
+              }),
+              correlationId: randomUUID(),
+            });
+            const envelope = signUnsignedEnvelope(unsigned, this._profile.device.privateKeyPem);
+            const reply = await this._mesh.sendExpectReply(transportPeerId, envelope, {
+              timeoutMs: 15_000,
+              dialHints,
+            });
+            if (reply.intent === "discovery.response") {
+              const resp = parseDiscoveryResponsePayload(reply.payload);
+              hit.followUpMatchCount = resp.matches.length;
+            } else {
+              hit.followUpError = `unexpected reply intent ${reply.intent}`;
+            }
+          } catch (error) {
+            hit.followUpError = error instanceof Error ? error.message : String(error);
+          }
+        } else if (!peerRecord) {
+          hit.followUpError = "not bonded — discovery.request requires peer directory entry";
+        }
+      }
+
+      hits.push(hit);
+    }
+
+    if (this._taskStore) {
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "p2p.trace",
+          direction: "outbound",
+          protocol: "discovery.capability.find.ok",
+          outcome: "record",
+          summary: `discoverCapabilityTopic topic=${topic} providers=${hits.length} followUp=${Boolean(params.followUpDiscovery)}`,
+        }),
+      );
+    }
+
+    return { topic, providers: hits };
+  }
+
+  async getMorningReport(params?: { limit?: number }): Promise<MorningReportEntry[]> {
+    if (!this._taskStore) {
+      return [];
+    }
+    const [trustRecords, peerRecords, discoveryEvents] = await Promise.all([
+      this._trustStore.listTrustRecords(),
+      this._peerDirectoryStore.listPeerRecords(),
+      this._taskStore.readDiscoveryEvents(),
+    ]);
+    return buildMorningReportDigest({
+      trustRecords,
+      peerDirectoryRecords: peerRecords,
+      discoveryEvents,
+      limit: params?.limit ?? 10,
+    });
+  }
+
+  queueDiscoveryForwardFromInbound(input: {
+    envelope: EnvoyEnvelope;
+    requesterOwnerId: string;
+    trustLevel: string;
+    correlationId: string | undefined;
+  }): string | undefined {
+    if (!this._approvalQueue) return undefined;
+    return queueDiscoveryForwardApproval(this._approvalQueue, {
+      envelope: input.envelope,
+      requesterOwnerId: input.requesterOwnerId,
+      trustLevel: input.trustLevel,
+      correlationId: input.correlationId,
+      excludeOwnerIds: [input.requesterOwnerId, this._profile?.owner.ownerId ?? ""].filter(Boolean),
+    });
+  }
+
+  private _countPendingDiscoveryForwards(correlationId: string): number {
+    if (!this._approvalQueue) return 0;
+    return this._approvalQueue.listPending().filter((item) => {
+      if (item.actionType !== "discovery_forward") return false;
+      return item.context.metadata?.correlationId === correlationId;
+    }).length;
+  }
+
+  private async _publishMultiHopSession(session: MultiHopDiscoverySessionView): Promise<void> {
+    this.emit("discovery:multihop-update", session);
+  }
+
+  async getMultiHopDiscoverySession(
+    correlationId: string,
+  ): Promise<MultiHopDiscoverySessionView | undefined> {
+    if (!this._multihopDiscoveryStore) return undefined;
+    const session = await this._multihopDiscoveryStore.getSession(correlationId.trim());
+    if (!session) return undefined;
+    return {
+      ...session,
+      pendingForwardApprovals: this._countPendingDiscoveryForwards(session.correlationId),
+    };
+  }
+
+  async ingestInboundMultiHopDiscoveryResponse(params: {
+    correlationId: string;
+    responderOwnerId: string;
+    matches: Array<{
+      ownerId: string;
+      peerId: string;
+      hopDistance?: number;
+      matchedCapabilities: string[];
+      matchedTagHashes: string[];
+    }>;
+  }): Promise<void> {
+    const correlationId = params.correlationId.trim();
+    if (!correlationId || !this._multihopDiscoveryStore) return;
+    const session = await this._multihopDiscoveryStore.getSession(correlationId);
+    if (!session) return;
+
+    const profile = this._profile;
+    const trustRecord = await this._trustStore.getTrustRecord(params.responderOwnerId);
+    const viaLabel = trustRecord?.displayName ?? params.responderOwnerId;
+    const hopMatches: MultiHopDiscoveryMatch[] = params.matches.map((match) => ({
+      ownerId: match.ownerId,
+      peerId: match.peerId,
+      hopDistance: match.hopDistance ?? 2,
+      matchedCapabilities: match.matchedCapabilities,
+      matchedTagHashes: match.matchedTagHashes,
+      viaOwnerId: params.responderOwnerId,
+      viaDisplayName: viaLabel,
+      referralOwnerId: params.responderOwnerId,
+      trustPath: profile
+        ? `${profile.owner.ownerId} → ${params.responderOwnerId} → ${match.ownerId}`
+        : `${params.responderOwnerId} → ${match.ownerId}`,
+    }));
+
+    const updated = await this._multihopDiscoveryStore.appendMatches(correlationId, hopMatches, {
+      pendingForwardApprovals: this._countPendingDiscoveryForwards(correlationId),
+    });
+    if (updated) {
+      await this._publishMultiHopSession({
+        ...updated,
+        pendingForwardApprovals: this._countPendingDiscoveryForwards(correlationId),
+      });
+    }
+  }
+
+  private async _relayMultiHopMatchesToRequester(input: {
+    requesterOwnerId: string;
+    requestMessageId: string;
+    correlationId: string;
+    hopMatches: MultiHopDiscoveryMatch[];
+  }): Promise<void> {
+    if (input.hopMatches.length === 0) return;
+    const profile = this._requireProfile();
+    const mesh = this._requireMesh();
+    const peerRecord = await this._peerDirectoryStore.getPeerByOwnerId(input.requesterOwnerId);
+    if (!peerRecord) return;
+
+    try {
+      const transportPeerId = peerRecord.peerId;
+      const { recipientEnvelopePeerId } = await this._resolvePeerTransportForOwner(input.requesterOwnerId);
+      const dialHints = await this._dialHintsForChat(transportPeerId, peerRecord.listenAddrs ?? []);
+      const responsePayload = createDiscoveryResponsePayload({
+        requestMessageId: input.requestMessageId,
+        responderOwnerId: profile.owner.ownerId,
+        matches: input.hopMatches.map((match) => ({
+          ownerId: match.ownerId,
+          peerId: match.peerId,
+          matchedCapabilities: match.matchedCapabilities,
+          matchedTagHashes: match.matchedTagHashes,
+          hopDistance: match.hopDistance,
+        })),
+        truncated: false,
+      });
+      const unsigned = createUnsignedEnvelope({
+        senderPeerId: derivePeerId(profile.device.publicKeyPem),
+        senderPublicKey: profile.device.publicKeyPem,
+        senderRole: "human",
+        recipientPeerId: recipientEnvelopePeerId,
+        recipientRole: "human",
+        intent: "discovery.response",
+        payload: responsePayload,
+        correlationId: input.correlationId,
+      });
+      const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+      await mesh.send(transportPeerId, envelope, { dialHints });
+    } catch (error) {
+      console.warn(
+        `[discovery_forward] relay hop-2 matches to ${input.requesterOwnerId} failed:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  async requestMultiHopDiscovery(
+    params: RequestMultiHopDiscoveryParams,
+  ): Promise<RequestMultiHopDiscoveryResult> {
+    const profile = this._requireProfile();
+    const mesh = this._requireMesh();
+    const correlationId = randomUUID();
+    const maxHops = Math.min(params.maxHops ?? 2, 4);
+    const maxBonds = params.maxBonds ?? 5;
+    const trustRecords = await this._trustStore.listTrustRecords();
+    const bonds = trustRecords.filter((row) => row.level !== "blocked").slice(0, maxBonds);
+    const matches: MultiHopDiscoveryMatch[] = [];
+    const seenOwners = new Set<string>();
+
+    for (const bond of bonds) {
+      const peerRecord = await this._peerDirectoryStore.getPeerByOwnerId(bond.peerOwnerId);
+      if (!peerRecord) continue;
+      try {
+        const transportPeerId = peerRecord.peerId;
+        const { recipientEnvelopePeerId } = await this._resolvePeerTransportForOwner(bond.peerOwnerId);
+        const dialHints = await this._dialHintsForChat(transportPeerId, peerRecord.listenAddrs ?? []);
+        const unsigned = createUnsignedEnvelope({
+          senderPeerId: derivePeerId(profile.device.publicKeyPem),
+          senderPublicKey: profile.device.publicKeyPem,
+          senderRole: "human",
+          recipientPeerId: recipientEnvelopePeerId,
+          recipientRole: "human",
+          intent: "discovery.request",
+          payload: createDiscoveryRequestPayload({
+            requesterOwnerId: profile.owner.ownerId,
+            requestedTagHashes: params.requestedTagHashes ?? [],
+            requestedCapabilities: params.requestedCapabilities ?? [],
+            fileTitleQuery: params.fileTitleQuery,
+            maxResults: 8,
+            requestedSensitivity: "public",
+            maxHops,
+            currentHop: 0,
+          }),
+          correlationId,
+        });
+        const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+        const reply = await mesh.sendExpectReply(transportPeerId, envelope, {
+          timeoutMs: 18_000,
+          dialHints,
+        });
+        if (reply.intent !== "discovery.response") continue;
+        const resp = parseDiscoveryResponsePayload(reply.payload);
+        for (const match of resp.matches) {
+          if (seenOwners.has(match.ownerId)) continue;
+          seenOwners.add(match.ownerId);
+          const bondLabel = bond.displayName ?? bond.peerOwnerId;
+          matches.push({
+            ownerId: match.ownerId,
+            peerId: match.peerId,
+            hopDistance: match.hopDistance ?? 1,
+            matchedCapabilities: match.matchedCapabilities,
+            matchedTagHashes: match.matchedTagHashes,
+            viaOwnerId: bond.peerOwnerId,
+            viaDisplayName: bondLabel,
+            trustPath: `${profile.owner.ownerId} → ${bond.peerOwnerId} → ${match.ownerId}`,
+          });
+        }
+        if (this._taskStore) {
+          await this._taskStore.appendDiscoveryEvent({
+            version: "0.1",
+            eventId: `discovery_mh_${envelope.messageId}`,
+            createdAt: new Date().toISOString(),
+            direction: "outbound",
+            intent: "discovery.response",
+            ownerId: bond.peerOwnerId,
+            remotePeerId: transportPeerId,
+            correlationId,
+            requestMessageId: envelope.messageId,
+            matchCount: resp.matches.length,
+            requestedTagHashes: params.requestedTagHashes ?? [],
+            requestedCapabilities: params.requestedCapabilities ?? [],
+            matchedTagHashes: resp.matches.flatMap((m) => m.matchedTagHashes),
+            matchedCapabilities: resp.matches.flatMap((m) => m.matchedCapabilities),
+            trustLevel: bond.level,
+            hopDistance: resp.matches[0]?.hopDistance ?? 1,
+            outcome: "record",
+            summary: `Multi-hop discovery bond query returned ${resp.matches.length} match(es).`,
+          });
+        }
+      } catch (error) {
+        console.warn(
+          `[requestMultiHopDiscovery] bond ${bond.peerOwnerId} failed:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
+    if (this._taskStore) {
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "p2p.trace",
+          direction: "outbound",
+          protocol: "discovery.multihop.ok",
+          outcome: "record",
+          correlationId,
+          summary: `requestMultiHopDiscovery bonds=${bonds.length} matches=${matches.length} maxHops=${maxHops}`,
+        }),
+      );
+    }
+
+    const pendingForwardApprovals = this._countPendingDiscoveryForwards(correlationId);
+    const now = new Date().toISOString();
+    if (this._multihopDiscoveryStore) {
+      const session: MultiHopDiscoverySessionView = {
+        correlationId,
+        createdAt: now,
+        updatedAt: now,
+        bondsQueried: bonds.length,
+        pendingForwardApprovals,
+        matches,
+      };
+      await this._multihopDiscoveryStore.upsertSession(session);
+      await this._publishMultiHopSession(session);
+    }
+
+    return {
+      matches,
+      bondsQueried: bonds.length,
+      correlationId,
+      pendingForwardApprovals,
+      aggregatedMatchCount: matches.length,
+    };
+  }
+
+  async sendSyncStateUpdate(
+    params: import("@envoymesh/api").SendSyncStateUpdateParams,
+  ): Promise<import("@envoymesh/api").SendSyncStateUpdateResult> {
+    const profile = this._requireProfile();
+    const mesh = this._requireMesh();
+    const scope = params.scope.trim();
+    const updateBase64 = params.updateBase64.trim();
+    if (!scope || !updateBase64) {
+      return { ok: false, recipients: 0, error: "scope and updateBase64 are required" };
+    }
+
+    const payload = createSyncStatePayload({
+      scope,
+      updateBase64,
+      senderOwnerId: profile.owner.ownerId,
+    });
+
+    const targets: string[] = [];
+    if (params.targetPeerId?.trim()) {
+      targets.push(params.targetPeerId.trim());
+    } else {
+      const selfPeerId = mesh.peerId;
+      const peers = await this._peerDirectoryStore.listPeerRecords();
+      for (const row of peers) {
+        if (row.ownerId === profile.owner.ownerId && row.peerId !== selfPeerId) {
+          targets.push(row.peerId);
+        }
+      }
+    }
+
+    if (targets.length === 0) {
+      return { ok: true, recipients: 0 };
+    }
+
+    let sent = 0;
+    for (const peerId of targets) {
+      try {
+        const unsigned = createUnsignedEnvelope({
+          senderPeerId: derivePeerId(profile.device.publicKeyPem),
+          senderPublicKey: profile.device.publicKeyPem,
+          senderRole: "human",
+          recipientPeerId: peerId,
+          recipientRole: "human",
+          intent: "sync.state",
+          payload,
+        });
+        const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+        await mesh.send(peerId, envelope);
+        sent += 1;
+      } catch (error) {
+        console.warn(
+          `[sendSyncStateUpdate] send to ${peerId} failed:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
+    return { ok: sent > 0, recipients: sent };
+  }
+
+  private async _executeDiscoveryForward(
+    payload: DiscoveryForwardApprovalPayload,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const profile = this._requireProfile();
+    const mesh = this._requireMesh();
+    const trustRecords = await this._trustStore.listTrustRecords();
+    const exclude = new Set(payload.excludeOwnerIds);
+    exclude.add(payload.requesterOwnerId);
+    const bonds = trustRecords.filter(
+      (row) => row.level !== "blocked" && !exclude.has(row.peerOwnerId),
+    );
+    if (bonds.length === 0) {
+      return { ok: false, error: "no forward bonds available" };
+    }
+
+    const forwardPayload = buildForwardedDiscoveryPayload(
+      createDiscoveryRequestPayload({
+        requesterOwnerId: payload.requesterOwnerId,
+        requestedTagHashes: payload.requestedTagHashes,
+        requestedCapabilities: payload.requestedCapabilities,
+        maxHops: payload.maxHops,
+        currentHop: payload.currentHop,
+      }),
+      payload.requesterOwnerId,
+      profile.owner.ownerId,
+      payload.correlationId,
+    );
+
+    let forwarded = 0;
+    for (const bond of bonds.slice(0, 8)) {
+      const peerRecord = await this._peerDirectoryStore.getPeerByOwnerId(bond.peerOwnerId);
+      if (!peerRecord) continue;
+      try {
+        const transportPeerId = peerRecord.peerId;
+        const { recipientEnvelopePeerId } = await this._resolvePeerTransportForOwner(bond.peerOwnerId);
+        const dialHints = await this._dialHintsForChat(transportPeerId, peerRecord.listenAddrs ?? []);
+        const unsigned = createUnsignedEnvelope({
+          senderPeerId: derivePeerId(profile.device.publicKeyPem),
+          senderPublicKey: profile.device.publicKeyPem,
+          senderRole: "human",
+          recipientPeerId: recipientEnvelopePeerId,
+          recipientRole: "human",
+          intent: "discovery.request",
+          payload: forwardPayload,
+          correlationId: payload.correlationId,
+        });
+        const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+        const reply = await mesh.sendExpectReply(transportPeerId, envelope, { timeoutMs: 18_000, dialHints });
+        forwarded += 1;
+        if (reply.intent === "discovery.response" && payload.correlationId) {
+          const resp = parseDiscoveryResponsePayload(reply.payload);
+          const bondLabel = bond.displayName ?? bond.peerOwnerId;
+          const hopMatches: MultiHopDiscoveryMatch[] = resp.matches.map((match) => ({
+            ownerId: match.ownerId,
+            peerId: match.peerId,
+            hopDistance: match.hopDistance ?? forwardPayload.currentHop + 1,
+            matchedCapabilities: match.matchedCapabilities,
+            matchedTagHashes: match.matchedTagHashes,
+            viaOwnerId: bond.peerOwnerId,
+            viaDisplayName: bondLabel,
+            referralOwnerId: profile.owner.ownerId,
+            trustPath: `${profile.owner.ownerId} → ${bond.peerOwnerId} → ${match.ownerId}`,
+          }));
+          await this._relayMultiHopMatchesToRequester({
+            requesterOwnerId: payload.requesterOwnerId,
+            requestMessageId: payload.requestMessageId,
+            correlationId: payload.correlationId,
+            hopMatches,
+          });
+        }
+      } catch (error) {
+        console.warn(
+          `[discovery_forward] bond ${bond.peerOwnerId} failed:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
+    if (this._taskStore) {
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "p2p.trace",
+          direction: "outbound",
+          protocol: "discovery.forward.ok",
+          outcome: "record",
+          correlationId: payload.correlationId,
+          summary: `Forwarded discovery.request hop=${forwardPayload.currentHop} bonds=${forwarded}`,
+        }),
+      );
+    }
+
+    return forwarded > 0 ? { ok: true } : { ok: false, error: "all forward sends failed" };
+  }
+
+  async getConnectivityDiagnostics(): Promise<ConnectivityDiagnostics> {
+    const mesh = this._reachableMesh();
+    const auditEvents = this._taskStore ? await this._taskStore.readAuditEvents() : [];
+    return buildConnectivityDiagnostics({
+      mesh,
+      nodeOnline: Boolean(mesh && this._nodeStatus === "running"),
+      config: await this._configStore.load(),
+      auditEvents,
+    });
   }
 
   private async searchLocalPeers(query: SearchQuery, maxResults: number): Promise<PeerSearchResult[]> {
@@ -2244,6 +3381,41 @@ class NodeServiceImpl implements NodeService {
       externalPublish: config.externalPublish,
       appendAudit: (event) => taskStore.appendAuditEvent(event),
     });
+  }
+
+  async pinLibraryItemExternal(documentId: string): Promise<PinLibraryItemExternalResult> {
+    this.recordOwnerActivity();
+    const config = await this.getNodeConfig();
+    if (!config.externalPublish?.allowIpfs) {
+      return { ok: false, error: "IPFS export is disabled" };
+    }
+    if (!config.externalPublish.pinningEnabled) {
+      return { ok: false, error: "External pinning is disabled in node settings" };
+    }
+    const store = createPublishedExternalStore(this._profileDir);
+    const record = await store.get(documentId.trim());
+    if (!record?.cid?.trim()) {
+      return { ok: false, error: "Document has no exported CID — export to IPFS first" };
+    }
+    const outcome = await pinCidToProvider({
+      cid: record.cid,
+      name: documentId,
+      provider: config.externalPublish.pinningProvider ?? "pinata",
+    });
+    if (!outcome.ok) {
+      return { ok: false, error: outcome.error };
+    }
+    if (this._taskStore) {
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "vault.ipfs_pin.completed",
+          outcome: "record",
+          summary: `Pinned CID via ${outcome.provider}`,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+    }
+    return { ok: true, cid: record.cid, provider: outcome.provider, pinId: outcome.pinId };
   }
 
   async getIpfsEngineStatus(): Promise<IpfsEngineStatus> {
@@ -2772,6 +3944,8 @@ class NodeServiceImpl implements NodeService {
               ipfsExportEngine: normalizeIpfsExportEngineSelection(
                 config.externalPublish.ipfsExportEngine,
               ),
+              pinningEnabled: config.externalPublish.pinningEnabled ?? false,
+              pinningProvider: config.externalPublish.pinningProvider ?? "pinata",
             }
           : { allowIpfs: false },
         maxConnections: config.maxConnections,
@@ -2783,6 +3957,13 @@ class NodeServiceImpl implements NodeService {
         idleTimerStretch: resolveIdleTimerStretch(config.discoveryProfile, {
           idleTimerStretch: config.idleTimerStretch,
         }),
+        agentVisibility: config.agentVisibility,
+        a2aChatNotifications: config.a2aChatNotifications ?? "off",
+        agentInteractionMode: config.agentInteractionMode ?? "structured_preferred",
+        friendAutopilotEnabled: config.friendAutopilotEnabled ?? false,
+        friendAutopilotIntervalHours: (config.friendAutopilotIntervalHours ?? 0) as 0 | 24 | 168,
+        friendAutopilotLastRunAt: config.friendAutopilotLastRunAt,
+        knowledgeSyndicationMaxSensitivity: config.knowledgeSyndicationMaxSensitivity,
       };
     }
     return {
@@ -2814,6 +3995,9 @@ class NodeServiceImpl implements NodeService {
       externalPublish: { allowIpfs: false },
       lazyCapabilityDiscovery: false,
       idleTimerStretch: false,
+      a2aChatNotifications: "off",
+      agentInteractionMode: "structured_preferred",
+      friendAutopilotEnabled: false,
     };
   }
 
@@ -2939,7 +4123,29 @@ class NodeServiceImpl implements NodeService {
       ...(config.homeClawCoreBaseUrl !== undefined && {
         homeClawCoreBaseUrl: config.homeClawCoreBaseUrl,
       }),
+      ...(config.agentVisibility !== undefined && { agentVisibility: config.agentVisibility }),
+      ...(config.a2aChatNotifications !== undefined && {
+        a2aChatNotifications: config.a2aChatNotifications,
+      }),
+      ...(config.agentInteractionMode !== undefined && {
+        agentInteractionMode: config.agentInteractionMode,
+      }),
       ...(config.trustModeEnabled !== undefined && { trustModeEnabled: config.trustModeEnabled }),
+      ...(config.friendAutopilotEnabled !== undefined && {
+        friendAutopilotEnabled: config.friendAutopilotEnabled,
+      }),
+      ...(config.friendAutopilotIntervalHours !== undefined && {
+        friendAutopilotIntervalHours: config.friendAutopilotIntervalHours,
+      }),
+      ...(config.friendAutopilotLastRunAt !== undefined && {
+        friendAutopilotLastRunAt: config.friendAutopilotLastRunAt,
+      }),
+      ...(Object.prototype.hasOwnProperty.call(config, "knowledgeSyndicationMaxSensitivity") && {
+        knowledgeSyndicationMaxSensitivity:
+          config.knowledgeSyndicationMaxSensitivity === null
+            ? undefined
+            : config.knowledgeSyndicationMaxSensitivity,
+      }),
       ...(config.externalPublish !== undefined && {
         externalPublish: {
           allowIpfs: config.externalPublish.allowIpfs ?? false,
@@ -2952,6 +4158,11 @@ class NodeServiceImpl implements NodeService {
               current.externalPublish?.ipfsExportEngine ??
               "kubo",
           ),
+          pinningEnabled: config.externalPublish.pinningEnabled ?? false,
+          pinningProvider:
+            config.externalPublish.pinningProvider ??
+            current.externalPublish?.pinningProvider ??
+            "pinata",
         },
       }),
       ...(validatedSigned !== undefined && {
@@ -3511,6 +4722,11 @@ class NodeServiceImpl implements NodeService {
               senderTrust?.displayName ?? payload.senderOwnerId,
               payload,
             ),
+            ...chatSenderActorFromEnvelope(
+              envelope.senderRole,
+              envelope.agentCredential,
+              guardDecision.action === "allow",
+            ),
           },
           recipient: {
             nodeId: mesh.peerId,
@@ -3558,13 +4774,14 @@ class NodeServiceImpl implements NodeService {
               agentIdentityStore: this._agentIdentityStore,
               vaultDir: this._vaultDir,
               styleAdapter: this._styleAdapter,
-              sendChat: (targetOwnerId, text) => this.sendChat(targetOwnerId, text),
+              sendChat: (targetOwnerId, text) => this.sendAgentChat(targetOwnerId, text),
               emitDraft: (threadPeerOwnerId, draft) => {
                 this.emit("chat:draft", {
                   threadPeerOwnerId,
                   draft: { ...draft, threadPeerOwnerId },
                 });
               },
+              approvalQueue: this._approvalQueue,
             });
           });
         }
@@ -3923,6 +5140,60 @@ class NodeServiceImpl implements NodeService {
     }
 
     return payload;
+  }
+
+  async createWanJoinInvite(params?: CreateWanJoinInviteParams): Promise<CreateWanJoinInviteResult> {
+    this.recordOwnerActivity();
+    const config = await this.getNodeConfig();
+    const reachable = this._mesh ?? this._externalMesh;
+    const expiresInHours =
+      typeof params?.expiresInHours === "number" && params.expiresInHours > 0
+        ? Math.min(params.expiresInHours, 24 * 30)
+        : 168;
+    const now = new Date();
+    const invite = {
+      v: 1 as const,
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + expiresInHours * 60 * 60 * 1000).toISOString(),
+      note: params?.note?.trim() || undefined,
+      targetPeerId: reachable?.peerId,
+      targetMultiaddrs: filterDialableMultiaddrs(reachable?.multiaddrs ?? []),
+      bootstrapPeers: [...config.bootstrapPeers],
+      bootstrapPresets: [...config.bootstrapPresets],
+    };
+    const token = encodeWanJoinInviteV1(invite);
+    return {
+      token,
+      uri: buildEnvoyJoinUri(token),
+      invite,
+    };
+  }
+
+  async applyWanJoinInvite(token: string): Promise<ApplyWanJoinInviteResult> {
+    this.recordOwnerActivity();
+    const invite = decodeWanJoinInviteV1(parseEnvoyJoinUri(token));
+    assertWanJoinInviteNotExpired(invite);
+    const config = await this.getNodeConfig();
+    const beforePeers = new Set(config.bootstrapPeers);
+    const beforePresets = new Set(config.bootstrapPresets);
+    const merged = mergeWanJoinInviteBootstrap({
+      bootstrapPeers: config.bootstrapPeers,
+      bootstrapPresets: config.bootstrapPresets,
+      invite,
+    });
+    await this.updateNodeConfig({
+      bootstrapPeers: merged.bootstrapPeers,
+      bootstrapPresets: merged.bootstrapPresets,
+    });
+    if (this._discoverySeedStore && merged.seedAddrs.length > 0) {
+      await this._discoverySeedStore.upsertMany(merged.seedAddrs, "manual-bootstrap");
+    }
+    return {
+      ok: true,
+      bootstrapPeersAdded: merged.bootstrapPeers.filter((p) => !beforePeers.has(p)).length,
+      bootstrapPresetsAdded: merged.bootstrapPresets.filter((p) => !beforePresets.has(p)).length,
+      seedsPersisted: merged.seedAddrs.length,
+    };
   }
 
   /**
@@ -4438,15 +5709,45 @@ class NodeServiceImpl implements NodeService {
     if (!context) {
       throw new Error("Node not initialized");
     }
-    return runDocumentAgentTurnLoop({
+    const turn = await runDocumentAgentTurnLoop({
       message,
       listLibraryItems: (query) => this.listLibraryItems(query ? { query } : undefined),
       getBonds: () => this.getBonds(),
       executeTool: (toolName, params) => executeTool(toolName, params, context),
       knowledgeQuery: (question) => this.knowledgeQuery(question),
       discoverPublishedLibrary: (p) => this.discoverPublishedLibrary(p),
-      sendChat: (targetOwnerId, text) => this.sendChat(targetOwnerId, text),
+      sendChat: (targetOwnerId, text) => this.sendAgentChat(targetOwnerId, text),
     });
+    await this.recordH2aOwnerTurn(message, turn);
+    return turn;
+  }
+
+  /** Local H2A turn — Activity row for Assistant lane (Phase 15C). */
+  async recordH2aOwnerTurn(message: string, turn: DocumentAgentTurnResult): Promise<void> {
+    if (!this._agentActivityStore) return;
+    const preview = message.trim().slice(0, 80);
+    let kind: AgentActivityRecord["kind"] = "task_progress";
+    let domain: AgentActivityRecord["domain"] = "home";
+    if (turn.intent === "knowledge") {
+      kind = "knowledge_answered";
+      domain = "knowledge";
+    } else if (turn.intent === "share_propose") {
+      kind = "share_proposed";
+      domain = "home";
+    }
+    const record: AgentActivityRecord = {
+      activityId: randomUUID(),
+      domain,
+      kind,
+      summary:
+        kind === "knowledge_answered"
+          ? `H2A vault assist: ${preview}`
+          : `H2A ${turn.intent}: ${preview}`,
+      remoteActorRole: "agent",
+      createdAt: new Date().toISOString(),
+    };
+    await this._agentActivityStore.append(record);
+    await this._publishAgentActivity(record);
   }
 
   // ============================================
@@ -4508,9 +5809,11 @@ class NodeServiceImpl implements NodeService {
       mesh: this._mesh,
       trustIntro: {
         trustModeEnabled: config?.trustModeEnabled ?? false,
+        friendAutopilotEnabled: config?.friendAutopilotEnabled ?? false,
         friendMatchingPreferencesText: config?.friendMatchingPreferencesText,
         humanProfileSummary,
       },
+      recordFriendAutopilotPass: (input) => this._recordFriendAutopilotPass(input),
       listLibraryItems: () => this.listLibraryItems(),
       discoverPublishedLibrary: (p) =>
         this.discoverPublishedLibrary(p as DiscoverPublishedLibraryParams | undefined),
@@ -4519,7 +5822,13 @@ class NodeServiceImpl implements NodeService {
       setLibraryItemPublished: (documentId, published) => this.setLibraryItemPublished(documentId, published),
       submitAgentShareProposal: (params) => this.submitAgentShareProposal(params),
       getBonds: () => this.getBonds(),
-      sendChat: (targetOwnerId, text) => this.sendChat(targetOwnerId, text),
+      sendChat: (targetOwnerId, text) => this.sendAgentChat(targetOwnerId, text),
+      listPendingApprovals: () => this.listPendingApprovals(),
+      approvePendingApproval: (itemId, notes) => this.approvePendingApproval(itemId, notes),
+      rejectPendingApproval: (itemId, notes) => this.rejectPendingApproval(itemId, notes),
+      requestAgentCard: (targetOwnerId) => this.requestAgentCard(targetOwnerId),
+      getAgentCard: (ownerId) => this.getAgentCard(ownerId),
+      listAgentCards: () => this.listAgentCards(),
       listActiveTransfers: () => this.listActiveTransfers(),
       getTransferStatus: (correlationId) => this.getTransferStatus(correlationId),
       listPendingShareOffers: () => this.listPendingShareOffers(),
@@ -4584,6 +5893,19 @@ class NodeServiceImpl implements NodeService {
     // Automatic mode: online if had activity within timeout
     return Date.now() - this.lastActivityTimestamp < this.activityTimeoutMs;
   }
+}
+
+function filterDialableMultiaddrs(addrs: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const addr of addrs) {
+    const trimmed = addr.trim();
+    if (!trimmed) continue;
+    const ip4 = trimmed.match(/\/ip4\/([0-9.]+)/)?.[1];
+    if (ip4 && (ip4.startsWith("127.") || ip4 === "0.0.0.0")) continue;
+    if (trimmed.includes("/ip6/::1")) continue;
+    out.push(trimmed);
+  }
+  return out.slice(0, 8);
 }
 
 function mimeTypeForFilename(filename: string): string {

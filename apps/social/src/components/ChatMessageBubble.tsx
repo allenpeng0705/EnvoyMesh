@@ -8,6 +8,8 @@ interface ChatMessageBubbleProps {
   variant: MessageVisualVariant;
   position: MessageStackPosition;
   senderLabel?: string;
+  /** Verified agent badge override (Phase 13B). */
+  actorBadge?: string;
   timeLabel?: string;
   deliveryReceipt?: "pending" | "sent" | "delivered" | "read" | "failed";
   copyText?: string;
@@ -25,6 +27,7 @@ const DELIVERY_LABEL: Record<NonNullable<ChatMessageBubbleProps["deliveryReceipt
 
 const VARIANT_BADGE: Record<MessageVisualVariant, string> = {
   outgoing: "You",
+  "outgoing-agent": "Your agent",
   "incoming-peer": "",
   "incoming-agent": "Agent",
   "ai-outgoing": "You",
@@ -36,6 +39,7 @@ export function ChatMessageBubble({
   variant,
   position,
   senderLabel,
+  actorBadge,
   timeLabel,
   deliveryReceipt,
   copyText,
@@ -45,9 +49,10 @@ export function ChatMessageBubble({
   const [copied, setCopied] = useState(false);
   const showMeta = position === "single" || position === "last";
   const badge =
-    variant === "incoming-peer" && senderLabel
+    actorBadge ??
+    (variant === "incoming-peer" && senderLabel
       ? String(senderLabel)
-      : VARIANT_BADGE[variant];
+      : VARIANT_BADGE[variant]);
 
   const showMetaRow = showMeta && (badge || timeLabel != null);
   const showDelivery = deliveryReceipt != null;

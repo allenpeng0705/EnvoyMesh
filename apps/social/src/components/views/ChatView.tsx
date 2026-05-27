@@ -1,5 +1,4 @@
 import { ChatSidebar } from "./ChatSidebar.js";
-import { AIChatPanel } from "./AIChatPanel.js";
 import { ContactChatPanel } from "./ContactChatPanel.js";
 import { InboxView } from "./InboxView.js";
 import { ChatIcon } from "../../icons.js";
@@ -15,6 +14,7 @@ export interface ChatViewProps {
   panelMode: ChatPanelMode;
   onPanelModeChange: (mode: ChatPanelMode) => void;
   inboxActivityCount: number;
+  onOpenAssistant?: () => void;
 }
 
 export function ChatView({
@@ -23,6 +23,7 @@ export function ChatView({
   panelMode,
   onPanelModeChange,
   inboxActivityCount,
+  onOpenAssistant,
 }: ChatViewProps) {
   return (
     <div className="chat-view">
@@ -56,11 +57,13 @@ export function ChatView({
         </div>
       ) : (
         <div className="chat-view-threads-shell">
-          <ChatSidebar selectedContact={selectedContact} onSelectContact={onSelectedContactChange} />
+          <ChatSidebar
+            selectedContact={selectedContact}
+            onSelectContact={onSelectedContactChange}
+            onOpenAssistant={onOpenAssistant}
+          />
           <section className="chat-area">
-            {selectedContact === "__envoy_ai__" ? (
-              <AIChatPanel />
-            ) : selectedContact ? (
+            {selectedContact ? (
               <ContactChatPanel
                 selectedContact={selectedContact}
                 onSelectContact={onSelectedContactChange}
@@ -71,7 +74,12 @@ export function ChatView({
                   <ChatIcon size={48} />
                 </div>
                 <h3>Select a contact</h3>
-                <p>Choose a contact from the list or start a conversation with Envoy AI</p>
+                <p>Choose a bonded contact from the list to start a human conversation.</p>
+                {onOpenAssistant && (
+                  <button type="button" className="primary" style={{ marginTop: "1rem" }} onClick={onOpenAssistant}>
+                    Open Assistant (owner ↔ home agent)
+                  </button>
+                )}
               </div>
             )}
           </section>

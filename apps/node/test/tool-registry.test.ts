@@ -81,15 +81,15 @@ describe("ToolRegistry", () => {
       });
 
       const tools = registry.listTools();
-      // 43 default tools + 2 additional = 45
-      expect(tools).toHaveLength(45);
+      // 45 default tools + 2 additional = 47
+      expect(tools).toHaveLength(47);
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "bond.send_hello", "chat.send", "discovery.search", "knowledge.query",
-          "mesh.acknowledge-escalation", "mesh.add-trigger", "mesh.approve",
-          "mesh.escalate", "mesh.get-contact-disclosure", "mesh.get-digest",
-          "mesh.get-digest-config", "mesh.get-external-agent", "mesh.get-mode",
-          "mesh.get-style", "mesh.library_discover", "mesh.library_export_ipfs",
+          "mesh.acknowledge-escalation", "mesh.add-trigger", "mesh.agent_card.request",
+          "mesh.approve", "mesh.escalate", "mesh.get-contact-disclosure", "mesh.get-digest",
+          "mesh.get-digest-config", "mesh.get-external-agent", "mesh.get_agent_card",
+          "mesh.get-mode", "mesh.get-style", "mesh.library_discover", "mesh.library_export_ipfs",
           "mesh.library_list", "mesh.library_publish", "mesh.library_request_share", "mesh.library_verify_ipfs_gateway",
           "mesh.list-all-approvals",
           "mesh.list-external-agent-actions",
@@ -107,8 +107,8 @@ describe("ToolRegistry", () => {
     it("default tools are pre-registered", () => {
       const registry = new ToolRegistry();
       const tools = registry.listTools();
-      // Default tools: prior 40 + mesh.transfer_status + mesh.share_list_pending + mesh.share_list_proposals = 43
-      expect(tools.length).toBe(43);
+      // Default tools: prior 43 + mesh.agent_card.request + mesh.get_agent_card = 45
+      expect(tools.length).toBe(45);
     });
   });
 
@@ -184,6 +184,24 @@ describe("ToolRegistry", () => {
       expect(vaultTool?.requiresApproval).toBe(false);
       expect(vaultTool?.sensitivityCeiling).toBe("private");
     });
+
+    it("has mesh.agent_card.request as mesh tool with agent.card.request intent", () => {
+      const registry = new ToolRegistry();
+      const tool = registry.get("mesh.agent_card.request");
+
+      expect(tool).toBeDefined();
+      expect(tool?.intent).toBe("agent.card.request");
+      expect(tool?.isMeshTool).toBe(true);
+    });
+
+    it("has mesh.get_agent_card as local-only read tool", () => {
+      const registry = new ToolRegistry();
+      const tool = registry.get("mesh.get_agent_card");
+
+      expect(tool).toBeDefined();
+      expect(tool?.intent).toBeUndefined();
+      expect(tool?.isMeshTool).toBe(false);
+    });
   });
 });
 
@@ -234,11 +252,12 @@ describe("listAgentTools", () => {
     expect(tools.some((t) => t.name.startsWith("mesh.intro."))).toBe(false);
   });
 
-  it("includes mesh.intro.* tools when trustModeEnabled", () => {
+    it("includes mesh.intro.* tools when trustModeEnabled", () => {
     const tools = listAgentTools({ trustModeEnabled: true });
     expect(tools.some((t) => t.name === "mesh.intro.matching_context")).toBe(true);
     expect(tools.some((t) => t.name === "mesh.intro.sync")).toBe(true);
     expect(tools.some((t) => t.name === "mesh.intro.broadcast_search")).toBe(true);
+    expect(tools.some((t) => t.name === "mesh.intro.run_autopilot")).toBe(true);
   });
 });
 

@@ -7,6 +7,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { AIChatPanel } from "../../src/components/views/AIChatPanel.js";
 
 const runDocumentAgentTurn = vi.fn();
+const sendSyncStateUpdate = vi.fn().mockResolvedValue({ ok: true, recipients: 0 });
+const on = vi.fn(() => () => {});
 
 let nodeConfig = {
   modelProviders: { mode: "mock" as const, modelName: "test-model" },
@@ -15,6 +17,8 @@ let nodeConfig = {
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
     runDocumentAgentTurn,
+    sendSyncStateUpdate,
+    on,
   }),
 }));
 

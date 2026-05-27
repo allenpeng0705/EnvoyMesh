@@ -10,13 +10,25 @@ import {
 import { evaluatePolicy } from "@envoymesh/bonds";
 import type { VaultIndex } from "@envoymesh/vault";
 import { buildModelProviders, routeModelRequest } from "@envoymesh/models";
-import type { AiKnowledgeBaseSettings, ModelProviderConfig } from "@envoymesh/api";
+import {
+  resolveKnowledgeSyndicationSensitivity,
+  syndicationSensitivityToKnowledgeAccess,
+  type AiKnowledgeBaseSettings,
+  type KnowledgeSyndicationSensitivity,
+  type ModelProviderConfig,
+} from "@envoymesh/api";
 import { ZodError } from "zod";
 import { formatVaultKnowledgeSection, searchVaultKnowledgeBase, type KnowledgeAccessLevel } from "./ai-context.js";
 import type { RagService } from "./rag-service.js";
 
 export type KnowledgeQueryInboundResult =
-  | { ok: true; responsePayload: KnowledgeResponsePayload }
+  | {
+      ok: true;
+      responsePayload: KnowledgeResponsePayload;
+      senderOwnerId?: string;
+      queryPreview: string;
+      syndicatedSensitivity: KnowledgeSyndicationSensitivity;
+    }
   | { ok: false; reason: string };
 
 /**
@@ -83,6 +95,10 @@ export async function handleInboundKnowledgeQuery(input: {
   /** Contact knowledge access ceiling for vault snippet filtering. Default: public. */
   knowledgeAccess?: KnowledgeAccessLevel;
   ragService?: RagService | null;
+  /** Phase 14B — owner ceiling for peer vault syndication (ignored for local self-query). */
+  knowledgeSyndicationMaxSensitivity?: KnowledgeSyndicationSensitivity;
+  /** Phase 14B — optional per-contact ceiling (tighter than global). */
+  contactSyndicationMaxSensitivity?: KnowledgeSyndicationSensitivity;
 }): Promise<KnowledgeQueryInboundResult> {
   const {
     envelope,
@@ -103,6 +119,8 @@ export async function handleInboundKnowledgeQuery(input: {
     knowledgeBase,
     knowledgeAccess = isLocalSelfQuery ? "personal" : "public",
     ragService = null,
+    knowledgeSyndicationMaxSensitivity,
+    contactSyndicationMaxSensitivity,
   } = input;
 
   let payload: ReturnType<typeof parseKnowledgeQueryPayload>;
@@ -197,7 +215,17 @@ export async function handleInboundKnowledgeQuery(input: {
 
   // action === "allow": proceed with vault search + model routing
   const maxSens = policyDecision.action === "allow" ? policyDecision.maxSensitivity : "public";
-  const allowedSensitivity = maxSens ?? "public";
+  const allowedSensitivity = (maxSens ?? "public") as KnowledgeSyndicationSensitivity;
+  const syndicatedSensitivity = isLocalSelfQuery
+    ? allowedSensitivity
+    : resolveKnowledgeSyndicationSensitivity(
+        allowedSensitivity,
+        knowledgeSyndicationMaxSensitivity,
+        contactSyndicationMaxSensitivity,
+      );
+  const effectiveKnowledgeAccess = isLocalSelfQuery
+    ? knowledgeAccess
+    : syndicationSensitivityToKnowledgeAccess(syndicatedSensitivity);
 
   // 4. Search vault knowledge base (best-effort)
   let vaultSnippets: Awaited<ReturnType<RagService["searchVaultKnowledgeBase"]>> = [];
@@ -207,14 +235,14 @@ export async function handleInboundKnowledgeQuery(input: {
       ? await ragService.searchVaultKnowledgeBase({
           vaultIndex,
           query: payload.query,
-          knowledgeAccess,
+          knowledgeAccess: effectiveKnowledgeAccess,
           knowledgeBase,
           knowledgeScope,
         })
       : searchVaultKnowledgeBase({
           vaultIndex,
           query: payload.query,
-          knowledgeAccess,
+          knowledgeAccess: effectiveKnowledgeAccess,
           knowledgeBase,
           knowledgeScope,
         });
@@ -298,6 +326,9 @@ Query: ${payload.query}`;
         refused: true,
         refusalReason: "model disabled",
       }),
+      senderOwnerId,
+      queryPreview: preview,
+      syndicatedSensitivity,
     };
   }
 
@@ -348,5 +379,11 @@ Query: ${payload.query}`;
     refused: false,
   });
 
-  return { ok: true, responsePayload };
+  return {
+    ok: true,
+    responsePayload,
+    senderOwnerId,
+    queryPreview: preview,
+    syndicatedSensitivity,
+  };
 }

@@ -22,6 +22,11 @@ import {
 import { matchPublishedLibraryDocuments } from "./discovery-library-match.js";
 import { createPublishedLibraryStore } from "./published-library-store.js";
 import { createPublishedExternalStore } from "./published-external-store.js";
+import { responseHopDistance } from "@envoymesh/api";
+import {
+  discoveryRequesterAuditLabel,
+  isAnonymousDiscoveryOwnerId,
+} from "@envoymesh/api";
 
 /** Requesting this capability (alone or with file/hash selectors) enables published-library metadata in the response. */
 export const PUBLISHED_LIB_CAPABILITY = "envoymesh.published-library";
@@ -32,7 +37,16 @@ type DiscoveryMatchRow = {
   matchedTagHashes: string[];
   matchedCapabilities: string[];
   libraryMatches?: LibraryFileMatch[];
+  hopDistance?: number;
 };
+
+function tagMatchesWithHopDistance(
+  matches: DiscoveryMatchRow[],
+  payload: ReturnType<typeof parseDiscoveryRequestPayload>,
+): DiscoveryMatchRow[] {
+  const hopDistance = responseHopDistance(payload);
+  return matches.map((row) => ({ ...row, hopDistance }));
+}
 
 function allowsPublicPublishedLibraryQuery(
   payload: ReturnType<typeof parseDiscoveryRequestPayload>,
@@ -50,6 +64,13 @@ function allowsPublicPublishedLibraryQuery(
     Boolean(payload.fileTitleQuery?.trim()) ||
     (payload.requestedContentHashPrefixes?.length ?? 0) > 0
   );
+}
+
+function discoveryTrustOwnerId(payload: ReturnType<typeof parseDiscoveryRequestPayload>): string {
+  if (isAnonymousDiscoveryOwnerId(payload.requesterOwnerId) && payload.referralOwnerId?.trim()) {
+    return payload.referralOwnerId.trim();
+  }
+  return payload.requesterOwnerId;
 }
 
 async function mergePublishedLibraryMatches(input: {
@@ -292,7 +313,8 @@ export async function handleInboundDiscoveryIntent(input: {
   try {
     if (envelope.intent === "discovery.request") {
       const payload = parseDiscoveryRequestPayload(envelope.payload);
-      const trustRecord = await trustStore.getTrustRecord(payload.requesterOwnerId);
+      const trustOwnerId = discoveryTrustOwnerId(payload);
+      const trustRecord = await trustStore.getTrustRecord(trustOwnerId);
       const trustLevel = trustRecord?.level ?? "public";
 
       // ─── Phase 8I: Anonymous discovery mode enforcement ────────────────────
@@ -369,7 +391,7 @@ export async function handleInboundDiscoveryIntent(input: {
         return { ok: false, reason: denyReason };
       }
 
-      if (!allowRequest(payload.requesterOwnerId, receivedAt)) {
+      if (!allowRequest(trustOwnerId, receivedAt)) {
         const denyReason = "discovery.request rate limit exceeded for requesterOwnerId";
         await auditDiscoveryDeny({ taskStore, envelope, remotePeerId, receivedAt, correlationId, trustLevel, reason: denyReason });
         return { ok: false, reason: denyReason };
@@ -427,7 +449,7 @@ export async function handleInboundDiscoveryIntent(input: {
         const responsePayload = createDiscoveryResponsePayload({
           requestMessageId: envelope.messageId,
           responderOwnerId: profile.owner.ownerId,
-          matches: matches.slice(0, payload.maxResults),
+          matches: tagMatchesWithHopDistance(matches, payload).slice(0, payload.maxResults),
           truncated: matches.length > payload.maxResults,
         });
 
@@ -507,7 +529,7 @@ export async function handleInboundDiscoveryIntent(input: {
       const responsePayload = createDiscoveryResponsePayload({
         requestMessageId: envelope.messageId,
         responderOwnerId: profile.owner.ownerId,
-        matches: matches.slice(0, payload.maxResults),
+        matches: tagMatchesWithHopDistance(matches, payload).slice(0, payload.maxResults),
         truncated: matches.length > payload.maxResults,
       });
 
@@ -748,7 +770,7 @@ async function auditDiscoveryMatch(input: {
       verificationStatus: "verified",
       latencyMs: Date.now() - receivedAt,
       outcome: "allow",
-      summary: `discovery.request matched=${matchCount} trust=${trustLevel}${hasManifest ? ` visibility=${manifestVisibility ?? "?"} ceiling=${sensitivityCeiling ?? "?"}` : " [legacy]"} tags=${tagCount} caps=${capCount}`,
+      summary: `discovery.request matched=${matchCount} trust=${trustLevel} requester=${discoveryRequesterAuditLabel({ requesterOwnerId: parseDiscoveryRequestPayload(envelope.payload).requesterOwnerId, referralOwnerId: parseDiscoveryRequestPayload(envelope.payload).referralOwnerId, currentHop: parseDiscoveryRequestPayload(envelope.payload).currentHop })}${hasManifest ? ` visibility=${manifestVisibility ?? "?"} ceiling=${sensitivityCeiling ?? "?"}` : " [legacy]"} tags=${tagCount} caps=${capCount}`,
       createdAt: envelope.createdAt,
     }),
   );
@@ -767,7 +789,7 @@ async function auditDiscoveryMatch(input: {
       matchCount,
       trustLevel: trustLevel as "direct" | "referred" | "public" | "blocked",
       outcome: "allow",
-      summary: `discovery.request matched=${matchCount}`,
+      summary: `discovery.request matched=${matchCount} (requester=${discoveryRequesterAuditLabel({ requesterOwnerId: parseDiscoveryRequestPayload(envelope.payload).requesterOwnerId, referralOwnerId: parseDiscoveryRequestPayload(envelope.payload).referralOwnerId, currentHop: parseDiscoveryRequestPayload(envelope.payload).currentHop })})`,
       createdAt: envelope.createdAt,
     }),
   );

@@ -99,6 +99,17 @@ export interface PersistedNodeConfig {
   lazyCapabilityDiscovery?: boolean;
   /** Stretch relay/capability/bootstrap timers when idle. */
   idleTimerStretch?: boolean;
+  /** Per-domain Activity notify loudness (Phase 13E). */
+  agentVisibility?: import("@envoymesh/api").AgentVisibilityConfig;
+  /** Local chat system lines on A2A milestones. Default off. */
+  a2aChatNotifications?: import("@envoymesh/api").A2aChatNotificationMode;
+  agentInteractionMode?: import("@envoymesh/api").AgentInteractionMode;
+  /** Phase 14A — Trust-mode friend autopilot (requires trustModeEnabled). */
+  friendAutopilotEnabled?: boolean;
+  friendAutopilotIntervalHours?: number;
+  friendAutopilotLastRunAt?: string;
+  /** Phase 14B — inbound peer knowledge.query syndication ceiling. */
+  knowledgeSyndicationMaxSensitivity?: "public" | "friends" | "private";
 }
 
 export interface NodeConfigStore {

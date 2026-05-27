@@ -1,9 +1,10 @@
 /**
  * Local “two-node” smoke: runs integration tests — Trust-mode intro → bond flow
  * (`trust-mode-intro-bond-flow.test.ts`) and FS-B file-share bytes/hash e2e
- * (`file-share-e2e.test.ts`).
+ * (`file-share-e2e.test.ts`), plus broader document-agent and bridge coverage.
  *
- * Start from repo root: `npm run smoke:local`
+ * Start from repo root: `npm run smoke:local` (nightly / full rehearsal).
+ * For Phase 13-only PR signal use `npm run smoke:phase13`.
  */
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -35,6 +36,18 @@ const relativeTests = [
   join("apps", "node", "test", "bridge-knowledge-async-e2e.test.ts"),
   join("apps", "node", "test", "json-rpc-document-agent.test.ts"),
   join("apps", "node", "test", "agent-share-proposal-store.test.ts"),
+  join("apps", "node", "test", "send-agent-chat-e2e.test.ts"),
+  join("apps", "node", "test", "agent-card-a2e.test.ts"),
+  join("apps", "node", "test", "approval-send-agent-chat-e2e.test.ts"),
+  join("apps", "node", "test", "report-create-activity-e2e.test.ts"),
+  join("apps", "node", "test", "task-activity-e2e.test.ts"),
+  join("apps", "node", "test", "structured-preferred-e2e.test.ts"),
+  join("apps", "node", "test", "json-rpc-phase13.test.ts"),
+  join("apps", "node", "test", "agent-card-node-service-e2e.test.ts"),
+  join("apps", "node", "test", "agent-card-a2e-full-daemon.test.ts"),
+  join("apps", "node", "test", "daemon-agent-card-inbound.test.ts"),
+  join("apps", "node", "test", "approval-executor.test.ts"),
+  join("packages", "api", "test", "agent-interaction.test.ts"),
   join("packages", "mobile-node", "test", "document-agent-mobile-e2e.test.ts"),
 ];
 

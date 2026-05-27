@@ -4,6 +4,7 @@ import { useNodeService } from "../../hooks/useNodeService.js";
 import { stripModelThinking } from "@envoymesh/api";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
 import { messageVisualVariant } from "../../lib/chat-thread-kind.js";
+import { createAssistantDraftCrdt, ASSISTANT_DRAFT_SYNC_SCOPE } from "../../lib/assistant-draft-crdt.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { Markdown } from "../Markdown.js";
 import { ChatIcon, RemoveIcon } from "../../icons.js";
@@ -40,14 +41,48 @@ function groupByDate(msgs: AiMessage[]): [string, AiMessage[]][] {
 
 export function AIChatPanel() {
   const nodeService = useNodeService();
-  const { nodeConfig } = useNodeState();
+  const { nodeConfig, humanProfile } = useNodeState();
 
   const [aiMessages, setAiMessages] = useState<AiMessage[]>([]);
   const [aiInput, setAiInput] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const draftRef = useRef<ReturnType<typeof createAssistantDraftCrdt> | null>(null);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ownerId = humanProfile?.ownerId ?? nodeConfig?.profileDir ?? "anonymous";
 
   const messageGroups = useMemo(() => groupByDate(aiMessages), [aiMessages]);
+
+  const pushDraftSync = (updateBase64: string) => {
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      void nodeService
+        .sendSyncStateUpdate({ scope: ASSISTANT_DRAFT_SYNC_SCOPE, updateBase64 })
+        .catch(() => {});
+    }, 400);
+  };
+
+  useEffect(() => {
+    const draft = createAssistantDraftCrdt(ownerId, { onLocalUpdate: pushDraftSync });
+    draftRef.current = draft;
+    setAiInput(draft.getPlainText());
+    const onDraftChange = () => setAiInput(draft.getPlainText());
+    draft.text.observe(onDraftChange);
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+      draft.text.unobserve(onDraftChange);
+      draft.destroy();
+      draftRef.current = null;
+    };
+  }, [ownerId, nodeService]);
+
+  useEffect(() => {
+    const unsub = nodeService.on("crdt:sync", (data) => {
+      if (data.scope !== ASSISTANT_DRAFT_SYNC_SCOPE) return;
+      draftRef.current?.applyRemoteUpdate(data.updateBase64);
+    });
+    return unsub;
+  }, [nodeService]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -63,7 +98,7 @@ export function AIChatPanel() {
       timestamp: new Date().toISOString(),
     };
     setAiMessages((prev) => [...prev, userMsg]);
-    setAiInput("");
+    draftRef.current?.setPlainText("");
     setIsAiLoading(true);
 
     try {
@@ -140,9 +175,9 @@ export function AIChatPanel() {
             <div className="empty-state-title">Chat with your AI assistant</div>
             <div className="empty-state-desc">Ask questions, get help with tasks, or draft messages</div>
             <div className="ai-suggestions">
-              <button type="button" onClick={() => setAiInput("What can you help me with?")}>What can you help me with?</button>
-              <button type="button" onClick={() => setAiInput("Summarize my recent conversations")}>Summarize my recent conversations</button>
-              <button type="button" onClick={() => setAiInput("Help me draft a message")}>Help me draft a message</button>
+              <button type="button" onClick={() => draftRef.current?.setPlainText("What can you help me with?")}>What can you help me with?</button>
+              <button type="button" onClick={() => draftRef.current?.setPlainText("Summarize my recent conversations")}>Summarize my recent conversations</button>
+              <button type="button" onClick={() => draftRef.current?.setPlainText("Help me draft a message")}>Help me draft a message</button>
             </div>
           </div>
         ) : (
@@ -201,7 +236,7 @@ export function AIChatPanel() {
           type="text"
           placeholder="Ask Envoy AI anything…"
           value={aiInput}
-          onChange={(e) => setAiInput(e.target.value)}
+          onChange={(e) => draftRef.current?.setPlainText(e.target.value)}
           onKeyDown={async (e) => {
             if (e.key === "Enter" && aiInput.trim() && !isAiLoading) {
               e.preventDefault();

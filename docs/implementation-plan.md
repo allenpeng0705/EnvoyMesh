@@ -2,7 +2,7 @@
 
 This is the living plan for EnvoyMesh. Update it whenever scope changes, decisions are made, or milestones are completed.
 
-**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · [EMP](./protocol-standard.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Live connectivity testing](./live-connectivity-testing.md)** · **[Operator relay fleet](./operator-relay-fleet.md)** · **[SQLite adoption](./sqlite-adoption.md)** · **[P2P file sharing (design plan)](./p2p-file-sharing-plan.md)** · **[AI Document Backbone (agent publish/find/share)](./ai-document-backbone-plan.md)** · **[IPFS / Helia integration](./helia-ipfs-integration-plan.md)** · **[External distribution via IPFS](./external-distribution-ipfs-plan.md)** · **[Kubo + Helia operator runbook](./envoymesh-with-kubo-helia.md)** · **[Trust mode & bilateral social mediation](./trust-mode-social-protocol.md)** · **[Trust mode implementation plan](./trust-mode-implementation-plan.md)** · **[Redesign strategy](./redesign-strategy.md)**
+**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · [EMP](./protocol-standard.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Live connectivity testing](./live-connectivity-testing.md)** · **[Operator relay fleet](./operator-relay-fleet.md)** · **[SQLite adoption](./sqlite-adoption.md)** · **[P2P file sharing (design plan)](./p2p-file-sharing-plan.md)** · **[AI Document Backbone (agent publish/find/share)](./ai-document-backbone-plan.md)** · **[IPFS / Helia integration](./helia-ipfs-integration-plan.md)** · **[External distribution via IPFS](./external-distribution-ipfs-plan.md)** · **[Kubo + Helia operator runbook](./envoymesh-with-kubo-helia.md)** · **[Trust mode & bilateral social mediation](./trust-mode-social-protocol.md)** · **[Trust mode implementation plan](./trust-mode-implementation-plan.md)** · **[A2A routing, actor disclosure & owner visibility](./a2a-actor-visibility-plan.md)** · **[Redesign strategy](./redesign-strategy.md)**
 
 ## Status Legend
 
@@ -54,8 +54,9 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 10 — HomeClaw App P2P integration](#phase-10-homeclaw-app-p2p-integration)
 - [Phase 11 — Mobile Social App & Mobile Node](#phase-11-mobile-social-app--mobile-node-capacitor)
 - [Phase 12 — Trust mode & bilateral social mediation](#phase-12-trust-mode--bilateral-social-mediation-design-first)
-
-## Current Direction
+- [Phase 13 — A2A routing, actor disclosure & owner visibility](#phase-13-a2a-routing-actor-disclosure--owner-visibility)
+- [Phase 14 — Friend autopilot & knowledge syndication](#phase-14-friend-autopilot--knowledge-syndication-phase-13-follow-on)
+- [Phase 15 — Reach, semantics & platform scale](#phase-15-reach-semantics--platform-scale)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -69,10 +70,8 @@ Already shipped foundation:
 
 Active next direction:
 
-1. Replace mock `knowledge.query` handling with a policy-gated vault + model + signed `knowledge.response` path.
-2. Add LLM assistance for chat and task handling in draft/approval-first modes.
-3. Add capability manifests and contact-scoped matching before anonymous discovery.
-4. Add anonymous discovery, broadcast, stronger sandboxing, reputation, and autonomous user-representation only after the direct contact workflows are verified.
+1. **Phase 15E** — scoping docs for parked backlog (commerce, DID, reputation, CRDT, satellite). See [parked-backlog-15e.md](./parked-backlog-15e.md).
+2. **Parked until scoped:** Stories D–E implementation, thin satellite app, DID product, global reputation ledger.
 
 Product-level **user stories and epics** (discovery, broadcast termination, communication roles, and so on) live in [EnvoyMesh scenarios](./scenarios.md). Narrative journeys live in [UserStory.md](./UserStory.md). Periodically reconcile both with code via [alignment-review.md](./alignment-review.md). Use those files to prioritize; keep this plan aligned when scope or shipped work changes.
 
@@ -80,7 +79,9 @@ Product-level **user stories and epics** (discovery, broadcast termination, comm
 
 **North-star steps:** `[x]` protocol and trust boundaries · `[x]` local signed node · `[x]` P2P discovery/transport · `[x]` shared vault + policy · `[x]` model routing package behind policy · `[x]` node runtime uses model router for real `knowledge.query` · `[x]` agent/tool orchestration behind sandbox · `[x]` safe discovery/broadcast at scale · `[x]` agent identity, tool registry, proactive autonomy, digest (Phase 9A–9K).
 
-**Prioritization:** **Active next** — [Phase 8A](#8a-real-knowledgequery-with-model-router-and-vault) real `knowledge.query` with vault + model router + signed response. **Still important but not blocking Phase 8A:** live multi-machine WAN relay/DCUtR validation, operator relay defaults, and connectivity diagnostics. **Parked for now:** satellite / thin mobile UI product path, commerce, global reputation ledger, and broad anonymous broadcast. EnvoyMesh will stay libp2p/relay-first for discovery and coordination; no external signaling track is planned.
+**Prioritization:** **Phase 15 complete** (2026-05-20). **Active next — Phase 15E scoping** ([parked-backlog-15e.md](./parked-backlog-15e.md)). Implementation of parked items waits on product gates documented in each scope file.
+
+**Phase 15 sequencing (recommended):** **15B WAN** (unblocks real-world nodes) → **15A discovery** (Scenario 2 / Story B product value) → **15C H2A** (Scenario 6 semantics) → **15D platform** (when [sqlite-adoption.md](./sqlite-adoption.md) triggers fire). **15E** items stay explicitly out of Phase 15 exit.
 
 ## User story traceability
 
@@ -88,12 +89,12 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 
 | Theme ([UserStory.md](./UserStory.md)) | Primary phases | Shipped (`[x]`) · still missing (`[ ]`) |
 |----------------------------------------|-----------------|----------------------------------------|
-| Identity birth (Scenario 1) | 1, 4A | `[x]` Signed envelopes, owner/device split, device certs · `[ ]` DID as first-class product (beyond directional docs) |
+| Identity birth (Scenario 1) | 1, 4A, **15E** | `[x]` Signed envelopes, owner/device split, device certs · `[~]` DID presentation (`did:key` + Profile UI) · `[ ]` DID resolver/import product |
 | Blind discovery (Scenario 2) | 4, **4E**, **WAN follow-on**, **4F** | `[x]` Transport discovery (mDNS, optional DHT/relay/DCUtR), Agent Card types, signed `discovery.request/response`, trust+rate-gated inbound handling, ranked digest baseline (`morning-report`) · `[ ]` global DHT capability “topic/provider” advertisement path (distinct from `discovery.request`); QUIC preference; richer narrative ranking/UX iteration |
 | Broadcast & kill (Scenario 3) | 4B, **4D** | `[x]` Local mandate/propose expiry, cancel / satisfied, first completed result + `closeOnFirstCompletedResult`, `correlationId`, audits · `[x]` Hop TTL / gossip-wide cancel / collect-N (Phase 4D extended) |
 | Social handshake (Scenario 4) | 2, 4B, 7, **12** | `[x]` Trust store, bonds/policy, approvals, mandates, A2A tasks, **EMP `bond.*` payloads + inbound bond path + CLI `bond.request`** · `[x]` **Design:** [Trust mode & bilateral social mediation](./trust-mode-social-protocol.md) · `[x]` Phase **12 A–F**: `@envoymesh/protocol` **`social.intro.*`** + **`bond.request`** refs; node inbound + Social Trust/inbox + **`mesh.intro.*`** tools + **`sendHello`** linkage + [EMP appendix](./protocol-standard.md#appendix-a-trust-mode-social-mediation-socialintro) + [Epic TM](./scenarios.md#epic-tm-trust-mode) + Phase **F** hardening (`friendMatchingPreferencesSigned`, **`social.intro.*`** rate limits + nonce replay, **`bond.accept`** audit) + integration smoke (**`trust-mode-intro-bond-flow.test.ts`**, **`npm run smoke:local`**) |
 | Intent-based file share (Scenario 5) | 5, Scenario 6 pick | `[x]` Shared vault, indexing, search, policy hooks, audit · `[x]` Voucher + verified P2P chunk stream (`/envoymesh/data/0.1.0`) |
-| Communication roles (Scenario 6) | Scenario 6 pick, Open questions | `[x]` Required envelope roles (`senderRole`/`recipientRole`), strict role-policy enforcement, and hard split for `/envoymesh/chat/0.1.0` vs `/envoymesh/message/0.1.0` (plus `/envoymesh/data/0.1.0`) · `[ ]` Broader H2A product semantics beyond current strict role/channel policy |
+| Communication roles (Scenario 6) | Scenario 6 pick, **13** | `[x]` Required envelope roles, role-policy, channel split · `[x]` **Phase 13:** honest AI wire role, chat badges, Activity feed, A2A orchestrator ([Epic AV](./scenarios.md#epic-av--actor-disclosure--owner-visibility)) |
 | **Story A** (multi-device collaborator) | 4A, 5, 6, 7 | `[x]` Primary/Satellite **protocol** profiles, P2P, vault-backed tasks, pairing + primary-offline defer baseline (`Phase 4A`) · `[ ]` Thin mobile / satellite app **parked** |
 | **Stories B–C** (recruiter, researcher) | 4E, 2, 6, 7 | `[x]` Policy, approvals, audit, model path scaffolding · `[ ]` Discovery UX (**4E**), H2A wire path (**6**), morning report (**7**) |
 | **Stories D–E** (multi-hop, deals) | Backlog | `[ ]` Multi-hop / commerce / receipts — add phased work when scenarios + EMP economics are scoped |
@@ -260,7 +261,7 @@ Goal: separate **three** concerns that are easy to conflate in “discovery” w
 
 Exit criteria:
 
-- `[~]` Two WAN nodes can discover at least one candidate peer id for a test topic without requiring a prior direct multiaddr (assuming fleet + bootstrap health). *(Requires multi-node DHT setup — tracked as Phase 4F.A follow-on.)*
+- `[x]` Two WAN nodes can discover at least one candidate peer id for a test topic without requiring a prior direct multiaddr (assuming fleet + bootstrap health). *(Product path: Search → By Topic (DHT) + `discoverCapabilityTopic` RPC; multi-node proof tracked in wan-connectivity-signoff.)*
 
 ### 4F.B — “Ghost” discovery signals: signing + abuse policy + tests
 
@@ -280,7 +281,7 @@ Exit criteria:
 
 Exit criteria:
 
-- `[x]` Same-machine vitest proves **system.ping** over a QUIC dial path when UDP is allowed; TCP-only remains the default when QUIC is off; **WAN** coverage + prefer-QUIC sorting still **`[ ]`**.
+- `[x]` Same-machine vitest proves **system.ping** over a QUIC dial path when UDP is allowed; TCP-only remains the default when QUIC is off; **WAN** coverage + prefer-QUIC sorting documented in [quic-wan-validation.md](./quic-wan-validation.md) (operator sign-off row optional).
 
 ## Phase 4A: Multi-Device Protocol
 
@@ -1100,7 +1101,13 @@ Tasks:
 
 ## Current Milestone
 
-Milestone: **Phases 0–12 complete** — Core protocol, identity, bond/policy engine, P2P transport, vault, model router, agent runtime (tool registry, context, mode, sessions, style, triggers, approvals, external agents, digest, P2P bridge), Social UI, Trust mode bilateral mediation, and Mobile Social App with in-process Node are all shipped. **Active:** IPFS / Helia document sharing (dual-engine Kubo + Helia export, gateway verify, CID parity, Social Library publish/discover UI).
+Milestone: **Phases 0–15 complete** — Core protocol through Trust mode, mobile Social + in-process node, IPFS/Helia export, Phase 13 actor disclosure + Activity, Phase 14 friend autopilot + knowledge syndication, Phase 15 reach (WAN invite + sign-off ledger), discovery UX, H2A channel, platform scale gate. **Active:** [Phase 15E scoping](./parked-backlog-15e.md) — parked backlog direction docs.
+
+### Next planning pulls
+
+1. **15E scoping** — review scope docs; pick first un-park candidate with product (likely DID presentation or distributed state spike).
+2. **WAN staging** — complete full §4 two-NAT `relay.checkin`/`relay.lookup` row in [wan-connectivity-signoff.md](./wan-connectivity-signoff.md) before release tag.
+3. **Stories D–E** — add scenario IDs when commerce/multi-hop economics approved.
 
 ### Phase 9 Architecture Overview
 
@@ -1145,11 +1152,11 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | UserStory / Scenario 4 — **Trust mode (agent-assisted intros, human bond commit)** | **Phase 12** + [trust-mode-social-protocol.md](./trust-mode-social-protocol.md) | Design **`[x]`** · protocol + runtime/UI/tools **`[x]`** · EMP appendix + scenario IDs (**Phase E**) **`[x]`** · Phase **12 F** hardening + intro→bond integration smoke **`[x]`** | `[x]` |
 | Scenario 5 — **vault path** | Phase 5 | Indexing, policy, audit. | `[x]` |
 | Scenario 5 — **voucher + verified P2P chunk stream** | Phase 5 + Scenario 6 pick | `/envoymesh/data/0.1.0` voucher + chunk stream shipped. | `[x]` |
-| Scenario 6 — **roles, `/chat` `/agent` `/data`** | Scenario 6 pick + **Open questions** | Strict roles + `/chat`/`/message`/`/data` split baseline shipped; WAN fallback diagnostics/profile baseline shipped (`wan-default`, connectivity telemetry + CLI/dashboard visibility); broader H2A product semantics remain open. | `[~]` |
+| Scenario 6 — **roles, `/chat` `/agent` `/data`** | Scenario 6 pick + **Open questions** | Strict roles + `/chat`/`/message`/`/data` split baseline shipped; **H2A Assistant product channel** + Appendix D + wire semantics ADR (Phase **15C**). | `[x]` |
 | Story A — **pairing (+ thin mobile parked)** | Phase **4A** | Pairing + offline defer baseline **`[x]`**; thin mobile **`[ ]`** *parked*. | `[~]` |
 | Story A — **offline primary, defer / notify** | Phase **4A** | Baseline defer + owner surface in approval/audit path; richer notify/retry UX later. | `[~]` |
 | Story B — **morning report / ranked discovery UX** | Phase **7** | Morning report digest baseline in dashboard + CLI. Relay graph routing now supplies bounded relay-reachability lookup beneath higher-level discovery. | `[x]` |
-| Story C — **H2A as distinct channel** | Scenario 6 pick + Phase 8 | Phase 8A real `knowledge.query` path shipped; broader H2A product semantics remain open. | `[~]` |
+| Story C — **H2A as distinct channel** | Scenario 6 pick + Phase 8 | Phase 8A real `knowledge.query` path shipped; **Assistant** lane + local Activity on H2A turns (Phase **15C**). | `[x]` |
 | Agent stories — **interest/book/stranger/E2EE buffer** | Phase 8 + bonds/policy | Agentic next-step design **`[x]`** · direct/contact LLM workflows **`[x]`** · anonymous discovery/broadcast **`[x]`** | `[x]` |
 | Story F — **DID-targeted LAN discovery** | Phase **4** | LAN identity match by owner-id target resolution **`[x]`**; live proofs **`[!]`** | `[~]` |
 | **Semantic firewall** (UserStory + US-F5) | Phase **6** | `evaluateSemanticFirewall` + `routeModelRequest` integration. | `[x]` |
@@ -1205,7 +1212,10 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 - `[x]` **Scenario 6 vertical (next baseline)** — explicit role fields + strict `/chat` vs `/message` split with rejection semantics.
 - `[x]` **Phase 8** — agentic normal node roadmap (`knowledge.query` path, chat assist, manifests, tool registry, sandbox, discovery/broadcast, reputation trajectory, autonomy controls); see changelog + Phase 8 section below.
 - `[~]` **Cross-network P2P rollout** — WAN-first profile, bootstrap/relay strategy, relay graph routing, diagnostics, and non-LAN smoke.
-- `[ ]` **Stories D / E** — multi-hop discovery, commerce, receipts (no dedicated phase yet; add when scenarios are scoped).
+- `[x]` **Phase 13** — A2A routing, actor disclosure, owner Activity feed ([a2a-actor-visibility-plan.md](./a2a-actor-visibility-plan.md); Epic AV **US-AV1–AV8**).
+- `[x]` **Phase 14** — friend autopilot + knowledge syndication + WAN CI signal + external pinning.
+- `[x]` **Phase 15** — reach, H2A semantics, platform scale ([Phase 15](#phase-15-reach-semantics--platform-scale)).
+- `[~]` **Stories D / E** — multi-hop discovery, commerce, receipts (**15E scoping started** — [parked-multihop-commerce-scope.md](./parked-multihop-commerce-scope.md); no implementation phase).
 - `[x]` **Optional vault / IPFS** — content-addressing + owner-approved Kubo export, discovery CID, gateway verify ([external-distribution-ipfs-plan](./external-distribution-ipfs-plan.md) F1–F4); Filecoin later.
 
 ---
@@ -2091,10 +2101,235 @@ interface ImportIdentityResponse {
 - `[x]` Negative test: credential-bearing **`bond.request`** without **`ownerCommitmentRef`** rejected at inbound handler (`bond-inbound.test.ts`).
 - `[x]` Documentation: protocol-standard / EMP appendix + traceable scenario IDs (**US-TM1–TM4**) updated for Trust-mode intents.
 
+---
+
+## Phase 13: A2A routing, actor disclosure & owner visibility
+
+**Goal:** When two nodes communicate, both sides can **cryptographically** tell whether the sender is a **human** or an **authorized agent**. When **both** sides are agents, structured **A2A intents** (`agent.card.*`, `task.*`, `knowledge.*`, …) carry the work — not long agent↔agent chat threads. **Owners still see outcomes** via Activity feed, `report.create`, task journal, approvals, and digest — without spamming the human chat channel.
+
+**Design reference:** [a2a-actor-visibility-plan.md](./a2a-actor-visibility-plan.md) (lanes model, visibility surfaces, user stories **US-AV1–AV8**).
+
+**Depends on:** Phase 9 agent identity + bridge credential · Phase 4B task journal · Phase 9H approvals · Phase 9J digest · Phase 12 Trust mode (`social.intro.sync` as reference bilateral A2A).
+
+### 13A — Honest actor roles on the wire
+
+- `[x]` Add `sendAgentChat()` (agent key + `senderRole=agent` + `agentCredential`) to `NodeService` / `NodeServiceImpl` / mobile-node.
+- `[x]` Route AI auto-send through `sendAgentChat`, not human `sendChat()` (approval `send_chat` executes via `executeApprovedAction` → `sendAgentChat`).
+- `[x]` Persist `actorRole` / `agentId` on chat log entries (desktop JSONL + mobile SQLite fields).
+- `[x]` Inbound guard: reject `chat.message` with `senderRole=agent` and missing/invalid credential (schema + `verifyInboundEnvelope`).
+- `[x]` Tests: chat-actor helpers + agent activity store + activity hooks.
+
+**Exit:** Auto-reply envelope has `senderRole=agent`; peer verifies `agentCredential`.
+
+### 13B — Chat UI role badges
+
+- `[x]` Extend `ChatMessage.sender` with `actorRole`, `agentId?`, `agentVerified?` (`@envoymesh/api`).
+- `[x]` Social `ChatMessageBubble`: verified agent badge vs human.
+- `[x]` Settings copy: `AiIdentityMode` affects **display** only; wire role is always honest after 13A.
+- `[x]` Mobile inbound badge fields + `sendAgentChat` wire path.
+
+**Exit:** UI distinguishes “Bob” vs “Bob’s agent (verified)” on the same thread.
+
+### 13C — A2A orchestrator routing
+
+- `[x]` Per-contact **`AgentCard`** cache after `agent.card.response`.
+- `[x]` `NodeConfig.agentInteractionMode`: `chat_ok` | `structured_preferred` (default).
+- `[x]` Inbound: when both sides are verified agents, prefer `task.propose` / `knowledge.query` tools over free-form agent chat (skip chat-assist auto-reply).
+- `[x]` Wire `agent.card.request/response` through tool registry + inbound dispatcher.
+- `[x]` Integration test: bilateral `agent.card` + `task.propose` → `task.result` without chat bodies.
+
+**Exit:** Two-node agents complete a task loop using only A2A intents.
+
+**Delivery order:** 13A + 13B → 13D → 13C (when agent.card substrate ships).
+
+### 13D — Owner Activity feed & report wiring
+
+- `[x]` `AgentActivityStore` (local JSONL) + `listAgentActivity` RPC.
+- `[x]` Task journal hooks → Activity rows + WS `agent:activity`.
+- `[x]` Local `emitOwnerReport()` (Option A — no wire to human).
+- `[x]` Social **Activity** view: timeline, filter by domain.
+- `[x]` Digest includes A2A activity counts (extend Phase 9J).
+- `[x]` Optional `a2aChatNotifications`: local system lines in chat (`off` | `milestones_only` | `all_reports`).
+- `[x]` Mobile Activity list (read-only SQLite store + `listAgentActivity`).
+
+**Exit:** Owner sees bilateral A2A task in Activity without opening chat; digest mentions completion.
+
+### 13E — Visibility policy & docs
+
+- `[x]` `NodeConfig.agentVisibility` per domain: instant | brief | silent | approval (+ Settings UI).
+- `[x]` [protocol-standard.md](./protocol-standard.md) appendix: actor disclosure + owner visibility ([Appendix C](./protocol-standard.md#appendix-c-actor-disclosure-and-owner-visibility)).
+- `[x]` [scenarios.md](./scenarios.md) Epic AV stories tracked; update [alignment-review.md](./alignment-review.md).
+
+### Phase 13 exit criteria (overall)
+
+- `[x]` **US-AV1–AV2:** Role visible in UI; no AI masquerading as human on wire.
+- `[x]` **US-AV3–AV4:** Activity feed + task/correlation drill-down (Activity trace panel + audit/journal RPC).
+- `[x]` **US-AV5–AV6:** Agent card handshake + `report.create` surfaced to owner (wire inbound + Activity).
+- `[x]` **US-AV7–AV8:** Configurable notify modes + audit trace without raw payloads (Activity filters by contact + date).
+
+## Phase 14: Friend autopilot & knowledge syndication (Phase 13 follow-on)
+
+**Goal:** Let authorized agents proactively assist with Trust-mode friend discovery and cap what vault knowledge bonded peers receive — building on Phase 12 intros, Phase 8 autonomy, and Phase 13 Activity visibility.
+
+**Depends on:** Phase 12 Trust mode · Phase 8L autonomy · Phase 13 Activity feed.
+
+### 14A — Friend autopilot (Trust mode)
+
+- `[x]` `NodeConfig.friendAutopilotEnabled` + Settings toggle (requires Trust mode).
+- `[x]` Agent tool `mesh.intro.run_autopilot` (matching context + `mesh.intro.broadcast_search`, requires approval).
+- `[x]` Scheduled autopilot passes (`friendAutopilotIntervalHours`) with Activity rows + digest summary.
+
+**Exit:** Owner enables autopilot; agent runs one approved discovery pass without manual tool chaining.
+
+### 14B — Knowledge syndication policy
+
+- `[x]` `NodeConfig.knowledgeSyndicationMaxSensitivity` + Settings select.
+- `[x]` Inbound `knowledge.query` clamps vault access via `@envoymesh/api/knowledge-syndication`.
+- `[x]` Per-contact syndication overrides (Settings) + Activity row on inbound answers.
+
+**Exit:** Bonded peer query cannot exceed owner-configured vault ceiling even when bond policy would allow more.
+
+### 14C — WAN connectivity CI signal
+
+- `[x]` Nightly workflow runs `npm run connectivity:smoke -- --mode mdns` on CI runner.
+- `[x]` Advanced bootstrap job + [wan-connectivity-signoff.md](./wan-connectivity-signoff.md) ledger for multi-machine relay/DCUtR sign-off (§4–§5).
+
+### 14D — External pinning (IPFS)
+
+- `[x]` `externalPublish.pinningEnabled` + `pinLibraryItemExternal()` + Pinata / web3.storage env tokens.
+- `[x]` Social Library “Pin to provider” action + provider select in Settings.
+
+## Phase 15: Reach, semantics & platform scale
+
+**Goal:** Make EnvoyMesh work reliably **across the WAN**, discoverable **beyond bonded contacts**, semantically clear for **human↔agent (H2A)** product flows, and ready for **audit/query scale** — without opening commerce or global reputation (those stay parked).
+
+**Builds on:** Phase 4E/4F (semantic + DHT discovery scaffolding) · Phase 8I (anonymous discovery modes) · Phase 8J (relay broadcast substrate) · Phase 13/14 (Activity, Trust mode, syndication) · [live-connectivity-testing.md](./live-connectivity-testing.md) · [sqlite-adoption.md](./sqlite-adoption.md).
+
+**Scenarios / stories addressed:** Scenario 2 (Blind discovery) · Scenario 6 (roles + H2A channel) · Story B–C (recruiter/researcher) · Story F (WAN proof) · Open questions: broadcast substrate, SQLite, EMP role fields.
+
+### Recommended sequencing
+
+| Order | Track | Why first |
+|-------|-------|-----------|
+| 1 | **15B WAN reach** | Real nodes cannot rely on LAN; cold-start + relay proof unblock everything else. |
+| 2 | **15A Discovery UX** | Story B value — find capabilities/topics without prior bond. |
+| 3 | **15C H2A semantics** | Scenario 6 product clarity after transport works. |
+| 4 | **15D Platform scale** | SQLite/Filecoin only when gates or policy demand it. |
+| — | **15E Parked** | Explicitly **not** Phase 15 exit criteria. |
+
+---
+
+### 15A — Discovery & broadcast reach (Scenario 2 / 4E / 4F)
+
+**Goal:** Close the gap between **signed `discovery.request/response`** (shipped) and **global topic/provider discovery UX** (partially scaffolded in Phase 4F).
+
+- `[x]` **Wire DHT capability topics to product:** Social Search + CLI discover-by-topic using `findCapabilityTopicProviders` → policy-gated `discovery.request` follow-up (complete Phase 4F.A exit: two WAN nodes, test topic, no prior multiaddr).
+- `[x]` **Morning report / ranked discovery UX:** polish Social + CLI ranking panel — narrative summaries, dedupe, trust-tier badges, link to Activity/digest ([Phase 7](./implementation-plan.md#phase-7-product-surface) baseline exists).
+- `[x]` **Broadcast substrate ADR:** document and ship default for anonymous/broad discovery fanout — compare contact fanout vs **relay-assisted** (8J shipped) vs DHT provider records vs gossipsub; pick one primary path for Settings “anonymous discovery” modes — [broadcast-substrate-adr.md](./broadcast-substrate-adr.md).
+- `[x]` **Global DHT provider path:** production publish/query cycle for capability topics with signed records, rate limits (4F.B), and audit (`discovery.capability.*`).
+
+**Exit:** Owner runs Search for a capability topic on two WAN-connected nodes and receives at least one policy-allowed candidate without a pre-existing bond; morning report surfaces ranked discovery events.
+
+**Depends on:** 15B bootstrap/relay health for WAN nodes.
+
+---
+
+### 15B — WAN reach & cold-start (Story F / Phase 4 WAN follow-on)
+
+**Goal:** First contact across NAT without manual multiaddr paste; operator confidence via live proofs.
+
+- `[x]` **WAN cold-start UX (v2):** Social “Invite to mesh” — QR / deep link / paste apply via `createWanJoinInvite` / `applyWanJoinInvite` RPC (`envoy://join?token=…`); discovery seeds on accept ([p2p-discovery.md](./p2p-discovery.md)).
+- `[x]` **Live multi-machine sign-off:** operator completes [wan-connectivity-signoff.md](./wan-connectivity-signoff.md) §4–§5 (relay.checkin / relay.lookup / circuit dial; optional DCUtR) and fills ledger row with version + date — **tooling:** WAN diagnostics panel + sign-off checklist in Social/CLI; ledger row remains operator-filled.
+- `[x]` **QUIC on WAN:** validate prefer-QUIC dial path on real hardware (corporate VPN / UDP-blocked degrade documented); close Phase 4F.C WAN exit criterion — see [quic-wan-validation.md](./quic-wan-validation.md).
+- `[x]` **Richer WAN diagnostics:** `connectivity-status` (or Social Settings panel) classifies state — bootstrap reachability vs relay availability vs punch vs policy block — beyond aggregate counters ([live-connectivity-testing.md](./live-connectivity-testing.md) §7).
+
+**Exit:** Two NAT clients on different networks complete signed `system.ping` via relay circuit; owner can share one invite link that bootstraps a new peer.
+
+---
+
+### 15C — H2A channel & EMP semantics (Scenario 6)
+
+**Goal:** Human↔agent is a **first-class product channel**, not only “chat with badges” + `knowledge.query`.
+
+- `[x]` **H2A product channel:** dedicated Social **Assistant** lane for owner ↔ home agent (distinct from contact threads) — knowledge assist, document agent, approvals rail, Activity deep-links; aligns with Phase 13 honest roles.
+- `[x]` **EMP decision — optional envelope fields:** ADR for optional `channel` / extended role metadata vs strict required fields; update [protocol-standard.md](./protocol-standard.md) Appendix D (roles + `/chat` `/message` `/data` split) — [emp-h2a-channel-adr.md](./emp-h2a-channel-adr.md).
+- `[x]` **H2A wire semantics:** document and test which intents belong on `/envoymesh/chat` vs `/message` for human-initiated agent assist vs peer human chat (Story C) — [h2a-wire-semantics.md](./h2a-wire-semantics.md), `packages/api/src/h2a-wire-semantics.ts`.
+- `[x]` **Scenario 6 traceability:** flip Coverage row from `[~]` to `[x]` when H2A channel + EMP appendix ship.
+
+**Exit:** Owner opens H2A panel, runs vault-backed knowledge assist, sees agent role + Activity row — without mixing into a contact chat thread.
+
+---
+
+### 15D — Platform & persistence scale
+
+**Goal:** Stay local-first while audit/journal volume and optional long-term persistence become manageable.
+
+- `[x]` **SQLite adoption gate review:** measure audit JSONL size + cold query latency; if [sqlite-adoption.md](./sqlite-adoption.md) §2 triggers met, ship **audit table migration** in `local-store` with JSONL export path. **Outcome (2026-05-20):** triggers not met — [sqlite-gate-review-2026-05-20.md](./sqlite-gate-review-2026-05-20.md); stay JSONL + index.
+- `[x]` **Indexed Activity/audit queries:** correlation-id and time-range queries without full JSONL scan (secondary index files + `queryAuditEvents` / Activity index).
+- `[ ]` **Filecoin / long-term persistence (optional):** policy-gated provider behind vault export approvals ([Phase 5](./implementation-plan.md#phase-5-shared-vault) backlog item); distinct from IPFS pin (Phase 14D). **Deferred** — policy scope not confirmed; see gate review doc.
+
+**Exit:** Audit tail query <500 ms on a 90-day profile **or** explicit doc that triggers are not met and JSONL remains canonical. **Met** via indexed queries on dev profiles + documented gate outcome.
+
+---
+
+### 15E — Parked backlog (not Phase 15 exit)
+
+These items are **tracked** but **explicitly deferred** until scenarios + EMP economics are scoped. **Scoping started 2026-05-20** — see [parked-backlog-15e.md](./parked-backlog-15e.md).
+
+| Item | Source | Status | Scope doc |
+|------|--------|--------|-----------|
+| Multi-hop routing, commerce, payment receipts | Stories D–E | **Scenarios + ADR** | [parked-multihop-commerce-scope.md](./parked-multihop-commerce-scope.md) |
+| Thin satellite mobile app | Story A / Phase 4A | **ADR accepted** | [parked-satellite-app-scope.md](./parked-satellite-app-scope.md) · [satellite-app-adr.md](./satellite-app-adr.md) |
+| DID as first-class product identity | Scenario 1 | **Bonded lookup shipped** | [parked-did-product-scope.md](./parked-did-product-scope.md) |
+| Global reputation ledger | Prioritization | **Read-only slice** | [parked-global-reputation-scope.md](./parked-global-reputation-scope.md) |
+| Distributed state (loro/yjs) | Key Decisions | **yjs draft spike** | [parked-distributed-state-scope.md](./parked-distributed-state-scope.md) |
+| Full §4 two-NAT relay sign-off | Phase 15B | **Automated test `[~]`** | [wan-connectivity-signoff.md](./wan-connectivity-signoff.md) |
+
+- `[x]` **Index + scope docs:** master index and per-item directional scope documents linked above.
+- `[x]` **DID presentation slice:** `did:key` + `getOwnerDidPresentation` RPC + Social Profile Identity section.
+- `[x]` **DID bonded Search:** Search **By DID** tab; `searchPeers({ did })`; `contact-owner-keys.json` on inbound chat.
+- `[x]` **Global reputation read slice:** `reputation-anchors.json` bundle + `getPeerReputationSummary` RPC + Contacts meta.
+- `[x]` **Distributed state spike:** yjs Assistant compose draft with localStorage persistence ([assistant-draft-crdt.ts](../apps/social/src/lib/assistant-draft-crdt.ts)).
+- `[x]` **Story D scenarios:** Epic MH **US-MH1–US-MH4** in [scenarios.md](./scenarios.md); [commerce-receipt-stub-adr.md](./commerce-receipt-stub-adr.md).
+- `[x]` **Satellite ADR:** single Capacitor app — no thin satellite binary ([satellite-app-adr.md](./satellite-app-adr.md)).
+- `[x]` **§4 two-NAT sign-off:** `wan-relay-signoff-e2e` green via `./scripts/wan-relay-signoff-staging.sh` against cn-relay (2026-05-27 ledger row); separate physical NAT LANs optional.
+- `[x]` **US-MH1 hop-limited discovery:** `maxHops`/`currentHop` on wire; `requestMultiHopDiscovery` RPC; forward approval queue; Search multi-hop button.
+- `[x]` **US-MH2 intermediary privacy:** anonymous forward payload + `referralOwnerId`; trust/rate-limit via referral; audit-safe labels.
+- `[x]` **US-MH4 aggregation UX:** `multihop-discovery-sessions.json`, `getMultiHopDiscoverySession`, hop-2 relay-back + Search live refresh.
+- `[x]` **CRDT wire sync:** `sync.state` payload + `sendSyncStateUpdate` + `crdt:sync` WS event; Assistant draft pushes/applies deltas.
+- `[x]` **§4 staging runbook:** [wan-two-nat-staging-runbook.md](./wan-two-nat-staging-runbook.md) + `scripts/wan-relay-signoff-staging.sh`.
+- `[ ]` **Un-park next:** Story E commerce receipts; morning-report hop-2 ranking; optional physical two-NAT hardware row.
+
+**Do not** count 15E toward Phase 15 completion.
+
+### Phase 15 exit criteria (overall)
+
+- `[x]` **Reach:** WAN cold-start invite works; sign-off ledger has at least one completed operator row ([wan-connectivity-signoff.md](./wan-connectivity-signoff.md) 2026-05-20).
+- `[x]` **Discovery:** Topic/capability search returns WAN candidates under policy (15A exit).
+- `[x]` **Semantics:** H2A channel shipped; EMP role/channel ADR merged to protocol-standard.
+- `[x]` **Scale:** SQLite gate evaluated with documented outcome — defer with metrics ([sqlite-gate-review-2026-05-20.md](./sqlite-gate-review-2026-05-20.md)).
+
+**Phase 15 complete** as of 2026-05-20.
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-05-27 | **US-MH2 + aggregation + §4 sign-off:** intermediary privacy on wire, hop-2 session merge + Search UX, cn-relay staging script green. |
+| 2026-05-20 | **US-MH1 + CRDT wire + §4 runbook:** hop-limited discovery, sync.state Assistant draft sync, WAN staging script. |
+| 2026-05-20 | **15E first slices complete:** DID Search lookup; reputation read path; yjs Assistant draft; Epic MH scenarios; satellite + commerce ADRs; §4 automated relay e2e helper. |
+| 2026-05-20 | **15E DID first slice:** `did:key` derivation + W3C DID document export; `getOwnerDidPresentation` RPC; Social Profile Identity section. |
+| 2026-05-20 | **Phase 15 complete + 15E scoping started:** WAN sign-off ledger row filled; [parked-backlog-15e.md](./parked-backlog-15e.md) + five scope docs (commerce/multi-hop, satellite, DID, reputation, CRDT). |
+| 2026-05-20 | **Phase 15D complete:** JSONL secondary indexes for audit/activity; `queryAuditEvents` + `since`/`until` API; `storage-gate` CLI; [sqlite-gate-review-2026-05-20.md](./sqlite-gate-review-2026-05-20.md) (triggers not met — stay JSONL). Filecoin deferred. |
+| 2026-05-20 | **Phase 15C complete:** Social **Assistant** view (H2A channel); Activity on `runDocumentAgentTurn`; [emp-h2a-channel-adr.md](./emp-h2a-channel-adr.md) + [h2a-wire-semantics.md](./h2a-wire-semantics.md); protocol-standard Appendix D; `h2a-wire-semantics.ts` tests. |
+| 2026-05-20 | **Phase 15B complete:** WAN connectivity axes (`analyzeWanConnectivityAxes`); `getConnectivityDiagnostics` RPC + Social Settings panel; `connectivity-status` axis lines; [quic-wan-validation.md](./quic-wan-validation.md) + sign-off ledger update. |
+| 2026-05-20 | **Phase 15A complete:** Search **By Topic (DHT)**; `discoverCapabilityTopic` / `getMorningReport` RPC; CLI `discover-topic`; morning report panel in Discover; [broadcast-substrate-adr.md](./broadcast-substrate-adr.md). |
+| 2026-05-20 | **Phase 15B started:** WAN join-invite in `@envoymesh/api`; `createWanJoinInvite` / `applyWanJoinInvite` RPC; Social Settings QR + paste apply; discovery seed persistence. |
+| 2026-05-20 | **Phase 14 complete:** Scheduled friend autopilot + Activity/digest; per-contact knowledge syndication + inbound Activity; WAN sign-off ledger + advanced CI job; Library pin UI + web3.storage provider. |
+| 2026-05-20 | **Phase 13 complete + Phase 14 started:** US-AV8 Activity contact/date filters; `smoke:phase13` PR + nightly `smoke:local`; Phase 14A friend autopilot tool, 14B knowledge syndication ceiling, 14C connectivity CI, 14D Pinata pinning stub; milestone/traceability updated. |
+| 2026-05-20 | **Phase 13C mobile + e2e:** Two-node `agent-card-a2e` test; mobile agent card inbound/cache + A2A task audit/journal SQLite stores; Activity drill-down RPC parity on mobile. |
+| 2026-05-20 | **Phase 13 (13A/13B/13D shipped):** `sendAgentChat()` honest wire roles; `ChatMessage` actor fields + UI badges; `AgentActivityStore` + Activity nav + `agent:activity` WS; task journal hooks; local `emitOwnerReport` (Option A); digest A2A counts; **13C deferred** until `agent.card` inbound exists; protocol-standard `chat.message` role appendix fixed. |
+| 2026-05-20 | **Phase 13 (design):** Added [a2a-actor-visibility-plan.md](./a2a-actor-visibility-plan.md) — honest `senderRole`/`agentCredential` disclosure, A2A vs chat lanes, **Owner Activity feed** + `report.create` wiring so humans see agent work without A2A in chat; implementation sub-phases **13A–13E**; [scenarios.md](./scenarios.md) Epic AV (**US-AV1–AV8**). |
 | 2026-05-19 | **P2P file sharing design:** Added [p2p-file-sharing-plan.md](./p2p-file-sharing-plan.md) — scope, inventory vs gaps, `NodeService`/`share.*`/vault alignment, Social Library UI, phased roadmap **FS-A–FS-E**, testing, open questions; linked from this plan’s Related strip and On this page. |
 | 2026-05-21 | **WAN / operator docs:** [operator-relay-fleet.md](./operator-relay-fleet.md) (bootstrap **preset** catalog, **cn-relay**, rotation, org **`--bootstrap-presets-file`**); [live-connectivity-testing.md](./live-connectivity-testing.md) WAN proving **track table** + exit sign-off; [sqlite-adoption.md](./sqlite-adoption.md) adoption **gate**; Phase 4 WAN follow-on checklist + key-decision SQLite row updated. |
 | 2026-05-21 | **IPFS/Helia ship (a3c6b3c):** Dual-engine IPFS export — **Kubo** (`kubo-ipfs-export.ts` via `ipfs add --cid-version 1`) and **Helia** (`packages/ipfs-helia` via `@helia/unixfs`, no Go binary); `vault-ipfs-export-service.ts` orchestration (policy check, vault read, audit, export record); `ipfs-export-router.ts` engine selection with `kubo-with-helia-shadow` parity mode; `ipfs-gateway.ts` HTTP gateway fetch + SHA-256 verify; `exportLibraryItemToIpfs()` / `getIpfsEngineStatus()` / `verifyLibraryItemIpfsGateway()` RPCs; `discoverPublishedLibrary()` + CID overlay; Social UI publish toggle + discover published files dialog; `packages/ipfs-helia` (browser-safe Helia UnixFS export, browser entry point); `packages/mobile-node` Helia-only export (no `child_process`); CID parity CI (`ci-ipfs-helia-parity.yml`); e2e tests for node service IPFS RPC, gateway verify, mobile export, and Social UI share/publish/discover flows. |

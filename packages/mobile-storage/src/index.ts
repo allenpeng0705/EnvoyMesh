@@ -284,6 +284,49 @@ export function mobileStorageSchema(): string[] {
       deliveryReceipt TEXT DEFAULT 'sent'
     )`,
     `CREATE INDEX IF NOT EXISTS idx_chat_thread ON chat_messages(threadPeerOwnerId, timestamp DESC)`,
+    `CREATE TABLE IF NOT EXISTS agent_activity (
+      activityId TEXT PRIMARY KEY,
+      correlationId TEXT,
+      taskId TEXT,
+      domain TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      remoteOwnerId TEXT,
+      remoteAgentId TEXT,
+      remoteActorRole TEXT,
+      requiresOwnerAction INTEGER DEFAULT 0,
+      createdAt TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_agent_activity_created ON agent_activity(createdAt DESC)`,
+    `CREATE TABLE IF NOT EXISTS audit_journal (
+      eventId TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      intent TEXT,
+      taskId TEXT,
+      correlationId TEXT,
+      remotePeerId TEXT,
+      direction TEXT,
+      outcome TEXT NOT NULL,
+      summary TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_audit_correlation ON audit_journal(correlationId)`,
+    `CREATE INDEX IF NOT EXISTS idx_audit_task ON audit_journal(taskId)`,
+    `CREATE TABLE IF NOT EXISTS task_journal (
+      eventId TEXT PRIMARY KEY,
+      taskId TEXT NOT NULL,
+      eventType TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      mandateId TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_task_journal_task ON task_journal(taskId)`,
+    `CREATE TABLE IF NOT EXISTS agent_cards (
+      ownerId TEXT PRIMARY KEY,
+      cardJson TEXT NOT NULL,
+      cachedAt TEXT NOT NULL,
+      sourceAgentPeerId TEXT
+    )`,
   ];
 }
 
@@ -318,6 +361,9 @@ export interface ChatLogEntry {
   sender: {
     ownerId?: string;
     displayName: string;
+    actorRole?: "human" | "agent" | "system";
+    agentId?: string;
+    agentVerified?: boolean;
   };
   recipient: {
     ownerId?: string;
@@ -660,3 +706,316 @@ export function createInMemoryDb(): MobileDatabase {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Agent activity store (Phase 13D — mobile read/write)
+// ---------------------------------------------------------------------------
+
+export interface MobileAgentActivityRecord {
+  activityId: string;
+  correlationId?: string;
+  taskId?: string;
+  domain: "social" | "knowledge" | "home" | "research";
+  kind: import("@envoymesh/api").AgentActivityKind;
+  summary: string;
+  remoteOwnerId?: string;
+  remoteAgentId?: string;
+  remoteActorRole?: "agent" | "human";
+  requiresOwnerAction?: boolean;
+  createdAt: string;
+}
+
+export interface MobileAgentActivityStore {
+  append(record: MobileAgentActivityRecord): Promise<void>;
+  list(params?: {
+    since?: string;
+    until?: string;
+    limit?: number;
+    domain?: MobileAgentActivityRecord["domain"];
+    remoteOwnerId?: string;
+  }): Promise<MobileAgentActivityRecord[]>;
+}
+
+export function createMobileAgentActivityStore(db: MobileDatabase): MobileAgentActivityStore {
+  return {
+    async append(record) {
+      await db.execute(
+        `INSERT OR REPLACE INTO agent_activity
+          (activityId, correlationId, taskId, domain, kind, summary, remoteOwnerId, remoteAgentId, remoteActorRole, requiresOwnerAction, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          record.activityId,
+          record.correlationId ?? null,
+          record.taskId ?? null,
+          record.domain,
+          record.kind,
+          record.summary,
+          record.remoteOwnerId ?? null,
+          record.remoteAgentId ?? null,
+          record.remoteActorRole ?? null,
+          record.requiresOwnerAction ? 1 : 0,
+          record.createdAt,
+        ],
+      );
+    },
+    async list(params = {}) {
+      const limit = Math.max(1, Math.min(params.limit ?? 200, 2000));
+      let sql = "SELECT * FROM agent_activity";
+      const args: unknown[] = [];
+      const clauses: string[] = [];
+      if (params.since) {
+        clauses.push("createdAt >= ?");
+        args.push(params.since);
+      }
+      if (params.until) {
+        clauses.push("createdAt < ?");
+        args.push(params.until);
+      }
+      if (params.domain) {
+        clauses.push("domain = ?");
+        args.push(params.domain);
+      }
+      if (params.remoteOwnerId?.trim()) {
+        clauses.push("remoteOwnerId = ?");
+        args.push(params.remoteOwnerId.trim());
+      }
+      if (clauses.length > 0) {
+        sql += ` WHERE ${clauses.join(" AND ")}`;
+      }
+      sql += " ORDER BY createdAt DESC LIMIT ?";
+      args.push(limit);
+      const rows = await db.query(sql, args);
+      return rows.map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          activityId: String(r.activityId),
+          correlationId: r.correlationId != null ? String(r.correlationId) : undefined,
+          taskId: r.taskId != null ? String(r.taskId) : undefined,
+          domain: String(r.domain) as MobileAgentActivityRecord["domain"],
+          kind: String(r.kind) as MobileAgentActivityRecord["kind"],
+          summary: String(r.summary),
+          remoteOwnerId: r.remoteOwnerId != null ? String(r.remoteOwnerId) : undefined,
+          remoteAgentId: r.remoteAgentId != null ? String(r.remoteAgentId) : undefined,
+          remoteActorRole:
+            r.remoteActorRole === "agent" || r.remoteActorRole === "human"
+              ? r.remoteActorRole
+              : undefined,
+          requiresOwnerAction: Number(r.requiresOwnerAction) === 1,
+          createdAt: String(r.createdAt),
+        };
+      });
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Audit journal (Phase 13 — Activity drill-down)
+// ---------------------------------------------------------------------------
+
+export interface MobileAuditEventRecord {
+  eventId: string;
+  type: string;
+  createdAt: string;
+  intent?: string;
+  taskId?: string;
+  correlationId?: string;
+  remotePeerId?: string;
+  direction?: "inbound" | "outbound" | "local";
+  outcome: "allow" | "deny" | "record";
+  summary: string;
+}
+
+export interface MobileAuditJournalStore {
+  append(record: MobileAuditEventRecord): Promise<void>;
+  list(params?: {
+    correlationId?: string;
+    taskId?: string;
+    since?: string;
+    until?: string;
+    limit?: number;
+  }): Promise<MobileAuditEventRecord[]>;
+}
+
+export function createMobileAuditJournalStore(db: MobileDatabase): MobileAuditJournalStore {
+  return {
+    async append(record) {
+      await db.execute(
+        `INSERT OR REPLACE INTO audit_journal
+          (eventId, type, createdAt, intent, taskId, correlationId, remotePeerId, direction, outcome, summary)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          record.eventId,
+          record.type,
+          record.createdAt,
+          record.intent ?? null,
+          record.taskId ?? null,
+          record.correlationId ?? null,
+          record.remotePeerId ?? null,
+          record.direction ?? null,
+          record.outcome,
+          record.summary,
+        ],
+      );
+    },
+    async list(params = {}) {
+      const limit = Math.max(1, Math.min(params.limit ?? 100, 500));
+      let sql = "SELECT * FROM audit_journal";
+      const args: unknown[] = [];
+      const clauses: string[] = [];
+      if (params.correlationId) {
+        clauses.push("correlationId = ?");
+        args.push(params.correlationId);
+      }
+      if (params.taskId) {
+        clauses.push("taskId = ?");
+        args.push(params.taskId);
+      }
+      if (params.since) {
+        clauses.push("createdAt >= ?");
+        args.push(params.since);
+      }
+      if (params.until) {
+        clauses.push("createdAt < ?");
+        args.push(params.until);
+      }
+      if (clauses.length > 0) {
+        sql += ` WHERE ${clauses.join(" AND ")}`;
+      }
+      sql += " ORDER BY createdAt DESC LIMIT ?";
+      args.push(limit);
+      const rows = await db.query(sql, args);
+      return rows.map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          eventId: String(r.eventId),
+          type: String(r.type),
+          createdAt: String(r.createdAt),
+          intent: r.intent != null ? String(r.intent) : undefined,
+          taskId: r.taskId != null ? String(r.taskId) : undefined,
+          correlationId: r.correlationId != null ? String(r.correlationId) : undefined,
+          remotePeerId: r.remotePeerId != null ? String(r.remotePeerId) : undefined,
+          direction:
+            r.direction === "inbound" || r.direction === "outbound" || r.direction === "local"
+              ? r.direction
+              : undefined,
+          outcome: String(r.outcome) as MobileAuditEventRecord["outcome"],
+          summary: String(r.summary),
+        };
+      });
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Task journal (Phase 13 — Activity drill-down)
+// ---------------------------------------------------------------------------
+
+export interface MobileTaskJournalRecord {
+  eventId: string;
+  taskId: string;
+  eventType: string;
+  summary: string;
+  createdAt: string;
+  mandateId?: string;
+}
+
+export interface MobileTaskJournalStore {
+  append(record: MobileTaskJournalRecord): Promise<void>;
+  list(params?: { taskId?: string; limit?: number }): Promise<MobileTaskJournalRecord[]>;
+}
+
+export function createMobileTaskJournalStore(db: MobileDatabase): MobileTaskJournalStore {
+  return {
+    async append(record) {
+      await db.execute(
+        `INSERT OR REPLACE INTO task_journal
+          (eventId, taskId, eventType, summary, createdAt, mandateId)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          record.eventId,
+          record.taskId,
+          record.eventType,
+          record.summary,
+          record.createdAt,
+          record.mandateId ?? null,
+        ],
+      );
+    },
+    async list(params = {}) {
+      const limit = Math.max(1, Math.min(params.limit ?? 100, 500));
+      let sql = "SELECT * FROM task_journal";
+      const args: unknown[] = [];
+      if (params.taskId) {
+        sql += " WHERE taskId = ?";
+        args.push(params.taskId);
+      }
+      sql += " ORDER BY createdAt DESC LIMIT ?";
+      args.push(limit);
+      const rows = await db.query(sql, args);
+      return rows.map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          eventId: String(r.eventId),
+          taskId: String(r.taskId),
+          eventType: String(r.eventType),
+          summary: String(r.summary),
+          createdAt: String(r.createdAt),
+          mandateId: r.mandateId != null ? String(r.mandateId) : undefined,
+        };
+      });
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Agent card cache (Phase 13C)
+// ---------------------------------------------------------------------------
+
+export interface MobileAgentCardRecord {
+  ownerId: string;
+  cardJson: string;
+  cachedAt: string;
+  sourceAgentPeerId?: string;
+}
+
+export interface MobileAgentCardStore {
+  get(ownerId: string): Promise<MobileAgentCardRecord | undefined>;
+  list(): Promise<MobileAgentCardRecord[]>;
+  upsert(record: MobileAgentCardRecord): Promise<void>;
+}
+
+export function createMobileAgentCardStore(db: MobileDatabase): MobileAgentCardStore {
+  return {
+    async get(ownerId) {
+      const rows = await db.query("SELECT * FROM agent_cards WHERE ownerId = ?", [ownerId]);
+      if (rows.length === 0) return undefined;
+      const r = rows[0] as Record<string, unknown>;
+      return {
+        ownerId: String(r.ownerId),
+        cardJson: String(r.cardJson),
+        cachedAt: String(r.cachedAt),
+        sourceAgentPeerId: r.sourceAgentPeerId != null ? String(r.sourceAgentPeerId) : undefined,
+      };
+    },
+    async list() {
+      const rows = await db.query("SELECT * FROM agent_cards ORDER BY cachedAt DESC");
+      return rows.map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          ownerId: String(r.ownerId),
+          cardJson: String(r.cardJson),
+          cachedAt: String(r.cachedAt),
+          sourceAgentPeerId: r.sourceAgentPeerId != null ? String(r.sourceAgentPeerId) : undefined,
+        };
+      });
+    },
+    async upsert(record) {
+      await db.execute(
+        `INSERT OR REPLACE INTO agent_cards (ownerId, cardJson, cachedAt, sourceAgentPeerId)
+         VALUES (?, ?, ?, ?)`,
+        [record.ownerId, record.cardJson, record.cachedAt, record.sourceAgentPeerId ?? null],
+      );
+    },
+  };
+}
+

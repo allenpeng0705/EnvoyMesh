@@ -13,10 +13,11 @@ import type { AssistantMode } from "../../lib/storage.js";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
 import {
-  messageVisualVariant,
+  messageVisualVariantForMessage,
   resolveChatThreadKind,
   threadKindLabel,
 } from "../../lib/chat-thread-kind.js";
+import { formatChatActorBadge } from "@envoymesh/api";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatFileAttachment } from "../ChatFileAttachment.js";
@@ -412,7 +413,13 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
               <div className="date-separator"><span>{fmtDateLabel(msgs[0].metadata.timestamp)}</span></div>
               {buildMessageStacks(msgs, (a, b) => isOutgoingMsg(a) === isOutgoingMsg(b)).map((stack) => {
                 const outgoing = isOutgoingMsg(stack[0]);
-                const variant = messageVisualVariant(outgoing, threadKind);
+                const variant = messageVisualVariantForMessage(stack[0], outgoing, threadKind);
+                const actorBadge = formatChatActorBadge({
+                  displayName: peerDisplayLabel(stack[0].sender),
+                  actorRole: stack[0].sender.actorRole,
+                  agentVerified: stack[0].sender.agentVerified,
+                  outgoing,
+                });
                 const senderInitial = peerDisplayLabel(stack[0].sender).charAt(0).toUpperCase() || "?";
                 return (
                   <div
@@ -434,6 +441,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
                           variant={variant}
                           position={stackPosition(index, stack.length)}
                           senderLabel={peerDisplayLabel(msg.sender)}
+                          actorBadge={actorBadge}
                           timeLabel={new Date(msg.metadata.timestamp).toLocaleTimeString([], {
                             hour: "2-digit",
                             minute: "2-digit",

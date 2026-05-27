@@ -13,9 +13,10 @@ import { useChatThreadPreviews } from "../../hooks/useChatThreadPreviews.js";
 interface ChatSidebarProps {
   selectedContact: string | null;
   onSelectContact: (id: string | null) => void;
+  onOpenAssistant?: () => void;
 }
 
-export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarProps) {
+export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant }: ChatSidebarProps) {
   const nodeService = useNodeService();
   const {
     bonds,
@@ -92,20 +93,22 @@ export function ChatSidebar({ selectedContact, onSelectContact }: ChatSidebarPro
         <h3>Chats</h3>
       </div>
 
-      {/* Envoy AI contact */}
-      <button
-        type="button"
-        className={`thread-row thread-row--ai ${selectedContact === "__envoy_ai__" ? "active" : ""}`}
-        onClick={() => onSelectContact("__envoy_ai__")}
-      >
-        <span className="thread-avatar" aria-hidden>AI</span>
-        <span className="thread-meta">
-          <span className="thread-title-row">
-            <span className="thread-title">Envoy AI</span>
+      {/* Assistant lane — dedicated view (Phase 15C), not a pseudo-contact thread */}
+      {onOpenAssistant && (
+        <button
+          type="button"
+          className="thread-row thread-row--ai"
+          onClick={onOpenAssistant}
+        >
+          <span className="thread-avatar" aria-hidden>AI</span>
+          <span className="thread-meta">
+            <span className="thread-title-row">
+              <span className="thread-title">Assistant</span>
+            </span>
+            <span className="thread-subtitle">Owner ↔ home agent</span>
           </span>
-          <span className="thread-subtitle">Knowledge assistant</span>
-        </span>
-      </button>
+        </button>
+      )}
 
       {/* Bridge agent contact — appears when external agent bridge is enabled */}
       {bridgeStatus?.enabled && (

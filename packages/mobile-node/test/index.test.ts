@@ -851,45 +851,46 @@ describe("MobileNode", () => {
     });
 
     it("routes inbound chat.message envelope to chat:message event", async () => {
-      const { generateOwnerIdentity, generateAgentIdentity, derivePeerId, signUnsignedEnvelope } =
+      const { generateOwnerIdentity, generateDeviceIdentity, derivePeerId, signUnsignedEnvelope } =
         await import("@envoymesh/mobile-identity");
-      const { createUnsignedEnvelope } = await import("@envoymesh/protocol");
+      const { createUnsignedEnvelope, createChatMessagePayload } = await import("@envoymesh/protocol");
 
       const senderOwner = generateOwnerIdentity();
-      const senderAgent = generateAgentIdentity(senderOwner.ownerId);
-      // derivePeerId matches what verifyEnvelope checks:
-      // senderPeerId must equal derivePeerId(senderPublicKey)
-      const senderPeerId = derivePeerId(senderAgent.publicKeyPem);
+      const senderDevice = generateDeviceIdentity();
+      const senderPeerId = derivePeerId(senderDevice.publicKeyPem);
 
-      // Build a signed inbound envelope with a peer-ID that matches derivation
       const unsigned = createUnsignedEnvelope({
         intent: "chat.message",
         senderPeerId,
-        senderPublicKey: senderAgent.publicKeyPem,
+        senderPublicKey: senderDevice.publicKeyPem,
         senderRole: "human",
         recipientPeerId: node.state.agent.agentPeerId,
         recipientRole: "human",
-        payload: { text: "inbound hello" },
+        payload: createChatMessagePayload({
+          senderOwnerId: senderOwner.ownerId,
+          text: "inbound hello",
+        }),
       });
-      const signed = signUnsignedEnvelope(unsigned, senderAgent.privateKeyPem);
+      const signed = signUnsignedEnvelope(unsigned, senderDevice.privateKeyPem);
 
-      // Listen for chat events
       const chatMessages: unknown[] = [];
       node.on("chat:message" as any, (d: unknown) => chatMessages.push(d));
 
-      // Simulate inbound routing
       (node as any)._handleInboundMessage(signed);
 
-      // Verify event emitted
-      expect(chatMessages).toHaveLength(1);
+      await vi.waitFor(() => {
+        expect(chatMessages).toHaveLength(1);
+      });
+
       const evt = chatMessages[0] as any;
       expect(evt.content.text).toBe("inbound hello");
       expect(evt.sender.nodeId).toBe(senderPeerId);
 
-      // Verify persisted to chat history (threaded by senderPeerId)
-      const history = await node.listChatHistory(senderPeerId);
-      expect(history).toHaveLength(1);
-      expect(history[0].content.text).toBe("inbound hello");
+      await vi.waitFor(async () => {
+        const history = await node.listChatHistory(senderPeerId);
+        expect(history).toHaveLength(1);
+        expect(history[0].content.text).toBe("inbound hello");
+      });
     });
   });
 

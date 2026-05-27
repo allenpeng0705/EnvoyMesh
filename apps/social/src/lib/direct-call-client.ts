@@ -66,6 +66,14 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getProfile();
   }
 
+  async getOwnerDidPresentation() {
+    return this._ns.getOwnerDidPresentation();
+  }
+
+  async getPeerReputationSummary(peerOwnerId: string) {
+    return this._ns.getPeerReputationSummary(peerOwnerId);
+  }
+
   async getHumanProfile() {
     return this._ns.getHumanProfile();
   }
@@ -138,6 +146,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.sendChat(targetOwnerId, text);
   }
 
+  async sendAgentChat(targetOwnerId: string, text: string) {
+    return this._ns.sendAgentChat(targetOwnerId, text);
+  }
+
   async sendChatAttachment(params: Parameters<NodeService["sendChatAttachment"]>[0]) {
     return this._ns.sendChatAttachment(params);
   }
@@ -148,6 +160,42 @@ export class DirectCallClient implements NodeServiceClient {
 
   async listChatHistory(peerOwnerId: string, limit?: number) {
     return this._ns.listChatHistory(peerOwnerId, limit);
+  }
+
+  async listAgentActivity(params?: Parameters<NodeService["listAgentActivity"]>[0]) {
+    return this._ns.listAgentActivity(params);
+  }
+
+  async listAuditEvents(params?: Parameters<NodeService["listAuditEvents"]>[0]) {
+    return this._ns.listAuditEvents(params);
+  }
+
+  async listTaskJournalEntries(params?: Parameters<NodeService["listTaskJournalEntries"]>[0]) {
+    return this._ns.listTaskJournalEntries(params);
+  }
+
+  async listAgentCards() {
+    return this._ns.listAgentCards();
+  }
+
+  async getAgentCard(ownerId: string) {
+    return this._ns.getAgentCard(ownerId);
+  }
+
+  async requestAgentCard(targetOwnerId: string) {
+    return this._ns.requestAgentCard(targetOwnerId);
+  }
+
+  async listPendingApprovals() {
+    return this._ns.listPendingApprovals();
+  }
+
+  async approvePendingApproval(itemId: string, notes?: string) {
+    return this._ns.approvePendingApproval(itemId, notes);
+  }
+
+  async rejectPendingApproval(itemId: string, notes?: string) {
+    return this._ns.rejectPendingApproval(itemId, notes);
   }
 
   async deleteChatMessage(peerOwnerId: string, messageId: string) {
@@ -206,6 +254,30 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getChatDiagnostics(peerOwnerId);
   }
 
+  async getConnectivityDiagnostics() {
+    return this._ns.getConnectivityDiagnostics();
+  }
+
+  async discoverCapabilityTopic(params: Parameters<NodeService["discoverCapabilityTopic"]>[0]) {
+    return this._ns.discoverCapabilityTopic(params);
+  }
+
+  async getMorningReport(params?: Parameters<NodeService["getMorningReport"]>[0]) {
+    return this._ns.getMorningReport(params);
+  }
+
+  async requestMultiHopDiscovery(params: Parameters<NodeService["requestMultiHopDiscovery"]>[0]) {
+    return this._ns.requestMultiHopDiscovery(params);
+  }
+
+  async getMultiHopDiscoverySession(correlationId: string) {
+    return this._ns.getMultiHopDiscoverySession(correlationId);
+  }
+
+  async sendSyncStateUpdate(params: Parameters<NodeService["sendSyncStateUpdate"]>[0]) {
+    return this._ns.sendSyncStateUpdate(params);
+  }
+
   // -----------------------------------------------------------------------
   // Agent Bridge
   // -----------------------------------------------------------------------
@@ -216,6 +288,14 @@ export class DirectCallClient implements NodeServiceClient {
 
   async getPairingPayload() {
     return this._ns.getPairingPayload();
+  }
+
+  async createWanJoinInvite(params?: Parameters<NodeService["createWanJoinInvite"]>[0]) {
+    return this._ns.createWanJoinInvite(params);
+  }
+
+  async applyWanJoinInvite(token: string) {
+    return this._ns.applyWanJoinInvite(token);
   }
 
   async pairWithHomeNode(params: Parameters<NodeService["pairWithHomeNode"]>[0]) {
@@ -256,6 +336,10 @@ export class DirectCallClient implements NodeServiceClient {
 
   async exportLibraryItemToIpfs(documentId: string) {
     return this._ns.exportLibraryItemToIpfs(documentId);
+  }
+
+  async pinLibraryItemExternal(documentId: string) {
+    return this._ns.pinLibraryItemExternal(documentId);
   }
 
   async getIpfsEngineStatus() {

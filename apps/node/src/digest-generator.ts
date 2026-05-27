@@ -120,6 +120,12 @@ export interface DigestSummary {
   // Style adaptations
   styleAdaptationsApplied: number;
 
+  /** A2A / agent Activity rows since period start (Phase 13D). */
+  a2aActivityCount: number;
+
+  /** Friend autopilot passes in period (Phase 14A). */
+  friendAutopilotPassCount: number;
+
   // Summary text
   summaryText: string;
 }
@@ -176,6 +182,12 @@ export function generateSummaryText(digest: DigestSummary): string {
   lines.push(`- Contacts interacted: ${digest.contactsInteracted.length}`);
   if (digest.newBonds > 0) lines.push(`- New bonds established: ${digest.newBonds}`);
   if (digest.bondsRevoked > 0) lines.push(`- Bonds revoked: ${digest.bondsRevoked}`);
+  if (digest.a2aActivityCount > 0) {
+    lines.push(`- Agent activity (A2A): ${digest.a2aActivityCount} events`);
+  }
+  if (digest.friendAutopilotPassCount > 0) {
+    lines.push(`- Friend autopilot passes: ${digest.friendAutopilotPassCount}`);
+  }
   lines.push("");
 
   // Pending items
@@ -265,6 +277,8 @@ export class DigestGenerator {
       pendingEscalations?: PendingItemEntry[];
       modeTransitions?: { from: string; to: string; reason: string; count: number }[];
       styleAdaptationsApplied?: number;
+      a2aActivityCount?: number;
+      friendAutopilotPassCount?: number;
     },
   ): Promise<DigestSummary> {
     const { start, end } = getDigestPeriodDates(period);
@@ -300,6 +314,8 @@ export class DigestGenerator {
       pendingEscalations: data.pendingEscalations || [],
       modeTransitions: data.modeTransitions || [],
       styleAdaptationsApplied: data.styleAdaptationsApplied || 0,
+      a2aActivityCount: data.a2aActivityCount ?? 0,
+      friendAutopilotPassCount: data.friendAutopilotPassCount ?? 0,
       summaryText: "",
     };
 

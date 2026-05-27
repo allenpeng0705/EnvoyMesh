@@ -63,6 +63,11 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     proposals: agentProposals,
     dismiss: dismissAgentShare,
   }),
+  usePendingApprovals: () => ({
+    items: [],
+    approve: vi.fn(),
+    reject: vi.fn(),
+  }),
 }));
 
 function renderInbox() {

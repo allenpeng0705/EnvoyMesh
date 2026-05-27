@@ -14,10 +14,12 @@ import {
   createLocalTaskStore,
   createLocalTrustStore,
   createLocalPeerReputationStore,
+  createContactOwnerKeyStore,
   createRelayStateStore,
   createTaskRuntimeStateStore,
   createCapabilityManifestStore,
   createDeviceAuthorizationStore,
+  createAgentCardStore,
   deriveCorrelationIdFromEnvelope,
   loadOrCreateNodeProfile,
   RELAY_MANAGER_SNAPSHOT_PROTOCOL,
@@ -83,6 +85,7 @@ import {
   createSystemPingPayload,
   createSystemSignalPayload,
   createKnowledgeResponsePayload,
+  createAgentCardResponsePayload,
   createSharePreviewPayload,
   parseShareRequestPayload,
   parseSharePreviewPayload,
@@ -93,6 +96,8 @@ import {
   humanProfileForSigning,
   parseSystemPingPayload,
   parseSystemSignalPayload,
+  parseDiscoveryRequestPayload,
+  parseDiscoveryResponsePayload,
   parseTaskCancelPayload,
   parseRendezvousRegisterPayload,
   parseRendezvousQueryPayload,
@@ -113,14 +118,18 @@ import { join } from "node:path";
 import { parseNodeArgs, applyPersistedDiscoveryConfig } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
+import { chatSenderActorFromEnvelope, shouldSkipAgentChatAssist } from "@envoymesh/api";
 import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
 import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates, processDiscoveryQueue } from "./discovery-inbound.js";
+import { handleInboundSyncStateIntent } from "./sync-state-inbound.js";
 import { handleInboundBroadcastRequest, handleInboundBroadcastResponse } from "./broadcast-inbound.js";
 import { handleInboundTaskFeedback, handleInboundOfficialCredential } from "./reputation-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
+import { handleDaemonAgentCardInbound } from "./daemon-agent-card-inbound.js";
+import { handleDaemonTaskInbound } from "./daemon-task-inbound.js";
 import { handleInboundShareRequest, handleInboundShareAccept, resolveSenderOwnerId } from "./share-inbound.js";
 import { generateChatDraft } from "./chat-draft-inbound.js";
 import { chatLogRowsToViews } from "./ai-context.js";
@@ -129,15 +138,14 @@ import { ModeController, createDefaultModeConfig } from "./mode-controller.js";
 import { FileSessionStore, SessionManager } from "./session-manager.js";
 import { StyleAdapter } from "./style-adapter.js";
 import { TriggerStore } from "./trigger-store.js";
-import { ApprovalQueue, createApprovalItem } from "./approval-queue.js";
-import { DigestGenerator, createDefaultDigestConfig } from "./digest-generator.js";
+import { ApprovalQueue, createApprovalItem } from "@envoymesh/api";
+import { DigestGenerator, createDefaultDigestConfig, getDigestPeriodDates } from "./digest-generator.js";
 import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
 import { resolveContactAiAccessLevel, buildVaultIndexOptionsFromKnowledgeBase } from "@envoymesh/api";
 import { stripModelThinking, applyAiIdentityPrefix, resolveAiIdentityPrefix } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
-import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
 import { installEnvoyDataTransferReceiver } from "./data-transfer-inbound.js";
 import { createNodeService, NodeServiceImpl } from "./node-service-impl.js";
 import { createNodeConfigStore } from "./node-config-store.js";
@@ -206,8 +214,10 @@ const chatLogStore = createLocalChatLogStore(args.profileDir);
 const chatDraftStore = createChatDraftStore(args.profileDir);
 const capabilityManifestStore = createCapabilityManifestStore(args.profileDir);
 const reputationStore = createLocalPeerReputationStore(args.profileDir);
+const contactOwnerKeyStore = createContactOwnerKeyStore(args.profileDir);
 const nodeConfigStore = createNodeConfigStore(args.profileDir);
 const deviceAuthorizationStore = createDeviceAuthorizationStore(args.profileDir);
+const agentCardStore = createAgentCardStore(args.profileDir);
 bindDeviceAuthorizationStore(deviceAuthorizationStore);
 const persistedNodeConfig = await nodeConfigStore.load();
 if (persistedNodeConfig) {
@@ -363,12 +373,24 @@ let currentChatAssistEnabled = false;
 let currentAutonomousKillSwitch = false;
 let currentAutonomousPolicies: readonly AutonomousPolicy[] = [];
 let currentTrustModeEnabled = false;
+let currentKnowledgeSyndicationMaxSensitivity:
+  | import("@envoymesh/api").KnowledgeSyndicationSensitivity
+  | undefined;
 
 // AI Settings — identity mode, online/offline behavior (loaded from persisted config)
 let currentAiSettings: AiSettings | undefined;
 
 // Contact AI preferences — per-contact access levels (loaded from persisted config)
-let currentContactAiPrefs: Map<string, { aiAccessLevel: "none" | "assistant_only" | "full"; knowledgeAccess: "public" | "professional" | "personal"; priority: "high" | "low" }> = new Map();
+let currentContactAiPrefs: Map<
+  string,
+  {
+    aiAccessLevel: "none" | "assistant_only" | "full";
+    knowledgeAccess: "public" | "professional" | "personal";
+    priority: "high" | "low";
+    syndicationMaxSensitivity?: "public" | "friends" | "private";
+  }
+> = new Map();
+let friendAutopilotRunInFlight = false;
 
 // Activity tracking for online/offline detection (inbound path)
 // Note: node-service-impl.ts has its own activity tracking for outbound paths (sendChat).
@@ -907,7 +929,43 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     return;
   }
 
+  if (envelope.intent === "agent.card.request" || envelope.intent === "agent.card.response") {
+    const agentCard = await handleDaemonAgentCardInbound({
+      envelope,
+      profile,
+      remotePeerId,
+      receivedAt,
+      correlationId,
+      taskStore,
+      trustStore,
+      agentCardStore,
+      humanProfileStore,
+      bridgeIdentity,
+      mesh,
+      nodeService: nodeService instanceof NodeServiceImpl ? nodeService : null,
+    });
+    if (agentCard.handled) return;
+  }
+
   if (envelope.intent === "knowledge.query") {
+    let contactSyndicationMaxSensitivity:
+      | import("@envoymesh/api").KnowledgeSyndicationSensitivity
+      | undefined;
+    if (envelope.agentCredential?.ownerId) {
+      contactSyndicationMaxSensitivity = currentContactAiPrefs.get(
+        envelope.agentCredential.ownerId,
+      )?.syndicationMaxSensitivity;
+    } else {
+      const records = await peerDirectoryStore.listPeerRecords();
+      const match =
+        records.find((r) => r.peerId === envelope.senderPeerId) ??
+        records.find((r) => r.peerId === remotePeerId);
+      if (match?.ownerId) {
+        contactSyndicationMaxSensitivity = currentContactAiPrefs.get(match.ownerId)
+          ?.syndicationMaxSensitivity;
+      }
+    }
+
     const kq = await handleInboundKnowledgeQuery({
       envelope,
       remotePeerId,
@@ -924,6 +982,8 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       agentIdentityStore,
       knowledgeBase: currentAiSettings?.knowledgeBase,
       ragService,
+      knowledgeSyndicationMaxSensitivity: currentKnowledgeSyndicationMaxSensitivity,
+      contactSyndicationMaxSensitivity,
     });
     if (!kq.ok) {
       await taskStore.appendAuditEvent(
@@ -971,6 +1031,13 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         createdAt: signedResponse.createdAt,
       }),
     );
+    if (nodeService instanceof NodeServiceImpl) {
+      void nodeService.recordInboundKnowledgeAnswered({
+        remoteOwnerId: kq.senderOwnerId,
+        correlationId,
+        queryPreview: `${kq.queryPreview} (${kq.syndicatedSensitivity})`,
+      });
+    }
     return;
   }
 
@@ -1169,6 +1236,52 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     return;
   }
 
+  if (envelope.intent === "sync.state") {
+    const syncResult = handleInboundSyncStateIntent({ envelope, profile });
+    if (!syncResult.ok) {
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "message.rejected",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "rejected",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "deny",
+          summary: `Rejected sync.state: ${syncResult.reason}`,
+          createdAt: envelope.createdAt,
+        }),
+      );
+      return;
+    }
+    if (nodeService instanceof NodeServiceImpl) {
+      nodeService.emit("crdt:sync", {
+        scope: syncResult.scope,
+        updateBase64: syncResult.updateBase64,
+        senderOwnerId: syncResult.senderOwnerId,
+        remotePeerId,
+      });
+    }
+    await taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "message.verified",
+        intent: envelope.intent,
+        messageId: envelope.messageId,
+        correlationId,
+        remotePeerId,
+        direction: "inbound",
+        verificationStatus: "verified",
+        latencyMs: Date.now() - receivedAt,
+        outcome: "allow",
+        summary: `sync.state scope=${syncResult.scope}`,
+        createdAt: envelope.createdAt,
+      }),
+    );
+    return;
+  }
+
   if (envelope.intent === "discovery.request" || envelope.intent === "discovery.response") {
     const capabilityManifest = await capabilityManifestStore.loadManifest();
     const nodeConfig = await nodeConfigStore.load();
@@ -1257,6 +1370,26 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         ),
         outcome: "record",
         summary: `Sent discovery.response with ${discovery.responsePayload.matches.length} match(es).`,
+      });
+
+      const requestPayload = parseDiscoveryRequestPayload(envelope.payload);
+      const requesterTrust = await trustStore.getTrustRecord(requestPayload.requesterOwnerId);
+      if (nodeService instanceof NodeServiceImpl) {
+        nodeService.queueDiscoveryForwardFromInbound({
+          envelope,
+          requesterOwnerId: requestPayload.requesterOwnerId,
+          trustLevel: requesterTrust?.level ?? "public",
+          correlationId,
+        });
+      }
+    }
+
+    if (envelope.intent === "discovery.response" && correlationId && nodeService instanceof NodeServiceImpl) {
+      const responsePayload = parseDiscoveryResponsePayload(envelope.payload);
+      await nodeService.ingestInboundMultiHopDiscoveryResponse({
+        correlationId,
+        responderOwnerId: responsePayload.responderOwnerId,
+        matches: responsePayload.matches,
       });
     }
     return;
@@ -1553,6 +1686,11 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         peerId: remotePeerId,
       })
       .catch((err) => console.warn(`[peer-directory] ensurePeerFromInboundChat failed:`, err));
+    if (payload.ownerPublicKeyPem?.trim()) {
+      void contactOwnerKeyStore
+        .upsert(payload.senderOwnerId, payload.ownerPublicKeyPem)
+        .catch((err) => console.warn(`[contact-owner-key] upsert failed:`, err));
+    }
     await taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.verified",
@@ -1590,6 +1728,11 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           displayName: formatChatSenderDisplayName(
             senderTrust?.displayName ?? payload.senderOwnerId,
             payload,
+          ),
+          ...chatSenderActorFromEnvelope(
+            envelope.senderRole,
+            envelope.agentCredential,
+            true,
           ),
         },
         recipient: {
@@ -1674,7 +1817,16 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       );
 
       // Only generate drafts if AI access level allows it (assistant_only or full)
-      if (effectiveChatAssist && (aiAccessLevel === "assistant_only" || aiAccessLevel === "full")) {
+      const skipAgentChatAssist = shouldSkipAgentChatAssist({
+        senderRole: envelope.senderRole,
+        agentInteractionMode: persistedNodeConfig?.agentInteractionMode,
+        agentVerified: envelope.senderRole === "agent" ? Boolean(envelope.agentCredential) : undefined,
+      });
+      if (
+        effectiveChatAssist &&
+        (aiAccessLevel === "assistant_only" || aiAccessLevel === "full") &&
+        !skipAgentChatAssist
+      ) {
         const senderDisplayName = senderTrust?.displayName ?? payload.senderOwnerId;
         console.log(`[chat] generating draft for message from ${senderDisplayName}: ${payload.text}`);
         void generateChatDraft({
@@ -1761,7 +1913,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
             if (autoSendPolicy.allowed && aiAccessLevel === "full" && nodeService instanceof NodeServiceImpl) {
               console.log(`[chat] auto-sending AI response to ${payload.senderOwnerId}: ${draftText}`);
               try {
-                await nodeService.sendChat(payload.senderOwnerId, draftText);
+                await nodeService.sendAgentChat(payload.senderOwnerId, draftText);
                 console.log(`[chat] auto-send success`);
               } catch (err) {
                 console.warn(`[chat] auto-send failed:`, err);
@@ -2195,69 +2347,39 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
   }
 
   if (isA2ATaskIntent(envelope.intent)) {
-    const runtimeGate = await guardInboundTaskRuntime({ envelope, store: taskRuntimeStore });
-    if (!runtimeGate.ok) {
-      await taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "message.rejected",
-          intent: envelope.intent,
-          messageId: envelope.messageId,
-          correlationId,
-          remotePeerId,
-          direction: "inbound",
-          verificationStatus: "rejected",
-          latencyMs: Date.now() - receivedAt,
-          outcome: "deny",
-          summary: `Rejected task message: ${runtimeGate.reason}.`,
-          createdAt: envelope.createdAt,
-        }),
-      );
-      console.warn(`[rejected task runtime] ${envelope.intent}: ${runtimeGate.reason}`);
-      return;
-    }
-  }
-
-  const taskDecision = await taskDispatcher.dispatch(envelope);
-  if (taskDecision.action === "handled") {
-    await taskStore.appendTaskJournalEntry(taskDecision.journalEntry);
-    await taskStore.appendAuditEvent(
-      auditEventForDispatcherDecision(taskDecision, {
-        messageId: envelope.messageId,
-        correlationId,
-        remotePeerId,
-        createdAt: envelope.createdAt,
-        direction: "inbound",
-        verificationStatus: "verified",
-        latencyMs: Date.now() - receivedAt,
-      }),
-    );
-    await applyTaskRuntimeAfterHandled({ decision: taskDecision, envelope, store: taskRuntimeStore });
-    await relayTaskCancelIfNeeded({
+    const taskResult = await handleDaemonTaskInbound({
       envelope,
-      taskDecision,
-      mesh,
-      profile,
+      remotePeerId,
+      receivedAt,
+      correlationId,
       taskStore,
+      taskRuntimeStore,
+      taskDispatcher,
+      nodeService: nodeService instanceof NodeServiceImpl ? nodeService : null,
+      senderOwnerId: envelope.agentCredential?.ownerId,
     });
-    console.log(
-      `[task ${taskDecision.state}] ${taskDecision.intent} task=${taskDecision.taskId} event=${taskDecision.journalEntry.eventId}`,
-    );
-    return;
-  }
-
-  if (taskDecision.action === "rejected") {
-    await taskStore.appendAuditEvent(
-      auditEventForDispatcherDecision(taskDecision, {
-        messageId: envelope.messageId,
-        correlationId,
-        remotePeerId,
-        createdAt: envelope.createdAt,
-        direction: "inbound",
-        verificationStatus: "rejected",
-        latencyMs: Date.now() - receivedAt,
-      }),
-    );
-    console.warn(`[rejected task] ${taskDecision.intent}: ${taskDecision.reason}`);
+    if (taskResult.handled) {
+      if (
+        taskResult.taskDecision?.action === "handled" &&
+        taskResult.taskDecision.intent === "task.cancel"
+      ) {
+        await relayTaskCancelIfNeeded({
+          envelope,
+          taskDecision: taskResult.taskDecision,
+          mesh,
+          profile,
+          taskStore,
+        });
+      }
+      if (taskResult.outcome === "handled" && taskResult.taskDecision?.action === "handled") {
+        console.log(
+          `[task ${taskResult.taskDecision.state}] ${taskResult.taskDecision.intent} task=${taskResult.taskDecision.taskId} event=${taskResult.taskDecision.journalEntry.eventId}`,
+        );
+      }
+      if (taskResult.outcome === "rejected_dispatch" && taskResult.taskDecision?.action === "rejected") {
+        console.warn(`[rejected task] ${taskResult.taskDecision.intent}: ${taskResult.taskDecision.reason}`);
+      }
+    }
     return;
   }
 
@@ -2279,6 +2401,8 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
   console.log(`[verified message] ${envelope.intent} from ${envelope.senderPeerId}`);
 });
 
+const approvalQueue = new ApprovalQueue();
+
 const nodeService = createNodeService(
   undefined,
   trustStore,
@@ -2295,6 +2419,7 @@ if (nodeService instanceof NodeServiceImpl) {
     }
   };
   nodeService.bindCliTaskStore(taskStore);
+  nodeService.bindApprovalQueue(approvalQueue);
   // bindExternalMesh + resyncBondedContactReachabilityTags run after mesh.start()
   // (mesh.peerId requires libp2p to be up).
   // Load model provider config from persisted config
@@ -2310,11 +2435,20 @@ if (nodeService instanceof NodeServiceImpl) {
   currentAutonomousKillSwitch = nodeConfig.autonomousKillSwitch ?? false;
   currentAutonomousPolicies = nodeConfig.autonomousPolicies ?? [];
   currentTrustModeEnabled = nodeConfig.trustModeEnabled ?? false;
+  currentKnowledgeSyndicationMaxSensitivity = nodeConfig.knowledgeSyndicationMaxSensitivity;
   // Load AI settings
   currentAiSettings = nodeConfig.aiSettings;
   // Load contact AI preferences into a Map for fast lookup
   currentContactAiPrefs = new Map(
-    (nodeConfig.contactAiPreferences ?? []).map((p: ContactAiPreferences) => [p.peerOwnerId, { aiAccessLevel: p.aiAccessLevel, knowledgeAccess: p.knowledgeAccess, priority: p.priority }]),
+    (nodeConfig.contactAiPreferences ?? []).map((p: ContactAiPreferences) => [
+      p.peerOwnerId,
+      {
+        aiAccessLevel: p.aiAccessLevel,
+        knowledgeAccess: p.knowledgeAccess,
+        priority: p.priority,
+        syndicationMaxSensitivity: p.syndicationMaxSensitivity,
+      },
+    ]),
   );
   console.log(`[model] provider mode=${currentModelProviders.mode}`);
   console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
@@ -2396,7 +2530,6 @@ const modeController = new ModeController(createDefaultModeConfig(), taskStore);
 const sessionManager = new SessionManager(new FileSessionStore(join(args.profileDir, "sessions")));
 const styleAdapter = new StyleAdapter();
 const triggerStore = new TriggerStore();
-const approvalQueue = new ApprovalQueue();
 const digestGenerator = new DigestGenerator(
   createDefaultDigestConfig(join(args.profileDir, "digests")),
 );
@@ -2458,6 +2591,21 @@ modeTransitionTimer = setInterval(() => {
   if (expiredIds.length > 0) {
     console.log(`[approval] expired ${expiredIds.length} items`);
   }
+  // Phase 14A — scheduled friend autopilot
+  if (nodeService instanceof NodeServiceImpl && !friendAutopilotRunInFlight) {
+    friendAutopilotRunInFlight = true;
+    void nodeService
+      .runScheduledFriendAutopilot()
+      .then((result) => {
+        if (result.ok) {
+          console.log("[friend-autopilot] scheduled pass completed");
+        }
+      })
+      .catch((err) => console.warn("[friend-autopilot] scheduled pass failed:", err))
+      .finally(() => {
+        friendAutopilotRunInFlight = false;
+      });
+  }
   // Check digest schedule (Phase 9J)
   const digestConfig = digestGenerator.getConfig();
   if (digestConfig.frequency !== "off") {
@@ -2465,8 +2613,16 @@ modeTransitionTimer = setInterval(() => {
     if (nextScheduled && now >= nextScheduled) {
       console.log(`[digest] generating ${digestConfig.frequency} digest`);
       const period = digestConfig.frequency as "daily" | "weekly";
-      void sessionManager.listSessions().then((sessions) =>
-        digestGenerator.generateDigest(period, {
+      void sessionManager.listSessions().then(async (sessions) => {
+        let a2aActivityCount = 0;
+        let friendAutopilotPassCount = 0;
+        if (nodeService instanceof NodeServiceImpl) {
+          const { start } = getDigestPeriodDates(period);
+          const rows = await nodeService.listAgentActivity({ since: start.toISOString(), limit: 5000 });
+          a2aActivityCount = rows.length;
+          friendAutopilotPassCount = rows.filter((r) => r.kind === "friend_autopilot_pass").length;
+        }
+        return digestGenerator.generateDigest(period, {
           contactActivity: sessions.map((s) => ({
             contactOwnerId: s.contactOwnerId,
             contactDisplayName: s.contactDisplayName,
@@ -2483,8 +2639,10 @@ modeTransitionTimer = setInterval(() => {
             requestedAt: item.requestedAt,
           })),
           proactiveActions: [],
-        }),
-      ).then(async (digest) => {
+          a2aActivityCount,
+          friendAutopilotPassCount,
+        });
+      }).then(async (digest) => {
         try {
           const path = await digestGenerator.saveDigest(digest);
           console.log(`[digest] saved to ${path}`);
@@ -2515,6 +2673,7 @@ nodeService.on("share:accepted", (data) => wsServer.emitEvent("share:accepted", 
 nodeService.on("share:declined", (data) => wsServer.emitEvent("share:declined", data));
 nodeService.on("chat:message", (data) => wsServer.emitEvent("chat:message", data));
 nodeService.on("chat:draft", (data) => wsServer.emitEvent("chat:draft", data));
+nodeService.on("agent:activity", (data) => wsServer.emitEvent("agent:activity", data));
 nodeService.on("bond:established", (data) => {
   console.log(`[index.ts] nodeService bond:established event fired, peerOwnerId=${data.peerOwnerId}`);
   wsServer.emitEvent("bond:established", data);
@@ -2527,7 +2686,15 @@ nodeService.on("config:updated", (data) => {
   currentModelProviders = data.modelProviders;
   currentAiSettings = data.aiSettings;
   currentContactAiPrefs = new Map(
-    (data.contactAiPreferences ?? []).map((p: ContactAiPreferences) => [p.peerOwnerId, { aiAccessLevel: p.aiAccessLevel, knowledgeAccess: p.knowledgeAccess, priority: p.priority }]),
+    (data.contactAiPreferences ?? []).map((p: ContactAiPreferences) => [
+      p.peerOwnerId,
+      {
+        aiAccessLevel: p.aiAccessLevel,
+        knowledgeAccess: p.knowledgeAccess,
+        priority: p.priority,
+        syndicationMaxSensitivity: p.syndicationMaxSensitivity,
+      },
+    ]),
   );
   console.log(`[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`);
   console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);

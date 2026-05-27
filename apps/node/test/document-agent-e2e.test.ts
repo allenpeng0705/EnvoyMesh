@@ -32,7 +32,9 @@ const profileDirs: string[] = [];
 
 afterEach(async () => {
   await Promise.all(meshes.splice(0).map((m) => m.stop().catch(() => {})));
-  await Promise.all(profileDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+  for (const dir of profileDirs.splice(0)) {
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+  }
 });
 
 interface TestNode {
@@ -183,6 +185,9 @@ describe("E2E document agent (single node)", () => {
     const turn = await node.service.runDocumentAgentTurn("list my library files");
     expect(turn.intent).toBe("list_library");
     expect(turn.answer).toContain("report.txt");
+
+    const activity = await node.service.listAgentActivity({ limit: 5 });
+    expect(activity.some((row) => row.summary.includes("H2A list_library"))).toBe(true);
   });
 
   it("publish and unpublish via runDocumentAgentTurn", async () => {
@@ -235,7 +240,7 @@ describe("E2E document agent (single node)", () => {
       displayName: "Sam",
     });
 
-    const sendChat = vi.spyOn(node.service, "sendChat").mockResolvedValue(undefined);
+    const sendAgentChat = vi.spyOn(node.service, "sendAgentChat").mockResolvedValue({ messageId: "msg-1" });
     const discover = vi.spyOn(node.service, "discoverPublishedLibrary").mockResolvedValue([
       {
         peerOwnerId: "envoy:owner:sam",
@@ -259,7 +264,7 @@ describe("E2E document agent (single node)", () => {
     const turn = await node.service.runDocumentAgentTurn("request share from Sam for kubo parity");
     expect(turn.intent).toBe("request_share_from");
     expect(discover).toHaveBeenCalled();
-    expect(sendChat).toHaveBeenCalledWith(
+    expect(sendAgentChat).toHaveBeenCalledWith(
       "envoy:owner:sam",
       expect.stringContaining("[Envoy AI]"),
     );

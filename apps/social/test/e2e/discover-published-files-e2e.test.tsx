@@ -37,6 +37,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     discoverPublishedLibrary,
     searchPeers,
     runCapabilityDiscovery,
+    getMorningReport: vi.fn().mockResolvedValue([]),
   }),
 }));
 

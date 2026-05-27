@@ -143,8 +143,8 @@ After a connection exists, traffic is not all “chat.” Modes (with **sender r
 |------|------|----------|-------------------------|
 | **Direct (H2H)** | Human → Human | Messenger-like; Envoy encrypts and delivers. | High, low latency. |
 | **Proxy (H2A)** | Human → Agent | Query a friend’s Envoy for allowed data. | Policy + mandate gates. |
-| **Negotiation (A2A)** | Agent → Agent | Background negotiation, sync, filtering. | Often audit-only / deferred UI. |
-| **Synthesis (A2H)** | Agent → Human | Results, prompts, approvals. | Morning brief / approvals. |
+| **Negotiation (A2A)** | Agent → Agent | Background negotiation, sync, filtering. | **Activity feed** + digest + `report.create` — not chat spam ([Phase 13](./a2a-actor-visibility-plan.md)). |
+| **Synthesis (A2H)** | Agent → Human | Results, prompts, approvals. | Activity / Inbox / morning brief. |
 
 **Reality:** Even “H2H” is often **agent-mediated** (AMC): the other side’s Envoy may summarize, filter, or draft replies.
 
@@ -154,7 +154,7 @@ After a connection exists, traffic is not all “chat.” Modes (with **sender r
 - `/envoymesh/agent/1.0.0` — A2A control / negotiation.
 - `/envoymesh/data/1.0.0` — chunked transfers.
 
-**Product gap / protocol:** Role fields on envelopes (or parallel streams), chat intents, semantic firewall before LLM/tool use, smart inbox UI.
+**Product gap / protocol:** Role fields on envelopes shipped; **Phase 13** adds honest AI wire role, chat badges, Activity feed for off-chat A2A ([a2a-actor-visibility-plan.md](./a2a-actor-visibility-plan.md), Epic AV **US-AV1–AV8**).
 
 ---
 
@@ -167,7 +167,7 @@ After a connection exists, traffic is not all “chat.” Modes (with **sender r
 | **Friend / bond** | Proof of context + policy path. | Auto-accept vs hold for review. |
 | **Response** | Signed structured response (directionally JWS-style). | Best match for owner vs discard. |
 
-**Principle:** The Envoy **buffers chaos** and surfaces **verified, explainable** outcomes (reports, audits, approvals).
+**Principle:** The Envoy **buffers chaos** and surfaces **verified, explainable** outcomes (Activity feed, reports, audits, approvals) — A2A packets stay off the human chat thread unless explicitly configured.
 
 ---
 

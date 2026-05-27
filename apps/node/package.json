@@ -18,6 +18,7 @@
     "poc:discovery:relay-public": "tsx src/connectivity-smoke.ts --mode advanced --bootstrap /dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN --expect-relay-address --timeout-ms 90000",
     "social:challenge": "tsx src/social-challenge.ts",
     "smoke:local-two-node": "tsx src/local-two-node-smoke.ts",
+    "smoke:phase13-two-node": "tsx src/phase13-two-node-smoke.ts",
     "discovery:dashboard": "tsx src/discovery-dashboard.ts",
     "discovery:dashboard:wan": "tsx src/discovery-dashboard.ts --profile ./data/default --discovery-profile wan-default --bootstrap-preset public-libp2p --p2p-debug"
   },

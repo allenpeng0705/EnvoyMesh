@@ -198,14 +198,14 @@ describe("developer CLI", () => {
     const audit = await runDeveloperCli(["audit", "--profile", profileDir]);
     const peers = await runDeveloperCli(["peer-list", "--profile", profileDir]);
 
-    expect(audit.lines).toContain("Audit events (2 of 3)");
+    expect(audit.lines).toContain("Audit events (2 queried)");
     expect(audit.lines.join("\n")).toContain("Rejected task.");
     expect(audit.lines.join("\n")).not.toContain("p2p.trace");
     expect(peers.lines).toContain("Observed peers (1)");
     expect(peers.lines.join("\n")).toContain("peer-a messages=2");
 
     const withTrace = await runDeveloperCli(["audit", "--profile", profileDir, "--include-p2p-trace"]);
-    expect(withTrace.lines).toContain("Audit events (3 of 3)");
+    expect(withTrace.lines).toContain("Audit events (3 queried)");
     expect(withTrace.lines.join("\n")).toContain("p2p.trace");
 
     const correlationFilter = await runDeveloperCli([
@@ -216,7 +216,7 @@ describe("developer CLI", () => {
       "--audit-correlation",
       "corr-task",
     ]);
-    expect(correlationFilter.lines).toContain("Audit events (1 of 3)");
+    expect(correlationFilter.lines).toContain("Audit events (1 queried)");
     expect(correlationFilter.lines.join("\n")).toContain("task.propose");
   });
 

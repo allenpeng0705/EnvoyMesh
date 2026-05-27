@@ -1,10 +1,10 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { SUGGESTED_TOPICS } from "../../lib/display.js";
 import { PRESET_CAPABILITY_GROUPS, type Capability } from "../../lib/profile.js";
 import { PublicIcon, PrivateIcon } from "../../icons.js";
-import type { HumanProfile, CreateHumanProfileInput } from "@envoymesh/api";
+import type { HumanProfile, CreateHumanProfileInput, OwnerDidPresentation } from "@envoymesh/api";
 
 interface ProfileEditForm {
   displayName: string;
@@ -27,7 +27,22 @@ export function ProfileView() {
   );
   const [advertisedTopics, setAdvertisedTopics] = useState<string[]>([]);
   const [newTopic, setNewTopic] = useState("");
+  const [ownerDid, setOwnerDid] = useState<OwnerDidPresentation | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void nodeService.getOwnerDidPresentation()
+      .then((presentation) => {
+        if (!cancelled) setOwnerDid(presentation);
+      })
+      .catch((error) => {
+        console.error("Failed to load owner DID presentation:", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [nodeService]);
 
   const connectionInfo = {
     peerId: peerId || "QmLoading...",
@@ -396,6 +411,53 @@ export function ProfileView() {
             </div>
           </div>
         ) : null}
+        <div className="profile-section">
+          <h3>Identity</h3>
+          <dl className="profile-info">
+            {ownerDid && (
+              <>
+                <div className="profile-info-row">
+                  <dt>DID</dt>
+                  <dd>
+                    <button
+                      type="button"
+                      className="copy-id-btn"
+                      onClick={() => void navigator.clipboard.writeText(ownerDid.did)}
+                      title="Copy W3C did:key"
+                    >
+                      <code className="peer-id-display">{ownerDid.did}</code>
+                    </button>
+                  </dd>
+                </div>
+                <div className="profile-info-row">
+                  <dt>Owner ID</dt>
+                  <dd>
+                    <button
+                      type="button"
+                      className="copy-id-btn"
+                      onClick={() => void navigator.clipboard.writeText(ownerDid.ownerId)}
+                      title="Copy Envoy owner id"
+                    >
+                      <code className="peer-id-display">{ownerDid.ownerId}</code>
+                    </button>
+                  </dd>
+                </div>
+                <div className="profile-info-row">
+                  <dt>DID document</dt>
+                  <dd>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => void navigator.clipboard.writeText(JSON.stringify(ownerDid.document, null, 2))}
+                    >
+                      Copy JSON
+                    </button>
+                  </dd>
+                </div>
+              </>
+            )}
+          </dl>
+        </div>
         <div className="profile-section">
           <h3>Connection</h3>
           <dl className="profile-info">

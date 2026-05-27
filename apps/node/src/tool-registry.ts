@@ -664,6 +664,37 @@ export class ToolRegistry {
     });
 
     this.register({
+      name: "mesh.agent_card.request",
+      description: "Request a peer agent's Agent Card (cached on agent.card.response)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          targetOwnerId: { type: "string", description: "Bonded peer owner id" },
+        },
+        required: ["targetOwnerId"],
+      },
+      sensitivityCeiling: "friends",
+      requiresApproval: false,
+      intent: "agent.card.request",
+      isMeshTool: true,
+    });
+
+    this.register({
+      name: "mesh.get_agent_card",
+      description: "Read a cached Agent Card for a bonded peer owner",
+      paramSchema: {
+        type: "object",
+        properties: {
+          ownerId: { type: "string", description: "Peer owner id" },
+        },
+        required: ["ownerId"],
+      },
+      sensitivityCeiling: "friends",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
       name: "mesh.escalate",
       description: "Escalate a pending item with a reason (low confidence, emotional content, etc.)",
       paramSchema: {
@@ -861,6 +892,22 @@ export class ToolRegistry {
         intent: "broadcast.request",
         isMeshTool: true,
       });
+
+      this.register({
+        name: "mesh.intro.run_autopilot",
+        description:
+          "Run one Trust-mode friend-discovery pass (matching context + relay broadcast search). Requires friend autopilot enabled.",
+        paramSchema: {
+          type: "object",
+          properties: {
+            maxResponses: { type: "number", description: "Max broadcast responses (default 10)" },
+          },
+          required: [],
+        },
+        sensitivityCeiling: "friends",
+        requiresApproval: true,
+        isMeshTool: false,
+      });
     }
   }
 
@@ -914,9 +961,16 @@ export interface MeshToolContext {
   /** Trust-mode intro tooling — callers load prefs/profile from node config */
   trustIntro?: {
     trustModeEnabled: boolean;
+    friendAutopilotEnabled?: boolean;
     friendMatchingPreferencesText?: string;
     humanProfileSummary?: { displayName?: string; bio?: string };
   };
+  recordFriendAutopilotPass?: (input: {
+    ok: boolean;
+    error?: string;
+    trigger: "manual" | "scheduled";
+    correlationId?: string;
+  }) => Promise<void>;
   /** Optional FS-D hooks — populated when the agent runtime is wired to NodeService. */
   listLibraryItems?: () => Promise<unknown>;
   discoverPublishedLibrary?: (params: Record<string, unknown> | undefined) => Promise<unknown>;
@@ -939,6 +993,18 @@ export interface MeshToolContext {
   listPendingShareOffers?: () => Promise<unknown>;
   listAgentShareProposals?: () => Promise<unknown>;
   documentAutonomy?: DocumentAutonomyPolicy;
+  listPendingApprovals?: () => Promise<import("@envoymesh/api").PendingApprovalSummary[]>;
+  approvePendingApproval?: (
+    itemId: string,
+    notes?: string,
+  ) => Promise<import("@envoymesh/api").ApprovePendingApprovalResult>;
+  rejectPendingApproval?: (
+    itemId: string,
+    notes?: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  requestAgentCard?: (targetOwnerId: string) => Promise<{ ok: boolean; error?: string }>;
+  getAgentCard?: (ownerId: string) => Promise<import("@envoymesh/api").CachedAgentCardSummary | undefined>;
+  listAgentCards?: () => Promise<import("@envoymesh/api").CachedAgentCardSummary[]>;
   shareFile?: (params: {
     targetOwnerId: string;
     vaultRelativePath: string;
@@ -1295,6 +1361,168 @@ export async function executeTool(
       return {
         ok: true,
         result: verifyResult,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.list-pending") {
+      if (!context.listPendingApprovals) {
+        return {
+          ok: false,
+          error: "listPendingApprovals is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const items = await context.listPendingApprovals();
+      return {
+        ok: true,
+        result: { items, count: items.length },
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.approve") {
+      if (!context.approvePendingApproval) {
+        return {
+          ok: false,
+          error: "approvePendingApproval is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const itemId = params.itemId as string | undefined;
+      if (!itemId?.trim()) {
+        return { ok: false, error: "itemId is required", toolName, correlationId, latencyMs: Date.now() - startTime };
+      }
+      const result = await context.approvePendingApproval(itemId.trim(), params.notes as string | undefined);
+      return {
+        ok: result.ok,
+        result,
+        error: result.ok ? undefined : result.error,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.reject") {
+      if (!context.rejectPendingApproval) {
+        return {
+          ok: false,
+          error: "rejectPendingApproval is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const itemId = params.itemId as string | undefined;
+      if (!itemId?.trim()) {
+        return { ok: false, error: "itemId is required", toolName, correlationId, latencyMs: Date.now() - startTime };
+      }
+      const result = await context.rejectPendingApproval(itemId.trim(), params.notes as string | undefined);
+      return {
+        ok: result.ok,
+        result,
+        error: result.ok ? undefined : result.error,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.agent_card.request") {
+      if (!context.requestAgentCard) {
+        return {
+          ok: false,
+          error: "requestAgentCard is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const targetOwnerId = params.targetOwnerId as string | undefined;
+      if (!targetOwnerId?.trim()) {
+        return { ok: false, error: "targetOwnerId is required", toolName, correlationId, latencyMs: Date.now() - startTime };
+      }
+      const result = await context.requestAgentCard(targetOwnerId.trim());
+      return {
+        ok: result.ok,
+        result,
+        error: result.ok ? undefined : result.error,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.get_agent_card") {
+      if (!context.getAgentCard) {
+        return {
+          ok: false,
+          error: "getAgentCard is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const ownerId = params.ownerId as string | undefined;
+      if (!ownerId?.trim()) {
+        return { ok: false, error: "ownerId is required", toolName, correlationId, latencyMs: Date.now() - startTime };
+      }
+      const card = await context.getAgentCard(ownerId.trim());
+      return {
+        ok: true,
+        result: card ?? null,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.intro.run_autopilot") {
+      if (!context.trustIntro?.trustModeEnabled) {
+        return {
+          ok: false,
+          error: "Trust mode disabled — mesh.intro.* tools are unavailable",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      if (!context.trustIntro.friendAutopilotEnabled) {
+        return {
+          ok: false,
+          error: "Friend autopilot disabled — enable in Settings → Trust mode",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const matching = {
+        friendMatchingPreferencesText: context.trustIntro.friendMatchingPreferencesText ?? "",
+        humanProfileSummary: context.trustIntro.humanProfileSummary ?? {},
+      };
+      const maxResponses =
+        typeof params.maxResponses === "number" && params.maxResponses > 0
+          ? Math.min(params.maxResponses, 25)
+          : 10;
+      const broadcast = await executeTool(
+        "mesh.intro.broadcast_search",
+        {
+          requestedSensitivity: "public",
+          maxResponses,
+          ttl: 1,
+        },
+        context,
+        vaultSearchFn,
+      );
+      if (context.recordFriendAutopilotPass) {
+        await context.recordFriendAutopilotPass({
+          ok: broadcast.ok,
+          error: broadcast.ok ? undefined : broadcast.error,
+          trigger: "manual",
+          correlationId,
+        });
+      }
+      return {
+        ok: broadcast.ok,
+        result: { matching, broadcast: broadcast.result ?? null },
+        error: broadcast.ok ? undefined : broadcast.error,
         toolName,
         correlationId,
         latencyMs: Date.now() - startTime,

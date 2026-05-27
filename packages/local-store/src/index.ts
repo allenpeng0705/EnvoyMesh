@@ -36,6 +36,15 @@ import {
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import {
+  createJsonlIndexAppender,
+  queryJsonlIndex,
+  readJsonlIndex,
+  rebuildJsonlIndex,
+  type JsonlIndexEntry,
+  type JsonlIndexQueryParams,
+} from "./jsonl-query-index.js";
+import { AUDIT_QUERY_INDEX_FILE } from "./storage-gate.js";
 
 const PEER_DIRECTORY_READ_BUDGET_MS = 20_000;
 
@@ -178,6 +187,7 @@ export type AuditEventType =
   | "vault.ipfs_gateway_verify.started"
   | "vault.ipfs_gateway_verify.completed"
   | "vault.ipfs_gateway_verify.failed"
+  | "vault.ipfs_pin.completed"
   | "model.routed"
   | "share.preview"
   | "share.request"
@@ -592,6 +602,8 @@ export interface LocalTaskStore {
   readTaskJournalEntries(): Promise<TaskJournalEntry[]>;
   appendAuditEvent(event: AuditEvent): Promise<void>;
   readAuditEvents(): Promise<AuditEvent[]>;
+  queryAuditEvents(params?: JsonlIndexQueryParams): Promise<AuditEvent[]>;
+  rebuildAuditQueryIndex(): Promise<number>;
   appendDiscoveryEvent(event: DiscoveryEvent): Promise<void>;
   readDiscoveryEvents(): Promise<DiscoveryEvent[]>;
   appendShareEvent(event: ShareEvent): Promise<void>;
@@ -638,6 +650,8 @@ export interface DiscoveryEvent {
   matchedTagHashes: string[];
   matchedCapabilities: string[];
   trustLevel?: TrustRecord["level"];
+  /** Story D: hop distance when match came via forwarded discovery. */
+  hopDistance?: number;
   outcome: "allow" | "deny" | "record";
   summary: string;
 }
@@ -657,6 +671,7 @@ export interface CreateDiscoveryEventInput {
   matchedTagHashes?: string[];
   matchedCapabilities?: string[];
   trustLevel?: TrustRecord["level"];
+  hopDistance?: number;
   outcome: DiscoveryEvent["outcome"];
   summary: string;
 }
@@ -711,6 +726,8 @@ export interface MorningReportEntry {
   reason: string;
   lastSeenAt?: string;
   discoveryMatchCount: number;
+  /** Minimum hop distance from recent discovery events (1 = direct). */
+  hopDistance?: number;
 }
 
 export interface LocalDispatcherHandledDecision {
@@ -732,6 +749,7 @@ export type LocalDispatcherDecision = LocalDispatcherHandledDecision | LocalDisp
 export function createLocalTaskStore(profileDir: string): LocalTaskStore {
   const taskJournalPath = join(profileDir, TASK_JOURNAL_FILE);
   const auditEventsPath = join(profileDir, AUDIT_EVENTS_FILE);
+  const auditIndexPath = join(profileDir, AUDIT_QUERY_INDEX_FILE);
   const approvalQueuePath = join(profileDir, APPROVAL_QUEUE_FILE);
   const discoveryEventsPath = join(profileDir, DISCOVERY_EVENTS_FILE);
   const shareEventsPath = join(profileDir, SHARE_EVENTS_FILE);
@@ -742,8 +760,48 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     maxSizeBytes: 100 * 1024 * 1024,
     maxAgeMs: 7 * 24 * 60 * 60 * 1000,
   });
+  const appendAuditIndexQueued = createJsonlIndexAppender(auditIndexPath);
   const appendDiscoveryQueued = createSerialJsonlAppender(discoveryEventsPath);
   const appendShareQueued = createSerialJsonlAppender(shareEventsPath);
+
+  const auditEventToIndexEntry = (event: AuditEvent): JsonlIndexEntry => ({
+    id: event.eventId,
+    createdAt: event.createdAt,
+    correlationId: event.correlationId,
+    taskId: event.taskId,
+    payload: {
+      type: event.type,
+      intent: event.intent,
+      remotePeerId: event.remotePeerId,
+      direction: event.direction,
+      outcome: event.outcome,
+      summary: event.summary,
+    },
+  });
+
+  const indexEntryToAuditEvent = (entry: JsonlIndexEntry): AuditEvent => ({
+    version: "0.1",
+    eventId: entry.id,
+    createdAt: entry.createdAt,
+    correlationId: entry.correlationId,
+    taskId: entry.taskId,
+    type: entry.payload.type as AuditEvent["type"],
+    intent: entry.payload.intent as AuditEvent["intent"],
+    remotePeerId: entry.payload.remotePeerId as string | undefined,
+    direction: entry.payload.direction as AuditEvent["direction"],
+    outcome: entry.payload.outcome as AuditEvent["outcome"],
+    summary: String(entry.payload.summary ?? ""),
+  });
+
+  const ensureAuditIndex = async (): Promise<void> => {
+    const [indexRows, auditRows] = await Promise.all([
+      readJsonlIndex(auditIndexPath),
+      readJsonLines<AuditEvent>(auditEventsPath),
+    ]);
+    if (auditRows.length > 0 && indexRows.length < auditRows.length) {
+      await rebuildJsonlIndex(auditRows, auditIndexPath, auditEventToIndexEntry);
+    }
+  };
 
   let approvalFileTail: Promise<unknown> = Promise.resolve();
   const runApprovalFileOp = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -766,10 +824,22 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
 
     async appendAuditEvent(event) {
       await appendAuditQueued(event);
+      await appendAuditIndexQueued(auditEventToIndexEntry(event));
     },
 
     async readAuditEvents() {
       return readJsonLines<AuditEvent>(auditEventsPath);
+    },
+
+    async queryAuditEvents(params = {}) {
+      await ensureAuditIndex();
+      const indexRows = await readJsonlIndex(auditIndexPath);
+      return queryJsonlIndex(indexRows, params).map(indexEntryToAuditEvent);
+    },
+
+    async rebuildAuditQueryIndex() {
+      const auditRows = await readJsonLines<AuditEvent>(auditEventsPath);
+      return rebuildJsonlIndex(auditRows, auditIndexPath, auditEventToIndexEntry);
     },
 
     async appendDiscoveryEvent(event) {
@@ -830,6 +900,7 @@ export function createDiscoveryEvent(input: CreateDiscoveryEventInput): Discover
     matchedTagHashes: input.matchedTagHashes ?? [],
     matchedCapabilities: input.matchedCapabilities ?? [],
     trustLevel: input.trustLevel,
+    hopDistance: input.hopDistance,
     outcome: input.outcome,
     summary: input.summary,
   };
@@ -871,11 +942,13 @@ export function buildMorningReportDigest(input: {
     {
       matches: number;
       lastSeenAt?: string;
+      minHopDistance?: number;
     }
   >();
 
   for (const event of input.discoveryEvents) {
     const current = discoveryByOwner.get(event.ownerId);
+    const hop = event.hopDistance;
     discoveryByOwner.set(event.ownerId, {
       matches: (current?.matches ?? 0) + event.matchCount,
       lastSeenAt: current?.lastSeenAt
@@ -883,6 +956,10 @@ export function buildMorningReportDigest(input: {
           ? current.lastSeenAt
           : event.createdAt
         : event.createdAt,
+      minHopDistance:
+        hop !== undefined
+          ? Math.min(current?.minHopDistance ?? hop, hop)
+          : current?.minHopDistance,
     });
   }
 
@@ -898,16 +975,18 @@ export function buildMorningReportDigest(input: {
     const discovery = discoveryByOwner.get(ownerId);
     const trustScore = trustLevelScore(trust?.level);
     const matchScore = Math.min(discovery?.matches ?? 0, 20) * 2;
+    const hopBoost = discovery?.minHopDistance === 2 ? 8 : 0;
     const recencyScore = peer?.lastSeenAt ? recencyPoints(peer.lastSeenAt) : 0;
-    const score = trustScore + matchScore + recencyScore;
+    const score = trustScore + matchScore + recencyScore + hopBoost;
     return {
       ownerId,
       peerId: peer?.peerId,
       trustLevel: trust?.level ?? "unknown",
       score,
-      reason: `trust=${trust?.level ?? "unknown"}, matches=${discovery?.matches ?? 0}, recency=${recencyScore}`,
+      reason: `trust=${trust?.level ?? "unknown"}, matches=${discovery?.matches ?? 0}, hop=${discovery?.minHopDistance ?? 1}, recency=${recencyScore}`,
       lastSeenAt: peer?.lastSeenAt ?? discovery?.lastSeenAt,
       discoveryMatchCount: discovery?.matches ?? 0,
+      hopDistance: discovery?.minHopDistance,
     };
   });
 
@@ -2044,9 +2123,18 @@ function isMissingFileError(error: unknown): boolean {
 
 export * from "./task-runtime-state.js";
 export * from "./connectivity-stage-d.js";
+export * from "./wan-connectivity-axes.js";
+export * from "./jsonl-query-index.js";
+export * from "./storage-gate.js";
+export { AUDIT_QUERY_INDEX_FILE, ACTIVITY_QUERY_INDEX_FILE } from "./storage-gate.js";
 export * from "./chat-log-store.js";
 export * from "./chat-draft-store.js";
 export * from "./capability-manifest-store.js";
 export * from "./session-token-store.js";
 export * from "./device-authorization-store.js";
 export * from "./agent-identity-store.js";
+export * from "./agent-activity-store.js";
+export * from "./contact-owner-key-store.js";
+export * from "./reputation-anchor-store.js";
+export * from "./multihop-discovery-store.js";
+export * from "./agent-card-store.js";

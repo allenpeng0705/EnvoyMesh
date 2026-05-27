@@ -12,6 +12,9 @@ import type {
   PairingPayload,
   ConnectionStatus,
   ChatDiagnostics,
+  ConnectivityDiagnostics,
+  MorningReportEntry,
+  DiscoverCapabilityTopicResult,
   CreateHumanProfileInput,
   DiscoveryProfile,
   HelloProfile,
@@ -73,6 +76,8 @@ export interface NodeServiceClient {
 
   // Identity
   getProfile(): Promise<NodeProfile>;
+  getOwnerDidPresentation(): Promise<import("@envoymesh/api").OwnerDidPresentation>;
+  getPeerReputationSummary(peerOwnerId: string): Promise<import("@envoymesh/api").PeerReputationSummary>;
   getHumanProfile(): Promise<HumanProfile | undefined>;
   updateHumanProfile(input: CreateHumanProfileInput): Promise<HumanProfile>;
   getAgentIdentity(): Promise<import("@envoymesh/api").AgentIdentityDocument>;
@@ -96,9 +101,19 @@ export interface NodeServiceClient {
 
   // Messaging
   sendChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
+  sendAgentChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
   sendChatAttachment(params: SendChatAttachmentParams): Promise<SendChatAttachmentResult>;
   readLibraryItemContent(params: ReadLibraryItemContentParams): Promise<ReadLibraryItemContentResult>;
   listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
+  listAgentActivity(params?: import("@envoymesh/api").ListAgentActivityParams): Promise<import("@envoymesh/api").AgentActivityRecord[]>;
+  listAuditEvents(params?: import("@envoymesh/api").ListAuditEventsParams): Promise<import("@envoymesh/api").AuditEventSummary[]>;
+  listTaskJournalEntries(params?: import("@envoymesh/api").ListTaskJournalParams): Promise<import("@envoymesh/api").TaskJournalSummary[]>;
+  listAgentCards(): Promise<import("@envoymesh/api").CachedAgentCardSummary[]>;
+  getAgentCard(ownerId: string): Promise<import("@envoymesh/api").CachedAgentCardSummary | undefined>;
+  requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }>;
+  listPendingApprovals(): Promise<import("@envoymesh/api").PendingApprovalSummary[]>;
+  approvePendingApproval(itemId: string, notes?: string): Promise<import("@envoymesh/api").ApprovePendingApprovalResult>;
+  rejectPendingApproval(itemId: string, notes?: string): Promise<{ ok: boolean; error?: string }>;
   deleteChatMessage(peerOwnerId: string, messageId: string): Promise<{ ok: boolean }>;
   clearChatHistory(peerOwnerId: string): Promise<{ deletedCount: number }>;
   getChatDrafts(threadPeerOwnerId?: string): Promise<ChatDraft[]>;
@@ -114,11 +129,31 @@ export interface NodeServiceClient {
   getPeerConnectionInfo(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
   warmContactConnection(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
   getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics>;
+  getConnectivityDiagnostics(): Promise<ConnectivityDiagnostics>;
   runCapabilityDiscovery(params?: { find?: boolean }): Promise<void>;
+  discoverCapabilityTopic(params: {
+    topic: string;
+    maxResults?: number;
+    followUpDiscovery?: boolean;
+  }): Promise<DiscoverCapabilityTopicResult>;
+  getMorningReport(params?: { limit?: number }): Promise<MorningReportEntry[]>;
+  requestMultiHopDiscovery(
+    params: import("@envoymesh/api").RequestMultiHopDiscoveryParams,
+  ): Promise<import("@envoymesh/api").RequestMultiHopDiscoveryResult>;
+  getMultiHopDiscoverySession(
+    correlationId: string,
+  ): Promise<import("@envoymesh/api").MultiHopDiscoverySessionView | undefined>;
+  sendSyncStateUpdate(
+    params: import("@envoymesh/api").SendSyncStateUpdateParams,
+  ): Promise<import("@envoymesh/api").SendSyncStateUpdateResult>;
 
   // Agent Bridge
   getBridgeStatus(): Promise<BridgeStatus>;
   getPairingPayload(): Promise<PairingPayload>;
+  createWanJoinInvite(
+    params?: import("@envoymesh/api").CreateWanJoinInviteParams,
+  ): Promise<import("@envoymesh/api").CreateWanJoinInviteResult>;
+  applyWanJoinInvite(token: string): Promise<import("@envoymesh/api").ApplyWanJoinInviteResult>;
   pairWithHomeNode(params: import("@envoymesh/api").PairWithHomeNodeParams): Promise<import("@envoymesh/api").PairWithHomeNodeResult>;
   listAuthorizedDevices(): Promise<import("@envoymesh/api").ListAuthorizedDevicesResult>;
   revokeAuthorizedDevice(
@@ -134,6 +169,7 @@ export interface NodeServiceClient {
   listLibraryItems(params?: ListLibraryItemsParams): Promise<LibraryItem[]>;
   setLibraryItemPublished(documentId: string, published: boolean): Promise<void>;
   exportLibraryItemToIpfs(documentId: string): Promise<ExportLibraryItemToIpfsResult>;
+  pinLibraryItemExternal(documentId: string): Promise<import("@envoymesh/api").PinLibraryItemExternalResult>;
   getIpfsEngineStatus(): Promise<IpfsEngineStatus>;
   getRagIndexStatus(): Promise<RagIndexStatus>;
   verifyLibraryItemIpfsGateway(
@@ -269,6 +305,12 @@ function createWsNodeServiceClient(
     },
 
     async getProfile() { return wsClient.rpc("getProfile"); },
+    async getOwnerDidPresentation() { return wsClient.rpc("getOwnerDidPresentation"); },
+    async getPeerReputationSummary(peerOwnerId: string) {
+      return wsClient.rpc("getPeerReputationSummary", { peerOwnerId }) as Promise<
+        import("@envoymesh/api").PeerReputationSummary
+      >;
+    },
     async getHumanProfile() { return wsClient.rpc("getHumanProfile"); },
     async updateHumanProfile(input: CreateHumanProfileInput) { return wsClient.rpc("updateHumanProfile", input as unknown as Record<string, unknown>); },
     async getAgentIdentity() { return wsClient.rpc("getAgentIdentity"); },
@@ -300,6 +342,9 @@ function createWsNodeServiceClient(
     async sendChat(targetOwnerId: string, text: string) {
       return wsClient.rpc("sendChat", { targetOwnerId, text }, { timeoutMs: 120_000 });
     },
+    async sendAgentChat(targetOwnerId: string, text: string) {
+      return wsClient.rpc("sendAgentChat", { targetOwnerId, text }, { timeoutMs: 120_000 });
+    },
     async sendChatAttachment(params: SendChatAttachmentParams) {
       return wsClient.rpc("sendChatAttachment", params as unknown as Record<string, unknown>, {
         timeoutMs: 300_000,
@@ -311,6 +356,43 @@ function createWsNodeServiceClient(
       >;
     },
     async listChatHistory(peerOwnerId: string, limit?: number) { return wsClient.rpc("listChatHistory", { peerOwnerId, limit }) as Promise<ChatMessage[]>; },
+    async listAgentActivity(params?: import("@envoymesh/api").ListAgentActivityParams) {
+      return wsClient.rpc("listAgentActivity", (params ?? {}) as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").AgentActivityRecord[]
+      >;
+    },
+    async listAuditEvents(params?: import("@envoymesh/api").ListAuditEventsParams) {
+      return wsClient.rpc("listAuditEvents", (params ?? {}) as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").AuditEventSummary[]
+      >;
+    },
+    async listTaskJournalEntries(params?: import("@envoymesh/api").ListTaskJournalParams) {
+      return wsClient.rpc("listTaskJournalEntries", (params ?? {}) as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TaskJournalSummary[]
+      >;
+    },
+    async listAgentCards() {
+      return wsClient.rpc("listAgentCards") as Promise<import("@envoymesh/api").CachedAgentCardSummary[]>;
+    },
+    async getAgentCard(ownerId: string) {
+      return wsClient.rpc("getAgentCard", { ownerId }) as Promise<
+        import("@envoymesh/api").CachedAgentCardSummary | undefined
+      >;
+    },
+    async requestAgentCard(targetOwnerId: string) {
+      return wsClient.rpc("requestAgentCard", { targetOwnerId }) as Promise<{ ok: boolean; error?: string }>;
+    },
+    async listPendingApprovals() {
+      return wsClient.rpc("listPendingApprovals") as Promise<import("@envoymesh/api").PendingApprovalSummary[]>;
+    },
+    async approvePendingApproval(itemId: string, notes?: string) {
+      return wsClient.rpc("approvePendingApproval", { itemId, notes }) as Promise<
+        import("@envoymesh/api").ApprovePendingApprovalResult
+      >;
+    },
+    async rejectPendingApproval(itemId: string, notes?: string) {
+      return wsClient.rpc("rejectPendingApproval", { itemId, notes }) as Promise<{ ok: boolean; error?: string }>;
+    },
     async deleteChatMessage(peerOwnerId: string, messageId: string) { return wsClient.rpc("deleteChatMessage", { peerOwnerId, messageId }) as Promise<{ ok: boolean }>; },
     async clearChatHistory(peerOwnerId: string) { return wsClient.rpc("clearChatHistory", { peerOwnerId }) as Promise<{ deletedCount: number }>; },
     async getChatDrafts(threadPeerOwnerId?: string) {
@@ -328,8 +410,48 @@ function createWsNodeServiceClient(
     async getChatDiagnostics(peerOwnerId?: string) {
       return wsClient.rpc("getChatDiagnostics", peerOwnerId ? { peerOwnerId } : {});
     },
+    async getConnectivityDiagnostics() {
+      return wsClient.rpc("getConnectivityDiagnostics", {}) as Promise<ConnectivityDiagnostics>;
+    },
+    async discoverCapabilityTopic(params: {
+      topic: string;
+      maxResults?: number;
+      followUpDiscovery?: boolean;
+    }) {
+      return wsClient.rpc("discoverCapabilityTopic", params as unknown as Record<string, unknown>) as Promise<
+        DiscoverCapabilityTopicResult
+      >;
+    },
+    async getMorningReport(params?: { limit?: number }) {
+      return wsClient.rpc("getMorningReport", params ?? {}) as Promise<MorningReportEntry[]>;
+    },
+    async requestMultiHopDiscovery(params) {
+      return wsClient.rpc("requestMultiHopDiscovery", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").RequestMultiHopDiscoveryResult
+      >;
+    },
+    async getMultiHopDiscoverySession(correlationId: string) {
+      return wsClient.rpc("getMultiHopDiscoverySession", { correlationId }) as Promise<
+        import("@envoymesh/api").MultiHopDiscoverySessionView | undefined
+      >;
+    },
+    async sendSyncStateUpdate(params) {
+      return wsClient.rpc("sendSyncStateUpdate", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").SendSyncStateUpdateResult
+      >;
+    },
     async getBridgeStatus() { return wsClient.rpc("getBridgeStatus"); },
     async getPairingPayload() { return wsClient.rpc("getPairingPayload"); },
+    async createWanJoinInvite(params?: import("@envoymesh/api").CreateWanJoinInviteParams) {
+      return wsClient.rpc("createWanJoinInvite", (params ?? {}) as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").CreateWanJoinInviteResult
+      >;
+    },
+    async applyWanJoinInvite(token: string) {
+      return wsClient.rpc("applyWanJoinInvite", { token }) as Promise<
+        import("@envoymesh/api").ApplyWanJoinInviteResult
+      >;
+    },
     async pairWithHomeNode(params: import("@envoymesh/api").PairWithHomeNodeParams) {
       return wsClient.rpc("pairWithHomeNode", params as unknown as Record<string, unknown>) as Promise<
         import("@envoymesh/api").PairWithHomeNodeResult
@@ -362,6 +484,11 @@ function createWsNodeServiceClient(
     },
     async exportLibraryItemToIpfs(documentId: string) {
       return wsClient.rpc("exportLibraryItemToIpfs", { documentId }) as Promise<ExportLibraryItemToIpfsResult>;
+    },
+    async pinLibraryItemExternal(documentId: string) {
+      return wsClient.rpc("pinLibraryItemExternal", { documentId }) as Promise<
+        import("@envoymesh/api").PinLibraryItemExternalResult
+      >;
     },
     async getIpfsEngineStatus() {
       return wsClient.rpc("getIpfsEngineStatus", {}) as Promise<IpfsEngineStatus>;
@@ -729,6 +856,37 @@ export function useHelloRequests() {
   };
 
   return { requests, accept, decline };
+}
+
+export function usePendingApprovals() {
+  const client = useNodeService();
+  const [items, setItems] = useState<import("@envoymesh/api").PendingApprovalSummary[]>([]);
+
+  useEffect(() => {
+    if (!client.isConnected) return;
+
+    void client.listPendingApprovals().then(setItems).catch(console.error);
+
+    const unsubDraft = client.on("chat:draft", () => {
+      void client.listPendingApprovals().then(setItems).catch(console.error);
+    });
+
+    return unsubDraft;
+  }, [client]);
+
+  const approve = async (itemId: string, notes?: string) => {
+    const result = await client.approvePendingApproval(itemId, notes);
+    const fresh = await client.listPendingApprovals();
+    setItems(fresh);
+    return result;
+  };
+
+  const reject = async (itemId: string, notes?: string) => {
+    await client.rejectPendingApproval(itemId, notes);
+    setItems((prev) => prev.filter((item) => item.id !== itemId));
+  };
+
+  return { items, approve, reject };
 }
 
 export function useShareOffers() {

@@ -28,6 +28,7 @@
  */
 
 import type { DeviceProfile, DeviceRevocationReason, FriendMatchingPreferencesPayload } from "@envoymesh/protocol";
+import type { AgentVisibilityConfig, A2aChatNotificationMode } from "./agent-visibility.js";
 
 // ============================================
 // Message Types
@@ -71,6 +72,8 @@ export const WS_PATH = "/ws";
 export type RpcMethods =
   // Identity
   | "getProfile"
+  | "getOwnerDidPresentation"
+  | "getPeerReputationSummary"
   | "getHumanProfile"
   | "updateHumanProfile"
   | "getAgentIdentity"
@@ -88,9 +91,19 @@ export type RpcMethods =
   | "declineSocialIntroProposal"
   // Messaging
   | "sendChat"
+  | "sendAgentChat"
   | "sendChatAttachment"
   | "readLibraryItemContent"
   | "listChatHistory"
+  | "listAgentActivity"
+  | "listAuditEvents"
+  | "listTaskJournalEntries"
+  | "listAgentCards"
+  | "getAgentCard"
+  | "requestAgentCard"
+  | "listPendingApprovals"
+  | "approvePendingApproval"
+  | "rejectPendingApproval"
   | "deleteChatMessage"
   | "clearChatHistory"
   | "markRead"
@@ -111,6 +124,7 @@ export type RpcMethods =
   | "listLibraryItems"
   | "setLibraryItemPublished"
   | "exportLibraryItemToIpfs"
+  | "pinLibraryItemExternal"
   | "getIpfsEngineStatus"
   | "getRagIndexStatus"
   | "verifyLibraryItemIpfsGateway"
@@ -127,7 +141,13 @@ export type RpcMethods =
   | "getPeerConnectionInfo"
   | "warmContactConnection"
   | "getChatDiagnostics"
+  | "getConnectivityDiagnostics"
   | "runCapabilityDiscovery"
+  | "discoverCapabilityTopic"
+  | "getMorningReport"
+  |   "requestMultiHopDiscovery"
+  | "getMultiHopDiscoverySession"
+  | "sendSyncStateUpdate"
   // AI / Knowledge Query
   | "knowledgeQuery"
   | "runDocumentAgentTurn"
@@ -136,6 +156,8 @@ export type RpcMethods =
   // Agent Bridge
   | "getBridgeStatus"
   | "getPairingPayload"
+  | "createWanJoinInvite"
+  | "applyWanJoinInvite"
   | "pairDevice"
   | "pairSharedIdentity"
   | "pairWithHomeNode"
@@ -207,6 +229,10 @@ export interface ExternalPublishConfig {
   gatewayAllowlist?: string[];
   /** Active IPFS export engine. Default "kubo". Helia is in-process (desktop H6+, mobile H5+). */
   ipfsExportEngine?: "kubo" | "helia" | "kubo-with-helia-shadow";
+  /** When true, allow explicit pin-to-provider RPC after export (requires provider JWT env). */
+  pinningEnabled?: boolean;
+  /** Pinning provider when enabled. Default `pinata`. */
+  pinningProvider?: import("./ipfs-pinning.js").IpfsPinningProvider;
 }
 
 export interface NodeConfig {
@@ -309,6 +335,28 @@ export interface NodeConfig {
   lazyCapabilityDiscovery?: boolean;
   /** Stretch relay/capability/bootstrap timers when idle. Default true for WAN profiles. */
   idleTimerStretch?: boolean;
+  /** Per-domain Activity notify loudness (Phase 13E). Default: instant for all domains. */
+  agentVisibility?: AgentVisibilityConfig;
+  /** Local chat system lines on A2A milestones. Default: off. */
+  a2aChatNotifications?: A2aChatNotificationMode;
+  /** Prefer structured A2A over agent free-form chat (Phase 13C). */
+  agentInteractionMode?: import("./node-service.js").AgentInteractionMode;
+  /**
+   * Phase 14A: agent may run Trust-mode intro discovery passes (`mesh.intro.run_autopilot`).
+   * Requires {@link trustModeEnabled}. Default false.
+   */
+  friendAutopilotEnabled?: boolean;
+  /**
+   * Phase 14A — hours between scheduled autopilot passes (0 = manual tool only).
+   */
+  friendAutopilotIntervalHours?: import("./friend-autopilot.js").FriendAutopilotIntervalHours;
+  /** ISO timestamp of last autopilot pass (persisted). */
+  friendAutopilotLastRunAt?: string;
+  /**
+   * Phase 14B: ceiling for vault bytes returned to bonded peers via inbound `knowledge.query`.
+   * Unset = bond policy only (no extra owner cap).
+   */
+  knowledgeSyndicationMaxSensitivity?: "public" | "friends" | "private";
 }
 
 /**
@@ -505,6 +553,11 @@ export interface ContactAiPreferences {
   aiAccessLevel: "none" | "assistant_only" | "full";
   /** Knowledge access level for vault queries. Default: "public" */
   knowledgeAccess: "public" | "professional" | "personal";
+  /**
+   * Phase 14B — optional per-contact inbound syndication cap (tighter than global ceiling).
+   * Unset = use global `knowledgeSyndicationMaxSensitivity` only.
+   */
+  syndicationMaxSensitivity?: "public" | "friends" | "private";
   /** Priority — whether to alert human immediately or let AI handle. Default: "high" */
   priority: "high" | "low";
 }
@@ -854,6 +907,12 @@ export interface UpdateNodeConfigParams {
   trustModeEnabled?: boolean;
   /** Owner criteria text for friend matching (bounded length). */
   friendMatchingPreferencesText?: string;
+  /** Phase 14A — allow agent Trust-mode autopilot tool. Requires trustModeEnabled. */
+  friendAutopilotEnabled?: boolean;
+  /** Phase 14A — scheduled autopilot interval hours (0 = manual only). */
+  friendAutopilotIntervalHours?: 0 | 24 | 168;
+  /** Phase 14B — cap inbound peer knowledge.query vault syndication. Pass null to clear. */
+  knowledgeSyndicationMaxSensitivity?: "public" | "friends" | "private" | null;
   /** Owner-signed preferences (validated server-side). When set, overrides plain text from signature payload. */
   friendMatchingPreferencesSigned?: FriendMatchingPreferencesPayload;
   maxConnections?: number;

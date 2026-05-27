@@ -50,7 +50,8 @@ Until these appear, **JSONL + optional external log shipping** (e.g. forward to 
 
 | Status | Action |
 |--------|--------|
-| **Before triggers in §2** | Stay on JSONL; monitor file sizes and query times in `connectivity-status` / operator tooling metrics if added. |
+| **2026-05-20 gate review** | Triggers **not met** on typical profiles — stay on JSONL + secondary index files. See [sqlite-gate-review-2026-05-20.md](./sqlite-gate-review-2026-05-20.md). Operator metric: `storage-gate` CLI. |
+| **Before triggers in §2** | Stay on JSONL; monitor file sizes and query times via `storage-gate` / operator tooling. |
 | **Triggers met** | Open a phased implementation: schema in `local-store`, migration from existing JSONL, tests for idempotent migration, and documentation for backup paths. |
 
 No SQLite migration is **normative** in the repo until a milestone explicitly ships it; this file is the **gate** for that work.

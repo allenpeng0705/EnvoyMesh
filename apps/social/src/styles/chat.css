@@ -521,20 +521,27 @@
 }
 
 .message-bubble.outgoing,
-.message-bubble.ai-outgoing {
+.message-bubble.ai-outgoing,
+.message-bubble.outgoing-agent {
   background: linear-gradient(145deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
   color: var(--color-primary-on);
   border: 1px solid var(--message-outgoing-code-border);
 }
 
 .message-bubble.outgoing .message-bubble-badge,
-.message-bubble.ai-outgoing .message-bubble-badge {
+.message-bubble.ai-outgoing .message-bubble-badge,
+.message-bubble.outgoing-agent .message-bubble-badge {
   color: var(--message-outgoing-time);
 }
 
 .message-bubble.outgoing .message-bubble-time,
-.message-bubble.ai-outgoing .message-bubble-time {
+.message-bubble.ai-outgoing .message-bubble-time,
+.message-bubble.outgoing-agent .message-bubble-time {
   color: var(--message-outgoing-time);
+}
+
+.message-bubble.outgoing-agent .message-bubble-badge {
+  color: color-mix(in srgb, var(--color-primary-on) 85%, var(--color-role-agent));
 }
 
 .message-bubble.incoming-peer {

@@ -28,8 +28,8 @@ jobs:
       - name: Mobile Capacitor production build
         run: npm run build -w @envoymesh/mobile
 
-      - name: Local two-node smoke rehearsal
-        run: npm run smoke:local
+      - name: Phase 13 two-node smoke (PR signal)
+        run: npm run smoke:phase13
 
       - name: Generate smoke artifacts
         run: |

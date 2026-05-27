@@ -428,6 +428,7 @@
   dependencies:
     "@envoymesh/identity" "0.1.0"
     "@envoymesh/protocol" "0.1.0"
+    zod "^4.3.6"
 
 "@envoymesh/bonds@0.1.0", "@envoymesh/bonds@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/bonds":
   version "0.1.0"
@@ -3876,6 +3877,11 @@ isexe@^2.0.0:
   resolved "https://mirrors.huaweicloud.com/repository/npm/isexe/-/isexe-2.0.0.tgz"
   integrity sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==
 
+isomorphic.js@^0.2.4:
+  version "0.2.5"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/isomorphic.js/-/isomorphic.js-0.2.5.tgz"
+  integrity sha512-PIeMbHqMt4DnUP3MA/Flc0HElYjMXArsw1qwJZcm9sqR8mq3l8NYizFMty0pWwE/tzIGH3EKK5+jes5mAr85yw==
+
 istanbul-lib-coverage@^3.0.0, istanbul-lib-coverage@^3.2.2:
   version "3.2.2"
   resolved "https://mirrors.huaweicloud.com/repository/npm/istanbul-lib-coverage/-/istanbul-lib-coverage-3.2.2.tgz"
@@ -4250,6 +4256,13 @@ leven@^3.1.0:
   version "3.1.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/leven/-/leven-3.1.0.tgz"
   integrity sha512-qsda+H8jTaUaN/x5vzW2rzc+8Rw4TAQ/4KjB46IwK5VH+IlVeeeje/EoZRpiXvIqjFgK84QffqPztGI3VBLG1A==
+
+lib0@^0.2.99:
+  version "0.2.117"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/lib0/-/lib0-0.2.117.tgz"
+  integrity sha512-DeXj9X5xDCjgKLU/7RR+/HQEVzuuEUiwldwOGsHK/sfAfELGWEyTcf0x+uOvCvK3O2zPmZePXWL85vtia6GyZw==
+  dependencies:
+    isomorphic.js "^0.2.4"
 
 libp2p@^3.0.0, libp2p@^3.2.0:
   version "3.2.3"
@@ -6556,6 +6569,13 @@ yauzl@^2.10.0:
   dependencies:
     buffer-crc32 "~0.2.3"
     fd-slicer "~1.1.0"
+
+yjs@^13.6.30:
+  version "13.6.30"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/yjs/-/yjs-13.6.30.tgz"
+  integrity sha512-vv/9h42eCMC81ZHDFswuu/MKzkl/vyq1BhaNGfHyOonwlG4CJbQF4oiBBJPvfdeCt/PlVDWh7Nov9D34YY09uQ==
+  dependencies:
+    lib0 "^0.2.99"
 
 zod@^4.3.6:
   version "4.3.6"

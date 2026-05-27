@@ -599,10 +599,12 @@ export function SettingsAITab() {
       )}
 
       <h4>AI Identity</h4>
-      <p className="field-desc">How the AI presents itself in responses.</p>
+      <p className="field-desc">
+        Display and prefix only — auto-sent chat always uses verified agent role on the wire.
+      </p>
       <div className="identity-mode-options">
         {(Object.entries({
-          invisible: { title: "Invisible", desc: "Responds as if it were you", example: `Example: "Yeah, I can do that."` },
+          invisible: { title: "Invisible", desc: "No prefix in text; peers still see “Your agent” badge", example: `Example: "Yeah, I can do that."` },
           transparent: { title: "Transparent", desc: "Prefix messages with [AI Agent]", example: `Example: "[AI Agent]: I'm checking..."` },
           defensive: { title: "Defensive (Gatekeep)", desc: "Acts as gatekeeper when you are away", example: `Example: "I've received your message and will notify them when back."` },
         }) as [AiIdentityMode, { title: string; desc: string; example: string }][]).map(([mode, info]) => (

@@ -263,8 +263,8 @@ describe("mobile-storage", () => {
     });
 
     it("lists all tokens", async () => {
-      const t1 = makeToken({ token: "tok-a", ownerId: "owner-a" });
-      const t2 = makeToken({ token: "tok-b", ownerId: "owner-b" });
+      const t1 = makeToken({ token: "tok-a", ownerId: "owner-a", deviceId: "envoy:device:a" });
+      const t2 = makeToken({ token: "tok-b", ownerId: "owner-b", deviceId: "envoy:device:b" });
       await sessionTokenStore.setToken(t1);
       await sessionTokenStore.setToken(t2);
 
@@ -273,8 +273,8 @@ describe("mobile-storage", () => {
     });
 
     it("removes all tokens for an owner", async () => {
-      const t1 = makeToken({ token: "tok-a", ownerId: "owner-a" });
-      const t2 = makeToken({ token: "tok-b", ownerId: "owner-b" });
+      const t1 = makeToken({ token: "tok-a", ownerId: "owner-a", deviceId: "envoy:device:a" });
+      const t2 = makeToken({ token: "tok-b", ownerId: "owner-b", deviceId: "envoy:device:b" });
       await sessionTokenStore.setToken(t1);
       await sessionTokenStore.setToken(t2);
 

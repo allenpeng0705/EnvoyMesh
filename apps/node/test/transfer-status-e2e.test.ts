@@ -38,7 +38,9 @@ const profileDirs: string[] = [];
 
 afterEach(async () => {
   await Promise.all(meshes.splice(0).map((m) => m.stop().catch(() => {})));
-  await Promise.all(profileDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+  for (const dir of profileDirs.splice(0)) {
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+  }
 });
 
 interface TestNode {

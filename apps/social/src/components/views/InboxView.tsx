@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useNodeService, useAgentShareProposals, useShareOffers } from "../../hooks/useNodeService.js";
+import { useNodeService, useAgentShareProposals, useShareOffers, usePendingApprovals } from "../../hooks/useNodeService.js";
 import { IncomingShareOffersSection } from "../file-share/IncomingShareOffersSection.js";
-import type { HelloProfile, HelloRequest, ChatMessage, SocialIntroProposal } from "@envoymesh/api";
+import type { HelloProfile, HelloRequest, ChatMessage, SocialIntroProposal, PendingApprovalSummary } from "@envoymesh/api";
 import { peerDisplayLabel } from "../../lib/display.js";
 
 export interface InboxViewProps {
@@ -27,9 +27,11 @@ export function InboxView({ embedded = false }: InboxViewProps) {
   const nodeService = useNodeService();
   const { proposals: agentShareProposals, dismiss: dismissAgentShare } = useAgentShareProposals();
   const { offers: pendingShareOffers } = useShareOffers();
+  const { items: pendingApprovals, approve: approvePending, reject: rejectPending } = usePendingApprovals();
 
   const [introSaveStatus, setIntroSaveStatus] = useState<string | null>(null);
   const [agentShareBusy, setAgentShareBusy] = useState<string | null>(null);
+  const [approvalBusy, setApprovalBusy] = useState<string | null>(null);
 
   const handleAccept = async (request: HelloRequest) => {
     try {
@@ -92,6 +94,31 @@ export function InboxView({ embedded = false }: InboxViewProps) {
     }
   };
 
+  const handleRejectApproval = async (item: PendingApprovalSummary) => {
+    setApprovalBusy(item.id);
+    try {
+      await rejectPending(item.id);
+    } catch (error) {
+      console.error("Failed to reject approval:", error);
+    } finally {
+      setApprovalBusy(null);
+    }
+  };
+
+  const handleApprovePending = async (item: PendingApprovalSummary) => {
+    setApprovalBusy(item.id);
+    try {
+      const result = await approvePending(item.id);
+      if (!result.ok) {
+        console.error("Approve failed:", result.error);
+      }
+    } catch (error) {
+      console.error("Failed to approve pending action:", error);
+    } finally {
+      setApprovalBusy(null);
+    }
+  };
+
   const pendingStrangerRow = (msg: ChatMessage) => (
     <li key={msg.messageId} className="inbox-item inbox-item-stranger">
       <div className="inbox-sender">
@@ -117,7 +144,8 @@ export function InboxView({ embedded = false }: InboxViewProps) {
     pendingIntroProposals.length === 0 &&
     pendingMessages.length === 0 &&
     agentShareProposals.length === 0 &&
-    pendingShareOffers.length === 0;
+    pendingShareOffers.length === 0 &&
+    pendingApprovals.length === 0;
 
   if (empty) {
     return (
@@ -129,7 +157,7 @@ export function InboxView({ embedded = false }: InboxViewProps) {
         )}
         <div className="inbox-empty">
           <p>No pending activity</p>
-          <small>Hello requests, Trust-mode intro proposals, incoming file shares, agent share suggestions, and messages from people you haven&apos;t bonded with yet appear here.</small>
+          <small>Hello requests, Trust-mode intro proposals, AI approval drafts, incoming file shares, agent share suggestions, and messages from people you haven&apos;t bonded with yet appear here.</small>
         </div>
       </div>
     );
@@ -148,6 +176,49 @@ export function InboxView({ embedded = false }: InboxViewProps) {
 
       {introSaveStatus && (
         <p className="settings-hint" style={{ marginBottom: 8 }}>{introSaveStatus}</p>
+      )}
+
+      {pendingApprovals.length > 0 && (
+        <>
+          <h3 className="inbox-section-title">AI approvals ({pendingApprovals.length})</h3>
+          <ul className="inbox-list">
+            {pendingApprovals.map((item) => (
+              <li key={item.id} className="inbox-item">
+                <div className="inbox-sender">
+                  <span className="avatar large">AI</span>
+                  <div className="inbox-sender-info">
+                    <strong>{item.title}</strong>
+                    <span className="owner-id">
+                      {item.contactDisplayName ?? item.contactOwnerId ?? item.actionType}
+                    </span>
+                  </div>
+                </div>
+                <p className="inbox-message">{item.description}</p>
+                {item.draftContent ? (
+                  <p className="inbox-message">&ldquo;{item.draftContent.slice(0, 240)}{item.draftContent.length > 240 ? "…" : ""}&rdquo;</p>
+                ) : null}
+                <div className="inbox-actions">
+                  <button
+                    type="button"
+                    className="accept"
+                    disabled={approvalBusy === item.id}
+                    onClick={() => void handleApprovePending(item)}
+                  >
+                    {approvalBusy === item.id ? "Sending…" : "Approve & send"}
+                  </button>
+                  <button
+                    type="button"
+                    className="decline"
+                    disabled={approvalBusy === item.id}
+                    onClick={() => void handleRejectApproval(item)}
+                  >
+                    Reject
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {pendingIntroProposals.length > 0 && (

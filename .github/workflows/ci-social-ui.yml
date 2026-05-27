@@ -1,0 +1,26 @@
+name: ci-social-ui
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  social-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Social UI tests (Phase 13)
+        run: npm run test:social-ui
