@@ -20,4 +20,7 @@ TEST_RELAY_ADDR="$RELAY_ADDR" npx vitest run apps/node/test/wan-relay-signoff-e2
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 echo ""
 echo "=== Sign-off ledger template (paste into docs/wan-connectivity-signoff.md) ==="
-echo "$(date +%Y-%m-%d) | main @ ${SHA} | two-NAT staging + relay | [x] wan-relay-signoff-e2e + operator two-NAT chat | [~] DCUtR | [~] QUIC | @you | TEST_RELAY_ADDR=${RELAY_ADDR}"
+npm run cli -w @envoymesh/node -- connectivity-signoff --profile ./data/default ${RELAY_ADDR:+--relay-addr "$RELAY_ADDR"}
+echo ""
+echo "Physical two-NAT row (after manual §4 on two home routers):"
+npm run cli -w @envoymesh/node -- connectivity-signoff --physical-two-nat ${RELAY_ADDR:+--relay-addr "$RELAY_ADDR"}

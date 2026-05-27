@@ -103,7 +103,7 @@ describe("NodeServiceImpl - Discovery Configuration", () => {
       );
       setConfigStore(nodeService, configStore);
 
-      const results = await (nodeService as any).searchByRendezvous(["music"]);
+      const results = await (nodeService as any)._discoveryRuntime().searchByRendezvous(["music"]);
       expect(results).toEqual([]);
     });
 
@@ -136,7 +136,7 @@ describe("NodeServiceImpl - Discovery Configuration", () => {
 
       // This will fail on signing, but should have called sendExpectReply once for enabled relay
       try {
-        await (nodeService as any).searchByRendezvous(["music"]);
+        await (nodeService as any)._discoveryRuntime().searchByRendezvous(["music"]);
       } catch {
         // Expected - signing requires real key
       }
@@ -463,7 +463,7 @@ describe("NodeServiceImpl - Relay Configuration", () => {
       updatedAt: new Date().toISOString(),
     }));
 
-    const results = await (nodeService as any).searchByRendezvous(["music"]);
+    const results = await (nodeService as any)._discoveryRuntime().searchByRendezvous(["music"]);
     // Returns empty when no relays configured (early return before profile check)
     expect(results).toEqual([]);
   });

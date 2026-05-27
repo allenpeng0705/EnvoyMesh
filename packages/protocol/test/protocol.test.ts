@@ -905,6 +905,12 @@ describe("protocol", () => {
       mandateId: "mandate-1",
       status: "completed",
       summary: "Peer recommended Designing Data-Intensive Applications.",
+      deliveryAttestation: {
+        documentId: "doc-1",
+        relativePath: "books/ddia.pdf",
+        contentHash: "hash1234567890",
+        counterpartyOwnerId: "envoy:owner:buyer",
+      },
       createdAt: "2026-04-27T10:03:00.000Z",
     });
     const cancelled = createTaskCancelPayload({

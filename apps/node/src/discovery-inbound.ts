@@ -26,6 +26,8 @@ import { responseHopDistance } from "@envoymesh/api";
 import {
   discoveryRequesterAuditLabel,
   isAnonymousDiscoveryOwnerId,
+  requiresDiscoveryReferralAttestation,
+  verifyDiscoveryReferralAttestation,
 } from "@envoymesh/api";
 
 /** Requesting this capability (alone or with file/hash selectors) enables published-library metadata in the response. */
@@ -291,6 +293,7 @@ export async function handleInboundDiscoveryIntent(input: {
   vaultDir?: string;
   profileDir?: string;
   loadPublishedDocumentIds?: () => Promise<Set<string>>;
+  resolveReferralOwnerPublicKey?: (ownerId: string) => Promise<string | undefined>;
 }): Promise<DiscoveryInboundResult> {
   const {
     envelope,
@@ -308,11 +311,78 @@ export async function handleInboundDiscoveryIntent(input: {
     vaultDir,
     profileDir,
     loadPublishedDocumentIds,
+    resolveReferralOwnerPublicKey,
   } = input;
 
   try {
     if (envelope.intent === "discovery.request") {
       const payload = parseDiscoveryRequestPayload(envelope.payload);
+
+      if (requiresDiscoveryReferralAttestation(payload)) {
+        if (!payload.referralAttestation) {
+          const denyReason = "anonymous hop>0 discovery.request requires referralAttestation (US-MH2+)";
+          await auditDiscoveryDeny({
+            taskStore,
+            envelope,
+            remotePeerId,
+            receivedAt,
+            correlationId,
+            trustLevel: "public",
+            reason: denyReason,
+          });
+          return { ok: false, reason: denyReason };
+        }
+        const referralOwnerId = payload.referralOwnerId?.trim();
+        if (!referralOwnerId) {
+          const denyReason = "referralAttestation requires referralOwnerId on payload";
+          await auditDiscoveryDeny({
+            taskStore,
+            envelope,
+            remotePeerId,
+            receivedAt,
+            correlationId,
+            trustLevel: "public",
+            reason: denyReason,
+          });
+          return { ok: false, reason: denyReason };
+        }
+        const referralPublicKeyPem = resolveReferralOwnerPublicKey
+          ? await resolveReferralOwnerPublicKey(referralOwnerId)
+          : undefined;
+        if (!referralPublicKeyPem) {
+          const denyReason = `referral owner public key unavailable for ${referralOwnerId.slice(0, 24)}…`;
+          await auditDiscoveryDeny({
+            taskStore,
+            envelope,
+            remotePeerId,
+            receivedAt,
+            correlationId,
+            trustLevel: "public",
+            reason: denyReason,
+          });
+          return { ok: false, reason: denyReason };
+        }
+        const attestationCheck = verifyDiscoveryReferralAttestation({
+          attestation: payload.referralAttestation,
+          referralOwnerPublicKeyPem: referralPublicKeyPem,
+          expectedReferralOwnerId: referralOwnerId,
+          expectedAnonymizedRequesterId: payload.requesterOwnerId,
+          expectedCorrelationId: correlationId,
+        });
+        if (!attestationCheck.ok) {
+          await auditDiscoveryDeny({
+            taskStore,
+            envelope,
+            remotePeerId,
+            receivedAt,
+            correlationId,
+            trustLevel: "public",
+            reason: attestationCheck.reason,
+          });
+          return { ok: false, reason: attestationCheck.reason };
+        }
+      }
+
       const trustOwnerId = discoveryTrustOwnerId(payload);
       const trustRecord = await trustStore.getTrustRecord(trustOwnerId);
       const trustLevel = trustRecord?.level ?? "public";

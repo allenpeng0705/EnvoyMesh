@@ -1,6 +1,6 @@
 # Parked scope — Distributed state (loro / yjs)
 
-**Status:** Scoping (Phase 15E) — **yjs Assistant draft spike shipped**; wire sync not scheduled.
+**Status:** Scoping (Phase 15E) — **yjs Assistant draft spike shipped**; **contact compose draft CRDT** shipped 2026-05-27; **contact notes/tags (loro)** shipped 2026-05-27.
 
 **Key decision:** [implementation-plan.md — Distributed state direction](./implementation-plan.md) — evaluate `loro` and `yjs` when shared social/task state is ready.
 
@@ -27,7 +27,7 @@ Cross-device sync today: **P2P intents** (chat.message, share.*, knowledge.*) �
 |---------|----------|------------|------------------------|
 | Chat draft / compose buffer | yjs text | Low | Medium |
 | Shared task checklist (owner + agent) | loro map | Medium | Medium |
-| Contact notes / tags | loro map | Low | Low |
+| Contact notes / tags | loro map | Low | **Shipped** |
 | Vault metadata overlay | High conflict risk | High | **Defer** |
 | Full chat history merge | yjs + ordering vs signed envelopes | Very high | **Defer** |
 
@@ -58,9 +58,10 @@ Prefer **existing P2P** paths:
 ## First slice (when un-parked)
 
 1. ~~Spike: yjs-backed draft sync between desktop + mobile for **Assistant** document agent only~~ **Shipped (local + wire):** [assistant-draft-crdt.ts](../apps/social/src/lib/assistant-draft-crdt.ts) — localStorage + `sync.state` / `crdt:sync` for paired owner devices.
-2. Conflict policy: signed outbound chat still wins; CRDT is pre-send buffer
-3. Gate: must not block offline-first single-device use
-4. **Next:** P2P delta sync between paired owner devices
+2. ~~Contact chat compose buffer (pre-send)~~ **Shipped:** [contact-compose-draft-crdt.ts](../apps/social/src/lib/contact-compose-draft-crdt.ts) — per-thread yjs + `contact-compose-draft:v1:<ownerId>` wire sync.
+3. ~~Structured contact notes/tags~~ **Shipped:** [contact-notes-crdt.ts](../apps/social/src/lib/contact-notes-crdt.ts) — loro text + tag list per contact + `contact-notes:v1:<contactOwnerId>` wire sync; UI in Contact chat panel.
+4. Conflict policy: signed outbound chat still wins; CRDT is pre-send buffer / private notes
+5. Gate: must not block offline-first single-device use
 
 ---
 

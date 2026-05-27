@@ -22,6 +22,13 @@ export async function routeRpcMethod(
       return ns.getProfile();
     case "getOwnerDidPresentation":
       return ns.getOwnerDidPresentation();
+    case "resolveDidImport":
+      return ns.resolveDidImport(String(params.input ?? ""));
+    case "cacheDidContactKey":
+      return ns.cacheDidContactKey({
+        ownerId: String(params.ownerId ?? ""),
+        publicKeyPem: String(params.publicKeyPem ?? ""),
+      });
     case "getPeerReputationSummary":
       return ns.getPeerReputationSummary(params.peerOwnerId as string);
     case "getHumanProfile":
@@ -87,6 +94,20 @@ export async function routeRpcMethod(
         correlationId: params.correlationId as string | undefined,
         domain: params.domain as import("@envoymesh/api").AgentActivityDomain | undefined,
         remoteOwnerId: params.remoteOwnerId as string | undefined,
+      });
+    case "listCommerceReceipts":
+      return ns.listCommerceReceipts({
+        counterpartyOwnerId: params.counterpartyOwnerId as string | undefined,
+        limit: params.limit as number | undefined,
+      });
+    case "recordCommerceReceipt":
+      return ns.recordCommerceReceipt({
+        taskId: String(params.taskId ?? ""),
+        mandateId: params.mandateId as string | undefined,
+        counterpartyOwnerId: String(params.counterpartyOwnerId ?? ""),
+        documentId: String(params.documentId ?? ""),
+        summary: params.summary as string | undefined,
+        cid: params.cid as string | undefined,
       });
     case "listAuditEvents":
       return ns.listAuditEvents({

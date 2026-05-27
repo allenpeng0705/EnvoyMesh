@@ -8,7 +8,11 @@ import {
   contactAiAccessLevelForAssistantMode,
   stripModelThinking,
   MAX_CHAT_ATTACHMENT_BYTES,
+  isContactComposeDraftSyncScope,
+  isContactNotesSyncScope,
 } from "@envoymesh/api";
+import { createContactComposeDraftCrdt } from "../../lib/contact-compose-draft-crdt.js";
+import { createContactNotesCrdt } from "../../lib/contact-notes-crdt.js";
 import type { AssistantMode } from "../../lib/storage.js";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
@@ -68,6 +72,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     setContactAiModes,
     connectionStatus,
     refreshNodeConfig,
+    humanProfile,
   } = useNodeState();
 
   const { messages, isOutgoing, removeMessage, clearThread } = useChatMessages(selectedContact);
@@ -79,6 +84,83 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const [chatInput, setChatInput] = useState("");
+  const [contactNote, setContactNote] = useState("");
+  const [contactTags, setContactTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
+  const [notesOpen, setNotesOpen] = useState(false);
+  const draftRef = useRef<ReturnType<typeof createContactComposeDraftCrdt> | null>(null);
+  const notesRef = useRef<ReturnType<typeof createContactNotesCrdt> | null>(null);
+  const draftSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notesSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ownerId = humanProfile?.ownerId ?? nodeConfig?.profileDir ?? "anonymous";
+
+  const pushDraftSync = useCallback(
+    (updateBase64: string, scope: string) => {
+      if (draftSyncTimerRef.current) clearTimeout(draftSyncTimerRef.current);
+      draftSyncTimerRef.current = setTimeout(() => {
+        void nodeService.sendSyncStateUpdate({ scope, updateBase64 }).catch(() => {});
+      }, 400);
+    },
+    [nodeService],
+  );
+
+  const pushNotesSync = useCallback(
+    (updateBase64: string, scope: string) => {
+      if (notesSyncTimerRef.current) clearTimeout(notesSyncTimerRef.current);
+      notesSyncTimerRef.current = setTimeout(() => {
+        void nodeService.sendSyncStateUpdate({ scope, updateBase64 }).catch(() => {});
+      }, 400);
+    },
+    [nodeService],
+  );
+
+  useEffect(() => {
+    const notes = createContactNotesCrdt(ownerId, selectedContact, {
+      onLocalUpdate: pushNotesSync,
+      onChange: () => {
+        setContactNote(notes.getNote());
+        setContactTags(notes.getTags());
+      },
+    });
+    notesRef.current = notes;
+    setContactNote(notes.getNote());
+    setContactTags(notes.getTags());
+    return () => {
+      notes.destroy();
+      notesRef.current = null;
+    };
+  }, [ownerId, selectedContact, pushNotesSync]);
+
+  useEffect(() => {
+    const draft = createContactComposeDraftCrdt(ownerId, selectedContact, {
+      onLocalUpdate: pushDraftSync,
+    });
+    draftRef.current = draft;
+    setChatInput(draft.getPlainText());
+    const onDraftChange = () => setChatInput(draft.getPlainText());
+    draft.text.observe(onDraftChange);
+    return () => {
+      if (draftSyncTimerRef.current) clearTimeout(draftSyncTimerRef.current);
+      draft.text.unobserve(onDraftChange);
+      draft.destroy();
+      draftRef.current = null;
+    };
+  }, [ownerId, selectedContact, pushDraftSync]);
+
+  useEffect(() => {
+    return nodeService.on("crdt:sync", (data) => {
+      if (isContactComposeDraftSyncScope(data.scope)) {
+        if (data.scope === draftRef.current?.syncScope) {
+          draftRef.current.applyRemoteUpdate(data.updateBase64);
+        }
+        return;
+      }
+      if (isContactNotesSyncScope(data.scope) && data.scope === notesRef.current?.syncScope) {
+        notesRef.current.applyRemoteUpdate(data.updateBase64);
+      }
+    });
+  }, [nodeService]);
+
   const [shareOpen, setShareOpen] = useState(false);
   const [attachBusy, setAttachBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -175,6 +257,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         }
       })();
       setChatInput("");
+      draftRef.current?.setPlainText("");
       return;
     }
 
@@ -197,6 +280,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
 
     setPendingOutbound((prev) => [...prev, pendingMsg]);
     setChatInput("");
+    draftRef.current?.setPlainText("");
     setSendError(null);
 
     void (async () => {
@@ -245,7 +329,9 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
 
   const handleUseDraft = () => {
     if (!latestDraft) return;
-    setChatInput(stripModelThinking(latestDraft.text));
+    const text = stripModelThinking(latestDraft.text);
+    draftRef.current?.setPlainText(text);
+    setChatInput(text);
     void dismissDraft(latestDraft.draftId);
   };
 
@@ -279,7 +365,10 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         mimeType: file.type || undefined,
         caption,
       });
-      if (caption) setChatInput("");
+      if (caption) {
+        setChatInput("");
+        draftRef.current?.setPlainText("");
+      }
       showToast(`Sending ${file.name}…`, "success");
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Failed to send file";
@@ -465,6 +554,62 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         )}
         <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
       </div>
+      <details
+        className="contact-notes-panel"
+        open={notesOpen}
+        onToggle={(event) => setNotesOpen((event.target as HTMLDetailsElement).open)}
+      >
+        <summary>Private notes (synced across your devices)</summary>
+        <textarea
+          className="contact-notes-input"
+          rows={3}
+          placeholder="Notes only you see — not sent on the mesh"
+          value={contactNote}
+          onChange={(e) => notesRef.current?.setNote(e.target.value)}
+        />
+        <div className="contact-notes-tags">
+          {contactTags.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              className="contact-notes-tag"
+              onClick={() => notesRef.current?.removeTag(tag)}
+              title="Remove tag"
+            >
+              {tag} ×
+            </button>
+          ))}
+        </div>
+        <div className="contact-notes-tag-add">
+          <input
+            type="text"
+            className="contact-notes-tag-input"
+            placeholder="Add tag"
+            value={tagInput}
+            onChange={(e) => setTagInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              const value = tagInput.trim();
+              if (!value) return;
+              notesRef.current?.addTag(value);
+              setTagInput("");
+            }}
+          />
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => {
+              const value = tagInput.trim();
+              if (!value) return;
+              notesRef.current?.addTag(value);
+              setTagInput("");
+            }}
+          >
+            Add
+          </button>
+        </div>
+      </details>
       <div className="chat-composer">
         {latestDraft && (
           <div className="chat-draft-suggestion" role="region" aria-label="Suggested reply">
@@ -541,7 +686,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           type="text"
           placeholder={nodeMeshOnline ? "Type a message..." : "Node offline"}
           value={chatInput}
-          onChange={(e) => setChatInput(e.target.value)}
+          onChange={(e) => draftRef.current?.setPlainText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();

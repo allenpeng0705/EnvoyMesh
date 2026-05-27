@@ -70,6 +70,14 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getOwnerDidPresentation();
   }
 
+  async resolveDidImport(input: string) {
+    return this._ns.resolveDidImport(input);
+  }
+
+  async cacheDidContactKey(params: { ownerId: string; publicKeyPem: string }) {
+    return this._ns.cacheDidContactKey(params);
+  }
+
   async getPeerReputationSummary(peerOwnerId: string) {
     return this._ns.getPeerReputationSummary(peerOwnerId);
   }
@@ -164,6 +172,14 @@ export class DirectCallClient implements NodeServiceClient {
 
   async listAgentActivity(params?: Parameters<NodeService["listAgentActivity"]>[0]) {
     return this._ns.listAgentActivity(params);
+  }
+
+  async listCommerceReceipts(params?: Parameters<NodeService["listCommerceReceipts"]>[0]) {
+    return this._ns.listCommerceReceipts(params);
+  }
+
+  async recordCommerceReceipt(params: Parameters<NodeService["recordCommerceReceipt"]>[0]) {
+    return this._ns.recordCommerceReceipt(params);
   }
 
   async listAuditEvents(params?: Parameters<NodeService["listAuditEvents"]>[0]) {

@@ -43,6 +43,9 @@ import {
   heliaUnixfsAddFileInteropRecipeV1,
   heliaUnixfsExportRecipeV1Description,
 } from "./helia-ipfs-export.js";
+import { formatWanSignOffEvidenceReport } from "@envoymesh/api";
+import { formatWanTwoNatOperatorChecklist } from "@envoymesh/api";
+import { execSync } from "node:child_process";
 
 export type IpfsFingerprintEngine = "kubo" | "helia";
 
@@ -58,6 +61,7 @@ export type DeveloperCliCommand =
   | "tasks"
   | "approvals"
   | "connectivity-status"
+  | "connectivity-signoff"
   | "relay-status"
   | "morning-report"
   | "discover-topic"
@@ -107,6 +111,16 @@ export interface DeveloperCliArgs {
   inviteToken?: string;
   /** connectivity-status only: prepend ASCII Stage D snapshot panel */
   connectivityRich?: boolean;
+  /** connectivity-signoff: format physical two-NAT ledger row */
+  connectivitySignoffPhysicalTwoNat?: boolean;
+  connectivitySignoffChecklist?: boolean;
+  connectivitySignoffComplete?: boolean;
+  relayAddr?: string;
+  operator?: string;
+  natAPeer?: string;
+  natBPeer?: string;
+  chatVerified?: boolean;
+  automatedOk?: boolean;
   /** discover-topic: DHT capability topic string */
   topic?: string;
   /** audit / storage-gate: ISO timestamp lower bound (inclusive) */
@@ -179,6 +193,10 @@ export async function runDeveloperCli(argv: string[]): Promise<DeveloperCliResul
 
   if (args.command === "connectivity-status") {
     return showConnectivityStatus(args);
+  }
+
+  if (args.command === "connectivity-signoff") {
+    return showConnectivitySignoff(args);
   }
 
   if (args.command === "relay-status") {
@@ -299,6 +317,24 @@ export function parseDeveloperCliArgs(rawArgv: string[]): DeveloperCliArgs {
       args.outputFormat = parseOutputFormat(readValue(argv, ++index, arg));
     } else if (arg === "--rich") {
       args.connectivityRich = true;
+    } else if (arg === "--physical-two-nat") {
+      args.connectivitySignoffPhysicalTwoNat = true;
+    } else if (arg === "--checklist") {
+      args.connectivitySignoffChecklist = true;
+    } else if (arg === "--complete") {
+      args.connectivitySignoffComplete = true;
+    } else if (arg === "--relay-addr") {
+      args.relayAddr = readValue(argv, ++index, arg);
+    } else if (arg === "--operator") {
+      args.operator = readValue(argv, ++index, arg);
+    } else if (arg === "--nat-a-peer") {
+      args.natAPeer = readValue(argv, ++index, arg);
+    } else if (arg === "--nat-b-peer") {
+      args.natBPeer = readValue(argv, ++index, arg);
+    } else if (arg === "--chat-verified") {
+      args.chatVerified = true;
+    } else if (arg === "--automated-ok") {
+      args.automatedOk = true;
     } else if (arg === "--machine-a") {
       args.machineAName = readValue(argv, ++index, arg);
     } else if (arg === "--machine-b") {
@@ -383,6 +419,7 @@ Commands:
   connectivity-status Show discovery/connectivity diagnostics: persisted node-config (discovery profile, bootstrap
                         preset ids, explicit bootstrap peer count, relay flags), audit summaries plus discovered peer ids,
                          capability-topic traces, and persisted discovery-seeds.json rows.
+  connectivity-signoff Print WAN sign-off ledger row + checklist for docs/wan-connectivity-signoff.md.
   pairing        Pairing-focused queue/actions (list/approve/reject/retry/timeline).
   relay-status   Show local relay manager snapshot from runtime audit events.
   morning-report Show ranked discovery digest.
@@ -412,6 +449,15 @@ Options:
   --output <path>   Output file path (required for vault-manifest; optional for pairing timeline / smoke-checklist).
   --format <text|json> Output format (pairing timeline and relay-status).
   --rich           connectivity-status only: print ASCII Stage D snapshot panel above the usual summary.
+  --physical-two-nat connectivity-signoff only: format physical two-NAT §4 ledger row.
+  --checklist      connectivity-signoff only: print two-NAT operator checklist.
+  --complete       connectivity-signoff only: format completed physical two-NAT ledger row.
+  --relay-addr <multiaddr> connectivity-signoff: include relay multiaddr in notes.
+  --operator <name> connectivity-signoff: operator column (default @operator).
+  --nat-a-peer <id> connectivity-signoff: NAT client A peer id evidence.
+  --nat-b-peer <id> connectivity-signoff: NAT client B peer id evidence.
+  --chat-verified  connectivity-signoff --complete: mark manual chat verified.
+  --automated-ok   connectivity-signoff --complete: mark automated baseline ok.
   --machine-a <name> Machine A label for smoke-checklist. Default: machine-a
   --machine-b <name> Machine B label for smoke-checklist. Default: machine-b
 
@@ -806,6 +852,61 @@ async function showConnectivityStatus(args: DeveloperCliArgs): Promise<Developer
   return ok(sections);
 }
 
+async function showConnectivitySignoff(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
+  const events = await createLocalTaskStore(args.profileDir).readAuditEvents();
+  const stageD = analyzeConnectivityStageD(events);
+  const axes = analyzeWanConnectivityAxes(events);
+  let commitSha = "unknown";
+  try {
+    commitSha = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
+  } catch {
+    /* optional outside git checkout */
+  }
+
+  if (args.connectivitySignoffChecklist) {
+    return ok(
+      formatWanTwoNatOperatorChecklist({
+        relayAddr: args.relayAddr,
+        natAPeerId: args.natAPeer,
+        natBPeerId: args.natBPeer,
+        operator: args.operator,
+        chatVerified: args.chatVerified,
+        automatedBaselineOk: args.automatedOk,
+      }).split("\n"),
+    );
+  }
+
+  const complete = args.connectivitySignoffComplete === true;
+  const report = formatWanSignOffEvidenceReport({
+    commitSha,
+    operator: args.operator ?? "@operator",
+    relayAddr: args.relayAddr,
+    peerId: args.natAPeer && args.natBPeer ? `${args.natAPeer}↔${args.natBPeer}` : args.natAPeer,
+    physicalTwoNat: args.connectivitySignoffPhysicalTwoNat === true || complete,
+    relaySignOff: complete && args.chatVerified ? "ok" : args.connectivitySignoffPhysicalTwoNat ? "pending" : "partial",
+    dcutrSignOff: "n/a",
+    quicSignOff: "n/a",
+    notes: complete
+      ? [
+          args.relayAddr ? `relay=${args.relayAddr}` : null,
+          args.natAPeer ? `natA=${args.natAPeer}` : null,
+          args.natBPeer ? `natB=${args.natBPeer}` : null,
+          args.automatedOk ? "wan-relay-signoff-e2e green" : null,
+          args.chatVerified ? "manual two-NAT signed chat verified" : null,
+        ]
+          .filter(Boolean)
+          .join("; ")
+      : undefined,
+    diagnostics: {
+      nodeOnline: false,
+      stageD,
+      axes,
+    },
+  });
+
+  return ok(report.split("\n"));
+}
+
 async function showRelayStatus(args: DeveloperCliArgs): Promise<DeveloperCliResult> {
   const [profile, events] = await Promise.all([
     loadOrCreateNodeProfile(args.profileDir),
@@ -1157,6 +1258,7 @@ function parseDeveloperCliCommand(value: string): DeveloperCliCommand {
     value === "tasks" ||
     value === "approvals" ||
     value === "connectivity-status" ||
+    value === "connectivity-signoff" ||
     value === "relay-status" ||
     value === "pairing" ||
     value === "morning-report" ||

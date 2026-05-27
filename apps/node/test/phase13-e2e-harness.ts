@@ -28,7 +28,7 @@ import {
 } from "@envoymesh/protocol";
 import { ApprovalQueue, isA2ATaskIntent } from "@envoymesh/api";
 import { EnvoyMesh } from "@envoymesh/network";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadBridgeIdentity, saveBridgeIdentity } from "../src/bridge/identity-store.js";
@@ -113,26 +113,37 @@ export async function registerBondedPeer(
     level: "direct",
     displayName,
   });
+  const peerDirectoryPath = join(local.profileDir, "peer-directory.json");
+  let records: Array<{
+    version: "0.1";
+    ownerId: string;
+    peerId: string;
+    deviceId: string;
+    devicePublicKeyPem: string;
+    lastSeenAt: string;
+    listenAddrs: string[];
+  }> = [];
+  try {
+    const existing = JSON.parse(await readFile(peerDirectoryPath, "utf8")) as {
+      records?: typeof records;
+    };
+    records = existing.records ?? [];
+  } catch {
+    records = [];
+  }
+  const nextRecord = {
+    version: "0.1" as const,
+    ownerId: remote.profile.owner.ownerId,
+    peerId: remote.mesh.peerId,
+    deviceId: deriveDeviceId(remote.profile.device.publicKeyPem),
+    devicePublicKeyPem: remote.profile.device.publicKeyPem,
+    lastSeenAt: new Date().toISOString(),
+    listenAddrs: remote.mesh.multiaddrs.map(String),
+  };
+  const withoutOwner = records.filter((row) => row.ownerId !== remote.profile.owner.ownerId);
   await writeFile(
-    join(local.profileDir, "peer-directory.json"),
-    JSON.stringify(
-      {
-        version: "0.1",
-        records: [
-          {
-            version: "0.1",
-            ownerId: remote.profile.owner.ownerId,
-            peerId: remote.mesh.peerId,
-            deviceId: deriveDeviceId(remote.profile.device.publicKeyPem),
-            devicePublicKeyPem: remote.profile.device.publicKeyPem,
-            lastSeenAt: new Date().toISOString(),
-            listenAddrs: remote.mesh.multiaddrs.map(String),
-          },
-        ],
-      },
-      null,
-      2,
-    ),
+    peerDirectoryPath,
+    JSON.stringify({ version: "0.1", records: [...withoutOwner, nextRecord] }, null, 2),
     { mode: 0o600 },
   );
 }

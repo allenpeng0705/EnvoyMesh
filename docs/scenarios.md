@@ -401,7 +401,7 @@ Scenario IDs use **US-MH** prefix to avoid collision with Epic D (social handsha
 - Forward tier uses referral proof or anonymized envelope variant per Bond Engine decision.
 - Audit rows record hop without storing full biography in relay payloads.
 
-**Status:** *Implemented* — `forwardPrivacy: anonymous`, `referralOwnerId`, and audit-safe labels in `@envoymesh/api/discovery-privacy`.
+**Status:** *Implemented* — `forwardPrivacy: anonymous`, `referralOwnerId`, audit-safe labels, and **US-MH2+** `referralAttestation` (Ed25519 over canonical referral proof) on hop>0 anonymous forwards.
 
 ### US-MH3: Owner approval per forward tier
 

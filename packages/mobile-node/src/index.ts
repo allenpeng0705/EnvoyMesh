@@ -139,7 +139,15 @@ import {
   buildOwnerDidPresentation,
   parseDidLookupInput,
   didKeysMatch,
+  type MultiHopDiscoveryMatch,
+  type MultiHopDiscoverySessionView,
+  type MorningReportEntry,
 } from "@envoymesh/api";
+import {
+  buildMorningReportDigest,
+  createMultiHopDiscoveryStore,
+  type MultiHopDiscoveryStore,
+} from "@envoymesh/local-store";
 import { handleMobileInboundAgentCardIntent } from "./mobile-agent-card-inbound.js";
 import { normalizeOpenAiCompatibleBaseUrl, runOwnerApprovedKnowledgeQuery } from "@envoymesh/models";
 import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from "@libp2p/crypto/keys";
@@ -457,6 +465,7 @@ export class MobileNode implements NodeService {
     trustModeEnabled: false,
     contactAiPreferences: [],
   };
+  private _multihopDiscoveryStore: MultiHopDiscoveryStore | null = null;
   constructor(config: MobileNodeConfig) {
     this._profileDir = config.profileDir;
     this._relayUrls = [...config.relayUrls];
@@ -1055,6 +1064,18 @@ export class MobileNode implements NodeService {
     });
   }
 
+  async resolveDidImport(input: string): Promise<import("@envoymesh/api").ResolveDidImportResult> {
+    const { resolveDidImportInput } = await import("@envoymesh/api");
+    return resolveDidImportInput(input);
+  }
+
+  async cacheDidContactKey(_params: {
+    ownerId: string;
+    publicKeyPem: string;
+  }): Promise<{ ok: boolean; reason?: string }> {
+    return { ok: false, reason: "contact owner key cache is desktop-node only" };
+  }
+
   async getPeerReputationSummary(peerOwnerId: string): Promise<PeerReputationSummary> {
     return {
       peerOwnerId: peerOwnerId.trim(),
@@ -1445,6 +1466,16 @@ You are the owner's personal AI assistant on EnvoyMesh.
 
   async listAgentActivity(params?: ListAgentActivityParams): Promise<AgentActivityRecord[]> {
     return this._agentActivity.list(params);
+  }
+
+  async listCommerceReceipts(): Promise<import("@envoymesh/api").CommerceReceiptRecord[]> {
+    return [];
+  }
+
+  async recordCommerceReceipt(
+    _params: import("@envoymesh/api").RecordCommerceReceiptParams,
+  ): Promise<import("@envoymesh/api").CommerceReceiptRecord> {
+    throw new Error("Commerce receipts require desktop node vault store");
   }
 
   private async _publishAgentActivity(
@@ -2854,38 +2885,170 @@ You are the owner's personal AI assistant on EnvoyMesh.
     };
   }
 
-  async getMorningReport(params?: { limit?: number }) {
-    const bonds = await this._trustStore.list();
-    return bonds.slice(0, params?.limit ?? 10).map((b, index) => ({
-      ownerId: b.peerOwnerId,
-      peerId: b.libp2pPeerId,
-      trustLevel: b.level,
-      score: 100 - index,
-      reason: `trust=${b.level}`,
-      discoveryMatchCount: 0,
-    }));
+  async getMorningReport(params?: { limit?: number }): Promise<MorningReportEntry[]> {
+    const [bonds, peers] = await Promise.all([
+      this._trustStore.list(),
+      this._peerDirectory.list(),
+    ]);
+    return buildMorningReportDigest({
+      trustRecords: bonds.map((bond) => {
+        const seen = bond.createdAt ?? new Date().toISOString();
+        return {
+          version: "0.1" as const,
+          peerOwnerId: bond.peerOwnerId,
+          level: bond.level,
+          displayName: bond.displayName,
+          createdAt: seen,
+          updatedAt: seen,
+        };
+      }),
+      peerDirectoryRecords: peers.map((peer) => ({
+        version: "0.1" as const,
+        ownerId: peer.ownerId,
+        peerId: peer.libp2pPeerId ?? "",
+        deviceId: "",
+        devicePublicKeyPem: "",
+        lastSeenAt: peer.lastSeen,
+        listenAddrs: peer.multiaddrs,
+      })),
+      discoveryEvents: [],
+      limit: params?.limit ?? 10,
+    });
+  }
+
+  private _requireMultihopDiscoveryStore(): MultiHopDiscoveryStore {
+    if (!this._multihopDiscoveryStore) {
+      this._multihopDiscoveryStore = createMultiHopDiscoveryStore(this._profileDir);
+    }
+    return this._multihopDiscoveryStore;
+  }
+
+  private _publishMultiHopSession(session: MultiHopDiscoverySessionView): void {
+    this._events.emit("discovery:multihop-update", session);
   }
 
   async requestMultiHopDiscovery(
     params: import("@envoymesh/api").RequestMultiHopDiscoveryParams,
   ): Promise<import("@envoymesh/api").RequestMultiHopDiscoveryResult> {
-    const bonds = (await this._trustStore.list()).filter((b) => b.level !== "blocked");
+    this._assertNodeRunning();
+    if (!this._state?.device || !this._state?.owner) {
+      throw new Error("Node not initialized — call initNode() first");
+    }
+    if (!this._mesh) {
+      return {
+        matches: [],
+        bondsQueried: 0,
+        correlationId: _randomUUID(),
+        pendingForwardApprovals: 0,
+        aggregatedMatchCount: 0,
+      };
+    }
+
+    const correlationId = _randomUUID();
+    const maxHops = Math.min(params.maxHops ?? 2, 4);
+    const maxBonds = params.maxBonds ?? 5;
+    const bonds = (await this._trustStore.list()).filter((row) => row.level !== "blocked").slice(0, maxBonds);
+    const matches: MultiHopDiscoveryMatch[] = [];
+    const seenOwners = new Set<string>();
+
+    for (const bond of bonds) {
+      try {
+        const transportPeerId = await this._resolveBondRecipientPeerId(bond.peerOwnerId);
+        const recipientEnvelopePeerId = await this._resolveChatRecipientPeerId(bond.peerOwnerId);
+        const unsigned = createUnsignedEnvelope({
+          senderPeerId: derivePeerId(this._state.device.publicKeyPem),
+          senderPublicKey: this._state.device.publicKeyPem,
+          senderRole: "human",
+          recipientPeerId: recipientEnvelopePeerId,
+          recipientRole: "human",
+          intent: "discovery.request",
+          payload: createDiscoveryRequestPayload({
+            requesterOwnerId: this._state.owner.ownerId,
+            requestedTagHashes: params.requestedTagHashes ?? [],
+            requestedCapabilities: params.requestedCapabilities ?? [],
+            fileTitleQuery: params.fileTitleQuery,
+            maxResults: 8,
+            requestedSensitivity: "public",
+            maxHops,
+            currentHop: 0,
+          }),
+          correlationId,
+        });
+        const envelope = signUnsignedEnvelope(unsigned, this._state.device.privateKeyPem);
+        const replyText = await this._sendExpectReplyViaMesh(
+          transportPeerId,
+          JSON.stringify(envelope),
+          18_000,
+        );
+        const reply = parseEnvelope(JSON.parse(replyText) as Record<string, unknown>);
+        if (reply.intent !== "discovery.response") continue;
+        const resp = parseDiscoveryResponsePayload(reply.payload);
+        for (const match of resp.matches) {
+          if (seenOwners.has(match.ownerId)) continue;
+          seenOwners.add(match.ownerId);
+          const bondLabel = bond.displayName ?? bond.peerOwnerId;
+          matches.push({
+            ownerId: match.ownerId,
+            peerId: match.peerId,
+            hopDistance: match.hopDistance ?? 1,
+            matchedCapabilities: match.matchedCapabilities,
+            matchedTagHashes: match.matchedTagHashes,
+            viaOwnerId: bond.peerOwnerId,
+            viaDisplayName: bondLabel,
+            trustPath: `${this._state.owner.ownerId} → ${bond.peerOwnerId} → ${match.ownerId}`,
+          });
+        }
+      } catch (error) {
+        console.warn(
+          `[mobile-node] requestMultiHopDiscovery bond ${bond.peerOwnerId} failed:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
+    const pendingForwardApprovals = maxHops >= 2 ? bonds.length : 0;
+    const awaitingHop2ViaBonds = maxHops >= 2 ? bonds.map((bond) => bond.peerOwnerId) : [];
+    const now = new Date().toISOString();
+    const store = this._requireMultihopDiscoveryStore();
+    const session: MultiHopDiscoverySessionView = {
+      correlationId,
+      createdAt: now,
+      updatedAt: now,
+      bondsQueried: bonds.length,
+      pendingForwardApprovals,
+      awaitingHop2ViaBonds,
+      matches,
+    };
+    await store.upsertSession({
+      ...session,
+      awaitingHop2ViaBonds,
+    });
+    this._publishMultiHopSession(session);
+
     return {
-      matches: [],
-      bondsQueried: Math.min(bonds.length, params.maxBonds ?? 5),
-      correlationId: _randomUUID(),
-      pendingForwardApprovals: 0,
-      aggregatedMatchCount: 0,
+      matches,
+      bondsQueried: bonds.length,
+      correlationId,
+      pendingForwardApprovals,
+      aggregatedMatchCount: matches.length,
     };
   }
 
   async getMultiHopDiscoverySession(
-    _correlationId: string,
-  ): Promise<import("@envoymesh/api").MultiHopDiscoverySessionView | undefined> {
-    return undefined;
+    correlationId: string,
+  ): Promise<MultiHopDiscoverySessionView | undefined> {
+    const store = this._requireMultihopDiscoveryStore();
+    const session = await store.getSession(correlationId.trim());
+    if (!session) return undefined;
+    const awaitingHop2ViaBonds = session.awaitingHop2ViaBonds ?? [];
+    return {
+      ...session,
+      awaitingHop2ViaBonds,
+      pendingForwardApprovals: awaitingHop2ViaBonds.length,
+    };
   }
 
-  async ingestInboundMultiHopDiscoveryResponse(_params: {
+  async ingestInboundMultiHopDiscoveryResponse(params: {
     correlationId: string;
     responderOwnerId: string;
     matches: Array<{
@@ -2895,8 +3058,46 @@ You are the owner's personal AI assistant on EnvoyMesh.
       matchedCapabilities: string[];
       matchedTagHashes: string[];
     }>;
+    forwardPendingAck?: boolean;
   }): Promise<void> {
-    return;
+    const correlationId = params.correlationId.trim();
+    if (!correlationId) return;
+    const store = this._requireMultihopDiscoveryStore();
+    const session = await store.getSession(correlationId);
+    if (!session) return;
+
+    const trustRecord = await this._trustStore.get(params.responderOwnerId);
+    const viaLabel = trustRecord?.displayName ?? params.responderOwnerId;
+    const ownerId = this._state?.owner?.ownerId;
+    const hopMatches: MultiHopDiscoveryMatch[] =
+      params.forwardPendingAck && params.matches.length === 0
+        ? []
+        : params.matches.map((match) => ({
+            ownerId: match.ownerId,
+            peerId: match.peerId,
+            hopDistance: match.hopDistance ?? 2,
+            matchedCapabilities: match.matchedCapabilities,
+            matchedTagHashes: match.matchedTagHashes,
+            viaOwnerId: params.responderOwnerId,
+            viaDisplayName: viaLabel,
+            referralOwnerId: params.responderOwnerId,
+            trustPath: ownerId
+              ? `${ownerId} → ${params.responderOwnerId} → ${match.ownerId}`
+              : `${params.responderOwnerId} → ${match.ownerId}`,
+          }));
+
+    const updated = await store.applyInboundResponse(correlationId, {
+      responderOwnerId: params.responderOwnerId,
+      forwardPendingAck: params.forwardPendingAck,
+      matches: hopMatches,
+    });
+    if (updated) {
+      this._publishMultiHopSession({
+        ...updated,
+        awaitingHop2ViaBonds: updated.awaitingHop2ViaBonds ?? [],
+        pendingForwardApprovals: (updated.awaitingHop2ViaBonds ?? []).length,
+      });
+    }
   }
 
   async sendSyncStateUpdate(
@@ -4193,6 +4394,20 @@ You are the owner's personal AI assistant on EnvoyMesh.
           });
         } catch {
           console.warn("[mobile-node] rejected sync.state: invalid payload");
+        }
+      } else if (intent === "discovery.response") {
+        const correlationId = typeof msg.correlationId === "string" ? msg.correlationId.trim() : "";
+        if (!correlationId) return;
+        try {
+          const responsePayload = parseDiscoveryResponsePayload(msg.payload);
+          void this.ingestInboundMultiHopDiscoveryResponse({
+            correlationId,
+            responderOwnerId: responsePayload.responderOwnerId,
+            matches: responsePayload.matches,
+            forwardPendingAck: responsePayload.forwardPendingAck,
+          });
+        } catch {
+          console.warn("[mobile-node] rejected discovery.response: invalid payload");
         }
       } else if (intent === "chat.message") {
         let chatPayload: ReturnType<typeof parseChatMessagePayload> | undefined;

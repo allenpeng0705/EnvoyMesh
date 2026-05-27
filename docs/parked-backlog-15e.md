@@ -10,7 +10,7 @@ Items here are **explicitly not** Phase 15 exit criteria. Phase 15 (reach, H2A s
 
 | Item | Source | Scope doc | Status | Un-park when |
 |------|--------|-----------|--------|--------------|
-| Multi-hop routing, commerce, payment receipts | Stories D–E | [parked-multihop-commerce-scope.md](./parked-multihop-commerce-scope.md) | **US-MH1–4 shipped (partial MH4 morning report)** | Story E commerce receipts |
+| Multi-hop routing, commerce, payment receipts | Stories D–E | [parked-multihop-commerce-scope.md](./parked-multihop-commerce-scope.md) | **US-MH1–4 + receipt-only slice shipped** | Payment rail / escrow |
 | Thin satellite mobile app | Story A / Phase 4A | [parked-satellite-app-scope.md](./parked-satellite-app-scope.md) · [satellite-app-adr.md](./satellite-app-adr.md) | **ADR accepted** (no separate app) | Reopen only if product requires constrained satellite binary |
 | DID as first-class product identity | Scenario 1 | [parked-did-product-scope.md](./parked-did-product-scope.md) | **Bonded lookup shipped** | WAN resolver / import UX |
 | Global reputation ledger | Prioritization | [parked-global-reputation-scope.md](./parked-global-reputation-scope.md) | **Read-only slice shipped** | Federation write path + anchor policy |

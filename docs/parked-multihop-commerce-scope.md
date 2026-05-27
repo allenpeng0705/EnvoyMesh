@@ -58,7 +58,7 @@
 
 ### Proposed first slice (when un-parked)
 
-1. ~~**Receipt-only** path: signed `task.result` + vault CID attestation + Activity row (no money movement).~~ **ADR stub:** [commerce-receipt-stub-adr.md](./commerce-receipt-stub-adr.md).
+1. ~~**Receipt-only** path: signed `task.result` + vault CID attestation + Activity row (no money movement).~~ **Shipped (2026-05-27):** [commerce-receipt-stub-adr.md](./commerce-receipt-stub-adr.md).
 2. Optional **payment mandate** schema extension behind feature flag.
 3. Commerce stays **off** relay nodes; settlement only on normal nodes with owner approval.
 

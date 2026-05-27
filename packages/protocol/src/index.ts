@@ -659,6 +659,14 @@ export function parseBondAcceptPayload(input: unknown): BondAcceptPayload {
   return BondAcceptPayloadSchema.parse(input);
 }
 
+export const DiscoveryReferralAttestationSchema = z.object({
+  referralOwnerId: z.string().min(1),
+  requestMessageId: z.string().min(1),
+  correlationId: z.string().min(1).optional(),
+  anonymizedRequesterId: z.string().min(1),
+  signature: z.string().min(1),
+});
+
 export const DiscoveryRequestPayloadSchema = z
   .object({
     requesterOwnerId: z.string().min(1),
@@ -679,6 +687,8 @@ export const DiscoveryRequestPayloadSchema = z
     forwardPrivacy: z.enum(["none", "anonymous"]).default("none"),
     /** Story D (US-MH2): intermediary owner vouching for anonymous forward tier. */
     referralOwnerId: z.string().min(1).optional(),
+    /** Story D (US-MH2+): intermediary-signed proof binding anonymous forward to referral owner. */
+    referralAttestation: DiscoveryReferralAttestationSchema.optional(),
   })
   .refine(
     (value) =>
@@ -728,6 +738,8 @@ export const DiscoveryResponsePayloadSchema = z.object({
   responderOwnerId: z.string().min(1),
   matches: z.array(DiscoveryMatchSchema).default([]),
   truncated: z.boolean().default(false),
+  /** Intermediary ack: hop-2 forward approval queued (US-MH4 aggregation UX). */
+  forwardPendingAck: z.boolean().default(false),
 });
 
 /** `broadcast.request` — one-to-many discovery query sent through a relay. */
@@ -1190,8 +1202,22 @@ export const TaskResultPayloadSchema = z.object({
   status: TaskLifecycleStateSchema,
   summary: z.string().min(1).max(4000),
   artifacts: z.array(z.string().min(1)).default([]),
+  /** Story E receipt-only: vault document attestation (no payment fields). */
+  deliveryAttestation: z
+    .object({
+      documentId: z.string().min(1),
+      relativePath: z.string().min(1),
+      contentHash: z.string().min(1).max(128),
+      cid: z.string().min(1).max(256).optional(),
+      counterpartyOwnerId: z.string().min(1),
+    })
+    .optional(),
   createdAt: z.string().datetime(),
 });
+
+export type CommerceDeliveryAttestation = NonNullable<
+  z.infer<typeof TaskResultPayloadSchema>["deliveryAttestation"]
+>;
 
 /** `task.feedback` — signed feedback from one peer about task outcome; used to update local reputation scores. */
 export const TaskFeedbackPayloadSchema = z.object({
@@ -1296,6 +1322,7 @@ export type BondRequestedLevel = z.infer<typeof BondRequestedLevelSchema>;
 export type BondRequestPayload = z.infer<typeof BondRequestPayloadSchema>;
 export type BondChallengePayload = z.infer<typeof BondChallengePayloadSchema>;
 export type BondChallengeResponsePayload = z.infer<typeof BondChallengeResponsePayloadSchema>;
+export type DiscoveryReferralAttestation = z.infer<typeof DiscoveryReferralAttestationSchema>;
 export type DiscoveryRequestPayload = z.infer<typeof DiscoveryRequestPayloadSchema>;
 export type LibraryFileMatch = z.infer<typeof LibraryFileMatchSchema>;
 export type DiscoveryMatch = z.infer<typeof DiscoveryMatchSchema>;
@@ -1976,6 +2003,7 @@ export interface CreateDiscoveryRequestPayloadInput {
   currentHop?: number;
   forwardPrivacy?: "none" | "anonymous";
   referralOwnerId?: string;
+  referralAttestation?: DiscoveryReferralAttestation;
 }
 
 export function createDiscoveryRequestPayload(
@@ -1993,6 +2021,7 @@ export function createDiscoveryRequestPayload(
     currentHop: input.currentHop,
     forwardPrivacy: input.forwardPrivacy,
     referralOwnerId: input.referralOwnerId,
+    referralAttestation: input.referralAttestation,
   });
 }
 
@@ -2015,6 +2044,7 @@ export interface CreateDiscoveryResponsePayloadInput {
   responderOwnerId: string;
   matches?: DiscoveryMatch[];
   truncated?: boolean;
+  forwardPendingAck?: boolean;
 }
 
 export function createDiscoveryResponsePayload(
@@ -2025,6 +2055,7 @@ export function createDiscoveryResponsePayload(
     responderOwnerId: input.responderOwnerId,
     matches: input.matches ?? [],
     truncated: input.truncated ?? false,
+    forwardPendingAck: input.forwardPendingAck ?? false,
   });
 }
 

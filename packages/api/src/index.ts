@@ -28,8 +28,13 @@ export * from "./ipfs-pinning.js";
 export * from "./wan-join-invite.js";
 export * from "./h2a-wire-semantics.js";
 export * from "./owner-did-presentation.js";
+export * from "./did-import.js";
+export * from "./wan-signoff-evidence.js";
+export * from "./commerce-receipt.js";
+export * from "./wan-two-nat-checklist.js";
 export * from "./discovery-hop.js";
 export * from "./discovery-privacy.js";
+export * from "./discovery-referral-attestation.js";
 export * from "./sync-state.js";
 export * from "./ws-protocol.js";
 /** Explicit export: Vite pre-bundle can skip `bondTrustRank` when re-exported only via star from `node-service`. */

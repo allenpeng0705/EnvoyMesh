@@ -1299,6 +1299,10 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       anonymousSensitivityCeiling: nodeConfig?.anonymousSensitivityCeiling ?? "public",
       vaultDir: vaultDirForNode,
       profileDir: args.profileDir,
+      resolveReferralOwnerPublicKey: async (ownerId) => {
+        const row = await contactOwnerKeyStore.get(ownerId);
+        return row?.ownerPublicKeyPem;
+      },
     });
     if (!discovery.ok) {
       await taskStore.appendAuditEvent(
@@ -1390,6 +1394,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         correlationId,
         responderOwnerId: responsePayload.responderOwnerId,
         matches: responsePayload.matches,
+        forwardPendingAck: responsePayload.forwardPendingAck,
       });
     }
     return;

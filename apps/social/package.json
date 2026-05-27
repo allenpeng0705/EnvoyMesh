@@ -11,6 +11,7 @@
   "dependencies": {
     "@envoymesh/api": "0.1.0",
     "dompurify": "^3.4.3",
+    "loro-crdt": "^1.12.1",
     "marked": "^18.0.3",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",

@@ -1,6 +1,6 @@
 # Parked scope — DID as first-class product identity (Scenario 1)
 
-**Status:** First slice shipped (2026-05-20) — `did:key` presentation + Profile UI + **bonded Search lookup**. WAN resolver/import UX remains parked.
+**Status:** First slice shipped (2026-05-20) — `did:key` presentation + Profile UI + **bonded Search lookup**. **Local import** (did:key + JSON DID document → cache for lookup) shipped 2026-05-27; WAN gateway resolver remains parked.
 
 **Scenario:** Identity birth — stable cryptographic identity visible to users as a portable DID, not only `envoy:owner:<hash>`.
 
@@ -50,7 +50,9 @@ Requirements for method selection:
 2. ~~Export DID document JSON from existing owner key (read-only, no migration required)~~ **Shipped via `getOwnerDidPresentation`.**
 3. ~~Social Profile shows copyable DID + `envoy:owner:*` alias~~ **Shipped in Profile → Identity.**
 4. ~~**Optional (still open):** resolve `did:…` in Search for bonded contacts only.~~ **Shipped:** Search **By DID** tab + `searchPeers({ did })` + `contact-owner-keys.json`.
-5. **Still open:** WAN resolver / import from external wallets.
+5. ~~**Optional (still open):** resolve `did:…` in Search for bonded contacts only.~~ **Shipped:** Search **By DID** tab + `searchPeers({ did })` + `contact-owner-keys.json`.
+6. **Shipped (local import):** Search → By DID → paste `did:key` or JSON DID document → `resolveDidImport` + `cacheDidContactKey` (2026-05-27).
+7. **Still open:** WAN gateway resolver (HTTP/DHT) for strangers without prior key material.
 
 ---
 

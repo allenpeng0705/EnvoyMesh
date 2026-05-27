@@ -611,6 +611,7 @@
     marked "^18.0.3"
     react "^19.2.3"
     react-dom "^19.2.3"
+    yjs "^13.6.30"
 
 "@envoymesh/tauri@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/tauri":
   version "0.1.0"
@@ -4377,6 +4378,11 @@ lop@^0.4.2:
     duck "^0.1.12"
     option "~0.2.1"
     underscore "^1.13.1"
+
+loro-crdt@^1.12.1:
+  version "1.12.1"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/loro-crdt/-/loro-crdt-1.12.1.tgz"
+  integrity sha512-iHDGq4RaTHr6CFbXqV91ngKyVlB2NuYXz0q9t0Dedr8sQnbcPNdFs4DaqzDNP1jojuygFvYv12gt407M22OeQg==
 
 lru-cache@^10.2.0:
   version "10.4.3"

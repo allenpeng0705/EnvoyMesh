@@ -21,6 +21,8 @@ export interface MultiHopDiscoverySession {
   updatedAt: string;
   bondsQueried: number;
   pendingForwardApprovals: number;
+  /** Direct bonds still awaiting hop-2 relay-back from intermediaries. */
+  awaitingHop2ViaBonds: string[];
   matches: MultiHopDiscoveryMatchRow[];
 }
 
@@ -36,8 +38,21 @@ export interface MultiHopDiscoveryStore {
     matches: MultiHopDiscoveryMatchRow[],
     input?: { pendingForwardApprovals?: number },
   ): Promise<MultiHopDiscoverySession | undefined>;
+  applyInboundResponse(
+    correlationId: string,
+    input: {
+      responderOwnerId: string;
+      forwardPendingAck?: boolean;
+      matches: MultiHopDiscoveryMatchRow[];
+    },
+  ): Promise<MultiHopDiscoverySession | undefined>;
   getSession(correlationId: string): Promise<MultiHopDiscoverySession | undefined>;
   listSessions(limit?: number): Promise<MultiHopDiscoverySession[]>;
+  updateAwaitingHop2Bonds(
+    correlationId: string,
+    awaitingHop2ViaBonds: string[],
+    pendingForwardApprovals: number,
+  ): Promise<MultiHopDiscoverySession | undefined>;
 }
 
 function isMissingFileError(error: unknown): boolean {
@@ -78,38 +93,96 @@ function mergeMatches(
 
 export function createMultiHopDiscoveryStore(profileDir: string): MultiHopDiscoveryStore {
   const path = join(profileDir, MULTIHOP_DISCOVERY_SESSIONS_FILE);
+  let writeChain: Promise<void> = Promise.resolve();
+
+  async function withSerializedWrite<T>(fn: () => Promise<T>): Promise<T> {
+    const run = writeChain.then(fn);
+    writeChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  async function writeFileJson(file: MultiHopDiscoverySessionFile): Promise<void> {
+    await mkdir(profileDir, { recursive: true });
+    await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+  }
 
   return {
     async upsertSession(session) {
-      const file = await readFileJson(path);
-      const idx = file.sessions.findIndex((row) => row.correlationId === session.correlationId);
-      if (idx >= 0) {
-        file.sessions[idx] = session;
-      } else {
-        file.sessions.unshift(session);
-      }
-      file.sessions = file.sessions.slice(0, 32);
-      await mkdir(profileDir, { recursive: true });
-      await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+      await withSerializedWrite(async () => {
+        const file = await readFileJson(path);
+        const idx = file.sessions.findIndex((row) => row.correlationId === session.correlationId);
+        if (idx >= 0) {
+          file.sessions[idx] = session;
+        } else {
+          file.sessions.unshift(session);
+        }
+        file.sessions = file.sessions.slice(0, 32);
+        await writeFileJson(file);
+      });
     },
 
     async appendMatches(correlationId, matches, input) {
-      const file = await readFileJson(path);
-      const idx = file.sessions.findIndex((row) => row.correlationId === correlationId);
-      if (idx < 0) return undefined;
-      const now = new Date().toISOString();
-      const current = file.sessions[idx]!;
-      const updated: MultiHopDiscoverySession = {
-        ...current,
-        updatedAt: now,
-        pendingForwardApprovals:
-          input?.pendingForwardApprovals ?? current.pendingForwardApprovals,
-        matches: mergeMatches(current.matches, matches),
-      };
-      file.sessions[idx] = updated;
-      await mkdir(profileDir, { recursive: true });
-      await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
-      return updated;
+      return withSerializedWrite(async () => {
+        const file = await readFileJson(path);
+        const idx = file.sessions.findIndex((row) => row.correlationId === correlationId);
+        if (idx < 0) return undefined;
+        const now = new Date().toISOString();
+        const current = file.sessions[idx]!;
+        const updated: MultiHopDiscoverySession = {
+          ...current,
+          updatedAt: now,
+          pendingForwardApprovals:
+            input?.pendingForwardApprovals ?? current.pendingForwardApprovals,
+          awaitingHop2ViaBonds: current.awaitingHop2ViaBonds ?? [],
+          matches: mergeMatches(current.matches, matches),
+        };
+        file.sessions[idx] = updated;
+        await writeFileJson(file);
+        return updated;
+      });
+    },
+
+    async applyInboundResponse(correlationId, input) {
+      return withSerializedWrite(async () => {
+        const file = await readFileJson(path);
+        const idx = file.sessions.findIndex((row) => row.correlationId === correlationId);
+        if (idx < 0) return undefined;
+        const now = new Date().toISOString();
+        const current = file.sessions[idx]!;
+        const awaiting = new Set(current.awaitingHop2ViaBonds ?? []);
+
+        if (input.forwardPendingAck && input.matches.length === 0) {
+          awaiting.add(input.responderOwnerId);
+          const updated: MultiHopDiscoverySession = {
+            ...current,
+            updatedAt: now,
+            awaitingHop2ViaBonds: [...awaiting],
+            pendingForwardApprovals: awaiting.size,
+          };
+          file.sessions[idx] = updated;
+          await writeFileJson(file);
+          return updated;
+        }
+
+        if (input.matches.length === 0) {
+          return current;
+        }
+
+        awaiting.delete(input.responderOwnerId);
+        const updated: MultiHopDiscoverySession = {
+          ...current,
+          updatedAt: now,
+          awaitingHop2ViaBonds: [...awaiting],
+          pendingForwardApprovals: awaiting.size,
+          matches: mergeMatches(current.matches, input.matches),
+        };
+        file.sessions[idx] = updated;
+        await writeFileJson(file);
+        return updated;
+      });
     },
 
     async getSession(correlationId) {
@@ -120,6 +193,24 @@ export function createMultiHopDiscoveryStore(profileDir: string): MultiHopDiscov
     async listSessions(limit = 8) {
       const file = await readFileJson(path);
       return file.sessions.slice(0, limit);
+    },
+
+    async updateAwaitingHop2Bonds(correlationId, awaitingHop2ViaBonds, pendingForwardApprovals) {
+      return withSerializedWrite(async () => {
+        const file = await readFileJson(path);
+        const idx = file.sessions.findIndex((row) => row.correlationId === correlationId);
+        if (idx < 0) return undefined;
+        const now = new Date().toISOString();
+        const updated: MultiHopDiscoverySession = {
+          ...file.sessions[idx]!,
+          updatedAt: now,
+          awaitingHop2ViaBonds,
+          pendingForwardApprovals,
+        };
+        file.sessions[idx] = updated;
+        await writeFileJson(file);
+        return updated;
+      });
     },
   };
 }

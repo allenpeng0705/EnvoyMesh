@@ -27,6 +27,7 @@ const KIND_LABEL: Record<AgentActivityRecord["kind"], string> = {
   share_proposed: "Share proposed",
   approval_needed: "Needs approval",
   report_received: "Report",
+  commerce_receipt: "Commerce receipt",
 };
 
 type DateRangePreset = "all" | "today" | "7d" | "custom";
@@ -130,6 +131,18 @@ function ActivityDetailPanel(props: {
         </button>
       </div>
       <p className="field-desc">{props.row.summary}</p>
+      {props.row.kind === "commerce_receipt" && props.row.evidence && props.row.evidence.length > 0 && (
+        <dl className="settings-list" style={{ marginBottom: "12px" }}>
+          {props.row.evidence.map((item) => (
+            <div key={`${item.type}-${item.ref}`} className="profile-info-row">
+              <dt>{item.type}</dt>
+              <dd>
+                <code className="peer-id-display">{item.ref}</code>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
       {loading ? (
         <p className="field-desc">Loading audit trace…</p>
       ) : (

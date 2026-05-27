@@ -77,6 +77,8 @@ export interface NodeServiceClient {
   // Identity
   getProfile(): Promise<NodeProfile>;
   getOwnerDidPresentation(): Promise<import("@envoymesh/api").OwnerDidPresentation>;
+  resolveDidImport(input: string): Promise<import("@envoymesh/api").ResolveDidImportResult>;
+  cacheDidContactKey(params: { ownerId: string; publicKeyPem: string }): Promise<{ ok: boolean; reason?: string }>;
   getPeerReputationSummary(peerOwnerId: string): Promise<import("@envoymesh/api").PeerReputationSummary>;
   getHumanProfile(): Promise<HumanProfile | undefined>;
   updateHumanProfile(input: CreateHumanProfileInput): Promise<HumanProfile>;
@@ -106,6 +108,12 @@ export interface NodeServiceClient {
   readLibraryItemContent(params: ReadLibraryItemContentParams): Promise<ReadLibraryItemContentResult>;
   listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
   listAgentActivity(params?: import("@envoymesh/api").ListAgentActivityParams): Promise<import("@envoymesh/api").AgentActivityRecord[]>;
+  listCommerceReceipts(
+    params?: import("@envoymesh/api").ListCommerceReceiptsParams,
+  ): Promise<import("@envoymesh/api").CommerceReceiptRecord[]>;
+  recordCommerceReceipt(
+    params: import("@envoymesh/api").RecordCommerceReceiptParams,
+  ): Promise<import("@envoymesh/api").CommerceReceiptRecord>;
   listAuditEvents(params?: import("@envoymesh/api").ListAuditEventsParams): Promise<import("@envoymesh/api").AuditEventSummary[]>;
   listTaskJournalEntries(params?: import("@envoymesh/api").ListTaskJournalParams): Promise<import("@envoymesh/api").TaskJournalSummary[]>;
   listAgentCards(): Promise<import("@envoymesh/api").CachedAgentCardSummary[]>;
@@ -306,6 +314,12 @@ function createWsNodeServiceClient(
 
     async getProfile() { return wsClient.rpc("getProfile"); },
     async getOwnerDidPresentation() { return wsClient.rpc("getOwnerDidPresentation"); },
+    async resolveDidImport(input: string) {
+      return wsClient.rpc("resolveDidImport", { input }) as Promise<import("@envoymesh/api").ResolveDidImportResult>;
+    },
+    async cacheDidContactKey(params: { ownerId: string; publicKeyPem: string }) {
+      return wsClient.rpc("cacheDidContactKey", params) as Promise<{ ok: boolean; reason?: string }>;
+    },
     async getPeerReputationSummary(peerOwnerId: string) {
       return wsClient.rpc("getPeerReputationSummary", { peerOwnerId }) as Promise<
         import("@envoymesh/api").PeerReputationSummary
@@ -359,6 +373,16 @@ function createWsNodeServiceClient(
     async listAgentActivity(params?: import("@envoymesh/api").ListAgentActivityParams) {
       return wsClient.rpc("listAgentActivity", (params ?? {}) as Record<string, unknown>) as Promise<
         import("@envoymesh/api").AgentActivityRecord[]
+      >;
+    },
+    async listCommerceReceipts(params?: import("@envoymesh/api").ListCommerceReceiptsParams) {
+      return wsClient.rpc("listCommerceReceipts", (params ?? {}) as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").CommerceReceiptRecord[]
+      >;
+    },
+    async recordCommerceReceipt(params: import("@envoymesh/api").RecordCommerceReceiptParams) {
+      return wsClient.rpc("recordCommerceReceipt", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").CommerceReceiptRecord
       >;
     },
     async listAuditEvents(params?: import("@envoymesh/api").ListAuditEventsParams) {

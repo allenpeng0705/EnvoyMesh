@@ -28,7 +28,8 @@ export type AgentActivityKind =
   | "friend_autopilot_pass"
   | "share_proposed"
   | "approval_needed"
-  | "report_received";
+  | "report_received"
+  | "commerce_receipt";
 
 export interface AgentActivityEvidence {
   type: string;

@@ -73,6 +73,8 @@ export type RpcMethods =
   // Identity
   | "getProfile"
   | "getOwnerDidPresentation"
+  | "resolveDidImport"
+  | "cacheDidContactKey"
   | "getPeerReputationSummary"
   | "getHumanProfile"
   | "updateHumanProfile"
@@ -96,6 +98,8 @@ export type RpcMethods =
   | "readLibraryItemContent"
   | "listChatHistory"
   | "listAgentActivity"
+  | "listCommerceReceipts"
+  | "recordCommerceReceipt"
   | "listAuditEvents"
   | "listTaskJournalEntries"
   | "listAgentCards"

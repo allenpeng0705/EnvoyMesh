@@ -10,6 +10,14 @@ import type {
 } from "@envoymesh/identity";
 import type { DocumentAgentTurnResult } from "./document-agent-loop.js";
 import type { OwnerDidPresentation } from "./owner-did-presentation.js";
+import type { ResolveDidImportResult, ResolvedDidImport } from "./did-import.js";
+import type {
+  CommerceReceiptRecord,
+  ListCommerceReceiptsParams,
+  RecordCommerceReceiptParams,
+} from "./commerce-receipt.js";
+export type { ResolveDidImportResult, ResolvedDidImport };
+export type { CommerceReceiptRecord, ListCommerceReceiptsParams, RecordCommerceReceiptParams };
 import type { RagIndexProgress, RagIndexStatus } from "./rag-index-status.js";
 import type { TransferStatus } from "./transfer-status.js";
 import type {
@@ -209,7 +217,8 @@ export type AgentActivityKind =
   | "friend_autopilot_pass"
   | "share_proposed"
   | "approval_needed"
-  | "report_received";
+  | "report_received"
+  | "commerce_receipt";
 
 export interface AgentActivityEvidence {
   type: string;
@@ -757,6 +766,7 @@ export interface MultiHopDiscoverySessionView {
   updatedAt: string;
   bondsQueried: number;
   pendingForwardApprovals: number;
+  awaitingHop2ViaBonds?: string[];
   matches: MultiHopDiscoveryMatch[];
 }
 
@@ -848,6 +858,16 @@ export interface NodeService {
    * Portable W3C did:key presentation for the owner (read-only; envoy:owner id remains canonical).
    */
   getOwnerDidPresentation(): OwnerDidPresentation;
+
+  /**
+   * Resolve external `did:key` or JSON DID document to envoy owner id + PEM (no WAN gateway).
+   */
+  resolveDidImport(input: string): Promise<ResolveDidImportResult>;
+
+  /**
+   * Store a contact owner public key for bonded DID search lookup.
+   */
+  cacheDidContactKey(params: { ownerId: string; publicKeyPem: string }): Promise<{ ok: boolean; reason?: string }>;
 
   /**
    * Local reputation score + opt-in anchor attestations for a bonded peer.
@@ -995,6 +1015,12 @@ export interface NodeService {
    */
   listAgentActivity(params?: ListAgentActivityParams): Promise<AgentActivityRecord[]>;
 
+  /** Story E receipt-only ledger (local JSON — no payment rail). */
+  listCommerceReceipts(params?: ListCommerceReceiptsParams): Promise<CommerceReceiptRecord[]>;
+
+  /** Record outbound delivery receipt for a vault document (links task + contentHash/CID). */
+  recordCommerceReceipt(params: RecordCommerceReceiptParams): Promise<CommerceReceiptRecord>;
+
   /** Filtered audit trail for Activity drill-down (summaries only). */
   listAuditEvents(params?: ListAuditEventsParams): Promise<AuditEventSummary[]>;
 
@@ -1074,6 +1100,7 @@ export interface NodeService {
       matchedCapabilities: string[];
       matchedTagHashes: string[];
     }>;
+    forwardPendingAck?: boolean;
   }): Promise<void>;
 
   /** Push yjs CRDT delta to paired owner devices (sync.state). */

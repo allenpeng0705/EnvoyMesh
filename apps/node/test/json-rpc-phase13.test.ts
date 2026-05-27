@@ -211,6 +211,19 @@ describe("routeRpcMethod — Phase 13 NodeServiceImpl integration", () => {
     expect(presentation.did).toMatch(/^did:key:z/);
   });
 
+  it("resolveDidImport resolves owner did:key presentation", async () => {
+    const node = createNode();
+    const presentation = (await routeRpcMethod(node, "getOwnerDidPresentation", {})) as {
+      did: string;
+      ownerId: string;
+    };
+    const resolved = (await routeRpcMethod(node, "resolveDidImport", {
+      input: presentation.did,
+    })) as { ok: boolean; resolved?: { ownerId: string } };
+    expect(resolved.ok).toBe(true);
+    expect(resolved.resolved?.ownerId).toBe(presentation.ownerId);
+  });
+
   it("getPeerReputationSummary returns local and anchor attestations shape", async () => {
     const node = createNode();
     const profile = await node.getProfile();

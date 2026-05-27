@@ -25,6 +25,10 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
   const [multiHopLoading, setMultiHopLoading] = useState(false);
   const [multiHopSession, setMultiHopSession] = useState<import("@envoymesh/api").MultiHopDiscoverySessionView | null>(null);
   const [multiHopCorrelationId, setMultiHopCorrelationId] = useState<string | null>(null);
+  const [didImportInput, setDidImportInput] = useState("");
+  const [didImportBusy, setDidImportBusy] = useState(false);
+  const [didImportResult, setDidImportResult] = useState<import("@envoymesh/api").ResolvedDidImport | null>(null);
+  const [didImportError, setDidImportError] = useState<string | null>(null);
 
   useEffect(() => {
     void nodeService.runCapabilityDiscovery({ find: true }).catch(() => {
@@ -63,6 +67,33 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
       window.clearInterval(poll);
     };
   }, [nodeService, multiHopCorrelationId]);
+
+  const handleDidImport = async () => {
+    const input = didImportInput.trim();
+    if (!input) return;
+    setDidImportBusy(true);
+    setDidImportError(null);
+    setDidImportResult(null);
+    try {
+      const result = await nodeService.resolveDidImport(input);
+      if (!result.ok) {
+        setDidImportError(result.reason ?? "Could not resolve DID");
+        return;
+      }
+      setDidImportResult(result.resolved);
+      const cached = await nodeService.cacheDidContactKey({
+        ownerId: result.resolved.ownerId,
+        publicKeyPem: result.resolved.publicKeyPem,
+      });
+      if (!cached.ok) {
+        setDidImportError(cached.reason ?? "Resolved but could not cache key");
+      }
+    } catch (error) {
+      setDidImportError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDidImportBusy(false);
+    }
+  };
 
   const handleSearch = async (overrideQuery?: string) => {
     const effectiveQuery = (overrideQuery ?? searchQuery).trim();
@@ -461,6 +492,9 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                           </p>
                         )}
                       </div>
+                      <button type="button" onClick={() => void handleSayHello(row.peerId)}>
+                        Say Hello
+                      </button>
                     </li>
                   ))
                 )}
@@ -469,10 +503,42 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
           )}
 
           {searchMode === "did" && !searchQuery && (
-            <p className="library-view-hint" style={{ marginTop: "0.75rem" }}>
-              Resolves <strong>bonded contacts only</strong> from a <code>did:key</code> or <code>envoy:owner:</code> id.
-              Copy your DID from Profile → Identity. WAN resolver import remains parked.
-            </p>
+            <>
+              <p className="library-view-hint" style={{ marginTop: "0.75rem" }}>
+                Resolves <strong>bonded contacts</strong> from a cached <code>did:key</code> or search by id above.
+                Import an external wallet DID document or <code>did:key</code> below to cache keys for lookup.
+              </p>
+              <div className="search-bar" style={{ marginTop: "0.75rem", flexDirection: "column", alignItems: "stretch" }}>
+                <textarea
+                  className="search-input"
+                  rows={3}
+                  placeholder="Paste did:key:z… or JSON DID document"
+                  value={didImportInput}
+                  onChange={(e) => setDidImportInput(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="search-btn"
+                  disabled={didImportBusy || !didImportInput.trim()}
+                  onClick={() => void handleDidImport()}
+                  style={{ marginTop: "0.5rem" }}
+                >
+                  {didImportBusy ? "Resolving…" : "Import DID for lookup"}
+                </button>
+                {didImportError && (
+                  <p className="settings-diagnostics-error" style={{ marginTop: "0.5rem" }}>
+                    {didImportError}
+                  </p>
+                )}
+                {didImportResult && (
+                  <div className="library-view-hint" style={{ marginTop: "0.5rem" }}>
+                    <strong>Resolved</strong> — {didImportResult.did}
+                    <br />
+                    Owner: <code>{didImportResult.ownerId}</code>
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
           {!morningReportLoading && morningReport && morningReport.length > 0 && (
@@ -485,6 +551,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                       <strong>{entry.ownerId.slice(0, 16)}…</strong>
                       <span className="result-username">
                         score={entry.score} · trust={entry.trustLevel} · matches={entry.discoveryMatchCount}
+                        {entry.hopDistance !== undefined ? ` · hop=${entry.hopDistance}` : ""}
                       </span>
                       <p className="library-view-hint">{entry.reason}</p>
                     </div>

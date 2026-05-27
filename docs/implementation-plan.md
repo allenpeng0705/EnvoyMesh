@@ -1101,13 +1101,16 @@ Tasks:
 
 ## Current Milestone
 
-Milestone: **Phases 0–15 complete** — Core protocol through Trust mode, mobile Social + in-process node, IPFS/Helia export, Phase 13 actor disclosure + Activity, Phase 14 friend autopilot + knowledge syndication, Phase 15 reach (WAN invite + sign-off ledger), discovery UX, H2A channel, platform scale gate. **Active:** [Phase 15E scoping](./parked-backlog-15e.md) — parked backlog direction docs.
+Milestone: **Phases 0–15 complete** — Core protocol through Trust mode, mobile Social + in-process node, IPFS/Helia export, Phase 13 actor disclosure + Activity, Phase 14 friend autopilot + knowledge syndication, Phase 15 reach (WAN invite + sign-off ledger), discovery UX, H2A channel, platform scale gate. **15E multi-hop (US-MH1–4) shipped** — see [parked-backlog-15e.md](./parked-backlog-15e.md) for remaining optional items.
 
 ### Next planning pulls
 
-1. **15E scoping** — review scope docs; pick first un-park candidate with product (likely DID presentation or distributed state spike).
-2. **WAN staging** — complete full §4 two-NAT `relay.checkin`/`relay.lookup` row in [wan-connectivity-signoff.md](./wan-connectivity-signoff.md) before release tag.
-3. **Stories D–E** — add scenario IDs when commerce/multi-hop economics approved.
+1. **Harden multi-hop discovery** — hop-2 E2E, mobile parity, session-store serialization, `forwardPendingAck`, **US-MH2+ referral attestation** (done 2026-05-27).
+2. **Structural** — `node-service-discovery.ts` / `node-service-sync.ts` extracted from `node-service-impl.ts` (done 2026-05-27); WAN/connectivity extraction optional next.
+3. **Physical two-NAT §4 row** — operator tooling shipped (`connectivity-signoff --checklist|--complete`, `./scripts/wan-two-nat-signoff.sh`, Settings wizard); fill pending ledger row when two home routers available.
+4. **DID local import** — shipped (`resolveDidImport` + Search By DID); WAN gateway resolver still open.
+5. **Contact compose + notes CRDT** — shipped (yjs compose + loro notes/tags per contact + sync.state).
+6. **Story E commerce receipts** — receipt-only slice shipped; payment rail still parked.
 
 ### Phase 9 Architecture Overview
 
@@ -2298,7 +2301,9 @@ These items are **tracked** but **explicitly deferred** until scenarios + EMP ec
 - `[x]` **US-MH4 aggregation UX:** `multihop-discovery-sessions.json`, `getMultiHopDiscoverySession`, hop-2 relay-back + Search live refresh.
 - `[x]` **CRDT wire sync:** `sync.state` payload + `sendSyncStateUpdate` + `crdt:sync` WS event; Assistant draft pushes/applies deltas.
 - `[x]` **§4 staging runbook:** [wan-two-nat-staging-runbook.md](./wan-two-nat-staging-runbook.md) + `scripts/wan-relay-signoff-staging.sh`.
-- `[ ]` **Un-park next:** Story E commerce receipts; morning-report hop-2 ranking; optional physical two-NAT hardware row.
+- `[x]` **Contact notes CRDT:** loro text + tags per contact ([contact-notes-crdt.ts](../apps/social/src/lib/contact-notes-crdt.ts)) + Contact chat panel UI.
+- `[x]` **§4 two-NAT operator tooling:** `wan-two-nat-checklist.ts`, `connectivity-signoff --checklist|--complete`, `./scripts/wan-two-nat-signoff.sh`, Settings Physical two-NAT wizard.
+- `[ ]` **Un-park next:** morning-report hop-2 ranking; **physical two-NAT hardware ledger row** when two routers available.
 
 **Do not** count 15E toward Phase 15 completion.
 

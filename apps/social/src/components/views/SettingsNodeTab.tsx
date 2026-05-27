@@ -13,6 +13,9 @@ import {
   DEFAULT_CLIENT_MAX_CONNECTIONS,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
   defaultBootstrapPresetsForDiscoveryProfile,
+  formatWanSignOffEvidenceReport,
+  formatWanTwoNatOperatorChecklist,
+  WAN_TWO_NAT_CHECKLIST_STEPS,
 } from "@envoymesh/api";
 import type {
   DiscoveryProfile,
@@ -31,6 +34,20 @@ import type {
   AgentActivityDomain,
   AgentInteractionMode,
 } from "@envoymesh/api";
+
+const WAN_TWO_NAT_CHECKLIST_STORAGE = "envoymesh:wan-two-nat-checklist:v1";
+
+function loadWanTwoNatChecklistDone(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(WAN_TWO_NAT_CHECKLIST_STORAGE);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as Record<string, boolean>;
+  } catch {
+    return {};
+  }
+}
 
 export function SettingsNodeTab() {
   const modelProviderUiScope = useModelProviderUiScope();
@@ -63,6 +80,22 @@ export function SettingsNodeTab() {
   const [connectivityDiagnostics, setConnectivityDiagnostics] = useState<ConnectivityDiagnostics | null>(null);
   const [connectivityDiagLoading, setConnectivityDiagLoading] = useState(false);
   const [connectivityDiagError, setConnectivityDiagError] = useState<string | null>(null);
+  const [twoNatChecklistDone, setTwoNatChecklistDone] = useState<Record<string, boolean>>(() =>
+    loadWanTwoNatChecklistDone(),
+  );
+  const [twoNatNatAPeer, setTwoNatNatAPeer] = useState("");
+  const [twoNatNatBPeer, setTwoNatNatBPeer] = useState("");
+  const [twoNatRelayAddr, setTwoNatRelayAddr] = useState("");
+  const [twoNatChatVerified, setTwoNatChatVerified] = useState(false);
+  const [twoNatAutomatedOk, setTwoNatAutomatedOk] = useState(false);
+
+  const toggleTwoNatStep = useCallback((stepId: string, checked: boolean) => {
+    setTwoNatChecklistDone((prev) => {
+      const next = { ...prev, [stepId]: checked };
+      localStorage.setItem(WAN_TWO_NAT_CHECKLIST_STORAGE, JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   // Sync local state when nodeConfig loads/changes (async load after mount)
   useEffect(() => {
@@ -666,8 +699,157 @@ export function SettingsNodeTab() {
                 </ol>
               </details>
             )}
+            <button
+              type="button"
+              className="settings-button"
+              style={{ marginTop: "12px" }}
+              onClick={() => {
+                const report = formatWanSignOffEvidenceReport({
+                  physicalTwoNat: true,
+                  relaySignOff: "pending",
+                  diagnostics: {
+                    nodeOnline: connectivityDiagnostics.nodeOnline,
+                    stageD: connectivityDiagnostics.stageD,
+                    axes: connectivityDiagnostics.axes,
+                  },
+                });
+                void navigator.clipboard.writeText(report);
+              }}
+            >
+              Copy physical two-NAT sign-off evidence
+            </button>
           </div>
         )}
+      </section>
+
+      <section className="settings-section">
+        <h3>Physical two-NAT sign-off</h3>
+        <p className="section-desc">
+          Operator checklist for §4 WAN sign-off when two home routers are available. Progress is saved locally.
+        </p>
+        <ol className="settings-list" style={{ paddingLeft: "1.25rem", marginTop: "8px" }}>
+          {WAN_TWO_NAT_CHECKLIST_STEPS.map((step) => (
+            <li key={step.id} style={{ marginBottom: "10px" }}>
+              <label style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
+                <input
+                  type="checkbox"
+                  checked={twoNatChecklistDone[step.id] === true}
+                  onChange={(e) => toggleTwoNatStep(step.id, e.target.checked)}
+                />
+                <span>
+                  <strong>{step.title}</strong>
+                  <br />
+                  <span className="toggle-desc">{step.detail}</span>
+                </span>
+              </label>
+            </li>
+          ))}
+        </ol>
+        <div className="settings-form-row" style={{ marginTop: "12px" }}>
+          <label>
+            Relay multiaddr
+            <input
+              type="text"
+              className="settings-input"
+              placeholder="/ip4/…/tcp/4001/p2p/…"
+              value={twoNatRelayAddr}
+              onChange={(e) => setTwoNatRelayAddr(e.target.value)}
+            />
+          </label>
+        </div>
+        <div className="settings-form-row">
+          <label>
+            NAT A peerId
+            <input
+              type="text"
+              className="settings-input"
+              value={twoNatNatAPeer}
+              onChange={(e) => setTwoNatNatAPeer(e.target.value)}
+            />
+          </label>
+          <label>
+            NAT B peerId
+            <input
+              type="text"
+              className="settings-input"
+              value={twoNatNatBPeer}
+              onChange={(e) => setTwoNatNatBPeer(e.target.value)}
+            />
+          </label>
+        </div>
+        <div className="settings-toggle-row" style={{ marginTop: "8px" }}>
+          <label style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={twoNatAutomatedOk}
+              onChange={(e) => setTwoNatAutomatedOk(e.target.checked)}
+            />
+            Automated baseline passed (wan-relay-signoff-e2e)
+          </label>
+        </div>
+        <div className="settings-toggle-row">
+          <label style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={twoNatChatVerified}
+              onChange={(e) => setTwoNatChatVerified(e.target.checked)}
+            />
+            Manual two-NAT signed chat verified
+          </label>
+        </div>
+        <button
+          type="button"
+          className="settings-button"
+          style={{ marginTop: "12px" }}
+          onClick={() => {
+            const text = formatWanTwoNatOperatorChecklist({
+              relayAddr: twoNatRelayAddr.trim() || undefined,
+              natAPeerId: twoNatNatAPeer.trim() || undefined,
+              natBPeerId: twoNatNatBPeer.trim() || undefined,
+              automatedBaselineOk: twoNatAutomatedOk,
+              chatVerified: twoNatChatVerified,
+            });
+            void navigator.clipboard.writeText(text);
+          }}
+        >
+          Copy operator checklist
+        </button>
+        <button
+          type="button"
+          className="settings-button"
+          style={{ marginTop: "8px", marginLeft: "8px" }}
+          disabled={!twoNatChatVerified || !twoNatAutomatedOk}
+          onClick={() => {
+            const report = formatWanSignOffEvidenceReport({
+              physicalTwoNat: true,
+              relaySignOff: twoNatChatVerified ? "ok" : "pending",
+              relayAddr: twoNatRelayAddr.trim() || undefined,
+              peerId:
+                twoNatNatAPeer.trim() && twoNatNatBPeer.trim()
+                  ? `${twoNatNatAPeer.trim()}↔${twoNatNatBPeer.trim()}`
+                  : twoNatNatAPeer.trim() || undefined,
+              notes: [
+                twoNatRelayAddr.trim() ? `relay=${twoNatRelayAddr.trim()}` : null,
+                twoNatNatAPeer.trim() ? `natA=${twoNatNatAPeer.trim()}` : null,
+                twoNatNatBPeer.trim() ? `natB=${twoNatNatBPeer.trim()}` : null,
+                twoNatAutomatedOk ? "wan-relay-signoff-e2e green" : null,
+                twoNatChatVerified ? "manual two-NAT signed chat verified" : null,
+              ]
+                .filter(Boolean)
+                .join("; "),
+              diagnostics: connectivityDiagnostics
+                ? {
+                    nodeOnline: connectivityDiagnostics.nodeOnline,
+                    stageD: connectivityDiagnostics.stageD,
+                    axes: connectivityDiagnostics.axes,
+                  }
+                : undefined,
+            });
+            void navigator.clipboard.writeText(report);
+          }}
+        >
+          Copy completed ledger row
+        </button>
       </section>
 
       <section className="settings-section">
