@@ -90,6 +90,40 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.updateHumanProfile(input);
   }
 
+  async setPublicProfileThumbnail(params: Parameters<NodeService["setPublicProfileThumbnail"]>[0]) {
+    return this._ns.setPublicProfileThumbnail(params);
+  }
+
+  async upsertProfileGalleryPhoto(params: Parameters<NodeService["upsertProfileGalleryPhoto"]>[0]) {
+    return this._ns.upsertProfileGalleryPhoto(params);
+  }
+
+  async removeProfileGalleryPhoto(params: Parameters<NodeService["removeProfileGalleryPhoto"]>[0]) {
+    return this._ns.removeProfileGalleryPhoto(params);
+  }
+
+  async updateProfileGalleryPhotoVisibility(
+    params: Parameters<NodeService["updateProfileGalleryPhotoVisibility"]>[0],
+  ) {
+    return this._ns.updateProfileGalleryPhotoVisibility(params);
+  }
+
+  async getPeerProfile(ownerId: string) {
+    return this._ns.getPeerProfile(ownerId);
+  }
+
+  async listPeerProfiles() {
+    return this._ns.listPeerProfiles();
+  }
+
+  async requestPeerProfile(ownerId: string) {
+    return this._ns.requestPeerProfile(ownerId);
+  }
+
+  async syncProfileToBonds() {
+    return this._ns.syncProfileToBonds();
+  }
+
   async getAgentIdentity() {
     return this._ns.getAgentIdentity();
   }

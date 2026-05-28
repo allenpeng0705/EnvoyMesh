@@ -19,8 +19,11 @@ import {
   DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_OVERLAP_CHARS,
   DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_SIZE_CHARS,
   DEFAULT_DOCUMENT_AUTONOMY_POLICY,
+  DEFAULT_PROFILE_MEDIA_POLICY,
   normalizeDocumentAutonomyPolicy,
+  normalizeProfileMediaPolicy,
   type AgentIdentityDocument,
+  type ProfileMediaPolicy,
 } from "@envoymesh/api";
 
 // ---------------------------------------------------------------------------
@@ -452,6 +455,7 @@ function defaultAiSettings(): AiSettings {
     defaultModeForNewContacts: "manual",
     rules: [],
     documentAutonomy: { ...DEFAULT_DOCUMENT_AUTONOMY_POLICY },
+    profileMedia: { ...DEFAULT_PROFILE_MEDIA_POLICY },
     knowledgeBase: { ...DEFAULT_AI_KNOWLEDGE_BASE },
   };
 }
@@ -461,6 +465,7 @@ export function SettingsAITab() {
   const { nodeConfig, refreshNodeConfig } = useNodeState();
   const aiSettings = nodeConfig?.aiSettings ?? defaultAiSettings();
   const documentAutonomy = normalizeDocumentAutonomyPolicy(aiSettings.documentAutonomy);
+  const profileMedia = normalizeProfileMediaPolicy(aiSettings.profileMedia);
 
   const [ruleForm, setRuleForm] = useState<RuleFormState>(EMPTY_RULE_FORM);
 
@@ -650,6 +655,66 @@ export function SettingsAITab() {
           await updateAiSettings({ knowledgeBase });
         }}
       />
+
+      <h4>Profile gallery photos</h4>
+      <p className="field-desc">
+        Your public thumbnail is always visible on your signed profile. These settings apply only to extra gallery photos in Profile → Photos.
+      </p>
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>Allow agent to share gallery photos</strong>
+          <span className="toggle-desc">When off, gallery photos are never sent by Envoy AI</span>
+        </div>
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={profileMedia.allowAgentShareGalleryPhotos}
+            onChange={async (e) => {
+              await updateAiSettings({
+                profileMedia: { ...profileMedia, allowAgentShareGalleryPhotos: e.target.checked },
+              });
+            }}
+          />
+          <span className="slider" />
+        </label>
+      </div>
+      <div className="form-group">
+        <label>Gallery share autonomy tier</label>
+        <select
+          className="settings-select"
+          value={profileMedia.maxAutonomousShareTier}
+          disabled={!profileMedia.allowAgentShareGalleryPhotos}
+          onChange={async (e) => {
+            const tier = Number(e.target.value) as ProfileMediaPolicy["maxAutonomousShareTier"];
+            await updateAiSettings({
+              profileMedia: { ...profileMedia, maxAutonomousShareTier: tier },
+            });
+          }}
+        >
+          <option value={0}>Tier 0 — propose in Inbox only</option>
+          <option value={2}>Tier 2 — auto-share when bond and visibility allow</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Minimum gallery visibility for agent share</label>
+        <select
+          className="settings-select"
+          value={profileMedia.autonomousShareMinVisibility}
+          disabled={!profileMedia.allowAgentShareGalleryPhotos}
+          onChange={async (e) => {
+            await updateAiSettings({
+              profileMedia: {
+                ...profileMedia,
+                autonomousShareMinVisibility: e.target.value as ProfileMediaPolicy["autonomousShareMinVisibility"],
+              },
+            });
+          }}
+        >
+          <option value="public">Public-labelled photos</option>
+          <option value="referred">Public + referred-labelled</option>
+          <option value="direct">Direct-only photos</option>
+        </select>
+      </div>
 
       <h4>Document Autonomy</h4>
       <p className="field-desc">

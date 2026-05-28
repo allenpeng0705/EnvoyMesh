@@ -69,6 +69,7 @@ export class WsServer {
       nodeServiceImpl.on("agent:activity", (data: unknown) => this.emitEvent("agent:activity", data));
       nodeServiceImpl.on("bond:established", (data: unknown) => this.emitEvent("bond:established", data));
       nodeServiceImpl.on("bond:revoked", (data: unknown) => this.emitEvent("bond:revoked", data));
+      nodeServiceImpl.on("profile:updated", (data: unknown) => this.emitEvent("profile:updated", data));
       nodeServiceImpl.on("node:status", (data: unknown) => this.emitEvent("node:status", data));
       nodeServiceImpl.on("node:online", (data: unknown) => this.emitEvent("node:online", data));
       nodeServiceImpl.on("node:offline", (data: unknown) => this.emitEvent("node:offline", data));
@@ -180,6 +181,7 @@ export class WsServer {
       "agent:activity",
       "bond:established",
       "bond:revoked",
+      "profile:updated",
       "node:status",
       "node:online",
       "node:offline",

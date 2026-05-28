@@ -78,6 +78,14 @@ export type RpcMethods =
   | "getPeerReputationSummary"
   | "getHumanProfile"
   | "updateHumanProfile"
+  | "setPublicProfileThumbnail"
+  | "upsertProfileGalleryPhoto"
+  | "removeProfileGalleryPhoto"
+  | "updateProfileGalleryPhotoVisibility"
+  | "getPeerProfile"
+  | "listPeerProfiles"
+  | "requestPeerProfile"
+  | "syncProfileToBonds"
   | "getAgentIdentity"
   | "updateAgentIdentity"
   // Bond Management
@@ -497,7 +505,16 @@ export interface AiSettings {
   knowledgeBase?: import("./ai-knowledge-base.js").AiKnowledgeBaseSettings;
   /** Document publish/share autonomy for Envoy AI (ADB-F). Default: proposals-only tier 0. */
   documentAutonomy?: import("./document-autonomy.js").DocumentAutonomyPolicy;
+  /** Gallery photo sharing by Envoy AI (thumbnail is always public on profile). */
+  profileMedia?: import("./profile-media.js").ProfileMediaPolicy;
 }
+
+export type { ProfileMediaPolicy, ProfileGalleryPhotoVisibility } from "./profile-media.js";
+export type {
+  ProfilePhotoRef,
+  ProfileGalleryPhoto,
+  ProfilePhotoMime,
+} from "./profile-media.js";
 
 export type { DocumentAutonomyPolicy } from "./document-autonomy.js";
 

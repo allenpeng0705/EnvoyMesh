@@ -27,7 +27,9 @@
     "typecheck": "tsc -b",
     "smoke:multimachine:guide": "npm run cli -w @envoymesh/node -- smoke-checklist --machine-a primary --machine-b satellite",
     "smoke:local": "npm run smoke:local-two-node -w @envoymesh/node",
-    "smoke:phase13": "npm run smoke:phase13-two-node -w @envoymesh/node"
+    "smoke:phase13": "npm run smoke:phase13-two-node -w @envoymesh/node",
+    "smoke:openclaw-bridge": "npm run smoke:openclaw-bridge -w @envoymesh/node",
+    "smoke:openclaw-bridge:live": "npm run smoke:openclaw-bridge:live -w @envoymesh/node"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

@@ -1263,6 +1263,39 @@
   max-width: none;
 }
 
+/* Profile Photos | About (shared ProfilePhotosTab / ProfileAboutTab) */
+.mv-profile-subtabs {
+  margin: var(--space-2) var(--space-4) var(--space-3);
+}
+
+.mv-profile-photos .profile-photos-hero-btn {
+  min-height: 44px;
+}
+
+.mv-profile-photos .profile-gallery-card .btn-small,
+.mv-profile-photos .profile-gallery-header button {
+  min-height: 44px;
+}
+
+.mv-profile-links {
+  margin-top: var(--space-4);
+}
+
+.mv-profile-about .profile-header--tappable {
+  margin: var(--space-2) var(--space-4);
+}
+
+.photo-picker-backdrop {
+  align-items: flex-end;
+  padding: 0;
+}
+
+.photo-picker-sheet {
+  max-width: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+}
+
 /* ==========================================================================
    Reduced motion
    ========================================================================== */

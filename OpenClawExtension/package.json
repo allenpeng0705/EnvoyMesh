@@ -1,0 +1,48 @@
+{
+  "name": "@openclaw/envoymesh",
+  "version": "2026.5.26",
+  "description": "EnvoyMesh P2P bridge channel plugin for OpenClaw",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/envoymesh/envoymesh",
+    "directory": "OpenClawExtension"
+  },
+  "type": "module",
+  "devDependencies": {
+    "@openclaw/plugin-sdk": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "setupEntry": "./setup-entry.ts",
+    "channel": {
+      "id": "envoymesh",
+      "label": "EnvoyMesh",
+      "selectionLabel": "EnvoyMesh (P2P Bridge)",
+      "docsPath": "/channels/envoymesh",
+      "docsLabel": "envoymesh",
+      "blurb": "Receive P2P chat from an EnvoyMesh node bridge and reply back to the mesh.",
+      "order": 91
+    },
+    "install": {
+      "npmSpec": "@openclaw/envoymesh",
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.4.10"
+    },
+    "compat": {
+      "pluginApi": ">=2026.5.26"
+    },
+    "build": {
+      "openclawVersion": "2026.5.26"
+    },
+    "release": {
+      "publishToClawHub": true,
+      "publishToNpm": true
+    }
+  },
+  "dependencies": {
+    "typebox": "1.1.38",
+    "zod": "4.4.3"
+  }
+}

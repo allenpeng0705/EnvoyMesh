@@ -410,6 +410,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       opts?: SendHelloOptions,
     ) => {
       await nodeService.sendHello(targetOwnerId, profile, message, opts);
+      void nodeService.requestPeerProfile(targetOwnerId).catch(() => {});
     },
     [nodeService],
   );

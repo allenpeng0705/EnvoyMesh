@@ -35,6 +35,34 @@ export async function routeRpcMethod(
       return ns.getHumanProfile();
     case "updateHumanProfile":
       return ns.updateHumanProfile(params as any);
+    case "setPublicProfileThumbnail":
+      return ns.setPublicProfileThumbnail({
+        contentBase64: String(params.contentBase64 ?? ""),
+        mimeType: params.mimeType as import("@envoymesh/api").SetPublicProfileThumbnailParams["mimeType"],
+      });
+    case "upsertProfileGalleryPhoto":
+      return ns.upsertProfileGalleryPhoto({
+        contentBase64: String(params.contentBase64 ?? ""),
+        mimeType: params.mimeType as import("@envoymesh/api").UpsertProfileGalleryPhotoParams["mimeType"],
+        visibility: params.visibility as import("@envoymesh/api").UpsertProfileGalleryPhotoParams["visibility"],
+        label: params.label != null ? String(params.label) : undefined,
+        photoId: params.photoId != null ? String(params.photoId) : undefined,
+      });
+    case "removeProfileGalleryPhoto":
+      return ns.removeProfileGalleryPhoto({ vaultRelativePath: String(params.vaultRelativePath ?? "") });
+    case "updateProfileGalleryPhotoVisibility":
+      return ns.updateProfileGalleryPhotoVisibility({
+        vaultRelativePath: String(params.vaultRelativePath ?? ""),
+        visibility: params.visibility as import("@envoymesh/api").UpdateProfileGalleryPhotoVisibilityParams["visibility"],
+      });
+    case "getPeerProfile":
+      return ns.getPeerProfile(String(params.ownerId ?? ""));
+    case "listPeerProfiles":
+      return ns.listPeerProfiles();
+    case "requestPeerProfile":
+      return ns.requestPeerProfile(String(params.ownerId ?? ""));
+    case "syncProfileToBonds":
+      return ns.syncProfileToBonds();
     case "getAgentIdentity":
       return ns.getAgentIdentity();
     case "updateAgentIdentity":

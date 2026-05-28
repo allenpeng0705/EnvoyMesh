@@ -1,0 +1,13 @@
+{
+  channels: {
+    envoymesh: {
+      enabled: true,
+      bridgeUrl: "http://127.0.0.1:3031/bridge/send",
+      bridgeSecret: "your-shared-secret",
+      inboundSecret: "your-shared-secret",
+      webhookPath: "/webhook/envoymesh",
+      dmPolicy: "allowlist",
+      allowedOwnerIds: ["envoy:owner:REPLACE_ME"],
+    },
+  },
+}

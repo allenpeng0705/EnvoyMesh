@@ -29,8 +29,18 @@ import {
 } from "@envoymesh/protocol";
 import { PUBLISHED_LIB_CAPABILITY } from "./discovery-inbound.js";
 import { runLibraryRequestShare } from "@envoymesh/api";
-import type { BondRecord, DiscoverPublishedLibraryPeerResult, DocumentAutonomyPolicy } from "@envoymesh/api";
-import { canAutonomousShareFile } from "@envoymesh/api";
+import type {
+  BondRecord,
+  DiscoverPublishedLibraryPeerResult,
+  DocumentAutonomyPolicy,
+  HumanProfile,
+  ProfileMediaPolicy,
+} from "@envoymesh/api";
+import {
+  canAgentAutonomousShareGalleryPhoto,
+  canAutonomousShareFile,
+  galleryPhotoShareSensitivity,
+} from "@envoymesh/api";
 
 /**
  * Sensitivity ceiling for a tool.
@@ -254,6 +264,25 @@ export class ToolRegistry {
         required: ["documentId"],
       },
       sensitivityCeiling: "public",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.share_profile_gallery_photo",
+      description:
+        "Share a profile gallery photo with a bonded contact (autonomous when Settings → AI profile media policy allows)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          targetOwnerId: { type: "string", description: "Recipient owner id" },
+          photoId: { type: "string", description: "Gallery photo id from your profile" },
+          vaultRelativePath: { type: "string", description: "Alternative: gallery vault path" },
+          summary: { type: "string", description: "Optional note for owner approval inbox" },
+        },
+        required: ["targetOwnerId"],
+      },
+      sensitivityCeiling: "friends",
       requiresApproval: false,
       isMeshTool: false,
     });
@@ -993,6 +1022,8 @@ export interface MeshToolContext {
   listPendingShareOffers?: () => Promise<unknown>;
   listAgentShareProposals?: () => Promise<unknown>;
   documentAutonomy?: DocumentAutonomyPolicy;
+  profileMedia?: ProfileMediaPolicy;
+  loadHumanProfile?: () => Promise<HumanProfile | undefined>;
   listPendingApprovals?: () => Promise<import("@envoymesh/api").PendingApprovalSummary[]>;
   approvePendingApproval?: (
     itemId: string,
@@ -1119,6 +1150,87 @@ export async function executeTool(
       return {
         ok: true,
         result: { documentId: documentId.trim(), published },
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.share_profile_gallery_photo") {
+      if (!context.submitAgentShareProposal || !context.loadHumanProfile) {
+        return {
+          ok: false,
+          error: "loadHumanProfile and submitAgentShareProposal must be configured",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const targetOwnerId = params.targetOwnerId as string | undefined;
+      const photoId = params.photoId as string | undefined;
+      const vaultRelativePath = params.vaultRelativePath as string | undefined;
+      if (!targetOwnerId?.trim()) {
+        return {
+          ok: false,
+          error: "targetOwnerId is required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const hp = await context.loadHumanProfile();
+      const gallery = hp?.galleryPhotos ?? [];
+      const photo = gallery.find(
+        (p) =>
+          (photoId?.trim() && p.photoId === photoId.trim()) ||
+          (vaultRelativePath?.trim() && p.vaultRelativePath === vaultRelativePath.trim()),
+      );
+      if (!photo) {
+        return {
+          ok: false,
+          error: "gallery photo not found on profile",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const bondLevel =
+        (await context.getBonds?.())?.find((b) => b.peerOwnerId === targetOwnerId.trim())?.level ?? "public";
+      const sensitivity = galleryPhotoShareSensitivity(photo.visibility);
+      if (
+        context.profileMedia &&
+        context.shareFile &&
+        canAgentAutonomousShareGalleryPhoto({
+          policy: context.profileMedia,
+          photo,
+          bondLevel,
+        })
+      ) {
+        await context.shareFile({
+          targetOwnerId: targetOwnerId.trim(),
+          vaultRelativePath: photo.vaultRelativePath,
+          sensitivity,
+        });
+        return {
+          ok: true,
+          result: {
+            autoShared: true,
+            targetOwnerId: targetOwnerId.trim(),
+            photoId: photo.photoId,
+            vaultRelativePath: photo.vaultRelativePath,
+          },
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const proposal = await context.submitAgentShareProposal({
+        targetOwnerId: targetOwnerId.trim(),
+        vaultRelativePath: photo.vaultRelativePath,
+        sensitivity,
+        summary: params.summary as string | undefined,
+      });
+      return {
+        ok: true,
+        result: proposal,
         toolName,
         correlationId,
         latencyMs: Date.now() - startTime,

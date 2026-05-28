@@ -56,6 +56,9 @@ export const EnvoyIntentSchema = z.enum([
   "broadcast.cancel",
   "task.feedback",
   "official.credential",
+  "profile.sync",
+  "profile.request",
+  "profile.response",
 ]);
 
 export const SensitivitySchema = z.enum(["public", "friends", "trusted", "private"]);
@@ -375,6 +378,26 @@ export type CapabilityUnion = z.infer<typeof CapabilityUnionSchema>;
  * Human profile fields that can be updated after initial setup.
  * Signed by the owner key so recipients can verify authenticity.
  */
+export const ProfilePhotoMimeSchema = z.enum(["image/jpeg", "image/png", "image/webp"]);
+
+export const ProfilePhotoRefSchema = z.object({
+  vaultRelativePath: z
+    .string()
+    .min(1)
+    .max(256)
+    .regex(/^profile\/(thumbnail\.[a-z]+|gallery\/[a-zA-Z0-9_-]+\.[a-z]+)$/),
+  contentSha256: z.string().regex(/^[a-f0-9]{64}$/i),
+  mimeType: ProfilePhotoMimeSchema,
+});
+
+export const ProfileGalleryPhotoVisibilitySchema = z.enum(["public", "referred", "direct"]);
+
+export const ProfileGalleryPhotoSchema = ProfilePhotoRefSchema.extend({
+  photoId: z.string().min(1).max(64),
+  label: z.string().max(80).optional(),
+  visibility: ProfileGalleryPhotoVisibilitySchema,
+});
+
 export const HumanProfilePayloadSchema = z.object({
   version: z.literal("0.1"),
   ownerId: z.string().min(1),
@@ -385,11 +408,19 @@ export const HumanProfilePayloadSchema = z.object({
   hobbies: z.array(z.string().min(1).max(50)).max(20).optional(),
   knowledge: z.array(z.string().min(1).max(100)).max(50).optional(),
   profileVisibility: z.enum(["public", "private"]).default("private"),
+  /** Always public when set — small avatar for discovery and contacts. */
+  publicThumbnail: ProfilePhotoRefSchema.optional(),
+  /** Additional photos; visibility per entry. */
+  galleryPhotos: z.array(ProfileGalleryPhotoSchema).max(12).optional(),
   // Rendezvous capabilities for peer discovery
   capabilities: z.array(CapabilityUnionSchema).max(20).optional(),
   updatedAt: z.string().datetime(),
   signature: z.string().min(1),
 });
+
+export type ProfilePhotoRef = z.infer<typeof ProfilePhotoRefSchema>;
+export type ProfileGalleryPhoto = z.infer<typeof ProfileGalleryPhotoSchema>;
+export type ProfileGalleryPhotoVisibility = z.infer<typeof ProfileGalleryPhotoVisibilitySchema>;
 
 export type HumanProfilePayload = z.infer<typeof HumanProfilePayloadSchema>;
 
@@ -402,6 +433,8 @@ export interface CreateHumanProfilePayloadInput {
   hobbies?: string[];
   knowledge?: string[];
   profileVisibility?: "public" | "private";
+  publicThumbnail?: z.infer<typeof ProfilePhotoRefSchema>;
+  galleryPhotos?: z.infer<typeof ProfileGalleryPhotoSchema>[];
   capabilities?: Array<{ tag: string } | { type: string; params?: Record<string, unknown>; confidence?: number } | { descriptor: string }>;
   ownerPrivateKeyPem: string;
 }
@@ -418,6 +451,8 @@ export function createHumanProfilePayload(input: CreateHumanProfilePayloadInput)
     hobbies: input.hobbies,
     knowledge: input.knowledge,
     profileVisibility: input.profileVisibility ?? "private",
+    publicThumbnail: input.publicThumbnail,
+    galleryPhotos: input.galleryPhotos,
     capabilities: input.capabilities,
     updatedAt: new Date().toISOString(),
   };
@@ -444,6 +479,8 @@ export const HumanProfileFragmentPayloadSchema = z.object({
   bio: z.string().max(500).optional(),
   hobbies: z.array(z.string().min(1).max(50)).max(10).optional(),
   tags: z.array(z.string().min(1).max(64)).max(20).optional(),
+  /** Copy of owner public thumbnail (always public). */
+  publicThumbnail: ProfilePhotoRefSchema.optional(),
   signature: z.string().min(1),
 });
 
@@ -657,6 +694,48 @@ export function createBondAcceptPayload(input: CreateBondAcceptPayloadInput): Bo
 
 export function parseBondAcceptPayload(input: unknown): BondAcceptPayload {
   return BondAcceptPayloadSchema.parse(input);
+}
+
+/** Inline thumbnail bytes for `profile.sync` (vault path on profile is verified via sha256). */
+export const ProfileThumbnailInlineSchema = z.object({
+  contentBase64: z.string().min(1),
+  mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+  contentSha256: z.string().min(1),
+});
+
+export type ProfileThumbnailInline = z.infer<typeof ProfileThumbnailInlineSchema>;
+
+/** Owner-signed profile broadcast to bonded peers (`profile.sync` / `profile.response`). */
+export const ProfileSyncPayloadSchema = z.object({
+  profile: HumanProfilePayloadSchema,
+  publicThumbnailInline: ProfileThumbnailInlineSchema.optional(),
+});
+
+export type ProfileSyncPayload = z.infer<typeof ProfileSyncPayloadSchema>;
+
+export function createProfileSyncPayload(
+  profile: HumanProfilePayload,
+  publicThumbnailInline?: ProfileThumbnailInline,
+): ProfileSyncPayload {
+  return ProfileSyncPayloadSchema.parse({ profile, publicThumbnailInline });
+}
+
+export function parseProfileSyncPayload(input: unknown): ProfileSyncPayload {
+  return ProfileSyncPayloadSchema.parse(input);
+}
+
+export const ProfileRequestPayloadSchema = z.object({
+  requesterOwnerId: z.string().min(1),
+});
+
+export type ProfileRequestPayload = z.infer<typeof ProfileRequestPayloadSchema>;
+
+export function createProfileRequestPayload(requesterOwnerId: string): ProfileRequestPayload {
+  return ProfileRequestPayloadSchema.parse({ requesterOwnerId });
+}
+
+export function parseProfileRequestPayload(input: unknown): ProfileRequestPayload {
+  return ProfileRequestPayloadSchema.parse(input);
 }
 
 export const DiscoveryReferralAttestationSchema = z.object({

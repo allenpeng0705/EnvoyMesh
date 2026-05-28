@@ -81,12 +81,14 @@ import type {
   RequestMultiHopDiscoveryResult,
   MultiHopDiscoveryMatch,
   MultiHopDiscoverySessionView,
+  PeerProfileView,
 } from "@envoymesh/api";
 import type { DocumentAgentTurnResult } from "@envoymesh/api";
 import {
   DEFAULT_RAG_INDEX_STATUS,
   runDocumentAgentTurn as runDocumentAgentTurnLoop,
   normalizeDocumentAutonomyPolicy,
+  normalizeProfileMediaPolicy,
   MAX_CHAT_ATTACHMENT_BYTES,
   MAX_LIBRARY_ITEM_PREVIEW_BYTES,
   pinCidToProvider,
@@ -115,6 +117,13 @@ import {
   resolveIdleTimerStretch,
   resolveLazyCapabilityDiscovery,
   stripModelThinking,
+  MAX_PROFILE_GALLERY_PHOTOS,
+  MAX_PROFILE_GALLERY_PHOTO_BYTES,
+  MAX_PROFILE_THUMBNAIL_BYTES,
+  type ProfileGalleryPhotoVisibility,
+  type SetPublicProfileThumbnailParams,
+  type UpsertProfileGalleryPhotoParams,
+  type UpdateProfileGalleryPhotoVisibilityParams,
   buildVaultIndexOptionsFromKnowledgeBase,
   resolveAiKnowledgeBaseSettings,
   chatMessagePayloadDeviceFields,
@@ -132,6 +141,8 @@ import {
   createBondRequestPayload,
   createChatMessagePayload,
   createHumanProfilePayload,
+  ProfileGalleryPhotoSchema,
+  ProfilePhotoRefSchema,
   createShareAcceptPayload,
   createShareRequestPayload,
   createUnsignedEnvelope,
@@ -207,6 +218,9 @@ import {
   type SessionTokenStore,
   type DeviceAuthorizationStore,
   buildMorningReportDigest,
+  createPeerProfileCacheStore,
+  type PeerProfileCacheStore,
+  type CachedPeerProfile,
 } from "@envoymesh/local-store";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
@@ -234,6 +248,22 @@ import { sendVaultFileViaDataTransfer } from "./node-file-share.js";
 import { openPathWithDefaultApp, revealPathInFileManager } from "./vault-file-open.js";
 import { TransferTracker } from "./transfer-tracker.js";
 import { isSafeVaultPath } from "./share-inbound.js";
+import {
+  importProfilePhotoBytes,
+  parseProfilePhotoMime,
+  photoIdFromGalleryPath,
+  profileGalleryVaultPath,
+  profileThumbnailVaultPath,
+} from "./profile-photo.js";
+import {
+  handleInboundProfileRequest,
+  handleInboundProfileSync,
+} from "./profile-sync-inbound.js";
+import {
+  sendProfileRequest,
+  sendProfileResponse,
+  sendProfileSyncToBonds,
+} from "./profile-sync-outbound.js";
 import { createPublishedLibraryStore } from "./published-library-store.js";
 import { createPublishedExternalStore } from "./published-external-store.js";
 import { exportVaultDocumentToIpfs } from "./vault-ipfs-export-service.js";
@@ -369,6 +399,7 @@ class NodeServiceImpl implements NodeService {
   private readonly _sessionTokenStore: SessionTokenStore | null;
   private readonly _deviceAuthorizationStore: DeviceAuthorizationStore | null;
   private readonly _contactOwnerKeyStore: ContactOwnerKeyStore | null;
+  private readonly _peerProfileCacheStore: PeerProfileCacheStore | null;
   private readonly _commerceReceiptStore: CommerceReceiptStore | null;
   private readonly _reputationAnchorStore: ReputationAnchorStore | null;
   private readonly _multihopDiscoveryStore: MultiHopDiscoveryStore | null;
@@ -847,6 +878,8 @@ class NodeServiceImpl implements NodeService {
     bindDeviceAuthorizationStore(this._deviceAuthorizationStore);
     this._contactOwnerKeyStore =
       profileDir && profileDir !== "/tmp/unknown" ? createContactOwnerKeyStore(profileDir) : null;
+    this._peerProfileCacheStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createPeerProfileCacheStore(profileDir) : null;
     this._commerceReceiptStore =
       profileDir && profileDir !== "/tmp/unknown" ? createCommerceReceiptStore(profileDir) : null;
     this._reputationAnchorStore =
@@ -1040,14 +1073,12 @@ class NodeServiceImpl implements NodeService {
       knowledge: input.knowledge ?? existing?.knowledge,
       profileVisibility: input.profileVisibility ?? existing?.profileVisibility ?? "private",
       capabilities: input.capabilities ?? existing?.capabilities,
+      publicThumbnail: existing?.publicThumbnail,
+      galleryPhotos: existing?.galleryPhotos,
       updatedAt: new Date().toISOString(),
     };
 
-    // Sign the profile
-    const signedProfile = signHumanProfile(updatedPayload, selfProfile.device.privateKeyPem);
-
-    // Save
-    await this._humanProfileStore.saveHumanProfile(signedProfile);
+    const signedProfile = await this._signAndSaveHumanProfile(updatedPayload);
 
     // Handle DHT advertising based on visibility (run in background with timeout)
     const config = await this._configStore.load();
@@ -1062,7 +1093,221 @@ class NodeServiceImpl implements NodeService {
       void this._advertiseInterests(interests, username);
     }
 
+    return signedProfile;
+  }
+
+  private async _signAndSaveHumanProfile(
+    payload: Omit<import("@envoymesh/protocol").HumanProfilePayload, "signature">,
+  ): Promise<HumanProfile> {
+    const selfProfile = this._requireProfile();
+    const signedProfile = signHumanProfile(payload, selfProfile.owner.privateKeyPem);
+    await this._humanProfileStore.saveHumanProfile(signedProfile);
+    void this._broadcastProfileSyncToBonds(signedProfile);
     return signedProfile as HumanProfile;
+  }
+
+  private _mapCachedPeerProfile(row: CachedPeerProfile): PeerProfileView {
+    return {
+      ownerId: row.ownerId,
+      profile: row.profile as HumanProfile,
+      cachedAt: row.cachedAt,
+      thumbnailContentBase64: row.thumbnail?.contentBase64,
+      thumbnailMimeType: row.thumbnail?.mimeType,
+    };
+  }
+
+  async getPeerProfile(ownerId: string): Promise<PeerProfileView | undefined> {
+    if (!this._peerProfileCacheStore) return undefined;
+    const row = await this._peerProfileCacheStore.get(ownerId);
+    return row ? this._mapCachedPeerProfile(row) : undefined;
+  }
+
+  async listPeerProfiles(): Promise<PeerProfileView[]> {
+    if (!this._peerProfileCacheStore) return [];
+    const rows = await this._peerProfileCacheStore.list();
+    return rows.map((r) => this._mapCachedPeerProfile(r));
+  }
+
+  async syncProfileToBonds(): Promise<void> {
+    const hp = await this._humanProfileStore.loadHumanProfile();
+    if (hp) await this._broadcastProfileSyncToBonds(hp);
+  }
+
+  async requestPeerProfile(ownerId: string): Promise<{ ok: boolean; reason?: string }> {
+    const mesh = this._requireMesh();
+    const profile = this._requireProfile();
+    const peer = await this._peerDirectoryStore.getPeerByOwnerId(ownerId);
+    if (!peer?.peerId) {
+      return { ok: false, reason: "peer not in directory" };
+    }
+    try {
+      await sendProfileRequest({
+        mesh,
+        profile,
+        targetPeerId: peer.peerId,
+        listenAddrs: peer.listenAddrs,
+        dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
+      });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  private async _broadcastProfileSyncToBonds(humanProfile: HumanProfilePayload): Promise<void> {
+    if (!humanProfile.publicThumbnail) return;
+    const mesh = this._reachableMesh();
+    if (!mesh) return;
+    const profile = this._profile;
+    if (!profile) return;
+    const bonds = await this.getBonds();
+    const bondOwnerIds = bonds.map((b) => b.peerOwnerId);
+    if (bondOwnerIds.length === 0) return;
+    try {
+      await sendProfileSyncToBonds({
+        mesh,
+        profile,
+        humanProfile,
+        vaultDir: this._vaultDir,
+        peerDirectoryStore: this._peerDirectoryStore,
+        bondOwnerIds,
+        dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
+      });
+    } catch (err) {
+      console.warn("[profile.sync] broadcast failed:", err);
+    }
+  }
+
+  async handleInboundProfileIntent(envelope: EnvoyEnvelope): Promise<boolean> {
+    if (!this._contactOwnerKeyStore || !this._peerProfileCacheStore) return false;
+    if (
+      envelope.intent !== "profile.sync" &&
+      envelope.intent !== "profile.response" &&
+      envelope.intent !== "profile.request"
+    ) {
+      return false;
+    }
+    if (envelope.intent === "profile.request") {
+      const result = await handleInboundProfileRequest({
+        envelope,
+        contactOwnerKeyStore: this._contactOwnerKeyStore,
+        loadLocalProfile: async () => this._humanProfileStore.loadHumanProfile(),
+        sendProfileResponse: async (recipientPeerId, local) => {
+          const mesh = this._requireMesh();
+          const profile = this._requireProfile();
+          await sendProfileResponse({
+            mesh,
+            profile,
+            humanProfile: local,
+            vaultDir: this._vaultDir,
+            recipientPeerId,
+            dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
+          });
+        },
+      });
+      if (result.handled) {
+        return true;
+      }
+      console.warn(`[profile.request] not handled: ${"reason" in result ? result.reason : "unknown"}`);
+      return false;
+    }
+    const result = await handleInboundProfileSync({
+      envelope,
+      contactOwnerKeyStore: this._contactOwnerKeyStore,
+      peerProfileCache: this._peerProfileCacheStore,
+    });
+    if (result.handled) {
+      this.emit("profile:updated", { ownerId: result.ownerId });
+      return true;
+    }
+    console.warn(`[${envelope.intent}] not handled: ${"reason" in result ? result.reason : "unknown"}`);
+    return false;
+  }
+
+  private async _loadHumanProfileForPhotoUpdate(): Promise<{
+    existing: import("@envoymesh/protocol").HumanProfilePayload;
+    base: Omit<import("@envoymesh/protocol").HumanProfilePayload, "signature">;
+  }> {
+    this._assertOnline();
+    const existing = await this._humanProfileStore.loadHumanProfile();
+    if (!existing) {
+      throw new Error("Create your profile before adding photos");
+    }
+    const { signature: _s, ...base } = existing;
+    return { existing, base: { ...base, updatedAt: new Date().toISOString() } };
+  }
+
+  async setPublicProfileThumbnail(params: SetPublicProfileThumbnailParams): Promise<HumanProfile> {
+    const mime = parseProfilePhotoMime(params.mimeType);
+    const imported = await importProfilePhotoBytes({
+      vaultDir: this._vaultDir,
+      relativePath: profileThumbnailVaultPath(mime),
+      contentBase64: params.contentBase64,
+      mimeType: mime,
+      maxBytes: MAX_PROFILE_THUMBNAIL_BYTES,
+    });
+    const publicThumbnail = ProfilePhotoRefSchema.parse(imported);
+    const { base } = await this._loadHumanProfileForPhotoUpdate();
+    return this._signAndSaveHumanProfile({ ...base, publicThumbnail });
+  }
+
+  async upsertProfileGalleryPhoto(params: UpsertProfileGalleryPhotoParams): Promise<HumanProfile> {
+    const mime = parseProfilePhotoMime(params.mimeType);
+    const visibility = params.visibility as ProfileGalleryPhotoVisibility;
+    const { base, existing } = await this._loadHumanProfileForPhotoUpdate();
+    const gallery = [...(existing.galleryPhotos ?? [])];
+    const photoId = params.photoId?.trim() || undefined;
+    const existingIdx = photoId
+      ? gallery.findIndex((p) => p.photoId === photoId)
+      : -1;
+    if (gallery.length >= MAX_PROFILE_GALLERY_PHOTOS && existingIdx < 0) {
+      throw new Error(`Gallery limit reached (max ${MAX_PROFILE_GALLERY_PHOTOS} photos)`);
+    }
+    const vaultRelativePath = profileGalleryVaultPath(mime, photoId);
+    const imported = await importProfilePhotoBytes({
+      vaultDir: this._vaultDir,
+      relativePath: vaultRelativePath,
+      contentBase64: params.contentBase64,
+      mimeType: mime,
+      maxBytes: MAX_PROFILE_GALLERY_PHOTO_BYTES,
+    });
+    const entry = ProfileGalleryPhotoSchema.parse({
+      ...imported,
+      photoId: photoId ?? photoIdFromGalleryPath(vaultRelativePath),
+      label: params.label?.trim() || undefined,
+      visibility,
+    });
+    if (existingIdx >= 0) {
+      gallery[existingIdx] = entry;
+    } else {
+      gallery.push(entry);
+    }
+    return this._signAndSaveHumanProfile({ ...base, galleryPhotos: gallery });
+  }
+
+  async removeProfileGalleryPhoto(params: { vaultRelativePath: string }): Promise<HumanProfile> {
+    const path = params.vaultRelativePath.trim().replace(/^[\\/]+/, "");
+    const { base, existing } = await this._loadHumanProfileForPhotoUpdate();
+    const gallery = (existing.galleryPhotos ?? []).filter((p) => p.vaultRelativePath !== path);
+    if (gallery.length === (existing.galleryPhotos ?? []).length) {
+      throw new Error("Gallery photo not found on profile");
+    }
+    return this._signAndSaveHumanProfile({ ...base, galleryPhotos: gallery });
+  }
+
+  async updateProfileGalleryPhotoVisibility(
+    params: UpdateProfileGalleryPhotoVisibilityParams,
+  ): Promise<HumanProfile> {
+    const path = params.vaultRelativePath.trim().replace(/^[\\/]+/, "");
+    const visibility = params.visibility as ProfileGalleryPhotoVisibility;
+    const { base, existing } = await this._loadHumanProfileForPhotoUpdate();
+    const gallery = (existing.galleryPhotos ?? []).map((p) =>
+      p.vaultRelativePath === path ? { ...p, visibility } : p,
+    );
+    if (!gallery.some((p) => p.vaultRelativePath === path)) {
+      throw new Error("Gallery photo not found on profile");
+    }
+    return this._signAndSaveHumanProfile({ ...base, galleryPhotos: gallery });
   }
 
   async getAgentIdentity(): Promise<AgentIdentityDocument> {
@@ -1488,6 +1733,8 @@ class NodeServiceImpl implements NodeService {
       displayName: pending.requesterDisplayName,
     });
 
+    void this.syncProfileToBonds();
+    void this.requestPeerProfile(pending.requesterOwnerId);
     void this._tagBondedContactReachability(pending.remotePeerId);
 
     // Remove from pending requests
@@ -5079,6 +5326,7 @@ class NodeServiceImpl implements NodeService {
       if (hp) humanProfileSummary = { displayName: hp.displayName, bio: hp.bio };
     } catch { /* ignore */ }
     const documentAutonomy = normalizeDocumentAutonomyPolicy(config?.aiSettings?.documentAutonomy);
+    const profileMedia = normalizeProfileMediaPolicy(config?.aiSettings?.profileMedia);
     return {
       trustStore: this._trustStore,
       peerDirectoryStore: this._peerDirectoryStore,
@@ -5119,6 +5367,11 @@ class NodeServiceImpl implements NodeService {
       listPendingShareOffers: () => this.listPendingShareOffers(),
       listAgentShareProposals: () => this.listAgentShareProposals(),
       documentAutonomy,
+      profileMedia,
+      loadHumanProfile: async () => {
+        const hp = await this._humanProfileStore.loadHumanProfile();
+        return hp ? (hp as HumanProfile) : undefined;
+      },
       shareFile: (params) =>
         this.shareFile(params.targetOwnerId, {
           path: params.vaultRelativePath,

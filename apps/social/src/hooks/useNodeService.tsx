@@ -82,6 +82,20 @@ export interface NodeServiceClient {
   getPeerReputationSummary(peerOwnerId: string): Promise<import("@envoymesh/api").PeerReputationSummary>;
   getHumanProfile(): Promise<HumanProfile | undefined>;
   updateHumanProfile(input: CreateHumanProfileInput): Promise<HumanProfile>;
+  setPublicProfileThumbnail(
+    params: import("@envoymesh/api").SetPublicProfileThumbnailParams,
+  ): Promise<HumanProfile>;
+  upsertProfileGalleryPhoto(
+    params: import("@envoymesh/api").UpsertProfileGalleryPhotoParams,
+  ): Promise<HumanProfile>;
+  removeProfileGalleryPhoto(params: { vaultRelativePath: string }): Promise<HumanProfile>;
+  updateProfileGalleryPhotoVisibility(
+    params: import("@envoymesh/api").UpdateProfileGalleryPhotoVisibilityParams,
+  ): Promise<HumanProfile>;
+  getPeerProfile(ownerId: string): Promise<import("@envoymesh/api").PeerProfileView | undefined>;
+  listPeerProfiles(): Promise<import("@envoymesh/api").PeerProfileView[]>;
+  requestPeerProfile(ownerId: string): Promise<{ ok: boolean; reason?: string }>;
+  syncProfileToBonds(): Promise<void>;
   getAgentIdentity(): Promise<import("@envoymesh/api").AgentIdentityDocument>;
   updateAgentIdentity(content: string): Promise<import("@envoymesh/api").AgentIdentityDocument>;
 
@@ -327,6 +341,32 @@ function createWsNodeServiceClient(
     },
     async getHumanProfile() { return wsClient.rpc("getHumanProfile"); },
     async updateHumanProfile(input: CreateHumanProfileInput) { return wsClient.rpc("updateHumanProfile", input as unknown as Record<string, unknown>); },
+    async setPublicProfileThumbnail(params) {
+      return wsClient.rpc("setPublicProfileThumbnail", params as unknown as Record<string, unknown>);
+    },
+    async upsertProfileGalleryPhoto(params) {
+      return wsClient.rpc("upsertProfileGalleryPhoto", params as unknown as Record<string, unknown>);
+    },
+    async removeProfileGalleryPhoto(params) {
+      return wsClient.rpc("removeProfileGalleryPhoto", params);
+    },
+    async updateProfileGalleryPhotoVisibility(params) {
+      return wsClient.rpc("updateProfileGalleryPhotoVisibility", params as unknown as Record<string, unknown>);
+    },
+    async getPeerProfile(ownerId: string) {
+      return wsClient.rpc("getPeerProfile", { ownerId }) as Promise<
+        import("@envoymesh/api").PeerProfileView | undefined
+      >;
+    },
+    async listPeerProfiles() {
+      return wsClient.rpc("listPeerProfiles") as Promise<import("@envoymesh/api").PeerProfileView[]>;
+    },
+    async requestPeerProfile(ownerId: string) {
+      return wsClient.rpc("requestPeerProfile", { ownerId }) as Promise<{ ok: boolean; reason?: string }>;
+    },
+    async syncProfileToBonds() {
+      await wsClient.rpc("syncProfileToBonds");
+    },
     async getAgentIdentity() { return wsClient.rpc("getAgentIdentity"); },
     async updateAgentIdentity(content: string) { return wsClient.rpc("updateAgentIdentity", { content }); },
     async sendHello(targetOwnerId: string, profile: HelloProfile, message: string, options?: SendHelloOptions) {

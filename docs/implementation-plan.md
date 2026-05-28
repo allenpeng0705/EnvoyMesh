@@ -998,6 +998,7 @@ Tasks:
 - `[x]` Role policy updated: `chat.message` allows agent↔human (at least one human role required)
 - `[x]` Wire bridge into node startup: identity generation, mesh.onMessage hook, graceful shutdown
 - `[x]` Unit tests: bridge pipe (signing, routing, auth, error handling), identity store (persistence)
+- `[x]` OpenClaw adapter ADR + example config: [openclaw-agent-bridge-adr.md](./openclaw-agent-bridge-adr.md), [agent_bridge_guide.md](./agent_bridge_guide.md), `bridge-config.openclaw.example.json`; channel plugin [OpenClawExtension/](../OpenClawExtension/) (chat + mesh tools + async + onboard wizard + `docs/channels/envoymesh.md`) + [openclaw-extension.md](./openclaw-extension.md) + E2E [openclaw-bridge-e2e-checklist.md](./openclaw-bridge-e2e-checklist.md); contract test `apps/node/test/bridge-openclaw-agent-mock.test.ts`; two-process smoke `npm run smoke:openclaw-bridge` in **ci-smoke-local**; live Gateway smoke `npm run smoke:openclaw-bridge:live` in **ci-smoke-openclaw-live** (`apps/node/src/openclaw-bridge-smoke/`, `ENVOYMESH_SMOKE_ECHO` test hook in plugin). HomeClaw `channels/envoymesh` unchanged.
 
 **Architecture:**
 ```

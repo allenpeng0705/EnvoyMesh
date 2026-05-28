@@ -4,6 +4,7 @@ import { useNodeService } from "../../hooks/useNodeService.js";
 import type { BondRecord, HelloProfile, PeerReputationSummary } from "@envoymesh/api";
 import type { ContactsPanelMode } from "../../App.js";
 import { SearchView } from "./SearchView.js";
+import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 
 function contactLabel(contact: Partial<BondRecord> & { peerOwnerId: string }): string {
   const d = contact.displayName?.trim();
@@ -149,7 +150,11 @@ export function ContactsView({ panelMode, onPanelModeChange, onOpenChat }: Conta
                       disabled={!onOpenChat}
                       aria-label={`Open chat with ${contactLabel(contact)}`}
                     >
-                      <span className="avatar large">{contactLabel(contact).charAt(0) || "?"}</span>
+                      <PeerProfileAvatar
+                        ownerId={contact.peerOwnerId}
+                        fallbackLabel={contactLabel(contact)}
+                        large
+                      />
                       <div className="contact-info">
                         <strong>{contactLabel(contact)}</strong>
                         <span className="bond-level">{contact.level}</span>

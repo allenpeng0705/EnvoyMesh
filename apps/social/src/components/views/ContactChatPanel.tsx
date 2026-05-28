@@ -28,6 +28,8 @@ import { ChatFileAttachment } from "../ChatFileAttachment.js";
 import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
 import { EditIcon, ChatIcon, BridgeIcon, P2PIcon, AttachIcon, RemoveIcon } from "../../icons.js";
 import { useToast } from "../../hooks/useToast.js";
+import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
+import { PeerProfileGalleryStrip } from "../PeerProfileGalleryStrip.js";
 
 interface ContactChatPanelProps {
   selectedContact: string;
@@ -421,6 +423,9 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         );
   const headerInitial = displayName.trim().charAt(0).toUpperCase() || "?";
 
+  const contactBond = bonds.find((c) => c.peerOwnerId === selectedContact);
+  const contactBondLevel = contactBond?.level ?? "public";
+
   const reachabilityClass = contactReachable
     ? peerReachability?.direct
       ? "online-direct"
@@ -433,9 +438,17 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     <>
       <header className="chat-header has-assistant-switch">
         <div className="chat-header-left">
-          <span className={`chat-header-avatar kind-${threadKind}`} aria-hidden>
-            {headerInitial}
-          </span>
+          {threadKind === "agent" ? (
+            <span className={`chat-header-avatar kind-${threadKind}`} aria-hidden>
+              {headerInitial}
+            </span>
+          ) : (
+            <PeerProfileAvatar
+              ownerId={selectedContact}
+              fallbackLabel={displayName}
+              className={`chat-header-avatar kind-${threadKind}`}
+            />
+          )}
           <div className="chat-header-titles">
             <span className="chat-name">{displayName}</span>
             <span className={`chat-header-kind kind-${threadKind}`}>{threadKindLabel(threadKind)}</span>
@@ -487,6 +500,9 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           </div>
         </div>
       </header>
+      {threadKind !== "agent" && (
+        <PeerProfileGalleryStrip ownerId={selectedContact} bondLevel={contactBondLevel} />
+      )}
       <div className="messages">
         {displayMessages.length === 0 ? (
           <div className="empty-state">

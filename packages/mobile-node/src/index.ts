@@ -29,6 +29,7 @@ import {
   bytesToBase64url,
   signUnsignedEnvelope,
   signCanonicalPayload,
+  signHumanProfile,
   verifyEnvelope,
   verifyAuthorizedDeviceEnvelope,
   isDeviceRevoked,
@@ -94,6 +95,8 @@ import {
   createDiscoveryRequestPayload,
   parseDiscoveryResponsePayload,
   createSyncStatePayload,
+  createProfileSyncPayload,
+  createProfileRequestPayload,
   parseSyncStatePayload,
   parseShareRequestPayload,
   parseSharePreviewPayload,
@@ -113,6 +116,8 @@ import {
   type AgentCredential,
   type Report,
   type TaskJournalEntry,
+  ProfileGalleryPhotoSchema,
+  ProfilePhotoRefSchema,
 } from "@envoymesh/protocol";
 import {
   bondTrustRank,
@@ -120,6 +125,15 @@ import {
   applyAiIdentityToDraftText,
   runDocumentAgentTurn as runDocumentAgentTurnLoop,
   stripModelThinking,
+  MAX_PROFILE_GALLERY_PHOTOS,
+  canAgentAutonomousShareGalleryPhoto,
+  galleryPhotoShareSensitivity,
+  normalizeProfileMediaPolicy,
+  type SetPublicProfileThumbnailParams,
+  type UpsertProfileGalleryPhotoParams,
+  type UpdateProfileGalleryPhotoVisibilityParams,
+  type ProfileGalleryPhotoVisibility,
+  type PeerProfileView,
   chatMessagePayloadDeviceFields,
   formatChatSenderDisplayName,
   verifyInboundChatDeviceAuthorization,
@@ -149,6 +163,23 @@ import {
   type MultiHopDiscoveryStore,
 } from "@envoymesh/local-store";
 import { handleMobileInboundAgentCardIntent } from "./mobile-agent-card-inbound.js";
+import { createMobileContactOwnerKeyStore, type MobileContactOwnerKeyStore } from "./mobile-contact-owner-keys.js";
+import { createMobilePeerProfileCache, type MobilePeerProfileCache } from "./mobile-peer-profile-cache.js";
+import {
+  importMobileProfilePhotoBytes,
+  parseProfilePhotoMime,
+  photoIdFromGalleryPath,
+  profileGalleryVaultPath,
+  profileThumbnailVaultPath,
+  MAX_PROFILE_GALLERY_PHOTO_BYTES,
+  MAX_PROFILE_THUMBNAIL_BYTES,
+} from "./mobile-profile-photo.js";
+import {
+  handleMobileInboundProfileRequest,
+  handleMobileInboundProfileSync,
+  loadMobileProfileThumbnailInline,
+  sendMobileProfileEnvelope,
+} from "./mobile-profile-sync.js";
 import { normalizeOpenAiCompatibleBaseUrl, runOwnerApprovedKnowledgeQuery } from "@envoymesh/models";
 import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from "@libp2p/crypto/keys";
 import { peerIdFromString } from "@libp2p/peer-id";
@@ -466,6 +497,8 @@ export class MobileNode implements NodeService {
     contactAiPreferences: [],
   };
   private _multihopDiscoveryStore: MultiHopDiscoveryStore | null = null;
+  private _contactOwnerKeys: MobileContactOwnerKeyStore | null = null;
+  private _peerProfileCache: MobilePeerProfileCache | null = null;
   constructor(config: MobileNodeConfig) {
     this._profileDir = config.profileDir;
     this._relayUrls = [...config.relayUrls];
@@ -1069,11 +1102,20 @@ export class MobileNode implements NodeService {
     return resolveDidImportInput(input);
   }
 
-  async cacheDidContactKey(_params: {
+  async cacheDidContactKey(params: {
     ownerId: string;
     publicKeyPem: string;
   }): Promise<{ ok: boolean; reason?: string }> {
-    return { ok: false, reason: "contact owner key cache is desktop-node only" };
+    if (!this._contactOwnerKeys) {
+      return { ok: false, reason: "Node not initialized" };
+    }
+    const ownerId = params.ownerId.trim();
+    const publicKeyPem = params.publicKeyPem.trim();
+    if (!ownerId || !publicKeyPem) {
+      return { ok: false, reason: "ownerId and publicKeyPem are required" };
+    }
+    await this._contactOwnerKeys.set(ownerId, publicKeyPem);
+    return { ok: true };
   }
 
   async getPeerReputationSummary(peerOwnerId: string): Promise<PeerReputationSummary> {
@@ -1102,6 +1144,8 @@ export class MobileNode implements NodeService {
       knowledge: input.knowledge,
       profileVisibility: input.profileVisibility ?? "private",
       capabilities: input.capabilities,
+      publicThumbnail: this._humanProfile?.publicThumbnail,
+      galleryPhotos: this._humanProfile?.galleryPhotos,
       updatedAt: new Date().toISOString(),
     };
     const signature = signCanonicalPayload(unsigned, this._state.owner.privateKeyPem);
@@ -1115,6 +1159,133 @@ export class MobileNode implements NodeService {
       );
     } catch { /* localStorage may be unavailable */ }
     return profile;
+  }
+
+  async setPublicProfileThumbnail(params: SetPublicProfileThumbnailParams): Promise<HumanProfile> {
+    const mime = parseProfilePhotoMime(params.mimeType);
+    const imported = await importMobileProfilePhotoBytes({
+      vault: this._vault,
+      relativePath: profileThumbnailVaultPath(mime),
+      contentBase64: params.contentBase64,
+      mimeType: mime,
+      maxBytes: MAX_PROFILE_THUMBNAIL_BYTES,
+    });
+    const publicThumbnail = ProfilePhotoRefSchema.parse(imported);
+    const { base } = await this._loadHumanProfileForPhotoUpdate();
+    const signed = await this._signAndSaveHumanProfile({ ...base, publicThumbnail });
+    void this.syncProfileToBonds();
+    return signed;
+  }
+
+  async upsertProfileGalleryPhoto(params: UpsertProfileGalleryPhotoParams): Promise<HumanProfile> {
+    const mime = parseProfilePhotoMime(params.mimeType);
+    const visibility = params.visibility as ProfileGalleryPhotoVisibility;
+    const { base, existing } = await this._loadHumanProfileForPhotoUpdate();
+    const gallery = [...(existing.galleryPhotos ?? [])];
+    const photoId = params.photoId?.trim() || undefined;
+    const existingIdx = photoId ? gallery.findIndex((p) => p.photoId === photoId) : -1;
+    if (gallery.length >= MAX_PROFILE_GALLERY_PHOTOS && existingIdx < 0) {
+      throw new Error(`Gallery limit reached (max ${MAX_PROFILE_GALLERY_PHOTOS} photos)`);
+    }
+    const vaultRelativePath = profileGalleryVaultPath(mime, photoId ?? _randomUUID());
+    const imported = await importMobileProfilePhotoBytes({
+      vault: this._vault,
+      relativePath: vaultRelativePath,
+      contentBase64: params.contentBase64,
+      mimeType: mime,
+      maxBytes: MAX_PROFILE_GALLERY_PHOTO_BYTES,
+    });
+    const entry = ProfileGalleryPhotoSchema.parse({
+      ...imported,
+      photoId: photoId ?? photoIdFromGalleryPath(vaultRelativePath),
+      label: params.label?.trim() || undefined,
+      visibility,
+    });
+    if (existingIdx >= 0) gallery[existingIdx] = entry;
+    else gallery.push(entry);
+    return this._signAndSaveHumanProfile({ ...base, galleryPhotos: gallery });
+  }
+
+  async removeProfileGalleryPhoto(params: { vaultRelativePath: string }): Promise<HumanProfile> {
+    const path = params.vaultRelativePath.trim().replace(/^[\\/]+/, "");
+    const { base, existing } = await this._loadHumanProfileForPhotoUpdate();
+    const gallery = (existing.galleryPhotos ?? []).filter((p) => p.vaultRelativePath !== path);
+    if (gallery.length === (existing.galleryPhotos ?? []).length) {
+      throw new Error("Gallery photo not found on profile");
+    }
+    return this._signAndSaveHumanProfile({ ...base, galleryPhotos: gallery });
+  }
+
+  async updateProfileGalleryPhotoVisibility(
+    params: UpdateProfileGalleryPhotoVisibilityParams,
+  ): Promise<HumanProfile> {
+    const path = params.vaultRelativePath.trim().replace(/^[\\/]+/, "");
+    const visibility = params.visibility as ProfileGalleryPhotoVisibility;
+    const { base, existing } = await this._loadHumanProfileForPhotoUpdate();
+    const gallery = (existing.galleryPhotos ?? []).map((p) =>
+      p.vaultRelativePath === path ? { ...p, visibility } : p,
+    );
+    if (!gallery.some((p) => p.vaultRelativePath === path)) {
+      throw new Error("Gallery photo not found on profile");
+    }
+    return this._signAndSaveHumanProfile({ ...base, galleryPhotos: gallery });
+  }
+
+  async getPeerProfile(ownerId: string): Promise<PeerProfileView | undefined> {
+    if (!this._peerProfileCache) return undefined;
+    const row = await this._peerProfileCache.get(ownerId);
+    return row ? this._mapCachedPeerProfile(row) : undefined;
+  }
+
+  async listPeerProfiles(): Promise<PeerProfileView[]> {
+    if (!this._peerProfileCache) return [];
+    const rows = await this._peerProfileCache.list();
+    return rows.map((r) => this._mapCachedPeerProfile(r));
+  }
+
+  async requestPeerProfile(ownerId: string): Promise<{ ok: boolean; reason?: string }> {
+    if (!this._state) return { ok: false, reason: "not initialized" };
+    try {
+      const targetPeerId = await this._resolveBondRecipientPeerId(ownerId.trim());
+      await sendMobileProfileEnvelope({
+        devicePrivateKeyPem: this._state.device.privateKeyPem,
+        devicePublicKeyPem: this._state.device.publicKeyPem,
+        recipientPeerId: targetPeerId,
+        intent: "profile.request",
+        payload: createProfileRequestPayload(this._state.owner.ownerId),
+        targetPeerId,
+        sendJson: (peerId, json) => this._sendProfileJson(peerId, json),
+      });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  async syncProfileToBonds(): Promise<void> {
+    if (!this._humanProfile?.publicThumbnail || !this._state) return;
+    const bonds = await this.getBonds();
+    for (const bond of bonds) {
+      const peerId = bond.libp2pPeerId?.trim();
+      if (!peerId) continue;
+      try {
+        const inline = await loadMobileProfileThumbnailInline(this._vault, this._humanProfile);
+        const payload = createProfileSyncPayload(this._humanProfile, inline);
+        await sendMobileProfileEnvelope({
+          devicePrivateKeyPem: this._state.device.privateKeyPem,
+          devicePublicKeyPem: this._state.device.publicKeyPem,
+          intent: "profile.sync",
+          payload,
+          targetPeerId: peerId,
+          sendJson: (id, json) => this._sendProfileJson(id, json),
+        });
+      } catch (err) {
+        console.warn(
+          `[mobile-node] profile.sync to ${bond.peerOwnerId.slice(0, 12)}… failed:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
   }
 
   async getAgentIdentity(): Promise<AgentIdentityDocument> {
@@ -1168,12 +1339,103 @@ You are the owner's personal AI assistant on EnvoyMesh.
 
   private _loadCachedProfile(): void {
     if (!this._state) return;
+    this._initProfileStores();
     try {
       const raw = localStorage.getItem(`envoymesh_profile_${this._state.owner.ownerId}`);
       if (raw) {
         this._humanProfile = JSON.parse(raw) as HumanProfile;
       }
     } catch { /* ignore parse errors */ }
+  }
+
+  private _initProfileStores(): void {
+    if (!this._state) return;
+    this._contactOwnerKeys = createMobileContactOwnerKeyStore(this._state.owner.ownerId);
+    this._peerProfileCache = createMobilePeerProfileCache(this._state.owner.ownerId);
+  }
+
+  private _mapCachedPeerProfile(row: {
+    ownerId: string;
+    profile: HumanProfile;
+    cachedAt: string;
+    thumbnail?: { contentBase64: string; mimeType: "image/jpeg" | "image/png" | "image/webp" };
+  }): PeerProfileView {
+    return {
+      ownerId: row.ownerId,
+      profile: row.profile,
+      cachedAt: row.cachedAt,
+      thumbnailContentBase64: row.thumbnail?.contentBase64,
+      thumbnailMimeType: row.thumbnail?.mimeType,
+    };
+  }
+
+  private _assertProfilePhotosAllowed(): void {
+    this._assertNodeRunning();
+    if (!this._state) {
+      throw new Error("Node not initialized — call initNode() first");
+    }
+  }
+
+  private async _loadHumanProfileForPhotoUpdate(): Promise<{
+    existing: HumanProfile;
+    base: Omit<HumanProfile, "signature">;
+  }> {
+    this._assertProfilePhotosAllowed();
+    if (!this._humanProfile) {
+      throw new Error("Create your profile before adding photos");
+    }
+    const { signature: _s, ...base } = this._humanProfile;
+    return { existing: this._humanProfile, base: { ...base, updatedAt: new Date().toISOString() } };
+  }
+
+  private async _signAndSaveHumanProfile(
+    payload: Omit<HumanProfile, "signature">,
+  ): Promise<HumanProfile> {
+    if (!this._state) {
+      throw new Error("Node not initialized");
+    }
+    const signed = signHumanProfile(payload, this._state.owner.privateKeyPem);
+    this._humanProfile = signed as HumanProfile;
+    try {
+      localStorage.setItem(
+        `envoymesh_profile_${this._state.owner.ownerId}`,
+        JSON.stringify(signed),
+      );
+    } catch { /* localStorage may be unavailable */ }
+    return signed as HumanProfile;
+  }
+
+  private async _sendProfileJson(targetPeerId: string, json: string): Promise<void> {
+    try {
+      if (this._mesh) {
+        await this._sendViaMesh(targetPeerId, json, ENVOY_MESSAGE_PROTOCOL);
+        return;
+      }
+    } catch (err) {
+      console.warn(
+        "[mobile-node] profile mesh send failed, using relay:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+    this._broadcastToRelaySockets(json);
+  }
+
+  private async _sendProfileResponseToPeer(
+    recipientPeerId: string,
+    profile: HumanProfile,
+  ): Promise<void> {
+    if (!this._state) return;
+    const inline = await loadMobileProfileThumbnailInline(this._vault, profile);
+    const payload = createProfileSyncPayload(profile, inline);
+    await sendMobileProfileEnvelope({
+      devicePrivateKeyPem: this._state.device.privateKeyPem,
+      devicePublicKeyPem: this._state.device.publicKeyPem,
+      recipientPeerId,
+      intent: "profile.response",
+      payload,
+      targetPeerId: recipientPeerId,
+      sendJson: (peerId, json) => this._sendProfileJson(peerId, json),
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -3367,6 +3629,51 @@ You are the owner's personal AI assistant on EnvoyMesh.
             await self.setLibraryItemPublished(documentId, published);
             return { ok: true, result: { documentId, published }, toolName, correlationId: "", latencyMs: 0 };
           }
+          if (toolName === "mesh.share_profile_gallery_photo") {
+            const targetOwnerId = params.targetOwnerId as string | undefined;
+            const photoId = params.photoId as string | undefined;
+            const vaultRelativePath = params.vaultRelativePath as string | undefined;
+            if (!targetOwnerId?.trim()) {
+              return { ok: false, error: "targetOwnerId is required", toolName, correlationId: "", latencyMs: 0 };
+            }
+            const hp = await self.getHumanProfile();
+            const gallery = hp?.galleryPhotos ?? [];
+            const photo = gallery.find(
+              (p) =>
+                (photoId?.trim() && p.photoId === photoId.trim()) ||
+                (vaultRelativePath?.trim() && p.vaultRelativePath === vaultRelativePath.trim()),
+            );
+            if (!photo) {
+              return { ok: false, error: "gallery photo not found on profile", toolName, correlationId: "", latencyMs: 0 };
+            }
+            const bonds = await self.getBonds();
+            const bondLevel = bonds.find((b) => b.peerOwnerId === targetOwnerId.trim())?.level ?? "public";
+            const cfg = await self.getNodeConfig();
+            const profileMedia = normalizeProfileMediaPolicy(cfg.aiSettings?.profileMedia);
+            const sensitivity = galleryPhotoShareSensitivity(photo.visibility);
+            if (
+              canAgentAutonomousShareGalleryPhoto({ policy: profileMedia, photo, bondLevel })
+            ) {
+              await self.shareFile(targetOwnerId.trim(), {
+                path: photo.vaultRelativePath,
+                sensitivity,
+              });
+              return {
+                ok: true,
+                result: { autoShared: true, targetOwnerId: targetOwnerId.trim(), photoId: photo.photoId },
+                toolName,
+                correlationId: "",
+                latencyMs: 0,
+              };
+            }
+            const proposal = await self.submitAgentShareProposal({
+              targetOwnerId: targetOwnerId.trim(),
+              vaultRelativePath: photo.vaultRelativePath,
+              sensitivity,
+              summary: params.summary as string | undefined,
+            });
+            return { ok: true, result: proposal, toolName, correlationId: "", latencyMs: 0 };
+          }
           if (toolName === "mesh.share_propose") {
             const proposal = await self.submitAgentShareProposal({
               targetOwnerId: params.targetOwnerId as string,
@@ -3743,6 +4050,8 @@ You are the owner's personal AI assistant on EnvoyMesh.
       peerOwnerId: payload.responderOwnerId,
       displayName,
     });
+    void this.syncProfileToBonds();
+    void this.requestPeerProfile(payload.responderOwnerId);
   }
 
   /** Inbound `bond.challenge` — auto-reply with `bond.challenge.response` (referral / pairing parity with desktop tests). */
@@ -4351,6 +4660,33 @@ You are the owner's personal AI assistant on EnvoyMesh.
     this._pendingFileSendByPreviewMsgId.delete(acc.inReplyTo);
   }
 
+  private async _handleInboundProfileIntent(msg: Record<string, unknown>): Promise<void> {
+    if (!this._contactOwnerKeys || !this._peerProfileCache) return;
+    const intent = msg.intent as string;
+    if (intent === "profile.request") {
+      const result = await handleMobileInboundProfileRequest({
+        payload: msg.payload,
+        senderPeerId: String(msg.senderPeerId ?? ""),
+        loadLocalProfile: async () => this._humanProfile,
+        sendProfileResponse: (recipientPeerId, profile) =>
+          this._sendProfileResponseToPeer(recipientPeerId, profile as HumanProfile),
+      });
+      if (result.ok) return;
+      console.warn(`[mobile-node] profile.request: ${result.reason}`);
+      return;
+    }
+    const result = await handleMobileInboundProfileSync({
+      payload: msg.payload,
+      ownerKeys: this._contactOwnerKeys,
+      cache: this._peerProfileCache,
+    });
+    if (result.ok) {
+      this._events.emit("profile:updated", { ownerId: result.ownerId });
+      return;
+    }
+    console.warn(`[mobile-node] ${intent}: ${result.reason}`);
+  }
+
   /**
    * Route an inbound message from a relay:
    * - EnvoyEnvelope → verify → route by intent → persist chat → emit events
@@ -4441,6 +4777,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
         if (chatPayload.senderOwnerId && sp) {
           this._ownerIdByEnvoyDevicePeerId.set(sp, chatPayload.senderOwnerId);
         }
+        if (chatPayload.senderOwnerId && chatPayload.ownerPublicKeyPem && this._contactOwnerKeys) {
+          void this._contactOwnerKeys.set(chatPayload.senderOwnerId, chatPayload.ownerPublicKeyPem);
+        }
         const ts = (msg.createdAt as string) ?? new Date().toISOString();
         const senderPeerId = (msg.senderPeerId as string) ?? "";
         const senderOwnerId =
@@ -4525,6 +4864,14 @@ You are the owner's personal AI assistant on EnvoyMesh.
             "[mobile-node] share.accept / data transfer:",
             err instanceof Error ? err.message : err,
           ),
+        );
+      } else if (
+        intent === "profile.sync" ||
+        intent === "profile.response" ||
+        intent === "profile.request"
+      ) {
+        void this._handleInboundProfileIntent(msg).catch((err) =>
+          console.warn("[mobile-node] profile intent:", err instanceof Error ? err.message : err),
         );
       } else if (intent === "agent.card.request" || intent === "agent.card.response") {
         void this._handleInboundAgentCard(

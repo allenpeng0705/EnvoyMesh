@@ -1,0 +1,20 @@
+{
+  "id": "envoymesh",
+  "activation": {
+    "onStartup": false
+  },
+  "channels": ["envoymesh"],
+  "channelEnvVars": {
+    "envoymesh": [
+      "ENVOYMESH_BRIDGE_URL",
+      "ENVOYMESH_BRIDGE_SECRET",
+      "ENVOYMESH_INBOUND_SECRET",
+      "ENVOYMESH_ALLOWED_OWNER_IDS"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

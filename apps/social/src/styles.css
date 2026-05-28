@@ -4913,3 +4913,221 @@ button.activity-row:hover,
   font-family: var(--font-mono, ui-monospace, monospace);
   color: var(--color-text-muted);
 }
+
+/* Profile Photos | About tabs */
+.profile-subtabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.profile-subtabs button {
+  flex: 1;
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+
+.profile-subtabs button.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+.profile-photo-suggest {
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-primary-subtle);
+  border: 1px solid var(--color-primary);
+}
+
+.profile-photos-hero {
+  text-align: center;
+  margin-bottom: var(--space-5);
+}
+
+.profile-photos-hero-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-2);
+}
+
+.profile-photos-hero-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.profile-gallery-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.profile-gallery-header h3 {
+  margin: 0;
+}
+
+.profile-gallery-vis-label {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin: 0.25rem 0;
+}
+
+.peer-profile-gallery-strip {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-elevated, var(--color-bg-subtle));
+}
+
+.peer-profile-gallery-strip__hint {
+  margin: 0 0 var(--space-2);
+}
+
+.peer-profile-gallery-strip__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+}
+
+.peer-profile-gallery-strip__item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: var(--text-xs);
+}
+
+.peer-profile-gallery-strip__label {
+  font-weight: 500;
+}
+
+.peer-profile-gallery-strip__vis {
+  color: var(--color-text-muted);
+}
+
+.profile-gallery-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+/* Photo picker + crop sheet */
+.photo-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+@media (min-width: 640px) {
+  .photo-picker-backdrop {
+    align-items: center;
+  }
+}
+
+.photo-picker-sheet {
+  width: 100%;
+  max-width: 400px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-lg);
+}
+
+.photo-picker-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+}
+
+.photo-picker-lede {
+  margin: 0 0 var(--space-4);
+}
+
+.photo-picker-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.photo-crop-viewport {
+  width: 280px;
+  height: 280px;
+  margin: 0 auto var(--space-2);
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: #0a0a0a;
+  touch-action: none;
+  cursor: grab;
+}
+
+.photo-crop-viewport:active {
+  cursor: grabbing;
+}
+
+.photo-crop-image {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  max-width: none;
+  pointer-events: none;
+  user-select: none;
+}
+
+.photo-crop-hint {
+  text-align: center;
+  margin-bottom: var(--space-3);
+}
+
+.photo-share-contact-list {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.photo-share-contact-btn {
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3);
+  border: none;
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-1);
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+
+.photo-share-contact-btn:hover {
+  background: var(--color-primary-subtle);
+}
+
+.multihop-result__avatar {
+  flex-shrink: 0;
+}

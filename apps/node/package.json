@@ -19,6 +19,8 @@
     "social:challenge": "tsx src/social-challenge.ts",
     "smoke:local-two-node": "tsx src/local-two-node-smoke.ts",
     "smoke:phase13-two-node": "tsx src/phase13-two-node-smoke.ts",
+    "smoke:openclaw-bridge": "tsx src/openclaw-bridge-smoke/orchestrator.ts",
+    "smoke:openclaw-bridge:live": "OPENCLAW_BRIDGE_SMOKE_LIVE=1 tsx src/openclaw-bridge-smoke/orchestrator.ts",
     "discovery:dashboard": "tsx src/discovery-dashboard.ts",
     "discovery:dashboard:wan": "tsx src/discovery-dashboard.ts --profile ./data/default --discovery-profile wan-default --bootstrap-preset public-libp2p --p2p-debug"
   },

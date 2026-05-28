@@ -906,6 +906,34 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     return;
   }
 
+  if (
+    envelope.intent === "profile.sync" ||
+    envelope.intent === "profile.response" ||
+    envelope.intent === "profile.request"
+  ) {
+    if (nodeService instanceof NodeServiceImpl) {
+      const handled = await nodeService.handleInboundProfileIntent(envelope);
+      if (handled) {
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "message.verified",
+            intent: envelope.intent,
+            messageId: envelope.messageId,
+            correlationId,
+            remotePeerId,
+            direction: "inbound",
+            verificationStatus: "verified",
+            latencyMs: Date.now() - receivedAt,
+            outcome: "allow",
+            summary: `Handled ${envelope.intent}.`,
+            createdAt: envelope.createdAt,
+          }),
+        );
+        return;
+      }
+    }
+  }
+
   if (envelope.intent === "system.ping") {
     const payload = parseSystemPingPayload(envelope.payload);
     console.log(
@@ -2682,6 +2710,10 @@ nodeService.on("agent:activity", (data) => wsServer.emitEvent("agent:activity", 
 nodeService.on("bond:established", (data) => {
   console.log(`[index.ts] nodeService bond:established event fired, peerOwnerId=${data.peerOwnerId}`);
   wsServer.emitEvent("bond:established", data);
+  if (nodeService instanceof NodeServiceImpl) {
+    void nodeService.syncProfileToBonds();
+    void nodeService.requestPeerProfile(data.peerOwnerId);
+  }
 });
 nodeService.on("config:updated", (data) => {
   console.log(`[index.ts] config:updated event fired`);

@@ -2139,3 +2139,4 @@ export * from "./reputation-anchor-store.js";
 export * from "./multihop-discovery-store.js";
 export * from "./agent-card-store.js";
 export * from "./commerce-receipt-store.js";
+export * from "./peer-profile-cache.js";

@@ -19,6 +19,8 @@ export * from "./default-bootstrap.js";
 export * from "./node-service.js";
 export * from "./bond-target.js";
 export * from "./document-autonomy.js";
+export * from "./profile-media.js";
+export * from "./strip-image-metadata.js";
 export * from "./document-agent-loop.js";
 export * from "./library-request-share.js";
 export * from "./transfer-status.js";

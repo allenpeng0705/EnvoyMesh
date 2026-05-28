@@ -984,6 +984,34 @@ describe("HumanProfilePayload", () => {
     expect(HumanProfilePayloadSchema.parse(profile)).toEqual(profile);
   });
 
+  it("accepts public thumbnail and gallery photos", () => {
+    const profile = {
+      version: "0.1" as const,
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "alice123",
+      publicThumbnail: {
+        vaultRelativePath: "profile/thumbnail.jpg",
+        contentSha256: "a".repeat(64),
+        mimeType: "image/jpeg" as const,
+      },
+      galleryPhotos: [
+        {
+          photoId: "trip-1",
+          vaultRelativePath: "profile/gallery/trip-1.jpg",
+          contentSha256: "b".repeat(64),
+          mimeType: "image/jpeg" as const,
+          visibility: "direct" as const,
+        },
+      ],
+      updatedAt: "2026-04-27T10:00:00.000Z",
+      signature: "signature123",
+    };
+    expect(HumanProfilePayloadSchema.parse(profile).publicThumbnail?.vaultRelativePath).toBe(
+      "profile/thumbnail.jpg",
+    );
+  });
+
   it("accepts profile with minimal required fields", () => {
     const profile = {
       version: "0.1" as const,

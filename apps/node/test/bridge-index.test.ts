@@ -56,6 +56,51 @@ describe("bridge runtime", () => {
 
       // forwardToAgent calls the agent HTTP endpoint via fetch
       expect(agentFetch).toHaveBeenCalledTimes(1);
+      // HomeClaw/OpenClaw deliver via POST /bridge/send only — sync JSON text must not P2P-send.
+      expect(sendChat).not.toHaveBeenCalled();
+    } finally {
+      await bridge.stop();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("ignores sync HTTP text from agentUrl on chat.message (no duplicate P2P)", async () => {
+    const port = await getFreePort();
+    const identity = makeBridgeIdentity();
+    const sendChat = vi.fn().mockResolvedValue(1);
+    const agentFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ text: "would-duplicate-if-used" }),
+    });
+    vi.stubGlobal("fetch", agentFetch);
+
+    const bridge = createBridge({
+      config: {
+        enabled: true,
+        agentUrl: "http://localhost:8010/message",
+        listenPort: port,
+      },
+      identity,
+      mesh: makeMesh({ sendChat }),
+      getRecipientPeerId: async (id) => id,
+    });
+
+    try {
+      await bridge._handleMessage(
+        {
+          intent: "chat.message",
+          recipientPeerId: identity.agentPeerId,
+          payload: createChatMessagePayload({
+            senderOwnerId: "envoy:owner:sender",
+            text: "ping",
+          }),
+        },
+        "envoy_peer_homeclaw_style",
+      );
+
+      await vi.waitFor(() => expect(agentFetch).toHaveBeenCalledTimes(1), { timeout: 3000 });
+      await new Promise((r) => setTimeout(r, 100));
+      expect(sendChat).not.toHaveBeenCalled();
     } finally {
       await bridge.stop();
       vi.unstubAllGlobals();

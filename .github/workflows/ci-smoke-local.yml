@@ -25,6 +25,9 @@ jobs:
       - name: Unit and integration tests
         run: npm test
 
+      - name: OpenClaw bridge two-process smoke
+        run: npm run smoke:openclaw-bridge
+
       - name: Mobile Capacitor production build
         run: npm run build -w @envoymesh/mobile
 

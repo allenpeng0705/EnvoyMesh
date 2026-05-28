@@ -5,6 +5,7 @@ import type {
   ResolvedDidImport,
 } from "@envoymesh/api";
 import { shortOwnerId } from "../../lib/display.js";
+import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 
 export function TrustPathTrail({ path }: { path: string }) {
   const segments = path.split(/\s*→\s*/).map((s) => s.trim()).filter(Boolean);
@@ -29,7 +30,7 @@ export function MultiHopResultCard({
 }: {
   row: MultiHopDiscoveryMatch;
   index: number;
-  onSayHello: (peerId: string) => void;
+  onSayHello: (ownerId: string) => void;
 }) {
   const via =
     row.viaDisplayName?.trim() ||
@@ -45,6 +46,11 @@ export function MultiHopResultCard({
       >
         {row.hopDistance}
       </span>
+      <PeerProfileAvatar
+        ownerId={row.ownerId}
+        fallbackLabel={via ?? row.ownerId}
+        className="peer-result-card__avatar multihop-result__avatar"
+      />
       <div className="result-info multihop-result__body">
         <strong title={row.ownerId}>{shortOwnerId(row.ownerId, 22)}</strong>
         {via && (
@@ -54,7 +60,7 @@ export function MultiHopResultCard({
         )}
         {row.trustPath && <TrustPathTrail path={row.trustPath} />}
       </div>
-      <button type="button" className="peer-result-card__action" onClick={() => void onSayHello(row.peerId)}>
+      <button type="button" className="peer-result-card__action" onClick={() => void onSayHello(row.ownerId)}>
         Say Hello
       </button>
     </li>
@@ -81,9 +87,11 @@ export function PeerResultCard({
       className="search-result peer-result-card"
       style={{ ["--discover-i" as string]: String(index) }}
     >
-      <span className="avatar peer-result-card__avatar" aria-hidden>
-        {result.displayName?.[0] || "?"}
-      </span>
+      <PeerProfileAvatar
+        ownerId={result.ownerId}
+        fallbackLabel={result.displayName || result.ownerId}
+        className="peer-result-card__avatar"
+      />
       <div className="result-info peer-result-card__body">
         <strong>{result.displayName || shortOwnerId(result.nodeId, 20)}</strong>
         {result.username && <span className="result-username">@{result.username}</span>}
@@ -106,7 +114,7 @@ export function PeerResultCard({
           <span className="interests peer-result-card__interests">{result.interests.join(", ")}</span>
         )}
       </div>
-      <button type="button" className="peer-result-card__action" onClick={() => void onSayHello(result.nodeId)}>
+      <button type="button" className="peer-result-card__action" onClick={() => void onSayHello(result.ownerId)}>
         Say Hello
       </button>
     </li>
@@ -133,6 +141,11 @@ export function MorningReportPanel({ entries }: { entries: MorningReportEntry[] 
             <span className="morning-report-card__rank" aria-hidden>
               {index + 1}
             </span>
+            <PeerProfileAvatar
+              ownerId={entry.ownerId}
+              fallbackLabel={entry.ownerId}
+              className="morning-report-card__avatar"
+            />
             <div className="morning-report-card__body">
               <strong title={entry.ownerId}>{shortOwnerId(entry.ownerId, 20)}</strong>
               <div className="morning-report-card__metrics">

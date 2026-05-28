@@ -67,6 +67,15 @@ export interface HumanProfile extends HumanProfilePayload {
   // HumanProfilePayload already has: ownerId, displayName, bio, gender, hobbies, knowledge, updatedAt, signature
 }
 
+/** Cached bonded-peer profile (thumbnail bytes when received via profile.sync). */
+export interface PeerProfileView {
+  ownerId: string;
+  profile: HumanProfile;
+  cachedAt: string;
+  thumbnailContentBase64?: string;
+  thumbnailMimeType?: "image/jpeg" | "image/png" | "image/webp";
+}
+
 export interface CreateHumanProfileInput {
   displayName: string;
   username: string;
@@ -76,6 +85,24 @@ export interface CreateHumanProfileInput {
   knowledge?: string[];
   profileVisibility?: "public" | "private";
   capabilities?: CapabilityUnion[];
+}
+
+export interface SetPublicProfileThumbnailParams {
+  contentBase64: string;
+  mimeType: import("./profile-media.js").ProfilePhotoMime;
+}
+
+export interface UpsertProfileGalleryPhotoParams {
+  contentBase64: string;
+  mimeType: import("./profile-media.js").ProfilePhotoMime;
+  visibility: import("./profile-media.js").ProfileGalleryPhotoVisibility;
+  label?: string;
+  photoId?: string;
+}
+
+export interface UpdateProfileGalleryPhotoVisibilityParams {
+  vaultRelativePath: string;
+  visibility: import("./profile-media.js").ProfileGalleryPhotoVisibility;
 }
 
 export interface AgentIdentityDocument {
@@ -800,6 +827,8 @@ export interface NodeServiceEvents {
   "bond:established": { peerOwnerId: string; displayName?: string };
   "bond:revoked": { peerOwnerId: string };
   "bond:blocked": { peerOwnerId: string };
+  /** Bonded peer profile cache updated (profile.sync / profile.response). */
+  "profile:updated": { ownerId: string };
 
   // Chat events
   "chat:message": ChatMessage;
@@ -883,6 +912,30 @@ export interface NodeService {
    * Update human profile (signs with owner key)
    */
   updateHumanProfile(profile: CreateHumanProfileInput): Promise<HumanProfile>;
+
+  /** Set the always-public profile thumbnail (stored in vault, referenced on signed profile). */
+  setPublicProfileThumbnail(params: SetPublicProfileThumbnailParams): Promise<HumanProfile>;
+
+  /** Add or replace a gallery photo with per-photo visibility. */
+  upsertProfileGalleryPhoto(params: UpsertProfileGalleryPhotoParams): Promise<HumanProfile>;
+
+  /** Remove a gallery photo from profile and vault index. */
+  removeProfileGalleryPhoto(params: { vaultRelativePath: string }): Promise<HumanProfile>;
+
+  /** Update visibility on an existing gallery photo. */
+  updateProfileGalleryPhotoVisibility(params: UpdateProfileGalleryPhotoVisibilityParams): Promise<HumanProfile>;
+
+  /** Cached signed profile for a bonded peer (includes inline thumbnail when synced). */
+  getPeerProfile(ownerId: string): Promise<PeerProfileView | undefined>;
+
+  /** List all cached peer profiles. */
+  listPeerProfiles(): Promise<PeerProfileView[]>;
+
+  /** Ask a bonded peer to send profile.sync (e.g. after bond established). */
+  requestPeerProfile(ownerId: string): Promise<{ ok: boolean; reason?: string }>;
+
+  /** Push local signed profile (and thumbnail bytes) to all bonded peers. */
+  syncProfileToBonds(): Promise<void>;
 
   /**
    * Get owner-editable agent operating instructions (`agent-identity.md` in profile dir).
