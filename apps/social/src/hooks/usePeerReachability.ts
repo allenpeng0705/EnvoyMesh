@@ -11,12 +11,13 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
   const [checking, setChecking] = useState(false);
 
   const refresh = useCallback(
-    async (opts?: { warm?: boolean }) => {
+    async (opts?: { warm?: boolean; silent?: boolean }) => {
       if (!enabled || !peerOwnerId || !nodeService.isConnected) {
         setInfo(null);
         return;
       }
-      setChecking(true);
+      const showChecking = !opts?.silent;
+      if (showChecking) setChecking(true);
       try {
         const next = opts?.warm
           ? await nodeService.warmContactConnection(peerOwnerId)
@@ -25,7 +26,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       } catch {
         setInfo({ connected: false, direct: false });
       } finally {
-        setChecking(false);
+        if (showChecking) setChecking(false);
       }
     },
     [enabled, nodeService, peerOwnerId],
@@ -39,7 +40,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
     }
     void refresh({ warm: true });
     const id = setInterval(() => {
-      void refresh();
+      void refresh({ silent: true });
     }, POLL_MS);
     return () => clearInterval(id);
   }, [enabled, peerOwnerId, nodeService.isConnected, refresh]);
