@@ -77,13 +77,24 @@ export function createPeerProfileCacheStore(profileDir: string): PeerProfileCach
       thumbnail?: CachedPeerProfileThumbnail,
     ): Promise<CachedPeerProfile> {
       const file = await loadFile();
+      const idx = file.records.findIndex((r) => r.ownerId === profile.ownerId);
+      const existing = idx >= 0 ? file.records[idx] : undefined;
+      let mergedThumbnail = thumbnail;
+      if (!profile.publicThumbnail) {
+        mergedThumbnail = undefined;
+      } else if (
+        !mergedThumbnail &&
+        existing?.thumbnail &&
+        existing.profile.publicThumbnail?.contentSha256 === profile.publicThumbnail.contentSha256
+      ) {
+        mergedThumbnail = existing.thumbnail;
+      }
       const row: CachedPeerProfile = {
         ownerId: profile.ownerId,
         profile,
         cachedAt: new Date().toISOString(),
-        thumbnail,
+        thumbnail: mergedThumbnail,
       };
-      const idx = file.records.findIndex((r) => r.ownerId === profile.ownerId);
       if (idx >= 0) file.records[idx] = row;
       else file.records.push(row);
       await saveFile(file);

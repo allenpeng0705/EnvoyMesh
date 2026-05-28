@@ -63,6 +63,8 @@ export async function routeRpcMethod(
       return ns.requestPeerProfile(String(params.ownerId ?? ""));
     case "syncProfileToBonds":
       return ns.syncProfileToBonds();
+    case "refreshBondPeerProfiles":
+      return ns.refreshBondPeerProfiles();
     case "getAgentIdentity":
       return ns.getAgentIdentity();
     case "updateAgentIdentity":

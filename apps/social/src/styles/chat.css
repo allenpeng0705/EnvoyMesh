@@ -741,7 +741,9 @@
   color: var(--color-text-muted);
 }
 
-.thread-row .thread-avatar {
+.thread-row .thread-avatar,
+.thread-row .profile-avatar,
+.thread-row .profile-avatar--photo {
   width: 44px;
   height: 44px;
   border-radius: var(--radius-full);
@@ -752,6 +754,7 @@
   font-size: var(--text-sm);
   flex-shrink: 0;
   color: var(--color-on-role);
+  object-fit: cover;
 }
 
 .thread-row--ai .thread-avatar {

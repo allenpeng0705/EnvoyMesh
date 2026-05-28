@@ -366,6 +366,15 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [nodeService, wsTransportOpen]);
 
+  // After mesh is reachable, exchange profiles with all bonds (catch-up for missed thumbnail updates).
+  useEffect(() => {
+    if (!wsTransportOpen) return;
+    const unsub = nodeService.on("node:online", () => {
+      void nodeService.refreshBondPeerProfiles?.().catch(() => {});
+    });
+    return unsub;
+  }, [nodeService, wsTransportOpen]);
+
   // -----------------------------------------------------------------------
   // Helper functions
   // -----------------------------------------------------------------------

@@ -23,7 +23,9 @@ Owner-signed **HumanProfile** metadata plus vault bytes for thumbnails and galle
 2. Node/mobile writes to vault under `profile/` (path-validated, no `..`).
 3. **EXIF/metadata stripped** for JPEG, PNG, and WebP (RIFF `EXIF` / `XMP ` / `ICCP` chunks).
 4. Size limits: thumbnail **512 KiB**, gallery **5 MiB**, max **12** gallery items.
-5. Profile re-signed; thumbnail changes trigger **`syncProfileToBonds`**.
+5. Profile re-signed; thumbnail changes trigger **`syncProfileToBonds`** (pushes `profile.sync` to all bonds).
+
+**Automatic refresh (no manual action):** When a contact changes their thumbnail, they broadcast `profile.sync`. Your node caches inline bytes and emits **`profile:updated`**; Social avatars reload from cache. When your mesh comes online, **`refreshBondPeerProfiles`** re-pushes your profile and requests each bond’s profile. Bond / hello acceptance does the same for the new contact pair.
 
 ---
 
@@ -75,7 +77,7 @@ Agent policy defaults: gallery auto-share **off** (`DEFAULT_PROFILE_MEDIA_POLICY
 ## APIs (NodeService)
 
 - `setPublicProfileThumbnail`, `upsertProfileGalleryPhoto`, `removeProfileGalleryPhoto`, `updateProfileGalleryPhotoVisibility`
-- `syncProfileToBonds`, `getPeerProfile`, `listPeerProfiles`, `requestPeerProfile`
+- `syncProfileToBonds`, `refreshBondPeerProfiles`, `getPeerProfile`, `listPeerProfiles`, `requestPeerProfile`
 
 ---
 

@@ -96,6 +96,7 @@ export interface NodeServiceClient {
   listPeerProfiles(): Promise<import("@envoymesh/api").PeerProfileView[]>;
   requestPeerProfile(ownerId: string): Promise<{ ok: boolean; reason?: string }>;
   syncProfileToBonds(): Promise<void>;
+  refreshBondPeerProfiles(): Promise<{ requested: number; failed: number }>;
   getAgentIdentity(): Promise<import("@envoymesh/api").AgentIdentityDocument>;
   updateAgentIdentity(content: string): Promise<import("@envoymesh/api").AgentIdentityDocument>;
 
@@ -366,6 +367,9 @@ function createWsNodeServiceClient(
     },
     async syncProfileToBonds() {
       await wsClient.rpc("syncProfileToBonds");
+    },
+    async refreshBondPeerProfiles() {
+      return wsClient.rpc("refreshBondPeerProfiles") as Promise<{ requested: number; failed: number }>;
     },
     async getAgentIdentity() { return wsClient.rpc("getAgentIdentity"); },
     async updateAgentIdentity(content: string) { return wsClient.rpc("updateAgentIdentity", { content }); },

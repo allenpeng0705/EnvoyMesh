@@ -86,6 +86,7 @@ export type RpcMethods =
   | "listPeerProfiles"
   | "requestPeerProfile"
   | "syncProfileToBonds"
+  | "refreshBondPeerProfiles"
   | "getAgentIdentity"
   | "updateAgentIdentity"
   // Bond Management

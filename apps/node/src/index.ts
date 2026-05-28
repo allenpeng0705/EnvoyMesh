@@ -2710,8 +2710,7 @@ nodeService.on("bond:established", (data) => {
   console.log(`[index.ts] nodeService bond:established event fired, peerOwnerId=${data.peerOwnerId}`);
   wsServer.emitEvent("bond:established", data);
   if (nodeService instanceof NodeServiceImpl) {
-    void nodeService.syncProfileToBonds();
-    void nodeService.requestPeerProfile(data.peerOwnerId);
+    void nodeService.refreshBondPeerProfiles();
   }
 });
 nodeService.on("config:updated", (data) => {

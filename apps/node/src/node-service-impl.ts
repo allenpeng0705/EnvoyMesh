@@ -1132,6 +1132,20 @@ class NodeServiceImpl implements NodeService {
     if (hp) await this._broadcastProfileSyncToBonds(hp);
   }
 
+  async refreshBondPeerProfiles(): Promise<{ requested: number; failed: number }> {
+    const hp = await this._humanProfileStore.loadHumanProfile();
+    if (hp) {
+      await this._broadcastProfileSyncToBonds(hp);
+    }
+    const bonds = await this.getBonds();
+    let failed = 0;
+    for (const bond of bonds) {
+      const result = await this.requestPeerProfile(bond.peerOwnerId);
+      if (!result.ok) failed += 1;
+    }
+    return { requested: bonds.length, failed };
+  }
+
   async requestPeerProfile(ownerId: string): Promise<{ ok: boolean; reason?: string }> {
     const mesh = this._requireMesh();
     const profile = this._requireProfile();
@@ -1732,8 +1746,7 @@ class NodeServiceImpl implements NodeService {
       displayName: pending.requesterDisplayName,
     });
 
-    void this.syncProfileToBonds();
-    void this.requestPeerProfile(pending.requesterOwnerId);
+    void this.refreshBondPeerProfiles();
     void this._tagBondedContactReachability(pending.remotePeerId);
 
     // Remove from pending requests
@@ -4100,6 +4113,9 @@ class NodeServiceImpl implements NodeService {
       this._nodeStatus = "running";
       this.emit("node:status", { status: this._nodeStatus, peerId: this._mesh.peerId });
       this.emit("node:online", { peerId: this._mesh.peerId, multiaddrs: this._mesh.multiaddrs.map(a => a.toString()) });
+      void this.refreshBondPeerProfiles().catch((err) => {
+        console.warn("[profile] refreshBondPeerProfiles after node:online failed:", err);
+      });
 
       // Wait longer for DHT to connect to bootstrap peers and stabilize routing table
       // DHT provide operations require the routing table to be populated

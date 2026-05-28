@@ -1261,6 +1261,17 @@ export class MobileNode implements NodeService {
     }
   }
 
+  async refreshBondPeerProfiles(): Promise<{ requested: number; failed: number }> {
+    await this.syncProfileToBonds();
+    const bonds = await this.getBonds();
+    let failed = 0;
+    for (const bond of bonds) {
+      const result = await this.requestPeerProfile(bond.peerOwnerId);
+      if (!result.ok) failed += 1;
+    }
+    return { requested: bonds.length, failed };
+  }
+
   async syncProfileToBonds(): Promise<void> {
     if (!this._humanProfile?.publicThumbnail || !this._state) return;
     const bonds = await this.getBonds();
@@ -3800,6 +3811,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
           peerId: this._state?.agent?.agentPeerId ?? "",
           multiaddrs: [url],
         });
+        void this.refreshBondPeerProfiles().catch((err) => {
+          console.warn("[mobile-node] refreshBondPeerProfiles after relay online failed:", err);
+        });
       };
       ws.onclose = () => {
         // Remove from socket array eagerly
@@ -4045,8 +4059,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
       peerOwnerId: payload.responderOwnerId,
       displayName,
     });
-    void this.syncProfileToBonds();
-    void this.requestPeerProfile(payload.responderOwnerId);
+    void this.refreshBondPeerProfiles();
   }
 
   /** Inbound `bond.challenge` — auto-reply with `bond.challenge.response` (referral / pairing parity with desktop tests). */

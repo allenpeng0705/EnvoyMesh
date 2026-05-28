@@ -7,6 +7,7 @@ import type {
 } from "@envoymesh/api";
 import { resolveContactAiAccessLevel } from "@envoymesh/api";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
+import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import { ChatIcon, BridgeIcon } from "../../icons.js";
 import { useChatThreadPreviews } from "../../hooks/useChatThreadPreviews.js";
 
@@ -207,9 +208,11 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant 
                   setContextMenu({ ownerId: contact.peerOwnerId, x: e.clientX, y: e.clientY });
                 }}
               >
-                <span className="thread-avatar" aria-hidden>
-                  {(contact.displayName?.[0] ?? "?").toUpperCase()}
-                </span>
+                <PeerProfileAvatar
+                  ownerId={contact.peerOwnerId}
+                  fallbackLabel={contactLabel(contact)}
+                  className="thread-avatar"
+                />
                 <span className="thread-meta">
                   <span className="thread-title-row">
                     <span className="thread-title">{contactLabel(contact)}</span>

@@ -937,6 +937,9 @@ export interface NodeService {
   /** Push local signed profile (and thumbnail bytes) to all bonded peers. */
   syncProfileToBonds(): Promise<void>;
 
+  /** Re-sync local profile to bonds and request fresh profiles from each bond (e.g. after mesh online). */
+  refreshBondPeerProfiles(): Promise<{ requested: number; failed: number }>;
+
   /**
    * Get owner-editable agent operating instructions (`agent-identity.md` in profile dir).
    */

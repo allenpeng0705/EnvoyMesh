@@ -124,6 +124,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.syncProfileToBonds();
   }
 
+  async refreshBondPeerProfiles() {
+    return this._ns.refreshBondPeerProfiles();
+  }
+
   async getAgentIdentity() {
     return this._ns.getAgentIdentity();
   }

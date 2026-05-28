@@ -13,19 +13,22 @@ export function PeerProfileAvatar({ ownerId, fallbackLabel, className = "", larg
   const [src, setSrc] = useState<string | null>(null);
 
   const loadThumbnail = () => {
-    void nodeService.getPeerProfile(ownerId).then((row) => {
-      if (!row?.thumbnailContentBase64) {
-        setSrc(null);
-        return;
-      }
-      const mime = row.thumbnailMimeType ?? "image/jpeg";
-      setSrc(`data:${mime};base64,${row.thumbnailContentBase64}`);
-    }).catch(() => setSrc(null));
+    void nodeService
+      .getPeerProfile(ownerId)
+      .then((row) => {
+        if (!row?.thumbnailContentBase64) {
+          setSrc(null);
+          void nodeService.requestPeerProfile(ownerId).catch(() => {});
+          return;
+        }
+        const mime = row.thumbnailMimeType ?? "image/jpeg";
+        setSrc(`data:${mime};base64,${row.thumbnailContentBase64}`);
+      })
+      .catch(() => setSrc(null));
   };
 
   useEffect(() => {
     loadThumbnail();
-    void nodeService.requestPeerProfile(ownerId).catch(() => {});
     const unsub = nodeService.on?.("profile:updated", (data: { ownerId: string }) => {
       if (data.ownerId === ownerId) loadThumbnail();
     });
