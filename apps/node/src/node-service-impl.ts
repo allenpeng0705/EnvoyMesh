@@ -265,6 +265,10 @@ import {
   isLibp2pPeerId,
 } from "./profile-sync-outbound.js";
 import { pickBestLibp2pPeerDirectoryRecord } from "./peer-transport-resolve.js";
+import {
+  normalizeTransportPeerId,
+  ownerIdFromProfileIntent,
+} from "./peer-directory-learn.js";
 import { createPublishedLibraryStore } from "./published-library-store.js";
 import { createPublishedExternalStore } from "./published-external-store.js";
 import { exportVaultDocumentToIpfs } from "./vault-ipfs-export-service.js";
@@ -451,6 +455,11 @@ class NodeServiceImpl implements NodeService {
 
   /** Serialize outbound chat streams per libp2p peer to avoid concurrent newStream races. */
   private readonly _chatSendChains = new Map<string, Promise<void>>();
+  /** In-memory owner → libp2p from recent inbound streams (until persisted in peer directory). */
+  private readonly _lastLibp2pTransportByOwner = new Map<
+    string,
+    { peerId: string; listenAddrs?: string[] }
+  >();
   /** Inbound push offers waiting for accept/decline — keyed by preview message id. */
   private readonly _pendingInboundShareOffers = new Map<string, ShareOffer>();
   /** Pending vault-relative rename on receive: key `senderPeerId + \\n + voucher source path`
@@ -1152,13 +1161,26 @@ class NodeServiceImpl implements NodeService {
     const mesh = this._requireMesh();
     const profile = this._requireProfile();
     try {
-      const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
-        await this._resolvePeerTransportForOwner(ownerId);
+      const resolved = await this._resolveLibp2pPeerForBondOwner(ownerId);
+      if (!resolved) {
+        return { ok: false, reason: "peer not in directory (no libp2p route)" };
+      }
+      const { transportPeerId, listenAddrs } = resolved;
+      let envelopeRecipientPeerId: string | undefined;
+      try {
+        envelopeRecipientPeerId = (await this._resolvePeerTransportForOwner(ownerId)).recipientEnvelopePeerId;
+      } catch {
+        const records = await this._peerDirectoryStore.listPeerRecords();
+        const rec = pickBestLibp2pPeerDirectoryRecord(records, ownerId);
+        if (rec?.devicePublicKeyPem) {
+          envelopeRecipientPeerId = derivePeerId(rec.devicePublicKeyPem);
+        }
+      }
       await sendProfileRequest({
         mesh,
         profile,
         transportPeerId,
-        envelopeRecipientPeerId: recipientEnvelopePeerId ?? transportPeerId,
+        envelopeRecipientPeerId: envelopeRecipientPeerId ?? transportPeerId,
         listenAddrs,
         dialHintsFor: (peerId, addrs) => this._dialHintsForChat(peerId, addrs ?? listenAddrs),
       });
@@ -1185,16 +1207,9 @@ class NodeServiceImpl implements NodeService {
         vaultDir: this._vaultDir,
         bondOwnerIds,
         resolveLibp2pPeer: async (ownerId) => {
-          try {
-            const { transportPeerId, listenAddrs } = await this._resolvePeerTransportForOwner(ownerId);
-            return { peerId: transportPeerId, listenAddrs };
-          } catch (err) {
-            console.warn(
-              `[profile.sync] no libp2p route to ${ownerId.slice(0, 20)}…:`,
-              err instanceof Error ? err.message : err,
-            );
-            return undefined;
-          }
+          const resolved = await this._resolveLibp2pPeerForBondOwner(ownerId);
+          if (!resolved) return undefined;
+          return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
         },
         dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
       });
@@ -1205,9 +1220,10 @@ class NodeServiceImpl implements NodeService {
 
   async handleInboundProfileIntent(
     envelope: EnvoyEnvelope,
-    context?: { transportPeerId?: string },
+    context?: { transportPeerId?: string; remoteAddr?: string },
   ): Promise<boolean> {
     if (!this._contactOwnerKeyStore || !this._peerProfileCacheStore) return false;
+    await this._rememberBondedPeerTransportFromInbound(envelope, context);
     if (
       envelope.intent !== "profile.sync" &&
       envelope.intent !== "profile.response" &&
@@ -1864,6 +1880,76 @@ class NodeServiceImpl implements NodeService {
       config,
       profileDir: this._profileDir,
     });
+  }
+
+  private async _rememberBondedPeerTransportFromInbound(
+    envelope: EnvoyEnvelope,
+    context?: { transportPeerId?: string; remoteAddr?: string },
+  ): Promise<void> {
+    const transportPeerId = normalizeTransportPeerId(context?.transportPeerId);
+    const ownerId = ownerIdFromProfileIntent(envelope);
+    if (!transportPeerId || !ownerId) return;
+
+    const listenAddrs = context?.remoteAddr?.trim() ? [context.remoteAddr.trim()] : [];
+    this._lastLibp2pTransportByOwner.set(ownerId, { peerId: transportPeerId, listenAddrs });
+
+    try {
+      await this._peerDirectoryStore.ensurePeerFromInboundChat({
+        ownerId,
+        peerId: transportPeerId,
+        listenAddrs,
+      });
+      if (envelope.senderPublicKey?.trim()) {
+        await this._peerDirectoryStore.mergeInboundDeviceBinding({
+          peerId: transportPeerId,
+          devicePublicKeyPem: envelope.senderPublicKey,
+          ownerId,
+        });
+      }
+      console.log(
+        `[peer-directory] learned ${ownerId.slice(0, 20)}… → libp2p ${transportPeerId.slice(0, 12)}… from ${envelope.intent}`,
+      );
+    } catch (err) {
+      console.warn(`[peer-directory] learn from ${envelope.intent} failed:`, err);
+    }
+  }
+
+  private async _resolveLibp2pPeerForBondOwner(
+    ownerId: string,
+  ): Promise<{ transportPeerId: string; listenAddrs?: string[] } | undefined> {
+    const cached = this._lastLibp2pTransportByOwner.get(ownerId);
+    if (cached && isLibp2pPeerId(cached.peerId)) {
+      return { transportPeerId: cached.peerId, listenAddrs: cached.listenAddrs };
+    }
+
+    for (const pending of this._pendingHelloRequests.values()) {
+      if (pending.requesterOwnerId === ownerId && isLibp2pPeerId(pending.remotePeerId)) {
+        return { transportPeerId: pending.remotePeerId, listenAddrs: [] };
+      }
+    }
+
+    try {
+      const resolved = await this._resolvePeerTransportForOwner(ownerId);
+      return { transportPeerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
+    } catch {
+      const records = await this._peerDirectoryStore.listPeerRecords();
+      const libp2p = pickBestLibp2pPeerDirectoryRecord(records, ownerId);
+      if (libp2p) {
+        return { transportPeerId: libp2p.peerId, listenAddrs: libp2p.listenAddrs };
+      }
+      const mesh = this._reachableMesh();
+      if (mesh) {
+        for (const rec of records.filter((r) => r.ownerId === ownerId && isLibp2pPeerId(r.peerId))) {
+          if (mesh.getPeerConnectionInfo(rec.peerId).connected) {
+            return { transportPeerId: rec.peerId, listenAddrs: rec.listenAddrs };
+          }
+        }
+      }
+      console.warn(
+        `[profile.sync] no libp2p route to ${ownerId.slice(0, 20)}…: Peer not found for owner (ask contact to message you once, or re-save their profile photo)`,
+      );
+      return undefined;
+    }
   }
 
   private async _resolvePeerTransportForOwner(targetOwnerId: string): Promise<{

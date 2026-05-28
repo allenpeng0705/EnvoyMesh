@@ -98,5 +98,6 @@ npx vitest run apps/social/test/e2e/profile-photos-desktop-e2e.test.tsx
 |---------|--------|
 | Contact has initials, no photo | Bond exists? They have `publicThumbnail`? Run Say Hello or wait for `profile.sync` |
 | `profile.sync` ignored | Owner pubkey in contact store? Signature valid? |
+| Win log: `no libp2p route` / `Peer not found for owner` | Bond exists but peer directory missing libp2p — contact must message you or push `profile.sync` once so your node learns their `ownerId → 12D3KooW…` mapping |
 | Share fails | Recipient bonded? Path under `profile/gallery/`? |
 | Gallery visible in chat but no image | Expected — use **Share** to send file bytes |
