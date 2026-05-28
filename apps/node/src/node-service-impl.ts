@@ -3665,8 +3665,48 @@ class NodeServiceImpl implements NodeService {
     return this._nodeStatus;
   }
 
+  /**
+   * Load profile + task store from persisted config when missing (Envoy-managed path).
+   * Safe to call when CLI already bound {@link bindCliTaskStore}.
+   */
+  private async _ensureAgentStores(): Promise<boolean> {
+    const config = await this._configStore.load();
+    if (!config?.profileDir) {
+      return Boolean(this._profile && this._taskStore);
+    }
+    if (!this._profile) {
+      this._profile = await loadOrCreateNodeProfile(config.profileDir);
+    }
+    if (!this._taskStore) {
+      this._taskStore = createLocalTaskStore(config.profileDir);
+    }
+    return Boolean(this._profile && this._taskStore);
+  }
+
+  private async _requireToolExecutionContext(): Promise<MeshToolContext> {
+    if (!(await this._ensureAgentStores())) {
+      if (this._nodeStatus === "starting") {
+        throw new Error("Node is still starting. Wait a moment and try again.");
+      }
+      if (this._nodeStatus === "offline") {
+        throw new Error("Node is offline. Complete setup or start the node from Settings → Node.");
+      }
+      const config = await this._configStore.load();
+      if (!config) {
+        throw new Error("Node not set up. Finish Welcome setup or run the Envoy node app.");
+      }
+      throw new Error("Node not ready for Assistant. Start the node from Settings → Node.");
+    }
+    const context = await this.getToolExecutionContext();
+    if (!context) {
+      throw new Error("Could not initialize agent identity. Check Settings → Node.");
+    }
+    return context;
+  }
+
   async startNode(): Promise<void> {
     if (this._nodeStatus === "running") {
+      await this._ensureAgentStores();
       return;
     }
 
@@ -3674,25 +3714,23 @@ class NodeServiceImpl implements NodeService {
       throw new Error("Node is already starting");
     }
 
-    this._nodeStatus = "starting";
-    this.emit("node:status", { status: this._nodeStatus });
-
     try {
       const config = await this._configStore.load();
       if (!config) {
         throw new Error("No node config found. Call initNode() first.");
       }
 
-      // Load or create profile
+      // Load stores before emitting "starting" so Assistant RPC cannot race an empty task store.
       this._profile = await loadOrCreateNodeProfile(config.profileDir);
-
-      // Create app-managed stores
       this._taskStore = createLocalTaskStore(config.profileDir);
       this._relayStateStore = createRelayStateStore(config.profileDir);
       this._discoverySeedStore = this._discoverySeedStore ?? createDiscoverySeedStore(config.profileDir);
       this._taskRuntimeStore = createTaskRuntimeStateStore(config.profileDir);
       this._inboundGuard = createInboundMessageGuard();
       this._taskDispatcher = createTaskDispatcher();
+
+      this._nodeStatus = "starting";
+      this.emit("node:status", { status: this._nodeStatus });
 
       // Compute effective bootstrap peers
       // Must resolve bootstrapPresets to actual multiaddresses for mesh connectivity
@@ -4899,23 +4937,25 @@ class NodeServiceImpl implements NodeService {
 
   async knowledgeQuery(question: string): Promise<string> {
     console.log(`[knowledgeQuery] called with question: ${question.substring(0, 50)}...`);
-    if (!this._mesh || !this._profile) {
+    const mesh = this._reachableMesh();
+    if (!mesh || !(await this._ensureAgentStores())) {
       throw new Error("Node not initialized");
     }
-
-    if (!this._taskStore) {
-      throw new Error("Task store not initialized");
+    const profile = this._profile;
+    const taskStore = this._taskStore;
+    if (!profile || !taskStore) {
+      throw new Error("Node not initialized");
     }
 
     const kqPayload = createKnowledgeQueryPayload({ query: question });
     const unsignedEnvelope = createUnsignedEnvelope({
-      senderPeerId: this._mesh.peerId,
-      senderPublicKey: this._profile.device.publicKeyPem,
+      senderPeerId: mesh.peerId,
+      senderPublicKey: profile.device.publicKeyPem,
       senderRole: "agent",
       intent: "knowledge.query",
       payload: kqPayload,
     });
-    const envelope = signUnsignedEnvelope(unsignedEnvelope, this._profile.device.privateKeyPem) as EnvoyEnvelope;
+    const envelope = signUnsignedEnvelope(unsignedEnvelope, profile.device.privateKeyPem) as EnvoyEnvelope;
 
     const nodeConfig = await this.getNodeConfig();
     console.log(`[knowledgeQuery] nodeConfig.modelProviders.mode=${nodeConfig.modelProviders.mode}`);
@@ -4925,13 +4965,13 @@ class NodeServiceImpl implements NodeService {
 
     const result = await handleInboundKnowledgeQuery({
       envelope,
-      remotePeerId: this._mesh.peerId,
+      remotePeerId: mesh.peerId,
       receivedAt: Date.now(),
       correlationId: envelope.messageId,
-      taskStore: this._taskStore,
+      taskStore,
       trustStore: this._trustStore,
       peerDirectoryStore: this._peerDirectoryStore,
-      profile: this._profile,
+      profile,
       vaultIndex,
       modelProviders: nodeConfig.modelProviders,
       isLocalSelfQuery: true,
@@ -4952,10 +4992,7 @@ class NodeServiceImpl implements NodeService {
 
   async runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult> {
     this.recordOwnerActivity();
-    const context = await this.getToolExecutionContext();
-    if (!context) {
-      throw new Error("Node not initialized");
-    }
+    const context = await this._requireToolExecutionContext();
     const turn = await runDocumentAgentTurnLoop({
       message,
       listLibraryItems: (query) => this.listLibraryItems(query ? { query } : undefined),
@@ -4966,7 +5003,7 @@ class NodeServiceImpl implements NodeService {
       sendChat: (targetOwnerId, text) => this.sendAgentChat(targetOwnerId, text),
     });
     await this.recordH2aOwnerTurn(message, turn);
-    return turn;
+    return { ...turn, answer: stripModelThinking(turn.answer) };
   }
 
   /** Local H2A turn — Activity row for Assistant lane (Phase 15C). */
@@ -5029,9 +5066,10 @@ class NodeServiceImpl implements NodeService {
    * Build {@link MeshToolContext} for native Envoy AI and optional bridge agents.
    */
   async getToolExecutionContext(): Promise<MeshToolContext | null> {
-    if (!this._taskStore) return null;
+    if (!(await this._ensureAgentStores())) return null;
     const profile = this._profile;
-    if (!profile) return null;
+    const taskStore = this._taskStore;
+    if (!profile || !taskStore) return null;
     const agentIdentity = await this._ensureAgentIdentity();
     if (!agentIdentity) return null;
     const config = await this._configStore.load();
@@ -5044,7 +5082,7 @@ class NodeServiceImpl implements NodeService {
     return {
       trustStore: this._trustStore,
       peerDirectoryStore: this._peerDirectoryStore,
-      taskStore: this._taskStore,
+      taskStore,
       agentIdentity: {
         agentId: agentIdentity.agentCredential.agentId,
         agentPeerId: agentIdentity.agentPeerId,
@@ -5053,7 +5091,7 @@ class NodeServiceImpl implements NodeService {
       },
       ownerIdentity: { ownerId: profile.owner.ownerId },
       agentCredential: agentIdentity.agentCredential,
-      mesh: this._mesh,
+      mesh: this._reachableMesh(),
       trustIntro: {
         trustModeEnabled: config?.trustModeEnabled ?? false,
         friendAutopilotEnabled: config?.friendAutopilotEnabled ?? false,

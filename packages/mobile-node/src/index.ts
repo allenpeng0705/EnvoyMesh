@@ -3337,7 +3337,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
       throw new Error("Node not initialized");
     }
     const self = this;
-    return runDocumentAgentTurnLoop({
+    const turn = await runDocumentAgentTurnLoop({
       message,
       listLibraryItems: (query) => self.listLibraryItems(query ? { query } : undefined),
       getBonds: () => self.getBonds(),
@@ -3427,6 +3427,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
         }
       },
     });
+    return { ...turn, answer: stripModelThinking(turn.answer) };
   }
 
   async listActiveTransfers(): Promise<TransferStatus[]> {

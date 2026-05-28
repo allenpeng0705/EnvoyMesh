@@ -16,6 +16,7 @@ import {
   type AiKnowledgeBaseSettings,
   type KnowledgeSyndicationSensitivity,
   type ModelProviderConfig,
+  stripModelThinking,
 } from "@envoymesh/api";
 import { ZodError } from "zod";
 import { formatVaultKnowledgeSection, searchVaultKnowledgeBase, type KnowledgeAccessLevel } from "./ai-context.js";
@@ -366,7 +367,7 @@ Query: ${payload.query}`;
   );
 
   // 8. Build and return response payload
-  const answer = modelResult.response?.text ?? "Model unavailable.";
+  const answer = stripModelThinking(modelResult.response?.text ?? "Model unavailable.");
   const matchScore = vaultSnippets.length > 0
     ? Math.min(1, vaultSnippets.reduce((sum, r) => sum + r.score, 0) / vaultSnippets.length / 10)
     : 0;

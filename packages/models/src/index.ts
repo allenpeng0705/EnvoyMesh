@@ -1,4 +1,4 @@
-import type { ModelProviderConfig } from "@envoymesh/api";
+import { stripModelThinking, type ModelProviderConfig } from "@envoymesh/api";
 import type { Sensitivity } from "@envoymesh/protocol";
 import {
   evaluateSemanticFirewall,
@@ -566,7 +566,7 @@ Query: ${query}`;
     providers,
   );
 
-  return modelResult.response?.text ?? "Model unavailable.";
+  return stripModelThinking(modelResult.response?.text ?? "Model unavailable.");
 }
 
 export function evaluateModelProvider(

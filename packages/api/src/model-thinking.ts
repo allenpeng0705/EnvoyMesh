@@ -1,4 +1,5 @@
-const THINKING_TAG = "(?:think|redacted_thinking|thinking)";
+/** Longest names first so `think` does not match inside `redacted_thinking` or ``. */
+const THINKING_TAG = "(?:redacted_thinking|thinking|think)";
 const THINKING_BLOCK_PATTERN = new RegExp(`<${THINKING_TAG}>[\\s\\S]*?<\\/${THINKING_TAG}>`, "i");
 
 export interface ParsedModelThinking {
@@ -28,10 +29,16 @@ function extractThinkingBlocks(text: string): string[] {
   return blocks;
 }
 
+function stripUnclosedThinkingBlocks(text: string): string {
+  return text.replace(new RegExp(`<${THINKING_TAG}>[\\s\\S]*$`, "gi"), "");
+}
+
 /** Split model output into optional reasoning vs user-visible reply text. */
 export function parseModelThinking(text: string): ParsedModelThinking {
   const blocks = extractThinkingBlocks(text);
-  const visibleText = text.replace(thinkingBlockRegex(), "").replace(/\n{3,}/g, "\n\n").trim();
+  const visibleText = stripUnclosedThinkingBlocks(text.replace(thinkingBlockRegex(), ""))
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
   return {
     thinking: blocks.length > 0 ? blocks.join("\n\n") : null,
     visibleText,

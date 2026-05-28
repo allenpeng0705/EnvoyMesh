@@ -22,8 +22,10 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
   }),
 }));
 
+let nodeStatus: "offline" | "starting" | "running" | "stopping" = "running";
+
 vi.mock("../../src/context/NodeStateContext.js", () => ({
-  useNodeState: () => ({ nodeConfig }),
+  useNodeState: () => ({ nodeConfig, nodeStatus }),
 }));
 
 afterEach(() => {
@@ -33,6 +35,7 @@ afterEach(() => {
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
+  nodeStatus = "running";
   nodeConfig = { modelProviders: { mode: "mock", modelName: "test-model" } };
   runDocumentAgentTurn.mockResolvedValue({
     answer: "Found 1 file(s) in your library:\n• report.txt",
@@ -53,6 +56,18 @@ describe("AIChatPanel", () => {
       expect(runDocumentAgentTurn).toHaveBeenCalledWith("list my library files");
     });
     expect(await screen.findByText(/report\.txt/i)).toBeDefined();
+  });
+
+  it("does not call runDocumentAgentTurn while node is starting", async () => {
+    nodeStatus = "starting";
+    render(<AIChatPanel />);
+
+    const input = screen.getByPlaceholderText(/Ask Envoy AI anything/i);
+    fireEvent.change(input, { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
+
+    expect(await screen.findByText(/Node is still starting/i)).toBeDefined();
+    expect(runDocumentAgentTurn).not.toHaveBeenCalled();
   });
 
   it("shows error message when runDocumentAgentTurn fails", async () => {

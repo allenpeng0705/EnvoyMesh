@@ -6,7 +6,7 @@ import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.
 import { messageVisualVariant } from "../../lib/chat-thread-kind.js";
 import { createAssistantDraftCrdt, ASSISTANT_DRAFT_SYNC_SCOPE } from "../../lib/assistant-draft-crdt.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
-import { Markdown } from "../Markdown.js";
+import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatIcon, RemoveIcon } from "../../icons.js";
 
 interface AiMessage {
@@ -41,7 +41,14 @@ function groupByDate(msgs: AiMessage[]): [string, AiMessage[]][] {
 
 export function AIChatPanel() {
   const nodeService = useNodeService();
-  const { nodeConfig, humanProfile } = useNodeState();
+  const { nodeConfig, humanProfile, nodeStatus } = useNodeState();
+  const assistantReady = nodeStatus === "running";
+  const assistantBlockedHint =
+    nodeStatus === "starting"
+      ? "Node is still starting. Wait a moment, then try again."
+      : nodeStatus === "stopping"
+        ? "Node is stopping. Try again after it finishes."
+        : "Start your node from Settings → Node to use the Assistant.";
 
   const [aiMessages, setAiMessages] = useState<AiMessage[]>([]);
   const [aiInput, setAiInput] = useState("");
@@ -91,6 +98,26 @@ export function AIChatPanel() {
   const sendAiMessage = async (question: string) => {
     if (!question.trim() || isAiLoading) return;
 
+    if (!assistantReady) {
+      setAiMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          text: question.trim(),
+          timestamp: new Date().toISOString(),
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "ai",
+          text: assistantBlockedHint,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      draftRef.current?.setPlainText("");
+      return;
+    }
+
     const userMsg: AiMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -108,7 +135,7 @@ export function AIChatPanel() {
         {
           id: crypto.randomUUID(),
           role: "ai",
-          text: turn.answer,
+          text: stripModelThinking(turn.answer),
           timestamp: new Date().toISOString(),
         },
       ]);
@@ -167,6 +194,11 @@ export function AIChatPanel() {
         </div>
       </header>
       <div className="messages ai-messages-pane">
+        {!assistantReady && (
+          <p className="chat-reachability-hint ai-assistant-hint" role="status">
+            {assistantBlockedHint}
+          </p>
+        )}
         {aiMessages.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">
@@ -208,7 +240,7 @@ export function AIChatPanel() {
                           copyText={stripModelThinking(msg.text)}
                           onDelete={() => handleDeleteAiMessage(msg.id)}
                         >
-                          <Markdown text={msg.text} className="message-text" />
+                          <ChatMessageText text={msg.text} className="message-text" />
                         </ChatMessageBubble>
                       ))}
                     </div>
@@ -243,14 +275,14 @@ export function AIChatPanel() {
               await sendAiMessage(aiInput);
             }
           }}
-          disabled={isAiLoading}
+          disabled={isAiLoading || !assistantReady}
         />
         <button
           type="button"
           onClick={async () => {
             if (aiInput.trim() && !isAiLoading) await sendAiMessage(aiInput);
           }}
-          disabled={!aiInput.trim() || isAiLoading}
+          disabled={!aiInput.trim() || isAiLoading || !assistantReady}
         >
           Send
         </button>

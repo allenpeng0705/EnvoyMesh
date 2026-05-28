@@ -8,6 +8,12 @@ export default defineConfig({
   resolve: {
     alias: {
       "@envoymesh/api": resolve(rootDir, "packages/api/src/index.ts"),
+      "@envoymesh/api/did-import": resolve(rootDir, "packages/api/src/did-import.ts"),
+      "@envoymesh/api/discovery-privacy": resolve(rootDir, "packages/api/src/discovery-privacy.ts"),
+      "@envoymesh/api/discovery-referral-attestation": resolve(
+        rootDir,
+        "packages/api/src/discovery-referral-attestation.ts",
+      ),
       "@envoymesh/protocol": resolve(rootDir, "packages/protocol/src/index.ts"),
       "@envoymesh/identity": resolve(rootDir, "packages/identity/src/index.ts"),
       "@envoymesh/bonds": resolve(rootDir, "packages/bonds/src/index.ts"),

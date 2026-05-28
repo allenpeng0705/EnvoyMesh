@@ -28,6 +28,11 @@ describe("parseModelThinking", () => {
 });
 
 describe("stripModelThinking", () => {
+  it("removes unclosed redacted_thinking suffix", () => {
+    const raw = "Hello!\n\n<think>still reasoning";
+    expect(stripModelThinking(raw)).toBe("Hello!");
+  });
+
   it("removes think blocks from real auto-reply shape", () => {
     const raw =
       '<think>reasoning here</think>\n\n[AI Agent Draft Reply]\n\n我能帮你回答问题！';

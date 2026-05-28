@@ -95,4 +95,22 @@ describe("NodeServiceImpl.runDocumentAgentTurn", () => {
     expect(ctx!.sendChat).toBeTypeOf("function");
     expect(ctx!.getBonds).toBeTypeOf("function");
   });
+
+  it("knowledgeQuery does not fail when mesh is only bound via bindExternalMesh (CLI)", async () => {
+    const profile = testProfile();
+    const taskStore = createLocalTaskStore(profileDir);
+    const node = new NodeServiceImpl(
+      undefined,
+      createLocalTrustStore(profileDir),
+      createLocalPeerDirectoryStore(profileDir),
+      createHumanProfileStore(profileDir),
+      profileDir,
+      profile,
+      vaultDir,
+    );
+    node.bindCliTaskStore(taskStore);
+    node.bindExternalMesh({ peerId: "12D3KooWCliExternalMesh" } as never);
+
+    await expect(node.knowledgeQuery("What can you help me with?")).resolves.toEqual(expect.any(String));
+  });
 });
