@@ -426,6 +426,11 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   const headerInitial = displayName.trim().charAt(0).toUpperCase() || "?";
 
   const contactBond = bonds.find((c) => c.peerOwnerId === selectedContact);
+
+  useEffect(() => {
+    if (threadKind === "agent" || threadKind === "ai") return;
+    void nodeService.requestPeerProfile(selectedContact).catch(() => {});
+  }, [nodeService, selectedContact, threadKind]);
   const contactBondLevel = contactBond?.level ?? "public";
 
   const reachabilityClass = contactReachable

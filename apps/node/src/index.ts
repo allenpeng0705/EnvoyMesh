@@ -915,6 +915,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       const handled = await nodeService.handleInboundProfileIntent(envelope, {
         transportPeerId: remotePeerId,
         remoteAddr,
+        replyWithEnvelope,
       });
       if (handled) {
         await taskStore.appendAuditEvent(

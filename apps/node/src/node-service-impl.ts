@@ -259,6 +259,7 @@ import {
   handleInboundProfileSync,
 } from "./profile-sync-inbound.js";
 import {
+  buildSignedProfilePayloadEnvelope,
   sendProfileRequest,
   sendProfileResponse,
   sendProfileSyncToBonds,
@@ -1220,7 +1221,11 @@ class NodeServiceImpl implements NodeService {
 
   async handleInboundProfileIntent(
     envelope: EnvoyEnvelope,
-    context?: { transportPeerId?: string; remoteAddr?: string },
+    context?: {
+      transportPeerId?: string;
+      remoteAddr?: string;
+      replyWithEnvelope?: (envelope: EnvoyEnvelope) => Promise<void>;
+    },
   ): Promise<boolean> {
     if (!this._contactOwnerKeyStore || !this._peerProfileCacheStore) return false;
     await this._rememberBondedPeerTransportFromInbound(envelope, context);
@@ -1239,8 +1244,22 @@ class NodeServiceImpl implements NodeService {
         contactOwnerKeyStore: this._contactOwnerKeyStore,
         loadLocalProfile: async () => this._humanProfileStore.loadHumanProfile(),
         sendProfileResponse: async (envelopeRecipientPeerId, local, replyTransportPeerId) => {
-          const mesh = this._requireMesh();
           const profile = this._requireProfile();
+          const responseEnvelope = await buildSignedProfilePayloadEnvelope({
+            profile,
+            humanProfile: local,
+            vaultDir: this._vaultDir,
+            intent: "profile.response",
+            recipientPeerId: envelopeRecipientPeerId,
+          });
+          if (context?.replyWithEnvelope) {
+            await context.replyWithEnvelope(responseEnvelope);
+            console.log(
+              `[profile.response] replied on inbound stream to ${envelopeRecipientPeerId.slice(0, 16)}…`,
+            );
+            return;
+          }
+          const mesh = this._requireMesh();
           const records = await this._peerDirectoryStore.listPeerRecords();
           const rec = records.find((row) => row.peerId === replyTransportPeerId);
           const listenAddrs = rec?.listenAddrs;

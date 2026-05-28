@@ -85,6 +85,7 @@ export function createPeerProfileCacheStore(profileDir: string): PeerProfileCach
       } else if (
         !mergedThumbnail &&
         existing?.thumbnail &&
+        profile.publicThumbnail &&
         existing.profile.publicThumbnail?.contentSha256 === profile.publicThumbnail.contentSha256
       ) {
         mergedThumbnail = existing.thumbnail;

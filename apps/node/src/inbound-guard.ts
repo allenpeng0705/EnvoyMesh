@@ -16,7 +16,26 @@ export interface InboundMessageGuardOptions {
 }
 
 const defaultMaxEnvelopeBytes = 64 * 1024;
+/** profile.sync may include inline thumbnail bytes (up to 512 KiB image + base64 overhead). */
+const profileMaxEnvelopeBytes = 1024 * 1024;
 const defaultMaxReplayEntries = 100_000;
+
+const PROFILE_INTENTS = new Set(["profile.sync", "profile.request", "profile.response"]);
+
+function maxBytesForInboundIntent(intent: string | undefined, defaultLimit: number): number {
+  if (intent && PROFILE_INTENTS.has(intent)) {
+    return profileMaxEnvelopeBytes;
+  }
+  return defaultLimit;
+}
+
+function inboundIntentFromUnknown(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null || !("intent" in input)) {
+    return undefined;
+  }
+  const intent = (input as { intent?: unknown }).intent;
+  return typeof intent === "string" ? intent : undefined;
+}
 
 export function createInboundMessageGuard(
   options: InboundMessageGuardOptions = {},
@@ -29,8 +48,10 @@ export function createInboundMessageGuard(
   return {
     inspect(input) {
       const byteLength = Buffer.byteLength(JSON.stringify(input), "utf8");
+      const intentHint = inboundIntentFromUnknown(input);
+      const sizeLimit = maxBytesForInboundIntent(intentHint, maxEnvelopeBytes);
 
-      if (byteLength > maxEnvelopeBytes) {
+      if (byteLength > sizeLimit) {
         return { action: "reject", reason: "envelope exceeds maximum size" };
       }
 

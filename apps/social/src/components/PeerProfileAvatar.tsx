@@ -29,6 +29,7 @@ export function PeerProfileAvatar({ ownerId, fallbackLabel, className = "", larg
 
   useEffect(() => {
     loadThumbnail();
+    void nodeService.requestPeerProfile(ownerId).catch(() => {});
     const unsub = nodeService.on?.("profile:updated", (data: { ownerId: string }) => {
       if (data.ownerId === ownerId) loadThumbnail();
     });

@@ -51,6 +51,38 @@ describe("inbound message guard", () => {
     });
   });
 
+  it("allows large profile.sync envelopes above the default 64 KiB cap", () => {
+    const guard = createInboundMessageGuard({ maxEnvelopeBytes: 64 * 1024 });
+    const identity = generateIdentity();
+    const owner = generateOwnerIdentity();
+    const bigInline = "A".repeat(80 * 1024);
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: identity.peerId,
+      senderPublicKey: identity.publicKeyPem,
+      senderRole: "human",
+      intent: "profile.sync",
+      payload: {
+        profile: {
+          version: "0.1",
+          ownerId: owner.ownerId,
+          displayName: "Big",
+          username: "big01",
+          profileVisibility: "private",
+          updatedAt: new Date().toISOString(),
+          signature: "sig-placeholder",
+        },
+        ownerPublicKeyPem: owner.publicKeyPem,
+        publicThumbnailInline: {
+          contentBase64: bigInline,
+          mimeType: "image/jpeg",
+          contentSha256: "a".repeat(64),
+        },
+      },
+    });
+    const envelope = signUnsignedEnvelope(unsigned, identity.privateKeyPem);
+    expect(guard.inspect(envelope).action).toBe("allow");
+  });
+
   it("rejects invalid signatures", () => {
     const guard = createInboundMessageGuard();
     const envelope = signedPingEnvelope();
