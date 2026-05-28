@@ -429,7 +429,12 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
 
   useEffect(() => {
     if (threadKind === "agent" || threadKind === "ai") return;
-    void nodeService.requestPeerProfile(selectedContact).catch(() => {});
+    const pullProfile = () => {
+      void nodeService.requestPeerProfile(selectedContact).catch(() => {});
+    };
+    pullProfile();
+    const refreshTimer = window.setInterval(pullProfile, 20_000);
+    return () => window.clearInterval(refreshTimer);
   }, [nodeService, selectedContact, threadKind]);
   const contactBondLevel = contactBond?.level ?? "public";
 

@@ -37,7 +37,7 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
         mimeType: mime,
       });
       await refreshHumanProfile();
-      void nodeService.syncProfileToBonds();
+      await nodeService.syncProfileToBonds();
       showToast("Thumbnail updated", "success");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Upload failed", "error");

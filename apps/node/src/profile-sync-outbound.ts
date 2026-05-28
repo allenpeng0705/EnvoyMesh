@@ -66,11 +66,26 @@ export async function sendProfileSyncToBonds(input: {
       console.warn(`[profile.sync] skip bond ${ownerId.slice(0, 20)}…: no libp2p peer id`);
       continue;
     }
-    try {
-      const dialHints = await input.dialHintsFor(resolved.peerId, resolved.listenAddrs);
+    const dialHints = await input.dialHintsFor(resolved.peerId, resolved.listenAddrs);
+    const sendOnce = async () => {
       await input.mesh.send(resolved.peerId, envelope, { dialHints });
-    } catch (err) {
-      console.warn(`[profile.sync] send to ${ownerId.slice(0, 16)}… failed:`, err);
+    };
+    try {
+      await sendOnce();
+    } catch (firstErr) {
+      console.warn(
+        `[profile.sync] send to ${ownerId.slice(0, 16)}… failed, retrying:`,
+        firstErr instanceof Error ? firstErr.message : firstErr,
+      );
+      try {
+        const closed = await input.mesh.closeConnectionsToPeer?.(resolved.peerId);
+        if (closed && closed > 0) {
+          console.log(`[profile.sync] closed ${closed} stale connection(s) to ${resolved.peerId.slice(0, 12)}…`);
+        }
+        await sendOnce();
+      } catch (retryErr) {
+        console.warn(`[profile.sync] send to ${ownerId.slice(0, 16)}… failed after retry:`, retryErr);
+      }
     }
   }
 }

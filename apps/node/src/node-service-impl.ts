@@ -1113,7 +1113,7 @@ class NodeServiceImpl implements NodeService {
     const selfProfile = this._requireProfile();
     const signedProfile = signHumanProfile(payload, selfProfile.owner.privateKeyPem);
     await this._humanProfileStore.saveHumanProfile(signedProfile);
-    void this._broadcastProfileSyncToBonds(signedProfile);
+    await this._broadcastProfileSyncToBonds(signedProfile);
     return signedProfile as HumanProfile;
   }
 
