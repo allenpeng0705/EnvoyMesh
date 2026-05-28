@@ -534,12 +534,17 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
                     className={`message-stack-row ${outgoing ? "is-outgoing" : "is-incoming"}`}
                   >
                     {!outgoing && (
-                      <span
-                        className={`message-stack-avatar ${threadKind === "agent" ? "agent" : "peer"}`}
-                        aria-hidden
-                      >
-                        {senderInitial}
-                      </span>
+                      threadKind === "agent" ? (
+                        <span className="message-stack-avatar agent" aria-hidden>
+                          {senderInitial}
+                        </span>
+                      ) : (
+                        <PeerProfileAvatar
+                          ownerId={selectedContact}
+                          fallbackLabel={peerDisplayLabel(stack[0].sender)}
+                          className="message-stack-avatar peer"
+                        />
+                      )
                     )}
                     <div className="message-stack-bubbles">
                       {stack.map((msg, index) => (

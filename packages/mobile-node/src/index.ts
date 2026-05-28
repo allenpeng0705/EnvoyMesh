@@ -1280,7 +1280,11 @@ export class MobileNode implements NodeService {
       if (!peerId) continue;
       try {
         const inline = await loadMobileProfileThumbnailInline(this._vault, this._humanProfile);
-        const payload = createProfileSyncPayload(this._humanProfile, inline);
+        const payload = createProfileSyncPayload(
+          this._humanProfile,
+          inline,
+          this._state.owner.publicKeyPem,
+        );
         await sendMobileProfileEnvelope({
           devicePrivateKeyPem: this._state.device.privateKeyPem,
           devicePublicKeyPem: this._state.device.publicKeyPem,
@@ -1436,7 +1440,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
   ): Promise<void> {
     if (!this._state) return;
     const inline = await loadMobileProfileThumbnailInline(this._vault, profile);
-    const payload = createProfileSyncPayload(profile, inline);
+    const payload = createProfileSyncPayload(profile, inline, this._state.owner.publicKeyPem);
     await sendMobileProfileEnvelope({
       devicePrivateKeyPem: this._state.device.privateKeyPem,
       devicePublicKeyPem: this._state.device.publicKeyPem,

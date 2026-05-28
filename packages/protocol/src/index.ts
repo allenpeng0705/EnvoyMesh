@@ -709,6 +709,8 @@ export type ProfileThumbnailInline = z.infer<typeof ProfileThumbnailInlineSchema
 export const ProfileSyncPayloadSchema = z.object({
   profile: HumanProfilePayloadSchema,
   publicThumbnailInline: ProfileThumbnailInlineSchema.optional(),
+  /** Lets recipients verify the profile before any prior `ownerPublicKeyPem` was cached (e.g. from chat). */
+  ownerPublicKeyPem: z.string().min(1).optional(),
 });
 
 export type ProfileSyncPayload = z.infer<typeof ProfileSyncPayloadSchema>;
@@ -716,8 +718,9 @@ export type ProfileSyncPayload = z.infer<typeof ProfileSyncPayloadSchema>;
 export function createProfileSyncPayload(
   profile: HumanProfilePayload,
   publicThumbnailInline?: ProfileThumbnailInline,
+  ownerPublicKeyPem?: string,
 ): ProfileSyncPayload {
-  return ProfileSyncPayloadSchema.parse({ profile, publicThumbnailInline });
+  return ProfileSyncPayloadSchema.parse({ profile, publicThumbnailInline, ownerPublicKeyPem });
 }
 
 export function parseProfileSyncPayload(input: unknown): ProfileSyncPayload {

@@ -1149,17 +1149,16 @@ class NodeServiceImpl implements NodeService {
   async requestPeerProfile(ownerId: string): Promise<{ ok: boolean; reason?: string }> {
     const mesh = this._requireMesh();
     const profile = this._requireProfile();
-    const peer = await this._peerDirectoryStore.getPeerByOwnerId(ownerId);
-    if (!peer?.peerId) {
-      return { ok: false, reason: "peer not in directory" };
-    }
     try {
+      const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
+        await this._resolvePeerTransportForOwner(ownerId);
       await sendProfileRequest({
         mesh,
         profile,
-        targetPeerId: peer.peerId,
-        listenAddrs: peer.listenAddrs,
-        dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
+        transportPeerId,
+        envelopeRecipientPeerId: recipientEnvelopePeerId ?? transportPeerId,
+        listenAddrs,
+        dialHintsFor: (peerId, addrs) => this._dialHintsForChat(peerId, addrs ?? listenAddrs),
       });
       return { ok: true };
     } catch (err) {
@@ -1182,8 +1181,15 @@ class NodeServiceImpl implements NodeService {
         profile,
         humanProfile,
         vaultDir: this._vaultDir,
-        peerDirectoryStore: this._peerDirectoryStore,
         bondOwnerIds,
+        resolveLibp2pPeer: async (ownerId) => {
+          try {
+            const { transportPeerId, listenAddrs } = await this._resolvePeerTransportForOwner(ownerId);
+            return { peerId: transportPeerId, listenAddrs };
+          } catch {
+            return undefined;
+          }
+        },
         dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
       });
     } catch (err) {
@@ -1191,7 +1197,10 @@ class NodeServiceImpl implements NodeService {
     }
   }
 
-  async handleInboundProfileIntent(envelope: EnvoyEnvelope): Promise<boolean> {
+  async handleInboundProfileIntent(
+    envelope: EnvoyEnvelope,
+    context?: { transportPeerId?: string },
+  ): Promise<boolean> {
     if (!this._contactOwnerKeyStore || !this._peerProfileCacheStore) return false;
     if (
       envelope.intent !== "profile.sync" &&
@@ -1201,20 +1210,27 @@ class NodeServiceImpl implements NodeService {
       return false;
     }
     if (envelope.intent === "profile.request") {
+      const transportPeerId = context?.transportPeerId?.trim() ?? "";
       const result = await handleInboundProfileRequest({
         envelope,
+        transportPeerId,
         contactOwnerKeyStore: this._contactOwnerKeyStore,
         loadLocalProfile: async () => this._humanProfileStore.loadHumanProfile(),
-        sendProfileResponse: async (recipientPeerId, local) => {
+        sendProfileResponse: async (envelopeRecipientPeerId, local, replyTransportPeerId) => {
           const mesh = this._requireMesh();
           const profile = this._requireProfile();
+          const records = await this._peerDirectoryStore.listPeerRecords();
+          const rec = records.find((row) => row.peerId === replyTransportPeerId);
+          const listenAddrs = rec?.listenAddrs;
           await sendProfileResponse({
             mesh,
             profile,
             humanProfile: local,
             vaultDir: this._vaultDir,
-            recipientPeerId,
-            dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
+            envelopeRecipientPeerId,
+            transportPeerId: replyTransportPeerId,
+            listenAddrs,
+            dialHintsFor: (peerId, addrs) => this._dialHintsForChat(peerId, addrs ?? listenAddrs),
           });
         },
       });

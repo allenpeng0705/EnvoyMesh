@@ -138,6 +138,37 @@ describe("E2E NodeServiceImpl profile photos", () => {
     expect(updated.galleryPhotos![0]!.label).toBe("Trip");
   });
 
+  it("accepts profile.sync when ownerPublicKeyPem is included in payload", async () => {
+    const { svc, profile } = createService();
+    const unsignedProfile = signHumanProfile(
+      {
+        version: "0.1",
+        ownerId: profile.owner.ownerId,
+        displayName: "Mac",
+        username: "mac01",
+        profileVisibility: "private",
+        updatedAt: new Date().toISOString(),
+      },
+      profile.owner.privateKeyPem,
+    );
+    const payload = createProfileSyncPayload(
+      unsignedProfile,
+      undefined,
+      profile.owner.publicKeyPem,
+    );
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "human",
+      intent: "profile.sync",
+      payload,
+    });
+    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+    expect(await svc.handleInboundProfileIntent(envelope)).toBe(true);
+    const cached = await svc.getPeerProfile(profile.owner.ownerId);
+    expect(cached?.profile.displayName).toBe("Mac");
+  });
+
   it("rejects profile.sync when owner public key is unknown", async () => {
     const { svc, profile } = createService();
     const unsignedProfile = signHumanProfile(

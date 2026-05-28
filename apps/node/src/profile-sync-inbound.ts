@@ -1,4 +1,4 @@
-import { verifyHumanProfile } from "@envoymesh/identity";
+import { deriveOwnerId, verifyHumanProfile } from "@envoymesh/identity";
 import {
   createProfileSyncPayload,
   parseProfileRequestPayload,
@@ -24,11 +24,18 @@ export async function handleInboundProfileSync(input: {
     return { handled: false, reason: "invalid profile.sync payload" };
   }
   const profile = payload.profile;
-  const ownerKeys = await input.contactOwnerKeyStore.get(profile.ownerId);
-  if (!ownerKeys?.ownerPublicKeyPem) {
+  let ownerPublicKeyPem = (await input.contactOwnerKeyStore.get(profile.ownerId))?.ownerPublicKeyPem;
+  if (payload.ownerPublicKeyPem) {
+    if (deriveOwnerId(payload.ownerPublicKeyPem) !== profile.ownerId) {
+      return { handled: false, reason: "owner public key mismatch" };
+    }
+    ownerPublicKeyPem = payload.ownerPublicKeyPem;
+    await input.contactOwnerKeyStore.upsert(profile.ownerId, ownerPublicKeyPem);
+  }
+  if (!ownerPublicKeyPem) {
     return { handled: false, reason: "unknown owner public key" };
   }
-  if (!verifyHumanProfile(profile, ownerKeys.ownerPublicKeyPem)) {
+  if (!verifyHumanProfile(profile, ownerPublicKeyPem)) {
     return { handled: false, reason: "invalid profile signature" };
   }
   let thumbnail: { contentBase64: string; mimeType: "image/jpeg" | "image/png" | "image/webp" } | undefined;
@@ -45,11 +52,14 @@ export async function handleInboundProfileSync(input: {
 
 export async function handleInboundProfileRequest(input: {
   envelope: EnvoyEnvelope;
+  /** libp2p peer id from the inbound stream (required to dial back) */
+  transportPeerId: string;
   contactOwnerKeyStore: ContactOwnerKeyStore;
   loadLocalProfile: () => Promise<import("@envoymesh/protocol").HumanProfilePayload | undefined>;
   sendProfileResponse: (
-    recipientPeerId: string,
+    envelopeRecipientPeerId: string,
     profile: import("@envoymesh/protocol").HumanProfilePayload,
+    transportPeerId: string,
   ) => Promise<void>;
 }): Promise<ProfileSyncInboundResult> {
   let payload;
@@ -62,11 +72,14 @@ export async function handleInboundProfileRequest(input: {
   if (!local) {
     return { handled: false, reason: "no profile to share" };
   }
-  const recipient = input.envelope.senderPeerId;
-  if (!recipient) {
+  const envelopeRecipientPeerId = input.envelope.senderPeerId;
+  if (!envelopeRecipientPeerId) {
     return { handled: false, reason: "missing sender peer id" };
   }
-  await input.sendProfileResponse(recipient, local);
+  if (!input.transportPeerId.trim()) {
+    return { handled: false, reason: "missing libp2p transport peer id" };
+  }
+  await input.sendProfileResponse(envelopeRecipientPeerId, local, input.transportPeerId);
   return { handled: true, ownerId: local.ownerId };
 }
 

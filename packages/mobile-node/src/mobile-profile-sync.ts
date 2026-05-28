@@ -7,7 +7,12 @@ import {
   type HumanProfilePayload,
   type ProfileThumbnailInline,
 } from "@envoymesh/protocol";
-import { derivePeerId, signUnsignedEnvelope, verifyHumanProfile } from "@envoymesh/mobile-identity";
+import {
+  deriveOwnerId,
+  derivePeerId,
+  signUnsignedEnvelope,
+  verifyHumanProfile,
+} from "@envoymesh/mobile-identity";
 import type { MobilePeerProfileCache } from "./mobile-peer-profile-cache.js";
 import type { MobileContactOwnerKeyStore } from "./mobile-contact-owner-keys.js";
 import type { MobileVault } from "@envoymesh/mobile-vault";
@@ -54,11 +59,18 @@ export async function handleMobileInboundProfileSync(input: {
     return { ok: false, reason: "invalid profile.sync payload" };
   }
   const profile = payload.profile;
-  const keys = await input.ownerKeys.get(profile.ownerId);
-  if (!keys?.ownerPublicKeyPem) {
+  let ownerPublicKeyPem = (await input.ownerKeys.get(profile.ownerId))?.ownerPublicKeyPem;
+  if (payload.ownerPublicKeyPem) {
+    if (deriveOwnerId(payload.ownerPublicKeyPem) !== profile.ownerId) {
+      return { ok: false, reason: "owner public key mismatch" };
+    }
+    ownerPublicKeyPem = payload.ownerPublicKeyPem;
+    await input.ownerKeys.set(profile.ownerId, ownerPublicKeyPem);
+  }
+  if (!ownerPublicKeyPem) {
     return { ok: false, reason: "unknown owner public key" };
   }
-  if (!verifyHumanProfile(profile, keys.ownerPublicKeyPem)) {
+  if (!verifyHumanProfile(profile, ownerPublicKeyPem)) {
     return { ok: false, reason: "invalid profile signature" };
   }
   let thumbnail: { contentBase64: string; mimeType: "image/jpeg" | "image/png" | "image/webp" } | undefined;

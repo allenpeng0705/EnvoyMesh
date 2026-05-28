@@ -103,4 +103,39 @@ describe("E2E mobile profile.sync inbound", () => {
     if (result.ok) throw new Error("expected failure");
     expect(result.reason).toMatch(/unknown owner/i);
   });
+
+  it("learns owner key from payload.ownerPublicKeyPem when store is empty", async () => {
+    const localOwner = generateOwnerIdentity();
+    const peerOwner = generateOwnerIdentity();
+    const cache = createMobilePeerProfileCache(localOwner.ownerId);
+    const stored: Record<string, string> = {};
+    const ownerKeys: MobileContactOwnerKeyStore = {
+      get: async (ownerId) =>
+        stored[ownerId] ? { ownerPublicKeyPem: stored[ownerId]! } : undefined,
+      set: async (ownerId, pem) => {
+        stored[ownerId] = pem;
+      },
+    };
+
+    const profile = signHumanProfile(
+      {
+        version: "0.1",
+        ownerId: peerOwner.ownerId,
+        displayName: "Mac",
+        username: "mac01",
+        profileVisibility: "private",
+        updatedAt: "2026-05-28T12:00:00.000Z",
+      },
+      peerOwner.privateKeyPem,
+    );
+
+    const result = await handleMobileInboundProfileSync({
+      payload: createProfileSyncPayload(profile, undefined, peerOwner.publicKeyPem),
+      ownerKeys,
+      cache,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(stored[peerOwner.ownerId]).toBe(peerOwner.publicKeyPem);
+  });
 });

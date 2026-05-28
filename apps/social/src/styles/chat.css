@@ -167,6 +167,23 @@
   background: linear-gradient(135deg, var(--avatar-ai-from), var(--avatar-ai-to));
 }
 
+.chat-header-avatar.profile-avatar,
+.chat-header-avatar.profile-avatar--photo {
+  width: 40px;
+  height: 40px;
+  font-size: var(--text-sm);
+  object-fit: cover;
+}
+
+.message-stack-row .profile-avatar,
+.message-stack-row .profile-avatar--photo {
+  width: 32px;
+  height: 32px;
+  font-size: var(--text-xs);
+  object-fit: cover;
+  margin-bottom: 4px;
+}
+
 .chat-header-titles {
   display: flex;
   flex-direction: column;
