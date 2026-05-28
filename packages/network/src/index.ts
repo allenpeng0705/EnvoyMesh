@@ -145,6 +145,8 @@ export interface MeshOutboundOptions {
   dialHints?: string[];
   /** When no active connection exists, try relay circuit hints before bare peer-id dials. */
   preferCircuitHints?: boolean;
+  /** Skip reusing an existing libp2p connection (redial via hints). */
+  forceFreshDial?: boolean;
 }
 
 export interface EnvoyMeshOptions {
@@ -822,9 +824,11 @@ export class EnvoyMesh {
         direction: "outbound",
       });
     }
-    if (stream.writeStatus !== "writable") {
+    if (!this.isOutboundStreamWritable(stream)) {
+      const peerId = stream.connection?.remotePeer?.toString();
+      await this.closeConnection(stream.connection);
       throw new Error(
-        `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}`,
+        `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}${peerId ? ` (closed connection to ${peerId.slice(0, 12)}…)` : ""}`,
       );
     }
     /** One instance per stream: multiple `byteStream(stream)` calls register duplicate listeners. */
@@ -894,15 +898,23 @@ export class EnvoyMesh {
   async sendChatExpectReply(
     target: string,
     envelope: EnvoyEnvelope,
-    options?: { timeoutMs?: number; dialHints?: string[]; preferCircuitHints?: boolean },
+    options?: {
+      timeoutMs?: number;
+      dialHints?: string[];
+      preferCircuitHints?: boolean;
+      forceFreshDial?: boolean;
+    },
   ): Promise<EnvoyEnvelope> {
     validateEnvelopeProtocol(ENVOY_CHAT_PROTOCOL, envelope);
     const timeoutMs = options?.timeoutMs ?? CHAT_DELIVERY_ACK_TIMEOUT_MS;
     const sendOptions: MeshOutboundOptions | undefined =
-      options?.dialHints?.length || options?.preferCircuitHints
+      options?.dialHints?.length ||
+      options?.preferCircuitHints ||
+      options?.forceFreshDial
         ? {
             dialHints: options.dialHints,
             preferCircuitHints: options.preferCircuitHints,
+            forceFreshDial: options.forceFreshDial,
           }
         : undefined;
     const { stream } = await this.openOutboundStream(target, ENVOY_CHAT_PROTOCOL, sendOptions);
@@ -915,9 +927,11 @@ export class EnvoyMesh {
         direction: "outbound",
       });
     }
-    if (stream.writeStatus !== "writable") {
+    if (!this.isOutboundStreamWritable(stream)) {
+      const peerId = stream.connection?.remotePeer?.toString();
+      await this.closeConnection(stream.connection);
       throw new Error(
-        `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}`,
+        `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}${peerId ? ` (closed connection to ${peerId.slice(0, 12)}…)` : ""}`,
       );
     }
     const streamIo = byteStream(stream);
@@ -1030,6 +1044,64 @@ export class EnvoyMesh {
     return peerIdStr ? this.getPeerConnectionInfo(peerIdStr) : { connected: false, direct: false };
   }
 
+  private isOutboundStreamWritable(stream: {
+    writeStatus?: string;
+    status?: string;
+  }): boolean {
+    return stream.writeStatus === "writable" && stream.status !== "reset";
+  }
+
+  private async closeConnection(connection: { close?: () => Promise<void> } | undefined): Promise<void> {
+    if (!connection?.close) return;
+    try {
+      await connection.close();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private async openStreamOnConnection(
+    connection: {
+      newStream: (protocols: string | string[], opts?: { runOnLimitedConnection?: boolean }) => Promise<unknown>;
+      remotePeer: { toString(): string };
+      close?: () => Promise<void>;
+    },
+    protocol: string,
+    limited: boolean,
+  ): Promise<{ stream: unknown; remotePeerId: string } | undefined> {
+    try {
+      const stream = await promiseWithTimeout(
+        limited
+          ? connection.newStream([protocol], { runOnLimitedConnection: true })
+          : connection.newStream(protocol),
+        NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS,
+        limited ? `newStream(limited relay) ${protocol}` : `newStream ${protocol}`,
+      );
+      if (!this.isOutboundStreamWritable(stream as { writeStatus?: string; status?: string })) {
+        const bad = stream as { close?: () => Promise<void>; abort?: () => Promise<void> };
+        try {
+          if (typeof bad.abort === "function") {
+            await bad.abort();
+          } else {
+            await bad.close?.();
+          }
+        } catch {
+          /* ignore */
+        }
+        await this.closeConnection(connection);
+        return undefined;
+      }
+      return { stream, remotePeerId: connection.remotePeer.toString() };
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      console.warn(
+        `[network] stream open failed on existing connection (${detail}); closing and redialing`,
+      );
+      await this.closeConnection(connection);
+      return undefined;
+    }
+  }
+
   private async openOutboundStream(
     target: string,
     protocol: string,
@@ -1038,46 +1110,20 @@ export class EnvoyMesh {
     const node = this.requireNode();
     const peerIdStr = parsePeerIdFromDialTarget(target);
 
-    // Existing-connection reuse requires a peer ID. Transport-level multiaddrs
-    // without /p2p/ (e.g. WebTransport certhash addrs from the DHT) skip this
-    // block and fall through to a fresh dial via dialOpenStreamViaHints.
-    if (peerIdStr) {
+    if (peerIdStr && !sendOptions?.forceFreshDial) {
       const existing = this.findOpenConnectionToPeer(node, peerIdStr);
       if (existing) {
-        try {
-          const stream = await promiseWithTimeout(
-            existing.newStream(protocol),
-            NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS,
-            `newStream ${protocol}`,
-          );
-          return { stream, remotePeerId: existing.remotePeer.toString() };
-        } catch (e) {
-          const detail = e instanceof Error ? e.message : String(e);
-          console.warn(
-            `[network] outbound reuse failed for ${peerIdStr.slice(0, 12)}… (${detail}); closing connection and redialing`,
-          );
-          try {
-            await existing.close();
-          } catch {
-            /* ignore */
-          }
+        const opened = await this.openStreamOnConnection(existing, protocol, false);
+        if (opened) {
+          return opened;
         }
       }
 
       const limitedExisting = this.findLimitedConnectionToPeer(node, peerIdStr);
       if (limitedExisting) {
-        try {
-          const stream = await promiseWithTimeout(
-            limitedExisting.newStream([protocol], { runOnLimitedConnection: true }),
-            NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS,
-            `newStream(limited relay) ${protocol}`,
-          );
-          return { stream, remotePeerId: limitedExisting.remotePeer.toString() };
-        } catch (e) {
-          const detail = e instanceof Error ? e.message : String(e);
-          console.warn(
-            `[network] limited relay stream open failed for ${peerIdStr.slice(0, 12)}… (${detail}); trying fresh dial`,
-          );
+        const opened = await this.openStreamOnConnection(limitedExisting, protocol, true);
+        if (opened) {
+          return opened;
         }
       }
     }
@@ -1291,9 +1337,11 @@ export class EnvoyMesh {
         direction: "outbound",
       });
     }
-    if (stream.writeStatus !== "writable") {
+    if (!this.isOutboundStreamWritable(stream)) {
+      const peerId = stream.connection?.remotePeer?.toString();
+      await this.closeConnection(stream.connection);
       throw new Error(
-        `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}`,
+        `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}${peerId ? ` (closed connection to ${peerId.slice(0, 12)}…)` : ""}`,
       );
     }
     const bytes = encodeEnvelope(envelope);
@@ -1336,9 +1384,11 @@ export class EnvoyMesh {
         direction: "outbound",
       });
     }
-    if (stream.writeStatus !== "writable") {
+    if (!this.isOutboundStreamWritable(stream)) {
+      const peerId = stream.connection?.remotePeer?.toString();
+      await this.closeConnection(stream.connection);
       throw new Error(
-        `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}`,
+        `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}${peerId ? ` (closed connection to ${peerId.slice(0, 12)}…)` : ""}`,
       );
     }
     const body = encodeDataTransferBody(voucherUtf8, chunks);
@@ -1389,9 +1439,11 @@ export class EnvoyMesh {
         direction: "outbound",
       });
     }
-    if (stream.writeStatus !== "writable") {
+    if (!this.isOutboundStreamWritable(stream)) {
+      const peerId = stream.connection?.remotePeer?.toString();
+      await this.closeConnection(stream.connection);
       throw new Error(
-        `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}`,
+        `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}${peerId ? ` (closed connection to ${peerId.slice(0, 12)}…)` : ""}`,
       );
     }
     await byteStream(stream).write(bytes);

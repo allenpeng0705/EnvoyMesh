@@ -2380,8 +2380,6 @@ class NodeServiceImpl implements NodeService {
       throw new Error("Agent identity is not available");
     }
 
-    console.log(`[sendAgentChat] targetOwnerId=${targetOwnerId}, text=${text.slice(0, 80)}`);
-
     const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
       await this._resolvePeerTransportForOwner(targetOwnerId);
 
@@ -2391,6 +2389,11 @@ class NodeServiceImpl implements NodeService {
       this.getNodeConfig(),
     ]);
 
+    let wireText = stripModelThinking(text);
+    const aiIdentity = config.aiSettings?.identity;
+    wireText = applyAiIdentityForIdentity(wireText, aiIdentity);
+    console.log(`[sendAgentChat] targetOwnerId=${targetOwnerId}, text=${wireText.slice(0, 80)}`);
+
     const dialHints = await raceWithTimeout(
       this._dialHintsForChat(transportPeerId, listenAddrs),
       30_000,
@@ -2398,10 +2401,6 @@ class NodeServiceImpl implements NodeService {
     );
 
     void this._tagBondedContactReachability(transportPeerId);
-
-    let wireText = stripModelThinking(text);
-    const aiIdentity = config.aiSettings?.identity;
-    wireText = applyAiIdentityForIdentity(wireText, aiIdentity);
 
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({

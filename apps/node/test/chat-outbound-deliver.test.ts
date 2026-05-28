@@ -97,4 +97,30 @@ describe("deliverChatEnvelopeWithRetry", () => {
     expect(mesh.sendChat).not.toHaveBeenCalled();
     expect(result).toEqual({ delivered: true, deliveredAt });
   });
+
+  it("falls back to send without ack after ack attempts fail", async () => {
+    const sendChatExpectReply = vi.fn().mockRejectedValue(new Error("stream reset"));
+    const sendChat = vi.fn().mockResolvedValue(undefined);
+    const mesh = {
+      sendChat,
+      sendChatExpectReply,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(1),
+      ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: false }),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: false }),
+    };
+
+    const result = await deliverChatEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWFallbackPeer",
+      envelope,
+      dialHints: ["/p2p/12D3KooWFallbackPeer"],
+      chatProtocol: "/envoy/chat/0.1",
+      maxAttempts: 2,
+    });
+
+    expect(sendChatExpectReply).toHaveBeenCalledTimes(2);
+    expect(sendChat).toHaveBeenCalledTimes(1);
+    expect(sendChat.mock.calls[0]?.[2]).toMatchObject({ forceFreshDial: true });
+    expect(result).toEqual({ delivered: false });
+  });
 });

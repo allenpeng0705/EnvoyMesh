@@ -81,11 +81,14 @@ export async function deliverChatEnvelopeWithRetry(input: {
     }
 
     try {
+      const preferCircuitsOnAttempt = preferCircuits || attempt > 0;
+      const forceFreshDial = attempt > 0;
       if (input.expectDeliveryAck !== false && typeof input.mesh.sendChatExpectReply === "function") {
         const reply = await input.mesh.sendChatExpectReply(input.transportPeerId, input.envelope, {
           timeoutMs: CHAT_DELIVERY_ACK_TIMEOUT_MS,
           dialHints: hints,
-          preferCircuitHints: preferCircuits || attempt > 0,
+          preferCircuitHints: preferCircuitsOnAttempt,
+          forceFreshDial,
         });
         const ack = parseChatDeliveredAck(reply);
         if (attempt > 0) {
@@ -95,7 +98,8 @@ export async function deliverChatEnvelopeWithRetry(input: {
       }
       await input.mesh.sendChat(input.transportPeerId, input.envelope, {
         dialHints: hints,
-        preferCircuitHints: preferCircuits || attempt > 0,
+        preferCircuitHints: preferCircuitsOnAttempt,
+        forceFreshDial,
       });
       if (attempt > 0) {
         console.log(`[sendChat] delivered on attempt ${attempt + 1}/${maxAttempts}`);
@@ -110,5 +114,36 @@ export async function deliverChatEnvelopeWithRetry(input: {
     }
   }
 
+  if (input.expectDeliveryAck !== false && typeof input.mesh.sendChat === "function") {
+    const fallback = await trySendChatWithoutAck({
+      mesh: input.mesh,
+      transportPeerId: input.transportPeerId,
+      envelope: input.envelope,
+      dialHints: rotateDialHintsForRetry(hints, maxAttempts),
+    });
+    if (fallback) {
+      return fallback;
+    }
+  }
+
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+async function trySendChatWithoutAck(input: {
+  mesh: Pick<EnvoyMesh, "sendChat">;
+  transportPeerId: string;
+  envelope: EnvoyEnvelope;
+  dialHints: string[];
+}): Promise<ChatDeliverResult | undefined> {
+  try {
+    await input.mesh.sendChat(input.transportPeerId, input.envelope, {
+      dialHints: input.dialHints,
+      preferCircuitHints: true,
+      forceFreshDial: true,
+    });
+    console.log("[sendChat] delivered without ack (fallback after ack failures)");
+    return { delivered: false };
+  } catch {
+    return undefined;
+  }
 }

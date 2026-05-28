@@ -1922,13 +1922,13 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           if (wsServerForEvents) {
             // Apply style adaptation (Phase 9F): match owner's writing voice
             const adapted = styleAdapter.adapt(
-              result.draft.text,
+              stripModelThinking(result.draft.text),
               payload.senderOwnerId,
               false,
               "statement",
             );
             const draftText = applyAiIdentityForIdentity(
-              adapted.adaptedText,
+              stripModelThinking(adapted.adaptedText),
               currentAiSettings?.identity,
             );
 
