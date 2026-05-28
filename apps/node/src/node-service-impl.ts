@@ -262,7 +262,9 @@ import {
   sendProfileRequest,
   sendProfileResponse,
   sendProfileSyncToBonds,
+  isLibp2pPeerId,
 } from "./profile-sync-outbound.js";
+import { pickBestLibp2pPeerDirectoryRecord } from "./peer-transport-resolve.js";
 import { createPublishedLibraryStore } from "./published-library-store.js";
 import { createPublishedExternalStore } from "./published-external-store.js";
 import { exportVaultDocumentToIpfs } from "./vault-ipfs-export-service.js";
@@ -1186,7 +1188,11 @@ class NodeServiceImpl implements NodeService {
           try {
             const { transportPeerId, listenAddrs } = await this._resolvePeerTransportForOwner(ownerId);
             return { peerId: transportPeerId, listenAddrs };
-          } catch {
+          } catch (err) {
+            console.warn(
+              `[profile.sync] no libp2p route to ${ownerId.slice(0, 20)}…:`,
+              err instanceof Error ? err.message : err,
+            );
             return undefined;
           }
         },
@@ -1818,6 +1824,13 @@ class NodeServiceImpl implements NodeService {
     const dirRecords = await this._peerDirectoryStore.listPeerRecords();
     const latestByOwner = new Map<string, { peerId: string; lastSeenAt: string }>();
     for (const r of dirRecords) {
+      const libp2p = pickBestLibp2pPeerDirectoryRecord(dirRecords, r.ownerId);
+      if (libp2p) {
+        latestByOwner.set(r.ownerId, { peerId: libp2p.peerId, lastSeenAt: libp2p.lastSeenAt });
+      }
+    }
+    for (const r of dirRecords) {
+      if (latestByOwner.has(r.ownerId)) continue;
       const cur = latestByOwner.get(r.ownerId);
       if (!cur || r.lastSeenAt > cur.lastSeenAt) {
         latestByOwner.set(r.ownerId, { peerId: r.peerId, lastSeenAt: r.lastSeenAt });
@@ -1871,15 +1884,36 @@ class NodeServiceImpl implements NodeService {
     if (!targetPeer) {
       const records = await raceWithTimeout(this._peerDirectoryStore.listPeerRecords(), 25_000, "listPeerRecords");
       targetPeer =
+        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId) ??
         records.find((r) => r.ownerId === targetOwnerId) ??
         records.find((r) => r.peerId === targetOwnerId) ??
         undefined;
+    } else if (!isLibp2pPeerId(targetPeer.peerId)) {
+      const records = await raceWithTimeout(this._peerDirectoryStore.listPeerRecords(), 25_000, "listPeerRecords");
+      targetPeer = pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId) ?? targetPeer;
     }
     if (!targetPeer?.peerId) {
       throw new Error(`Peer not found for owner: ${targetOwnerId}`);
     }
     const transportPeerId = targetPeer.peerId;
-    if (transportPeerId.startsWith("envoy_")) {
+    if (!isLibp2pPeerId(transportPeerId)) {
+      const mesh = this._reachableMesh();
+      if (mesh) {
+        const records = await this._peerDirectoryStore.listPeerRecords();
+        for (const rec of records.filter((r) => r.ownerId === targetOwnerId && isLibp2pPeerId(r.peerId))) {
+          const info = mesh.getPeerConnectionInfo(rec.peerId);
+          if (info.connected) {
+            const recipientEnvelopePeerId = rec.devicePublicKeyPem
+              ? derivePeerId(rec.devicePublicKeyPem)
+              : undefined;
+            return {
+              transportPeerId: rec.peerId,
+              recipientEnvelopePeerId,
+              listenAddrs: rec.listenAddrs,
+            };
+          }
+        }
+      }
       throw new Error(`Peer directory has Envoy envelope id for this owner (not libp2p).`);
     }
     const recipientEnvelopePeerId = targetPeer.devicePublicKeyPem

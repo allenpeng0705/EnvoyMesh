@@ -29,6 +29,11 @@ export async function sendProfileSyncToBonds(input: {
 }): Promise<void> {
   if (!input.humanProfile.publicThumbnail) return;
   const publicThumbnailInline = await loadProfileThumbnailInline(input.vaultDir, input.humanProfile);
+  if (!publicThumbnailInline) {
+    console.warn(
+      `[profile.sync] thumbnail bytes missing on disk for ${input.profile.owner.ownerId.slice(0, 20)}… (path/hash mismatch?)`,
+    );
+  }
   const payload = createProfileSyncPayload(
     input.humanProfile,
     publicThumbnailInline,
@@ -45,7 +50,10 @@ export async function sendProfileSyncToBonds(input: {
   const envelope = signUnsignedEnvelope(unsigned, input.profile.device.privateKeyPem);
   for (const ownerId of input.bondOwnerIds) {
     const resolved = await input.resolveLibp2pPeer(ownerId);
-    if (!resolved?.peerId || !isLibp2pPeerId(resolved.peerId)) continue;
+    if (!resolved?.peerId || !isLibp2pPeerId(resolved.peerId)) {
+      console.warn(`[profile.sync] skip bond ${ownerId.slice(0, 20)}…: no libp2p peer id`);
+      continue;
+    }
     try {
       const dialHints = await input.dialHintsFor(resolved.peerId, resolved.listenAddrs);
       await input.mesh.send(resolved.peerId, envelope, { dialHints });
