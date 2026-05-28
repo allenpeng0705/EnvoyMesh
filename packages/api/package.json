@@ -20,6 +20,10 @@
     "./discovery-referral-attestation": {
       "types": "./dist/discovery-referral-attestation.d.ts",
       "import": "./dist/discovery-referral-attestation.js"
+    },
+    "./chat-delivered": {
+      "types": "./dist/chat-delivered.d.ts",
+      "import": "./dist/chat-delivered.js"
     }
   },
   "dependencies": {

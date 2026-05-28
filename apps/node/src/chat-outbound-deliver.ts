@@ -2,7 +2,7 @@ import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { prioritizeCircuitDialHints } from "@envoymesh/network";
-import { parseChatDeliveredAck } from "@envoymesh/api";
+import { parseChatDeliveredAck } from "@envoymesh/api/chat-delivered";
 
 const CHAT_SEND_MAX_ATTEMPTS = 3;
 const CHAT_SEND_RETRY_BASE_MS = 800;

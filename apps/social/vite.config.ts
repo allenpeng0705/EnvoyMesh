@@ -33,6 +33,7 @@ export default defineConfig({
         repoRoot,
         "packages/api/src/discovery-referral-attestation.ts",
       ),
+      "@envoymesh/api/chat-delivered": resolve(repoRoot, "packages/api/src/chat-delivered.ts"),
       "@envoymesh/protocol": resolve(repoRoot, "packages/protocol/src/index.ts"),
     },
   },

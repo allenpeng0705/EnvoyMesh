@@ -154,13 +154,12 @@ import {
   buildOwnerDidPresentation,
   parseDidLookupInput,
   didKeysMatch,
-  buildSignedChatDeliveredEnvelope,
-  parseChatDeliveredAck,
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   type MultiHopDiscoveryMatch,
   type MultiHopDiscoverySessionView,
   type MorningReportEntry,
 } from "@envoymesh/api";
+import { buildSignedChatDeliveredEnvelope, parseChatDeliveredAck } from "@envoymesh/api/chat-delivered";
 import {
   buildMorningReportDigest,
   createMultiHopDiscoveryStore,

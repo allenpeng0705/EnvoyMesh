@@ -97,11 +97,11 @@ import {
   didKeysMatch,
   buildCommerceReceiptFromTaskResult,
   mapCommerceReceiptToActivity,
-  buildSignedChatDeliveredEnvelope,
   type CommerceReceiptRecord,
   type ListCommerceReceiptsParams,
   type RecordCommerceReceiptParams,
 } from "@envoymesh/api";
+import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
 import { resolveDidImportInput } from "@envoymesh/api/did-import";
 
 import { randomUUID } from "node:crypto";
