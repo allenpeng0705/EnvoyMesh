@@ -295,7 +295,13 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
               ? {
                   ...m,
                   messageId: result.messageId,
-                  metadata: { ...m.metadata, deliveryReceipt: "sent" as const },
+                  metadata: {
+                    ...m.metadata,
+                    deliveryReceipt:
+                      result.deliveryReceipt === "delivered"
+                        ? ("delivered" as const)
+                        : ("sent" as const),
+                  },
                 }
               : m,
           ),
@@ -434,7 +440,19 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     };
     pullProfile();
     const refreshTimer = window.setInterval(pullProfile, 20_000);
-    return () => window.clearInterval(refreshTimer);
+    const unsubDelivered = nodeService.on?.("chat:delivered", (data: { messageId: string }) => {
+      setPendingOutbound((prev) =>
+        prev.map((m) =>
+          m.messageId === data.messageId
+            ? { ...m, metadata: { ...m.metadata, deliveryReceipt: "delivered" as const } }
+            : m,
+        ),
+      );
+    });
+    return () => {
+      window.clearInterval(refreshTimer);
+      unsubDelivered?.();
+    };
   }, [nodeService, selectedContact, threadKind]);
   const contactBondLevel = contactBond?.level ?? "public";
 

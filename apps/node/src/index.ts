@@ -118,7 +118,7 @@ import { join } from "node:path";
 import { parseNodeArgs, applyPersistedDiscoveryConfig } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
-import { chatSenderActorFromEnvelope, shouldSkipAgentChatAssist } from "@envoymesh/api";
+import { chatSenderActorFromEnvelope, shouldSkipAgentChatAssist, buildSignedChatDeliveredEnvelope } from "@envoymesh/api";
 import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
@@ -1721,6 +1721,9 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       .ensurePeerFromInboundChat({
         ownerId: payload.senderOwnerId,
         peerId: remotePeerId,
+        listenAddrs: remoteAddr?.trim()
+          ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId)
+          : [],
       })
       .catch((err) => console.warn(`[peer-directory] ensurePeerFromInboundChat failed:`, err));
     if (payload.ownerPublicKeyPem?.trim()) {
@@ -1744,6 +1747,22 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       }),
     );
     console.log(`[chat.message] ${payload.senderOwnerId}: ${payload.text}`);
+
+    if (replyWithEnvelope && envelope.senderPeerId?.trim()) {
+      try {
+        await replyWithEnvelope(
+          buildSignedChatDeliveredEnvelope({
+            profile,
+            messageId: envelope.messageId,
+            recipientOwnerId: profile.owner.ownerId,
+            envelopeRecipientPeerId: envelope.senderPeerId,
+            correlationId: envelope.correlationId,
+          }),
+        );
+      } catch (err) {
+        console.warn(`[chat.message] delivery ack failed:`, err);
+      }
+    }
 
     if (envelope.recipientPeerId === bridgeIdentity.agentPeerId) {
       void bridgeHandleMessage(envelope, remotePeerId);
@@ -2708,6 +2727,7 @@ nodeService.on("share:offered", (data) => wsServer.emitEvent("share:offered", da
 nodeService.on("share:accepted", (data) => wsServer.emitEvent("share:accepted", data));
 nodeService.on("share:declined", (data) => wsServer.emitEvent("share:declined", data));
 nodeService.on("chat:message", (data) => wsServer.emitEvent("chat:message", data));
+nodeService.on("chat:delivered", (data) => wsServer.emitEvent("chat:delivered", data));
 nodeService.on("chat:draft", (data) => wsServer.emitEvent("chat:draft", data));
 nodeService.on("agent:activity", (data) => wsServer.emitEvent("agent:activity", data));
 nodeService.on("bond:established", (data) => {

@@ -27,6 +27,7 @@ export const EnvoyIntentSchema = z.enum([
   "relay.register.response",
   "relay.summary",
   "chat.message",
+  "chat.delivered",
   "knowledge.query",
   "knowledge.response",
   "task.mandate",
@@ -1073,6 +1074,15 @@ export const RendezvousResponsePayloadSchema = z.object({
   matches: z.array(RendezvousMatchSchema),
 });
 
+export const ChatDeliveredPayloadSchema = z.object({
+  messageId: z.string().min(1),
+  recipientOwnerId: z.string().min(1),
+  deliveredAt: z.string().min(1),
+});
+
+/** Max wait for a peer to reply with chat.delivered on the same libp2p stream. */
+export const CHAT_DELIVERY_ACK_TIMEOUT_MS = 45_000;
+
 export const ChatMessagePayloadSchema = z
   .object({
     senderOwnerId: z.string().min(1),
@@ -1437,6 +1447,7 @@ export type RendezvousQueryPayload = z.infer<typeof RendezvousQueryPayloadSchema
 export type RendezvousMatch = z.infer<typeof RendezvousMatchSchema>;
 export type RendezvousResponsePayload = z.infer<typeof RendezvousResponsePayloadSchema>;
 export type ChatMessagePayload = z.infer<typeof ChatMessagePayloadSchema>;
+export type ChatDeliveredPayload = z.infer<typeof ChatDeliveredPayloadSchema>;
 export type MandateAction = z.infer<typeof MandateActionSchema>;
 export type MandatePeerScope = z.infer<typeof MandatePeerScopeSchema>;
 export type MandateCostLimit = z.infer<typeof MandateCostLimitSchema>;
@@ -1696,6 +1707,10 @@ export function parseRendezvousQueryPayload(input: unknown): RendezvousQueryPayl
 
 export function parseChatMessagePayload(input: unknown): ChatMessagePayload {
   return ChatMessagePayloadSchema.parse(input);
+}
+
+export function parseChatDeliveredPayload(input: unknown): ChatDeliveredPayload {
+  return ChatDeliveredPayloadSchema.parse(input);
 }
 
 export function parseMandate(input: unknown): Mandate {
@@ -2345,6 +2360,20 @@ export function createChatMessagePayload(input: CreateChatMessagePayloadInput): 
   });
 }
 
+export interface CreateChatDeliveredPayloadInput {
+  messageId: string;
+  recipientOwnerId: string;
+  deliveredAt?: string;
+}
+
+export function createChatDeliveredPayload(input: CreateChatDeliveredPayloadInput): ChatDeliveredPayload {
+  return ChatDeliveredPayloadSchema.parse({
+    messageId: input.messageId,
+    recipientOwnerId: input.recipientOwnerId,
+    deliveredAt: input.deliveredAt ?? new Date().toISOString(),
+  });
+}
+
 export interface CreateUnsignedDeviceRevocationRecordInput {
   ownerId: string;
   deviceId: string;
@@ -2857,6 +2886,16 @@ function evaluateEnvelopeRolePolicy(
       return {
         ok: false,
         reason: "chat.message cannot involve system role",
+      };
+    }
+    return { ok: true };
+  }
+
+  if (intent === "chat.delivered") {
+    if (senderRole === "system" || recipientRole === "system") {
+      return {
+        ok: false,
+        reason: "chat.delivered cannot involve system role",
       };
     }
     return { ok: true };

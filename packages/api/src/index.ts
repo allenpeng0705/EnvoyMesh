@@ -9,6 +9,7 @@ export * from "./autonomous-policy.js";
 export * from "./envoy-pair-uri.js";
 export * from "./chat-device-auth.js";
 export * from "./chat-actor.js";
+export * from "./chat-delivered.js";
 export * from "./agent-visibility.js";
 export * from "./agent-activity-map.js";
 export * from "./agent-interaction.js";

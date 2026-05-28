@@ -394,6 +394,11 @@ export interface MobileChatLogStore {
   listThread(threadPeerOwnerId: string, limit?: number): Promise<ChatLogEntry[]>;
   deleteMessage(threadPeerOwnerId: string, messageId: string): Promise<boolean>;
   clearThread(threadPeerOwnerId: string): Promise<number>;
+  updateDeliveryReceipt(
+    threadPeerOwnerId: string,
+    messageId: string,
+    deliveryReceipt: NonNullable<ChatLogEntry["metadata"]["deliveryReceipt"]>,
+  ): Promise<boolean>;
 }
 
 function _parseAttachmentsJson(raw: unknown): ChatLogEntry["content"]["attachments"] {
@@ -499,6 +504,22 @@ export function createMobileChatLogStore(db: MobileDatabase): MobileChatLogStore
       if (rows.length === 0) return 0;
       await db.execute(`DELETE FROM chat_messages WHERE threadPeerOwnerId = ?`, [thread]);
       return rows.length;
+    },
+
+    async updateDeliveryReceipt(threadPeerOwnerId, messageId, deliveryReceipt) {
+      const thread = threadPeerOwnerId.trim();
+      const id = messageId.trim();
+      if (!thread || !id) return false;
+      const before = await db.query(
+        `SELECT messageId FROM chat_messages WHERE threadPeerOwnerId = ? AND messageId = ? LIMIT 1`,
+        [thread, id],
+      ) as Record<string, unknown>[];
+      if (before.length === 0) return false;
+      await db.execute(
+        `UPDATE chat_messages SET deliveryReceipt = ? WHERE threadPeerOwnerId = ? AND messageId = ?`,
+        [deliveryReceipt, thread, id],
+      );
+      return true;
     },
   };
 }

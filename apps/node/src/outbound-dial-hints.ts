@@ -7,37 +7,16 @@ import {
   isLikelyInboundConnSnapshotDialHint,
   isPublicLibp2pBootstrapMultiaddr,
   isUsableOutboundPeerDialHint,
+  buildSyntheticRelayCircuitHints,
+  dedupeDialHintStrings,
 } from "@envoymesh/network";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import { createDefaultPersistedNodeConfig, type PersistedNodeConfig } from "./node-config-store.js";
 import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR, DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS } from "@envoymesh/api";
 
-function relayCircuitToPeer(relayBaseMultiaddr: string, targetPeerId: string): string | undefined {
-  const s = relayBaseMultiaddr.trim().replace(/\/$/, "");
-  if (!s || !s.includes("/p2p/") || s.includes("/p2p-circuit/")) {
-    return undefined;
-  }
-  const m = s.match(/\/p2p\/([^/]+)$/);
-  const lastPeer = m?.[1];
-  if (!lastPeer || lastPeer === targetPeerId) {
-    return undefined;
-  }
-  return `${s}/p2p-circuit/p2p/${targetPeerId}`;
-}
-
 function dedupeDialHints(addrs: string[]): string[] {
-  const seen = new Set<string>();
-  const ordered: string[] = [];
-  for (const a of addrs) {
-    const t = a.trim();
-    if (!t || seen.has(t)) {
-      continue;
-    }
-    seen.add(t);
-    ordered.push(t);
-  }
-  return ordered;
+  return dedupeDialHintStrings(addrs);
 }
 
 /** Drop public libp2p bootstrap, WebTransport, and incomplete circuit multiaddrs. */
@@ -117,19 +96,10 @@ export async function buildOutboundDialHints(input: {
     }
   }
 
-  let synthetic = 0;
-  /** When we have routable direct listen addrs (e.g. mDNS/LAN), skip slow synthetic relay dials. */
-  const maxSynthetic = nonLoopListen.length > 0 ? 0 : 8;
-  for (const base of relayPool) {
-    if (synthetic >= maxSynthetic) {
-      break;
-    }
-    const c = relayCircuitToPeer(base, recipientPeerId);
-    if (c) {
-      out.push(c);
-      synthetic++;
-    }
-  }
+  const maxSynthetic = nonLoopListen.length > 0 ? 4 : 8;
+  out.push(
+    ...buildSyntheticRelayCircuitHints(recipientPeerId, relayPool, maxSynthetic),
+  );
 
   return dedupeDialHints(out.filter((a) => isUsableChatDialHint(a, recipientPeerId)));
 }

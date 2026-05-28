@@ -97,6 +97,7 @@ import {
   didKeysMatch,
   buildCommerceReceiptFromTaskResult,
   mapCommerceReceiptToActivity,
+  buildSignedChatDeliveredEnvelope,
   type CommerceReceiptRecord,
   type ListCommerceReceiptsParams,
   type RecordCommerceReceiptParams,
@@ -265,6 +266,7 @@ import {
   sendProfileSyncToBonds,
   isLibp2pPeerId,
 } from "./profile-sync-outbound.js";
+import { deliverChatEnvelopeWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
 import { pickBestLibp2pPeerDirectoryRecord } from "./peer-transport-resolve.js";
 import {
   normalizeTransportPeerId,
@@ -456,6 +458,8 @@ class NodeServiceImpl implements NodeService {
 
   /** Serialize outbound chat streams per libp2p peer to avoid concurrent newStream races. */
   private readonly _chatSendChains = new Map<string, Promise<void>>();
+  /** Keeps bonded contacts warm across NAT idle periods. */
+  private _bondWarmTimer?: ReturnType<typeof setInterval>;
   /** In-memory owner → libp2p from recent inbound streams (until persisted in peer directory). */
   private readonly _lastLibp2pTransportByOwner = new Map<
     string,
@@ -1750,10 +1754,11 @@ class NodeServiceImpl implements NodeService {
     // Manual-approval hello never ran `emitBondEstablished` from bond-inbound, so index.ts did not
     // upsert peer-directory. Persist requester libp2p id so sendChat can resolve owner → peerId.
     try {
+      const requesterDir = await this._peerDirectoryStore.getPeerByOwnerId(pending.requesterOwnerId);
       await this._peerDirectoryStore.ensurePeerFromInboundChat({
         ownerId: pending.requesterOwnerId,
         peerId: pending.remotePeerId,
-        listenAddrs: [],
+        listenAddrs: requesterDir?.listenAddrs ?? [],
       });
     } catch (err) {
       console.warn(`[peer-directory] acceptHello ensurePeerFromInboundChat:`, err);
@@ -1976,6 +1981,34 @@ class NodeServiceImpl implements NodeService {
     recipientEnvelopePeerId: string | undefined;
     listenAddrs: string[] | undefined;
   }> {
+    const mesh = this._reachableMesh();
+    const isConnected = mesh
+      ? (peerId: string) => mesh.getPeerConnectionInfo(peerId).connected
+      : undefined;
+
+    const cachedTransport = this._lastLibp2pTransportByOwner.get(targetOwnerId);
+    if (cachedTransport && isLibp2pPeerId(cachedTransport.peerId)) {
+      const records = await raceWithTimeout(
+        this._peerDirectoryStore.listPeerRecords(),
+        25_000,
+        "listPeerRecords",
+      );
+      const dirRow =
+        records.find((r) => r.ownerId === targetOwnerId && r.peerId === cachedTransport.peerId) ??
+        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected });
+      const recipientEnvelopePeerId = dirRow?.devicePublicKeyPem
+        ? derivePeerId(dirRow.devicePublicKeyPem)
+        : targetOwnerId.startsWith("envoy_")
+          ? targetOwnerId
+          : undefined;
+      return {
+        transportPeerId: cachedTransport.peerId,
+        recipientEnvelopePeerId,
+        listenAddrs:
+          cachedTransport.listenAddrs?.length ? cachedTransport.listenAddrs : dirRow?.listenAddrs,
+      };
+    }
+
     let targetPeer: Awaited<ReturnType<LocalPeerDirectoryStore["getPeerByOwnerId"]>>;
     try {
       targetPeer = await raceWithTimeout(
@@ -1989,13 +2022,14 @@ class NodeServiceImpl implements NodeService {
     if (!targetPeer) {
       const records = await raceWithTimeout(this._peerDirectoryStore.listPeerRecords(), 25_000, "listPeerRecords");
       targetPeer =
-        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId) ??
+        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected }) ??
         records.find((r) => r.ownerId === targetOwnerId) ??
         records.find((r) => r.peerId === targetOwnerId) ??
         undefined;
     } else if (!isLibp2pPeerId(targetPeer.peerId)) {
       const records = await raceWithTimeout(this._peerDirectoryStore.listPeerRecords(), 25_000, "listPeerRecords");
-      targetPeer = pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId) ?? targetPeer;
+      targetPeer =
+        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected }) ?? targetPeer;
     }
     if (!targetPeer?.peerId) {
       throw new Error(`Peer not found for owner: ${targetOwnerId}`);
@@ -2187,26 +2221,32 @@ class NodeServiceImpl implements NodeService {
     transportPeerId: string,
     envelope: EnvoyEnvelope,
     dialHints: string[],
-  ): Promise<void> {
-    await this._withChatSendLock(transportPeerId, async () => {
+    listenAddrs?: string[],
+  ): Promise<ChatDeliverResult> {
+    return this._withChatSendLock(transportPeerId, async () => {
       const mesh = this._requireMesh();
-      const sendOnce = async (): Promise<void> => {
-        await mesh.sendChat(transportPeerId, envelope, { dialHints });
-      };
-      try {
-        await sendOnce();
-      } catch (firstErr) {
-        console.warn(
-          `[sendChat] first attempt failed for ${transportPeerId.slice(0, 12)}…, resetting path:`,
-          firstErr instanceof Error ? firstErr.message : firstErr,
-        );
-        const closed = await mesh.closeConnectionsToPeer(transportPeerId);
-        if (closed > 0) {
-          console.log(`[sendChat] closed ${closed} stale connection(s) to ${transportPeerId.slice(0, 12)}…`);
-        }
-        await sendOnce();
-      }
+      return deliverChatEnvelopeWithRetry({
+        mesh,
+        transportPeerId,
+        envelope,
+        dialHints,
+        chatProtocol: ENVOY_CHAT_PROTOCOL,
+        rebuildDialHints: () => this._dialHintsForChat(transportPeerId, listenAddrs),
+      });
     });
+  }
+
+  private async _markOutboundChatDelivered(
+    threadPeerOwnerId: string,
+    messageId: string,
+    deliveredAt: string,
+  ): Promise<void> {
+    if (this._chatLogStore) {
+      await this._chatLogStore
+        .updateDeliveryReceipt(threadPeerOwnerId, messageId, "delivered")
+        .catch((err) => console.warn(`[chat-log] delivery update failed:`, err));
+    }
+    this.emit("chat:delivered", { messageId, timestamp: deliveredAt });
   }
 
   private async _withChatSendLock<T>(transportPeerId: string, fn: () => Promise<T>): Promise<T> {
@@ -2280,13 +2320,16 @@ class NodeServiceImpl implements NodeService {
       selfProfile.device.privateKeyPem,
     );
 
+    let deliverResult: ChatDeliverResult = { delivered: false };
     if (transportPeerId === mesh.peerId && this._bridgeChatHandler) {
       console.log(`[sendChat] self-send to ${targetOwnerId}, routing via bridge handler`);
       await this._bridgeChatHandler(envelope, mesh.peerId);
+      deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
     } else {
-      await this._deliverChatEnvelope(transportPeerId, envelope, dialHints);
+      deliverResult = await this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
     }
 
+    const deliveryReceipt = deliverResult.delivered ? ("delivered" as const) : ("sent" as const);
     const emittedMsg: ChatMessage = {
       messageId: envelope.messageId,
       sender: {
@@ -2305,15 +2348,26 @@ class NodeServiceImpl implements NodeService {
       },
       metadata: {
         timestamp: envelope.createdAt,
-        deliveryReceipt: "sent" as const,
+        deliveryReceipt,
       },
       signature: envelope.signature,
     };
     console.log(`[sendChat] Emitting chat:message locally:`, emittedMsg);
     this._persistChatMessage(targetOwnerId, emittedMsg);
     this.emit("chat:message", emittedMsg);
+    if (deliverResult.delivered) {
+      await this._markOutboundChatDelivered(
+        targetOwnerId,
+        envelope.messageId,
+        deliverResult.deliveredAt ?? envelope.createdAt,
+      );
+    }
     this._styleAdapter?.learnFromMessage(true, wireText);
-    return { messageId: envelope.messageId };
+    return {
+      messageId: envelope.messageId,
+      deliveryReceipt,
+      deliveredAt: deliverResult.deliveredAt,
+    };
   }
 
   async sendAgentChat(targetOwnerId: string, text: string): Promise<SendChatResult> {
@@ -2366,12 +2420,15 @@ class NodeServiceImpl implements NodeService {
       agentIdentity.agentPrivateKeyPem,
     );
 
+    let deliverResult: ChatDeliverResult = { delivered: false };
     if (transportPeerId === mesh.peerId && this._bridgeChatHandler) {
       await this._bridgeChatHandler(envelope, mesh.peerId);
+      deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
     } else {
-      await this._deliverChatEnvelope(transportPeerId, envelope, dialHints);
+      deliverResult = await this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
     }
 
+    const deliveryReceipt = deliverResult.delivered ? ("delivered" as const) : ("sent" as const);
     const emittedMsg: ChatMessage = {
       messageId: envelope.messageId,
       sender: {
@@ -2390,13 +2447,24 @@ class NodeServiceImpl implements NodeService {
       content: { text: wireText },
       metadata: {
         timestamp: envelope.createdAt,
-        deliveryReceipt: "sent",
+        deliveryReceipt,
       },
       signature: envelope.signature,
     };
     this._persistChatMessage(targetOwnerId, emittedMsg);
     this.emit("chat:message", emittedMsg);
-    return { messageId: envelope.messageId };
+    if (deliverResult.delivered) {
+      await this._markOutboundChatDelivered(
+        targetOwnerId,
+        envelope.messageId,
+        deliverResult.deliveredAt ?? envelope.createdAt,
+      );
+    }
+    return {
+      messageId: envelope.messageId,
+      deliveryReceipt,
+      deliveredAt: deliverResult.deliveredAt,
+    };
   }
 
   async listAgentActivity(params?: ListAgentActivityParams): Promise<AgentActivityRecord[]> {
@@ -4271,6 +4339,7 @@ class NodeServiceImpl implements NodeService {
       void this.refreshBondPeerProfiles().catch((err) => {
         console.warn("[profile] refreshBondPeerProfiles after node:online failed:", err);
       });
+      this._startBondWarmInterval();
 
       // Wait longer for DHT to connect to bootstrap peers and stabilize routing table
       // DHT provide operations require the routing table to be populated
@@ -4295,7 +4364,7 @@ class NodeServiceImpl implements NodeService {
     const profile = this._profile!;
     const taskStore = this._taskStore!;
 
-    mesh.onMessage(async ({ envelope, remotePeerId, remoteAddr }) => {
+    mesh.onMessage(async ({ envelope, remotePeerId, remoteAddr, replyWithEnvelope }) => {
       const guardDecision = this._inboundGuard!.inspect(envelope);
       if (guardDecision.action === "reject") return;
 
@@ -4455,6 +4524,9 @@ class NodeServiceImpl implements NodeService {
           .ensurePeerFromInboundChat({
             ownerId: payload.senderOwnerId,
             peerId: remotePeerId,
+            listenAddrs: remoteAddr?.trim()
+              ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId)
+              : [],
           })
           .catch((err) => console.warn(`[peer-directory] ensurePeerFromInboundChat failed:`, err));
         const incomingMsg: ChatMessage = {
@@ -4483,6 +4555,21 @@ class NodeServiceImpl implements NodeService {
         };
         this._persistChatMessage(payload.senderOwnerId, incomingMsg);
         this.emit("chat:message", incomingMsg);
+        if (replyWithEnvelope && envelope.senderPeerId?.trim()) {
+          try {
+            await replyWithEnvelope(
+              buildSignedChatDeliveredEnvelope({
+                profile,
+                messageId: envelope.messageId,
+                recipientOwnerId: profile.owner.ownerId,
+                envelopeRecipientPeerId: envelope.senderPeerId,
+                correlationId: envelope.correlationId,
+              }),
+            );
+          } catch (err) {
+            console.warn(`[chat.message] delivery ack failed:`, err);
+          }
+        }
         if (senderTrust && senderTrust.level !== "blocked") {
           void this._tagBondedContactReachability(remotePeerId);
         }
@@ -4646,6 +4733,10 @@ class NodeServiceImpl implements NodeService {
       }
       this._stopNodeStatsLogging?.();
       this._stopNodeStatsLogging = undefined;
+      if (this._bondWarmTimer) {
+        clearInterval(this._bondWarmTimer);
+        this._bondWarmTimer = undefined;
+      }
       this._relayBootstrapPeers = [];
       if (this._mesh) {
         await this._mesh.stop();
@@ -5287,13 +5378,12 @@ class NodeServiceImpl implements NodeService {
       return { connected: false, direct: false };
     }
 
-    // Look up the libp2p peer ID from the peer directory
-    const peerRecord = await this._peerDirectoryStore.getPeerByOwnerId(peerOwnerId);
-    if (!peerRecord?.peerId) {
+    try {
+      const { transportPeerId } = await this._resolvePeerTransportForOwner(peerOwnerId);
+      return mesh.getPeerConnectionInfo(transportPeerId);
+    } catch {
       return { connected: false, direct: false };
     }
-
-    return mesh.getPeerConnectionInfo(peerRecord.peerId);
   }
 
   async warmContactConnection(peerOwnerId: string): Promise<PeerConnectionInfo> {
@@ -5327,6 +5417,33 @@ class NodeServiceImpl implements NodeService {
     }
 
     return mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, { dialHints });
+  }
+
+  private _startBondWarmInterval(): void {
+    if (this._bondWarmTimer) {
+      clearInterval(this._bondWarmTimer);
+    }
+    void this._warmAllBondedContacts();
+    this._bondWarmTimer = setInterval(() => {
+      void this._warmAllBondedContacts();
+    }, 45_000);
+  }
+
+  private async _warmAllBondedContacts(): Promise<void> {
+    if (this._nodeStatus !== "running") {
+      return;
+    }
+    const bonds = await this.getBonds();
+    for (const bond of bonds) {
+      if (bond.level !== "direct" && bond.level !== "referred") {
+        continue;
+      }
+      try {
+        await this.warmContactConnection(bond.peerOwnerId);
+      } catch {
+        /* best-effort keepalive */
+      }
+    }
   }
 
   async getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics> {

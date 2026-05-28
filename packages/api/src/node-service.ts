@@ -226,6 +226,8 @@ export interface ChatMessage {
 /** Result of an outbound chat send (transport accepted the envelope). */
 export interface SendChatResult {
   messageId: string;
+  deliveryReceipt?: "sent" | "delivered";
+  deliveredAt?: string;
 }
 
 // ============================================

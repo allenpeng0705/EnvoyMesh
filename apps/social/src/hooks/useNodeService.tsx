@@ -1115,7 +1115,7 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
   useEffect(() => {
     if (!client.isConnected) return;
 
-    const unsub = client.on("chat:message", (data) => {
+    const unsubMessage = client.on("chat:message", (data) => {
       const msg = data as ChatMessage;
       const self = selfIdsRef.current;
       if (!self?.ownerId) {
@@ -1125,7 +1125,33 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
       setThreads((prev) => appendChatToThreads(prev, msg, self) ?? prev);
     });
 
-    return unsub;
+    const unsubDelivered = client.on("chat:delivered", (data) => {
+      const { messageId } = data as { messageId: string };
+      if (!messageId) return;
+      setThreads((prev) => {
+        let changed = false;
+        const next: Record<string, ChatMessage[]> = {};
+        for (const [threadId, list] of Object.entries(prev)) {
+          const updated = list.map((m) => {
+            if (m.messageId !== messageId || m.metadata.deliveryReceipt === "delivered") {
+              return m;
+            }
+            changed = true;
+            return {
+              ...m,
+              metadata: { ...m.metadata, deliveryReceipt: "delivered" as const },
+            };
+          });
+          next[threadId] = updated;
+        }
+        return changed ? next : prev;
+      });
+    });
+
+    return () => {
+      unsubMessage();
+      unsubDelivered();
+    };
   }, [client, client.isConnected]);
 
   useEffect(() => {

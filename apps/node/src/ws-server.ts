@@ -65,6 +65,7 @@ export class WsServer {
         this.emitEvent("share:agent-proposed", data),
       );
       nodeServiceImpl.on("chat:message", (data: unknown) => this.emitEvent("chat:message", data));
+      nodeServiceImpl.on("chat:delivered", (data: unknown) => this.emitEvent("chat:delivered", data));
       nodeServiceImpl.on("chat:draft", (data: unknown) => this.emitEvent("chat:draft", data));
       nodeServiceImpl.on("agent:activity", (data: unknown) => this.emitEvent("agent:activity", data));
       nodeServiceImpl.on("bond:established", (data: unknown) => this.emitEvent("bond:established", data));

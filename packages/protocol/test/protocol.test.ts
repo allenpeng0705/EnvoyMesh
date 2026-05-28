@@ -10,6 +10,8 @@ import {
   createBondChallengePayload,
   createBondChallengeResponsePayload,
   createChatMessagePayload,
+  createChatDeliveredPayload,
+  parseChatDeliveredPayload,
   createDiscoveryRequestPayload,
   createDiscoveryResponsePayload,
   createDevicePairApprovePayload,
@@ -475,6 +477,15 @@ describe("protocol", () => {
       },
     });
     expect(parseChatMessagePayload(payload)).toEqual(payload);
+  });
+
+  it("roundtrips chat.delivered payload", () => {
+    const payload = createChatDeliveredPayload({
+      messageId: "msg-ack-1",
+      recipientOwnerId: "envoy:owner:bob",
+      deliveredAt: "2026-05-28T12:00:00.000Z",
+    });
+    expect(parseChatDeliveredPayload(payload)).toEqual(payload);
   });
 
   it("creates a valid unsigned envelope", () => {

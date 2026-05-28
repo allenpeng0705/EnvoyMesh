@@ -12,12 +12,23 @@ export function evaluateInboundEnvelopeRolePolicy(envelope: EnvoyEnvelope): Inbo
   if (envelope.intent === "chat.message") {
     // human↔human: OK (original)
     // agent↔human: OK (Phase 9A — AI assistant / bridge replies)
-    // agent↔agent: NOT OK (use A2A task intents instead)
+    // agent↔human: OK for chat.delivered acks too
     const roles = [envelope.senderRole, envelope.recipientRole];
     if (!roles.includes("human")) {
       return {
         ok: false,
         reason: "chat.message requires at least one human role (use A2A intents for agent-to-agent)",
+      };
+    }
+    return { ok: true };
+  }
+
+  if (envelope.intent === "chat.delivered") {
+    const roles = [envelope.senderRole, envelope.recipientRole];
+    if (!roles.includes("human")) {
+      return {
+        ok: false,
+        reason: "chat.delivered requires at least one human role",
       };
     }
     return { ok: true };

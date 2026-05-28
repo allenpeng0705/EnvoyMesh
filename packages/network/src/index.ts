@@ -14,6 +14,7 @@ import { byteStream } from "@libp2p/utils";
 import { KEEP_ALIVE, type RoutingOptions } from "@libp2p/interface";
 import { peerIdFromString } from "@libp2p/peer-id";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
+import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
 import { multiaddr } from "@multiformats/multiaddr";
 import type { CID } from "multiformats/cid";
 import { createLibp2p, type Libp2p } from "libp2p";
@@ -86,7 +87,7 @@ export function getEnvoyContactKeepAlivePeerTagName(): string {
  */
 const NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS = 15_000;
 /** Per-hint dial cap when iterating multiaddrs (fail fast; libp2p default dialTimeout is 15s). */
-const HINT_DIAL_TIMEOUT_MS = 6_000;
+const HINT_DIAL_TIMEOUT_MS = 3_500;
 
 function promiseWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -142,6 +143,8 @@ export interface MeshOutboundOptions {
    * dial does not succeed.
    */
   dialHints?: string[];
+  /** When no active connection exists, try relay circuit hints before bare peer-id dials. */
+  preferCircuitHints?: boolean;
 }
 
 export interface EnvoyMeshOptions {
@@ -885,6 +888,97 @@ export class EnvoyMesh {
     return this.sendEnvelopeOnProtocol(target, envelope, ENVOY_CHAT_PROTOCOL, sendOptions);
   }
 
+  /**
+   * Send chat.message on the chat protocol and read a single chat.delivered ack on the same stream.
+   */
+  async sendChatExpectReply(
+    target: string,
+    envelope: EnvoyEnvelope,
+    options?: { timeoutMs?: number; dialHints?: string[]; preferCircuitHints?: boolean },
+  ): Promise<EnvoyEnvelope> {
+    validateEnvelopeProtocol(ENVOY_CHAT_PROTOCOL, envelope);
+    const timeoutMs = options?.timeoutMs ?? CHAT_DELIVERY_ACK_TIMEOUT_MS;
+    const sendOptions: MeshOutboundOptions | undefined =
+      options?.dialHints?.length || options?.preferCircuitHints
+        ? {
+            dialHints: options.dialHints,
+            preferCircuitHints: options.preferCircuitHints,
+          }
+        : undefined;
+    const { stream } = await this.openOutboundStream(target, ENVOY_CHAT_PROTOCOL, sendOptions);
+    const remotePeerId = stream.connection?.remotePeer?.toString();
+    if (remotePeerId) {
+      this.emitP2pDebug({
+        kind: "stream:open",
+        remotePeerId,
+        protocol: ENVOY_CHAT_PROTOCOL,
+        direction: "outbound",
+      });
+    }
+    if (stream.writeStatus !== "writable") {
+      throw new Error(
+        `Cannot send on stream ${stream.id}; status=${stream.status}, writeStatus=${stream.writeStatus}, remoteWriteStatus=${stream.remoteWriteStatus}`,
+      );
+    }
+    const streamIo = byteStream(stream);
+    await streamIo.write(encodeEnvelope(envelope));
+    const readPromise = streamIo.read() as Promise<Uint8Array | null>;
+    let replyBytes: Uint8Array | null;
+    try {
+      replyBytes = await new Promise<Uint8Array | null>((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error(`sendChatExpectReply timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+        void readPromise
+          .then((b) => {
+            clearTimeout(timer);
+            resolve(b);
+          })
+          .catch((err: unknown) => {
+            clearTimeout(timer);
+            reject(err);
+          });
+      });
+    } catch (error) {
+      try {
+        if (typeof stream.abort === "function") {
+          await stream.abort();
+        }
+      } catch {
+        /* ignore */
+      }
+      try {
+        await stream.close();
+      } catch {
+        /* ignore */
+      }
+      throw error;
+    }
+    try {
+      await stream.close();
+    } catch {
+      /* ignore */
+    }
+    if (remotePeerId) {
+      this.emitP2pDebug({
+        kind: "stream:close",
+        remotePeerId,
+        protocol: ENVOY_CHAT_PROTOCOL,
+        direction: "outbound",
+      });
+    }
+    if (replyBytes === null) {
+      throw new Error("sendChatExpectReply: peer closed stream without a reply");
+    }
+    const reply = decodeEnvelope(replyBytes.subarray());
+    validateEnvelopeProtocol(ENVOY_CHAT_PROTOCOL, reply);
+    if (reply.intent !== "chat.delivered") {
+      throw new Error(`sendChatExpectReply: expected chat.delivered, got ${reply.intent}`);
+    }
+    return reply;
+  }
+
   /** Close all libp2p connections to a peer (used before redial after a stale path). */
   async closeConnectionsToPeer(peerIdStr: string): Promise<number> {
     const node = this.requireNode();
@@ -1061,6 +1155,32 @@ export class EnvoyMesh {
     let lastError: unknown = new Error("no outbound dial attempted");
 
     const dialTarget = this._normalizeDialTarget(target);
+    const tryRoutableHints = async (): Promise<{ stream: any; remotePeerId?: string } | undefined> => {
+      if (!hasRoutableHint) {
+        return undefined;
+      }
+      for (const ma of dialHintsToMultiaddrs(sortDialHints(routableHints), peerIdStr)) {
+        try {
+          return await dialOnce(ma);
+        } catch (e) {
+          lastError = e;
+        }
+      }
+      return undefined;
+    };
+
+    const coldPeer = peerIdStr ? !this.findOpenConnectionToPeer(node, peerIdStr) : true;
+    const preferCircuits =
+      Boolean(sendOptions?.preferCircuitHints) ||
+      (coldPeer && routableHints.some((h) => h.includes("/p2p-circuit/")));
+
+    if (barePeerDial && preferCircuits) {
+      const viaHints = await tryRoutableHints();
+      if (viaHints) {
+        return viaHints;
+      }
+    }
+
     // Prefer libp2p peer-id dial (peerstore + active conn) before stale multiaddr hints.
     if (barePeerDial) {
       try {
@@ -1070,13 +1190,10 @@ export class EnvoyMesh {
       }
     }
 
-    if (barePeerDial && hasRoutableHint) {
-      for (const ma of dialHintsToMultiaddrs(sortDialHints(routableHints), peerIdStr)) {
-        try {
-          return await dialOnce(ma);
-        } catch (e) {
-          lastError = e;
-        }
+    if (barePeerDial && hasRoutableHint && !preferCircuits) {
+      const viaHints = await tryRoutableHints();
+      if (viaHints) {
+        return viaHints;
       }
     }
 
@@ -1308,7 +1425,7 @@ export class EnvoyMesh {
       let replyConsumed = false;
       const streamIo = byteStream(stream);
       const replyWithEnvelope =
-        protocol === ENVOY_MESSAGE_PROTOCOL
+        protocol === ENVOY_MESSAGE_PROTOCOL || protocol === ENVOY_CHAT_PROTOCOL
           ? async (env: EnvoyEnvelope) => {
               if (replyConsumed) {
                 throw new Error("EnvoyMesh replyWithEnvelope: duplicate reply");
@@ -1643,6 +1760,12 @@ export {
 } from "./protocols.js";
 export { CAPABILITY_TOPIC_NAMESPACE, cidForCapabilityTopic } from "./capability-topic-cid.js";
 export { expandListenAddressesWithQuic, quicListenFromTcpListen } from "./quic-listen.js";
+export {
+  buildSyntheticRelayCircuitHints,
+  dedupeDialHintStrings,
+  prioritizeCircuitDialHints,
+  relayCircuitToPeer,
+} from "./relay-circuit-hints.js";
 export { CapabilityRegistry, type CapabilityRegistryOptions, type CapabilityRegistryVerbosity } from "./capability-registry.js";
 
 /**
@@ -1896,8 +2019,11 @@ function dialHintsToMultiaddrs(
 }
 
 function validateEnvelopeProtocol(protocol: string, envelope: EnvoyEnvelope): void {
-  if (protocol === ENVOY_CHAT_PROTOCOL && envelope.intent !== "chat.message") {
-    throw new Error(`invalid intent ${envelope.intent} on chat protocol`);
+  if (protocol === ENVOY_CHAT_PROTOCOL) {
+    if (envelope.intent !== "chat.message" && envelope.intent !== "chat.delivered") {
+      throw new Error(`invalid intent ${envelope.intent} on chat protocol`);
+    }
+    return;
   }
   if (protocol === ENVOY_MESSAGE_PROTOCOL && envelope.intent === "chat.message") {
     throw new Error("chat.message must be sent on chat protocol");

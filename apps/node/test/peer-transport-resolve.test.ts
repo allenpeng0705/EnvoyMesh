@@ -19,4 +19,24 @@ describe("pickBestLibp2pPeerDirectoryRecord", () => {
     const picked = pickBestLibp2pPeerDirectoryRecord(records, ownerId);
     expect(picked?.peerId).toBe("12D3KooWMacLibp2pOlder");
   });
+
+  it("prefers a connected libp2p row over a newer disconnected one", () => {
+    const ownerId = "envoy:owner:win";
+    const records = [
+      {
+        ownerId,
+        peerId: "12D3KooWWinNewerOffline",
+        lastSeenAt: "2026-05-29T12:00:00.000Z",
+      },
+      {
+        ownerId,
+        peerId: "12D3KooWWinOlderOnline",
+        lastSeenAt: "2026-05-29T10:00:00.000Z",
+      },
+    ];
+    const picked = pickBestLibp2pPeerDirectoryRecord(records, ownerId, {
+      isConnected: (peerId) => peerId === "12D3KooWWinOlderOnline",
+    });
+    expect(picked?.peerId).toBe("12D3KooWWinOlderOnline");
+  });
 });

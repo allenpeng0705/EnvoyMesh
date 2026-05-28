@@ -72,6 +72,12 @@ export interface LocalChatLogStore {
   deleteMessage(threadPeerOwnerId: string, messageId: string): Promise<boolean>;
   /** Remove all messages in a thread. Returns count removed. */
   clearThread(threadPeerOwnerId: string): Promise<number>;
+  /** Upgrade delivery receipt for an existing outbound message row. */
+  updateDeliveryReceipt(
+    threadPeerOwnerId: string,
+    messageId: string,
+    deliveryReceipt: NonNullable<ChatLogEnvelope["metadata"]["deliveryReceipt"]>,
+  ): Promise<boolean>;
 }
 
 function isMissingFileError(error: unknown): boolean {
@@ -226,6 +232,26 @@ export function createLocalChatLogStore(profileDir: string): LocalChatLogStore {
         if (deleted === 0) return 0;
         await writeChatLinesAtomic(path, next);
         return deleted;
+      });
+    },
+
+    updateDeliveryReceipt(threadPeerOwnerId, messageId, deliveryReceipt) {
+      return enqueue(async () => {
+        const thread = threadPeerOwnerId.trim();
+        const id = messageId.trim();
+        if (!thread || !id) return false;
+        const rows = await readAllChatLines(path);
+        let changed = false;
+        for (const row of rows) {
+          if (row.threadPeerOwnerId === thread && row.messageId === id) {
+            row.metadata = { ...row.metadata, deliveryReceipt };
+            changed = true;
+            break;
+          }
+        }
+        if (!changed) return false;
+        await writeChatLinesAtomic(path, rows);
+        return true;
       });
     },
   };
