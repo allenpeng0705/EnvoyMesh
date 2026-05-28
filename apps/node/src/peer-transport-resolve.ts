@@ -1,18 +1,11 @@
+import type { PeerDirectoryRecord } from "@envoymesh/local-store";
 import { isLibp2pPeerId } from "./profile-sync-outbound.js";
-
-export type PeerDirectoryRow = {
-  ownerId: string;
-  peerId: string;
-  lastSeenAt: string;
-  listenAddrs?: string[];
-  devicePublicKeyPem?: string;
-};
 
 /** Prefer a dialable libp2p row over a newer `envoy_*` envelope id for the same owner. */
 export function pickBestLibp2pPeerDirectoryRecord(
-  records: PeerDirectoryRow[],
+  records: PeerDirectoryRecord[],
   ownerId: string,
-): PeerDirectoryRow | undefined {
+): PeerDirectoryRecord | undefined {
   const matches = records.filter((r) => r.ownerId === ownerId && isLibp2pPeerId(r.peerId));
   if (matches.length === 0) {
     return undefined;
