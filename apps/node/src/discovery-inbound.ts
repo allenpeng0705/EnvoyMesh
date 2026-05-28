@@ -23,12 +23,11 @@ import { matchPublishedLibraryDocuments } from "./discovery-library-match.js";
 import { createPublishedLibraryStore } from "./published-library-store.js";
 import { createPublishedExternalStore } from "./published-external-store.js";
 import { responseHopDistance } from "@envoymesh/api";
+import { discoveryRequesterAuditLabel, isAnonymousDiscoveryOwnerId } from "@envoymesh/api";
 import {
-  discoveryRequesterAuditLabel,
-  isAnonymousDiscoveryOwnerId,
   requiresDiscoveryReferralAttestation,
   verifyDiscoveryReferralAttestation,
-} from "@envoymesh/api";
+} from "@envoymesh/api/discovery-referral-attestation";
 
 /** Requesting this capability (alone or with file/hash selectors) enables published-library metadata in the response. */
 export const PUBLISHED_LIB_CAPABILITY = "envoymesh.published-library";

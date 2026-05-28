@@ -1,0 +1,112 @@
+[     677ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5175/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=9f0dc859:20102
+[     737ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5175/favicon.ico:0
+[     738ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5175/ws-client.ts:60
+[     741ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5175/ws-client.ts:104
+[     741ms] [LOG] [ws-client] Disconnected @ http://localhost:5175/ws-client.ts:87
+[     741ms] [LOG] [ws-client] Reconnecting in 1000ms (attempt 1)... @ http://localhost:5175/ws-client.ts:299
+[     742ms] [ERROR] [NodeServiceProvider] WebSocket connect failed: Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5175/ws-client.ts:97:20) @ http://localhost:5175/hooks/useNodeService.tsx:443
+[    1743ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5175/ws-client.ts:60
+[    1743ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5175/ws-client.ts:104
+[    1743ms] [LOG] [ws-client] Disconnected @ http://localhost:5175/ws-client.ts:87
+[    1744ms] [LOG] [ws-client] Reconnecting in 2000ms (attempt 2)... @ http://localhost:5175/ws-client.ts:299
+[    1744ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5175/ws-client.ts:97:20)
+[    3746ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5175/ws-client.ts:60
+[    3746ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5175/ws-client.ts:104
+[    3746ms] [LOG] [ws-client] Disconnected @ http://localhost:5175/ws-client.ts:87
+[    3746ms] [LOG] [ws-client] Reconnecting in 4000ms (attempt 3)... @ http://localhost:5175/ws-client.ts:299
+[    3746ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5175/ws-client.ts:97:20)
+[    7748ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5175/ws-client.ts:60
+[    7748ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5175/ws-client.ts:104
+[    7748ms] [LOG] [ws-client] Disconnected @ http://localhost:5175/ws-client.ts:87
+[    7749ms] [LOG] [ws-client] Reconnecting in 8000ms (attempt 4)... @ http://localhost:5175/ws-client.ts:299
+[    7749ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5175/ws-client.ts:97:20)
+[    8005ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5175/ws-client.ts:60
+[    8005ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5175/ws-client.ts:104
+[    8005ms] [LOG] [ws-client] Disconnected @ http://localhost:5175/ws-client.ts:87
+[    8005ms] [LOG] [ws-client] Reconnecting in 16000ms (attempt 5)... @ http://localhost:5175/ws-client.ts:299
+[    8005ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5175/ws-client.ts:97:20)
+[   14431ms] [LOG] [ws-client] Connected @ http://localhost:5175/ws-client.ts:71
+[   35286ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) @ http://localhost:5175/:0
+[   77581ms] [LOG] [ws-client] Disconnected @ http://localhost:5175/ws-client.ts:87
+[   77582ms] [LOG] [ws-client] Reconnecting in 1000ms (attempt 1)... @ http://localhost:5175/ws-client.ts:299
+[   78586ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5175/ws-client.ts:60
+[   78586ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5175/ws-client.ts:104
+[   78586ms] [LOG] [ws-client] Disconnected @ http://localhost:5175/ws-client.ts:87
+[   78586ms] [LOG] [ws-client] Reconnecting in 2000ms (attempt 2)... @ http://localhost:5175/ws-client.ts:299
+[   78590ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5175/ws-client.ts:97:20)
+[   80590ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5175/ws-client.ts:60
+[   80590ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5175/ws-client.ts:104
+[   80590ms] [LOG] [ws-client] Disconnected @ http://localhost:5175/ws-client.ts:87
+[   80590ms] [LOG] [ws-client] Reconnecting in 4000ms (attempt 3)... @ http://localhost:5175/ws-client.ts:299
+[   80591ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5175/ws-client.ts:97:20)
+[   84593ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5175/ws-client.ts:60
+[   84593ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5175/ws-client.ts:104
+[   84593ms] [LOG] [ws-client] Disconnected @ http://localhost:5175/ws-client.ts:87
+[   84593ms] [LOG] [ws-client] Reconnecting in 8000ms (attempt 4)... @ http://localhost:5175/ws-client.ts:299
+[   84593ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5175/ws-client.ts:97:20)
+[   92597ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5175/ws-client.ts:60
+[   92597ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5175/ws-client.ts:104
+[   92597ms] [LOG] [ws-client] Disconnected @ http://localhost:5175/ws-client.ts:87
+[   92597ms] [LOG] [ws-client] Reconnecting in 16000ms (attempt 5)... @ http://localhost:5175/ws-client.ts:299
+[   92598ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5175/ws-client.ts:97:20)
+[  108602ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5175/ws-client.ts:60
+[  108602ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5175/ws-client.ts:104
+[  108602ms] [LOG] [ws-client] Disconnected @ http://localhost:5175/ws-client.ts:87
+[  108602ms] [LOG] [ws-client] Reconnecting in 32000ms (attempt 6)... @ http://localhost:5175/ws-client.ts:299
+[  108603ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5175/ws-client.ts:97:20)
+[  140607ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5175/ws-client.ts:60
+[  140608ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5175/ws-client.ts:104
+[  140608ms] [LOG] [ws-client] Disconnected @ http://localhost:5175/ws-client.ts:87
+[  140608ms] [LOG] [ws-client] Reconnecting in 60000ms (attempt 7)... @ http://localhost:5175/ws-client.ts:299
+[  140609ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5175/ws-client.ts:97:20)
+[  200611ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5175/ws-client.ts:60
+[  200611ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5175/ws-client.ts:104
+[  200611ms] [LOG] [ws-client] Disconnected @ http://localhost:5175/ws-client.ts:87
+[  200611ms] [LOG] [ws-client] Reconnecting in 60000ms (attempt 8)... @ http://localhost:5175/ws-client.ts:299
+[  200612ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5175/ws-client.ts:97:20)
+[  211487ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:20102
+[  211535ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:0
+[  211773ms] [LOG] [ws-client] Connected @ http://localhost:5173/ws-client.ts:71
+[  232781ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  232824ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  232867ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  232903ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  232912ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  232922ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  232931ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  232940ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  232955ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  232964ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  232972ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  232980ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  232989ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  232997ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  233005ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  233014ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  233022ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  233031ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  233039ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  233047ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  233058ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  233067ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  233075ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  233083ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  233093ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  233101ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  233109ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  233117ms] [ERROR] Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render. @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=6f44d871:3528
+[  336354ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) @ http://localhost:5173/:0
+[  580895ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/components/views/H2AChannelView.tsx?t=1779906411063:0
+[  580896ms] [ERROR] [vite] Failed to reload /components/views/H2AChannelView.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:5173/@vite/client:881

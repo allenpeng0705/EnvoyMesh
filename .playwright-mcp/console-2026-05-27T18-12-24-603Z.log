@@ -1,0 +1,9 @@
+[     700ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5176/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=1ca10d9c:20102
+[     725ms] Error: Module "node:crypto" has been externalized for browser compatibility. Cannot access "node:crypto.createHash" in client code.  See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+    at Object.get (http://localhost:5176/@id/__vite-browser-external:node:crypto:3:13)
+    at http://localhost:5176/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/identity/src/index.ts:16:137
+[     726ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5176/favicon.ico:0
+[   12951ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5176/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=1ca10d9c:20102
+[   12967ms] Error: Module "node:crypto" has been externalized for browser compatibility. Cannot access "node:crypto.createHash" in client code.  See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+    at Object.get (http://localhost:5176/@id/__vite-browser-external:node:crypto:3:13)
+    at http://localhost:5176/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/identity/src/index.ts:16:137

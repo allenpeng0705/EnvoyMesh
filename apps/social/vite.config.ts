@@ -27,8 +27,13 @@ export default defineConfig({
   resolve: {
     alias: {
       "@envoymesh/api": resolve(repoRoot, "packages/api/src/index.ts"),
+      "@envoymesh/api/did-import": resolve(repoRoot, "packages/api/src/did-import.ts"),
+      "@envoymesh/api/discovery-privacy": resolve(repoRoot, "packages/api/src/discovery-privacy.ts"),
+      "@envoymesh/api/discovery-referral-attestation": resolve(
+        repoRoot,
+        "packages/api/src/discovery-referral-attestation.ts",
+      ),
       "@envoymesh/protocol": resolve(repoRoot, "packages/protocol/src/index.ts"),
-      "@envoymesh/identity": resolve(repoRoot, "packages/identity/src/index.ts"),
     },
   },
 });

@@ -194,6 +194,7 @@ export function App() {
             )}
             {currentView === "assistant" && (
               <H2AChannelView
+                onBackToChats={() => setCurrentView("chat")}
                 onOpenActivity={() => setCurrentView("activity")}
                 onOpenInbox={() => {
                   setCurrentView("chat");

@@ -3,7 +3,7 @@
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { H2AChannelView } from "../../src/components/views/H2AChannelView.js";
 
 const listAgentActivity = vi.fn().mockResolvedValue([]);
@@ -36,7 +36,14 @@ beforeEach(() => {
 describe("H2AChannelView", () => {
   it("renders owner-home-agent rail and chat panel", () => {
     render(<H2AChannelView />);
-    expect(screen.getByText(/owner ↔ home agent/i)).toBeDefined();
+    expect(screen.getByRole("heading", { name: /^assistant$/i })).toBeDefined();
     expect(screen.getByText(/chat with your ai assistant/i)).toBeDefined();
+  });
+
+  it("calls onBackToChats when back control is clicked", () => {
+    const onBackToChats = vi.fn();
+    render(<H2AChannelView onBackToChats={onBackToChats} />);
+    fireEvent.click(screen.getByRole("button", { name: /back to chats/i }));
+    expect(onBackToChats).toHaveBeenCalledTimes(1);
   });
 });

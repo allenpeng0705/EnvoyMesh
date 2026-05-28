@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { AIChatPanel } from "./AIChatPanel.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
+import { BackIcon } from "../../icons.js";
 import type { AgentActivityRecord, PendingApprovalSummary } from "@envoymesh/api";
 
 export interface H2AChannelViewProps {
+  onBackToChats?: () => void;
   onOpenActivity?: () => void;
   onOpenInbox?: () => void;
 }
 
-export function H2AChannelView({ onOpenActivity, onOpenInbox }: H2AChannelViewProps) {
+export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H2AChannelViewProps) {
   const nodeService = useNodeService();
   const [activity, setActivity] = useState<AgentActivityRecord[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalSummary[]>([]);
@@ -26,6 +28,29 @@ export function H2AChannelView({ onOpenActivity, onOpenInbox }: H2AChannelViewPr
 
   return (
     <div className="h2a-channel-view">
+      <header className="h2a-channel-toolbar">
+        {onBackToChats && (
+          <button
+            type="button"
+            className="h2a-channel-back"
+            onClick={onBackToChats}
+            aria-label="Back to chats"
+          >
+            <BackIcon size={18} />
+            <span>Chats</span>
+          </button>
+        )}
+        <div className="h2a-channel-toolbar__title">
+          <span className="h2a-channel-toolbar__avatar" aria-hidden>
+            AI
+          </span>
+          <div>
+            <h2 className="h2a-channel-toolbar__heading">Assistant</h2>
+            <p className="h2a-channel-toolbar__subtitle">Owner ↔ home agent</p>
+          </div>
+        </div>
+      </header>
+      <div className="h2a-channel-body">
       <aside className="h2a-channel-rail" aria-label="Assistant context">
         <h3>Owner ↔ home agent</h3>
         <p className="section-desc">
@@ -78,6 +103,7 @@ export function H2AChannelView({ onOpenActivity, onOpenInbox }: H2AChannelViewPr
       <section className="h2a-channel-main chat-area">
         <AIChatPanel />
       </section>
+      </div>
     </div>
   );
 }

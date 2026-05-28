@@ -55,7 +55,7 @@ describe("Header", () => {
   it("renders primary navigation", () => {
     renderHeader(baseProps);
     const nav = screen.getByRole("navigation", { name: /primary/i });
-    expect(within(nav).getByRole("button", { name: /^assistant$/i })).toBeDefined();
+    expect(within(nav).queryByRole("button", { name: /^assistant$/i })).toBeNull();
     expect(within(nav).getByRole("button", { name: /^chat$/i })).toBeDefined();
     expect(within(nav).getByText(/contacts \(0\)/i)).toBeDefined();
     expect(within(nav).getByRole("button", { name: /^library$/i })).toBeDefined();

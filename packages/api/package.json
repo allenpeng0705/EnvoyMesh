@@ -8,11 +8,24 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./did-import": {
+      "types": "./dist/did-import.d.ts",
+      "import": "./dist/did-import.js"
+    },
+    "./discovery-privacy": {
+      "types": "./dist/discovery-privacy.d.ts",
+      "import": "./dist/discovery-privacy.js"
+    },
+    "./discovery-referral-attestation": {
+      "types": "./dist/discovery-referral-attestation.d.ts",
+      "import": "./dist/discovery-referral-attestation.js"
     }
   },
   "dependencies": {
     "@envoymesh/identity": "0.1.0",
     "@envoymesh/protocol": "0.1.0",
+    "@noble/hashes": "^1.8.0",
     "zod": "^4.3.6"
   }
 }

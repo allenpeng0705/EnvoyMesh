@@ -83,17 +83,9 @@ export function Header({
       <nav className="header-nav app-header__nav" aria-label="Primary">
         <button
           type="button"
-          className={currentView === "assistant" ? "active" : ""}
-          onClick={() => onNavigate("assistant")}
-          aria-current={currentView === "assistant" ? "page" : undefined}
-        >
-          Assistant
-        </button>
-        <button
-          type="button"
-          className={`${currentView === "chat" ? "active" : ""} ${inboxActivityCount > 0 ? "has-inbox" : ""}`}
+          className={`${currentView === "chat" || currentView === "assistant" ? "active" : ""} ${inboxActivityCount > 0 ? "has-inbox" : ""}`}
           onClick={() => onNavigate("chat")}
-          aria-current={currentView === "chat" ? "page" : undefined}
+          aria-current={currentView === "chat" || currentView === "assistant" ? "page" : undefined}
           aria-label={
             inboxActivityCount > 0
               ? `Chat — ${inboxActivityCount} item${inboxActivityCount === 1 ? "" : "s"} in inbox`

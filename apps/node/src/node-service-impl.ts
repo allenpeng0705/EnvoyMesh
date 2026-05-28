@@ -93,13 +93,13 @@ import {
   buildOwnerDidPresentation,
   parseDidLookupInput,
   didKeysMatch,
-  resolveDidImportInput,
   buildCommerceReceiptFromTaskResult,
   mapCommerceReceiptToActivity,
   type CommerceReceiptRecord,
   type ListCommerceReceiptsParams,
   type RecordCommerceReceiptParams,
 } from "@envoymesh/api";
+import { resolveDidImportInput } from "@envoymesh/api/did-import";
 
 import { randomUUID } from "node:crypto";
 import {

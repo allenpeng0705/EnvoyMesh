@@ -1,16 +1,29 @@
-import { createHash } from "node:crypto";
+import { sha256 } from "@noble/hashes/sha2.js";
 
 /** Wire prefix for US-MH2 anonymized discovery requester ids. */
 export const ANONYMOUS_DISCOVERY_OWNER_PREFIX = "envoy:discovery:anon:";
 
 export type DiscoveryForwardPrivacy = "none" | "anonymous";
 
+function sha256Base64Url(seed: string): string {
+  const hash = sha256(new TextEncoder().encode(seed));
+  let binary = "";
+  for (const byte of hash) {
+    binary += String.fromCharCode(byte);
+  }
+  const b64 =
+    typeof globalThis.btoa === "function"
+      ? globalThis.btoa(binary)
+      : Buffer.from(hash).toString("base64");
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
 export function anonymizeDiscoveryRequesterOwnerId(
   originalOwnerId: string,
   correlationId: string | undefined,
 ): string {
   const seed = `${originalOwnerId.trim()}|${(correlationId ?? "no-correlation").trim()}`;
-  const digest = createHash("sha256").update(seed).digest("base64url").slice(0, 22);
+  const digest = sha256Base64Url(seed).slice(0, 22);
   return `${ANONYMOUS_DISCOVERY_OWNER_PREFIX}${digest}`;
 }
 

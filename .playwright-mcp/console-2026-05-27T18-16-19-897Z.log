@@ -1,0 +1,4 @@
+[     576ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5176/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=7d93e0f1:20102
+[     597ms] Error: Module "node:crypto" has been externalized for browser compatibility. Cannot access "node:crypto.createHash" in client code.  See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+    at Object.get (http://localhost:5176/@id/__vite-browser-external:node:crypto:3:13)
+    at http://localhost:5176/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/api/src/discovery-privacy.js:1:137

@@ -3,7 +3,7 @@ import {
   createDiscoveryReferralAttestation,
   requiresDiscoveryReferralAttestation,
   verifyDiscoveryReferralAttestation,
-} from "@envoymesh/api";
+} from "../src/discovery-referral-attestation.js";
 import { describe, expect, it } from "vitest";
 
 describe("discovery referral attestation", () => {

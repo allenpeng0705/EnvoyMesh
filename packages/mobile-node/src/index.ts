@@ -1065,7 +1065,7 @@ export class MobileNode implements NodeService {
   }
 
   async resolveDidImport(input: string): Promise<import("@envoymesh/api").ResolveDidImportResult> {
-    const { resolveDidImportInput } = await import("@envoymesh/api");
+    const { resolveDidImportInput } = await import("@envoymesh/api/did-import");
     return resolveDidImportInput(input);
   }
 

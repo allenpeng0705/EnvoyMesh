@@ -1,0 +1,4 @@
+- status [ref=e4]:
+  - generic [ref=e5]:
+    - heading "Connecting to EnvoyMesh" [level=2] [ref=e7]
+    - paragraph [ref=e8]: Opening node channel at ws://localhost:3030/ws

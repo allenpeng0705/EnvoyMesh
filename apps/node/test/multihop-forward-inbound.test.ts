@@ -6,7 +6,7 @@ import {
   type NodeProfile,
 } from "@envoymesh/local-store";
 import { createDiscoveryRequestPayload, createUnsignedEnvelope } from "@envoymesh/protocol";
-import { createDiscoveryReferralAttestation } from "@envoymesh/api";
+import { createDiscoveryReferralAttestation } from "@envoymesh/api/discovery-referral-attestation";
 import { buildForwardedDiscoveryPayload } from "../src/discovery-forward.js";
 import { handleInboundDiscoveryIntent, __resetDiscoveryState } from "../src/discovery-inbound.js";
 import { mkdtemp, rm } from "node:fs/promises";

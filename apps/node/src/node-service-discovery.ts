@@ -13,12 +13,8 @@ import type {
   RequestMultiHopDiscoveryResult,
   SearchQuery,
 } from "@envoymesh/api";
-import {
-  buildOwnerDidPresentation,
-  createDiscoveryReferralAttestation,
-  didKeysMatch,
-  parseDidLookupInput,
-} from "@envoymesh/api";
+import { buildOwnerDidPresentation, didKeysMatch, parseDidLookupInput } from "@envoymesh/api";
+import { createDiscoveryReferralAttestation } from "@envoymesh/api/discovery-referral-attestation";
 import {
   createAuditEvent,
   buildMorningReportDigest,
