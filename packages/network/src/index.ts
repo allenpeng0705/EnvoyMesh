@@ -1149,16 +1149,7 @@ export class EnvoyMesh {
       if (!limitedExisting) {
         return undefined;
       }
-      try {
-        const stream = await promiseWithTimeout(
-          limitedExisting.newStream([protocol], { runOnLimitedConnection: true }),
-          NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS,
-          `newStream(limited relay) ${protocol}`,
-        );
-        return { stream, remotePeerId: limitedExisting.remotePeer.toString() };
-      } catch {
-        return undefined;
-      }
+      return this.openStreamOnConnection(limitedExisting, protocol, true);
     };
 
     const dialOnce = async (addr: ReturnType<typeof multiaddr> | string): Promise<{ stream: any; remotePeerId?: string }> => {
@@ -1177,6 +1168,14 @@ export class EnvoyMesh {
             /* ignore */
           }
           throw new Error(`connected to ${remotePeerId.slice(0, 12)}…, expected ${peerIdStr.slice(0, 12)}…`);
+        }
+        if (!this.isOutboundStreamWritable(stream as { writeStatus?: string; status?: string })) {
+          await this.closeConnection(
+            s.connection as { close?: () => Promise<void> } | undefined,
+          );
+          throw new Error(
+            `dial opened non-writable stream status=${(stream as { status?: string }).status}`,
+          );
         }
         return { stream, remotePeerId };
       } catch (e) {

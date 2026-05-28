@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   deliverChatEnvelopeWithRetry,
+  isChatAckFailureLikelyAfterWrite,
   rotateDialHintsForRetry,
 } from "../src/chat-outbound-deliver.js";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
@@ -14,6 +15,15 @@ describe("rotateDialHintsForRetry", () => {
       "/ip4/relay.example/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWPeer",
     ];
     expect(rotateDialHintsForRetry(hints, 1)[0]).toContain("/p2p-circuit/");
+  });
+});
+
+describe("isChatAckFailureLikelyAfterWrite", () => {
+  it("detects stream reset after write", () => {
+    const err = new Error("The stream has been reset");
+    (err as Error & { name: string }).name = "StreamResetError";
+    expect(isChatAckFailureLikelyAfterWrite(err)).toBe(true);
+    expect(isChatAckFailureLikelyAfterWrite(new Error("Cannot send on stream 3"))).toBe(false);
   });
 });
 
@@ -121,6 +131,31 @@ describe("deliverChatEnvelopeWithRetry", () => {
     expect(sendChatExpectReply).toHaveBeenCalledTimes(2);
     expect(sendChat).toHaveBeenCalledTimes(1);
     expect(sendChat.mock.calls[0]?.[2]).toMatchObject({ forceFreshDial: true });
+    expect(result).toEqual({ delivered: false });
+  });
+
+  it("does not retry when ack fails after send (stream reset)", async () => {
+    const sendChatExpectReply = vi.fn().mockRejectedValue(new Error("The stream has been reset"));
+    const sendChat = vi.fn();
+    const mesh = {
+      sendChat,
+      sendChatExpectReply,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: false }),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: false }),
+    };
+
+    const result = await deliverChatEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWAfterWritePeer",
+      envelope,
+      dialHints: ["/p2p/12D3KooWAfterWritePeer"],
+      chatProtocol: "/envoy/chat/0.1",
+      maxAttempts: 3,
+    });
+
+    expect(sendChatExpectReply).toHaveBeenCalledTimes(1);
+    expect(sendChat).not.toHaveBeenCalled();
     expect(result).toEqual({ delivered: false });
   });
 });

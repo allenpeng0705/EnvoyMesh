@@ -20,6 +20,22 @@ export function rotateDialHintsForRetry(hints: string[], attempt: number): strin
   return prioritizeCircuitDialHints(hints);
 }
 
+/** ACK read failed after chat.message was written — do not retry (avoids duplicate sends). */
+export function isChatAckFailureLikelyAfterWrite(err: unknown): boolean {
+  const name = err instanceof Error ? (err as Error & { name?: string }).name : "";
+  const msg = err instanceof Error ? err.message : String(err);
+  if (name === "StreamResetError") {
+    return true;
+  }
+  return (
+    /stream has been reset/i.test(msg) ||
+    /peer closed stream without a reply/i.test(msg) ||
+    /sendChatExpectReply timed out/i.test(msg) ||
+    /Unexpected EOF/i.test(msg) ||
+    /stream closed while reading/i.test(msg)
+  );
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -45,6 +61,8 @@ export async function deliverChatEnvelopeWithRetry(input: {
   let lastErr: unknown;
   let hints = input.dialHints;
   const preferCircuits = hints.some((h) => h.includes("/p2p-circuit/"));
+  const canExpectAck =
+    input.expectDeliveryAck !== false && typeof input.mesh.sendChatExpectReply === "function";
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
@@ -80,10 +98,13 @@ export async function deliverChatEnvelopeWithRetry(input: {
       }
     }
 
+    const preferCircuitsOnAttempt = preferCircuits || attempt > 0;
+    const forceFreshDial = attempt > 0;
+    let usedAck = false;
+
     try {
-      const preferCircuitsOnAttempt = preferCircuits || attempt > 0;
-      const forceFreshDial = attempt > 0;
-      if (input.expectDeliveryAck !== false && typeof input.mesh.sendChatExpectReply === "function") {
+      if (canExpectAck) {
+        usedAck = true;
         const reply = await input.mesh.sendChatExpectReply(input.transportPeerId, input.envelope, {
           timeoutMs: CHAT_DELIVERY_ACK_TIMEOUT_MS,
           dialHints: hints,
@@ -107,6 +128,13 @@ export async function deliverChatEnvelopeWithRetry(input: {
       return { delivered: false };
     } catch (err) {
       lastErr = err;
+      if (usedAck && isChatAckFailureLikelyAfterWrite(err)) {
+        console.warn(
+          `[sendChat] ack failed after send for ${input.transportPeerId.slice(0, 12)}… (message likely delivered):`,
+          err instanceof Error ? err.message : err,
+        );
+        return { delivered: false };
+      }
       console.warn(
         `[sendChat] attempt ${attempt + 1}/${maxAttempts} failed for ${input.transportPeerId.slice(0, 12)}…:`,
         err instanceof Error ? err.message : err,
@@ -114,7 +142,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
     }
   }
 
-  if (input.expectDeliveryAck !== false && typeof input.mesh.sendChat === "function") {
+  if (canExpectAck && typeof input.mesh.sendChat === "function") {
     const fallback = await trySendChatWithoutAck({
       mesh: input.mesh,
       transportPeerId: input.transportPeerId,
@@ -130,12 +158,16 @@ export async function deliverChatEnvelopeWithRetry(input: {
 }
 
 async function trySendChatWithoutAck(input: {
-  mesh: Pick<EnvoyMesh, "sendChat">;
+  mesh: Pick<EnvoyMesh, "sendChat" | "closeConnectionsToPeer">;
   transportPeerId: string;
   envelope: EnvoyEnvelope;
   dialHints: string[];
 }): Promise<ChatDeliverResult | undefined> {
   try {
+    const closed = await input.mesh.closeConnectionsToPeer(input.transportPeerId);
+    if (closed > 0) {
+      console.log(`[sendChat] closed ${closed} stale connection(s) before ack-less fallback`);
+    }
     await input.mesh.sendChat(input.transportPeerId, input.envelope, {
       dialHints: input.dialHints,
       preferCircuitHints: true,
@@ -143,7 +175,11 @@ async function trySendChatWithoutAck(input: {
     });
     console.log("[sendChat] delivered without ack (fallback after ack failures)");
     return { delivered: false };
-  } catch {
+  } catch (err) {
+    console.warn(
+      "[sendChat] ack-less fallback failed:",
+      err instanceof Error ? err.message : err,
+    );
     return undefined;
   }
 }
