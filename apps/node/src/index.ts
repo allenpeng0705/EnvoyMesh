@@ -143,7 +143,7 @@ import { DigestGenerator, createDefaultDigestConfig, getDigestPeriodDates } from
 import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
 import { resolveContactAiAccessLevel, buildVaultIndexOptionsFromKnowledgeBase } from "@envoymesh/api";
-import { stripModelThinking, applyAiIdentityPrefix, resolveAiIdentityPrefix } from "@envoymesh/api";
+import { stripModelThinking, applyAiIdentityForIdentity } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
 import { installEnvoyDataTransferReceiver } from "./data-transfer-inbound.js";
@@ -1903,10 +1903,9 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
               false,
               "statement",
             );
-            const draftText = applyAiIdentityPrefix(
+            const draftText = applyAiIdentityForIdentity(
               adapted.adaptedText,
-              currentAiSettings?.identity?.mode ?? "transparent",
-              resolveAiIdentityPrefix(currentAiSettings?.identity),
+              currentAiSettings?.identity,
             );
 
             // Always emit draft event for UI to display

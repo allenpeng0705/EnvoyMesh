@@ -1,5 +1,5 @@
 import type { ModelProviderConfig, SendChatResult } from "@envoymesh/api";
-import { resolveContactAiAccessLevel, applyAiIdentityPrefix, resolveAiIdentityPrefix } from "@envoymesh/api";
+import { resolveContactAiAccessLevel, applyAiIdentityForIdentity } from "@envoymesh/api";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import {
   createAuditEvent,
@@ -154,11 +154,7 @@ export async function runInboundChatAssist(input: {
   const adapted = styleAdapter
     ? styleAdapter.adapt(result.draft.text, senderOwnerId, false, "statement")
     : { adaptedText: result.draft.text };
-  const draftText = applyAiIdentityPrefix(
-    adapted.adaptedText,
-    config.aiSettings?.identity?.mode ?? "transparent",
-    resolveAiIdentityPrefix(config.aiSettings?.identity),
-  );
+  const draftText = applyAiIdentityForIdentity(adapted.adaptedText, config.aiSettings?.identity);
 
   emitDraft(senderOwnerId, { ...result.draft, text: draftText });
 

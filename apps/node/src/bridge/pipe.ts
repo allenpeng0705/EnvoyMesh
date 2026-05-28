@@ -2,7 +2,7 @@ import type { AgentCredential, EnvoyEnvelope } from "@envoymesh/protocol";
 import { createChatMessagePayload, createUnsignedEnvelope } from "@envoymesh/protocol";
 import { signUnsignedEnvelope } from "@envoymesh/identity";
 import type { AiIdentity } from "@envoymesh/api";
-import { applyAiIdentityPrefix, resolveAiIdentityPrefix } from "@envoymesh/api";
+import { applyAiIdentityForIdentity } from "@envoymesh/api";
 import type { ExternalAgentGateway } from "../external-agent-gateway.js";
 import type { BridgeConfig } from "./config.js";
 
@@ -101,8 +101,7 @@ export async function receiveFromAgent(
   }
 
   const aiIdentity = deps.getAiIdentity?.();
-  const identityMode = aiIdentity?.mode ?? "transparent";
-  text = applyAiIdentityPrefix(text, identityMode, resolveAiIdentityPrefix(aiIdentity));
+  text = applyAiIdentityForIdentity(text, aiIdentity);
 
   const unsigned = createUnsignedEnvelope({
     messageId,

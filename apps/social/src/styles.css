@@ -5068,6 +5068,12 @@ button.activity-row:hover,
   margin: 0 0 var(--space-4);
 }
 
+.photo-picker-error {
+  margin: 0 0 var(--space-3);
+  color: var(--color-danger, #c62828);
+  font-size: var(--text-sm);
+}
+
 .photo-picker-actions {
   display: flex;
   flex-direction: column;

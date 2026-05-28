@@ -44,29 +44,52 @@ describe("mobile-chat-draft", () => {
     }
   });
 
-  it("generateMobileChatDraft prefixes transparent identity mode", async () => {
-    const result = await generateMobileChatDraft({
+  it("generateMobileChatDraft does not embed prefix unless debug is enabled", async () => {
+    const base = {
       senderOwnerId: "envoy:owner:peer",
       senderDisplayName: "Peer",
       chatText: "Hello there",
       messageId: "msg-1",
       remotePeerId: "envoy_peer",
-      bondLevel: "direct",
-      modelProviders: { mode: "mock" },
+      bondLevel: "direct" as const,
+      modelProviders: { mode: "mock" as const },
       chatAssistEnabled: true,
+      contactAiPreferences: [],
+      randomId: () => "draft-1",
+    };
+    const status = {
+      onlineAssistantEnabled: true,
+      offlineAgentEnabled: false,
+      statusMode: "automatic" as const,
+    };
+
+    const plain = await generateMobileChatDraft({
+      ...base,
       aiSettings: {
-        status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" },
+        status,
         identity: { mode: "transparent" },
         defaultModeForNewContacts: "assistant",
         rules: [],
       },
-      contactAiPreferences: [],
-      randomId: () => "draft-1",
     });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.draft.text).toMatch(/^\[AI Agent\]: /);
-      expect(result.draft.threadPeerOwnerId).toBe("envoy:owner:peer");
+    expect(plain.ok).toBe(true);
+    if (plain.ok) {
+      expect(plain.draft.text).not.toMatch(/^\[AI Agent\]: /);
+    }
+
+    const debug = await generateMobileChatDraft({
+      ...base,
+      aiSettings: {
+        status,
+        identity: { mode: "transparent", debugPrefixInMessageText: true },
+        defaultModeForNewContacts: "assistant",
+        rules: [],
+      },
+    });
+    expect(debug.ok).toBe(true);
+    if (debug.ok) {
+      expect(debug.draft.text).toMatch(/^\[AI Agent\]: /);
+      expect(debug.draft.threadPeerOwnerId).toBe("envoy:owner:peer");
     }
   });
 

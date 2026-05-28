@@ -133,7 +133,9 @@
       // invisible | transparent | defensive
       "mode": "transparent"
 
-      // Prefix when mode is transparent or defensive. Default "[AI Agent]".
+      // Debug only: embed prefix in chat.message text (hidden in Social UI). Default false.
+      // "debugPrefixInMessageText": false,
+      // Debug prefix string when debugPrefixInMessageText is true. Default "[AI Agent]".
       // "transparentPrefix": "[AI Agent]"
     },
 

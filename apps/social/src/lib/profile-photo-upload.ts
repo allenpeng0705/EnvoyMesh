@@ -11,6 +11,7 @@ export async function fileToBase64(file: Blob): Promise<string> {
 export function mimeFromFile(file: File): ProfilePhotoMime {
   if (file.type === "image/png") return "image/png";
   if (file.type === "image/webp") return "image/webp";
+  // HEIC/HEIF from iOS libraries are normalized to JPEG on export.
   return "image/jpeg";
 }
 

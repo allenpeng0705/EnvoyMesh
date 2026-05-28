@@ -7,6 +7,7 @@ import type { ChatMessage, ContactAiPreferences } from "@envoymesh/api";
 import {
   contactAiAccessLevelForAssistantMode,
   stripModelThinking,
+  chatMessageTextForDisplay,
   MAX_CHAT_ATTACHMENT_BYTES,
   isContactComposeDraftSyncScope,
   isContactNotesSyncScope,
@@ -323,6 +324,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   );
   const canDraftAssist = (nodeConfig?.chatAssistEnabled ?? false) || autoSendEnabled;
   const canAutoSend = autoSendEnabled && !(nodeConfig?.autonomousKillSwitch ?? false);
+  const aiIdentity = nodeConfig?.aiSettings?.identity;
   const showDraftSuggestions = canDraftAssist && currentAiMode === "assistant";
   const { latestDraft, dismissDraft } = useChatDrafts(
     selectedContact,
@@ -331,7 +333,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
 
   const handleUseDraft = () => {
     if (!latestDraft) return;
-    const text = stripModelThinking(latestDraft.text);
+    const text = chatMessageTextForDisplay(stripModelThinking(latestDraft.text), aiIdentity);
     draftRef.current?.setPlainText(text);
     setChatInput(text);
     void dismissDraft(latestDraft.draftId);
@@ -552,10 +554,13 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
                             minute: "2-digit",
                           })}
                           deliveryReceipt={outgoing ? msg.metadata.deliveryReceipt : undefined}
-                          copyText={stripModelThinking(msg.content.text)}
+                          copyText={chatMessageTextForDisplay(
+                            stripModelThinking(msg.content.text),
+                            aiIdentity,
+                          )}
                           onDelete={() => void handleDeleteMessage(msg.messageId)}
                         >
-                          <ChatMessageText text={msg.content.text} />
+                          <ChatMessageText text={msg.content.text} identity={aiIdentity} />
                           {msg.content.attachments?.map((attachment) => (
                             <ChatFileAttachment key={attachment.id} attachment={attachment} />
                           ))}
@@ -631,7 +636,9 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           <div className="chat-draft-suggestion" role="region" aria-label="Suggested reply">
             <div className="chat-draft-suggestion-body">
               <span className="chat-draft-suggestion-label">Suggested reply</span>
-              <p className="chat-draft-suggestion-text">{stripModelThinking(latestDraft.text)}</p>
+              <p className="chat-draft-suggestion-text">
+                {chatMessageTextForDisplay(stripModelThinking(latestDraft.text), aiIdentity)}
+              </p>
             </div>
             <div className="chat-draft-suggestion-actions">
               <button

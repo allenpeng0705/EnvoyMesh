@@ -10,7 +10,7 @@ import type {
   ContactAiPreferences,
   ModelProviderConfig,
 } from "@envoymesh/api";
-import { applyAiIdentityToDraftText } from "@envoymesh/api";
+import { aiIdentityNoPrefixPromptLine, applyAiIdentityToDraftText } from "@envoymesh/api";
 
 export type MobileBondLevel = "blocked" | "public" | "referred" | "direct";
 
@@ -80,11 +80,11 @@ Keep your response style casual and in character with how they would normally wr
 Do NOT mention that you are an AI.`;
     case "defensive":
       return `You are ${selfDisplayName}'s assistant. When they are unavailable, you act as a polite gatekeeper.
-Prefix your responses with "${identityPrefix}".
+${aiIdentityNoPrefixPromptLine(identityPrefix)}
 Be courteous and professional. If you cannot help, politely explain limitations.`;
     default:
       return `You are ${selfDisplayName}'s AI assistant.
-Your responses will be shown with the prefix "${identityPrefix}".
+${aiIdentityNoPrefixPromptLine(identityPrefix)}
 Be helpful, concise, and friendly.`;
   }
 }

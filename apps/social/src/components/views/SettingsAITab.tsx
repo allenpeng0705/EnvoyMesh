@@ -605,13 +605,26 @@ export function SettingsAITab() {
 
       <h4>AI Identity</h4>
       <p className="field-desc">
-        Display and prefix only — auto-sent chat always uses verified agent role on the wire.
+        Controls assistant tone in drafts. Human vs agent is always tracked by message role (not shown as inline
+        <code> [AI Agent] </code> in chat unless debug below).
       </p>
       <div className="identity-mode-options">
         {(Object.entries({
-          invisible: { title: "Invisible", desc: "No prefix in text; peers still see “Your agent” badge", example: `Example: "Yeah, I can do that."` },
-          transparent: { title: "Transparent", desc: "Prefix messages with [AI Agent]", example: `Example: "[AI Agent]: I'm checking..."` },
-          defensive: { title: "Defensive (Gatekeep)", desc: "Acts as gatekeeper when you are away", example: `Example: "I've received your message and will notify them when back."` },
+          invisible: {
+            title: "Invisible",
+            desc: "Drafts sound like you; agent role still applies on send",
+            example: `Example: "Yeah, I can do that."`,
+          },
+          transparent: {
+            title: "Transparent",
+            desc: "Drafts as an open AI assistant (no inline label in chat UI)",
+            example: `Example: "I'm checking that for you."`,
+          },
+          defensive: {
+            title: "Defensive (Gatekeep)",
+            desc: "Gatekeeper tone when you are away",
+            example: `Example: "I've received your message and will notify them when back."`,
+          },
         }) as [AiIdentityMode, { title: string; desc: string; example: string }][]).map(([mode, info]) => (
           <label key={mode} className={`identity-mode-option ${aiSettings.identity.mode === mode ? "active" : ""}`}>
             <input type="radio" name="ai-identity" value={mode}
@@ -626,6 +639,51 @@ export function SettingsAITab() {
             </div>
           </label>
         ))}
+      </div>
+
+      <div className="settings-field">
+        <label className="settings-checkbox-row">
+          <input
+            type="checkbox"
+            checked={aiSettings.identity.debugPrefixInMessageText === true}
+            onChange={async (e) => {
+              await updateAiSettings({
+                identity: {
+                  ...aiSettings.identity,
+                  debugPrefixInMessageText: e.target.checked,
+                },
+              });
+            }}
+          />
+          <span>
+            <strong>Debug: embed prefix in message text</strong>
+            <span className="field-desc block">
+              When enabled, adds your configurable prefix (default <code>[AI Agent]</code>) to outbound message
+              bytes for logs and wire inspection. Never shown in the Social chat UI.
+            </span>
+          </span>
+        </label>
+      </div>
+
+      <div className="settings-field">
+        <label htmlFor="ai-debug-prefix">Debug prefix string</label>
+        <input
+          id="ai-debug-prefix"
+          type="text"
+          className="settings-input"
+          placeholder="[AI Agent]"
+          value={aiSettings.identity.transparentPrefix ?? ""}
+          disabled={aiSettings.identity.debugPrefixInMessageText !== true}
+          onChange={async (e) => {
+            const transparentPrefix = e.target.value.trim();
+            await updateAiSettings({
+              identity: {
+                ...aiSettings.identity,
+                transparentPrefix: transparentPrefix || undefined,
+              },
+            });
+          }}
+        />
       </div>
 
       <AgentIdentityEditor />

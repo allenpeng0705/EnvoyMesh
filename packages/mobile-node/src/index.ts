@@ -138,8 +138,7 @@ import {
   formatChatSenderDisplayName,
   verifyInboundChatDeviceAuthorization,
   chatSenderActorFromEnvelope,
-  applyAiIdentityPrefix,
-  resolveAiIdentityPrefix,
+  applyAiIdentityForIdentity,
   mapTaskJournalToActivity,
   mapOwnerReportToActivity,
   resolveReportContactOwnerId,
@@ -1687,11 +1686,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
     const ts = new Date().toISOString();
     const cfg = await this.getNodeConfig();
     let wireText = stripModelThinking(text);
-    wireText = applyAiIdentityPrefix(
-      wireText,
-      cfg.aiSettings?.identity?.mode ?? "transparent",
-      resolveAiIdentityPrefix(cfg.aiSettings?.identity),
-    );
+    wireText = applyAiIdentityForIdentity(wireText, cfg.aiSettings?.identity);
     const credential = this._ensureAgentCredential();
     await this._chatLog.append(targetOwnerId, {
       messageId: msgId,

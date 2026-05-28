@@ -460,9 +460,9 @@ export interface AutonomousPolicy {
 }
 
 /**
- * How the AI presents itself in responses.
+ * How the AI presents itself in responses (prompt tone; not shown as inline text in Social UI).
  * - invisible: Responds as if it were the human owner
- * - transparent: Prefixes messages with [AI Agent]:
+ * - transparent: Openly an AI assistant (no inline prefix unless debug is on)
  * - defensive: Acts as gatekeeper when owner is unavailable
  */
 export type AiIdentityMode = "invisible" | "transparent" | "defensive";
@@ -473,8 +473,13 @@ export type AiIdentityMode = "invisible" | "transparent" | "defensive";
 export interface AiIdentity {
   /** How the AI introduces itself. Default: "transparent" */
   mode: AiIdentityMode;
-  /** Prefix to use in transparent mode. Default: "[AI Agent]" */
+  /** Debug-only prefix string when {@link debugPrefixInMessageText} is true. Default: "[AI Agent]" */
   transparentPrefix?: string;
+  /**
+   * When true, embed {@link transparentPrefix} in chat.message text for logs/audit (hidden in Social UI).
+   * Agent vs human is always carried by envelope `senderRole` / chat `actorRole`. Default: false.
+   */
+  debugPrefixInMessageText?: boolean;
 }
 
 /**

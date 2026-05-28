@@ -33,12 +33,14 @@ export function PhotoPickerSheet({
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [crop, setCrop] = useState<ThumbnailCropState>(DEFAULT_THUMBNAIL_CROP);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const dragRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
 
   const reset = useCallback(() => {
     setSourceFile(null);
     setImage(null);
     setCrop(DEFAULT_THUMBNAIL_CROP);
+    setLoadError(null);
     dragRef.current = null;
   }, []);
 
@@ -53,11 +55,18 @@ export function PhotoPickerSheet({
       onClose();
       return;
     }
+    setLoadError(null);
     setSourceFile(file);
-    const img = await loadImageFromFile(file);
-    setImage(img);
-    const cover = minCoverScale(img.naturalWidth, img.naturalHeight, 280);
-    setCrop({ scale: cover, offsetX: 0, offsetY: 0 });
+    try {
+      const img = await loadImageFromFile(file);
+      setImage(img);
+      const cover = minCoverScale(img.naturalWidth, img.naturalHeight, 280);
+      setCrop({ scale: cover, offsetX: 0, offsetY: 0 });
+    } catch (err) {
+      setSourceFile(null);
+      setImage(null);
+      setLoadError(err instanceof Error ? err.message : "Could not load image");
+    }
   };
 
   const confirmThumbnail = async () => {
@@ -71,21 +80,25 @@ export function PhotoPickerSheet({
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (!image) return;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    e.preventDefault();
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // jsdom and some browsers omit pointer capture
+    }
     dragRef.current = { x: e.clientX, y: e.clientY, ox: crop.offsetX, oy: crop.offsetY };
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragRef.current || !image) return;
-    const dx = e.clientX - dragRef.current.x;
-    const dy = e.clientY - dragRef.current.y;
+    const drag = dragRef.current;
+    if (!drag || !image) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    const { ox, oy } = drag;
+    const imgW = image.naturalWidth;
+    const imgH = image.naturalHeight;
     setCrop((prev) =>
-      clampCropPan(
-        { ...prev, offsetX: dragRef.current!.ox + dx, offsetY: dragRef.current!.oy + dy },
-        image.naturalWidth,
-        image.naturalHeight,
-        280,
-      ),
+      clampCropPan({ ...prev, offsetX: ox + dx, offsetY: oy + dy }, imgW, imgH, 280),
     );
   };
 
@@ -114,12 +127,18 @@ export function PhotoPickerSheet({
             : "New gallery photos default to public metadata on your profile. Discover shows your thumbnail; use Share to send image files."}
         </p>
 
+        {loadError ? (
+          <p className="photo-picker-error" role="alert">
+            {loadError}
+          </p>
+        ) : null}
+
         {!showCrop && (
           <>
             <input
               ref={inputRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
               capture={purpose === "thumbnail" ? "environment" : undefined}
               className="sr-only"
               onChange={(e) => {
@@ -185,7 +204,7 @@ export function PhotoPickerSheet({
             <input
               ref={inputRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
               capture="environment"
               className="sr-only"
               onChange={(e) => {

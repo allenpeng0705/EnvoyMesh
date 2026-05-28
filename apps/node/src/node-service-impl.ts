@@ -128,8 +128,7 @@ import {
   resolveAiKnowledgeBaseSettings,
   chatMessagePayloadDeviceFields,
   chatSenderActorFromEnvelope,
-  applyAiIdentityPrefix,
-  resolveAiIdentityPrefix,
+  applyAiIdentityForIdentity,
   shouldPushAgentActivity,
   shouldPostA2aChatLine,
   formatA2aChatSystemLine,
@@ -2180,11 +2179,7 @@ class NodeServiceImpl implements NodeService {
 
     let wireText = stripModelThinking(text);
     const aiIdentity = config.aiSettings?.identity;
-    wireText = applyAiIdentityPrefix(
-      wireText,
-      aiIdentity?.mode ?? "transparent",
-      resolveAiIdentityPrefix(aiIdentity),
-    );
+    wireText = applyAiIdentityForIdentity(wireText, aiIdentity);
 
     const envelope = signUnsignedEnvelope(
       createUnsignedEnvelope({

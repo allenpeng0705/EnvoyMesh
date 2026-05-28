@@ -9,6 +9,7 @@ import { formatVaultKnowledgeSection, searchVaultKnowledgeBase } from "./ai-cont
 import { buildContextInjection } from "./context-injector.js";
 import { loadAgentIdentitySection } from "./agent-identity-context.js";
 import type { ModeController } from "./mode-controller.js";
+import { aiIdentityNoPrefixPromptLine } from "@envoymesh/api";
 import type { RagService } from "./rag-service.js";
 
 export interface ChatDraftResult {
@@ -206,12 +207,12 @@ Do NOT mention that you are an AI.`;
       break;
     case "transparent":
       identityInstructions = `You are ${selfDisplayName}'s AI assistant.
-Your responses will be shown with the prefix "${identityPrefix}".
+${aiIdentityNoPrefixPromptLine(identityPrefix)}
 Be helpful, concise, and friendly.`;
       break;
     case "defensive":
       identityInstructions = `You are ${selfDisplayName}'s assistant. When they are unavailable, you act as a polite gatekeeper.
-Prefix your responses with "${identityPrefix}".
+${aiIdentityNoPrefixPromptLine(identityPrefix)}
 Be courteous and professional. If you cannot help, politely explain limitations.`;
       break;
   }
@@ -231,12 +232,12 @@ Do NOT mention that you are an AI.`;
           break;
         case "transparent":
           identityInstructions = `You are ${selfDisplayName}'s AI assistant.
-Your responses will be shown with the prefix "${identityPrefix}".
+${aiIdentityNoPrefixPromptLine(identityPrefix)}
 Be helpful, concise, and friendly.`;
           break;
         case "defensive":
           identityInstructions = `You are ${selfDisplayName}'s assistant. When they are unavailable, you act as a polite gatekeeper.
-Prefix your responses with "${identityPrefix}".
+${aiIdentityNoPrefixPromptLine(identityPrefix)}
 Be courteous and professional. If you cannot help, politely explain limitations.`;
           break;
       }

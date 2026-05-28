@@ -14,20 +14,63 @@ export const DEFAULT_THUMBNAIL_CROP: ThumbnailCropState = {
   offsetY: 0,
 };
 
-export function loadImageFromFile(file: File): Promise<HTMLImageElement> {
+function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(img);
+      void (async () => {
+        try {
+          if (typeof img.decode === "function") await img.decode();
+        } catch {
+          // decode() can fail on some WebViews; naturalWidth may still be valid
+        }
+        if (!img.naturalWidth || !img.naturalHeight) {
+          reject(new Error("Could not read image dimensions"));
+          return;
+        }
+        resolve(img);
+      })();
     };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Could not load image"));
-    };
+    img.onerror = () => reject(new Error("Could not load image"));
     img.src = url;
   });
+}
+
+/** Bake EXIF orientation into pixels so crop math matches what the user sees. */
+async function loadImageBitmapNormalized(file: File): Promise<HTMLImageElement> {
+  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  try {
+    const w = bitmap.width;
+    const h = bitmap.height;
+    if (!w || !h) throw new Error("Could not read image dimensions");
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas not available");
+    ctx.drawImage(bitmap, 0, 0);
+    const mime = file.type === "image/png" ? "image/png" : "image/jpeg";
+    const dataUrl = canvas.toDataURL(mime, mime === "image/jpeg" ? 0.92 : undefined);
+    return loadImageFromUrl(dataUrl);
+  } finally {
+    bitmap.close();
+  }
+}
+
+export async function loadImageFromFile(file: File): Promise<HTMLImageElement> {
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await loadImageBitmapNormalized(file);
+    } catch {
+      // Fall back to object-URL load (older WebViews or unsupported formats).
+    }
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    return await loadImageFromUrl(url);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 /** Minimum scale so the image covers a square viewport (center crop baseline). */
