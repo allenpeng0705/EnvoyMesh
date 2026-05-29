@@ -40,6 +40,9 @@ import {
   canAgentAutonomousShareGalleryPhoto,
   canAutonomousShareFile,
   galleryPhotoShareSensitivity,
+  getAgentCapabilityRoute,
+  matchAgentCapabilityRoutes,
+  resolveAgentCapabilityRouteById,
 } from "@envoymesh/api";
 
 /**
@@ -704,8 +707,7 @@ export class ToolRegistry {
       },
       sensitivityCeiling: "friends",
       requiresApproval: false,
-      intent: "agent.card.request",
-      isMeshTool: true,
+      isMeshTool: false,
     });
 
     this.register({
@@ -717,6 +719,71 @@ export class ToolRegistry {
           ownerId: { type: "string", description: "Peer owner id" },
         },
         required: ["ownerId"],
+      },
+      sensitivityCeiling: "friends",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.match_capability_route",
+      description:
+        "AI-only: rank EMP intent routes for a goal or capability ids (orchestration planner — not human discovery UI)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          goal: { type: "string", description: "Natural-language task goal for keyword routing" },
+          capabilityIds: {
+            type: "array",
+            items: { type: "string" },
+            description: "Capability tags from discovery.response or Agent Card",
+          },
+          routeId: {
+            type: "string",
+            description: "When set, return a single route plan instead of ranking",
+          },
+          maxResults: { type: "number", description: "Max ranked routes (default 5)" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "public",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.capability_provider.start",
+      description:
+        "Start an in-process capability provider job: match route, execute mesh tool steps autonomously (EnvoyMesh-native — not bridge/RPC)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          goal: { type: "string", description: "Task goal for route matching" },
+          capabilityIds: {
+            type: "array",
+            items: { type: "string" },
+            description: "Optional capability tags to narrow routing",
+          },
+          targetOwnerId: { type: "string", description: "Optional bonded peer owner id" },
+        },
+        required: ["goal"],
+      },
+      sensitivityCeiling: "friends",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.task.propose",
+      description: "Send task.mandate + task.propose to a bonded peer agent (capability route executor)",
+      paramSchema: {
+        type: "object",
+        properties: {
+          targetOwnerId: { type: "string" },
+          objective: { type: "string" },
+          correlationId: { type: "string" },
+        },
+        required: ["targetOwnerId", "objective"],
       },
       sensitivityCeiling: "friends",
       requiresApproval: false,
@@ -1036,6 +1103,18 @@ export interface MeshToolContext {
   requestAgentCard?: (targetOwnerId: string) => Promise<{ ok: boolean; error?: string }>;
   getAgentCard?: (ownerId: string) => Promise<import("@envoymesh/api").CachedAgentCardSummary | undefined>;
   listAgentCards?: () => Promise<import("@envoymesh/api").CachedAgentCardSummary[]>;
+  getLocalCapabilityManifest?: () => Promise<{ capabilities: string[]; keywords: string[] } | undefined>;
+  listBondedAgentCapabilities?: () => Promise<Array<{ ownerId: string; capabilities: string[] }>>;
+  startCapabilityProviderJob?: (params: {
+    goal: string;
+    capabilityIds?: string[];
+    targetOwnerId?: string;
+  }) => Promise<{ jobId: string; correlationId: string }>;
+  sendTaskPropose?: (params: {
+    targetOwnerId: string;
+    objective: string;
+    correlationId?: string;
+  }) => Promise<{ ok: boolean; result?: unknown; error?: string }>;
   shareFile?: (params: {
     targetOwnerId: string;
     vaultRelativePath: string;
@@ -1582,6 +1661,143 @@ export async function executeTool(
       return {
         ok: true,
         result: card ?? null,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.match_capability_route") {
+      const routeId = typeof params.routeId === "string" ? params.routeId.trim() : "";
+      let localManifestCapabilities: string[] | undefined;
+      if (context.getLocalCapabilityManifest) {
+        const manifest = await context.getLocalCapabilityManifest();
+        localManifestCapabilities = manifest?.capabilities;
+      }
+      if (routeId) {
+        const route = resolveAgentCapabilityRouteById(routeId, { localManifestCapabilities });
+        if (!route) {
+          return {
+            ok: false,
+            error: `Unknown routeId: ${routeId}`,
+            toolName,
+            correlationId,
+            latencyMs: Date.now() - startTime,
+          };
+        }
+        return {
+          ok: true,
+          result: { route, audience: "agent" },
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const goal = typeof params.goal === "string" ? params.goal.trim() : undefined;
+      const capabilityIds = Array.isArray(params.capabilityIds)
+        ? params.capabilityIds.map((id) => String(id))
+        : undefined;
+      const maxResults =
+        typeof params.maxResults === "number" && params.maxResults > 0
+          ? Math.min(params.maxResults, 10)
+          : undefined;
+      if (!goal && (!capabilityIds || capabilityIds.length === 0)) {
+        return {
+          ok: false,
+          error: "Provide goal and/or capabilityIds, or routeId for a single plan",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const routes = matchAgentCapabilityRoutes({
+        goal,
+        capabilityIds,
+        localManifestCapabilities,
+        maxResults,
+      });
+      return {
+        ok: true,
+        result: { routes, audience: "agent" },
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.capability_provider.start") {
+      if (!context.startCapabilityProviderJob) {
+        return {
+          ok: false,
+          error: "startCapabilityProviderJob is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const goal = typeof params.goal === "string" ? params.goal.trim() : "";
+      if (!goal) {
+        return {
+          ok: false,
+          error: "goal is required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const capabilityIds = Array.isArray(params.capabilityIds)
+        ? params.capabilityIds.map((id) => String(id))
+        : undefined;
+      const targetOwnerId =
+        typeof params.targetOwnerId === "string" ? params.targetOwnerId.trim() : undefined;
+      try {
+        const started = await context.startCapabilityProviderJob({
+          goal,
+          capabilityIds,
+          targetOwnerId: targetOwnerId || undefined,
+        });
+        return {
+          ok: true,
+          result: started,
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+    } else if (toolName === "mesh.task.propose") {
+      if (!context.sendTaskPropose) {
+        return {
+          ok: false,
+          error: "sendTaskPropose is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const targetOwnerId = typeof params.targetOwnerId === "string" ? params.targetOwnerId.trim() : "";
+      const objective = typeof params.objective === "string" ? params.objective.trim() : "";
+      if (!targetOwnerId || !objective) {
+        return {
+          ok: false,
+          error: "targetOwnerId and objective are required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const result = await context.sendTaskPropose({
+        targetOwnerId,
+        objective,
+        correlationId: typeof params.correlationId === "string" ? params.correlationId : correlationId,
+      });
+      return {
+        ok: result.ok,
+        result: result.result,
+        error: result.error,
         toolName,
         correlationId,
         latencyMs: Date.now() - startTime,

@@ -57,6 +57,38 @@ function testProfile(): NodeProfile {
   };
 }
 
+function signedOwnerReadyEnvelope(
+  senderOwner: ReturnType<typeof generateOwnerIdentity>,
+  profile: NodeProfile,
+  input: {
+    introCorrelationId: string;
+    nonce: string;
+    messageId: string;
+    expiresAt?: string;
+    ownerId?: string;
+  },
+): EnvoyEnvelope {
+  return {
+    ...createUnsignedEnvelope({
+      senderPeerId: derivePeerId(senderOwner.publicKeyPem),
+      senderPublicKey: senderOwner.publicKeyPem,
+      senderRole: "human",
+      recipientPeerId: derivePeerId(profile.device.publicKeyPem),
+      recipientRole: "human",
+      intent: "social.intro.owner-ready",
+      payload: createSocialIntroOwnerReadyPayload({
+        introCorrelationId: input.introCorrelationId,
+        ownerId: input.ownerId ?? senderOwner.ownerId,
+        nonce: input.nonce,
+        expiresAt: input.expiresAt ?? "2030-01-01T00:00:00.000Z",
+      }),
+      createdAt: "2026-06-01T10:00:00.000Z",
+      messageId: input.messageId,
+    }),
+    signature: "signature",
+  };
+}
+
 describe("handleInboundSocialIntroIntent", () => {
   it("audits deny when trust mode is disabled", async () => {
     const profile = testProfile();
@@ -345,25 +377,11 @@ describe("handleInboundSocialIntroIntent", () => {
       now: new Date().toISOString(),
     });
 
-    const envelope: EnvoyEnvelope = {
-      ...createUnsignedEnvelope({
-        senderPeerId: "peer-human-remote",
-        senderPublicKey: profile.device.publicKeyPem,
-        senderRole: "human",
-        recipientPeerId: derivePeerId(profile.device.publicKeyPem),
-        recipientRole: "human",
-        intent: "social.intro.owner-ready",
-        payload: createSocialIntroOwnerReadyPayload({
-          introCorrelationId: "ic5",
-          ownerId: strangerOwner.ownerId,
-          nonce: "n1",
-          expiresAt: "2030-01-01T00:00:00.000Z",
-        }),
-        createdAt: "2026-06-01T10:00:00.000Z",
-        messageId: "soc-intro-5",
-      }),
-      signature: "signature",
-    };
+    const envelope = signedOwnerReadyEnvelope(strangerOwner, profile, {
+      introCorrelationId: "ic5",
+      nonce: "n1",
+      messageId: "soc-intro-5",
+    });
 
     const result = await handleInboundSocialIntroIntent({
       envelope,
@@ -381,6 +399,43 @@ describe("handleInboundSocialIntroIntent", () => {
     expect(audits[0].summary).toContain("policy allow");
   });
 
+  it("rejects owner-ready when payload ownerId mismatches sender public key", async () => {
+    const profile = testProfile();
+    const taskStore = createLocalTaskStore(profileDir);
+    const trustStore = createLocalTrustStore(profileDir);
+    const strangerOwner = generateOwnerIdentity();
+    const otherOwner = generateOwnerIdentity();
+    await trustStore.setTrustRecord({
+      peerOwnerId: strangerOwner.ownerId,
+      displayName: "Stranger",
+      level: "referred",
+      now: new Date().toISOString(),
+    });
+
+    const envelope = signedOwnerReadyEnvelope(strangerOwner, profile, {
+      introCorrelationId: "ic-mismatch",
+      nonce: "n-mismatch",
+      messageId: "soc-intro-mismatch",
+      ownerId: otherOwner.ownerId,
+    });
+
+    const result = await handleInboundSocialIntroIntent({
+      envelope,
+      profile,
+      remotePeerId: "libp2p-remote",
+      receivedAt: Date.now(),
+      correlationId: undefined,
+      taskStore,
+      trustStore,
+      trustModeEnabled: true,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("does not match sender public key");
+    }
+  });
+
   it("rejects duplicate social.intro.owner-ready nonce before expiry", async () => {
     const profile = testProfile();
     const taskStore = createLocalTaskStore(profileDir);
@@ -393,25 +448,12 @@ describe("handleInboundSocialIntroIntent", () => {
       now: new Date().toISOString(),
     });
 
-    const envelopeBase = (): EnvoyEnvelope => ({
-      ...createUnsignedEnvelope({
-        senderPeerId: "peer-human-remote",
-        senderPublicKey: profile.device.publicKeyPem,
-        senderRole: "human",
-        recipientPeerId: derivePeerId(profile.device.publicKeyPem),
-        recipientRole: "human",
-        intent: "social.intro.owner-ready",
-        payload: createSocialIntroOwnerReadyPayload({
-          introCorrelationId: "ic-replay",
-          ownerId: strangerOwner.ownerId,
-          nonce: "nonce-fixed",
-          expiresAt: "2030-01-01T00:00:00.000Z",
-        }),
-        createdAt: "2026-06-01T10:00:00.000Z",
+    const envelopeBase = (): EnvoyEnvelope =>
+      signedOwnerReadyEnvelope(strangerOwner, profile, {
+        introCorrelationId: "ic-replay",
+        nonce: "nonce-fixed",
         messageId: "soc-intro-replay-a",
-      }),
-      signature: "signature",
-    });
+      });
 
     const first = await handleInboundSocialIntroIntent({
       envelope: envelopeBase(),
@@ -819,25 +861,11 @@ describe("handleInboundSocialIntroIntent", () => {
 
     __primeOwnerReadyNonceMapForTests(MAX_OWNER_READY_NONCE_ENTRIES);
 
-    const envelope: EnvoyEnvelope = {
-      ...createUnsignedEnvelope({
-        senderPeerId: "peer-human-remote",
-        senderPublicKey: profile.device.publicKeyPem,
-        senderRole: "human",
-        recipientPeerId: derivePeerId(profile.device.publicKeyPem),
-        recipientRole: "human",
-        intent: "social.intro.owner-ready",
-        payload: createSocialIntroOwnerReadyPayload({
-          introCorrelationId: "ic-capacity",
-          ownerId: strangerOwner.ownerId,
-          nonce: "fresh-nonce",
-          expiresAt: "2030-01-01T00:00:00.000Z",
-        }),
-        createdAt: "2026-06-01T10:00:00.000Z",
-        messageId: "soc-intro-capacity",
-      }),
-      signature: "signature",
-    };
+    const envelope = signedOwnerReadyEnvelope(strangerOwner, profile, {
+      introCorrelationId: "ic-capacity",
+      nonce: "fresh-nonce",
+      messageId: "soc-intro-capacity",
+    });
 
     const result = await handleInboundSocialIntroIntent({
       envelope,
@@ -877,25 +905,11 @@ describe("handleInboundSocialIntroIntent", () => {
     __primeOwnerReadyNonceMapForTests(MAX_OWNER_READY_NONCE_ENTRIES);
 
     const remotePeerId = "libp2p-capacity-rate-rollback-peer";
-    const capacityDenyEnvelope: EnvoyEnvelope = {
-      ...createUnsignedEnvelope({
-        senderPeerId: "peer-human-remote",
-        senderPublicKey: profile.device.publicKeyPem,
-        senderRole: "human",
-        recipientPeerId: derivePeerId(profile.device.publicKeyPem),
-        recipientRole: "human",
-        intent: "social.intro.owner-ready",
-        payload: createSocialIntroOwnerReadyPayload({
-          introCorrelationId: "ic-cap-rate",
-          ownerId: strangerOwner.ownerId,
-          nonce: "nonce-after-prime",
-          expiresAt: "2030-01-01T00:00:00.000Z",
-        }),
-        createdAt: "2026-06-01T10:00:00.000Z",
-        messageId: "soc-intro-cap-rate-deny",
-      }),
-      signature: "signature",
-    };
+    const capacityDenyEnvelope = signedOwnerReadyEnvelope(strangerOwner, profile, {
+      introCorrelationId: "ic-cap-rate",
+      nonce: "nonce-after-prime",
+      messageId: "soc-intro-cap-rate-deny",
+    });
 
     await handleInboundSocialIntroIntent({
       envelope: capacityDenyEnvelope,

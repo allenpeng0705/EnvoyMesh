@@ -164,6 +164,13 @@ export type RpcMethods =
   // AI / Knowledge Query
   | "knowledgeQuery"
   | "runDocumentAgentTurn"
+  | "listSocialProxySessions"
+  | "runSocialProxyPass"
+  | "cancelSocialProxySession"
+  | "startDocumentAcquisitionJob"
+  | "getDocumentAcquisitionJob"
+  | "listDocumentAcquisitionJobs"
+  | "cancelDocumentAcquisitionJob"
   | "listActiveTransfers"
   | "getTransferStatus"
   // Agent Bridge
@@ -370,6 +377,15 @@ export interface NodeConfig {
    * Unset = bond policy only (no extra owner cap).
    */
   knowledgeSyndicationMaxSensitivity?: "public" | "friends" | "private";
+  /** Phase 16B — standing social proxy posture (requires trustModeEnabled). */
+  socialProxyEnabled?: boolean;
+  socialProxyMandateId?: string;
+  socialProxyLastPassAt?: string;
+  /** Phase 16C — document acquisition orchestrator. */
+  documentAcquisitionEnabled?: boolean;
+  documentAcquisitionMandateId?: string;
+  capabilityProviderEnabled?: boolean;
+  capabilityProviderMandateId?: string;
 }
 
 /**
@@ -511,6 +527,8 @@ export interface AiSettings {
   knowledgeBase?: import("./ai-knowledge-base.js").AiKnowledgeBaseSettings;
   /** Document publish/share autonomy for Envoy AI (ADB-F). Default: proposals-only tier 0. */
   documentAutonomy?: import("./document-autonomy.js").DocumentAutonomyPolicy;
+  /** Chat presentation (Phase 16D) — local only, not on wire. */
+  disclosure?: import("./envoy-disclosure.js").EnvoyDisclosureSettings;
   /** Gallery photo sharing by Envoy AI (thumbnail is always public on profile). */
   profileMedia?: import("./profile-media.js").ProfileMediaPolicy;
 }

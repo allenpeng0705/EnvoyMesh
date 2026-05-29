@@ -428,6 +428,7 @@
   dependencies:
     "@envoymesh/identity" "0.1.0"
     "@envoymesh/protocol" "0.1.0"
+    "@noble/hashes" "^1.8.0"
     zod "^4.3.6"
 
 "@envoymesh/bonds@0.1.0", "@envoymesh/bonds@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/bonds":
@@ -6652,7 +6653,12 @@ yjs@^13.6.30:
   dependencies:
     lib0 "^0.2.99"
 
-zod@^4.3.6:
+zod-to-json-schema@^3.25.2:
+  version "3.25.2"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/zod-to-json-schema/-/zod-to-json-schema-3.25.2.tgz"
+  integrity sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==
+
+"zod@^3.25.28 || ^4", zod@^4.3.6:
   version "4.3.6"
   resolved "https://mirrors.huaweicloud.com/repository/npm/zod/-/zod-4.3.6.tgz"
   integrity sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==

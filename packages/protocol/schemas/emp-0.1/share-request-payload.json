@@ -1,0 +1,59 @@
+{
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/share-request-payload.json",
+  "title": "share.request Payload",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "requestType": {
+      "type": "string",
+      "enum": [
+        "knowledge",
+        "file"
+      ]
+    },
+    "query": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "relativePath": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "requestedSensitivity": {
+      "default": "public",
+      "type": "string",
+      "enum": [
+        "public",
+        "friends",
+        "trusted",
+        "private"
+      ]
+    },
+    "correlationId": {
+      "type": "string"
+    },
+    "fileOrigin": {
+      "default": "responder",
+      "type": "string",
+      "enum": [
+        "responder",
+        "sender"
+      ]
+    },
+    "deliveryChannel": {
+      "default": "inbox",
+      "type": "string",
+      "enum": [
+        "inbox",
+        "chat"
+      ]
+    }
+  },
+  "required": [
+    "requestType",
+    "requestedSensitivity",
+    "fileOrigin",
+    "deliveryChannel"
+  ],
+  "additionalProperties": false
+}

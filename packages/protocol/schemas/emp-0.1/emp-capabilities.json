@@ -1,0 +1,12 @@
+{
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/emp-capabilities.json",
+  "title": "EMP Advertised Capability",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "standing-delegation",
+    "social-proxy",
+    "document-acquisition",
+    "capability-provider"
+  ]
+}

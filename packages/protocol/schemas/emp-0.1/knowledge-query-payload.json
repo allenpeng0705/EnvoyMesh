@@ -1,0 +1,26 @@
+{
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/knowledge-query-payload.json",
+  "title": "knowledge.query Payload",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "requestedSensitivity": {
+      "type": "string",
+      "enum": [
+        "public",
+        "friends",
+        "trusted",
+        "private"
+      ]
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "additionalProperties": false
+}

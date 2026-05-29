@@ -191,7 +191,34 @@ describe("MESH_FIND_CAPABILITY_TOOL", () => {
     const toolImpl = buildMeshFindCapabilityTool({ trustStore });
     const result = (await toolImpl({ keywords: [] })) as Record<string, unknown>;
 
-    expect(result.error).toBe("keywords parameter is required");
+    expect(result.error).toBe("keywords or capabilityIds parameter is required");
+  });
+
+  it("matches bonded contact by Agent Card capability tag", async () => {
+    const trustStore = createLocalTrustStore(profileDir);
+    await trustStore.setTrustRecord({
+      peerOwnerId: "envoy:owner:dana",
+      displayName: "Dana",
+      level: "direct",
+      now: new Date().toISOString(),
+    });
+
+    const { buildMeshFindCapabilityTool } = await import("../src/tool-impl.js");
+    const toolImpl = buildMeshFindCapabilityTool({
+      trustStore,
+      listBondedAgentCapabilities: async () => [
+        { ownerId: "envoy:owner:dana", capabilities: ["envoymesh.published-library"] },
+      ],
+    });
+    const result = (await toolImpl({
+      capabilityIds: ["envoymesh.published-library"],
+      maxResults: 5,
+    })) as Record<string, unknown>;
+
+    const contacts = result.contacts as Array<Record<string, unknown>>;
+    expect(contacts.length).toBe(1);
+    expect(contacts[0]?.capabilityTags).toContain("envoymesh.published-library");
+    expect(contacts[0]?.suggestedRouteId).toBe("document.published-library");
   });
 
   it("redacts all sensitive metadata from results", async () => {

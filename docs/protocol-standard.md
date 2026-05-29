@@ -1,10 +1,10 @@
 # EnvoyMesh Protocol
 
-EnvoyMesh Protocol, or EMP, is the standard contract that lets Envoys run across different devices and implementations.
+EnvoyMesh Protocol, or **EMP**, is the **single standard contract** for EnvoyMesh — including AI-mediated peer-to-peer social networking. One protocol, one version line (`emp/0.1`), reusable across desktop, mobile, relay, and future implementations.
 
-EMP defines identity, device roles, message envelopes, trust workflows, and the minimum verbs every Envoy should understand. The goal is to let a desktop Envoy, mobile Envoy, home server Envoy, or future embedded Envoy interoperate without depending on a central backend.
+EMP defines identity, device roles, signed envelopes, trust workflows, human and agent communication lanes, mandates, standing autonomous **postures** (EnvoyAI), and the minimum intents every Envoy must understand. Humans and agents share the same wire; policy and presentation distinguish who acted.
 
-For product-level narratives and user stories, see [EnvoyMesh scenarios](./scenarios.md), [narrative user stories](./UserStory.md), and [design ↔ implementation alignment](./alignment-review.md). For how EMP fields map to packages and the node runtime, see [detailed design](./detailed-design.md).
+For product narratives and user stories, see [EnvoyMesh scenarios](./scenarios.md), [narrative user stories](./UserStory.md), and [design ↔ implementation alignment](./alignment-review.md). For package and runtime mapping, see [detailed design](./detailed-design.md). For third-party implementers, see [emp-implementers-guide.md](./emp-implementers-guide.md) and `packages/protocol/schemas/emp-0.1/`. EnvoyAI design notes that mirror this spec: [envoyai-protocol.md](./envoyai-protocol.md) (guide only — **normative text lives here**).
 
 ## Design Goals
 
@@ -17,6 +17,9 @@ For product-level narratives and user stories, see [EnvoyMesh scenarios](./scena
 - Long-running tasks can complete asynchronously and report at the right time.
 - Trust is local, cryptographic, and portable.
 - Protocol features can evolve without breaking old nodes.
+- **One protocol for AI + social mesh** — standing delegation postures, honest wire roles, and configurable UI disclosure are part of EMP, not a parallel standard.
+- **Humans and agents are first-class peers** — same envelopes and intents; `senderRole` + `agentCredential` disambiguate actors.
+- **Human commit for trust** — bond tier upgrades and high-risk actions stay owner-committed unless explicitly mandated.
 
 ## Identity Model
 
@@ -236,7 +239,8 @@ Example:
     "acceptsReferralRequests": true,
     "requiresHumanApprovalForRawFiles": true
   },
-  "supportedProtocolVersions": ["emp/0.1"]
+  "supportedProtocolVersions": ["emp/0.1"],
+  "supportedCapabilities": ["standing-delegation", "social-proxy", "document-acquisition"]
 }
 ```
 
@@ -286,6 +290,160 @@ Mandates should be:
 - Bound to allowed actions, sensitivity, and cost.
 
 Every A2A request that performs delegated work should include either a mandate reference or a proof derived from the mandate.
+
+### Standing mandates and postures
+
+Task mandates (above) authorize **one job**. **Standing mandates** authorize a **posture** — a named autonomous mode the owner enables until expiry or revocation. Postures are the EnvoyAI capability within EMP; they reuse the same mandate schema with optional fields:
+
+| Field | Purpose |
+|-------|---------|
+| `posture` | `social_proxy` \| `document_acquisition` (extensible enum in `@envoymesh/protocol`) |
+| `posturePolicy` | Posture-specific bounds (JSON object — see [EnvoyAI](#envoyai-ai-mediated-social-mesh)) |
+| `taskIntent` | e.g. `emp.social_proxy`, `emp.document_acquisition` |
+
+Standing mandates MUST still be owner-signed, time-limited, revocable, and auditable. Optional envelope field **`postureRef`** links automated traffic to the active standing `mandateId`.
+
+<a id="envoyai-ai-mediated-social-mesh"></a>
+
+## EnvoyAI (AI-mediated social mesh)
+
+**EnvoyAI** is the name for EMP's AI-social capabilities: standing delegation, honest automation on the wire, negotiation lanes, and presentation rules. It is **not** a separate protocol or version — implementations advertise support via `supportedCapabilities` on Agent Card / `system.signal` under `emp/0.1`.
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Presentation (local Social UI — configurable badges)        │
+├─────────────────────────────────────────────────────────────┤
+│ EnvoyMesh Protocol (emp/0.1)                                │
+│   envelopes · intents · bonds · mandates · postures       │
+│   chat · social.intro.* · discovery · share · task · report │
+├─────────────────────────────────────────────────────────────┤
+│ Transport (libp2p, relay, /envoymesh/chat|message|data)     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Implementation: [Phase 16](./implementation-plan.md#phase-16-envoyai-standing-delegation--autonomous-postures). Stories: [Epic SP](./scenarios.md#epic-sp--delegated-social-presence), [Epic DA](./scenarios.md#epic-da--document-acquisition), US-AV9.
+
+### Postures
+
+A **posture** is a standing autonomous mode:
+
+| Posture | Purpose | Human commit still required for |
+|---------|---------|--------------------------------|
+| `social_proxy` | Discover candidates, intro sync, say hello, pre-bond chat with humans or peer agents | `bond.accept`, trust tier upgrade, sensitive profile disclosure |
+| `document_acquisition` | Hunt documents (vault → bonded catalog → optional discovery); negotiate; retrieve bytes when policy allows | Publishing local vault items, share above mandate ceiling |
+| `capability_provider` | Match capability routes; execute mesh tool steps; delegate `task.*` when bonded | Human bond commit, approval-gated chat |
+
+### Three agent workflows (one protocol)
+
+EnvoyMesh ships **one protocol** (`emp/0.1`). Product scenarios are **user stories** that share the same wire:
+
+```text
+Advertise → Discover → Negotiate → Commit/Execute
+```
+
+| Workflow | User stories | Standing posture | Planner route id (agent-only) |
+|----------|--------------|------------------|-------------------------------|
+| **Social** | Epic SP — intros, hello, pre-bond chat | `social_proxy` | `social.intro-bond` |
+| **Documents** | Epic DA — hunt, negotiate, retrieve bytes | `document_acquisition` | `document.published-library` |
+| **Capabilities** | Agent services — match tags, route intents, task delegate | `capability_provider` | `service.task-negotiation` (+ manifest-derived `custom:*`) |
+
+**Capability routing** is an **AI orchestration layer** — not human discovery UI. Agents call in-process tools (`mesh.match_capability_route`, `mesh.capability_provider.start`) on the home node. External bridge/RPC exposure is optional and deferred.
+
+Custom manifest capability tags map to generic task-service routes via `@envoymesh/api` `deriveRoutesFromManifestCapabilities()`. Bond tier and mandate ceilings still gate every EMP hop.
+
+Postures are **not** time-boxed “night modes.” They are standing delegations with optional schedules and a kill switch (`autonomousKillSwitch`).
+
+Example standing mandate:
+
+```json
+{
+  "version": "0.1",
+  "mandateId": "mandate-social-proxy-001",
+  "ownerId": "envoy:owner:z6MkOwner",
+  "agentId": "envoy:agent:z6MkAgent",
+  "posture": "social_proxy",
+  "taskIntent": "emp.social_proxy",
+  "allowedActions": ["discovery.request", "social.intro.sync", "social.intro.propose", "chat.message", "bond.request"],
+  "disallowedActions": ["bond.accept", "bond.revoke"],
+  "maxSensitivity": "friends",
+  "maxCost": { "amount": 0, "currency": "USD" },
+  "expiresAt": "2027-01-01T00:00:00.000Z",
+  "requiresApprovalFor": ["bond.request"],
+  "posturePolicy": {
+    "autoHello": true,
+    "autoChatWithPeerAgents": true,
+    "maxNewIntrosPerDay": 5,
+    "requireOwnerCommitmentRefOnBondRequest": true
+  },
+  "signature": "owner-signature"
+}
+```
+
+`document_acquisition` uses `posturePolicy` fields such as `searchBondedOnly`, `maxNegotiationRounds`, `autoAcceptInboundShareUpTo`, `autoRequestShareUpTo`.
+
+Inbound handlers MUST verify mandate signature, expiry, `allowedActions`, and `posturePolicy` before autonomous execution.
+
+### Three disclosure planes
+
+| Plane | Audience | Rule |
+|-------|----------|------|
+| **Wire** | All peers | Cryptographic honesty — `senderRole`, `agentCredential`, signed mandates (Appendix C). |
+| **Protocol / audit** | Bond Engine, Activity, audit JSONL | Full actor metadata always retained for the owner. |
+| **Presentation** | Local Social UI | Owner-configurable badges; MUST NOT change outbound wire roles (US-AV2). |
+
+Presentation settings (`showAgentBadges`, `collapsePeerAgentToContact`) are **local-only** — not transmitted on the wire.
+
+### Negotiation lanes
+
+| Lane | Intents | UI surface |
+|------|---------|------------|
+| Human chat | `chat.message` | Contact thread |
+| Pre-bond social | `social.intro.*`, `bond.request` (+ `ownerCommitmentRef` when agent-sent) | Inbox / Trust |
+| A2A orchestration | `task.*`, `agent.card.*`, `knowledge.*` (agent↔agent) | Activity |
+| Document hunt | `discovery.request`, `knowledge.query`, `share.request` / `share.accept` | Activity + Assistant + Library |
+| Owner H2A | Local RPC (`runDocumentAgentTurn`, …) | Assistant view |
+
+Long agent↔agent work MUST NOT spam human chat; summaries use Activity / `report.create`.
+
+### Posture: `social_proxy`
+
+| Action | Intent | Sender role | Notes |
+|--------|--------|-------------|-------|
+| Find candidates | `discovery.request` | agent | Trust mode + mandate |
+| Intro context | `social.intro.sync`, `social.intro.propose` | agent | Rate limits |
+| Say hello | `bond.request` | agent | **`ownerCommitmentRef`** required (Appendix A) |
+| Pre-bond chat | `chat.message` | agent | `agentCredential` required |
+| Commit friendship | `bond.accept` | **human** | Not delegatable in emp/0.1 |
+
+### Posture: `document_acquisition`
+
+Async job keyed by `correlationId`:
+
+```text
+vault.search → discoverPublishedLibrary (bonded) → optional discovery.request
+  → negotiate (knowledge.query, chat.message) → share.request / share.accept
+  → verified /envoymesh/data transfer → report.create
+```
+
+**Metadata ≠ bytes:** discovery matches never imply transfer consent (ADB Layer 2 vs Layer 3).
+
+| Stage | Intents | Autonomy |
+|-------|---------|----------|
+| Local search | vault APIs, self `knowledge.query` | Within mandate |
+| Bonded catalog | `discovery.request` | Auto |
+| Wider discovery | `discovery.request` (hop-limited) | Per forward approval (US-MH3) |
+| Negotiate | `chat.message`, `knowledge.query` | ≤ `maxSensitivity` |
+| Request / accept bytes | `share.request`, `share.accept` | Per `posturePolicy` thresholds |
+
+### EnvoyAI security rules
+
+1. **`bond.accept`** MUST use `senderRole=human` in emp/0.1.
+2. Agent **`bond.request`** MUST include valid **`ownerCommitmentRef`** when credential-bearing (Appendix A).
+3. **`share.accept`** without human approval only when `posturePolicy` explicitly allows and sensitivity ≤ mandate ceiling.
+4. **`autonomousKillSwitch`** disables all postures immediately.
+5. Peers MUST verify `agentCredential` regardless of sender UI disclosure settings.
+
+Agent credential **`scope`** MAY include `emp.social_proxy`, `emp.document_acquisition` to gate delegated intents.
 
 ## Proof Of Intent
 
@@ -615,10 +773,13 @@ Purpose:
 
 Returns an approved answer.
 
+Executable payload shape: **`KnowledgeResponsePayloadSchema`** in `@envoymesh/protocol` (fields include **`answer`**, optional **`requestedSensitivity`**, optional **`suggestedRelativePath`**, optional **`matchScore`**, optional **`refused`** / **`refusalReason`**).
+
 Purpose:
 
 - Send summaries, citations, or permitted snippets.
 - Include sensitivity and audit metadata.
+- For document acquisition interop, set **`suggestedRelativePath`** when a published vault item matches (preferred over parsing path from `answer` text). See [EMP implementer's guide](./emp-implementers-guide.md#5-document-acquisition-interop-knowledgeresponse).
 
 ### `task.propose`
 
@@ -867,6 +1028,22 @@ Code: `packages/api/src/h2a-wire-semantics.ts` + `packages/network` protocol val
 
 Local owner turns append **`AgentActivityRecord`** rows (`knowledge_answered`, `task_progress`, `share_proposed`) with domain `knowledge` or `home` — visible in Assistant rail and Activity feed.
 
+<a id="appendix-e-envoyai-standing-delegation-profile"></a>
+
+## Appendix E: EnvoyAI quick reference (part of emp/0.1)
+
+Normative detail: [EnvoyAI section](#envoyai-ai-mediated-social-mesh) above. Implementation: [Phase 16](./implementation-plan.md#phase-16-envoyai-standing-delegation--autonomous-postures).
+
+| Topic | EMP location |
+|-------|----------------|
+| Standing mandates | [Mandates → Standing mandates](#standing-mandates-and-postures) |
+| Postures | [`social_proxy`, `document_acquisition`](#postures) |
+| Disclosure | [Three disclosure planes](#three-disclosure-planes) |
+| Intent matrices | [social_proxy](#posture-social_proxy), [document_acquisition](#posture-document_acquisition) |
+| Capability advertisement | `supportedCapabilities` on Agent Card / `system.signal` |
+
+**There is no `envoyai/0.1` version line.** EnvoyAI ships as optional capabilities within `emp/0.1`.
+
 ## Envelope Requirements
 
 Every EMP message must include:
@@ -955,7 +1132,7 @@ Device authorization SHOULD require both **trust level** (bonds) and **device ca
 
 ## Versioning
 
-EMP uses semantic protocol versions.
+EMP uses semantic protocol versions. **EnvoyAI is part of emp/0.1** — not a separate version.
 
 The current draft version is:
 
@@ -963,12 +1140,21 @@ The current draft version is:
 emp/0.1
 ```
 
+Optional **capability flags** (advertised in Agent Card / `system.signal`, ignored by nodes that do not implement them):
+
+```text
+standing-delegation
+social-proxy
+document-acquisition
+```
+
 Rules:
 
 - Unknown intents are rejected by default.
 - Unknown optional fields are ignored only when schema permits them.
-- Breaking envelope changes require a new major protocol version.
+- Breaking envelope changes require a new major protocol version (`emp/0.2`, not a forked AI protocol).
 - Nodes should advertise supported EMP versions in `system.signal`.
+- Nodes that support EnvoyAI postures SHOULD list relevant entries in `supportedCapabilities`.
 
 ## Implementation Guidance
 

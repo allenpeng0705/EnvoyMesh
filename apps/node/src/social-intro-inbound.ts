@@ -1,6 +1,8 @@
 import { evaluatePolicy, type BondLevel } from "@envoymesh/bonds";
+import { deriveOwnerId } from "@envoymesh/identity";
 import {
   createAuditEvent,
+  type LocalPeerDirectoryStore,
   type LocalTaskStore,
   type LocalTrustStore,
   type NodeProfile,
@@ -11,6 +13,7 @@ import {
   parseSocialIntroSyncPayload,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
+import { resolveSenderOwnerId } from "./share-inbound.js";
 
 const SOCIAL_INTRO_RATE_WINDOW_MS = 60_000;
 /** Max inbound `social.intro.*` messages per remote peer per sliding window (Phase F). Exported for tests. */
@@ -94,6 +97,7 @@ export async function handleInboundSocialIntroIntent(input: {
   correlationId: string | undefined;
   taskStore: LocalTaskStore;
   trustStore: LocalTrustStore;
+  peerDirectoryStore?: LocalPeerDirectoryStore;
   trustModeEnabled: boolean;
   /** When propose passes policy (not deny), emit inbox notification */
   onSocialIntroPropose?: (data: {
@@ -106,6 +110,14 @@ export async function handleInboundSocialIntroIntent(input: {
     rationale?: string;
     receivedAt: string;
   }) => void;
+  /** When peer owner signals willingness via social.intro.owner-ready */
+  onSocialIntroOwnerReady?: (data: {
+    introCorrelationId: string;
+    ownerId: string;
+    nonce: string;
+    remotePeerId: string;
+    receivedAt: string;
+  }) => void;
 }): Promise<SocialIntroInboundResult> {
   const {
     envelope,
@@ -115,8 +127,10 @@ export async function handleInboundSocialIntroIntent(input: {
     correlationId,
     taskStore,
     trustStore,
+    peerDirectoryStore,
     trustModeEnabled,
     onSocialIntroPropose,
+    onSocialIntroOwnerReady,
   } = input;
 
   const appendAudit = async (opts: {
@@ -165,6 +179,9 @@ export async function handleInboundSocialIntroIntent(input: {
 
     pruneOwnerReadyNonceMap(rateLimitNow);
 
+    let ownerReadyNotify:
+      | { introCorrelationId: string; ownerId: string; nonce: string }
+      | undefined;
     let ownerReadyDedupKey: string | undefined;
     let ownerReadyExpiryMs = 0;
 
@@ -221,6 +238,28 @@ export async function handleInboundSocialIntroIntent(input: {
       };
     } else if (envelope.intent === "social.intro.owner-ready") {
       const payload = parseSocialIntroOwnerReadyPayload(envelope.payload);
+      if (envelope.senderRole !== "human") {
+        rollbackSocialIntroHit(remotePeerId, rateHitId);
+        return { ok: false, reason: "social.intro.owner-ready requires human sender" };
+      }
+      let senderOwnerId: string | undefined;
+      if (peerDirectoryStore) {
+        senderOwnerId = await resolveSenderOwnerId(
+          envelope.senderPeerId,
+          remotePeerId,
+          peerDirectoryStore,
+        );
+      }
+      if (!senderOwnerId) {
+        senderOwnerId = deriveOwnerId(envelope.senderPublicKey);
+      }
+      if (senderOwnerId !== payload.ownerId) {
+        rollbackSocialIntroHit(remotePeerId, rateHitId);
+        return {
+          ok: false,
+          reason: "social.intro.owner-ready ownerId does not match sender public key",
+        };
+      }
       const exp = new Date(payload.expiresAt).getTime();
       const nonceNow = Date.now();
       if (!Number.isFinite(exp) || exp <= nonceNow) {
@@ -257,8 +296,13 @@ export async function handleInboundSocialIntroIntent(input: {
         return { ok: true };
       }
       ownerReadyExpiryMs = exp;
-      remoteOwnerId = payload.ownerId;
+      remoteOwnerId = senderOwnerId;
       summaryExtra = `nonce=${payload.nonce}`;
+      ownerReadyNotify = {
+        introCorrelationId: payload.introCorrelationId,
+        ownerId: senderOwnerId,
+        nonce: payload.nonce,
+      };
     } else {
       rollbackSocialIntroHit(remotePeerId, rateHitId);
       return { ok: false, reason: "not a social.intro intent" };
@@ -326,6 +370,16 @@ export async function handleInboundSocialIntroIntent(input: {
         agentPeerId: envelope.senderPeerId,
         agentOwnerId: envelope.agentCredential.ownerId,
         rationale: proposeNotify.rationale,
+        receivedAt: envelope.createdAt,
+      });
+    }
+
+    if (ownerReadyNotify && outcome === "allow" && onSocialIntroOwnerReady) {
+      onSocialIntroOwnerReady({
+        introCorrelationId: ownerReadyNotify.introCorrelationId,
+        ownerId: ownerReadyNotify.ownerId,
+        nonce: ownerReadyNotify.nonce,
+        remotePeerId,
         receivedAt: envelope.createdAt,
       });
     }

@@ -18,6 +18,8 @@ import {
   createDevicePairDeferredPayload,
   createDevicePairRequestPayload,
   createKnowledgeQueryPayload,
+  createKnowledgeResponsePayload,
+  parseKnowledgeResponsePayload,
   createReport,
   createReportCreatePayload,
   createRelayCheckinPayload,
@@ -127,6 +129,17 @@ describe("protocol", () => {
       requestedSensitivity: "public",
     });
     expect(parseKnowledgeQueryPayload(payload)).toEqual(payload);
+  });
+
+  it("roundtrips knowledge.response with suggestedRelativePath", () => {
+    const payload = createKnowledgeResponsePayload({
+      inReplyTo: "msg-1",
+      answer: "Ed25519 mesh security specification draft.",
+      suggestedRelativePath: "shared/ed25519-draft.pdf",
+      sensitivity: "friends",
+      matchScore: 0.9,
+    });
+    expect(parseKnowledgeResponsePayload(payload)).toEqual(payload);
   });
 
   it("roundtrips bond payloads", () => {

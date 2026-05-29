@@ -2703,6 +2703,19 @@ You are the owner's personal AI assistant on EnvoyMesh.
     await this._shareFileInternal(targetOwnerId, file);
   }
 
+  async requestShareFromLibrary(
+    targetOwnerId: string,
+    file: {
+      relativePath: string;
+      sensitivity: "public" | "friends" | "private";
+      correlationId?: string;
+    },
+  ): Promise<{ shareRequestMessageId: string }> {
+    void targetOwnerId;
+    void file;
+    throw new Error("requestShareFromLibrary is not supported on mobile yet");
+  }
+
   private async _shareFileInternal(
     targetOwnerId: string,
     file: {
@@ -3797,6 +3810,60 @@ You are the owner's personal AI assistant on EnvoyMesh.
       },
     });
     return { ...turn, answer: stripModelThinking(turn.answer) };
+  }
+
+  async listSocialProxySessions(): Promise<import("@envoymesh/api").SocialProxySession[]> {
+    return [];
+  }
+
+  async runSocialProxyPass(): Promise<{ ok: boolean; error?: string; correlationId?: string }> {
+    return { ok: false, error: "social proxy not implemented on mobile yet" };
+  }
+
+  async cancelSocialProxySession(_sessionId: string): Promise<void> {}
+
+  async startDocumentAcquisitionJob(_params: {
+    query: string;
+    fileTitleHint?: string;
+    pathHint?: string;
+  }): Promise<{ jobId: string; correlationId: string }> {
+    throw new Error("document acquisition not implemented on mobile yet");
+  }
+
+  async getDocumentAcquisitionJob(_jobId: string): Promise<import("@envoymesh/api").DocumentAcquisitionJob | undefined> {
+    return undefined;
+  }
+
+  async listDocumentAcquisitionJobs(_activeOnly?: boolean): Promise<import("@envoymesh/api").DocumentAcquisitionJob[]> {
+    return [];
+  }
+
+  async cancelDocumentAcquisitionJob(_jobId: string): Promise<void> {}
+
+  async startCapabilityProviderJob(_params: {
+    goal: string;
+    capabilityIds?: string[];
+    targetOwnerId?: string;
+  }): Promise<{ jobId: string; correlationId: string }> {
+    throw new Error("capability provider not implemented on mobile yet");
+  }
+
+  async getCapabilityProviderJob(
+    _jobId: string,
+  ): Promise<import("@envoymesh/api").CapabilityProviderJob | undefined> {
+    return undefined;
+  }
+
+  async listCapabilityProviderJobs(
+    _activeOnly?: boolean,
+  ): Promise<import("@envoymesh/api").CapabilityProviderJob[]> {
+    return [];
+  }
+
+  async cancelCapabilityProviderJob(_jobId: string): Promise<void> {}
+
+  async runCapabilityProviderWorker(): Promise<number> {
+    return 0;
   }
 
   async listActiveTransfers(): Promise<TransferStatus[]> {

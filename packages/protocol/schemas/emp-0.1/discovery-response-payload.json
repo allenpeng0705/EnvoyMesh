@@ -1,0 +1,123 @@
+{
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/discovery-response-payload.json",
+  "title": "discovery.response Payload",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "requestMessageId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "responderOwnerId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "matches": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ownerId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "peerId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "matchedTagHashes": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "matchedCapabilities": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "libraryMatches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "documentId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string"
+                },
+                "relativePath": {
+                  "type": "string"
+                },
+                "contentHash": {
+                  "type": "string"
+                },
+                "byteLength": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "sensitivity": {
+                  "type": "string",
+                  "enum": [
+                    "public",
+                    "friends",
+                    "private"
+                  ]
+                },
+                "cid": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "required": [
+                "documentId",
+                "title",
+                "relativePath",
+                "contentHash"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "hopDistance": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
+          }
+        },
+        "required": [
+          "ownerId",
+          "peerId",
+          "matchedTagHashes",
+          "matchedCapabilities"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "truncated": {
+      "default": false,
+      "type": "boolean"
+    },
+    "forwardPendingAck": {
+      "default": false,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "requestMessageId",
+    "responderOwnerId",
+    "matches",
+    "truncated",
+    "forwardPendingAck"
+  ],
+  "additionalProperties": false
+}

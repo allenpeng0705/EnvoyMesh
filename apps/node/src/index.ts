@@ -118,7 +118,7 @@ import { join } from "node:path";
 import { parseNodeArgs, applyPersistedDiscoveryConfig } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
-import { chatSenderActorFromEnvelope, shouldSkipAgentChatAssist } from "@envoymesh/api";
+import { chatSenderActorFromEnvelope, shouldSkipAgentChatAssist, resolveEmpSupportedCapabilities } from "@envoymesh/api";
 import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
 import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
@@ -398,6 +398,9 @@ let currentContactAiPrefs: Map<
   }
 > = new Map();
 let friendAutopilotRunInFlight = false;
+let socialProxyRunInFlight = false;
+let documentAcquisitionRunInFlight = false;
+let capabilityProviderRunInFlight = false;
 
 // Activity tracking for online/offline detection (inbound path)
 // Note: node-service-impl.ts has its own activity tracking for outbound paths (sendChat).
@@ -1100,10 +1103,25 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         previewPayload.isFileTransfer &&
         !previewPayload.refused
       ) {
-        nodeService.linkOutboundSharePreviewFromInbound(envelope.messageId, previewPayload.inReplyTo);
-        console.log(
-          `[share.preview] linked outbound file send for request ${previewPayload.inReplyTo.slice(0, 12)}…`,
+        const senderOwnerId = await resolveSenderOwnerId(
+          envelope.senderPeerId,
+          remotePeerId,
+          peerDirectoryStore,
         );
+        const recorded = nodeService.recordInboundPullSharePreview({
+          previewMessageId: envelope.messageId,
+          inReplyToRequestMsgId: previewPayload.inReplyTo,
+          senderPeerId: remotePeerId,
+          senderOwnerId,
+          previewText: previewPayload.previewText,
+          sensitivity: previewPayload.sensitivity as "public" | "friends" | "private",
+        });
+        if (!recorded) {
+          nodeService.linkOutboundSharePreviewFromInbound(envelope.messageId, previewPayload.inReplyTo);
+          console.log(
+            `[share.preview] linked outbound file send for request ${previewPayload.inReplyTo.slice(0, 12)}…`,
+          );
+        }
       }
     } catch {
       // ignore invalid preview payloads for helper linkage
@@ -2267,6 +2285,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       correlationId,
       taskStore,
       trustStore,
+      peerDirectoryStore,
       trustModeEnabled: nodeCfg.trustModeEnabled ?? false,
       onSocialIntroPropose: (data) => {
         if (nodeService instanceof NodeServiceImpl) {
@@ -2274,6 +2293,11 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
             ...data,
             commitmentApproved: false,
           });
+        }
+      },
+      onSocialIntroOwnerReady: (data) => {
+        if (nodeService instanceof NodeServiceImpl) {
+          void nodeService.handleSocialProxyPeerOwnerReady(data);
         }
       },
     });
@@ -2683,11 +2707,15 @@ modeTransitionTimer = setInterval(() => {
   if (expiredIds.length > 0) {
     console.log(`[approval] expired ${expiredIds.length} items`);
   }
-  // Phase 14A — scheduled friend autopilot
+  // Phase 14A — scheduled friend autopilot (legacy when social proxy off)
   if (nodeService instanceof NodeServiceImpl && !friendAutopilotRunInFlight) {
     friendAutopilotRunInFlight = true;
     void nodeService
-      .runScheduledFriendAutopilot()
+      .getNodeConfig()
+      .then((cfg) => {
+        if (cfg.socialProxyEnabled) return { ok: false };
+        return nodeService.runScheduledFriendAutopilot();
+      })
       .then((result) => {
         if (result.ok) {
           console.log("[friend-autopilot] scheduled pass completed");
@@ -2696,6 +2724,42 @@ modeTransitionTimer = setInterval(() => {
       .catch((err) => console.warn("[friend-autopilot] scheduled pass failed:", err))
       .finally(() => {
         friendAutopilotRunInFlight = false;
+      });
+  }
+  // Phase 16B — social proxy pass
+  if (nodeService instanceof NodeServiceImpl && !socialProxyRunInFlight) {
+    socialProxyRunInFlight = true;
+    void nodeService
+      .getNodeConfig()
+      .then((cfg) => (cfg.socialProxyEnabled ? nodeService.runSocialProxyPass() : { ok: false }))
+      .then((result) => {
+        if (result.ok) {
+          console.log("[social-proxy] scheduled pass completed");
+        }
+      })
+      .catch((err) => console.warn("[social-proxy] scheduled pass failed:", err))
+      .finally(() => {
+        socialProxyRunInFlight = false;
+      });
+  }
+  // Phase 16C — document acquisition worker tick
+  if (nodeService instanceof NodeServiceImpl && !documentAcquisitionRunInFlight) {
+    documentAcquisitionRunInFlight = true;
+    void nodeService
+      .runDocumentAcquisitionWorker()
+      .catch((err) => console.warn("[document-acquisition] worker tick failed:", err))
+      .finally(() => {
+        documentAcquisitionRunInFlight = false;
+      });
+  }
+  // Phase 16E — capability provider route executor tick
+  if (nodeService instanceof NodeServiceImpl && !capabilityProviderRunInFlight) {
+    capabilityProviderRunInFlight = true;
+    void nodeService
+      .runCapabilityProviderWorker()
+      .catch((err) => console.warn("[capability-provider] worker tick failed:", err))
+      .finally(() => {
+        capabilityProviderRunInFlight = false;
       });
   }
   // Check digest schedule (Phase 9J)
@@ -3134,6 +3198,7 @@ if (resolvedArgs.pingTarget) {
 }
 
 if (resolvedArgs.signalTarget) {
+  const nodeConfigForSignal = await nodeConfigStore.load();
   const unsignedEnvelope = createUnsignedEnvelope({
     senderPeerId: derivePeerId(profile.device.publicKeyPem),
     senderPublicKey: profile.device.publicKeyPem,
@@ -3144,6 +3209,11 @@ if (resolvedArgs.signalTarget) {
       deviceCertificate: profile.deviceCertificate,
       ownerPublicKeyPem: profile.owner.publicKeyPem,
       listenAddrs: mesh.multiaddrs,
+      supportedCapabilities: resolveEmpSupportedCapabilities({
+        socialProxyEnabled: nodeConfigForSignal?.socialProxyEnabled,
+        documentAcquisitionEnabled: nodeConfigForSignal?.documentAcquisitionEnabled,
+        capabilityProviderEnabled: nodeConfigForSignal?.capabilityProviderEnabled,
+      }),
     }),
     correlationId: resolvedArgs.correlationId,
   });

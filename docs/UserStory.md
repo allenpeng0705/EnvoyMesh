@@ -8,7 +8,8 @@ Use it alongside:
 - [EnvoyMesh scenarios](./scenarios.md) — structured epic/story backlog with acceptance and status.
 - [Implementation plan](./implementation-plan.md) — phased delivery.
 - [Agentic next step](./next-step.md) — design rationale for LLM and agentic normal nodes.
-- [EnvoyMesh Protocol](./protocol-standard.md) (EMP) — normative contracts.
+- [EnvoyMesh Protocol](./protocol-standard.md) (EMP) — single normative standard including EnvoyAI postures.
+- [EnvoyAI design guide](./envoyai-protocol.md) — readable index into EMP AI-social sections.
 
 When a story becomes buildable, add or refine a matching entry in `scenarios.md` with testable acceptance criteria.
 
@@ -44,7 +45,10 @@ Legend: **Aligned** = behavior matches the story in a meaningful way today. **Pa
 | I Capability matchmaker | **Planned** | `discovery.request/response` exists; owner-approved manifest + match-to-share workflow not built. |
 | J Agent capability extender | **Planned** | OpenClaw/HomeClaw adapter boundary not built. |
 | K Public expert with safe preview | **Planned** | Anonymous discovery toggle, fast path, and public preview not built. |
-| L Bounded autonomous representative | **Planned** | Sandbox, reputation, official credentials, autonomy policy, digest, and kill switch not built. |
+| L Bounded autonomous representative | **Partial** | Autonomy domains + kill switch shipped; **standing postures** (social proxy, document acquisition) not productized. |
+| **M Delegated social presence** | **Planned** | Trust mode + friend autopilot (discovery only); no standing proxy hello/chat loop; human bond commit enforced. |
+| **N Document acquisition agent** | **Partial** | ADB + `runDocumentAgentTurn` + library tools; no async hunt orchestrator or mandate-gated auto-retrieve. |
+| **O Configurable actor disclosure (UI)** | **Planned** | Wire honest (Phase 13); chat badges always on; no `showAgentBadges` / peer collapse setting. |
 
 For a longer narrative of gaps and strengths, see [alignment-review.md](./alignment-review.md).
 
@@ -382,7 +386,70 @@ These stories describe the next product step: relays stay lean, while normal nod
 4. The Envoy summarizes autonomous decisions in a digest.
 5. Bob can pause autonomy immediately with a kill switch.
 
-**Features implied:** Phase 8K-8L; local reputation, official credentials, autonomy policy, approval thresholds, digest, kill switch.
+**Features implied:** Phase 8K-8L; local reputation, official credentials, autonomy policy, approval thresholds, digest, kill switch. **EnvoyAI** extends this with **standing postures** — see Stories M–N.
+
+---
+
+<a id="story-m-delegated-social-presence"></a>
+
+### Story M — Delegated social presence (social proxy)
+
+**Persona:** Bob, a professional who wants to grow his mesh network without being online all day.
+
+**Goal:** One **standing agent** represents Bob socially: discovers compatible people, says hello, chats with humans and their agents — while **bond commit stays human-only**.
+
+**Journey:**
+
+1. Bob enables **social proxy** in Settings and signs a standing mandate (intents, daily intro cap, sensitivity ceiling).
+2. Bob’s agent runs discovery (Trust mode, capability tags, optional multi-hop per policy).
+3. On a promising match, the agent runs `social.intro.sync` / proposes an intro; may send **`bond.request`** with **`ownerCommitmentRef`** after Bob approved an intro or per mandate approval rules.
+4. The agent exchanges **`chat.message`** with the candidate human and/or their agent (`senderRole=agent`, verified credential).
+5. Bob reviews Activity (and Inbox for intros); when ready, Bob personally **`bond.accept`**s — the agent cannot.
+6. Bob configures **UI disclosure** (Story O): peers may see messages without “Bob’s agent” badges if Bob prefers natural chat — wire stays honest.
+
+**Features implied:** EMP [`social_proxy`](./protocol-standard.md#posture-social_proxy), Epic SP (US-SP1–SP5), Phase 16B.
+
+**Gap vs today:** Friend autopilot only broadcasts search; agent `bond.request` without owner ref is rejected; no unified social proxy mandate or pre-bond chat loop.
+
+---
+
+<a id="story-n-document-acquisition-agent"></a>
+
+### Story N — Document acquisition agent
+
+**Persona:** Alice, researcher; **goal:** obtain a specific technical report that may live on a contact’s node or a second-degree peer’s published library.
+
+**Journey:**
+
+1. Alice enables **document acquisition** posture with a mandate (bonded-only hunt, auto-accept up to `friends` sensitivity, optional hop-scoped discovery).
+2. Alice asks her Assistant: “Find the Ed25519 mesh security draft we discussed.”
+3. Alice’s agent starts an **async job** (`correlationId`): local vault → bonded `discoverPublishedLibrary` → optional `discovery.request` (with forward approvals if hop > 0).
+4. The agent negotiates via `knowledge.query` and `chat.message` with peer agents.
+5. On match, the agent sends `share.request` or auto-accepts inbound `share.request` within mandate bounds.
+6. Verified bytes land in vault inbox; Alice gets Activity + `report.create` summary.
+
+**Features implied:** EMP [`document_acquisition`](./protocol-standard.md#posture-document_acquisition), Epic DA (US-DA1–DA5), Phase 16C, [AI Document Backbone](./ai-document-backbone-plan.md).
+
+**Gap vs today:** Turn-based document agent only; `mesh.library_request_share` is a chat ask; no end-to-end pull orchestrator; wider discovery limited to bonded catalog.
+
+---
+
+<a id="story-o-configurable-actor-disclosure"></a>
+
+### Story O — Configurable actor disclosure (UI)
+
+**Persona:** Bob; **goal:** let his agent speak on his behalf in pre-bond chats without peers always seeing “AI” badges, while cryptography stays truthful.
+
+**Journey:**
+
+1. Bob sets **show agent badges** off in Settings → AI → Disclosure.
+2. Bob’s outbound automated messages still use `senderRole=agent` + `agentCredential` (peers can verify).
+3. Bob’s Social UI shows peer agent messages like normal contact chat (optional **collapse peer agent to contact**).
+4. Bob’s Activity and audit always show the true actor for his own review.
+
+**Features implied:** EMP [disclosure planes](./protocol-standard.md#three-disclosure-planes), US-AV9, Phase 16D.
+
+**Gap vs today:** `ChatMessageBubble` always uses agent variants; `AiIdentityMode` affects tone only.
 
 ---
 
@@ -397,6 +464,9 @@ These stories describe the next product step: relays stay lean, while normal nod
 | Agent capability extender | Local tool registry + constrained external-agent adapter | Lets OpenClaw/HomeClaw use the mesh without bypassing Envoy policy. |
 | Public expert | Anonymous mode + fast match + safe preview | Allows public discovery without waking the LLM for every stranger request. |
 | Autonomous representative | Sandbox, reputation, approvals, digest, kill switch | Lets the Envoy stand for the owner without becoming unbounded. |
+| **Delegated social presence (M)** | `social_proxy` mandate, intro + hello + pre-bond chat | Standing social representation; human `bond.accept` only. |
+| **Document acquisition (N)** | Async hunt job, `share.*` orchestration | Cross-peer document retrieval under mandate. |
+| **UI disclosure (O)** | Local presentation settings | Honest wire + optional opaque chat UI. |
 
 ---
 
@@ -427,6 +497,7 @@ Track concrete fields in `protocol-standard.md`; track delivery in `implementati
 
 | Date | Change |
 |------|--------|
+| 2026-05-28 | Stories **M–O**; EnvoyAI consolidated into [EMP](./protocol-standard.md#envoyai-ai-mediated-social-mesh) as one protocol.
 | 2026-04-26 | Initial `UserStory.md` from product narrative and journey-style stories. |
 | 2026-04-26 | Added implementation snapshot table; linked `alignment-review.md`. |
 | 2026-05-05 | Added agentic normal node stories G-L aligned with Phase 8 and `next-step.md`. |

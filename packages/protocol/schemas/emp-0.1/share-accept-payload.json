@@ -1,0 +1,20 @@
+{
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/share-accept-payload.json",
+  "title": "share.accept Payload",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "inReplyTo": {
+      "type": "string"
+    },
+    "accept": {
+      "default": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "inReplyTo",
+    "accept"
+  ],
+  "additionalProperties": false
+}

@@ -2140,3 +2140,6 @@ export * from "./multihop-discovery-store.js";
 export * from "./agent-card-store.js";
 export * from "./commerce-receipt-store.js";
 export * from "./peer-profile-cache.js";
+export * from "./social-proxy-store.js";
+export * from "./document-acquisition-store.js";
+export * from "./capability-provider-job-store.js";

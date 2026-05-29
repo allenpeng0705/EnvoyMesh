@@ -1,0 +1,116 @@
+{
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/chat-message-payload.json",
+  "title": "chat.message Payload",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "senderOwnerId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128000
+    },
+    "deviceCertificate": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string",
+          "const": "0.1"
+        },
+        "certificateId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deviceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "devicePublicKeyPem": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deviceProfile": {
+          "type": "string",
+          "enum": [
+            "primary",
+            "satellite",
+            "full",
+            "relay"
+          ]
+        },
+        "capabilities": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "mesh.listen",
+              "mesh.discovery",
+              "mesh.relay",
+              "ui.channel",
+              "approval.prompt",
+              "message.send",
+              "message.store_encrypted",
+              "vault.index",
+              "vault.retrieve",
+              "model.local",
+              "model.cloud.request",
+              "task.execute",
+              "device.sync"
+            ]
+          }
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "version",
+        "certificateId",
+        "ownerId",
+        "deviceId",
+        "devicePublicKeyPem",
+        "deviceProfile",
+        "capabilities",
+        "issuedAt",
+        "expiresAt",
+        "signature"
+      ],
+      "additionalProperties": false
+    },
+    "ownerPublicKeyPem": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "senderOwnerId",
+    "text"
+  ],
+  "additionalProperties": false
+}

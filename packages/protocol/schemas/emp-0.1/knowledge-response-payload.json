@@ -1,0 +1,50 @@
+{
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/knowledge-response-payload.json",
+  "title": "knowledge.response Payload",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "inReplyTo": {
+      "type": "string"
+    },
+    "answer": {
+      "type": "string",
+      "maxLength": 32768
+    },
+    "sensitivity": {
+      "default": "public",
+      "type": "string",
+      "enum": [
+        "public",
+        "friends",
+        "trusted",
+        "private"
+      ]
+    },
+    "matchScore": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "suggestedRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "refused": {
+      "default": false,
+      "type": "boolean"
+    },
+    "refusalReason": {
+      "type": "string",
+      "maxLength": 500
+    }
+  },
+  "required": [
+    "inReplyTo",
+    "answer",
+    "sensitivity",
+    "refused"
+  ],
+  "additionalProperties": false
+}

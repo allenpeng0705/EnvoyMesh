@@ -12,6 +12,7 @@ import { searchVault, type VaultIndex } from "@envoymesh/vault";
 import type { LocalPeerDirectoryStore, LocalTrustStore, LocalTaskStore } from "@envoymesh/local-store";
 import type { ToolImplementation } from "@envoymesh/models";
 import { evaluatePolicy } from "@envoymesh/bonds";
+import { matchAgentCapabilityRoutes } from "@envoymesh/api";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import { createAuditEvent } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
@@ -272,6 +273,7 @@ function redactContact(opts: {
   trustLevel?: string;
   interests?: string[];
   capabilityTags?: string[];
+  suggestedRouteId?: string;
 }) {
   return {
     ownerId: opts.ownerId,
@@ -279,6 +281,7 @@ function redactContact(opts: {
     trustLevel: opts.trustLevel ?? "unknown",
     interests: opts.interests ?? [],
     capabilityTags: opts.capabilityTags ?? [],
+    suggestedRouteId: opts.suggestedRouteId,
   };
 }
 
@@ -286,6 +289,7 @@ function redactContact(opts: {
 
 export interface MeshFindCapabilityDeps {
   trustStore: LocalTrustStore;
+  listBondedAgentCapabilities?: () => Promise<Array<{ ownerId: string; capabilities: string[] }>>;
   maxInvocationsPerHour?: number;
 }
 
@@ -305,13 +309,23 @@ export function buildMeshFindCapabilityTool(
     const keywords: string[] = Array.isArray(rawKeywords)
       ? rawKeywords.map((k) => String(k).toLowerCase())
       : [];
+    const filterCapabilityIds: string[] = Array.isArray(params.capabilityIds)
+      ? params.capabilityIds.map((id) => String(id))
+      : [];
     const maxResults = typeof params.maxResults === "number" ? Math.min(params.maxResults, 20) : 5;
 
-    if (keywords.length === 0) {
-      return { error: "keywords parameter is required" };
+    if (keywords.length === 0 && filterCapabilityIds.length === 0) {
+      return { error: "keywords or capabilityIds parameter is required" };
     }
 
     const trustRecords = await deps.trustStore.listTrustRecords();
+
+    const capabilitiesByOwner = new Map<string, string[]>();
+    if (deps.listBondedAgentCapabilities) {
+      for (const row of await deps.listBondedAgentCapabilities()) {
+        capabilitiesByOwner.set(row.ownerId, row.capabilities);
+      }
+    }
 
     // Build ownerId -> displayName map from trust records
     const displayNameByOwner = new Map<string, string>();
@@ -327,7 +341,7 @@ export function buildMeshFindCapabilityTool(
       }
     }
 
-    // Find peers that match keywords
+    // Find peers that match keywords and/or manifest/agent-card capability tags
     const matched: ReturnType<typeof redactContact>[] = [];
     for (const ownerId of bondedOwnerIds) {
       if (matched.length >= maxResults) break;
@@ -335,17 +349,31 @@ export function buildMeshFindCapabilityTool(
       const trust = trustRecords.find((t) => t.peerOwnerId === ownerId);
       if (!trust) continue;
 
-      // Match keywords against ownerId and displayName
+      const capabilityTags = capabilitiesByOwner.get(ownerId) ?? [];
       const displayName = displayNameByOwner.get(ownerId) ?? ownerId;
-      const searchable = `${ownerId} ${displayName}`.toLowerCase();
-      const matchesKeyword = keywords.some((kw) => searchable.includes(kw));
+      const searchable = `${ownerId} ${displayName} ${capabilityTags.join(" ")}`.toLowerCase();
 
-      if (matchesKeyword) {
+      const matchesKeyword =
+        keywords.length === 0 || keywords.some((kw) => searchable.includes(kw));
+      const matchesCapability =
+        filterCapabilityIds.length === 0 ||
+        filterCapabilityIds.some((cap) =>
+          capabilityTags.some((tag) => tag.toLowerCase() === cap.toLowerCase()),
+        );
+
+      if (matchesKeyword && matchesCapability) {
+        const routes = matchAgentCapabilityRoutes({
+          goal: keywords.join(" ") || displayName,
+          capabilityIds: capabilityTags,
+          maxResults: 1,
+        });
         matched.push(
           redactContact({
             ownerId,
             displayName,
             trustLevel: trust.level,
+            capabilityTags,
+            suggestedRouteId: routes[0]?.routeId,
           }),
         );
       }

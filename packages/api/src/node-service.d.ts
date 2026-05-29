@@ -1,7 +1,13 @@
 import type { DeviceCertificate, HumanProfilePayload, CapabilityUnion } from "@envoymesh/protocol";
 import type { DeviceIdentity, OwnerIdentity } from "@envoymesh/identity";
 import type { DocumentAgentTurnResult } from "./document-agent-loop.js";
+import type { DocumentAcquisitionJob } from "./document-acquisition.js";
+import type { SocialProxySession } from "./social-proxy-session.js";
 import type { OwnerDidPresentation } from "./owner-did-presentation.js";
+import type { ResolveDidImportResult, ResolvedDidImport } from "./did-import.js";
+import type { CommerceReceiptRecord, ListCommerceReceiptsParams, RecordCommerceReceiptParams } from "./commerce-receipt.js";
+export type { ResolveDidImportResult, ResolvedDidImport };
+export type { CommerceReceiptRecord, ListCommerceReceiptsParams, RecordCommerceReceiptParams };
 import type { RagIndexProgress, RagIndexStatus } from "./rag-index-status.js";
 import type { TransferStatus } from "./transfer-status.js";
 import type { BridgeStatus, NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult, ChatDraft, CapabilityManifest, UpdateCapabilityManifestParams, AutonomousPolicy, ModelProviderConfig, AiSettings, ContactAiPreferences, PairingPayload, HomeClawCoreProxyParams, HomeClawCoreProxyResult, PairDeviceParams, PairDeviceResult, PairSharedIdentityParams, PairSharedIdentityResult, PairWithHomeNodeParams, PairWithHomeNodeResult, ListAuthorizedDevicesResult, RevokeAuthorizedDeviceParams, RevokeAuthorizedDeviceResult, ListDeviceRevocationsResult } from "./ws-protocol.js";
@@ -12,6 +18,14 @@ export interface NodeProfile {
 }
 export interface HumanProfile extends HumanProfilePayload {
 }
+/** Cached bonded-peer profile (thumbnail bytes when received via profile.sync). */
+export interface PeerProfileView {
+    ownerId: string;
+    profile: HumanProfile;
+    cachedAt: string;
+    thumbnailContentBase64?: string;
+    thumbnailMimeType?: "image/jpeg" | "image/png" | "image/webp";
+}
 export interface CreateHumanProfileInput {
     displayName: string;
     username: string;
@@ -21,6 +35,21 @@ export interface CreateHumanProfileInput {
     knowledge?: string[];
     profileVisibility?: "public" | "private";
     capabilities?: CapabilityUnion[];
+}
+export interface SetPublicProfileThumbnailParams {
+    contentBase64: string;
+    mimeType: import("./profile-media.js").ProfilePhotoMime;
+}
+export interface UpsertProfileGalleryPhotoParams {
+    contentBase64: string;
+    mimeType: import("./profile-media.js").ProfilePhotoMime;
+    visibility: import("./profile-media.js").ProfileGalleryPhotoVisibility;
+    label?: string;
+    photoId?: string;
+}
+export interface UpdateProfileGalleryPhotoVisibilityParams {
+    vaultRelativePath: string;
+    visibility: import("./profile-media.js").ProfileGalleryPhotoVisibility;
 }
 export interface AgentIdentityDocument {
     content: string;
@@ -120,9 +149,11 @@ export interface ChatMessage {
 /** Result of an outbound chat send (transport accepted the envelope). */
 export interface SendChatResult {
     messageId: string;
+    deliveryReceipt?: "sent" | "delivered";
+    deliveredAt?: string;
 }
 export type AgentActivityDomain = "social" | "knowledge" | "home" | "research";
-export type AgentActivityKind = "task_started" | "task_progress" | "task_completed" | "task_failed" | "knowledge_answered" | "intro_sync" | "friend_autopilot_pass" | "share_proposed" | "approval_needed" | "report_received";
+export type AgentActivityKind = "task_started" | "task_progress" | "task_completed" | "task_failed" | "knowledge_answered" | "intro_sync" | "friend_autopilot_pass" | "social_proxy_transition" | "document_acq_stage" | "share_proposed" | "approval_needed" | "report_received" | "commerce_receipt";
 export interface AgentActivityEvidence {
     type: string;
     ref: string;
@@ -609,6 +640,7 @@ export interface MultiHopDiscoverySessionView {
     updatedAt: string;
     bondsQueried: number;
     pendingForwardApprovals: number;
+    awaitingHop2ViaBonds?: string[];
     matches: MultiHopDiscoveryMatch[];
 }
 export interface CapabilityTopicProviderHit {
@@ -640,6 +672,10 @@ export interface NodeServiceEvents {
     };
     "bond:blocked": {
         peerOwnerId: string;
+    };
+    /** Bonded peer profile cache updated (profile.sync / profile.response). */
+    "profile:updated": {
+        ownerId: string;
     };
     "chat:message": ChatMessage;
     "chat:draft": {
@@ -722,6 +758,20 @@ export interface NodeService {
      */
     getOwnerDidPresentation(): OwnerDidPresentation;
     /**
+     * Resolve external `did:key` or JSON DID document to envoy owner id + PEM (no WAN gateway).
+     */
+    resolveDidImport(input: string): Promise<ResolveDidImportResult>;
+    /**
+     * Store a contact owner public key for bonded DID search lookup.
+     */
+    cacheDidContactKey(params: {
+        ownerId: string;
+        publicKeyPem: string;
+    }): Promise<{
+        ok: boolean;
+        reason?: string;
+    }>;
+    /**
      * Local reputation score + opt-in anchor attestations for a bonded peer.
      */
     getPeerReputationSummary(peerOwnerId: string): Promise<PeerReputationSummary>;
@@ -733,6 +783,32 @@ export interface NodeService {
      * Update human profile (signs with owner key)
      */
     updateHumanProfile(profile: CreateHumanProfileInput): Promise<HumanProfile>;
+    /** Set the always-public profile thumbnail (stored in vault, referenced on signed profile). */
+    setPublicProfileThumbnail(params: SetPublicProfileThumbnailParams): Promise<HumanProfile>;
+    /** Add or replace a gallery photo with per-photo visibility. */
+    upsertProfileGalleryPhoto(params: UpsertProfileGalleryPhotoParams): Promise<HumanProfile>;
+    /** Remove a gallery photo from profile and vault index. */
+    removeProfileGalleryPhoto(params: {
+        vaultRelativePath: string;
+    }): Promise<HumanProfile>;
+    /** Update visibility on an existing gallery photo. */
+    updateProfileGalleryPhotoVisibility(params: UpdateProfileGalleryPhotoVisibilityParams): Promise<HumanProfile>;
+    /** Cached signed profile for a bonded peer (includes inline thumbnail when synced). */
+    getPeerProfile(ownerId: string): Promise<PeerProfileView | undefined>;
+    /** List all cached peer profiles. */
+    listPeerProfiles(): Promise<PeerProfileView[]>;
+    /** Ask a bonded peer to send profile.sync (e.g. after bond established). */
+    requestPeerProfile(ownerId: string): Promise<{
+        ok: boolean;
+        reason?: string;
+    }>;
+    /** Push local signed profile (and thumbnail bytes) to all bonded peers. */
+    syncProfileToBonds(): Promise<void>;
+    /** Re-sync local profile to bonds and request fresh profiles from each bond (e.g. after mesh online). */
+    refreshBondPeerProfiles(): Promise<{
+        requested: number;
+        failed: number;
+    }>;
     /**
      * Get owner-editable agent operating instructions (`agent-identity.md` in profile dir).
      */
@@ -839,6 +915,10 @@ export interface NodeService {
      * Owner Activity timeline (`agent-activity.jsonl`).
      */
     listAgentActivity(params?: ListAgentActivityParams): Promise<AgentActivityRecord[]>;
+    /** Story E receipt-only ledger (local JSON — no payment rail). */
+    listCommerceReceipts(params?: ListCommerceReceiptsParams): Promise<CommerceReceiptRecord[]>;
+    /** Record outbound delivery receipt for a vault document (links task + contentHash/CID). */
+    recordCommerceReceipt(params: RecordCommerceReceiptParams): Promise<CommerceReceiptRecord>;
     /** Filtered audit trail for Activity drill-down (summaries only). */
     listAuditEvents(params?: ListAuditEventsParams): Promise<AuditEventSummary[]>;
     /** Task journal rows for Activity drill-down. */
@@ -911,6 +991,7 @@ export interface NodeService {
             matchedCapabilities: string[];
             matchedTagHashes: string[];
         }>;
+        forwardPendingAck?: boolean;
     }): Promise<void>;
     /** Push yjs CRDT delta to paired owner devices (sync.state). */
     sendSyncStateUpdate(params: import("./sync-state.js").SendSyncStateUpdateParams): Promise<import("./sync-state.js").SendSyncStateUpdateResult>;
@@ -1147,6 +1228,24 @@ export interface NodeService {
      * Native Envoy AI turn: routes document intents to tools, falls back to vault knowledgeQuery.
      */
     runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult>;
+    listSocialProxySessions(): Promise<SocialProxySession[]>;
+    runSocialProxyPass(): Promise<{
+        ok: boolean;
+        error?: string;
+        correlationId?: string;
+    }>;
+    cancelSocialProxySession(sessionId: string): Promise<void>;
+    startDocumentAcquisitionJob(params: {
+        query: string;
+        fileTitleHint?: string;
+        pathHint?: string;
+    }): Promise<{
+        jobId: string;
+        correlationId: string;
+    }>;
+    getDocumentAcquisitionJob(jobId: string): Promise<DocumentAcquisitionJob | undefined>;
+    listDocumentAcquisitionJobs(activeOnly?: boolean): Promise<DocumentAcquisitionJob[]>;
+    cancelDocumentAcquisitionJob(jobId: string): Promise<void>;
     /**
      * Record owner activity (call when owner sends any message via WebSocket).
      * Used for online/offline detection.

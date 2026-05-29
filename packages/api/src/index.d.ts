@@ -19,17 +19,29 @@ export * from "./default-bootstrap.js";
 export * from "./node-service.js";
 export * from "./bond-target.js";
 export * from "./document-autonomy.js";
+export * from "./profile-media.js";
+export * from "./strip-image-metadata.js";
 export * from "./document-agent-loop.js";
 export * from "./library-request-share.js";
 export * from "./transfer-status.js";
 export * from "./knowledge-syndication.js";
+export * from "./envoy-disclosure.js";
+export * from "./social-proxy-session.js";
+export * from "./document-acquisition.js";
 export * from "./friend-autopilot.js";
 export * from "./ipfs-pinning.js";
 export * from "./wan-join-invite.js";
 export * from "./h2a-wire-semantics.js";
 export * from "./owner-did-presentation.js";
+/** Types only — runtime lives in `@envoymesh/api/did-import` (Node identity / crypto). */
+export type { ResolveDidImportResult, ResolvedDidImport } from "./did-import.js";
+export * from "./wan-signoff-evidence.js";
+export * from "./commerce-receipt.js";
+export * from "./wan-two-nat-checklist.js";
 export * from "./discovery-hop.js";
 export * from "./discovery-privacy.js";
+/** Types only — runtime lives in `@envoymesh/api/discovery-referral-attestation`. */
+export type { UnsignedDiscoveryReferralAttestation } from "./discovery-referral-attestation.js";
 export * from "./sync-state.js";
 export * from "./ws-protocol.js";
 /** Explicit export: Vite pre-bundle can skip `bondTrustRank` when re-exported only via star from `node-service`. */

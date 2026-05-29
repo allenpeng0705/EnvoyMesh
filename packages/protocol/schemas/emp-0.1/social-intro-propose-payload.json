@@ -1,0 +1,128 @@
+{
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/social-intro-propose-payload.json",
+  "title": "social.intro.propose Payload",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "introCorrelationId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "candidateOwnerId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "candidatePeerId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "profileFragment": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string",
+          "const": "0.1"
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "discovery-card",
+            "trust-mode-intro"
+          ]
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "bio": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "hobbies": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          }
+        },
+        "tags": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "publicThumbnail": {
+          "type": "object",
+          "properties": {
+            "vaultRelativePath": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^profile\\/(thumbnail\\.[a-z]+|gallery\\/[a-zA-Z0-9_-]+\\.[a-z]+)$"
+            },
+            "contentSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "mimeType": {
+              "type": "string",
+              "enum": [
+                "image/jpeg",
+                "image/png",
+                "image/webp"
+              ]
+            }
+          },
+          "required": [
+            "vaultRelativePath",
+            "contentSha256",
+            "mimeType"
+          ],
+          "additionalProperties": false
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "version",
+        "ownerId",
+        "purpose",
+        "expiresAt",
+        "signature"
+      ],
+      "additionalProperties": false
+    },
+    "profileFragmentRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "rationale": {
+      "type": "string",
+      "maxLength": 2048
+    }
+  },
+  "required": [
+    "introCorrelationId",
+    "candidateOwnerId",
+    "candidatePeerId"
+  ],
+  "additionalProperties": false
+}

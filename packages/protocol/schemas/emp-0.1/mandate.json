@@ -1,0 +1,341 @@
+{
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/mandate.json",
+  "title": "Signed Mandate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "mandateId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ownerId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "issuedToDeviceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "taskIntent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "allowedPeerScopes": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "self",
+          "direct",
+          "referred",
+          "public"
+        ]
+      }
+    },
+    "allowedActions": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "discover",
+          "query",
+          "negotiate",
+          "report",
+          "delegate",
+          "purchase",
+          "share.private_data",
+          "send.raw_files",
+          "raw_contact_exchange",
+          "device.sync",
+          "tool.call"
+        ]
+      }
+    },
+    "disallowedActions": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "discover",
+          "query",
+          "negotiate",
+          "report",
+          "delegate",
+          "purchase",
+          "share.private_data",
+          "send.raw_files",
+          "raw_contact_exchange",
+          "device.sync",
+          "tool.call"
+        ]
+      }
+    },
+    "maxSensitivity": {
+      "type": "string",
+      "enum": [
+        "public",
+        "friends",
+        "trusted",
+        "private"
+      ]
+    },
+    "maxCost": {
+      "type": "object",
+      "properties": {
+        "amount": {
+          "type": "number",
+          "minimum": 0
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12
+        }
+      },
+      "required": [
+        "amount",
+        "currency"
+      ],
+      "additionalProperties": false
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "closeOnFirstCompletedResult": {
+      "default": false,
+      "type": "boolean"
+    },
+    "collectCompletedResults": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 32
+    },
+    "ttl": {
+      "default": 3,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8
+    },
+    "requiresApprovalFor": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "discover",
+          "query",
+          "negotiate",
+          "report",
+          "delegate",
+          "purchase",
+          "share.private_data",
+          "send.raw_files",
+          "raw_contact_exchange",
+          "device.sync",
+          "tool.call"
+        ]
+      }
+    },
+    "posture": {
+      "type": "string",
+      "enum": [
+        "social_proxy",
+        "document_acquisition",
+        "capability_provider"
+      ]
+    },
+    "posturePolicy": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "autoHello": {
+              "default": false,
+              "type": "boolean"
+            },
+            "autoChatWithPeerAgents": {
+              "default": true,
+              "type": "boolean"
+            },
+            "autoChatWithPeerHumans": {
+              "default": false,
+              "type": "boolean"
+            },
+            "maxNewIntrosPerDay": {
+              "default": 5,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "requireOwnerCommitmentRefOnBondRequest": {
+              "default": true,
+              "type": "boolean"
+            },
+            "helloRequiresApproval": {
+              "default": true,
+              "type": "boolean"
+            },
+            "scheduleIntervalHours": {
+              "default": 0,
+              "anyOf": [
+                {
+                  "type": "number",
+                  "const": 0
+                },
+                {
+                  "type": "number",
+                  "const": 24
+                },
+                {
+                  "type": "number",
+                  "const": 168
+                }
+              ]
+            }
+          },
+          "required": [
+            "autoHello",
+            "autoChatWithPeerAgents",
+            "autoChatWithPeerHumans",
+            "maxNewIntrosPerDay",
+            "requireOwnerCommitmentRefOnBondRequest",
+            "helloRequiresApproval",
+            "scheduleIntervalHours"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "searchBondedOnly": {
+              "default": true,
+              "type": "boolean"
+            },
+            "maxHops": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 8
+            },
+            "maxNegotiationRounds": {
+              "default": 5,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32
+            },
+            "autoRequestShareUpTo": {
+              "default": "public",
+              "type": "string",
+              "enum": [
+                "public",
+                "friends",
+                "trusted",
+                "private"
+              ]
+            },
+            "autoAcceptInboundShareUpTo": {
+              "default": "friends",
+              "type": "string",
+              "enum": [
+                "public",
+                "friends",
+                "trusted",
+                "private"
+              ]
+            },
+            "maxActiveJobs": {
+              "default": 3,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16
+            },
+            "jobTtlHours": {
+              "default": 72,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 720
+            }
+          },
+          "required": [
+            "searchBondedOnly",
+            "maxHops",
+            "maxNegotiationRounds",
+            "autoRequestShareUpTo",
+            "autoAcceptInboundShareUpTo",
+            "maxActiveJobs",
+            "jobTtlHours"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "maxActiveJobs": {
+              "default": 3,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16
+            },
+            "jobTtlHours": {
+              "default": 72,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 720
+            },
+            "searchBondedOnly": {
+              "default": true,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "maxActiveJobs",
+            "jobTtlHours",
+            "searchBondedOnly"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "issuedToAgentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signature": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "version",
+    "mandateId",
+    "ownerId",
+    "issuedToDeviceId",
+    "taskIntent",
+    "objective",
+    "allowedPeerScopes",
+    "allowedActions",
+    "disallowedActions",
+    "maxSensitivity",
+    "maxCost",
+    "expiresAt",
+    "closeOnFirstCompletedResult",
+    "ttl",
+    "requiresApprovalFor",
+    "signature"
+  ],
+  "additionalProperties": false
+}

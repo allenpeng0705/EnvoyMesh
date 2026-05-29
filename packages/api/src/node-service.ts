@@ -9,6 +9,9 @@ import type {
   OwnerIdentity,
 } from "@envoymesh/identity";
 import type { DocumentAgentTurnResult } from "./document-agent-loop.js";
+import type { DocumentAcquisitionJob } from "./document-acquisition.js";
+import type { CapabilityProviderJob } from "./capability-provider.js";
+import type { SocialProxySession } from "./social-proxy-session.js";
 import type { OwnerDidPresentation } from "./owner-did-presentation.js";
 import type { ResolveDidImportResult, ResolvedDidImport } from "./did-import.js";
 import type {
@@ -244,6 +247,9 @@ export type AgentActivityKind =
   | "knowledge_answered"
   | "intro_sync"
   | "friend_autopilot_pass"
+  | "social_proxy_transition"
+  | "document_acq_stage"
+  | "capability_provider_stage"
   | "share_proposed"
   | "approval_needed"
   | "report_received"
@@ -1215,6 +1221,18 @@ export interface NodeService {
   ): Promise<void>;
 
   /**
+   * Pull a published library file from a bonded peer (`fileOrigin: responder`).
+   */
+  requestShareFromLibrary(
+    targetOwnerId: string,
+    file: {
+      relativePath: string;
+      sensitivity: ChatAttachment["sensitivity"];
+      correlationId?: string;
+    },
+  ): Promise<{ shareRequestMessageId: string }>;
+
+  /**
    * Accept incoming file share
    */
   acceptShare(shareId: string, savePath: string): Promise<void>;
@@ -1472,6 +1490,31 @@ export interface NodeService {
    * Native Envoy AI turn: routes document intents to tools, falls back to vault knowledgeQuery.
    */
   runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult>;
+
+  // ----- Phase 16 — EnvoyAI postures -----
+
+  listSocialProxySessions(): Promise<SocialProxySession[]>;
+  runSocialProxyPass(): Promise<{ ok: boolean; error?: string; correlationId?: string }>;
+  cancelSocialProxySession(sessionId: string): Promise<void>;
+
+  startDocumentAcquisitionJob(params: {
+    query: string;
+    fileTitleHint?: string;
+    pathHint?: string;
+  }): Promise<{ jobId: string; correlationId: string }>;
+  getDocumentAcquisitionJob(jobId: string): Promise<DocumentAcquisitionJob | undefined>;
+  listDocumentAcquisitionJobs(activeOnly?: boolean): Promise<DocumentAcquisitionJob[]>;
+  cancelDocumentAcquisitionJob(jobId: string): Promise<void>;
+
+  startCapabilityProviderJob(params: {
+    goal: string;
+    capabilityIds?: string[];
+    targetOwnerId?: string;
+  }): Promise<{ jobId: string; correlationId: string }>;
+  getCapabilityProviderJob(jobId: string): Promise<CapabilityProviderJob | undefined>;
+  listCapabilityProviderJobs(activeOnly?: boolean): Promise<CapabilityProviderJob[]>;
+  cancelCapabilityProviderJob(jobId: string): Promise<void>;
+  runCapabilityProviderWorker(): Promise<number>;
 
   // ----- Activity Tracking -----
 

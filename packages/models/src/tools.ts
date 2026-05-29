@@ -350,15 +350,21 @@ export const TASK_SUMMARY_TOOL: LocalToolDescriptor = {
 export const MESH_FIND_CAPABILITY_TOOL: LocalToolDescriptor = {
   name: "mesh_findCapability",
   description:
-    "Search for contacts in the EnvoyMesh that match the given keywords. " +
-    "Only bonded contacts are returned. Raw peer IDs and addresses are never exposed. " +
-    "This is the only way an external agent can discover mesh peers — libp2p direct access is not allowed.",
+    "Search bonded contacts by keywords and/or Agent Card capability tags. " +
+    "Returns redacted contacts with capabilityTags and suggestedRouteId for agent orchestration. " +
+    "Libp2p direct access is not allowed.",
   parameters: [
     {
       name: "keywords",
-      description: "Array of keyword strings to match against contact interests and capabilities",
+      description: "Keyword strings matched against display name and capability tags",
       type: "array",
-      required: true,
+      required: false,
+    },
+    {
+      name: "capabilityIds",
+      description: "Capability tags that must be present on the peer Agent Card",
+      type: "array",
+      required: false,
     },
     {
       name: "maxResults",

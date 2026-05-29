@@ -3,6 +3,7 @@ const MILESTONE_KINDS = new Set([
     "task_failed",
     "report_received",
     "approval_needed",
+    "commerce_receipt",
 ]);
 /** Whether to push `agent:activity` to the owner for this row. Store always retains the row. */
 export function shouldPushAgentActivity(kind, visibility, domain) {

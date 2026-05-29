@@ -1,0 +1,11 @@
+{
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/emp-actor-roles.json",
+  "title": "EMP Actor Role",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "human",
+    "agent",
+    "system"
+  ]
+}

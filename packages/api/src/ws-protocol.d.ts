@@ -49,7 +49,7 @@ export type JsonRpcEvent = {
 export declare const WS_PROTOCOL_VERSION = "envoy/ws-api/0.1.0";
 export declare const WS_PORT = 3030;
 export declare const WS_PATH = "/ws";
-export type RpcMethods = "getProfile" | "getOwnerDidPresentation" | "getPeerReputationSummary" | "getHumanProfile" | "updateHumanProfile" | "getAgentIdentity" | "updateAgentIdentity" | "sendHello" | "acceptHello" | "declineHello" | "blockPeer" | "unblockPeer" | "revokeBond" | "getBonds" | "listPendingSocialIntroProposals" | "approveSocialIntroCommitment" | "declineSocialIntroProposal" | "sendChat" | "sendAgentChat" | "sendChatAttachment" | "readLibraryItemContent" | "listChatHistory" | "listAgentActivity" | "listAuditEvents" | "listTaskJournalEntries" | "listAgentCards" | "getAgentCard" | "requestAgentCard" | "listPendingApprovals" | "approvePendingApproval" | "rejectPendingApproval" | "deleteChatMessage" | "clearChatHistory" | "markRead" | "getChatDrafts" | "deleteChatDraft" | "searchPeers" | "advertiseTopic" | "stopAdvertiseTopic" | "getCapabilityManifest" | "updateCapabilityManifest" | "shareFile" | "acceptShare" | "declineShare" | "listPendingShareOffers" | "listLibraryItems" | "setLibraryItemPublished" | "exportLibraryItemToIpfs" | "pinLibraryItemExternal" | "getIpfsEngineStatus" | "getRagIndexStatus" | "verifyLibraryItemIpfsGateway" | "importToLibrary" | "resolveLibraryItemPath" | "openLibraryItem" | "revealLibraryItemInFileManager" | "discoverPublishedLibrary" | "listAgentShareProposals" | "dismissAgentShareProposal" | "submitAgentShareProposal" | "getConnectionStatus" | "getPeerConnectionInfo" | "warmContactConnection" | "getChatDiagnostics" | "getConnectivityDiagnostics" | "runCapabilityDiscovery" | "discoverCapabilityTopic" | "getMorningReport" | "requestMultiHopDiscovery" | "getMultiHopDiscoverySession" | "sendSyncStateUpdate" | "knowledgeQuery" | "runDocumentAgentTurn" | "listActiveTransfers" | "getTransferStatus" | "getBridgeStatus" | "getPairingPayload" | "createWanJoinInvite" | "applyWanJoinInvite" | "pairDevice" | "pairSharedIdentity" | "pairWithHomeNode" | "listAuthorizedDevices" | "revokeAuthorizedDevice" | "listDeviceRevocations" | "getNodeConfig" | "updateNodeConfig" | "listRelays" | "addRelay" | "removeRelay" | "initNode" | "getNodeStatus" | "startNode" | "stopNode" | "forwardEnvelope"
+export type RpcMethods = "getProfile" | "getOwnerDidPresentation" | "resolveDidImport" | "cacheDidContactKey" | "getPeerReputationSummary" | "getHumanProfile" | "updateHumanProfile" | "setPublicProfileThumbnail" | "upsertProfileGalleryPhoto" | "removeProfileGalleryPhoto" | "updateProfileGalleryPhotoVisibility" | "getPeerProfile" | "listPeerProfiles" | "requestPeerProfile" | "syncProfileToBonds" | "refreshBondPeerProfiles" | "getAgentIdentity" | "updateAgentIdentity" | "sendHello" | "acceptHello" | "declineHello" | "blockPeer" | "unblockPeer" | "revokeBond" | "getBonds" | "listPendingSocialIntroProposals" | "approveSocialIntroCommitment" | "declineSocialIntroProposal" | "sendChat" | "sendAgentChat" | "sendChatAttachment" | "readLibraryItemContent" | "listChatHistory" | "listAgentActivity" | "listCommerceReceipts" | "recordCommerceReceipt" | "listAuditEvents" | "listTaskJournalEntries" | "listAgentCards" | "getAgentCard" | "requestAgentCard" | "listPendingApprovals" | "approvePendingApproval" | "rejectPendingApproval" | "deleteChatMessage" | "clearChatHistory" | "markRead" | "getChatDrafts" | "deleteChatDraft" | "searchPeers" | "advertiseTopic" | "stopAdvertiseTopic" | "getCapabilityManifest" | "updateCapabilityManifest" | "shareFile" | "acceptShare" | "declineShare" | "listPendingShareOffers" | "listLibraryItems" | "setLibraryItemPublished" | "exportLibraryItemToIpfs" | "pinLibraryItemExternal" | "getIpfsEngineStatus" | "getRagIndexStatus" | "verifyLibraryItemIpfsGateway" | "importToLibrary" | "resolveLibraryItemPath" | "openLibraryItem" | "revealLibraryItemInFileManager" | "discoverPublishedLibrary" | "listAgentShareProposals" | "dismissAgentShareProposal" | "submitAgentShareProposal" | "getConnectionStatus" | "getPeerConnectionInfo" | "warmContactConnection" | "getChatDiagnostics" | "getConnectivityDiagnostics" | "runCapabilityDiscovery" | "discoverCapabilityTopic" | "getMorningReport" | "requestMultiHopDiscovery" | "getMultiHopDiscoverySession" | "sendSyncStateUpdate" | "knowledgeQuery" | "runDocumentAgentTurn" | "listSocialProxySessions" | "runSocialProxyPass" | "cancelSocialProxySession" | "startDocumentAcquisitionJob" | "getDocumentAcquisitionJob" | "listDocumentAcquisitionJobs" | "cancelDocumentAcquisitionJob" | "listActiveTransfers" | "getTransferStatus" | "getBridgeStatus" | "getPairingPayload" | "createWanJoinInvite" | "applyWanJoinInvite" | "pairDevice" | "pairSharedIdentity" | "pairWithHomeNode" | "listAuthorizedDevices" | "revokeAuthorizedDevice" | "listDeviceRevocations" | "getNodeConfig" | "updateNodeConfig" | "listRelays" | "addRelay" | "removeRelay" | "initNode" | "getNodeStatus" | "startNode" | "stopNode" | "forwardEnvelope"
 /** HTTP proxy from mobile Companion to HomeClaw Core on the home LAN (SSR-safe paths only). */
  | "homeclawCoreProxy" | "homeClawCoreWsOpen" | "homeClawCoreWsSend" | "homeClawCoreWsClose" | "on" | "off" | "home_claw_core_ws_open" | "home_claw_core_ws_send" | "home_claw_core_ws_close";
 export interface RelayConfig {
@@ -210,6 +210,13 @@ export interface NodeConfig {
      * Unset = bond policy only (no extra owner cap).
      */
     knowledgeSyndicationMaxSensitivity?: "public" | "friends" | "private";
+    /** Phase 16B — standing social proxy posture (requires trustModeEnabled). */
+    socialProxyEnabled?: boolean;
+    socialProxyMandateId?: string;
+    socialProxyLastPassAt?: string;
+    /** Phase 16C — document acquisition orchestrator. */
+    documentAcquisitionEnabled?: boolean;
+    documentAcquisitionMandateId?: string;
 }
 /**
  * Domain in which the node operates autonomously on behalf of the owner.
@@ -290,9 +297,9 @@ export interface AutonomousPolicy {
     autoSendChat: boolean;
 }
 /**
- * How the AI presents itself in responses.
+ * How the AI presents itself in responses (prompt tone; not shown as inline text in Social UI).
  * - invisible: Responds as if it were the human owner
- * - transparent: Prefixes messages with [AI Agent]:
+ * - transparent: Openly an AI assistant (no inline prefix unless debug is on)
  * - defensive: Acts as gatekeeper when owner is unavailable
  */
 export type AiIdentityMode = "invisible" | "transparent" | "defensive";
@@ -302,8 +309,13 @@ export type AiIdentityMode = "invisible" | "transparent" | "defensive";
 export interface AiIdentity {
     /** How the AI introduces itself. Default: "transparent" */
     mode: AiIdentityMode;
-    /** Prefix to use in transparent mode. Default: "[AI Agent]" */
+    /** Debug-only prefix string when {@link debugPrefixInMessageText} is true. Default: "[AI Agent]" */
     transparentPrefix?: string;
+    /**
+     * When true, embed {@link transparentPrefix} in chat.message text for logs/audit (hidden in Social UI).
+     * Agent vs human is always carried by envelope `senderRole` / chat `actorRole`. Default: false.
+     */
+    debugPrefixInMessageText?: boolean;
 }
 /**
  * AI Assistant status — online/offline detection and global toggles.
@@ -332,7 +344,13 @@ export interface AiSettings {
     knowledgeBase?: import("./ai-knowledge-base.js").AiKnowledgeBaseSettings;
     /** Document publish/share autonomy for Envoy AI (ADB-F). Default: proposals-only tier 0. */
     documentAutonomy?: import("./document-autonomy.js").DocumentAutonomyPolicy;
+    /** Chat presentation (Phase 16D) — local only, not on wire. */
+    disclosure?: import("./envoy-disclosure.js").EnvoyDisclosureSettings;
+    /** Gallery photo sharing by Envoy AI (thumbnail is always public on profile). */
+    profileMedia?: import("./profile-media.js").ProfileMediaPolicy;
 }
+export type { ProfileMediaPolicy, ProfileGalleryPhotoVisibility } from "./profile-media.js";
+export type { ProfilePhotoRef, ProfileGalleryPhoto, ProfilePhotoMime, } from "./profile-media.js";
 export type { DocumentAutonomyPolicy } from "./document-autonomy.js";
 /**
  * AI Rule — defines trigger-action behavior for AI responses.

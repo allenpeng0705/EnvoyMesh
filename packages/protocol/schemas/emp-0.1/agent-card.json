@@ -1,0 +1,88 @@
+{
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/agent-card.json",
+  "title": "Agent Card",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "ownerId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "nodeProfile": {
+      "type": "string",
+      "enum": [
+        "primary",
+        "satellite",
+        "full",
+        "relay"
+      ]
+    },
+    "capabilities": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "publicTopics": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "trustPolicySummary": {
+      "type": "object",
+      "properties": {
+        "acceptsDirectBondRequests": {
+          "default": false,
+          "type": "boolean"
+        },
+        "acceptsReferralRequests": {
+          "default": true,
+          "type": "boolean"
+        },
+        "requiresHumanApprovalForRawFiles": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "acceptsDirectBondRequests",
+        "acceptsReferralRequests",
+        "requiresHumanApprovalForRawFiles"
+      ],
+      "additionalProperties": false
+    },
+    "supportedProtocolVersions": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "version",
+    "ownerId",
+    "displayName",
+    "nodeProfile",
+    "capabilities",
+    "publicTopics",
+    "trustPolicySummary",
+    "supportedProtocolVersions"
+  ],
+  "additionalProperties": false
+}

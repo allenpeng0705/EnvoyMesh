@@ -280,6 +280,24 @@ export async function routeRpcMethod(
       return ns.knowledgeQuery(params.question as string);
     case "runDocumentAgentTurn":
       return ns.runDocumentAgentTurn(params.message as string);
+    case "listSocialProxySessions":
+      return ns.listSocialProxySessions();
+    case "runSocialProxyPass":
+      return ns.runSocialProxyPass();
+    case "cancelSocialProxySession":
+      return ns.cancelSocialProxySession(params.sessionId as string);
+    case "startDocumentAcquisitionJob":
+      return ns.startDocumentAcquisitionJob({
+        query: params.query as string,
+        fileTitleHint: params.fileTitleHint as string | undefined,
+        pathHint: params.pathHint as string | undefined,
+      });
+    case "getDocumentAcquisitionJob":
+      return ns.getDocumentAcquisitionJob(params.jobId as string);
+    case "listDocumentAcquisitionJobs":
+      return ns.listDocumentAcquisitionJobs(params.activeOnly as boolean | undefined);
+    case "cancelDocumentAcquisitionJob":
+      return ns.cancelDocumentAcquisitionJob(params.jobId as string);
     case "listActiveTransfers":
       return ns.listActiveTransfers();
     case "getTransferStatus":

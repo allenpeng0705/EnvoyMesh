@@ -1,0 +1,11 @@
+{
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/emp-postures.json",
+  "title": "EMP Standing Posture",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "social_proxy",
+    "document_acquisition",
+    "capability_provider"
+  ]
+}

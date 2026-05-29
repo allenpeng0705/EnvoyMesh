@@ -83,7 +83,7 @@ import type {
   MultiHopDiscoverySessionView,
   PeerProfileView,
 } from "@envoymesh/api";
-import type { DocumentAgentTurnResult } from "@envoymesh/api";
+import type { DocumentAgentTurnResult, CapabilityProviderJob, DocumentAcquisitionCandidate, DocumentAcquisitionJob, SocialProxySession } from "@envoymesh/api";
 import {
   DEFAULT_RAG_INDEX_STATUS,
   runDocumentAgentTurn as runDocumentAgentTurnLoop,
@@ -151,6 +151,7 @@ import {
   parseChatMessagePayload,
   parseEnvelope,
   parseShareAcceptPayload,
+  parseSharePreviewPayload,
   createDiscoveryRequestPayload,
   parseDiscoveryResponsePayload,
   createDiscoveryResponsePayload,
@@ -159,7 +160,12 @@ import {
   createRendezvousQueryPayload,
   RendezvousResponsePayloadSchema,
   createKnowledgeQueryPayload,
+  parseKnowledgeResponsePayload,
   createAgentCardRequestPayload,
+  createHumanProfileFragmentPayload,
+  createSocialIntroProposePayload,
+  createSocialIntroOwnerReadyPayload,
+  createSocialIntroSyncPayload,
   parseFriendMatchingPreferencesPayload,
   type HumanProfilePayload,
   type EnvoyEnvelope,
@@ -221,6 +227,12 @@ import {
   createPeerProfileCacheStore,
   type PeerProfileCacheStore,
   type CachedPeerProfile,
+  createSocialProxySessionStore,
+  type SocialProxySessionStore,
+  createDocumentAcquisitionJobStore,
+  createCapabilityProviderJobStore,
+  type DocumentAcquisitionJobStore,
+  type CapabilityProviderJobStore,
 } from "@envoymesh/local-store";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
@@ -291,7 +303,25 @@ import {
   buildFriendAutopilotActivityRecord,
   runFriendAutopilotPass,
 } from "./friend-autopilot-runner.js";
-import { shouldRunScheduledFriendAutopilot } from "@envoymesh/api";
+import { runSocialProxyPass, advanceSocialProxySession } from "./social-proxy-orchestrator.js";
+import {
+  advanceDocumentAcquisitionJob,
+  runDocumentAcquisitionWorkerTick,
+  startDocumentAcquisitionJob as startDocumentAcquisitionJobWorker,
+} from "./document-acquisition-worker.js";
+import {
+  advanceCapabilityProviderJob,
+  runCapabilityProviderWorkerTick,
+  startCapabilityProviderJob as startCapabilityProviderJobWorker,
+} from "./capability-provider-worker.js";
+import { executeCapabilityRouteStep } from "./capability-route-executor.js";
+import { sendAgentTaskPropose } from "./agent-task-propose-send.js";
+import {
+  shouldRunScheduledFriendAutopilot,
+  transitionDocumentAcquisitionJob,
+  transitionCapabilityProviderJob,
+  transitionSocialProxySession,
+} from "@envoymesh/api";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import { buildChatDiagnostics } from "./chat-diagnostics.js";
 import { NodeDiscoveryRuntime } from "./node-service-discovery.js";
@@ -307,6 +337,7 @@ import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capabi
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
+import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { runInboundChatAssist } from "./inbound-chat-assist.js";
 import { recordTaskJournalActivity, emitOwnerReport } from "./agent-activity-hooks.js";
@@ -320,7 +351,7 @@ import {
   queueDiscoveryForwardApproval,
 } from "./discovery-forward.js";
 import { executeHomeClawCoreProxy } from "./homeclaw-core-proxy.js";
-import { chatLogRowsToViews } from "./ai-context.js";
+import { chatLogRowsToViews, searchVaultKnowledgeBase } from "./ai-context.js";
 import { createRagService, type RagService } from "./rag-service.js";
 
 const MAX_FRIEND_MATCHING_PREFS_CHARS = 4096;
@@ -334,6 +365,9 @@ const NATIVE_AGENT_TOOL_SCOPE = [
   "share.request",
   "share.preview",
   "share.accept",
+  "social.intro.sync",
+  "social.intro.propose",
+  "bond.request",
 ] as const;
 
 /** Unblocks when an underlying `fs.readFile` or mutex never settles (seen on some Windows setups). */
@@ -412,6 +446,9 @@ class NodeServiceImpl implements NodeService {
   private readonly _reputationAnchorStore: ReputationAnchorStore | null;
   private readonly _multihopDiscoveryStore: MultiHopDiscoveryStore | null;
   private readonly _peerReputationStore: PeerReputationStore | null;
+  private readonly _socialProxyStore: SocialProxySessionStore | null;
+  private readonly _documentAcquisitionJobStore: DocumentAcquisitionJobStore | null;
+  private readonly _capabilityProviderJobStore: CapabilityProviderJobStore | null;
   private _approvalQueue: ApprovalQueue | null = null;
 
   /** Best-effort last failure for {@link getConnectionStatus} (cleared on successful {@link startNode}). */
@@ -438,6 +475,16 @@ class NodeServiceImpl implements NodeService {
   private readonly _pendingPushShareByRequestMsgId = new Map<
     string,
     { relativePath: string; toPeerId: string; deliveryChannel?: "inbox" | "chat" }
+  >();
+  /** Outbound pull: peer vault path requested via fileOrigin=responder until preview arrives. */
+  private readonly _pendingPullShareByRequestMsgId = new Map<
+    string,
+    {
+      peerRelativePath: string;
+      targetOwnerId: string;
+      toPeerId: string;
+      sensitivity: "public" | "friends" | "private";
+    }
   >();
   /** After inbound `share.preview`: preview message id → send file to peer (we are holder). */
   private readonly _pendingFileSendByPreviewMsgId = new Map<
@@ -545,7 +592,140 @@ class NodeServiceImpl implements NodeService {
     if (!row.ownerCommitmentRef) {
       row.ownerCommitmentRef = randomUUID();
     }
+    const sent = await this._sendSocialIntroOwnerReady(row);
+    if (!sent) {
+      throw new Error("Failed to send social.intro.owner-ready (mesh unavailable or send failed)");
+    }
     return { ownerCommitmentRef: row.ownerCommitmentRef };
+  }
+
+  async handleSocialProxyPeerOwnerReady(input: {
+    introCorrelationId: string;
+    ownerId: string;
+    nonce: string;
+    remotePeerId: string;
+    receivedAt: string;
+  }): Promise<SocialProxySession | undefined> {
+    void input.nonce;
+    if (!this._socialProxyStore) return undefined;
+    const config = await this.getNodeConfig();
+    if (!config.socialProxyEnabled) return undefined;
+
+    const sessions = await this._socialProxyStore.list();
+    const session = sessions.find(
+      (s) => s.correlationId === input.introCorrelationId && s.candidateOwnerId === input.ownerId,
+    );
+    if (!session) {
+      console.warn(
+        `[social-proxy] social.intro.owner-ready: no session for correlationId=${input.introCorrelationId} candidateOwnerId=${input.ownerId}`,
+      );
+      if (this._taskStore) {
+        await this._taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "message.verified",
+            intent: "social.intro.owner-ready",
+            correlationId: input.introCorrelationId,
+            remotePeerId: input.remotePeerId,
+            direction: "inbound",
+            outcome: "record",
+            summary: `social.intro.owner-ready: no matching social proxy session (candidateOwnerId=${input.ownerId})`,
+            createdAt: input.receivedAt,
+          }),
+        );
+      }
+      return undefined;
+    }
+
+    let current = session;
+    if (current.status === "awaiting_peer") {
+      const peerReady = transitionSocialProxySession(current, "PEER_OWNER_READY");
+      if (peerReady.changed) current = peerReady.session;
+    }
+
+    const localRef = randomUUID();
+    if (current.introProposalMessageId) {
+      const row = this._pendingSocialIntroProposals.get(current.introProposalMessageId);
+      if (row) row.ownerCommitmentRef = localRef;
+    }
+
+    const withRef = {
+      ...current,
+      ownerCommitmentRef: localRef,
+      updatedAt: new Date().toISOString(),
+    };
+    const { session: next } = transitionSocialProxySession(withRef, "OWNER_APPROVE_INTRO", {
+      hasOwnerCommitmentRef: true,
+    });
+    await this._socialProxyStore.save(next);
+
+    if (this._agentActivityStore) {
+      const record: AgentActivityRecord = {
+        activityId: randomUUID(),
+        correlationId: next.correlationId,
+        taskId: next.sessionId,
+        domain: "social",
+        kind: "social_proxy_transition",
+        summary: `Social proxy: peer owner-ready → ${next.status}`,
+        remoteOwnerId: input.ownerId,
+        createdAt: new Date().toISOString(),
+      };
+      await this._agentActivityStore.append(record);
+      await this._publishAgentActivity(record, input.ownerId);
+    }
+
+    void this.advanceSocialProxySession(next.sessionId);
+    return next;
+  }
+
+  private async _sendSocialIntroOwnerReady(
+    row: SocialIntroProposal & { ownerCommitmentRef?: string },
+  ): Promise<boolean> {
+    const mesh = this._reachableMesh();
+    const profile = this._profile;
+    if (!mesh || !profile) return false;
+
+    try {
+      const { transportPeerId } = await this._resolvePeerTransportForOwner(row.agentOwnerId);
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      const unsigned = createUnsignedEnvelope({
+        senderPeerId: derivePeerId(profile.device.publicKeyPem),
+        senderPublicKey: profile.device.publicKeyPem,
+        senderRole: "human",
+        recipientPeerId: row.agentPeerId,
+        recipientRole: "agent",
+        intent: "social.intro.owner-ready",
+        payload: createSocialIntroOwnerReadyPayload({
+          introCorrelationId: row.introCorrelationId,
+          ownerId: profile.owner.ownerId,
+          nonce: randomUUID(),
+          expiresAt,
+        }),
+        correlationId: row.introCorrelationId,
+      });
+      const signed = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+      const dialHints = await this._dialHintsForChat(transportPeerId, undefined);
+      await mesh.send(transportPeerId, signed, { dialHints });
+
+      if (this._taskStore) {
+        await this._taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "message.sent",
+            intent: signed.intent,
+            messageId: signed.messageId,
+            correlationId: row.introCorrelationId,
+            remotePeerId: transportPeerId,
+            direction: "outbound",
+            outcome: "record",
+            summary: "Sent social.intro.owner-ready after intro commitment approval.",
+            createdAt: signed.createdAt,
+          }),
+        );
+      }
+      return true;
+    } catch (err) {
+      console.warn("[node-service] failed to send social.intro.owner-ready:", err);
+      return false;
+    }
   }
 
   async declineSocialIntroProposal(messageId: string): Promise<void> {
@@ -654,6 +834,38 @@ class NodeServiceImpl implements NodeService {
         );
       });
     }
+  }
+
+  /**
+   * Inbound `share.preview` for outbound pull (`fileOrigin: responder`).
+   * Records an inbox offer so {@link acceptShare} can complete the transfer.
+   */
+  recordInboundPullSharePreview(input: {
+    previewMessageId: string;
+    inReplyToRequestMsgId: string;
+    senderPeerId: string;
+    senderOwnerId?: string;
+    previewText: string;
+    sensitivity: "public" | "friends" | "private";
+  }): boolean {
+    const pending = this._pendingPullShareByRequestMsgId.get(input.inReplyToRequestMsgId);
+    if (!pending) return false;
+    this._pendingPullShareByRequestMsgId.delete(input.inReplyToRequestMsgId);
+    void this.recordInboundPushShareOffer({
+      shareId: input.previewMessageId,
+      senderPeerId: input.senderPeerId,
+      senderOwnerId: input.senderOwnerId ?? pending.targetOwnerId,
+      previewText: input.previewText,
+      sensitivity: input.sensitivity,
+      relativePath: pending.peerRelativePath,
+      deliveryChannel: "inbox",
+    });
+    const correlationId = this._correlationByRequestMsgId.get(input.inReplyToRequestMsgId);
+    if (correlationId) {
+      this._correlationByPreviewMsgId.set(input.previewMessageId, correlationId);
+      this._correlationByRequestMsgId.delete(input.inReplyToRequestMsgId);
+    }
+    return true;
   }
 
   /** We hold the file (responder); after sending preview, wait for requester's `share.accept`. */
@@ -912,6 +1124,12 @@ class NodeServiceImpl implements NodeService {
       profileDir && profileDir !== "/tmp/unknown" ? createMultiHopDiscoveryStore(profileDir) : null;
     this._peerReputationStore =
       profileDir && profileDir !== "/tmp/unknown" ? createLocalPeerReputationStore(profileDir) : null;
+    this._socialProxyStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createSocialProxySessionStore(profileDir) : null;
+    this._documentAcquisitionJobStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createDocumentAcquisitionJobStore(profileDir) : null;
+    this._capabilityProviderJobStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createCapabilityProviderJobStore(profileDir) : null;
     if (profileDir && profileDir !== "/tmp/unknown") {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
     }
@@ -2756,6 +2974,566 @@ class NodeServiceImpl implements NodeService {
     return { ok: pass.ok, error: pass.error };
   }
 
+  async listSocialProxySessions(): Promise<SocialProxySession[]> {
+    if (!this._socialProxyStore) return [];
+    return this._socialProxyStore.list();
+  }
+
+  async advanceSocialProxySession(sessionId: string): Promise<SocialProxySession | undefined> {
+    if (!this._socialProxyStore) return undefined;
+    const config = await this.getNodeConfig();
+    return advanceSocialProxySession(this._socialProxyOrchestratorDeps(config), sessionId.trim());
+  }
+
+  async notifySocialProxyOwnerCommitment(
+    sessionId: string,
+    ownerCommitmentRef: string,
+  ): Promise<SocialProxySession | undefined> {
+    if (!this._socialProxyStore) return undefined;
+    const session = await this._socialProxyStore.get(sessionId.trim());
+    if (!session) {
+      throw new Error(`Social proxy session not found: ${sessionId}`);
+    }
+    if (session.introProposalMessageId) {
+      const row = this._pendingSocialIntroProposals.get(session.introProposalMessageId);
+      if (row) {
+        row.ownerCommitmentRef = ownerCommitmentRef;
+      }
+    }
+    const withRef = {
+      ...session,
+      ownerCommitmentRef,
+      updatedAt: new Date().toISOString(),
+    };
+    const { session: next } = transitionSocialProxySession(withRef, "OWNER_APPROVE_INTRO", {
+      hasOwnerCommitmentRef: true,
+    });
+    await this._socialProxyStore.save(next);
+    return next;
+  }
+
+  async runSocialProxyPass(input?: {
+    targetOwnerId?: string;
+    targetPeerId?: string;
+    targetAgentPeerId?: string;
+    focusSessionId?: string;
+  }): Promise<{ ok: boolean; error?: string; correlationId?: string }> {
+    const config = await this.getNodeConfig();
+    if (!this._socialProxyStore) {
+      return { ok: false, error: "social proxy store unavailable" };
+    }
+    const deps = this._socialProxyOrchestratorDeps(config);
+    const result = await runSocialProxyPass({
+      ...deps,
+      focusSessionId: input?.focusSessionId,
+      targetCandidate:
+        input?.targetOwnerId && input?.targetPeerId
+          ? {
+              ownerId: input.targetOwnerId,
+              peerId: input.targetPeerId,
+              agentPeerId: input.targetAgentPeerId,
+            }
+          : undefined,
+    });
+    if (result.ok) {
+      await this.updateNodeConfig({ socialProxyLastPassAt: new Date().toISOString() });
+    }
+    return result;
+  }
+
+  private _socialProxyOrchestratorDeps(config: NodeConfig) {
+    return {
+      getContext: () => this.getToolExecutionContext(),
+      socialProxyEnabled: config.socialProxyEnabled ?? false,
+      trustModeEnabled: config.trustModeEnabled ?? false,
+      autonomousKillSwitch: config.autonomousKillSwitch ?? false,
+      postureRef: config.socialProxyMandateId ?? "default-social-proxy",
+      listSessions: () => this._socialProxyStore!.list(),
+      saveSession: (session: SocialProxySession) => this._socialProxyStore!.save(session),
+      recordActivity: async (input: {
+        correlationId: string;
+        summary: string;
+        remoteOwnerId?: string;
+        sessionId: string;
+      }) => {
+        if (!this._agentActivityStore) return;
+        const record: AgentActivityRecord = {
+          activityId: randomUUID(),
+          correlationId: input.correlationId,
+          taskId: input.sessionId,
+          domain: "social",
+          kind: "social_proxy_transition",
+          summary: input.summary,
+          remoteOwnerId: input.remoteOwnerId,
+          createdAt: new Date().toISOString(),
+        };
+        await this._agentActivityStore.append(record);
+        await this._publishAgentActivity(record, input.remoteOwnerId);
+      },
+      policy: {
+        autoHello: true,
+        helloRequiresApproval: false,
+        maxNewIntrosPerDay: 5,
+        autoChatWithPeerHumans: true,
+      },
+      proposeIntro: (session: SocialProxySession, candidate: { ownerId: string; peerId: string }) =>
+        this._proposeSocialIntro(session, candidate),
+      syncIntroWithCandidate: (
+        session: SocialProxySession,
+        candidate: { ownerId: string; peerId: string; agentPeerId?: string },
+      ) => this._syncSocialIntro(session, candidate),
+      sendHello: (session: SocialProxySession) => this._sendSocialProxyHello(session),
+      sendAgentChat: async (session: SocialProxySession, text: string) => {
+        if (!session.candidateOwnerId) return false;
+        await this.sendAgentChat(session.candidateOwnerId, text);
+        return true;
+      },
+    };
+  }
+
+  private async _syncSocialIntro(
+    session: SocialProxySession,
+    candidate: { ownerId: string; peerId: string; agentPeerId?: string },
+  ): Promise<boolean> {
+    const agentIdentity = await this._ensureAgentIdentity();
+    const profile = this._profile;
+    const mesh = this._reachableMesh();
+    if (!agentIdentity || !profile || !mesh || !candidate.agentPeerId) return false;
+
+    const { transportPeerId } = await this._resolvePeerTransportForOwner(candidate.ownerId);
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: agentIdentity.agentPeerId,
+      senderPublicKey: agentIdentity.agentPublicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: candidate.agentPeerId,
+      recipientRole: "agent",
+      intent: "social.intro.sync",
+      payload: createSocialIntroSyncPayload({
+        introCorrelationId: session.correlationId,
+        ownerId: profile.owner.ownerId,
+        counterpartyOwnerIdHint: candidate.ownerId,
+        profileFragmentRefs: [],
+        interest: "explore",
+      }),
+      agentCredential: agentIdentity.agentCredential,
+      correlationId: session.correlationId,
+    });
+    const signed = signUnsignedEnvelope(unsigned, agentIdentity.agentPrivateKeyPem);
+    const dialHints = await this._dialHintsForChat(transportPeerId, undefined);
+    await mesh.send(transportPeerId, signed, { dialHints });
+    return true;
+  }
+
+  private async _proposeSocialIntro(
+    session: SocialProxySession,
+    candidate: { ownerId: string; peerId: string },
+  ): Promise<{ messageId: string; introCorrelationId: string } | null> {
+    const agentIdentity = await this._ensureAgentIdentity();
+    const profile = this._profile;
+    const mesh = this._reachableMesh();
+    if (!agentIdentity || !profile || !mesh) return null;
+
+    const { transportPeerId, recipientEnvelopePeerId } = await this._resolvePeerTransportForOwner(
+      candidate.ownerId,
+    );
+    if (!recipientEnvelopePeerId) return null;
+
+    const fragment = createHumanProfileFragmentPayload({
+      ownerId: profile.owner.ownerId,
+      purpose: "trust-mode-intro",
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      bio: "Social proxy introduction",
+      signature: "local-fragment",
+    });
+
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: agentIdentity.agentPeerId,
+      senderPublicKey: agentIdentity.agentPublicKeyPem,
+      senderRole: "agent",
+      recipientPeerId: recipientEnvelopePeerId,
+      recipientRole: "human",
+      intent: "social.intro.propose",
+      payload: createSocialIntroProposePayload({
+        introCorrelationId: session.correlationId,
+        candidateOwnerId: candidate.ownerId,
+        candidatePeerId: recipientEnvelopePeerId,
+        profileFragment: fragment,
+        rationale: "Social proxy introduction",
+      }),
+      agentCredential: agentIdentity.agentCredential,
+      correlationId: session.correlationId,
+    });
+    const signed = signUnsignedEnvelope(unsigned, agentIdentity.agentPrivateKeyPem);
+    const dialHints = await this._dialHintsForChat(transportPeerId, undefined);
+    await mesh.send(transportPeerId, signed, { dialHints });
+
+    const receivedAt = new Date().toISOString();
+    this._pendingSocialIntroProposals.set(signed.messageId, {
+      messageId: signed.messageId,
+      introCorrelationId: session.correlationId,
+      candidateOwnerId: candidate.ownerId,
+      candidatePeerId: candidate.peerId,
+      agentPeerId: agentIdentity.agentPeerId,
+      agentOwnerId: profile.owner.ownerId,
+      rationale: "Social proxy introduction",
+      receivedAt,
+      ownerCommitmentRef: session.ownerCommitmentRef,
+    });
+
+    return { messageId: signed.messageId, introCorrelationId: session.correlationId };
+  }
+
+  private async _sendSocialProxyHello(session: SocialProxySession): Promise<boolean> {
+    if (!session.candidateOwnerId || !session.introProposalMessageId) return false;
+    const humanProfile = await this._humanProfileStore.loadHumanProfile();
+    await this.sendHello(
+      session.candidateOwnerId,
+      {
+        displayName: humanProfile?.displayName ?? this._requireProfile().owner.ownerId,
+        bio: humanProfile?.bio,
+        interests: [],
+        whatShares: [],
+      },
+      "Social proxy hello",
+      { introProposalMessageId: session.introProposalMessageId },
+    );
+    return true;
+  }
+
+  async cancelSocialProxySession(sessionId: string): Promise<void> {
+    if (!this._socialProxyStore) return;
+    const session = await this._socialProxyStore.get(sessionId.trim());
+    if (!session) return;
+    const { session: next } = transitionSocialProxySession(session, "KILL_SWITCH");
+    await this._socialProxyStore.save(next);
+  }
+
+  async startDocumentAcquisitionJob(params: {
+    query: string;
+    fileTitleHint?: string;
+    pathHint?: string;
+  }): Promise<{ jobId: string; correlationId: string }> {
+    const config = await this.getNodeConfig();
+    if (!this._documentAcquisitionJobStore) {
+      throw new Error("document acquisition store unavailable");
+    }
+    if (!config.documentAcquisitionEnabled) {
+      throw new Error("document acquisition disabled");
+    }
+    if (config.autonomousKillSwitch) {
+      throw new Error("autonomous kill switch active");
+    }
+    const policy = {
+      searchBondedOnly: true,
+      maxNegotiationRounds: 5,
+      maxActiveJobs: 3,
+      jobTtlHours: 72,
+    };
+    const localManifestCapabilities = await this._localManifestCapabilities();
+    const started = await startDocumentAcquisitionJobWorker(
+      {
+        postureRef: config.documentAcquisitionMandateId ?? "default-document-acquisition",
+        policy,
+        localManifestCapabilities,
+        listJobs: (activeOnly) => this._documentAcquisitionJobStore!.list(activeOnly),
+        saveJob: (job) => this._documentAcquisitionJobStore!.save(job),
+        recordActivity: async (input) => {
+          if (!this._agentActivityStore) return;
+          const record: AgentActivityRecord = {
+            activityId: randomUUID(),
+            correlationId: input.correlationId,
+            taskId: input.jobId,
+            domain: "knowledge",
+            kind: "document_acq_stage",
+            summary: input.summary,
+            createdAt: new Date().toISOString(),
+          };
+          await this._agentActivityStore.append(record);
+          await this._publishAgentActivity(record);
+        },
+      },
+      params,
+    );
+    await advanceDocumentAcquisitionJob(await this._documentAcquisitionWorkerDeps(config), started.jobId);
+    return started;
+  }
+
+  async getDocumentAcquisitionJob(jobId: string): Promise<DocumentAcquisitionJob | undefined> {
+    if (!this._documentAcquisitionJobStore) return undefined;
+    return this._documentAcquisitionJobStore.get(jobId.trim());
+  }
+
+  async listDocumentAcquisitionJobs(activeOnly?: boolean): Promise<DocumentAcquisitionJob[]> {
+    if (!this._documentAcquisitionJobStore) return [];
+    return this._documentAcquisitionJobStore.list(activeOnly);
+  }
+
+  async cancelDocumentAcquisitionJob(jobId: string): Promise<void> {
+    if (!this._documentAcquisitionJobStore) return;
+    const job = await this._documentAcquisitionJobStore.get(jobId.trim());
+    if (!job) return;
+    const { job: next } = transitionDocumentAcquisitionJob(job, "KILL_SWITCH");
+    await this._documentAcquisitionJobStore.save(next);
+  }
+
+  async runDocumentAcquisitionWorker(): Promise<number> {
+    const config = await this.getNodeConfig();
+    return runDocumentAcquisitionWorkerTick(await this._documentAcquisitionWorkerDeps(config));
+  }
+
+  async startCapabilityProviderJob(params: {
+    goal: string;
+    capabilityIds?: string[];
+    targetOwnerId?: string;
+  }): Promise<{ jobId: string; correlationId: string }> {
+    const config = await this.getNodeConfig();
+    if (!this._capabilityProviderJobStore) {
+      throw new Error("capability provider store unavailable");
+    }
+    if (!config.capabilityProviderEnabled) {
+      throw new Error("capability provider disabled");
+    }
+    if (config.autonomousKillSwitch) {
+      throw new Error("autonomous kill switch active");
+    }
+    const started = await startCapabilityProviderJobWorker(
+      {
+        postureRef: config.capabilityProviderMandateId ?? "default-capability-provider",
+        policy: { maxActiveJobs: 3, jobTtlHours: 72 },
+        listJobs: (activeOnly) => this._capabilityProviderJobStore!.list(activeOnly),
+        saveJob: (job) => this._capabilityProviderJobStore!.save(job),
+        recordActivity: async (input) => {
+          if (!this._agentActivityStore) return;
+          const record: AgentActivityRecord = {
+            activityId: randomUUID(),
+            correlationId: input.correlationId,
+            taskId: input.jobId,
+            domain: "research",
+            kind: "capability_provider_stage",
+            summary: input.summary,
+            createdAt: new Date().toISOString(),
+          };
+          await this._agentActivityStore.append(record);
+          await this._publishAgentActivity(record);
+        },
+      },
+      params,
+    );
+    await advanceCapabilityProviderJob(await this._capabilityProviderWorkerDeps(config), started.jobId);
+    return started;
+  }
+
+  async getCapabilityProviderJob(jobId: string): Promise<CapabilityProviderJob | undefined> {
+    if (!this._capabilityProviderJobStore) return undefined;
+    return this._capabilityProviderJobStore.get(jobId.trim());
+  }
+
+  async listCapabilityProviderJobs(activeOnly?: boolean): Promise<CapabilityProviderJob[]> {
+    if (!this._capabilityProviderJobStore) return [];
+    return this._capabilityProviderJobStore.list(activeOnly);
+  }
+
+  async cancelCapabilityProviderJob(jobId: string): Promise<void> {
+    if (!this._capabilityProviderJobStore) return;
+    const job = await this._capabilityProviderJobStore.get(jobId.trim());
+    if (!job) return;
+    const { job: next } = transitionCapabilityProviderJob(job, "KILL_SWITCH");
+    await this._capabilityProviderJobStore.save(next);
+  }
+
+  async runCapabilityProviderWorker(): Promise<number> {
+    const config = await this.getNodeConfig();
+    return runCapabilityProviderWorkerTick(await this._capabilityProviderWorkerDeps(config));
+  }
+
+  private async _localManifestCapabilities(): Promise<string[]> {
+    const manifest = await this.getCapabilityManifest();
+    return manifest?.capabilities ?? [];
+  }
+
+  private async _capabilityProviderWorkerDeps(config: NodeConfig) {
+    return {
+      capabilityProviderEnabled: config.capabilityProviderEnabled ?? false,
+      autonomousKillSwitch: config.autonomousKillSwitch ?? false,
+      postureRef: config.capabilityProviderMandateId ?? "default-capability-provider",
+      policy: { maxActiveJobs: 3, jobTtlHours: 72 },
+      localManifestCapabilities: await this._localManifestCapabilities(),
+      listJobs: (activeOnly?: boolean) =>
+        this._capabilityProviderJobStore?.list(activeOnly) ?? Promise.resolve([]),
+      saveJob: (job: CapabilityProviderJob) => {
+        if (!this._capabilityProviderJobStore) {
+          throw new Error("capability provider store unavailable");
+        }
+        return this._capabilityProviderJobStore.save(job);
+      },
+      executeRouteStep: (
+        job: CapabilityProviderJob,
+        toolName: string,
+        params: Record<string, unknown>,
+      ) =>
+        executeCapabilityRouteStep(
+          { getToolContext: () => this.getToolExecutionContext() },
+          job,
+          toolName,
+          params,
+        ),
+      resolveTargetOwnerId: async (goal: string, capabilityIds: string[]) => {
+        const context = await this.getToolExecutionContext();
+        if (!context?.listBondedAgentCapabilities) return undefined;
+        const rows = await context.listBondedAgentCapabilities();
+        const goalLower = goal.toLowerCase();
+        for (const row of rows) {
+          if (
+            capabilityIds.length > 0 &&
+            !capabilityIds.some((cap: string) =>
+              row.capabilities.some((tag) => tag.toLowerCase() === cap.toLowerCase()),
+            )
+          ) {
+            continue;
+          }
+          if (capabilityIds.length > 0 || goalLower.length > 2) {
+            return row.ownerId;
+          }
+        }
+        return rows[0]?.ownerId;
+      },
+      recordActivity: async (input: { correlationId: string; summary: string; jobId: string }) => {
+        if (!this._agentActivityStore) return;
+        const record: AgentActivityRecord = {
+          activityId: randomUUID(),
+          correlationId: input.correlationId,
+          taskId: input.jobId,
+          domain: "research",
+          kind: "capability_provider_stage",
+          summary: input.summary,
+          createdAt: new Date().toISOString(),
+        };
+        await this._agentActivityStore.append(record);
+        await this._publishAgentActivity(record);
+      },
+    };
+  }
+
+  private async _documentAcquisitionWorkerDeps(config: NodeConfig) {
+    return {
+      documentAcquisitionEnabled: config.documentAcquisitionEnabled ?? false,
+      autonomousKillSwitch: config.autonomousKillSwitch ?? false,
+      postureRef: config.documentAcquisitionMandateId ?? "default-document-acquisition",
+      localManifestCapabilities: await this._localManifestCapabilities(),
+      policy: {
+        searchBondedOnly: true,
+        maxNegotiationRounds: 5,
+        maxActiveJobs: 3,
+        jobTtlHours: 72,
+      },
+      listJobs: (activeOnly?: boolean) =>
+        this._documentAcquisitionJobStore?.list(activeOnly) ?? Promise.resolve([]),
+      saveJob: (job: DocumentAcquisitionJob) => {
+        if (!this._documentAcquisitionJobStore) {
+          throw new Error("document acquisition store unavailable");
+        }
+        return this._documentAcquisitionJobStore.save(job);
+      },
+      listLibraryItems: (query?: string) => this.listLibraryItems({ query }),
+      searchLocalVault: async (query: string) => {
+        const vaultIndex = await buildVaultIndex({ rootDir: this._vaultDir });
+        const nodeConfig = await this.getNodeConfig();
+        const rag = await this._getRagService();
+        const hits = rag
+          ? await rag.searchVaultKnowledgeBase({
+              vaultIndex,
+              query,
+              knowledgeAccess: "personal",
+              knowledgeBase: nodeConfig.aiSettings?.knowledgeBase,
+              knowledgeScope: "owner",
+            })
+          : searchVaultKnowledgeBase({
+              vaultIndex,
+              query,
+              knowledgeAccess: "personal",
+              knowledgeBase: nodeConfig.aiSettings?.knowledgeBase,
+              knowledgeScope: "owner",
+            });
+        const byDoc = new Map<string, { relativePath: string; title: string; ragScore: number }>();
+        for (const hit of hits) {
+          const existing = byDoc.get(hit.document.documentId);
+          if (!existing || hit.score > existing.ragScore) {
+            byDoc.set(hit.document.documentId, {
+              relativePath: hit.document.relativePath,
+              title: hit.document.title,
+              ragScore: hit.score,
+            });
+          }
+        }
+        return [...byDoc.values()].sort((a, b) => b.ragScore - a.ragScore).slice(0, 8);
+      },
+      discoverPublishedLibrary: () => this.discoverPublishedLibrary(),
+      listPendingShareOffers: () => this.listPendingShareOffers(),
+      acceptShare: (shareId: string, savePath: string) => this.acceptShare(shareId, savePath),
+      isTransferVerified: async (shareId: string) => {
+        const status = await this.getTransferStatus(shareId);
+        return status?.phase === "verified";
+      },
+      queryPeerKnowledge: async (ownerId: string, query: string) => {
+        const context = await this.getToolExecutionContext();
+        if (!context) return { ok: false };
+        const result = await executeTool(
+          "knowledge.query",
+          { targetOwnerId: ownerId, query, requestedSensitivity: "friends" },
+          context,
+        );
+        if (!result.ok) return { ok: false };
+        const response = result.result;
+        if (response && typeof response === "object" && "payload" in response) {
+          try {
+            const payload = parseKnowledgeResponsePayload((response as EnvoyEnvelope).payload);
+            return {
+              ok: true,
+              answerText: payload.answer,
+              suggestedRelativePath: payload.suggestedRelativePath,
+            };
+          } catch {
+            /* fall through */
+          }
+        }
+        const answerText =
+          typeof result.result === "string"
+            ? result.result
+            : JSON.stringify(result.result ?? "");
+        return { ok: true, answerText };
+      },
+      requestShareFromLibrary: async (job: DocumentAcquisitionJob, candidate: DocumentAcquisitionCandidate) => {
+        if (!candidate.sourceRelativePath) return false;
+        const sensitivity =
+          candidate.sensitivity === "trusted" ? "friends" : candidate.sensitivity;
+        try {
+          await this.requestShareFromLibrary(candidate.sourceOwnerId, {
+            relativePath: candidate.sourceRelativePath,
+            sensitivity,
+            correlationId: job.correlationId,
+          });
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      recordActivity: async (input: { correlationId: string; summary: string; jobId: string }) => {
+        if (!this._agentActivityStore) return;
+        const record: AgentActivityRecord = {
+          activityId: randomUUID(),
+          correlationId: input.correlationId,
+          taskId: input.jobId,
+          domain: "knowledge",
+          kind: "document_acq_stage",
+          summary: input.summary,
+          createdAt: new Date().toISOString(),
+        };
+        await this._agentActivityStore.append(record);
+        await this._publishAgentActivity(record);
+      },
+    };
+  }
+
   private async _recordFriendAutopilotPass(input: {
     ok: boolean;
     error?: string;
@@ -3467,6 +4245,83 @@ class NodeServiceImpl implements NodeService {
     await this._shareFileInternal(targetOwnerId, file);
   }
 
+  /**
+   * Request a file from a bonded peer's vault (pull share — `fileOrigin: responder`).
+   */
+  async requestShareFromLibrary(
+    targetOwnerId: string,
+    file: {
+      relativePath: string;
+      sensitivity: "public" | "friends" | "private";
+      correlationId?: string;
+    },
+  ): Promise<{ shareRequestMessageId: string }> {
+    return this._requestShareFromLibraryInternal(targetOwnerId, file);
+  }
+
+  private async _requestShareFromLibraryInternal(
+    targetOwnerId: string,
+    file: {
+      relativePath: string;
+      sensitivity: "public" | "friends" | "private";
+      correlationId?: string;
+    },
+  ): Promise<{ shareRequestMessageId: string }> {
+    this._assertOnline();
+    this.recordOwnerActivity();
+    const mesh = this._requireMesh();
+    const profile = this._requireProfile();
+    if (!this._taskStore) {
+      throw new Error("Task store not initialized — node is not fully wired");
+    }
+
+    const { transportPeerId, recipientEnvelopePeerId } =
+      await this._resolvePeerTransportForOwner(targetOwnerId);
+    const peerPath = file.relativePath.replace(/^[\\/]+/, "");
+    const dialHints = await raceWithTimeout(
+      this._dialHintsForChat(transportPeerId, undefined),
+      30_000,
+      "_dialHintsForChat",
+    );
+
+    const correlationId = file.correlationId ?? randomUUID();
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "human",
+      recipientPeerId: recipientEnvelopePeerId,
+      recipientRole: "human",
+      intent: "share.request",
+      payload: createShareRequestPayload({
+        requestType: "file",
+        relativePath: peerPath,
+        requestedSensitivity: file.sensitivity,
+        fileOrigin: "responder",
+        deliveryChannel: "inbox",
+        correlationId,
+      }),
+      correlationId,
+    });
+    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
+    this._pendingPullShareByRequestMsgId.set(envelope.messageId, {
+      peerRelativePath: peerPath,
+      targetOwnerId,
+      toPeerId: transportPeerId,
+      sensitivity: file.sensitivity,
+    });
+    this._correlationByRequestMsgId.set(envelope.messageId, correlationId);
+    await mesh.send(transportPeerId, envelope as any, { dialHints });
+    this._upsertTransferStatus({
+      correlationId,
+      phase: "negotiating",
+      remotePeerOwnerId: targetOwnerId,
+      remotePeerId: transportPeerId,
+      vaultRelativePath: peerPath,
+      updatedAt: new Date().toISOString(),
+    });
+    return { shareRequestMessageId: envelope.messageId };
+  }
+
   private async _shareFileInternal(
     targetOwnerId: string,
     file: {
@@ -3790,6 +4645,13 @@ class NodeServiceImpl implements NodeService {
         friendAutopilotIntervalHours: (config.friendAutopilotIntervalHours ?? 0) as 0 | 24 | 168,
         friendAutopilotLastRunAt: config.friendAutopilotLastRunAt,
         knowledgeSyndicationMaxSensitivity: config.knowledgeSyndicationMaxSensitivity,
+        socialProxyEnabled: config.socialProxyEnabled ?? false,
+        socialProxyMandateId: config.socialProxyMandateId,
+        socialProxyLastPassAt: config.socialProxyLastPassAt,
+        documentAcquisitionEnabled: config.documentAcquisitionEnabled ?? false,
+        documentAcquisitionMandateId: config.documentAcquisitionMandateId,
+        capabilityProviderEnabled: config.capabilityProviderEnabled ?? false,
+        capabilityProviderMandateId: config.capabilityProviderMandateId,
       };
     }
     return {
@@ -3971,6 +4833,27 @@ class NodeServiceImpl implements NodeService {
           config.knowledgeSyndicationMaxSensitivity === null
             ? undefined
             : config.knowledgeSyndicationMaxSensitivity,
+      }),
+      ...(config.socialProxyEnabled !== undefined && {
+        socialProxyEnabled: config.socialProxyEnabled,
+      }),
+      ...(config.socialProxyMandateId !== undefined && {
+        socialProxyMandateId: config.socialProxyMandateId,
+      }),
+      ...(config.socialProxyLastPassAt !== undefined && {
+        socialProxyLastPassAt: config.socialProxyLastPassAt,
+      }),
+      ...(config.documentAcquisitionEnabled !== undefined && {
+        documentAcquisitionEnabled: config.documentAcquisitionEnabled,
+      }),
+      ...(config.documentAcquisitionMandateId !== undefined && {
+        documentAcquisitionMandateId: config.documentAcquisitionMandateId,
+      }),
+      ...(config.capabilityProviderEnabled !== undefined && {
+        capabilityProviderEnabled: config.capabilityProviderEnabled,
+      }),
+      ...(config.capabilityProviderMandateId !== undefined && {
+        capabilityProviderMandateId: config.capabilityProviderMandateId,
       }),
       ...(config.externalPublish !== undefined && {
         externalPublish: {
@@ -4431,6 +5314,58 @@ class NodeServiceImpl implements NodeService {
       }
 
       const { intent } = envelope;
+
+      if (
+        intent === "social.intro.sync" ||
+        intent === "social.intro.propose" ||
+        intent === "social.intro.owner-ready"
+      ) {
+        const receivedAt = Date.now();
+        const correlationId = deriveCorrelationIdFromEnvelope(envelope);
+        const nodeCfg = await this.getNodeConfig();
+        const intro = await handleInboundSocialIntroIntent({
+          envelope,
+          profile,
+          remotePeerId,
+          receivedAt,
+          correlationId,
+          taskStore,
+          trustStore: this._trustStore,
+          peerDirectoryStore: this._peerDirectoryStore,
+          trustModeEnabled: nodeCfg.trustModeEnabled ?? false,
+          onSocialIntroPropose: (data) => {
+            this.storePendingSocialIntroProposal({ ...data, commitmentApproved: false });
+          },
+          onSocialIntroOwnerReady: (data) => {
+            void this.handleSocialProxyPeerOwnerReady(data);
+          },
+        });
+        if (!intro.ok) {
+          console.warn(`[rejected social.intro] ${envelope.intent}: ${intro.reason}`);
+        }
+        return;
+      }
+
+      if (intent === "share.preview") {
+        try {
+          const previewPayload = parseSharePreviewPayload(envelope.payload);
+          if (previewPayload.isFileTransfer && !previewPayload.refused) {
+            const recorded = this.recordInboundPullSharePreview({
+              previewMessageId: envelope.messageId,
+              inReplyToRequestMsgId: previewPayload.inReplyTo,
+              senderPeerId: remotePeerId,
+              previewText: previewPayload.previewText,
+              sensitivity: previewPayload.sensitivity as "public" | "friends" | "private",
+            });
+            if (!recorded) {
+              this.linkOutboundSharePreviewFromInbound(envelope.messageId, previewPayload.inReplyTo);
+            }
+          }
+        } catch {
+          /* ignore invalid preview */
+        }
+        return;
+      }
 
       if (
         intent === "bond.request" ||
@@ -5707,6 +6642,42 @@ class NodeServiceImpl implements NodeService {
       requestAgentCard: (targetOwnerId) => this.requestAgentCard(targetOwnerId),
       getAgentCard: (ownerId) => this.getAgentCard(ownerId),
       listAgentCards: () => this.listAgentCards(),
+      getLocalCapabilityManifest: async () => {
+        const manifest = await this.getCapabilityManifest();
+        if (!manifest) return undefined;
+        return { capabilities: manifest.capabilities, keywords: manifest.keywords };
+      },
+      listBondedAgentCapabilities: async () => {
+        const cards = await this.listAgentCards();
+        return cards.map((card) => ({
+          ownerId: card.ownerId,
+          capabilities: card.capabilities,
+        }));
+      },
+      startCapabilityProviderJob: (params) => this.startCapabilityProviderJob(params),
+      sendTaskPropose: async (params) => {
+        const profile = this._profile;
+        const mesh = this._reachableMesh();
+        const agentIdentity = await this._ensureAgentIdentity();
+        if (!profile || !agentIdentity || !mesh) {
+          return { ok: false, error: "agent runtime unavailable" };
+        }
+        const result = await sendAgentTaskPropose({
+          mesh,
+          profile,
+          agentPeerId: agentIdentity.agentPeerId,
+          agentPublicKeyPem: agentIdentity.agentPublicKeyPem,
+          agentPrivateKeyPem: agentIdentity.agentPrivateKeyPem,
+          agentCredential: agentIdentity.agentCredential,
+          peerDirectoryStore: this._peerDirectoryStore,
+          targetOwnerId: params.targetOwnerId,
+          objective: params.objective,
+          correlationId: params.correlationId,
+        });
+        return result.ok
+          ? { ok: true, result: { summary: result.summary, taskId: result.taskId } }
+          : { ok: false, error: result.summary };
+      },
       listActiveTransfers: () => this.listActiveTransfers(),
       getTransferStatus: (correlationId) => this.getTransferStatus(correlationId),
       listPendingShareOffers: () => this.listPendingShareOffers(),

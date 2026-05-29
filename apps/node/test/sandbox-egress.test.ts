@@ -252,7 +252,7 @@ describe("Vault search injection guard", () => {
 
     const result = await tool({});
     expect(result).toHaveProperty("error");
-    expect((result as Record<string, unknown>).error).toContain("keywords parameter is required");
+    expect((result as Record<string, unknown>).error).toContain("keywords or capabilityIds");
   });
 
   it("rejects missing targetOwnerId on mesh_requestKnowledge", async () => {

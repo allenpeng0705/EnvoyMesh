@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/index.json",
+  "title": "EnvoyMesh Protocol (EMP) 0.1 JSON Schema Bundle",
+  "description": "Machine-readable schemas generated from @envoymesh/protocol Zod definitions. Normative behavior: docs/protocol-standard.md",
+  "version": "emp/0.1",
+  "jsonSchemaDraft": "2020-12",
+  "generatedBy": "@envoymesh/protocol/scripts/export-json-schema.ts",
+  "schemas": [
+    {
+      "file": "emp-intents.json",
+      "title": "EMP Intent",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/emp-intents.json"
+    },
+    {
+      "file": "emp-actor-roles.json",
+      "title": "EMP Actor Role",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/emp-actor-roles.json"
+    },
+    {
+      "file": "emp-postures.json",
+      "title": "EMP Standing Posture",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/emp-postures.json"
+    },
+    {
+      "file": "emp-capabilities.json",
+      "title": "EMP Advertised Capability",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/emp-capabilities.json"
+    },
+    {
+      "file": "unsigned-envelope.json",
+      "title": "Unsigned EMP Envelope",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/unsigned-envelope.json"
+    },
+    {
+      "file": "knowledge-query-payload.json",
+      "title": "knowledge.query Payload",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/knowledge-query-payload.json"
+    },
+    {
+      "file": "knowledge-response-payload.json",
+      "title": "knowledge.response Payload",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/knowledge-response-payload.json"
+    },
+    {
+      "file": "chat-message-payload.json",
+      "title": "chat.message Payload",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/chat-message-payload.json"
+    },
+    {
+      "file": "discovery-request-payload.json",
+      "title": "discovery.request Payload",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/discovery-request-payload.json"
+    },
+    {
+      "file": "discovery-response-payload.json",
+      "title": "discovery.response Payload",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/discovery-response-payload.json"
+    },
+    {
+      "file": "share-request-payload.json",
+      "title": "share.request Payload",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/share-request-payload.json"
+    },
+    {
+      "file": "share-accept-payload.json",
+      "title": "share.accept Payload",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/share-accept-payload.json"
+    },
+    {
+      "file": "bond-request-payload.json",
+      "title": "bond.request Payload",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/bond-request-payload.json"
+    },
+    {
+      "file": "mandate.json",
+      "title": "Signed Mandate",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/mandate.json"
+    },
+    {
+      "file": "unsigned-mandate.json",
+      "title": "Unsigned Mandate",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/unsigned-mandate.json"
+    },
+    {
+      "file": "agent-card.json",
+      "title": "Agent Card",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/agent-card.json"
+    },
+    {
+      "file": "social-intro-sync-payload.json",
+      "title": "social.intro.sync Payload",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/social-intro-sync-payload.json"
+    },
+    {
+      "file": "social-intro-propose-payload.json",
+      "title": "social.intro.propose Payload",
+      "$id": "https://envoymesh.dev/schemas/emp-0.1/social-intro-propose-payload.json"
+    }
+  ]
+}

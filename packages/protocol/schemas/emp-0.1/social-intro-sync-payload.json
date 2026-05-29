@@ -1,0 +1,49 @@
+{
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/social-intro-sync-payload.json",
+  "title": "social.intro.sync Payload",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "introCorrelationId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ownerId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "counterpartyOwnerIdHint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "profileFragmentRefs": {
+      "default": [],
+      "maxItems": 16,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "interest": {
+      "type": "string",
+      "enum": [
+        "explore",
+        "decline",
+        "request-human-review",
+        "withdraw"
+      ]
+    },
+    "noteToCounterpartyAgent": {
+      "type": "string",
+      "maxLength": 1024
+    }
+  },
+  "required": [
+    "introCorrelationId",
+    "ownerId",
+    "profileFragmentRefs",
+    "interest"
+  ],
+  "additionalProperties": false
+}

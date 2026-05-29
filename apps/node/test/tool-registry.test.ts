@@ -81,8 +81,8 @@ describe("ToolRegistry", () => {
       });
 
       const tools = registry.listTools();
-      // 45 default tools + 2 additional = 47
-      expect(tools).toHaveLength(47);
+      // 49 default tools + 2 additional = 51
+      expect(tools).toHaveLength(51);
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "bond.send_hello", "chat.send", "discovery.search", "knowledge.query",
@@ -94,10 +94,12 @@ describe("ToolRegistry", () => {
           "mesh.list-all-approvals",
           "mesh.list-external-agent-actions",
           "mesh.list-external-sessions", "mesh.list-pending", "mesh.list-sessions",
-          "mesh.list-triggers", "mesh.reject", "mesh.reject-all", "mesh.remove-trigger",
+          "mesh.list-triggers", "mesh.capability_provider.start", "mesh.match_capability_route",
+          "mesh.reject", "mesh.reject-all", "mesh.remove-trigger",
           "mesh.revoke-external-agent", "mesh.session-summary", "mesh.set-contact-disclosure",
           "mesh.set-contact-mode", "mesh.set-digest-schedule", "mesh.set-mode",
-          "mesh.set-style", "mesh.share_list_pending", "mesh.share_list_proposals", "mesh.share_propose",
+          "mesh.set-style", "mesh.share_list_pending", "mesh.share_list_proposals",
+          "mesh.share_profile_gallery_photo", "mesh.share_propose", "mesh.task.propose",
           "mesh.transfer_status", "mesh.update-trigger", "share.send", "tool.1", "tool.2",
           "vault.search",
         ].sort(),
@@ -107,8 +109,8 @@ describe("ToolRegistry", () => {
     it("default tools are pre-registered", () => {
       const registry = new ToolRegistry();
       const tools = registry.listTools();
-      // Default tools: prior 43 + mesh.agent_card.request + mesh.get_agent_card = 45
-      expect(tools.length).toBe(45);
+      // Default tools: 49 (includes mesh.task.propose)
+      expect(tools.length).toBe(49);
     });
   });
 
@@ -185,13 +187,13 @@ describe("ToolRegistry", () => {
       expect(vaultTool?.sensitivityCeiling).toBe("private");
     });
 
-    it("has mesh.agent_card.request as mesh tool with agent.card.request intent", () => {
+    it("has mesh.agent_card.request as route-executor tool (NodeService requestAgentCard)", () => {
       const registry = new ToolRegistry();
       const tool = registry.get("mesh.agent_card.request");
 
       expect(tool).toBeDefined();
-      expect(tool?.intent).toBe("agent.card.request");
-      expect(tool?.isMeshTool).toBe(true);
+      expect(tool?.intent).toBeUndefined();
+      expect(tool?.isMeshTool).toBe(false);
     });
 
     it("has mesh.get_agent_card as local-only read tool", () => {
@@ -201,6 +203,17 @@ describe("ToolRegistry", () => {
       expect(tool).toBeDefined();
       expect(tool?.intent).toBeUndefined();
       expect(tool?.isMeshTool).toBe(false);
+    });
+
+    it("has mesh.match_capability_route as agent-only planner tool", () => {
+      const registry = new ToolRegistry();
+      const tool = registry.get("mesh.match_capability_route");
+
+      expect(tool).toBeDefined();
+      expect(tool?.intent).toBeUndefined();
+      expect(tool?.isMeshTool).toBe(false);
+      expect(tool?.requiresApproval).toBe(false);
+      expect(tool?.sensitivityCeiling).toBe("public");
     });
   });
 });
@@ -369,6 +382,45 @@ describe("executeTool — IPFS library hooks", () => {
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("executeTool — mesh.match_capability_route", () => {
+  const minimalContext = {
+    trustStore: {} as never,
+    peerDirectoryStore: {} as never,
+    taskStore: { appendAuditEvent: async () => {} } as never,
+    agentIdentity: {} as never,
+    ownerIdentity: { ownerId: "envoy:owner:test" },
+    agentCredential: {} as never,
+  };
+
+  it("ranks routes for capability ids", async () => {
+    const result = await executeTool(
+      "mesh.match_capability_route",
+      { capabilityIds: ["envoymesh.published-library"] },
+      minimalContext,
+    );
+    expect(result.ok).toBe(true);
+    const routes = (result.result as { routes?: { routeId: string }[] })?.routes;
+    expect(routes?.[0]?.routeId).toBe("document.published-library");
+  });
+
+  it("returns a single route when routeId is set", async () => {
+    const result = await executeTool(
+      "mesh.match_capability_route",
+      { routeId: "service.task-negotiation" },
+      minimalContext,
+    );
+    expect(result.ok).toBe(true);
+    const route = (result.result as { route?: { routeId: string } })?.route;
+    expect(route?.routeId).toBe("service.task-negotiation");
+  });
+
+  it("requires goal, capabilityIds, or routeId", async () => {
+    const result = await executeTool("mesh.match_capability_route", {}, minimalContext);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/goal and\/or capabilityIds/i);
   });
 });
 

@@ -20,7 +20,9 @@ import {
   DEFAULT_AI_KNOWLEDGE_BASE_CHUNK_SIZE_CHARS,
   DEFAULT_DOCUMENT_AUTONOMY_POLICY,
   DEFAULT_PROFILE_MEDIA_POLICY,
+  DEFAULT_ENVOY_DISCLOSURE_SETTINGS,
   normalizeDocumentAutonomyPolicy,
+  normalizeEnvoyDisclosureSettings,
   normalizeProfileMediaPolicy,
   type AgentIdentityDocument,
   type ProfileMediaPolicy,
@@ -455,6 +457,7 @@ function defaultAiSettings(): AiSettings {
     defaultModeForNewContacts: "manual",
     rules: [],
     documentAutonomy: { ...DEFAULT_DOCUMENT_AUTONOMY_POLICY },
+    disclosure: { ...DEFAULT_ENVOY_DISCLOSURE_SETTINGS },
     profileMedia: { ...DEFAULT_PROFILE_MEDIA_POLICY },
     knowledgeBase: { ...DEFAULT_AI_KNOWLEDGE_BASE },
   };
@@ -466,6 +469,7 @@ export function SettingsAITab() {
   const aiSettings = nodeConfig?.aiSettings ?? defaultAiSettings();
   const documentAutonomy = normalizeDocumentAutonomyPolicy(aiSettings.documentAutonomy);
   const profileMedia = normalizeProfileMediaPolicy(aiSettings.profileMedia);
+  const disclosure = normalizeEnvoyDisclosureSettings(aiSettings.disclosure);
 
   const [ruleForm, setRuleForm] = useState<RuleFormState>(EMPTY_RULE_FORM);
 
@@ -639,6 +643,92 @@ export function SettingsAITab() {
             </div>
           </label>
         ))}
+      </div>
+
+      <h4>Chat disclosure</h4>
+      <p className="field-desc">
+        Wire messages always use honest agent roles. These settings affect contact-thread presentation only;
+        Activity and audit always show the true actor.
+      </p>
+      <div className="settings-field">
+        <label className="settings-checkbox-row">
+          <input
+            type="checkbox"
+            checked={disclosure.showAgentBadges}
+            onChange={async (e) => {
+              await updateAiSettings({
+                disclosure: { ...disclosure, showAgentBadges: e.target.checked },
+              });
+            }}
+          />
+          <span>Show agent badges in contact chat</span>
+        </label>
+      </div>
+      <div className="settings-field">
+        <label className="settings-checkbox-row">
+          <input
+            type="checkbox"
+            checked={disclosure.collapsePeerAgentToContact}
+            onChange={async (e) => {
+              await updateAiSettings({
+                disclosure: {
+                  ...disclosure,
+                  collapsePeerAgentToContact: e.target.checked,
+                },
+              });
+            }}
+          />
+          <span>Show verified peer agents like normal contact chat</span>
+        </label>
+      </div>
+
+      <h4>EnvoyAI postures</h4>
+      <p className="field-desc">
+        Standing delegation within EMP. Social proxy requires Trust mode enabled in Settings → Trust.
+      </p>
+      <div className="settings-field">
+        <label className="settings-checkbox-row">
+          <input
+            type="checkbox"
+            checked={nodeConfig?.socialProxyEnabled === true}
+            disabled={!nodeConfig?.trustModeEnabled}
+            onChange={async (e) => {
+              const enabled = e.target.checked;
+              await nodeService.updateNodeConfig({
+                socialProxyEnabled: enabled,
+                ...(enabled ? { friendAutopilotEnabled: false } : {}),
+              });
+              await refreshNodeConfig();
+            }}
+          />
+          <span>Social proxy</span>
+        </label>
+      </div>
+      <div className="settings-field">
+        <label className="settings-checkbox-row">
+          <input
+            type="checkbox"
+            checked={nodeConfig?.documentAcquisitionEnabled === true}
+            onChange={async (e) => {
+              await nodeService.updateNodeConfig({ documentAcquisitionEnabled: e.target.checked });
+              await refreshNodeConfig();
+            }}
+          />
+          <span>Document acquisition agent</span>
+        </label>
+      </div>
+      <div className="settings-field">
+        <label className="settings-checkbox-row">
+          <input
+            type="checkbox"
+            checked={nodeConfig?.capabilityProviderEnabled === true}
+            onChange={async (e) => {
+              await nodeService.updateNodeConfig({ capabilityProviderEnabled: e.target.checked });
+              await refreshNodeConfig();
+            }}
+          />
+          <span>Capability provider agent</span>
+        </label>
       </div>
 
       <div className="settings-field">

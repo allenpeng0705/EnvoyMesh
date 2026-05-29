@@ -83,6 +83,54 @@ export const CapabilitySchema = z.enum([
   "device.sync",
 ]);
 
+/** Standing delegation postures (EnvoyAI — part of emp/0.1). */
+export const EmpPostureSchema = z.enum(["social_proxy", "document_acquisition", "capability_provider"]);
+
+/** Advertised on Agent Card / system.signal when node supports EnvoyAI features. */
+export const EmpCapabilitySchema = z.enum([
+  "standing-delegation",
+  "social-proxy",
+  "document-acquisition",
+  "capability-provider",
+]);
+
+/** Agent credential scope values for posture-gated intents. */
+export const EMP_AGENT_SCOPE_SOCIAL_PROXY = "emp.social_proxy" as const;
+export const EMP_AGENT_SCOPE_DOCUMENT_ACQUISITION = "emp.document_acquisition" as const;
+export const EMP_AGENT_SCOPE_CAPABILITY_PROVIDER = "emp.capability_provider" as const;
+
+export const SocialProxyPosturePolicySchema = z.object({
+  autoHello: z.boolean().default(false),
+  autoChatWithPeerAgents: z.boolean().default(true),
+  autoChatWithPeerHumans: z.boolean().default(false),
+  maxNewIntrosPerDay: z.number().int().min(0).max(100).default(5),
+  requireOwnerCommitmentRefOnBondRequest: z.boolean().default(true),
+  helloRequiresApproval: z.boolean().default(true),
+  scheduleIntervalHours: z.union([z.literal(0), z.literal(24), z.literal(168)]).default(0),
+});
+
+export const DocumentAcquisitionPosturePolicySchema = z.object({
+  searchBondedOnly: z.boolean().default(true),
+  maxHops: z.number().int().min(0).max(8).default(0),
+  maxNegotiationRounds: z.number().int().min(1).max(32).default(5),
+  autoRequestShareUpTo: SensitivitySchema.default("public"),
+  autoAcceptInboundShareUpTo: SensitivitySchema.default("friends"),
+  maxActiveJobs: z.number().int().min(1).max(16).default(3),
+  jobTtlHours: z.number().int().min(1).max(720).default(72),
+});
+
+export const CapabilityProviderPosturePolicySchema = z.object({
+  maxActiveJobs: z.number().int().min(1).max(16).default(3),
+  jobTtlHours: z.number().int().min(1).max(720).default(72),
+  searchBondedOnly: z.boolean().default(true),
+});
+
+export const PosturePolicySchema = z.union([
+  SocialProxyPosturePolicySchema,
+  DocumentAcquisitionPosturePolicySchema,
+  CapabilityProviderPosturePolicySchema,
+]);
+
 export const PublicIdentitySchema = z.object({
   id: z.string().min(1),
   publicKeyPem: z.string().min(1),
@@ -191,6 +239,8 @@ const EnvoyEnvelopeObjectSchema = z.object({
   payload: z.unknown(),
   /** Agent credential, required when senderRole is "agent" */
   agentCredential: AgentCredentialSchema.optional(),
+  /** Links automated traffic to an active standing mandate id (EnvoyAI). */
+  postureRef: z.string().min(1).optional(),
   signature: z.string().min(1),
 });
 
@@ -251,6 +301,8 @@ export const SystemSignalPayloadSchema = z.object({
   deviceProfile: DeviceProfileSchema,
   capabilities: z.array(CapabilitySchema).min(1),
   supportedProtocolVersions: z.array(z.string().min(1)).min(1),
+  /** Optional EnvoyAI capability flags under emp/0.1. */
+  supportedCapabilities: z.array(EmpCapabilitySchema).default([]),
   listenAddrs: z.array(z.string().min(1)).default([]),
   publicTopics: z.array(z.string().min(1)).default([]),
   status: z.enum(["online", "away", "busy"]).default("online"),
@@ -526,6 +578,8 @@ export const KnowledgeResponsePayloadSchema = z.object({
   answer: z.string().max(32768),
   sensitivity: SensitivitySchema.default("public"),
   matchScore: z.number().min(0).max(1).optional(),
+  /** Vault-relative path when responder identifies a published library item (document acquisition interop). */
+  suggestedRelativePath: z.string().min(1).max(512).optional(),
   refused: z.boolean().optional().default(false),
   refusalReason: z.string().max(500).optional(),
 });
@@ -1149,6 +1203,11 @@ export const UnsignedMandateSchema = z.object({
   /** Time-to-live: max relay hops for task propagation. Default 3. */
   ttl: z.number().int().min(1).max(8).default(3),
   requiresApprovalFor: z.array(MandateActionSchema).default([]),
+  /** Standing posture mandate (EnvoyAI). When set, {@link posturePolicy} bounds autonomous work. */
+  posture: EmpPostureSchema.optional(),
+  posturePolicy: PosturePolicySchema.optional(),
+  /** Agent recipient for standing mandates (optional; device may still be {@link issuedToDeviceId}). */
+  issuedToAgentId: z.string().min(1).optional(),
 });
 
 export const MandateSchema = UnsignedMandateSchema.extend({
@@ -1449,6 +1508,11 @@ export type RendezvousResponsePayload = z.infer<typeof RendezvousResponsePayload
 export type ChatMessagePayload = z.infer<typeof ChatMessagePayloadSchema>;
 export type ChatDeliveredPayload = z.infer<typeof ChatDeliveredPayloadSchema>;
 export type MandateAction = z.infer<typeof MandateActionSchema>;
+export type EmpPosture = z.infer<typeof EmpPostureSchema>;
+export type EmpCapability = z.infer<typeof EmpCapabilitySchema>;
+export type SocialProxyPosturePolicy = z.infer<typeof SocialProxyPosturePolicySchema>;
+export type DocumentAcquisitionPosturePolicy = z.infer<typeof DocumentAcquisitionPosturePolicySchema>;
+export type PosturePolicy = z.infer<typeof PosturePolicySchema>;
 export type MandatePeerScope = z.infer<typeof MandatePeerScopeSchema>;
 export type MandateCostLimit = z.infer<typeof MandateCostLimitSchema>;
 export type UnsignedMandate = z.infer<typeof UnsignedMandateSchema>;
@@ -1500,6 +1564,7 @@ export interface CreateEnvelopeInput<TPayload> {
   createdAt?: string;
   messageId?: string;
   correlationId?: string;
+  postureRef?: string;
 }
 
 export function createUnsignedEnvelope<TPayload>(
@@ -1524,6 +1589,7 @@ export function createUnsignedEnvelope<TPayload>(
     intent: input.intent,
     payload: input.payload,
     agentCredential: input.agentCredential,
+    postureRef: input.postureRef,
   }) as UnsignedEnvoyEnvelope<TPayload>;
 }
 
@@ -1844,6 +1910,7 @@ export interface CreateKnowledgeResponsePayloadInput {
   answer: string;
   sensitivity?: Sensitivity;
   matchScore?: number;
+  suggestedRelativePath?: string;
   refused?: boolean;
   refusalReason?: string;
 }
@@ -1854,6 +1921,7 @@ export function createKnowledgeResponsePayload(input: CreateKnowledgeResponsePay
     answer: input.answer,
     sensitivity: input.sensitivity ?? "public",
     matchScore: input.matchScore,
+    suggestedRelativePath: input.suggestedRelativePath,
     refused: input.refused ?? false,
     refusalReason: input.refusalReason,
   });
@@ -2401,6 +2469,7 @@ export interface CreateSystemSignalPayloadInput {
   deviceCertificate: DeviceCertificate;
   ownerPublicKeyPem: string;
   supportedProtocolVersions?: string[];
+  supportedCapabilities?: SystemSignalPayload["supportedCapabilities"];
   listenAddrs?: string[];
   publicTopics?: string[];
   status?: SystemSignalPayload["status"];
@@ -2417,6 +2486,7 @@ export function createSystemSignalPayload(
     deviceProfile: input.deviceCertificate.deviceProfile,
     capabilities: input.deviceCertificate.capabilities,
     supportedProtocolVersions: input.supportedProtocolVersions ?? ["emp/0.1"],
+    supportedCapabilities: input.supportedCapabilities ?? [],
     listenAddrs: input.listenAddrs ?? [],
     publicTopics: input.publicTopics ?? [],
     status: input.status ?? "online",
@@ -2525,6 +2595,9 @@ export interface CreateUnsignedMandateInput {
   ttl?: number;
   requiresApprovalFor?: MandateAction[];
   mandateId?: string;
+  posture?: EmpPosture;
+  posturePolicy?: z.infer<typeof PosturePolicySchema>;
+  issuedToAgentId?: string;
 }
 
 export function createUnsignedMandate(input: CreateUnsignedMandateInput): UnsignedMandate {
@@ -2549,6 +2622,9 @@ export function createUnsignedMandate(input: CreateUnsignedMandateInput): Unsign
     collectCompletedResults: input.collectCompletedResults,
     ttl: input.ttl ?? 3,
     requiresApprovalFor: input.requiresApprovalFor ?? ["purchase", "raw_contact_exchange"],
+    posture: input.posture,
+    posturePolicy: input.posturePolicy,
+    issuedToAgentId: input.issuedToAgentId,
   });
 }
 

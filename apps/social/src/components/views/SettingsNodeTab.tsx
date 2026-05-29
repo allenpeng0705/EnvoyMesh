@@ -1590,7 +1590,9 @@ export function SettingsNodeTab() {
           <div className="toggle-info">
             <strong>Friend autopilot</strong>
             <span className="toggle-desc">
-              Allow agent tool <code>mesh.intro.run_autopilot</code> (requires Trust mode + owner approval)
+              {nodeConfig?.socialProxyEnabled
+                ? "Superseded by Social proxy (Settings → AI). Disable social proxy to use discovery-only autopilot."
+                : "Allow agent tool mesh.intro.run_autopilot (requires Trust mode + owner approval)"}
             </span>
           </div>
           <label className="toggle-switch">
@@ -1598,7 +1600,7 @@ export function SettingsNodeTab() {
               type="checkbox"
               checked={friendAutopilotToggle.checked}
               onChange={friendAutopilotToggle.onCheckboxChange}
-              disabled={!trustModeToggle.checked}
+              disabled={!trustModeToggle.checked || nodeConfig?.socialProxyEnabled === true}
             />
             <span className="slider" />
           </label>

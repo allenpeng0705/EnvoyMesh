@@ -18,11 +18,13 @@ import type { AssistantMode } from "../../lib/storage.js";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
 import {
-  messageVisualVariantForMessage,
   resolveChatThreadKind,
   threadKindLabel,
 } from "../../lib/chat-thread-kind.js";
-import { formatChatActorBadge } from "@envoymesh/api";
+import {
+  normalizeEnvoyDisclosureSettings,
+  resolveChatBubblePresentation,
+} from "@envoymesh/api";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatFileAttachment } from "../ChatFileAttachment.js";
@@ -331,6 +333,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   const canDraftAssist = (nodeConfig?.chatAssistEnabled ?? false) || autoSendEnabled;
   const canAutoSend = autoSendEnabled && !(nodeConfig?.autonomousKillSwitch ?? false);
   const aiIdentity = nodeConfig?.aiSettings?.identity;
+  const disclosure = normalizeEnvoyDisclosureSettings(nodeConfig?.aiSettings?.disclosure);
   const showDraftSuggestions = canDraftAssist && currentAiMode === "assistant";
   const { latestDraft, dismissDraft } = useChatDrafts(
     selectedContact,
@@ -548,13 +551,18 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
               <div className="date-separator"><span>{fmtDateLabel(msgs[0].metadata.timestamp)}</span></div>
               {buildMessageStacks(msgs, (a, b) => isOutgoingMsg(a) === isOutgoingMsg(b)).map((stack) => {
                 const outgoing = isOutgoingMsg(stack[0]);
-                const variant = messageVisualVariantForMessage(stack[0], outgoing, threadKind);
-                const actorBadge = formatChatActorBadge({
-                  displayName: peerDisplayLabel(stack[0].sender),
-                  actorRole: stack[0].sender.actorRole,
-                  agentVerified: stack[0].sender.agentVerified,
-                  outgoing,
-                });
+                const presentation = resolveChatBubblePresentation(
+                  {
+                    actorRole: stack[0].sender.actorRole,
+                    agentVerified: stack[0].sender.agentVerified,
+                    outgoing,
+                    contactDisplayName: peerDisplayLabel(stack[0].sender),
+                    threadKind,
+                  },
+                  disclosure,
+                );
+                const variant = presentation.variant;
+                const actorBadge = presentation.actorBadge;
                 const senderInitial = peerDisplayLabel(stack[0].sender).charAt(0).toUpperCase() || "?";
                 return (
                   <div

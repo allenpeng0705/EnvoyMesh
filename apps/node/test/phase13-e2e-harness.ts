@@ -23,11 +23,14 @@ import {
 } from "@envoymesh/local-store";
 import {
   createChatMessagePayload,
+  createKnowledgeResponsePayload,
   createUnsignedEnvelope,
+  parseKnowledgeQueryPayload,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
 import { ApprovalQueue, isA2ATaskIntent } from "@envoymesh/api";
 import { EnvoyMesh } from "@envoymesh/network";
+import { buildVaultIndex } from "@envoymesh/vault";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,6 +39,7 @@ import type { BridgeIdentity } from "../src/bridge/pipe.js";
 import { handleDaemonAgentCardInbound } from "../src/daemon-agent-card-inbound.js";
 import { handleDaemonTaskInbound } from "../src/daemon-task-inbound.js";
 import { createInboundMessageGuard } from "../src/inbound-guard.js";
+import { handleInboundKnowledgeQuery } from "../src/knowledge-query-inbound.js";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
 
 export const phase13Meshes: EnvoyMesh[] = [];
@@ -343,11 +347,321 @@ export async function waitForPhase13(
   throw new Error("waitForPhase13 timeout");
 }
 
+export async function cleanupPhase13Node(node: Phase13TestNode): Promise<void> {
+  await node.mesh.stop().catch(() => {});
+  await rm(node.profileDir, { recursive: true, force: true }).catch(() => {});
+  const meshIdx = phase13Meshes.indexOf(node.mesh);
+  if (meshIdx >= 0) phase13Meshes.splice(meshIdx, 1);
+  const dirIdx = phase13ProfileDirs.indexOf(node.profileDir);
+  if (dirIdx >= 0) phase13ProfileDirs.splice(dirIdx, 1);
+}
+
 export async function cleanupPhase13Harness(): Promise<void> {
   await Promise.all(phase13Meshes.splice(0).map((m) => m.stop().catch(() => {})));
   await Promise.all(
     phase13ProfileDirs.splice(0).map((d) => rm(d, { recursive: true, force: true }).catch(() => {})),
   );
+}
+
+import { handleInboundSocialIntroIntent } from "../src/social-intro-inbound.js";
+import { handleInboundDiscoveryIntent } from "../src/discovery-inbound.js";
+import {
+  createDiscoveryResponsePayload,
+  createSharePreviewPayload,
+  parseShareAcceptPayload,
+  parseSharePreviewPayload,
+  parseShareRequestPayload,
+} from "@envoymesh/protocol";
+import { handleInboundShareRequest } from "../src/share-inbound.js";
+import { installEnvoyDataTransferReceiver } from "../src/data-transfer-inbound.js";
+
+export async function ensureSocialProxyBridgeIdentity(node: Phase13TestNode): Promise<BridgeIdentity> {
+  const existing = await loadBridgeIdentity(node.profileDir);
+  if (existing) return existing;
+  const agent = generateAgentIdentity(node.profile.owner.ownerId);
+  const identity: BridgeIdentity = {
+    agentPeerId: agent.agentPeerId,
+    agentPublicKeyPem: agent.publicKeyPem,
+    agentPrivateKeyPem: agent.privateKeyPem,
+    ownerId: node.profile.owner.ownerId,
+    agentCredential: createAgentCredential({
+      owner: node.profile.owner,
+      agent,
+      scope: [
+        "message.send",
+        "chat.message",
+        "discovery.request",
+        "social.intro.sync",
+        "social.intro.propose",
+        "bond.request",
+      ],
+    }),
+  };
+  await saveBridgeIdentity(node.profileDir, identity);
+  return identity;
+}
+
+export function wireSocialIntroHandlers(node: Phase13TestNode, trustModeEnabled = true): void {
+  node.mesh.onMessage(async ({ envelope, remotePeerId }) => {
+    if (!verifyInboundEnvelope(envelope)) return;
+    if (
+      envelope.intent !== "social.intro.sync" &&
+      envelope.intent !== "social.intro.propose" &&
+      envelope.intent !== "social.intro.owner-ready"
+    ) {
+      return;
+    }
+    const intro = await handleInboundSocialIntroIntent({
+      envelope,
+      profile: node.profile,
+      remotePeerId,
+      receivedAt: Date.now(),
+      correlationId: envelope.correlationId,
+      taskStore: node.taskStore,
+      trustStore: node.trustStore,
+      peerDirectoryStore: node.peerDirectory,
+      trustModeEnabled,
+      onSocialIntroPropose: (data) => {
+        const svc = node.service as NodeServiceImpl;
+        svc.storePendingSocialIntroProposal({ ...data, commitmentApproved: false });
+      },
+      onSocialIntroOwnerReady: (data) => {
+        void (node.service as NodeServiceImpl).handleSocialProxyPeerOwnerReady(data);
+      },
+    });
+    void intro;
+  });
+}
+
+export function wireDiscoveryAndShareForAcquisition(
+  publisher: Phase13TestNode,
+  acquirer: Phase13TestNode,
+): void {
+  publisher.mesh.onMessage(async ({ envelope, remotePeerId, replyWithEnvelope }) => {
+    if (!verifyInboundEnvelope(envelope)) return;
+
+    if (envelope.intent === "discovery.request") {
+      const discovery = await handleInboundDiscoveryIntent({
+        envelope,
+        profile: publisher.profile,
+        remotePeerId,
+        receivedAt: Date.now(),
+        correlationId: envelope.correlationId,
+        taskStore: publisher.taskStore,
+        trustStore: publisher.trustStore,
+        anonymousDiscoveryMode: "off",
+        vaultDir: publisher.vaultDir,
+        profileDir: publisher.profileDir,
+      });
+      if (!discovery.ok || !discovery.responsePayload || !replyWithEnvelope) return;
+      const unsignedResponse = createUnsignedEnvelope({
+        senderPeerId: derivePeerId(publisher.profile.device.publicKeyPem),
+        senderPublicKey: publisher.profile.device.publicKeyPem,
+        recipientPeerId: envelope.senderPeerId,
+        intent: "discovery.response",
+        payload: createDiscoveryResponsePayload(discovery.responsePayload),
+        correlationId: envelope.correlationId,
+      });
+      const signedResponse = signUnsignedEnvelope(unsignedResponse, publisher.profile.device.privateKeyPem);
+      await replyWithEnvelope(signedResponse);
+      return;
+    }
+
+    if (envelope.intent === "share.request") {
+      const share = await handleInboundShareRequest({
+        envelope,
+        remotePeerId,
+        receivedAt: Date.now(),
+        correlationId: envelope.correlationId,
+        taskStore: publisher.taskStore,
+        trustStore: publisher.trustStore,
+        peerDirectoryStore: publisher.peerDirectory,
+        profile: publisher.profile,
+        vaultIndex: null,
+        vaultDir: publisher.vaultDir,
+        modelProviders: { mode: "mock" },
+      });
+      if (!share.ok) return;
+
+      const unsignedResponse = createUnsignedEnvelope({
+        senderPeerId: derivePeerId(publisher.profile.device.publicKeyPem),
+        senderPublicKey: publisher.profile.device.publicKeyPem,
+        senderRole: "human",
+        recipientPeerId: envelope.senderPeerId,
+        recipientRole: "human",
+        intent: "share.preview",
+        payload: createSharePreviewPayload(share.responsePayload),
+        correlationId: envelope.correlationId,
+      });
+      const signedResponse = signUnsignedEnvelope(unsignedResponse, publisher.profile.device.privateKeyPem);
+      await publisher.mesh.send(remotePeerId, signedResponse);
+
+      let shareRequestPayload: ReturnType<typeof parseShareRequestPayload> | null = null;
+      try {
+        shareRequestPayload = parseShareRequestPayload(envelope.payload);
+      } catch {
+        shareRequestPayload = null;
+      }
+      if (shareRequestPayload?.requestType === "file" && shareRequestPayload.fileOrigin === "responder") {
+        publisher.service.registerResponderFileSendAfterPreview(
+          signedResponse.messageId,
+          shareRequestPayload.relativePath,
+          remotePeerId,
+        );
+      }
+      return;
+    }
+
+    if (envelope.intent === "share.accept") {
+      try {
+        const acc = parseShareAcceptPayload(envelope.payload);
+        if (!acc.accept) {
+          publisher.service.clearPendingShareStateForPreview(acc.inReplyTo);
+          return;
+        }
+      } catch {
+        return;
+      }
+      await publisher.service.maybeSendShareFileForInboundAccept({
+        envelope,
+        remotePeerId,
+        taskStore: publisher.taskStore,
+        vaultDir: publisher.vaultDir,
+      });
+    }
+  });
+
+  acquirer.mesh.onMessage(async ({ envelope, remotePeerId }) => {
+    if (!verifyInboundEnvelope(envelope)) return;
+    if (envelope.intent !== "share.preview") return;
+    try {
+      const preview = parseSharePreviewPayload(envelope.payload);
+      if (!preview.isFileTransfer || preview.refused) return;
+      const recorded = acquirer.service.recordInboundPullSharePreview({
+        previewMessageId: envelope.messageId,
+        inReplyToRequestMsgId: preview.inReplyTo,
+        senderPeerId: remotePeerId,
+        previewText: preview.previewText,
+        sensitivity: preview.sensitivity as "public" | "friends" | "private",
+      });
+      if (!recorded) {
+        acquirer.service.linkOutboundSharePreviewFromInbound(envelope.messageId, preview.inReplyTo);
+      }
+    } catch {
+      /* ignore */
+    }
+  });
+
+  installEnvoyDataTransferReceiver({
+    mesh: acquirer.mesh,
+    peerDirectoryStore: acquirer.peerDirectory,
+    taskStore: acquirer.taskStore,
+    vaultDir: acquirer.vaultDir,
+    resolveInboundRelativePath: (remotePeerId, voucherRelativePath) =>
+      acquirer.service.resolveInboundDataTransferRelativePath(remotePeerId, voucherRelativePath),
+    onInboundVaultWriteCommitted: (remotePeerId, voucherSourceRelativePath) =>
+      acquirer.service.consumeInboundDataTransferSaveMapping(remotePeerId, voucherSourceRelativePath),
+    onInboundTransferVerified: (input) => acquirer.service.notifyInboundTransferVerified(input),
+  });
+}
+
+/**
+ * Wait until vector RAG has finished indexing the local vault (for E2E).
+ */
+export async function primeLocalVaultRagIndex(node: Phase13TestNode): Promise<void> {
+  await waitForPhase13(async () => {
+    const status = await node.service.getRagIndexStatus();
+    return status.progress.phase === "done" && status.progress.indexed > 0;
+  }, 20_000);
+}
+
+/**
+ * Full inbound knowledge.query handler (vault RAG + mock model) for E2E tests.
+ */
+export async function wireInboundKnowledgeQueryReply(publisher: Phase13TestNode): Promise<void> {
+  publisher.mesh.onMessage(async ({ envelope, remotePeerId, replyWithEnvelope }) => {
+    if (!verifyInboundEnvelope(envelope) || envelope.intent !== "knowledge.query") return;
+    const vaultIndex = await buildVaultIndex({ rootDir: publisher.vaultDir });
+    const result = await handleInboundKnowledgeQuery({
+      envelope,
+      remotePeerId,
+      receivedAt: Date.now(),
+      correlationId: envelope.correlationId ?? `kq-${Date.now()}`,
+      taskStore: publisher.taskStore,
+      trustStore: publisher.trustStore,
+      peerDirectoryStore: publisher.peerDirectory,
+      profile: publisher.profile,
+      vaultIndex,
+      modelProviders: { mode: "mock" },
+    });
+    if (!replyWithEnvelope) return;
+    const refused = !result.ok || (result.responsePayload?.refused ?? false);
+    const unsignedResponse = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(publisher.profile.device.publicKeyPem),
+      senderPublicKey: publisher.profile.device.publicKeyPem,
+      senderRole: envelope.recipientRole === "agent" ? "agent" : "human",
+      recipientPeerId: envelope.senderPeerId,
+      recipientRole: envelope.senderRole,
+      intent: "knowledge.response",
+      payload: createKnowledgeResponsePayload({
+        inReplyTo: envelope.messageId,
+        answer: refused
+          ? `Sorry: ${result.responsePayload?.refusalReason ?? "error"}`
+          : (result.ok ? (result.responsePayload?.answer ?? "No answer") : "Error"),
+        sensitivity: "public",
+        refused,
+      }),
+      correlationId: envelope.correlationId,
+    });
+    await replyWithEnvelope(
+      signUnsignedEnvelope(unsignedResponse, publisher.profile.device.privateKeyPem),
+    );
+  });
+}
+
+/**
+ * Deterministic knowledge.response for document-acquisition negotiation E2E
+ * (path on first line, as structured acquisition queries expect).
+ */
+export function wireDocumentAcquisitionKnowledgeReply(
+  publisher: Phase13TestNode,
+  relativePath: string,
+  matchSummary = "This published library item matches the acquisition request.",
+): void {
+  publisher.mesh.onMessage(async ({ envelope, replyWithEnvelope }) => {
+    if (!verifyInboundEnvelope(envelope) || envelope.intent !== "knowledge.query") return;
+    if (!replyWithEnvelope) return;
+    try {
+      const payload = parseKnowledgeQueryPayload(envelope.payload);
+      if (
+        !payload.query.includes("Document acquisition") &&
+        !payload.query.includes("metadata only")
+      ) {
+        return;
+      }
+    } catch {
+      return;
+    }
+    const unsignedResponse = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(publisher.profile.device.publicKeyPem),
+      senderPublicKey: publisher.profile.device.publicKeyPem,
+      senderRole: envelope.recipientRole === "agent" ? "agent" : "human",
+      recipientPeerId: envelope.senderPeerId,
+      recipientRole: envelope.senderRole,
+      intent: "knowledge.response",
+      payload: createKnowledgeResponsePayload({
+        inReplyTo: envelope.messageId,
+        answer: `${relativePath}\n${matchSummary}`,
+        suggestedRelativePath: relativePath,
+        sensitivity: "friends",
+        refused: false,
+      }),
+      correlationId: envelope.correlationId,
+    });
+    await replyWithEnvelope(
+      signUnsignedEnvelope(unsignedResponse, publisher.profile.device.privateKeyPem),
+    );
+  });
 }
 
 export function chatAssistApprovalConfig(ownerId: string, peerOwnerId: string) {

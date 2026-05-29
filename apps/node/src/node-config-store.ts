@@ -110,6 +110,16 @@ export interface PersistedNodeConfig {
   friendAutopilotLastRunAt?: string;
   /** Phase 14B — inbound peer knowledge.query syndication ceiling. */
   knowledgeSyndicationMaxSensitivity?: "public" | "friends" | "private";
+  /** Phase 16B — social proxy posture. */
+  socialProxyEnabled?: boolean;
+  socialProxyMandateId?: string;
+  socialProxyLastPassAt?: string;
+  /** Phase 16C — document acquisition. */
+  documentAcquisitionEnabled?: boolean;
+  documentAcquisitionMandateId?: string;
+  /** Phase 16D — capability provider (agent intent routing jobs). */
+  capabilityProviderEnabled?: boolean;
+  capabilityProviderMandateId?: string;
 }
 
 export interface NodeConfigStore {

@@ -1,0 +1,48 @@
+{
+  "$id": "https://envoymesh.dev/schemas/emp-0.1/bond-request-payload.json",
+  "title": "bond.request Payload",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "requesterOwnerId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requesterDisplayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "message": {
+      "type": "string",
+      "maxLength": 1024
+    },
+    "proofOfContext": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "requestedLevel": {
+      "default": "direct",
+      "type": "string",
+      "enum": [
+        "direct",
+        "referred"
+      ]
+    },
+    "introCorrelationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "ownerCommitmentRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  },
+  "required": [
+    "requesterOwnerId",
+    "requestedLevel"
+  ],
+  "additionalProperties": false
+}

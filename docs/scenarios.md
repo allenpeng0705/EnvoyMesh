@@ -6,7 +6,8 @@ This document is the **scenario backlog** for EnvoyMesh: short, testable user st
 
 - [Alignment review](./alignment-review.md): design vs implementation snapshot.
 - [User stories (narrative requirements)](./UserStory.md): journeys, roles, and protocol pressure in prose.
-- [EnvoyMesh Protocol](./protocol-standard.md) (EMP): envelopes, identity, mandates, tasks.
+- [EnvoyMesh Protocol](./protocol-standard.md) (EMP): envelopes, identity, mandates, tasks, **EnvoyAI postures**.
+- [EnvoyAI design guide](./envoyai-protocol.md): readable index into EMP's AI-social sections (normative text in protocol-standard).
 - [QuickStart](../QuickStart.md): run node, CLI, dashboard, probes.
 
 **How to read each story**
@@ -375,6 +376,147 @@ Stories for [Phase 13](./implementation-plan.md#phase-13-a2a-routing-actor-discl
 
 **Status:** *Implemented* — Activity timeline + correlation refs + **contact/date filter UI** (US-AV8).
 
+### US-AV9: Configurable peer-facing agent disclosure in chat UI
+
+**As an** owner, **I want** to choose whether chat shows **agent badges** or presents messages **like the contact** **so that** social conversations feel natural while wire verification stays honest.
+
+**Acceptance notes**
+
+- Settings: `showAgentBadges`, `collapsePeerAgentToContact` (local-only; see [EMP EnvoyAI disclosure](./protocol-standard.md#three-disclosure-planes)).
+- Wire unchanged: outbound auto-send still `senderRole=agent` + `agentCredential` (US-AV2).
+- Activity + audit always record true actor; UI collapse affects contact threads only.
+- Inbound messages still verified; unverified agent role → reject or blocked state.
+
+**Status:** *Planned* — Phase **16D**; today badges always show (`ChatMessageBubble` agent variants).
+
+---
+
+<a id="epic-sp-delegated-social-presence"></a>
+
+## Epic SP — Delegated social presence
+
+Stories for [Phase 16B](./implementation-plan.md#phase-16-envoyai-standing-delegation--autonomous-postures) and [EMP `social_proxy`](./protocol-standard.md#posture-social_proxy). **Not** a time-boxed “night mode” — a **standing social proxy** posture authorized by owner mandate.
+
+### US-SP1: Enable social proxy posture
+
+**As an** owner, **I want** a single **social proxy** toggle backed by a signed standing mandate **so that** my agent may represent me socially within explicit bounds.
+
+**Acceptance notes**
+
+- `NodeConfig.socialProxyEnabled` (or equivalent) requires valid `social_proxy` mandate on disk.
+- Mandate lists allowed intents, `maxNewIntrosPerDay`, sensitivity ceiling, expiry.
+- Kill switch disables posture immediately.
+
+**Status:** *Planned* — Phase **16B**; partial overlap with `friendAutopilotEnabled` (discovery-only today).
+
+### US-SP2: Agent discovers and proposes intros autonomously
+
+**As an** Envoy with social proxy, **I want** to run discovery + Trust-mode intro sync **so that** promising candidates surface without manual tool chaining.
+
+**Acceptance notes**
+
+- Uses `discovery.request`, `mesh.intro.broadcast_search`, `social.intro.sync` / `social.intro.propose` per mandate.
+- Activity row + optional digest per pass; respects Trust mode + rate limits.
+
+**Status:** *Planned* — Phase **16B**; Phase 14 autopilot covers broadcast search only.
+
+### US-SP3: Agent says hello with human commit linkage
+
+**As an** Envoy with social proxy, **I want** to send **`bond.request`** on the owner’s behalf **so that** peers receive a hello while bond commit stays human-only.
+
+**Acceptance notes**
+
+- Agent-sent `bond.request` includes **`ownerCommitmentRef`** (approved intro) or queues owner approval per mandate `requiresApprovalFor`.
+- Inbound policy unchanged: credential-bearing agent without ref → reject.
+
+**Status:** *Planned* — Phase **16B**; `sendHello` supports refs when owner drives; agent-initiated path missing.
+
+### US-SP4: Pre-bond chat with humans and peer agents
+
+**As an** Envoy with social proxy, **I want** to exchange **`chat.message`** with candidate humans and their agents **so that** rapport builds before the owner commits a bond.
+
+**Acceptance notes**
+
+- `senderRole=agent` + verified `agentCredential` on all automated chat.
+- Peer policy gates stranger/referred chat; Activity records counterparty + `correlationId`.
+- Long A2A negotiation summarized via Activity / `report.create`, not chat spam.
+
+**Status:** *Planned* — Phase **16B**; `sendAgentChat` exists but not wired to standing proxy loop.
+
+### US-SP5: Owner retains bond commit and visibility
+
+**As an** owner, **I want** **`bond.accept`** to require my explicit action and all proxy work in Activity **so that** friendship stays human-committed and reviewable.
+
+**Acceptance notes**
+
+- `bond.accept` MUST be `senderRole=human` (EnvoyAI v0.1).
+- Inbox still surfaces intro proposals; proxy cannot silently upgrade trust tier.
+
+**Status:** *Planned* — policy rule documented; enforcement is Phase **16B** + existing Phase 12 inbound guards.
+
+---
+
+<a id="epic-da-document-acquisition"></a>
+
+## Epic DA — Document acquisition
+
+Stories for [Phase 16C](./implementation-plan.md#phase-16-envoyai-standing-delegation--autonomous-postures), [EMP `document_acquisition`](./protocol-standard.md#posture-document_acquisition), and [AI Document Backbone](./ai-document-backbone-plan.md).
+
+### US-DA1: Enable document acquisition posture
+
+**As an** owner, **I want** a **document acquisition** mandate **so that** my agent may hunt for files across the mesh while I am away.
+
+**Acceptance notes**
+
+- Mandate defines sensitivity ceiling, bonded-only vs hop-scoped discovery, auto-accept/share thresholds.
+- Assistant or Library UI shows posture status + active job count.
+
+**Status:** *Planned* — Phase **16C**.
+
+### US-DA2: Async hunt job with correlation
+
+**As an** Envoy, **I want** a standing **acquisition job** (vault → bonded catalog → optional discovery) **so that** document search is not limited to one assistant turn.
+
+**Acceptance notes**
+
+- Job store keyed by `correlationId`; stages emit Activity rows.
+- Local vault search runs first; bonded `discoverPublishedLibrary` second.
+
+**Status:** *Planned* — Phase **16C**; `runDocumentAgentTurn` is turn-based only today.
+
+### US-DA3: Negotiate across chat and knowledge intents
+
+**As an** Envoy, **I want** to negotiate with peer agents via **`knowledge.query`** and **`chat.message`** **so that** I can clarify which document matches the owner’s need.
+
+**Acceptance notes**
+
+- Negotiation respects mandate `maxSensitivity` and trust tier.
+- Peer agent replies verified; summaries in Activity.
+
+**Status:** *Planned* — Phase **16C**; `mesh.library_request_share` sends chat ask only.
+
+### US-DA4: Request and accept shares under mandate
+
+**As an** Envoy, **I want** to **`share.request`** and **`share.accept`** within mandate bounds **so that** found documents land in vault inbox without owner micromanagement.
+
+**Acceptance notes**
+
+- Auto-accept only ≤ `autoAcceptInboundShareUpTo`; auto-request only ≤ `autoRequestShareUpTo`.
+- Bytes flow only after consent path + verified `/envoymesh/data` transfer (ADB Layer 3).
+
+**Status:** *Planned* — Phase **16C**; narrow `maybeAutoAcceptChatShare` for bonded inbound only.
+
+### US-DA5: Owner report when acquisition completes or stalls
+
+**As an** owner, **I want** a plain-language **`report.create`** (or Activity summary) when a hunt finishes, fails, or needs approval **so that** I know what was retrieved or why it stopped.
+
+**Acceptance notes**
+
+- Terminal states: `completed`, `failed`, `approval_needed`, `cancelled` (kill switch).
+- Links to Library item path or approval queue item.
+
+**Status:** *Planned* — Phase **16C**; Activity infrastructure exists from Phase 13.
+
 ---
 
 ## Epic MH — Multi-hop discovery (Story D)
@@ -459,6 +601,7 @@ Order should stay consistent with the [implementation plan](./implementation-pla
 |----------|---------|-----------|
 | **P0** | US-A1, US-C1, US-G1, US-D2 | Identity, correlated tasks, auditability, safe defaults. |
 | **P1** | US-C2, US-D1, US-F2, US-TM1–TM4, **US-AV1–AV3** | Bounded broadcasts and trust UX; Trust-mode + **Phase 13** actor disclosure & Activity feed. |
+| **P1+** | **US-SP1–SP5**, **US-DA1–DA5**, **US-AV9** | **Phase 16** EnvoyAI postures within EMP ([protocol-standard § EnvoyAI](./protocol-standard.md#envoyai-ai-mediated-social-mesh)). |
 | **P2** | US-E1–E2, US-F1, US-F3–F4 | Data plane + human-facing channels. |
 | **P3** | US-B1–B2, US-F5, US-A2 | Scale discovery and harden AI-mediated paths. |
 
@@ -468,6 +611,7 @@ Order should stay consistent with the [implementation plan](./implementation-pla
 
 | Date | Change |
 |------|--------|
+| 2026-05-28 | **Epic SP / DA / US-AV9:** Delegated social presence, document acquisition, UI disclosure; EnvoyAI consolidated into [EMP](./protocol-standard.md#envoyai-ai-mediated-social-mesh). |
 | 2026-05-20 | **Epic MH:** Multi-hop discovery **US-MH1–US-MH4** (Story D) — acceptance criteria for parked commerce/multi-hop scope. |
 | 2026-05-20 | **Epic AV:** Actor disclosure & owner visibility **US-AV1–AV8** for [Phase 13](./implementation-plan.md#phase-13-a2a-routing-actor-disclosure--owner-visibility); answers “how owner knows what AI did if A2A is not chat.” P1 hint adds US-AV1–AV3. |
 | 2026-05-19 | **Epic TM:** Trust-mode scenario IDs **US-TM1–US-TM4** (config, inbox/WS/RPC, **`sendHello`** linkage, gated **`mesh.intro.*`** tools); P1 prioritization hint updated. EMP appendix: [protocol-standard.md § Appendix A](./protocol-standard.md#appendix-a-trust-mode-social-mediation-socialintro). |
