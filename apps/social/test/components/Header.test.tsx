@@ -8,6 +8,12 @@ import { Header } from "../../src/components/Header.js";
 import { ThemeProvider } from "../../src/context/ThemeContext.js";
 import type { ViewName } from "../../src/App.js";
 
+vi.mock("../../src/hooks/useNodeService.js", () => ({
+  useNodeService: () => ({
+    readLibraryItemContent: vi.fn().mockRejectedValue(new Error("no photo")),
+  }),
+}));
+
 afterEach(() => cleanup());
 
 function renderHeader(props: React.ComponentProps<typeof Header>) {

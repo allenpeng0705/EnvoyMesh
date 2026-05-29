@@ -6,6 +6,7 @@ import type {
 import type { ViewName } from "../App.js";
 import { useTheme } from "../context/ThemeContext.js";
 import { DarkModeIcon, LightModeIcon } from "../icons.js";
+import { ProfilePhotoAvatar } from "./ProfilePhotoAvatar.js";
 
 interface HeaderProps {
   currentView: ViewName;
@@ -185,7 +186,12 @@ export function Header({
           aria-current={currentView === "profile" ? "page" : undefined}
           title={profileButtonTitle}
         >
-          {profileButtonLabel}
+          <ProfilePhotoAvatar
+            photo={humanProfile?.publicThumbnail}
+            fallbackLabel={profileButtonLabel}
+            className="header-profile-avatar"
+          />
+          <span className="header-profile-btn__label">{profileButtonLabel}</span>
         </button>
       </div>
     </header>
