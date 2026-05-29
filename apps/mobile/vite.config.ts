@@ -41,7 +41,14 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      // Shared packages (same as social vite config)
+      // Shared packages (same as social vite config) — subpath aliases before package root
+      "@envoymesh/api/chat-delivered": resolve(repoRoot, "packages/api/src/chat-delivered.ts"),
+      "@envoymesh/api/did-import": resolve(repoRoot, "packages/api/src/did-import.ts"),
+      "@envoymesh/api/discovery-privacy": resolve(repoRoot, "packages/api/src/discovery-privacy.ts"),
+      "@envoymesh/api/discovery-referral-attestation": resolve(
+        repoRoot,
+        "packages/api/src/discovery-referral-attestation.ts",
+      ),
       "@envoymesh/api": resolve(repoRoot, "packages/api/src/index.ts"),
       "@envoymesh/protocol": resolve(repoRoot, "packages/protocol/src/index.ts"),
 
@@ -62,9 +69,11 @@ export default defineConfig({
       "@envoymesh/network/capability-topic-cid": resolve(repoRoot, "packages/network/src/capability-topic-cid.ts"),
       "@envoymesh/network/protocols": resolve(repoRoot, "packages/network/src/protocols.ts"),
       "@envoymesh/network/data-framing": resolve(repoRoot, "packages/network/src/data-framing.ts"),
+      // Dynamic `import("@envoymesh/network")` in mobile-node — must not load node index
+      "@envoymesh/network": resolve(repoRoot, "packages/network/src/browser.ts"),
 
-      // Desktop identity (social UI uses it for type imports)
-      "@envoymesh/identity": resolve(repoRoot, "packages/identity/src/index.ts"),
+      // Desktop identity types only where needed; mobile runtime uses mobile-identity
+      "@envoymesh/identity": resolve(repoRoot, "packages/mobile-identity/src/index.ts"),
 
       // Social UI source (shared between desktop and mobile)
       "@envoymesh/social": socialSrc,

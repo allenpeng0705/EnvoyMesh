@@ -183,9 +183,15 @@ import { logRelayReachableAddrsForCheckin, logRelayServerCheckinAccepted, logRel
 import {
   createInitialRelayHealthState,
   evaluateRelayHealth,
+  isRelayClientNode,
   type RelayHealthSnapshot,
   type RelayHealthState,
 } from "./relay-health.js";
+import {
+  LIBP2P_RESTART_MIN_INTERVAL_MS,
+  RELAY_HEALTH_REPROBE_MIN_INTERVAL_MS,
+  shouldRunThrottledRepair,
+} from "./libp2p-repair-policy.js";
 import {
   createInitialNodeHealthState,
   evaluateNodeHealth,
@@ -665,6 +671,8 @@ let relayHealthSnapshot: RelayHealthSnapshot | undefined;
 let nodeHealthState: NodeHealthState = createInitialNodeHealthState();
 let nodeHealthSnapshot: NodeHealthSnapshot | undefined;
 let libp2pRepairInProgress = false;
+let lastLibp2pRestartAtMs = 0;
+let lastRelayHealthReprobeAtMs = 0;
 
 mesh.onPeerDiscovered(async (peer) => {
   const source = peerDiscoverySourceFromMultiaddrs(peer.multiaddrs);
@@ -3640,6 +3648,7 @@ async function runNodeHealthCycle(source: "startup" | "periodic"): Promise<void>
     rssBytes: process.memoryUsage().rss,
     recentFatalErrors,
     previous: nodeHealthState,
+    relayClientOnly: isRelayClientNode({ relayServerEnabled: args.enableRelayServer }),
   });
   nodeHealthState = result.state;
   nodeHealthSnapshot = result.snapshot;
@@ -3664,6 +3673,14 @@ async function restartLibp2pForNodeHealth(reason: string): Promise<void> {
     await appendNodeHealthTrace("node.health.repair", "node health libp2p restart already in progress");
     return;
   }
+  const nowMs = Date.now();
+  if (!shouldRunThrottledRepair(nowMs, lastLibp2pRestartAtMs, LIBP2P_RESTART_MIN_INTERVAL_MS)) {
+    await appendNodeHealthTrace(
+      "node.health.repair",
+      `node health libp2p restart skipped (cooldown ${LIBP2P_RESTART_MIN_INTERVAL_MS}ms)`,
+    );
+    return;
+  }
   libp2pRepairInProgress = true;
   try {
     console.warn(`[node-health] restarting libp2p: ${reason}`);
@@ -3672,9 +3689,18 @@ async function restartLibp2pForNodeHealth(reason: string): Promise<void> {
     await mesh.start();
     meshStarted = true;
     lastKnownLibp2pPeerId = mesh.peerId;
+    lastLibp2pRestartAtMs = Date.now();
     await appendNodeHealthTrace("node.health.repair", "node health libp2p restart completed");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (isRelayClientNode({ relayServerEnabled: args.enableRelayServer })) {
+      await appendNodeHealthTrace(
+        "node.health.fail",
+        `node health libp2p restart failed (relay client; staying up) error=${message}`,
+      );
+      console.error(`[node-health] libp2p restart failed (relay client; staying up): ${message}`);
+      return;
+    }
     await appendNodeHealthTrace(
       "node.health.critical",
       `node health libp2p restart failed; exiting for supervisor error=${message}`,
@@ -3751,7 +3777,17 @@ async function runRelayHealthCycle(source: "startup" | "periodic"): Promise<void
   );
 
   if (result.snapshot.actions.includes("reprobe-neighbors")) {
-    await runRelayHealthReprobe();
+    const nowMs = Date.now();
+    if (shouldRunThrottledRepair(nowMs, lastRelayHealthReprobeAtMs, RELAY_HEALTH_REPROBE_MIN_INTERVAL_MS)) {
+      lastRelayHealthReprobeAtMs = nowMs;
+      await runRelayHealthReprobe();
+    } else {
+      await appendRelayTrace(
+        "relay.health.repair",
+        mesh.peerId,
+        `relay health reprobe skipped (cooldown ${RELAY_HEALTH_REPROBE_MIN_INTERVAL_MS}ms)`,
+      );
+    }
   }
   if (result.snapshot.actions.includes("refresh-relay-summary")) {
     await runRelaySummaryCycle("periodic");
@@ -3777,6 +3813,15 @@ async function restartLibp2pForRelayHealth(reason: string): Promise<void> {
     await appendRelayTrace("relay.health.repair", relayPeerId, "relay health libp2p restart already in progress");
     return;
   }
+  const nowMs = Date.now();
+  if (!shouldRunThrottledRepair(nowMs, lastLibp2pRestartAtMs, LIBP2P_RESTART_MIN_INTERVAL_MS)) {
+    await appendRelayTrace(
+      "relay.health.repair",
+      relayPeerId,
+      `relay health libp2p restart skipped (cooldown ${LIBP2P_RESTART_MIN_INTERVAL_MS}ms)`,
+    );
+    return;
+  }
   libp2pRepairInProgress = true;
   try {
     console.warn(`[relay-health] restarting libp2p: ${reason}`);
@@ -3785,9 +3830,19 @@ async function restartLibp2pForRelayHealth(reason: string): Promise<void> {
     await mesh.start();
     meshStarted = true;
     lastKnownLibp2pPeerId = mesh.peerId;
+    lastLibp2pRestartAtMs = Date.now();
     await appendRelayTrace("relay.health.repair", relayPeerId, "relay health libp2p restart completed");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (isRelayClientNode({ relayServerEnabled: args.enableRelayServer })) {
+      await appendRelayTrace(
+        "relay.health.fail",
+        relayPeerId,
+        `relay health libp2p restart failed (relay client; staying up) error=${message}`,
+      );
+      console.error(`[relay-health] libp2p restart failed (relay client; staying up): ${message}`);
+      return;
+    }
     await appendRelayTrace(
       "relay.health.critical",
       relayPeerId,

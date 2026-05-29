@@ -4,8 +4,10 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "icon": "tauri icon app-icon.svg -o src-tauri/icons",
     "dev": "tauri dev",
     "build": "tauri build",
+    "build:full": "bash ../../scripts/fetch-kubo-sidecar.sh && tauri build --config src-tauri/tauri.conf.full.json",
     "build:slim": "tauri build --config src-tauri/tauri.conf.slim.json",
     "build:mac": "tauri build --target aarch64-apple-darwin",
     "build:mac:slim": "tauri build --config src-tauri/tauri.conf.slim.json --target aarch64-apple-darwin",

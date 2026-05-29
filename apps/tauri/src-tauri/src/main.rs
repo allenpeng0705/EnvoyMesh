@@ -1,51 +1,197 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use tauri::{Manager, State};
-use tracing::{info, error, Level};
+use tracing::{error, info, warn, Level};
+use tracing::subscriber::set_global_default;
 use tracing_subscriber::FmtSubscriber;
 
-// Node process handle
-struct NodeProcess(Mutex<Option<std::process::Child>>);
-
-fn get_repo_root() -> PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::current_dir().expect("Failed to get current dir"));
-    manifest_dir
-        .parent().unwrap()
-        .parent().unwrap()
-        .parent().unwrap()
-        .to_path_buf()
+#[derive(Clone)]
+struct NodeSpawnConfig {
+    node_exe: PathBuf,
+    node_path: PathBuf,
+    node_cwd: PathBuf,
+    profile_dir: PathBuf,
+    ipfs_repo_dir: PathBuf,
+    bundled_ipfs: Option<PathBuf>,
 }
 
-fn get_node_path(repo_root: &PathBuf) -> PathBuf {
+struct NodeProcessState {
+    child: Mutex<Option<Child>>,
+    config: NodeSpawnConfig,
+}
+
+/// Compile-time manifest dir (dev builds) — only valid on the machine that built the binary.
+fn resource_dir_from_exe() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    #[cfg(target_os = "macos")]
+    {
+        // .../EnvoyMesh.app/Contents/MacOS/envoymesh → .../Contents/Resources
+        let macos_dir = exe.parent()?;
+        let contents = macos_dir.parent()?;
+        let resources = contents.join("Resources");
+        if resources.is_dir() {
+            return Some(resources);
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let dir = exe.parent()?;
+        let resources = dir.join("resources");
+        if resources.is_dir() {
+            return Some(resources);
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let dir = exe.parent()?;
+        let resources = dir.join("resources");
+        if resources.is_dir() {
+            return Some(resources);
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        let _ = exe;
+    }
+    None
+}
+
+fn resolve_resource_dir(app: &tauri::App) -> Option<PathBuf> {
+    app.path()
+        .resource_dir()
+        .ok()
+        .or_else(resource_dir_from_exe)
+}
+
+fn dev_repo_root_from_manifest() -> Option<PathBuf> {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo = manifest.parent()?.parent()?.parent()?;
+    Some(repo.to_path_buf())
+}
+
+fn dev_node_entry_from_repo(repo_root: &Path) -> PathBuf {
     repo_root.join("apps/node/dist/src/index.js")
 }
 
-fn get_social_ui_path(repo_root: &PathBuf) -> PathBuf {
-    repo_root.join("apps/social/src/dist/index.html")
-}
-
-fn bundled_ipfs_candidates(repo_root: &PathBuf, resource_dir: Option<&Path>) -> Vec<PathBuf> {
+fn bundled_node_runtime_candidates(resource_dir: Option<&Path>, repo_root: Option<&Path>) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     if let Some(dir) = resource_dir {
         #[cfg(windows)]
-        paths.push(dir.join("kubo").join("ipfs.exe"));
+        {
+            paths.push(dir.join("node-runtime/node.exe"));
+            paths.push(dir.join("resources/node-runtime/node.exe"));
+        }
         #[cfg(not(windows))]
-        paths.push(dir.join("kubo").join("ipfs"));
+        {
+            paths.push(dir.join("node-runtime/node"));
+            paths.push(dir.join("resources/node-runtime/node"));
+        }
     }
-    #[cfg(windows)]
-    paths.push(repo_root.join("apps/tauri/resources/kubo/ipfs.exe"));
-    #[cfg(not(windows))]
-    {
-        paths.push(repo_root.join("apps/tauri/resources/kubo/ipfs"));
+    if let Some(repo) = repo_root {
+        #[cfg(windows)]
+        paths.push(
+            repo.join("apps/tauri/src-tauri/resources/node-runtime/node.exe"),
+        );
+        #[cfg(not(windows))]
+        paths.push(repo.join("apps/tauri/src-tauri/resources/node-runtime/node"));
     }
     paths
 }
 
-fn resolve_bundled_ipfs_exe(repo_root: &PathBuf, resource_dir: Option<&Path>) -> Option<PathBuf> {
-    for path in bundled_ipfs_candidates(repo_root, resource_dir) {
+fn resolve_bundled_node_exe(resource_dir: Option<&Path>) -> Option<PathBuf> {
+    let repo = dev_repo_root_from_manifest();
+    for path in bundled_node_runtime_candidates(resource_dir, repo.as_deref()) {
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn resolve_node_exe(resource_dir: Option<&Path>) -> PathBuf {
+    if let Ok(from_env) = std::env::var("ENVOYMESH_NODE_EXE") {
+        let path = PathBuf::from(from_env.trim());
+        if path.is_file() {
+            return path;
+        }
+        warn!("ENVOYMESH_NODE_EXE is set but not a file: {:?}", path);
+    }
+
+    if let Some(bundled) = resolve_bundled_node_exe(resource_dir) {
+        return bundled;
+    }
+
+    PathBuf::from("node")
+}
+
+fn node_app_root(node_entry: &Path) -> PathBuf {
+    node_entry
+        .parent()
+        .and_then(|src| src.parent())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| node_entry.parent().unwrap_or(node_entry).to_path_buf())
+}
+
+fn bundled_node_entry(resource_dir: &Path) -> Option<PathBuf> {
+    let candidates = [
+        resource_dir.join("node/src/index.js"),
+        resource_dir.join("resources/node/src/index.js"),
+    ];
+    candidates.into_iter().find(|path| path.is_file())
+}
+
+fn resolve_node_entry(resource_dir: Option<&Path>) -> Option<PathBuf> {
+    if let Ok(from_env) = std::env::var("ENVOYMESH_NODE_ENTRY") {
+        let path = PathBuf::from(from_env.trim());
+        if path.is_file() {
+            return Some(path);
+        }
+        warn!("ENVOYMESH_NODE_ENTRY is set but not a file: {:?}", path);
+    }
+
+    if let Some(dir) = resource_dir {
+        if let Some(bundled) = bundled_node_entry(dir) {
+            return Some(bundled);
+        }
+    }
+
+    if let Some(repo) = dev_repo_root_from_manifest() {
+        let dev_entry = dev_node_entry_from_repo(&repo);
+        if dev_entry.is_file() {
+            return Some(dev_entry);
+        }
+    }
+
+    None
+}
+
+fn bundled_ipfs_candidates(repo_root: Option<&Path>, resource_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(dir) = resource_dir {
+        #[cfg(windows)]
+        {
+            paths.push(dir.join("resources/kubo/ipfs.exe"));
+            paths.push(dir.join("kubo/ipfs.exe"));
+        }
+        #[cfg(not(windows))]
+        {
+            paths.push(dir.join("resources/kubo/ipfs"));
+            paths.push(dir.join("kubo/ipfs"));
+        }
+    }
+    if let Some(repo) = repo_root {
+        #[cfg(windows)]
+        paths.push(repo.join("apps/tauri/resources/kubo/ipfs.exe"));
+        #[cfg(not(windows))]
+        paths.push(repo.join("apps/tauri/resources/kubo/ipfs"));
+    }
+    paths
+}
+
+fn resolve_bundled_ipfs_exe(resource_dir: Option<&Path>) -> Option<PathBuf> {
+    let repo = dev_repo_root_from_manifest();
+    for path in bundled_ipfs_candidates(repo.as_deref(), resource_dir) {
         if path.is_file() {
             return Some(path);
         }
@@ -57,12 +203,70 @@ fn is_port_in_use(port: u16) -> bool {
     std::net::TcpListener::bind(format!("127.0.0.1:{}", port)).is_err()
 }
 
+fn stop_node_child(child_slot: &mut Option<Child>) {
+    if let Some(mut child) = child_slot.take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+fn spawn_node_process(config: &NodeSpawnConfig) -> Result<Child, String> {
+    if !config.node_path.is_file() {
+        return Err(format!(
+            "Node entry not found at {:?} (rebuild the app)",
+            config.node_path
+        ));
+    }
+    if !config.node_exe.is_file() && config.node_exe != Path::new("node") {
+        return Err(format!(
+            "Node.js runtime not found at {:?} (rebuild the app)",
+            config.node_exe
+        ));
+    }
+
+    let mut command = Command::new(&config.node_exe);
+    command
+        .arg(&config.node_path)
+        .current_dir(&config.node_cwd)
+        .env(
+            "ENVOYMESH_PROFILE",
+            config
+                .profile_dir
+                .to_str()
+                .unwrap_or("./data/default"),
+        )
+        .env("ENVOYMESH_IPFS_PATH", &config.ipfs_repo_dir)
+        .env("RUST_LOG", "info")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    if let Some(exe) = &config.bundled_ipfs {
+        command.env("ENVOYMESH_IPFS_EXE", exe);
+    }
+
+    command.spawn().map_err(|e| {
+        format!(
+            "Failed to spawn node process ({:?}): {}",
+            config.node_exe, e
+        )
+    })
+}
+
+#[tauri::command]
+fn restart_node_process(state: State<'_, NodeProcessState>) -> Result<(), String> {
+    let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
+    stop_node_child(&mut child_guard);
+    let child = spawn_node_process(&state.config)?;
+    info!("Node process restarted from Social UI");
+    *child_guard = Some(child);
+    Ok(())
+}
+
 fn main() {
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .finish();
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("failed to set tracing subscriber");
+    set_global_default(subscriber).expect("failed to set tracing subscriber");
 
     info!("Starting EnvoyMesh Tauri app");
 
@@ -70,31 +274,14 @@ fn main() {
         info!("Port 3030 is already in use. Another node may be running.");
     }
 
-    let repo_root = get_repo_root();
-    let node_path = get_node_path(&repo_root);
-    let ui_path = get_social_ui_path(&repo_root);
-
-    if !node_path.exists() {
-        error!("Node binary not found at: {:?}", node_path);
-        error!("Please run 'npm run node:build' first");
-        std::process::exit(1);
-    }
-
-    if !ui_path.exists() {
-        error!("Social UI not found at: {:?}", ui_path);
-        error!("Please run 'npm run social:build' first");
-        std::process::exit(1);
-    }
-
-    info!("Using node path: {:?}", node_path);
-    info!("Using UI path: {:?}", ui_path);
-
     tauri::Builder::default()
-        .manage(NodeProcess(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![restart_node_process])
         .setup(move |app| {
             info!("Tauri app setup starting");
 
-            let app_data_dir = app.path().app_data_dir()
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
                 .expect("Failed to get app data dir");
             std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data dir");
             info!("App data directory: {:?}", app_data_dir);
@@ -107,43 +294,66 @@ fn main() {
             std::fs::create_dir_all(&ipfs_repo_dir).ok();
             info!("IPFS repo directory: {:?}", ipfs_repo_dir);
 
-            let resource_dir = app.path().resource_dir().ok();
-            let bundled_ipfs = resolve_bundled_ipfs_exe(&repo_root, resource_dir.as_deref());
+            let resource_dir = resolve_resource_dir(app);
+            if let Some(ref dir) = resource_dir {
+                info!("Resource directory: {:?}", dir);
+            }
+
+            let bundled_ipfs = resolve_bundled_ipfs_exe(resource_dir.as_deref());
             if let Some(ref exe) = bundled_ipfs {
                 info!("Bundled Kubo sidecar: {:?}", exe);
             } else {
                 info!("No bundled Kubo sidecar — node will use ipfs on PATH if present");
             }
 
-            let node_state: State<NodeProcess> = app.state();
-            let mut node_child = node_state.0.lock().unwrap();
-
-            let node_exe = std::env::var("ENVOYMESH_NODE_EXE").unwrap_or_else(|_| "node".to_string());
-            info!("Spawning node process...");
-
-            let mut command = Command::new(&node_exe);
-            command
-                .arg(node_path.clone())
-                .env("ENVOYMESH_PROFILE", profile_dir.to_str().unwrap_or("./data/default"))
-                .env("ENVOYMESH_IPFS_PATH", ipfs_repo_dir)
-                .env("RUST_LOG", "info")
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
-
-            if let Some(exe) = bundled_ipfs {
-                command.env("ENVOYMESH_IPFS_EXE", exe);
+            let node_exe = resolve_node_exe(resource_dir.as_deref());
+            if node_exe.is_file() {
+                info!("Using Node.js runtime: {:?}", node_exe);
+            } else {
+                info!("Using Node.js runtime from PATH: {:?}", node_exe);
             }
 
-            match command.spawn() {
+            let node_path = match resolve_node_entry(resource_dir.as_deref()) {
+                Some(path) => {
+                    info!("Using node entry: {:?}", path);
+                    path
+                }
+                None => {
+                    error!(
+                        "Node entry not found in app resources or dev tree. \
+                         Rebuild with npm run social:build && npm run node:build && npm run build -w @envoymesh/tauri."
+                    );
+                    PathBuf::from("node/src/index.js")
+                }
+            };
+
+            let node_cwd = node_app_root(&node_path);
+            info!("Node working directory: {:?}", node_cwd);
+
+            let spawn_config = NodeSpawnConfig {
+                node_exe: node_exe.clone(),
+                node_path: node_path.clone(),
+                node_cwd,
+                profile_dir: profile_dir.clone(),
+                ipfs_repo_dir: ipfs_repo_dir.clone(),
+                bundled_ipfs: bundled_ipfs.clone(),
+            };
+
+            let initial_child = match spawn_node_process(&spawn_config) {
                 Ok(child) => {
                     info!("Node process spawned successfully");
-                    *node_child = Some(child);
+                    Some(child)
                 }
                 Err(e) => {
-                    error!("Failed to spawn node process: {}", e);
-                    error!("Make sure Node.js is installed and in PATH");
+                    error!("{}", e);
+                    None
                 }
-            }
+            };
+
+            app.manage(NodeProcessState {
+                child: Mutex::new(initial_child),
+                config: spawn_config,
+            });
 
             info!("Tauri app setup complete");
             Ok(())
@@ -153,13 +363,10 @@ fn main() {
                 info!("Window close requested, shutting down...");
 
                 let app = window.app_handle();
-                let node_state: State<NodeProcess> = app.state();
-                let mut node_child = node_state.0.lock().unwrap();
-                if let Some(mut child) = node_child.take() {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    info!("Node process killed");
-                }
+                let node_state: State<NodeProcessState> = app.state();
+                let mut child_guard = node_state.child.lock().unwrap();
+                stop_node_child(&mut *child_guard);
+                info!("Node process killed");
 
                 std::process::exit(0);
             }

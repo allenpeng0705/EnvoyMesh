@@ -13,6 +13,7 @@ import { SettingsView } from "./components/views/SettingsView.js";
 import { LibraryView } from "./components/views/LibraryView.js";
 import { ActivityView } from "./components/views/ActivityView.js";
 import { H2AChannelView } from "./components/views/H2AChannelView.js";
+import { isTauriShell, restartTauriNodeProcess } from "./lib/tauri-shell.js";
 
 export type ViewName = "chat" | "assistant" | "contacts" | "library" | "activity" | "profile" | "settings";
 
@@ -25,6 +26,10 @@ function ConnectingSplash({
   lastError,
   isRelayUnreachable,
   onRetryConnect,
+  onRestartNode,
+  restartNodeBusy,
+  restartNodeError,
+  tauriShell,
   autoConnect,
   wsUrl,
 }: {
@@ -32,6 +37,10 @@ function ConnectingSplash({
   lastError: string | null;
   isRelayUnreachable: boolean;
   onRetryConnect: () => void;
+  onRestartNode?: () => void;
+  restartNodeBusy?: boolean;
+  restartNodeError?: string | null;
+  tauriShell?: boolean;
   autoConnect: boolean;
   wsUrl: string;
 }) {
@@ -53,6 +62,23 @@ function ConnectingSplash({
           {isRelayUnreachable && (
             <p className="envoy-splash__relay-warn">Relay may be unreachable — check network or relay URL.</p>
           )}
+          {tauriShell && restartNodeError && (
+            <p className="envoy-splash__relay-warn">{restartNodeError}</p>
+          )}
+          {tauriShell && (
+            <div className="envoy-splash__actions">
+              {onRestartNode && (
+                <button
+                  type="button"
+                  className="primary envoy-splash__retry"
+                  onClick={onRestartNode}
+                  disabled={restartNodeBusy}
+                >
+                  {restartNodeBusy ? "Restarting node…" : "Restart node"}
+                </button>
+              )}
+            </div>
+          )}
           {(isRelayUnreachable || lastError || !autoConnect) && (
             <div className="envoy-splash__error">
               <p>
@@ -62,11 +88,23 @@ function ConnectingSplash({
                     : "Unable to connect. Is the node running?")}
               </p>
               <p className="envoy-splash__hint">
-                Desktop: start with <code>npm run node:dev</code> (WebSocket port 3030).
+                {tauriShell
+                  ? "If Restart node does not help, quit and reopen the app."
+                  : "Desktop dev: start with npm run node:dev (WebSocket port 3030)."}
               </p>
-              <button type="button" className="primary envoy-splash__retry" onClick={onRetryConnect}>
-                Retry connection
-              </button>
+              {restartNodeError && (
+                <p className="envoy-splash__relay-warn">{restartNodeError}</p>
+              )}
+              <div className="envoy-splash__actions">
+                <button
+                  type="button"
+                  className="primary envoy-splash__retry"
+                  onClick={onRetryConnect}
+                  disabled={restartNodeBusy}
+                >
+                  Retry connection
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -108,6 +146,9 @@ export function App() {
   const nodeService = useNodeService();
   const reconnectAttempts = nodeService.reconnectAttempts;
   const lastError = (nodeService as unknown as { getLastError?(): string | null }).getLastError?.() ?? null;
+  const tauriShell = isTauriShell();
+  const [restartNodeBusy, setRestartNodeBusy] = useState(false);
+  const [restartNodeError, setRestartNodeError] = useState<string | null>(null);
   const isRelayUnreachable =
     reconnectAttempts > 3 ||
     (lastError?.includes("Connection timed out") ||
@@ -117,6 +158,27 @@ export function App() {
 
   const handleRetryConnect = () => {
     void nodeService.reconnect();
+  };
+
+  const handleRestartNode = async () => {
+    if (!tauriShell) {
+      return;
+    }
+    setRestartNodeBusy(true);
+    setRestartNodeError(null);
+    try {
+      const result = await restartTauriNodeProcess();
+      if (!result.ok) {
+        setRestartNodeError(result.reason === "not-tauri" ? "Not running in desktop app." : result.reason);
+        return;
+      }
+      await nodeService.waitForConnection(25_000);
+      await nodeService.reconnect();
+    } catch (error) {
+      setRestartNodeError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRestartNodeBusy(false);
+    }
   };
 
   const [currentView, setCurrentView] = useState<ViewName>("chat");
@@ -134,6 +196,10 @@ export function App() {
           lastError={lastError}
           isRelayUnreachable={isRelayUnreachable}
           onRetryConnect={handleRetryConnect}
+          onRestartNode={tauriShell ? () => void handleRestartNode() : undefined}
+          restartNodeBusy={restartNodeBusy}
+          restartNodeError={restartNodeError}
+          tauriShell={tauriShell}
           autoConnect={appSettings.autoConnect}
           wsUrl={appSettings.wsUrl.trim() || "ws://localhost:3030/ws"}
         />

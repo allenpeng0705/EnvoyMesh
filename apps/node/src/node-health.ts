@@ -46,6 +46,11 @@ export interface NodeHealthInput {
   rssBytes?: number;
   recentFatalErrors: Array<{ at: number; message: string }>;
   previous?: NodeHealthState;
+  /**
+   * Any node without `--relay-server` (desktop / edge). Should not self-terminate
+   * when libp2p repair fails repeatedly — e.g. bootstrap relay outage while direct paths work.
+   */
+  relayClientOnly?: boolean;
   /** Override the MAX_RSS_BYTES threshold (used by tests to avoid env-var timing issues). */
   maxRssBytesOverride?: number;
 }
@@ -117,7 +122,11 @@ export function evaluateNodeHealth(input: NodeHealthInput): { snapshot: NodeHeal
     reasons.push(`recent fatal errors=${recentFatalErrors.length}`);
   }
 
-  if (actions.has("restart-libp2p") && previous.consecutiveRestartRequests >= MAX_CONSECUTIVE_RESTART_REQUESTS) {
+  if (
+    !input.relayClientOnly &&
+    actions.has("restart-libp2p") &&
+    previous.consecutiveRestartRequests >= MAX_CONSECUTIVE_RESTART_REQUESTS
+  ) {
     reasons.push("libp2p restart requested repeatedly");
     actions.add("exit-for-supervisor");
   }

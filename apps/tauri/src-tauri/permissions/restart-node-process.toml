@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-restart-node-process"
+description = "Restart the EnvoyMesh node child process from Social UI."
+commands.allow = ["restart_node_process"]

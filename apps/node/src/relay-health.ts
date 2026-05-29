@@ -1,6 +1,7 @@
 import type { RelayBookEntry, RelayRosterEntry } from "./relay-roster.js";
 import type { RelaySummaryEntry } from "./relay-lookup-router.js";
 import type { RelayManagerRoutingMetrics } from "@envoymesh/local-store";
+import { capRelayClientConsecutiveFailures } from "./libp2p-repair-policy.js";
 
 export type RelayHealthStatus = "healthy" | "degraded" | "unhealthy" | "critical";
 
@@ -67,6 +68,11 @@ const MAX_EVENT_LOOP_LAG_MS = 2_000;
 const MAX_RSS_BYTES = readMaxRssBytes("ENVOYMESH_RELAY_MAX_RSS_MB", 4096);
 const MAX_NEGATIVE_CACHE_SIZE = 100;
 
+/** Desktop / edge nodes that use relay transport but do not run `--relay-server`. */
+export function isRelayClientNode(input: Pick<RelayHealthInput, "relayServerEnabled">): boolean {
+  return !input.relayServerEnabled;
+}
+
 export function createInitialRelayHealthState(): RelayHealthState {
   return {
     lastStatus: "healthy",
@@ -93,7 +99,7 @@ export function evaluateRelayHealth(input: RelayHealthInput): { snapshot: RelayH
   if (!input.relayEnabled && !input.relayServerEnabled) {
     actions.add("none");
     const snapshot = buildSnapshot("healthy", current, previous, reasons, actions);
-    return { snapshot, state: nextState(previous, snapshot) };
+    return { snapshot, state: nextState(previous, snapshot, isRelayClientNode(input)) };
   }
 
   if (input.listenAddrs.length === 0) {
@@ -146,7 +152,8 @@ export function evaluateRelayHealth(input: RelayHealthInput): { snapshot: RelayH
     actions.add("exit-for-supervisor");
   }
 
-  const status = statusFor(actions, previous);
+  const relayClientOnly = isRelayClientNode(input);
+  const status = statusFor(actions, previous, relayClientOnly);
   if (status === "critical") {
     actions.add("exit-for-supervisor");
   }
@@ -154,11 +161,20 @@ export function evaluateRelayHealth(input: RelayHealthInput): { snapshot: RelayH
     actions.add("none");
   }
   const snapshot = buildSnapshot(status, current, previous, reasons, actions);
-  return { snapshot, state: nextState(previous, snapshot) };
+  const state = nextState(previous, snapshot, isRelayClientNode(input));
+  return { snapshot, state };
 }
 
-function statusFor(actions: Set<RelayHealthAction>, previous: RelayHealthState): RelayHealthStatus {
-  if (actions.has("exit-for-supervisor") || previous.consecutiveFailures >= 4) {
+function statusFor(
+  actions: Set<RelayHealthAction>,
+  previous: RelayHealthState,
+  relayClientOnly: boolean,
+): RelayHealthStatus {
+  if (actions.has("exit-for-supervisor")) {
+    return "critical";
+  }
+  // Relay clients must stay up when bootstrap relays are unreachable; degraded + reprobe is enough.
+  if (!relayClientOnly && previous.consecutiveFailures >= 4) {
     return "critical";
   }
   if (actions.has("restart-libp2p")) {
@@ -187,7 +203,11 @@ function buildSnapshot(
   };
 }
 
-function nextState(previous: RelayHealthState, snapshot: RelayHealthSnapshot): RelayHealthState {
+function nextState(
+  previous: RelayHealthState,
+  snapshot: RelayHealthSnapshot,
+  relayClientOnly: boolean,
+): RelayHealthState {
   const counters = { ...previous.counters };
   counters.healthChecks += 1;
   if (snapshot.status === "degraded") {
@@ -212,7 +232,13 @@ function nextState(previous: RelayHealthState, snapshot: RelayHealthSnapshot): R
   return {
     lastStatus: snapshot.status,
     lastHealthyAt: snapshot.status === "healthy" ? snapshot.checkedAt : previous.lastHealthyAt,
-    consecutiveFailures: snapshot.status === "healthy" ? 0 : previous.consecutiveFailures + 1,
+    consecutiveFailures: relayClientOnly
+      ? capRelayClientConsecutiveFailures(
+          snapshot.status === "healthy" ? 0 : previous.consecutiveFailures + 1,
+        )
+      : snapshot.status === "healthy"
+        ? 0
+        : previous.consecutiveFailures + 1,
     counters,
   };
 }

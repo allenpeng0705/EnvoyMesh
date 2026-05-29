@@ -165,7 +165,7 @@ import {
   buildMorningReportDigest,
   createMultiHopDiscoveryStore,
   type MultiHopDiscoveryStore,
-} from "@envoymesh/local-store";
+} from "./mobile-local-store-shim.js";
 import { handleMobileInboundAgentCardIntent } from "./mobile-agent-card-inbound.js";
 import { createMobileContactOwnerKeyStore, type MobileContactOwnerKeyStore } from "./mobile-contact-owner-keys.js";
 import { createMobilePeerProfileCache, type MobilePeerProfileCache } from "./mobile-peer-profile-cache.js";

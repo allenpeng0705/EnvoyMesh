@@ -102,6 +102,17 @@
   min-height: 44px;
 }
 
+.envoy-splash__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.envoy-splash__actions .envoy-splash__retry {
+  margin-top: 0;
+}
+
 /* ---- App header / mesh status ---- */
 .app-header {
   background:

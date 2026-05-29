@@ -2,6 +2,8 @@ node_modules/
 dist/
 # Rust / Tauri (never commit build trees)
 apps/tauri/src-tauri/target/
+apps/tauri/src-tauri/resources/node/
+apps/tauri/src-tauri/resources/node-runtime/
 *.tsbuildinfo
 .env
 .env.*

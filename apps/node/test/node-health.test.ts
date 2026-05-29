@@ -128,4 +128,25 @@ describe("node health", () => {
     expect(result.snapshot.actions).toContain("restart-libp2p");
     expect(result.snapshot.actions).toContain("exit-for-supervisor");
   });
+
+  it("keeps relay clients up after repeated libp2p restart requests", () => {
+    const previous = {
+      ...createInitialNodeHealthState(),
+      consecutiveRestartRequests: 2,
+    };
+    const result = evaluateNodeHealth({
+      now: () => now,
+      startedAtMs,
+      meshStarted: true,
+      listenAddrs: [],
+      relayPeerCount: 0,
+      recentFatalErrors: [],
+      previous,
+      relayClientOnly: true,
+    });
+
+    expect(result.snapshot.status).toBe("unhealthy");
+    expect(result.snapshot.actions).toContain("restart-libp2p");
+    expect(result.snapshot.actions).not.toContain("exit-for-supervisor");
+  });
 });
