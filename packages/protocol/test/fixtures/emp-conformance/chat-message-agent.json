@@ -1,0 +1,73 @@
+{
+  "id": "chat-message-agent",
+  "description": "Agent chat.message with agentCredential (Phase 16 social proxy)",
+  "intent": "chat.message",
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAWxT4sMRQ+46FDbsVlk4L6zGBPnueqsMORKp4uDebMl8=\n-----END PUBLIC KEY-----\n",
+  "peerId": "envoy_agent_jJYKE6vCTsXpDu7CP_VRW0SNi356L15AmficK5eRubs",
+  "unsignedEnvelopeJson": {
+    "version": "0.1",
+    "messageId": "emp-conf-chat-agent-01",
+    "correlationId": "emp-conf-corr-05",
+    "createdAt": "2026-05-28T00:00:05.000Z",
+    "senderPeerId": "envoy_agent_jJYKE6vCTsXpDu7CP_VRW0SNi356L15AmficK5eRubs",
+    "senderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAWxT4sMRQ+46FDbsVlk4L6zGBPnueqsMORKp4uDebMl8=\n-----END PUBLIC KEY-----\n",
+    "senderRole": "agent",
+    "recipientPeerId": "envoy_peer_human",
+    "recipientRole": "human",
+    "intent": "chat.message",
+    "payload": {
+      "senderOwnerId": "envoy:owner:WQfRO7SYFICX3vi-B2DUO44ak3j0hw9zi9GdECBrIpc",
+      "text": "Agent greeting on behalf of owner (social proxy smoke)"
+    },
+    "agentCredential": {
+      "version": "0.1",
+      "credentialId": "agent_cred_ae3e2e03-3ddd-48ec-88a9-843ab683fcf7",
+      "ownerId": "envoy:owner:WQfRO7SYFICX3vi-B2DUO44ak3j0hw9zi9GdECBrIpc",
+      "ownerPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAb7nIytIGMTriyWofOI5E2dNL1sRAze4iZaiZBhsn5hw=\n-----END PUBLIC KEY-----\n",
+      "agentId": "envoy:agent:jJYKE6vCTsXpDu7CP_VRW0SNi356L15AmficK5eRubs",
+      "agentPeerId": "envoy_agent_jJYKE6vCTsXpDu7CP_VRW0SNi356L15AmficK5eRubs",
+      "agentPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAWxT4sMRQ+46FDbsVlk4L6zGBPnueqsMORKp4uDebMl8=\n-----END PUBLIC KEY-----\n",
+      "scope": [
+        "chat.message",
+        "knowledge.query"
+      ],
+      "issuedAt": "2026-05-28T00:00:00.000Z",
+      "expiresAt": "2030-01-01T00:00:00.000Z",
+      "signature": "uRpDSdo5XK-pzNy6iUM1OL5SsjnTvLjIg3xeXWDE3U72Kp0MIsYztkSUaMqeH7f9DLBS0RdvhcGSybF4fX6rDA"
+    }
+  },
+  "signatureBase64Url": "HUwIcVwMEWPJtZKZiIZz-7QMVLk4qj9q7f1ZHdRw1c65V-fxL86aZMDmJ7nZC3JoroXDVnTMbxwsMz-P7RgSAA",
+  "signedEnvelopeJson": {
+    "version": "0.1",
+    "messageId": "emp-conf-chat-agent-01",
+    "correlationId": "emp-conf-corr-05",
+    "createdAt": "2026-05-28T00:00:05.000Z",
+    "senderPeerId": "envoy_agent_jJYKE6vCTsXpDu7CP_VRW0SNi356L15AmficK5eRubs",
+    "senderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAWxT4sMRQ+46FDbsVlk4L6zGBPnueqsMORKp4uDebMl8=\n-----END PUBLIC KEY-----\n",
+    "senderRole": "agent",
+    "recipientPeerId": "envoy_peer_human",
+    "recipientRole": "human",
+    "intent": "chat.message",
+    "payload": {
+      "senderOwnerId": "envoy:owner:WQfRO7SYFICX3vi-B2DUO44ak3j0hw9zi9GdECBrIpc",
+      "text": "Agent greeting on behalf of owner (social proxy smoke)"
+    },
+    "agentCredential": {
+      "version": "0.1",
+      "credentialId": "agent_cred_ae3e2e03-3ddd-48ec-88a9-843ab683fcf7",
+      "ownerId": "envoy:owner:WQfRO7SYFICX3vi-B2DUO44ak3j0hw9zi9GdECBrIpc",
+      "ownerPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAb7nIytIGMTriyWofOI5E2dNL1sRAze4iZaiZBhsn5hw=\n-----END PUBLIC KEY-----\n",
+      "agentId": "envoy:agent:jJYKE6vCTsXpDu7CP_VRW0SNi356L15AmficK5eRubs",
+      "agentPeerId": "envoy_agent_jJYKE6vCTsXpDu7CP_VRW0SNi356L15AmficK5eRubs",
+      "agentPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAWxT4sMRQ+46FDbsVlk4L6zGBPnueqsMORKp4uDebMl8=\n-----END PUBLIC KEY-----\n",
+      "scope": [
+        "chat.message",
+        "knowledge.query"
+      ],
+      "issuedAt": "2026-05-28T00:00:00.000Z",
+      "expiresAt": "2030-01-01T00:00:00.000Z",
+      "signature": "uRpDSdo5XK-pzNy6iUM1OL5SsjnTvLjIg3xeXWDE3U72Kp0MIsYztkSUaMqeH7f9DLBS0RdvhcGSybF4fX6rDA"
+    },
+    "signature": "HUwIcVwMEWPJtZKZiIZz-7QMVLk4qj9q7f1ZHdRw1c65V-fxL86aZMDmJ7nZC3JoroXDVnTMbxwsMz-P7RgSAA"
+  }
+}

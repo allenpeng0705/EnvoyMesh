@@ -664,6 +664,89 @@ export function wireDocumentAcquisitionKnowledgeReply(
   });
 }
 
+/**
+ * Document-acquisition reply using only `suggestedRelativePath` (no path in answer text).
+ */
+export function wireDocumentAcquisitionKnowledgeSuggestedPathOnly(
+  publisher: Phase13TestNode,
+  relativePath: string,
+  matchSummary = "This published library item matches the acquisition request.",
+): void {
+  publisher.mesh.onMessage(async ({ envelope, replyWithEnvelope }) => {
+    if (!verifyInboundEnvelope(envelope) || envelope.intent !== "knowledge.query") return;
+    if (!replyWithEnvelope) return;
+    try {
+      const payload = parseKnowledgeQueryPayload(envelope.payload);
+      if (
+        !payload.query.includes("Document acquisition") &&
+        !payload.query.includes("metadata only")
+      ) {
+        return;
+      }
+    } catch {
+      return;
+    }
+    const unsignedResponse = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(publisher.profile.device.publicKeyPem),
+      senderPublicKey: publisher.profile.device.publicKeyPem,
+      senderRole: envelope.recipientRole === "agent" ? "agent" : "human",
+      recipientPeerId: envelope.senderPeerId,
+      recipientRole: envelope.senderRole,
+      intent: "knowledge.response",
+      payload: createKnowledgeResponsePayload({
+        inReplyTo: envelope.messageId,
+        answer: matchSummary,
+        suggestedRelativePath: relativePath,
+        sensitivity: "friends",
+        refused: false,
+      }),
+      correlationId: envelope.correlationId,
+    });
+    await replyWithEnvelope(
+      signUnsignedEnvelope(unsignedResponse, publisher.profile.device.privateKeyPem),
+    );
+  });
+}
+
+/**
+ * Always refuse document-acquisition knowledge.query negotiation rounds.
+ */
+export function wireDocumentAcquisitionKnowledgeRefusal(publisher: Phase13TestNode): void {
+  publisher.mesh.onMessage(async ({ envelope, replyWithEnvelope }) => {
+    if (!verifyInboundEnvelope(envelope) || envelope.intent !== "knowledge.query") return;
+    if (!replyWithEnvelope) return;
+    try {
+      const payload = parseKnowledgeQueryPayload(envelope.payload);
+      if (
+        !payload.query.includes("Document acquisition") &&
+        !payload.query.includes("metadata only")
+      ) {
+        return;
+      }
+    } catch {
+      return;
+    }
+    const unsignedResponse = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(publisher.profile.device.publicKeyPem),
+      senderPublicKey: publisher.profile.device.publicKeyPem,
+      senderRole: envelope.recipientRole === "agent" ? "agent" : "human",
+      recipientPeerId: envelope.senderPeerId,
+      recipientRole: envelope.senderRole,
+      intent: "knowledge.response",
+      payload: createKnowledgeResponsePayload({
+        inReplyTo: envelope.messageId,
+        answer: "no match",
+        sensitivity: "friends",
+        refused: false,
+      }),
+      correlationId: envelope.correlationId,
+    });
+    await replyWithEnvelope(
+      signUnsignedEnvelope(unsignedResponse, publisher.profile.device.privateKeyPem),
+    );
+  });
+}
+
 export function chatAssistApprovalConfig(ownerId: string, peerOwnerId: string) {
   return {
     chatAssistEnabled: true,

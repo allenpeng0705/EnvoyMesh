@@ -1,0 +1,49 @@
+{
+  "id": "knowledge-response-suggested-path",
+  "description": "knowledge.response with suggestedRelativePath (Phase 16 doc acquisition)",
+  "intent": "knowledge.response",
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+  "peerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+  "unsignedEnvelopeJson": {
+    "version": "0.1",
+    "messageId": "emp-conf-kr-01",
+    "correlationId": "emp-conf-corr-02",
+    "createdAt": "2026-05-28T00:00:02.000Z",
+    "senderPeerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+    "senderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+    "senderRole": "human",
+    "recipientPeerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+    "recipientRole": "human",
+    "intent": "knowledge.response",
+    "payload": {
+      "inReplyTo": "emp-conf-kq-01",
+      "answer": "The published library contains a matching quarterly report.",
+      "sensitivity": "friends",
+      "matchScore": 0.91,
+      "suggestedRelativePath": "shared/q3-revenue.pdf",
+      "refused": false
+    }
+  },
+  "signatureBase64Url": "Oda2FlPR_oGla6B73Rh9B2vzlZgsU4mCBL3TY5bihNxa0YpDrjCvUT1uS85jZhy0kCUXtSSFx4Sy0oCdrN9VDA",
+  "signedEnvelopeJson": {
+    "version": "0.1",
+    "messageId": "emp-conf-kr-01",
+    "correlationId": "emp-conf-corr-02",
+    "createdAt": "2026-05-28T00:00:02.000Z",
+    "senderPeerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+    "senderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+    "senderRole": "human",
+    "recipientPeerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+    "recipientRole": "human",
+    "intent": "knowledge.response",
+    "payload": {
+      "inReplyTo": "emp-conf-kq-01",
+      "answer": "The published library contains a matching quarterly report.",
+      "sensitivity": "friends",
+      "matchScore": 0.91,
+      "suggestedRelativePath": "shared/q3-revenue.pdf",
+      "refused": false
+    },
+    "signature": "Oda2FlPR_oGla6B73Rh9B2vzlZgsU4mCBL3TY5bihNxa0YpDrjCvUT1uS85jZhy0kCUXtSSFx4Sy0oCdrN9VDA"
+  }
+}

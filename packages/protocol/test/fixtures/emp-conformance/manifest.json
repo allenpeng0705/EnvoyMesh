@@ -1,0 +1,42 @@
+{
+  "version": "emp/0.1",
+  "generatedAt": "2026-05-29T18:10:15.782Z",
+  "vectors": [
+    {
+      "id": "system-ping",
+      "file": "system-ping.json",
+      "intent": "system.ping",
+      "description": "Baseline system.ping on message channel (companion interop key)"
+    },
+    {
+      "id": "knowledge-query-human",
+      "file": "knowledge-query-human.json",
+      "intent": "knowledge.query",
+      "description": "Human knowledge.query for document acquisition negotiation"
+    },
+    {
+      "id": "knowledge-response-suggested-path",
+      "file": "knowledge-response-suggested-path.json",
+      "intent": "knowledge.response",
+      "description": "knowledge.response with suggestedRelativePath (Phase 16 doc acquisition)"
+    },
+    {
+      "id": "share-request-metadata",
+      "file": "share-request-metadata.json",
+      "intent": "share.request",
+      "description": "share.request metadata after knowledge negotiation (no bytes on message stream)"
+    },
+    {
+      "id": "chat-message-human",
+      "file": "chat-message-human.json",
+      "intent": "chat.message",
+      "description": "Human chat.message on chat channel"
+    },
+    {
+      "id": "chat-message-agent",
+      "file": "chat-message-agent.json",
+      "intent": "chat.message",
+      "description": "Agent chat.message with agentCredential (Phase 16 social proxy)"
+    }
+  ]
+}

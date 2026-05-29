@@ -1,0 +1,19 @@
+{
+  "_testOnly": "Do not use in production; CI conformance fixture keys",
+  "device": {
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+    "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIDebQoUrpXOw6RJJxZDpoJXtN9PEenAfOCzHyQWhlB7d\n-----END PRIVATE KEY-----\n",
+    "peerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA"
+  },
+  "owner": {
+    "ownerId": "envoy:owner:WQfRO7SYFICX3vi-B2DUO44ak3j0hw9zi9GdECBrIpc",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAb7nIytIGMTriyWofOI5E2dNL1sRAze4iZaiZBhsn5hw=\n-----END PUBLIC KEY-----\n",
+    "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEICBD6xnaxPYum3qr7wWgc1UI66RAZlMpPBfe6JjPmyIb\n-----END PRIVATE KEY-----\n"
+  },
+  "agent": {
+    "agentId": "envoy:agent:jJYKE6vCTsXpDu7CP_VRW0SNi356L15AmficK5eRubs",
+    "agentPeerId": "envoy_agent_jJYKE6vCTsXpDu7CP_VRW0SNi356L15AmficK5eRubs",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAWxT4sMRQ+46FDbsVlk4L6zGBPnueqsMORKp4uDebMl8=\n-----END PUBLIC KEY-----\n",
+    "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIH0I9o8szsQ5UcA2ridxZ6knMCtyR75/k+kC3sZNb2i9\n-----END PRIVATE KEY-----\n"
+  }
+}

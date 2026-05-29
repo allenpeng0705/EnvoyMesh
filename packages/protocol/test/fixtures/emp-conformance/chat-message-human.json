@@ -1,0 +1,41 @@
+{
+  "id": "chat-message-human",
+  "description": "Human chat.message on chat channel",
+  "intent": "chat.message",
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+  "peerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+  "unsignedEnvelopeJson": {
+    "version": "0.1",
+    "messageId": "emp-conf-chat-01",
+    "correlationId": "emp-conf-corr-04",
+    "createdAt": "2026-05-28T00:00:04.000Z",
+    "senderPeerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+    "senderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+    "senderRole": "human",
+    "recipientPeerId": "envoy_peer_human",
+    "recipientRole": "human",
+    "intent": "chat.message",
+    "payload": {
+      "senderOwnerId": "envoy:owner:conformance_test",
+      "text": "Hello from EMP conformance vector"
+    }
+  },
+  "signatureBase64Url": "zlhWROLEeX8zOQbOHzYxlSafMGvRBRiQksfnbDIvODxRAc-94EoihxCqAWauZM5d9hEWInZBLJs94JkMkPTHAQ",
+  "signedEnvelopeJson": {
+    "version": "0.1",
+    "messageId": "emp-conf-chat-01",
+    "correlationId": "emp-conf-corr-04",
+    "createdAt": "2026-05-28T00:00:04.000Z",
+    "senderPeerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+    "senderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+    "senderRole": "human",
+    "recipientPeerId": "envoy_peer_human",
+    "recipientRole": "human",
+    "intent": "chat.message",
+    "payload": {
+      "senderOwnerId": "envoy:owner:conformance_test",
+      "text": "Hello from EMP conformance vector"
+    },
+    "signature": "zlhWROLEeX8zOQbOHzYxlSafMGvRBRiQksfnbDIvODxRAc-94EoihxCqAWauZM5d9hEWInZBLJs94JkMkPTHAQ"
+  }
+}

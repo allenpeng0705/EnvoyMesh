@@ -207,4 +207,58 @@ describe("E2E knowledge.query (agent over libp2p)", () => {
     expect(payload.answer.length).toBeGreaterThan(0);
     expect(result.correlationId).toBeTruthy();
   }, 30_000);
+
+  it("returns suggestedRelativePath in knowledge.response payload", async () => {
+    const alice = await createTestNode();
+    const bob = await createTestNode();
+    await registerBondedPeer(alice, bob, "Bob");
+    await registerBondedPeer(bob, alice, "Alice");
+
+    const relativePath = "docs/ed25519-spec.md";
+    await mkdir(join(bob.vaultDir, "docs"), { recursive: true });
+    await writeFile(
+      join(bob.vaultDir, relativePath),
+      "Ed25519 mesh security specification for autonomous agents.",
+      { mode: 0o600 },
+    );
+
+    bob.mesh.onMessage(async ({ envelope, replyWithEnvelope }) => {
+      if (!verifyInboundEnvelope(envelope) || envelope.intent !== "knowledge.query") return;
+      if (!replyWithEnvelope) return;
+      const unsignedResponse = createUnsignedEnvelope({
+        senderPeerId: derivePeerId(bob.profile.device.publicKeyPem),
+        senderPublicKey: bob.profile.device.publicKeyPem,
+        recipientPeerId: envelope.senderPeerId,
+        intent: "knowledge.response",
+        payload: createKnowledgeResponsePayload({
+          inReplyTo: envelope.messageId,
+          answer: "Ed25519 mesh security specification is in the published library.",
+          suggestedRelativePath: relativePath,
+          sensitivity: "friends",
+          matchScore: 0.92,
+        }),
+        correlationId: envelope.correlationId,
+      });
+      await replyWithEnvelope(signUnsignedEnvelope(unsignedResponse, bob.profile.device.privateKeyPem));
+    });
+
+    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+
+    const ctx = await alice.service.getToolExecutionContext();
+    const result = await executeTool(
+      "knowledge.query",
+      {
+        targetOwnerId: bob.profile.owner.ownerId,
+        query: "Ed25519 mesh security specification",
+        requestedSensitivity: "friends",
+      },
+      ctx!,
+    );
+
+    expect(result.ok).toBe(true);
+    const envelope = result.result as EnvoyEnvelope;
+    const payload = parseKnowledgeResponsePayload(envelope.payload);
+    expect(payload.suggestedRelativePath).toBe(relativePath);
+    expect(payload.answer).not.toContain(relativePath);
+  }, 30_000);
 });

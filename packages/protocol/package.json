@@ -12,7 +12,8 @@
     "./schemas/emp-0.1/*": "./schemas/emp-0.1/*"
   },
   "scripts": {
-    "export-schemas": "tsx scripts/export-json-schema.ts"
+    "export-schemas": "tsx scripts/export-json-schema.ts",
+    "generate-conformance-vectors": "tsx scripts/generate-conformance-vectors.ts"
   },
   "dependencies": {
     "zod": "^4.3.6"

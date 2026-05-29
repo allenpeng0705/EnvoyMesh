@@ -1,0 +1,41 @@
+{
+  "id": "system-ping",
+  "description": "Baseline system.ping on message channel (companion interop key)",
+  "intent": "system.ping",
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+  "peerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+  "unsignedEnvelopeJson": {
+    "version": "0.1",
+    "messageId": "emp-conf-system-ping-01",
+    "correlationId": "emp-conf-corr-01",
+    "createdAt": "2026-05-28T00:00:00.000Z",
+    "senderPeerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+    "senderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+    "senderRole": "system",
+    "recipientPeerId": "envoy_peer_recv_test",
+    "recipientRole": "agent",
+    "intent": "system.ping",
+    "payload": {
+      "nonce": "emp-conf-nonce-01",
+      "message": "emp-conformance-ping"
+    }
+  },
+  "signatureBase64Url": "4Wa1OF8YfKpkaILb7MNzSAdJFhdZ3NsMUNyKNSA-CDsnOxZc-FIsk4O8O61WavsG4uAB12RvnjpQlwz761IXDg",
+  "signedEnvelopeJson": {
+    "version": "0.1",
+    "messageId": "emp-conf-system-ping-01",
+    "correlationId": "emp-conf-corr-01",
+    "createdAt": "2026-05-28T00:00:00.000Z",
+    "senderPeerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+    "senderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+    "senderRole": "system",
+    "recipientPeerId": "envoy_peer_recv_test",
+    "recipientRole": "agent",
+    "intent": "system.ping",
+    "payload": {
+      "nonce": "emp-conf-nonce-01",
+      "message": "emp-conformance-ping"
+    },
+    "signature": "4Wa1OF8YfKpkaILb7MNzSAdJFhdZ3NsMUNyKNSA-CDsnOxZc-FIsk4O8O61WavsG4uAB12RvnjpQlwz761IXDg"
+  }
+}

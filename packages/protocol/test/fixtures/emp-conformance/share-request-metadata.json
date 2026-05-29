@@ -1,0 +1,49 @@
+{
+  "id": "share-request-metadata",
+  "description": "share.request metadata after knowledge negotiation (no bytes on message stream)",
+  "intent": "share.request",
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+  "peerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+  "unsignedEnvelopeJson": {
+    "version": "0.1",
+    "messageId": "emp-conf-share-01",
+    "correlationId": "emp-conf-corr-03",
+    "createdAt": "2026-05-28T00:00:03.000Z",
+    "senderPeerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+    "senderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+    "senderRole": "human",
+    "recipientPeerId": "envoy_peer_publisher",
+    "recipientRole": "human",
+    "intent": "share.request",
+    "payload": {
+      "requestType": "file",
+      "relativePath": "shared/q3-revenue.pdf",
+      "requestedSensitivity": "friends",
+      "correlationId": "emp-conf-corr-03",
+      "fileOrigin": "responder",
+      "deliveryChannel": "inbox"
+    }
+  },
+  "signatureBase64Url": "bGTBeWGgl8LNJImN7K3ijV5vt0brhjXa6U98QESHSBvNdUg0FVUyEp5sPubFKeNryHWC-DRbI11ZbWu9KNvCDg",
+  "signedEnvelopeJson": {
+    "version": "0.1",
+    "messageId": "emp-conf-share-01",
+    "correlationId": "emp-conf-corr-03",
+    "createdAt": "2026-05-28T00:00:03.000Z",
+    "senderPeerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+    "senderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+    "senderRole": "human",
+    "recipientPeerId": "envoy_peer_publisher",
+    "recipientRole": "human",
+    "intent": "share.request",
+    "payload": {
+      "requestType": "file",
+      "relativePath": "shared/q3-revenue.pdf",
+      "requestedSensitivity": "friends",
+      "correlationId": "emp-conf-corr-03",
+      "fileOrigin": "responder",
+      "deliveryChannel": "inbox"
+    },
+    "signature": "bGTBeWGgl8LNJImN7K3ijV5vt0brhjXa6U98QESHSBvNdUg0FVUyEp5sPubFKeNryHWC-DRbI11ZbWu9KNvCDg"
+  }
+}

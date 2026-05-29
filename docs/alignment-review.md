@@ -75,7 +75,7 @@ alignment-review.md    →  This periodic audit
 
 1. **Mobile parity** — implement or explicitly defer Phase 16 postures on `MobileNode`.
 2. **Bridge posture API** — only after [capability-route-executor.md § Bridge exposure](./capability-route-executor.md#bridge-exposure-deferred) criteria.
-3. **Conformance vectors** — signed envelope fixtures for third-party CI (alongside JSON Schema).
+3. **Conformance vectors** — signed envelope fixtures at `packages/protocol/test/fixtures/emp-conformance/` (regenerate: `npm run generate-conformance-vectors -w @envoymesh/protocol`).
 4. **Phase 4 WAN** — circuit relay / DCUtR field proofs per implementation plan.
 5. **Keep docs honest** — archive superseded specs (e.g. [agent-communication-protocol.md](./agent-communication-protocol.md) → protocol-standard).
 

@@ -131,6 +131,8 @@ Peers that do not implement a posture ignore the capability flag; core intents s
 - [ ] Validate payloads with per-intent Zod / JSON Schema
 - [ ] For file bytes: `share.*` control plane + `/envoymesh/data` transfer
 
+**CI fixtures:** Signed envelope vectors live in `packages/protocol/test/fixtures/emp-conformance/` with tests in `emp-conformance-vectors.test.ts`. Regenerate: `npm run generate-conformance-vectors -w @envoymesh/protocol`.
+
 ---
 
 ## 9. Reference implementation map
@@ -151,3 +153,4 @@ Peers that do not implement a posture ignore the capability flag; core intents s
 | Date | Change |
 |------|--------|
 | 2026-05-28 | Initial guide; JSON Schema bundle; `knowledge.response.suggestedRelativePath`. |
+| 2026-05-29 | Signed envelope conformance vectors (`emp-conformance/` fixtures). |

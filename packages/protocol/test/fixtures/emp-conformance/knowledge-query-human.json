@@ -1,0 +1,41 @@
+{
+  "id": "knowledge-query-human",
+  "description": "Human knowledge.query for document acquisition negotiation",
+  "intent": "knowledge.query",
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+  "peerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+  "unsignedEnvelopeJson": {
+    "version": "0.1",
+    "messageId": "emp-conf-kq-01",
+    "correlationId": "emp-conf-corr-02",
+    "createdAt": "2026-05-28T00:00:01.000Z",
+    "senderPeerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+    "senderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+    "senderRole": "human",
+    "recipientPeerId": "envoy_peer_publisher",
+    "recipientRole": "human",
+    "intent": "knowledge.query",
+    "payload": {
+      "query": "Document acquisition metadata only: quarterly revenue report",
+      "requestedSensitivity": "friends"
+    }
+  },
+  "signatureBase64Url": "pfEMBMmuZD84HG-YNPg0O_3wXdy7PiWK8Ms5V2y1Q9ArA9XEH3mEmIaeA094Olb7zG1ZPFsP-CIg0sX-u0G5DQ",
+  "signedEnvelopeJson": {
+    "version": "0.1",
+    "messageId": "emp-conf-kq-01",
+    "correlationId": "emp-conf-corr-02",
+    "createdAt": "2026-05-28T00:00:01.000Z",
+    "senderPeerId": "envoy_uv4I__vK5VBDR03aUicjwAQ_WjevFI1jzpziOk5ucZA",
+    "senderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUhNuaolhhcAKfxHhMkT/Uzt1A5IDkO9GjwqhEmr8M68=\n-----END PUBLIC KEY-----\n",
+    "senderRole": "human",
+    "recipientPeerId": "envoy_peer_publisher",
+    "recipientRole": "human",
+    "intent": "knowledge.query",
+    "payload": {
+      "query": "Document acquisition metadata only: quarterly revenue report",
+      "requestedSensitivity": "friends"
+    },
+    "signature": "pfEMBMmuZD84HG-YNPg0O_3wXdy7PiWK8Ms5V2y1Q9ArA9XEH3mEmIaeA094Olb7zG1ZPFsP-CIg0sX-u0G5DQ"
+  }
+}
