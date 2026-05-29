@@ -65,7 +65,12 @@ export async function sendVaultFileViaDataTransfer(input: {
     toPeerId,
     voucherUtf8,
     chunks,
-    dialHints?.length ? { dialHints } : undefined,
+    dialHints?.length
+      ? {
+          dialHints,
+          preferCircuitHints: dialHints.some((h) => h.includes("/p2p-circuit/")),
+        }
+      : undefined,
   );
   transferHooks?.onUpdate({
     correlationId: transferHooks.correlationId,

@@ -91,7 +91,7 @@ export async function sendProfileSyncToBonds(input: {
 }
 
 export async function sendProfileRequest(input: {
-  mesh: EnvoyMesh;
+  mesh: Pick<EnvoyMesh, "send" | "sendExpectReply">;
   profile: NodeProfile;
   /** libp2p peer id used for mesh dial */
   transportPeerId: string;
@@ -99,7 +99,8 @@ export async function sendProfileRequest(input: {
   envelopeRecipientPeerId: string;
   listenAddrs?: string[];
   dialHintsFor: (peerId: string, listenAddrs?: string[]) => Promise<string[]>;
-}): Promise<void> {
+  timeoutMs?: number;
+}): Promise<EnvoyEnvelope> {
   if (!isLibp2pPeerId(input.transportPeerId)) {
     throw new Error("profile.request requires a libp2p transport peer id");
   }
@@ -115,7 +116,21 @@ export async function sendProfileRequest(input: {
   });
   const envelope = signUnsignedEnvelope(unsigned, input.profile.device.privateKeyPem);
   const dialHints = await input.dialHintsFor(input.transportPeerId, input.listenAddrs);
-  await input.mesh.send(input.transportPeerId, envelope, { dialHints });
+  const preferCircuits = dialHints.some((h) => h.includes("/p2p-circuit/"));
+  const timeoutMs = input.timeoutMs ?? 30_000;
+  if (typeof input.mesh.sendExpectReply !== "function") {
+    await input.mesh.send(input.transportPeerId, envelope, { dialHints });
+    throw new Error("profile.request requires sendExpectReply on mesh");
+  }
+  const reply = await input.mesh.sendExpectReply(input.transportPeerId, envelope, {
+    timeoutMs,
+    dialHints,
+    preferCircuitHints: preferCircuits,
+  });
+  if (reply.intent !== "profile.response") {
+    throw new Error(`profile.request: expected profile.response, got ${reply.intent}`);
+  }
+  return reply;
 }
 
 export async function sendProfileResponse(input: {

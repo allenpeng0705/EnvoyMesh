@@ -807,13 +807,23 @@ export class EnvoyMesh {
   async sendExpectReply(
     target: string,
     envelope: EnvoyEnvelope,
-    options?: { timeoutMs?: number; dialHints?: string[] },
+    options?: {
+      timeoutMs?: number;
+      dialHints?: string[];
+      preferCircuitHints?: boolean;
+      forceFreshDial?: boolean;
+    },
   ): Promise<EnvoyEnvelope> {
     validateEnvelopeProtocol(ENVOY_MESSAGE_PROTOCOL, envelope);
     const timeoutMs = options?.timeoutMs ?? 30_000;
-    const sendOptions: MeshOutboundOptions | undefined = options?.dialHints?.length
-      ? { dialHints: options.dialHints }
-      : undefined;
+    const sendOptions: MeshOutboundOptions | undefined =
+      options?.dialHints?.length || options?.preferCircuitHints || options?.forceFreshDial
+        ? {
+            dialHints: options.dialHints,
+            preferCircuitHints: options.preferCircuitHints,
+            forceFreshDial: options.forceFreshDial,
+          }
+        : undefined;
     const { stream } = await this.openOutboundStream(target, ENVOY_MESSAGE_PROTOCOL, sendOptions);
     const remotePeerId = stream.connection?.remotePeer?.toString();
     if (remotePeerId) {
@@ -1483,6 +1493,9 @@ export class EnvoyMesh {
               }
               replyConsumed = true;
               validateEnvelopeProtocol(protocol, env);
+              if (!this.isOutboundStreamWritable(stream)) {
+                throw new Error("EnvoyMesh replyWithEnvelope: stream is not writable");
+              }
               await streamIo.write(encodeEnvelope(env));
               await stream.close();
             }

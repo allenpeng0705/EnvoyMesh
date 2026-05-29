@@ -712,13 +712,22 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
   if (isMessageSeen(inboundEnvelope.messageId)) {
     return;
   }
-  markMessageSeen(inboundEnvelope.messageId);
 
-  // Guard: per-peer rate limiting
-  if (!checkInboundRateLimit(remotePeerId)) {
+  // Guard: per-peer rate limiting (profile + share handshakes exempt — UI polls / file accept)
+  const isRateLimitExemptIntent =
+    inboundEnvelope.intent === "profile.sync" ||
+    inboundEnvelope.intent === "profile.request" ||
+    inboundEnvelope.intent === "profile.response" ||
+    inboundEnvelope.intent === "share.preview" ||
+    inboundEnvelope.intent === "share.request" ||
+    inboundEnvelope.intent === "share.accept" ||
+    inboundEnvelope.intent === "chat.delivered";
+  if (!isRateLimitExemptIntent && !checkInboundRateLimit(remotePeerId)) {
     console.warn(`[node] rate limited for peer ${remotePeerId}, dropping message`);
     return;
   }
+
+  markMessageSeen(inboundEnvelope.messageId);
 
   const guardDecision = inboundGuard.inspect(inboundEnvelope);
 

@@ -458,6 +458,12 @@ class NodeServiceImpl implements NodeService {
 
   /** Serialize outbound chat streams per libp2p peer to avoid concurrent newStream races. */
   private readonly _chatSendChains = new Map<string, Promise<void>>();
+  private static readonly _PROFILE_REQUEST_COOLDOWN_MS = 15_000;
+  private readonly _profileRequestInflight = new Map<
+    string,
+    Promise<{ ok: boolean; reason?: string }>
+  >();
+  private readonly _profileRequestLastAt = new Map<string, number>();
   /** Keeps bonded contacts warm across NAT idle periods. */
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
   /** In-memory owner → libp2p from recent inbound streams (until persisted in peer directory). */
@@ -794,7 +800,10 @@ class NodeServiceImpl implements NodeService {
     console.log(
       `[share] data transfer start: ${pending.relativePath} → ${input.remotePeerId.slice(0, 12)}… (${dialHints.length} dial hints)`,
     );
-    const reachability = await mesh.ensurePeerReachable(input.remotePeerId, ENVOY_DATA_PROTOCOL, { dialHints });
+    const reachability = await mesh.ensurePeerReachable(input.remotePeerId, ENVOY_DATA_PROTOCOL, {
+      dialHints,
+      preferCircuitHints: dialHints.some((h) => h.includes("/p2p-circuit/")),
+    });
     if (!reachability.connected) {
       console.warn(
         `[share] data channel not reachable for ${input.remotePeerId.slice(0, 12)}…; attempting transfer anyway`,
@@ -1163,8 +1172,40 @@ class NodeServiceImpl implements NodeService {
   }
 
   async requestPeerProfile(ownerId: string): Promise<{ ok: boolean; reason?: string }> {
+    const key = ownerId.trim();
+    if (!key) {
+      return { ok: false, reason: "owner id required" };
+    }
+    const inflight = this._profileRequestInflight.get(key);
+    if (inflight) {
+      return inflight;
+    }
+    const lastAt = this._profileRequestLastAt.get(key) ?? 0;
+    if (Date.now() - lastAt < NodeServiceImpl._PROFILE_REQUEST_COOLDOWN_MS) {
+      const cached = this._peerProfileCacheStore
+        ? await this._peerProfileCacheStore.get(key)
+        : undefined;
+      if (cached) {
+        return { ok: true };
+      }
+    }
+
+    const run = this._requestPeerProfileOnce(key);
+    this._profileRequestInflight.set(key, run);
+    try {
+      return await run;
+    } finally {
+      this._profileRequestInflight.delete(key);
+      this._profileRequestLastAt.set(key, Date.now());
+    }
+  }
+
+  private async _requestPeerProfileOnce(ownerId: string): Promise<{ ok: boolean; reason?: string }> {
     const mesh = this._requireMesh();
     const profile = this._requireProfile();
+    if (!this._contactOwnerKeyStore || !this._peerProfileCacheStore) {
+      return { ok: false, reason: "profile cache not initialized" };
+    }
     try {
       const resolved = await this._resolveLibp2pPeerForBondOwner(ownerId);
       if (!resolved) {
@@ -1181,7 +1222,7 @@ class NodeServiceImpl implements NodeService {
           envelopeRecipientPeerId = derivePeerId(rec.devicePublicKeyPem);
         }
       }
-      await sendProfileRequest({
+      const reply = await sendProfileRequest({
         mesh,
         profile,
         transportPeerId,
@@ -1189,6 +1230,14 @@ class NodeServiceImpl implements NodeService {
         listenAddrs,
         dialHintsFor: (peerId, addrs) => this._dialHintsForChat(peerId, addrs ?? listenAddrs),
       });
+      const cached = await handleInboundProfileSync({
+        envelope: reply,
+        contactOwnerKeyStore: this._contactOwnerKeyStore,
+        peerProfileCache: this._peerProfileCacheStore,
+      });
+      if (cached.handled) {
+        this.emit("profile:updated", { ownerId: cached.ownerId });
+      }
       return { ok: true };
     } catch (err) {
       return { ok: false, reason: err instanceof Error ? err.message : String(err) };
@@ -1257,11 +1306,18 @@ class NodeServiceImpl implements NodeService {
             recipientPeerId: envelopeRecipientPeerId,
           });
           if (context?.replyWithEnvelope) {
-            await context.replyWithEnvelope(responseEnvelope);
-            console.log(
-              `[profile.response] replied on inbound stream to ${envelopeRecipientPeerId.slice(0, 16)}…`,
-            );
-            return;
+            try {
+              await context.replyWithEnvelope(responseEnvelope);
+              console.log(
+                `[profile.response] replied on inbound stream to ${envelopeRecipientPeerId.slice(0, 16)}…`,
+              );
+              return;
+            } catch (err) {
+              console.warn(
+                `[profile.response] inbound stream reply failed, dialing outbound:`,
+                err instanceof Error ? err.message : err,
+              );
+            }
           }
           const mesh = this._requireMesh();
           const records = await this._peerDirectoryStore.listPeerRecords();
@@ -5362,9 +5418,16 @@ class NodeServiceImpl implements NodeService {
     // Forward into the P2P mesh
     console.log(`[forwardEnvelope] intent=${envelope.intent} senderPeerId=${envelope.senderPeerId} transportPeerId=${transportPeerId}`);
     if (envelope.intent === "chat.message") {
-      await mesh.sendChat(transportPeerId, envelope as any, { dialHints: dialHints ?? [] });
+      const hints =
+        dialHints?.length ? dialHints : await this._dialHintsForChat(transportPeerId, undefined);
+      await this._deliverChatEnvelope(transportPeerId, envelope, hints);
     } else {
-      await mesh.send(transportPeerId, envelope as any, { dialHints: dialHints ?? [] });
+      const hints = dialHints ?? [];
+      const preferCircuits = hints.some((h) => h.includes("/p2p-circuit/"));
+      await mesh.send(transportPeerId, envelope as any, {
+        dialHints: hints,
+        preferCircuitHints: preferCircuits,
+      });
     }
 
     // Tag reachability for the transport peer

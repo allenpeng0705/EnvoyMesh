@@ -54,6 +54,9 @@ function mockMesh(): EnvoyMesh {
     peerId: "12D3KooWWinNode",
     multiaddrs: [],
     send: async () => undefined,
+    sendExpectReply: async () => {
+      throw new Error("sendExpectReply not configured for this test");
+    },
     onMessage: () => {},
     probePeer: async () => undefined,
     getPeerConnectionInfo: () => ({ connected: false, direct: false }),
@@ -111,6 +114,20 @@ describe("profile.sync inbound learns libp2p for bond owner", () => {
 
     const row = await peerDirectory.getPeerByOwnerId(macOwner.ownerId);
     expect(row?.peerId).toBe(MAC_LIBP2P);
+
+    const responseUnsigned = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(macDevice.publicKeyPem),
+      senderPublicKey: macDevice.publicKeyPem,
+      senderRole: "human",
+      intent: "profile.response",
+      payload,
+    });
+    const responseEnvelope = signUnsignedEnvelope(responseUnsigned, macDevice.privateKeyPem);
+    const meshWithReply = {
+      ...mockMesh(),
+      sendExpectReply: async () => responseEnvelope,
+    } as unknown as EnvoyMesh;
+    svc.bindExternalMesh(meshWithReply);
 
     const result = await svc.requestPeerProfile(macOwner.ownerId);
     expect(result.ok, result.reason).toBe(true);

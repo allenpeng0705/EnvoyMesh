@@ -27,10 +27,15 @@ export function isChatAckFailureLikelyAfterWrite(err: unknown): boolean {
   if (name === "StreamResetError") {
     return true;
   }
+  if (/sendChatExpectReply timed out/i.test(msg)) {
+    return false;
+  }
+  if (/Cannot send on stream/i.test(msg) || /stream is not writable/i.test(msg)) {
+    return false;
+  }
   return (
     /stream has been reset/i.test(msg) ||
     /peer closed stream without a reply/i.test(msg) ||
-    /sendChatExpectReply timed out/i.test(msg) ||
     /Unexpected EOF/i.test(msg) ||
     /stream closed while reading/i.test(msg)
   );

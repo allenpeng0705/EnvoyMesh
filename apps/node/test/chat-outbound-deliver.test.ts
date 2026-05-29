@@ -25,6 +25,12 @@ describe("isChatAckFailureLikelyAfterWrite", () => {
     expect(isChatAckFailureLikelyAfterWrite(err)).toBe(true);
     expect(isChatAckFailureLikelyAfterWrite(new Error("Cannot send on stream 3"))).toBe(false);
   });
+
+  it("does not treat ack timeout as post-write failure (allows retry)", () => {
+    expect(isChatAckFailureLikelyAfterWrite(new Error("sendChatExpectReply timed out after 45000ms"))).toBe(
+      false,
+    );
+  });
 });
 
 describe("deliverChatEnvelopeWithRetry", () => {

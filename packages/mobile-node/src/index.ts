@@ -97,6 +97,7 @@ import {
   createSyncStatePayload,
   createProfileSyncPayload,
   createProfileRequestPayload,
+  parseProfileRequestPayload,
   parseSyncStatePayload,
   parseShareRequestPayload,
   parseSharePreviewPayload,
@@ -178,7 +179,6 @@ import {
   MAX_PROFILE_THUMBNAIL_BYTES,
 } from "./mobile-profile-photo.js";
 import {
-  handleMobileInboundProfileRequest,
   handleMobileInboundProfileSync,
   loadMobileProfileThumbnailInline,
   sendMobileProfileEnvelope,
@@ -1247,19 +1247,49 @@ export class MobileNode implements NodeService {
   }
 
   async requestPeerProfile(ownerId: string): Promise<{ ok: boolean; reason?: string }> {
-    if (!this._state) return { ok: false, reason: "not initialized" };
+    if (!this._state || !this._contactOwnerKeys || !this._peerProfileCache) {
+      return { ok: false, reason: "not initialized" };
+    }
+    const key = ownerId.trim();
+    if (!key) return { ok: false, reason: "owner id required" };
     try {
-      const targetPeerId = await this._resolveBondRecipientPeerId(ownerId.trim());
-      await sendMobileProfileEnvelope({
-        devicePrivateKeyPem: this._state.device.privateKeyPem,
-        devicePublicKeyPem: this._state.device.publicKeyPem,
-        recipientPeerId: targetPeerId,
+      const transportPeerId = await this._resolveChatTransportPeerId(key);
+      if (!transportPeerId) {
+        return { ok: false, reason: "no route to peer" };
+      }
+      const envelopeRecipientPeerId = await this._resolveChatRecipientPeerId(key);
+      const unsigned = createUnsignedEnvelope({
+        senderPeerId: derivePeerId(this._state.device.publicKeyPem),
+        senderPublicKey: this._state.device.publicKeyPem,
+        senderRole: "human",
+        recipientPeerId: envelopeRecipientPeerId,
+        recipientRole: "human",
         intent: "profile.request",
         payload: createProfileRequestPayload(this._state.owner.ownerId),
-        targetPeerId,
-        sendJson: (peerId, json) => this._sendProfileJson(peerId, json),
       });
-      return { ok: true };
+      const envelope = signUnsignedEnvelope(unsigned, this._state.device.privateKeyPem);
+      const hints = await this._buildMobileChatDialHints(transportPeerId, key);
+      const replyJson = await this._sendExpectReplyViaMeshWithHints(
+        transportPeerId,
+        JSON.stringify(envelope),
+        30_000,
+        hints,
+        ENVOY_MESSAGE_PROTOCOL,
+      );
+      const reply = parseEnvelope(JSON.parse(replyJson) as Record<string, unknown>);
+      if (reply.intent !== "profile.response") {
+        return { ok: false, reason: `expected profile.response, got ${reply.intent}` };
+      }
+      const result = await handleMobileInboundProfileSync({
+        payload: reply.payload,
+        ownerKeys: this._contactOwnerKeys,
+        cache: this._peerProfileCache,
+      });
+      if (result.ok) {
+        this._events.emit("profile:updated", { ownerId: result.ownerId });
+        return { ok: true };
+      }
+      return { ok: false, reason: result.reason };
     } catch (err) {
       return { ok: false, reason: err instanceof Error ? err.message : String(err) };
     }
@@ -1423,10 +1453,17 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return signed as HumanProfile;
   }
 
-  private async _sendProfileJson(targetPeerId: string, json: string): Promise<void> {
+  private async _sendProfileJson(
+    transportPeerId: string,
+    json: string,
+    ownerHint?: string,
+  ): Promise<void> {
     try {
       if (this._mesh) {
-        await this._sendViaMesh(targetPeerId, json, ENVOY_MESSAGE_PROTOCOL);
+        const hints = ownerHint
+          ? await this._buildMobileChatDialHints(transportPeerId, ownerHint)
+          : [`/p2p/${transportPeerId}`];
+        await this._sendViaMeshWithHints(transportPeerId, json, ENVOY_MESSAGE_PROTOCOL, hints);
         return;
       }
     } catch (err) {
@@ -1439,8 +1476,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
   }
 
   private async _sendProfileResponseToPeer(
-    recipientPeerId: string,
+    recipientEnvelopePeerId: string,
     profile: HumanProfile,
+    transportPeerId: string,
   ): Promise<void> {
     if (!this._state) return;
     const inline = await loadMobileProfileThumbnailInline(this._vault, profile);
@@ -1448,10 +1486,10 @@ You are the owner's personal AI assistant on EnvoyMesh.
     await sendMobileProfileEnvelope({
       devicePrivateKeyPem: this._state.device.privateKeyPem,
       devicePublicKeyPem: this._state.device.publicKeyPem,
-      recipientPeerId,
+      recipientPeerId: recipientEnvelopePeerId,
       intent: "profile.response",
       payload,
-      targetPeerId: recipientPeerId,
+      targetPeerId: transportPeerId,
       sendJson: (peerId, json) => this._sendProfileJson(peerId, json),
     });
   }
@@ -2569,6 +2607,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
           transportPeerId,
           JSON.stringify(envelope),
           timeoutMs,
+          bond.peerOwnerId,
         );
         const replyJson = JSON.parse(replyText) as Record<string, unknown>;
         const reply = parseEnvelope(replyJson);
@@ -3263,6 +3302,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
           transportPeerId,
           JSON.stringify(envelope),
           18_000,
+          bond.peerOwnerId,
         );
         const reply = parseEnvelope(JSON.parse(replyText) as Record<string, unknown>);
         if (reply.intent !== "discovery.response") continue;
@@ -4668,6 +4708,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
       }
     }
     try {
+      const hints = await this._buildMobileChatDialHints(targetPeer, targetPeer);
       await sendMobileVaultFileDataTransfer({
         mesh: this._mesh,
         vault: this._vault,
@@ -4677,6 +4718,8 @@ You are the owner's personal AI assistant on EnvoyMesh.
         devicePrivateKeyPem: this._state.device.privateKeyPem,
         relativePath: pending.relativePath,
         toLibp2pPeerId: targetPeer,
+        dialHints: hints,
+        hintDialTimeoutMs: MobileNode._MOBILE_HINT_DIAL_TIMEOUT_MS,
       });
     } catch (err) {
       this._recordNodeError("share data transfer send", err);
@@ -4684,19 +4727,63 @@ You are the owner's personal AI assistant on EnvoyMesh.
     this._pendingFileSendByPreviewMsgId.delete(acc.inReplyTo);
   }
 
-  private async _handleInboundProfileIntent(msg: Record<string, unknown>): Promise<void> {
-    if (!this._contactOwnerKeys || !this._peerProfileCache) return;
+  private async _handleInboundProfileIntent(
+    msg: Record<string, unknown>,
+    opts?: {
+      transportPeerId?: string;
+      replyWithEnvelope?: (envelope: EnvoyEnvelope) => Promise<void>;
+    },
+  ): Promise<void> {
+    if (!this._contactOwnerKeys || !this._peerProfileCache || !this._state) return;
     const intent = msg.intent as string;
     if (intent === "profile.request") {
-      const result = await handleMobileInboundProfileRequest({
-        payload: msg.payload,
-        senderPeerId: String(msg.senderPeerId ?? ""),
-        loadLocalProfile: async () => this._humanProfile,
-        sendProfileResponse: (recipientPeerId, profile) =>
-          this._sendProfileResponseToPeer(recipientPeerId, profile as HumanProfile),
-      });
-      if (result.ok) return;
-      console.warn(`[mobile-node] profile.request: ${result.reason}`);
+      try {
+        parseProfileRequestPayload(msg.payload);
+      } catch {
+        console.warn("[mobile-node] profile.request: invalid payload");
+        return;
+      }
+      const local = this._humanProfile;
+      if (!local) {
+        console.warn("[mobile-node] profile.request: no profile to share");
+        return;
+      }
+      const envelopeRecipientPeerId = String(msg.senderPeerId ?? "");
+      if (!envelopeRecipientPeerId) {
+        console.warn("[mobile-node] profile.request: missing sender peer id");
+        return;
+      }
+      const inline = await loadMobileProfileThumbnailInline(this._vault, local);
+      const payload = createProfileSyncPayload(local, inline, this._state.owner.publicKeyPem);
+      const responseEnvelope = signUnsignedEnvelope(
+        createUnsignedEnvelope({
+          senderPeerId: derivePeerId(this._state.device.publicKeyPem),
+          senderPublicKey: this._state.device.publicKeyPem,
+          senderRole: "human",
+          recipientPeerId: envelopeRecipientPeerId,
+          recipientRole: "human",
+          intent: "profile.response",
+          payload,
+        }),
+        this._state.device.privateKeyPem,
+      );
+      if (opts?.replyWithEnvelope) {
+        try {
+          await opts.replyWithEnvelope(responseEnvelope);
+          return;
+        } catch (err) {
+          console.warn(
+            "[mobile-node] profile.response inbound reply failed, dialing outbound:",
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+      const transportPeerId = opts?.transportPeerId?.trim();
+      if (!transportPeerId) {
+        console.warn("[mobile-node] profile.response: no transport peer id for outbound send");
+        return;
+      }
+      await this._sendProfileJson(transportPeerId, JSON.stringify(responseEnvelope));
       return;
     }
     const result = await handleMobileInboundProfileSync({
@@ -4927,7 +5014,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
         intent === "profile.response" ||
         intent === "profile.request"
       ) {
-        void this._handleInboundProfileIntent(msg).catch((err) =>
+        void this._handleInboundProfileIntent(msg, opts).catch((err) =>
           console.warn("[mobile-node] profile intent:", err instanceof Error ? err.message : err),
         );
       } else if (intent === "agent.card.request" || intent === "agent.card.response") {
@@ -5275,7 +5362,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
       const text = new TextDecoder().decode(data);
       const msg = JSON.parse(text) as Record<string, unknown>;
       const replyWithEnvelope =
-        protocol === ENVOY_CHAT_PROTOCOL
+        protocol === ENVOY_CHAT_PROTOCOL || protocol === ENVOY_MESSAGE_PROTOCOL
           ? async (envelope: EnvoyEnvelope) => {
               if (replyConsumed) return;
               replyConsumed = true;
@@ -5350,22 +5437,122 @@ You are the owner's personal AI assistant on EnvoyMesh.
     });
   }
 
-  private async _openChatStreamWithHints(
+  private async _openProtocolStreamWithHints(
     transportPeerId: string,
     hints: string[],
     attempt: number,
+    protocol: string,
   ): Promise<unknown> {
     const { prioritizeCircuitDialHints } = await import("@envoymesh/network");
     const ordered = attempt > 0 ? prioritizeCircuitDialHints(hints) : hints;
     let lastErr: unknown = new Error("no dial hints");
     for (const hint of ordered) {
       try {
-        return await this._dialProtocolWithHint(hint, ENVOY_CHAT_PROTOCOL);
+        return await this._dialProtocolWithHint(hint, protocol);
       } catch (err) {
         lastErr = err;
       }
     }
     throw lastErr;
+  }
+
+  private async _openChatStreamWithHints(
+    transportPeerId: string,
+    hints: string[],
+    attempt: number,
+  ): Promise<unknown> {
+    return this._openProtocolStreamWithHints(transportPeerId, hints, attempt, ENVOY_CHAT_PROTOCOL);
+  }
+
+  private async _sendViaMeshWithHints(
+    targetPeerId: string,
+    data: string,
+    protocol: string,
+    hints: string[],
+  ): Promise<void> {
+    const { byteStream } = await import("@libp2p/utils");
+    const stream = await this._openProtocolStreamWithHints(targetPeerId, hints, 0, protocol);
+    try {
+      await byteStream(stream as Parameters<typeof byteStream>[0]).write(new TextEncoder().encode(data));
+    } finally {
+      try {
+        await (stream as { close?: () => Promise<void> }).close?.();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  private async _sendExpectReplyViaMeshWithHints(
+    targetPeerId: string,
+    requestJson: string,
+    timeoutMs: number,
+    hints: string[],
+    protocol: string = ENVOY_MESSAGE_PROTOCOL,
+  ): Promise<string> {
+    if (!this._mesh || !targetPeerId) throw new Error("Mesh not available");
+    const { byteStream } = await import("@libp2p/utils");
+    let lastErr: unknown = new Error("profile request failed");
+    for (let attempt = 0; attempt < MobileNode._MOBILE_CHAT_SEND_MAX_ATTEMPTS; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+      }
+      try {
+        const stream = await this._openProtocolStreamWithHints(targetPeerId, hints, attempt, protocol);
+        const streamIo = byteStream(stream as Parameters<typeof byteStream>[0]);
+        try {
+          await streamIo.write(new TextEncoder().encode(requestJson));
+          const replyBytes = await new Promise<Uint8Array | null>((resolve, reject) => {
+            const timer = setTimeout(
+              () => reject(new Error(`request reply timed out after ${timeoutMs}ms`)),
+              timeoutMs,
+            );
+            void (streamIo.read() as Promise<Uint8Array | null>)
+              .then((b) => {
+                clearTimeout(timer);
+                resolve(b);
+              })
+              .catch((err: unknown) => {
+                clearTimeout(timer);
+                reject(err);
+              });
+          });
+          if (replyBytes === null) throw new Error("peer closed stream without a reply");
+          const bytes =
+            replyBytes instanceof Uint8Array
+              ? replyBytes
+              : (replyBytes as { subarray: () => Uint8Array }).subarray();
+          return new TextDecoder().decode(bytes);
+        } finally {
+          try {
+            await (stream as { close?: () => Promise<void> }).close?.();
+          } catch {
+            /* ignore */
+          }
+        }
+      } catch (err) {
+        lastErr = err;
+        console.warn(
+          `[mobile-node] sendExpectReply attempt ${attempt + 1}/${MobileNode._MOBILE_CHAT_SEND_MAX_ATTEMPTS} failed:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+  }
+
+  private _isChatAckFailureLikelyAfterWrite(err: unknown): boolean {
+    const name = err instanceof Error ? (err as Error & { name?: string }).name : "";
+    const msg = err instanceof Error ? err.message : String(err);
+    if (name === "StreamResetError") return true;
+    if (/timed out/i.test(msg)) return false;
+    if (/Cannot send on stream/i.test(msg) || /stream is not writable/i.test(msg)) return false;
+    return (
+      /stream has been reset/i.test(msg) ||
+      /peer closed stream without a reply/i.test(msg) ||
+      /Unexpected EOF/i.test(msg) ||
+      /stream closed while reading/i.test(msg)
+    );
   }
 
   private async _sendChatViaMeshWithAck(
@@ -5420,11 +5607,33 @@ You are the owner's personal AI assistant on EnvoyMesh.
         return { delivered: false };
       } catch (err) {
         lastErr = err;
+        if (this._isChatAckFailureLikelyAfterWrite(err)) {
+          console.warn(
+            "[mobile-node] chat ack failed after send (message likely delivered):",
+            err instanceof Error ? err.message : err,
+          );
+          return { delivered: false };
+        }
         console.warn(
           `[mobile-node] sendChat attempt ${attempt + 1}/${MobileNode._MOBILE_CHAT_SEND_MAX_ATTEMPTS} failed:`,
           err instanceof Error ? err.message : err,
         );
       }
+    }
+    try {
+      await this._sendViaMeshWithHints(
+        transportPeerId,
+        signedJson,
+        ENVOY_CHAT_PROTOCOL,
+        hints,
+      );
+      console.log("[mobile-node] chat delivered without ack (fallback after ack failures)");
+      return { delivered: false };
+    } catch (fallbackErr) {
+      console.warn(
+        "[mobile-node] chat ack-less fallback failed:",
+        fallbackErr instanceof Error ? fallbackErr.message : fallbackErr,
+      );
     }
     throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
   }
@@ -5445,36 +5654,18 @@ You are the owner's personal AI assistant on EnvoyMesh.
     targetPeerId: string,
     requestJson: string,
     timeoutMs: number,
+    ownerHint?: string,
   ): Promise<string> {
-    if (!this._mesh || !targetPeerId) throw new Error("Mesh not available");
-    const { byteStream } = await import("@libp2p/utils");
-    const stream = await this._mesh.dialProtocol(`/p2p/${targetPeerId}` as any, ENVOY_MESSAGE_PROTOCOL);
-    const streamIo = byteStream(stream);
-    try {
-      await streamIo.write(new TextEncoder().encode(requestJson));
-      const readPromise = streamIo.read() as Promise<Uint8Array | null>;
-      const replyBytes = await new Promise<Uint8Array | null>((resolve, reject) => {
-        const timer = setTimeout(
-          () => reject(new Error(`discovery reply timed out after ${timeoutMs}ms`)),
-          timeoutMs,
-        );
-        void readPromise
-          .then((b) => {
-            clearTimeout(timer);
-            resolve(b);
-          })
-          .catch((err: unknown) => {
-            clearTimeout(timer);
-            reject(err);
-          });
-      });
-      if (replyBytes === null) throw new Error("peer closed stream without a reply");
-      const bytes =
-        replyBytes instanceof Uint8Array ? replyBytes : (replyBytes as { subarray: () => Uint8Array }).subarray();
-      return new TextDecoder().decode(bytes);
-    } finally {
-      try { await stream.close(); } catch { /* ignore */ }
-    }
+    const hints = ownerHint
+      ? await this._buildMobileChatDialHints(targetPeerId, ownerHint)
+      : [`/p2p/${targetPeerId}`];
+    return this._sendExpectReplyViaMeshWithHints(
+      targetPeerId,
+      requestJson,
+      timeoutMs,
+      hints,
+      ENVOY_MESSAGE_PROTOCOL,
+    );
   }
 
   /** Search the DHT for capability topic providers. */

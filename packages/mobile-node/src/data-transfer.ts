@@ -123,6 +123,8 @@ export async function sendMobileVaultFileDataTransfer(input: {
   devicePrivateKeyPem: string;
   relativePath: string;
   toLibp2pPeerId: string;
+  dialHints?: string[];
+  hintDialTimeoutMs?: number;
 }): Promise<void> {
   const norm = input.relativePath.replace(/^[\\/]+/, "");
   if (!isValidMobileVaultRelativePath(norm)) {
@@ -150,14 +152,43 @@ export async function sendMobileVaultFileDataTransfer(input: {
     chunks.push(content.subarray(offset, Math.min(offset + chunkSize, content.length)));
   }
   const body = encodeDataTransferBody(voucherUtf8, chunks);
-  const stream: any = await input.mesh.dialProtocol(`/p2p/${input.toLibp2pPeerId}` as any, ENVOY_DATA_PROTOCOL);
-  try {
-    await byteStream(stream).write(body);
-  } finally {
+  const hints = input.dialHints?.length
+    ? input.dialHints
+    : [`/p2p/${input.toLibp2pPeerId}`];
+  const dialTimeoutMs = input.hintDialTimeoutMs ?? 3_500;
+  let lastErr: unknown = new Error("data transfer dial failed");
+  for (const hint of hints) {
+    let stream: any;
     try {
-      await stream.close();
-    } catch {
-      /* ignore */
+      stream = await new Promise<any>((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error(`data transfer dial timed out: ${hint.slice(0, 64)}`)),
+          dialTimeoutMs,
+        );
+        void input.mesh
+          .dialProtocol(hint as any, ENVOY_DATA_PROTOCOL)
+          .then((s) => {
+            clearTimeout(timer);
+            resolve(s);
+          })
+          .catch((err: unknown) => {
+            clearTimeout(timer);
+            reject(err);
+          });
+      });
+      try {
+        await byteStream(stream).write(body);
+        return;
+      } finally {
+        try {
+          await stream.close();
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch (err) {
+      lastErr = err;
     }
   }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
