@@ -330,10 +330,13 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
   // chat:message from unbonded peers → pending messages
   useEffect(() => {
     if (!wsTransportOpen) return;
+    const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
     const unsub = nodeService.on("chat:message", (msg) => {
+      // Skip own outbound copies (local emit or mesh echo — nodeId may be the remote peer on echo)
+      if (selfOwnerId && msg.sender.ownerId?.trim() === selfOwnerId) return;
       // Skip local echo (sent receipts)
       if (msg.metadata?.deliveryReceipt === "sent") return;
-      // Skip own messages
+      // Skip own messages by libp2p id
       if (peerId && msg.sender.nodeId === peerId) return;
       // Skip if bonded
       const isBonded = bonds.some(
@@ -349,7 +352,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       });
     });
     return unsub;
-  }, [nodeService, wsTransportOpen, bonds, peerId]);
+  }, [nodeService, wsTransportOpen, bonds, peerId, humanProfile?.ownerId]);
 
   // bond:established — remove pending messages from that peer
   useEffect(() => {

@@ -1721,6 +1721,25 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       return;
     }
 
+    const localDevicePeerId = derivePeerId(profile.device.publicKeyPem);
+    if (envelope.senderPeerId === localDevicePeerId) {
+      console.warn(
+        `[chat.message] ignoring self-echo messageId=${envelope.messageId} via libp2p peer ${remotePeerId.slice(0, 12)}…`,
+      );
+      return;
+    }
+    const intendedRecipient = envelope.recipientPeerId?.trim();
+    if (
+      intendedRecipient &&
+      intendedRecipient !== localDevicePeerId &&
+      intendedRecipient !== bridgeIdentity.agentPeerId
+    ) {
+      console.warn(
+        `[chat.message] ignoring misaddressed message for ${intendedRecipient.slice(0, 16)}… messageId=${envelope.messageId}`,
+      );
+      return;
+    }
+
     const senderTrustForReach = await trustStore.getTrustRecord(payload.senderOwnerId);
     if (senderTrustForReach && senderTrustForReach.level !== "blocked") {
       void mesh.tagContactForPersistentReachability(remotePeerId).catch((err) =>

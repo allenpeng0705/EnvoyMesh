@@ -4887,6 +4887,22 @@ You are the owner's personal AI assistant on EnvoyMesh.
           return;
         }
 
+        const localDevicePeerId = derivePeerId(this._state.device.publicKeyPem);
+        const senderEnvelopePeerId = String(msg.senderPeerId ?? "").trim();
+        if (senderEnvelopePeerId === localDevicePeerId) {
+          console.warn("[mobile-node] chat.message: ignoring self-echo");
+          return;
+        }
+        const intendedRecipient = typeof msg.recipientPeerId === "string" ? msg.recipientPeerId.trim() : "";
+        if (
+          intendedRecipient &&
+          intendedRecipient !== localDevicePeerId &&
+          intendedRecipient !== this._state.homeAgentPeerId?.trim()
+        ) {
+          console.warn("[mobile-node] chat.message: ignoring misaddressed message");
+          return;
+        }
+
         if (
           opts?.replyWithEnvelope &&
           typeof msg.messageId === "string" &&
