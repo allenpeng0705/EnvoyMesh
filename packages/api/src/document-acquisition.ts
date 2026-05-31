@@ -1,5 +1,8 @@
-import { randomUUID } from "node:crypto";
 import type { Sensitivity } from "@envoymesh/protocol";
+
+function randomUUID(): string {
+  return crypto.randomUUID();
+}
 
 export type DocumentAcquisitionStage =
   | "queued"

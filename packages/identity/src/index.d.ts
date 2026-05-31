@@ -113,6 +113,8 @@ export declare function verifyDeviceRevocationRecord(record: DeviceRevocationRec
 export declare function isDeviceRevoked(certificate: DeviceCertificate, records: readonly DeviceRevocationRecord[], ownerPublicKeyPem: string): boolean;
 export declare function signUnsignedEnvelope<TPayload>(envelope: UnsignedEnvoyEnvelope<TPayload>, privateKeyPem: string): EnvoyEnvelope<TPayload>;
 export declare function verifyEnvelope(envelope: EnvoyEnvelope): boolean;
+/** Inbound verification: agent envelopes use {@link verifyAgentEnvelope}; device/human use {@link verifyEnvelope}. */
+export declare function verifyInboundEnvelope(envelope: EnvoyEnvelope): boolean;
 /**
  * Verify an envelope sent by an agent.
  * Checks:
@@ -143,4 +145,23 @@ export declare function signHumanProfile(payload: Omit<HumanProfilePayload, "sig
 export declare function verifyHumanProfile(profile: HumanProfilePayload, ownerPublicKeyPem: string): boolean;
 export declare function signFriendMatchingPreferences(payload: Omit<FriendMatchingPreferencesPayload, "signature">, ownerPrivateKeyPem: string): FriendMatchingPreferencesPayload;
 export declare function verifyFriendMatchingPreferences(prefs: FriendMatchingPreferencesPayload, ownerPublicKeyPem: string): boolean;
+export interface EncryptedOwnerKey {
+    /** AES-256-GCM ciphertext (base64url) */
+    encryptedKey: string;
+    /** Ephemeral ECDH P-256 public key (raw 65 bytes, base64url) */
+    ephemeralPublicKey: string;
+    /** AES-GCM IV (12 bytes, base64url) */
+    iv: string;
+    /** AES-GCM authentication tag (16 bytes, base64url) — included separately for Web Crypto API */
+    authTag: string;
+}
+/**
+ * Encrypt the owner private key for secure transfer to a mobile device.
+ *
+ * Uses ECDH over P-256 + HKDF-SHA-256 + AES-256-GCM.
+ * The peer's ECDH public key is in raw uncompressed format (65 bytes for P-256).
+ *
+ * Called by the home node during shared-identity pairing.
+ */
+export declare function encryptOwnerKeyForDevice(ownerPrivateKeyPem: string, peerEcdhPublicKeyRaw: Uint8Array): Promise<EncryptedOwnerKey>;
 //# sourceMappingURL=index.d.ts.map

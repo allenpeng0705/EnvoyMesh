@@ -1,0 +1,31 @@
+[      85ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=3bf31cf4:20102
+[     161ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/ws-client.ts:60
+[     162ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5173/ws-client.ts:104
+[     162ms] [LOG] [ws-client] Disconnected @ http://localhost:5173/ws-client.ts:87
+[     162ms] [LOG] [ws-client] Reconnecting in 1000ms (attempt 1)... @ http://localhost:5173/ws-client.ts:299
+[     164ms] [ERROR] [NodeServiceProvider] WebSocket connect failed: Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5173/ws-client.ts:97:20) @ http://localhost:5173/hooks/useNodeService.tsx:470
+[    1165ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/ws-client.ts:60
+[    1165ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5173/ws-client.ts:104
+[    1165ms] [LOG] [ws-client] Disconnected @ http://localhost:5173/ws-client.ts:87
+[    1165ms] [LOG] [ws-client] Reconnecting in 2000ms (attempt 2)... @ http://localhost:5173/ws-client.ts:299
+[    1166ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5173/ws-client.ts:97:20)
+[    3168ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/ws-client.ts:60
+[    3168ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5173/ws-client.ts:104
+[    3168ms] [LOG] [ws-client] Disconnected @ http://localhost:5173/ws-client.ts:87
+[    3168ms] [LOG] [ws-client] Reconnecting in 4000ms (attempt 3)... @ http://localhost:5173/ws-client.ts:299
+[    3170ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5173/ws-client.ts:97:20)
+[    4308ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/ws-client.ts:60
+[    4308ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5173/ws-client.ts:104
+[    4308ms] [LOG] [ws-client] Disconnected @ http://localhost:5173/ws-client.ts:87
+[    4308ms] [LOG] [ws-client] Reconnecting in 8000ms (attempt 4)... @ http://localhost:5173/ws-client.ts:299
+[    4308ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5173/ws-client.ts:97:20)
+[   12309ms] [ERROR] WebSocket connection to 'ws://localhost:3030/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/ws-client.ts:60
+[   12309ms] [ERROR] [ws-client] WebSocket error connecting to ws://localhost:3030/ws @ http://localhost:5173/ws-client.ts:104
+[   12309ms] [LOG] [ws-client] Disconnected @ http://localhost:5173/ws-client.ts:87
+[   12309ms] [LOG] [ws-client] Reconnecting in 16000ms (attempt 5)... @ http://localhost:5173/ws-client.ts:299
+[   12309ms] Error: WebSocket error connecting to ws://localhost:3030/ws
+    at ws.onclose (http://localhost:5173/ws-client.ts:97:20)

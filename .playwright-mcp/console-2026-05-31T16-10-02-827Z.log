@@ -1,0 +1,5 @@
+[     210ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social/node_modules/.vite/deps/react-dom_client.js?v=3bf31cf4:20102
+[     244ms] Error: Module "node:crypto" has been externalized for browser compatibility. Cannot access "node:crypto.randomUUID" in client code.  See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+    at Object.get (http://localhost:5173/@id/__vite-browser-external:node:crypto:3:13)
+    at http://localhost:5173/@fs/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/api/src/capability-provider.ts:1:137
+[     244ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:0

@@ -1,6 +1,9 @@
-import { randomUUID } from "node:crypto";
 import type { AgentRouteStep } from "./capability-intent-routing.js";
 import type { RouteStepExecutionRecord } from "./capability-route-executor.js";
+
+function randomUUID(): string {
+  return crypto.randomUUID();
+}
 
 export type CapabilityProviderStage =
   | "queued"

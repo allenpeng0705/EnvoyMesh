@@ -1,4 +1,6 @@
-import { randomUUID } from "node:crypto";
+function randomUUID(): string {
+  return crypto.randomUUID();
+}
 
 export type SocialProxySessionStatus =
   | "discovered"

@@ -1,4 +1,4 @@
-import { agentCredentialForSigning, authChallengeProofForSigning, canonicalJson, createUnsignedAgentCredential, deviceCertificateForSigning, deviceRevocationRecordForSigning, envelopeForSigning, mandateForSigning, proofOfIntentForSigning, dataTransferVoucherForSigning, humanProfileForSigning, } from "@envoymesh/protocol";
+import { agentCredentialForSigning, authChallengeProofForSigning, canonicalJson, createUnsignedAgentCredential, deviceCertificateForSigning, deviceRevocationRecordForSigning, envelopeForSigning, mandateForSigning, proofOfIntentForSigning, dataTransferVoucherForSigning, humanProfileForSigning, friendMatchingPreferencesForSigning, createFriendMatchingPreferencesPayload, } from "@envoymesh/protocol";
 import { createHash, generateKeyPairSync, randomUUID, sign as cryptoSign, verify as cryptoVerify, } from "node:crypto";
 export function generateIdentity() {
     const { publicKeyPem, privateKeyPem } = generateEd25519KeyPair();
@@ -208,6 +208,13 @@ export function verifyEnvelope(envelope) {
     }
     return verifyCanonicalPayload(envelopeForSigning(envelope), envelope.signature, envelope.senderPublicKey);
 }
+/** Inbound verification: agent envelopes use {@link verifyAgentEnvelope}; device/human use {@link verifyEnvelope}. */
+export function verifyInboundEnvelope(envelope) {
+    if (envelope.senderRole === "agent" && envelope.agentCredential) {
+        return verifyAgentEnvelope(envelope);
+    }
+    return verifyEnvelope(envelope);
+}
 /**
  * Verify an envelope sent by an agent.
  * Checks:
@@ -368,7 +375,60 @@ export function verifyHumanProfile(profile, ownerPublicKeyPem) {
     }
     return verifyCanonicalPayload(humanProfileForSigning(profile), profile.signature, ownerPublicKeyPem);
 }
+export function signFriendMatchingPreferences(payload, ownerPrivateKeyPem) {
+    const signature = signCanonicalPayload(payload, ownerPrivateKeyPem);
+    return createFriendMatchingPreferencesPayload({
+        ownerId: payload.ownerId,
+        text: payload.text,
+        expiresAt: payload.expiresAt,
+        signature,
+    });
+}
+export function verifyFriendMatchingPreferences(prefs, ownerPublicKeyPem) {
+    if (deriveOwnerId(ownerPublicKeyPem) !== prefs.ownerId) {
+        return false;
+    }
+    return verifyCanonicalPayload(friendMatchingPreferencesForSigning(prefs), prefs.signature, ownerPublicKeyPem);
+}
 function randomCertificateId() {
     return `cert_${randomUUID()}`;
+}
+/**
+ * Encrypt the owner private key for secure transfer to a mobile device.
+ *
+ * Uses ECDH over P-256 + HKDF-SHA-256 + AES-256-GCM.
+ * The peer's ECDH public key is in raw uncompressed format (65 bytes for P-256).
+ *
+ * Called by the home node during shared-identity pairing.
+ */
+export async function encryptOwnerKeyForDevice(ownerPrivateKeyPem, peerEcdhPublicKeyRaw) {
+    // Generate ephemeral ECDH P-256 keypair
+    const ephemeralKeyPair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+    // Export ephemeral public key
+    const ephemeralPubKeyRaw = new Uint8Array(await crypto.subtle.exportKey("raw", ephemeralKeyPair.publicKey));
+    // Import peer's public key
+    const peerPubKey = await crypto.subtle.importKey("raw", peerEcdhPublicKeyRaw.buffer, { name: "ECDH", namedCurve: "P-256" }, false, []);
+    // Derive shared secret bits
+    const sharedBits = new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: peerPubKey }, ephemeralKeyPair.privateKey, 256));
+    // Derive AES key via HKDF
+    const hkdfKey = await crypto.subtle.importKey("raw", sharedBits.buffer, { name: "HKDF" }, false, ["deriveKey"]);
+    const info = new TextEncoder().encode("envoymesh:owner-key-wrap:v1");
+    const aesKey = await crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0).buffer, info }, hkdfKey, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
+    // Encrypt
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const plaintext = new TextEncoder().encode(ownerPrivateKeyPem);
+    const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aesKey, plaintext.buffer));
+    // Split ciphertext into encrypted data + auth tag (GCM appends 16-byte tag)
+    const encryptedContent = ciphertext.slice(0, ciphertext.length - 16);
+    const authTag = ciphertext.slice(ciphertext.length - 16);
+    return {
+        encryptedKey: bytesToBase64url(encryptedContent),
+        ephemeralPublicKey: bytesToBase64url(ephemeralPubKeyRaw),
+        iv: bytesToBase64url(iv),
+        authTag: bytesToBase64url(authTag),
+    };
+}
+function bytesToBase64url(bytes) {
+    return Buffer.from(bytes).toString("base64url");
 }
 //# sourceMappingURL=index.js.map
