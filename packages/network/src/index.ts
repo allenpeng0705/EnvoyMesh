@@ -1472,6 +1472,14 @@ export class EnvoyMesh {
     await Promise.all([...this.handlers].map((handler) => handler(message)));
   }
 
+  /**
+   * Register an inbound libp2p stream handler for the given protocol.
+   *
+   * Stream contract: one EnvoyEnvelope per stream, half-duplex. The handler
+   * reads exactly one envelope, dispatches it, optionally writes one reply
+   * on the same stream, then closes. Follow-up envelopes on the same stream
+   * are not supported — each logical message requires a fresh stream.
+   */
   private async installEnvelopeInboundHandler(protocol: string): Promise<void> {
     await this.requireNode().handle(protocol, async (stream: any, connection: any) => {
       const remotePeerId = connection.remotePeer.toString();

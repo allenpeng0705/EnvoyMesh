@@ -2,7 +2,7 @@ import { createUnsignedEnvelope } from "@envoymesh/protocol";
 import { describe, expect, it } from "vitest";
 import { ENVOY_CHAT_PROTOCOL, ENVOY_MESSAGE_PROTOCOL, EnvoyMesh } from "../src/index.js";
 
-describe("chat protocol routing", () => {
+describe("validateEnvelopeProtocol", () => {
   it("rejects chat.message on message protocol", async () => {
     const mesh = new EnvoyMesh({ enableMdns: false });
     await mesh.start();

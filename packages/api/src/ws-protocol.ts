@@ -27,7 +27,7 @@
  *    { event: "connected", data: { peerId: "...", multiaddrs: [...] } }
  */
 
-import type { DeviceProfile, DeviceRevocationReason, FriendMatchingPreferencesPayload } from "@envoymesh/protocol";
+import type { DeviceProfile, DeviceRevocationReason, DeviceRevocationRecord, FriendMatchingPreferencesPayload } from "@envoymesh/protocol";
 import type { AgentVisibilityConfig, A2aChatNotificationMode } from "./agent-visibility.js";
 
 // ============================================
@@ -912,11 +912,11 @@ export interface RevokeAuthorizedDeviceParams {
 }
 
 export interface RevokeAuthorizedDeviceResult {
-  revocation: Record<string, unknown>;
+  revocation: DeviceRevocationRecord;
 }
 
 export interface ListDeviceRevocationsResult {
-  revocations: Record<string, unknown>[];
+  revocations: DeviceRevocationRecord[];
 }
 
 export interface GetPeerConnectionInfoParams {

@@ -1,5 +1,10 @@
 node_modules/
 dist/
+# Stray tsc output in source trees — packages publish from dist/ anyway
+packages/identity/src/*.js
+packages/identity/src/*.js.map
+packages/identity/src/*.d.ts
+packages/identity/src/*.d.ts.map
 # Rust / Tauri (never commit build trees)
 apps/tauri/src-tauri/target/
 apps/tauri/src-tauri/resources/node/

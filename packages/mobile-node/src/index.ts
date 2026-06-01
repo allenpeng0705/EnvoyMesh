@@ -896,7 +896,7 @@ export class MobileNode implements NodeService {
   }
 
   async listDeviceRevocations(): Promise<import("@envoymesh/api").ListDeviceRevocationsResult> {
-    return { revocations: this._deviceRevocations as unknown as Record<string, unknown>[] };
+    return { revocations: this._deviceRevocations };
   }
 
   // -----------------------------------------------------------------------

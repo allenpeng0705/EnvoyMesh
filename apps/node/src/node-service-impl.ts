@@ -6601,7 +6601,7 @@ class NodeServiceImpl implements NodeService {
     if (this._sessionTokenStore) {
       await this._sessionTokenStore.removeTokenByDeviceId(deviceId);
     }
-    return { revocation: revocation as unknown as Record<string, unknown> };
+    return { revocation };
   }
 
   async listDeviceRevocations(): Promise<ListDeviceRevocationsResult> {
@@ -6609,7 +6609,7 @@ class NodeServiceImpl implements NodeService {
       return { revocations: [] };
     }
     const revocations = await this._deviceAuthorizationStore.listRevocations();
-    return { revocations: revocations as unknown as Record<string, unknown>[] };
+    return { revocations };
   }
 
   async homeclawCoreProxy(params: HomeClawCoreProxyParams): Promise<HomeClawCoreProxyResult> {
