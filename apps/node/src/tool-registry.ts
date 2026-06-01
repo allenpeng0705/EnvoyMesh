@@ -39,6 +39,8 @@ import type {
 import {
   canAgentAutonomousShareGalleryPhoto,
   canAutonomousShareFile,
+  friendMatchingGeoSearchTopics,
+  friendMatchingGeoTagHashes,
   galleryPhotoShareSensitivity,
   getAgentCapabilityRoute,
   matchAgentCapabilityRoutes,
@@ -146,7 +148,8 @@ export class ToolRegistry {
     // Discovery tools
     this.register({
       name: "discovery.search",
-      description: "Send discovery.request to a specific contact and wait for discovery.response (same stream)",
+      description:
+        "Send discovery.request to a bonded contact. Matches requestedCapabilities against their capability manifest (includes Profile About capability tags synced on save).",
       paramSchema: {
         type: "object",
         properties: {
@@ -1059,7 +1062,12 @@ export interface MeshToolContext {
     trustModeEnabled: boolean;
     friendAutopilotEnabled?: boolean;
     friendMatchingPreferencesText?: string;
+    friendMatchingPreferencesSigned?: import("@envoymesh/protocol").FriendMatchingPreferencesPayload;
     humanProfileSummary?: { displayName?: string; bio?: string };
+    humanProfileLocation?: {
+      discoveryLocation?: import("@envoymesh/protocol").DiscoveryLocation;
+      discoveryLocationPrecision?: import("@envoymesh/protocol").DiscoveryLocationPrecision;
+    };
   };
   recordFriendAutopilotPass?: (input: {
     ok: boolean;
@@ -1821,9 +1829,21 @@ export async function executeTool(
           latencyMs: Date.now() - startTime,
         };
       }
+      const geoTagHashes = friendMatchingGeoTagHashes({
+        matchingLocation: context.trustIntro.friendMatchingPreferencesSigned?.matchingLocation,
+        matchingLocationScope: context.trustIntro.friendMatchingPreferencesSigned?.matchingLocationScope,
+        humanProfile: context.trustIntro.humanProfileLocation,
+      });
+      const geoSearchTopics = friendMatchingGeoSearchTopics({
+        matchingLocation: context.trustIntro.friendMatchingPreferencesSigned?.matchingLocation,
+        matchingLocationScope: context.trustIntro.friendMatchingPreferencesSigned?.matchingLocationScope,
+        humanProfile: context.trustIntro.humanProfileLocation,
+      });
       const matching = {
         friendMatchingPreferencesText: context.trustIntro.friendMatchingPreferencesText ?? "",
         humanProfileSummary: context.trustIntro.humanProfileSummary ?? {},
+        geoSearchTopics,
+        geoTagHashes,
       };
       const maxResponses =
         typeof params.maxResponses === "number" && params.maxResponses > 0
@@ -1832,6 +1852,7 @@ export async function executeTool(
       const broadcast = await executeTool(
         "mesh.intro.broadcast_search",
         {
+          requestedTagHashes: geoTagHashes,
           requestedSensitivity: "public",
           maxResponses,
           ttl: 1,
@@ -1865,11 +1886,23 @@ export async function executeTool(
           latencyMs: Date.now() - startTime,
         };
       }
+      const geoTagHashes = friendMatchingGeoTagHashes({
+        matchingLocation: context.trustIntro.friendMatchingPreferencesSigned?.matchingLocation,
+        matchingLocationScope: context.trustIntro.friendMatchingPreferencesSigned?.matchingLocationScope,
+        humanProfile: context.trustIntro.humanProfileLocation,
+      });
+      const geoSearchTopics = friendMatchingGeoSearchTopics({
+        matchingLocation: context.trustIntro.friendMatchingPreferencesSigned?.matchingLocation,
+        matchingLocationScope: context.trustIntro.friendMatchingPreferencesSigned?.matchingLocationScope,
+        humanProfile: context.trustIntro.humanProfileLocation,
+      });
       return {
         ok: true,
         result: {
           friendMatchingPreferencesText: context.trustIntro.friendMatchingPreferencesText ?? "",
           humanProfileSummary: context.trustIntro.humanProfileSummary ?? {},
+          geoSearchTopics,
+          geoTagHashes,
         },
         toolName,
         correlationId,

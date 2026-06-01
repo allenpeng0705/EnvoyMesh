@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useT } from "../../context/I18nContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { contactLabel } from "../../lib/display.js";
 import type {
@@ -8,30 +9,6 @@ import type {
   BondRecord,
   TaskJournalSummary,
 } from "@envoymesh/api";
-
-const DOMAIN_LABEL: Record<AgentActivityDomain, string> = {
-  social: "Social",
-  knowledge: "Knowledge",
-  home: "Home",
-  research: "Research",
-};
-
-const KIND_LABEL: Record<AgentActivityRecord["kind"], string> = {
-  task_started: "Task started",
-  task_progress: "In progress",
-  task_completed: "Completed",
-  task_failed: "Failed",
-  knowledge_answered: "Knowledge",
-  intro_sync: "Intro sync",
-  friend_autopilot_pass: "Friend autopilot",
-  social_proxy_transition: "Social proxy",
-  document_acq_stage: "Document hunt",
-  capability_provider_stage: "Capability routing",
-  share_proposed: "Share proposed",
-  approval_needed: "Needs approval",
-  report_received: "Report",
-  commerce_receipt: "Commerce receipt",
-};
 
 type DateRangePreset = "all" | "today" | "7d" | "custom";
 
@@ -81,10 +58,13 @@ function resolveDateRange(
   return {};
 }
 
+const ACTIVITY_DOMAINS: AgentActivityDomain[] = ["social", "knowledge", "home", "research"];
+
 function ActivityDetailPanel(props: {
   row: AgentActivityRecord;
   onClose: () => void;
 }) {
+  const t = useT();
   const nodeService = useNodeService();
   const [audits, setAudits] = useState<AuditEventSummary[]>([]);
   const [journal, setJournal] = useState<TaskJournalSummary[]>([]);
@@ -128,9 +108,9 @@ function ActivityDetailPanel(props: {
   return (
     <div className="activity-detail-panel">
       <div className="activity-detail-header">
-        <h3>Trace</h3>
+        <h3>{t("activity.detailTitle")}</h3>
         <button type="button" className="btn-secondary" onClick={props.onClose}>
-          Close
+          {t("activity.close")}
         </button>
       </div>
       <p className="field-desc">{props.row.summary}</p>
@@ -147,12 +127,12 @@ function ActivityDetailPanel(props: {
         </dl>
       )}
       {loading ? (
-        <p className="field-desc">Loading audit trace…</p>
+        <p className="field-desc">{t("activity.loadingTrace")}</p>
       ) : (
         <>
           {journal.length > 0 && (
             <>
-              <h4 className="activity-detail-subtitle">Task journal</h4>
+              <h4 className="activity-detail-subtitle">{t("activity.taskJournal")}</h4>
               <ul className="activity-trace-list">
                 {journal.map((entry) => (
                   <li key={entry.eventId}>
@@ -166,7 +146,7 @@ function ActivityDetailPanel(props: {
           )}
           {audits.length > 0 && (
             <>
-              <h4 className="activity-detail-subtitle">Audit events</h4>
+              <h4 className="activity-detail-subtitle">{t("activity.auditTrail")}</h4>
               <ul className="activity-trace-list">
                 {audits.map((entry) => (
                   <li key={entry.eventId}>
@@ -179,7 +159,7 @@ function ActivityDetailPanel(props: {
             </>
           )}
           {journal.length === 0 && audits.length === 0 && (
-            <p className="field-desc">No correlated audit or journal rows found.</p>
+            <p className="field-desc">{t("activity.noCorrelated")}</p>
           )}
         </>
       )}
@@ -188,7 +168,8 @@ function ActivityDetailPanel(props: {
 }
 
 /** Owner Activity timeline (Phase 13D / US-AV8 filters). */
-export function ActivityView() {
+export function ActivityView({ embedded = false }: { embedded?: boolean }) {
+  const t = useT();
   const nodeService = useNodeService();
   const [rows, setRows] = useState<AgentActivityRecord[]>([]);
   const [bonds, setBonds] = useState<BondRecord[]>([]);
@@ -198,6 +179,16 @@ export function ActivityView() {
   const [datePreset, setDatePreset] = useState<DateRangePreset>("all");
   const [customDay, setCustomDay] = useState("");
   const [selected, setSelected] = useState<AgentActivityRecord | null>(null);
+
+  const domainLabel = useCallback(
+    (domain: AgentActivityDomain) => t(`activity.domains.${domain}`),
+    [t],
+  );
+
+  const kindLabel = useCallback(
+    (kind: AgentActivityRecord["kind"]) => t(`activity.kinds.${kind}`),
+    [t],
+  );
 
   const bondLabels = useMemo(() => {
     const map = new Map<string, string>();
@@ -254,14 +245,18 @@ export function ActivityView() {
     <div className="activity-view">
       <div className="activity-header">
         <div>
-          <h2 className="activity-title">Activity</h2>
-          <p className="activity-subtitle">
-            What your agent did off-chat — tasks, reports, and A2A work.
-          </p>
+          {!embedded ? (
+            <>
+              <h2 className="activity-title">{t("activity.title")}</h2>
+              <p className="activity-subtitle">{t("activity.lede")}</p>
+            </>
+          ) : (
+            <p className="section-desc">{t("activity.lede")}</p>
+          )}
         </div>
         <div className="activity-filters">
           <label className="activity-filter-label" htmlFor="activity-domain-filter">
-            Domain
+            {t("activity.filterDomain")}
           </label>
           <select
             id="activity-domain-filter"
@@ -271,16 +266,16 @@ export function ActivityView() {
               setDomainFilter(e.target.value as AgentActivityDomain | "all")
             }
           >
-            <option value="all">All</option>
-            {(Object.keys(DOMAIN_LABEL) as AgentActivityDomain[]).map((key) => (
+            <option value="all">{t("activity.allDomains")}</option>
+            {ACTIVITY_DOMAINS.map((key) => (
               <option key={key} value={key}>
-                {DOMAIN_LABEL[key]}
+                {domainLabel(key)}
               </option>
             ))}
           </select>
 
           <label className="activity-filter-label" htmlFor="activity-contact-filter">
-            Contact
+            {t("activity.filterContact")}
           </label>
           <select
             id="activity-contact-filter"
@@ -288,7 +283,7 @@ export function ActivityView() {
             value={contactFilter}
             onChange={(e) => setContactFilter(e.target.value)}
           >
-            <option value="all">All contacts</option>
+            <option value="all">{t("activity.allContacts")}</option>
             {bonds.map((bond) => (
               <option key={bond.peerOwnerId} value={bond.peerOwnerId}>
                 {contactLabel(bond)}
@@ -297,7 +292,7 @@ export function ActivityView() {
           </select>
 
           <label className="activity-filter-label" htmlFor="activity-date-filter">
-            When
+            {t("activity.filterWhen")}
           </label>
           <select
             id="activity-date-filter"
@@ -305,10 +300,10 @@ export function ActivityView() {
             value={datePreset}
             onChange={(e) => setDatePreset(e.target.value as DateRangePreset)}
           >
-            <option value="all">All time</option>
-            <option value="today">Today</option>
-            <option value="7d">Last 7 days</option>
-            <option value="custom">Custom day</option>
+            <option value="all">{t("activity.dateAll")}</option>
+            <option value="today">{t("activity.dateToday")}</option>
+            <option value="7d">{t("activity.date7d")}</option>
+            <option value="custom">{t("activity.dateCustom")}</option>
           </select>
           {datePreset === "custom" ? (
             <input
@@ -316,7 +311,7 @@ export function ActivityView() {
               className="activity-filter-select"
               value={customDay}
               onChange={(e) => setCustomDay(e.target.value)}
-              aria-label="Activity custom day"
+              aria-label={t("activity.customDayAria")}
             />
           ) : null}
         </div>
@@ -326,14 +321,12 @@ export function ActivityView() {
 
       {loading ? (
         <div className="empty-state">
-          <div className="empty-state-desc">Loading activity…</div>
+          <div className="empty-state-desc">{t("activity.loading")}</div>
         </div>
       ) : rows.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-state-title">No agent activity yet</div>
-          <div className="empty-state-desc">
-            Task progress and owner reports appear here — not in contact chat threads.
-          </div>
+          <div className="empty-state-title">{t("activity.empty")}</div>
+          <div className="empty-state-desc">{t("activity.emptyDesc")}</div>
         </div>
       ) : (
         <ul className="activity-list">
@@ -345,8 +338,8 @@ export function ActivityView() {
                 onClick={() => setSelected((prev) => (prev?.activityId === row.activityId ? null : row))}
               >
                 <div className="activity-row-meta">
-                  <span className="activity-kind">{KIND_LABEL[row.kind]}</span>
-                  <span className="activity-domain">{DOMAIN_LABEL[row.domain]}</span>
+                  <span className="activity-kind">{kindLabel(row.kind)}</span>
+                  <span className="activity-domain">{domainLabel(row.domain)}</span>
                   {row.remoteOwnerId ? (
                     <span className="activity-contact">
                       {bondLabels.get(row.remoteOwnerId) ??
@@ -367,7 +360,7 @@ export function ActivityView() {
                   </div>
                 )}
                 {row.requiresOwnerAction ? (
-                  <span className="activity-action-badge">Needs your action</span>
+                  <span className="activity-action-badge">{t("activity.needsAction")}</span>
                 ) : null}
               </button>
             </li>

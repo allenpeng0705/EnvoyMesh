@@ -346,6 +346,11 @@ export async function migrateMobileStorageSchema(db: MobileDatabase): Promise<vo
     /* column already exists */
   }
   try {
+    await db.execute("ALTER TABLE chat_messages ADD COLUMN groupDeliveryJson TEXT");
+  } catch {
+    /* column already exists */
+  }
+  try {
     await db.execute("ALTER TABLE identity_state ADD COLUMN agentName_home TEXT");
   } catch {
     /* column already exists */
@@ -383,6 +388,8 @@ export interface ChatLogEntry {
   metadata: {
     timestamp: string;
     deliveryReceipt?: "sent" | "delivered" | "read";
+    deliveredToOwnerIds?: string[];
+    pendingRecipientOwnerIds?: string[];
   };
   signature: string;
 }
@@ -399,6 +406,11 @@ export interface MobileChatLogStore {
     messageId: string,
     deliveryReceipt: NonNullable<ChatLogEntry["metadata"]["deliveryReceipt"]>,
   ): Promise<boolean>;
+  updateGroupDeliveryProgress(
+    threadPeerOwnerId: string,
+    messageId: string,
+    recipientOwnerId: string,
+  ): Promise<boolean>;
 }
 
 function _parseAttachmentsJson(raw: unknown): ChatLogEntry["content"]["attachments"] {
@@ -411,8 +423,60 @@ function _parseAttachmentsJson(raw: unknown): ChatLogEntry["content"]["attachmen
   }
 }
 
+function _parseGroupDeliveryJson(raw: unknown): Pick<
+  ChatLogEntry["metadata"],
+  "deliveredToOwnerIds" | "pendingRecipientOwnerIds"
+> {
+  if (typeof raw !== "string" || !raw.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw) as {
+      deliveredToOwnerIds?: unknown;
+      pendingRecipientOwnerIds?: unknown;
+    };
+    const deliveredToOwnerIds = Array.isArray(parsed.deliveredToOwnerIds)
+      ? parsed.deliveredToOwnerIds.filter((id): id is string => typeof id === "string")
+      : undefined;
+    const pendingRecipientOwnerIds = Array.isArray(parsed.pendingRecipientOwnerIds)
+      ? parsed.pendingRecipientOwnerIds.filter((id): id is string => typeof id === "string")
+      : undefined;
+    return {
+      ...(deliveredToOwnerIds?.length ? { deliveredToOwnerIds } : {}),
+      ...(pendingRecipientOwnerIds?.length ? { pendingRecipientOwnerIds } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function _serializeGroupDeliveryJson(metadata: ChatLogEntry["metadata"]): string | null {
+  if (!metadata.deliveredToOwnerIds?.length && !metadata.pendingRecipientOwnerIds?.length) {
+    return null;
+  }
+  return JSON.stringify({
+    deliveredToOwnerIds: metadata.deliveredToOwnerIds ?? [],
+    pendingRecipientOwnerIds: metadata.pendingRecipientOwnerIds ?? [],
+  });
+}
+
+function _mergeMobileGroupDeliveryMetadata(
+  metadata: ChatLogEntry["metadata"],
+  recipientOwnerId: string,
+): ChatLogEntry["metadata"] {
+  const delivered = new Set(metadata.deliveredToOwnerIds ?? []);
+  delivered.add(recipientOwnerId);
+  const pending = (metadata.pendingRecipientOwnerIds ?? []).filter((id) => !delivered.has(id));
+  const allDelivered = pending.length === 0 && delivered.size > 0;
+  return {
+    ...metadata,
+    deliveredToOwnerIds: [...delivered],
+    pendingRecipientOwnerIds: pending.length > 0 ? pending : undefined,
+    deliveryReceipt: allDelivered ? "delivered" : metadata.deliveryReceipt ?? "sent",
+  };
+}
+
 function _rowToChatLogEntry(row: Record<string, unknown>): ChatLogEntry {
   const attachments = _parseAttachmentsJson(row.attachmentsJson);
+  const groupDelivery = _parseGroupDeliveryJson(row.groupDeliveryJson);
   return {
     messageId: String(row.messageId ?? ""),
     sender: {
@@ -430,6 +494,7 @@ function _rowToChatLogEntry(row: Record<string, unknown>): ChatLogEntry {
     metadata: {
       timestamp: String(row.timestamp ?? ""),
       deliveryReceipt: _normalizeDeliveryReceipt(row.deliveryReceipt),
+      ...groupDelivery,
     },
     signature: String(row.signature ?? ""),
   };
@@ -449,8 +514,8 @@ export function createMobileChatLogStore(db: MobileDatabase): MobileChatLogStore
       await db.execute(
         `INSERT OR REPLACE INTO chat_messages
          (messageId, threadPeerOwnerId, senderOwnerId, senderDisplayName,
-          recipientOwnerId, recipientDisplayName, textContent, timestamp, signature, deliveryReceipt, attachmentsJson)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          recipientOwnerId, recipientDisplayName, textContent, timestamp, signature, deliveryReceipt, attachmentsJson, groupDeliveryJson)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entry.messageId,
           threadPeerOwnerId,
@@ -465,6 +530,7 @@ export function createMobileChatLogStore(db: MobileDatabase): MobileChatLogStore
           entry.content.attachments?.length
             ? JSON.stringify(entry.content.attachments)
             : null,
+          _serializeGroupDeliveryJson(entry.metadata),
         ],
       );
     },
@@ -518,6 +584,30 @@ export function createMobileChatLogStore(db: MobileDatabase): MobileChatLogStore
       await db.execute(
         `UPDATE chat_messages SET deliveryReceipt = ? WHERE threadPeerOwnerId = ? AND messageId = ?`,
         [deliveryReceipt, thread, id],
+      );
+      return true;
+    },
+
+    async updateGroupDeliveryProgress(threadPeerOwnerId, messageId, recipientOwnerId) {
+      const thread = threadPeerOwnerId.trim();
+      const id = messageId.trim();
+      const recipient = recipientOwnerId.trim();
+      if (!thread || !id || !recipient) return false;
+      const rows = await db.query(
+        `SELECT * FROM chat_messages WHERE threadPeerOwnerId = ? AND messageId = ? LIMIT 1`,
+        [thread, id],
+      ) as Record<string, unknown>[];
+      if (rows.length === 0) return false;
+      const current = _rowToChatLogEntry(rows[0]!);
+      const next = _mergeMobileGroupDeliveryMetadata(current.metadata, recipient);
+      await db.execute(
+        `UPDATE chat_messages SET deliveryReceipt = ?, groupDeliveryJson = ? WHERE threadPeerOwnerId = ? AND messageId = ?`,
+        [
+          next.deliveryReceipt ?? "sent",
+          _serializeGroupDeliveryJson(next),
+          thread,
+          id,
+        ],
       );
       return true;
     },

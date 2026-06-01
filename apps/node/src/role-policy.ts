@@ -34,6 +34,16 @@ export function evaluateInboundEnvelopeRolePolicy(envelope: EnvoyEnvelope): Inbo
     return { ok: true };
   }
 
+  if (envelope.intent === "chat.room.sync" || envelope.intent === "chat.room.message") {
+    if (envelope.senderRole !== "human" || envelope.recipientRole !== "human") {
+      return {
+        ok: false,
+        reason: `${envelope.intent} requires senderRole=human and recipientRole=human`,
+      };
+    }
+    return { ok: true };
+  }
+
   if (isA2ATaskIntent(envelope.intent)) {
     if (envelope.senderRole !== "agent") {
       return {

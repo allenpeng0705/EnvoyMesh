@@ -6,7 +6,7 @@
  */
 import { useState, useCallback } from "react";
 import { useNodeState } from "@envoymesh/social/context/NodeStateContext.js";
-import { useNodeService } from "@envoymesh/social/hooks/useNodeService.js";
+import { RemoveContactConfirmModal } from "@envoymesh/social/components/RemoveContactConfirmModal.js";
 import type { HelloProfile } from "@envoymesh/api";
 import { ChatIcon, SearchIcon } from "@envoymesh/social/icons.js";
 
@@ -16,11 +16,11 @@ export interface MobileContactsViewProps {
 }
 
 export function MobileContactsView({ onOpenChat, onGoDiscover }: MobileContactsViewProps) {
-  const nodeService = useNodeService();
   const { bonds, humanProfile, discoveredPeers, sendHello } = useNodeState();
 
   const [showAroundMe, setShowAroundMe] = useState(false);
   const [helloing, setHelloing] = useState<Record<string, boolean>>({});
+  const [removeTarget, setRemoveTarget] = useState<{ ownerId: string; name: string } | null>(null);
 
   const handleSayHello = useCallback(async (targetNodeId: string) => {
     setHelloing((prev) => ({ ...prev, [targetNodeId]: true }));
@@ -39,9 +39,9 @@ export function MobileContactsView({ onOpenChat, onGoDiscover }: MobileContactsV
     }
   }, [humanProfile, sendHello]);
 
-  const handleRevokeBond = useCallback(async (ownerId: string) => {
-    try { await nodeService.revokeBond(ownerId); } catch (e) { console.error(e); }
-  }, [nodeService]);
+  const handleRevokeBond = useCallback((ownerId: string, name: string) => {
+    setRemoveTarget({ ownerId, name });
+  }, []);
 
   if (bonds.length === 0 && discoveredPeers.length === 0) {
     return (
@@ -62,7 +62,7 @@ export function MobileContactsView({ onOpenChat, onGoDiscover }: MobileContactsV
   return (
     <div className="mv-contacts">
       <p className="mv-tab-hint">
-        Bonded contacts and nearby peers. Tap to chat — swipe left on a row to remove a bond.
+        Tap to chat — swipe left and tap Remove to drop a bond.
       </p>
       {/* Around Me section */}
       {discoveredPeers.length > 0 && (
@@ -97,7 +97,10 @@ export function MobileContactsView({ onOpenChat, onGoDiscover }: MobileContactsV
 
       {/* Bonded contacts */}
       <div className="mv-contacts-list">
-        {bonds.map((contact) => (
+        {bonds.map((contact) => {
+          const label =
+            contact.displayName || contact.libp2pPeerId || contact.peerOwnerId;
+          return (
           <div key={contact.peerOwnerId} className="mv-swipe-row">
             <div
               className="mv-contacts-row mv-swipe-content"
@@ -116,7 +119,7 @@ export function MobileContactsView({ onOpenChat, onGoDiscover }: MobileContactsV
               </div>
               <div className="mv-contacts-detail">
                 <div className="mv-contacts-name">
-                  {contact.displayName || contact.libp2pPeerId || contact.peerOwnerId}
+                  {label}
                 </div>
                 <div className="mv-contacts-bond">
                   {contact.level ?? "direct"} bond
@@ -127,14 +130,23 @@ export function MobileContactsView({ onOpenChat, onGoDiscover }: MobileContactsV
             <div className="mv-swipe-actions">
               <button
                 className="mv-swipe-action remove"
-                onClick={() => handleRevokeBond(contact.peerOwnerId)}
+                onClick={() => handleRevokeBond(contact.peerOwnerId, label)}
               >
                 Remove
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
+
+      {removeTarget ? (
+        <RemoveContactConfirmModal
+          peerOwnerId={removeTarget.ownerId}
+          displayName={removeTarget.name}
+          onClose={() => setRemoveTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }

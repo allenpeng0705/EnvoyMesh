@@ -27,6 +27,7 @@ import type {
   PeerSearchResult,
   RelayConfig,
   SearchQuery,
+  ChatRoom,
   SendChatResult,
   SendHelloOptions,
   SocialIntroProposal,
@@ -100,6 +101,10 @@ import {
   type CommerceReceiptRecord,
   type ListCommerceReceiptsParams,
   type RecordCommerceReceiptParams,
+  deriveLocationDiscoveryTopics,
+  profileCapabilityTags,
+  profileCapabilityDiscoveryTopics,
+  syncProfileTagsToManifestCapabilities,
 } from "@envoymesh/api";
 import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
 import { resolveDidImportInput } from "@envoymesh/api/did-import";
@@ -149,6 +154,8 @@ import {
   parseBondAcceptPayload,
   parseBondRequestPayload,
   parseChatMessagePayload,
+  parseChatRoomSyncPayload,
+  parseChatRoomMessagePayload,
   parseEnvelope,
   parseShareAcceptPayload,
   parseSharePreviewPayload,
@@ -189,6 +196,11 @@ import {
   createHumanProfileStore,
   createAgentIdentityStore,
   createLocalChatLogStore,
+  createLocalChatRoomStore,
+  createLocalChatRoomPendingSyncStore,
+  createLocalChatRoomPendingMessageStore,
+  type LocalChatRoomPendingSyncStore,
+  type LocalChatRoomPendingMessageStore,
   createLocalAgentActivityStore,
   createChatDraftStore,
   createTaskRuntimeStateStore,
@@ -214,6 +226,7 @@ import {
   type LocalTrustStore,
   type LocalPeerDirectoryStore,
   type LocalChatLogStore,
+  type LocalChatRoomStore,
   type LocalAgentActivityStore,
   type ChatDraftStore,
   type HumanProfileStore,
@@ -239,7 +252,26 @@ import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-s
 import { seedAddrsForDiscoveryProfile, peerDiscoverySourceFromMultiaddrs, shouldPersistPeerDiscoverySeeds } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
-import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
+import {
+  verifyInboundChatDevice,
+  formatChatSenderDisplayName,
+  bindDeviceAuthorizationStore,
+} from "./chat-device-auth.js";
+import {
+  createChatRoomImpl,
+  dismissChatRoomImpl,
+  handleInboundChatRoomMessageImpl,
+  handleInboundChatRoomSyncImpl,
+  inviteToChatRoomImpl,
+  leaveChatRoomImpl,
+  listChatRoomsImpl,
+  removeMembersFromChatRoomImpl,
+  renameChatRoomImpl,
+  sendChatRoomMessageImpl,
+  flushPendingRoomSyncsImpl,
+  flushPendingRoomMessagesImpl,
+  type ChatRoomServiceDeps,
+} from "./chat-room-service.js";
 import { createTaskDispatcher } from "./task-dispatcher.js";
 import { buildVaultIndex, assertPathInsideVault } from "@envoymesh/vault";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
@@ -278,6 +310,7 @@ import {
   sendProfileSyncToBonds,
   isLibp2pPeerId,
 } from "./profile-sync-outbound.js";
+import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
 import { deliverChatEnvelopeWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
 import { pickBestLibp2pPeerDirectoryRecord } from "./peer-transport-resolve.js";
 import {
@@ -404,6 +437,14 @@ class NodeServiceImpl implements NodeService {
   private readonly _humanProfileStore: HumanProfileStore;
   private readonly _agentIdentityStore: AgentIdentityStore | null;
   private readonly _chatLogStore: LocalChatLogStore | null;
+  private readonly _chatRoomStore: LocalChatRoomStore | null;
+  private readonly _chatRoomPendingSyncStore: LocalChatRoomPendingSyncStore | null;
+  private readonly _chatRoomPendingMessageStore: LocalChatRoomPendingMessageStore | null;
+  private readonly _groupDeliveryPending = new Map<
+    string,
+    { threadKey: string; pending: Set<string> }
+  >();
+  private _chatRoomSyncFlushTimer: ReturnType<typeof setInterval> | null = null;
   private readonly _agentActivityStore: LocalAgentActivityStore | null;
   private readonly _agentCardStore: AgentCardStore | null;
   private readonly _chatDraftStore: ChatDraftStore | null;
@@ -506,11 +547,14 @@ class NodeServiceImpl implements NodeService {
   /** Serialize outbound chat streams per libp2p peer to avoid concurrent newStream races. */
   private readonly _chatSendChains = new Map<string, Promise<void>>();
   private static readonly _PROFILE_REQUEST_COOLDOWN_MS = 15_000;
+  private static readonly _NEARBY_PROFILE_PROBE_COOLDOWN_MS = 30_000;
   private readonly _profileRequestInflight = new Map<
     string,
     Promise<{ ok: boolean; reason?: string }>
   >();
   private readonly _profileRequestLastAt = new Map<string, number>();
+  private readonly _nearbyProfileProbeLastAt = new Map<string, number>();
+  private readonly _nearbyProfileProbeInflight = new Set<string>();
   /** Keeps bonded contacts warm across NAT idle periods. */
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
   /** In-memory owner → libp2p from recent inbound streams (until persisted in peer directory). */
@@ -1099,6 +1143,22 @@ class NodeServiceImpl implements NodeService {
     this._configStore = profileDir ? createNodeConfigStore(profileDir) : createStubNodeConfigStore();
     this._chatLogStore =
       profileDir && profileDir !== "/tmp/unknown" ? createLocalChatLogStore(profileDir) : null;
+    this._chatRoomStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createLocalChatRoomStore(profileDir) : null;
+    this._chatRoomPendingSyncStore =
+      profileDir && profileDir !== "/tmp/unknown"
+        ? createLocalChatRoomPendingSyncStore(profileDir)
+        : null;
+    this._chatRoomPendingMessageStore =
+      profileDir && profileDir !== "/tmp/unknown"
+        ? createLocalChatRoomPendingMessageStore(profileDir)
+        : null;
+    if (this._chatRoomPendingSyncStore || this._chatRoomPendingMessageStore) {
+      this._chatRoomSyncFlushTimer = setInterval(() => {
+        void this._flushPendingRoomSyncs();
+        void this._flushPendingRoomMessages();
+      }, 90_000);
+    }
     this._agentActivityStore =
       profileDir && profileDir !== "/tmp/unknown" ? createLocalAgentActivityStore(profileDir) : null;
     this._agentCardStore =
@@ -1314,6 +1374,9 @@ class NodeServiceImpl implements NodeService {
       hobbies: input.hobbies ?? existing?.hobbies,
       knowledge: input.knowledge ?? existing?.knowledge,
       profileVisibility: input.profileVisibility ?? existing?.profileVisibility ?? "private",
+      discoveryLocation: input.discoveryLocation ?? existing?.discoveryLocation,
+      discoveryLocationPrecision:
+        input.discoveryLocationPrecision ?? existing?.discoveryLocationPrecision ?? "hidden",
       capabilities: input.capabilities ?? existing?.capabilities,
       publicThumbnail: existing?.publicThumbnail,
       galleryPhotos: existing?.galleryPhotos,
@@ -1327,12 +1390,31 @@ class NodeServiceImpl implements NodeService {
     const isPublicNetwork = config?.bootstrapPresets && config.bootstrapPresets.length > 0;
     const interests = [...(updatedPayload.hobbies ?? []), ...(updatedPayload.knowledge ?? [])];
     const username = updatedPayload.username;
+    const locationTopics = deriveLocationDiscoveryTopics({
+      location: updatedPayload.discoveryLocation,
+      precision: updatedPayload.discoveryLocationPrecision,
+    });
+    const previousProfileCapabilityTags = profileCapabilityTags(existing?.capabilities);
+    const capabilityTags = profileCapabilityTags(updatedPayload.capabilities);
+    const capabilityTopics = profileCapabilityDiscoveryTopics(capabilityTags);
+    await this._syncProfileCapabilitiesToManifest(
+      previousProfileCapabilityTags,
+      capabilityTags,
+    );
 
-    // If profile is public AND we're on public network, advertise interests as DHT topics
-    // Run DHT operations in background to avoid blocking the response
-    console.log(`[node-service] Checking DHT advertising: visibility=${updatedPayload.profileVisibility}, isPublicNetwork=${isPublicNetwork}, interests=${JSON.stringify(interests)}`);
+    // If profile is public AND we're on public network, advertise interests + geo + capabilities as DHT topics
+    console.log(
+      `[node-service] Checking DHT advertising: visibility=${updatedPayload.profileVisibility}, isPublicNetwork=${isPublicNetwork}, interests=${JSON.stringify(interests)}, locationTopics=${JSON.stringify(locationTopics)}, capabilityTopics=${JSON.stringify(capabilityTopics)}`,
+    );
     if (updatedPayload.profileVisibility === "public" && isPublicNetwork) {
-      void this._advertiseInterests(interests, username);
+      await this._advertisePublicDiscoveryTopics({
+        interests,
+        username,
+        locationTopics,
+        capabilityTopics,
+      });
+    } else {
+      await this._cancelAutoAdvertisedDiscoveryTopics();
     }
 
     return signedProfile;
@@ -1459,6 +1541,48 @@ class NodeServiceImpl implements NodeService {
       return { ok: true };
     } catch (err) {
       return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  private async _probeNearbyPeerProfileAfterDiscovery(peerId: string, multiaddrs: string[]): Promise<void> {
+    const mesh = this._mesh;
+    const profile = this._profile;
+    if (!mesh || !profile || !this._contactOwnerKeyStore || !this._peerProfileCacheStore) {
+      return;
+    }
+    if (peerId === mesh.peerId) {
+      return;
+    }
+    const lastAt = this._nearbyProfileProbeLastAt.get(peerId) ?? 0;
+    if (Date.now() - lastAt < NodeServiceImpl._NEARBY_PROFILE_PROBE_COOLDOWN_MS) {
+      return;
+    }
+    if (this._nearbyProfileProbeInflight.has(peerId)) {
+      return;
+    }
+    this._nearbyProfileProbeInflight.add(peerId);
+    try {
+      const enriched = await probeNearbyPeerProfile({
+        mesh,
+        profile,
+        contactOwnerKeyStore: this._contactOwnerKeyStore,
+        peerProfileCache: this._peerProfileCacheStore,
+        transportPeerId: peerId,
+        listenAddrs: multiaddrs,
+        dialHintsFor: (transportPeerId, addrs) => this._dialHintsForChat(transportPeerId, addrs ?? multiaddrs),
+        selfPeerId: mesh.peerId,
+        selfOwnerId: profile.owner.ownerId,
+      });
+      this._nearbyProfileProbeLastAt.set(peerId, Date.now());
+      if (!enriched) {
+        return;
+      }
+      this.emit("profile:updated", { ownerId: enriched.ownerId });
+      this.emit("peer:discovered", enriched);
+    } catch (err) {
+      console.warn(`[node-service] nearby profile probe failed for ${peerId}:`, err);
+    } finally {
+      this._nearbyProfileProbeInflight.delete(peerId);
     }
   }
 
@@ -1678,6 +1802,8 @@ class NodeServiceImpl implements NodeService {
    * Runs continuously in background with periodic retries (like system topics)
    */
   private _advertiseInterestsTimer?: ReturnType<typeof setInterval>;
+  /** Topics auto-advertised from public profile (interests, username, geo) — cancelled when profile/network changes. */
+  private _autoAdvertisedDiscoveryTopics: string[] = [];
   private _advertiseInterestsStartupTimeout?: ReturnType<typeof setTimeout>;
   private _stopRelayClientScheduler?: () => void;
   private _capabilityDiscoveryTimer?: ReturnType<typeof setTimeout>;
@@ -1685,21 +1811,94 @@ class NodeServiceImpl implements NodeService {
   private _nodeProcessStartedAtMs = Date.now();
   private _relayBootstrapPeers: string[] = [];
 
-  private async _advertiseInterests(interests: string[], username: string): Promise<void> {
-    // Stop any existing advertising timer
+  private async _cancelDiscoveryTopics(topics: string[]): Promise<void> {
+    if (topics.length === 0) return;
+    const mesh = this._mesh ?? this._externalMesh;
+    if (!mesh) return;
+    for (const topic of topics) {
+      try {
+        await mesh.cancelCapabilityTopicReprovide(topic);
+        console.log(`[node-service] Cancelled DHT topic: ${topic}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[node-service] Failed to cancel topic "${topic}": ${msg}`);
+      }
+    }
+  }
+
+  private async _cancelAutoAdvertisedDiscoveryTopics(): Promise<void> {
+    const removed = [...this._autoAdvertisedDiscoveryTopics];
+    this._autoAdvertisedDiscoveryTopics = [];
     if (this._advertiseInterestsTimer) {
       clearInterval(this._advertiseInterestsTimer);
+      this._advertiseInterestsTimer = undefined;
+    }
+    await this._cancelDiscoveryTopics(removed);
+  }
+
+  private async _syncProfileCapabilitiesToManifest(
+    previousProfileTags: string[],
+    nextProfileTags: string[],
+  ): Promise<void> {
+    if (!this._capabilityManifestStore) {
+      return;
+    }
+    if (previousProfileTags.length === 0 && nextProfileTags.length === 0) {
+      return;
+    }
+    let manifest = await this._capabilityManifestStore.loadManifest();
+    if (!manifest) {
+      manifest = await this._capabilityManifestStore.createDefaultManifest();
+    }
+    const { capabilities, changed } = syncProfileTagsToManifestCapabilities({
+      manifestCapabilities: manifest.capabilities,
+      previousProfileTags,
+      nextProfileTags,
+    });
+    if (!changed) {
+      return;
+    }
+    await this._capabilityManifestStore.saveManifest({
+      ...manifest,
+      capabilities,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  private async _advertisePublicDiscoveryTopics(input: {
+    interests: string[];
+    username: string;
+    locationTopics: string[];
+    capabilityTopics?: string[];
+  }): Promise<void> {
+    const topicSet = new Set<string>();
+    for (const interest of input.interests) {
+      topicSet.add(interest.toLowerCase());
+    }
+    topicSet.add(`username:${input.username.toLowerCase()}`);
+    for (const geo of input.locationTopics) {
+      topicSet.add(geo);
+    }
+    for (const capability of input.capabilityTopics ?? []) {
+      topicSet.add(capability);
+    }
+    const allTopics = [...topicSet];
+
+    const removed = this._autoAdvertisedDiscoveryTopics.filter((topic) => !topicSet.has(topic));
+    await this._cancelDiscoveryTopics(removed);
+    this._autoAdvertisedDiscoveryTopics = allTopics;
+
+    if (this._advertiseInterestsTimer) {
+      clearInterval(this._advertiseInterestsTimer);
+      this._advertiseInterestsTimer = undefined;
     }
 
     const advertisedTopics: string[] = [];
     let allSuccess = true;
 
-    /**
-     * Attempt to advertise a single topic (no retry - just one attempt)
-     */
     const advertiseOnce = async (topic: string): Promise<boolean> => {
       try {
-        await this._mesh!.provideCapabilityTopic(topic);
+        await this._requireMesh().provideCapabilityTopic(topic);
         console.log(`[node-service] Successfully advertised topic: ${topic}`);
         return true;
       } catch (err) {
@@ -1709,9 +1908,7 @@ class NodeServiceImpl implements NodeService {
       }
     };
 
-    // Advertise all interests once (initial attempt)
-    for (const interest of interests) {
-      const topic = interest.toLowerCase();
+    for (const topic of allTopics) {
       const success = await advertiseOnce(topic);
       if (success) {
         advertisedTopics.push(topic);
@@ -1720,38 +1917,24 @@ class NodeServiceImpl implements NodeService {
       }
     }
 
-    // Advertise username as a special DHT topic for username-based discovery
-    const usernameTopic = `username:${username.toLowerCase()}`;
-    const usernameSuccess = await advertiseOnce(usernameTopic);
-    if (usernameSuccess) {
-      advertisedTopics.push(usernameTopic);
-      console.log(`[node-service] Advertised username: ${usernameTopic}`);
-    } else {
-      allSuccess = false;
-    }
-
-    // Emit initial result
     this.emit("discovery:advertising-complete", { topics: advertisedTopics, success: allSuccess });
 
-    // Set up periodic retry - keep trying every 5 minutes like system topics do
-    // This ensures we eventually advertise successfully even with poor DHT connectivity
     this._advertiseInterestsTimer = setInterval(async () => {
-      console.log(`[node-service] Periodic re-advertisement for ${interests.length + 1} topics...`);
+      console.log(`[node-service] Periodic re-advertisement for ${allTopics.length} topics...`);
       let retrySuccess = true;
-
-      for (const interest of interests) {
-        const topic = interest.toLowerCase();
+      for (const topic of allTopics) {
         const success = await advertiseOnce(topic);
         if (!success) retrySuccess = false;
       }
-
-      const usernameSuccess = await advertiseOnce(usernameTopic);
-      if (!usernameSuccess) retrySuccess = false;
-
       if (retrySuccess) {
         console.log(`[node-service] All topics successfully advertised on retry`);
       }
-    }, 5 * 60 * 1000); // 5 minutes
+    }, 5 * 60 * 1000);
+  }
+
+  /** @deprecated Use `_advertisePublicDiscoveryTopics` — kept as alias for tests. */
+  private async _advertiseInterests(interests: string[], username: string): Promise<void> {
+    return this._advertisePublicDiscoveryTopics({ interests, username, locationTopics: [] });
   }
 
   /**
@@ -1767,13 +1950,27 @@ class NodeServiceImpl implements NodeService {
     const isPublicNetwork = config.bootstrapPresets && config.bootstrapPresets.length > 0;
     if (profile.profileVisibility === "public" && isPublicNetwork) {
       const interests = [...(profile.hobbies ?? []), ...(profile.knowledge ?? [])];
+      const locationTopics = deriveLocationDiscoveryTopics({
+        location: profile.discoveryLocation,
+        precision: profile.discoveryLocationPrecision,
+      });
+      const capabilityTopics = profileCapabilityDiscoveryTopics(
+        profileCapabilityTags(profile.capabilities),
+      );
 
       // Advertise on DHT (with retry and exponential backoff)
-      await this._advertiseInterests(interests, profile.username);
+      await this._advertisePublicDiscoveryTopics({
+        interests,
+        username: profile.username,
+        locationTopics,
+        capabilityTopics,
+      });
 
       // Also register with rendezvous servers and relay peers as fallback
       // This runs in parallel with DHT advertising and uses relay-based discovery
       void this._registerWithRendezvousServers(interests, profile.username);
+    } else {
+      await this._cancelAutoAdvertisedDiscoveryTopics();
     }
   }
 
@@ -2082,6 +2279,9 @@ class NodeServiceImpl implements NodeService {
       displayName: pending.requesterDisplayName,
     });
 
+    void this._flushPendingRoomSyncs();
+    void this._flushPendingRoomMessages();
+
     void this.refreshBondPeerProfiles();
     void this._tagBondedContactReachability(pending.remotePeerId);
 
@@ -2352,6 +2552,118 @@ class NodeServiceImpl implements NodeService {
       if (!view) return;
       return rag.indexChatMessage(threadPeerOwnerId, view);
     }).catch((err) => console.warn(`[rag] chat index failed:`, err));
+  }
+
+  private _chatRoomDeps(): ChatRoomServiceDeps {
+    const profile = () => this._requireProfile();
+    return {
+      getProfile: profile,
+      requireMeshPeerId: () => this._requireMesh().peerId,
+      trustStore: this._trustStore,
+      humanProfileStore: this._humanProfileStore,
+      chatRoomStore: this._chatRoomStore,
+      pendingSyncStore: this._chatRoomPendingSyncStore,
+      pendingMessageStore: this._chatRoomPendingMessageStore,
+      resolvePeerTransportForOwner: (targetOwnerId) => this._resolvePeerTransportForOwner(targetOwnerId),
+      deliverEnvelope: (targetOwnerId, transportPeerId, envelope, dialHints, listenAddrs) =>
+        this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs).then((r) => {
+          void targetOwnerId;
+          return r;
+        }),
+      dialHintsForChat: (transportPeerId, listenAddrs) => this._dialHintsForChat(transportPeerId, listenAddrs),
+      persistChatMessage: (threadKey, msg) => this._persistChatMessage(threadKey, msg),
+      emitRoomUpdated: (room) => this.emit("chat:room-updated", room),
+      emitRoomRemoved: (roomId) => this.emit("chat:room-removed", { roomId }),
+      emitRoomMessage: (roomId, message) => this.emit("chat:room-message", { roomId, message }),
+      assertOnline: () => this._assertOnline(),
+      recordOwnerActivity: () => this.recordOwnerActivity(),
+      formatSenderDisplayName: formatChatSenderDisplayName,
+      verifyInboundDevice: (envelope, payload) => verifyInboundChatDevice(envelope, payload),
+      verifyInboundSyncAuthor: (envelope, payload) =>
+        verifyInboundChatDevice(envelope, {
+          senderOwnerId: payload.updatedByOwnerId,
+          deviceCertificate: payload.deviceCertificate,
+          ownerPublicKeyPem: payload.ownerPublicKeyPem,
+        }),
+      markOutboundDelivered: (threadKey, messageId, deliveredAt) => {
+        void this._markOutboundChatDelivered(threadKey, messageId, deliveredAt);
+      },
+      recordGroupDeliveryProgress: (input) => {
+        this._recordGroupDeliveryProgress(input);
+      },
+      clearChatThread: (threadKey) => {
+        void this.clearChatHistory(threadKey);
+      },
+    };
+  }
+
+  private _recordGroupDeliveryProgress(input: {
+    threadKey: string;
+    messageId: string;
+    recipientOwnerId: string;
+    deliveredAt: string;
+    allRecipientOwnerIds: readonly string[];
+  }): void {
+    const key = `${input.threadKey}:${input.messageId}`;
+    let state = this._groupDeliveryPending.get(key);
+    if (!state) {
+      state = {
+        threadKey: input.threadKey,
+        pending: new Set(input.allRecipientOwnerIds),
+      };
+      this._groupDeliveryPending.set(key, state);
+    }
+    state.pending.delete(input.recipientOwnerId);
+    if (this._chatLogStore) {
+      void this._chatLogStore
+        .updateGroupDeliveryProgress(input.threadKey, input.messageId, input.recipientOwnerId)
+        .catch((err) => console.warn(`[chat-log] group delivery update failed:`, err));
+    }
+    this.emit("chat:delivered", {
+      messageId: input.messageId,
+      timestamp: input.deliveredAt,
+      recipientOwnerId: input.recipientOwnerId,
+    });
+    if (state.pending.size === 0) {
+      this._groupDeliveryPending.delete(key);
+      void this._markOutboundChatDelivered(input.threadKey, input.messageId, input.deliveredAt);
+    }
+  }
+
+  private async _flushPendingRoomSyncs(): Promise<void> {
+    if (!this._chatRoomPendingSyncStore) return;
+    try {
+      await flushPendingRoomSyncsImpl(this._chatRoomDeps());
+    } catch (err) {
+      console.warn("[chat.room] pending sync flush failed:", err);
+    }
+  }
+
+  private async _flushPendingRoomMessages(): Promise<void> {
+    if (!this._chatRoomPendingMessageStore) return;
+    try {
+      await flushPendingRoomMessagesImpl(this._chatRoomDeps());
+    } catch (err) {
+      console.warn("[chat.room] pending message flush failed:", err);
+    }
+  }
+
+  private _roomDeliveryAck(
+    replyWithEnvelope: ((envelope: EnvoyEnvelope) => Promise<void>) | undefined,
+  ): ChatRoomServiceDeps["replyWithDelivered"] {
+    if (!replyWithEnvelope) return undefined;
+    return async ({ messageId, senderEnvelopePeerId, correlationId }) => {
+      const p = this._requireProfile();
+      await replyWithEnvelope(
+        buildSignedChatDeliveredEnvelope({
+          profile: p,
+          messageId,
+          recipientOwnerId: p.owner.ownerId,
+          envelopeRecipientPeerId: senderEnvelopePeerId,
+          correlationId,
+        }),
+      );
+    };
   }
 
   private async _getRagService(): Promise<RagService | null> {
@@ -3780,6 +4092,60 @@ class NodeServiceImpl implements NodeService {
     return rows as ChatMessage[];
   }
 
+  async listChatRooms(): Promise<ChatRoom[]> {
+    return listChatRoomsImpl(this._chatRoomDeps());
+  }
+
+  async createChatRoom(title: string, memberOwnerIds: string[]): Promise<ChatRoom> {
+    return createChatRoomImpl(this._chatRoomDeps(), title, memberOwnerIds);
+  }
+
+  async inviteToChatRoom(roomId: string, memberOwnerIds: string[]): Promise<ChatRoom> {
+    return inviteToChatRoomImpl(this._chatRoomDeps(), roomId, memberOwnerIds);
+  }
+
+  async leaveChatRoom(roomId: string): Promise<void> {
+    return leaveChatRoomImpl(this._chatRoomDeps(), roomId);
+  }
+
+  async removeMembersFromChatRoom(roomId: string, memberOwnerIds: string[]): Promise<ChatRoom> {
+    return removeMembersFromChatRoomImpl(this._chatRoomDeps(), roomId, memberOwnerIds);
+  }
+
+  async renameChatRoom(roomId: string, title: string): Promise<ChatRoom> {
+    return renameChatRoomImpl(this._chatRoomDeps(), roomId, title);
+  }
+
+  async dismissChatRoom(roomId: string): Promise<void> {
+    return dismissChatRoomImpl(this._chatRoomDeps(), roomId);
+  }
+
+  async sendChatRoomMessage(roomId: string, text: string): Promise<SendChatResult> {
+    return sendChatRoomMessageImpl(this._chatRoomDeps(), roomId, text);
+  }
+
+  async handleInboundChatRoomSync(
+    envelope: import("@envoymesh/protocol").EnvoyEnvelope,
+    payload: import("@envoymesh/protocol").ChatRoomSyncPayload,
+  ): Promise<void> {
+    await handleInboundChatRoomSyncImpl(this._chatRoomDeps(), envelope, payload);
+  }
+
+  async handleInboundChatRoomMessage(
+    envelope: EnvoyEnvelope,
+    payload: import("@envoymesh/protocol").ChatRoomMessagePayload,
+    remotePeerId: string,
+    replyWithEnvelope?: (envelope: EnvoyEnvelope) => Promise<void>,
+  ): Promise<void> {
+    await handleInboundChatRoomMessageImpl(
+      this._chatRoomDeps(),
+      envelope,
+      payload,
+      remotePeerId,
+      this._roomDeliveryAck(replyWithEnvelope),
+    );
+  }
+
   async deleteChatMessage(peerOwnerId: string, messageId: string): Promise<{ ok: boolean }> {
     const thread = peerOwnerId.trim();
     const id = messageId.trim();
@@ -3837,11 +4203,16 @@ class NodeServiceImpl implements NodeService {
         discoverySeedStore: this._discoverySeedStore,
         contactOwnerKeyStore: this._contactOwnerKeyStore,
         multihopDiscoveryStore: this._multihopDiscoveryStore,
+        peerProfileCacheStore: this._peerProfileCacheStore,
         getApprovalQueue: () => this._approvalQueue,
         resolvePeerTransportForOwner: (targetOwnerId) => this._resolvePeerTransportForOwner(targetOwnerId),
         dialHintsForChat: (recipientPeerId, peerListenAddrs) =>
           this._dialHintsForChat(recipientPeerId, peerListenAddrs),
         emitMultiHopUpdate: (session) => this.emit("discovery:multihop-update", session),
+        warmLocalPeerProfiles: async (ownerIds) => {
+          await Promise.allSettled(ownerIds.map((ownerId) => this.requestPeerProfile(ownerId)));
+        },
+        loadHumanProfile: () => this._humanProfileStore.loadHumanProfile(),
       });
     }
     return this._discoveryRuntimeCache;
@@ -4583,7 +4954,7 @@ class NodeServiceImpl implements NodeService {
       apiKey: process.env.ENVOY_MODEL_API_KEY ?? config.modelProviders.apiKey,
       modelName: process.env.ENVOY_MODEL_NAME ?? config.modelProviders.modelName,
     } : {
-      mode: (process.env.ENVOY_MODEL_MODE as ModelProviderConfig["mode"]) ?? "mock",
+      mode: (process.env.ENVOY_MODEL_MODE as ModelProviderConfig["mode"]) ?? "disabled",
       endpoint: process.env.ENVOY_MODEL_ENDPOINT,
       apiKey: process.env.ENVOY_MODEL_API_KEY,
       modelName: process.env.ENVOY_MODEL_NAME,
@@ -4656,14 +5027,14 @@ class NodeServiceImpl implements NodeService {
     }
     return {
       profileDir: this._profileDir,
-      discoveryProfile: "wan-default" as const,
+      discoveryProfile: "lan-fast" as const,
       enableMdns: true,
       relayEnabled: true,
       relayServerEnabled: false,
       configuredRelays: [],
       advertiseAddrs: [],
-      bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
-      bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
+      bootstrapPeers: [],
+      bootstrapPresets: [],
       modelProviders,
       chatAssistEnabled: false,
       anonymousDiscoveryMode: "off",
@@ -4759,14 +5130,14 @@ class NodeServiceImpl implements NodeService {
     const current = (await this._configStore.load()) ?? {
       version: "0.1" as const,
       profileDir: this._profileDir,
-      discoveryProfile: "wan-default" as const,
+      discoveryProfile: "lan-fast" as const,
       relayEnabled: true,
       relayServerEnabled: false,
       advertiseAddrs: [] as string[],
       bootstrapPeers: [] as string[],
-      bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS] as string[],
+      bootstrapPresets: [] as string[],
       configuredRelays: [],
-      modelProviders: { mode: "mock" as const },
+      modelProviders: { mode: "disabled" as const },
       chatAssistEnabled: false,
       anonymousDiscoveryMode: "off",
       anonymousIntentAllowlist: ["discovery.request"],
@@ -4982,14 +5353,14 @@ class NodeServiceImpl implements NodeService {
     const config = (await this._configStore.load()) ?? {
       version: "0.1" as const,
       profileDir: this._profileDir,
-      discoveryProfile: "wan-default" as const,
+      discoveryProfile: "lan-fast" as const,
       relayEnabled: true,
       relayServerEnabled: false,
       advertiseAddrs: [] as string[],
       bootstrapPeers: [] as string[],
-      bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS] as string[],
+      bootstrapPresets: [] as string[],
       configuredRelays: [],
-      modelProviders: { mode: "mock" as const },
+      modelProviders: { mode: "disabled" as const },
       chatAssistEnabled: false,
       autonomousKillSwitch: false,
       autonomousPolicies: [],
@@ -5049,16 +5420,16 @@ class NodeServiceImpl implements NodeService {
     const config: PersistedNodeConfig = {
       version: "0.1",
       profileDir,
-      discoveryProfile: options?.discoveryProfile ?? "wan-default",
+      discoveryProfile: options?.discoveryProfile ?? "lan-fast",
       relayEnabled: options?.relayEnabled ?? true,
       relayServerEnabled: options?.relayServerEnabled ?? false,
       advertiseAddrs: options?.advertiseAddrs ?? [],
-      bootstrapPeers: options?.bootstrapPeers ?? [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
+      bootstrapPeers: options?.bootstrapPeers ?? [],
       bootstrapPresets:
         options?.bootstrapPresets ??
-        [...defaultBootstrapPresetsForDiscoveryProfile(options?.discoveryProfile ?? "wan-default")],
+        [...defaultBootstrapPresetsForDiscoveryProfile(options?.discoveryProfile ?? "lan-fast")],
       configuredRelays: [],
-      modelProviders: { mode: "mock" },
+      modelProviders: { mode: "disabled" },
       chatAssistEnabled: false,
       autonomousKillSwitch: false,
       autonomousPolicies: [],
@@ -5391,6 +5762,8 @@ class NodeServiceImpl implements NodeService {
           },
           async (bondData) => {
             this.emit("bond:established", bondData);
+            void this._flushPendingRoomSyncs();
+            void this._flushPendingRoomMessages();
             if (envelope.intent === "bond.request") {
               try {
                 const payload = parseBondRequestPayload(envelope.payload);
@@ -5489,6 +5862,32 @@ class NodeServiceImpl implements NodeService {
               err instanceof Error ? err.message : err,
             );
           }
+        }
+        return;
+      }
+
+      if (intent === "chat.room.sync") {
+        try {
+          const payload = parseChatRoomSyncPayload(envelope.payload);
+          await handleInboundChatRoomSyncImpl(this._chatRoomDeps(), envelope, payload);
+        } catch {
+          console.warn(`[chat.room.sync] invalid payload from ${remotePeerId}`);
+        }
+        return;
+      }
+
+      if (intent === "chat.room.message") {
+        try {
+          const payload = parseChatRoomMessagePayload(envelope.payload);
+          await handleInboundChatRoomMessageImpl(
+            this._chatRoomDeps(),
+            envelope,
+            payload,
+            remotePeerId,
+            this._roomDeliveryAck(replyWithEnvelope),
+          );
+        } catch {
+          console.warn(`[chat.room.message] invalid payload from ${remotePeerId}`);
         }
         return;
       }
@@ -5630,15 +6029,22 @@ class NodeServiceImpl implements NodeService {
         // info via system.signal, bond.request, or bond.accept handlers.
         // Creating a record here with ownerId=peerId would corrupt the directory because
         // later lookups by real ownerId wouldn't find the existing record.
-        this.emit("peer:discovered", {
+        const mesh = this._mesh;
+        const profile = this._profile;
+        if (mesh && profile && peerId === mesh.peerId) {
+          return;
+        }
+        const placeholder = {
           nodeId: peerId,
           ownerId: peerId,
           displayName: `Peer ${peerId.slice(0, 8)}`,
           username: undefined,
           bio: undefined,
-          interests: [],
+          interests: [] as string[],
           profileVisibility: "public" as const,
-        });
+        };
+        this.emit("peer:discovered", placeholder);
+        void this._probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs);
       } catch (err) {
         console.warn(`[node-service] Failed to process peer discovery for ${peerId}:`, err);
       }
@@ -6413,7 +6819,10 @@ class NodeServiceImpl implements NodeService {
       return { connected: false, direct: false };
     }
 
-    return mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, { dialHints });
+    const result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, { dialHints });
+    void this._flushPendingRoomSyncs();
+    void this._flushPendingRoomMessages();
+    return result;
   }
 
   private _startBondWarmInterval(): void {
@@ -6601,9 +7010,21 @@ class NodeServiceImpl implements NodeService {
     if (!agentIdentity) return null;
     const config = await this._configStore.load();
     let humanProfileSummary: { displayName?: string; bio?: string } | undefined;
+    let humanProfileLocation:
+      | {
+          discoveryLocation?: import("@envoymesh/protocol").DiscoveryLocation;
+          discoveryLocationPrecision?: import("@envoymesh/protocol").DiscoveryLocationPrecision;
+        }
+      | undefined;
     try {
       const hp = await this._humanProfileStore.loadHumanProfile();
-      if (hp) humanProfileSummary = { displayName: hp.displayName, bio: hp.bio };
+      if (hp) {
+        humanProfileSummary = { displayName: hp.displayName, bio: hp.bio };
+        humanProfileLocation = {
+          discoveryLocation: hp.discoveryLocation,
+          discoveryLocationPrecision: hp.discoveryLocationPrecision,
+        };
+      }
     } catch { /* ignore */ }
     const documentAutonomy = normalizeDocumentAutonomyPolicy(config?.aiSettings?.documentAutonomy);
     const profileMedia = normalizeProfileMediaPolicy(config?.aiSettings?.profileMedia);
@@ -6624,7 +7045,9 @@ class NodeServiceImpl implements NodeService {
         trustModeEnabled: config?.trustModeEnabled ?? false,
         friendAutopilotEnabled: config?.friendAutopilotEnabled ?? false,
         friendMatchingPreferencesText: config?.friendMatchingPreferencesText,
+        friendMatchingPreferencesSigned: config?.friendMatchingPreferencesSigned,
         humanProfileSummary,
+        humanProfileLocation,
       },
       recordFriendAutopilotPass: (input) => this._recordFriendAutopilotPass(input),
       listLibraryItems: () => this.listLibraryItems(),

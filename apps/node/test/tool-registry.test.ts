@@ -424,6 +424,55 @@ describe("executeTool — mesh.match_capability_route", () => {
   });
 });
 
+describe("executeTool — mesh.intro geo matching", () => {
+  const trustIntroContext = {
+    trustStore: {} as never,
+    peerDirectoryStore: {} as never,
+    taskStore: { appendAuditEvent: async () => {} } as never,
+    agentIdentity: {
+      agentId: "envoy:agent:test",
+      agentPeerId: "envoy_agent_test",
+      privateKeyPem: "priv",
+      publicKeyPem: "pub",
+    },
+    ownerIdentity: { ownerId: "envoy:owner:test" },
+    agentCredential: {} as never,
+    trustIntro: {
+      trustModeEnabled: true,
+      friendMatchingPreferencesText: "music friends in Boston",
+      humanProfileSummary: { displayName: "Test User", bio: "Hello" },
+      humanProfileLocation: {
+        discoveryLocation: { countryCode: "US", city: "Boston" },
+        discoveryLocationPrecision: "city" as const,
+      },
+    },
+  };
+
+  it("mesh.intro.matching_context emits geoSearchTopics and geoTagHashes", async () => {
+    const result = await executeTool("mesh.intro.matching_context", {}, trustIntroContext);
+    expect(result.ok).toBe(true);
+    const payload = result.result as {
+      geoSearchTopics?: string[];
+      geoTagHashes?: string[];
+    };
+    expect(payload.geoSearchTopics).toEqual(["geo:city:US-boston"]);
+    expect(payload.geoTagHashes).toContain("hash:geo:city:us-boston");
+  });
+
+  it("mesh.intro.matching_context is unavailable when trust mode is off", async () => {
+    const result = await executeTool(
+      "mesh.intro.matching_context",
+      {},
+      {
+        ...trustIntroContext,
+        trustIntro: { trustModeEnabled: false },
+      },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/Unknown tool: mesh\.intro\.matching_context/);
+  });
+});
+
 describe("ToolDefinition interface", () => {
   it("can create tool with full definition", () => {
     const toolDef: ToolDefinition = {

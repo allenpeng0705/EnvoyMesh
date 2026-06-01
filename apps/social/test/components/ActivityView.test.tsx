@@ -3,9 +3,10 @@
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { AgentActivityRecord, AuditEventSummary, TaskJournalSummary } from "@envoymesh/api";
 import { ActivityView } from "../../src/components/views/ActivityView.js";
+import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
 const sampleRow: AgentActivityRecord = {
   activityId: "act-ui-1",
@@ -74,14 +75,14 @@ afterEach(() => {
 
 describe("ActivityView — Phase 13D", () => {
   it("shows empty state when no activity rows", async () => {
-    render(<ActivityView />);
+    renderWithI18n(<ActivityView />);
 
     expect(await screen.findByText(/No agent activity yet/i)).toBeDefined();
   });
 
   it("lists activity rows with kind and summary", async () => {
     listAgentActivity.mockResolvedValue([sampleRow]);
-    render(<ActivityView />);
+    renderWithI18n(<ActivityView />);
 
     expect(await screen.findByText(/Task started/i)).toBeDefined();
     expect(screen.getByText(sampleRow.summary)).toBeDefined();
@@ -93,7 +94,7 @@ describe("ActivityView — Phase 13D", () => {
     listAuditEvents.mockResolvedValue([sampleAudit]);
     listTaskJournalEntries.mockResolvedValue([sampleJournal]);
 
-    render(<ActivityView />);
+    renderWithI18n(<ActivityView />);
 
     fireEvent.click(await screen.findByRole("button", { name: new RegExp(sampleRow.summary.slice(0, 20)) }));
 
@@ -117,7 +118,7 @@ describe("ActivityView — Phase 13D", () => {
 
   it("passes contact and date filters to listAgentActivity", async () => {
     listAgentActivity.mockResolvedValue([sampleRow]);
-    render(<ActivityView />);
+    renderWithI18n(<ActivityView />);
 
     await screen.findByText(sampleRow.summary);
 

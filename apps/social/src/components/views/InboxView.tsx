@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useAgentShareProposals, useShareOffers, usePendingApprovals } from "../../hooks/useNodeService.js";
 import { IncomingShareOffersSection } from "../file-share/IncomingShareOffersSection.js";
@@ -11,6 +12,7 @@ export interface InboxViewProps {
 }
 
 export function InboxView({ embedded = false }: InboxViewProps) {
+  const t = useT();
   const {
     pendingHellOs,
     pendingIntroProposals,
@@ -50,7 +52,7 @@ export function InboxView({ embedded = false }: InboxViewProps) {
   };
 
   const profileForHello = (): HelloProfile => ({
-    displayName: humanProfile?.displayName ?? "Envoy User",
+    displayName: humanProfile?.displayName ?? t("inbox.defaultUserName"),
     bio: humanProfile?.bio ?? "",
     interests: [...(humanProfile?.hobbies ?? []), ...(humanProfile?.knowledge ?? [])],
     whatShares: [],
@@ -58,7 +60,7 @@ export function InboxView({ embedded = false }: InboxViewProps) {
 
   const handleSayHello = async (targetOwnerId: string) => {
     try {
-      await sendHello(targetOwnerId, profileForHello(), "Hello!");
+      await sendHello(targetOwnerId, profileForHello(), t("inbox.defaultHello"));
     } catch (error) {
       console.error("Failed to send hello:", error);
     }
@@ -68,17 +70,17 @@ export function InboxView({ embedded = false }: InboxViewProps) {
     try {
       setIntroSaveStatus(null);
       await approveIntroCommitment(p.messageId);
-      setIntroSaveStatus("Intro approved — you can send hello.");
+      setIntroSaveStatus(t("inbox.introApproved"));
       setTimeout(() => setIntroSaveStatus(null), 4000);
     } catch (error) {
       console.error("Failed to approve intro:", error);
-      setIntroSaveStatus("Approve failed");
+      setIntroSaveStatus(t("inbox.introApproveFailed"));
     }
   };
 
   const handleSendIntroHello = async (p: SocialIntroProposal) => {
     try {
-      await sendHello(p.candidateOwnerId, profileForHello(), "Hello!", {
+      await sendHello(p.candidateOwnerId, profileForHello(), t("inbox.defaultHello"), {
         introProposalMessageId: p.messageId,
       });
     } catch (error) {
@@ -133,7 +135,7 @@ export function InboxView({ embedded = false }: InboxViewProps) {
       )}
       <div className="inbox-actions">
         <button type="button" className="accept" onClick={() => handleSayHello(msg.sender.ownerId ?? msg.sender.nodeId)}>
-          Say Hello
+          {t("common.sayHello")}
         </button>
       </div>
     </li>
@@ -152,12 +154,12 @@ export function InboxView({ embedded = false }: InboxViewProps) {
       <div className={`inbox-view${embedded ? " inbox-view--embedded" : ""}`}>
         {!embedded && (
           <header className="inbox-header">
-            <h2>Inbox</h2>
+            <h2>{t("inbox.title")}</h2>
           </header>
         )}
         <div className="inbox-empty inbox-empty--refined">
-          <p>No pending activity</p>
-          <small>Hello requests, Trust-mode intro proposals, AI approval drafts, incoming file shares, agent share suggestions, and messages from people you haven&apos;t bonded with yet appear here.</small>
+          <p>{t("inbox.empty")}</p>
+          <small>{t("inbox.emptyDesc")}</small>
         </div>
       </div>
     );
@@ -166,10 +168,10 @@ export function InboxView({ embedded = false }: InboxViewProps) {
   return (
     <div className={`inbox-view${embedded ? " inbox-view--embedded" : ""}`}>
       <header className="inbox-header inbox-header-row">
-        {!embedded ? <h2>Inbox</h2> : <h3 className="inbox-embedded-title">Inbox</h3>}
+        {!embedded ? <h2>{t("inbox.title")}</h2> : <h3 className="inbox-embedded-title">{t("inbox.title")}</h3>}
         {pendingMessages.length > 0 && (
           <button type="button" className="clear-inbox" onClick={clearPendingMessages}>
-            Clear strangers
+            {t("inbox.clearStrangers")}
           </button>
         )}
       </header>
@@ -180,7 +182,7 @@ export function InboxView({ embedded = false }: InboxViewProps) {
 
       {pendingApprovals.length > 0 && (
         <>
-          <h3 className="inbox-section-title">AI approvals ({pendingApprovals.length})</h3>
+          <h3 className="inbox-section-title">{t("inbox.aiApprovals", { count: pendingApprovals.length })}</h3>
           <ul className="inbox-list">
             {pendingApprovals.map((item) => (
               <li key={item.id} className="inbox-item">
@@ -204,7 +206,7 @@ export function InboxView({ embedded = false }: InboxViewProps) {
                     disabled={approvalBusy === item.id}
                     onClick={() => void handleApprovePending(item)}
                   >
-                    {approvalBusy === item.id ? "Sending…" : "Approve & send"}
+                    {approvalBusy === item.id ? t("inbox.sending") : t("inbox.approveSend")}
                   </button>
                   <button
                     type="button"
@@ -212,7 +214,7 @@ export function InboxView({ embedded = false }: InboxViewProps) {
                     disabled={approvalBusy === item.id}
                     onClick={() => void handleRejectApproval(item)}
                   >
-                    Reject
+                    {t("inbox.reject")}
                   </button>
                 </div>
               </li>
@@ -223,19 +225,19 @@ export function InboxView({ embedded = false }: InboxViewProps) {
 
       {pendingIntroProposals.length > 0 && (
         <>
-          <h3 className="inbox-section-title">Intro proposals ({pendingIntroProposals.length})</h3>
+          <h3 className="inbox-section-title">{t("inbox.introProposals", { count: pendingIntroProposals.length })}</h3>
           <ul className="inbox-list">
             {pendingIntroProposals.map((p) => (
               <li key={p.messageId} className="inbox-item inbox-item-stranger">
                 <div className="inbox-sender">
                   <span className="avatar large">{(p.agentOwnerId.slice(-1) ?? "?").toUpperCase()}</span>
                   <div className="inbox-sender-info">
-                    <strong>Agent-mediated intro</strong>
+                    <strong>{t("inbox.agentMediatedIntro")}</strong>
                     <span className="owner-id">{p.agentOwnerId}</span>
                   </div>
                 </div>
                 <p className="inbox-message">
-                  Candidate: <code>{p.candidateOwnerId}</code>
+                  {t("inbox.candidate")} <code>{p.candidateOwnerId}</code>
                 </p>
                 {p.rationale && (
                   <p className="inbox-message">&ldquo;{p.rationale}&rdquo;</p>
@@ -243,15 +245,15 @@ export function InboxView({ embedded = false }: InboxViewProps) {
                 <div className="inbox-actions">
                   {!p.commitmentApproved ? (
                     <button type="button" className="accept" onClick={() => void handleApproveIntro(p)}>
-                      Approve commitment
+                      {t("inbox.approveCommitment")}
                     </button>
                   ) : (
                     <button type="button" className="accept" onClick={() => void handleSendIntroHello(p)}>
-                      Send hello (with commitment)
+                      {t("inbox.sendHelloCommitment")}
                     </button>
                   )}
                   <button type="button" className="decline" onClick={() => void handleDeclineIntro(p)}>
-                    Decline
+                    {t("common.decline")}
                   </button>
                 </div>
               </li>
@@ -264,19 +266,19 @@ export function InboxView({ embedded = false }: InboxViewProps) {
 
       {agentShareProposals.length > 0 && (
         <>
-          <h3 className="inbox-section-title">Agent share suggestions ({agentShareProposals.length})</h3>
+          <h3 className="inbox-section-title">{t("inbox.agentShareSuggestions", { count: agentShareProposals.length })}</h3>
           <ul className="inbox-list">
             {agentShareProposals.map((p) => (
               <li key={p.proposalId} className="inbox-item">
                 <div className="inbox-sender">
                   <span className="avatar large">A</span>
                   <div className="inbox-sender-info">
-                    <strong>Share to contact</strong>
+                    <strong>{t("inbox.shareToContact")}</strong>
                     <span className="owner-id">{p.targetOwnerId}</span>
                   </div>
                 </div>
                 <p className="inbox-message">
-                  File: <code>{p.vaultRelativePath}</code> · {p.sensitivity}
+                  {t("inbox.fileLabel")} <code>{p.vaultRelativePath}</code> · {p.sensitivity}
                 </p>
                 {p.summary && <p className="inbox-message">&ldquo;{p.summary}&rdquo;</p>}
                 <div className="inbox-actions">
@@ -301,10 +303,10 @@ export function InboxView({ embedded = false }: InboxViewProps) {
                       })();
                     }}
                   >
-                    {agentShareBusy === p.proposalId ? "Sending…" : "Send share"}
+                    {agentShareBusy === p.proposalId ? t("inbox.sending") : t("inbox.sendShare")}
                   </button>
                   <button type="button" className="decline" onClick={() => void dismissAgentShare(p.proposalId)}>
-                    Dismiss
+                    {t("inbox.dismiss")}
                   </button>
                 </div>
               </li>
@@ -315,7 +317,7 @@ export function InboxView({ embedded = false }: InboxViewProps) {
 
       {pendingHellOs.length > 0 && (
         <>
-          <h3 className="inbox-section-title">Hello requests ({pendingHellOs.length})</h3>
+          <h3 className="inbox-section-title">{t("inbox.helloRequests", { count: pendingHellOs.length })}</h3>
           <ul className="inbox-list">
             {pendingHellOs.map((request) => (
               <li key={request.messageId} className="inbox-item">
@@ -337,10 +339,10 @@ export function InboxView({ embedded = false }: InboxViewProps) {
                 )}
                 <div className="inbox-actions">
                   <button type="button" className="accept" onClick={() => handleAccept(request)}>
-                    Accept
+                    {t("common.accept")}
                   </button>
                   <button type="button" className="decline" onClick={() => handleDecline(request)}>
-                    Decline
+                    {t("common.decline")}
                   </button>
                 </div>
               </li>
@@ -351,7 +353,7 @@ export function InboxView({ embedded = false }: InboxViewProps) {
 
       {pendingMessages.length > 0 && (
         <>
-          <h3 className="inbox-section-title">Messages before bonding ({pendingMessages.length})</h3>
+          <h3 className="inbox-section-title">{t("inbox.messagesBeforeBonding", { count: pendingMessages.length })}</h3>
           <ul className="inbox-list">{pendingMessages.map(pendingStrangerRow)}</ul>
         </>
       )}

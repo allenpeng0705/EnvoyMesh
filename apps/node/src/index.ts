@@ -73,6 +73,8 @@ import {
   parseDevicePairDeferredPayload,
   parseDevicePairRequestPayload,
   parseChatMessagePayload,
+  parseChatRoomSyncPayload,
+  parseChatRoomMessagePayload,
   parseRelayCheckinPayload,
   parseRelayHintsRequestPayload,
   parseRelayHintsResponsePayload,
@@ -1353,6 +1355,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
   if (envelope.intent === "discovery.request" || envelope.intent === "discovery.response") {
     const capabilityManifest = await capabilityManifestStore.loadManifest();
     const nodeConfig = await nodeConfigStore.load();
+    const humanProfile = await humanProfileStore.loadHumanProfile().catch(() => undefined);
     const discovery = await handleInboundDiscoveryIntent({
       envelope,
       profile,
@@ -1367,6 +1370,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       anonymousSensitivityCeiling: nodeConfig?.anonymousSensitivityCeiling ?? "public",
       vaultDir: vaultDirForNode,
       profileDir: args.profileDir,
+      humanProfile: humanProfile ?? undefined,
       resolveReferralOwnerPublicKey: async (ownerId) => {
         const row = await contactOwnerKeyStore.get(ownerId);
         return row?.ownerPublicKeyPem;
@@ -1698,6 +1702,26 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     });
     if (!result.ok) {
       console.warn(`[rejected official.credential] ${result.reason}`);
+    }
+    return;
+  }
+
+  if (envelope.intent === "chat.room.sync" && nodeService instanceof NodeServiceImpl) {
+    try {
+      const payload = parseChatRoomSyncPayload(envelope.payload);
+      await nodeService.handleInboundChatRoomSync(envelope, payload);
+    } catch {
+      console.warn(`[chat.room.sync] invalid payload from ${remotePeerId}`);
+    }
+    return;
+  }
+
+  if (envelope.intent === "chat.room.message" && nodeService instanceof NodeServiceImpl) {
+    try {
+      const payload = parseChatRoomMessagePayload(envelope.payload);
+      await nodeService.handleInboundChatRoomMessage(envelope, payload, remotePeerId, replyWithEnvelope);
+    } catch {
+      console.warn(`[chat.room.message] invalid payload from ${remotePeerId}`);
     }
     return;
   }
@@ -2828,6 +2852,9 @@ nodeService.on("share:offered", (data) => wsServer.emitEvent("share:offered", da
 nodeService.on("share:accepted", (data) => wsServer.emitEvent("share:accepted", data));
 nodeService.on("share:declined", (data) => wsServer.emitEvent("share:declined", data));
 nodeService.on("chat:message", (data) => wsServer.emitEvent("chat:message", data));
+nodeService.on("chat:room-updated", (data) => wsServer.emitEvent("chat:room-updated", data));
+nodeService.on("chat:room-removed", (data) => wsServer.emitEvent("chat:room-removed", data));
+nodeService.on("chat:room-message", (data) => wsServer.emitEvent("chat:room-message", data));
 nodeService.on("chat:delivered", (data) => wsServer.emitEvent("chat:delivered", data));
 nodeService.on("chat:draft", (data) => wsServer.emitEvent("chat:draft", data));
 nodeService.on("agent:activity", (data) => wsServer.emitEvent("agent:activity", data));

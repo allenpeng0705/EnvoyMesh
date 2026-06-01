@@ -1,25 +1,29 @@
 import { useState, useEffect } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useTheme } from "../../context/ThemeContext.js";
+import { useI18n, useT } from "../../context/I18nContext.js";
 import { DEFAULT_APP_SETTINGS } from "../../lib/storage.js";
 import type { ThemeMode } from "../../context/ThemeContext.js";
+import type { LocaleId } from "../../i18n/types.js";
 
-function notificationPermissionHint(): string | null {
+function notificationPermissionHint(t: (key: string) => string): string | null {
   if (typeof Notification === "undefined") {
-    return "Browser notifications are not available in this environment.";
+    return t("settings.behavior.notifyUnavailable");
   }
   if (Notification.permission === "denied") {
-    return "Notifications are blocked in your browser. Enable them in site settings to receive alerts.";
+    return t("settings.behavior.notifyBlocked");
   }
   return null;
 }
 
 export function SettingsAppTab() {
+  const t = useT();
+  const { locale, setLocale, localeOptions } = useI18n();
   const { appSettings, setAppSettings } = useNodeState();
   const { theme, setTheme } = useTheme();
   const [wsUrlDraft, setWsUrlDraft] = useState(appSettings.wsUrl);
   const [notificationHint, setNotificationHint] = useState<string | null>(() =>
-    appSettings.notificationsEnabled ? notificationPermissionHint() : null,
+    appSettings.notificationsEnabled ? notificationPermissionHint(t) : null,
   );
 
   useEffect(() => {
@@ -31,19 +35,38 @@ export function SettingsAppTab() {
       setNotificationHint(null);
       return;
     }
-    setNotificationHint(notificationPermissionHint());
-  }, [appSettings.notificationsEnabled]);
+    setNotificationHint(notificationPermissionHint(t));
+  }, [appSettings.notificationsEnabled, t]);
 
   const themeOptions: { value: ThemeMode; label: string; desc: string }[] = [
-    { value: "system", label: "System", desc: "Follow your device settings" },
-    { value: "light", label: "Light", desc: "Always use light appearance" },
-    { value: "dark", label: "Dark", desc: "Always use dark appearance" },
+    { value: "system", label: t("settings.appearance.system"), desc: t("settings.appearance.systemDesc") },
+    { value: "light", label: t("settings.appearance.light"), desc: t("settings.appearance.lightDesc") },
+    { value: "dark", label: t("settings.appearance.dark"), desc: t("settings.appearance.darkDesc") },
   ];
 
   return (
     <section className="settings-section">
       <div className="settings-card">
-        <h4>Appearance</h4>
+        <h4>{t("settings.language.title")}</h4>
+        <p className="settings-hint">{t("settings.language.hint")}</p>
+        <div className="settings-radio-group">
+          {localeOptions.map((opt) => (
+            <label
+              key={opt.id}
+              className={`settings-radio-option ${locale === opt.id ? "active" : ""}`}
+              onClick={() => setLocale(opt.id as LocaleId)}
+            >
+              <span className={`settings-radio ${locale === opt.id ? "checked" : ""}`} />
+              <div className="radio-content">
+                <div className="mode-title">{opt.label}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <h4>{t("settings.appearance.title")}</h4>
         <div className="settings-radio-group">
           {themeOptions.map((opt) => (
             <label
@@ -62,11 +85,11 @@ export function SettingsAppTab() {
       </div>
 
       <div className="settings-card">
-        <h4>Connection</h4>
+        <h4>{t("settings.connection.title")}</h4>
         <div className="settings-row">
           <div>
-            <div className="settings-row-label">WebSocket URL</div>
-            <div className="settings-row-hint">Node backend endpoint</div>
+            <div className="settings-row-label">{t("settings.connection.wsUrl")}</div>
+            <div className="settings-row-hint">{t("settings.connection.wsHint")}</div>
           </div>
         </div>
         <input
@@ -86,27 +109,23 @@ export function SettingsAppTab() {
               });
             }}
           >
-            Apply URL
+            {t("settings.connection.applyUrl")}
           </button>
-          <button
-            type="button"
-            className="settings-cancel-btn"
-            onClick={() => setWsUrlDraft(appSettings.wsUrl)}
-          >
-            Reset
+          <button type="button" className="settings-cancel-btn" onClick={() => setWsUrlDraft(appSettings.wsUrl)}>
+            {t("common.reset")}
           </button>
         </div>
         <p className="settings-hint" style={{ marginTop: "6px" }}>
-          Reconnects automatically when you apply a new URL (no page reload required).
+          {t("settings.connection.applyNote")}
         </p>
       </div>
 
       <div className="settings-card">
-        <h4>Behavior</h4>
+        <h4>{t("settings.behavior.title")}</h4>
         <div className="settings-row">
           <div>
-            <div className="settings-row-label">Auto Connect</div>
-            <div className="settings-row-hint">Connect automatically on startup</div>
+            <div className="settings-row-label">{t("settings.behavior.autoConnect")}</div>
+            <div className="settings-row-hint">{t("settings.behavior.autoConnectHint")}</div>
           </div>
           <label className="toggle-switch">
             <input
@@ -119,8 +138,8 @@ export function SettingsAppTab() {
         </div>
         <div className="settings-row">
           <div>
-            <div className="settings-row-label">Notifications</div>
-            <div className="settings-row-hint">Enable notifications for new messages</div>
+            <div className="settings-row-label">{t("settings.behavior.notifications")}</div>
+            <div className="settings-row-hint">{t("settings.behavior.notificationsHint")}</div>
           </div>
           <label className="toggle-switch">
             <input
@@ -137,9 +156,7 @@ export function SettingsAppTab() {
                     await Notification.requestPermission();
                   }
                   setAppSettings({ ...appSettings, notificationsEnabled: enabled });
-                  setNotificationHint(
-                    enabled ? notificationPermissionHint() : null,
-                  );
+                  setNotificationHint(enabled ? notificationPermissionHint(t) : null);
                 })();
               }}
             />
@@ -153,8 +170,8 @@ export function SettingsAppTab() {
         ) : null}
         <div className="settings-row">
           <div>
-            <div className="settings-row-label">Connection Status</div>
-            <div className="settings-row-hint">Show P2P/Relay indicator in chat</div>
+            <div className="settings-row-label">{t("settings.behavior.connectionStatus")}</div>
+            <div className="settings-row-hint">{t("settings.behavior.connectionStatusHint")}</div>
           </div>
           <label className="toggle-switch">
             <input

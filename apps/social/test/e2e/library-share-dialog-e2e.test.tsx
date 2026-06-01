@@ -4,10 +4,11 @@
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { BondRecord, LibraryItem } from "@envoymesh/api";
 import { LibraryView } from "../../src/components/views/LibraryView.js";
 import { ShareFileDialog } from "../../src/components/file-share/ShareFileDialog.js";
+import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
 const listLibraryItems = vi.fn();
 const getBonds = vi.fn();
@@ -75,7 +76,7 @@ beforeEach(() => {
 
 describe("E2E Library Share dialog", () => {
   it("opens Share dialog from Library row with pre-filled vault path", async () => {
-    render(<LibraryView />);
+    renderWithI18n(<LibraryView />);
 
     const table = await screen.findByRole("table");
     fireEvent.click(within(table).getByRole("button", { name: /^Share…$/i }));
@@ -87,7 +88,7 @@ describe("E2E Library Share dialog", () => {
   });
 
   it("send share request calls shareFile with contact, path, and sensitivity", async () => {
-    render(<LibraryView />);
+    renderWithI18n(<LibraryView />);
 
     const table = await screen.findByRole("table");
     fireEvent.click(within(table).getByRole("button", { name: /^Share…$/i }));
@@ -113,7 +114,7 @@ describe("E2E Library Share dialog", () => {
   });
 
   it("cancel closes the dialog without calling shareFile", async () => {
-    render(<LibraryView />);
+    renderWithI18n(<LibraryView />);
 
     const table = await screen.findByRole("table");
     fireEvent.click(within(table).getByRole("button", { name: /^Share…$/i }));
@@ -129,7 +130,7 @@ describe("E2E Library Share dialog", () => {
 
   it("standalone ShareFileDialog lists vault files when no libraryItem preset", async () => {
     const onClose = vi.fn();
-    render(
+    renderWithI18n(
       <ShareFileDialog
         onClose={onClose}
         onShared={vi.fn()}

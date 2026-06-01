@@ -39,6 +39,8 @@ export interface ChatLogEnvelope {
   metadata: {
     timestamp: string;
     deliveryReceipt?: "pending" | "sent" | "delivered" | "read" | "failed";
+    deliveredToOwnerIds?: string[];
+    pendingRecipientOwnerIds?: string[];
   };
   signature: string;
 }
@@ -77,6 +79,12 @@ export interface LocalChatLogStore {
     threadPeerOwnerId: string,
     messageId: string,
     deliveryReceipt: NonNullable<ChatLogEnvelope["metadata"]["deliveryReceipt"]>,
+  ): Promise<boolean>;
+  /** Merge a group-chat delivery ack into persisted message metadata. */
+  updateGroupDeliveryProgress(
+    threadPeerOwnerId: string,
+    messageId: string,
+    recipientOwnerId: string,
   ): Promise<boolean>;
 }
 
@@ -151,6 +159,22 @@ async function writeChatLinesAtomic(path: string, rows: ChatLogLine[]): Promise<
     }
     throw error;
   }
+}
+
+function mergeGroupDeliveryMetadata(
+  metadata: ChatLogEnvelope["metadata"],
+  recipientOwnerId: string,
+): ChatLogEnvelope["metadata"] {
+  const delivered = new Set(metadata.deliveredToOwnerIds ?? []);
+  delivered.add(recipientOwnerId);
+  const pending = (metadata.pendingRecipientOwnerIds ?? []).filter((id) => !delivered.has(id));
+  const allDelivered = pending.length === 0 && delivered.size > 0;
+  return {
+    ...metadata,
+    deliveredToOwnerIds: [...delivered],
+    pendingRecipientOwnerIds: pending.length > 0 ? pending : undefined,
+    deliveryReceipt: allDelivered ? "delivered" : metadata.deliveryReceipt === "failed" ? "failed" : "sent",
+  };
 }
 
 export function createLocalChatLogStore(profileDir: string): LocalChatLogStore {
@@ -245,6 +269,27 @@ export function createLocalChatLogStore(profileDir: string): LocalChatLogStore {
         for (const row of rows) {
           if (row.threadPeerOwnerId === thread && row.messageId === id) {
             row.metadata = { ...row.metadata, deliveryReceipt };
+            changed = true;
+            break;
+          }
+        }
+        if (!changed) return false;
+        await writeChatLinesAtomic(path, rows);
+        return true;
+      });
+    },
+
+    updateGroupDeliveryProgress(threadPeerOwnerId, messageId, recipientOwnerId) {
+      return enqueue(async () => {
+        const thread = threadPeerOwnerId.trim();
+        const id = messageId.trim();
+        const recipient = recipientOwnerId.trim();
+        if (!thread || !id || !recipient) return false;
+        const rows = await readAllChatLines(path);
+        let changed = false;
+        for (const row of rows) {
+          if (row.threadPeerOwnerId === thread && row.messageId === id) {
+            row.metadata = mergeGroupDeliveryMetadata(row.metadata, recipient);
             changed = true;
             break;
           }

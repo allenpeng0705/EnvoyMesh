@@ -1,23 +1,44 @@
 import { useState, useEffect, useMemo } from "react";
+import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import type {
+  ChatRoom,
   ContactAiPreferences,
   HelloProfile,
 } from "@envoymesh/api";
+import { chatRoomThreadKey } from "@envoymesh/api";
 import { resolveContactAiAccessLevel } from "@envoymesh/api";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
-import { ChatIcon, BridgeIcon } from "../../icons.js";
+import { ChatIcon, BridgeIcon, AddIcon } from "../../icons.js";
 import { useChatThreadPreviews } from "../../hooks/useChatThreadPreviews.js";
+import { CreateGroupModal } from "./CreateGroupModal.js";
+import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
+import type { BondRecord } from "@envoymesh/api";
+
+function sortByLatestMessage<T>(
+  items: readonly T[],
+  threadKey: (item: T) => string,
+  previews: Record<string, { timestampMs?: number }>,
+): T[] {
+  return [...items].sort((a, b) => {
+    const ta = previews[threadKey(a)]?.timestampMs ?? 0;
+    const tb = previews[threadKey(b)]?.timestampMs ?? 0;
+    return tb - ta;
+  });
+}
 
 interface ChatSidebarProps {
   selectedContact: string | null;
   onSelectContact: (id: string | null) => void;
+  onGroupCreated?: (roomId: string) => void;
   onOpenAssistant?: () => void;
+  onOpenDiscover?: () => void;
 }
 
-export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant }: ChatSidebarProps) {
+export function ChatSidebar({ selectedContact, onSelectContact, onGroupCreated, onOpenAssistant, onOpenDiscover }: ChatSidebarProps) {
+  const t = useT();
   const nodeService = useNodeService();
   const {
     bonds,
@@ -35,6 +56,9 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant 
   } = useNodeState();
 
   const [contextMenu, setContextMenu] = useState<{ ownerId: string; x: number; y: number } | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<{ ownerId: string; name: string } | null>(null);
+  const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -76,63 +100,113 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant 
   const handleSayHello = async (targetOwnerId: string) => {
     try {
       const profile: HelloProfile = {
-        displayName: humanProfile?.displayName ?? "Envoy User",
+        displayName: humanProfile?.displayName ?? t("inbox.defaultUserName"),
         bio: humanProfile?.bio ?? "",
         interests: [...(humanProfile?.hobbies ?? []), ...(humanProfile?.knowledge ?? [])],
         whatShares: [],
       };
-      await sendHello(targetOwnerId, profile, "Hello!");
+      await sendHello(targetOwnerId, profile, t("inbox.defaultHello"));
     } catch (e) { console.error(e); }
   };
 
+  const openRemoveContact = (peerOwnerId: string, name: string) => {
+    setContextMenu(null);
+    setRemoveTarget({ ownerId: peerOwnerId, name });
+  };
+
   const bondPeerIds = useMemo(() => bonds.map((b) => b.peerOwnerId), [bonds]);
-  const threadPreviews = useChatThreadPreviews(bondPeerIds);
+  const roomThreadKeys = useMemo(() => chatRooms.map((r) => chatRoomThreadKey(r.roomId)), [chatRooms]);
+  const threadPreviews = useChatThreadPreviews([...bondPeerIds, ...roomThreadKeys]);
+
+  const sortedChatRooms = useMemo(
+    () => sortByLatestMessage(chatRooms, (room) => chatRoomThreadKey(room.roomId), threadPreviews),
+    [chatRooms, threadPreviews],
+  );
+
+  const sortedBonds = useMemo(
+    () => sortByLatestMessage(bonds, (contact: BondRecord) => contact.peerOwnerId, threadPreviews),
+    [bonds, threadPreviews],
+  );
+
+  const showAiSection = Boolean(onOpenAssistant) || bridgeStatus?.enabled;
+
+  useEffect(() => {
+    if (!nodeService.isConnected) return;
+    let cancelled = false;
+    void nodeService
+      .listChatRooms()
+      .then((rooms) => {
+        if (!cancelled) setChatRooms(rooms);
+      })
+      .catch(console.error);
+    const unsub = nodeService.on("chat:room-updated", (room) => {
+      setChatRooms((prev) => {
+        const idx = prev.findIndex((r) => r.roomId === room.roomId);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = room;
+          return next;
+        }
+        return [room, ...prev];
+      });
+    });
+    const unsubRemoved = nodeService.on("chat:room-removed", ({ roomId }) => {
+      setChatRooms((prev) => prev.filter((r) => r.roomId !== roomId));
+      if (selectedContact && chatRoomThreadKey(roomId) === selectedContact) {
+        onSelectContact(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+      unsubRemoved();
+    };
+  }, [nodeService, nodeService.isConnected, onSelectContact, selectedContact]);
 
   return (
     <aside className="contact-list">
-      <div className="contact-list-header">
-        <h3>Chats</h3>
-      </div>
+      {/* AI — assistant + home agent bridge */}
+      {showAiSection ? (
+        <>
+          <div className="contact-list-section-label">{t("chat.aiSection")}</div>
+          {onOpenAssistant ? (
+            <button
+              type="button"
+              className="thread-row thread-row--ai"
+              onClick={onOpenAssistant}
+            >
+              <span className="thread-avatar" aria-hidden>AI</span>
+              <span className="thread-meta">
+                <span className="thread-title-row">
+                  <span className="thread-title">{t("chat.assistant")}</span>
+                </span>
+                <span className="thread-subtitle">{t("chat.assistantSubtitle")}</span>
+              </span>
+            </button>
+          ) : null}
+          {bridgeStatus?.enabled ? (
+            <button
+              type="button"
+              className={`thread-row thread-row--agent ${selectedContact === bridgeStatus.agentPeerId ? "active" : ""}`}
+              onClick={() => onSelectContact(bridgeStatus.agentPeerId)}
+            >
+              <span className="thread-avatar" aria-hidden>AG</span>
+              <span className="thread-meta">
+                <span className="thread-title-row">
+                  <span className="thread-title">{bridgeStatus.agentName ?? t("chat.myAgent")}</span>
+                </span>
+                <span className="thread-subtitle">{t("chat.homeclawBridge")}</span>
+              </span>
+            </button>
+          ) : null}
+        </>
+      ) : null}
 
-      {/* Assistant lane — dedicated view (Phase 15C), not a pseudo-contact thread */}
-      {onOpenAssistant && (
-        <button
-          type="button"
-          className="thread-row thread-row--ai"
-          onClick={onOpenAssistant}
-        >
-          <span className="thread-avatar" aria-hidden>AI</span>
-          <span className="thread-meta">
-            <span className="thread-title-row">
-              <span className="thread-title">Assistant</span>
-            </span>
-            <span className="thread-subtitle">Owner ↔ home agent</span>
-          </span>
-        </button>
-      )}
-
-      {/* Bridge agent contact — appears when external agent bridge is enabled */}
-      {bridgeStatus?.enabled && (
-        <button
-          type="button"
-          className={`thread-row thread-row--agent ${selectedContact === bridgeStatus.agentPeerId ? "active" : ""}`}
-          onClick={() => onSelectContact(bridgeStatus.agentPeerId)}
-        >
-          <span className="thread-avatar" aria-hidden>AG</span>
-          <span className="thread-meta">
-            <span className="thread-title-row">
-              <span className="thread-title">{bridgeStatus.agentName ?? "My Agent"}</span>
-            </span>
-            <span className="thread-subtitle">HomeClaw bridge</span>
-          </span>
-        </button>
-      )}
-
-      {/* Pending Hello requests — shown inline as contact list items */}
+      {/* Pending Hello requests */}
       {pendingHellOs.length > 0 && (
         <>
           <div className="contact-list-section-label">
-            Requests ({pendingHellOs.length})
+            {t("chat.requests", { count: pendingHellOs.length })}
           </div>
           {pendingHellOs.map((request) => (
             <button
@@ -148,7 +222,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant 
                 <span className="thread-title-row">
                   <span className="thread-title">{request.profile.displayName}</span>
                 </span>
-                <span className="thread-subtitle">Tap to accept hello</span>
+                <span className="thread-subtitle">{t("chat.tapAcceptHello")}</span>
               </span>
             </button>
           ))}
@@ -158,7 +232,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant 
       {/* Pending messages from unbonded peers — shown inline in contact list */}
       {pendingMessages.length > 0 && (
         <>
-          <div className="contact-list-section-label">Pending</div>
+          <div className="contact-list-section-label">{t("chat.pending")}</div>
           {pendingMessages.map((msg) => (
             <button
               key={msg.messageId}
@@ -173,58 +247,125 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant 
                 <span className="thread-title-row">
                   <span className="thread-title">{peerDisplayLabel(msg.sender)}</span>
                 </span>
-                <span className="thread-subtitle">{msg.content?.text?.slice(0, 48) ?? "New message"}</span>
+                <span className="thread-subtitle">{msg.content?.text?.slice(0, 48) ?? t("chat.newMessage")}</span>
               </span>
             </button>
           ))}
           <button className="clear-pending-btn" onClick={clearPendingMessages}>
-            Clear all
+            {t("chat.clearAll")}
           </button>
         </>
       )}
 
-      {/* Bonded contacts */}
-      {bonds.length === 0 && pendingHellOs.length === 0 && pendingIntroProposals.length === 0 && pendingMessages.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-state-icon">
-            <ChatIcon size={32} />
-          </div>
-          <div className="empty-state-title">No contacts yet</div>
-          <div className="empty-state-desc">Discover people in Contacts and start connecting</div>
-        </div>
-      ) : (
+      {/* Group chats — always listed under Group when user has contacts */}
+      {bonds.length > 0 ? (
         <>
-          <div className="contact-list-section-label">Contacts</div>
-          {bonds.map((contact) => {
-            const pv = threadPreviews[contact.peerOwnerId];
+          <div className="contact-list-section-header">
+            <span className="contact-list-section-label">{t("chat.groupsSection")}</span>
+            <button
+              type="button"
+              className="contact-list-section-add-btn"
+              aria-label={t("chat.addGroupAria")}
+              title={t("chat.addGroupAria")}
+              onClick={() => setShowCreateGroup(true)}
+            >
+              <AddIcon size={18} />
+            </button>
+          </div>
+          {sortedChatRooms.map((room) => {
+            const threadKey = chatRoomThreadKey(room.roomId);
+            const pv = threadPreviews[threadKey];
             return (
               <button
-                key={contact.peerOwnerId}
+                key={room.roomId}
                 type="button"
-                className={`thread-row thread-row--contact ${selectedContact === contact.peerOwnerId ? "active" : ""}`}
-                onClick={() => onSelectContact(contact.peerOwnerId)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setContextMenu({ ownerId: contact.peerOwnerId, x: e.clientX, y: e.clientY });
-                }}
+                className={`thread-row thread-row--group ${selectedContact === threadKey ? "active" : ""}`}
+                onClick={() => onSelectContact(threadKey)}
               >
-                <PeerProfileAvatar
-                  ownerId={contact.peerOwnerId}
-                  fallbackLabel={contactLabel(contact)}
-                  className="thread-avatar"
-                />
+                <span className="thread-avatar thread-avatar--group" aria-hidden>
+                  {room.title.slice(0, 2).toUpperCase()}
+                </span>
                 <span className="thread-meta">
                   <span className="thread-title-row">
-                    <span className="thread-title">{contactLabel(contact)}</span>
+                    <span className="thread-title">{room.title}</span>
                     {pv ? <span className="thread-time">{pv.timeLabel}</span> : null}
                   </span>
-                  <span className="thread-subtitle">{pv?.text ?? "No messages yet"}</span>
+                  <span className="thread-subtitle">{pv?.text ?? t("chat.noMessagesYet")}</span>
                 </span>
               </button>
             );
           })}
         </>
-      )}
+      ) : null}
+
+      {/* Bonded contacts — primary chat list */}
+      {bonds.length > 0 ? (
+        <>
+          <div className="contact-list-section-label">{t("chat.contactsSection")}</div>
+          <p className="contact-list-hint">{t("contacts.tapHint")}</p>
+          {sortedBonds.map((contact) => {
+            const pv = threadPreviews[contact.peerOwnerId];
+            const label = contactLabel(contact);
+            return (
+              <div key={contact.peerOwnerId} className="thread-row-with-actions">
+                <button
+                  type="button"
+                  className={`thread-row thread-row--contact ${selectedContact === contact.peerOwnerId ? "active" : ""}`}
+                  onClick={() => onSelectContact(contact.peerOwnerId)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setContextMenu({ ownerId: contact.peerOwnerId, x: e.clientX, y: e.clientY });
+                  }}
+                >
+                  <PeerProfileAvatar
+                    ownerId={contact.peerOwnerId}
+                    fallbackLabel={label}
+                    className="thread-avatar"
+                  />
+                  <span className="thread-meta">
+                    <span className="thread-title-row">
+                      <span className="thread-title">{label}</span>
+                      {pv ? <span className="thread-time">{pv.timeLabel}</span> : null}
+                    </span>
+                    <span className="thread-subtitle">{pv?.text ?? t("chat.noMessagesYet")}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="thread-row-remove-btn"
+                  aria-label={t("contacts.removeNamed", { name: label })}
+                  title={t("contacts.removeContact")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openRemoveContact(contact.peerOwnerId, label);
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+        </>
+      ) : null}
+
+      {bonds.length === 0 &&
+      chatRooms.length === 0 &&
+      pendingHellOs.length === 0 &&
+      pendingIntroProposals.length === 0 &&
+      pendingMessages.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-state-icon">
+            <ChatIcon size={32} />
+          </div>
+          <div className="empty-state-title">{t("chat.noContactsTitle")}</div>
+          <div className="empty-state-desc">{t("chat.noContactsDesc")}</div>
+          {onOpenDiscover ? (
+            <button type="button" className="discover-primary-btn chat-sidebar-discover-btn" onClick={onOpenDiscover}>
+              {t("chat.openDiscover")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Context menu for AI access level */}
       {contextMenu && (
@@ -233,7 +374,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant 
           style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, zIndex: 1000 }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="context-menu-header">AI Access for Contact</div>
+          <div className="context-menu-header">{t("chat.aiAccessMenu")}</div>
           {(["none", "assistant_only", "full"] as const).map((level) => {
             const currentLevel = getContactAiAccessLevel(contextMenu.ownerId);
             return (
@@ -245,14 +386,49 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant 
                   setContextMenu(null);
                 }}
               >
-                {level === "none" && "○ None — AI never responds"}
-                {level === "assistant_only" && <><ChatIcon size={14} /> Assistant Only — Draft suggestions only</>}
-                {level === "full" && <><BridgeIcon size={14} /> Full Auto-Reply — AI can respond automatically</>}
+                {level === "none" && t("chat.aiAccessNone")}
+                {level === "assistant_only" && <><ChatIcon size={14} /> {t("chat.aiAccessAssistant")}</>}
+                {level === "full" && <><BridgeIcon size={14} /> {t("chat.aiAccessFull")}</>}
               </div>
             );
           })}
+          <div className="context-menu-divider" role="separator" />
+          <div
+            className="context-menu-item context-menu-item--danger"
+            onClick={() => {
+              const bond = bonds.find((b) => b.peerOwnerId === contextMenu.ownerId);
+              openRemoveContact(contextMenu.ownerId, contactLabel(bond ?? { peerOwnerId: contextMenu.ownerId }));
+            }}
+          >
+            {t("contacts.removeContact")}
+          </div>
         </div>
       )}
+
+      {showCreateGroup ? (
+        <CreateGroupModal
+          onClose={() => setShowCreateGroup(false)}
+          onCreated={(threadKey) => {
+            const roomId = threadKey.slice("room:".length);
+            onGroupCreated?.(roomId);
+            onSelectContact(threadKey);
+            setShowCreateGroup(false);
+          }}
+        />
+      ) : null}
+
+      {removeTarget ? (
+        <RemoveContactConfirmModal
+          peerOwnerId={removeTarget.ownerId}
+          displayName={removeTarget.name}
+          onClose={() => setRemoveTarget(null)}
+          onRemoved={() => {
+            if (selectedContact === removeTarget.ownerId) {
+              onSelectContact(null);
+            }
+          }}
+        />
+      ) : null}
     </aside>
   );
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProfilePhotoMime } from "@envoymesh/api";
+import { useT } from "../context/I18nContext.js";
 import {
   DEFAULT_THUMBNAIL_CROP,
   exportSquareThumbnail,
@@ -29,6 +30,7 @@ export function PhotoPickerSheet({
   onConfirmThumbnail,
   onConfirmGallery,
 }: PhotoPickerSheetProps) {
+  const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -65,7 +67,7 @@ export function PhotoPickerSheet({
     } catch (err) {
       setSourceFile(null);
       setImage(null);
-      setLoadError(err instanceof Error ? err.message : "Could not load image");
+      setLoadError(err instanceof Error ? err.message : t("profilePhotos.loadImageFailed"));
     }
   };
 
@@ -119,12 +121,14 @@ export function PhotoPickerSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 id="photo-picker-title" className="photo-picker-title">
-          {purpose === "thumbnail" ? "Profile thumbnail" : "Add gallery photo"}
+          {purpose === "thumbnail"
+            ? t("profilePhotos.photoPickerThumbnailTitle")
+            : t("profilePhotos.photoPickerGalleryTitle")}
         </h3>
         <p className="photo-picker-lede muted small">
           {purpose === "thumbnail"
-            ? "Drag to reposition. We crop to a square and remove location metadata on upload."
-            : "New gallery photos default to public metadata on your profile. Discover shows your thumbnail; use Share to send image files."}
+            ? t("profilePhotos.photoPickerThumbnailHint")
+            : t("profilePhotos.photoPickerGalleryHint")}
         </p>
 
         {loadError ? (
@@ -154,10 +158,10 @@ export function PhotoPickerSheet({
                 disabled={busy}
                 onClick={() => inputRef.current?.click()}
               >
-                {busy ? "Uploading…" : purpose === "thumbnail" ? "Choose photo" : "Choose photo"}
+                {busy ? t("profilePhotos.uploading") : t("profilePhotos.choosePhoto")}
               </button>
               <button type="button" className="btn-secondary" disabled={busy} onClick={onClose}>
-                Cancel
+                {t("common.cancel")}
               </button>
             </div>
           </>
@@ -184,10 +188,10 @@ export function PhotoPickerSheet({
                 draggable={false}
               />
             </div>
-            <p className="muted small photo-crop-hint">Drag the photo to adjust framing</p>
+            <p className="muted small photo-crop-hint">{t("profilePhotos.cropHint")}</p>
             <div className="photo-picker-actions">
               <button type="button" className="primary" disabled={busy} onClick={() => void confirmThumbnail()}>
-                {busy ? "Uploading…" : "Use this thumbnail"}
+                {busy ? t("profilePhotos.uploading") : t("profilePhotos.useThumbnail")}
               </button>
               <button
                 type="button"
@@ -198,7 +202,7 @@ export function PhotoPickerSheet({
                   inputRef.current?.click();
                 }}
               >
-                Pick different photo
+                {t("profilePhotos.pickDifferent")}
               </button>
             </div>
             <input

@@ -317,15 +317,48 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
   // peer:discovered — track nearby peers
   useEffect(() => {
     if (!wsTransportOpen) return;
+    const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
     const unsub = nodeService.on("peer:discovered", (data) => {
+      if (selfOwnerId && data.ownerId === selfOwnerId) return;
+      if (bonds.some((b) => b.peerOwnerId === data.ownerId)) return;
       setDiscoveredPeers((prev) => {
-        if (bonds.some((b) => b.peerOwnerId === data.ownerId)) return prev;
+        const existing = prev.find((p) => p.nodeId === data.nodeId);
+        if (existing) {
+          return prev.map((p) => (p.nodeId === data.nodeId ? { ...p, ...data } : p));
+        }
         if (prev.some((p) => p.nodeId === data.nodeId)) return prev;
         return [...prev, data];
       });
     });
     return unsub;
-  }, [nodeService, wsTransportOpen, bonds]);
+  }, [nodeService, wsTransportOpen, bonds, humanProfile?.ownerId]);
+
+  // profile:updated — refresh nearby card names after profile probe
+  useEffect(() => {
+    if (!wsTransportOpen) return;
+    const unsub = nodeService.on("profile:updated", (data) => {
+      void nodeService
+        .getPeerProfile(data.ownerId)
+        .then((row) => {
+          if (!row) return;
+          setDiscoveredPeers((prev) =>
+            prev.map((p) =>
+              p.ownerId === data.ownerId || p.nodeId === data.ownerId
+                ? {
+                    ...p,
+                    ownerId: data.ownerId,
+                    displayName: row.profile.displayName ?? p.displayName,
+                    username: row.profile.username ?? p.username,
+                    bio: row.profile.bio ?? p.bio,
+                  }
+                : p,
+            ),
+          );
+        })
+        .catch(() => {});
+    });
+    return unsub;
+  }, [nodeService, wsTransportOpen]);
 
   // chat:message from unbonded peers → pending messages
   useEffect(() => {

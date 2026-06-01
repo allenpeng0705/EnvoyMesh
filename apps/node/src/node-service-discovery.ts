@@ -14,7 +14,9 @@ import type {
   SearchQuery,
 } from "@envoymesh/api";
 import { buildOwnerDidPresentation, didKeysMatch, parseDidLookupInput } from "@envoymesh/api";
+import { locationSearchTopics } from "@envoymesh/api";
 import { createDiscoveryReferralAttestation } from "@envoymesh/api/discovery-referral-attestation";
+import type { HumanProfilePayload } from "@envoymesh/protocol";
 import {
   createAuditEvent,
   buildMorningReportDigest,
@@ -35,6 +37,7 @@ import {
 } from "@envoymesh/protocol";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import type { NodeProfile } from "@envoymesh/api";
+import type { PeerProfileCacheStore } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
 import type { createNodeConfigStore } from "./node-config-store.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
@@ -56,6 +59,8 @@ export interface NodeDiscoveryRuntimeDeps {
   discoverySeedStore?: DiscoverySeedStore;
   contactOwnerKeyStore: ContactOwnerKeyStore | null;
   multihopDiscoveryStore: MultiHopDiscoveryStore | null;
+  peerProfileCacheStore?: PeerProfileCacheStore | null;
+  warmLocalPeerProfiles?: (ownerIds: string[]) => Promise<void>;
   getApprovalQueue(): ApprovalQueue | null;
   resolvePeerTransportForOwner(targetOwnerId: string): Promise<{
     transportPeerId: string;
@@ -64,6 +69,7 @@ export interface NodeDiscoveryRuntimeDeps {
   }>;
   dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]>;
   emitMultiHopUpdate(session: MultiHopDiscoverySessionView): void;
+  loadHumanProfile?: () => Promise<HumanProfilePayload | undefined>;
 }
 
 export class NodeDiscoveryRuntime {
@@ -81,12 +87,30 @@ export class NodeDiscoveryRuntime {
         return this.searchByPeerId(query.peerId, maxResults);
       }
 
-      // 2. Explicit DHT capability topic (Phase 15A)
-      if (query.topic?.trim()) {
-        const topicResults = await this.searchByTopic(query.topic.trim(), maxResults);
+      // 2. Explicit DHT capability topic(s) (Phase 15A / 17 geo)
+      const topicQueries = [
+        ...(query.topic?.trim() ? [query.topic.trim()] : []),
+        ...(query.topics ?? []).map((t) => t.trim()).filter(Boolean),
+      ];
+      if (topicQueries.length > 0) {
+        const results: PeerSearchResult[] = [];
+        for (const topic of [...new Set(topicQueries)]) {
+          const topicResults = await this.searchByTopic(topic, maxResults);
+          for (const r of topicResults) {
+            if (!results.some((existing) => existing.nodeId === r.nodeId)) {
+              results.push(r);
+            }
+          }
+        }
         const selfPeerId = this.deps.getMesh()?.peerId;
-        return topicResults
-          .filter((r) => r.nodeId !== selfPeerId && r.ownerId !== this.deps.getProfile()?.owner.ownerId)
+        const selfOwnerId = this.deps.getProfile()?.owner.ownerId;
+        return results
+          .filter(
+            (r) =>
+              r.nodeId !== selfPeerId
+              && r.ownerId !== selfOwnerId
+              && r.nodeId !== selfOwnerId,
+          )
           .slice(0, maxResults);
       }
 
@@ -119,18 +143,7 @@ export class NodeDiscoveryRuntime {
         }
       }
 
-      // 5. Hybrid mode by default when public network is enabled: also search locally for better discovery
-      // Even without configured relays, local search helps find peers that haven't advertised yet
-      if (isPublicNetwork && query.interests && query.interests.length > 0) {
-        const localResults = await this.searchLocalPeers(query, maxResults);
-        for (const r of localResults) {
-          if (!results.some((existing) => existing.nodeId === r.nodeId)) {
-            results.push(r);
-          }
-        }
-      }
-
-      // 6. Private relay network: search via rendezvous servers
+      // 5. Private relay network: search via rendezvous servers
       if (isPrivateRelay && query.interests && query.interests.length > 0) {
         const rendezvousResults = await this.searchByRendezvous(query.interests);
         for (const r of rendezvousResults) {
@@ -140,8 +153,20 @@ export class NodeDiscoveryRuntime {
         }
       }
 
-      // 7. If neither public network nor relays configured, do local search only
-      if (!isPublicNetwork && !isPrivateRelay) {
+      // 7. LAN / local profile search — always merge for name or hobby queries
+      if (query.username || (query.interests && query.interests.length > 0) || query.queryText) {
+        await this.warmLocalPeerProfilesForSearch(query, maxResults);
+        const localResults = await this.searchLocalPeers(query, maxResults);
+        for (const r of localResults) {
+          if (!results.some((existing) => existing.nodeId === r.nodeId || existing.ownerId === r.ownerId)) {
+            results.push(r);
+          }
+        }
+      }
+
+      // 8. If neither public network nor relays configured, local-only mode
+      if (!isPublicNetwork && !isPrivateRelay && results.length === 0) {
+        await this.warmLocalPeerProfilesForSearch(query, maxResults);
         return this.searchLocalPeers(query, maxResults);
       }
 
@@ -150,7 +175,9 @@ export class NodeDiscoveryRuntime {
       const selfOwnerId = this.deps.getProfile()?.owner.ownerId;
       const selfPeerId = this.deps.getMesh()?.peerId;
       const filteredResults = results.filter((r) =>
-        r.nodeId !== selfOwnerId && r.nodeId !== selfPeerId
+        r.nodeId !== selfOwnerId
+        && r.nodeId !== selfPeerId
+        && r.ownerId !== selfOwnerId
       );
 
       return filteredResults.slice(0, maxResults);
@@ -399,12 +426,50 @@ export class NodeDiscoveryRuntime {
         this.deps.peerDirectoryStore.listPeerRecords(),
         this.deps.taskStore.readDiscoveryEvents(),
       ]);
-      return buildMorningReportDigest({
+      const entries = buildMorningReportDigest({
         trustRecords,
         peerDirectoryRecords: peerRecords,
         discoveryEvents,
         limit: params?.limit ?? 10,
       });
+
+      const humanProfile = this.deps.loadHumanProfile
+        ? await this.deps.loadHumanProfile().catch(() => undefined)
+        : undefined;
+      const loc = humanProfile?.discoveryLocation;
+      const precision = humanProfile?.discoveryLocationPrecision;
+      if (
+        loc?.countryCode &&
+        loc.city?.trim() &&
+        precision &&
+        precision !== "hidden" &&
+        (precision === "city" || precision === "town" || precision === "nearby")
+      ) {
+        const topics = locationSearchTopics({ location: loc, scope: "city" });
+        if (topics.length > 0) {
+          try {
+            const peers = await this.searchPeers({ topics, maxResults: 50 });
+            if (peers.length > 0) {
+              entries.unshift({
+                ownerId: `geo-city:${loc.countryCode}-${loc.city}`,
+                displayName: loc.city,
+                trustLevel: "unknown",
+                score: peers.length,
+                reason: "geo-city-summary",
+                discoveryMatchCount: peers.length,
+                geoCitySummary: {
+                  peerCount: peers.length,
+                  cityLabel: loc.city,
+                },
+              });
+            }
+          } catch {
+            /* optional geo summary */
+          }
+        }
+      }
+
+      return entries;
     }
 
   queueDiscoveryForwardFromInbound(input: {
@@ -913,9 +978,39 @@ export class NodeDiscoveryRuntime {
       return forwarded > 0 ? { ok: true } : { ok: false, error: "all forward sends failed" };
     }
 
+    private async warmLocalPeerProfilesForSearch(query: SearchQuery, maxResults: number): Promise<void> {
+      if (!this.deps.warmLocalPeerProfiles || !this.deps.peerProfileCacheStore) return;
+      const hasTextQuery =
+        Boolean(query.queryText?.trim()) ||
+        Boolean(query.username?.trim()) ||
+        Boolean(query.interests && query.interests.length > 0);
+      if (!hasTextQuery) return;
+
+      const selfOwnerId = this.deps.getProfile()?.owner.ownerId;
+      const [peerRecords, cached] = await Promise.all([
+        this.deps.peerDirectoryStore.listPeerRecords(),
+        this.deps.peerProfileCacheStore.list(),
+      ]);
+      const cachedOwners = new Set(cached.map((row) => row.ownerId));
+      const missingOwnerIds = peerRecords
+        .map((row) => row.ownerId)
+        .filter((ownerId) => ownerId !== selfOwnerId && !cachedOwners.has(ownerId))
+        .slice(0, Math.min(6, maxResults));
+      if (missingOwnerIds.length === 0) return;
+      await this.deps.warmLocalPeerProfiles(missingOwnerIds);
+    }
+
     private async searchLocalPeers(query: SearchQuery, maxResults: number): Promise<PeerSearchResult[]> {
       const peerRecords = await this.deps.peerDirectoryStore.listPeerRecords();
       const trustRecords = await this.deps.trustStore.listTrustRecords();
+
+      const profileByOwner = new Map<string, HumanProfilePayload>();
+      if (this.deps.peerProfileCacheStore) {
+        const cached = await this.deps.peerProfileCacheStore.list();
+        for (const row of cached) {
+          profileByOwner.set(row.ownerId, row.profile);
+        }
+      }
 
       // Build a map of ownerId -> displayName from trust records
       const displayNameByOwner = new Map<string, string>();
@@ -935,56 +1030,90 @@ export class NodeDiscoveryRuntime {
 
       let results: PeerSearchResult[] = [];
 
+      const matchesLocalQuery = (ownerId: string, displayName: string, peerId: string): boolean => {
+        const profile = profileByOwner.get(ownerId);
+        const username = profile?.username?.toLowerCase() ?? "";
+        const profileName = profile?.displayName?.toLowerCase() ?? "";
+        const hobbyHaystack = [...(profile?.hobbies ?? []), ...(profile?.knowledge ?? [])].map((h) =>
+          h.toLowerCase(),
+        );
+
+        if (query.queryText) {
+          const q = query.queryText.toLowerCase();
+          if (
+            ownerId.toLowerCase().includes(q) ||
+            displayName.toLowerCase().includes(q) ||
+            profileName.includes(q) ||
+            username.includes(q)
+          ) {
+            return true;
+          }
+        }
+
+        if (query.username) {
+          const u = query.username.toLowerCase();
+          if (
+            username === u ||
+            displayName.toLowerCase().includes(u) ||
+            ownerId.toLowerCase().includes(u) ||
+            profileName.includes(u)
+          ) {
+            return true;
+          }
+        }
+
+        if (query.interests && query.interests.length > 0) {
+          const needles = query.interests.map((i) => i.toLowerCase());
+          const haystack = [
+            ownerId,
+            displayName,
+            profileName,
+            username,
+            peerId,
+            ...hobbyHaystack,
+          ].filter(Boolean);
+          if (needles.some((needle) => haystack.some((h) => h.includes(needle) || needle.includes(h)))) {
+            return true;
+          }
+        }
+
+        return false;
+      };
+
+      const pushResult = (record: (typeof peerRecords)[number], displayName: string) => {
+        const profile = profileByOwner.get(record.ownerId);
+        const interests = [...(profile?.hobbies ?? []), ...(profile?.knowledge ?? [])];
+        if (!results.some((r) => r.nodeId === record.peerId)) {
+          results.push({
+            nodeId: record.peerId,
+            ownerId: record.ownerId,
+            displayName: profile?.displayName ?? displayName,
+            interests,
+            profileVisibility: profile?.profileVisibility ?? "public",
+            username: profile?.username,
+            discoverySource: "local",
+          });
+        }
+      };
+
       // Build results from peer records
       for (const record of peerRecords) {
-        // Skip if not bonded (unless text search covers it)
-        // Include all records if they match query text
         const displayName = displayNameByOwner.get(record.ownerId) ?? record.ownerId;
         const isBonded = bondedOwnerIds.has(record.ownerId);
+        const hasTextQuery =
+          Boolean(query.queryText?.trim()) ||
+          Boolean(query.username?.trim()) ||
+          Boolean(query.interests && query.interests.length > 0);
 
-        const result: PeerSearchResult = {
-          nodeId: record.peerId,
-          ownerId: record.ownerId,
-          displayName,
-          interests: [],
-          profileVisibility: "public",
-        };
-
-        // Filter: if query text is provided, match against ownerId or displayName
-        if (query.queryText) {
-          const lowerQuery = query.queryText.toLowerCase();
-          const matches = result.ownerId.toLowerCase().includes(lowerQuery) ||
-            result.displayName.toLowerCase().includes(lowerQuery);
-          if (!matches) continue;
-          results.push(result);
-        } else if (isBonded) {
-          // No query text - show only bonded peers
-          results.push(result);
-        }
-      }
-
-      // Also search by interests (text match on any interest)
-      if (query.interests && query.interests.length > 0) {
-        const interestMatches = peerRecords.filter((record) => {
-          const displayName = displayNameByOwner.get(record.ownerId) ?? "";
-          // Note: peerRecords don't have interests field, so we just match by ownerId/displayName
-          const lowerInterests = query.interests!.map((i) => i.toLowerCase());
-          return lowerInterests.some((interest) =>
-            record.ownerId.toLowerCase().includes(interest) ||
-            displayName.toLowerCase().includes(interest),
-          );
-        });
-        for (const record of interestMatches) {
-          const displayName = displayNameByOwner.get(record.ownerId) ?? record.ownerId;
-          if (!results.some((r) => r.nodeId === record.peerId)) {
-            results.push({
-              nodeId: record.peerId,
-              ownerId: record.ownerId,
-              displayName,
-              interests: [],
-              profileVisibility: "public",
-            });
+        if (hasTextQuery) {
+          if (matchesLocalQuery(record.ownerId, displayName, record.peerId)) {
+            pushResult(record, displayName);
           }
+          continue;
+        }
+
+        if (isBonded) {
+          pushResult(record, displayName);
         }
       }
 
@@ -1010,9 +1139,8 @@ export class NodeDiscoveryRuntime {
         try {
           console.log(`[node-service] Searching rendezvous server ${relay.addr} for interests: ${interests.join(", ")}`);
 
-          // Build query for each interest (as tag matches)
           const queryPayload = {
-            match: interests.map(interest => ({ tag: interest.toLowerCase() })) as any,
+            match: interests.map((interest) => ({ tag: interest.toLowerCase() })) as any,
           };
 
           const envelope = signUnsignedEnvelope(
@@ -1036,7 +1164,7 @@ export class NodeDiscoveryRuntime {
               nodeId: match.peerId,
               ownerId: match.peerId,
               displayName: match.peerId.slice(0, 12) + "...",
-              interests: match.capabilities?.map((c: any) => "tag" in c ? c.tag : "") .filter(Boolean) ?? [],
+              interests: match.capabilities?.map((c: any) => ("tag" in c ? c.tag : "")).filter(Boolean) ?? [],
               profileVisibility: "public",
             });
           }

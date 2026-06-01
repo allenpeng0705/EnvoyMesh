@@ -24,6 +24,8 @@ export interface AppSettings {
   autoConnect: boolean;
   notificationsEnabled: boolean;
   showConnectionStatus: boolean;
+  /** UI locale (en default). */
+  locale?: string;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -31,6 +33,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoConnect: true,
   notificationsEnabled: true,
   showConnectionStatus: true,
+  locale: "en",
 };
 
 const APP_SETTINGS_KEY = "envoymesh:app-settings";

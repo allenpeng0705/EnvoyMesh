@@ -116,6 +116,22 @@ export async function routeRpcMethod(
       });
     case "listChatHistory":
       return ns.listChatHistory(params.peerOwnerId as string, params.limit as number | undefined);
+    case "listChatRooms":
+      return ns.listChatRooms();
+    case "createChatRoom":
+      return ns.createChatRoom(params.title as string, params.memberOwnerIds as string[]);
+    case "inviteToChatRoom":
+      return ns.inviteToChatRoom(params.roomId as string, params.memberOwnerIds as string[]);
+    case "leaveChatRoom":
+      return ns.leaveChatRoom(params.roomId as string);
+    case "removeMembersFromChatRoom":
+      return ns.removeMembersFromChatRoom(params.roomId as string, params.memberOwnerIds as string[]);
+    case "renameChatRoom":
+      return ns.renameChatRoom(params.roomId as string, params.title as string);
+    case "dismissChatRoom":
+      return ns.dismissChatRoom(params.roomId as string);
+    case "sendChatRoomMessage":
+      return ns.sendChatRoomMessage(params.roomId as string, params.text as string);
     case "listAgentActivity":
       return ns.listAgentActivity({
         since: params.since as string | undefined,

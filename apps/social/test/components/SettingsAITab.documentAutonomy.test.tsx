@@ -3,7 +3,8 @@
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { DEFAULT_DOCUMENT_AUTONOMY_POLICY } from "@envoymesh/api";
 import { SettingsAITab } from "../../src/components/views/SettingsAITab.js";
 
@@ -23,6 +24,7 @@ let nodeConfig: {
     documentAutonomy?: typeof DEFAULT_DOCUMENT_AUTONOMY_POLICY;
   };
   chatAssistEnabled?: boolean;
+  modelProviders?: { mode: "disabled" };
 } = {
   aiSettings: {
     status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" },
@@ -32,6 +34,7 @@ let nodeConfig: {
     documentAutonomy: { ...DEFAULT_DOCUMENT_AUTONOMY_POLICY },
   },
   chatAssistEnabled: false,
+  modelProviders: { mode: "disabled" },
 };
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
@@ -42,6 +45,8 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     updateAgentIdentity,
     on,
   }),
+  useModelProviderUiScope: () => "full",
+  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({
@@ -66,6 +71,7 @@ beforeEach(() => {
       documentAutonomy: { ...DEFAULT_DOCUMENT_AUTONOMY_POLICY },
     },
     chatAssistEnabled: false,
+    modelProviders: { mode: "disabled" },
   };
   updateNodeConfig.mockResolvedValue(undefined);
   refreshNodeConfig.mockResolvedValue(undefined);
@@ -73,11 +79,10 @@ beforeEach(() => {
 
 describe("SettingsAITab — document autonomy", () => {
   it("updates share autonomy tier via updateNodeConfig", async () => {
-    render(<SettingsAITab />);
+    renderWithI18n(<SettingsAITab />);
 
-    const tierSelect = screen
-      .getAllByRole("combobox")
-      .find((el) => (el as HTMLSelectElement).value === "0") as HTMLSelectElement;
+    const shareTierSection = screen.getByText("Share autonomy tier").closest(".form-group");
+    const tierSelect = within(shareTierSection as HTMLElement).getByRole("combobox") as HTMLSelectElement;
     fireEvent.change(tierSelect, { target: { value: "2" } });
 
     await waitFor(() => {
@@ -91,7 +96,7 @@ describe("SettingsAITab — document autonomy", () => {
   });
 
   it("toggles autonomous publish metadata via updateNodeConfig", async () => {
-    render(<SettingsAITab />);
+    renderWithI18n(<SettingsAITab />);
 
     const publishRow = screen.getByText("Autonomous publish metadata").closest(".settings-toggle-row");
     const toggle = within(publishRow as HTMLElement).getByRole("checkbox");

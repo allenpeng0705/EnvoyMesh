@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { BondRecord, LibraryItem } from "@envoymesh/api";
+import { useT } from "../../context/I18nContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
 
@@ -18,6 +19,7 @@ export function ShareFileDialog({
   onClose,
   onShared,
 }: ShareFileDialogProps) {
+  const t = useT();
   const nodeService = useNodeService();
   const { showToast } = useToast();
   const [bonds, setBonds] = useState<BondRecord[]>([]);
@@ -46,20 +48,20 @@ export function ShareFileDialog({
   const directBonds = bonds.filter((b) => b.level !== "blocked");
 
   return (
-    <div className="library-share-panel" role="dialog" aria-label="Share file">
+    <div className="library-share-panel" role="dialog" aria-label={t("fileShare.dialogAria")}>
       <h3 className="library-share-title">
-        {libraryItem ? `Share “${libraryItem.title}”` : "Share from library"}
+        {libraryItem
+          ? t("fileShare.shareTitle", { title: libraryItem.title })
+          : t("fileShare.shareFromLibrary")}
       </h3>
-      <p className="library-view-hint">
-        Sends a verified P2P file offer; the recipient accepts from Chat → Inbox.
-      </p>
+      <p className="library-view-hint">{t("fileShare.hint")}</p>
       {err && (
         <p className="library-view-error" role="alert">
           {err}
         </p>
       )}
       <label className="library-share-label" htmlFor="share-file-contact">
-        Bonded contact
+        {t("fileShare.bondedContact")}
       </label>
       <select
         id="share-file-contact"
@@ -67,7 +69,7 @@ export function ShareFileDialog({
         value={targetOwnerId}
         onChange={(e) => setTargetOwnerId(e.target.value)}
       >
-        <option value="">Select a contact…</option>
+        <option value="">{t("fileShare.selectContact")}</option>
         {directBonds.map((b) => (
           <option key={b.peerOwnerId} value={b.peerOwnerId}>
             {b.displayName?.trim() || b.peerOwnerId}
@@ -77,7 +79,7 @@ export function ShareFileDialog({
       {!libraryItem && (
         <>
           <label className="library-share-label" htmlFor="share-file-path">
-            Vault file
+            {t("fileShare.vaultFile")}
           </label>
           <select
             id="share-file-path"
@@ -85,7 +87,7 @@ export function ShareFileDialog({
             value={vaultPath}
             onChange={(e) => setVaultPath(e.target.value)}
           >
-            <option value="">Select a file…</option>
+            <option value="">{t("fileShare.selectFile")}</option>
             {libraryItems.map((item) => (
               <option key={item.documentId} value={item.relativePath}>
                 {item.title} ({item.relativePath})
@@ -95,7 +97,7 @@ export function ShareFileDialog({
         </>
       )}
       <label className="library-share-label" htmlFor="share-file-sens">
-        Sensitivity
+        {t("fileShare.sensitivity")}
       </label>
       <select
         id="share-file-sens"
@@ -103,9 +105,9 @@ export function ShareFileDialog({
         value={sensitivity}
         onChange={(e) => setSensitivity(e.target.value as "public" | "friends" | "private")}
       >
-        <option value="public">public</option>
-        <option value="friends">friends</option>
-        <option value="private">private</option>
+        <option value="public">{t("fileShare.sensitivityPublic")}</option>
+        <option value="friends">{t("fileShare.sensitivityFriends")}</option>
+        <option value="private">{t("fileShare.sensitivityPrivate")}</option>
       </select>
       <div className="library-share-actions">
         <button
@@ -121,7 +123,7 @@ export function ShareFileDialog({
                   path: vaultPath.trim(),
                   sensitivity,
                 });
-                showToast("Share request sent — waiting for peer to accept", "info");
+                showToast(t("fileShare.requestSent"), "info");
                 onShared?.();
                 onClose();
               } catch (e) {
@@ -132,10 +134,10 @@ export function ShareFileDialog({
             })();
           }}
         >
-          {busy ? "Sending…" : "Send share request"}
+          {busy ? t("fileShare.sending") : t("fileShare.sendRequest")}
         </button>
         <button type="button" className="secondary" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("common.cancel")}
         </button>
       </div>
     </div>

@@ -24,10 +24,12 @@ import { createPublishedLibraryStore } from "./published-library-store.js";
 import { createPublishedExternalStore } from "./published-external-store.js";
 import { responseHopDistance } from "@envoymesh/api";
 import { discoveryRequesterAuditLabel, isAnonymousDiscoveryOwnerId } from "@envoymesh/api";
+import { matchGeoDiscoveryTagHashes } from "@envoymesh/api";
 import {
   requiresDiscoveryReferralAttestation,
   verifyDiscoveryReferralAttestation,
 } from "@envoymesh/api/discovery-referral-attestation";
+import type { HumanProfilePayload } from "@envoymesh/protocol";
 
 /** Requesting this capability (alone or with file/hash selectors) enables published-library metadata in the response. */
 export const PUBLISHED_LIB_CAPABILITY = "envoymesh.published-library";
@@ -47,6 +49,26 @@ function tagMatchesWithHopDistance(
 ): DiscoveryMatchRow[] {
   const hopDistance = responseHopDistance(payload);
   return matches.map((row) => ({ ...row, hopDistance }));
+}
+
+function resolveTagMatch(
+  payload: ReturnType<typeof parseDiscoveryRequestPayload>,
+  humanProfile: HumanProfilePayload | undefined,
+  manifestKeywords: string[] | undefined,
+): { hasMatch: boolean; matchedTagHashes: string[] } {
+  if (payload.requestedTagHashes.length === 0) {
+    return { hasMatch: false, matchedTagHashes: [] };
+  }
+  const geoMatched = humanProfile
+    ? matchGeoDiscoveryTagHashes(payload.requestedTagHashes, humanProfile)
+    : [];
+  if (geoMatched.length > 0) {
+    return { hasMatch: true, matchedTagHashes: geoMatched };
+  }
+  if (manifestKeywords && keywordsMatch(manifestKeywords, payload.requestedTagHashes)) {
+    return { hasMatch: true, matchedTagHashes: payload.requestedTagHashes };
+  }
+  return { hasMatch: false, matchedTagHashes: [] };
 }
 
 function allowsPublicPublishedLibraryQuery(
@@ -293,6 +315,7 @@ export async function handleInboundDiscoveryIntent(input: {
   profileDir?: string;
   loadPublishedDocumentIds?: () => Promise<Set<string>>;
   resolveReferralOwnerPublicKey?: (ownerId: string) => Promise<string | undefined>;
+  humanProfile?: HumanProfilePayload;
 }): Promise<DiscoveryInboundResult> {
   const {
     envelope,
@@ -311,6 +334,7 @@ export async function handleInboundDiscoveryIntent(input: {
     profileDir,
     loadPublishedDocumentIds,
     resolveReferralOwnerPublicKey,
+    humanProfile,
   } = input;
 
   try {
@@ -479,15 +503,15 @@ export async function handleInboundDiscoveryIntent(input: {
         const matchedCapabilities = payload.requestedCapabilities.filter((capability) =>
           localCapabilities.includes(capability as (typeof localCapabilities)[number]),
         );
-        const hasTagMatch = payload.requestedTagHashes.length > 0;
+        const tagMatch = resolveTagMatch(payload, humanProfile, undefined);
         const hasCapabilityMatch = matchedCapabilities.length > 0;
         let matches: DiscoveryMatchRow[] =
-          hasTagMatch || hasCapabilityMatch
+          tagMatch.hasMatch || hasCapabilityMatch
             ? [
                 {
                   ownerId: profile.owner.ownerId,
                   peerId: derivePeerId(profile.device.publicKeyPem),
-                  matchedTagHashes: hasTagMatch ? payload.requestedTagHashes : [],
+                  matchedTagHashes: tagMatch.matchedTagHashes,
                   matchedCapabilities,
                 },
               ]
@@ -550,22 +574,22 @@ export async function handleInboundDiscoveryIntent(input: {
         manifestCapabilities.includes(capability),
       );
 
-      // 4. Keyword matching against manifest keywords
-      const hasKeywordMatch = keywordsMatch(
+      // 4. Keyword + geo hash matching against manifest keywords and profile location
+      const tagMatch = resolveTagMatch(
+        payload,
+        humanProfile,
         capabilityManifest.keywords,
-        payload.requestedTagHashes,
       );
 
       const hasCapabilityMatch = matchedCapabilities.length > 0;
-      const hasTagMatch = payload.requestedTagHashes.length > 0;
 
       let matches: DiscoveryMatchRow[] =
-        hasTagMatch || hasCapabilityMatch
+        tagMatch.hasMatch || hasCapabilityMatch
           ? [
               {
                 ownerId: profile.owner.ownerId,
                 peerId: derivePeerId(profile.device.publicKeyPem),
-                matchedTagHashes: hasTagMatch ? payload.requestedTagHashes : [],
+                matchedTagHashes: tagMatch.matchedTagHashes,
                 matchedCapabilities,
               },
             ]

@@ -21,11 +21,11 @@
   "profileDir": "./data/default",
 
   // How the node finds peers on the network:
-  //   lan-fast       — prioritize mDNS on LAN
-  //   wan-default    — DHT + bootstrap presets + relays (typical internet home node)
+  //   lan-fast       — prioritize mDNS on LAN (default for new profiles)
+  //   wan-default    — DHT + bootstrap presets + relays (public mesh)
   //   relay-only     — outbound relay connections only (mobile-like)
   //   contacts-only  — bonded contacts only; minimal anonymous discovery
-  "discoveryProfile": "wan-default",
+  "discoveryProfile": "lan-fast",
 
   // Client: dial via circuit relay when direct connection fails.
   "relayEnabled": true,
@@ -39,8 +39,8 @@
   // Manual libp2p bootstrap multiaddrs (multiaddr strings with /p2p/ peer id).
   "bootstrapPeers": [],
 
-  // Named bootstrap bundles merged with bootstrapPeers. Examples: public-libp2p, cn-relay, public-libp2p-am6.
-  "bootstrapPresets": ["public-libp2p", "cn-relay"],
+  // Named bootstrap bundles merged with bootstrapPeers. Empty for lan-fast; add presets when using wan-default.
+  "bootstrapPresets": [],
 
   // Custom relay entries: { relayId, addr, enabled, level?, region? }. Usually [] if using presets.
   "configuredRelays": [],

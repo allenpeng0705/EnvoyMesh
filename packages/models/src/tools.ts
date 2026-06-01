@@ -350,7 +350,7 @@ export const TASK_SUMMARY_TOOL: LocalToolDescriptor = {
 export const MESH_FIND_CAPABILITY_TOOL: LocalToolDescriptor = {
   name: "mesh_findCapability",
   description:
-    "Search bonded contacts by keywords and/or Agent Card capability tags. " +
+    "Search bonded contacts by keywords and/or capability tags (Profile About tags sync into manifests on save). " +
     "Returns redacted contacts with capabilityTags and suggestedRouteId for agent orchestration. " +
     "Libp2p direct access is not allowed.",
   parameters: [

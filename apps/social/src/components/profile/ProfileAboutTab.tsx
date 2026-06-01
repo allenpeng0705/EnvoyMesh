@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
+import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { PRESET_CAPABILITY_GROUPS, type Capability } from "../../lib/profile.js";
 import { PublicIcon, PrivateIcon } from "../../icons.js";
 import type { CreateHumanProfileInput, OwnerDidPresentation } from "@envoymesh/api";
+import { encodeGeohash, normalizeCountryCode, deriveLocationDiscoveryTopics, NEARBY_GEOHASH_PRECISION } from "@envoymesh/api";
 import { ProfilePhotoAvatar } from "../ProfilePhotoAvatar.js";
+import { ShareContactCard } from "../discover/ShareContactCard.js";
+import { LocationGazetteerFields } from "./LocationGazetteerFields.js";
+import { NearbyMapPicker } from "./NearbyMapPicker.js";
+import { formatLocalizedLocation } from "../../lib/gazetteer.js";
 
 interface ProfileEditForm {
   displayName: string;
@@ -14,6 +20,12 @@ interface ProfileEditForm {
   hobbies: string;
   knowledge: string;
   profileVisibility: "public" | "private";
+  locationCountry: string;
+  locationRegion: string;
+  locationCity: string;
+  locationTown: string;
+  locationGeohash: string;
+  locationPrecision: import("@envoymesh/api").DiscoveryLocationPrecision;
 }
 
 export interface ProfileAboutTabProps {
@@ -21,6 +33,7 @@ export interface ProfileAboutTabProps {
 }
 
 export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
+  const t = useT();
   const nodeService = useNodeService();
   const { humanProfile, nodeStatus, peerId, bonds, connectionStatus, refreshNodeConfig, refreshHumanProfile } =
     useNodeState();
@@ -42,6 +55,12 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
     hobbies: (humanProfile?.hobbies ?? []).join(", "),
     knowledge: (humanProfile?.knowledge ?? []).join(", "),
     profileVisibility: humanProfile?.profileVisibility ?? "private",
+    locationCountry: humanProfile?.discoveryLocation?.countryCode ?? "",
+    locationRegion: humanProfile?.discoveryLocation?.regionCode ?? "",
+    locationCity: humanProfile?.discoveryLocation?.city ?? "",
+    locationTown: humanProfile?.discoveryLocation?.town ?? "",
+    locationGeohash: humanProfile?.discoveryLocation?.geohash ?? "",
+    locationPrecision: humanProfile?.discoveryLocationPrecision ?? "hidden",
   });
 
   useEffect(() => {
@@ -58,16 +77,40 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
 
   const handleSaveProfile = async () => {
     if (!profileEditForm.displayName.trim()) {
-      alert("Display name is required");
+      alert(t("profileAbout.displayNameRequired"));
       return;
     }
     if (!profileEditForm.username.trim() || !/^[a-zA-Z0-9_]{3,30}$/.test(profileEditForm.username.trim())) {
-      alert("Username is required. 3-30 characters, letters, numbers, underscore only.");
+      alert(t("profileAbout.usernameInvalid"));
       return;
     }
     setIsSavingProfile(true);
     try {
       const interests = profileEditForm.hobbies.split(",").map((s) => s.trim()).filter(Boolean);
+      const cc = profileEditForm.locationCountry.trim();
+      const discoveryLocation =
+        cc.length === 2
+          ? {
+              countryCode: normalizeCountryCode(cc),
+              ...(profileEditForm.locationRegion.trim()
+                ? { regionCode: profileEditForm.locationRegion.trim() }
+                : {}),
+              ...(profileEditForm.locationCity.trim()
+                ? { city: profileEditForm.locationCity.trim() }
+                : {}),
+              ...(profileEditForm.locationTown.trim()
+                ? { town: profileEditForm.locationTown.trim() }
+                : {}),
+              ...(profileEditForm.locationGeohash.trim()
+                ? {
+                    geohash: profileEditForm.locationGeohash
+                      .trim()
+                      .toLowerCase()
+                      .slice(0, NEARBY_GEOHASH_PRECISION),
+                  }
+                : {}),
+            }
+          : undefined;
       await nodeService.updateHumanProfile({
         displayName: profileEditForm.displayName.trim(),
         username: profileEditForm.username.trim(),
@@ -75,13 +118,15 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
         gender: profileEditForm.gender,
         hobbies: interests,
         profileVisibility: profileEditForm.profileVisibility,
+        discoveryLocation,
+        discoveryLocationPrecision: profileEditForm.locationPrecision,
         capabilities: selectedCapabilities,
       } satisfies CreateHumanProfileInput);
       await refreshHumanProfile();
       await refreshNodeConfig();
       setIsEditingProfile(false);
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to update profile");
+      alert(error instanceof Error ? error.message : t("profileAbout.updateFailed"));
     } finally {
       setIsSavingProfile(false);
     }
@@ -113,53 +158,53 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
   if (isEditingProfile) {
     return (
       <div className={`${rootClass} profile-edit`}>
-        <h2>Edit profile</h2>
+        <h2>{t("profileAbout.editTitle")}</h2>
         <div className="form-group">
-          <label>Display Name <span className="required">*</span></label>
+          <label>{t("profileAbout.displayName")} <span className="required">*</span></label>
           <input
             type="text"
             value={profileEditForm.displayName}
             onChange={(e) => setProfileEditForm({ ...profileEditForm, displayName: e.target.value })}
-            placeholder="Your name"
+            placeholder={t("profileAbout.displayNamePlaceholder")}
             required
           />
         </div>
         <div className="form-group">
-          <label>Username <span className="required">*</span></label>
+          <label>{t("profileAbout.username")} <span className="required">*</span></label>
           <input
             type="text"
             value={profileEditForm.username}
             onChange={(e) => setProfileEditForm({ ...profileEditForm, username: e.target.value })}
-            placeholder="johndoe"
+            placeholder={t("profileAbout.usernamePlaceholder")}
             required
             pattern="^[a-zA-Z0-9_]{3,30}$"
           />
-          <small>Used for DHT discovery. 3-30 characters.</small>
+          <small>{t("profileAbout.usernameHint")}</small>
         </div>
         <div className="form-group">
-          <label>Introduction</label>
+          <label>{t("profileAbout.introduction")}</label>
           <textarea
             value={profileEditForm.bio}
             onChange={(e) => setProfileEditForm({ ...profileEditForm, bio: e.target.value })}
-            placeholder="Hi! I'm into music and coding..."
+            placeholder={t("profileAbout.bioPlaceholder")}
             rows={3}
           />
         </div>
         <div className="form-group">
-          <label>Gender</label>
+          <label>{t("profileAbout.gender")}</label>
           <select
             value={profileEditForm.gender}
             onChange={(e) => setProfileEditForm({ ...profileEditForm, gender: e.target.value })}
           >
-            <option value="">Prefer not to say</option>
-            <option value="Male">Male</option>
-            <option value="Female">Female</option>
-            <option value="Non-binary">Non-binary</option>
-            <option value="Other">Other</option>
+            <option value="">{t("profileAbout.genderPreferNot")}</option>
+            <option value="Male">{t("profileAbout.genderMale")}</option>
+            <option value="Female">{t("profileAbout.genderFemale")}</option>
+            <option value="Non-binary">{t("profileAbout.genderNonBinary")}</option>
+            <option value="Other">{t("profileAbout.genderOther")}</option>
           </select>
         </div>
         <div className="form-group">
-          <label>Discovery</label>
+          <label>{t("profileAbout.discovery")}</label>
           <div className="visibility-toggle">
             <button
               type="button"
@@ -167,8 +212,8 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
               onClick={() => setProfileEditForm({ ...profileEditForm, profileVisibility: "public" })}
             >
               <span className="visibility-icon"><PublicIcon size={20} /></span>
-              <span className="visibility-label">Public</span>
-              <small>Advertise to network for discovery</small>
+              <span className="visibility-label">{t("profileAbout.public")}</span>
+              <small>{t("profileAbout.publicDesc")}</small>
             </button>
             <button
               type="button"
@@ -176,22 +221,126 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
               onClick={() => setProfileEditForm({ ...profileEditForm, profileVisibility: "private" })}
             >
               <span className="visibility-icon"><PrivateIcon size={20} /></span>
-              <span className="visibility-label">Private</span>
-              <small>Only visible to bonded peers</small>
+              <span className="visibility-label">{t("profileAbout.private")}</span>
+              <small>{t("profileAbout.privateDesc")}</small>
             </button>
           </div>
         </div>
         <div className="form-group">
-          <label>Interests</label>
+          <label>{t("profileAbout.interests")}</label>
           <input
             type="text"
             value={profileEditForm.hobbies}
             onChange={(e) => setProfileEditForm({ ...profileEditForm, hobbies: e.target.value })}
-            placeholder="music, tech, hiking"
+            placeholder={t("profileAbout.interestsPlaceholder")}
           />
         </div>
         <div className="form-group">
-          <label>Capabilities</label>
+          <label>{t("profileAbout.locationSection")}</label>
+          <p className="profile-hint muted small">{t("profileAbout.locationHint")}</p>
+          <div className="profile-location-grid">
+            <LocationGazetteerFields
+              countryCode={profileEditForm.locationCountry}
+              regionCode={profileEditForm.locationRegion}
+              city={profileEditForm.locationCity}
+              onCountryChange={(code) =>
+                setProfileEditForm((prev) => ({ ...prev, locationCountry: code }))
+              }
+              onRegionChange={(code) =>
+                setProfileEditForm((prev) => ({ ...prev, locationRegion: code }))
+              }
+              onCityChange={(city) =>
+                setProfileEditForm((prev) => ({ ...prev, locationCity: city }))
+              }
+              t={t}
+              countryLabel={t("profileAbout.countryLabel")}
+              regionLabel={t("profileAbout.regionLabel")}
+              cityLabel={t("profileAbout.cityLabel")}
+              countryPlaceholder={t("profileAbout.countryPlaceholder")}
+              regionPlaceholder={t("profileAbout.regionPlaceholder")}
+              cityPlaceholder={t("profileAbout.cityPlaceholder")}
+            />
+            <input
+              type="text"
+              value={profileEditForm.locationTown}
+              onChange={(e) => setProfileEditForm({ ...profileEditForm, locationTown: e.target.value })}
+              placeholder={t("profileAbout.townPlaceholder")}
+              aria-label={t("profileAbout.townLabel")}
+            />
+          </div>
+          <label className="profile-location-precision-label" htmlFor="location-precision">
+            {t("profileAbout.locationPrecisionLabel")}
+          </label>
+          <select
+            id="location-precision"
+            value={profileEditForm.locationPrecision}
+            onChange={(e) =>
+              setProfileEditForm({
+                ...profileEditForm,
+                locationPrecision: e.target.value as ProfileEditForm["locationPrecision"],
+              })
+            }
+          >
+            <option value="hidden">{t("profileAbout.precisionHidden")}</option>
+            <option value="country">{t("profileAbout.precisionCountry")}</option>
+            <option value="region">{t("profileAbout.precisionRegion")}</option>
+            <option value="city">{t("profileAbout.precisionCity")}</option>
+            <option value="town">{t("profileAbout.precisionTown")}</option>
+            <option value="nearby">{t("profileAbout.precisionNearby")}</option>
+          </select>
+          {profileEditForm.locationPrecision === "nearby" ? (
+            <>
+              <button
+                type="button"
+                className="btn-secondary btn-small profile-location-gps-btn"
+                onClick={() => {
+                  if (!navigator.geolocation) {
+                    alert(t("profileAbout.geolocationUnavailable"));
+                    return;
+                  }
+                  navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                      const geohash = encodeGeohash(
+                        pos.coords.latitude,
+                        pos.coords.longitude,
+                        NEARBY_GEOHASH_PRECISION,
+                      );
+                      setProfileEditForm((prev) => ({
+                        ...prev,
+                        locationGeohash: geohash,
+                        locationPrecision: "nearby",
+                      }));
+                    },
+                    () => alert(t("profileAbout.geolocationDenied")),
+                    { timeout: 12_000 },
+                  );
+                }}
+              >
+                {t("profileAbout.useDeviceLocation")}
+              </button>
+              {profileEditForm.locationGeohash ? (
+                <p className="muted small profile-geohash-hint">
+                  {t("profileAbout.geohashHint")}: {profileEditForm.locationGeohash}
+                </p>
+              ) : null}
+              <NearbyMapPicker
+                countryCode={profileEditForm.locationCountry}
+                geohash={profileEditForm.locationGeohash}
+                onGeohashChange={(geohash) =>
+                  setProfileEditForm((prev) => ({
+                    ...prev,
+                    locationGeohash: geohash,
+                    locationPrecision: "nearby",
+                  }))
+                }
+                pickOnMapLabel={t("profileAbout.pickOnMap")}
+                mapHint={t("profileAbout.mapPickerHint")}
+              />
+            </>
+          ) : null}
+        </div>
+        <div className="form-group">
+          <label>{t("profileAbout.capabilities")}</label>
           {PRESET_CAPABILITY_GROUPS.map((group) => (
             <div key={group.label} className="capability-group">
               <h4>{group.label}</h4>
@@ -223,9 +372,9 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
         </div>
         <div className="profile-edit-actions">
           <button onClick={handleSaveProfile} className="btn-primary" disabled={isSavingProfile}>
-            {isSavingProfile ? "Saving..." : "Save"}
+            {isSavingProfile ? t("profileAbout.saving") : t("common.save")}
           </button>
-          <button onClick={() => setIsEditingProfile(false)} className="btn-secondary">Cancel</button>
+          <button onClick={() => setIsEditingProfile(false)} className="btn-secondary">{t("common.cancel")}</button>
         </div>
       </div>
     );
@@ -244,6 +393,12 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
             hobbies: (humanProfile?.hobbies ?? []).join(", "),
             knowledge: (humanProfile?.knowledge ?? []).join(", "),
             profileVisibility: humanProfile?.profileVisibility ?? "private",
+            locationCountry: humanProfile?.discoveryLocation?.countryCode ?? "",
+            locationRegion: humanProfile?.discoveryLocation?.regionCode ?? "",
+            locationCity: humanProfile?.discoveryLocation?.city ?? "",
+            locationTown: humanProfile?.discoveryLocation?.town ?? "",
+            locationGeohash: humanProfile?.discoveryLocation?.geohash ?? "",
+            locationPrecision: humanProfile?.discoveryLocationPrecision ?? "hidden",
           });
           setSelectedCapabilities((humanProfile?.capabilities as Capability[]) ?? []);
           setIsEditingProfile(true);
@@ -253,30 +408,55 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") setIsEditingProfile(true);
         }}
-        aria-label="Edit profile details"
+        aria-label={t("profileAbout.editAriaLabel")}
       >
         <ProfilePhotoAvatar
           photo={humanProfile?.publicThumbnail}
           fallbackLabel={humanProfile?.displayName ?? humanProfile?.username ?? "?"}
         />
         <div className="profile-header-info">
-          <h2>{humanProfile?.displayName || humanProfile?.username || "Unnamed Peer"}</h2>
+          <h2>{humanProfile?.displayName || humanProfile?.username || t("profileAbout.unnamedPeer")}</h2>
           {humanProfile?.username && <p className="profile-username">@{humanProfile.username}</p>}
         </div>
         <span className="profile-chevron" aria-hidden="true">&#8250;</span>
       </div>
-      <p className="profile-hint muted small">Tap header to edit name, bio, and discovery settings. Photos are on the Photos tab.</p>
+      <p className="profile-hint muted small">{t("profileAbout.hint")}</p>
 
       {humanProfile?.bio && (
         <div className="profile-section">
-          <h3>About</h3>
+          <h3>{t("profileAbout.about")}</h3>
           <p className="profile-bio">{humanProfile.bio}</p>
         </div>
       )}
 
+      {humanProfile?.discoveryLocation?.countryCode &&
+      humanProfile.discoveryLocationPrecision &&
+      humanProfile.discoveryLocationPrecision !== "hidden" ? (
+        <div className="profile-section">
+          <h3>{t("profileAbout.locationSection")}</h3>
+          <p className="profile-bio">
+            {formatLocalizedLocation({
+              countryCode: humanProfile.discoveryLocation.countryCode,
+              regionCode: humanProfile.discoveryLocation.regionCode,
+              city: humanProfile.discoveryLocation.city,
+              town: humanProfile.discoveryLocation.town,
+              t,
+            })}
+          </p>
+          <div className="profile-tags">
+            {deriveLocationDiscoveryTopics({
+              location: humanProfile.discoveryLocation,
+              precision: humanProfile.discoveryLocationPrecision,
+            }).map((topic) => (
+              <span key={topic} className="tag advertised">{topic}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {(humanProfile?.hobbies?.length ?? 0) > 0 || advertisedTopics.length > 0 ? (
         <div className="profile-section">
-          <h3>Interests</h3>
+          <h3>{t("profileAbout.interests")}</h3>
           <div className="profile-tags">
             {humanProfile?.hobbies?.map((h: string, i: number) => (
               <span key={`h-${i}`} className="tag">{h}</span>
@@ -295,10 +475,10 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
               type="text"
               value={newTopic}
               onChange={(e) => setNewTopic(e.target.value)}
-              placeholder="Advertise a DHT topic..."
+              placeholder={t("profileAbout.advertiseTopicPlaceholder")}
             />
             <button type="button" className="btn-secondary btn-small" onClick={() => void handleAdvertiseTopic()}>
-              Advertise
+              {t("profileAbout.advertise")}
             </button>
           </div>
         </div>
@@ -306,7 +486,7 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
 
       {(humanProfile?.capabilities?.length ?? 0) > 0 ? (
         <div className="profile-section">
-          <h3>Capabilities</h3>
+          <h3>{t("profileAbout.capabilities")}</h3>
           <div className="profile-tags">
             {(humanProfile?.capabilities ?? []).map((cap: Capability, i: number) => {
               const label =
@@ -320,12 +500,12 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
       ) : null}
 
       <div className="profile-section">
-        <h3>Identity</h3>
+        <h3>{t("profileAbout.identity")}</h3>
         <dl className="profile-info">
           {ownerDid && (
             <>
               <div className="profile-info-row">
-                <dt>DID</dt>
+                <dt>{t("profileAbout.did")}</dt>
                 <dd>
                   <button
                     type="button"
@@ -337,7 +517,7 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
                 </dd>
               </div>
               <div className="profile-info-row">
-                <dt>Owner ID</dt>
+                <dt>{t("profileAbout.ownerId")}</dt>
                 <dd>
                   <code className="peer-id-display">{ownerDid.ownerId}</code>
                 </dd>
@@ -348,26 +528,30 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
       </div>
 
       <div className="profile-section">
-        <h3>Connection</h3>
+        <ShareContactCard />
+      </div>
+
+      <div className="profile-section">
+        <h3>{t("profileAbout.connection")}</h3>
         <dl className="profile-info">
           <div className="profile-info-row">
-            <dt>Status</dt>
+            <dt>{t("profileAbout.status")}</dt>
             <dd className={nodeStatus === "running" ? "text-success" : ""}>{nodeStatus}</dd>
           </div>
           {peerId && !(peerId.startsWith("envoy_") && !peerId.startsWith("envoy_agent_")) && (
             <div className="profile-info-row">
-              <dt>Peer ID</dt>
+              <dt>{t("profileAbout.peerId")}</dt>
               <dd><code className="peer-id-display">{peerId}</code></dd>
             </div>
           )}
           <div className="profile-info-row">
-            <dt>Bonded peers</dt>
+            <dt>{t("profileAbout.bondedPeers")}</dt>
             <dd>{bonds.length}</dd>
           </div>
           {connectionStatus?.online != null && (
             <div className="profile-info-row">
-              <dt>Mesh</dt>
-              <dd>{connectionStatus.online ? "Online" : "Offline"}</dd>
+              <dt>{t("profileAbout.mesh")}</dt>
+              <dd>{connectionStatus.online ? t("profileAbout.online") : t("profileAbout.offline")}</dd>
             </div>
           )}
         </dl>

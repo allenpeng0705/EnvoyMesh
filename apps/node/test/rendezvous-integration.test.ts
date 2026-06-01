@@ -3,6 +3,11 @@ import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
 } from "@envoymesh/api";
+import {
+  createDeviceCertificate,
+  generateDeviceIdentity,
+  generateOwnerIdentity,
+} from "@envoymesh/identity";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
 import { createStubNodeConfigStore, type PersistedNodeConfig } from "../src/node-config-store.js";
 import type { LocalTrustStore, LocalPeerDirectoryStore, HumanProfileStore } from "@envoymesh/local-store";
@@ -33,6 +38,7 @@ const createMockMesh = (overrides: any = {}) => ({
   peerId: "QmMockPeer123456",
   multiaddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/QmMockPeer123456"],
   provideCapabilityTopic: vi.fn().mockResolvedValue(undefined),
+  cancelCapabilityTopicReprovide: vi.fn().mockResolvedValue(undefined),
   findCapabilityTopicProviders: vi.fn().mockResolvedValue([]),
   send: vi.fn().mockResolvedValue(1),
   sendExpectReply: vi.fn().mockResolvedValue({ payload: { matches: [] } }),
@@ -334,6 +340,150 @@ describe("NodeServiceImpl - Discovery Configuration", () => {
     });
   });
 
+  describe("_advertisePublicDiscoveryTopics geo topics", () => {
+    it("should advertise geo topics alongside interests and username", async () => {
+      const configStore = createTestConfigStore(null);
+      const nodeService = new NodeServiceImpl(
+        mockMesh,
+        mockTrustStore,
+        mockPeerDirectoryStore,
+        mockHumanProfileStore,
+        undefined,
+      );
+      setConfigStore(nodeService, configStore);
+
+      await (nodeService as any)._advertisePublicDiscoveryTopics({
+        interests: ["music"],
+        username: "alice",
+        locationTopics: ["geo:country:US", "geo:city:US-boston"],
+      });
+
+      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("music");
+      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("username:alice");
+      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("geo:country:US");
+      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("geo:city:US-boston");
+    });
+
+    it("should advertise profile capability tags as DHT topics", async () => {
+      const configStore = createTestConfigStore(null);
+      const nodeService = new NodeServiceImpl(
+        mockMesh,
+        mockTrustStore,
+        mockPeerDirectoryStore,
+        mockHumanProfileStore,
+        undefined,
+      );
+      setConfigStore(nodeService, configStore);
+
+      await (nodeService as any)._advertisePublicDiscoveryTopics({
+        interests: [],
+        username: "alice",
+        locationTopics: [],
+        capabilityTopics: ["coding-help", "capability:coding-help"],
+      });
+
+      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("coding-help");
+      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("capability:coding-help");
+    });
+
+    it("should cancel stale geo topics when precision is downgraded", async () => {
+      const configStore = createTestConfigStore(null);
+      const nodeService = new NodeServiceImpl(
+        mockMesh,
+        mockTrustStore,
+        mockPeerDirectoryStore,
+        mockHumanProfileStore,
+        undefined,
+      );
+      setConfigStore(nodeService, configStore);
+
+      await (nodeService as any)._advertisePublicDiscoveryTopics({
+        interests: [],
+        username: "alice",
+        locationTopics: ["geo:country:US", "geo:city:US-boston"],
+      });
+
+      mockMesh.provideCapabilityTopic.mockClear();
+
+      await (nodeService as any)._advertisePublicDiscoveryTopics({
+        interests: [],
+        username: "alice",
+        locationTopics: ["geo:country:US"],
+      });
+
+      expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("geo:city:US-boston");
+      expect(mockMesh.provideCapabilityTopic).not.toHaveBeenCalledWith("geo:city:US-boston");
+    });
+
+    it("should cancel all auto-advertised topics when profile goes private", async () => {
+      const profileStore = createMockHumanProfileStore({
+        displayName: "Alice",
+        username: "alice",
+        profileVisibility: "public",
+        hobbies: ["music"],
+        knowledge: [],
+        discoveryLocation: { countryCode: "US", city: "Boston" },
+        discoveryLocationPrecision: "city",
+      });
+      const configStore = createTestConfigStore({
+        version: "0.1",
+        profileDir: "/tmp/test",
+        discoveryProfile: "wan-default" as const,
+        enableMdns: false,
+        relayEnabled: false,
+        relayServerEnabled: false,
+        advertiseAddrs: [],
+        bootstrapPeers: ["public-libp2p"],
+        bootstrapPresets: ["public-libp2p"],
+        configuredRelays: [],
+        updatedAt: new Date().toISOString(),
+      });
+
+      const owner = generateOwnerIdentity();
+      const device = generateDeviceIdentity();
+      const profile = {
+        owner,
+        device,
+        deviceCertificate: createDeviceCertificate({
+          owner,
+          device,
+          deviceProfile: "primary",
+          capabilities: ["mesh.listen", "message.send"],
+        }),
+      };
+
+      const nodeService = new NodeServiceImpl(
+        mockMesh,
+        mockTrustStore,
+        mockPeerDirectoryStore,
+        profileStore,
+        "/tmp/test",
+        profile,
+      );
+      setConfigStore(nodeService, configStore);
+
+      await (nodeService as any)._advertisePublicDiscoveryTopics({
+        interests: ["music"],
+        username: "alice",
+        locationTopics: ["geo:country:US", "geo:city:US-boston"],
+      });
+
+      mockMesh.cancelCapabilityTopicReprovide.mockClear();
+
+      await nodeService.updateHumanProfile({
+        displayName: "Alice",
+        username: "alice",
+        profileVisibility: "private",
+        hobbies: ["music"],
+      });
+
+      expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("music");
+      expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("username:alice");
+      expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("geo:country:US");
+      expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("geo:city:US-boston");
+    });
+  });
+
   describe("getNodeConfig", () => {
     it("should return default config when none saved", async () => {
       const nodeService = new NodeServiceImpl(
@@ -345,13 +495,13 @@ describe("NodeServiceImpl - Discovery Configuration", () => {
       );
 
       const config = await nodeService.getNodeConfig();
-      expect(config.discoveryProfile).toBe("wan-default");
-      expect(config.bootstrapPresets).toEqual([...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS]);
-      expect(config.bootstrapPeers).toEqual([DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR]);
+      expect(config.discoveryProfile).toBe("lan-fast");
+      expect(config.bootstrapPresets).toEqual([]);
+      expect(config.bootstrapPeers).toEqual([]);
       expect(config.configuredRelays).toEqual([]);
     });
 
-    it("should have wan-default as default discovery profile", async () => {
+    it("should have lan-fast as default discovery profile", async () => {
       const nodeService = new NodeServiceImpl(
         undefined,
         createMockTrustStore(),
@@ -361,7 +511,7 @@ describe("NodeServiceImpl - Discovery Configuration", () => {
       );
 
       const config = await nodeService.getNodeConfig();
-      expect(config.discoveryProfile).toBe("wan-default");
+      expect(config.discoveryProfile).toBe("lan-fast");
     });
 
     it("should return persisted enableMdns and aiSettings", async () => {

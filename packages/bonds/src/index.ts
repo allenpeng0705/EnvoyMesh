@@ -70,6 +70,8 @@ const capabilityRequirements: Partial<Record<EnvoyIntent, Capability[][]>> = {
   "social.intro.propose": [["message.send"], ["ui.channel"]],
   "social.intro.owner-ready": [["message.send"]],
   "chat.message": [["message.send"]],
+  "chat.room.sync": [["message.send"]],
+  "chat.room.message": [["message.send"]],
   "knowledge.query": [["vault.retrieve"]],
   "knowledge.response": [["message.send"]],
   "task.mandate": [["message.send"]],

@@ -24,6 +24,22 @@
     "./chat-delivered": {
       "types": "./dist/chat-delivered.d.ts",
       "import": "./dist/chat-delivered.js"
+    },
+    "./chat-room-service": {
+      "types": "./dist/chat-room-service.d.ts",
+      "import": "./dist/chat-room-service.js"
+    },
+    "./group-chat-delivery": {
+      "types": "./dist/group-chat-delivery.d.ts",
+      "import": "./dist/group-chat-delivery.js"
+    },
+    "./chat-room-thread": {
+      "types": "./dist/chat-room-thread.d.ts",
+      "import": "./dist/chat-room-thread.js"
+    },
+    "./discovery-location": {
+      "types": "./dist/discovery-location.d.ts",
+      "import": "./dist/discovery-location.js"
     }
   },
   "dependencies": {

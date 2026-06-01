@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ShareOffer } from "@envoymesh/api";
+import { useT } from "../../context/I18nContext.js";
 import { useShareOffers } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
 
@@ -15,6 +16,7 @@ export interface IncomingShareOffersSectionProps {
 }
 
 export function IncomingShareOffersSection({ embedded = false }: IncomingShareOffersSectionProps) {
+  const t = useT();
   const { offers, accept, decline } = useShareOffers();
   const { showToast } = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -30,10 +32,14 @@ export function IncomingShareOffersSection({ embedded = false }: IncomingShareOf
   return (
     <>
       {!embedded && (
-        <h3 className="inbox-section-title">Incoming file shares ({offers.length})</h3>
+        <h3 className="inbox-section-title">
+          {t("fileShare.incomingShares", { count: String(offers.length) })}
+        </h3>
       )}
       {embedded && (
-        <h3 className="inbox-section-title">File shares ({offers.length})</h3>
+        <h3 className="inbox-section-title">
+          {t("fileShare.fileShares", { count: String(offers.length) })}
+        </h3>
       )}
       <ul className="inbox-list">
         {offers.map((o) => (
@@ -50,7 +56,7 @@ export function IncomingShareOffersSection({ embedded = false }: IncomingShareOf
               {o.mimeType ? ` · ${o.mimeType}` : ""}
             </p>
             <label className="library-share-label" htmlFor={`share-save-${o.shareId}`}>
-              Save as (vault path, optional)
+              {t("fileShare.saveAs")}
             </label>
             <input
               id={`share-save-${o.shareId}`}
@@ -73,11 +79,11 @@ export function IncomingShareOffersSection({ embedded = false }: IncomingShareOf
                     try {
                       const path = defaultSavePath(o).trim();
                       await accept(o.shareId, path);
-                      showToast(`Accepted ${o.filename} — transfer in progress`, "info");
+                      showToast(t("fileShare.acceptedTransfer", { filename: o.filename }), "info");
                     } catch (err) {
                       console.error(err);
                       showToast(
-                        err instanceof Error ? err.message : "Accept failed",
+                        err instanceof Error ? err.message : t("fileShare.acceptFailed"),
                         "error",
                       );
                     } finally {
@@ -86,7 +92,7 @@ export function IncomingShareOffersSection({ embedded = false }: IncomingShareOf
                   })();
                 }}
               >
-                {busyId === o.shareId ? "Accepting…" : "Accept"}
+                {busyId === o.shareId ? t("fileShare.accepting") : t("common.accept")}
               </button>
               <button
                 type="button"
@@ -105,7 +111,7 @@ export function IncomingShareOffersSection({ embedded = false }: IncomingShareOf
                   })();
                 }}
               >
-                Decline
+                {t("common.decline")}
               </button>
             </div>
           </li>

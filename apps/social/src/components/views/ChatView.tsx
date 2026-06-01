@@ -1,8 +1,14 @@
 import { ChatSidebar } from "./ChatSidebar.js";
 import { ContactChatPanel } from "./ContactChatPanel.js";
+import { GroupChatPanel } from "./GroupChatPanel.js";
 import { InboxView } from "./InboxView.js";
 import { ChatIcon } from "../../icons.js";
+import { useT } from "../../context/I18nContext.js";
 import type { ChatPanelMode } from "../../App.js";
+import { isChatRoomThreadKey, parseChatRoomThreadKey } from "@envoymesh/api";
+import { useEffect, useState } from "react";
+import { useNodeService } from "../../hooks/useNodeService.js";
+import type { ChatRoom } from "@envoymesh/api";
 
 /**
  * ChatView is a layout shell: sidebar + AI or contact thread, with Inbox as a second panel.
@@ -15,6 +21,7 @@ export interface ChatViewProps {
   onPanelModeChange: (mode: ChatPanelMode) => void;
   inboxActivityCount: number;
   onOpenAssistant?: () => void;
+  onOpenDiscover?: () => void;
 }
 
 export function ChatView({
@@ -24,17 +31,56 @@ export function ChatView({
   onPanelModeChange,
   inboxActivityCount,
   onOpenAssistant,
+  onOpenDiscover,
 }: ChatViewProps) {
+  const t = useT();
+  const nodeService = useNodeService();
+  const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+  const [postCreateRoomId, setPostCreateRoomId] = useState<string | null>(null);
+  const selectedRoom = isChatRoomThreadKey(selectedContact ?? "")
+    ? chatRooms.find((r) => r.roomId === parseChatRoomThreadKey(selectedContact!))
+    : undefined;
+
+  useEffect(() => {
+    if (!nodeService.isConnected) return;
+    let cancelled = false;
+    void nodeService.listChatRooms().then((rooms) => {
+      if (!cancelled) setChatRooms(rooms);
+    });
+    const unsub = nodeService.on("chat:room-updated", (room) => {
+      setChatRooms((prev) => {
+        const idx = prev.findIndex((r) => r.roomId === room.roomId);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = room;
+          return next;
+        }
+        return [room, ...prev];
+      });
+    });
+    const unsubRemoved = nodeService.on("chat:room-removed", ({ roomId }) => {
+      setChatRooms((prev) => prev.filter((r) => r.roomId !== roomId));
+      if (selectedContact && parseChatRoomThreadKey(selectedContact) === roomId) {
+        onSelectedContactChange(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+      unsubRemoved();
+    };
+  }, [nodeService, nodeService.isConnected, onSelectedContactChange, selectedContact]);
+
   return (
     <div className="chat-view">
-      <div className="chat-view-primary-tabs" aria-label="Chat or inbox">
+      <div className="chat-view-primary-tabs" aria-label={t("chat.tabsLabel")}>
         <button
           type="button"
           aria-pressed={panelMode === "threads"}
           className={panelMode === "threads" ? "active" : ""}
           onClick={() => onPanelModeChange("threads")}
         >
-          Chats
+          {t("chat.chats")}
         </button>
         <button
           type="button"
@@ -42,7 +88,7 @@ export function ChatView({
           className={`${panelMode === "inbox" ? "active" : ""}${inboxActivityCount > 0 ? " has-inbox-tab" : ""}`}
           onClick={() => onPanelModeChange("inbox")}
         >
-          Inbox
+          {t("chat.inbox")}
           {inboxActivityCount > 0 ? (
             <span className="inbox-badge" aria-hidden>
               {inboxActivityCount > 99 ? "99+" : inboxActivityCount}
@@ -59,25 +105,45 @@ export function ChatView({
         <div className="chat-view-threads-shell">
           <ChatSidebar
             selectedContact={selectedContact}
-            onSelectContact={onSelectedContactChange}
+            onSelectContact={(id) => {
+              onSelectedContactChange(id);
+              if (id && isChatRoomThreadKey(id)) {
+                const rid = parseChatRoomThreadKey(id);
+                if (rid) setPostCreateRoomId(rid);
+              }
+            }}
+            onGroupCreated={(roomId) => setPostCreateRoomId(roomId)}
             onOpenAssistant={onOpenAssistant}
+            onOpenDiscover={onOpenDiscover}
           />
           <section className="chat-area">
             {selectedContact ? (
-              <ContactChatPanel
-                selectedContact={selectedContact}
-                onSelectContact={onSelectedContactChange}
-              />
+              isChatRoomThreadKey(selectedContact) ? (
+                <GroupChatPanel
+                  threadKey={selectedContact}
+                  room={selectedRoom}
+                  showPostCreateHint={
+                    !!selectedRoom && postCreateRoomId === selectedRoom.roomId
+                  }
+                  onDismissPostCreateHint={() => setPostCreateRoomId(null)}
+                  onLeaveGroup={() => onSelectedContactChange(null)}
+                />
+              ) : (
+                <ContactChatPanel
+                  selectedContact={selectedContact}
+                  onSelectContact={onSelectedContactChange}
+                />
+              )
             ) : (
               <div className="no-chat-selected">
                 <div className="no-chat-selected-icon">
                   <ChatIcon size={48} />
                 </div>
-                <h3>Select a contact</h3>
-                <p>Choose a bonded contact from the list to start a human conversation.</p>
+                <h3>{t("chat.selectContact")}</h3>
+                <p>{t("chat.selectContactDesc")}</p>
                 {onOpenAssistant && (
                   <button type="button" className="primary" style={{ marginTop: "1rem" }} onClick={onOpenAssistant}>
-                    Open Assistant (owner ↔ home agent)
+                    {t("chat.openAssistant")}
                   </button>
                 )}
               </div>

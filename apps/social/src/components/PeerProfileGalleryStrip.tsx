@@ -5,14 +5,8 @@ import {
   type PeerProfileView,
   type ProfileGalleryPhotoVisibility,
 } from "@envoymesh/api";
-import { useNodeState } from "../context/NodeStateContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
-
-const VISIBILITY_LABELS: Record<ProfileGalleryPhotoVisibility, string> = {
-  public: "Public",
-  referred: "Introduced",
-  direct: "Contacts only",
-};
+import { useT } from "../context/I18nContext.js";
 
 interface PeerProfileGalleryStripProps {
   ownerId: string;
@@ -20,8 +14,15 @@ interface PeerProfileGalleryStripProps {
 }
 
 export function PeerProfileGalleryStrip({ ownerId, bondLevel }: PeerProfileGalleryStripProps) {
+  const t = useT();
   const nodeService = useNodeService();
   const [peer, setPeer] = useState<PeerProfileView | undefined>();
+
+  const visibilityLabel = (v: ProfileGalleryPhotoVisibility) => {
+    if (v === "public") return t("profilePhotos.galleryVisibilityPublic");
+    if (v === "referred") return t("profilePhotos.galleryVisibilityReferred");
+    return t("profilePhotos.galleryVisibilityDirect");
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -48,16 +49,15 @@ export function PeerProfileGalleryStrip({ ownerId, bondLevel }: PeerProfileGalle
   }
 
   return (
-    <section className="peer-profile-gallery-strip" aria-label="Contact gallery metadata">
+    <section className="peer-profile-gallery-strip" aria-label={t("profilePhotos.galleryStripAria")}>
       <p className="muted small peer-profile-gallery-strip__hint">
-        Gallery ({visible.length} visible at your bond level). Image bytes are not synced — ask them to
-        share a file, or you may already have it in Inbox.
+        {t("profilePhotos.galleryStripHint", { count: visible.length })}
       </p>
       <ul className="peer-profile-gallery-strip__list">
         {visible.map((photo) => (
           <li key={photo.photoId} className="peer-profile-gallery-strip__item">
             <span className="peer-profile-gallery-strip__label">{photo.label ?? photo.photoId}</span>
-            <span className="peer-profile-gallery-strip__vis">{VISIBILITY_LABELS[photo.visibility]}</span>
+            <span className="peer-profile-gallery-strip__vis">{visibilityLabel(photo.visibility)}</span>
           </li>
         ))}
       </ul>

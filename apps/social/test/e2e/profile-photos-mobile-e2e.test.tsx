@@ -22,9 +22,10 @@ vi.mock("../../src/lib/profile-photo-crop.js", async (importOriginal) => {
   };
 });
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { HumanProfile } from "@envoymesh/api";
 import { ProfilePhotosTab } from "../../src/components/profile/ProfilePhotosTab.js";
+import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { minimalPngFile } from "../fixtures/profile-photo-fixtures.js";
 
 const setPublicProfileThumbnail = vi.fn();
@@ -82,14 +83,14 @@ beforeEach(() => {
 describe("E2E Profile photos (mobile tab)", () => {
   it("renders mobile layout class and optional thumbnail suggestion", () => {
     humanProfile = { ...humanProfile!, publicThumbnail: undefined };
-    render(<ProfilePhotosTab variant="mobile" />);
+    renderWithI18n(<ProfilePhotosTab variant="mobile" />);
 
     expect(document.querySelector(".mv-profile-photos")).toBeTruthy();
     expect(screen.getByRole("status").textContent).toMatch(/add a profile photo/i);
   });
 
   it("thumbnail picker uses capture=environment for camera-friendly mobile upload", async () => {
-    render(<ProfilePhotosTab variant="mobile" />);
+    renderWithI18n(<ProfilePhotosTab variant="mobile" />);
 
     fireEvent.click(screen.getByRole("button", { name: /change profile thumbnail/i }));
 
@@ -99,7 +100,7 @@ describe("E2E Profile photos (mobile tab)", () => {
   });
 
   it("gallery pick uploads with public visibility", async () => {
-    render(<ProfilePhotosTab variant="mobile" />);
+    renderWithI18n(<ProfilePhotosTab variant="mobile" />);
 
     fireEvent.click(screen.getByRole("button", { name: /^add photo$/i }));
 
@@ -117,7 +118,7 @@ describe("E2E Profile photos (mobile tab)", () => {
     humanProfile = { ...humanProfile!, publicThumbnail: undefined };
     setPublicProfileThumbnail.mockResolvedValue(humanProfile);
 
-    render(<ProfilePhotosTab variant="mobile" />);
+    renderWithI18n(<ProfilePhotosTab variant="mobile" />);
     fireEvent.click(screen.getByRole("button", { name: /change profile thumbnail/i }));
 
     const input = (await screen.findByRole("dialog")).querySelector('input[type="file"]') as HTMLInputElement;

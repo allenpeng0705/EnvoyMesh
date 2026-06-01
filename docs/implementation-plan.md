@@ -58,6 +58,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 14 — Friend autopilot & knowledge syndication](#phase-14-friend-autopilot--knowledge-syndication-phase-13-follow-on)
 - [Phase 15 — Reach, semantics & platform scale](#phase-15-reach-semantics--platform-scale)
 - [Phase 16 — EnvoyAI standing delegation & autonomous postures](#phase-16-envoyai-standing-delegation--autonomous-postures)
+- [Phase 17 — Location-scoped peer discovery](#phase-17-location-scoped-peer-discovery)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -72,8 +73,9 @@ Already shipped foundation:
 Active next direction:
 
 1. **Phase 16 — EnvoyAI in EMP** — standing postures (`social_proxy`, `document_acquisition`), mandate schemas, configurable UI disclosure. Spec: [protocol-standard § EnvoyAI](./protocol-standard.md#envoyai-ai-mediated-social-mesh).
-2. **Phase 15E** — remaining parked backlog (commerce payments, DID resolver, hop-2 morning report). See [parked-backlog-15e.md](./parked-backlog-15e.md).
-3. **Parked until scoped:** Story E payment rail, thin satellite app.
+2. **Phase 17 — Location-scoped discovery** — geo capability topics on DHT (`geo:country:…`, `geo:city:…`, `geo:geohash:…`); profile location + Discover “By place” search. See [Phase 17](#phase-17-location-scoped-peer-discovery).
+3. **Phase 15E** — remaining parked backlog (commerce payments, DID resolver, hop-2 morning report). See [parked-backlog-15e.md](./parked-backlog-15e.md).
+4. **Parked until scoped:** Story E payment rail, thin satellite app.
 
 Product-level **user stories and epics** (discovery, broadcast termination, communication roles, and so on) live in [EnvoyMesh scenarios](./scenarios.md). Narrative journeys live in [UserStory.md](./UserStory.md). Periodically reconcile both with code via [alignment-review.md](./alignment-review.md). Use those files to prioritize; keep this plan aligned when scope or shipped work changes.
 
@@ -2457,10 +2459,140 @@ These items are **tracked** but **explicitly deferred** until scenarios + EMP ec
 
 **Exit:** Agent on home node can start a capability provider job, route matches, executable steps run via existing tool registry, Activity records `capability_provider_stage`; no bridge dependency.
 
+## Phase 17: Location-scoped peer discovery
+
+**Goal:** Let owners be **findable by place** (country, region, city, town, nearby) on the **existing DHT capability-topic layer** (Phase 4F / 15A) — without a central geo server, without storing raw GPS in signed profiles, and with **owner-chosen precision**.
+
+**Builds on:** Phase 4F signed capability topics · Phase 15A Discover Search · `HumanProfilePayload` · [trust-mode-social-protocol.md](./trust-mode-social-protocol.md) geography hints · [p2p-discovery.md](./p2p-discovery.md).
+
+**Scenarios / stories:** Scenario 2 (Blind discovery) · Story B (recruiter / researcher find people) · Trust-mode matching inputs (§2 geography hints).
+
+### Problem
+
+Today, wider Discover finds peers by **interest topics**, **username**, or **peer ID**. There is no structured way to say “I am in Boston” or “find people near me” on the public mesh. LAN **Nearby** (mDNS) is separate and does not help across the internet.
+
+### Design principles
+
+1. **Reuse DHT topics** — no new discovery transport. Location is encoded as normalized **`geo:*` capability topic strings**, published via `provideCapabilityTopic` (same as hobbies / `username:alice`).
+2. **Owner-signed, tiered disclosure** — place fields live on **`HumanProfilePayload`**; **`discoveryLocationPrecision`** controls how much is advertised (`hidden` → `country` → … → `nearby`).
+3. **No raw coordinates on the wire** — profiles store optional **geohash** (derived from device GPS with consent), never lat/lng. DHT carries topic strings only.
+4. **Hierarchical topics** — finer scopes imply coarser ones when advertised (city also publishes country + region topics).
+5. **Separate LAN vs geo “nearby”** — UI labels **On this network** (mDNS) vs **Near me** (geohash DHT query).
+
+### Topic namespace (normative)
+
+| Topic pattern | Example | Typical use |
+|---------------|---------|-------------|
+| `geo:country:{ISO}` | `geo:country:US` | Same country |
+| `geo:region:{CC}-{slug}` | `geo:region:US-ca` | State / province |
+| `geo:city:{CC}-{slug}` | `geo:city:US-san-francisco` | City |
+| `geo:town:{CC}-{slug}` | `geo:town:US-mission-district` | Town / neighborhood |
+| `geo:geohash:{prefix}` | `geo:geohash:9q8yy` | Nearby (~5 km at 5 chars) |
+
+Slugs: lowercase ASCII, hyphenated (`normalizeLocationSlug`). Country codes: ISO 3166-1 alpha-2 uppercase.
+
+DHT provider keys remain **`cidForCapabilityTopic("envoymesh:cap:v1:" + topic)`** — unchanged from Phase 4F.
+
+### Protocol (`@envoymesh/protocol`)
+
+**`DiscoveryLocationSchema`** (on `HumanProfilePayload`):
+
+```typescript
+discoveryLocation?: {
+  countryCode: string;   // required when location set — ISO 3166-1 alpha-2
+  regionCode?: string;
+  city?: string;
+  town?: string;
+  geohash?: string;      // lowercase base32, 4–12 chars — never lat/lng
+};
+discoveryLocationPrecision?: "hidden" | "country" | "region" | "city" | "town" | "nearby";
+```
+
+Default precision: **`hidden`**. Changing precision re-derives advertised topics on next profile save / node start.
+
+**Bond-scoped discovery (`discovery.request`)** — future: hash `geo:*` topics the same way as interest tags for multi-hop queries (Phase 17C); cleartext topics remain on DHT only.
+
+### Runtime (`apps/node`, `packages/api`)
+
+| Component | Responsibility |
+|-----------|----------------|
+| `@envoymesh/api` **`discovery-location.ts`** | `deriveLocationDiscoveryTopics`, `locationSearchTopics`, `encodeGeohash`, `parseGeoDiscoveryTopic` |
+| **`NodeServiceImpl._advertisePublicDiscoveryTopics`** | Merges interests + `username:` + geo topics; periodic DHT re-provide (5 min) |
+| **`NodeDiscoveryRuntime.searchPeers`** | `SearchQuery.topics[]` — merge multi-topic DHT hits |
+| **`updateHumanProfile`** | Persists signed location fields; triggers re-advertise when `profileVisibility === "public"` + WAN bootstrap |
+
+**Advertise gate (unchanged):** public profile + at least one bootstrap preset (Explore public mesh). Private profiles do not publish geo topics.
+
+**Privacy defaults:** product default precision **`city`** recommended in UI copy; **`town`** and **`nearby`** require explicit opt-in.
+
+### Social UI
+
+| Surface | Behavior |
+|---------|----------|
+| **Profile → About → Edit** | Country / region / city / town fields; precision selector; “Save device location for nearby” (browser geolocation → geohash only) |
+| **Discover → Wider → By place** | Buttons: Same country / city / town / Near me → `searchPeers({ topics })` |
+| **View mode** | Shows human-readable place + advertised `geo:*` topic chips |
+
+LAN **Nearby** panel unchanged (mDNS + profile probe).
+
+### Phased delivery
+
+#### 17A — Schema + topic derivation + DHT advertise/query **`[x]`**
+
+- `[x]` `DiscoveryLocation*` on `HumanProfilePayload` + `CreateHumanProfileInput`
+- `[x]` `@envoymesh/api/discovery-location` helpers + unit tests
+- `[x]` Node: merge geo topics into `_advertisePublicDiscoveryTopics`
+- `[x]` Node: `SearchQuery.topics` multi-topic search
+- `[x]` Social: profile location editor + Discover “By place”
+
+**Exit:** Two WAN nodes with public profiles, same city precision, find each other via Discover → By place → Same city without prior bond. Backend path verified by `geo-discovery-wan-signoff.test.ts` (test #2 uses `locationSearchTopics`); browser Social UI sign-off is optional staging QA.
+
+#### 17B — Nearby geohash polish **`[x]`**
+
+- `[x]` Persist geohash on profile save from edit form (not only GPS button)
+- `[x]` Neighbor-cell search expansion (Discover nearby uses `locationSearchTopics`)
+- `[x]` Optional map picker for nearby precision
+- `[x]` Stop advertising stale geo topics when precision downgraded (explicit `cancelCapabilityTopicReprovide`)
+
+#### 17C — Trust-mode + agent matching **`[x]`**
+
+- `[x]` `FriendMatchingPreferences` geography fields → same `geo:*` topic queries
+- `[x]` `discovery.request` hashed geo tags for bond-mediated search
+- `[x]` Morning report: “N peers in your city this week”
+
+#### 17D — Gazetteer UX **`[x]`**
+
+- `[x]` Offline country/region/city autocomplete (static JSON, no central API; 7-country MVP — free-text fallback outside list)
+- `[x]` Non-English i18n for location strings
+
+### Threat model notes
+
+| Risk | Mitigation |
+|------|------------|
+| Exact home address on DHT | Default city precision; town/nearby opt-in; geohash prefix not full precision |
+| Topic guessing | DHT topics are not secret; treat as **public rendezvous**, not authentication |
+| Sybil / flood | Existing Phase 4F rate limits + signed provider records |
+| Stale location | Owner updates profile; 17B adds explicit topic cancellation |
+
+### Tests
+
+- `[x]` `packages/api/test/discovery-location.test.ts` — slug, geohash, topic derivation
+- `[x]` `apps/node/test/rendezvous-integration.test.ts` — geo topics in `_advertisePublicDiscoveryTopics`
+- `[x]` `apps/node/test/geo-discovery-e2e.test.ts` — two-node DHT geo:city find
+- `[x]` `apps/node/test/discovery-geo-tags.test.ts` — hashed geo tags on discovery.request
+- `[x]` `apps/node/test/geo-discovery-wan-signoff.test.ts` — WAN DHT geo find (`TEST_RELAY_ADDR`; ~9 min; skipped in CI)
+- `[x]` Social component test — Discover place buttons call `searchPeers({ topics })`
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-05-28 | **Phase 17D:** Offline gazetteer autocomplete in Profile location editor; zh/ko/ja/fr/de/it i18n for countries/regions/cities; nearby map picker grid for geohash precision. WAN geo signoff green via cn-relay (`geo-discovery-wan-signoff.test.ts`). |
+| 2026-05-28 | **Phase 17C:** Friend-matching geo fields on signed prefs; hashed geo tags on bond-scoped `discovery.request`; morning report geo city peer count; Trust intro tools emit geo tag hashes. |
+| 2026-05-28 | **Phase 17B:** Geohash persisted on profile save; neighbor-cell nearby search via `locationSearchTopics`; stale geo topic cancellation on profile/network change; two-node geo DHT e2e test. |
+| 2026-05-28 | **Profile capabilities → discovery:** Profile About capability tags sync into capability manifest and DHT advertise (`capability:{tag}` + raw tag) on public profile save; agents match via `discovery.request` / `requestedCapabilities`. |
 | 2026-05-28 | **Phase 16E capability routing:** `@envoymesh/api` intent routing + route executor modules; capability provider worker + daemon tick; `mesh.capability_provider.start` in-process tool; [capability-route-executor.md](./capability-route-executor.md). |
 | 2026-05-28 | **Phase 16 design docs:** [social-proxy-delegation.md](./social-proxy-delegation.md), [document-acquisition-agent.md](./document-acquisition-agent.md), [envoyai-disclosure-adr.md](./envoyai-disclosure-adr.md). |
 | 2026-05-28 | **EnvoyAI merged into EMP:** one protocol (`emp/0.1`); [protocol-standard § EnvoyAI](./protocol-standard.md#envoyai-ai-mediated-social-mesh).

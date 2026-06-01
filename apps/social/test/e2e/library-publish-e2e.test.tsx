@@ -4,9 +4,10 @@
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { LibraryItem } from "@envoymesh/api";
 import { LibraryView } from "../../src/components/views/LibraryView.js";
+import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
 const listLibraryItems = vi.fn();
 const getBonds = vi.fn();
@@ -59,7 +60,7 @@ vi.mock("../../src/context/NodeStateContext.js", () => ({
 }));
 
 function renderLibrary() {
-  return render(<LibraryView />);
+  return renderWithI18n(<LibraryView />);
 }
 
 async function tableCheckbox() {

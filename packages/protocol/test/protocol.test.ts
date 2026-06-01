@@ -1001,6 +1001,7 @@ describe("HumanProfilePayload", () => {
       hobbies: ["music", "coding"],
       knowledge: ["distributed systems"],
       profileVisibility: "public" as const,
+      discoveryLocationPrecision: "hidden" as const,
       updatedAt: "2026-04-27T10:00:00.000Z",
       signature: "signature123",
     };

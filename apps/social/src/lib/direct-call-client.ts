@@ -208,6 +208,38 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.listChatHistory(peerOwnerId, limit);
   }
 
+  async listChatRooms() {
+    return this._ns.listChatRooms();
+  }
+
+  async createChatRoom(title: string, memberOwnerIds: string[]) {
+    return this._ns.createChatRoom(title, memberOwnerIds);
+  }
+
+  async inviteToChatRoom(roomId: string, memberOwnerIds: string[]) {
+    return this._ns.inviteToChatRoom(roomId, memberOwnerIds);
+  }
+
+  async leaveChatRoom(roomId: string) {
+    return this._ns.leaveChatRoom(roomId);
+  }
+
+  async removeMembersFromChatRoom(roomId: string, memberOwnerIds: string[]) {
+    return this._ns.removeMembersFromChatRoom(roomId, memberOwnerIds);
+  }
+
+  async renameChatRoom(roomId: string, title: string) {
+    return this._ns.renameChatRoom(roomId, title);
+  }
+
+  async dismissChatRoom(roomId: string) {
+    return this._ns.dismissChatRoom(roomId);
+  }
+
+  async sendChatRoomMessage(roomId: string, text: string) {
+    return this._ns.sendChatRoomMessage(roomId, text);
+  }
+
   async listAgentActivity(params?: Parameters<NodeService["listAgentActivity"]>[0]) {
     return this._ns.listAgentActivity(params);
   }

@@ -3,14 +3,15 @@
  */
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import { cleanup, screen, fireEvent } from "@testing-library/react";
 import { ChatMessageBubble } from "../../src/components/ChatMessageBubble.js";
+import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
 afterEach(() => cleanup());
 
 describe("ChatMessageBubble — Phase 13B actor badges", () => {
   it("shows verified peer agent badge from actorBadge prop", () => {
-    render(
+    renderWithI18n(
       <ChatMessageBubble variant="incoming-agent" position="single" actorBadge="Bob's agent">
         Hello from Bob&apos;s agent
       </ChatMessageBubble>,
@@ -21,7 +22,7 @@ describe("ChatMessageBubble — Phase 13B actor badges", () => {
   });
 
   it("shows unverified agent badge when actorBadge says so", () => {
-    render(
+    renderWithI18n(
       <ChatMessageBubble
         variant="incoming-agent"
         position="single"
@@ -35,7 +36,7 @@ describe("ChatMessageBubble — Phase 13B actor badges", () => {
   });
 
   it("shows Your agent for outgoing-agent variant", () => {
-    render(
+    renderWithI18n(
       <ChatMessageBubble variant="outgoing-agent" position="single">
         Auto-sent reply
       </ChatMessageBubble>,
@@ -45,7 +46,7 @@ describe("ChatMessageBubble — Phase 13B actor badges", () => {
   });
 
   it("shows human contact name for incoming-peer with senderLabel", () => {
-    render(
+    renderWithI18n(
       <ChatMessageBubble variant="incoming-peer" position="single" senderLabel="Bob">
         Human message
       </ChatMessageBubble>,
@@ -58,7 +59,7 @@ describe("ChatMessageBubble — Phase 13B actor badges", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
 
-    render(
+    renderWithI18n(
       <ChatMessageBubble variant="outgoing" position="single" copyText="Copy me">
         Copy me
       </ChatMessageBubble>,

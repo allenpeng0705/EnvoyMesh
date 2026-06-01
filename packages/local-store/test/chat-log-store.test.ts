@@ -47,4 +47,37 @@ describe("createLocalChatLogStore", () => {
     expect(await store.listThread("envoy:owner:alice")).toEqual([]);
     expect((await store.listThread("envoy:owner:bob")).map((m) => m.messageId)).toEqual(["m-3"]);
   });
+
+  it("persists partial group delivery progress across reload", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "envoy-chat-"));
+    const store = createLocalChatLogStore(dir);
+    const threadKey = "room:11111111-1111-4111-8111-111111111111";
+    await store.append(threadKey, {
+      messageId: "group-msg-1",
+      sender: { nodeId: "peer-a", displayName: "Alice", ownerId: "envoy:owner:alice" },
+      recipient: { nodeId: threadKey, displayName: "Weekend", ownerId: threadKey },
+      content: { text: "Hello group" },
+      metadata: {
+        timestamp: "2026-05-28T12:00:00.000Z",
+        deliveryReceipt: "sent",
+        deliveredToOwnerIds: ["envoy:owner:bob"],
+        pendingRecipientOwnerIds: ["envoy:owner:carol"],
+      },
+      signature: "sig",
+    });
+
+    expect(
+      await store.updateGroupDeliveryProgress(threadKey, "group-msg-1", "envoy:owner:carol"),
+    ).toBe(true);
+
+    const reloaded = createLocalChatLogStore(dir);
+    const rows = await reloaded.listThread(threadKey);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.metadata.deliveredToOwnerIds?.sort()).toEqual([
+      "envoy:owner:bob",
+      "envoy:owner:carol",
+    ]);
+    expect(rows[0]?.metadata.pendingRecipientOwnerIds).toBeUndefined();
+    expect(rows[0]?.metadata.deliveryReceipt).toBe("delivered");
+  });
 });

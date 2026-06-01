@@ -40,6 +40,14 @@ export function useToast(): ToastContextValue {
   return ctx;
 }
 
+/** Like useToast but no-ops when rendered outside ToastProvider (tests, storybook). */
+export function useToastOptional(): Pick<ToastContextValue, "showToast"> {
+  const ctx = useContext(ToastContext);
+  return {
+    showToast: ctx?.showToast ?? (() => {}),
+  };
+}
+
 function ToastContainer({ toasts }: { toasts: Toast[] }) {
   if (toasts.length === 0) return null;
   return (

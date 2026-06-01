@@ -2,8 +2,6 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
-  DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
-  DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
   defaultBootstrapPresetsForDiscoveryProfile,
   normalizeBootstrapPresetsForContactsOnly,
 } from "@envoymesh/api";
@@ -132,15 +130,15 @@ export function createDefaultPersistedNodeConfig(profileDir: string): PersistedN
   return {
     version: "0.1",
     profileDir,
-    discoveryProfile: "wan-default",
+    discoveryProfile: "lan-fast",
     enableMdns: true,
     relayEnabled: true,
     relayServerEnabled: false,
     advertiseAddrs: [],
-    bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
-    bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
+    bootstrapPeers: [],
+    bootstrapPresets: [],
     configuredRelays: [],
-    modelProviders: { mode: "mock" },
+    modelProviders: { mode: "disabled" },
     chatAssistEnabled: false,
     contactAiPreferences: [],
     updatedAt: new Date().toISOString(),
@@ -232,7 +230,9 @@ function tryMigrateNodeConfig(value: unknown, profileDir: string): PersistedNode
       : defaults.bootstrapPeers,
     bootstrapPresets: Array.isArray(file.bootstrapPresets)
       ? file.bootstrapPresets.filter((a): a is string => typeof a === "string")
-      : defaults.bootstrapPresets,
+      : [...defaultBootstrapPresetsForDiscoveryProfile(
+          isValidDiscoveryProfile(file.discoveryProfile) ? file.discoveryProfile : defaults.discoveryProfile,
+        )],
     configuredRelays: Array.isArray(file.configuredRelays)
       ? (file.configuredRelays as RelayConfig[])
       : defaults.configuredRelays,

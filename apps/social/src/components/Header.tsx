@@ -5,6 +5,7 @@ import type {
 } from "@envoymesh/api";
 import type { ViewName } from "../App.js";
 import { useTheme } from "../context/ThemeContext.js";
+import { useT } from "../context/I18nContext.js";
 import { DarkModeIcon, LightModeIcon } from "../icons.js";
 import { ProfilePhotoAvatar } from "./ProfilePhotoAvatar.js";
 
@@ -13,7 +14,6 @@ interface HeaderProps {
   onNavigate: (view: ViewName) => void;
   /** Hello requests + stranger chat pings — badge on Chat */
   inboxActivityCount: number;
-  bondsCount: number;
   isPublicNetwork: boolean;
   connectionStatus: ConnectionStatus | null;
   nodeStatus: NodeStatus;
@@ -27,7 +27,6 @@ export function Header({
   currentView,
   onNavigate,
   inboxActivityCount,
-  bondsCount,
   isPublicNetwork,
   connectionStatus,
   nodeStatus,
@@ -36,6 +35,7 @@ export function Header({
   relayUnreachable,
   onRetryConnect,
 }: HeaderProps) {
+  const t = useT();
   const { theme, resolved, setTheme } = useTheme();
 
   const cycleTheme = () => {
@@ -44,29 +44,29 @@ export function Header({
     else setTheme("system");
   };
 
-  const themeLabel = theme === "system" ? "Auto" : theme === "dark" ? "Dark" : "Light";
+  const themeLabel =
+    theme === "system"
+      ? t("header.themeAuto")
+      : theme === "dark"
+        ? t("header.themeDark")
+        : t("header.themeLight");
 
-  /** Mesh exists only after successful start — avoid stuck "Connecting" when snapshot lags behind node:status. */
-  const publicConnectivityReady =
-    nodeStatus === "running" ||
-    Boolean(connectionStatus?.online);
-  const publicConnectivityLabel =
-    publicConnectivityReady
-      ? "Public Network"
-      : nodeStatus === "starting" || nodeStatus === "stopping"
-        ? "Starting…"
-        : "Connecting…";
+  const publicConnectivityReady = nodeStatus === "running" || Boolean(connectionStatus?.online);
+  const publicConnectivityLabel = publicConnectivityReady
+    ? t("header.publicNetwork")
+    : nodeStatus === "starting" || nodeStatus === "stopping"
+      ? t("header.starting")
+      : t("header.connecting");
   const publicStatusTitle =
     isPublicNetwork && !publicConnectivityReady && connectionStatus?.lastError?.trim()
       ? connectionStatus.lastError
       : undefined;
   const displayNameTrimmed = humanProfile?.displayName?.trim();
-  const profileButtonLabel =
-    displayNameTrimmed && displayNameTrimmed.length > 0 ? displayNameTrimmed : "Profile";
+  const profileButtonLabel = displayNameTrimmed && displayNameTrimmed.length > 0 ? displayNameTrimmed : t("nav.profile");
   const profileButtonTitle =
     peerId && !peerId.startsWith("envoy_")
-      ? `Open profile (${peerId})`
-      : "Open profile";
+      ? t("nav.openProfileWithPeer", { peerId })
+      : t("nav.openProfile");
 
   const nodeStatusClass =
     nodeStatus === "running"
@@ -75,25 +75,28 @@ export function Header({
         ? "transitional"
         : "offline";
 
+  const chatAriaLabel =
+    inboxActivityCount > 0
+      ? inboxActivityCount === 1
+        ? t("nav.chatInboxOne", { count: inboxActivityCount })
+        : t("nav.chatInboxMany", { count: inboxActivityCount })
+      : t("nav.chat");
+
   return (
     <header className="header app-header">
       <div className="header-left">
         <img src="/assets/logo.svg" alt="Envoy" className="logo" />
         <span className="logo-text">Envoy</span>
       </div>
-      <nav className="header-nav app-header__nav" aria-label="Primary">
+      <nav className="header-nav app-header__nav" aria-label={t("nav.primary")}>
         <button
           type="button"
           className={`${currentView === "chat" || currentView === "assistant" ? "active" : ""} ${inboxActivityCount > 0 ? "has-inbox" : ""}`}
           onClick={() => onNavigate("chat")}
           aria-current={currentView === "chat" || currentView === "assistant" ? "page" : undefined}
-          aria-label={
-            inboxActivityCount > 0
-              ? `Chat — ${inboxActivityCount} item${inboxActivityCount === 1 ? "" : "s"} in inbox`
-              : "Chat"
-          }
+          aria-label={chatAriaLabel}
         >
-          Chat
+          {t("nav.chat")}
           {inboxActivityCount > 0 && (
             <span className="inbox-badge" aria-hidden>
               {inboxActivityCount > 99 ? "99+" : inboxActivityCount}
@@ -102,11 +105,11 @@ export function Header({
         </button>
         <button
           type="button"
-          className={currentView === "contacts" ? "active" : ""}
-          onClick={() => onNavigate("contacts")}
-          aria-current={currentView === "contacts" ? "page" : undefined}
+          className={currentView === "discover" ? "active" : ""}
+          onClick={() => onNavigate("discover")}
+          aria-current={currentView === "discover" ? "page" : undefined}
         >
-          Contacts ({bondsCount})
+          {t("nav.discover")}
         </button>
         <button
           type="button"
@@ -114,15 +117,7 @@ export function Header({
           onClick={() => onNavigate("library")}
           aria-current={currentView === "library" ? "page" : undefined}
         >
-          Library
-        </button>
-        <button
-          type="button"
-          className={currentView === "activity" ? "active" : ""}
-          onClick={() => onNavigate("activity")}
-          aria-current={currentView === "activity" ? "page" : undefined}
-        >
-          Activity
+          {t("nav.library")}
         </button>
         <button
           type="button"
@@ -130,20 +125,20 @@ export function Header({
           onClick={() => onNavigate("settings")}
           aria-current={currentView === "settings" ? "page" : undefined}
         >
-          Settings
+          {t("nav.settings")}
         </button>
       </nav>
       <div className="header-right app-header__meta">
-        <div className="header-status-strip" role="group" aria-label="Node connectivity">
+        <div className="header-status-strip" role="group" aria-label={t("header.nodeConnectivity")}>
           {relayUnreachable && isPublicNetwork && (
             <button
               type="button"
               className="relay-warning mesh-status-chip mesh-status-chip--warn"
               onClick={onRetryConnect}
-              title="Relay unreachable — tap to retry"
+              title={t("header.relayUnreachable")}
             >
               <span className="mesh-status-chip__dot" aria-hidden />
-              <span className="mesh-status-chip__label">Relay down</span>
+              <span className="mesh-status-chip__label">{t("header.relayDown")}</span>
             </button>
           )}
           {isPublicNetwork ? (
@@ -157,7 +152,7 @@ export function Header({
           ) : (
             <div className="mesh-status-chip network-status private mesh-status-chip--private">
               <span className="mesh-status-chip__dot status-indicator" aria-hidden />
-              <span className="mesh-status-chip__label">Private mesh</span>
+              <span className="mesh-status-chip__label">{t("header.privateMesh")}</span>
             </div>
           )}
           <span className={`mesh-status-chip node-status mesh-status-chip--node mesh-status-chip--${nodeStatusClass}`}>
@@ -166,7 +161,9 @@ export function Header({
           </span>
           {connectionStatus && connectionStatus.bondedPeers > 0 && (
             <span className="mesh-status-chip peer-count mesh-status-chip--peers">
-              <span className="mesh-status-chip__label">{connectionStatus.bondedPeers} bonded</span>
+              <span className="mesh-status-chip__label">
+                {t("header.bonded", { count: connectionStatus.bondedPeers })}
+              </span>
             </span>
           )}
         </div>
@@ -174,8 +171,8 @@ export function Header({
           type="button"
           className="theme-toggle-btn"
           onClick={cycleTheme}
-          title={`Theme: ${themeLabel}`}
-          aria-label={`Theme: ${themeLabel}. Click to change.`}
+          title={t("header.theme", { mode: themeLabel })}
+          aria-label={t("header.themeClick", { mode: themeLabel })}
         >
           {resolved === "dark" ? <LightModeIcon size={16} /> : <DarkModeIcon size={16} />}
         </button>

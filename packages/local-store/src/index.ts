@@ -721,6 +721,7 @@ export interface CreateShareEventInput {
 export interface MorningReportEntry {
   ownerId: string;
   peerId?: string;
+  displayName?: string;
   trustLevel: TrustRecord["level"] | "unknown";
   score: number;
   reason: string;
@@ -728,6 +729,11 @@ export interface MorningReportEntry {
   discoveryMatchCount: number;
   /** Minimum hop distance from recent discovery events (1 = direct). */
   hopDistance?: number;
+  /** Phase 17C: location peer-count summary (not an individual peer row). */
+  geoCitySummary?: {
+    peerCount: number;
+    cityLabel: string;
+  };
 }
 
 export interface LocalDispatcherHandledDecision {
@@ -981,6 +987,7 @@ export function buildMorningReportDigest(input: {
     return {
       ownerId,
       peerId: peer?.peerId,
+      displayName: trust?.displayName?.trim() || undefined,
       trustLevel: trust?.level ?? "unknown",
       score,
       reason: `trust=${trust?.level ?? "unknown"}, matches=${discovery?.matches ?? 0}, hop=${discovery?.minHopDistance ?? 1}, recency=${recencyScore}`,
@@ -990,7 +997,11 @@ export function buildMorningReportDigest(input: {
     };
   });
 
-  return ranked.sort((left, right) => right.score - left.score).slice(0, input.limit ?? 10);
+  return ranked
+    .filter((entry) => entry.trustLevel === "unknown")
+    .filter((entry) => entry.discoveryMatchCount > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, input.limit ?? 10);
 }
 
 function trustLevelScore(level: TrustRecord["level"] | undefined): number {
@@ -2128,6 +2139,9 @@ export * from "./jsonl-query-index.js";
 export * from "./storage-gate.js";
 export { AUDIT_QUERY_INDEX_FILE, ACTIVITY_QUERY_INDEX_FILE } from "./storage-gate.js";
 export * from "./chat-log-store.js";
+export * from "./chat-room-store.js";
+export * from "./chat-room-pending-sync-store.js";
+export * from "./chat-room-pending-message-store.js";
 export * from "./chat-draft-store.js";
 export * from "./capability-manifest-store.js";
 export * from "./session-token-store.js";

@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { stripModelThinking } from "@envoymesh/api";
@@ -8,6 +9,7 @@ import { createAssistantDraftCrdt, ASSISTANT_DRAFT_SYNC_SCOPE } from "../../lib/
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatIcon, RemoveIcon } from "../../icons.js";
+import type { TFunction } from "../../context/I18nContext.js";
 
 interface AiMessage {
   id: string;
@@ -16,15 +18,15 @@ interface AiMessage {
   timestamp: string;
 }
 
-function fmtDateLabel(dateStr: string): string {
+function fmtDateLabel(dateStr: string, t: TFunction): string {
   const d = new Date(dateStr);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today.getTime() - 86400000);
   const msgDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
-  if (msgDate.getTime() === today.getTime()) return "Today";
-  if (msgDate.getTime() === yesterday.getTime()) return "Yesterday";
+  if (msgDate.getTime() === today.getTime()) return t("aiChat.dateToday");
+  if (msgDate.getTime() === yesterday.getTime()) return t("aiChat.dateYesterday");
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
@@ -40,15 +42,16 @@ function groupByDate(msgs: AiMessage[]): [string, AiMessage[]][] {
 }
 
 export function AIChatPanel() {
+  const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig, humanProfile, nodeStatus } = useNodeState();
   const assistantReady = nodeStatus === "running";
   const assistantBlockedHint =
     nodeStatus === "starting"
-      ? "Node is still starting. Wait a moment, then try again."
+      ? t("aiChat.nodeStarting")
       : nodeStatus === "stopping"
-        ? "Node is stopping. Try again after it finishes."
-        : "Start your node from Settings → Node to use the Assistant.";
+        ? t("aiChat.nodeStopping")
+        : t("aiChat.nodeOffline");
 
   const [aiMessages, setAiMessages] = useState<AiMessage[]>([]);
   const [aiInput, setAiInput] = useState("");
@@ -140,13 +143,13 @@ export function AIChatPanel() {
         },
       ]);
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Failed to get AI response";
+      const msg = error instanceof Error ? error.message : t("aiChat.responseFailed");
       setAiMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           role: "ai",
-          text: `Error: ${msg}`,
+          text: t("aiChat.errorPrefix", { message: msg }),
           timestamp: new Date().toISOString(),
         },
       ]);
@@ -161,9 +164,18 @@ export function AIChatPanel() {
 
   const handleClearAiChat = () => {
     if (aiMessages.length === 0) return;
-    if (!window.confirm("Clear this Envoy AI session?")) return;
+    if (!window.confirm(t("aiChat.clearConfirm"))) return;
     setAiMessages([]);
   };
+
+  const modelStatusLabel =
+    nodeConfig?.modelProviders?.mode === "disabled"
+      ? t("aiChat.aiDisabled")
+      : nodeConfig?.modelProviders?.mode === "mock"
+        ? t("aiChat.mockMode")
+        : t("aiChat.modelLabel", {
+            name: nodeConfig?.modelProviders?.modelName ?? t("aiChat.modelNotSet"),
+          });
 
   return (
     <>
@@ -171,25 +183,23 @@ export function AIChatPanel() {
         <div className="chat-header-left">
           <span className="chat-header-avatar kind-ai" aria-hidden>AI</span>
           <div className="chat-header-titles">
-            <span className="chat-name">Envoy AI</span>
-            <span className="chat-header-kind kind-ai">Knowledge assistant</span>
+            <span className="chat-name">{t("aiChat.title")}</span>
+            <span className="chat-header-kind kind-ai">{t("aiChat.subtitle")}</span>
           </div>
         </div>
         <div className="chat-header-right">
           <button
             type="button"
             className="chat-header-clear-btn"
-            title="Clear session"
-            aria-label="Clear session"
+            title={t("aiChat.clearSessionTitle")}
+            aria-label={t("aiChat.clearSessionAria")}
             disabled={aiMessages.length === 0}
             onClick={handleClearAiChat}
           >
             <RemoveIcon size={16} />
           </button>
           <span className="ai-status" title={nodeConfig?.modelProviders?.modelName ?? undefined}>
-            {nodeConfig?.modelProviders?.mode === "disabled" ? "AI Disabled" :
-             nodeConfig?.modelProviders?.mode === "mock" ? "Mock Mode" :
-             `Model: ${nodeConfig?.modelProviders?.modelName ?? "Not set"}`}
+            {modelStatusLabel}
           </span>
         </div>
       </header>
@@ -204,18 +214,24 @@ export function AIChatPanel() {
             <div className="empty-state-icon">
               <ChatIcon size={40} />
             </div>
-            <div className="empty-state-title">Chat with your AI assistant</div>
-            <div className="empty-state-desc">Ask questions, get help with tasks, or draft messages</div>
+            <div className="empty-state-title">{t("aiChat.emptyTitle")}</div>
+            <div className="empty-state-desc">{t("aiChat.emptyDesc")}</div>
             <div className="ai-suggestions">
-              <button type="button" onClick={() => draftRef.current?.setPlainText("What can you help me with?")}>What can you help me with?</button>
-              <button type="button" onClick={() => draftRef.current?.setPlainText("Summarize my recent conversations")}>Summarize my recent conversations</button>
-              <button type="button" onClick={() => draftRef.current?.setPlainText("Help me draft a message")}>Help me draft a message</button>
+              <button type="button" onClick={() => draftRef.current?.setPlainText(t("aiChat.suggestHelp"))}>
+                {t("aiChat.suggestHelp")}
+              </button>
+              <button type="button" onClick={() => draftRef.current?.setPlainText(t("aiChat.suggestSummarize"))}>
+                {t("aiChat.suggestSummarize")}
+              </button>
+              <button type="button" onClick={() => draftRef.current?.setPlainText(t("aiChat.suggestDraft"))}>
+                {t("aiChat.suggestDraft")}
+              </button>
             </div>
           </div>
         ) : (
           messageGroups.map(([dateKey, msgs]) => (
             <div key={dateKey}>
-              <div className="date-separator"><span>{fmtDateLabel(msgs[0].timestamp)}</span></div>
+              <div className="date-separator"><span>{fmtDateLabel(msgs[0].timestamp, t)}</span></div>
               {buildMessageStacks(msgs, (a, b) => a.role === b.role).map((stack) => {
                 const outgoing = stack[0].role === "user";
                 const variant = messageVisualVariant(outgoing, "ai");
@@ -255,8 +271,8 @@ export function AIChatPanel() {
             <span className="message-stack-avatar agent" aria-hidden>AI</span>
             <div className="message-stack-bubbles">
               <div className="message-bubble ai-incoming group-single">
-                <span className="message-bubble-badge">Envoy AI</span>
-                <p className="message-bubble-body ai-loading">Thinking…</p>
+                <span className="message-bubble-badge">{t("aiChat.badge")}</span>
+                <p className="message-bubble-body ai-loading">{t("aiChat.thinking")}</p>
               </div>
             </div>
           </div>
@@ -266,7 +282,7 @@ export function AIChatPanel() {
       <footer className="chat-input">
         <input
           type="text"
-          placeholder="Ask Envoy AI anything…"
+          placeholder={t("aiChat.inputPlaceholder")}
           value={aiInput}
           onChange={(e) => draftRef.current?.setPlainText(e.target.value)}
           onKeyDown={async (e) => {
@@ -284,7 +300,7 @@ export function AIChatPanel() {
           }}
           disabled={!aiInput.trim() || isAiLoading || !assistantReady}
         >
-          Send
+          {t("aiChat.send")}
         </button>
       </footer>
     </>

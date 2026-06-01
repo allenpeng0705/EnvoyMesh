@@ -174,7 +174,7 @@ function recencyPoints(lastSeenAt: string): number {
 }
 
 export function buildMorningReportDigest(input: {
-  trustRecords: Array<{ peerOwnerId: string; level?: TrustLevel }>;
+  trustRecords: Array<{ peerOwnerId: string; level?: TrustLevel; displayName?: string }>;
   peerDirectoryRecords: Array<{ ownerId: string; peerId?: string; lastSeenAt?: string }>;
   discoveryEvents: Array<{
     ownerId: string;
@@ -224,6 +224,7 @@ export function buildMorningReportDigest(input: {
     return {
       ownerId,
       peerId: peer?.peerId,
+      displayName: trust?.displayName?.trim() || undefined,
       trustLevel: trust?.level ?? "unknown",
       score,
       reason: `trust=${trust?.level ?? "unknown"}, matches=${discovery?.matches ?? 0}, hop=${discovery?.minHopDistance ?? 1}, recency=${recencyScore}`,
@@ -233,5 +234,9 @@ export function buildMorningReportDigest(input: {
     };
   });
 
-  return ranked.sort((left, right) => right.score - left.score).slice(0, input.limit ?? 10);
+  return ranked
+    .filter((entry) => entry.trustLevel === "unknown")
+    .filter((entry) => entry.discoveryMatchCount > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, input.limit ?? 10);
 }

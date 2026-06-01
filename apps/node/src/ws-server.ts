@@ -66,6 +66,9 @@ export class WsServer {
       );
       nodeServiceImpl.on("chat:message", (data: unknown) => this.emitEvent("chat:message", data));
       nodeServiceImpl.on("chat:delivered", (data: unknown) => this.emitEvent("chat:delivered", data));
+      nodeServiceImpl.on("chat:room-updated", (data: unknown) => this.emitEvent("chat:room-updated", data));
+      nodeServiceImpl.on("chat:room-removed", (data: unknown) => this.emitEvent("chat:room-removed", data));
+      nodeServiceImpl.on("chat:room-message", (data: unknown) => this.emitEvent("chat:room-message", data));
       nodeServiceImpl.on("chat:draft", (data: unknown) => this.emitEvent("chat:draft", data));
       nodeServiceImpl.on("agent:activity", (data: unknown) => this.emitEvent("agent:activity", data));
       nodeServiceImpl.on("bond:established", (data: unknown) => this.emitEvent("bond:established", data));
@@ -178,6 +181,10 @@ export class WsServer {
       "social.intro:propose",
       "share:agent-proposed",
       "chat:message",
+      "chat:delivered",
+      "chat:room-updated",
+      "chat:room-removed",
+      "chat:room-message",
       "chat:draft",
       "agent:activity",
       "bond:established",

@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNodeState } from "../context/NodeStateContext.js";
 import { useNodeService } from "./useNodeService.js";
-import type { ChatMessage } from "@envoymesh/api";
+import type { ChatMessage, ChatRoomMessageEvent } from "@envoymesh/api";
+import { isChatRoomThreadKey } from "@envoymesh/api";
 
 export interface ThreadPreview {
   text: string;
   timeLabel: string;
+  /** Latest message time (for sidebar sort). */
+  timestampMs: number;
 }
 
 function latestMessage(msgs: ChatMessage[]): ChatMessage | undefined {
@@ -33,6 +36,13 @@ function threadPeerOwnerId(msg: ChatMessage, selfOwnerId: string | undefined): s
     return so ?? ro ?? null;
   }
   return so ?? ro ?? null;
+}
+
+/** Thread key for preview map — bonded owner id or `room:{uuid}`. */
+function previewThreadKey(msg: ChatMessage, selfOwnerId: string | undefined): string | null {
+  const rcvO = msg.recipient.ownerId?.trim();
+  if (rcvO && isChatRoomThreadKey(rcvO)) return rcvO;
+  return threadPeerOwnerId(msg, selfOwnerId);
 }
 
 function formatThreadTime(iso: string): string {
@@ -77,6 +87,7 @@ export function useChatThreadPreviews(peerOwnerIds: readonly string[]): Record<s
             next[pid] = {
               text: formatPreview(last.content?.text ?? ""),
               timeLabel: formatThreadTime(last.metadata.timestamp),
+              timestampMs: new Date(last.metadata.timestamp).getTime(),
             };
           } catch {
             /* ignore per-peer errors */
@@ -91,18 +102,26 @@ export function useChatThreadPreviews(peerOwnerIds: readonly string[]): Record<s
   }, [nodeService, sortedKey, peerOwnerIds]);
 
   useEffect(() => {
-    const unsub = nodeService.on("chat:message", (msg) => {
-      const peer = threadPeerOwnerId(msg, selfOwnerId);
+    const applyPreview = (msg: ChatMessage) => {
+      const peer = previewThreadKey(msg, selfOwnerId);
       if (!peer || !peerOwnerIds.includes(peer)) return;
       setPreviews((prev) => ({
         ...prev,
         [peer]: {
           text: formatPreview(msg.content?.text ?? ""),
           timeLabel: formatThreadTime(msg.metadata.timestamp),
+          timestampMs: new Date(msg.metadata.timestamp).getTime(),
         },
       }));
+    };
+    const unsub = nodeService.on("chat:message", applyPreview);
+    const unsubRoom = nodeService.on("chat:room-message", (data) => {
+      applyPreview((data as ChatRoomMessageEvent).message);
     });
-    return unsub;
+    return () => {
+      unsub();
+      unsubRoom();
+    };
   }, [nodeService, selfOwnerId, sortedKey, peerOwnerIds]);
 
   return previews;

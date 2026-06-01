@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
+import { useT } from "../../context/I18nContext.js";
 import {
   useIsInProcessMobileNode,
   useModelProviderUiScope,
@@ -50,6 +51,7 @@ function loadWanTwoNatChecklistDone(): Record<string, boolean> {
 }
 
 export function SettingsNodeTab() {
+  const t = useT();
   const modelProviderUiScope = useModelProviderUiScope();
   const cloudOnlyMobile = modelProviderUiScope === "cloud-only";
   const isMobileNode = useIsInProcessMobileNode();
@@ -138,10 +140,10 @@ export function SettingsNodeTab() {
           available: false,
           running: false,
           managed: false,
-          errorHint: "Could not read IPFS engine status",
+          errorHint: t("settings.network.ipfs.statusReadError"),
         }),
       );
-  }, [nodeService, nodeConfig?.externalPublish?.allowIpfs, isMobileNode]);
+  }, [nodeService, nodeConfig?.externalPublish?.allowIpfs, isMobileNode, t]);
 
   useEffect(() => {
     void refreshConnectionStatus();
@@ -163,26 +165,26 @@ export function SettingsNodeTab() {
       case "ollama":
         return {
           endpointPlaceholder: "http://127.0.0.1:11434/v1",
-          hint: "Use Ollama’s OpenAI-compatible base URL (must end with /v1). On a phone, use your computer’s LAN IP instead of 127.0.0.1. EnvoyMesh normalizes bare http://host:11434 to …/v1 automatically.",
-          apiKeyHint: "Leave empty for typical local Ollama.",
+          hint: t("settings.network.modelProvider.ollama.hint"),
+          apiKeyHint: t("settings.network.modelProvider.ollama.apiKeyHint"),
         };
       case "litellm":
         return {
           endpointPlaceholder: "http://127.0.0.1:4000/v1",
-          hint: "Point at LiteLLM’s HTTP API (OpenAI-compatible), usually ending with /v1. Mobile: prefer http://<home-LAN-ip>:4000/v1 so the device can reach your proxy.",
-          apiKeyHint: "Optional: LiteLLM master key if configured.",
+          hint: t("settings.network.modelProvider.litellm.hint"),
+          apiKeyHint: t("settings.network.modelProvider.litellm.apiKeyHint"),
         };
       case "openai-compatible":
         return {
           endpointPlaceholder: "https://api.minimaxi.com/v1",
-          hint: "Any Chat Completions–compatible API; base URL should include /v1. MiniMax China: https://api.minimaxi.com/v1 (not api.minimax.com). International: https://api.minimax.io/v1.",
-          apiKeyHint: "Usually required unless your gateway injects auth.",
+          hint: t("settings.network.modelProvider.openaiCompatible.hint"),
+          apiKeyHint: t("settings.network.modelProvider.openaiCompatible.apiKeyHint"),
         };
       case "anthropic-compatible":
         return {
           endpointPlaceholder: "https://api.anthropic.com",
-          hint: "Anthropic Messages API host only — do not add /v1 here (the client appends /v1/messages).",
-          apiKeyHint: "Anthropic API key.",
+          hint: t("settings.network.modelProvider.anthropicCompatible.hint"),
+          apiKeyHint: t("settings.network.modelProvider.anthropicCompatible.apiKeyHint"),
         };
       default:
         return {
@@ -191,7 +193,7 @@ export function SettingsNodeTab() {
           apiKeyHint: "",
         };
     }
-  }, [modelMode]);
+  }, [modelMode, t]);
 
   // QR pairing state
   const [pairingQR, setPairingQR] = useState<string | null>(null); // data URL
@@ -230,7 +232,7 @@ export function SettingsNodeTab() {
   const handleRevokeDevice = useCallback(async (deviceId: string) => {
     if (isMobileNode) return;
     const label = authorizedDevices.find((d) => d.deviceId === deviceId)?.displayName ?? deviceId;
-    if (!window.confirm(`Revoke device "${label}"? It will no longer be able to send chat as your owner identity.`)) {
+    if (!window.confirm(t("settings.network.agentBridge.revokeConfirm", { label }))) {
       return;
     }
     setRevokingDeviceId(deviceId);
@@ -242,7 +244,7 @@ export function SettingsNodeTab() {
     } finally {
       setRevokingDeviceId(null);
     }
-  }, [authorizedDevices, isMobileNode, nodeService, refreshAuthorizedDevices]);
+  }, [authorizedDevices, isMobileNode, nodeService, refreshAuthorizedDevices, t]);
 
   const handleShowPairingQR = useCallback(async () => {
     setPairingLoading(true);
@@ -292,7 +294,11 @@ export function SettingsNodeTab() {
     try {
       const result = await nodeService.applyWanJoinInvite(wanInvitePaste);
       setWanInviteApplyMsg(
-        `Applied invite — ${result.bootstrapPeersAdded} bootstrap peer(s), ${result.bootstrapPresetsAdded} preset(s), ${result.seedsPersisted} seed(s). Restart node if already running.`,
+        t("settings.network.agentBridge.wanInviteApplied", {
+          bootstrapPeersAdded: result.bootstrapPeersAdded,
+          bootstrapPresetsAdded: result.bootstrapPresetsAdded,
+          seedsPersisted: result.seedsPersisted,
+        }),
       );
       setWanInvitePaste("");
       await refreshNodeConfig();
@@ -301,7 +307,7 @@ export function SettingsNodeTab() {
     } finally {
       setWanInviteApplyBusy(false);
     }
-  }, [nodeService, wanInvitePaste, refreshNodeConfig]);
+  }, [nodeService, wanInvitePaste, refreshNodeConfig, t]);
 
   const handleStartNode = async () => {
     try { await nodeService.startNode(); } catch (e) { console.error(e); }
@@ -467,42 +473,69 @@ export function SettingsNodeTab() {
   const { offers: pendingShareOffers } = useShareOffers();
   const { proposals: agentShareProposals } = useAgentShareProposals();
 
+  const nodeStatusLabel = (status: string) => {
+    switch (status) {
+      case "running":
+        return t("settings.network.nodeControl.statusRunning");
+      case "starting":
+        return t("settings.network.nodeControl.statusStarting");
+      case "stopped":
+        return t("settings.network.nodeControl.statusStopped");
+      case "stopping":
+        return t("settings.network.nodeControl.statusStopping");
+      case "error":
+        return t("settings.network.nodeControl.statusError");
+      default:
+        return status.charAt(0).toUpperCase() + status.slice(1);
+    }
+  };
+
   return (
     <>
       {(pendingShareOffers.length > 0 || agentShareProposals.length > 0) && (
         <section className="settings-section">
-          <h3>File sharing</h3>
+          <h3>{t("settings.network.fileSharing.title")}</h3>
           <p className="section-desc">
             {pendingShareOffers.length > 0
-              ? `${pendingShareOffers.length} incoming file share${pendingShareOffers.length === 1 ? "" : "s"}. `
+              ? t(
+                  pendingShareOffers.length === 1
+                    ? "settings.network.fileSharing.incomingOne"
+                    : "settings.network.fileSharing.incomingMany",
+                  { count: pendingShareOffers.length },
+                )
               : ""}
             {agentShareProposals.length > 0
-              ? `${agentShareProposals.length} agent share suggestion${agentShareProposals.length === 1 ? "" : "s"}. `
+              ? t(
+                  agentShareProposals.length === 1
+                    ? "settings.network.fileSharing.suggestionsOne"
+                    : "settings.network.fileSharing.suggestionsMany",
+                  { count: agentShareProposals.length },
+                )
               : ""}
-            Open Chat → Inbox to accept, send, or dismiss.
+            {t("settings.network.fileSharing.inboxHint")}
           </p>
         </section>
       )}
 
       <section className="settings-section">
-        <h3>Node Control</h3>
+        <h3>{t("settings.network.nodeControl.title")}</h3>
         <dl className="settings-list">
-          <dt>Status</dt>
+          <dt>{t("settings.network.nodeControl.status")}</dt>
           <dd className={`status-${nodeStatus}`}>
             <span className={`status-dot ${nodeStatus === "running" ? "online" : nodeStatus === "starting" ? "starting" : "offline"}`} />
-            {nodeStatus.charAt(0).toUpperCase() + nodeStatus.slice(1)}
+            {nodeStatusLabel(nodeStatus)}
           </dd>
-          <dt>Profile Directory</dt>
-          <dd>{nodeConfig?.profileDir ?? "Loading..."}</dd>
-          <dt>Network peer ID (libp2p)</dt>
+          <dt>{t("settings.network.nodeControl.profileDir")}</dt>
+          <dd>{nodeConfig?.profileDir ?? t("settings.network.nodeControl.loading")}</dd>
+          <dt>{t("settings.network.nodeControl.networkPeerId")}</dt>
           <dd>
             <code>
-              {peerId && !peerId.startsWith("envoy_") ? peerId : "Not connected"}
+              {peerId && !peerId.startsWith("envoy_") ? peerId : t("settings.network.nodeControl.notConnected")}
             </code>
           </dd>
           {connectionStatus?.lastError && (
             <>
-              <dt>Last node error</dt>
+              <dt>{t("settings.network.nodeControl.lastNodeError")}</dt>
               <dd className="settings-diagnostics-error">
                 <span className="settings-diagnostics-time">{connectionStatus.lastErrorAt ?? ""}</span>
                 <code>{connectionStatus.lastError}</code>
@@ -512,27 +545,27 @@ export function SettingsNodeTab() {
         </dl>
         <div className="node-controls">
           {nodeStatus === "running" ? (
-            <button onClick={handleStopNode}>Stop Node</button>
+            <button onClick={handleStopNode}>{t("settings.network.nodeControl.stopNode")}</button>
           ) : (
-            <button onClick={handleStartNode}>Start Node</button>
+            <button onClick={handleStartNode}>{t("settings.network.nodeControl.startNode")}</button>
           )}
         </div>
       </section>
 
       <section className="settings-section">
-        <h3>Chat connectivity diagnostics</h3>
+        <h3>{t("settings.network.chatDiagnostics.title")}</h3>
         <p className="section-desc">
-          Check relay registration, circuit dial hints, and likely causes when cross-NAT chat fails.
+          {t("settings.network.chatDiagnostics.desc")}
         </p>
         <dl className="settings-list">
-          <dt>Contact (optional)</dt>
+          <dt>{t("settings.network.chatDiagnostics.contactOptional")}</dt>
           <dd>
             <select
               className="settings-input"
               value={chatDiagContact}
               onChange={(e) => setChatDiagContact(e.target.value)}
             >
-              <option value="">Node only (no contact dial hints)</option>
+              <option value="">{t("settings.network.chatDiagnostics.nodeOnly")}</option>
               {bonds.map((bond) => (
                 <option key={bond.peerOwnerId} value={bond.peerOwnerId}>
                   {bond.displayName ?? bond.peerOwnerId}
@@ -558,7 +591,7 @@ export function SettingsNodeTab() {
               .finally(() => setChatDiagLoading(false));
           }}
         >
-          {chatDiagLoading ? "Running…" : "Run chat diagnostics"}
+          {chatDiagLoading ? t("settings.network.chatDiagnostics.running") : t("settings.network.chatDiagnostics.run")}
         </button>
         {chatDiagError && (
           <p className="settings-diagnostics-error" style={{ marginTop: "8px" }}>
@@ -573,43 +606,61 @@ export function SettingsNodeTab() {
               ))}
             </ul>
             <dl className="settings-list" style={{ marginTop: "12px" }}>
-              <dt>Relay control targets</dt>
+              <dt>{t("settings.network.chatDiagnostics.relayControlTargets")}</dt>
               <dd>{chatDiagnostics.relayControlTargets.length}</dd>
-              <dt>Last relay.checkin</dt>
+              <dt>{t("settings.network.chatDiagnostics.lastRelayCheckin")}</dt>
               <dd>
                 {chatDiagnostics.lastRelayCheckin
-                  ? `${chatDiagnostics.lastRelayCheckin.results.filter((r) => r.ok).length}/${chatDiagnostics.lastRelayCheckin.results.length} ok (${chatDiagnostics.lastRelayCheckin.source})`
-                  : "none yet"}
+                  ? t("settings.network.chatDiagnostics.relayCheckinOk", {
+                      ok: chatDiagnostics.lastRelayCheckin.results.filter((r) => r.ok).length,
+                      total: chatDiagnostics.lastRelayCheckin.results.length,
+                      source: chatDiagnostics.lastRelayCheckin.source,
+                    })
+                  : t("settings.network.chatDiagnostics.noneYet")}
               </dd>
-              <dt>Last relay.lookup</dt>
+              <dt>{t("settings.network.chatDiagnostics.lastRelayLookup")}</dt>
               <dd>
                 {chatDiagnostics.lastRelayLookup
                   ? chatDiagnostics.lastRelayLookup.ok
-                    ? `${chatDiagnostics.lastRelayLookup.peerCount} peers, ${chatDiagnostics.lastRelayLookup.circuitAddrsStored} circuit addr(s)`
-                    : `failed: ${chatDiagnostics.lastRelayLookup.error ?? "unknown"}`
-                  : "none yet"}
+                    ? t("settings.network.chatDiagnostics.relayLookupOk", {
+                        peerCount: chatDiagnostics.lastRelayLookup.peerCount,
+                        circuitAddrs: chatDiagnostics.lastRelayLookup.circuitAddrsStored,
+                      })
+                    : t("settings.network.chatDiagnostics.relayLookupFailed", {
+                        error: chatDiagnostics.lastRelayLookup.error ?? "unknown",
+                      })
+                  : t("settings.network.chatDiagnostics.noneYet")}
               </dd>
-              <dt>Connections</dt>
+              <dt>{t("settings.network.chatDiagnostics.connections")}</dt>
               <dd>
-                total={chatDiagnostics.connectionStats.totalPeers}/{chatDiagnostics.connectionStats.totalConnections},
-                circuit={chatDiagnostics.connectionStats.circuitPeers}/{chatDiagnostics.connectionStats.circuitConnections}
+                {t("settings.network.chatDiagnostics.connectionsDetail", {
+                  totalPeers: chatDiagnostics.connectionStats.totalPeers,
+                  totalConnections: chatDiagnostics.connectionStats.totalConnections,
+                  circuitPeers: chatDiagnostics.connectionStats.circuitPeers,
+                  circuitConnections: chatDiagnostics.connectionStats.circuitConnections,
+                })}
               </dd>
-              <dt>Discovery seeds</dt>
+              <dt>{t("settings.network.chatDiagnostics.discoverySeeds")}</dt>
               <dd>
-                {chatDiagnostics.discoverySeedCount} total, {chatDiagnostics.circuitSeedCount} circuit
+                {t("settings.network.chatDiagnostics.discoverySeedsDetail", {
+                  total: chatDiagnostics.discoverySeedCount,
+                  circuit: chatDiagnostics.circuitSeedCount,
+                })}
               </dd>
               {chatDiagnostics.contact && (
                 <>
-                  <dt>Contact dial hints</dt>
+                  <dt>{t("settings.network.chatDiagnostics.contactDialHints")}</dt>
                   <dd>
                     {chatDiagnostics.contact.dialHintCount}
                     {chatDiagnostics.contact.badPublicBootstrapHints > 0
-                      ? ` (${chatDiagnostics.contact.badPublicBootstrapHints} bad public bootstrap)`
+                      ? t("settings.network.chatDiagnostics.badPublicBootstrap", {
+                          count: chatDiagnostics.contact.badPublicBootstrapHints,
+                        })
                       : ""}
                   </dd>
                   {chatDiagnostics.contact.sampleDialHints.length > 0 && (
                     <>
-                      <dt>Sample hints</dt>
+                      <dt>{t("settings.network.chatDiagnostics.sampleHints")}</dt>
                       <dd>
                         {chatDiagnostics.contact.sampleDialHints.map((hint) => (
                           <code key={hint} style={{ display: "block", marginBottom: "4px", wordBreak: "break-all" }}>
@@ -627,9 +678,9 @@ export function SettingsNodeTab() {
       </section>
 
       <section className="settings-section">
-        <h3>WAN connectivity diagnostics</h3>
+        <h3>{t("settings.network.wanDiagnostics.title")}</h3>
         <p className="section-desc">
-          Classifies bootstrap reachability, relay availability, hole punch (DCUtR), and discovery policy blocks.
+          {t("settings.network.wanDiagnostics.desc")}
         </p>
         <button
           type="button"
@@ -648,7 +699,7 @@ export function SettingsNodeTab() {
               .finally(() => setConnectivityDiagLoading(false));
           }}
         >
-          {connectivityDiagLoading ? "Running…" : "Run WAN diagnostics"}
+          {connectivityDiagLoading ? t("settings.network.wanDiagnostics.running") : t("settings.network.wanDiagnostics.run")}
         </button>
         {connectivityDiagError && (
           <p className="settings-diagnostics-error" style={{ marginTop: "8px" }}>
@@ -663,35 +714,35 @@ export function SettingsNodeTab() {
               ))}
             </ul>
             <dl className="settings-list" style={{ marginTop: "12px" }}>
-              <dt>Stage D badge</dt>
+              <dt>{t("settings.network.wanDiagnostics.stageDBadge")}</dt>
               <dd>
                 {connectivityDiagnostics.stageD.badge} — {connectivityDiagnostics.stageD.badgeExplanation}
               </dd>
-              <dt>Bootstrap</dt>
+              <dt>{t("settings.network.wanDiagnostics.bootstrap")}</dt>
               <dd>
                 {connectivityDiagnostics.axes.bootstrapReachability.state}:{" "}
                 {connectivityDiagnostics.axes.bootstrapReachability.explanation}
               </dd>
-              <dt>Relay</dt>
+              <dt>{t("settings.network.wanDiagnostics.relay")}</dt>
               <dd>
                 {connectivityDiagnostics.axes.relayAvailability.state}:{" "}
                 {connectivityDiagnostics.axes.relayAvailability.explanation}
               </dd>
-              <dt>Hole punch (DCUtR)</dt>
+              <dt>{t("settings.network.wanDiagnostics.holePunch")}</dt>
               <dd>
                 {connectivityDiagnostics.axes.holePunch.state}: {connectivityDiagnostics.axes.holePunch.explanation}
               </dd>
-              <dt>Policy block</dt>
+              <dt>{t("settings.network.wanDiagnostics.policyBlock")}</dt>
               <dd>
                 {connectivityDiagnostics.axes.policyBlock.state}:{" "}
                 {connectivityDiagnostics.axes.policyBlock.explanation}
               </dd>
-              <dt>QUIC</dt>
-              <dd>{connectivityDiagnostics.quicEnabled ? "enabled" : "disabled or not in profile trace"}</dd>
+              <dt>{t("settings.network.wanDiagnostics.quic")}</dt>
+              <dd>{connectivityDiagnostics.quicEnabled ? t("settings.network.wanDiagnostics.quicEnabled") : t("settings.network.wanDiagnostics.quicDisabled")}</dd>
             </dl>
             {connectivityDiagnostics.signOffChecklist.length > 0 && (
               <details style={{ marginTop: "12px" }}>
-                <summary>Live multi-machine sign-off checklist</summary>
+                <summary>{t("settings.network.wanDiagnostics.signOffChecklist")}</summary>
                 <ol style={{ marginTop: "8px", paddingLeft: "1.25rem" }}>
                   {connectivityDiagnostics.signOffChecklist.map((step) => (
                     <li key={step}>{step}</li>
@@ -716,16 +767,16 @@ export function SettingsNodeTab() {
                 void navigator.clipboard.writeText(report);
               }}
             >
-              Copy physical two-NAT sign-off evidence
+              {t("settings.network.wanDiagnostics.copyEvidence")}
             </button>
           </div>
         )}
       </section>
 
       <section className="settings-section">
-        <h3>Physical two-NAT sign-off</h3>
+        <h3>{t("settings.network.twoNatSignOff.title")}</h3>
         <p className="section-desc">
-          Operator checklist for §4 WAN sign-off when two home routers are available. Progress is saved locally.
+          {t("settings.network.twoNatSignOff.desc")}
         </p>
         <ol className="settings-list" style={{ paddingLeft: "1.25rem", marginTop: "8px" }}>
           {WAN_TWO_NAT_CHECKLIST_STEPS.map((step) => (
@@ -747,11 +798,11 @@ export function SettingsNodeTab() {
         </ol>
         <div className="settings-form-row" style={{ marginTop: "12px" }}>
           <label>
-            Relay multiaddr
+            {t("settings.network.twoNatSignOff.relayMultiaddr")}
             <input
               type="text"
               className="settings-input"
-              placeholder="/ip4/…/tcp/4001/p2p/…"
+              placeholder={t("settings.network.twoNatSignOff.relayPlaceholder")}
               value={twoNatRelayAddr}
               onChange={(e) => setTwoNatRelayAddr(e.target.value)}
             />
@@ -759,7 +810,7 @@ export function SettingsNodeTab() {
         </div>
         <div className="settings-form-row">
           <label>
-            NAT A peerId
+            {t("settings.network.twoNatSignOff.natAPeerId")}
             <input
               type="text"
               className="settings-input"
@@ -768,7 +819,7 @@ export function SettingsNodeTab() {
             />
           </label>
           <label>
-            NAT B peerId
+            {t("settings.network.twoNatSignOff.natBPeerId")}
             <input
               type="text"
               className="settings-input"
@@ -784,7 +835,7 @@ export function SettingsNodeTab() {
               checked={twoNatAutomatedOk}
               onChange={(e) => setTwoNatAutomatedOk(e.target.checked)}
             />
-            Automated baseline passed (wan-relay-signoff-e2e)
+            {t("settings.network.twoNatSignOff.automatedBaseline")}
           </label>
         </div>
         <div className="settings-toggle-row">
@@ -794,7 +845,7 @@ export function SettingsNodeTab() {
               checked={twoNatChatVerified}
               onChange={(e) => setTwoNatChatVerified(e.target.checked)}
             />
-            Manual two-NAT signed chat verified
+            {t("settings.network.twoNatSignOff.manualChatVerified")}
           </label>
         </div>
         <button
@@ -812,7 +863,7 @@ export function SettingsNodeTab() {
             void navigator.clipboard.writeText(text);
           }}
         >
-          Copy operator checklist
+          {t("settings.network.twoNatSignOff.copyChecklist")}
         </button>
         <button
           type="button"
@@ -848,19 +899,19 @@ export function SettingsNodeTab() {
             void navigator.clipboard.writeText(report);
           }}
         >
-          Copy completed ledger row
+          {t("settings.network.twoNatSignOff.copyLedgerRow")}
         </button>
       </section>
 
       <section className="settings-section">
-        <h3>Discovery Settings</h3>
+        <h3>{t("settings.network.discovery.title")}</h3>
         <p className="section-desc">
-          Configure how your node discovers other peers on the network.
+          {t("settings.network.discovery.desc")}
         </p>
         <div className="settings-toggle-row">
           <div className="toggle-info">
-            <strong>mDNS Discovery</strong>
-            <span className="toggle-desc">Discover peers on local network via multicast DNS</span>
+            <strong>{t("settings.network.discovery.mdns")}</strong>
+            <span className="toggle-desc">{t("settings.network.discovery.mdnsDesc")}</span>
           </div>
           <label className="toggle-switch">
             <input
@@ -874,38 +925,38 @@ export function SettingsNodeTab() {
       </section>
 
       <section className="settings-section">
-        <h3>Discovery profile</h3>
+        <h3>{t("settings.network.discoveryProfile.title")}</h3>
         <p className="section-desc">
-          Controls how much background mesh work your node does. Restart the node after changing.
+          {t("settings.network.discoveryProfile.desc")}
         </p>
         <label className="settings-field">
-          <span className="settings-field-label">Profile</span>
+          <span className="settings-field-label">{t("settings.network.discoveryProfile.label")}</span>
           <select
             className="settings-select"
             value={discoveryProfile}
             onChange={(e) => void setDiscoveryProfile(e.target.value as DiscoveryProfile)}
           >
-            <option value="wan-default">Full WAN — DHT + public libp2p bootstrap</option>
-            <option value="relay-only">Relay-only WAN — no DHT (lower CPU/RAM)</option>
-            <option value="contacts-only">Contacts only — relay + bonded peers</option>
+            <option value="wan-default">{t("settings.network.discoveryProfile.wanDefault")}</option>
+            <option value="relay-only">{t("settings.network.discoveryProfile.relayOnly")}</option>
+            <option value="contacts-only">{t("settings.network.discoveryProfile.contactsOnly")}</option>
           </select>
         </label>
         <p className="section-desc muted">
           {discoveryProfile === "wan-default"
-            ? "Global peer discovery via public libp2p bootstrap and DHT. Lazy find skips background DHT queries until you open Search."
+            ? t("settings.network.discoveryProfile.wanDefaultHint")
             : discoveryProfile === "relay-only"
-              ? "Reach peers through Envoy relay without Kad-DHT. Good middle ground for always-on home nodes."
-              : "No public swarm discovery — chat with existing contacts via relay."}
+              ? t("settings.network.discoveryProfile.relayOnlyHint")
+              : t("settings.network.discoveryProfile.contactsOnlyHint")}
         </p>
       </section>
 
       <section className="settings-section">
-        <h3>Resource tuning</h3>
+        <h3>{t("settings.network.resourceTuning.title")}</h3>
         <p className="section-desc">
-          Reduce CPU and memory while staying on WAN. Takes effect after node restart.
+          {t("settings.network.resourceTuning.desc")}
         </p>
         <label className="settings-field">
-          <span className="settings-field-label">Max connections</span>
+          <span className="settings-field-label">{t("settings.network.resourceTuning.maxConnections")}</span>
           <input
             type="number"
             min={10}
@@ -922,7 +973,7 @@ export function SettingsNodeTab() {
           />
         </label>
         <label className="settings-field">
-          <span className="settings-field-label">Capability cycle (seconds)</span>
+          <span className="settings-field-label">{t("settings.network.resourceTuning.capabilityCycle")}</span>
           <input
             type="number"
             min={30}
@@ -940,8 +991,8 @@ export function SettingsNodeTab() {
         </label>
         <div className="settings-toggle-row">
           <div className="toggle-info">
-            <strong>Lazy DHT find</strong>
-            <span className="toggle-desc">Skip background DHT queries; run when Search is open</span>
+            <strong>{t("settings.network.resourceTuning.lazyDhtFind")}</strong>
+            <span className="toggle-desc">{t("settings.network.resourceTuning.lazyDhtFindDesc")}</span>
           </div>
           <label className="toggle-switch">
             <input
@@ -957,8 +1008,8 @@ export function SettingsNodeTab() {
         </div>
         <div className="settings-toggle-row">
           <div className="toggle-info">
-            <strong>Idle timer stretch</strong>
-            <span className="toggle-desc">Slow relay/capability timers when no recent chat activity</span>
+            <strong>{t("settings.network.resourceTuning.idleTimerStretch")}</strong>
+            <span className="toggle-desc">{t("settings.network.resourceTuning.idleTimerStretchDesc")}</span>
           </div>
           <label className="toggle-switch">
             <input
@@ -975,17 +1026,17 @@ export function SettingsNodeTab() {
       </section>
 
       <section className="settings-section">
-        <h3>Public network discovery</h3>
+        <h3>{t("settings.network.publicDiscovery.title")}</h3>
         <p className="section-desc">
-          Quick toggle for full public libp2p vs contacts-only. Use the profile selector above for relay-only WAN.
+          {t("settings.network.publicDiscovery.desc")}
         </p>
         <div className="settings-toggle-row">
           <div className="toggle-info">
-            <strong>Public libp2p discovery</strong>
+            <strong>{t("settings.network.publicDiscovery.toggle")}</strong>
             <span className="toggle-desc">
               {isPublicLibp2pDiscovery
-                ? `Profile: wan-default (${bootstrapPresets.length} bootstrap preset(s))`
-                : "Profile: contacts-only (cn-relay + your configured relays)"}
+                ? t("settings.network.publicDiscovery.profileWanDefault", { count: bootstrapPresets.length })
+                : t("settings.network.publicDiscovery.profileContactsOnly")}
             </span>
           </div>
           <label className="toggle-switch">
@@ -999,25 +1050,24 @@ export function SettingsNodeTab() {
         </div>
         {!isPublicLibp2pDiscovery ? (
           <p className="section-desc muted">
-            Stranger / global mesh discovery is reduced. Chat with existing contacts still works via relay.
-            On desktop, fully quit and reopen the app if connectivity does not change after toggling.
+            {t("settings.network.publicDiscovery.contactsOnlyHint")}
           </p>
         ) : null}
       </section>
 
       <section className="settings-section">
-        <h3>Bootstrap presets (advanced)</h3>
+        <h3>{t("settings.network.bootstrapPresets.title")}</h3>
         <p className="section-desc">
           {isPublicLibp2pDiscovery
-            ? "Fine-tune which public bootstrap sets are used when public libp2p discovery is on."
-            : "Turn on public libp2p discovery above to edit public bootstrap presets."}
+            ? t("settings.network.bootstrapPresets.descPublic")
+            : t("settings.network.bootstrapPresets.descPrivate")}
         </p>
         <div className="bootstrap-presets">
           {[
-            { id: "public-libp2p", label: "public-libp2p", desc: "4 bootstrap servers" },
-            { id: "public-libp2p-am6", label: "public-libp2p-am6", desc: "1 server (AM6)" },
-            { id: "public-libp2p-am7", label: "public-libp2p-am7", desc: "1 server (AM7)" },
-            { id: "cn-relay", label: "CN Relay (47.93.11.212)", desc: "China relay server" },
+            { id: "public-libp2p", label: t("settings.network.bootstrapPresets.publicLibp2p"), desc: t("settings.network.bootstrapPresets.publicLibp2pDesc") },
+            { id: "public-libp2p-am6", label: t("settings.network.bootstrapPresets.publicLibp2pAm6"), desc: t("settings.network.bootstrapPresets.publicLibp2pAm6Desc") },
+            { id: "public-libp2p-am7", label: t("settings.network.bootstrapPresets.publicLibp2pAm7"), desc: t("settings.network.bootstrapPresets.publicLibp2pAm7Desc") },
+            { id: "cn-relay", label: t("settings.network.bootstrapPresets.cnRelay"), desc: t("settings.network.bootstrapPresets.cnRelayDesc") },
           ].map((preset) => (
             <label key={preset.id} className="preset-checkbox">
               <input
@@ -1055,9 +1105,9 @@ export function SettingsNodeTab() {
       </section>
 
       <section className="settings-section">
-        <h3>Configured Relays</h3>
+        <h3>{t("settings.network.relays.title")}</h3>
         {relays.length === 0 ? (
-          <p className="empty">No relays configured</p>
+          <p className="empty">{t("settings.network.relays.empty")}</p>
         ) : (
           <ul className="relay-list">
             {relays.map((relay) => (
@@ -1076,7 +1126,7 @@ export function SettingsNodeTab() {
                   />
                   <span className="relay-info">
                     <strong>{relay.addr}</strong>
-                    {relay.level !== undefined && <span className="relay-level">Level {relay.level}</span>}
+                    {relay.level !== undefined && <span className="relay-level">{t("settings.network.relays.level", { level: relay.level })}</span>}
                     {relay.region && <span className="relay-region">{relay.region}</span>}
                   </span>
                 </label>
@@ -1087,17 +1137,17 @@ export function SettingsNodeTab() {
                     await refreshNodeConfig();
                   }}
                 >
-                  Remove
+                  {t("settings.network.relays.remove")}
                 </button>
               </li>
             ))}
           </ul>
         )}
         <div className="add-relay-form">
-          <h4>Add Relay</h4>
+          <h4>{t("settings.network.relays.addTitle")}</h4>
           <input
             type="text"
-            placeholder="Relay address (e.g., /ip4/1.2.3.4/tcp/4001)"
+            placeholder={t("settings.network.relays.addPlaceholder")}
             value={newRelayAddr}
             onChange={(e) => setNewRelayAddr(e.target.value)}
           />
@@ -1113,20 +1163,20 @@ export function SettingsNodeTab() {
               }
             }}
           >
-            Add
+            {t("settings.network.relays.add")}
           </button>
         </div>
       </section>
 
       <section className="settings-section">
-        <h3>AI / Model Provider</h3>
+        <h3>{t("settings.network.modelProvider.title")}</h3>
         <p className="section-desc">
           {cloudOnlyMobile
-            ? "On this device, configure a cloud API (OpenAI-compatible or Anthropic). Local engines such as Ollama or LiteLLM are not exposed in the mobile UI — use your desktop node for those."
-            : "Configure the AI model provider for knowledge queries and chat assistance. For local Ollama/LiteLLM URLs and LAN HTTP notes, see docs/mobile-local-models.md."}
+            ? t("settings.network.modelProvider.descMobile")
+            : t("settings.network.modelProvider.descDesktop")}
         </p>
         <dl className="settings-list">
-          <dt>Provider Mode</dt>
+          <dt>{t("settings.network.modelProvider.providerMode")}</dt>
           <dd>
             <select
               className="settings-select"
@@ -1138,24 +1188,24 @@ export function SettingsNodeTab() {
                 });
               }}
             >
-              <option value="mock">Mock (testing only)</option>
-              <option value="openai-compatible">OpenAI-Compatible</option>
-              <option value="anthropic-compatible">Anthropic-Compatible</option>
+              <option value="mock">{t("settings.network.modelProvider.modeMock")}</option>
+              <option value="openai-compatible">{t("settings.network.modelProvider.modeOpenAi")}</option>
+              <option value="anthropic-compatible">{t("settings.network.modelProvider.modeAnthropic")}</option>
               {!cloudOnlyMobile && (
                 <>
-                  <option value="ollama">Ollama (local)</option>
-                  <option value="litellm">LiteLLM (local/cloud)</option>
+                  <option value="ollama">{t("settings.network.modelProvider.modeOllama")}</option>
+                  <option value="litellm">{t("settings.network.modelProvider.modeLitellm")}</option>
                 </>
               )}
-              <option value="disabled">Disabled</option>
+              <option value="disabled">{t("settings.network.modelProvider.modeDisabled")}</option>
             </select>
           </dd>
-          <dt>Endpoint URL</dt>
+          <dt>{t("settings.network.modelProvider.endpointUrl")}</dt>
           <dd>
             <input
               type="text"
               className="settings-input"
-              placeholder={modelProviderHints.endpointPlaceholder || "https://api.example.com/v1"}
+              placeholder={modelProviderHints.endpointPlaceholder || t("settings.network.modelProvider.endpointPlaceholderDefault")}
               value={modelEndpoint}
               onChange={(e) => {
                 modelProviderFieldsDirtyRef.current = true;
@@ -1168,17 +1218,17 @@ export function SettingsNodeTab() {
               </p>
             ) : null}
           </dd>
-          <dt>Model Name</dt>
+          <dt>{t("settings.network.modelProvider.modelName")}</dt>
           <dd>
-            <input type="text" className="settings-input" placeholder="MiniMax-M2.7"
+            <input type="text" className="settings-input" placeholder={t("settings.network.modelProvider.modelNamePlaceholder")}
               value={modelName} onChange={(e) => {
                 modelProviderFieldsDirtyRef.current = true;
                 setModelName(e.target.value);
               }} />
           </dd>
-          <dt>API Key</dt>
+          <dt>{t("settings.network.modelProvider.apiKey")}</dt>
           <dd>
-            <input type="password" className="settings-input" placeholder="sk-..."
+            <input type="password" className="settings-input" placeholder={t("settings.network.modelProvider.apiKeyPlaceholder")}
               value={modelApiKey} onChange={(e) => {
                 modelProviderFieldsDirtyRef.current = true;
                 setModelApiKey(e.target.value);
@@ -1193,13 +1243,13 @@ export function SettingsNodeTab() {
       </section>
 
       <section className="settings-section">
-        <h3>AI Chat Behavior</h3>
-        <p className="section-desc">Control how AI interacts in conversations.</p>
+        <h3>{t("settings.network.aiChatBehavior.title")}</h3>
+        <p className="section-desc">{t("settings.network.aiChatBehavior.desc")}</p>
 
         <div className="settings-toggle-row">
           <div className="toggle-info">
-            <strong>Chat Assist</strong>
-            <span className="toggle-desc">AI suggests message drafts while typing</span>
+            <strong>{t("settings.network.aiChatBehavior.chatAssist")}</strong>
+            <span className="toggle-desc">{t("settings.network.aiChatBehavior.chatAssistDesc")}</span>
           </div>
           <label className="toggle-switch">
             <input type="checkbox" checked={chatAssistToggle.checked}
@@ -1210,8 +1260,8 @@ export function SettingsNodeTab() {
 
         <div className="settings-toggle-row">
           <div className="toggle-info">
-            <strong>Auto AI Response</strong>
-            <span className="toggle-desc">AI responds automatically to messages in chat</span>
+            <strong>{t("settings.network.aiChatBehavior.autoAiResponse")}</strong>
+            <span className="toggle-desc">{t("settings.network.aiChatBehavior.autoAiResponseDesc")}</span>
           </div>
           <label className="toggle-switch">
             <input type="checkbox"
@@ -1223,8 +1273,8 @@ export function SettingsNodeTab() {
 
         <div className="settings-toggle-row">
           <div className="toggle-info">
-            <strong>Autonomous Kill Switch</strong>
-            <span className="toggle-desc">Master toggle - pause all autonomous AI actions</span>
+            <strong>{t("settings.network.aiChatBehavior.killSwitch")}</strong>
+            <span className="toggle-desc">{t("settings.network.aiChatBehavior.killSwitchDesc")}</span>
           </div>
           <label className="toggle-switch">
             <input type="checkbox" checked={killSwitchToggle.checked}
@@ -1234,7 +1284,7 @@ export function SettingsNodeTab() {
         </div>
 
         <div className="form-group">
-          <label>Chat activity notifications</label>
+          <label>{t("settings.network.aiChatBehavior.chatNotifications")}</label>
           <select
             value={nodeConfig?.a2aChatNotifications ?? "off"}
             onChange={(e) => {
@@ -1243,17 +1293,17 @@ export function SettingsNodeTab() {
               });
             }}
           >
-            <option value="off">Off</option>
-            <option value="milestones_only">Milestones only (tasks, reports, approvals)</option>
-            <option value="all_reports">All agent activity</option>
+            <option value="off">{t("settings.network.aiChatBehavior.chatNotificationsOff")}</option>
+            <option value="milestones_only">{t("settings.network.aiChatBehavior.chatNotificationsMilestones")}</option>
+            <option value="all_reports">{t("settings.network.aiChatBehavior.chatNotificationsAll")}</option>
           </select>
           <p className="field-desc">
-            Optional local system lines in chat threads when your agent completes work (never sent on the wire).
+            {t("settings.network.aiChatBehavior.chatNotificationsHint")}
           </p>
         </div>
 
         <div className="form-group">
-          <label>Agent interaction mode</label>
+          <label>{t("settings.network.aiChatBehavior.agentInteractionMode")}</label>
           <select
             value={nodeConfig?.agentInteractionMode ?? "structured_preferred"}
             onChange={(e) => {
@@ -1262,18 +1312,18 @@ export function SettingsNodeTab() {
               });
             }}
           >
-            <option value="structured_preferred">Structured preferred — skip chat-assist for verified peer agents</option>
-            <option value="chat_ok">Chat OK — allow free-form agent chat assist</option>
+            <option value="structured_preferred">{t("settings.network.aiChatBehavior.agentInteractionStructured")}</option>
+            <option value="chat_ok">{t("settings.network.aiChatBehavior.agentInteractionChatOk")}</option>
           </select>
           <p className="field-desc">
-            When structured preferred, inbound chat from verified peer agents does not trigger LLM auto-replies; use task and knowledge intents instead.
+            {t("settings.network.aiChatBehavior.agentInteractionHint")}
           </p>
         </div>
 
         <div className="form-group">
-          <label>Agent visibility by domain</label>
+          <label>{t("settings.network.aiChatBehavior.agentVisibility")}</label>
           <p className="field-desc">
-            Controls Activity feed push and WS notifications. Rows are always stored locally.
+            {t("settings.network.aiChatBehavior.agentVisibilityHint")}
           </p>
           {(["social", "knowledge", "home", "research"] as AgentActivityDomain[]).map((domain) => (
             <div className="form-row" key={domain}>
@@ -1290,10 +1340,10 @@ export function SettingsNodeTab() {
                     });
                   }}
                 >
-                  <option value="instant">Instant — show all activity</option>
-                  <option value="brief">Brief — milestones only</option>
-                  <option value="silent">Silent — store only</option>
-                  <option value="approval">Approval — reports and approvals only</option>
+                  <option value="instant">{t("settings.network.aiChatBehavior.visibilityInstant")}</option>
+                  <option value="brief">{t("settings.network.aiChatBehavior.visibilityBrief")}</option>
+                  <option value="silent">{t("settings.network.aiChatBehavior.visibilitySilent")}</option>
+                  <option value="approval">{t("settings.network.aiChatBehavior.visibilityApproval")}</option>
                 </select>
               </div>
             </div>
@@ -1322,7 +1372,7 @@ export function SettingsNodeTab() {
                 setTimeout(() => setSettingsSaveStatus("idle"), 2000);
               }
             }}>
-            {settingsSaveStatus === "saving" ? "Saving..." : settingsSaveStatus === "saved" ? "Saved!" : "Save"}
+            {settingsSaveStatus === "saving" ? t("settings.network.aiChatBehavior.saving") : settingsSaveStatus === "saved" ? t("settings.network.aiChatBehavior.saved") : t("settings.network.aiChatBehavior.save")}
           </button>
           <button type="button" className="settings-cancel-btn"
             onClick={() => {
@@ -1332,43 +1382,43 @@ export function SettingsNodeTab() {
               setModelApiKey(nodeConfig?.modelProviders?.apiKey ?? "");
               setSettingsSaveStatus("idle");
             }}>
-            Cancel
+            {t("settings.network.aiChatBehavior.cancel")}
           </button>
-          {settingsSaveStatus === "error" && <span className="settings-save-error">Save failed</span>}
+          {settingsSaveStatus === "error" && <span className="settings-save-error">{t("settings.network.aiChatBehavior.saveFailed")}</span>}
         </div>
       </section>
 
       {isMobileNode ? (
         <section className="settings-section">
-          <h3>External distribution (IPFS)</h3>
+          <h3>{t("settings.network.ipfs.title")}</h3>
           <p className="section-desc">
-            On mobile, Library export uses in-process Helia (no Kubo). Gateway verify still requires your home desktop node.
+            {t("settings.network.ipfs.descMobile")}
           </p>
           <dl className="settings-list">
-            <dt>IPFS engine</dt>
+            <dt>{t("settings.network.ipfs.engine")}</dt>
             <dd>
               {ipfsEngineStatus == null ? (
-                <span className="settings-hint">Checking…</span>
+                <span className="settings-hint">{t("settings.network.ipfs.checking")}</span>
               ) : ipfsEngineStatus.helia?.available ? (
                 <span className="settings-hint">
-                  Helia in-process
+                  {t("settings.network.ipfs.heliaInProcess")}
                   {ipfsEngineStatus.helia.heliaVersion ? ` (${ipfsEngineStatus.helia.heliaVersion})` : ""}
                 </span>
               ) : (
                 <span className="settings-hint" role="alert">
-                  {ipfsEngineStatus.helia?.errorHint ?? "Helia engine unavailable"}
+                  {ipfsEngineStatus.helia?.errorHint ?? t("settings.network.ipfs.heliaUnavailable")}
                 </span>
               )}
             </dd>
-            <dt>Export engine</dt>
+            <dt>{t("settings.network.ipfs.exportEngine")}</dt>
             <dd>
-              <span className="settings-hint">Helia (mobile only)</span>
+              <span className="settings-hint">{t("settings.network.ipfs.heliaMobileOnly")}</span>
             </dd>
           </dl>
           <div className="settings-toggle-row">
             <div className="toggle-info">
-              <strong>Allow IPFS export</strong>
-              <span className="toggle-desc">Gate explicit vault → IPFS export in Library (default off)</span>
+              <strong>{t("settings.network.ipfs.allowExport")}</strong>
+              <span className="toggle-desc">{t("settings.network.ipfs.allowExportDescMobile")}</span>
             </div>
             <label className="toggle-switch">
               <input
@@ -1382,62 +1432,64 @@ export function SettingsNodeTab() {
         </section>
       ) : (
         <section className="settings-section">
-          <h3>External distribution (IPFS)</h3>
+          <h3>{t("settings.network.ipfs.title")}</h3>
           <p className="section-desc">
-            When enabled, Library can export vault files to IPFS and persist the root CID locally.
-            EnvoyMesh starts the bundled IPFS engine automatically on first export — no separate install or terminal commands.
+            {t("settings.network.ipfs.descDesktop")}
           </p>
           <dl className="settings-list">
-            <dt>IPFS engine</dt>
+            <dt>{t("settings.network.ipfs.engine")}</dt>
             <dd>
               {currentExternalPublish.ipfsExportEngine === "helia" ? (
                 <>
                   {ipfsEngineStatus == null ? (
-                    <span className="settings-hint">Checking…</span>
+                    <span className="settings-hint">{t("settings.network.ipfs.checking")}</span>
                   ) : ipfsEngineStatus.helia?.available ? (
                     <span className="settings-hint">
-                      Helia in-process (primary)
+                      {t("settings.network.ipfs.heliaInProcessPrimary")}
                       {ipfsEngineStatus.helia.heliaVersion ? ` (${ipfsEngineStatus.helia.heliaVersion})` : ""}
                     </span>
                   ) : (
                     <span className="settings-hint" role="alert">
-                      {ipfsEngineStatus.helia?.errorHint ?? "Helia engine unavailable"}
+                      {ipfsEngineStatus.helia?.errorHint ?? t("settings.network.ipfs.heliaUnavailable")}
                     </span>
                   )}
                   <span className="settings-hint" style={{ display: "block", marginTop: "4px" }}>
                     {ipfsEngineStatus?.kubo?.available
-                      ? `Kubo also available${ipfsEngineStatus.kubo.kuboVersion ? ` (${ipfsEngineStatus.kubo.kuboVersion})` : ""} — switch engine to use it`
-                      : ipfsEngineStatus?.kubo?.errorHint ?? "Kubo not required for Helia export"}
+                      ? t("settings.network.ipfs.kuboAlsoAvailable", {
+                          version: ipfsEngineStatus.kubo.kuboVersion ? ` (${ipfsEngineStatus.kubo.kuboVersion})` : "",
+                        })
+                      : ipfsEngineStatus?.kubo?.errorHint ?? t("settings.network.ipfs.kuboNotRequired")}
                   </span>
                 </>
               ) : (
                 <>
                   {ipfsEngineStatus == null ? (
-                    <span className="settings-hint">Checking…</span>
+                    <span className="settings-hint">{t("settings.network.ipfs.checking")}</span>
                   ) : ipfsEngineStatus.available ? (
                     <span className="settings-hint">
                       {ipfsEngineStatus.running
-                        ? `Kubo ready${ipfsEngineStatus.kuboVersion ? ` (${ipfsEngineStatus.kuboVersion})` : ""}${
-                            ipfsEngineStatus.managed ? " — managed by EnvoyMesh" : ""
-                          }`
-                        : "Kubo available — starts automatically when you export"}
+                        ? `${t("settings.network.ipfs.kuboReady", {
+                            version: ipfsEngineStatus.kuboVersion ? ` (${ipfsEngineStatus.kuboVersion})` : "",
+                            managed: ipfsEngineStatus.managed ? t("settings.network.ipfs.kuboManaged") : "",
+                          })}`
+                        : t("settings.network.ipfs.kuboAvailableStarts")}
                     </span>
                   ) : (
                     <span className="settings-hint" role="alert">
-                      {ipfsEngineStatus.errorHint ?? "Kubo engine unavailable"}
+                      {ipfsEngineStatus.errorHint ?? t("settings.network.ipfs.kuboUnavailable")}
                     </span>
                   )}
                   {ipfsEngineStatus?.helia != null && (
                     <span className="settings-hint" style={{ display: "block", marginTop: "4px" }}>
                       {ipfsEngineStatus.helia.available
-                        ? `Helia in-process${ipfsEngineStatus.helia.heliaVersion ? ` (${ipfsEngineStatus.helia.heliaVersion})` : ""}`
-                        : ipfsEngineStatus.helia.errorHint ?? "Helia unavailable"}
+                        ? `${t("settings.network.ipfs.heliaInProcess")}${ipfsEngineStatus.helia.heliaVersion ? ` (${ipfsEngineStatus.helia.heliaVersion})` : ""}`
+                        : ipfsEngineStatus.helia.errorHint ?? t("settings.network.ipfs.heliaUnavailableShort")}
                     </span>
                   )}
                 </>
               )}
             </dd>
-            <dt>Export engine</dt>
+            <dt>{t("settings.network.ipfs.exportEngine")}</dt>
             <dd>
               <select
                 className="settings-input"
@@ -1454,23 +1506,23 @@ export function SettingsNodeTab() {
                   });
                 }}
               >
-                <option value="kubo">Kubo (default)</option>
-                <option value="kubo-with-helia-shadow">Kubo + Helia shadow</option>
-                <option value="helia">Helia (in-process)</option>
+                <option value="kubo">{t("settings.network.ipfs.engineKubo")}</option>
+                <option value="kubo-with-helia-shadow">{t("settings.network.ipfs.engineKuboHeliaShadow")}</option>
+                <option value="helia">{t("settings.network.ipfs.engineHelia")}</option>
               </select>
               <p className="settings-hint" style={{ marginTop: "6px" }}>
                 {currentExternalPublish.ipfsExportEngine === "helia"
-                  ? "Helia produces the canonical CID in-process — no Kubo sidecar required. CIDs match Kubo when both use the interop recipe (CI parity gate)."
+                  ? t("settings.network.ipfs.hintHelia")
                   : currentExternalPublish.ipfsExportEngine === "kubo-with-helia-shadow"
-                    ? "Shadow mode runs Helia in-process after Kubo export and records parity in audit logs. Canonical CID stays Kubo."
-                    : "Kubo uses the bundled sidecar or ipfs on PATH; starts automatically on first export."}
+                    ? t("settings.network.ipfs.hintKuboHeliaShadow")
+                    : t("settings.network.ipfs.hintKubo")}
               </p>
             </dd>
           </dl>
           <div className="settings-toggle-row">
             <div className="toggle-info">
-              <strong>Allow IPFS export</strong>
-              <span className="toggle-desc">Gate explicit vault → IPFS export actions (default off)</span>
+              <strong>{t("settings.network.ipfs.allowExport")}</strong>
+              <span className="toggle-desc">{t("settings.network.ipfs.allowExportDescDesktop")}</span>
             </div>
             <label className="toggle-switch">
               <input
@@ -1484,9 +1536,9 @@ export function SettingsNodeTab() {
           {ipfsExportToggle.checked ? (
             <div className="settings-toggle-row">
               <div className="toggle-info">
-                <strong>Allow external pinning</strong>
+                <strong>{t("settings.network.ipfs.allowPinning")}</strong>
                 <span className="toggle-desc">
-                  Enable Library “Pin to provider” after IPFS export (JWT/token env required)
+                  {t("settings.network.ipfs.allowPinningDesc")}
                 </span>
               </div>
               <label className="toggle-switch">
@@ -1508,7 +1560,7 @@ export function SettingsNodeTab() {
           ) : null}
           {ipfsExportToggle.checked && currentExternalPublish.pinningEnabled ? (
             <dl className="settings-list">
-              <dt>Pinning provider</dt>
+              <dt>{t("settings.network.ipfs.pinningProvider")}</dt>
               <dd>
                 <select
                   className="settings-input"
@@ -1522,24 +1574,24 @@ export function SettingsNodeTab() {
                     });
                   }}
                 >
-                  <option value="pinata">Pinata (ENVOYMESH_PINATA_JWT)</option>
-                  <option value="web3storage">web3.storage (ENVOYMESH_WEB3_STORAGE_TOKEN)</option>
+                  <option value="pinata">{t("settings.network.ipfs.pinata")}</option>
+                  <option value="web3storage">{t("settings.network.ipfs.web3storage")}</option>
                 </select>
               </dd>
             </dl>
           ) : null}
           <dl className="settings-list">
-            <dt>Gateway allowlist</dt>
+            <dt>{t("settings.network.ipfs.gatewayAllowlist")}</dt>
             <dd>
               <textarea
                 className="settings-input"
                 rows={3}
-                placeholder={"https://ipfs.io\nhttps://dweb.link"}
+                placeholder={t("settings.network.ipfs.gatewayPlaceholder")}
                 value={gatewayAllowlistDraft}
                 onChange={(e) => setGatewayAllowlistDraft(e.target.value)}
               />
               <p className="settings-hint" style={{ marginTop: "6px" }}>
-                One HTTPS gateway base per line. Required for Library “Verify on gateway” (automated fetch compares bytes to vault hash).
+                {t("settings.network.ipfs.gatewayHint")}
               </p>
               <button
                 type="button"
@@ -1560,7 +1612,7 @@ export function SettingsNodeTab() {
                   })();
                 }}
               >
-                Save gateway allowlist
+                {t("settings.network.ipfs.saveGatewayAllowlist")}
               </button>
             </dd>
           </dl>
@@ -1568,14 +1620,14 @@ export function SettingsNodeTab() {
       )}
 
       <section className="settings-section">
-        <h3>Trust mode & matching</h3>
+        <h3>{t("settings.network.trustMatching.title")}</h3>
         <p className="section-desc">
-          Allow agent-mediated intros (<code>social.intro.*</code>). Use preferences below so your agent can align discovery with what you say you&apos;re looking for — never invented biography.
+          {t("settings.network.trustMatching.desc")}
         </p>
         <div className="settings-toggle-row">
           <div className="toggle-info">
-            <strong>Trust mode</strong>
-            <span className="toggle-desc">Enable inbound/outbound Trust-mode intro intents</span>
+            <strong>{t("settings.network.trustMatching.trustMode")}</strong>
+            <span className="toggle-desc">{t("settings.network.trustMatching.trustModeDesc")}</span>
           </div>
           <label className="toggle-switch">
             <input
@@ -1588,11 +1640,11 @@ export function SettingsNodeTab() {
         </div>
         <div className="settings-toggle-row">
           <div className="toggle-info">
-            <strong>Friend autopilot</strong>
+            <strong>{t("settings.network.trustMatching.friendAutopilot")}</strong>
             <span className="toggle-desc">
               {nodeConfig?.socialProxyEnabled
-                ? "Superseded by Social proxy (Settings → AI). Disable social proxy to use discovery-only autopilot."
-                : "Allow agent tool mesh.intro.run_autopilot (requires Trust mode + owner approval)"}
+                ? t("settings.network.trustMatching.friendAutopilotSuperseded")
+                : t("settings.network.trustMatching.friendAutopilotDesc")}
             </span>
           </div>
           <label className="toggle-switch">
@@ -1607,7 +1659,7 @@ export function SettingsNodeTab() {
         </div>
         {friendAutopilotToggle.checked ? (
           <dl className="settings-list">
-            <dt>Autopilot schedule</dt>
+            <dt>{t("settings.network.trustMatching.autopilotSchedule")}</dt>
             <dd>
               <select
                 className="settings-input"
@@ -1619,18 +1671,18 @@ export function SettingsNodeTab() {
                 }}
                 disabled={!trustModeToggle.checked}
               >
-                <option value="0">Manual only (agent tool)</option>
-                <option value="24">Daily scheduled pass</option>
-                <option value="168">Weekly scheduled pass</option>
+                <option value="0">{t("settings.network.trustMatching.scheduleManual")}</option>
+                <option value="24">{t("settings.network.trustMatching.scheduleDaily")}</option>
+                <option value="168">{t("settings.network.trustMatching.scheduleWeekly")}</option>
               </select>
               <p className="settings-hint" style={{ marginTop: "6px" }}>
-                Scheduled passes run without per-pass approval when autopilot is enabled. Activity rows and digest include pass counts.
+                {t("settings.network.trustMatching.autopilotScheduleHint")}
               </p>
             </dd>
           </dl>
         ) : null}
         <dl className="settings-list">
-          <dt>Knowledge syndication ceiling</dt>
+          <dt>{t("settings.network.trustMatching.syndicationCeiling")}</dt>
           <dd>
             <select
               className="settings-input"
@@ -1643,18 +1695,18 @@ export function SettingsNodeTab() {
                 } as Parameters<typeof nodeService.updateNodeConfig>[0]);
               }}
             >
-              <option value="">Bond policy only (no extra cap)</option>
-              <option value="public">Public snippets only</option>
-              <option value="friends">Friends tier</option>
-              <option value="private">Private (trusted peers only)</option>
+              <option value="">{t("settings.network.trustMatching.syndicationBondOnly")}</option>
+              <option value="public">{t("settings.network.trustMatching.syndicationPublic")}</option>
+              <option value="friends">{t("settings.network.trustMatching.syndicationFriends")}</option>
+              <option value="private">{t("settings.network.trustMatching.syndicationPrivate")}</option>
             </select>
             <p className="settings-hint" style={{ marginTop: "6px" }}>
-              Caps vault bytes returned to bonded peers on inbound <code>knowledge.query</code>.
+              {t("settings.network.trustMatching.syndicationHint")}
             </p>
           </dd>
           {bonds.length > 0 ? (
             <>
-              <dt>Per-contact syndication caps</dt>
+              <dt>{t("settings.network.trustMatching.perContactCaps")}</dt>
               <dd>
                 <ul className="settings-contact-syndication-list">
                   {bonds.map((bond) => {
@@ -1693,10 +1745,10 @@ export function SettingsNodeTab() {
                             });
                           }}
                         >
-                          <option value="">Use global ceiling</option>
-                          <option value="public">Public only</option>
-                          <option value="friends">Friends tier</option>
-                          <option value="private">Private tier</option>
+                          <option value="">{t("settings.network.trustMatching.useGlobalCeiling")}</option>
+                          <option value="public">{t("settings.network.trustMatching.publicOnly")}</option>
+                          <option value="friends">{t("settings.network.trustMatching.syndicationFriends")}</option>
+                          <option value="private">{t("settings.network.trustMatching.privateTier")}</option>
                         </select>
                       </li>
                     );
@@ -1705,17 +1757,17 @@ export function SettingsNodeTab() {
               </dd>
             </>
           ) : null}
-          <dt>Friend matching preferences</dt>
+          <dt>{t("settings.network.trustMatching.friendMatchingPreferences")}</dt>
           <dd>
             <textarea
               className="settings-input"
               rows={5}
-              placeholder="Topics, traits, boundaries — plain language for your agent (max 4096 chars)."
+              placeholder={t("settings.network.trustMatching.friendMatchingPlaceholder")}
               value={friendMatchingDraft}
               onChange={(e) => setFriendMatchingDraft(e.target.value)}
             />
             <p className="settings-hint" style={{ marginTop: "6px" }}>
-              Saved separately from provider keys — edit and tap Save preferences when ready.
+              {t("settings.network.trustMatching.friendMatchingHint")}
             </p>
           </dd>
         </dl>
@@ -1727,7 +1779,7 @@ export function SettingsNodeTab() {
               await updateNodeConfig({ friendMatchingPreferencesText: friendMatchingDraft });
             }}
           >
-            Save preferences
+            {t("settings.network.trustMatching.savePreferences")}
           </button>
           <button
             type="button"
@@ -1735,26 +1787,24 @@ export function SettingsNodeTab() {
             onClick={() =>
               setFriendMatchingDraft(nodeConfig?.friendMatchingPreferencesText ?? "")}
           >
-            Reset
+            {t("settings.network.trustMatching.reset")}
           </button>
         </div>
       </section>
 
       {/* Relay Public WS URL */}
       <section className="settings-section">
-        <h3>Relay WebSocket URL</h3>
+        <h3>{t("settings.network.relayWs.title")}</h3>
         <p className="section-desc">
-          Public WebSocket URL of the EnvoyMesh relay for mobile pairing.
-          When set, the pairing QR directs mobile clients through the relay, enabling pairing from any network.
-          Leave empty to auto-discover from configured relays.
+          {t("settings.network.relayWs.desc")}
         </p>
         <dl className="settings-list">
-          <dt>Relay WS URL</dt>
+          <dt>{t("settings.network.relayWs.label")}</dt>
           <dd>
             <input
               type="text"
               className="settings-input"
-              placeholder="ws://relay.example.com:15432/ws (leave empty for auto-discovery)"
+              placeholder={t("settings.network.relayWs.placeholder")}
               value={nodeConfig?.relayPublicWsUrl ?? ""}
               onChange={async (e) => {
                 const value = e.target.value.trim();
@@ -1768,39 +1818,39 @@ export function SettingsNodeTab() {
 
       {/* Agent Bridge */}
       <section className="settings-section">
-        <h3>Agent Bridge</h3>
+        <h3>{t("settings.network.agentBridge.title")}</h3>
         <dl className="settings-list">
-          <dt>Status</dt>
+          <dt>{t("settings.network.agentBridge.status")}</dt>
           <dd>
             <span className={`status-dot ${bridgeStatus?.enabled ? "online" : "offline"}`} />
-            {bridgeStatus?.enabled ? "Running" : nodeConfig?.bridgeEnabled ? "Stopped (needs restart)" : "Disabled"}
+            {bridgeStatus?.enabled ? t("settings.network.agentBridge.running") : nodeConfig?.bridgeEnabled ? t("settings.network.agentBridge.stoppedNeedsRestart") : t("settings.network.agentBridge.disabled")}
           </dd>
           {bridgeStatus?.enabled && (
             <>
-              <dt>Agent Name</dt>
-              <dd>{bridgeStatus.agentName ?? "My Agent"}</dd>
-              <dt>Agent Peer ID</dt>
+              <dt>{t("settings.network.agentBridge.agentName")}</dt>
+              <dd>{bridgeStatus.agentName ?? t("settings.network.agentBridge.defaultAgentName")}</dd>
+              <dt>{t("settings.network.agentBridge.agentPeerId")}</dt>
               <dd><code>{bridgeStatus.agentPeerId}</code></dd>
-              <dt>Agent URL</dt>
+              <dt>{t("settings.network.agentBridge.agentUrl")}</dt>
               <dd><code>{bridgeStatus.agentUrl}</code></dd>
-              <dt>Listen Port</dt>
+              <dt>{t("settings.network.agentBridge.listenPort")}</dt>
               <dd>{bridgeStatus.listenPort}</dd>
             </>
           )}
         </dl>
         {(!bridgeStatus?.enabled) && (
           nodeConfig?.bridgeEnabled ? (
-            <p className="settings-hint">Bridge will be enabled on next node restart.</p>
+            <p className="settings-hint">{t("settings.network.agentBridge.enabledOnRestart")}</p>
           ) : (
-            <p className="settings-hint">Enable the bridge in your node's bridge-config.json to connect an external agent (HomeClaw, OpenClaw).</p>
+            <p className="settings-hint">{t("settings.network.agentBridge.enableHint")}</p>
           )
         )}
 
         {/* Bridge enable/disable toggle — takes effect on next node restart */}
         <div className="settings-toggle-row" style={{ marginTop: "12px" }}>
           <div className="toggle-info">
-            <strong>Enable Bridge</strong>
-            <span className="toggle-desc">Turn the agent bridge on/off (requires node restart)</span>
+            <strong>{t("settings.network.agentBridge.enableBridge")}</strong>
+            <span className="toggle-desc">{t("settings.network.agentBridge.enableBridgeDesc")}</span>
           </div>
           <label className="toggle-switch">
             <input
@@ -1820,17 +1870,17 @@ export function SettingsNodeTab() {
               onClick={handleShowPairingQR}
               disabled={pairingLoading}
             >
-              {pairingLoading ? "Generating…" : "Show Pairing QR"}
+              {pairingLoading ? t("settings.network.agentBridge.generating") : t("settings.network.agentBridge.showPairingQr")}
             </button>
           ) : (
             <div style={{ textAlign: "center" }}>
               <img
                 src={pairingQR}
-                alt="Pairing QR Code"
+                alt={t("settings.network.agentBridge.pairingQrAlt")}
                 style={{ width: 256, height: 256, border: "2px solid var(--border-color)", borderRadius: 8 }}
               />
               <p className="settings-hint" style={{ marginTop: 8, wordBreak: "break-all", fontSize: "0.75rem" }}>
-                Scan with HomeClaw mobile app to pair.
+                {t("settings.network.agentBridge.scanToPair")}
                 <br />
                 <code style={{ fontSize: "0.65rem" }}>{pairingUri}</code>
               </p>
@@ -1839,14 +1889,14 @@ export function SettingsNodeTab() {
                 onClick={() => { void navigator.clipboard.writeText(pairingUri); }}
                 style={{ marginTop: 4 }}
               >
-                Copy URI
+                {t("settings.network.agentBridge.copyUri")}
               </button>
               <button
                 className="settings-button"
                 onClick={() => setPairingQR(null)}
                 style={{ marginTop: 4, marginLeft: 4 }}
               >
-                Hide QR
+                {t("settings.network.agentBridge.hideQr")}
               </button>
             </div>
           )}
@@ -1855,10 +1905,9 @@ export function SettingsNodeTab() {
         {/* WAN join invite (Phase 15B) — bootstrap cold-start across NAT */}
         {!isMobileNode ? (
           <div style={{ marginTop: "16px" }}>
-            <strong>Invite to mesh (WAN)</strong>
+            <strong>{t("settings.network.agentBridge.wanInviteTitle")}</strong>
             <p className="settings-hint" style={{ marginTop: 4 }}>
-              Share bootstrap peers + this node&apos;s dial hints for first contact over the internet.
-              Tokens are unsigned — treat like a join URL (short-lived, trusted channel).
+              {t("settings.network.agentBridge.wanInviteDesc")}
             </p>
             {!wanJoinQr ? (
               <button
@@ -1867,13 +1916,13 @@ export function SettingsNodeTab() {
                 onClick={() => { void handleShowWanJoinInvite(); }}
                 disabled={wanJoinLoading}
               >
-                {wanJoinLoading ? "Generating…" : "Show WAN invite QR"}
+                {wanJoinLoading ? t("settings.network.agentBridge.generating") : t("settings.network.agentBridge.showWanInviteQr")}
               </button>
             ) : (
               <div style={{ textAlign: "center" }}>
                 <img
                   src={wanJoinQr}
-                  alt="WAN join invite QR"
+                  alt={t("settings.network.agentBridge.wanInviteQrAlt")}
                   style={{ width: 256, height: 256, border: "2px solid var(--border-color)", borderRadius: 8 }}
                 />
                 <p className="settings-hint" style={{ marginTop: 8, wordBreak: "break-all", fontSize: "0.75rem" }}>
@@ -1885,7 +1934,7 @@ export function SettingsNodeTab() {
                   onClick={() => { void navigator.clipboard.writeText(wanJoinUri); }}
                   style={{ marginTop: 4 }}
                 >
-                  Copy link
+                  {t("settings.network.agentBridge.copyLink")}
                 </button>
                 <button
                   type="button"
@@ -1893,17 +1942,17 @@ export function SettingsNodeTab() {
                   onClick={() => setWanJoinQr(null)}
                   style={{ marginTop: 4, marginLeft: 4 }}
                 >
-                  Hide QR
+                  {t("settings.network.agentBridge.hideQr")}
                 </button>
               </div>
             )}
             <dl className="settings-list" style={{ marginTop: 12 }}>
-              <dt>Accept WAN invite</dt>
+              <dt>{t("settings.network.agentBridge.acceptWanInvite")}</dt>
               <dd>
                 <textarea
                   className="settings-input"
                   rows={3}
-                  placeholder="Paste envoy://join?token=… or raw token"
+                  placeholder={t("settings.network.agentBridge.wanInvitePlaceholder")}
                   value={wanInvitePaste}
                   onChange={(e) => setWanInvitePaste(e.target.value)}
                 />
@@ -1914,7 +1963,7 @@ export function SettingsNodeTab() {
                   onClick={() => { void handleApplyWanJoinInvite(); }}
                   style={{ marginTop: 8 }}
                 >
-                  {wanInviteApplyBusy ? "Applying…" : "Apply invite"}
+                  {wanInviteApplyBusy ? t("settings.network.agentBridge.applying") : t("settings.network.agentBridge.applyInvite")}
                 </button>
                 {wanInviteApplyMsg ? (
                   <p className="settings-hint" style={{ marginTop: 8 }} role="status">
@@ -1928,18 +1977,18 @@ export function SettingsNodeTab() {
 
         {!isMobileNode && (
           <div style={{ marginTop: "16px" }}>
-            <strong>Authorized devices</strong>
+            <strong>{t("settings.network.agentBridge.authorizedDevices")}</strong>
             <p className="settings-hint" style={{ marginTop: 4 }}>
-              Shared-identity satellites paired via QR. Revoking blocks their device certificate on this node.
+              {t("settings.network.agentBridge.authorizedDevicesDesc")}
             </p>
             {authorizedDevicesLoading ? (
-              <p className="settings-hint">Loading devices…</p>
+              <p className="settings-hint">{t("settings.network.agentBridge.loadingDevices")}</p>
             ) : authorizedDevicesError ? (
               <p className="settings-hint" style={{ color: "var(--danger-color, #c0392b)" }}>
                 {authorizedDevicesError}
               </p>
             ) : authorizedDevices.length === 0 ? (
-              <p className="settings-hint">No paired satellite devices yet.</p>
+              <p className="settings-hint">{t("settings.network.agentBridge.noDevices")}</p>
             ) : (
               <ul className="settings-list" style={{ marginTop: 8 }}>
                 {authorizedDevices.map((device) => (
@@ -1952,7 +2001,7 @@ export function SettingsNodeTab() {
                       <div>{device.displayName ?? device.deviceProfile}</div>
                       <div className="settings-hint" style={{ fontSize: "0.75rem" }}>
                         {device.deviceProfile}
-                        {device.revoked ? " · revoked" : ""}
+                        {device.revoked ? t("settings.network.agentBridge.revoked") : ""}
                         <br />
                         <code style={{ fontSize: "0.65rem" }}>{device.deviceId}</code>
                       </div>
@@ -1964,7 +2013,7 @@ export function SettingsNodeTab() {
                         disabled={revokingDeviceId === device.deviceId}
                         onClick={() => { void handleRevokeDevice(device.deviceId); }}
                       >
-                        {revokingDeviceId === device.deviceId ? "Revoking…" : "Revoke"}
+                        {revokingDeviceId === device.deviceId ? t("settings.network.agentBridge.revoking") : t("settings.network.agentBridge.revoke")}
                       </button>
                     )}
                   </li>
@@ -1978,7 +2027,7 @@ export function SettingsNodeTab() {
               disabled={authorizedDevicesLoading}
               onClick={() => { void refreshAuthorizedDevices(); }}
             >
-              Refresh devices
+              {t("settings.network.agentBridge.refreshDevices")}
             </button>
           </div>
         )}

@@ -2084,7 +2084,12 @@ function dialHintsToMultiaddrs(
 
 function validateEnvelopeProtocol(protocol: string, envelope: EnvoyEnvelope): void {
   if (protocol === ENVOY_CHAT_PROTOCOL) {
-    if (envelope.intent !== "chat.message" && envelope.intent !== "chat.delivered") {
+    if (
+      envelope.intent !== "chat.message" &&
+      envelope.intent !== "chat.delivered" &&
+      envelope.intent !== "chat.room.sync" &&
+      envelope.intent !== "chat.room.message"
+    ) {
       throw new Error(`invalid intent ${envelope.intent} on chat protocol`);
     }
     return;

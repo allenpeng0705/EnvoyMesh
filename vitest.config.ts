@@ -15,6 +15,8 @@ export default defineConfig({
         "packages/api/src/discovery-referral-attestation.ts",
       ),
       "@envoymesh/api/chat-delivered": resolve(rootDir, "packages/api/src/chat-delivered.ts"),
+      "@envoymesh/api/chat-room-service": resolve(rootDir, "packages/api/src/chat-room-service.ts"),
+      "@envoymesh/api/group-chat-delivery": resolve(rootDir, "packages/api/src/group-chat-delivery.ts"),
       "@envoymesh/api": resolve(rootDir, "packages/api/src/index.ts"),
       "@envoymesh/social": resolve(rootDir, "apps/social/src"),
       "@envoymesh/protocol": resolve(rootDir, "packages/protocol/src/index.ts"),

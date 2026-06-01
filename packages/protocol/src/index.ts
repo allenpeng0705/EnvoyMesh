@@ -28,6 +28,8 @@ export const EnvoyIntentSchema = z.enum([
   "relay.summary",
   "chat.message",
   "chat.delivered",
+  "chat.room.sync",
+  "chat.room.message",
   "knowledge.query",
   "knowledge.response",
   "task.mandate",
@@ -451,6 +453,37 @@ export const ProfileGalleryPhotoSchema = ProfilePhotoRefSchema.extend({
   visibility: ProfileGalleryPhotoVisibilitySchema,
 });
 
+/** Owner-controlled discoverability granularity for geo DHT topics. */
+export const DiscoveryLocationPrecisionSchema = z.enum([
+  "hidden",
+  "country",
+  "region",
+  "city",
+  "town",
+  "nearby",
+]);
+
+export type DiscoveryLocationPrecision = z.infer<typeof DiscoveryLocationPrecisionSchema>;
+
+/** Signed profile location — admin divisions + optional geohash (never raw lat/lng). */
+export const DiscoveryLocationSchema = z.object({
+  countryCode: z
+    .string()
+    .length(2)
+    .regex(/^[A-Z]{2}$/),
+  regionCode: z.string().min(1).max(16).optional(),
+  city: z.string().min(1).max(80).optional(),
+  town: z.string().min(1).max(80).optional(),
+  geohash: z
+    .string()
+    .min(4)
+    .max(12)
+    .regex(/^[0-9b-hjkmnp-z]+$/i)
+    .optional(),
+});
+
+export type DiscoveryLocation = z.infer<typeof DiscoveryLocationSchema>;
+
 export const HumanProfilePayloadSchema = z.object({
   version: z.literal("0.1"),
   ownerId: z.string().min(1),
@@ -465,6 +498,10 @@ export const HumanProfilePayloadSchema = z.object({
   publicThumbnail: ProfilePhotoRefSchema.optional(),
   /** Additional photos; visibility per entry. */
   galleryPhotos: z.array(ProfileGalleryPhotoSchema).max(12).optional(),
+  /** Optional place metadata for geo-scoped DHT discovery (see Phase 17). */
+  discoveryLocation: DiscoveryLocationSchema.optional(),
+  /** How much of `discoveryLocation` is advertised as `geo:*` capability topics. */
+  discoveryLocationPrecision: DiscoveryLocationPrecisionSchema.default("hidden"),
   // Rendezvous capabilities for peer discovery
   capabilities: z.array(CapabilityUnionSchema).max(20).optional(),
   updatedAt: z.string().datetime(),
@@ -488,6 +525,8 @@ export interface CreateHumanProfilePayloadInput {
   profileVisibility?: "public" | "private";
   publicThumbnail?: z.infer<typeof ProfilePhotoRefSchema>;
   galleryPhotos?: z.infer<typeof ProfileGalleryPhotoSchema>[];
+  discoveryLocation?: DiscoveryLocation;
+  discoveryLocationPrecision?: DiscoveryLocationPrecision;
   capabilities?: Array<{ tag: string } | { type: string; params?: Record<string, unknown>; confidence?: number } | { descriptor: string }>;
   ownerPrivateKeyPem: string;
 }
@@ -506,6 +545,8 @@ export function createHumanProfilePayload(input: CreateHumanProfilePayloadInput)
     profileVisibility: input.profileVisibility ?? "private",
     publicThumbnail: input.publicThumbnail,
     galleryPhotos: input.galleryPhotos,
+    discoveryLocation: input.discoveryLocation,
+    discoveryLocationPrecision: input.discoveryLocationPrecision ?? "hidden",
     capabilities: input.capabilities,
     updatedAt: new Date().toISOString(),
   };
@@ -553,6 +594,9 @@ export const FriendMatchingPreferencesPayloadSchema = z.object({
   version: z.literal("0.1"),
   ownerId: z.string().min(1),
   text: z.string().min(1).max(FRIEND_MATCHING_PREFERENCES_TEXT_MAX),
+  /** Optional geography for Trust-mode matching (Phase 17C). Overrides profile location when set. */
+  matchingLocation: DiscoveryLocationSchema.optional(),
+  matchingLocationScope: z.enum(["country", "region", "city", "town", "nearby"]).optional(),
   expiresAt: z.string().datetime(),
   signature: z.string().min(1),
 });
@@ -1137,6 +1181,30 @@ export const ChatDeliveredPayloadSchema = z.object({
 /** Max wait for a peer to reply with chat.delivered on the same libp2p stream. */
 export const CHAT_DELIVERY_ACK_TIMEOUT_MS = 45_000;
 
+function refineChatSenderDeviceFields(
+  value: {
+    senderOwnerId: string;
+    deviceCertificate?: DeviceCertificate;
+    ownerPublicKeyPem?: string;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  if (value.deviceCertificate && !value.ownerPublicKeyPem) {
+    ctx.addIssue({
+      code: "custom",
+      message: "ownerPublicKeyPem is required when deviceCertificate is present",
+      path: ["ownerPublicKeyPem"],
+    });
+  }
+  if (value.deviceCertificate && value.deviceCertificate.ownerId !== value.senderOwnerId) {
+    ctx.addIssue({
+      code: "custom",
+      message: "deviceCertificate.ownerId must match senderOwnerId",
+      path: ["deviceCertificate"],
+    });
+  }
+}
+
 export const ChatMessagePayloadSchema = z
   .object({
     senderOwnerId: z.string().min(1),
@@ -1147,20 +1215,89 @@ export const ChatMessagePayloadSchema = z
     ownerPublicKeyPem: z.string().min(1).optional(),
   })
   .superRefine((value, ctx) => {
-    if (value.deviceCertificate && !value.ownerPublicKeyPem) {
+    refineChatSenderDeviceFields(value, ctx);
+  });
+
+function refineChatRoomSyncDeviceFields(
+  value: {
+    updatedByOwnerId: string;
+    deviceCertificate?: DeviceCertificate;
+    ownerPublicKeyPem?: string;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  if (value.deviceCertificate && !value.ownerPublicKeyPem) {
+    ctx.addIssue({
+      code: "custom",
+      message: "ownerPublicKeyPem is required when deviceCertificate is present",
+      path: ["ownerPublicKeyPem"],
+    });
+  }
+  if (value.deviceCertificate && value.deviceCertificate.ownerId !== value.updatedByOwnerId) {
+    ctx.addIssue({
+      code: "custom",
+      message: "deviceCertificate.ownerId must match updatedByOwnerId",
+      path: ["deviceCertificate"],
+    });
+  }
+}
+
+export const ChatRoomSyncPayloadSchema = z
+  .object({
+    roomId: z.string().uuid(),
+    title: z.string().min(1).max(128),
+    creatorOwnerId: z.string().min(1),
+    /** Owner id of the member applying this revision (room creator or inviter). */
+    updatedByOwnerId: z.string().min(1),
+    memberOwnerIds: z.array(z.string().min(1)).max(64),
+    revision: z.number().int().nonnegative(),
+    updatedAt: z.string().datetime(),
+    action: z.enum(["create", "invite", "leave", "remove", "rename", "dismiss"]),
+    /** Required when action is remove — members removed by the creator. */
+    removedMemberOwnerIds: z.array(z.string().min(1)).max(64).optional(),
+    deviceCertificate: DeviceCertificateSchema.optional(),
+    ownerPublicKeyPem: z.string().min(1).optional(),
+  })
+  .superRefine((value, ctx) => {
+    refineChatRoomSyncDeviceFields(value, ctx);
+    if (value.action !== "dismiss" && value.memberOwnerIds.length < 1) {
       ctx.addIssue({
-        code: "custom",
-        message: "ownerPublicKeyPem is required when deviceCertificate is present",
-        path: ["ownerPublicKeyPem"],
+        code: z.ZodIssueCode.custom,
+        message: "memberOwnerIds must include at least one member unless action is dismiss",
+        path: ["memberOwnerIds"],
       });
     }
-    if (value.deviceCertificate && value.deviceCertificate.ownerId !== value.senderOwnerId) {
+    if (value.action === "remove" && (!value.removedMemberOwnerIds || value.removedMemberOwnerIds.length < 1)) {
       ctx.addIssue({
-        code: "custom",
-        message: "deviceCertificate.ownerId must match senderOwnerId",
-        path: ["deviceCertificate"],
+        code: z.ZodIssueCode.custom,
+        message: "removedMemberOwnerIds is required when action is remove",
+        path: ["removedMemberOwnerIds"],
       });
     }
+    if (value.action === "remove" && value.removedMemberOwnerIds) {
+      for (const removedId of value.removedMemberOwnerIds) {
+        if (value.memberOwnerIds.includes(removedId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "removedMemberOwnerIds must not overlap memberOwnerIds",
+            path: ["removedMemberOwnerIds"],
+          });
+          break;
+        }
+      }
+    }
+  });
+
+export const ChatRoomMessagePayloadSchema = z
+  .object({
+    roomId: z.string().uuid(),
+    senderOwnerId: z.string().min(1),
+    text: z.string().min(1).max(128000),
+    deviceCertificate: DeviceCertificateSchema.optional(),
+    ownerPublicKeyPem: z.string().min(1).optional(),
+  })
+  .superRefine((value, ctx) => {
+    refineChatSenderDeviceFields(value, ctx);
   });
 
 export const MandateActionSchema = z.enum([
@@ -1506,6 +1643,8 @@ export type RendezvousQueryPayload = z.infer<typeof RendezvousQueryPayloadSchema
 export type RendezvousMatch = z.infer<typeof RendezvousMatchSchema>;
 export type RendezvousResponsePayload = z.infer<typeof RendezvousResponsePayloadSchema>;
 export type ChatMessagePayload = z.infer<typeof ChatMessagePayloadSchema>;
+export type ChatRoomSyncPayload = z.infer<typeof ChatRoomSyncPayloadSchema>;
+export type ChatRoomMessagePayload = z.infer<typeof ChatRoomMessagePayloadSchema>;
 export type ChatDeliveredPayload = z.infer<typeof ChatDeliveredPayloadSchema>;
 export type MandateAction = z.infer<typeof MandateActionSchema>;
 export type EmpPosture = z.infer<typeof EmpPostureSchema>;
@@ -1571,7 +1710,9 @@ export function createUnsignedEnvelope<TPayload>(
   input: CreateEnvelopeInput<TPayload>,
 ): UnsignedEnvoyEnvelope<TPayload> {
   const defaultRoles =
-    input.intent === "chat.message"
+    input.intent === "chat.message" ||
+    input.intent === "chat.room.sync" ||
+    input.intent === "chat.room.message"
       ? { senderRole: "human" as const, recipientRole: "human" as const }
       : input.intent.startsWith("system.")
         ? { senderRole: "system" as const, recipientRole: "agent" as const }
@@ -1773,6 +1914,14 @@ export function parseRendezvousQueryPayload(input: unknown): RendezvousQueryPayl
 
 export function parseChatMessagePayload(input: unknown): ChatMessagePayload {
   return ChatMessagePayloadSchema.parse(input);
+}
+
+export function parseChatRoomSyncPayload(input: unknown): ChatRoomSyncPayload {
+  return ChatRoomSyncPayloadSchema.parse(input);
+}
+
+export function parseChatRoomMessagePayload(input: unknown): ChatRoomMessagePayload {
+  return ChatRoomMessagePayloadSchema.parse(input);
 }
 
 export function parseChatDeliveredPayload(input: unknown): ChatDeliveredPayload {
@@ -2038,6 +2187,8 @@ export function createHumanProfileFragmentPayload(
 export interface CreateFriendMatchingPreferencesPayloadInput {
   ownerId: string;
   text: string;
+  matchingLocation?: DiscoveryLocation;
+  matchingLocationScope?: "country" | "region" | "city" | "town" | "nearby";
   expiresAt: string;
   signature: string;
 }
@@ -2049,6 +2200,8 @@ export function createFriendMatchingPreferencesPayload(
     version: "0.1",
     ownerId: input.ownerId,
     text: input.text,
+    matchingLocation: input.matchingLocation,
+    matchingLocationScope: input.matchingLocationScope,
     expiresAt: input.expiresAt,
     signature: input.signature,
   });
@@ -2421,6 +2574,56 @@ export interface CreateChatMessagePayloadInput {
 
 export function createChatMessagePayload(input: CreateChatMessagePayloadInput): ChatMessagePayload {
   return ChatMessagePayloadSchema.parse({
+    senderOwnerId: input.senderOwnerId,
+    text: input.text,
+    deviceCertificate: input.deviceCertificate,
+    ownerPublicKeyPem: input.ownerPublicKeyPem,
+  });
+}
+
+export interface CreateChatRoomSyncPayloadInput {
+  roomId: string;
+  title: string;
+  creatorOwnerId: string;
+  updatedByOwnerId: string;
+  memberOwnerIds: string[];
+  revision: number;
+  updatedAt?: string;
+  action: ChatRoomSyncPayload["action"];
+  removedMemberOwnerIds?: string[];
+  deviceCertificate?: DeviceCertificate;
+  ownerPublicKeyPem?: string;
+}
+
+export function createChatRoomSyncPayload(input: CreateChatRoomSyncPayloadInput): ChatRoomSyncPayload {
+  return ChatRoomSyncPayloadSchema.parse({
+    roomId: input.roomId,
+    title: input.title,
+    creatorOwnerId: input.creatorOwnerId,
+    updatedByOwnerId: input.updatedByOwnerId,
+    memberOwnerIds: input.memberOwnerIds,
+    revision: input.revision,
+    updatedAt: input.updatedAt ?? new Date().toISOString(),
+    action: input.action,
+    removedMemberOwnerIds: input.removedMemberOwnerIds,
+    deviceCertificate: input.deviceCertificate,
+    ownerPublicKeyPem: input.ownerPublicKeyPem,
+  });
+}
+
+export interface CreateChatRoomMessagePayloadInput {
+  roomId: string;
+  senderOwnerId: string;
+  text: string;
+  deviceCertificate?: DeviceCertificate;
+  ownerPublicKeyPem?: string;
+}
+
+export function createChatRoomMessagePayload(
+  input: CreateChatRoomMessagePayloadInput,
+): ChatRoomMessagePayload {
+  return ChatRoomMessagePayloadSchema.parse({
+    roomId: input.roomId,
     senderOwnerId: input.senderOwnerId,
     text: input.text,
     deviceCertificate: input.deviceCertificate,
@@ -2962,6 +3165,16 @@ function evaluateEnvelopeRolePolicy(
       return {
         ok: false,
         reason: "chat.message cannot involve system role",
+      };
+    }
+    return { ok: true };
+  }
+
+  if (intent === "chat.room.sync" || intent === "chat.room.message") {
+    if (senderRole !== "human" || recipientRole !== "human") {
+      return {
+        ok: false,
+        reason: `${intent} requires senderRole=human and recipientRole=human`,
       };
     }
     return { ok: true };

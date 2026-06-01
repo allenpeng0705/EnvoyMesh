@@ -1,6 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useNodeService } from "../../hooks/useNodeService.js";
+import {
+  useIsInProcessMobileNode,
+  useModelProviderUiScope,
+  useNodeService,
+} from "../../hooks/useNodeService.js";
 import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
 import type {
   AiIdentityMode,
@@ -11,7 +16,14 @@ import type {
   AiRuleCategory,
   AiSettings,
   DocumentAutonomyPolicy,
+  ModelProviderMode,
   RagIndexStatus,
+  AutonomousPolicy,
+  A2aChatNotificationMode,
+  AgentActivityDomain,
+  AgentInteractionMode,
+  AgentNotifyMode,
+  AutonomousDomain,
 } from "@envoymesh/api";
 import {
   DEFAULT_AI_KNOWLEDGE_BASE,
@@ -60,6 +72,7 @@ const EMPTY_RULE_FORM: RuleFormState = {
 };
 
 function RagIndexStatusPanel() {
+  const t = useT();
   const nodeService = useNodeService();
   const [status, setStatus] = useState<RagIndexStatus | null>(null);
 
@@ -100,21 +113,37 @@ function RagIndexStatusPanel() {
 
   return (
     <div className="form-group">
-      <label>Vector index status</label>
+      <label>{t("settings.ai.rag.indexStatusLabel")}</label>
       <div className="settings-status-panel">
         <div className="settings-progress-bar" aria-hidden="true">
           <div className="settings-progress-fill" style={{ width: `${pct}%` }} />
         </div>
         <p className="field-desc">
           {status.isIndexing
-            ? `Indexing ${progress.phase}: ${progress.processed}/${progress.total} files`
+            ? t("settings.ai.rag.indexStatusIndexing", {
+                phase: progress.phase,
+                processed: progress.processed,
+                total: progress.total,
+              })
             : progress.phase === "done"
-              ? `Up to date — indexed ${progress.indexed}, skipped ${progress.skipped}, removed ${progress.removed}`
+              ? t("settings.ai.rag.indexStatusDone", {
+                  indexed: progress.indexed,
+                  skipped: progress.skipped,
+                  removed: progress.removed,
+                })
               : progress.phase === "error"
-                ? `Index error: ${progress.message ?? "unknown"}`
-                : "Idle"}
-          {status.lastCompletedAt ? ` · Last run ${new Date(status.lastCompletedAt).toLocaleString()}` : ""}
-          {status.trackedDocuments > 0 ? ` · ${status.trackedDocuments} tracked file(s)` : ""}
+                ? t("settings.ai.rag.indexStatusError", {
+                    message: progress.message ?? t("settings.ai.rag.indexStatusUnknown"),
+                  })
+                : t("settings.ai.rag.indexStatusIdle")}
+          {status.lastCompletedAt
+            ? t("settings.ai.rag.indexStatusLastRunSuffix", {
+                time: new Date(status.lastCompletedAt).toLocaleString(),
+              })
+            : ""}
+          {status.trackedDocuments > 0
+            ? t("settings.ai.rag.indexStatusTrackedSuffix", { count: status.trackedDocuments })
+            : ""}
         </p>
       </div>
     </div>
@@ -125,6 +154,7 @@ function KnowledgeBaseSettings(props: {
   value: AiKnowledgeBaseSettings;
   onChange: (next: AiKnowledgeBaseSettings) => Promise<void>;
 }) {
+  const t = useT();
   const kb = props.value;
   const patch = async (partial: Partial<AiKnowledgeBaseSettings>) => {
     await props.onChange({ ...kb, ...partial });
@@ -134,8 +164,8 @@ function KnowledgeBaseSettings(props: {
     <>
       <div className="settings-toggle-row">
         <div className="toggle-info">
-          <strong>Enable vault knowledge base</strong>
-          <span className="toggle-desc">Inject matching vault snippets into AI prompts</span>
+          <strong>{t("settings.ai.rag.enableVaultKb")}</strong>
+          <span className="toggle-desc">{t("settings.ai.rag.enableVaultKbDesc")}</span>
         </div>
         <label className="toggle-switch">
           <input
@@ -151,23 +181,23 @@ function KnowledgeBaseSettings(props: {
 
       <div className="form-row">
         <div className="form-group">
-          <label>Retrieval mode</label>
+          <label>{t("settings.ai.rag.retrievalMode")}</label>
           <select
             value={kb.ragMode ?? DEFAULT_AI_KNOWLEDGE_BASE.ragMode}
             onChange={async (e) => {
               await patch({ ragMode: e.target.value as AiRagMode });
             }}
           >
-            <option value="vector">Vector (embeddings, recommended)</option>
-            <option value="hybrid">Hybrid (vector + keyword fallback)</option>
-            <option value="lexical">Lexical (keywords only)</option>
+            <option value="vector">{t("settings.ai.rag.retrievalVector")}</option>
+            <option value="hybrid">{t("settings.ai.rag.retrievalHybrid")}</option>
+            <option value="lexical">{t("settings.ai.rag.retrievalLexical")}</option>
           </select>
         </div>
         <div className="form-group">
-          <label>Embedding model</label>
+          <label>{t("settings.ai.rag.embeddingModel")}</label>
           <input
             type="text"
-            placeholder="inherit from chat model or e.g. nomic-embed-text"
+            placeholder={t("settings.ai.rag.embeddingPlaceholder")}
             value={kb.embedding?.modelName ?? ""}
             onChange={async (e) => {
               await patch({
@@ -184,10 +214,8 @@ function KnowledgeBaseSettings(props: {
 
       <div className="settings-toggle-row">
         <div className="toggle-info">
-          <strong>Purge RAG when deleting chat</strong>
-          <span className="toggle-desc">
-            Off (default): deleted messages stay in the vector index for AI context. On: delete/clear also removes chat RAG vectors.
-          </span>
+          <strong>{t("settings.ai.rag.purgeRagOnDelete")}</strong>
+          <span className="toggle-desc">{t("settings.ai.rag.purgeRagOnDeleteDesc")}</span>
         </div>
         <label className="toggle-switch">
           <input
@@ -203,7 +231,7 @@ function KnowledgeBaseSettings(props: {
 
       <div className="form-row">
         <div className="form-group">
-          <label>Recent messages in context</label>
+          <label>{t("settings.ai.rag.recentMessagesInContext")}</label>
           <input
             type="number"
             min={1}
@@ -215,7 +243,7 @@ function KnowledgeBaseSettings(props: {
           />
         </div>
         <div className="form-group">
-          <label>RAG history messages</label>
+          <label>{t("settings.ai.rag.ragHistoryMessages")}</label>
           <input
             type="number"
             min={0}
@@ -227,7 +255,7 @@ function KnowledgeBaseSettings(props: {
           />
         </div>
         <div className="form-group">
-          <label>Vault snippets per prompt</label>
+          <label>{t("settings.ai.rag.vaultSnippetsPerPrompt")}</label>
           <input
             type="number"
             min={0}
@@ -242,7 +270,7 @@ function KnowledgeBaseSettings(props: {
 
       <div className="form-row">
         <div className="form-group">
-          <label>Max file size (MB)</label>
+          <label>{t("settings.ai.rag.maxFileSizeMb")}</label>
           <input
             type="number"
             min={1}
@@ -257,7 +285,7 @@ function KnowledgeBaseSettings(props: {
           />
         </div>
         <div className="form-group">
-          <label>Chunk size (chars)</label>
+          <label>{t("settings.ai.rag.chunkSizeChars")}</label>
           <input
             type="number"
             min={200}
@@ -271,7 +299,7 @@ function KnowledgeBaseSettings(props: {
           />
         </div>
         <div className="form-group">
-          <label>Chunk overlap (chars)</label>
+          <label>{t("settings.ai.rag.chunkOverlapChars")}</label>
           <input
             type="number"
             min={0}
@@ -289,10 +317,10 @@ function KnowledgeBaseSettings(props: {
       <RagIndexStatusPanel />
 
       <div className="form-group">
-        <label>Public knowledge paths (comma-separated)</label>
+        <label>{t("settings.ai.rag.publicKnowledgePaths")}</label>
         <input
           type="text"
-          placeholder="knowledge/public/"
+          placeholder={t("settings.ai.rag.publicPathsPlaceholder")}
           value={(kb.publicVaultPaths ?? kb.vaultPaths ?? DEFAULT_AI_KNOWLEDGE_BASE.publicVaultPaths).join(", ")}
           onChange={async (e) => {
             const publicVaultPaths = e.target.value
@@ -302,14 +330,14 @@ function KnowledgeBaseSettings(props: {
             await patch({ publicVaultPaths, vaultPaths: undefined });
           }}
         />
-        <p className="field-desc">Used for auto-reply and contact-facing AI only.</p>
+        <p className="field-desc">{t("settings.ai.rag.publicPathsDesc")}</p>
       </div>
 
       <div className="form-group">
-        <label>Private knowledge paths (comma-separated)</label>
+        <label>{t("settings.ai.rag.privateKnowledgePaths")}</label>
         <input
           type="text"
-          placeholder="knowledge/private/"
+          placeholder={t("settings.ai.rag.privatePathsPlaceholder")}
           value={(kb.privateVaultPaths ?? DEFAULT_AI_KNOWLEDGE_BASE.privateVaultPaths).join(", ")}
           onChange={async (e) => {
             const privateVaultPaths = e.target.value
@@ -319,12 +347,12 @@ function KnowledgeBaseSettings(props: {
             await patch({ privateVaultPaths });
           }}
         />
-        <p className="field-desc">Owner-only: Envoy AI tab and local knowledge queries.</p>
+        <p className="field-desc">{t("settings.ai.rag.privatePathsDesc")}</p>
       </div>
 
       <div className="form-row">
         <div className="form-group">
-          <label>External provider</label>
+          <label>{t("settings.ai.rag.externalProvider")}</label>
           <select
             value={kb.externalProvider ?? "none"}
             onChange={async (e) => {
@@ -333,15 +361,15 @@ function KnowledgeBaseSettings(props: {
               });
             }}
           >
-            <option value="none">None (local vault only)</option>
-            <option value="mcp">MCP server (e.g. Memex)</option>
+            <option value="none">{t("settings.ai.rag.externalNone")}</option>
+            <option value="mcp">{t("settings.ai.rag.externalMcp")}</option>
           </select>
         </div>
         <div className="form-group">
-          <label>MCP server URL</label>
+          <label>{t("settings.ai.rag.mcpServerUrl")}</label>
           <input
             type="text"
-            placeholder="http://127.0.0.1:PORT/mcp"
+            placeholder={t("settings.ai.rag.mcpUrlPlaceholder")}
             value={kb.mcpServerUrl ?? ""}
             disabled={kb.externalProvider !== "mcp"}
             onChange={async (e) => {
@@ -354,10 +382,10 @@ function KnowledgeBaseSettings(props: {
       {kb.externalProvider === "mcp" && (
         <div className="form-row">
           <div className="form-group">
-            <label>MCP search tool</label>
+            <label>{t("settings.ai.rag.mcpSearchTool")}</label>
             <input
               type="text"
-              placeholder="memex_search"
+              placeholder={t("settings.ai.rag.mcpSearchToolPlaceholder")}
               value={kb.mcpSearchTool ?? ""}
               onChange={async (e) => {
                 await patch({ mcpSearchTool: e.target.value.trim() || undefined });
@@ -365,7 +393,7 @@ function KnowledgeBaseSettings(props: {
             />
           </div>
           <div className="form-group">
-            <label>MCP API key (optional)</label>
+            <label>{t("settings.ai.rag.mcpApiKeyOptional")}</label>
             <input
               type="password"
               value={kb.mcpApiKey ?? ""}
@@ -381,6 +409,7 @@ function KnowledgeBaseSettings(props: {
 }
 
 function AgentIdentityEditor() {
+  const t = useT();
   const nodeService = useNodeService();
   const [content, setContent] = useState("");
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
@@ -409,9 +438,9 @@ function AgentIdentityEditor() {
     try {
       const doc = await nodeService.updateAgentIdentity(content);
       setUpdatedAt(doc.updatedAt);
-      setSaveMessage("Saved");
+      setSaveMessage(t("settings.ai.agent.saved"));
     } catch (err) {
-      setSaveMessage(err instanceof Error ? err.message : "Save failed");
+      setSaveMessage(err instanceof Error ? err.message : t("settings.ai.agent.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -419,13 +448,10 @@ function AgentIdentityEditor() {
 
   return (
     <>
-      <h4>Agent Operating Instructions</h4>
-      <p className="field-desc">
-        Private markdown injected into every AI prompt (Envoy AI chat, draft replies, knowledge answers).
-        Separate from your public Profile and from vault RAG files. Stored as agent-identity.md in your profile directory.
-      </p>
+      <h4>{t("settings.ai.agent.operatingInstructionsHeading")}</h4>
+      <p className="field-desc">{t("settings.ai.agent.operatingInstructionsDesc")}</p>
       {loading ? (
-        <p className="field-desc">Loading…</p>
+        <p className="field-desc">{t("settings.ai.agent.loading")}</p>
       ) : (
         <>
           <div className="form-group">
@@ -437,10 +463,12 @@ function AgentIdentityEditor() {
           </div>
           <div className="form-actions">
             <button type="button" className="btn-primary" disabled={saving} onClick={() => void handleSave()}>
-              {saving ? "Saving…" : "Save agent identity"}
+              {saving ? t("settings.ai.agent.saving") : t("settings.ai.agent.saveButton")}
             </button>
             {updatedAt && updatedAt !== new Date(0).toISOString() ? (
-              <span className="field-desc">Last saved {new Date(updatedAt).toLocaleString()}</span>
+              <span className="field-desc">
+                {t("settings.ai.agent.lastSaved", { time: new Date(updatedAt).toLocaleString() })}
+              </span>
             ) : null}
             {saveMessage ? <span className="field-desc">{saveMessage}</span> : null}
           </div>
@@ -463,7 +491,208 @@ function defaultAiSettings(): AiSettings {
   };
 }
 
+function ModelProviderSettings({
+  nodeConfig,
+  refreshNodeConfig,
+}: {
+  nodeConfig: import("@envoymesh/api").NodeConfig | null;
+  refreshNodeConfig: () => Promise<void>;
+}) {
+  const t = useT();
+  const nodeService = useNodeService();
+  const modelProviderUiScope = useModelProviderUiScope();
+  const cloudOnlyMobile = modelProviderUiScope === "cloud-only";
+  const isMobileNode = useIsInProcessMobileNode();
+
+  const [modelEndpoint, setModelEndpoint] = useState(nodeConfig?.modelProviders?.endpoint ?? "");
+  const [modelName, setModelName] = useState(nodeConfig?.modelProviders?.modelName ?? "");
+  const [modelApiKey, setModelApiKey] = useState(nodeConfig?.modelProviders?.apiKey ?? "");
+  const [settingsSaveStatus, setSettingsSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const modelProviderFieldsDirtyRef = useRef(false);
+
+  useEffect(() => {
+    if (settingsSaveStatus === "saving" || modelProviderFieldsDirtyRef.current) return;
+    const mp = nodeConfig?.modelProviders;
+    if (!mp) return;
+    setModelEndpoint(mp.endpoint ?? "");
+    setModelName(mp.modelName ?? "");
+    setModelApiKey(mp.apiKey ?? "");
+  }, [nodeConfig?.modelProviders, settingsSaveStatus]);
+
+  const modelMode = nodeConfig?.modelProviders?.mode ?? "mock";
+  const modelProviderHints = useMemo(() => {
+    switch (modelMode) {
+      case "ollama":
+        return {
+          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderOllama"),
+          hint: t("settings.ai.model.endpointHintOllama"),
+          apiKeyHint: t("settings.ai.model.apiKeyHintOllama"),
+        };
+      case "litellm":
+        return {
+          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderLitellm"),
+          hint: t("settings.ai.model.endpointHintLitellm"),
+          apiKeyHint: t("settings.ai.model.apiKeyHintLitellm"),
+        };
+      case "openai-compatible":
+        return {
+          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderOpenAi"),
+          hint: t("settings.ai.model.endpointHintOpenAi"),
+          apiKeyHint: t("settings.ai.model.apiKeyHintOpenAi"),
+        };
+      case "anthropic-compatible":
+        return {
+          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderAnthropic"),
+          hint: t("settings.ai.model.endpointHintAnthropic"),
+          apiKeyHint: t("settings.ai.model.apiKeyHintAnthropic"),
+        };
+      default:
+        return { endpointPlaceholder: "", hint: "", apiKeyHint: "" };
+    }
+  }, [modelMode, t]);
+
+  const updateNodeConfig = async (partial: Partial<import("@envoymesh/api").NodeConfig>) => {
+    await nodeService.updateNodeConfig(partial);
+    await refreshNodeConfig();
+  };
+
+  return (
+    <>
+      <h4>{t("settings.ai.model.heading")}</h4>
+      <p className="section-desc">
+        {cloudOnlyMobile
+          ? t("settings.ai.model.sectionDescCloud")
+          : t("settings.ai.model.sectionDescDefault")}
+      </p>
+      <dl className="settings-list">
+        <dt>{t("settings.ai.model.providerLabel")}</dt>
+        <dd>
+          <select
+            className="settings-select"
+            value={nodeConfig?.modelProviders?.mode ?? "mock"}
+            onChange={async (e) => {
+              const mode = e.target.value as ModelProviderMode;
+              await updateNodeConfig({
+                modelProviders: { ...nodeConfig?.modelProviders, mode },
+              });
+            }}
+          >
+            <option value="mock">{t("settings.ai.model.modeMock")}</option>
+            <option value="openai-compatible">{t("settings.ai.model.modeOpenAiCompatible")}</option>
+            <option value="anthropic-compatible">{t("settings.ai.model.modeAnthropicCompatible")}</option>
+            {!cloudOnlyMobile && !isMobileNode && (
+              <>
+                <option value="ollama">{t("settings.ai.model.modeOllama")}</option>
+                <option value="litellm">{t("settings.ai.model.modeLitellm")}</option>
+              </>
+            )}
+            <option value="disabled">{t("settings.ai.model.modeDisabled")}</option>
+          </select>
+        </dd>
+        <dt>{t("settings.ai.model.endpointUrl")}</dt>
+        <dd>
+          <input
+            type="text"
+            className="settings-input"
+            placeholder={modelProviderHints.endpointPlaceholder || t("settings.ai.model.endpointPlaceholderDefault")}
+            value={modelEndpoint}
+            onChange={(e) => {
+              modelProviderFieldsDirtyRef.current = true;
+              setModelEndpoint(e.target.value);
+            }}
+          />
+          {modelProviderHints.hint ? (
+            <p className="settings-hint" style={{ marginTop: "6px" }}>
+              {modelProviderHints.hint}
+            </p>
+          ) : null}
+        </dd>
+        <dt>{t("settings.ai.model.modelName")}</dt>
+        <dd>
+          <input
+            type="text"
+            className="settings-input"
+            placeholder={t("settings.ai.model.modelNamePlaceholder")}
+            value={modelName}
+            onChange={(e) => {
+              modelProviderFieldsDirtyRef.current = true;
+              setModelName(e.target.value);
+            }}
+          />
+        </dd>
+        <dt>{t("settings.ai.model.apiKey")}</dt>
+        <dd>
+          <input
+            type="password"
+            className="settings-input"
+            placeholder={t("settings.ai.model.apiKeyPlaceholder")}
+            value={modelApiKey}
+            onChange={(e) => {
+              modelProviderFieldsDirtyRef.current = true;
+              setModelApiKey(e.target.value);
+            }}
+          />
+          {modelProviderHints.apiKeyHint ? (
+            <p className="settings-hint" style={{ marginTop: "6px" }}>
+              {modelProviderHints.apiKeyHint}
+            </p>
+          ) : null}
+        </dd>
+      </dl>
+      <div className="settings-buttons">
+        <button
+          type="button"
+          className="settings-save-btn"
+          disabled={settingsSaveStatus === "saving"}
+          onClick={async () => {
+            setSettingsSaveStatus("saving");
+            try {
+              await updateNodeConfig({
+                modelProviders: {
+                  ...(nodeConfig?.modelProviders ?? { mode: "mock" as ModelProviderMode }),
+                  endpoint: modelEndpoint,
+                  modelName,
+                  apiKey: modelApiKey,
+                },
+              });
+              modelProviderFieldsDirtyRef.current = false;
+              setSettingsSaveStatus("saved");
+              setTimeout(() => setSettingsSaveStatus("idle"), 2000);
+            } catch {
+              setSettingsSaveStatus("error");
+              setTimeout(() => setSettingsSaveStatus("idle"), 2000);
+            }
+          }}
+        >
+          {settingsSaveStatus === "saving"
+            ? t("settings.ai.model.saving")
+            : settingsSaveStatus === "saved"
+              ? t("settings.ai.model.saved")
+              : t("settings.ai.model.saveProvider")}
+        </button>
+        <button
+          type="button"
+          className="settings-cancel-btn"
+          onClick={() => {
+            modelProviderFieldsDirtyRef.current = false;
+            setModelEndpoint(nodeConfig?.modelProviders?.endpoint ?? "");
+            setModelName(nodeConfig?.modelProviders?.modelName ?? "");
+            setModelApiKey(nodeConfig?.modelProviders?.apiKey ?? "");
+            setSettingsSaveStatus("idle");
+          }}
+        >
+          {t("settings.ai.model.reset")}
+        </button>
+        {settingsSaveStatus === "error" && (
+          <span className="settings-save-error">{t("settings.ai.model.saveFailed")}</span>
+        )}
+      </div>
+    </>
+  );
+}
+
 export function SettingsAITab() {
+  const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig, refreshNodeConfig } = useNodeState();
   const aiSettings = nodeConfig?.aiSettings ?? defaultAiSettings();
@@ -484,7 +713,7 @@ export function SettingsAITab() {
 
   const handleAddRule = async () => {
     if (!ruleForm.name.trim()) {
-      alert("Please enter a rule name");
+      alert(t("settings.ai.rules.nameRequiredAlert"));
       return;
     }
 
@@ -545,16 +774,157 @@ export function SettingsAITab() {
     },
   );
 
+  const updateNodeConfigPartial = async (partial: Parameters<typeof nodeService.updateNodeConfig>[0]) => {
+    await nodeService.updateNodeConfig(partial);
+    await refreshNodeConfig();
+  };
+
+  const chatAssistToggle = useOptimisticToggle(
+    nodeConfig?.chatAssistEnabled ?? false,
+    async (chatAssistEnabled) => {
+      await updateNodeConfigPartial({ chatAssistEnabled });
+    },
+  );
+
+  const socialAutoSend = !!(nodeConfig?.autonomousPolicies ?? []).find((p) => p.domain === "social")?.autoSendChat;
+
+  const autoSendChatToggle = useOptimisticToggle(socialAutoSend, async (next) => {
+    const currentPolicies = nodeConfig?.autonomousPolicies ?? [];
+    const existingSocial = currentPolicies.find((p) => p.domain === "social");
+    let updatedPolicies: AutonomousPolicy[];
+    if (existingSocial) {
+      updatedPolicies = currentPolicies.map((p) =>
+        p.domain === "social" ? { ...p, autoSendChat: next } : p,
+      );
+    } else {
+      updatedPolicies = [
+        ...currentPolicies,
+        {
+          domain: "social" as AutonomousDomain,
+          maxSensitivity: "friends",
+          autoAnswer: next,
+          autoSendChat: next,
+        },
+      ];
+    }
+    await updateNodeConfigPartial({ autonomousPolicies: updatedPolicies });
+  });
+
+  const killSwitchToggle = useOptimisticToggle(
+    nodeConfig?.autonomousKillSwitch ?? false,
+    async (autonomousKillSwitch) => {
+      await updateNodeConfigPartial({ autonomousKillSwitch });
+    },
+  );
+
   return (
     <section className="settings-section">
-      <h3>AI Assistant Settings</h3>
-      <p className="section-desc">Configure how the AI responds on your behalf.</p>
+      <h3>{t("settings.ai.title")}</h3>
+      <p className="section-desc">{t("settings.ai.sectionDesc")}</p>
 
-      <h4>Status</h4>
+      <ModelProviderSettings nodeConfig={nodeConfig} refreshNodeConfig={refreshNodeConfig} />
+
+      <h4>{t("settings.ai.chat.heading")}</h4>
+      <p className="field-desc">{t("settings.ai.chat.sectionDesc")}</p>
       <div className="settings-toggle-row">
         <div className="toggle-info">
-          <strong>Online Assistant</strong>
-          <span className="toggle-desc">Suggest drafts when you are online</span>
+          <strong>{t("settings.ai.chat.chatAssist")}</strong>
+          <span className="toggle-desc">{t("settings.ai.chat.chatAssistDesc")}</span>
+        </div>
+        <label className="toggle-switch">
+          <input type="checkbox" checked={chatAssistToggle.checked} onChange={chatAssistToggle.onCheckboxChange} />
+          <span className="slider" />
+        </label>
+      </div>
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>{t("settings.ai.chat.autoSendChat")}</strong>
+          <span className="toggle-desc">{t("settings.ai.chat.autoSendChatDesc")}</span>
+        </div>
+        <label className="toggle-switch">
+          <input type="checkbox" checked={autoSendChatToggle.checked} onChange={autoSendChatToggle.onCheckboxChange} />
+          <span className="slider" />
+        </label>
+      </div>
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>{t("settings.ai.chat.pauseAllAi")}</strong>
+          <span className="toggle-desc">{t("settings.ai.chat.pauseAllAiDesc")}</span>
+        </div>
+        <label className="toggle-switch">
+          <input type="checkbox" checked={killSwitchToggle.checked} onChange={killSwitchToggle.onCheckboxChange} />
+          <span className="slider" />
+        </label>
+      </div>
+      <div className="form-group">
+        <label>{t("settings.ai.chat.activityNotifications")}</label>
+        <select
+          value={nodeConfig?.a2aChatNotifications ?? "off"}
+          onChange={(e) => {
+            void updateNodeConfigPartial({
+              a2aChatNotifications: e.target.value as A2aChatNotificationMode,
+            });
+          }}
+        >
+          <option value="off">{t("settings.ai.chat.notificationsOff")}</option>
+          <option value="milestones_only">{t("settings.ai.chat.notificationsMilestonesOnly")}</option>
+          <option value="all_reports">{t("settings.ai.chat.notificationsAllReports")}</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>{t("settings.ai.chat.interactionMode")}</label>
+        <select
+          value={nodeConfig?.agentInteractionMode ?? "structured_preferred"}
+          onChange={(e) => {
+            void updateNodeConfigPartial({
+              agentInteractionMode: e.target.value as AgentInteractionMode,
+            });
+          }}
+        >
+          <option value="structured_preferred">{t("settings.ai.chat.interactionStructuredPreferred")}</option>
+          <option value="chat_ok">{t("settings.ai.chat.interactionChatOk")}</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>{t("settings.ai.chat.visibilityByDomain")}</label>
+        {(["social", "knowledge", "home", "research"] as AgentActivityDomain[]).map((domain) => (
+          <div className="form-row" key={domain}>
+            <div className="form-group">
+              <label>
+                {domain === "social"
+                  ? t("settings.ai.chat.domainSocial")
+                  : domain === "knowledge"
+                    ? t("settings.ai.chat.domainKnowledge")
+                    : domain === "home"
+                      ? t("settings.ai.chat.domainHome")
+                      : t("settings.ai.chat.domainResearch")}
+              </label>
+              <select
+                value={nodeConfig?.agentVisibility?.[domain] ?? "instant"}
+                onChange={(e) => {
+                  void updateNodeConfigPartial({
+                    agentVisibility: {
+                      ...(nodeConfig?.agentVisibility ?? {}),
+                      [domain]: e.target.value as AgentNotifyMode,
+                    },
+                  });
+                }}
+              >
+                <option value="instant">{t("settings.ai.chat.notifyInstant")}</option>
+                <option value="brief">{t("settings.ai.chat.notifyBrief")}</option>
+                <option value="silent">{t("settings.ai.chat.notifySilent")}</option>
+                <option value="approval">{t("settings.ai.chat.notifyApprovalOnly")}</option>
+              </select>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <h4>{t("settings.ai.presence.heading")}</h4>
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>{t("settings.ai.presence.onlineAssistant")}</strong>
+          <span className="toggle-desc">{t("settings.ai.presence.onlineAssistantDesc")}</span>
         </div>
         <label className="toggle-switch">
           <input type="checkbox" checked={onlineAssistantToggle.checked}
@@ -565,8 +935,8 @@ export function SettingsAITab() {
 
       <div className="settings-toggle-row">
         <div className="toggle-info">
-          <strong>Offline Agent</strong>
-          <span className="toggle-desc">Handle chats when you are away</span>
+          <strong>{t("settings.ai.presence.offlineAgent")}</strong>
+          <span className="toggle-desc">{t("settings.ai.presence.offlineAgentDesc")}</span>
         </div>
         <label className="toggle-switch">
           <input type="checkbox" checked={offlineAgentToggle.checked}
@@ -575,8 +945,8 @@ export function SettingsAITab() {
         </label>
       </div>
 
-      <h4>Status Detection</h4>
-      <p className="field-desc">Choose how your online status is determined.</p>
+      <h4>{t("settings.ai.presence.detectionHeading")}</h4>
+      <p className="field-desc">{t("settings.ai.presence.detectionDesc")}</p>
       <div className="settings-radio-group">
         {(["automatic", "manual"] as const).map((mode) => (
           <label key={mode} className={`settings-radio-option ${currentStatus.statusMode === mode ? "active" : ""}`}>
@@ -586,8 +956,16 @@ export function SettingsAITab() {
                 await updateAiSettings({ status: { ...currentStatus, statusMode: mode } });
               }} />
             <div className="radio-content">
-              <strong>{mode === "automatic" ? "Automatic" : "Manual"}</strong>
-              <span>{mode === "automatic" ? "Detect based on activity (typing, mouse movement)" : "Set your status manually below"}</span>
+              <strong>
+                {mode === "automatic"
+                  ? t("settings.ai.presence.modeAutomatic")
+                  : t("settings.ai.presence.modeManual")}
+              </strong>
+              <span>
+                {mode === "automatic"
+                  ? t("settings.ai.presence.modeAutomaticDesc")
+                  : t("settings.ai.presence.modeManualDesc")}
+              </span>
             </div>
           </label>
         ))}
@@ -596,8 +974,8 @@ export function SettingsAITab() {
       {currentStatus.statusMode === "manual" && (
         <div className="settings-toggle-row" style={{ marginTop: "0.75rem" }}>
           <div className="toggle-info">
-            <strong>Current Status</strong>
-            <span className="toggle-desc">Set whether you appear online or away</span>
+            <strong>{t("settings.ai.presence.currentStatus")}</strong>
+            <span className="toggle-desc">{t("settings.ai.presence.currentStatusDesc")}</span>
           </div>
           <label className="toggle-switch">
             <input type="checkbox" checked={manualStatusToggle.checked}
@@ -607,29 +985,16 @@ export function SettingsAITab() {
         </div>
       )}
 
-      <h4>AI Identity</h4>
-      <p className="field-desc">
-        Controls assistant tone in drafts. Human vs agent is always tracked by message role (not shown as inline
-        <code> [AI Agent] </code> in chat unless debug below).
-      </p>
+      <h4>{t("settings.ai.identity.heading")}</h4>
+      <p className="field-desc">{t("settings.ai.identity.sectionDesc")}</p>
       <div className="identity-mode-options">
-        {(Object.entries({
-          invisible: {
-            title: "Invisible",
-            desc: "Drafts sound like you; agent role still applies on send",
-            example: `Example: "Yeah, I can do that."`,
-          },
-          transparent: {
-            title: "Transparent",
-            desc: "Drafts as an open AI assistant (no inline label in chat UI)",
-            example: `Example: "I'm checking that for you."`,
-          },
-          defensive: {
-            title: "Defensive (Gatekeep)",
-            desc: "Gatekeeper tone when you are away",
-            example: `Example: "I've received your message and will notify them when back."`,
-          },
-        }) as [AiIdentityMode, { title: string; desc: string; example: string }][]).map(([mode, info]) => (
+        {(
+          [
+            ["invisible", "modeInvisible", "modeInvisibleDesc", "modeInvisibleExample"],
+            ["transparent", "modeTransparent", "modeTransparentDesc", "modeTransparentExample"],
+            ["defensive", "modeDefensive", "modeDefensiveDesc", "modeDefensiveExample"],
+          ] as const
+        ).map(([mode, titleKey, descKey, exampleKey]) => (
           <label key={mode} className={`identity-mode-option ${aiSettings.identity.mode === mode ? "active" : ""}`}>
             <input type="radio" name="ai-identity" value={mode}
               checked={aiSettings.identity.mode === mode}
@@ -637,19 +1002,16 @@ export function SettingsAITab() {
                 await updateAiSettings({ identity: { ...aiSettings.identity, mode } });
               }} />
             <div className="identity-mode-content">
-              <strong>{info.title}</strong>
-              <span>{info.desc}</span>
-              <small>{info.example}</small>
+              <strong>{t(`settings.ai.identity.${titleKey}`)}</strong>
+              <span>{t(`settings.ai.identity.${descKey}`)}</span>
+              <small>{t(`settings.ai.identity.${exampleKey}`)}</small>
             </div>
           </label>
         ))}
       </div>
 
-      <h4>Chat disclosure</h4>
-      <p className="field-desc">
-        Wire messages always use honest agent roles. These settings affect contact-thread presentation only;
-        Activity and audit always show the true actor.
-      </p>
+      <h4>{t("settings.ai.identity.disclosureHeading")}</h4>
+      <p className="field-desc">{t("settings.ai.identity.disclosureDesc")}</p>
       <div className="settings-field">
         <label className="settings-checkbox-row">
           <input
@@ -661,7 +1023,7 @@ export function SettingsAITab() {
               });
             }}
           />
-          <span>Show agent badges in contact chat</span>
+          <span>{t("settings.ai.identity.showAgentBadges")}</span>
         </label>
       </div>
       <div className="settings-field">
@@ -678,14 +1040,12 @@ export function SettingsAITab() {
               });
             }}
           />
-          <span>Show verified peer agents like normal contact chat</span>
+          <span>{t("settings.ai.identity.collapsePeerAgentToContact")}</span>
         </label>
       </div>
 
-      <h4>EnvoyAI postures</h4>
-      <p className="field-desc">
-        Standing delegation within EMP. Social proxy requires Trust mode enabled in Settings → Trust.
-      </p>
+      <h4>{t("settings.ai.postures.heading")}</h4>
+      <p className="field-desc">{t("settings.ai.postures.sectionDesc")}</p>
       <div className="settings-field">
         <label className="settings-checkbox-row">
           <input
@@ -701,7 +1061,7 @@ export function SettingsAITab() {
               await refreshNodeConfig();
             }}
           />
-          <span>Social proxy</span>
+          <span>{t("settings.ai.postures.socialProxy")}</span>
         </label>
       </div>
       <div className="settings-field">
@@ -714,7 +1074,7 @@ export function SettingsAITab() {
               await refreshNodeConfig();
             }}
           />
-          <span>Document acquisition agent</span>
+          <span>{t("settings.ai.postures.documentAcquisition")}</span>
         </label>
       </div>
       <div className="settings-field">
@@ -727,7 +1087,7 @@ export function SettingsAITab() {
               await refreshNodeConfig();
             }}
           />
-          <span>Capability provider agent</span>
+          <span>{t("settings.ai.postures.capabilityProvider")}</span>
         </label>
       </div>
 
@@ -746,22 +1106,19 @@ export function SettingsAITab() {
             }}
           />
           <span>
-            <strong>Debug: embed prefix in message text</strong>
-            <span className="field-desc block">
-              When enabled, adds your configurable prefix (default <code>[AI Agent]</code>) to outbound message
-              bytes for logs and wire inspection. Never shown in the Social chat UI.
-            </span>
+            <strong>{t("settings.ai.identity.debugEmbedPrefix")}</strong>
+            <span className="field-desc block">{t("settings.ai.identity.debugEmbedPrefixDesc")}</span>
           </span>
         </label>
       </div>
 
       <div className="settings-field">
-        <label htmlFor="ai-debug-prefix">Debug prefix string</label>
+        <label htmlFor="ai-debug-prefix">{t("settings.ai.identity.debugPrefixLabel")}</label>
         <input
           id="ai-debug-prefix"
           type="text"
           className="settings-input"
-          placeholder="[AI Agent]"
+          placeholder={t("settings.ai.identity.debugPrefixPlaceholder")}
           value={aiSettings.identity.transparentPrefix ?? ""}
           disabled={aiSettings.identity.debugPrefixInMessageText !== true}
           onChange={async (e) => {
@@ -778,25 +1135,19 @@ export function SettingsAITab() {
 
       <AgentIdentityEditor />
 
-      <h4>Default Mode for New Contacts</h4>
-      <p className="field-desc">
-        Default AI mode when you open a chat with someone who has no per-contact override.
-        To change mode for an existing contact, use the Manual / Assistant / Auto buttons in that chat&apos;s header.
-      </p>
+      <h4>{t("settings.ai.contacts.defaultModeHeading")}</h4>
+      <p className="field-desc">{t("settings.ai.contacts.defaultModeDesc")}</p>
       <select className="settings-select" value={aiSettings.defaultModeForNewContacts}
         onChange={async (e) => {
           await updateAiSettings({ defaultModeForNewContacts: e.target.value as "manual" | "assistant" | "auto" });
         }}>
-        <option value="manual">Manual (safest — you type everything)</option>
-        <option value="assistant">Assistant (AI suggests drafts)</option>
-        <option value="auto">Auto-Reply (AI responds automatically, requires trust)</option>
+        <option value="manual">{t("settings.ai.contacts.modeManual")}</option>
+        <option value="assistant">{t("settings.ai.contacts.modeAssistant")}</option>
+        <option value="auto">{t("settings.ai.contacts.modeAuto")}</option>
       </select>
 
-      <h4>Knowledge Base</h4>
-      <p className="field-desc">
-        Local vault files are split into public (auto-reply) and private (Envoy AI) partitions,
-        indexed in SQLite with an HNSW ANN index.
-      </p>
+      <h4>{t("settings.ai.rag.heading")}</h4>
+      <p className="field-desc">{t("settings.ai.rag.sectionDesc")}</p>
       <KnowledgeBaseSettings
         value={aiSettings.knowledgeBase ?? { ...DEFAULT_AI_KNOWLEDGE_BASE }}
         onChange={async (knowledgeBase) => {
@@ -804,14 +1155,12 @@ export function SettingsAITab() {
         }}
       />
 
-      <h4>Profile gallery photos</h4>
-      <p className="field-desc">
-        Your public thumbnail is always visible on your signed profile. These settings apply only to extra gallery photos in Profile → Photos.
-      </p>
+      <h4>{t("settings.ai.profileMedia.heading")}</h4>
+      <p className="field-desc">{t("settings.ai.profileMedia.sectionDesc")}</p>
       <div className="settings-toggle-row">
         <div className="toggle-info">
-          <strong>Allow agent to share gallery photos</strong>
-          <span className="toggle-desc">When off, gallery photos are never sent by Envoy AI</span>
+          <strong>{t("settings.ai.profileMedia.allowAgentShare")}</strong>
+          <span className="toggle-desc">{t("settings.ai.profileMedia.allowAgentShareDesc")}</span>
         </div>
         <label className="toggle-switch">
           <input
@@ -827,7 +1176,7 @@ export function SettingsAITab() {
         </label>
       </div>
       <div className="form-group">
-        <label>Gallery share autonomy tier</label>
+        <label>{t("settings.ai.profileMedia.shareAutonomyTier")}</label>
         <select
           className="settings-select"
           value={profileMedia.maxAutonomousShareTier}
@@ -839,12 +1188,12 @@ export function SettingsAITab() {
             });
           }}
         >
-          <option value={0}>Tier 0 — propose in Inbox only</option>
-          <option value={2}>Tier 2 — auto-share when bond and visibility allow</option>
+          <option value={0}>{t("settings.ai.profileMedia.tier0ProposeInbox")}</option>
+          <option value={2}>{t("settings.ai.profileMedia.tier2AutoShare")}</option>
         </select>
       </div>
       <div className="form-group">
-        <label>Minimum gallery visibility for agent share</label>
+        <label>{t("settings.ai.profileMedia.minVisibility")}</label>
         <select
           className="settings-select"
           value={profileMedia.autonomousShareMinVisibility}
@@ -858,18 +1207,16 @@ export function SettingsAITab() {
             });
           }}
         >
-          <option value="public">Public-labelled photos</option>
-          <option value="referred">Public + referred-labelled</option>
-          <option value="direct">Direct-only photos</option>
+          <option value="public">{t("settings.ai.profileMedia.visibilityPublic")}</option>
+          <option value="referred">{t("settings.ai.profileMedia.visibilityReferred")}</option>
+          <option value="direct">{t("settings.ai.profileMedia.visibilityDirect")}</option>
         </select>
       </div>
 
-      <h4>Document Autonomy</h4>
-      <p className="field-desc">
-        Controls how Envoy AI handles library publish and file share workflows. Default is proposals-only (Inbox).
-      </p>
+      <h4>{t("settings.ai.autonomy.heading")}</h4>
+      <p className="field-desc">{t("settings.ai.autonomy.sectionDesc")}</p>
       <div className="form-group">
-        <label>Share autonomy tier</label>
+        <label>{t("settings.ai.autonomy.shareAutonomyTier")}</label>
         <select
           className="settings-select"
           value={documentAutonomy.maxAutonomousShareTier}
@@ -880,15 +1227,15 @@ export function SettingsAITab() {
             });
           }}
         >
-          <option value={0}>Tier 0 — proposals only (Inbox approval)</option>
-          <option value={1}>Tier 1 — delegated (publish helpers; share still proposed)</option>
-          <option value={2}>Tier 2 — auto-share to direct bonds (≤ friends sensitivity)</option>
+          <option value={0}>{t("settings.ai.autonomy.tier0ProposalsOnly")}</option>
+          <option value={1}>{t("settings.ai.autonomy.tier1Delegated")}</option>
+          <option value={2}>{t("settings.ai.autonomy.tier2AutoShareDirect")}</option>
         </select>
       </div>
       <div className="settings-toggle-row">
         <div className="toggle-info">
-          <strong>Autonomous publish metadata</strong>
-          <span className="toggle-desc">Allow agent to publish public library metadata without extra prompts</span>
+          <strong>{t("settings.ai.autonomy.autonomousPublishMetadata")}</strong>
+          <span className="toggle-desc">{t("settings.ai.autonomy.autonomousPublishMetadataDesc")}</span>
         </div>
         <label className="toggle-switch">
           <input
@@ -904,8 +1251,8 @@ export function SettingsAITab() {
         </label>
       </div>
 
-      <h4>AI Rules</h4>
-      <p className="field-desc">Rules define how the AI responds to specific triggers.</p>
+      <h4>{t("settings.ai.rules.heading")}</h4>
+      <p className="field-desc">{t("settings.ai.rules.sectionDesc")}</p>
 
       {/* Rules List */}
       {aiSettings.rules.length > 0 ? (
@@ -917,115 +1264,119 @@ export function SettingsAITab() {
                 <span className="rule-item-category">{rule.category}</span>
               </div>
               <div className="rule-item-triggers">
-                {rule.trigger.isGreeting && "Greetings "}
-                {rule.trigger.keywords && rule.trigger.keywords.length > 0 && `Keywords: ${rule.trigger.keywords.join(", ")} `}
-                {rule.trigger.messageContains && `Regex: ${rule.trigger.messageContains}`}
-                {rule.trigger.contactAiAccessLevel && rule.trigger.contactAiAccessLevel.length > 0 && ` Access: ${rule.trigger.contactAiAccessLevel.join(", ")}`}
-                {!rule.trigger.isGreeting && (!rule.trigger.keywords || rule.trigger.keywords.length === 0) && !rule.trigger.messageContains && "No triggers (catch-all)"}
+                {rule.trigger.isGreeting && `${t("settings.ai.rules.listGreetings")} `}
+                {rule.trigger.keywords && rule.trigger.keywords.length > 0
+                  && `${t("settings.ai.rules.listKeywordsPrefix")} ${rule.trigger.keywords.join(", ")} `}
+                {rule.trigger.messageContains
+                  && `${t("settings.ai.rules.listRegexPrefix")} ${rule.trigger.messageContains}`}
+                {rule.trigger.contactAiAccessLevel && rule.trigger.contactAiAccessLevel.length > 0
+                  && ` ${t("settings.ai.rules.listAccessPrefix")} ${rule.trigger.contactAiAccessLevel.join(", ")}`}
+                {!rule.trigger.isGreeting && (!rule.trigger.keywords || rule.trigger.keywords.length === 0) && !rule.trigger.messageContains && t("settings.ai.rules.listNoTriggers")}
               </div>
               <div className="rule-item-actions">
-                Action: {rule.action.type}
+                {t("settings.ai.rules.listActionPrefix")} {rule.action.type}
                 {rule.action.template && ` — "${rule.action.template.slice(0, 50)}${rule.action.template.length > 50 ? "..." : ""}"`}
-                {rule.action.aiIdentityOverride && ` | Identity: ${rule.action.aiIdentityOverride}`}
+                {rule.action.aiIdentityOverride
+                  && ` | ${t("settings.ai.rules.listIdentityPrefix")} ${rule.action.aiIdentityOverride}`}
               </div>
               <div className="rule-item-controls">
-                <button className="delete" onClick={() => handleDeleteRule(rule.id)}>Delete</button>
+                <button className="delete" onClick={() => handleDeleteRule(rule.id)}>{t("settings.ai.rules.delete")}</button>
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <p className="field-desc" style={{ marginBottom: "1rem" }}>No rules configured. Add a rule below.</p>
+        <p className="field-desc" style={{ marginBottom: "1rem" }}>{t("settings.ai.rules.empty")}</p>
       )}
 
       {/* Add Rule Form — fully controlled */}
       <div className="add-rule-form">
-        <h5>Add New Rule</h5>
+        <h5>{t("settings.ai.rules.addHeading")}</h5>
         <div className="form-group">
-          <label>Rule Name</label>
-          <input type="text" placeholder="e.g., Greeting Response"
+          <label>{t("settings.ai.rules.nameLabel")}</label>
+          <input type="text" placeholder={t("settings.ai.rules.namePlaceholder")}
             value={ruleForm.name}
             onChange={(e) => setRuleForm({ ...ruleForm, name: e.target.value })} />
         </div>
         <div className="form-row">
           <div className="form-group">
-            <label>Category</label>
+            <label>{t("settings.ai.rules.categoryLabel")}</label>
             <select value={ruleForm.category}
               onChange={(e) => setRuleForm({ ...ruleForm, category: e.target.value as AiRuleCategory })}>
-              <option value="availability">Availability</option>
-              <option value="capability">Capability</option>
-              <option value="catch_all">Catch-all</option>
+              <option value="availability">{t("settings.ai.rules.categoryAvailability")}</option>
+              <option value="capability">{t("settings.ai.rules.categoryCapability")}</option>
+              <option value="catch_all">{t("settings.ai.rules.categoryCatchAll")}</option>
             </select>
           </div>
           <div className="form-group">
-            <label>Priority (lower = first)</label>
+            <label>{t("settings.ai.rules.priorityLabel")}</label>
             <input type="number" value={ruleForm.priority} min={1} max={100}
               onChange={(e) => setRuleForm({ ...ruleForm, priority: parseInt(e.target.value) || 1 })} />
           </div>
         </div>
         <div className="form-row">
           <div className="form-group">
-            <label>Trigger: Keywords (comma-separated)</label>
-            <input type="text" placeholder="e.g., help, question, support"
+            <label>{t("settings.ai.rules.triggerKeywords")}</label>
+            <input type="text" placeholder={t("settings.ai.rules.triggerKeywordsPlaceholder")}
               value={ruleForm.keywords}
               onChange={(e) => setRuleForm({ ...ruleForm, keywords: e.target.value })} />
           </div>
           <div className="form-group">
-            <label>Trigger: Message Regex</label>
-            <input type="text" placeholder="e.g., \\b(help|support)\\b"
+            <label>{t("settings.ai.rules.triggerRegex")}</label>
+            <input type="text" placeholder={t("settings.ai.rules.triggerRegexPlaceholder")}
               value={ruleForm.regex}
               onChange={(e) => setRuleForm({ ...ruleForm, regex: e.target.value })} />
           </div>
         </div>
         <div className="form-row">
           <div className="form-group">
-            <label>Trigger: Greeting?</label>
+            <label>{t("settings.ai.rules.triggerGreeting")}</label>
             <select value={ruleForm.isGreeting ? "true" : ""}
               onChange={(e) => setRuleForm({ ...ruleForm, isGreeting: e.target.value === "true" })}>
-              <option value="">Any</option>
-              <option value="true">Yes (match greetings)</option>
+              <option value="">{t("settings.ai.rules.triggerGreetingAny")}</option>
+              <option value="true">{t("settings.ai.rules.triggerGreetingYes")}</option>
             </select>
           </div>
           <div className="form-group">
-            <label>Trigger: AI Access Level</label>
+            <label>{t("settings.ai.rules.triggerAccessLevel")}</label>
             <select value={ruleForm.accessLevel}
               onChange={(e) => setRuleForm({ ...ruleForm, accessLevel: e.target.value as "" | "full" | "assistant_only" })}>
-              <option value="">Any</option>
-              <option value="full">Full access only</option>
-              <option value="assistant_only">Assistant only</option>
+              <option value="">{t("settings.ai.rules.triggerAccessAny")}</option>
+              <option value="full">{t("settings.ai.rules.triggerAccessFull")}</option>
+              <option value="assistant_only">{t("settings.ai.rules.triggerAccessAssistantOnly")}</option>
             </select>
           </div>
         </div>
         <div className="form-row">
           <div className="form-group">
-            <label>Action Type</label>
+            <label>{t("settings.ai.rules.actionType")}</label>
             <select value={ruleForm.actionType}
               onChange={(e) => setRuleForm({ ...ruleForm, actionType: e.target.value as AiRuleActionType })}>
-              <option value="draft">Draft (suggest reply)</option>
-              <option value="auto_send">Auto-send (send directly)</option>
-              <option value="gatekeep">Gatekeep (polite refusal)</option>
-              <option value="defer">Defer (ask owner)</option>
+              <option value="draft">{t("settings.ai.rules.actionDraft")}</option>
+              <option value="auto_send">{t("settings.ai.rules.actionAutoSend")}</option>
+              <option value="gatekeep">{t("settings.ai.rules.actionGatekeep")}</option>
+              <option value="defer">{t("settings.ai.rules.actionDefer")}</option>
             </select>
           </div>
           <div className="form-group">
-            <label>Identity Override</label>
+            <label>{t("settings.ai.rules.identityOverride")}</label>
             <select value={ruleForm.identityOverride}
               onChange={(e) => setRuleForm({ ...ruleForm, identityOverride: e.target.value as "" | AiIdentityMode })}>
-              <option value="">Use default</option>
-              <option value="invisible">Invisible (as owner)</option>
-              <option value="transparent">Transparent ([AI])</option>
-              <option value="defensive">Defensive (gatekeep)</option>
+              <option value="">{t("settings.ai.rules.identityUseDefault")}</option>
+              <option value="invisible">{t("settings.ai.rules.identityInvisible")}</option>
+              <option value="transparent">{t("settings.ai.rules.identityTransparent")}</option>
+              <option value="defensive">{t("settings.ai.rules.identityDefensive")}</option>
             </select>
           </div>
         </div>
         <div className="form-group">
-          <label>Response Template (optional, use {"{ownerName}"} for owner's name)</label>
-          <textarea placeholder="e.g., Hi {ownerName} is currently away. I'll let them know you reached out!"
+          <label>{t("settings.ai.rules.templateLabel")}</label>
+          <textarea placeholder={t("settings.ai.rules.templatePlaceholder")}
             value={ruleForm.template}
             onChange={(e) => setRuleForm({ ...ruleForm, template: e.target.value })} />
         </div>
         <div className="form-actions">
-          <button className="btn-primary" onClick={handleAddRule}>Add Rule</button>
+          <button className="btn-primary" onClick={handleAddRule}>{t("settings.ai.rules.addButton")}</button>
         </div>
       </div>
     </section>

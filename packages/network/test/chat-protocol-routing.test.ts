@@ -51,6 +51,32 @@ describe("chat protocol routing", () => {
     }
   });
 
+  it("allows group chat intents on chat protocol", async () => {
+    const mesh = new EnvoyMesh({ enableMdns: false });
+    await mesh.start();
+    try {
+      for (const intent of ["chat.room.sync", "chat.room.message"] as const) {
+        const envelope = {
+          ...createUnsignedEnvelope({
+            senderPeerId: "peer-a",
+            senderPublicKey: "pk-a",
+            senderRole: "human",
+            recipientPeerId: "peer-b",
+            recipientRole: "human",
+            intent,
+            payload: { roomId: "11111111-1111-4111-8111-111111111111", text: "hi" },
+          }),
+          signature: "sig",
+        };
+        await expect(mesh.sendChat("/ip4/127.0.0.1/tcp/1", envelope as any)).rejects.not.toThrow(
+          /invalid intent .* on chat protocol/,
+        );
+      }
+    } finally {
+      await mesh.stop();
+    }
+  });
+
   it("exports distinct chat and message protocol ids", () => {
     expect(ENVOY_CHAT_PROTOCOL).not.toBe(ENVOY_MESSAGE_PROTOCOL);
   });

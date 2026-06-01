@@ -6,6 +6,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { Header } from "../../src/components/Header.js";
 import { ThemeProvider } from "../../src/context/ThemeContext.js";
+import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import type { ViewName } from "../../src/App.js";
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
@@ -17,7 +18,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
 afterEach(() => cleanup());
 
 function renderHeader(props: React.ComponentProps<typeof Header>) {
-  return render(
+  return renderWithI18n(
     <ThemeProvider>
       <Header {...props} />
     </ThemeProvider>,
@@ -45,7 +46,6 @@ describe("Header", () => {
     currentView: "chat" as ViewName,
     onNavigate: vi.fn(),
     inboxActivityCount: 0,
-    bondsCount: 0,
     isPublicNetwork: false,
     connectionStatus: null,
     nodeStatus: "running" as const,
@@ -63,8 +63,9 @@ describe("Header", () => {
     const nav = screen.getByRole("navigation", { name: /primary/i });
     expect(within(nav).queryByRole("button", { name: /^assistant$/i })).toBeNull();
     expect(within(nav).getByRole("button", { name: /^chat$/i })).toBeDefined();
-    expect(within(nav).getByText(/contacts \(0\)/i)).toBeDefined();
+    expect(within(nav).getByRole("button", { name: /^discover$/i })).toBeDefined();
     expect(within(nav).getByRole("button", { name: /^library$/i })).toBeDefined();
+    expect(within(nav).queryByRole("button", { name: /^activity$/i })).toBeNull();
     expect(within(nav).getByRole("button", { name: /^settings$/i })).toBeDefined();
     expect(within(nav).queryByRole("button", { name: /^profile$/i })).toBeNull();
     expect(screen.getByRole("button", { name: /^profile$/i })).toBeDefined();
@@ -98,9 +99,11 @@ describe("Header", () => {
     expect(screen.getByText("3")).toBeDefined();
   });
 
-  it("shows bonds count", () => {
-    renderHeader({ ...baseProps, bondsCount: 5 });
-    expect(screen.getByText("Contacts (5)")).toBeDefined();
+  it("navigates to Discover when Discover is clicked", () => {
+    const onNavigate = vi.fn();
+    renderHeader({ ...baseProps, onNavigate });
+    fireEvent.click(screen.getByRole("button", { name: /^discover$/i }));
+    expect(onNavigate).toHaveBeenCalledWith("discover");
   });
 
   it("shows display name on Profile nav when profile has displayName", () => {

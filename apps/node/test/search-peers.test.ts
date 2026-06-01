@@ -69,6 +69,53 @@ describe("NodeServiceImpl - Search Peers", () => {
       expect(results[0].ownerId).toBe("owner-alice");
     });
 
+    it("matches cached profile hobbies on LAN interest search", async () => {
+      const trustRecords = [
+        { peerOwnerId: "owner-bob", displayName: "Bob", level: "public", createdAt: new Date().toISOString() },
+      ];
+      const peerRecords = [
+        {
+          peerId: "peer-bob",
+          ownerId: "owner-bob",
+          deviceId: "dev1",
+          lastSeenAt: new Date().toISOString(),
+          listenAddrs: [],
+        },
+      ];
+      const trustStore = createMockTrustStore(trustRecords);
+      const peerDirectoryStore = createMockPeerDirectoryStore(peerRecords);
+      const humanProfileStore = createMockHumanProfileStore();
+      const nodeService = new NodeServiceImpl(undefined, trustStore, peerDirectoryStore, humanProfileStore, "/tmp/test");
+      (nodeService as any)._peerProfileCacheStore = {
+        list: async () => [
+          {
+            ownerId: "owner-bob",
+            cachedAt: new Date().toISOString(),
+            profile: {
+              ownerId: "owner-bob",
+              displayName: "Bob",
+              username: "bob",
+              bio: "",
+              gender: "",
+              hobbies: ["music"],
+              knowledge: [],
+              profileVisibility: "public",
+              updatedAt: new Date().toISOString(),
+              signature: "sig",
+            },
+          },
+        ],
+        get: async () => undefined,
+        upsert: async () => ({} as any),
+        remove: async () => {},
+      };
+      (nodeService as any)._discoveryRuntimeCache = undefined;
+
+      const results = await nodeService.searchPeers({ interests: ["music"] });
+      expect(results.some((r) => r.ownerId === "owner-bob")).toBe(true);
+      expect(results.find((r) => r.ownerId === "owner-bob")?.interests).toContain("music");
+    });
+
     it("should return only bonded peers when no query text provided", async () => {
       const trustRecords = [
         { peerOwnerId: "owner-alice", displayName: "Alice", level: "bonded", createdAt: new Date().toISOString() },

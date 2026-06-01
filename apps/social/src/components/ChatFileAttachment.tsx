@@ -1,5 +1,6 @@
 import type { ChatAttachment } from "@envoymesh/api";
 import { useEffect, useState } from "react";
+import { useT } from "../context/I18nContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
 import { useToast } from "../hooks/useToast.js";
 import {
@@ -17,6 +18,7 @@ function isImageMime(mimeType: string): boolean {
 }
 
 export function ChatFileAttachment({ attachment }: ChatFileAttachmentProps) {
+  const t = useT();
   const nodeService = useNodeService();
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
@@ -45,7 +47,7 @@ export function ChatFileAttachment({ attachment }: ChatFileAttachmentProps) {
 
   const run = async (action: "open" | "reveal") => {
     if (!vaultPath) {
-      showToast("File path unavailable for this attachment", "error");
+      showToast(t("fileShare.pathUnavailable"), "error");
       return;
     }
     setBusy(true);
@@ -86,10 +88,10 @@ export function ChatFileAttachment({ attachment }: ChatFileAttachmentProps) {
       {vaultPath ? (
         <div className="chat-file-attachment-actions">
           <button type="button" className="secondary" disabled={busy} onClick={() => void run("open")}>
-            Open
+            {busy ? t("library.opening") : t("library.open")}
           </button>
           <button type="button" className="secondary" disabled={busy} onClick={() => void run("reveal")}>
-            Show in folder
+            {t("library.showInFolder")}
           </button>
         </div>
       ) : null}

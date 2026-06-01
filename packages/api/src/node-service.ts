@@ -87,6 +87,8 @@ export interface CreateHumanProfileInput {
   hobbies?: string[];
   knowledge?: string[];
   profileVisibility?: "public" | "private";
+  discoveryLocation?: import("@envoymesh/protocol").DiscoveryLocation;
+  discoveryLocationPrecision?: import("@envoymesh/protocol").DiscoveryLocationPrecision;
   capabilities?: CapabilityUnion[];
 }
 
@@ -222,6 +224,10 @@ export interface ChatMessage {
   metadata: {
     timestamp: string;
     deliveryReceipt?: "pending" | "sent" | "delivered" | "read" | "failed";
+    /** Group chat: owners who have acked delivery. */
+    deliveredToOwnerIds?: string[];
+    /** Group chat: owners still awaiting delivery ack. */
+    pendingRecipientOwnerIds?: string[];
   };
   signature: string;
 }
@@ -231,6 +237,29 @@ export interface SendChatResult {
   messageId: string;
   deliveryReceipt?: "sent" | "delivered";
   deliveredAt?: string;
+  deliveredToOwnerIds?: string[];
+  pendingRecipientOwnerIds?: string[];
+}
+
+/** Owner-created group chat room (membership synced via chat.room.sync). */
+export interface ChatRoom {
+  roomId: string;
+  title: string;
+  creatorOwnerId: string;
+  memberOwnerIds: string[];
+  revision: number;
+  updatedAt: string;
+}
+
+export {
+  chatRoomThreadKey,
+  parseChatRoomThreadKey,
+  isChatRoomThreadKey,
+} from "./chat-room-thread.js";
+
+export interface ChatRoomMessageEvent {
+  roomId: string;
+  message: ChatMessage;
 }
 
 // ============================================
@@ -377,6 +406,8 @@ export interface SearchQuery {
   peerId?: string;
   /** DHT topic-based discovery - peers advertising this topic will be found */
   topic?: string;
+  /** Multiple DHT topics (merged, deduped) — used for geo + interest combined search */
+  topics?: string[];
   /** Text search in display name/bio/interests (not used when peerId or topic is set) */
   queryText?: string;
   /** Username search - when query matches username pattern */
@@ -748,12 +779,18 @@ export interface ConnectivityDiagnostics {
 export interface MorningReportEntry {
   ownerId: string;
   peerId?: string;
+  displayName?: string;
   trustLevel: string;
   score: number;
   reason: string;
   lastSeenAt?: string;
   discoveryMatchCount: number;
   hopDistance?: number;
+  /** Phase 17C: location peer-count summary (not an individual peer row). */
+  geoCitySummary?: {
+    peerCount: number;
+    cityLabel: string;
+  };
 }
 
 export interface DiscoverCapabilityTopicParams {
@@ -840,10 +877,13 @@ export interface NodeServiceEvents {
 
   // Chat events
   "chat:message": ChatMessage;
+  "chat:room-updated": ChatRoom;
+  "chat:room-removed": { roomId: string };
+  "chat:room-message": ChatRoomMessageEvent;
   "chat:draft": { threadPeerOwnerId: string; draft: ChatDraft };
   /** Owner Activity feed row (Phase 13D — local, not wire). */
   "agent:activity": AgentActivityRecord;
-  "chat:delivered": { messageId: string; timestamp: string };
+  "chat:delivered": { messageId: string; timestamp: string; recipientOwnerId?: string };
   "chat:read": { messageId: string; timestamp: string };
 
   // File sharing events
@@ -1073,6 +1113,30 @@ export interface NodeService {
    * Human chat transcripts persisted under the profile (`chat-messages.jsonl`).
    */
   listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
+
+  /** List locally known group chat rooms. */
+  listChatRooms(): Promise<ChatRoom[]>;
+
+  /** Create a group room and invite bonded members (fan-out chat.room.sync). */
+  createChatRoom(title: string, memberOwnerIds: string[]): Promise<ChatRoom>;
+
+  /** Add bonded members to an existing room. */
+  inviteToChatRoom(roomId: string, memberOwnerIds: string[]): Promise<ChatRoom>;
+
+  /** Leave a group room (notifies remaining members via chat.room.sync). */
+  leaveChatRoom(roomId: string): Promise<void>;
+
+  /** Creator removes bonded members from a group room. */
+  removeMembersFromChatRoom(roomId: string, memberOwnerIds: string[]): Promise<ChatRoom>;
+
+  /** Creator renames a group room (fan-out chat.room.sync rename). */
+  renameChatRoom(roomId: string, title: string): Promise<ChatRoom>;
+
+  /** Creator dismisses the group for all members. */
+  dismissChatRoom(roomId: string): Promise<void>;
+
+  /** Send a message to all room members (fan-out chat.room.message). */
+  sendChatRoomMessage(roomId: string, text: string): Promise<SendChatResult>;
 
   /**
    * Owner Activity timeline (`agent-activity.jsonl`).

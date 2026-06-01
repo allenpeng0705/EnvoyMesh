@@ -2,8 +2,9 @@
  * @vitest-environment jsdom
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { PhotoPickerSheet } from "../../src/components/PhotoPickerSheet.js";
+import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
 const loadImageFromFile = vi.fn();
 const exportSquareThumbnail = vi.fn();
@@ -36,7 +37,7 @@ beforeEach(() => {
 describe("PhotoPickerSheet", () => {
   it("does not crash when dragging after pointerup clears drag ref", async () => {
     const onConfirmThumbnail = vi.fn();
-    render(
+    renderWithI18n(
       <PhotoPickerSheet
         open
         purpose="thumbnail"

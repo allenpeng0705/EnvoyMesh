@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNodeState } from "./context/NodeStateContext.js";
+import { useT } from "./context/I18nContext.js";
 import { useNodeService } from "./hooks/useNodeService.js";
 import { useInboxActivityCount } from "./hooks/useInboxActivityCount.js";
 import { ToastProvider } from "./hooks/useToast.js";
@@ -7,19 +8,16 @@ import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { Header } from "./components/Header.js";
 import { SetupView } from "./components/views/SetupView.js";
 import { ChatView } from "./components/views/ChatView.js";
-import { ContactsView } from "./components/views/ContactsView.js";
+import { DiscoverView } from "./components/views/DiscoverView.js";
 import { ProfileView } from "./components/views/ProfileView.js";
-import { SettingsView } from "./components/views/SettingsView.js";
+import { SettingsView, type SettingsTabId } from "./components/views/SettingsView.js";
 import { LibraryView } from "./components/views/LibraryView.js";
-import { ActivityView } from "./components/views/ActivityView.js";
 import { H2AChannelView } from "./components/views/H2AChannelView.js";
 import { isTauriShell, restartTauriNodeProcess } from "./lib/tauri-shell.js";
 
-export type ViewName = "chat" | "assistant" | "contacts" | "library" | "activity" | "profile" | "settings";
+export type ViewName = "chat" | "assistant" | "discover" | "library" | "profile" | "settings";
 
 export type ChatPanelMode = "threads" | "inbox";
-
-export type ContactsPanelMode = "list" | "discover";
 
 function ConnectingSplash({
   reconnectAttempts,
@@ -44,6 +42,7 @@ function ConnectingSplash({
   autoConnect: boolean;
   wsUrl: string;
 }) {
+  const t = useT();
   return (
     <div className="app">
       <div className="envoy-splash" role="status" aria-live="polite">
@@ -51,16 +50,16 @@ function ConnectingSplash({
         <div className="envoy-splash__card">
           <div className="envoy-splash__mesh" aria-hidden />
           <div className="loading-spinner envoy-splash__spinner" />
-          <h2 className="envoy-splash__title">Connecting to EnvoyMesh</h2>
+          <h2 className="envoy-splash__title">{t("splash.connectingTitle")}</h2>
           <p className="envoy-splash__detail">
             {!autoConnect && reconnectAttempts === 0
-              ? "Auto-connect is off. Use Retry when you are ready."
+              ? t("splash.autoConnectOff")
               : reconnectAttempts > 0
-                ? `Reconnect attempt ${reconnectAttempts}\u2026`
-                : `Opening node channel at ${wsUrl}`}
+                ? t("splash.reconnectAttempt", { count: reconnectAttempts })
+                : t("splash.openingChannel", { wsUrl })}
           </p>
           {isRelayUnreachable && (
-            <p className="envoy-splash__relay-warn">Relay may be unreachable — check network or relay URL.</p>
+            <p className="envoy-splash__relay-warn">{t("splash.relayWarn")}</p>
           )}
           {tauriShell && restartNodeError && (
             <p className="envoy-splash__relay-warn">{restartNodeError}</p>
@@ -74,7 +73,7 @@ function ConnectingSplash({
                   onClick={onRestartNode}
                   disabled={restartNodeBusy}
                 >
-                  {restartNodeBusy ? "Restarting node…" : "Restart node"}
+                  {restartNodeBusy ? t("splash.restartingNode") : t("splash.restartNode")}
                 </button>
               )}
             </div>
@@ -83,14 +82,10 @@ function ConnectingSplash({
             <div className="envoy-splash__error">
               <p>
                 {lastError ??
-                  (!autoConnect
-                    ? "Not connected to the node backend."
-                    : "Unable to connect. Is the node running?")}
+                  (!autoConnect ? t("splash.notConnected") : t("splash.unableConnect"))}
               </p>
               <p className="envoy-splash__hint">
-                {tauriShell
-                  ? "If Restart node does not help, quit and reopen the app."
-                  : "Desktop dev: start with npm run node:dev (WebSocket port 3030)."}
+                {tauriShell ? t("splash.tauriHint") : t("splash.devHint")}
               </p>
               {restartNodeError && (
                 <p className="envoy-splash__relay-warn">{restartNodeError}</p>
@@ -102,7 +97,7 @@ function ConnectingSplash({
                   onClick={onRetryConnect}
                   disabled={restartNodeBusy}
                 >
-                  Retry connection
+                  {t("splash.retryConnection")}
                 </button>
               </div>
             </div>
@@ -114,14 +109,15 @@ function ConnectingSplash({
 }
 
 function LoadingNodeSplash() {
+  const t = useT();
   return (
     <div className="app">
       <div className="envoy-splash envoy-splash--compact" role="status" aria-live="polite">
         <div className="envoy-splash__backdrop" aria-hidden />
         <div className="envoy-splash__card">
           <div className="loading-spinner envoy-splash__spinner" />
-          <h2 className="envoy-splash__title">Syncing node</h2>
-          <p className="envoy-splash__detail">Connected to API — loading mesh status…</p>
+          <h2 className="envoy-splash__title">{t("splash.syncingTitle")}</h2>
+          <p className="envoy-splash__detail">{t("splash.syncingDetail")}</p>
         </div>
       </div>
     </div>
@@ -129,6 +125,7 @@ function LoadingNodeSplash() {
 }
 
 export function App() {
+  const t = useT();
   const {
     isConnected,
     nodeStatusHydrated,
@@ -136,7 +133,6 @@ export function App() {
     peerId,
     nodeConfig,
     humanProfile,
-    bonds,
     connectionStatus,
     appSettings,
   } = useNodeState();
@@ -169,7 +165,7 @@ export function App() {
     try {
       const result = await restartTauriNodeProcess();
       if (!result.ok) {
-        setRestartNodeError(result.reason === "not-tauri" ? "Not running in desktop app." : result.reason);
+        setRestartNodeError(result.reason === "not-tauri" ? t("splash.notDesktopApp") : result.reason);
         return;
       }
       await nodeService.waitForConnection(25_000);
@@ -182,9 +178,9 @@ export function App() {
   };
 
   const [currentView, setCurrentView] = useState<ViewName>("chat");
+  const [settingsTab, setSettingsTab] = useState<SettingsTabId>("account");
   const [chatSelectedContact, setChatSelectedContact] = useState<string | null>(null);
   const [chatPanelMode, setChatPanelMode] = useState<ChatPanelMode>("threads");
-  const [contactsPanelMode, setContactsPanelMode] = useState<ContactsPanelMode>("list");
 
   const isPublicNetwork = (nodeConfig?.bootstrapPresets ?? []).length > 0;
 
@@ -232,10 +228,8 @@ export function App() {
             onNavigate={(v) => {
               setCurrentView(v);
               if (v === "chat") setChatPanelMode("threads");
-              if (v === "contacts") setContactsPanelMode("list");
             }}
             inboxActivityCount={inboxActivityCount}
-            bondsCount={bonds.length}
             isPublicNetwork={isPublicNetwork}
             connectionStatus={connectionStatus}
             nodeStatus={nodeStatus}
@@ -256,33 +250,28 @@ export function App() {
                 onPanelModeChange={setChatPanelMode}
                 inboxActivityCount={inboxActivityCount}
                 onOpenAssistant={() => setCurrentView("assistant")}
+                onOpenDiscover={() => setCurrentView("discover")}
               />
             )}
             {currentView === "assistant" && (
               <H2AChannelView
                 onBackToChats={() => setCurrentView("chat")}
-                onOpenActivity={() => setCurrentView("activity")}
+                onOpenActivity={() => {
+                  setSettingsTab("activity");
+                  setCurrentView("settings");
+                }}
                 onOpenInbox={() => {
                   setCurrentView("chat");
                   setChatPanelMode("inbox");
                 }}
               />
             )}
-            {currentView === "contacts" && (
-              <ContactsView
-                panelMode={contactsPanelMode}
-                onPanelModeChange={setContactsPanelMode}
-                onOpenChat={(peerOwnerId) => {
-                  setChatSelectedContact(peerOwnerId);
-                  setCurrentView("chat");
-                  setChatPanelMode("threads");
-                }}
-              />
-            )}
+            {currentView === "discover" && <DiscoverView />}
             {currentView === "library" && <LibraryView />}
-            {currentView === "activity" && <ActivityView />}
             {currentView === "profile" && <ProfileView />}
-            {currentView === "settings" && <SettingsView />}
+            {currentView === "settings" && (
+              <SettingsView tab={settingsTab} onTabChange={setSettingsTab} />
+            )}
           </main>
         </ErrorBoundary>
       </div>

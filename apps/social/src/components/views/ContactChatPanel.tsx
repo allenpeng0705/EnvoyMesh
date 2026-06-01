@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
 import { useChatDrafts } from "../../hooks/useChatDrafts.js";
@@ -33,21 +34,23 @@ import { EditIcon, ChatIcon, BridgeIcon, P2PIcon, AttachIcon, RemoveIcon } from 
 import { useToast } from "../../hooks/useToast.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import { PeerProfileGalleryStrip } from "../PeerProfileGalleryStrip.js";
+import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
+import type { TFunction } from "../../context/I18nContext.js";
 
 interface ContactChatPanelProps {
   selectedContact: string;
   onSelectContact: (id: string | null) => void;
 }
 
-function fmtDateLabel(dateStr: string): string {
+function fmtDateLabel(dateStr: string, t: TFunction): string {
   const d = new Date(dateStr);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today.getTime() - 86400000);
   const msgDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
-  if (msgDate.getTime() === today.getTime()) return "Today";
-  if (msgDate.getTime() === yesterday.getTime()) return "Yesterday";
+  if (msgDate.getTime() === today.getTime()) return t("contactChat.dateToday");
+  if (msgDate.getTime() === yesterday.getTime()) return t("contactChat.dateYesterday");
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
@@ -66,7 +69,8 @@ function isPendingOutgoing(msg: ChatMessage): boolean {
   return msg.messageId.startsWith("pending-") || msg.metadata.deliveryReceipt === "pending";
 }
 
-export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
+export function ContactChatPanel({ selectedContact, onSelectContact }: ContactChatPanelProps) {
+  const t = useT();
   const nodeService = useNodeService();
   const { showToast } = useToast();
   const {
@@ -167,6 +171,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
   }, [nodeService]);
 
   const [shareOpen, setShareOpen] = useState(false);
+  const [removeContactOpen, setRemoveContactOpen] = useState(false);
   const [attachBusy, setAttachBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -246,7 +251,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     if (!text) return;
 
     if (!nodeMeshOnline) {
-      setSendError("Your node is offline — start the node before sending.");
+      setSendError(t("contactChat.nodeOffline"));
       setTimeout(() => setSendError(null), 5000);
       return;
     }
@@ -276,7 +281,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
     const tempId = `pending-${crypto.randomUUID()}`;
     const pendingMsg: ChatMessage = {
       messageId: tempId,
-      sender: { nodeId: "", ownerId: "", displayName: "You" },
+      sender: { nodeId: "", ownerId: "", displayName: t("messageBubble.you") },
       recipient: { nodeId: "", ownerId: selectedContact, displayName: selectedContact },
       content: { text },
       metadata: { timestamp: new Date().toISOString(), deliveryReceipt: "pending" },
@@ -309,7 +314,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           ),
         );
       } catch (error) {
-        const msg = error instanceof Error ? error.message : "Failed to send message";
+        const msg = error instanceof Error ? error.message : t("contactChat.sendFailed");
         console.error("[ContactChatPanel] sendChat failed:", error);
         setPendingOutbound((prev) =>
           prev.map((m) =>
@@ -358,12 +363,15 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
 
   const handleAttachFile = async (file: File) => {
     if (!nodeMeshOnline) {
-      setSendError("Your node is offline — start the node before sending.");
+      setSendError(t("contactChat.nodeOffline"));
       setTimeout(() => setSendError(null), 5000);
       return;
     }
     if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
-      showToast(`File is too large (max ${Math.round(MAX_CHAT_ATTACHMENT_BYTES / (1024 * 1024))} MB)`, "error");
+      showToast(
+        t("contactChat.fileTooLarge", { maxMb: Math.round(MAX_CHAT_ATTACHMENT_BYTES / (1024 * 1024)) }),
+        "error",
+      );
       return;
     }
     setAttachBusy(true);
@@ -382,9 +390,9 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         setChatInput("");
         draftRef.current?.setPlainText("");
       }
-      showToast(`Sending ${file.name}…`, "success");
+      showToast(t("contactChat.sendingFile", { filename: file.name }), "success");
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Failed to send file";
+      const msg = error instanceof Error ? error.message : t("contactChat.sendFileFailed");
       setSendError(msg);
       showToast(msg, "error");
     } finally {
@@ -398,37 +406,46 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
       setPendingOutbound((prev) => prev.filter((m) => m.messageId !== messageId));
       return;
     }
-    if (!window.confirm("Delete this message?")) return;
+    if (!window.confirm(t("contactChat.deleteConfirm"))) return;
     const ok = await removeMessage(messageId);
     if (ok) {
-      showToast("Message deleted", "success");
+      showToast(t("contactChat.messageDeleted"), "success");
     } else {
-      showToast("Could not delete message", "error");
+      showToast(t("contactChat.deleteFailed"), "error");
     }
   };
 
   const handleClearChat = async () => {
     if (displayMessages.length === 0) return;
-    if (!window.confirm("Clear all messages in this chat? This removes them from your chat history on this device. AI may still use them for context unless “Purge RAG when deleting chat” is on in Settings → AI.")) {
+    if (!window.confirm(t("contactChat.clearConfirm"))) {
       return;
     }
     const deletedCount = await clearThread();
     setPendingOutbound([]);
     if (deletedCount > 0) {
-      showToast(`Cleared ${deletedCount} message${deletedCount === 1 ? "" : "s"}`, "success");
+      showToast(
+        deletedCount === 1
+          ? t("contactChat.clearedOne", { count: deletedCount })
+          : t("contactChat.clearedMany", { count: deletedCount }),
+        "success",
+      );
     } else {
-      showToast("Chat cleared", "success");
+      showToast(t("contactChat.chatCleared"), "success");
     }
   };
 
   const messageGroups = useMemo(() => groupMessagesByDate(displayMessages), [displayMessages]);
 
   const threadKind = resolveChatThreadKind(selectedContact, bridgeStatus?.agentPeerId);
+  const isBondedHumanContact =
+    threadKind === "human" &&
+    !selectedContact.startsWith("room:") &&
+    Boolean(bonds.find((c) => c.peerOwnerId === selectedContact));
   const isHomeBridgeThread =
     Boolean(bridgeStatus?.enabled) && selectedContact === bridgeStatus?.agentPeerId;
   const displayName =
     selectedContact === bridgeStatus?.agentPeerId
-      ? (bridgeStatus.agentName ?? "My Agent")
+      ? (bridgeStatus.agentName ?? t("chat.myAgent"))
       : contactLabel(
           bonds.find((c) => c.peerOwnerId === selectedContact) ?? { peerOwnerId: selectedContact },
         );
@@ -485,37 +502,48 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           <div className="chat-header-titles">
             <span className="chat-name">{displayName}</span>
             <span className={`chat-header-kind kind-${threadKind}`}>{threadKindLabel(threadKind)}</span>
-            <span className={`contact-reachability ${reachabilityClass}`} title="P2P path to this contact">
+            <span className={`contact-reachability ${reachabilityClass}`} title={t("contactChat.p2pPathTitle")}>
               <span className="contact-reachability-dot" aria-hidden />
               {isHomeBridgeThread && !contactReachable && !reachabilityChecking
-                ? "Home offline"
+                ? t("contactChat.homeOffline")
                 : peerReachabilityLabel(peerReachability)}
             </span>
           </div>
         </div>
         <div className="chat-header-right">
+          {isBondedHumanContact ? (
+            <button
+              type="button"
+              className="chat-header-remove-contact-btn"
+              title={t("contactChat.removeContactTitle")}
+              aria-label={t("contactChat.removeContactAria", { name: displayName })}
+              onClick={() => setRemoveContactOpen(true)}
+            >
+              {t("contacts.remove")}
+            </button>
+          ) : null}
           <button
             type="button"
             className="chat-header-clear-btn"
-            title="Clear all messages"
-            aria-label="Clear all messages"
+            title={t("contactChat.clearAllTitle")}
+            aria-label={t("contactChat.clearAllAria")}
             disabled={displayMessages.length === 0}
             onClick={() => void handleClearChat()}
           >
             <RemoveIcon size={16} />
           </button>
-          <div className="assistant-switch" aria-label={`AI mode: ${currentAiMode}`}>
+          <div className="assistant-switch" aria-label={t("contactChat.aiModeLabel", { mode: currentAiMode })}>
             <span className="assistant-switch-label">AI</span>
             <button
               className={`assistant-switch-btn ${currentAiMode === "manual" ? "active" : ""}`}
-              title="Manual: type yourself"
-              aria-label="Manual mode"
+              title={t("contactChat.manualTitle")}
+              aria-label={t("contactChat.manualAria")}
               onClick={() => void updateContactAiMode(selectedContact, "manual")}
             ><EditIcon size={16} /></button>
             <button
               className={`assistant-switch-btn ${currentAiMode === "assistant" ? "active" : ""} ${!canDraftAssist ? "disabled" : ""}`}
-              title={canDraftAssist ? "Assistant: AI suggests drafts" : "Enable Chat Assist or social auto-send in Settings"}
-              aria-label="Assistant mode"
+              title={canDraftAssist ? t("contactChat.assistantTitle") : t("contactChat.assistantDisabledTitle")}
+              aria-label={t("contactChat.assistantAria")}
               onClick={() => {
                 if (!canDraftAssist) return;
                 void updateContactAiMode(selectedContact, "assistant");
@@ -523,8 +551,8 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
             ><ChatIcon size={16} /></button>
             <button
               className={`assistant-switch-btn ${currentAiMode === "auto" ? "active" : ""} ${!canAutoSend ? "disabled" : ""}`}
-              title={canAutoSend ? "Auto-reply: AI responds automatically" : "Enable social auto-send in Settings"}
-              aria-label="Auto-reply mode"
+              title={canAutoSend ? t("contactChat.autoTitle") : t("contactChat.autoDisabledTitle")}
+              aria-label={t("contactChat.autoAria")}
               onClick={() => {
                 if (!canAutoSend) return;
                 void updateContactAiMode(selectedContact, "auto");
@@ -542,13 +570,13 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
             <div className="empty-state-icon">
               <ChatIcon size={40} />
             </div>
-            <div className="empty-state-title">No messages yet</div>
-            <div className="empty-state-desc">Say hello to start the conversation</div>
+            <div className="empty-state-title">{t("chat.noMessagesYet")}</div>
+            <div className="empty-state-desc">{t("contactChat.emptyDesc")}</div>
           </div>
         ) : (
           messageGroups.map(([dateKey, msgs]) => (
             <div key={dateKey}>
-              <div className="date-separator"><span>{fmtDateLabel(msgs[0].metadata.timestamp)}</span></div>
+              <div className="date-separator"><span>{fmtDateLabel(msgs[0].metadata.timestamp, t)}</span></div>
               {buildMessageStacks(msgs, (a, b) => isOutgoingMsg(a) === isOutgoingMsg(b)).map((stack) => {
                 const outgoing = isOutgoingMsg(stack[0]);
                 const presentation = resolveChatBubblePresentation(
@@ -621,11 +649,11 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         open={notesOpen}
         onToggle={(event) => setNotesOpen((event.target as HTMLDetailsElement).open)}
       >
-        <summary>Private notes (synced across your devices)</summary>
+        <summary>{t("contactChat.privateNotesSummary")}</summary>
         <textarea
           className="contact-notes-input"
           rows={3}
-          placeholder="Notes only you see — not sent on the mesh"
+          placeholder={t("contactChat.privateNotesPlaceholder")}
           value={contactNote}
           onChange={(e) => notesRef.current?.setNote(e.target.value)}
         />
@@ -636,7 +664,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
               type="button"
               className="contact-notes-tag"
               onClick={() => notesRef.current?.removeTag(tag)}
-              title="Remove tag"
+              title={t("contactChat.removeTagTitle")}
             >
               {tag} ×
             </button>
@@ -646,7 +674,7 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           <input
             type="text"
             className="contact-notes-tag-input"
-            placeholder="Add tag"
+            placeholder={t("contactChat.addTagPlaceholder")}
             value={tagInput}
             onChange={(e) => setTagInput(e.target.value)}
             onKeyDown={(e) => {
@@ -668,15 +696,15 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
               setTagInput("");
             }}
           >
-            Add
+            {t("contactChat.addTagBtn")}
           </button>
         </div>
       </details>
       <div className="chat-composer">
         {latestDraft && (
-          <div className="chat-draft-suggestion" role="region" aria-label="Suggested reply">
+          <div className="chat-draft-suggestion" role="region" aria-label={t("contactChat.suggestedReplyAria")}>
             <div className="chat-draft-suggestion-body">
-              <span className="chat-draft-suggestion-label">Suggested reply</span>
+              <span className="chat-draft-suggestion-label">{t("contactChat.suggestedReply")}</span>
               <p className="chat-draft-suggestion-text">
                 {chatMessageTextForDisplay(stripModelThinking(latestDraft.text), aiIdentity)}
               </p>
@@ -687,10 +715,10 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
                 className="secondary chat-draft-dismiss-btn"
                 onClick={() => void dismissDraft(latestDraft.draftId)}
               >
-                Dismiss
+                {t("contactChat.dismiss")}
               </button>
               <button type="button" className="chat-draft-use-btn" onClick={handleUseDraft}>
-                Use
+                {t("contactChat.use")}
               </button>
             </div>
           </div>
@@ -700,8 +728,8 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         {!contactReachable && nodeMeshOnline && !reachabilityChecking && (
           <div className="chat-reachability-hint">
             {isHomeBridgeThread
-              ? "Home computer offline — start your home node and bridge agent (HomeClaw/OpenClaw) to reach My Agent."
-              : "Contact is offline — sending will try to connect and may take longer."}
+              ? t("contactChat.homeOfflineHint")
+              : t("contactChat.contactOfflineHint")}
           </div>
         )}
         {shareOpen && (
@@ -718,8 +746,8 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         <button
           type="button"
           className="secondary chat-attach-file-btn"
-          title="Send image or file"
-          aria-label="Send image or file"
+          title={t("contactChat.attachFileTitle")}
+          aria-label={t("contactChat.attachFileAria")}
           disabled={!nodeMeshOnline || attachBusy}
           onClick={() => fileInputRef.current?.click()}
         >
@@ -740,15 +768,15 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
         <button
           type="button"
           className="secondary chat-share-file-btn"
-          title="Share a vault library file"
-          aria-label="Share a vault library file"
+          title={t("contactChat.shareVaultTitle")}
+          aria-label={t("contactChat.shareVaultAria")}
           onClick={() => setShareOpen(true)}
         >
           <P2PIcon size={18} />
         </button>
         <input
           type="text"
-          placeholder={nodeMeshOnline ? "Type a message..." : "Node offline"}
+          placeholder={nodeMeshOnline ? t("contactChat.inputOnline") : t("contactChat.inputOffline")}
           value={chatInput}
           onChange={(e) => draftRef.current?.setPlainText(e.target.value)}
           onKeyDown={(e) => {
@@ -765,10 +793,21 @@ export function ContactChatPanel({ selectedContact }: ContactChatPanelProps) {
           onClick={handleSendMessage}
           disabled={!chatInput.trim() || !nodeMeshOnline}
         >
-          Send
+          {t("contactChat.send")}
         </button>
       </footer>
       </div>
+      {removeContactOpen && isBondedHumanContact ? (
+        <RemoveContactConfirmModal
+          peerOwnerId={selectedContact}
+          displayName={displayName}
+          onClose={() => setRemoveContactOpen(false)}
+          onRemoved={() => {
+            showToast(t("contactChat.removeContactSuccess"), "success");
+            onSelectContact(null);
+          }}
+        />
+      ) : null}
     </>
   );
 }

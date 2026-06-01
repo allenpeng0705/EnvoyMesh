@@ -25,3 +25,28 @@ export const SUGGESTED_TOPICS = [
   "movies", "books", "travel", "food", "fitness",
   "news", "sports", "fashion", "photography", "coding",
 ];
+
+/** Plain-language bond level for contact lists. */
+export function bondLevelLabel(level: string | undefined): string {
+  switch (level) {
+    case "direct":
+      return "Friend";
+    case "referred":
+      return "Introduced";
+    case "public":
+      return "New contact";
+    case "blocked":
+      return "Blocked";
+    default:
+      return level ?? "Contact";
+  }
+}
+
+/** mDNS discovery often lacks real names — show a friendly label instead of "Peer 12D3…". */
+export function nearbyPeerLabel(displayName: string | undefined, nodeId: string): string {
+  const name = displayName?.trim();
+  if (!name || /^Peer [A-Za-z0-9]{6,}/.test(name)) {
+    return "Someone nearby";
+  }
+  return name;
+}

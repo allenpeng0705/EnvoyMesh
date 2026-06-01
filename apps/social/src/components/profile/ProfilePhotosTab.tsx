@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import {
@@ -10,18 +11,25 @@ import { ProfilePhotoAvatar } from "../ProfilePhotoAvatar.js";
 import { PhotoPickerSheet } from "../PhotoPickerSheet.js";
 import { fileToBase64, mimeFromFile } from "../../lib/profile-photo-upload.js";
 import { useToast } from "../../hooks/useToast.js";
+import type { TFunction } from "../../context/I18nContext.js";
 
-const VISIBILITY_LABELS: Record<ProfileGalleryPhotoVisibility, string> = {
-  public: "Everyone on the mesh",
-  referred: "Introduced contacts",
-  direct: "My contacts only",
-};
+function visibilityLabel(t: TFunction, visibility: ProfileGalleryPhotoVisibility): string {
+  switch (visibility) {
+    case "public":
+      return t("profilePhotos.visibilityEveryone");
+    case "referred":
+      return t("profilePhotos.visibilityReferred");
+    case "direct":
+      return t("profilePhotos.visibilityDirect");
+  }
+}
 
 export interface ProfilePhotosTabProps {
   variant?: "desktop" | "mobile";
 }
 
 export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps) {
+  const t = useT();
   const nodeService = useNodeService();
   const { humanProfile, refreshHumanProfile, bonds } = useNodeState();
   const { showToast } = useToast();
@@ -38,9 +46,9 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
       });
       await refreshHumanProfile();
       await nodeService.syncProfileToBonds();
-      showToast("Thumbnail updated", "success");
+      showToast(t("profilePhotos.thumbnailUpdated"), "success");
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "Upload failed", "error");
+      showToast(err instanceof Error ? err.message : t("profilePhotos.uploadFailed"), "error");
     } finally {
       setBusy(false);
     }
@@ -56,9 +64,9 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
         label: file.name,
       });
       await refreshHumanProfile();
-      showToast("Gallery photo added", "success");
+      showToast(t("profilePhotos.galleryPhotoAdded"), "success");
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "Upload failed", "error");
+      showToast(err instanceof Error ? err.message : t("profilePhotos.uploadFailed"), "error");
     } finally {
       setBusy(false);
     }
@@ -74,10 +82,10 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
         path: photo.vaultRelativePath,
         sensitivity: galleryPhotoShareSensitivity(photo.visibility),
       });
-      showToast("Share sent", "success");
+      showToast(t("profilePhotos.shareSent"), "success");
       setShareTarget(null);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "Share failed", "error");
+      showToast(err instanceof Error ? err.message : t("profilePhotos.shareFailed"), "error");
     } finally {
       setBusy(false);
     }
@@ -89,10 +97,8 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
     <div className={rootClass}>
       {!humanProfile?.publicThumbnail && (
         <div className="profile-photo-suggest" role="status">
-          <strong>Add a profile photo</strong>
-          <p className="muted small">
-            Optional, but recommended — contacts and Discover will show your face instead of initials.
-          </p>
+          <strong>{t("profilePhotos.suggestTitle")}</strong>
+          <p className="muted small">{t("profilePhotos.suggestDesc")}</p>
         </div>
       )}
 
@@ -102,7 +108,7 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
           className="profile-photos-hero-btn"
           onClick={() => setPicker("thumbnail")}
           disabled={busy}
-          aria-label="Change profile thumbnail"
+          aria-label={t("profilePhotos.changeThumbnailAria")}
         >
           <ProfilePhotoAvatar
             large
@@ -110,37 +116,32 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
             fallbackLabel={humanProfile?.displayName ?? humanProfile?.username ?? "?"}
           />
           <span className="profile-photos-hero-label">
-            {humanProfile?.publicThumbnail ? "Change photo" : "Add photo"}
+            {humanProfile?.publicThumbnail ? t("profilePhotos.changePhoto") : t("profilePhotos.addPhoto")}
           </span>
         </button>
-        <p className="muted small">
-          Thumbnail is always public. Drag to adjust crop when you upload.
-        </p>
+        <p className="muted small">{t("profilePhotos.thumbnailHint")}</p>
       </section>
 
       <section className="profile-section profile-gallery-section">
         <div className="profile-gallery-header">
-          <h3>Gallery</h3>
+          <h3>{t("profilePhotos.gallery")}</h3>
           <button
             type="button"
             className="btn-secondary btn-small"
             disabled={busy}
             onClick={() => setPicker("gallery")}
           >
-            Add photo
+            {t("profilePhotos.addPhotoBtn")}
           </button>
         </div>
-        <p className="muted small">
-          Gallery metadata syncs to bonded contacts (visibility below). <strong>Discover</strong> shows your
-          public thumbnail only — share a photo to send full image bytes.
-        </p>
+        <p className="muted small">{t("profilePhotos.galleryHint")}</p>
         <div className="profile-gallery-grid">
           {(humanProfile?.galleryPhotos ?? []).map((photo) => (
             <div key={photo.photoId} className="profile-gallery-card">
               <ProfilePhotoAvatar photo={photo} fallbackLabel={photo.label ?? photo.photoId} large />
-              <span className="profile-gallery-vis-label">{VISIBILITY_LABELS[photo.visibility]}</span>
+              <span className="profile-gallery-vis-label">{visibilityLabel(t, photo.visibility)}</span>
               <label className="profile-gallery-visibility">
-                Visibility
+                {t("profilePhotos.visibilityLabel")}
                 <select
                   value={photo.visibility}
                   disabled={busy}
@@ -152,13 +153,13 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
                       })
                       .then(() => refreshHumanProfile())
                       .catch((err) =>
-                        showToast(err instanceof Error ? err.message : "Update failed", "error"),
+                        showToast(err instanceof Error ? err.message : t("profilePhotos.updateFailed"), "error"),
                       );
                   }}
                 >
-                  <option value="public">Everyone on the mesh</option>
-                  <option value="referred">Introduced contacts</option>
-                  <option value="direct">My contacts only</option>
+                  <option value="public">{t("profilePhotos.visibilityEveryone")}</option>
+                  <option value="referred">{t("profilePhotos.visibilityReferred")}</option>
+                  <option value="direct">{t("profilePhotos.visibilityDirect")}</option>
                 </select>
               </label>
               <div className="profile-gallery-card-actions">
@@ -167,26 +168,29 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
                   className="btn-secondary btn-small"
                   disabled={busy || bonds.length === 0}
                   onClick={() =>
-                    setShareTarget({ vaultRelativePath: photo.vaultRelativePath, label: photo.label ?? "Photo" })
+                    setShareTarget({
+                      vaultRelativePath: photo.vaultRelativePath,
+                      label: photo.label ?? t("profilePhotos.defaultPhotoLabel"),
+                    })
                   }
                 >
-                  Share…
+                  {t("profilePhotos.shareBtn")}
                 </button>
                 <button
                   type="button"
                   className="btn-secondary btn-small"
                   disabled={busy}
                   onClick={() => {
-                    if (!window.confirm("Remove this gallery photo?")) return;
+                    if (!window.confirm(t("profilePhotos.removeConfirm"))) return;
                     void nodeService
                       .removeProfileGalleryPhoto({ vaultRelativePath: photo.vaultRelativePath })
                       .then(() => refreshHumanProfile())
                       .catch((err) =>
-                        showToast(err instanceof Error ? err.message : "Remove failed", "error"),
+                        showToast(err instanceof Error ? err.message : t("profilePhotos.removeFailed"), "error"),
                       );
                   }}
                 >
-                  Remove
+                  {t("profilePhotos.removeBtn")}
                 </button>
               </div>
             </div>
@@ -197,8 +201,8 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
       {shareTarget && (
         <div className="photo-picker-backdrop" role="presentation" onClick={() => setShareTarget(null)}>
           <div className="photo-picker-sheet photo-share-sheet" role="dialog" onClick={(e) => e.stopPropagation()}>
-            <h3 className="photo-picker-title">Share {shareTarget.label}</h3>
-            <p className="muted small">Pick a bonded contact</p>
+            <h3 className="photo-picker-title">{t("profilePhotos.shareTitle", { label: shareTarget.label })}</h3>
+            <p className="muted small">{t("profilePhotos.sharePickContact")}</p>
             <ul className="photo-share-contact-list">
               {bonds.map((b) => (
                 <li key={b.peerOwnerId}>
@@ -213,9 +217,9 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
                 </li>
               ))}
             </ul>
-            {bonds.length === 0 && <p className="muted small">Add a contact first.</p>}
+            {bonds.length === 0 && <p className="muted small">{t("profilePhotos.addContactFirst")}</p>}
             <button type="button" className="btn-secondary" onClick={() => setShareTarget(null)}>
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
         </div>

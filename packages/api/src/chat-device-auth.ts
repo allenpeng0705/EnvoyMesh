@@ -21,7 +21,7 @@ export type IsDeviceRevokedFn = (
  */
 export function verifyInboundChatDeviceAuthorization(
   envelope: EnvoyEnvelope,
-  payload: ChatMessagePayload,
+  payload: Pick<ChatMessagePayload, "senderOwnerId" | "deviceCertificate" | "ownerPublicKeyPem">,
   verifyAuthorizedDeviceEnvelope: VerifyAuthorizedDeviceEnvelope,
   isDeviceRevoked?: IsDeviceRevokedFn,
 ): ChatDeviceAuthResult {
@@ -72,7 +72,7 @@ export function chatMessagePayloadDeviceFields(input: {
 /** Human-readable sender label for multi-device chat (e.g. "Alice (satellite)"). */
 export function formatChatSenderDisplayName(
   baseDisplayName: string,
-  payload: ChatMessagePayload,
+  payload: Pick<ChatMessagePayload, "deviceCertificate">,
 ): string {
   if (!payload.deviceCertificate) {
     return baseDisplayName;

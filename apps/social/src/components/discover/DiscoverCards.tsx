@@ -3,15 +3,24 @@ import type {
   MultiHopDiscoveryMatch,
   PeerSearchResult,
   ResolvedDidImport,
+  BondRecord,
 } from "@envoymesh/api";
+import { useT } from "../../context/I18nContext.js";
 import { shortOwnerId } from "../../lib/display.js";
+import {
+  filterFriendSuggestions,
+  formatFriendSuggestionReason,
+  friendSuggestionDisplayName,
+} from "../../lib/discover-friend-suggestion.js";
+import { resolvePeerHelloState } from "../../lib/discover-peer-state.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 
 export function TrustPathTrail({ path }: { path: string }) {
+  const t = useT();
   const segments = path.split(/\s*→\s*/).map((s) => s.trim()).filter(Boolean);
   if (segments.length === 0) return null;
   return (
-    <ol className="multihop-trust-path" aria-label="Trust path">
+    <ol className="multihop-trust-path" aria-label={t("discoverCards.trustPathLabel")}>
       {segments.map((segment, i) => (
         <li key={`${i}-${segment}`}>
           <span className="multihop-trust-path__node" title={segment}>
@@ -32,9 +41,14 @@ export function MultiHopResultCard({
   index: number;
   onSayHello: (ownerId: string) => void;
 }) {
+  const t = useT();
   const via =
     row.viaDisplayName?.trim() ||
     (row.viaOwnerId ? shortOwnerId(row.viaOwnerId) : null);
+  const hopLabel =
+    row.hopDistance === 1
+      ? t("discoverCards.hopAria", { count: row.hopDistance })
+      : t("discoverCards.hopsAria", { count: row.hopDistance });
   return (
     <li
       className="multihop-result search-result peer-result-card"
@@ -42,7 +56,7 @@ export function MultiHopResultCard({
     >
       <span
         className={`multihop-hop-badge multihop-hop-badge--${row.hopDistance}`}
-        aria-label={`${row.hopDistance} hop${row.hopDistance === 1 ? "" : "s"}`}
+        aria-label={hopLabel}
       >
         {row.hopDistance}
       </span>
@@ -55,13 +69,13 @@ export function MultiHopResultCard({
         <strong title={row.ownerId}>{shortOwnerId(row.ownerId, 22)}</strong>
         {via && (
           <span className="multihop-result__via">
-            Referred via <em>{via}</em>
+            {t("discoverCards.referredVia")} <em>{via}</em>
           </span>
         )}
         {row.trustPath && <TrustPathTrail path={row.trustPath} />}
       </div>
       <button type="button" className="peer-result-card__action" onClick={() => void onSayHello(row.ownerId)}>
-        Say Hello
+        {t("discoverCards.sayHello")}
       </button>
     </li>
   );
@@ -70,17 +84,20 @@ export function MultiHopResultCard({
 export function PeerResultCard({
   result,
   index,
+  helloState = "none",
   onSayHello,
 }: {
   result: PeerSearchResult;
   index: number;
+  helloState?: "none" | "sent" | "connected";
   onSayHello: (nodeId: string) => void;
 }) {
+  const t = useT();
   const trustBits: string[] = [];
   if (result.discoverySource) trustBits.push(result.discoverySource);
   if (result.trustLevel) trustBits.push(result.trustLevel);
-  if (result.signedRecordValid === true) trustBits.push("signed");
-  else if (result.signedRecordValid === false) trustBits.push("unsigned");
+  if (result.signedRecordValid === true) trustBits.push(t("discoverCards.signed"));
+  else if (result.signedRecordValid === false) trustBits.push(t("discoverCards.unsigned"));
 
   return (
     <li
@@ -114,58 +131,90 @@ export function PeerResultCard({
           <span className="interests peer-result-card__interests">{result.interests.join(", ")}</span>
         )}
       </div>
-      <button type="button" className="peer-result-card__action" onClick={() => void onSayHello(result.ownerId)}>
-        Say Hello
-      </button>
+      {helloState === "connected" ? (
+        <span className="discover-peer-card__status discover-peer-card__status--connected" role="status">
+          {t("common.connected")}
+        </span>
+      ) : helloState === "sent" ? (
+        <span className="discover-peer-card__status discover-peer-card__status--sent" role="status">
+          {t("common.helloSentWaiting")}
+        </span>
+      ) : (
+        <button type="button" className="peer-result-card__action" onClick={() => void onSayHello(result.ownerId)}>
+          {t("discoverCards.sayHello")}
+        </button>
+      )}
     </li>
   );
 }
 
-export function MorningReportPanel({ entries }: { entries: MorningReportEntry[] }) {
-  if (entries.length === 0) return null;
+export function FriendSuggestionsPanel({
+  entries,
+  bonds,
+  outboundHellos,
+  onSayHello,
+}: {
+  entries: MorningReportEntry[];
+  bonds: readonly BondRecord[];
+  outboundHellos: ReadonlySet<string>;
+  onSayHello: (targetId: string) => void;
+}) {
+  const t = useT();
+  const visible = filterFriendSuggestions(entries, bonds);
+  if (visible.length === 0) return null;
   return (
-    <section className="discover-panel morning-report-panel" aria-labelledby="morning-report-heading">
+    <section className="discover-panel friend-suggestions-panel" aria-labelledby="friend-suggestions-heading">
       <header className="discover-panel__header">
-        <h4 id="morning-report-heading" className="discover-panel__title">
-          Morning report
+        <h4 id="friend-suggestions-heading" className="discover-panel__title">
+          {t("discoverCards.friendSuggestionsTitle")}
         </h4>
-        <p className="discover-panel__lede">Ranked discovery candidates from overnight bond and DHT activity.</p>
+        <p className="discover-panel__lede">{t("discoverCards.friendSuggestionsLede")}</p>
       </header>
-      <ol className="morning-report-list">
-        {entries.map((entry, index) => (
-          <li
-            key={entry.ownerId}
-            className="morning-report-card"
-            style={{ ["--discover-i" as string]: String(index) }}
-          >
-            <span className="morning-report-card__rank" aria-hidden>
-              {index + 1}
-            </span>
-            <PeerProfileAvatar
-              ownerId={entry.ownerId}
-              fallbackLabel={entry.ownerId}
-              className="morning-report-card__avatar"
-            />
-            <div className="morning-report-card__body">
-              <strong title={entry.ownerId}>{shortOwnerId(entry.ownerId, 20)}</strong>
-              <div className="morning-report-card__metrics">
-                <span className="morning-report-card__score" title="Discovery score">
-                  {entry.score}
-                </span>
-                <span className="peer-result-card__tag">{entry.trustLevel}</span>
-                <span className="morning-report-card__meta">
-                  {entry.discoveryMatchCount} match{entry.discoveryMatchCount === 1 ? "" : "es"}
-                  {entry.hopDistance !== undefined ? ` · ${entry.hopDistance} hop` : ""}
-                </span>
+      <ul className="friend-suggestions-list">
+        {visible.map((entry, index) => {
+          const label = friendSuggestionDisplayName(entry, t);
+          const helloState = resolvePeerHelloState(
+            entry.ownerId,
+            entry.peerId ?? entry.ownerId,
+            bonds,
+            outboundHellos,
+          );
+          return (
+            <li
+              key={entry.ownerId}
+              className="friend-suggestion-card"
+              style={{ ["--discover-i" as string]: String(index) }}
+            >
+              <PeerProfileAvatar
+                ownerId={entry.ownerId}
+                fallbackLabel={label}
+                className="friend-suggestion-card__avatar"
+              />
+              <div className="friend-suggestion-card__body">
+                <strong>{label}</strong>
+                <p className="friend-suggestion-card__reason">{formatFriendSuggestionReason(entry, t)}</p>
               </div>
-              <p className="morning-report-card__reason">{entry.reason}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
+              <div className="friend-suggestion-card__actions">
+                {helloState === "sent" ? (
+                  <span className="discover-peer-card__status discover-peer-card__status--sent" role="status">
+                    {t("common.helloSentWaiting")}
+                  </span>
+                ) : (
+                  <button type="button" className="discover-primary-btn" onClick={() => onSayHello(entry.ownerId)}>
+                    {t("discoverCards.sayHello")}
+                  </button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }
+
+/** @deprecated Use FriendSuggestionsPanel */
+export const MorningReportPanel = FriendSuggestionsPanel;
 
 export function DidImportPanel({
   input,
@@ -182,21 +231,20 @@ export function DidImportPanel({
   result: ResolvedDidImport | null;
   onImport: () => void;
 }) {
+  const t = useT();
   return (
     <section className="discover-panel did-import-panel" aria-labelledby="did-import-heading">
       <header className="discover-panel__header">
         <h4 id="did-import-heading" className="discover-panel__title">
-          Import external DID
+          {t("discoverCards.didImportTitle")}
         </h4>
-        <p className="discover-panel__lede">
-          Paste a <code>did:key</code> or JSON DID document to cache keys for bonded-contact lookup.
-        </p>
+        <p className="discover-panel__lede">{t("discoverCards.didImportLede")}</p>
       </header>
       <div className="did-import-panel__form">
         <textarea
           className="did-import-panel__input"
           rows={4}
-          placeholder="did:key:z… or { &quot;@context&quot;: … }"
+          placeholder={t("discoverCards.didImportPlaceholder")}
           value={input}
           onChange={(e) => onInputChange(e.target.value)}
         />
@@ -206,7 +254,7 @@ export function DidImportPanel({
           disabled={busy || !input.trim()}
           onClick={() => void onImport()}
         >
-          {busy ? "Resolving…" : "Import for lookup"}
+          {busy ? t("discoverCards.resolving") : t("discoverCards.importForLookup")}
         </button>
       </div>
       {error && (
@@ -216,12 +264,12 @@ export function DidImportPanel({
       )}
       {result && (
         <div className="did-import-panel__success" role="status">
-          <strong>Resolved</strong>
+          <strong>{t("discoverCards.resolved")}</strong>
           <p className="did-import-panel__did" title={result.did}>
             {result.did}
           </p>
           <p className="did-import-panel__owner">
-            Owner <code>{result.ownerId}</code>
+            {t("discoverCards.ownerLabel")} <code>{result.ownerId}</code>
           </p>
         </div>
       )}

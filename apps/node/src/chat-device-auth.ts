@@ -4,7 +4,7 @@ import {
 } from "@envoymesh/api";
 import type { DeviceAuthorizationStore } from "@envoymesh/local-store";
 import { verifyAuthorizedDeviceEnvelope } from "@envoymesh/identity";
-import type { ChatMessagePayload, EnvoyEnvelope } from "@envoymesh/protocol";
+import type { ChatMessagePayload, ChatRoomMessagePayload, EnvoyEnvelope } from "@envoymesh/protocol";
 
 export { formatChatSenderDisplayName };
 
@@ -14,9 +14,14 @@ export function bindDeviceAuthorizationStore(store: DeviceAuthorizationStore | n
   deviceAuthorizationStore = store;
 }
 
+type ChatSenderDevicePayload = Pick<
+  ChatMessagePayload | ChatRoomMessagePayload,
+  "senderOwnerId" | "deviceCertificate" | "ownerPublicKeyPem"
+>;
+
 export async function verifyInboundChatDevice(
   envelope: EnvoyEnvelope,
-  payload: ChatMessagePayload,
+  payload: ChatSenderDevicePayload,
 ) {
   const result = verifyInboundChatDeviceAuthorization(
     envelope,

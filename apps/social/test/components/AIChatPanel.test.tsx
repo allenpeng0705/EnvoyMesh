@@ -3,8 +3,9 @@
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { AIChatPanel } from "../../src/components/views/AIChatPanel.js";
+import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
 const runDocumentAgentTurn = vi.fn();
 const sendSyncStateUpdate = vi.fn().mockResolvedValue({ ok: true, recipients: 0 });
@@ -46,7 +47,7 @@ beforeEach(() => {
 
 describe("AIChatPanel", () => {
   it("calls runDocumentAgentTurn and displays the tool-backed answer", async () => {
-    render(<AIChatPanel />);
+    renderWithI18n(<AIChatPanel />);
 
     const input = screen.getByPlaceholderText(/Ask Envoy AI anything/i);
     fireEvent.change(input, { target: { value: "list my library files" } });
@@ -60,7 +61,7 @@ describe("AIChatPanel", () => {
 
   it("does not call runDocumentAgentTurn while node is starting", async () => {
     nodeStatus = "starting";
-    render(<AIChatPanel />);
+    renderWithI18n(<AIChatPanel />);
 
     const input = screen.getByPlaceholderText(/Ask Envoy AI anything/i);
     fireEvent.change(input, { target: { value: "hello" } });
@@ -72,7 +73,7 @@ describe("AIChatPanel", () => {
 
   it("shows error message when runDocumentAgentTurn fails", async () => {
     runDocumentAgentTurn.mockRejectedValue(new Error("Node not initialized"));
-    render(<AIChatPanel />);
+    renderWithI18n(<AIChatPanel />);
 
     const input = screen.getByPlaceholderText(/Ask Envoy AI anything/i);
     fireEvent.change(input, { target: { value: "who has golden" } });

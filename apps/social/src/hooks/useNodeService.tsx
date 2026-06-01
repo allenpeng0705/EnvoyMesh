@@ -7,6 +7,8 @@ import type {
   BridgeStatus,
   ChatDraft,
   ChatMessage,
+  ChatRoom,
+  ChatRoomMessageEvent,
   DiscoverPublishedLibraryParams,
   DiscoverPublishedLibraryPeerResult,
   PairingPayload,
@@ -47,6 +49,8 @@ import type {
   IpfsEngineStatus,
   RagIndexStatus,
 } from "@envoymesh/api";
+import { isChatRoomThreadKey } from "@envoymesh/api";
+import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
 
 type InitNodeOptions = {
   discoveryProfile?: DiscoveryProfile;
@@ -122,6 +126,14 @@ export interface NodeServiceClient {
   sendChatAttachment(params: SendChatAttachmentParams): Promise<SendChatAttachmentResult>;
   readLibraryItemContent(params: ReadLibraryItemContentParams): Promise<ReadLibraryItemContentResult>;
   listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
+  listChatRooms(): Promise<ChatRoom[]>;
+  createChatRoom(title: string, memberOwnerIds: string[]): Promise<ChatRoom>;
+  inviteToChatRoom(roomId: string, memberOwnerIds: string[]): Promise<ChatRoom>;
+  leaveChatRoom(roomId: string): Promise<void>;
+  removeMembersFromChatRoom(roomId: string, memberOwnerIds: string[]): Promise<ChatRoom>;
+  renameChatRoom(roomId: string, title: string): Promise<ChatRoom>;
+  dismissChatRoom(roomId: string): Promise<void>;
+  sendChatRoomMessage(roomId: string, text: string): Promise<SendChatResult>;
   listAgentActivity(params?: import("@envoymesh/api").ListAgentActivityParams): Promise<import("@envoymesh/api").AgentActivityRecord[]>;
   listCommerceReceipts(
     params?: import("@envoymesh/api").ListCommerceReceiptsParams,
@@ -414,6 +426,28 @@ function createWsNodeServiceClient(
       >;
     },
     async listChatHistory(peerOwnerId: string, limit?: number) { return wsClient.rpc("listChatHistory", { peerOwnerId, limit }) as Promise<ChatMessage[]>; },
+    async listChatRooms() { return wsClient.rpc("listChatRooms", {}) as Promise<ChatRoom[]>; },
+    async createChatRoom(title: string, memberOwnerIds: string[]) {
+      return wsClient.rpc("createChatRoom", { title, memberOwnerIds }) as Promise<ChatRoom>;
+    },
+    async inviteToChatRoom(roomId: string, memberOwnerIds: string[]) {
+      return wsClient.rpc("inviteToChatRoom", { roomId, memberOwnerIds }) as Promise<ChatRoom>;
+    },
+    async leaveChatRoom(roomId: string) {
+      return wsClient.rpc("leaveChatRoom", { roomId }) as Promise<void>;
+    },
+    async removeMembersFromChatRoom(roomId: string, memberOwnerIds: string[]) {
+      return wsClient.rpc("removeMembersFromChatRoom", { roomId, memberOwnerIds }) as Promise<ChatRoom>;
+    },
+    async renameChatRoom(roomId: string, title: string) {
+      return wsClient.rpc("renameChatRoom", { roomId, title }) as Promise<ChatRoom>;
+    },
+    async dismissChatRoom(roomId: string) {
+      return wsClient.rpc("dismissChatRoom", { roomId }) as Promise<void>;
+    },
+    async sendChatRoomMessage(roomId: string, text: string) {
+      return wsClient.rpc("sendChatRoomMessage", { roomId, text }) as Promise<SendChatResult>;
+    },
     async listAgentActivity(params?: import("@envoymesh/api").ListAgentActivityParams) {
       return wsClient.rpc("listAgentActivity", (params ?? {}) as Record<string, unknown>) as Promise<
         import("@envoymesh/api").AgentActivityRecord[]
@@ -1039,6 +1073,10 @@ function partnerOwnerIdForChat(
   const rcvO = msg.recipient.ownerId?.trim();
   const rcvN = msg.recipient.nodeId?.trim();
 
+  if (rcvO && isChatRoomThreadKey(rcvO)) {
+    return rcvO;
+  }
+
   // Use ownerId as primary routing key (ownerIds are distinct even when
   // both peers share the same node, e.g. bridge agent running on same node).
   if (sndO && sndO === selfO && rcvO && rcvO !== selfO) {
@@ -1125,21 +1163,39 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
       setThreads((prev) => appendChatToThreads(prev, msg, self) ?? prev);
     });
 
+    const unsubRoomMessage = client.on("chat:room-message", (data) => {
+      const { message } = data as ChatRoomMessageEvent;
+      const self = selfIdsRef.current;
+      if (!self?.ownerId) {
+        pendingUntilSelfReady.current.push(message);
+        return;
+      }
+      setThreads((prev) => appendChatToThreads(prev, message, self) ?? prev);
+    });
+
     const unsubDelivered = client.on("chat:delivered", (data) => {
-      const { messageId } = data as { messageId: string };
+      const { messageId, recipientOwnerId } = data as {
+        messageId: string;
+        recipientOwnerId?: string;
+      };
       if (!messageId) return;
       setThreads((prev) => {
         let changed = false;
         const next: Record<string, ChatMessage[]> = {};
         for (const [threadId, list] of Object.entries(prev)) {
           const updated = list.map((m) => {
-            if (m.messageId !== messageId || m.metadata.deliveryReceipt === "delivered") {
-              return m;
-            }
+            if (m.messageId !== messageId) return m;
+            if (m.metadata.deliveryReceipt === "delivered") return m;
             changed = true;
+            if (!recipientOwnerId) {
+              return {
+                ...m,
+                metadata: { ...m.metadata, deliveryReceipt: "delivered" as const },
+              };
+            }
             return {
               ...m,
-              metadata: { ...m.metadata, deliveryReceipt: "delivered" as const },
+              metadata: mergeGroupDeliveryAck(m.metadata, recipientOwnerId),
             };
           });
           next[threadId] = updated;
@@ -1150,6 +1206,7 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
 
     return () => {
       unsubMessage();
+      unsubRoomMessage();
       unsubDelivered();
     };
   }, [client, client.isConnected]);

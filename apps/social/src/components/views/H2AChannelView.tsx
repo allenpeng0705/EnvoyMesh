@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useT } from "../../context/I18nContext.js";
 import { AIChatPanel } from "./AIChatPanel.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { BackIcon } from "../../icons.js";
@@ -11,6 +12,7 @@ export interface H2AChannelViewProps {
 }
 
 export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H2AChannelViewProps) {
+  const t = useT();
   const nodeService = useNodeService();
   const [activity, setActivity] = useState<AgentActivityRecord[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalSummary[]>([]);
@@ -34,10 +36,10 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H
             type="button"
             className="h2a-channel-back"
             onClick={onBackToChats}
-            aria-label="Back to chats"
+            aria-label={t("h2a.backToChatsAria")}
           >
             <BackIcon size={18} />
-            <span>Chats</span>
+            <span>{t("h2a.chats")}</span>
           </button>
         )}
         <div className="h2a-channel-toolbar__title">
@@ -45,21 +47,19 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H
             AI
           </span>
           <div>
-            <h2 className="h2a-channel-toolbar__heading">Assistant</h2>
-            <p className="h2a-channel-toolbar__subtitle">Owner ↔ home agent</p>
+            <h2 className="h2a-channel-toolbar__heading">{t("h2a.assistant")}</h2>
+            <p className="h2a-channel-toolbar__subtitle">{t("h2a.subtitle")}</p>
           </div>
         </div>
       </header>
       <div className="h2a-channel-body">
-      <aside className="h2a-channel-rail" aria-label="Assistant context">
-        <h3>Owner ↔ home agent</h3>
-        <p className="section-desc">
-          Vault-backed assist, document workflows, and approvals — separate from contact chat threads.
-        </p>
+      <aside className="h2a-channel-rail" aria-label={t("h2a.contextAria")}>
+        <h3>{t("h2a.railTitle")}</h3>
+        <p className="section-desc">{t("h2a.railDesc")}</p>
 
         {pendingApprovals.length > 0 && (
           <div className="h2a-rail-block">
-            <h4>Pending approvals ({pendingApprovals.length})</h4>
+            <h4>{t("h2a.pendingApprovals", { count: pendingApprovals.length })}</h4>
             <ul className="h2a-rail-list">
               {pendingApprovals.slice(0, 4).map((item) => (
                 <li key={item.id}>
@@ -71,16 +71,16 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H
             </ul>
             {onOpenInbox && (
               <button type="button" className="secondary" onClick={onOpenInbox}>
-                Open inbox
+                {t("h2a.openInbox")}
               </button>
             )}
           </div>
         )}
 
         <div className="h2a-rail-block">
-          <h4>Recent activity</h4>
+          <h4>{t("h2a.recentActivity")}</h4>
           {activity.length === 0 ? (
-            <p className="library-view-hint">Activity from vault assist and agent tools appears here.</p>
+            <p className="library-view-hint">{t("h2a.activityEmpty")}</p>
           ) : (
             <ul className="h2a-rail-list">
               {activity.map((row) => (
@@ -94,7 +94,7 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H
           )}
           {onOpenActivity && (
             <button type="button" className="secondary" onClick={onOpenActivity}>
-              View all activity
+              {t("h2a.viewAllActivity")}
             </button>
           )}
         </div>

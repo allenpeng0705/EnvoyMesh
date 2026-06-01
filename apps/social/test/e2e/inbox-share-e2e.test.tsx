@@ -4,10 +4,11 @@
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ShareOffer } from "@envoymesh/api";
 import { InboxView } from "../../src/components/views/InboxView.js";
 import { ToastProvider } from "../../src/hooks/useToast.js";
+import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
 const acceptShare = vi.fn();
 const declineShare = vi.fn();
@@ -71,7 +72,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
 }));
 
 function renderInbox() {
-  return render(
+  return renderWithI18n(
     <ToastProvider>
       <InboxView embedded />
     </ToastProvider>,

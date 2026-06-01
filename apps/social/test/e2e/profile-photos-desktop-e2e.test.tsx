@@ -25,7 +25,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { BondRecord, HumanProfile } from "@envoymesh/api";
 import { ProfileView } from "../../src/components/views/ProfileView.js";
+import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { MINIMAL_PNG_BASE64, minimalPngFile } from "../fixtures/profile-photo-fixtures.js";
+
+function renderProfileView() {
+  return renderWithI18n(<ProfileView />);
+}
 
 const setPublicProfileThumbnail = vi.fn();
 const upsertProfileGalleryPhoto = vi.fn();
@@ -121,7 +126,7 @@ beforeEach(() => {
 
 describe("E2E Profile photos (desktop)", () => {
   it("shows Photos and About sub-tabs; About shows profile fields", async () => {
-    render(<ProfileView />);
+    renderProfileView();
 
     expect(screen.getByRole("navigation", { name: /profile sections/i })).toBeDefined();
     expect(screen.getByRole("button", { name: /^photos$/i })).toBeDefined();
@@ -133,14 +138,14 @@ describe("E2E Profile photos (desktop)", () => {
 
   it("suggests a thumbnail when none is set", async () => {
     humanProfile = { ...humanProfile!, publicThumbnail: undefined };
-    render(<ProfileView />);
+    renderProfileView();
 
     expect(screen.getByRole("status").textContent).toMatch(/add a profile photo/i);
     expect(screen.getByRole("button", { name: /add photo/i })).toBeDefined();
   });
 
   it("gallery add uploads with public visibility by default", async () => {
-    render(<ProfileView />);
+    renderProfileView();
 
     fireEvent.click(screen.getByRole("button", { name: /^add photo$/i }));
     expect(await screen.findByText(/gallery metadata syncs/i)).toBeDefined();
@@ -161,7 +166,7 @@ describe("E2E Profile photos (desktop)", () => {
 
   it("thumbnail flow opens crop UI then calls setPublicProfileThumbnail", async () => {
     humanProfile = { ...humanProfile!, publicThumbnail: undefined };
-    render(<ProfileView />);
+    renderProfileView();
 
     fireEvent.click(screen.getByRole("button", { name: /change profile thumbnail/i }));
 

@@ -103,6 +103,8 @@ import {
   parseSharePreviewPayload,
   parseShareAcceptPayload,
   parseChatMessagePayload,
+  parseChatRoomSyncPayload,
+  parseChatRoomMessagePayload,
   CHAT_DELIVERY_ACK_TIMEOUT_MS,
   parseEnvelope,
   parseBondRequestPayload,
@@ -183,6 +185,24 @@ import {
   loadMobileProfileThumbnailInline,
   sendMobileProfileEnvelope,
 } from "./mobile-profile-sync.js";
+import {
+  mobileCreateChatRoom,
+  mobileDismissChatRoom,
+  mobileFlushPendingRoomSyncs,
+  mobileHandleInboundChatRoomMessage,
+  mobileHandleInboundChatRoomSync,
+  mobileInviteToChatRoom,
+  mobileLeaveChatRoom,
+  mobileListChatRooms,
+  mobileRemoveMembersFromChatRoom,
+  mobileRenameChatRoom,
+  mobileSendChatRoomMessage,
+  mobileFlushPendingRoomMessages,
+  type MobileChatRoomHost,
+} from "./mobile-chat-room.js";
+import { createMobileChatRoomStore } from "./mobile-chat-room-store.js";
+import { createMobileChatRoomPendingSyncStore } from "./mobile-chat-room-pending-sync-store.js";
+import { createMobileChatRoomPendingMessageStore } from "./mobile-chat-room-pending-message-store.js";
 import { normalizeOpenAiCompatibleBaseUrl, runOwnerApprovedKnowledgeQuery } from "@envoymesh/models";
 import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from "@libp2p/crypto/keys";
 import { peerIdFromString } from "@libp2p/peer-id";
@@ -408,6 +428,14 @@ export class MobileNode implements NodeService {
   private readonly _sessionTokenStore: MobileSessionTokenStore;
   private readonly _identityStateStore: MobileIdentityStateStore;
   private readonly _chatLog: ReturnType<typeof createMobileChatLogStore>;
+  private readonly _chatRoomStore: ReturnType<typeof createMobileChatRoomStore>;
+  private readonly _chatRoomPendingSyncStore: ReturnType<typeof createMobileChatRoomPendingSyncStore>;
+  private readonly _chatRoomPendingMessageStore: ReturnType<typeof createMobileChatRoomPendingMessageStore>;
+  private readonly _groupDeliveryPending = new Map<
+    string,
+    { threadKey: string; pending: Set<string> }
+  >();
+  private _chatRoomSyncFlushTimer: ReturnType<typeof setInterval> | null = null;
   private readonly _agentActivity: ReturnType<typeof createMobileAgentActivityStore>;
   private readonly _auditJournal: ReturnType<typeof createMobileAuditJournalStore>;
   private readonly _taskJournal: ReturnType<typeof createMobileTaskJournalStore>;
@@ -514,6 +542,13 @@ export class MobileNode implements NodeService {
     this._sessionTokenStore = createMobileSessionTokenStore(this._db);
     this._identityStateStore = createMobileIdentityStateStore(this._db);
     this._chatLog = createMobileChatLogStore(this._db);
+    this._chatRoomStore = createMobileChatRoomStore(this._profileDir);
+    this._chatRoomPendingSyncStore = createMobileChatRoomPendingSyncStore(this._profileDir);
+    this._chatRoomPendingMessageStore = createMobileChatRoomPendingMessageStore(this._profileDir);
+    this._chatRoomSyncFlushTimer = setInterval(() => {
+      void mobileFlushPendingRoomSyncs(this._mobileChatRoomHost());
+      void mobileFlushPendingRoomMessages(this._mobileChatRoomHost());
+    }, 90_000);
     this._agentActivity = createMobileAgentActivityStore(this._db);
     this._auditJournal = createMobileAuditJournalStore(this._db);
     this._taskJournal = createMobileTaskJournalStore(this._db);
@@ -1146,6 +1181,9 @@ export class MobileNode implements NodeService {
       hobbies: input.hobbies,
       knowledge: input.knowledge,
       profileVisibility: input.profileVisibility ?? "private",
+      discoveryLocation: input.discoveryLocation ?? this._humanProfile?.discoveryLocation,
+      discoveryLocationPrecision:
+        input.discoveryLocationPrecision ?? this._humanProfile?.discoveryLocationPrecision ?? "hidden",
       capabilities: input.capabilities,
       publicThumbnail: this._humanProfile?.publicThumbnail,
       galleryPhotos: this._humanProfile?.galleryPhotos,
@@ -1694,6 +1732,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
   }
   async revokeBond(peerOwnerId: string): Promise<void> {
     await this._trustStore.delete(peerOwnerId);
+    this._events.emit("bond:revoked", { peerOwnerId });
   }
 
   async getBonds(): Promise<BondRecord[]> {
@@ -2132,6 +2171,41 @@ You are the owner's personal AI assistant on EnvoyMesh.
       metadata: row.metadata,
       signature: row.signature,
     }));
+  }
+
+  async listChatRooms(): Promise<import("@envoymesh/api").ChatRoom[]> {
+    return mobileListChatRooms(this._mobileChatRoomHost());
+  }
+
+  async createChatRoom(title: string, memberOwnerIds: string[]): Promise<import("@envoymesh/api").ChatRoom> {
+    return mobileCreateChatRoom(this._mobileChatRoomHost(), title, memberOwnerIds);
+  }
+
+  async inviteToChatRoom(roomId: string, memberOwnerIds: string[]): Promise<import("@envoymesh/api").ChatRoom> {
+    return mobileInviteToChatRoom(this._mobileChatRoomHost(), roomId, memberOwnerIds);
+  }
+
+  async leaveChatRoom(roomId: string): Promise<void> {
+    return mobileLeaveChatRoom(this._mobileChatRoomHost(), roomId);
+  }
+
+  async removeMembersFromChatRoom(
+    roomId: string,
+    memberOwnerIds: string[],
+  ): Promise<import("@envoymesh/api").ChatRoom> {
+    return mobileRemoveMembersFromChatRoom(this._mobileChatRoomHost(), roomId, memberOwnerIds);
+  }
+
+  async renameChatRoom(roomId: string, title: string): Promise<import("@envoymesh/api").ChatRoom> {
+    return mobileRenameChatRoom(this._mobileChatRoomHost(), roomId, title);
+  }
+
+  async dismissChatRoom(roomId: string): Promise<void> {
+    return mobileDismissChatRoom(this._mobileChatRoomHost(), roomId);
+  }
+
+  async sendChatRoomMessage(roomId: string, text: string): Promise<import("@envoymesh/api").SendChatResult> {
+    return mobileSendChatRoomMessage(this._mobileChatRoomHost(), roomId, text);
   }
 
   async deleteChatMessage(peerOwnerId: string, messageId: string): Promise<{ ok: boolean }> {
@@ -4927,6 +5001,26 @@ You are the owner's personal AI assistant on EnvoyMesh.
         } catch {
           console.warn("[mobile-node] rejected discovery.response: invalid payload");
         }
+      } else if (intent === "chat.room.sync") {
+        try {
+          const syncPayload = parseChatRoomSyncPayload(msg.payload);
+          void mobileHandleInboundChatRoomSync(this._mobileChatRoomHost(), msg as EnvoyEnvelope, syncPayload);
+        } catch {
+          console.warn("[mobile-node] rejected chat.room.sync: invalid payload");
+        }
+      } else if (intent === "chat.room.message") {
+        try {
+          const roomPayload = parseChatRoomMessagePayload(msg.payload);
+          void mobileHandleInboundChatRoomMessage(
+            this._mobileChatRoomHost(),
+            msg as EnvoyEnvelope,
+            roomPayload,
+            String(msg.senderPeerId ?? opts?.transportPeerId ?? ""),
+            opts?.replyWithEnvelope,
+          );
+        } catch {
+          console.warn("[mobile-node] rejected chat.room.message: invalid payload");
+        }
       } else if (intent === "chat.message") {
         let chatPayload: ReturnType<typeof parseChatMessagePayload> | undefined;
         try {
@@ -5719,6 +5813,107 @@ You are the owner's personal AI assistant on EnvoyMesh.
       );
     }
     throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+  }
+
+  private _mobileChatRoomHost(): MobileChatRoomHost {
+    return {
+      assertOnline: () => this._assertNodeRunning(),
+      getProfile: () => this.getProfile(),
+      getMeshPeerId: () => this._meshPeerId ?? derivePeerId(this._state.device.publicKeyPem),
+      trustStore: {
+        getTrustRecord: async (ownerId) => {
+          const record = await this._trustStore.get(ownerId);
+          if (!record) return undefined;
+          return { level: record.level, displayName: record.displayName };
+        },
+      },
+      chatRoomStore: this._chatRoomStore,
+      pendingSyncStore: this._chatRoomPendingSyncStore,
+      pendingMessageStore: this._chatRoomPendingMessageStore,
+      deviceRevocations: this._deviceRevocations,
+      loadHumanDisplayName: async () => this._humanProfile?.displayName,
+      resolvePeerTransportForOwner: async (targetOwnerId) => {
+        const transportPeerId = await this._resolveChatTransportPeerId(targetOwnerId);
+        if (!transportPeerId) {
+          throw new Error(`No transport peer for ${targetOwnerId}`);
+        }
+        const recipientEnvelopePeerId = await this._resolveChatRecipientPeerId(targetOwnerId);
+        return { transportPeerId, recipientEnvelopePeerId };
+      },
+      deliverEnvelopeToOwner: async (targetOwnerId, transportPeerId, envelope) => {
+        const data = JSON.stringify(envelope);
+        if (this._mesh) {
+          try {
+            return await this._sendChatViaMeshWithAck(transportPeerId, data, targetOwnerId);
+          } catch (err) {
+            console.warn(
+              "[mobile-node] chat.room fan-out mesh failed, falling back to relay:",
+              err instanceof Error ? err.message : err,
+            );
+          }
+        }
+        this._broadcastToRelaySockets(data);
+        return { delivered: false };
+      },
+      persistChatMessage: (threadKey, msg) => {
+        const receipt = msg.metadata.deliveryReceipt;
+        const deliveryReceipt =
+          receipt === "sent" || receipt === "delivered" || receipt === "read" ? receipt : undefined;
+        void this._chatLog.append(threadKey, {
+          messageId: msg.messageId,
+          sender: {
+            ownerId: msg.sender.ownerId,
+            displayName: msg.sender.displayName,
+          },
+          recipient: {
+            ownerId: msg.recipient.ownerId,
+            displayName: msg.recipient.displayName,
+          },
+          content: msg.content,
+          metadata: {
+            timestamp: msg.metadata.timestamp,
+            ...(deliveryReceipt ? { deliveryReceipt } : {}),
+            ...(msg.metadata.deliveredToOwnerIds
+              ? { deliveredToOwnerIds: msg.metadata.deliveredToOwnerIds }
+              : {}),
+            ...(msg.metadata.pendingRecipientOwnerIds
+              ? { pendingRecipientOwnerIds: msg.metadata.pendingRecipientOwnerIds }
+              : {}),
+          },
+          signature: msg.signature,
+        }).catch(() => {});
+      },
+      emitRoomUpdated: (room) => this._events.emit("chat:room-updated", room),
+      emitRoomRemoved: (roomId) => this._events.emit("chat:room-removed", { roomId }),
+      emitRoomMessage: (roomId, message) => this._events.emit("chat:room-message", { roomId, message }),
+      markOutboundDelivered: (threadKey, messageId, deliveredAt) => {
+        void this._markOutboundChatDelivered(threadKey, messageId, deliveredAt);
+      },
+      recordGroupDeliveryProgress: (input) => {
+        const key = `${input.threadKey}:${input.messageId}`;
+        let state = this._groupDeliveryPending.get(key);
+        if (!state) {
+          state = { threadKey: input.threadKey, pending: new Set(input.allRecipientOwnerIds) };
+          this._groupDeliveryPending.set(key, state);
+        }
+        state.pending.delete(input.recipientOwnerId);
+        void this._chatLog
+          .updateGroupDeliveryProgress(input.threadKey, input.messageId, input.recipientOwnerId)
+          .catch(() => {});
+        this._events.emit("chat:delivered", {
+          messageId: input.messageId,
+          timestamp: input.deliveredAt,
+          recipientOwnerId: input.recipientOwnerId,
+        });
+        if (state.pending.size === 0) {
+          this._groupDeliveryPending.delete(key);
+          void this._markOutboundChatDelivered(input.threadKey, input.messageId, input.deliveredAt);
+        }
+      },
+      clearChatThread: (threadKey) => {
+        void this.clearChatHistory(threadKey);
+      },
+    };
   }
 
   private async _markOutboundChatDelivered(

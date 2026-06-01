@@ -101,6 +101,20 @@ describe("MobileNode", () => {
       expect(result.peerId).toBe(node.state.agent.agentPeerId);
     });
 
+    it("updateHumanProfile persists discoveryLocation and precision", async () => {
+      await node.initNode("/test-profile");
+      const updated = await node.updateHumanProfile({
+        displayName: "Mobile User",
+        username: "mobile01",
+        profileVisibility: "public",
+        discoveryLocation: { countryCode: "US", city: "Boston" },
+        discoveryLocationPrecision: "city",
+      });
+      expect(updated.discoveryLocation).toEqual({ countryCode: "US", city: "Boston" });
+      expect(updated.discoveryLocationPrecision).toBe("city");
+      expect((await node.getHumanProfile())?.discoveryLocation?.city).toBe("Boston");
+    });
+
     it("initStandalone without prior init also triggers standalone init", async () => {
       const fresh = new MobileNode(makeConfig());
       const result = await fresh.initNode("/fresh-profile");
@@ -375,6 +389,21 @@ describe("MobileNode", () => {
       await node.unblockPeer(oid);
       const bonds = await node.getBonds();
       expect(bonds.find((x) => x.peerOwnerId === oid)).toBeUndefined();
+    });
+
+    it("revokeBond removes trust entry and emits bond:revoked", async () => {
+      const oid = "envoy:owner:revoke-me";
+      await (node as any)._trustStore.set({
+        peerOwnerId: oid,
+        displayName: "Carol",
+        level: "direct",
+        createdAt: new Date().toISOString(),
+      });
+      const handler = vi.fn();
+      node.on("bond:revoked", handler);
+      await node.revokeBond(oid);
+      expect(await node.getBonds()).toEqual([]);
+      expect(handler).toHaveBeenCalledWith({ peerOwnerId: oid });
     });
   });
 

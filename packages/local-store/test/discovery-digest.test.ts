@@ -21,41 +21,13 @@ afterEach(async () => {
 });
 
 describe("discovery digest", () => {
-  it("ranks direct trusted peers higher", async () => {
+  it("excludes bonded contacts and keeps unknown discovery matches", async () => {
     const trustStore = createLocalTrustStore(profileDir);
     const peerStore = createLocalPeerDirectoryStore(profileDir);
     const taskStore = createLocalTaskStore(profileDir);
 
     await trustStore.setTrustRecord({ peerOwnerId: "envoy:owner:alice", level: "direct" });
     await trustStore.setTrustRecord({ peerOwnerId: "envoy:owner:bob", level: "public" });
-
-    await peerStore.upsertPeerFromSignal({
-      peerId: "peer-a",
-      seenAt: new Date().toISOString(),
-      payload: {
-        ownerId: "envoy:owner:alice",
-        ownerPublicKeyPem: "owner-key",
-        deviceId: "envoy:device:a",
-        deviceCertificate: {
-          version: "0.1",
-          certificateId: "cert-1",
-          ownerId: "envoy:owner:alice",
-          deviceId: "envoy:device:a",
-          devicePublicKeyPem: "device-key-a",
-          deviceProfile: "primary",
-          capabilities: ["mesh.discovery"],
-          issuedAt: "2026-01-01T00:00:00.000Z",
-          expiresAt: null,
-          signature: "sig",
-        },
-        deviceProfile: "primary",
-        capabilities: ["mesh.discovery"],
-        supportedProtocolVersions: ["emp/0.1"],
-        listenAddrs: [],
-        publicTopics: [],
-        status: "online",
-      },
-    });
 
     await taskStore.appendDiscoveryEvent(
       createDiscoveryEvent({
@@ -77,6 +49,16 @@ describe("discovery digest", () => {
         summary: "bob matches",
       }),
     );
+    await taskStore.appendDiscoveryEvent(
+      createDiscoveryEvent({
+        direction: "inbound",
+        intent: "discovery.response",
+        ownerId: "envoy:owner:carol",
+        matchCount: 2,
+        outcome: "record",
+        summary: "carol matches",
+      }),
+    );
 
     const digest = buildMorningReportDigest({
       trustRecords: await trustStore.listTrustRecords(),
@@ -85,7 +67,9 @@ describe("discovery digest", () => {
       limit: 5,
     });
 
-    expect(digest[0]?.ownerId).toBe("envoy:owner:alice");
-    expect(digest[0]?.score).toBeGreaterThan(digest[1]?.score ?? 0);
+    expect(digest).toHaveLength(1);
+    expect(digest[0]?.ownerId).toBe("envoy:owner:carol");
+    expect(digest[0]?.trustLevel).toBe("unknown");
+    expect(digest[0]?.discoveryMatchCount).toBe(2);
   });
 });

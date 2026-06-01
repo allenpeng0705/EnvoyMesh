@@ -6,29 +6,30 @@
  * search mode switching and query handling in isolation.
  */
 import { describe, it, expect } from "vitest";
+import { locationSearchTopics } from "@envoymesh/api";
 
 describe("SearchView — logic", () => {
-  it("search mode defaults to interest", () => {
-    let mode: "interest" | "peerId" | "library" = "interest";
-    expect(mode).toBe("interest");
+  it("discover path defaults to nearby", () => {
+    let path: "nearby" | "code" | "wider" | "library" = "nearby";
+    expect(path).toBe("nearby");
   });
 
-  it("search mode can switch to peerId", () => {
-    let mode: "interest" | "peerId" | "library" = "interest";
-    mode = "peerId";
-    expect(mode).toBe("peerId");
+  it("discover path can switch to code", () => {
+    let path: "nearby" | "code" | "wider" | "library" = "nearby";
+    path = "code";
+    expect(path).toBe("code");
   });
 
-  it("search mode can switch to library discovery", () => {
-    let mode: "interest" | "peerId" | "library" = "interest";
-    mode = "library";
-    expect(mode).toBe("library");
+  it("discover path can switch to friends files", () => {
+    let path: "nearby" | "code" | "wider" | "library" = "nearby";
+    path = "library";
+    expect(path).toBe("library");
   });
 
-  it("search mode can switch back to interest", () => {
-    let mode: "interest" | "peerId" = "peerId";
-    mode = "interest";
-    expect(mode).toBe("interest");
+  it("discover path can switch to wider network", () => {
+    let path: "nearby" | "code" | "wider" = "code";
+    path = "wider";
+    expect(path).toBe("wider");
   });
 
   it("empty search query is detected", () => {
@@ -52,9 +53,9 @@ describe("SearchView — logic", () => {
     expect(searchParams.username).toBe("alice");
   });
 
-  it("peerId search builds query with peerId only", () => {
-    const query = "12D3KooWTest";
-    const searchParams = { peerId: query };
-    expect(searchParams.peerId).toBe("12D3KooWTest");
+  it("geo place search builds city topic list", () => {
+    const location = { countryCode: "US", city: "Boston" };
+    const topics = locationSearchTopics({ location, scope: "city" });
+    expect(topics).toEqual(["geo:city:US-boston"]);
   });
 });

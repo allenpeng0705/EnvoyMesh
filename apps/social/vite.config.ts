@@ -26,7 +26,6 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@envoymesh/api": resolve(repoRoot, "packages/api/src/index.ts"),
       "@envoymesh/api/did-import": resolve(repoRoot, "packages/api/src/did-import.ts"),
       "@envoymesh/api/discovery-privacy": resolve(repoRoot, "packages/api/src/discovery-privacy.ts"),
       "@envoymesh/api/discovery-referral-attestation": resolve(
@@ -34,6 +33,10 @@ export default defineConfig({
         "packages/api/src/discovery-referral-attestation.ts",
       ),
       "@envoymesh/api/chat-delivered": resolve(repoRoot, "packages/api/src/chat-delivered.ts"),
+      "@envoymesh/api/group-chat-delivery": resolve(repoRoot, "packages/api/src/group-chat-delivery.ts"),
+      "@envoymesh/api/chat-room-thread": resolve(repoRoot, "packages/api/src/chat-room-thread.ts"),
+      "@envoymesh/api/chat-room-service": resolve(repoRoot, "packages/api/src/chat-room-service.ts"),
+      "@envoymesh/api": resolve(repoRoot, "packages/api/src/index.ts"),
       "@envoymesh/protocol": resolve(repoRoot, "packages/protocol/src/index.ts"),
     },
   },

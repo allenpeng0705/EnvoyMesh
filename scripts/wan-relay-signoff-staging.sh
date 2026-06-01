@@ -17,6 +17,9 @@ npm run typecheck
 echo "==> wan-relay-signoff e2e (TEST_RELAY_ADDR=$RELAY_ADDR)"
 TEST_RELAY_ADDR="$RELAY_ADDR" npx vitest run apps/node/test/wan-relay-signoff-e2e.test.ts
 
+echo "==> geo-discovery-wan-signoff (TEST_RELAY_ADDR=$RELAY_ADDR)"
+TEST_RELAY_ADDR="$RELAY_ADDR" npx vitest run apps/node/test/geo-discovery-wan-signoff.test.ts
+
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 echo ""
 echo "=== Sign-off ledger template (paste into docs/wan-connectivity-signoff.md) ==="

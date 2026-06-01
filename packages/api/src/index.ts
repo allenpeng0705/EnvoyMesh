@@ -7,6 +7,7 @@ export * from "./contact-ai-access.js";
 export * from "./ai-identity-prefix.js";
 export * from "./autonomous-policy.js";
 export * from "./envoy-pair-uri.js";
+export * from "./envoy-contact-link.js";
 export * from "./chat-device-auth.js";
 export * from "./chat-actor.js";
 export * from "./agent-visibility.js";
@@ -16,6 +17,7 @@ export * from "./approval-queue.js";
 export * from "./approval-executor.js";
 export * from "./task-dispatcher.js";
 export * from "./default-bootstrap.js";
+export * from "./group-chat-delivery.js";
 export * from "./node-service.js";
 export * from "./bond-target.js";
 export * from "./document-autonomy.js";
@@ -55,3 +57,43 @@ export {
   MAX_CHAT_ATTACHMENT_BYTES,
   MAX_LIBRARY_ITEM_PREVIEW_BYTES,
 } from "./node-service.js";
+export {
+  chatRoomThreadKey,
+  parseChatRoomThreadKey,
+  isChatRoomThreadKey,
+} from "./chat-room-thread.js";
+export {
+  deriveLocationDiscoveryTopics,
+  locationSearchTopics,
+  encodeGeohash,
+  decodeGeohash,
+  NEARBY_GEOHASH_PRECISION,
+  normalizeLocationSlug,
+  normalizeCountryCode,
+  parseGeoDiscoveryTopic,
+  formatGeoTopicLabel,
+  geohashNeighborPrefixes,
+  GEO_TOPIC_PREFIX,
+  hashDiscoveryTag,
+  hashGeoDiscoveryTopics,
+  geoDiscoveryTagHashesFromProfile,
+  matchGeoDiscoveryTagHashes,
+  friendMatchingGeoSearchTopics,
+  friendMatchingGeoTagHashes,
+  resolveFriendMatchingGeoInput,
+} from "./discovery-location.js";
+export type { FriendMatchingGeoScope } from "./discovery-location.js";
+export type { DiscoveryLocation, DiscoveryLocationPrecision } from "@envoymesh/protocol";
+export {
+  profileCapabilityTags,
+  profileCapabilityDiscoveryTopics,
+  syncProfileTagsToManifestCapabilities,
+} from "./profile-capabilities.js";
+export type { ProfileCapabilityEntry } from "./profile-capabilities.js";
+/** Explicit export: Social UI imports these; keep browser-safe (no node-only deps). */
+export {
+  mergeGroupDeliveryAck,
+  groupDeliveryRecipientCount,
+  isGroupDeliveryComplete,
+  hasPartialGroupDelivery,
+} from "./group-chat-delivery.js";

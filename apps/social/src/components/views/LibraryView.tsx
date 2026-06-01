@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
+import { useT } from "../../context/I18nContext.js";
 import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
 import { openVaultLibraryFile, revealVaultLibraryFile } from "../../lib/library-file-actions.js";
 import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
+import { FriendsFilesPanel } from "../discover/FriendsFilesPanel.js";
 import type { LibraryItem } from "@envoymesh/api";
 
 export function LibraryView() {
+  const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig } = useNodeState();
   const { showToast } = useToast();
@@ -93,7 +96,7 @@ export function LibraryView() {
         contentBase64,
         mimeType: file.type || undefined,
       });
-      showToast(`Imported ${result.relativePath}`, "success");
+      showToast(t("library.importedToast", { path: result.relativePath }), "success");
       await load();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -112,7 +115,7 @@ export function LibraryView() {
         disabled={fileActionBusy === `open:${row.relativePath}`}
         onClick={() => void runLibraryFileAction(row.relativePath, "open")}
       >
-        {fileActionBusy === `open:${row.relativePath}` ? "Opening…" : "Open"}
+        {fileActionBusy === `open:${row.relativePath}` ? t("library.opening") : t("library.open")}
       </button>
       <button
         type="button"
@@ -120,7 +123,7 @@ export function LibraryView() {
         disabled={fileActionBusy === `reveal:${row.relativePath}`}
         onClick={() => void runLibraryFileAction(row.relativePath, "reveal")}
       >
-        {fileActionBusy === `reveal:${row.relativePath}` ? "Opening…" : "Show in folder"}
+        {fileActionBusy === `reveal:${row.relativePath}` ? t("library.opening") : t("library.showInFolder")}
       </button>
       <label className="library-published-toggle">
         <input
@@ -137,7 +140,7 @@ export function LibraryView() {
             })();
           }}
         />{" "}
-        {row.published ? "Published" : "Private"}
+        {row.published ? t("library.published") : t("library.private")}
       </label>
       {ipfsExportActionsEnabled && (
         <div className="library-row-ipfs">
@@ -151,11 +154,11 @@ export function LibraryView() {
                 className="secondary"
                 onClick={() => {
                   void navigator.clipboard.writeText(row.publishedExternal!.cid);
-                  setIpfsOk("CID copied");
+                  setIpfsOk(t("library.cidCopied"));
                   setIpfsErr(null);
                 }}
               >
-                Copy CID
+                {t("library.copyCid")}
               </button>
             </>
           ) : null}
@@ -170,7 +173,7 @@ export function LibraryView() {
                 setIpfsBusyId(row.documentId);
                 try {
                   await nodeService.exportLibraryItemToIpfs(row.documentId);
-                  showToast("IPFS export complete", "success");
+                  showToast(t("library.ipfsExportComplete"), "success");
                   await load();
                 } catch (err) {
                   setIpfsErr(err instanceof Error ? err.message : String(err));
@@ -180,7 +183,11 @@ export function LibraryView() {
               })();
             }}
           >
-            {ipfsBusyId === row.documentId ? "Exporting…" : row.publishedExternal ? "Re-export" : "Export"}
+            {ipfsBusyId === row.documentId
+              ? t("library.exporting")
+              : row.publishedExternal
+                ? t("library.reExport")
+                : t("library.export")}
           </button>
           {ipfsPinningEnabled && row.publishedExternal && (
             <button
@@ -195,10 +202,15 @@ export function LibraryView() {
                   try {
                     const result = await nodeService.pinLibraryItemExternal(row.documentId);
                     if (!result.ok) {
-                      throw new Error(result.error ?? "Pin failed");
+                      throw new Error(result.error ?? t("library.pinFailed"));
                     }
-                    setIpfsOk(`Pinned via ${result.provider}${result.pinId ? ` (${result.pinId})` : ""}`);
-                    showToast("CID pinned to provider", "success");
+                    setIpfsOk(
+                      t("library.pinnedStatus", {
+                        provider: result.provider,
+                        pinId: result.pinId ? ` (${result.pinId})` : "",
+                      }),
+                    );
+                    showToast(t("library.cidPinnedToast"), "success");
                   } catch (err) {
                     setIpfsErr(err instanceof Error ? err.message : String(err));
                   } finally {
@@ -207,7 +219,7 @@ export function LibraryView() {
                 })();
               }}
             >
-              {ipfsPinBusyId === row.documentId ? "Pinning…" : "Pin to provider"}
+              {ipfsPinBusyId === row.documentId ? t("library.pinning") : t("library.pin")}
             </button>
           )}
           {ipfsGatewayVerifyEnabled && row.publishedExternal && (
@@ -224,8 +236,13 @@ export function LibraryView() {
                     const result = await nodeService.verifyLibraryItemIpfsGateway({
                       documentId: row.documentId,
                     });
-                    setIpfsOk(`Gateway verified (${result.fetchedBytes} bytes) — ${result.gatewayUrl}`);
-                    showToast("Gateway content matches vault hash", "success");
+                    setIpfsOk(
+                      t("library.gatewayVerifiedStatus", {
+                        bytes: String(result.fetchedBytes),
+                        url: result.gatewayUrl,
+                      }),
+                    );
+                    showToast(t("library.gatewayMatch"), "success");
                   } catch (err) {
                     setIpfsErr(err instanceof Error ? err.message : String(err));
                   } finally {
@@ -234,35 +251,32 @@ export function LibraryView() {
                 })();
               }}
             >
-              {ipfsVerifyBusyId === row.documentId ? "Verifying…" : "Verify gateway"}
+              {ipfsVerifyBusyId === row.documentId ? t("library.verifying") : t("library.verifyGateway")}
             </button>
           )}
         </div>
       )}
       <button type="button" className="secondary" onClick={() => setShareFor(row)}>
-        Share…
+        {t("library.share")}
       </button>
     </>
   );
 
   return (
     <div className="library-view">
-      <h2>Library</h2>
-      <p className="library-view-hint">
-        Files in your shared vault — publish metadata for discovery, export to IPFS, or offer P2P shares.
-        Only .md / .txt / .json are full-text searchable for vault RAG.
-      </p>
+      <h2>{t("library.title")}</h2>
+      <p className="library-view-hint">{t("library.hint")}</p>
       <div className="library-view-toolbar">
         <input
           type="search"
           className="library-view-search"
-          placeholder="Filter by name or path…"
+          placeholder={t("library.filterPlaceholder")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          aria-label="Filter library"
+          aria-label={t("library.filterAria")}
         />
         <button type="button" className="secondary" onClick={() => void load()} disabled={loading}>
-          {loading ? "Loading…" : "Refresh"}
+          {loading ? t("common.loading") : t("common.refresh")}
         </button>
         <button
           type="button"
@@ -270,7 +284,7 @@ export function LibraryView() {
           disabled={importBusy}
           onClick={() => fileInputRef.current?.click()}
         >
-          {importBusy ? "Importing…" : "Import file…"}
+          {importBusy ? t("library.importing") : t("library.importFile")}
         </button>
         <input
           ref={fileInputRef}
@@ -287,35 +301,24 @@ export function LibraryView() {
       {ipfsErr && <p className="library-view-error" role="alert">{ipfsErr}</p>}
       {ipfsOk && <p className="library-view-hint" role="status">{ipfsOk}</p>}
       {isMobileNode && !ipfsMobileHeliaEnabled && (
-        <p className="library-view-hint">
-          IPFS export on mobile uses in-process Helia. Enable it under Settings → Node → External distribution.
-        </p>
+        <p className="library-view-hint">{t("library.heliaHint")}</p>
       )}
       {isMobileNode && ipfsMobileHeliaEnabled && (
-        <p className="library-view-hint">
-          Export uses in-process Helia on this device. Add a gateway allowlist in Settings to verify CIDs over HTTP.
-        </p>
+        <p className="library-view-hint">{t("library.ipfsMobileHeliaOn")}</p>
       )}
       {!isMobileNode && !ipfsPolicyEnabled && (
-        <p className="library-view-hint">
-          IPFS export is off. Enable it under Settings → Node → External distribution when you want CIDs for vault files.
-        </p>
+        <p className="library-view-hint">{t("library.ipfsDisabled")}</p>
       )}
       {!isMobileNode && ipfsPolicyEnabled && ipfsHeliaPrimaryEnabled && (
-        <p className="library-view-hint">
-          Export uses in-process Helia — no Kubo daemon required. Switch back to Kubo in Settings if you need the bundled sidecar.
-        </p>
+        <p className="library-view-hint">{t("library.ipfsDesktopHelia")}</p>
       )}
       {!isMobileNode && ipfsPolicyEnabled && !ipfsHeliaPrimaryEnabled && (
-        <p className="library-view-hint">
-          Export starts the IPFS engine automatically on first use when using the desktop app bundle.
-        </p>
+        <p className="library-view-hint">{t("library.ipfsDesktopKubo")}</p>
       )}
+      <FriendsFilesPanel />
       {!loading && !error && items.length === 0 && (
         <p className="library-view-empty">
-          {rawItems.length === 0
-            ? "No documents yet. Import a file or add files to your shared vault folder."
-            : "No entries match your filter."}
+          {rawItems.length === 0 ? t("library.empty") : t("library.emptyFilter")}
         </p>
       )}
       {items.length > 0 && (
@@ -323,11 +326,11 @@ export function LibraryView() {
           <table className="library-view-table">
             <thead>
               <tr>
-                <th scope="col">Title</th>
-                <th scope="col">Path</th>
-                <th scope="col">Size</th>
-                <th scope="col">Updated</th>
-                <th scope="col">Actions</th>
+                <th scope="col">{t("library.colTitle")}</th>
+                <th scope="col">{t("library.colPath")}</th>
+                <th scope="col">{t("library.colSize")}</th>
+                <th scope="col">{t("library.colUpdated")}</th>
+                <th scope="col">{t("library.colActions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -342,7 +345,7 @@ export function LibraryView() {
               ))}
             </tbody>
           </table>
-          <ul className="library-view-cards" aria-label="Library files">
+          <ul className="library-view-cards" aria-label={t("library.filesAria")}>
             {items.map((row) => (
               <li key={row.documentId} className="library-view-card">
                 <div className="library-view-card-head">
