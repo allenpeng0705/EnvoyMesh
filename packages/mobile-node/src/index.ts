@@ -1760,9 +1760,8 @@ You are the owner's personal AI assistant on EnvoyMesh.
     const ts = new Date().toISOString();
     const wireText = stripModelThinking(text);
     // Persist locally — threaded by targetOwnerId (ownerId namespace).
-    // NOTE: Inbound chat messages are threaded by senderPeerId (peerId namespace).
-    // The two namespaces differ; a unified thread view requires an ownerId→peerId
-    // mapping from the trust store. Tracked as ISSUE #6.
+    // The inbound handler now threads by senderOwnerId, so outbound and
+    // inbound messages addressed to the same contact land in the same thread.
     await this._chatLog.append(targetOwnerId, {
       messageId: msgId,
       sender: { ownerId: this._state.owner.ownerId, displayName: "Me" },
@@ -5060,6 +5059,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
         }
 
         const localDevicePeerId = derivePeerId(this._state.device.publicKeyPem);
+        const localAgentPeerId = this._state.agent.agentPeerId;
         const senderEnvelopePeerId = String(msg.senderPeerId ?? "").trim();
         if (senderEnvelopePeerId === localDevicePeerId) {
           console.warn("[mobile-node] chat.message: ignoring self-echo");
@@ -5069,6 +5069,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
         if (
           intendedRecipient &&
           intendedRecipient !== localDevicePeerId &&
+          intendedRecipient !== localAgentPeerId &&
           intendedRecipient !== this._state.homeAgentPeerId?.trim()
         ) {
           console.warn("[mobile-node] chat.message: ignoring misaddressed message");
@@ -5122,7 +5123,11 @@ You are the owner's personal AI assistant on EnvoyMesh.
         void this._trustStore.get(senderOwnerId).then((bond) => {
           const baseName = bond?.displayName ?? senderOwnerId;
           const senderDisplayName = formatChatSenderDisplayName(baseName, chatPayload);
-          this._chatLog.append(senderPeerId, {
+          // Thread by senderOwnerId (ownerId namespace) so the local copy
+          // joins the same thread as any outbound messages addressed to the
+          // same contact. The libp2p senderPeerId is still recorded on the
+          // event payload for transport-level routing.
+          this._chatLog.append(senderOwnerId, {
             messageId: (msg.messageId as string) ?? _randomUUID(),
             sender: { ownerId: senderOwnerId, displayName: senderDisplayName },
             recipient: { ownerId: owner.ownerId, displayName: "Me" },

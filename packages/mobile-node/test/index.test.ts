@@ -915,8 +915,11 @@ describe("MobileNode", () => {
       expect(evt.content.text).toBe("inbound hello");
       expect(evt.sender.nodeId).toBe(senderPeerId);
 
+      // Threaded by senderOwnerId (ownerId namespace) so the inbound copy
+      // joins the same thread as any outbound messages addressed to the same
+      // contact — fixing the multi-device shared-identity view.
       await vi.waitFor(async () => {
-        const history = await node.listChatHistory(senderPeerId);
+        const history = await node.listChatHistory(senderOwner.ownerId);
         expect(history).toHaveLength(1);
         expect(history[0].content.text).toBe("inbound hello");
       });
