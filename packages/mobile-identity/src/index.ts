@@ -572,7 +572,12 @@ export function verifyHumanProfile(
 }
 
 // ---------------------------------------------------------------------------
-// ECDH key exchange for shared-identity owner-key transfer (Phase 11)
+// ECDH key exchange for shared-identity owner-key transfer (Phase 11).
+//
+// Crypto stack: Ed25519 via `@noble/curves`; ECDH P-256 + HKDF + AES-256-GCM
+// via Web Crypto (`crypto.subtle`) for parity with the desktop package.
+// Both packages intentionally use the same dual-crypto approach; keep them
+// in sync if a stable `@noble/curves/p256` is adopted on both sides.
 // ---------------------------------------------------------------------------
 
 export interface EncryptedOwnerKey {

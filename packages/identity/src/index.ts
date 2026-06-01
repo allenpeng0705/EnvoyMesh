@@ -647,7 +647,14 @@ function randomCertificateId(): string {
 }
 
 // ---------------------------------------------------------------------------
-// ECDH key exchange for shared-identity owner-key transfer (Phase 11)
+// ECDH key exchange for shared-identity owner-key transfer (Phase 11).
+//
+// Crypto stack: Ed25519 via `node:crypto`, ECDH P-256 + HKDF + AES-256-GCM
+// via Web Crypto (`crypto.subtle`). The two stacks are intentionally mixed
+// here because Node 18+ exposes `crypto.subtle` and `@noble/curves` does
+// not yet ship a stable P-256 across all supported runtimes. The same
+// approach is mirrored in `@envoymesh/mobile-identity`; keep them in sync
+// if a stable `@noble/curves/p256` is adopted on both sides.
 // ---------------------------------------------------------------------------
 
 export interface EncryptedOwnerKey {
