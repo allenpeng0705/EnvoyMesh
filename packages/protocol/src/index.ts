@@ -246,49 +246,11 @@ const EnvoyEnvelopeObjectSchema = z.object({
   signature: z.string().min(1),
 });
 
-export const EnvoyEnvelopeSchema = EnvoyEnvelopeObjectSchema.superRefine((value, context) => {
-  const decision = evaluateEnvelopeRolePolicy(value.intent, value.senderRole, value.recipientRole);
-  if (!decision.ok) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: decision.reason,
-      path: ["senderRole"],
-    });
-  }
-  // When senderRole is "agent" and intent is chat.message, agentCredential must be present.
-  // chat.message is the primary intent where an agent directly represents the owner to a human.
-  // For task.* and report.create intents, authorization comes from mandates instead.
-  if (value.senderRole === "agent" && value.intent === "chat.message" && !value.agentCredential) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "agentCredential is required when senderRole is 'agent' for chat.message",
-      path: ["agentCredential"],
-    });
-  }
-});
+export const EnvoyEnvelopeSchema = EnvoyEnvelopeObjectSchema.superRefine(envelopeRoleRefinement);
 
 export const UnsignedEnvoyEnvelopeSchema = EnvoyEnvelopeObjectSchema.omit({
   signature: true,
-}).superRefine((value, context) => {
-  const decision = evaluateEnvelopeRolePolicy(value.intent, value.senderRole, value.recipientRole);
-  if (!decision.ok) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: decision.reason,
-      path: ["senderRole"],
-    });
-  }
-  // When senderRole is "agent" and intent is chat.message, agentCredential must be present.
-  // chat.message is the primary intent where an agent directly represents the owner to a human.
-  // For task.* and report.create intents, authorization comes from mandates instead.
-  if (value.senderRole === "agent" && value.intent === "chat.message" && !value.agentCredential) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "agentCredential is required when senderRole is 'agent' for chat.message",
-      path: ["agentCredential"],
-    });
-  }
-});
+}).superRefine(envelopeRoleRefinement);
 
 export const SystemPingPayloadSchema = z.object({
   nonce: z.string().min(1),
@@ -3262,93 +3224,13 @@ function evaluateEnvelopeRolePolicy(
   senderRole: EnvoyActorRole,
   recipientRole: EnvoyActorRole,
 ): { ok: true } | { ok: false; reason: string } {
-  if (intent === "chat.message") {
-    // chat.message is allowed for: human↔human, human↔agent, agent↔human, agent↔agent
-    if (senderRole === "system" || recipientRole === "system") {
-      return {
-        ok: false,
-        reason: "chat.message cannot involve system role",
-      };
-    }
-    return { ok: true };
-  }
-
-  if (intent === "chat.room.sync" || intent === "chat.room.message") {
-    if (senderRole !== "human" || recipientRole !== "human") {
-      return {
-        ok: false,
-        reason: `${intent} requires senderRole=human and recipientRole=human`,
-      };
-    }
-    return { ok: true };
-  }
-
-  if (intent === "chat.delivered") {
-    if (senderRole === "system" || recipientRole === "system") {
-      return {
-        ok: false,
-        reason: "chat.delivered cannot involve system role",
-      };
-    }
-    return { ok: true };
-  }
-
-  if (intent === "social.intro.sync") {
-    if (senderRole !== "agent" || recipientRole !== "agent") {
-      return {
-        ok: false,
-        reason: "social.intro.sync requires senderRole=agent and recipientRole=agent",
-      };
-    }
-    return { ok: true };
-  }
-
-  if (intent === "social.intro.propose") {
-    if (senderRole !== "agent") {
-      return {
-        ok: false,
-        reason: "social.intro.propose requires senderRole=agent",
-      };
-    }
-    if (recipientRole !== "human") {
-      return {
-        ok: false,
-        reason: "social.intro.propose requires recipientRole=human",
-      };
-    }
-    return { ok: true };
-  }
-
-  if (intent === "social.intro.owner-ready") {
-    if (senderRole !== "human") {
-      return {
-        ok: false,
-        reason: "social.intro.owner-ready requires senderRole=human",
-      };
-    }
-    if (recipientRole !== "agent" && recipientRole !== "human") {
-      return {
-        ok: false,
-        reason: "social.intro.owner-ready requires recipientRole=agent or recipientRole=human",
-      };
-    }
-    return { ok: true };
-  }
-
-  if (intent.startsWith("task.") || intent === "report.create") {
-    if (senderRole !== "agent") {
-      return {
-        ok: false,
-        reason: `${intent} requires senderRole=agent`,
-      };
-    }
-    if (recipientRole !== "agent") {
-      return {
-        ok: false,
-        reason: `${intent} requires recipientRole=agent`,
-      };
-    }
-  }
-
-  return { ok: true };
+  // Re-exported from role-policy-table.ts so the existing API surface
+  // (and any test that calls this function directly) keeps working.
+  return evaluateEnvelopeRolePolicyFromTable(intent, senderRole, recipientRole);
 }
+
+import {
+  evaluateEnvelopeRolePolicy as evaluateEnvelopeRolePolicyFromTable,
+} from "./role-policy-table.js";
+
+import { envelopeRoleRefinement } from "./envelope-role-refinement.js";

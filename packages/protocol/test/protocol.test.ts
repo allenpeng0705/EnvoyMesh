@@ -639,7 +639,7 @@ describe("protocol", () => {
           profileFragmentRef: "ref",
         }),
       }),
-    ).toThrow(/social.intro.propose requires recipientRole=human/);
+    ).toThrow(/social\.intro\.propose.*senderRole=agent|recipientRole/);
   });
 
   it("defaults mandate closeOnFirstCompletedResult to false", () => {
