@@ -1,9 +1,10 @@
 import "./dom-event-polyfill.js";
 import { derivePeerId, generateIdentity, signUnsignedEnvelope } from "@envoymesh/identity";
 import { loadOrCreateNodeProfile } from "@envoymesh/local-store";
-import { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, EnvoyMesh } from "@envoymesh/network";
+import { EnvoyMesh } from "@envoymesh/network";
 import { createSystemPingPayload, createUnsignedEnvelope, type EnvoyEnvelope } from "@envoymesh/protocol";
 import { join } from "node:path";
+import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 
 type Scenario =
   | "invalid-signature"
@@ -26,7 +27,9 @@ const stranger = generateIdentity();
 
 const mesh = new EnvoyMesh({
   listen: args.listen,
-  libp2pPrivateKeyPath: join(args.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME),
+  libp2pPrivateKey: await loadOrCreateLibp2pPrivateKey(
+    join(args.profileDir, "libp2p-private.key"),
+  ),
 });
 await mesh.start();
 

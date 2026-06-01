@@ -2,8 +2,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { EnvoyMesh } from "../src/index.js";
-import { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME } from "../src/libp2p-key.js";
+import { EnvoyMesh } from "@envoymesh/network";
+import { loadOrCreateLibp2pPrivateKey } from "../src/libp2p-key-loader.js";
 
 const meshes: EnvoyMesh[] = [];
 
@@ -12,14 +12,14 @@ afterEach(async () => {
 });
 
 describe("libp2p private key persistence", () => {
-  it("keeps the same libp2p Peer ID across restarts when libp2pPrivateKeyPath is set", async () => {
+  it("keeps the same libp2p Peer ID across restarts when the key is loaded from the same file", async () => {
     const dir = await mkdtemp(join(tmpdir(), "envoymesh-libp2p-key-"));
-    const keyPath = join(dir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME);
+    const keyPath = join(dir, "libp2p-private.key");
     try {
       const m1 = new EnvoyMesh({
         listen: ["/ip4/127.0.0.1/tcp/0"],
         enableMdns: false,
-        libp2pPrivateKeyPath: keyPath,
+        libp2pPrivateKey: await loadOrCreateLibp2pPrivateKey(keyPath),
       });
       meshes.push(m1);
       await m1.start();
@@ -30,7 +30,7 @@ describe("libp2p private key persistence", () => {
       const m2 = new EnvoyMesh({
         listen: ["/ip4/127.0.0.1/tcp/0"],
         enableMdns: false,
-        libp2pPrivateKeyPath: keyPath,
+        libp2pPrivateKey: await loadOrCreateLibp2pPrivateKey(keyPath),
       });
       meshes.push(m2);
       await m2.start();
@@ -40,7 +40,7 @@ describe("libp2p private key persistence", () => {
     }
   });
 
-  it("uses different Peer IDs without libp2pPrivateKeyPath (ephemeral)", async () => {
+  it("uses different Peer IDs without a pre-loaded key (ephemeral)", async () => {
     const m1 = new EnvoyMesh({ listen: ["/ip4/127.0.0.1/tcp/0"], enableMdns: false });
     const m2 = new EnvoyMesh({ listen: ["/ip4/127.0.0.1/tcp/0"], enableMdns: false });
     meshes.push(m1, m2);

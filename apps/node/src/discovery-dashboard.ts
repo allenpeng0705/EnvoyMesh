@@ -3,7 +3,7 @@ import "./dom-event-polyfill.js";
 import { loadOrCreateNodeProfile } from "@envoymesh/local-store";
 import type { DiscoveryProfile } from "@envoymesh/api";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
-import { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, EnvoyMesh, type DiscoveredMeshPeer } from "@envoymesh/network";
+import { EnvoyMesh, type DiscoveredMeshPeer } from "@envoymesh/network";
 import {
   createRelayCheckinPayload,
   createRelayLookupPayload,
@@ -17,6 +17,7 @@ import { parseNodeArgs, printHelp } from "./args.js";
 import { createDiscoverySeedStore } from "./discovery-seed-store.js";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
+import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { logRelayReachableAddrsForCheckin, logClientRelayLookupResponse, describeMultiaddrReachability } from "./relay-checkin-log.js";
 
 const CLEAR = "\x1b[2J\x1b[H";
@@ -139,7 +140,9 @@ Examples:
     enableAutoNat: args.enableAutoNat || args.discoveryProfile === "wan-default",
     enableDcutr: args.enableDcutr || args.discoveryProfile === "wan-default",
     enableP2pDebug: args.p2pDebug,
-    libp2pPrivateKeyPath: join(args.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME),
+    libp2pPrivateKey: await loadOrCreateLibp2pPrivateKey(
+      join(args.profileDir, "libp2p-private.key"),
+    ),
     onP2pDebug: (event) => {
       // Suppress debug output to keep dashboard clean
     },

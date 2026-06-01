@@ -171,6 +171,7 @@ import {
 import { handleMobileInboundAgentCardIntent } from "./mobile-agent-card-inbound.js";
 import { createMobileContactOwnerKeyStore, type MobileContactOwnerKeyStore } from "./mobile-contact-owner-keys.js";
 import { createMobilePeerProfileCache, type MobilePeerProfileCache } from "./mobile-peer-profile-cache.js";
+import { isBrowserDevMode, isCapacitorNative } from "./runtime-detection.js";
 import {
   importMobileProfilePhotoBytes,
   parseProfilePhotoMime,
@@ -724,13 +725,23 @@ export class MobileNode implements NodeService {
       await this._secureStorage.set("ownerPrivateKey", s.owner.privateKeyPem);
       await this._secureStorage.set("devicePrivateKey", s.device.privateKeyPem);
       await this._secureStorage.set("agentPrivateKey", s.agent.privateKeyPem);
-    } else {
-      // Fallback: persist keys to localStorage for browser dev mode
+    } else if (isBrowserDevMode()) {
+      // Browser dev mode: allow localStorage as a plaintext fallback so the
+      // social UI can boot. Never enable this on a native build.
       try {
         localStorage.setItem("envoymesh_keys_owner", s.owner.privateKeyPem);
         localStorage.setItem("envoymesh_keys_device", s.device.privateKeyPem);
         localStorage.setItem("envoymesh_keys_agent", s.agent.privateKeyPem);
       } catch { /* localStorage may be unavailable */ }
+    } else {
+      // Native build without a secure storage adapter wired in. Refuse to
+      // persist private keys in plaintext — this would compromise the mesh.
+      throw new Error(
+        "MobileNode: no secure storage adapter provided for a native build. " +
+          "Pass a `secureStorage` option implementing set/get/delete to MobileNode " +
+          "(e.g. the iOS Keychain / Android EncryptedSharedPreferences adapter " +
+          "from apps/mobile/src/capacitor-secure-storage.ts).",
+      );
     }
     return persisted;
   }

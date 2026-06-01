@@ -45,7 +45,6 @@ import {
 import {
   CapabilityRegistry,
   CLIENT_PROXY_PROTOCOL,
-  DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME,
   ENVOY_CHAT_PROTOCOL,
   ENVOY_DATA_PROTOCOL,
   ENVOY_MESSAGE_PROTOCOL,
@@ -124,6 +123,7 @@ import { chatSenderActorFromEnvelope, shouldSkipAgentChatAssist, resolveEmpSuppo
 import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
 import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
+import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
 import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates, processDiscoveryQueue } from "./discovery-inbound.js";
@@ -479,7 +479,9 @@ if (rawBootstrapPeers.length !== effectiveBootstrapPeers.length || peerDirectory
     `[connectivity] bootstrap addrs: kept=${effectiveBootstrapPeers.length} filtered=${rawBootstrapPeers.length - effectiveBootstrapPeers.length} peer-dir-skipped=${peerDirectorySeedAddrs.length} (contact listen addrs use dial hints only)`,
   );
 }
-const libp2pPrivateKeyPath = join(args.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME);
+const libp2pPrivateKey = await loadOrCreateLibp2pPrivateKey(
+  join(args.profileDir, "libp2p-private.key"),
+);
 const connectivityRuntime: ResolvedConnectivityRuntime = resolveConnectivityRuntime({
   profile: args.discoveryProfile,
   enableMdns: args.enableMdnsExplicit ? args.enableMdns : undefined,
@@ -503,7 +505,7 @@ const mesh = new EnvoyMesh({
   enableP2pDebug: args.p2pDebug,
   enableRelayDebugSummary: args.relayDebugSummary,
   ...(connectivityRuntime.maxConnections != null ? { maxConnections: connectivityRuntime.maxConnections } : {}),
-  libp2pPrivateKeyPath,
+  libp2pPrivateKey,
   onP2pDebug: (event) => {
     void appendP2pTrace(event);
   },
@@ -3001,7 +3003,7 @@ if (args.configPath) {
 console.log(`Owner ID: ${profile.owner.ownerId}`);
 console.log(`Device ID: ${profile.device.deviceId}`);
 console.log(`libp2p Peer ID: ${mesh.peerId}`);
-console.log(`libp2p key file (stable Peer ID across restarts): ${libp2pPrivateKeyPath}`);
+console.log(`libp2p private key loaded (stable Peer ID across restarts)`);
 console.log(`Configured --listen: ${args.listen.join(", ")}`);
 if (args.listen.some((addr) => addr.includes("/ip4/0.0.0.0/") || addr.includes("/ip6/::/"))) {
   console.log(

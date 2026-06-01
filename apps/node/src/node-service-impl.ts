@@ -248,6 +248,7 @@ import {
   type CapabilityProviderJobStore,
 } from "@envoymesh/local-store";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
+import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
 import { seedAddrsForDiscoveryProfile, peerDiscoverySourceFromMultiaddrs, shouldPersistPeerDiscoverySeeds } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
@@ -279,7 +280,6 @@ import { dirname, resolve } from "node:path";
 import {
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
-  DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME,
   filterBootstrapMultiaddrs,
   filterUsableOutboundPeerDialHints,
   ENVOY_CHAT_PROTOCOL,
@@ -5599,7 +5599,9 @@ class NodeServiceImpl implements NodeService {
         ...(connectivityRuntime.maxConnections != null
           ? { maxConnections: connectivityRuntime.maxConnections }
           : {}),
-        libp2pPrivateKeyPath: join(config.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME),
+        libp2pPrivateKey: await loadOrCreateLibp2pPrivateKey(
+          join(config.profileDir, "libp2p-private.key"),
+        ),
       };
 
       this._mesh = new EnvoyMesh(meshOptions);

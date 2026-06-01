@@ -17,8 +17,9 @@ import { join } from "path";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { byteStream } from "@libp2p/utils";
-import { CapabilityRegistry, CLIENT_PROXY_PROTOCOL, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, EnvoyMesh } from "@envoymesh/network";
+import { CapabilityRegistry, CLIENT_PROXY_PROTOCOL, EnvoyMesh } from "@envoymesh/network";
 import { parseRelayArgs } from "./args.js";
+import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import {
   createInitialStandaloneRelayHealthState,
   evaluateStandaloneRelayHealth,
@@ -48,7 +49,9 @@ const startedAtMs = Date.now();
 // Ensure profile directory exists
 mkdirSync(args.profileDir, { recursive: true });
 
-const libp2pPrivateKeyPath = join(args.profileDir, DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME);
+const libp2pPrivateKey = await loadOrCreateLibp2pPrivateKey(
+  join(args.profileDir, "libp2p-private.key"),
+);
 
 // Maximum payload size to prevent memory exhaustion (1MB)
 const MAX_ENVELOPE_BYTES = 1 * 1024 * 1024;
@@ -126,7 +129,7 @@ const mesh = new EnvoyMesh({
   enableDht: args.enableDht,
   dhtClientMode: args.dhtClientMode,
   bootstrapPeers: args.bootstrapPeers,
-  libp2pPrivateKeyPath,
+  libp2pPrivateKey,
 });
 
 let started = false;

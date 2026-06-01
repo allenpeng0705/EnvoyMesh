@@ -3,7 +3,7 @@ import type { PrivateKey } from "@libp2p/interface";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-/** Default filename stored under the node profile directory (alongside `profile.json`). */
+/** Default filename stored under the relay profile directory. */
 export const DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME = "libp2p-private.key";
 
 function isMissingFileError(error: unknown): boolean {
@@ -12,7 +12,9 @@ function isMissingFileError(error: unknown): boolean {
 
 /**
  * Load protobuf-serialized libp2p private key from disk, or generate Ed25519 and persist it.
- * Stable keys imply stable libp2p Peer IDs and stable `/p2p/<peerId>` suffix in multiaddrs.
+ *
+ * Mirrors the loader in `apps/node/src/libp2p-key-loader.ts`; relay and node apps do not
+ * share a workspace path, so the function is duplicated here. Keep them in sync.
  */
 export async function loadOrCreateLibp2pPrivateKey(keyFilePath: string): Promise<PrivateKey> {
   try {

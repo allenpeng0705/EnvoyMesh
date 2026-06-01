@@ -27,6 +27,14 @@ import {
   parseVoucherJsonObject,
   readAllFromByteStream,
 } from "./data-framing.js";
+
+/**
+ * Defense-in-depth cap on inbound envelope bytes for chat and message protocols.
+ * `apps/node/src/inbound-guard.ts` enforces a finer-grained cap (default 64 KiB,
+ * 1 MiB for profile.*) before Zod parse, but the Diplomat layer rejects
+ * oversized streams first to avoid OOM on a single buffer.
+ */
+export const MAX_INBOUND_ENVELOPE_BYTES = 1 * 1024 * 1024;
 import {
   CLIENT_PROXY_PROTOCOL,
   ENVOY_CHAT_PROTOCOL,
@@ -40,7 +48,6 @@ import {
   encodeCapabilityTopicRecordToMultiaddr,
 } from "./capability-topic.js";
 import { expandListenAddressesWithQuic } from "./quic-listen.js";
-import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key.js";
 import {
   DEFAULT_CLIENT_MAX_CONNECTIONS,
   DEFAULT_MDNS_INTERVAL_MS,
@@ -49,7 +56,6 @@ import {
   type MeshConnectionStats,
 } from "./connection-stats.js";
 
-export { DEFAULT_LIBP2P_PRIVATE_KEY_BASENAME, loadOrCreateLibp2pPrivateKey } from "./libp2p-key.js";
 export {
   DEFAULT_CLIENT_MAX_CONNECTIONS,
   DEFAULT_MDNS_INTERVAL_MS,
@@ -181,9 +187,10 @@ export interface EnvoyMeshOptions {
    */
   browserMode?: boolean;
   /**
-   * Pre-loaded libp2p Ed25519 private key. Takes precedence over
-   * {@link libp2pPrivateKeyPath}. Use this in environments where file I/O
-   * is unavailable (browsers, Capacitor WebView).
+   * Pre-loaded libp2p Ed25519 private key. Required in environments where file
+   * I/O is unavailable (browsers, Capacitor WebView). The caller is
+   * responsible for loading or generating the key — see
+   * `apps/node/src/libp2p-key-loader.ts` for a file-backed implementation.
    */
   libp2pPrivateKey?: import("@libp2p/interface").PrivateKey;
   enableP2pDebug?: boolean;
@@ -288,12 +295,9 @@ export class EnvoyMesh {
 
     const quicTransportFactory = this.options.enableQuic ? await this.loadQuicTransport() : undefined;
 
-    const libp2pPrivateKey = this.options.libp2pPrivateKey
-      ?? (this.options.libp2pPrivateKeyPath
-        ? await loadOrCreateLibp2pPrivateKey(this.options.libp2pPrivateKeyPath)
-        : undefined);
+    const libp2pPrivateKey = this.options.libp2pPrivateKey;
     if (libp2pPrivateKey && this.options.enableP2pDebug) {
-      console.log(`[p2p] libp2p private key file: ${this.options.libp2pPrivateKeyPath}`);
+      console.log(`[p2p] libp2p private key supplied by caller`);
     }
 
     const maxConnections =
@@ -1510,12 +1514,20 @@ export class EnvoyMesh {
           : undefined;
 
       try {
-        const bytes = await streamIo.read();
+        const firstChunk = await streamIo.read();
 
-        if (bytes !== null) {
+        if (firstChunk !== null) {
+          const firstBytes = firstChunk instanceof Uint8Array ? firstChunk : firstChunk.subarray();
+          if (firstBytes.byteLength > MAX_INBOUND_ENVELOPE_BYTES) {
+            console.error(
+              `EnvoyMesh inbound envelope exceeds size cap ${MAX_INBOUND_ENVELOPE_BYTES} (got ${firstBytes.byteLength}); dropping stream`,
+            );
+            return;
+          }
+          const bytes = firstBytes;
           let envelope: EnvoyEnvelope;
           try {
-            envelope = decodeEnvelope(bytes.subarray());
+            envelope = decodeEnvelope(bytes);
             validateEnvelopeProtocol(protocol, envelope);
           } catch (error) {
             console.error("EnvoyMesh inbound envelope decode failed", error);
