@@ -94,7 +94,7 @@ import {
   createUnsignedEnvelope,
   createBondAcceptPayload,
   createHumanProfilePayload,
-  humanProfileForSigning,
+
   parseSystemPingPayload,
   parseSystemSignalPayload,
   parseDiscoveryRequestPayload,
@@ -3397,10 +3397,7 @@ if (resolvedArgs.humanProfileUpdate) {
       ownerPrivateKeyPem: profile.owner.privateKeyPem,
     });
 
-    const signedProfile = signHumanProfile(
-      humanProfileForSigning(unsignedPayload),
-      profile.owner.privateKeyPem,
-    );
+    const signedProfile = signHumanProfile(unsignedPayload, profile.owner.privateKeyPem);
 
     await humanProfileStore.saveHumanProfile(signedProfile);
     console.log(`[human-profile] updated and saved to ${args.profileDir}/human-profile.json`);

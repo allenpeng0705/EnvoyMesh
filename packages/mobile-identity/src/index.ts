@@ -14,121 +14,70 @@ import {
   agentCredentialForSigning,
   authChallengeProofForSigning,
   canonicalJson,
+  createFriendMatchingPreferencesPayload,
   createUnsignedAgentCredential,
   deviceCertificateForSigning,
   deviceRevocationRecordForSigning,
   envelopeForSigning,
+  friendMatchingPreferencesForSigning,
+  humanProfileForSigning,
   mandateForSigning,
   proofOfIntentForSigning,
   dataTransferVoucherForSigning,
-  humanProfileForSigning,
 } from "@envoymesh/protocol";
 import type {
   AgentCredential,
+  AgentIdentity,
   AuthChallengePayload,
   AuthChallengeResponsePayload,
   Capability,
+  CreateAgentCredentialInput,
+  CreateChallengeResponseInput,
+  CreateDeviceCertificateInput,
+  CreateDeviceRevocationRecordInput,
+  CreateMandateInput,
+  CreateProofOfIntentInput,
   CreateUnsignedAgentCredentialInput,
+  DataTransferVoucher,
   DeviceCertificate,
-  DeviceProfile,
+  DeviceIdentity,
   DeviceRevocationRecord,
-  DeviceRevocationReason,
   EnvoyEnvelope,
+  EnvoyIdentity,
   EnvoyIntent,
+  EnvoyKeyPair,
+  FriendMatchingPreferencesPayload,
+  HumanProfilePayload,
   Mandate,
+  OwnerIdentity,
   ProofOfIntent,
   PublicIdentity,
   UnsignedAgentCredential,
-  UnsignedMandate,
+  UnsignedDataTransferVoucher,
   UnsignedDeviceCertificate,
   UnsignedDeviceRevocationRecord,
   UnsignedEnvoyEnvelope,
-  UnsignedDataTransferVoucher,
-  DataTransferVoucher,
-  HumanProfilePayload,
+  UnsignedMandate,
 } from "@envoymesh/protocol";
 
 // ---------------------------------------------------------------------------
-// Type exports (compatible with @envoymesh/identity)
+// Re-exports of shared identity types so consumers can use a single import.
 // ---------------------------------------------------------------------------
 
-export interface EnvoyKeyPair {
-  publicKeyPem: string;
-  privateKeyPem: string;
-}
-
-export interface EnvoyIdentity {
-  peerId: string;
-  publicKeyPem: string;
-  privateKeyPem: string;
-}
-
-export interface OwnerIdentity {
-  ownerId: string;
-  publicKeyPem: string;
-  privateKeyPem: string;
-}
-
-export interface DeviceIdentity {
-  deviceId: string;
-  publicKeyPem: string;
-  privateKeyPem: string;
-}
-
-export interface AgentIdentity {
-  agentId: string;
-  agentPeerId: string;
-  publicKeyPem: string;
-  privateKeyPem: string;
-}
-
-export interface CreateAgentCredentialInput {
-  owner: OwnerIdentity;
-  agent: AgentIdentity;
-  scope?: string[];
-  credentialId?: string;
-  issuedAt?: string;
-  expiresAt?: string | null;
-}
-
-export interface CreateDeviceCertificateInput {
-  owner: OwnerIdentity;
-  device: DeviceIdentity;
-  deviceProfile: DeviceProfile;
-  capabilities: Capability[];
-  certificateId?: string;
-  issuedAt?: string;
-  expiresAt?: string | null;
-}
-
-export interface CreateDeviceRevocationRecordInput {
-  owner: OwnerIdentity;
-  deviceId: string;
-  reason: DeviceRevocationReason;
-  certificateId?: string;
-  revokedAt?: string;
-  revocationId?: string;
-}
-
-export interface CreateChallengeResponseInput {
-  challenge: AuthChallengePayload;
-  ownerPublicKeyPem: string;
-  deviceCertificate: DeviceCertificate;
-  devicePrivateKeyPem: string;
-}
-
-export interface CreateMandateInput {
-  owner: OwnerIdentity;
-  unsignedMandate: UnsignedMandate;
-}
-
-export interface CreateProofOfIntentInput {
-  mandate: Mandate;
-  taskId: string;
-  requestIntent: EnvoyIntent;
-  device: DeviceIdentity;
-  nonce?: string;
-}
+export type {
+  AgentIdentity,
+  CreateAgentCredentialInput,
+  CreateChallengeResponseInput,
+  CreateDeviceCertificateInput,
+  CreateDeviceRevocationRecordInput,
+  CreateMandateInput,
+  CreateProofOfIntentInput,
+  DeviceIdentity,
+  EnvoyIdentity,
+  EnvoyKeyPair,
+  FriendMatchingPreferencesPayload,
+  OwnerIdentity,
+} from "@envoymesh/protocol";
 
 export { canonicalJson };
 
@@ -772,4 +721,45 @@ export async function decryptOwnerKeyFromDevice(
   );
 
   return new TextDecoder().decode(plaintext);
+}
+
+// ---------------------------------------------------------------------------
+// Friend matching preferences (Phase F — Trust mode)
+// ---------------------------------------------------------------------------
+
+/**
+ * Sign a friend-matching preferences payload with the owner's private key.
+ * Mirrors `@envoymesh/identity`'s `signFriendMatchingPreferences` so mobile
+ * devices can sign and verify these payloads on-device.
+ */
+export function signFriendMatchingPreferences(
+  payload: Omit<FriendMatchingPreferencesPayload, "signature">,
+  ownerPrivateKeyPem: string,
+): FriendMatchingPreferencesPayload {
+  const signature = signCanonicalPayload(payload, ownerPrivateKeyPem);
+  return createFriendMatchingPreferencesPayload({
+    ownerId: payload.ownerId,
+    text: payload.text,
+    expiresAt: payload.expiresAt,
+    signature,
+  });
+}
+
+/**
+ * Verify a friend-matching preferences payload using the owner's public key.
+ * Returns false if the signature does not validate or the ownerId does not
+ * match the public key — never throws on malformed input.
+ */
+export function verifyFriendMatchingPreferences(
+  prefs: FriendMatchingPreferencesPayload,
+  ownerPublicKeyPem: string,
+): boolean {
+  if (deriveOwnerId(ownerPublicKeyPem) !== prefs.ownerId) {
+    return false;
+  }
+  return verifyCanonicalPayload(
+    friendMatchingPreferencesForSigning(prefs),
+    prefs.signature,
+    ownerPublicKeyPem,
+  );
 }

@@ -12,13 +12,21 @@ import {
   type AuthChallengePayload,
   type AuthChallengeResponsePayload,
   type Capability,
+  type CreateAgentCredentialInput,
+  type CreateChallengeResponseInput,
+  type CreateDeviceCertificateInput,
+  type CreateDeviceRevocationRecordInput,
+  type CreateMandateInput,
+  type CreateProofOfIntentInput,
   type CreateUnsignedAgentCredentialInput,
   type DeviceCertificate,
-  type DeviceProfile,
+  type DeviceIdentity,
+  type AgentIdentity,
   type DeviceRevocationRecord,
-  type DeviceRevocationReason,
+  type EnvoyIdentity,
+  type EnvoyKeyPair,
   type EnvoyEnvelope,
-  type EnvoyIntent,
+  type OwnerIdentity,
   type Mandate,
   type ProofOfIntent,
   type PublicIdentity,
@@ -44,83 +52,21 @@ import {
   verify as cryptoVerify,
 } from "node:crypto";
 
-export interface EnvoyKeyPair {
-  publicKeyPem: string;
-  privateKeyPem: string;
-}
-
-export interface EnvoyIdentity {
-  peerId: string;
-  publicKeyPem: string;
-  privateKeyPem: string;
-}
-
-export interface OwnerIdentity {
-  ownerId: string;
-  publicKeyPem: string;
-  privateKeyPem: string;
-}
-
-export interface DeviceIdentity {
-  deviceId: string;
-  publicKeyPem: string;
-  privateKeyPem: string;
-}
-
-export interface AgentIdentity {
-  agentId: string;
-  agentPeerId: string;
-  publicKeyPem: string;
-  privateKeyPem: string;
-}
-
-export interface CreateAgentCredentialInput {
-  owner: OwnerIdentity;
-  agent: AgentIdentity;
-  scope?: string[];
-  credentialId?: string;
-  issuedAt?: string;
-  expiresAt?: string | null;
-}
-
-export interface CreateDeviceCertificateInput {
-  owner: OwnerIdentity;
-  device: DeviceIdentity;
-  deviceProfile: DeviceProfile;
-  capabilities: Capability[];
-  certificateId?: string;
-  issuedAt?: string;
-  expiresAt?: string | null;
-}
-
-export interface CreateDeviceRevocationRecordInput {
-  owner: OwnerIdentity;
-  deviceId: string;
-  reason: DeviceRevocationReason;
-  certificateId?: string;
-  revokedAt?: string;
-  revocationId?: string;
-}
-
-export interface CreateChallengeResponseInput {
-  challenge: AuthChallengePayload;
-  ownerPublicKeyPem: string;
-  deviceCertificate: DeviceCertificate;
-  devicePrivateKeyPem: string;
-}
-
-export interface CreateMandateInput {
-  owner: OwnerIdentity;
-  unsignedMandate: UnsignedMandate;
-}
-
-export interface CreateProofOfIntentInput {
-  mandate: Mandate;
-  taskId: string;
-  requestIntent: EnvoyIntent;
-  device: DeviceIdentity;
-  nonce?: string;
-}
+// Re-export shared identity types so existing imports from @envoymesh/identity
+// (and @envoymesh/mobile-identity) keep working with a single source of truth.
+export type {
+  EnvoyKeyPair,
+  EnvoyIdentity,
+  OwnerIdentity,
+  DeviceIdentity,
+  AgentIdentity,
+  CreateAgentCredentialInput,
+  CreateDeviceCertificateInput,
+  CreateDeviceRevocationRecordInput,
+  CreateChallengeResponseInput,
+  CreateMandateInput,
+  CreateProofOfIntentInput,
+} from "@envoymesh/protocol";
 
 export function generateIdentity(): EnvoyIdentity {
   const { publicKeyPem, privateKeyPem } = generateEd25519KeyPair();
@@ -622,8 +568,14 @@ export function verifyCanonicalPayload(
   signature: string,
   publicKeyPem: string,
 ): boolean {
-  const payload = Buffer.from(canonicalJson(input), "utf8");
-  return cryptoVerify(null, payload, publicKeyPem, Buffer.from(signature, "base64url"));
+  // Match the mobile-identity contract: malformed PEM or signature bytes
+  // should not throw — return false so callers can branch on the boolean.
+  try {
+    const payload = Buffer.from(canonicalJson(input), "utf8");
+    return cryptoVerify(null, payload, publicKeyPem, Buffer.from(signature, "base64url"));
+  } catch {
+    return false;
+  }
 }
 
 export function createSignedDataTransferVoucher(input: {

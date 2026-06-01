@@ -531,9 +531,21 @@ export interface CreateHumanProfilePayloadInput {
   ownerPrivateKeyPem: string;
 }
 
-export function createHumanProfilePayload(input: CreateHumanProfilePayloadInput): HumanProfilePayload {
-  const { ownerPrivateKeyPem, ...rest } = input;
-  const unsigned: Omit<HumanProfilePayload, "signature"> = {
+/**
+ * Build a {@link HumanProfilePayload} (unsigned) from user input.
+ *
+ * Returns the **unsigned** shape — the caller must sign via
+ * {@link signHumanProfile} from `@envoymesh/identity` or
+ * `@envoymesh/mobile-identity` to produce a usable payload. This avoids the
+ * footgun where downstream callers stored a `signature: ""` placeholder and
+ * the verification step silently failed.
+ */
+export function createHumanProfilePayload(
+  input: CreateHumanProfilePayloadInput,
+): Omit<HumanProfilePayload, "signature"> {
+  const { ownerPrivateKeyPem: _ignored, ...rest } = input;
+  void _ignored;
+  return {
     version: "0.1",
     ownerId: input.ownerId,
     displayName: input.displayName.trim(),
@@ -549,10 +561,6 @@ export function createHumanProfilePayload(input: CreateHumanProfilePayloadInput)
     discoveryLocationPrecision: input.discoveryLocationPrecision ?? "hidden",
     capabilities: input.capabilities,
     updatedAt: new Date().toISOString(),
-  };
-  return {
-    ...unsigned,
-    signature: "", // placeholder; caller must sign and replace
   };
 }
 
@@ -1351,6 +1359,90 @@ export const MandateSchema = UnsignedMandateSchema.extend({
   signature: z.string().min(1),
 });
 
+// ---------------------------------------------------------------------------
+// Identity value types — shared between @envoymesh/identity (node:crypto) and
+// @envoymesh/mobile-identity (@noble/curves). Both packages re-export these
+// types so consumers can use a single source of truth.
+// ---------------------------------------------------------------------------
+
+export const EnvoyKeyPairSchema = z.object({
+  publicKeyPem: z.string().min(1),
+  privateKeyPem: z.string().min(1),
+});
+
+export const EnvoyIdentitySchema = z.object({
+  peerId: z.string().min(1),
+  publicKeyPem: z.string().min(1),
+  privateKeyPem: z.string().min(1),
+});
+
+export const OwnerIdentitySchema = z.object({
+  ownerId: z.string().min(1),
+  publicKeyPem: z.string().min(1),
+  privateKeyPem: z.string().min(1),
+});
+
+export const DeviceIdentitySchema = z.object({
+  deviceId: z.string().min(1),
+  publicKeyPem: z.string().min(1),
+  privateKeyPem: z.string().min(1),
+});
+
+export const AgentIdentitySchema = z.object({
+  agentId: z.string().min(1),
+  agentPeerId: z.string().min(1),
+  publicKeyPem: z.string().min(1),
+  privateKeyPem: z.string().min(1),
+});
+
+export const CreateAgentCredentialInputSchema = z.object({
+  owner: OwnerIdentitySchema,
+  agent: AgentIdentitySchema,
+  scope: z.array(z.string()).optional(),
+  credentialId: z.string().optional(),
+  issuedAt: z.string().optional(),
+  expiresAt: z.string().nullable().optional(),
+});
+
+export const CreateDeviceCertificateInputSchema = z.object({
+  owner: OwnerIdentitySchema,
+  device: DeviceIdentitySchema,
+  deviceProfile: DeviceProfileSchema,
+  capabilities: z.array(CapabilitySchema).min(1),
+  certificateId: z.string().optional(),
+  issuedAt: z.string().optional(),
+  expiresAt: z.string().nullable().optional(),
+});
+
+export const CreateDeviceRevocationRecordInputSchema = z.object({
+  owner: OwnerIdentitySchema,
+  deviceId: z.string().min(1),
+  reason: DeviceRevocationReasonSchema,
+  certificateId: z.string().optional(),
+  revokedAt: z.string().optional(),
+  revocationId: z.string().optional(),
+});
+
+export const CreateChallengeResponseInputSchema = z.object({
+  challenge: AuthChallengePayloadSchema,
+  ownerPublicKeyPem: z.string().min(1),
+  deviceCertificate: DeviceCertificateSchema,
+  devicePrivateKeyPem: z.string().min(1),
+});
+
+export const CreateMandateInputSchema = z.object({
+  owner: OwnerIdentitySchema,
+  unsignedMandate: UnsignedMandateSchema,
+});
+
+export const CreateProofOfIntentInputSchema = z.object({
+  mandate: MandateSchema,
+  taskId: z.string().min(1),
+  requestIntent: EnvoyIntentSchema,
+  device: DeviceIdentitySchema,
+  nonce: z.string().optional(),
+});
+
 export const ProofOfIntentPayloadSchema = z.object({
   version: z.literal("0.1"),
   mandateId: z.string().min(1),
@@ -1583,6 +1675,17 @@ export type DeviceProfile = z.infer<typeof DeviceProfileSchema>;
 export type EnvoyActorRole = z.infer<typeof EnvoyActorRoleSchema>;
 export type Capability = z.infer<typeof CapabilitySchema>;
 export type PublicIdentity = z.infer<typeof PublicIdentitySchema>;
+export type EnvoyKeyPair = z.infer<typeof EnvoyKeyPairSchema>;
+export type EnvoyIdentity = z.infer<typeof EnvoyIdentitySchema>;
+export type OwnerIdentity = z.infer<typeof OwnerIdentitySchema>;
+export type DeviceIdentity = z.infer<typeof DeviceIdentitySchema>;
+export type AgentIdentity = z.infer<typeof AgentIdentitySchema>;
+export type CreateAgentCredentialInput = z.infer<typeof CreateAgentCredentialInputSchema>;
+export type CreateDeviceCertificateInput = z.infer<typeof CreateDeviceCertificateInputSchema>;
+export type CreateDeviceRevocationRecordInput = z.infer<typeof CreateDeviceRevocationRecordInputSchema>;
+export type CreateChallengeResponseInput = z.infer<typeof CreateChallengeResponseInputSchema>;
+export type CreateMandateInput = z.infer<typeof CreateMandateInputSchema>;
+export type CreateProofOfIntentInput = z.infer<typeof CreateProofOfIntentInputSchema>;
 export type UnsignedDeviceCertificate = z.infer<typeof UnsignedDeviceCertificateSchema>;
 export type DeviceCertificate = z.infer<typeof DeviceCertificateSchema>;
 export type DeviceRevocationReason = z.infer<typeof DeviceRevocationReasonSchema>;

@@ -1236,7 +1236,7 @@ describe("createHumanProfilePayload", () => {
     expect(payload.ownerId).toBe("envoy:owner:alice");
     expect(payload.displayName).toBe("Alice");
     expect(payload.username).toBe("alice123");
-    expect(payload.signature).toBe("");
+    expect("signature" in payload).toBe(false);
     expect(payload.updatedAt).toBeTruthy();
   });
 
@@ -1283,7 +1283,7 @@ describe("createHumanProfilePayload", () => {
     expect(payload.profileVisibility).toBe("private");
   });
 
-  it("provides a placeholder empty signature", () => {
+  it("returns the unsigned shape (no signature field)", () => {
     const payload = createHumanProfilePayload({
       ownerId: "envoy:owner:alice",
       displayName: "Alice",
@@ -1291,7 +1291,7 @@ describe("createHumanProfilePayload", () => {
       ownerPrivateKeyPem: "private-key",
     });
 
-    expect(payload.signature).toBe("");
+    expect("signature" in payload).toBe(false);
   });
 });
 
