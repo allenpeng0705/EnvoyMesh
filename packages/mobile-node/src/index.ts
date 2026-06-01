@@ -1839,6 +1839,12 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return this._agentActivity.list(params);
   }
 
+  // Mobile-node NodeService stubs for features that require the desktop
+  // vault store. The convention:
+  //   - read methods (list*) return empty results so the UI degrades gracefully
+  //   - write methods (record*, revoke*) throw because they cannot be silently
+  //     no-op'd (a silently-dropped write would lie to the user)
+
   async listCommerceReceipts(): Promise<import("@envoymesh/api").CommerceReceiptRecord[]> {
     return [];
   }

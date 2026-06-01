@@ -113,23 +113,5 @@ export function scanLibp2pConnectionsMap(
  * @deprecated Prefer {@link scanLibp2pConnectionsFlat} or {@link scanLibp2pConnectionsMap}.
  * Legacy shape: iterable of `[peerId, connections[]]`.
  */
-export function scanLibp2pConnectionStats(
-  connections: Iterable<[unknown, unknown]> | undefined,
-): MeshConnectionStats {
-  if (!connections) {
-    return {
-      totalPeerIds: 0,
-      totalConnections: 0,
-      circuitPeerIds: [],
-      circuitConnections: 0,
-    };
-  }
-
-  const map = new Map<string, Libp2pConnectionLike[]>();
-  for (const [peerIdStr, conns] of connections) {
-    if (Array.isArray(conns)) {
-      map.set(String(peerIdStr), conns as Libp2pConnectionLike[]);
-    }
-  }
-  return aggregatePeerConnectionStats(map.entries());
-}
+// Removed in P2 #20 — call sites already migrated. Keep this comment as a
+// breadcrumb in case someone greps for the old name.

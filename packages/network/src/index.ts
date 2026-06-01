@@ -59,7 +59,6 @@ import {
 export {
   DEFAULT_CLIENT_MAX_CONNECTIONS,
   DEFAULT_MDNS_INTERVAL_MS,
-  scanLibp2pConnectionStats,
   scanLibp2pConnectionsFlat,
   scanLibp2pConnectionsMap,
   type MeshConnectionStats,
