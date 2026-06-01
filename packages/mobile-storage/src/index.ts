@@ -17,6 +17,10 @@
 
 import type { BondRecord } from "@envoymesh/api";
 import type { SessionTokenRecord } from "./session-token-types.js";
+import { runMobileStorageMigrations } from "./migrations.js";
+
+export { runMobileStorageMigrations, MOBILE_STORAGE_MIGRATIONS } from "./migrations.js";
+export type { MobileStorageMigration } from "./migrations.js";
 
 // ---------------------------------------------------------------------------
 // Types (re-exported for consumers)
@@ -331,30 +335,12 @@ export function mobileStorageSchema(): string[] {
 }
 
 /**
- * Idempotent migrations for existing SQLite databases (new columns, etc.).
- * Safe to call after {@link mobileStorageSchema} on upgrade.
+ * Idempotent migrations for existing SQLite databases. Delegates to the
+ * versioned framework in `./migrations.ts` so adding a new column is a
+ * single row in the `MOBILE_STORAGE_MIGRATIONS` table.
  */
 export async function migrateMobileStorageSchema(db: MobileDatabase): Promise<void> {
-  try {
-    await db.execute("ALTER TABLE peer_directory ADD COLUMN libp2pPeerId TEXT");
-  } catch {
-    /* column already exists */
-  }
-  try {
-    await db.execute("ALTER TABLE chat_messages ADD COLUMN attachmentsJson TEXT");
-  } catch {
-    /* column already exists */
-  }
-  try {
-    await db.execute("ALTER TABLE chat_messages ADD COLUMN groupDeliveryJson TEXT");
-  } catch {
-    /* column already exists */
-  }
-  try {
-    await db.execute("ALTER TABLE identity_state ADD COLUMN agentName_home TEXT");
-  } catch {
-    /* column already exists */
-  }
+  await runMobileStorageMigrations(db);
 }
 
 // ---------------------------------------------------------------------------

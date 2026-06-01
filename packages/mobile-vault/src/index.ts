@@ -80,7 +80,11 @@ export function createMobileVault(): MobileVault {
 }
 
 function _validatePath(path: string): void {
-  if (!path || path.includes("..") || path.includes("~")) {
-    throw new Error(`Invalid vault path: ${path}`);
-  }
+  if (!path) throw new Error("Invalid vault path: empty");
+  if (path.includes("..")) throw new Error(`Invalid vault path (traversal): ${path}`);
+  if (path.includes("~")) throw new Error(`Invalid vault path (tilde): ${path}`);
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f]/.test(path)) throw new Error(`Invalid vault path (control char): ${path}`);
 }
+
+export { createCapacitorVault, CapacitorFilesystemVault } from "./capacitor.js";

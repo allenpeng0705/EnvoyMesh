@@ -13,8 +13,8 @@
  * we **do not** create a second standalone identity (avoids split-brain state).
  */
 import { MobileNode } from "@envoymesh/mobile-node";
+import { CapacitorFilesystemVault } from "@envoymesh/mobile-vault";
 import { CapacitorSqliteDatabase } from "./capacitor-sqlite-database.js";
-import { CapacitorFilesystemVault } from "./capacitor-filesystem-vault.js";
 import { CapacitorSecureStorage } from "./capacitor-secure-storage.js";
 
 export interface MobileAppConfig {
