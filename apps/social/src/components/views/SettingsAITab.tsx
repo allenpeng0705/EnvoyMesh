@@ -33,6 +33,10 @@ import {
   DEFAULT_DOCUMENT_AUTONOMY_POLICY,
   DEFAULT_PROFILE_MEDIA_POLICY,
   DEFAULT_ENVOY_DISCLOSURE_SETTINGS,
+  DEFAULT_AUTO_REPLY_LIMITS,
+  normalizeAutoReplyLimits,
+  isAutoReplyCapUnlimited,
+  AUTO_REPLY_CAP_UNLIMITED,
   normalizeDocumentAutonomyPolicy,
   normalizeEnvoyDisclosureSettings,
   normalizeProfileMediaPolicy,
@@ -478,6 +482,138 @@ function AgentIdentityEditor() {
   );
 }
 
+function AutoReplyLimitsSettings({
+  aiSettings,
+  updateAiSettings,
+}: {
+  aiSettings: AiSettings;
+  updateAiSettings: (partial: Partial<AiSettings>) => Promise<void>;
+}) {
+  const t = useT();
+  const limits = normalizeAutoReplyLimits(aiSettings.autoReplyLimits);
+  const hourlyUnlimited = isAutoReplyCapUnlimited(limits.maxPerContactPerHour);
+  const dailyUnlimited = isAutoReplyCapUnlimited(limits.maxPerContactPerDay);
+
+  const patchLimits = (partial: Partial<typeof limits>) => {
+    void updateAiSettings({
+      autoReplyLimits: { ...limits, ...partial },
+    });
+  };
+
+  return (
+    <>
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>{t("settings.ai.chat.limitsEnabled")}</strong>
+          <span className="toggle-desc">{t("settings.ai.chat.limitsEnabledDesc")}</span>
+        </div>
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={limits.enabled}
+            onChange={(e) => patchLimits({ enabled: e.target.checked })}
+          />
+          <span className="slider" />
+        </label>
+      </div>
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>{t("settings.ai.chat.limitsOnlyAgentPeers")}</strong>
+          <span className="toggle-desc">{t("settings.ai.chat.limitsOnlyAgentPeersDesc")}</span>
+        </div>
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={limits.onlyForAgentPeers}
+            disabled={!limits.enabled}
+            onChange={(e) => patchLimits({ onlyForAgentPeers: e.target.checked })}
+          />
+          <span className="slider" />
+        </label>
+      </div>
+      <div className="form-group">
+        <label htmlFor="auto-reply-max-hour">{t("settings.ai.chat.limitsPerHour")}</label>
+        <div className="settings-inline-row">
+          <input
+            id="auto-reply-max-hour"
+            type="number"
+            min={1}
+            max={100}
+            value={hourlyUnlimited ? DEFAULT_AUTO_REPLY_LIMITS.maxPerContactPerHour : limits.maxPerContactPerHour}
+            disabled={!limits.enabled || hourlyUnlimited}
+            onChange={(e) => {
+              const n = Number.parseInt(e.target.value, 10);
+              if (Number.isFinite(n) && n >= 1) patchLimits({ maxPerContactPerHour: n });
+            }}
+          />
+          <label className="settings-checkbox-inline">
+            <input
+              type="checkbox"
+              checked={hourlyUnlimited}
+              disabled={!limits.enabled}
+              onChange={(e) =>
+                patchLimits({
+                  maxPerContactPerHour: e.target.checked
+                    ? AUTO_REPLY_CAP_UNLIMITED
+                    : DEFAULT_AUTO_REPLY_LIMITS.maxPerContactPerHour,
+                })
+              }
+            />
+            {t("settings.ai.chat.limitsUnlimited")}
+          </label>
+        </div>
+      </div>
+      <div className="form-group">
+        <label htmlFor="auto-reply-max-day">{t("settings.ai.chat.limitsPerDay")}</label>
+        <div className="settings-inline-row">
+          <input
+            id="auto-reply-max-day"
+            type="number"
+            min={1}
+            max={500}
+            value={dailyUnlimited ? DEFAULT_AUTO_REPLY_LIMITS.maxPerContactPerDay : limits.maxPerContactPerDay}
+            disabled={!limits.enabled || dailyUnlimited}
+            onChange={(e) => {
+              const n = Number.parseInt(e.target.value, 10);
+              if (Number.isFinite(n) && n >= 1) patchLimits({ maxPerContactPerDay: n });
+            }}
+          />
+          <label className="settings-checkbox-inline">
+            <input
+              type="checkbox"
+              checked={dailyUnlimited}
+              disabled={!limits.enabled}
+              onChange={(e) =>
+                patchLimits({
+                  maxPerContactPerDay: e.target.checked
+                    ? AUTO_REPLY_CAP_UNLIMITED
+                    : DEFAULT_AUTO_REPLY_LIMITS.maxPerContactPerDay,
+                })
+              }
+            />
+            {t("settings.ai.chat.limitsUnlimited")}
+          </label>
+        </div>
+      </div>
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>{t("settings.ai.chat.limitsPauseThread")}</strong>
+          <span className="toggle-desc">{t("settings.ai.chat.limitsPauseThreadDesc")}</span>
+        </div>
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={limits.pauseThreadOnLimit}
+            disabled={!limits.enabled}
+            onChange={(e) => patchLimits({ pauseThreadOnLimit: e.target.checked })}
+          />
+          <span className="slider" />
+        </label>
+      </div>
+    </>
+  );
+}
+
 function defaultAiSettings(): AiSettings {
   return {
     status: { onlineAssistantEnabled: true, offlineAgentEnabled: false, statusMode: "automatic" },
@@ -488,6 +624,7 @@ function defaultAiSettings(): AiSettings {
     disclosure: { ...DEFAULT_ENVOY_DISCLOSURE_SETTINGS },
     profileMedia: { ...DEFAULT_PROFILE_MEDIA_POLICY },
     knowledgeBase: { ...DEFAULT_AI_KNOWLEDGE_BASE },
+    autoReplyLimits: { ...DEFAULT_AUTO_REPLY_LIMITS },
   };
 }
 
@@ -856,6 +993,11 @@ export function SettingsAITab() {
           <span className="slider" />
         </label>
       </div>
+
+      <h4>{t("settings.ai.chat.limitsHeading")}</h4>
+      <p className="field-desc">{t("settings.ai.chat.limitsDesc")}</p>
+      <AutoReplyLimitsSettings aiSettings={aiSettings} updateAiSettings={updateAiSettings} />
+
       <div className="form-group">
         <label>{t("settings.ai.chat.activityNotifications")}</label>
         <select

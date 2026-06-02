@@ -247,29 +247,28 @@ export const en = {
   },
   discover: {
     title: "Find people",
-    lede: "Use the guided flow to add a friend on the same Wi‑Fi or far away.",
-    embeddedLede: "Same Wi‑Fi: use People nearby. Far away: paste your friend's contact link.",
-    advanced: "Advanced discovery options",
-    backToGuided: "Back to guided flow",
+    lede:
+      "Search the network by name, interest, or location. Same Wi‑Fi and contact links are below when you need them.",
+    advanced: "More discovery options",
+    backToSearch: "Back to search",
     tabs: {
-      nearby: "People nearby",
-      pasteLink: "Paste a link",
-      searchName: "Search by name",
+      nearby: "Same Wi‑Fi — people nearby",
+      pasteLink: "Paste a contact link",
+      searchNetwork: "Search the network",
     },
     wizard: {
       title: "Add a friend",
       recommended: "Recommended",
-      sameWifiRecommended: "Recommended: you are on Same Wi‑Fi / home — try people nearby first.",
-      internetRecommended:
-        "Recommended: paste your friend's contact link (you are set up for friends on the internet).",
+      otherWaysTitle: "Other ways to connect",
+      otherWaysLede: "Use these when search is not enough — same Wi‑Fi or a link from a friend.",
+      sameWifiRecommended: "On the same Wi‑Fi? People nearby is usually fastest.",
+      internetRecommended: "Have a link from your friend? Paste it below.",
       sameWifi: "Same Wi‑Fi — people nearby",
       sameWifiHint: "Find others on your Wi‑Fi network",
-      shareLink: "Far away — share my link",
-      shareLinkHint: "Send a QR code or link to a friend",
       pasteLink: "Far away — paste their link",
       pasteLinkHint: "Paste or scan a contact link from a friend",
       searchNetwork: "Search the network",
-      searchNetworkHint: "Name, interest, capability topic, or peer ID",
+      searchNetworkHint: "Name, interest, location, or peer ID",
     },
     pending: {
       title: "Waiting for you",
@@ -329,9 +328,9 @@ export const en = {
         "That invite link looks incomplete. Ask your friend to generate a new link from Share contact card.",
     },
     search: {
-      panelTitle: "Search the wider network",
+      panelTitle: "Search the network",
       panelLede:
-        "Search by username or display name, interest or capability topic, or paste a libp2p peer ID. Topic mode queries the DHT for advertised capabilities.",
+        "Search by username or display name, interest or capability topic, or location. Set country and city in Profile → About for place search.",
       byName: "By name",
       byTopic: "By topic",
       namePlaceholder: "Name, username, interest, or peer ID",
@@ -350,7 +349,7 @@ export const en = {
       searchingFor: "Searching for \"{query}\"",
       widerTopicFallback:
         "Search the public mesh for peers advertising a topic. Requires wider network settings in Settings → Network.",
-      widerSearchTypeLabel: "Wider search type",
+      widerSearchTypeLabel: "Search type",
       byLocation: "By place",
       geoSameCountry: "Same country",
       geoSameCity: "Same city",

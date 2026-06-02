@@ -649,20 +649,20 @@ export const ja = mergeMessages(en, {
   discover: {
     title: "人を探す",
     lede: "同じ Wi‑Fi または遠方の友達を追加するガイドに従ってください。",
-    embeddedLede: "同じ Wi‑Fi: 近くの人。遠方: 友達の連絡リンクを貼り付け。",
     advanced: "詳細検索オプション",
-    backToGuided: "ガイドに戻る",
+    backToSearch: "検索に戻る",
     tabs: {
-      nearby: "近くの人",
-      pasteLink: "リンクを貼り付け",
-      searchName: "名前で検索",
+      nearby: "同じ Wi‑Fi — 近くの人",
+      pasteLink: "連絡リンクを貼り付け",
+      searchNetwork: "ネットワークを検索",
     },
     wizard: {
       title: "友達を追加",
-      sameWifiRecommended: "推奨: 同じ Wi‑Fi / ホーム — まず近くの人を試してください。",
-      internetRecommended: "推奨: 友達の連絡リンクを貼り付け（インターネット友達モード）。",
+      otherWaysTitle: "その他の接続方法",
+      otherWaysLede: "検索で見つからない場合 — 同じ Wi‑Fi または友達からのリンク。",
+      sameWifiRecommended: "同じ Wi‑Fi？近くの人が通常最速です。",
+      internetRecommended: "友達からリンクがありますか？下に貼り付けてください。",
       sameWifi: "同じ Wi‑Fi — 近くの人",
-      shareLink: "遠方 — 自分のリンクを共有",
       pasteLink: "遠方 — 相手のリンクを貼り付け",
     },
     pending: {

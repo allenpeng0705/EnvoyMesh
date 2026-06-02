@@ -29,6 +29,7 @@ import {
   type PersistedRelaySummaryEntry,
   type RelayManagerRuntimeState,
   type ChatDraftStore,
+  createAutoReplyLimitStore,
 } from "@envoymesh/local-store";
 import {
   createAgentCredential,
@@ -144,6 +145,11 @@ import { TriggerStore } from "./trigger-store.js";
 import { ApprovalQueue, createApprovalItem } from "@envoymesh/api";
 import { DigestGenerator, createDefaultDigestConfig, getDigestPeriodDates } from "./digest-generator.js";
 import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
+import {
+  applyAutoReplyLimitDenied,
+  checkAutoReplyAllowed,
+  recordAutoReplyAfterSend,
+} from "./auto-reply-gate.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
 import { resolveContactAiAccessLevel, buildVaultIndexOptionsFromKnowledgeBase } from "@envoymesh/api";
 import { stripModelThinking, applyAiIdentityForIdentity } from "@envoymesh/api";
@@ -221,6 +227,7 @@ const humanProfileStore = createHumanProfileStore(args.profileDir);
 const agentIdentityStore = createAgentIdentityStore(args.profileDir);
 const chatLogStore = createLocalChatLogStore(args.profileDir);
 const chatDraftStore = createChatDraftStore(args.profileDir);
+const autoReplyLimitStore = createAutoReplyLimitStore(args.profileDir);
 const capabilityManifestStore = createCapabilityManifestStore(args.profileDir);
 const reputationStore = createLocalPeerReputationStore(args.profileDir);
 const contactOwnerKeyStore = createContactOwnerKeyStore(args.profileDir);
@@ -2046,12 +2053,54 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
 
             // Auto-send the chat response if policy allows AND contact AI access level is "full"
             if (autoSendPolicy.allowed && aiAccessLevel === "full" && nodeService instanceof NodeServiceImpl) {
-              console.log(`[chat] auto-sending AI response to ${payload.senderOwnerId}: ${draftText}`);
-              try {
-                await nodeService.sendAgentChat(payload.senderOwnerId, draftText);
-                console.log(`[chat] auto-send success`);
-              } catch (err) {
-                console.warn(`[chat] auto-send failed:`, err);
+              const limits = currentAiSettings?.autoReplyLimits;
+              const limitDecision = await checkAutoReplyAllowed({
+                store: autoReplyLimitStore,
+                contactOwnerId: payload.senderOwnerId,
+                limits,
+                inboundSenderRole: envelope.senderRole ?? "human",
+                nowMs: receivedAt,
+              });
+              if (!limitDecision.allowed) {
+                const notification = await applyAutoReplyLimitDenied({
+                  store: autoReplyLimitStore,
+                  contactOwnerId: payload.senderOwnerId,
+                  contactDisplayName: senderDisplayName,
+                  limits,
+                  decision: limitDecision,
+                  nowMs: receivedAt,
+                });
+                if (notification && wsServerForEvents) {
+                  wsServerForEvents.emitEvent("chat:auto-reply-paused", notification);
+                }
+                await auditAutonomousDecision({
+                  taskStore,
+                  intent: "chat.message",
+                  messageId: envelope.messageId,
+                  correlationId,
+                  remotePeerId,
+                  receivedAt,
+                  domain: "social",
+                  action: "auto_send_chat",
+                  allowed: false,
+                  reason: `auto_reply_${limitDecision.reason}`,
+                  createdAt: new Date().toISOString(),
+                });
+              } else {
+                console.log(`[chat] auto-sending AI response to ${payload.senderOwnerId}: ${draftText}`);
+                try {
+                  await nodeService.sendAgentChat(payload.senderOwnerId, draftText);
+                  await recordAutoReplyAfterSend({
+                    store: autoReplyLimitStore,
+                    contactOwnerId: payload.senderOwnerId,
+                    limits,
+                    inboundSenderRole: envelope.senderRole ?? "human",
+                    nowMs: receivedAt,
+                  });
+                  console.log(`[chat] auto-send success`);
+                } catch (err) {
+                  console.warn(`[chat] auto-send failed:`, err);
+                }
               }
             } else if (draftText) {
               // Phase 9H: Queue draft for owner approval when auto-send is not allowed

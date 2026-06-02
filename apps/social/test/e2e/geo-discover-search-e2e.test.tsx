@@ -1,6 +1,6 @@
 /**
  * @vitest-environment jsdom
- * E2E (UI integration): Discover → Advanced → Wider → By place geo search.
+ * E2E (UI integration): Discover → By place geo search.
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -75,17 +75,15 @@ beforeEach(() => {
   searchPeers.mockResolvedValue([]);
 });
 
-function openAdvancedWiderPlacePanel() {
+function openPlacePanel() {
   renderWithI18n(<SearchView embedded />);
-  fireEvent.click(screen.getByRole("button", { name: /Advanced discovery options/i }));
-  fireEvent.click(screen.getByRole("button", { name: /Search by name/i }));
-  const subTabs = screen.getByRole("tablist", { name: /Wider search type/i });
+  const subTabs = screen.getByRole("tablist", { name: /Search type/i });
   fireEvent.click(within(subTabs).getByRole("button", { name: /By place/i }));
 }
 
 describe("E2E Discover geo search", () => {
   it("Same city calls searchPeers with geo:city topic", async () => {
-    openAdvancedWiderPlacePanel();
+    openPlacePanel();
     fireEvent.click(screen.getByRole("button", { name: /^Same city$/i }));
 
     await waitFor(
@@ -105,7 +103,7 @@ describe("E2E Discover geo search", () => {
       ...humanProfile!,
       discoveryLocation: undefined,
     };
-    openAdvancedWiderPlacePanel();
+    openPlacePanel();
     fireEvent.click(screen.getByRole("button", { name: /^Same city$/i }));
 
     await waitFor(() => {
@@ -123,7 +121,7 @@ describe("E2E Discover geo search", () => {
       discoveryLocation: { countryCode: "US", geohash: "drt2z" },
       discoveryLocationPrecision: "nearby",
     };
-    openAdvancedWiderPlacePanel();
+    openPlacePanel();
     fireEvent.click(screen.getByRole("button", { name: /^Near me$/i }));
 
     await waitFor(() => {
@@ -149,7 +147,7 @@ describe("E2E Discover geo search", () => {
     };
     searchPeers.mockResolvedValue([peer]);
 
-    openAdvancedWiderPlacePanel();
+    openPlacePanel();
     fireEvent.click(screen.getByRole("button", { name: /^Same city$/i }));
 
     expect(await screen.findByText("Boston Alice")).toBeDefined();
@@ -169,7 +167,7 @@ describe("E2E Discover geo search", () => {
     ];
     getMorningReport.mockResolvedValue(entries);
 
-    openAdvancedWiderPlacePanel();
+    openPlacePanel();
 
     expect(await screen.findByText(/3 peers in Boston/i)).toBeDefined();
   });

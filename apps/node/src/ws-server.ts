@@ -70,6 +70,9 @@ export class WsServer {
       nodeServiceImpl.on("chat:room-removed", (data: unknown) => this.emitEvent("chat:room-removed", data));
       nodeServiceImpl.on("chat:room-message", (data: unknown) => this.emitEvent("chat:room-message", data));
       nodeServiceImpl.on("chat:draft", (data: unknown) => this.emitEvent("chat:draft", data));
+      nodeServiceImpl.on("chat:auto-reply-paused", (data: unknown) =>
+        this.emitEvent("chat:auto-reply-paused", data),
+      );
       nodeServiceImpl.on("agent:activity", (data: unknown) => this.emitEvent("agent:activity", data));
       nodeServiceImpl.on("bond:established", (data: unknown) => this.emitEvent("bond:established", data));
       nodeServiceImpl.on("bond:revoked", (data: unknown) => this.emitEvent("bond:revoked", data));
@@ -189,6 +192,7 @@ export class WsServer {
       "chat:room-removed",
       "chat:room-message",
       "chat:draft",
+      "chat:auto-reply-paused",
       "agent:activity",
       "bond:established",
       "bond:revoked",

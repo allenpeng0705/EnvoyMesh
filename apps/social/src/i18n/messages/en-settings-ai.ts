@@ -46,6 +46,23 @@ export const aiSettingsMessages = {
     autoSendChatDesc: "AI responds automatically in chat (default off)",
     pauseAllAi: "Pause all AI",
     pauseAllAiDesc: "Master kill switch for autonomous actions",
+    limitsHeading: "Auto-reply limits",
+    limitsDesc:
+      "Caps automatic sends per contact when the other party is an AI agent — to prevent runaway AI-to-AI loops. Human contacts are not capped.",
+    limitsEnabled: "Enforce per-contact limits",
+    limitsEnabledDesc: "When off, only the kill switch and auto-send toggle apply",
+    limitsOnlyAgentPeers: "Only when peer is an AI agent",
+    limitsOnlyAgentPeersDesc:
+      "Apply hourly/daily caps only to verified agent messages; human contacts can receive unlimited auto-replies",
+    limitsPerHour: "Max auto-replies per hour (per contact)",
+    limitsPerDay: "Max auto-replies per day (per contact)",
+    limitsUnlimited: "Unlimited",
+    limitsPauseThread: "Pause thread when a cap is hit",
+    limitsPauseThreadDesc: "Stops auto-send for that contact until the hour or day window resets",
+    toastHourly:
+      "Auto-reply paused for {name}: hourly limit reached ({count}/{max}). Switch to Manual or wait for the window to reset.",
+    toastDaily:
+      "Auto-reply paused for {name}: daily limit reached ({count}/{max}). Switch to Manual or wait until tomorrow (UTC).",
     activityNotifications: "Chat activity notifications",
     notificationsOff: "Off",
     notificationsMilestonesOnly: "Milestones only",

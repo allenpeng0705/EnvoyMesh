@@ -649,20 +649,20 @@ export const ko = mergeMessages(en, {
   discover: {
     title: "사람 찾기",
     lede: "같은 Wi‑Fi 또는 멀리 있는 친구를 추가하는 안내를 따르세요.",
-    embeddedLede: "같은 Wi‑Fi: 근처 사람. 멀리: 친구의 연락 링크 붙여넣기.",
     advanced: "고급 검색 옵션",
-    backToGuided: "안내로 돌아가기",
+    backToSearch: "검색으로 돌아가기",
     tabs: {
-      nearby: "근처 사람",
-      pasteLink: "링크 붙여넣기",
-      searchName: "이름으로 검색",
+      nearby: "같은 Wi‑Fi — 근처 사람",
+      pasteLink: "연락 링크 붙여넣기",
+      searchNetwork: "네트워크 검색",
     },
     wizard: {
       title: "친구 추가",
-      sameWifiRecommended: "권장: 같은 Wi‑Fi / 홈 — 먼저 근처 사람을 시도하세요.",
-      internetRecommended: "권장: 친구의 연락 링크를 붙여넣으세요(인터넷 친구 모드).",
+      otherWaysTitle: "다른 연결 방법",
+      otherWaysLede: "검색으로 부족할 때 — 같은 Wi‑Fi 또는 친구의 링크.",
+      sameWifiRecommended: "같은 Wi‑Fi? 근처 사람이 보통 가장 빠릅니다.",
+      internetRecommended: "친구의 링크가 있나요? 아래에 붙여넣으세요.",
       sameWifi: "같은 Wi‑Fi — 근처 사람",
-      shareLink: "멀리 — 내 링크 공유",
       pasteLink: "멀리 — 상대 링크 붙여넣기",
     },
     pending: {

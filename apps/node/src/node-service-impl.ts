@@ -139,6 +139,7 @@ import {
   shouldPostA2aChatLine,
   formatA2aChatSystemLine,
   resolveReportContactOwnerId,
+  chatRoomThreadKey,
 } from "@envoymesh/api";
 
 import {
@@ -203,6 +204,8 @@ import {
   type LocalChatRoomPendingMessageStore,
   createLocalAgentActivityStore,
   createChatDraftStore,
+  createAutoReplyLimitStore,
+  type AutoReplyLimitStore,
   createTaskRuntimeStateStore,
   createRelayStateStore,
   createCapabilityManifestStore,
@@ -448,6 +451,7 @@ class NodeServiceImpl implements NodeService {
   private readonly _agentActivityStore: LocalAgentActivityStore | null;
   private readonly _agentCardStore: AgentCardStore | null;
   private readonly _chatDraftStore: ChatDraftStore | null;
+  private readonly _autoReplyLimitStore: AutoReplyLimitStore | null;
   private readonly _capabilityManifestStore: CapabilityManifestStore | null;
   private readonly _configStore: ReturnType<typeof createNodeConfigStore>;
   private readonly _profileDir: string;
@@ -1165,6 +1169,8 @@ class NodeServiceImpl implements NodeService {
       profileDir && profileDir !== "/tmp/unknown" ? createAgentCardStore(profileDir) : null;
     this._chatDraftStore =
       profileDir && profileDir !== "/tmp/unknown" ? createChatDraftStore(profileDir) : null;
+    this._autoReplyLimitStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createAutoReplyLimitStore(profileDir) : null;
     this._capabilityManifestStore =
       profileDir && profileDir !== "/tmp/unknown" ? createCapabilityManifestStore(profileDir) : null;
     this._sessionTokenStore =
@@ -5879,17 +5885,72 @@ class NodeServiceImpl implements NodeService {
       }
 
       if (intent === "chat.room.message") {
+        let roomPayload: ReturnType<typeof parseChatRoomMessagePayload>;
         try {
-          const payload = parseChatRoomMessagePayload(envelope.payload);
+          roomPayload = parseChatRoomMessagePayload(envelope.payload);
           await handleInboundChatRoomMessageImpl(
             this._chatRoomDeps(),
             envelope,
-            payload,
+            roomPayload,
             remotePeerId,
             this._roomDeliveryAck(replyWithEnvelope),
           );
         } catch {
           console.warn(`[chat.room.message] invalid payload from ${remotePeerId}`);
+          return;
+        }
+
+        const selfOwnerId = this._profile?.owner.ownerId;
+        if (
+          selfOwnerId &&
+          roomPayload.senderOwnerId !== selfOwnerId &&
+          guardDecision.action === "allow" &&
+          this._taskStore &&
+          this._chatDraftStore &&
+          this._profile
+        ) {
+          const receivedAt = Date.now();
+          const correlationId = deriveCorrelationIdFromEnvelope(envelope);
+          void this._configStore.load().then(async (config) => {
+            if (!config || !this._taskStore || !this._chatDraftStore || !this._profile) {
+              return;
+            }
+            const nodeConfig = await this.getNodeConfig();
+            await runInboundChatAssist({
+              envelope: guardDecision.envelope,
+              senderOwnerId: roomPayload.senderOwnerId,
+              chatText: roomPayload.text,
+              remotePeerId,
+              receivedAt,
+              correlationId,
+              config,
+              modelProviders: nodeConfig.modelProviders,
+              profile: this._profile,
+              taskStore: this._taskStore,
+              trustStore: this._trustStore,
+              peerDirectoryStore: this._peerDirectoryStore,
+              draftStore: this._chatDraftStore,
+              chatLogStore: this._chatLogStore,
+              humanProfileStore: this._humanProfileStore,
+              agentIdentityStore: this._agentIdentityStore,
+              vaultDir: this._vaultDir,
+              styleAdapter: this._styleAdapter,
+              sendChat: (targetOwnerId, text) => this.sendAgentChat(targetOwnerId, text),
+              emitDraft: (threadPeerOwnerId, draft) => {
+                this.emit("chat:draft", {
+                  threadPeerOwnerId,
+                  draft: { ...draft, threadPeerOwnerId },
+                });
+              },
+              approvalQueue: this._approvalQueue,
+              autoReplyLimitStore: this._autoReplyLimitStore,
+              onAutoReplyPaused: (notification) => {
+                this.emit("chat:auto-reply-paused", notification);
+              },
+              draftThreadKey: chatRoomThreadKey(roomPayload.roomId),
+              disableAutoSend: true,
+            });
+          });
         }
         return;
       }
@@ -6004,6 +6065,10 @@ class NodeServiceImpl implements NodeService {
                 });
               },
               approvalQueue: this._approvalQueue,
+              autoReplyLimitStore: this._autoReplyLimitStore,
+              onAutoReplyPaused: (notification) => {
+                this.emit("chat:auto-reply-paused", notification);
+              },
             });
           });
         }

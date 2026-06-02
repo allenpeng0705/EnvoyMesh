@@ -899,6 +899,29 @@
   color: var(--color-primary);
 }
 
+.discover-path-card--compact {
+  flex-direction: row;
+  align-items: center;
+  padding: var(--space-3);
+  gap: var(--space-2);
+}
+
+.discover-path-grid--compact {
+  gap: var(--space-2);
+}
+
+.discover-alt-paths {
+  margin-top: var(--space-4);
+}
+
+.discover-alt-paths .discover-panel__title {
+  font-size: var(--text-base);
+}
+
+.discover-alt-paths .discover-panel__lede {
+  font-size: var(--text-sm);
+}
+
 /* Navigation & actions */
 .discover-back-link {
   display: inline-flex;
@@ -1471,4 +1494,28 @@ button.secondary:not(.danger):disabled,
   margin: 1.5rem 0;
   padding-top: 1rem;
   border-top: 1px solid var(--color-border);
+}
+
+.settings-inline-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.settings-inline-row input[type="number"] {
+  width: 5rem;
+}
+
+.settings-checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-weight: normal;
+  cursor: pointer;
+}
+
+.settings-checkbox-inline input[type="checkbox"] {
+  margin: 0;
 }

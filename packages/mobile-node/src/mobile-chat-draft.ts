@@ -10,7 +10,7 @@ import type {
   ContactAiPreferences,
   ModelProviderConfig,
 } from "@envoymesh/api";
-import { aiIdentityNoPrefixPromptLine, applyAiIdentityToDraftText } from "@envoymesh/api";
+import { aiIdentityNoPrefixPromptLine, applyAiIdentityToDraftText, capGroupChatAiAccessLevel } from "@envoymesh/api";
 
 export type MobileBondLevel = "blocked" | "public" | "referred" | "direct";
 
@@ -102,6 +102,9 @@ export async function generateMobileChatDraft(input: {
   contactAiPreferences: ContactAiPreferences[];
   ownerDisplayName?: string;
   randomId?: () => string;
+  threadPeerOwnerId?: string;
+  accessContactId?: string;
+  disableAutoSend?: boolean;
 }): Promise<{ ok: true; draft: ChatDraft } | { ok: false; reason: string }> {
   const {
     senderOwnerId,
@@ -116,7 +119,13 @@ export async function generateMobileChatDraft(input: {
     contactAiPreferences,
     ownerDisplayName,
     randomId = () => crypto.randomUUID(),
+    threadPeerOwnerId,
+    accessContactId,
+    disableAutoSend = false,
   } = input;
+
+  const draftThread = threadPeerOwnerId ?? senderOwnerId;
+  const accessId = accessContactId ?? senderOwnerId;
 
   if (!chatAssistEnabled) {
     return { ok: false, reason: "chat assist is disabled" };
@@ -131,11 +140,14 @@ export async function generateMobileChatDraft(input: {
     };
   }
 
-  const contactAiAccessLevel = resolveMobileContactAiAccessLevel(
-    senderOwnerId,
+  let contactAiAccessLevel = resolveMobileContactAiAccessLevel(
+    accessId,
     contactAiPreferences,
     aiSettings,
   );
+  if (disableAutoSend) {
+    contactAiAccessLevel = capGroupChatAiAccessLevel(contactAiAccessLevel);
+  }
   if (contactAiAccessLevel === "none") {
     return { ok: false, reason: "contact AI access level is none" };
   }
@@ -216,7 +228,7 @@ Write your reply draft below:`;
 
   const draft: ChatDraft = {
     draftId: randomId(),
-    threadPeerOwnerId: senderOwnerId,
+    threadPeerOwnerId: draftThread,
     inReplyToMessageId: messageId,
     text: draftText,
     createdAt: new Date().toISOString(),

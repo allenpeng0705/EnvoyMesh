@@ -1,5 +1,5 @@
 import type { ModelProviderConfig, SendChatResult } from "@envoymesh/api";
-import { resolveContactAiAccessLevel, applyAiIdentityForIdentity, stripModelThinking } from "@envoymesh/api";
+import { resolveContactAiAccessLevel, applyAiIdentityForIdentity, stripModelThinking, capGroupChatAiAccessLevel } from "@envoymesh/api";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import {
   createAuditEvent,
@@ -15,11 +15,18 @@ import {
 import { createApprovalItem, shouldSkipAgentChatAssist, type ApprovalQueue } from "@envoymesh/api";
 import { buildVaultIndex } from "@envoymesh/vault";
 import { auditAutonomousDecision, evaluateAutonomousPolicy } from "./autonomous-inbound.js";
+import {
+  applyAutoReplyLimitDenied,
+  checkAutoReplyAllowed,
+  recordAutoReplyAfterSend,
+} from "./auto-reply-gate.js";
 import { generateChatDraft } from "./chat-draft-inbound.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 import type { StyleAdapter } from "./style-adapter.js";
 
 import type { RagService } from "./rag-service.js";
+import type { AutoReplyLimitStore } from "@envoymesh/local-store";
+import type { AutoReplyPausedNotification } from "@envoymesh/api";
 
 export async function runInboundChatAssist(input: {
   envelope: EnvoyEnvelope;
@@ -45,6 +52,11 @@ export async function runInboundChatAssist(input: {
   isOwnerOnline?: () => boolean;
   ragService?: RagService | null;
   approvalQueue?: Pick<ApprovalQueue, "add"> | null;
+  autoReplyLimitStore?: AutoReplyLimitStore | null;
+  onAutoReplyPaused?: (notification: AutoReplyPausedNotification) => void;
+  /** Group chat: prefs + drafts keyed by room thread; never auto-send when true. */
+  draftThreadKey?: string;
+  disableAutoSend?: boolean;
 }): Promise<void> {
   const {
     envelope,
@@ -70,15 +82,26 @@ export async function runInboundChatAssist(input: {
     isOwnerOnline = () => true,
     ragService = null,
     approvalQueue = null,
+    autoReplyLimitStore = null,
+    onAutoReplyPaused,
+    draftThreadKey,
+    disableAutoSend = false,
   } = input;
 
+  const accessThreadKey = draftThreadKey ?? senderOwnerId;
+  const draftThread = draftThreadKey ?? senderOwnerId;
+
   const contactPrefs = config.contactAiPreferences ?? [];
-  const aiAccessLevel = resolveContactAiAccessLevel(
-    senderOwnerId,
+  let aiAccessLevel = resolveContactAiAccessLevel(
+    accessThreadKey,
     contactPrefs,
     config.aiSettings?.defaultModeForNewContacts,
   );
-  const autoSendEnabled = (config.autonomousPolicies ?? []).some(
+  if (disableAutoSend) {
+    aiAccessLevel = capGroupChatAiAccessLevel(aiAccessLevel);
+  }
+  const autoSendEnabled =
+    !disableAutoSend && (config.autonomousPolicies ?? []).some(
     (p) => p.domain === "social" && p.autoSendChat,
   );
   const allowWhileOwnerOnline =
@@ -107,7 +130,7 @@ export async function runInboundChatAssist(input: {
   const senderTrust = await trustStore.getTrustRecord(senderOwnerId);
   const senderDisplayName = senderTrust?.displayName ?? senderOwnerId;
   const selfHuman = await humanProfileStore.loadHumanProfile().catch(() => null);
-  const contactPref = contactPrefs.find((p) => p.peerOwnerId === senderOwnerId);
+  const contactPref = contactPrefs.find((p) => p.peerOwnerId === accessThreadKey);
 
   let vaultIndex = null;
   try {
@@ -144,6 +167,7 @@ export async function runInboundChatAssist(input: {
     allowWhileOwnerOnline,
     knowledgeBase: config.aiSettings?.knowledgeBase,
     ragService,
+    threadKey: draftThread,
   });
 
   if (!result.ok) {
@@ -159,7 +183,11 @@ export async function runInboundChatAssist(input: {
     config.aiSettings?.identity,
   );
 
-  emitDraft(senderOwnerId, { ...result.draft, text: draftText });
+  emitDraft(draftThread, { ...result.draft, text: draftText });
+
+  if (disableAutoSend) {
+    return;
+  }
 
   const bondLevel = senderTrust?.level ?? "public";
   const requestedSensitivity = bondLevel === "direct" || bondLevel === "referred" ? "friends" : "public";
@@ -186,12 +214,64 @@ export async function runInboundChatAssist(input: {
   });
 
   if (autoSendPolicy.allowed && aiAccessLevel === "full") {
-    console.log(`[chat-assist] auto-sending AI response to ${senderOwnerId}`);
-    try {
-      await sendChat(senderOwnerId, draftText);
-      console.log(`[chat-assist] auto-send success`);
-    } catch (err) {
-      console.warn(`[chat-assist] auto-send failed:`, err);
+    const limits = config.aiSettings?.autoReplyLimits;
+    let limitAllowed = true;
+    if (autoReplyLimitStore) {
+      const limitDecision = await checkAutoReplyAllowed({
+        store: autoReplyLimitStore,
+        contactOwnerId: senderOwnerId,
+        limits,
+        inboundSenderRole: envelope.senderRole ?? "human",
+        nowMs: receivedAt,
+      });
+      if (!limitDecision.allowed) {
+        limitAllowed = false;
+        const notification = await applyAutoReplyLimitDenied({
+          store: autoReplyLimitStore,
+          contactOwnerId: senderOwnerId,
+          contactDisplayName: senderDisplayName,
+          limits,
+          decision: limitDecision,
+          nowMs: receivedAt,
+        });
+        if (notification) {
+          onAutoReplyPaused?.(notification);
+        }
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "autonomous.decided",
+            intent: "chat.message",
+            messageId: envelope.messageId,
+            correlationId,
+            remotePeerId,
+            direction: "inbound",
+            verificationStatus: "verified",
+            latencyMs: Date.now() - receivedAt,
+            outcome: "deny",
+            summary: `auto-send denied: auto_reply_${limitDecision.reason} contact=${senderOwnerId}`,
+            createdAt: envelope.createdAt,
+          }),
+        );
+      }
+    }
+
+    if (limitAllowed) {
+      console.log(`[chat-assist] auto-sending AI response to ${senderOwnerId}`);
+      try {
+        await sendChat(senderOwnerId, draftText);
+        if (autoReplyLimitStore) {
+          await recordAutoReplyAfterSend({
+            store: autoReplyLimitStore,
+            contactOwnerId: senderOwnerId,
+            limits,
+            inboundSenderRole: envelope.senderRole ?? "human",
+            nowMs: receivedAt,
+          });
+        }
+        console.log(`[chat-assist] auto-send success`);
+      } catch (err) {
+        console.warn(`[chat-assist] auto-send failed:`, err);
+      }
     }
   } else if (draftText && approvalQueue) {
     const item = createApprovalItem(

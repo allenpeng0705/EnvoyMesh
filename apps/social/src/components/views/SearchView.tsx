@@ -8,10 +8,7 @@ import {
   MultiHopResultCard,
   PeerResultCard,
 } from "../discover/DiscoverCards.js";
-import { NearbyPeersPanel } from "../discover/NearbyPeersPanel.js";
-import { ShareContactCard } from "../discover/ShareContactCard.js";
-import { AddFriendWizard, type WizardStep } from "../discover/AddFriendWizard.js";
-import { resolvePeerHelloState } from "../../lib/discover-peer-state.js";
+import { DiscoverSections } from "../discover/AddFriendWizard.js";
 import { ContactLinkScanner } from "../discover/ContactLinkScanner.js";
 import { useT } from "../../context/I18nContext.js";
 import { looksLikePeerId, parseContactCode } from "../../lib/discover-contact-code.js";
@@ -21,10 +18,8 @@ import {
   widerEmptyHint,
   widerTopicHint,
 } from "../../lib/discover-empty-hints.js";
-import { resolveDiscoverDefaultPath, type DiscoverPath } from "../../lib/discover-default-path.js";
 import { extractGeoCitySummary } from "../../lib/discover-friend-suggestion.js";
-import { loadOutboundHellos, markOutboundHello } from "../../lib/discover-peer-state.js";
-import { resolveNetworkPreset } from "../../lib/network-presets.js";
+import { loadOutboundHellos, markOutboundHello, resolvePeerHelloState } from "../../lib/discover-peer-state.js";
 import { SearchIcon } from "../../icons.js";
 import {
   type HelloProfile,
@@ -39,6 +34,7 @@ import {
 
 export type { DiscoverPath } from "../../lib/discover-default-path.js";
 type WiderSearchMode = "name" | "topic" | "place";
+type LookupPanelMode = "network" | "paste";
 
 export function SearchView({ embedded = false }: { embedded?: boolean }) {
   const t = useT();
@@ -57,15 +53,12 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     declineHello,
   } = useNodeState();
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<PeerSearchResult[]>([]);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [wizardStep, setWizardStep] = useState<WizardStep>("choose");
-  const [discoverPath, setDiscoverPath] = useState<DiscoverPath>(() => resolveDiscoverDefaultPath(null));
-  const [outboundHellos, setOutboundHellos] = useState(() => loadOutboundHellos());
-  const [helloHint, setHelloHint] = useState<string | null>(null);
-  const [widerMode, setWiderMode] = useState<WiderSearchMode>("name");
-  const [isSearching, setIsSearching] = useState(false);
+  const [networkQuery, setNetworkQuery] = useState("");
+  const [pasteQuery, setPasteQuery] = useState("");
+  const [networkResults, setNetworkResults] = useState<PeerSearchResult[]>([]);
+  const [pasteResults, setPasteResults] = useState<PeerSearchResult[]>([]);
+  const [networkSearching, setNetworkSearching] = useState(false);
+  const [pasteSearching, setPasteSearching] = useState(false);
   const [morningReport, setMorningReport] = useState<MorningReportEntry[] | null>(null);
   const [morningReportLoading, setMorningReportLoading] = useState(false);
 
@@ -77,13 +70,9 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
   const [codeInviteApplyMsg, setCodeInviteApplyMsg] = useState<string | null>(null);
   const [codeInviteApplyOk, setCodeInviteApplyOk] = useState<boolean | null>(null);
   const [codeInviteApplyBusy, setCodeInviteApplyBusy] = useState(false);
-
-  useEffect(() => {
-    if (!nodeConfig) return;
-    setDiscoverPath(resolveDiscoverDefaultPath(nodeConfig));
-  }, [nodeConfig?.discoveryProfile, nodeConfig?.bootstrapPresets]);
-
-  const networkPreset = resolveNetworkPreset(nodeConfig?.discoveryProfile, nodeConfig?.bootstrapPresets);
+  const [outboundHellos, setOutboundHellos] = useState(() => loadOutboundHellos());
+  const [helloHint, setHelloHint] = useState<string | null>(null);
+  const [widerMode, setWiderMode] = useState<WiderSearchMode>("name");
 
   useEffect(() => {
     void nodeService.runCapabilityDiscovery({ find: true }).catch(() => {
@@ -124,8 +113,8 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
   }, [nodeService, multiHopCorrelationId]);
 
   const handleGeoSearch = async (scope: "country" | "city" | "town" | "nearby") => {
-    setIsSearching(true);
-    setSearchResults([]);
+    setNetworkSearching(true);
+    setNetworkResults([]);
     try {
       await nodeService.runCapabilityDiscovery({ find: true }).catch(() => {});
       let topics: string[] = [];
@@ -158,35 +147,41 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
         topics = locationSearchTopics({ location: loc, scope });
       }
       const results = await nodeService.searchPeers({ topics, maxResults: 20 });
-      setSearchResults(results);
+      setNetworkResults(results);
     } catch (error) {
       console.error("[SearchView] geo search failed:", error);
-      setSearchResults([]);
+      setNetworkResults([]);
     } finally {
-      setIsSearching(false);
+      setNetworkSearching(false);
     }
   };
 
-  const handleSearch = async (overrideQuery?: string) => {
-    const effectiveQuery = (overrideQuery ?? searchQuery).trim();
-    const usingCodePath = showAdvanced ? discoverPath === "code" : wizardStep === "paste";
-    const usingWiderPath = (showAdvanced && discoverPath === "wider") || wizardStep === "search";
-    if (!effectiveQuery || (!usingCodePath && !usingWiderPath)) return;
-    setIsSearching(true);
-    setSearchResults([]);
-    setCodeInviteHint(null);
-    setCodeInviteApplyMsg(null);
-    setCodeInviteApplyOk(null);
+  const handleSearch = async (panel: LookupPanelMode, overrideQuery?: string) => {
+    const isPaste = panel === "paste";
+    const queryState = isPaste ? pasteQuery : networkQuery;
+    const effectiveQuery = (overrideQuery ?? queryState).trim();
+    if (!effectiveQuery) return;
+
+    const setSearching = isPaste ? setPasteSearching : setNetworkSearching;
+    const setResults = isPaste ? setPasteResults : setNetworkResults;
+
+    setSearching(true);
+    setResults([]);
+    if (isPaste) {
+      setCodeInviteHint(null);
+      setCodeInviteApplyMsg(null);
+      setCodeInviteApplyOk(null);
+    }
     const startedAt = Date.now();
     try {
       await nodeService.runCapabilityDiscovery({ find: true }).catch(() => {});
       let results: PeerSearchResult[];
       const query = effectiveQuery;
 
-      if (usingCodePath) {
+      if (isPaste) {
         const parsed = parseContactCode(query);
         if (parsed.kind === "pair") {
-          setSearchResults([]);
+          setPasteResults([]);
           setCodeInviteHint("pair");
           return;
         }
@@ -206,7 +201,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
             }
           }
           if (!parsed.peerId) {
-            setSearchResults([]);
+            setPasteResults([]);
             if (!parsed.wanJoinToken) {
               setCodeInviteApplyOk(false);
               setCodeInviteApplyMsg(t("discover.paste.noPeerId"));
@@ -218,7 +213,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
         } else if (parsed.kind === "wan-join") {
           setCodeInviteApplyBusy(true);
           try {
-            const result = await nodeService.applyWanJoinInvite(parsed.wanJoinToken);
+            await nodeService.applyWanJoinInvite(parsed.wanJoinToken);
             setCodeInviteApplyOk(true);
             setCodeInviteApplyMsg(t("discover.paste.inviteAdded"));
             await refreshNodeConfig();
@@ -228,22 +223,21 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
           } finally {
             setCodeInviteApplyBusy(false);
           }
-          setSearchResults([]);
+          setPasteResults([]);
           return;
-        }
-        if (parsed.kind === "join-invalid") {
-          setSearchResults([]);
+        } else if (parsed.kind === "join-invalid") {
+          setPasteResults([]);
           setCodeInviteHint("join-invalid");
           return;
-        }
-        if (parsed.kind === "invalid") {
-          setSearchResults([]);
+        } else if (parsed.kind === "invalid") {
+          setPasteResults([]);
           setCodeInviteApplyOk(false);
           setCodeInviteApplyMsg(parsed.message);
           return;
+        } else {
+          setCodeInviteHint(null);
+          results = await nodeService.searchPeers({ peerId: parsed.peerId });
         }
-        setCodeInviteHint(null);
-        results = await nodeService.searchPeers({ peerId: parsed.peerId });
       } else if (widerMode === "topic") {
         results = await nodeService.searchPeers({ topic: query.toLowerCase() });
       } else if (looksLikePeerId(query)) {
@@ -260,12 +254,12 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
       if (elapsed < 800) {
         await new Promise((r) => setTimeout(r, 800 - elapsed));
       }
-      setSearchResults(results);
+      setResults(results);
     } catch (error) {
       console.error("[SearchView] search failed:", error);
-      setSearchResults([]);
+      setResults([]);
     } finally {
-      setIsSearching(false);
+      setSearching(false);
     }
   };
 
@@ -275,7 +269,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     setMultiHopSession(null);
     setMultiHopCorrelationId(null);
     try {
-      const q = searchQuery.trim();
+      const q = networkQuery.trim();
       const result = await nodeService.requestMultiHopDiscovery({
         requestedCapabilities: q ? [q.toLowerCase()] : ["capability:envoymesh.discovery"],
         maxHops: 2,
@@ -325,7 +319,6 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
   };
 
   const emptyHintContext = {
-    path: discoverPath as "nearby" | "code" | "wider",
     widerMode,
     nodeStatus,
     nodeConfig,
@@ -334,96 +327,40 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <div className={`search-view${embedded ? " search-view--embedded" : ""}`}>
-      {!embedded && (
+      {embedded ? null : (
         <header className="search-view__header">
           <h2>{t("discover.title")}</h2>
           <p className="search-view__lede">{t("discover.lede")}</p>
         </header>
       )}
-      {embedded && (
-        <p className="search-view__lede search-view__lede--embedded">{t("discover.embeddedLede")}</p>
-      )}
-      {!showAdvanced ? (
-        <>
-          <AddFriendWizard
-            step={wizardStep}
-            onStep={setWizardStep}
-            networkPreset={networkPreset}
-            discoveredPeers={discoveredPeers}
-            bonds={bonds}
-            outboundHellos={outboundHellos}
-            nodeStatus={nodeStatus}
-            nodeConfig={nodeConfig}
-            helloHint={helloHint}
-            pendingHellOs={pendingHellOs}
-            onSayHello={handleSayHello}
-            onAcceptHello={(request) => acceptHello(request.messageId)}
-            onDeclineHello={(request) => declineHello(request.messageId)}
-            pastePanel={renderLookupPanel("paste")}
-            searchPanel={renderLookupPanel("wider")}
-          />
-          <button type="button" className="discover-text-action" onClick={() => setShowAdvanced(true)}>
-            {t("discover.advanced")}
-          </button>
-        </>
-      ) : (
-        <>
-          <div className="search-mode-tabs">
-            <button
-              type="button"
-              className={discoverPath === "nearby" ? "active" : ""}
-              onClick={() => setDiscoverPath("nearby")}
-            >
-              {t("discover.tabs.nearby")}
-            </button>
-            <button
-              type="button"
-              className={discoverPath === "code" ? "active" : ""}
-              onClick={() => setDiscoverPath("code")}
-            >
-              {t("discover.tabs.pasteLink")}
-            </button>
-            <button
-              type="button"
-              className={discoverPath === "wider" ? "active" : ""}
-              onClick={() => setDiscoverPath("wider")}
-            >
-              {t("discover.tabs.searchName")}
-            </button>
-          </div>
-
-          {discoverPath === "nearby" ? (
-            <>
-              <NearbyPeersPanel
-                discoveredPeers={discoveredPeers}
-                bonds={bonds}
-                outboundHellos={outboundHellos}
-                nodeStatus={nodeStatus}
-                emptyHint={nearbyEmptyHint({ ...emptyHintContext, path: "nearby" }, t)}
-                helloHint={helloHint}
-                onSayHello={handleSayHello}
-              />
-              <ShareContactCard compact />
-            </>
-          ) : discoverPath === "code" ? (
-            renderLookupPanel("code")
-          ) : (
-            renderLookupPanel("wider")
-          )}
-          <button type="button" className="discover-text-action" onClick={() => setShowAdvanced(false)}>
-            {t("discover.backToGuided")}
-          </button>
-        </>
-      )}
+      <DiscoverSections
+        discoveredPeers={discoveredPeers}
+        bonds={bonds}
+        outboundHellos={outboundHellos}
+        nodeStatus={nodeStatus}
+        nodeConfig={nodeConfig}
+        helloHint={helloHint}
+        nearbyEmptyHint={nearbyEmptyHint({ ...emptyHintContext, path: "nearby" }, t)}
+        pendingHellOs={pendingHellOs}
+        onSayHello={handleSayHello}
+        onAcceptHello={(request) => acceptHello(request.messageId)}
+        onDeclineHello={(request) => declineHello(request.messageId)}
+        networkPanel={renderLookupPanel("network")}
+        pastePanel={renderLookupPanel("paste")}
+      />
     </div>
   );
 
-  function renderLookupPanel(mode: "paste" | "code" | "wider") {
-    const isCode = mode === "paste" || mode === "code";
-    const isWider = mode === "wider";
+  function renderLookupPanel(panel: LookupPanelMode) {
+    const isPaste = panel === "paste";
+    const isNetwork = panel === "network";
+    const query = isPaste ? pasteQuery : networkQuery;
+    const setQuery = isPaste ? setPasteQuery : setNetworkQuery;
+    const searchResults = isPaste ? pasteResults : networkResults;
+    const isSearching = isPaste ? pasteSearching : networkSearching;
     return (
       <section className="discover-panel discover-lookup-panel">
-        {isCode ? (
+        {isPaste ? (
           <header className="discover-panel__header">
             <h4 className="discover-panel__title">{t("discover.paste.panelTitle")}</h4>
             <p className="discover-panel__lede">{t("discover.paste.lede")}</p>
@@ -435,11 +372,11 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
           </header>
         )}
 
-        {isCode ? (
+        {isPaste ? (
           <ContactLinkScanner
             onScan={(text) => {
-              setSearchQuery(text);
-              void handleSearch(text);
+              setPasteQuery(text);
+              void handleSearch("paste", text);
             }}
           />
         ) : (
@@ -483,7 +420,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                 </button>
               </div>
             ) : null}
-            {widerMode === "topic" && !searchQuery ? (
+            {widerMode === "topic" && !networkQuery ? (
               <p className="discover-status discover-status--muted">
                 {widerTopicHint({ ...emptyHintContext, path: "wider" }, t) ?? t("discover.search.widerTopicFallback")}
               </p>
@@ -492,41 +429,41 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
         )}
 
         <div className="search-bar discover-search-bar">
-          {widerMode !== "place" ? (
+          {isPaste || widerMode !== "place" ? (
           <input
             type="text"
             placeholder={
-              isCode
+              isPaste
                 ? t("discover.paste.placeholder")
                 : widerMode === "topic"
                   ? t("discover.search.topicPlaceholder")
                   : t("discover.search.namePlaceholder")
             }
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                void handleSearch();
+                void handleSearch(panel);
               }
             }}
           />
           ) : (
             <p className="discover-status discover-status--muted">{t("discover.search.geoSearching")}</p>
           )}
-          {widerMode !== "place" ? (
+          {isPaste || widerMode !== "place" ? (
           <button
             type="button"
-            onClick={() => void handleSearch()}
-            disabled={isSearching || codeInviteApplyBusy}
+            onClick={() => void handleSearch(panel)}
+            disabled={isSearching || (isPaste && codeInviteApplyBusy)}
             className="search-btn"
           >
-            {isSearching || codeInviteApplyBusy ? (
+            {isSearching || (isPaste && codeInviteApplyBusy) ? (
               <>
                 <span className="search-spinner" />
                 {t("common.searching")}
               </>
-            ) : isCode ? (
+            ) : isPaste ? (
               t("common.lookUp")
             ) : (
               t("common.search")
@@ -535,7 +472,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
           ) : null}
         </div>
 
-        {codeInviteApplyMsg ? (
+        {isPaste && codeInviteApplyMsg ? (
           <p
             className={`discover-status${codeInviteApplyOk ? " discover-status--ok" : " discover-status--error"}`}
             role="status"
@@ -544,11 +481,11 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
           </p>
         ) : null}
 
-        {codeInviteHint === "pair" ? (
+        {isPaste && codeInviteHint === "pair" ? (
           <p className="discover-status discover-status--muted" role="status">
             {t("discover.paste.pairLinkHint")}
           </p>
-        ) : codeInviteHint === "join-invalid" ? (
+        ) : isPaste && codeInviteHint === "join-invalid" ? (
           <p className="discover-status discover-status--error" role="status">
             {t("discover.paste.joinInvalidHint")}
           </p>
@@ -561,9 +498,9 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                 <SearchIcon size={20} />
               </span>
               <div>
-                <strong>{t("discover.search.searchingFor", { query: searchQuery })}</strong>
+                <strong>{t("discover.search.searchingFor", { query })}</strong>
                 <p>
-                  {isCode
+                  {isPaste
                     ? t("discover.search.lookingUp")
                     : widerMode === "topic"
                       ? t("discover.search.queryingDht")
@@ -574,7 +511,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
           </div>
         ) : null}
 
-        {isWider && widerMode === "name" && !searchQuery ? (
+        {isNetwork && widerMode === "name" && !networkQuery ? (
           <div className="topic-suggestions">
             <h4>{t("discover.search.tryTopic")}</h4>
             <div className="topic-chips">
@@ -585,8 +522,8 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                   className="topic-chip"
                   onClick={() => {
                     setWiderMode("topic");
-                    setSearchQuery(topic);
-                    void handleSearch(topic);
+                    setNetworkQuery(topic);
+                    void handleSearch("network", topic);
                   }}
                 >
                   {topic}
@@ -596,7 +533,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
           </div>
         ) : null}
 
-        {isWider && widerMode === "topic" ? (
+        {isNetwork && widerMode === "topic" ? (
           <section className="multihop-panel" aria-labelledby="multihop-discover-heading">
             <header className="multihop-panel__header">
               <h4 id="multihop-discover-heading" className="multihop-panel__title">
@@ -637,7 +574,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
           </section>
         ) : null}
 
-        {!morningReportLoading && morningReport && morningReport.length > 0 && isWider ? (
+        {isNetwork && !morningReportLoading && morningReport && morningReport.length > 0 ? (
           <>
             {(() => {
               const geo = extractGeoCitySummary(morningReport);
@@ -669,16 +606,16 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
               />
             ))}
           </ul>
-        ) : searchQuery.trim() && !isSearching && !codeInviteHint ? (
+        ) : query.trim() && !isSearching && !(isPaste && codeInviteHint) ? (
           <div className="search-empty">
-            <p>{t("discover.search.noResults", { query: searchQuery })}</p>
+            <p>{t("discover.search.noResults", { query })}</p>
             <small>
-              {isCode
+              {isPaste
                 ? codeEmptyHint({ ...emptyHintContext, path: "code" }, t)
                 : widerEmptyHint({ ...emptyHintContext, path: "wider" }, t)}
             </small>
           </div>
-        ) : !isSearching && isCode && !searchQuery ? (
+        ) : !isSearching && isPaste && !query ? (
           <div className="discover-empty">
             <SearchIcon size={32} className="discover-empty__icon" />
             <p className="discover-empty__title">{t("discover.paste.emptyTitle")}</p>

@@ -2143,6 +2143,7 @@ export * from "./chat-room-store.js";
 export * from "./chat-room-pending-sync-store.js";
 export * from "./chat-room-pending-message-store.js";
 export * from "./chat-draft-store.js";
+export * from "./auto-reply-limit-store.js";
 export * from "./capability-manifest-store.js";
 export * from "./session-token-store.js";
 export * from "./device-authorization-store.js";

@@ -539,6 +539,8 @@ export interface AiSettings {
   disclosure?: import("./envoy-disclosure.js").EnvoyDisclosureSettings;
   /** Gallery photo sharing by Envoy AI (thumbnail is always public on profile). */
   profileMedia?: import("./profile-media.js").ProfileMediaPolicy;
+  /** Per-contact auto-reply rate limits (hourly + daily caps). */
+  autoReplyLimits?: import("./auto-reply-limits.js").AutoReplyLimits;
 }
 
 export type { ProfileMediaPolicy, ProfileGalleryPhotoVisibility } from "./profile-media.js";

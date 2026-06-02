@@ -33,3 +33,8 @@ export function contactAiAccessLevelForAssistantMode(
   }
   return "none";
 }
+
+/** Group threads never auto-send — cap full access to draft-only assistant mode. */
+export function capGroupChatAiAccessLevel(level: ContactAiAccessLevel): ContactAiAccessLevel {
+  return level === "full" ? "assistant_only" : level;
+}

@@ -1,9 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
-import type { ChatMessage, ChatRoom } from "@envoymesh/api";
-import { chatMessageTextForDisplay, parseChatRoomThreadKey, stripModelThinking } from "@envoymesh/api";
+import { useChatDrafts } from "../../hooks/useChatDrafts.js";
+import type { ChatMessage, ChatRoom, ContactAiPreferences } from "@envoymesh/api";
+import {
+  chatMessageTextForDisplay,
+  contactAiAccessLevelForAssistantMode,
+  parseChatRoomThreadKey,
+  stripModelThinking,
+} from "@envoymesh/api";
 import {
   mergeGroupDeliveryAck,
   hasPartialGroupDelivery,
@@ -13,6 +19,8 @@ import {
 import { peerDisplayLabel } from "../../lib/display.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatMessageText } from "../ChatMessageText.js";
+import { ChatIcon, EditIcon } from "../../icons.js";
+import type { AssistantMode } from "../../lib/storage.js";
 import { InviteMembersModal } from "./InviteMembersModal.js";
 import { GroupManageModal } from "./GroupManageModal.js";
 
@@ -44,7 +52,7 @@ export function GroupChatPanel({
 }: GroupChatPanelProps) {
   const t = useT();
   const nodeService = useNodeService();
-  const { humanProfile } = useNodeState();
+  const { humanProfile, nodeConfig, contactAiModes, setContactAiModes, refreshNodeConfig } = useNodeState();
   const { messages, isOutgoing } = useChatMessages(threadKey);
   const [chatInput, setChatInput] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
@@ -56,6 +64,50 @@ export function GroupChatPanel({
 
   const roomId = parseChatRoomThreadKey(threadKey);
   const isCreator = !!room && humanProfile?.ownerId === room.creatorOwnerId;
+
+  const defaultGroupAiMode: AssistantMode =
+    nodeConfig?.aiSettings?.defaultModeForNewContacts === "manual" ? "manual" : "assistant";
+  const storedMode = contactAiModes[threadKey] ?? defaultGroupAiMode;
+  const currentAiMode: AssistantMode = storedMode === "auto" ? "assistant" : storedMode;
+  const canDraftAssist = nodeConfig?.chatAssistEnabled ?? false;
+  const aiIdentity = nodeConfig?.aiSettings?.identity;
+  const showDraftSuggestions = canDraftAssist && currentAiMode === "assistant";
+  const { latestDraft, dismissDraft } = useChatDrafts(threadKey, showDraftSuggestions);
+
+  const updateGroupAiMode = useCallback(
+    async (mode: Extract<AssistantMode, "manual" | "assistant">) => {
+      setContactAiModes({ ...contactAiModes, [threadKey]: mode });
+
+      const currentPrefs = nodeConfig?.contactAiPreferences ?? [];
+      const existingPref = currentPrefs.find((p) => p.peerOwnerId === threadKey);
+      const otherPrefs = currentPrefs.filter((p) => p.peerOwnerId !== threadKey);
+      const aiAccessLevel = contactAiAccessLevelForAssistantMode(mode);
+      const newPrefs: ContactAiPreferences[] = [
+        ...otherPrefs,
+        {
+          peerOwnerId: threadKey,
+          aiAccessLevel,
+          knowledgeAccess: existingPref?.knowledgeAccess ?? "public",
+          priority: existingPref?.priority ?? "high",
+        },
+      ];
+      const configPatch: { contactAiPreferences: ContactAiPreferences[]; chatAssistEnabled?: boolean } = {
+        contactAiPreferences: newPrefs,
+      };
+      if (mode === "assistant" && !nodeConfig?.chatAssistEnabled) {
+        configPatch.chatAssistEnabled = true;
+      }
+      await nodeService.updateNodeConfig(configPatch);
+      await refreshNodeConfig();
+    },
+    [contactAiModes, nodeConfig, nodeService, refreshNodeConfig, setContactAiModes, threadKey],
+  );
+
+  const handleUseDraft = () => {
+    if (!latestDraft) return;
+    setChatInput(chatMessageTextForDisplay(stripModelThinking(latestDraft.text), aiIdentity));
+    void dismissDraft(latestDraft.draftId);
+  };
   const displayMessages = useMemo(
     () => [...messages, ...pendingOutbound].sort((a, b) =>
       new Date(a.metadata.timestamp).getTime() - new Date(b.metadata.timestamp).getTime(),
@@ -166,7 +218,7 @@ export function GroupChatPanel({
 
   return (
     <div className="contact-chat-panel group-chat-panel">
-      <header className="chat-header">
+      <header className="chat-header has-assistant-switch group-chat-panel__header">
         <div className="chat-header-main">
           <h2>{room?.title ?? t("groupChat.untitled")}</h2>
           <p className="chat-header-subtitle">
@@ -174,6 +226,30 @@ export function GroupChatPanel({
           </p>
         </div>
         <div className="chat-header-actions">
+          <div className="assistant-switch" aria-label={t("contactChat.aiModeLabel", { mode: currentAiMode })}>
+            <span className="assistant-switch-label">AI</span>
+            <button
+              type="button"
+              className={`assistant-switch-btn ${currentAiMode === "manual" ? "active" : ""}`}
+              title={t("contactChat.manualTitle")}
+              aria-label={t("contactChat.manualAria")}
+              onClick={() => void updateGroupAiMode("manual")}
+            >
+              <EditIcon size={16} />
+            </button>
+            <button
+              type="button"
+              className={`assistant-switch-btn ${currentAiMode === "assistant" ? "active" : ""} ${!canDraftAssist ? "disabled" : ""}`}
+              title={canDraftAssist ? t("groupChat.assistantTitle") : t("contactChat.assistantDisabledTitle")}
+              aria-label={t("contactChat.assistantAria")}
+              onClick={() => {
+                if (!canDraftAssist) return;
+                void updateGroupAiMode("assistant");
+              }}
+            >
+              <ChatIcon size={16} />
+            </button>
+          </div>
           {isCreator ? (
             <button type="button" className="secondary" onClick={() => setShowManage(true)}>
               {t("groupChat.manageGroup")}
@@ -251,6 +327,29 @@ export function GroupChatPanel({
 
       {sendError ? <p className="chat-send-error">{sendError}</p> : null}
 
+      <div className="chat-composer">
+        {latestDraft ? (
+          <div className="chat-draft-suggestion" role="region" aria-label={t("contactChat.suggestedReplyAria")}>
+            <div className="chat-draft-suggestion-body">
+              <span className="chat-draft-suggestion-label">{t("contactChat.suggestedReply")}</span>
+              <p className="chat-draft-suggestion-text">
+                {chatMessageTextForDisplay(stripModelThinking(latestDraft.text), aiIdentity)}
+              </p>
+            </div>
+            <div className="chat-draft-suggestion-actions">
+              <button
+                type="button"
+                className="secondary chat-draft-dismiss-btn"
+                onClick={() => void dismissDraft(latestDraft.draftId)}
+              >
+                {t("contactChat.dismiss")}
+              </button>
+              <button type="button" className="chat-draft-use-btn" onClick={handleUseDraft}>
+                {t("contactChat.use")}
+              </button>
+            </div>
+          </div>
+        ) : null}
       <div className="chat-compose">
         <textarea
           className="chat-input"
@@ -268,6 +367,7 @@ export function GroupChatPanel({
         <button type="button" className="primary" onClick={handleSend} disabled={!chatInput.trim()}>
           {t("contactChat.send")}
         </button>
+      </div>
       </div>
 
       {showInvite && roomId && room ? (

@@ -69,6 +69,7 @@ export const groupChatMessages = {
   dismissConfirm: "Dismiss this group for everyone? All members will lose access.",
   dismissFailed: "Could not dismiss group",
   creatorBadge: "Creator",
+  assistantTitle: "Assistant — suggest replies only (you send manually)",
 } as const;
 
 export const contactChatMessages = {

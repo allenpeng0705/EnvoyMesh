@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   contactAiAccessLevelForAssistantMode,
+  capGroupChatAiAccessLevel,
   resolveContactAiAccessLevel,
 } from "../src/contact-ai-access.js";
 
@@ -33,5 +34,13 @@ describe("contactAiAccessLevelForAssistantMode", () => {
     expect(contactAiAccessLevelForAssistantMode("manual")).toBe("none");
     expect(contactAiAccessLevelForAssistantMode("assistant")).toBe("assistant_only");
     expect(contactAiAccessLevelForAssistantMode("auto")).toBe("full");
+  });
+});
+
+describe("capGroupChatAiAccessLevel", () => {
+  it("caps full access to assistant_only for group threads", () => {
+    expect(capGroupChatAiAccessLevel("full")).toBe("assistant_only");
+    expect(capGroupChatAiAccessLevel("assistant_only")).toBe("assistant_only");
+    expect(capGroupChatAiAccessLevel("none")).toBe("none");
   });
 });

@@ -881,6 +881,7 @@ export interface NodeServiceEvents {
   "chat:room-removed": { roomId: string };
   "chat:room-message": ChatRoomMessageEvent;
   "chat:draft": { threadPeerOwnerId: string; draft: ChatDraft };
+  "chat:auto-reply-paused": import("./auto-reply-limits.js").AutoReplyPausedNotification;
   /** Owner Activity feed row (Phase 13D — local, not wire). */
   "agent:activity": AgentActivityRecord;
   "chat:delivered": { messageId: string; timestamp: string; recipientOwnerId?: string };

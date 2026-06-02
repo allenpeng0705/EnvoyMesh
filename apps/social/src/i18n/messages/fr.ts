@@ -659,20 +659,20 @@ export const fr = mergeMessages(en, {
   discover: {
     title: "Trouver des personnes",
     lede: "Suivez le guide pour ajouter un ami sur le même Wi‑Fi ou à distance.",
-    embeddedLede: "Même Wi‑Fi : personnes à proximité. À distance : coller le lien de contact.",
     advanced: "Options de recherche avancées",
-    backToGuided: "Retour au guide",
+    backToSearch: "Retour à la recherche",
     tabs: {
-      nearby: "Personnes à proximité",
-      pasteLink: "Coller un lien",
-      searchName: "Rechercher par nom",
+      nearby: "Même Wi‑Fi — personnes à proximité",
+      pasteLink: "Coller un lien de contact",
+      searchNetwork: "Rechercher sur le réseau",
     },
     wizard: {
       title: "Ajouter un ami",
-      sameWifiRecommended: "Recommandé : même Wi‑Fi / domicile — essayez d'abord les personnes à proximité.",
-      internetRecommended: "Recommandé : collez le lien de contact (mode amis sur Internet).",
+      otherWaysTitle: "Autres moyens de connexion",
+      otherWaysLede: "Si la recherche ne suffit pas — même Wi‑Fi ou lien d'un ami.",
+      sameWifiRecommended: "Même Wi‑Fi ? Les personnes à proximité sont souvent les plus rapides.",
+      internetRecommended: "Un lien d'un ami ? Collez-le ci-dessous.",
       sameWifi: "Même Wi‑Fi — personnes à proximité",
-      shareLink: "À distance — partager mon lien",
       pasteLink: "À distance — coller leur lien",
     },
     pending: {

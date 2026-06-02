@@ -65,6 +65,12 @@ import { loadMobilePublishedDocumentIds, saveMobilePublishedDocumentIds } from "
 import { loadMobileExternalPublish, saveMobileExternalPublish } from "./mobile-external-publish.js";
 import { loadMobileNodePrefs, saveMobileNodePrefs, type MobileNodePrefs } from "./mobile-node-prefs.js";
 import { generateMobileChatDraft, resolveMobileContactAiAccessLevel } from "./mobile-chat-draft.js";
+import {
+  applyMobileAutoReplyLimitDenied,
+  checkMobileAutoReplyAllowed,
+  MobileAutoReplyLimitStore,
+  recordMobileAutoReplyAfterSend,
+} from "./mobile-auto-reply-limits.js";
 import { loadMobilePublishedExternalMap } from "./mobile-published-external.js";
 import { exportMobileLibraryDocumentToIpfs } from "./mobile-ipfs-export.js";
 import { verifyMobileLibraryDocumentIpfsGateway } from "./mobile-ipfs-gateway-verify.js";
@@ -161,6 +167,7 @@ import {
   type MultiHopDiscoveryMatch,
   type MultiHopDiscoverySessionView,
   type MorningReportEntry,
+  chatRoomThreadKey,
 } from "@envoymesh/api";
 import { buildSignedChatDeliveredEnvelope, parseChatDeliveredAck } from "@envoymesh/api/chat-delivered";
 import {
@@ -507,6 +514,7 @@ export class MobileNode implements NodeService {
 
   /** Inbound chat drafts keyed by thread owner id (for cloud-assisted replies). */
   private readonly _chatDrafts = new Map<string, ChatDraft[]>();
+  private readonly _autoReplyLimitStore = new MobileAutoReplyLimitStore();
 
   // Libp2p mesh (browser-mode: WebSocket transport + DHT client + circuit relay)
   private _mesh?: import("libp2p").Libp2p;
@@ -3735,13 +3743,39 @@ You are the owner's personal AI assistant on EnvoyMesh.
       requestedSensitivity,
     });
     if (autoSendPolicy.allowed && aiAccessLevel === "full") {
-      try {
-        await this.sendAgentChat(input.senderOwnerId, result.draft.text);
-      } catch (err) {
-        console.warn(
-          "[mobile-node] chat draft auto-send failed:",
-          err instanceof Error ? err.message : err,
-        );
+      const limits = cfg.aiSettings?.autoReplyLimits;
+      const limitDecision = await checkMobileAutoReplyAllowed({
+        store: this._autoReplyLimitStore,
+        contactOwnerId: input.senderOwnerId,
+        limits,
+        inboundSenderRole: input.senderRole ?? "human",
+      });
+      if (!limitDecision.allowed) {
+        const notification = await applyMobileAutoReplyLimitDenied({
+          store: this._autoReplyLimitStore,
+          contactOwnerId: input.senderOwnerId,
+          contactDisplayName: input.senderDisplayName,
+          limits,
+          decision: limitDecision,
+        });
+        if (notification) {
+          this._events.emit("chat:auto-reply-paused", notification);
+        }
+      } else {
+        try {
+          await this.sendAgentChat(input.senderOwnerId, result.draft.text);
+          await recordMobileAutoReplyAfterSend({
+            store: this._autoReplyLimitStore,
+            contactOwnerId: input.senderOwnerId,
+            limits,
+            inboundSenderRole: input.senderRole ?? "human",
+          });
+        } catch (err) {
+          console.warn(
+            "[mobile-node] chat draft auto-send failed:",
+            err instanceof Error ? err.message : err,
+          );
+        }
       }
     } else if (result.draft.text) {
       const item = createApprovalItem(
@@ -3757,6 +3791,57 @@ You are the owner's personal AI assistant on EnvoyMesh.
       );
       this._approvalQueue.add(item);
     }
+  }
+
+  private async _maybeGenerateInboundGroupChatDraft(input: {
+    roomId: string;
+    senderOwnerId: string;
+    senderDisplayName: string;
+    chatText: string;
+    messageId: string;
+    remotePeerId: string;
+    senderRole?: "human" | "agent" | "system";
+    agentVerified?: boolean;
+  }): Promise<void> {
+    if (!this._state) return;
+    if (input.senderOwnerId === this._state.owner.ownerId) return;
+    this._loadAiPrefsIfNeeded();
+    const cfg = await this.getNodeConfig();
+    if (
+      shouldSkipAgentChatAssist({
+        senderRole: input.senderRole ?? "human",
+        agentInteractionMode: cfg.agentInteractionMode,
+        agentVerified: input.agentVerified,
+      })
+    ) {
+      return;
+    }
+    const bond = await this._trustStore.get(input.senderOwnerId);
+    const bondLevel = bond?.level ?? "public";
+    const threadKey = chatRoomThreadKey(input.roomId);
+    const result = await generateMobileChatDraft({
+      senderOwnerId: input.senderOwnerId,
+      senderDisplayName: input.senderDisplayName,
+      chatText: input.chatText,
+      messageId: input.messageId,
+      remotePeerId: input.remotePeerId,
+      bondLevel,
+      modelProviders: cfg.modelProviders,
+      chatAssistEnabled: cfg.chatAssistEnabled,
+      aiSettings: cfg.aiSettings,
+      contactAiPreferences: cfg.contactAiPreferences,
+      ownerDisplayName: this._state.owner.ownerId,
+      threadPeerOwnerId: threadKey,
+      accessContactId: threadKey,
+      disableAutoSend: true,
+    });
+    if (!result.ok) return;
+    const list = this._chatDrafts.get(threadKey) ?? [];
+    this._chatDrafts.set(threadKey, [...list, result.draft]);
+    this._events.emit("chat:draft", {
+      threadPeerOwnerId: threadKey,
+      draft: result.draft,
+    });
   }
 
   async runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult> {
@@ -5033,7 +5118,24 @@ You are the owner's personal AI assistant on EnvoyMesh.
             roomPayload,
             String(msg.senderPeerId ?? opts?.transportPeerId ?? ""),
             opts?.replyWithEnvelope,
-          );
+          ).then(() => {
+            const senderOwnerId = roomPayload.senderOwnerId;
+            void this._trustStore.get(senderOwnerId).then((trust) => {
+              void this._maybeGenerateInboundGroupChatDraft({
+                roomId: roomPayload.roomId,
+                senderOwnerId,
+                senderDisplayName: trust?.displayName ?? senderOwnerId,
+                chatText: roomPayload.text,
+                messageId: String(msg.messageId ?? ""),
+                remotePeerId: String(msg.senderPeerId ?? opts?.transportPeerId ?? ""),
+                senderRole:
+                  msg.senderRole === "human" || msg.senderRole === "agent" || msg.senderRole === "system"
+                    ? msg.senderRole
+                    : undefined,
+                agentVerified: msg.senderRole === "agent" ? Boolean(msg.agentCredential) : undefined,
+              });
+            });
+          });
         } catch {
           console.warn("[mobile-node] rejected chat.room.message: invalid payload");
         }

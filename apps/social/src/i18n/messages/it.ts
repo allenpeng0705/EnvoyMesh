@@ -659,20 +659,20 @@ export const it = mergeMessages(en, {
   discover: {
     title: "Trova persone",
     lede: "Segui la guida per aggiungere un amico sulla stessa Wi‑Fi o da lontano.",
-    embeddedLede: "Stessa Wi‑Fi: persone nelle vicinanze. Lontano: incolla il link di contatto.",
     advanced: "Opzioni di scoperta avanzate",
-    backToGuided: "Torna alla guida",
+    backToSearch: "Torna alla ricerca",
     tabs: {
-      nearby: "Persone nelle vicinanze",
-      pasteLink: "Incolla un link",
-      searchName: "Cerca per nome",
+      nearby: "Stessa Wi‑Fi — persone nelle vicinanze",
+      pasteLink: "Incolla link di contatto",
+      searchNetwork: "Cerca nella rete",
     },
     wizard: {
       title: "Aggiungi un amico",
-      sameWifiRecommended: "Consigliato: stessa Wi‑Fi / casa — prova prima le persone nelle vicinanze.",
-      internetRecommended: "Consigliato: incolla il link di contatto (modalità amici su Internet).",
+      otherWaysTitle: "Altri modi per connettersi",
+      otherWaysLede: "Se la ricerca non basta — stessa Wi‑Fi o link da un amico.",
+      sameWifiRecommended: "Stessa Wi‑Fi? Persone nelle vicinanze è di solito il più veloce.",
+      internetRecommended: "Hai un link da un amico? Incollalo sotto.",
       sameWifi: "Stessa Wi‑Fi — persone nelle vicinanze",
-      shareLink: "Lontano — condividi il mio link",
       pasteLink: "Lontano — incolla il loro link",
     },
     pending: {

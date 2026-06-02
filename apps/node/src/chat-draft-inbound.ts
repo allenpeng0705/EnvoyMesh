@@ -72,6 +72,8 @@ export async function generateChatDraft(input: {
   ragService?: RagService | null;
   /** When true, skip reactive-mode guard (auto-reply or online assistant enabled). */
   allowWhileOwnerOnline?: boolean;
+  /** Persist drafts and load thread context under this key (e.g. room:uuid for group chat). */
+  threadKey?: string;
 }): Promise<ChatDraftResult | ChatDraftFailure> {
   const {
     envelope,
@@ -101,7 +103,10 @@ export async function generateChatDraft(input: {
     knowledgeBase,
     ragService = null,
     allowWhileOwnerOnline = false,
+    threadKey: threadKeyOverride,
   } = input;
+
+  const threadKey = threadKeyOverride ?? senderOwnerId;
 
   // Guard: chat assist must be enabled
   if (!chatAssistEnabled) {
@@ -296,7 +301,7 @@ Contact permissions:
 - Knowledge Access: ${knowledgeAccess}`;
 
   const injectedContext = humanProfileStore
-    ? await buildContextInjection(senderOwnerId, chatLogStore, trustStore, humanProfileStore, {
+    ? await buildContextInjection(threadKey, chatLogStore, trustStore, humanProfileStore, {
         knowledgeBase,
         ragQuery: chatText,
         ragService,
@@ -376,7 +381,7 @@ Write your reply draft below:`;
   const createdAt = new Date().toISOString();
   const draft = {
     draftId,
-    threadPeerOwnerId: senderOwnerId,
+    threadPeerOwnerId: threadKey,
     inReplyToMessageId: envelope.messageId,
     text: draftText,
     createdAt,
