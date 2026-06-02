@@ -32,12 +32,11 @@ function sortByLatestMessage<T>(
 interface ChatSidebarProps {
   selectedContact: string | null;
   onSelectContact: (id: string | null) => void;
-  onGroupCreated?: (roomId: string) => void;
   onOpenAssistant?: () => void;
   onOpenDiscover?: () => void;
 }
 
-export function ChatSidebar({ selectedContact, onSelectContact, onGroupCreated, onOpenAssistant, onOpenDiscover }: ChatSidebarProps) {
+export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant, onOpenDiscover }: ChatSidebarProps) {
   const t = useT();
   const nodeService = useNodeService();
   const {
@@ -413,8 +412,6 @@ export function ChatSidebar({ selectedContact, onSelectContact, onGroupCreated, 
         <CreateGroupModal
           onClose={() => setShowCreateGroup(false)}
           onCreated={(threadKey) => {
-            const roomId = threadKey.slice("room:".length);
-            onGroupCreated?.(roomId);
             onSelectContact(threadKey);
             setShowCreateGroup(false);
           }}

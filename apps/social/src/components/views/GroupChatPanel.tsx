@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
+import type { TFunction } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
 import { useChatDrafts } from "../../hooks/useChatDrafts.js";
@@ -7,6 +8,7 @@ import type { ChatMessage, ChatRoom, ContactAiPreferences } from "@envoymesh/api
 import {
   chatMessageTextForDisplay,
   contactAiAccessLevelForAssistantMode,
+  normalizeEnvoyDisclosureSettings,
   parseChatRoomThreadKey,
   stripModelThinking,
 } from "@envoymesh/api";
@@ -16,10 +18,13 @@ import {
   groupDeliveryRecipientCount,
   isGroupDeliveryComplete,
 } from "@envoymesh/api/group-chat-delivery";
+import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
 import { peerDisplayLabel } from "../../lib/display.js";
+import { resolveChatBubblePresentation } from "@envoymesh/api";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatIcon, EditIcon } from "../../icons.js";
+import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import type { AssistantMode } from "../../lib/storage.js";
 import { InviteMembersModal } from "./InviteMembersModal.js";
 import { GroupManageModal } from "./GroupManageModal.js";
@@ -28,8 +33,18 @@ interface GroupChatPanelProps {
   threadKey: string;
   room: ChatRoom | undefined;
   onLeaveGroup?: () => void;
-  showPostCreateHint?: boolean;
-  onDismissPostCreateHint?: () => void;
+}
+
+function fmtDateLabel(dateStr: string, t: TFunction): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+  const msgDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  if (msgDate.getTime() === today.getTime()) return t("contactChat.dateToday");
+  if (msgDate.getTime() === yesterday.getTime()) return t("contactChat.dateYesterday");
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function groupMessagesByDate(msgs: ChatMessage[]): [string, ChatMessage[]][] {
@@ -43,16 +58,27 @@ function groupMessagesByDate(msgs: ChatMessage[]): [string, ChatMessage[]][] {
   return [...groups.entries()];
 }
 
+function isPendingOutgoing(msg: ChatMessage): boolean {
+  return msg.messageId.startsWith("pending-") || msg.metadata.deliveryReceipt === "pending";
+}
+
+function sameMessageStackGroup(a: ChatMessage, b: ChatMessage, isOutgoingMsg: (m: ChatMessage) => boolean): boolean {
+  const outA = isOutgoingMsg(a);
+  const outB = isOutgoingMsg(b);
+  if (outA !== outB) return false;
+  if (outA) return true;
+  return (a.sender.ownerId || "") === (b.sender.ownerId || "");
+}
+
 export function GroupChatPanel({
   threadKey,
   room,
   onLeaveGroup,
-  showPostCreateHint,
-  onDismissPostCreateHint,
 }: GroupChatPanelProps) {
   const t = useT();
   const nodeService = useNodeService();
-  const { humanProfile, nodeConfig, contactAiModes, setContactAiModes, refreshNodeConfig } = useNodeState();
+  const { humanProfile, nodeConfig, contactAiModes, setContactAiModes, refreshNodeConfig, connectionStatus } =
+    useNodeState();
   const { messages, isOutgoing } = useChatMessages(threadKey);
   const [chatInput, setChatInput] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
@@ -61,9 +87,14 @@ export function GroupChatPanel({
   const [showManage, setShowManage] = useState(false);
   const [leaveBusy, setLeaveBusy] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const lastSendRef = useRef<{ at: number; text: string } | null>(null);
 
   const roomId = parseChatRoomThreadKey(threadKey);
   const isCreator = !!room && humanProfile?.ownerId === room.creatorOwnerId;
+  const roomTitle = room?.title ?? t("groupChat.untitled");
+  const headerInitial = roomTitle.trim().charAt(0).toUpperCase() || "G";
+  const memberCount = room?.memberOwnerIds.length ?? 0;
+  const nodeMeshOnline = connectionStatus?.online === true;
 
   const defaultGroupAiMode: AssistantMode =
     nodeConfig?.aiSettings?.defaultModeForNewContacts === "manual" ? "manual" : "assistant";
@@ -71,6 +102,7 @@ export function GroupChatPanel({
   const currentAiMode: AssistantMode = storedMode === "auto" ? "assistant" : storedMode;
   const canDraftAssist = nodeConfig?.chatAssistEnabled ?? false;
   const aiIdentity = nodeConfig?.aiSettings?.identity;
+  const disclosure = normalizeEnvoyDisclosureSettings(nodeConfig?.aiSettings?.disclosure);
   const showDraftSuggestions = canDraftAssist && currentAiMode === "assistant";
   const { latestDraft, dismissDraft } = useChatDrafts(threadKey, showDraftSuggestions);
 
@@ -108,16 +140,44 @@ export function GroupChatPanel({
     setChatInput(chatMessageTextForDisplay(stripModelThinking(latestDraft.text), aiIdentity));
     void dismissDraft(latestDraft.draftId);
   };
-  const displayMessages = useMemo(
-    () => [...messages, ...pendingOutbound].sort((a, b) =>
-      new Date(a.metadata.timestamp).getTime() - new Date(b.metadata.timestamp).getTime(),
-    ),
-    [messages, pendingOutbound],
+
+  const displayMessages = useMemo(() => {
+    const merged = [...messages, ...pendingOutbound];
+    const seen = new Set<string>();
+    const out: ChatMessage[] = [];
+    for (const m of merged) {
+      if (seen.has(m.messageId)) continue;
+      seen.add(m.messageId);
+      out.push(m);
+    }
+    out.sort(
+      (a, b) =>
+        new Date(a.metadata.timestamp).getTime() - new Date(b.metadata.timestamp).getTime(),
+    );
+    return out;
+  }, [messages, pendingOutbound]);
+
+  const isOutgoingMsg = useCallback(
+    (msg: ChatMessage) => isPendingOutgoing(msg) || isOutgoing(msg),
+    [isOutgoing],
   );
+
+  const messageGroups = useMemo(() => groupMessagesByDate(displayMessages), [displayMessages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [displayMessages.length]);
+
+  useEffect(() => {
+    setPendingOutbound((prev) =>
+      prev.filter((p) => {
+        if (p.metadata.deliveryReceipt === "pending" || p.metadata.deliveryReceipt === "failed") {
+          return true;
+        }
+        return !messages.some((m) => m.messageId === p.messageId);
+      }),
+    );
+  }, [messages]);
 
   useEffect(() => {
     const unsub = nodeService.on("chat:delivered", (data) => {
@@ -150,14 +210,25 @@ export function GroupChatPanel({
     const text = stripModelThinking(chatInput).trim();
     if (!text || !roomId) return;
 
-    const tempId = `pending-${Date.now()}`;
+    if (!nodeMeshOnline) {
+      setSendError(t("contactChat.nodeOffline"));
+      setTimeout(() => setSendError(null), 5000);
+      return;
+    }
+
+    const now = Date.now();
+    const last = lastSendRef.current;
+    if (last && last.text === text && now - last.at < 1500) return;
+    lastSendRef.current = { at: now, text };
+
+    const tempId = `pending-${crypto.randomUUID()}`;
     const pendingMsg: ChatMessage = {
       messageId: tempId,
       sender: { nodeId: "", ownerId: "", displayName: t("messageBubble.you") },
       recipient: {
         nodeId: roomId,
         ownerId: threadKey,
-        displayName: room?.title ?? t("groupChat.untitled"),
+        displayName: roomTitle,
       },
       content: { text },
       metadata: { timestamp: new Date().toISOString(), deliveryReceipt: "pending" },
@@ -217,15 +288,49 @@ export function GroupChatPanel({
   };
 
   return (
-    <div className="contact-chat-panel group-chat-panel">
-      <header className="chat-header has-assistant-switch group-chat-panel__header">
-        <div className="chat-header-main">
-          <h2>{room?.title ?? t("groupChat.untitled")}</h2>
-          <p className="chat-header-subtitle">
-            {t("groupChat.memberCount", { count: room?.memberOwnerIds.length ?? 0 })}
-          </p>
+    <>
+      <header className="chat-header has-assistant-switch">
+        <div className="chat-header-left">
+          <span className="chat-header-avatar kind-group" aria-hidden>
+            {headerInitial}
+          </span>
+          <div className="chat-header-titles">
+            <span className="chat-name">{roomTitle}</span>
+            <span className="chat-header-kind kind-group">{t("groupChat.threadKindLabel")}</span>
+            <span className="contact-reachability checking">
+              {t("groupChat.memberCount", { count: memberCount })}
+            </span>
+          </div>
         </div>
-        <div className="chat-header-actions">
+        <div className="chat-header-right">
+          {isCreator ? (
+            <button
+              type="button"
+              className="chat-header-remove-contact-btn"
+              onClick={() => setShowManage(true)}
+            >
+              {t("groupChat.manageGroup")}
+            </button>
+          ) : null}
+          {isCreator ? (
+            <button
+              type="button"
+              className="chat-header-remove-contact-btn"
+              onClick={() => setShowInvite(true)}
+            >
+              {t("groupChat.addPeople")}
+            </button>
+          ) : null}
+          {!(isCreator && memberCount > 1) ? (
+            <button
+              type="button"
+              className="chat-header-remove-contact-btn"
+              onClick={() => void handleLeave()}
+              disabled={leaveBusy}
+            >
+              {t("groupChat.leaveGroup")}
+            </button>
+          ) : null}
           <div className="assistant-switch" aria-label={t("contactChat.aiModeLabel", { mode: currentAiMode })}>
             <span className="assistant-switch-label">AI</span>
             <button
@@ -250,82 +355,111 @@ export function GroupChatPanel({
               <ChatIcon size={16} />
             </button>
           </div>
-          {isCreator ? (
-            <button type="button" className="secondary" onClick={() => setShowManage(true)}>
-              {t("groupChat.manageGroup")}
-            </button>
-          ) : null}
-          {isCreator ? (
-            <button type="button" className="secondary" onClick={() => setShowInvite(true)}>
-              {t("groupChat.addPeople")}
-            </button>
-          ) : null}
-          {!(isCreator && (room?.memberOwnerIds.length ?? 0) > 1) ? (
-            <button type="button" className="secondary danger" onClick={() => void handleLeave()} disabled={leaveBusy}>
-              {t("groupChat.leaveGroup")}
-            </button>
-          ) : null}
         </div>
       </header>
 
-      {showPostCreateHint ? (
-        <div className="group-chat-hint banner-info">
-          <span>{t("groupChat.postCreateHint")}</span>
-          <button type="button" className="link-btn" onClick={() => setShowInvite(true)}>
-            {t("groupChat.addPeople")}
-          </button>
-          {onDismissPostCreateHint ? (
-            <button type="button" className="link-btn" onClick={onDismissPostCreateHint}>
-              {t("groupChat.dismissHint")}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="chat-messages">
-        {groupMessagesByDate(displayMessages).map(([dateKey, msgs]) => (
-          <div key={dateKey} className="chat-date-group">
-            {msgs.map((msg) => {
-              const outgoing = isOutgoing(msg);
-              const memberCount = room?.memberOwnerIds.length ?? 0;
-              const totalRecipients = groupDeliveryRecipientCount(memberCount);
-              const deliveredCount = msg.metadata.deliveredToOwnerIds?.length ?? 0;
-              const partial =
-                outgoing &&
-                hasPartialGroupDelivery(msg.metadata, memberCount);
-              const deliveryDetail =
-                partial && totalRecipients > 0
-                  ? t("groupChat.deliveryPartial", { delivered: deliveredCount, total: totalRecipients })
-                  : undefined;
-              const deliveryReceipt =
-                outgoing && isGroupDeliveryComplete(msg.metadata, memberCount)
-                  ? ("delivered" as const)
-                  : outgoing
-                    ? msg.metadata.deliveryReceipt
-                    : undefined;
-              return (
-                <ChatMessageBubble
-                  key={msg.messageId}
-                  variant={outgoing ? "outgoing" : "incoming-peer"}
-                  position="single"
-                  senderLabel={outgoing ? t("messageBubble.you") : peerDisplayLabel(msg.sender)}
-                  timeLabel={new Date(msg.metadata.timestamp).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                  deliveryReceipt={deliveryReceipt}
-                  deliveryDetail={deliveryDetail}
-                >
-                  <ChatMessageText text={chatMessageTextForDisplay(msg.content.text)} />
-                </ChatMessageBubble>
-              );
-            })}
+      <div className="messages">
+        {displayMessages.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <ChatIcon size={40} />
+            </div>
+            <div className="empty-state-title">{t("chat.noMessagesYet")}</div>
+            <div className="empty-state-desc">{t("groupChat.emptyDesc")}</div>
           </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
+        ) : (
+          messageGroups.map(([dateKey, msgs]) => (
+            <div key={dateKey}>
+              <div className="date-separator">
+                <span>{fmtDateLabel(msgs[0].metadata.timestamp, t)}</span>
+              </div>
+              {buildMessageStacks(msgs, (a, b) => sameMessageStackGroup(a, b, isOutgoingMsg)).map((stack) => {
+                const outgoing = isOutgoingMsg(stack[0]);
+                const senderOwnerId = stack[0].sender.ownerId?.trim() || "";
+                const presentation = resolveChatBubblePresentation(
+                  {
+                    actorRole: stack[0].sender.actorRole,
+                    agentVerified: stack[0].sender.agentVerified,
+                    outgoing,
+                    contactDisplayName: peerDisplayLabel(stack[0].sender),
+                    threadKind: "human",
+                  },
+                  disclosure,
+                );
+                const variant = presentation.variant;
+                const actorBadge = presentation.actorBadge;
+                const totalRecipients = groupDeliveryRecipientCount(memberCount);
+                const deliveredCount = stack[0].metadata.deliveredToOwnerIds?.length ?? 0;
+                const partial =
+                  outgoing && hasPartialGroupDelivery(stack[0].metadata, memberCount);
+                const deliveryDetail =
+                  partial && totalRecipients > 0
+                    ? t("groupChat.deliveryPartial", { delivered: deliveredCount, total: totalRecipients })
+                    : undefined;
+                const deliveryReceipt =
+                  outgoing && isGroupDeliveryComplete(stack[0].metadata, memberCount)
+                    ? ("delivered" as const)
+                    : outgoing
+                      ? stack[0].metadata.deliveryReceipt
+                      : undefined;
 
-      {sendError ? <p className="chat-send-error">{sendError}</p> : null}
+                return (
+                  <div
+                    key={stack[0].messageId}
+                    className={`message-stack-row ${outgoing ? "is-outgoing" : "is-incoming"}`}
+                  >
+                    {!outgoing && senderOwnerId ? (
+                      <PeerProfileAvatar
+                        ownerId={senderOwnerId}
+                        fallbackLabel={peerDisplayLabel(stack[0].sender)}
+                        className="message-stack-avatar peer"
+                      />
+                    ) : null}
+                    <div className="message-stack-bubbles">
+                      {stack.map((msg, index) => {
+                        const msgPartial =
+                          outgoing && hasPartialGroupDelivery(msg.metadata, memberCount);
+                        const msgDeliveredCount = msg.metadata.deliveredToOwnerIds?.length ?? 0;
+                        const msgDeliveryDetail =
+                          msgPartial && totalRecipients > 0
+                            ? t("groupChat.deliveryPartial", {
+                                delivered: msgDeliveredCount,
+                                total: totalRecipients,
+                              })
+                            : deliveryDetail;
+                        const msgReceipt =
+                          outgoing && isGroupDeliveryComplete(msg.metadata, memberCount)
+                            ? ("delivered" as const)
+                            : outgoing
+                              ? msg.metadata.deliveryReceipt
+                              : undefined;
+                        return (
+                          <ChatMessageBubble
+                            key={msg.messageId}
+                            variant={variant}
+                            position={stackPosition(index, stack.length)}
+                            senderLabel={outgoing ? t("messageBubble.you") : peerDisplayLabel(msg.sender)}
+                            actorBadge={actorBadge}
+                            timeLabel={new Date(msg.metadata.timestamp).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                            deliveryReceipt={index === stack.length - 1 ? msgReceipt : undefined}
+                            deliveryDetail={index === stack.length - 1 ? msgDeliveryDetail : undefined}
+                          >
+                            <ChatMessageText text={msg.content.text} identity={aiIdentity} />
+                          </ChatMessageBubble>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))
+        )}
+        <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
+      </div>
 
       <div className="chat-composer">
         {latestDraft ? (
@@ -350,24 +484,33 @@ export function GroupChatPanel({
             </div>
           </div>
         ) : null}
-      <div className="chat-compose">
-        <textarea
-          className="chat-input"
-          rows={2}
-          value={chatInput}
-          onChange={(e) => setChatInput(e.target.value)}
-          placeholder={t("groupChat.inputPlaceholder")}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-        />
-        <button type="button" className="primary" onClick={handleSend} disabled={!chatInput.trim()}>
-          {t("contactChat.send")}
-        </button>
-      </div>
+        <footer className="chat-input">
+          {sendError ? <div className="chat-send-error">{sendError}</div> : null}
+          {pendingOutbound.some((m) => m.metadata.deliveryReceipt === "pending") ? (
+            <div className="typing-indicator">
+              <span />
+              <span />
+              <span />
+            </div>
+          ) : null}
+          <input
+            type="text"
+            placeholder={nodeMeshOnline ? t("groupChat.inputPlaceholder") : t("contactChat.inputOffline")}
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            enterKeyHint="send"
+            disabled={!nodeMeshOnline}
+          />
+          <button type="button" onClick={handleSend} disabled={!chatInput.trim() || !nodeMeshOnline}>
+            {t("contactChat.send")}
+          </button>
+        </footer>
       </div>
 
       {showInvite && roomId && room ? (
@@ -386,6 +529,6 @@ export function GroupChatPanel({
           onDismissed={() => onLeaveGroup?.()}
         />
       ) : null}
-    </div>
+    </>
   );
 }

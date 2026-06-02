@@ -36,7 +36,6 @@ export function ChatView({
   const t = useT();
   const nodeService = useNodeService();
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
-  const [postCreateRoomId, setPostCreateRoomId] = useState<string | null>(null);
   const selectedRoom = isChatRoomThreadKey(selectedContact ?? "")
     ? chatRooms.find((r) => r.roomId === parseChatRoomThreadKey(selectedContact!))
     : undefined;
@@ -105,14 +104,7 @@ export function ChatView({
         <div className="chat-view-threads-shell">
           <ChatSidebar
             selectedContact={selectedContact}
-            onSelectContact={(id) => {
-              onSelectedContactChange(id);
-              if (id && isChatRoomThreadKey(id)) {
-                const rid = parseChatRoomThreadKey(id);
-                if (rid) setPostCreateRoomId(rid);
-              }
-            }}
-            onGroupCreated={(roomId) => setPostCreateRoomId(roomId)}
+            onSelectContact={onSelectedContactChange}
             onOpenAssistant={onOpenAssistant}
             onOpenDiscover={onOpenDiscover}
           />
@@ -122,10 +114,6 @@ export function ChatView({
                 <GroupChatPanel
                   threadKey={selectedContact}
                   room={selectedRoom}
-                  showPostCreateHint={
-                    !!selectedRoom && postCreateRoomId === selectedRoom.roomId
-                  }
-                  onDismissPostCreateHint={() => setPostCreateRoomId(null)}
                   onLeaveGroup={() => onSelectedContactChange(null)}
                 />
               ) : (

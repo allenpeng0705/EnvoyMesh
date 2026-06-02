@@ -54,8 +54,6 @@ export const groupChatMessages = {
   leaveGroup: "Leave group",
   leaveConfirm: "Leave this group? You will stop receiving new messages.",
   creatorLeaveHint: "As the creator, dismiss the group for everyone instead of leaving.",
-  postCreateHint: "Invite more people anytime with Add people.",
-  dismissHint: "Got it",
   deliveryPartial: "Delivered to {delivered} of {total}",
   manageGroup: "Manage group",
   manageTitle: "Group settings",
@@ -70,6 +68,8 @@ export const groupChatMessages = {
   dismissFailed: "Could not dismiss group",
   creatorBadge: "Creator",
   assistantTitle: "Assistant — suggest replies only (you send manually)",
+  threadKindLabel: "Group chat",
+  emptyDesc: "Send a message — everyone in the group will see it.",
 } as const;
 
 export const contactChatMessages = {

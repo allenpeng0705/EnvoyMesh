@@ -166,6 +166,15 @@
   background: linear-gradient(135deg, var(--avatar-ai-from), var(--avatar-ai-to));
 }
 
+.chat-header-avatar.kind-group {
+  background: var(--color-accent-muted, #dbeafe);
+  color: var(--color-accent, #2563eb);
+}
+
+.chat-header-kind.kind-group {
+  color: var(--color-accent, #2563eb);
+}
+
 .chat-header-avatar.profile-avatar,
 .chat-header-avatar.profile-avatar--photo {
   width: 40px;
@@ -328,6 +337,8 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
   padding: var(--space-4) var(--space-5);
   gap: var(--space-4);
   background:
