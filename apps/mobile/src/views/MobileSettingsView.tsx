@@ -7,6 +7,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useNodeState } from "@envoymesh/social/context/NodeStateContext.js";
 import { useNodeService } from "@envoymesh/social/hooks/useNodeService.js";
+import { useT } from "@envoymesh/social/context/I18nContext.js";
 import { MobilePairHomeSection } from "./MobilePairHomeSection.js";
 import { BridgeIcon } from "@envoymesh/social/icons.js";
 
@@ -17,6 +18,7 @@ interface MobileSettingsViewProps {
 }
 
 export function MobileSettingsView({ onBack }: MobileSettingsViewProps) {
+  const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig, nodeStatus, peerId, connectionStatus, bridgeStatus, refreshNodeConfig, refreshConnectionStatus } =
     useNodeState();
@@ -50,19 +52,19 @@ export function MobileSettingsView({ onBack }: MobileSettingsViewProps) {
           className={`mv-settings-tab${activeTab === "node" ? " active" : ""}`}
           onClick={() => setActiveTab("node")}
         >
-          Node
+          {t("mobile.settings.tabs.node")}
         </button>
         <button
           className={`mv-settings-tab${activeTab === "ai" ? " active" : ""}`}
           onClick={() => setActiveTab("ai")}
         >
-          AI
+          {t("mobile.settings.tabs.ai")}
         </button>
         <button
           className={`mv-settings-tab${activeTab === "app" ? " active" : ""}`}
           onClick={() => setActiveTab("app")}
         >
-          App
+          {t("mobile.settings.tabs.app")}
         </button>
       </div>
 
@@ -71,21 +73,21 @@ export function MobileSettingsView({ onBack }: MobileSettingsViewProps) {
         {activeTab === "node" && (
           <>
             <div className="mv-section-group">
-              <div className="mv-section-group-title">Status</div>
+              <div className="mv-section-group-title">{t("mobile.settings.status")}</div>
               <div className="mv-section-row">
-                <span className="mv-section-label">Node Status</span>
+                <span className="mv-section-label">{t("mobile.settings.nodeStatus")}</span>
                 <span className="mv-section-value">{nodeStatus}</span>
               </div>
               <div className="mv-section-row">
-                <span className="mv-section-label">Connection</span>
+                <span className="mv-section-label">{t("mobile.settings.connection")}</span>
                 <span className="mv-section-value">
-                  {connectionStatus?.online ? "Online" : "Offline"}
+                  {connectionStatus?.online ? t("mobile.settings.online") : t("mobile.settings.offline")}
                 </span>
               </div>
               {connectionStatus?.lastError && (
                 <>
                   <div className="mv-section-row mv-diag-error-meta">
-                    <span className="mv-section-label">Last error (diagnostics)</span>
+                    <span className="mv-section-label">{t("mobile.settings.lastError")}</span>
                     <span className="mv-section-value">
                       {connectionStatus.lastErrorAt ?? "—"}
                     </span>
@@ -98,9 +100,9 @@ export function MobileSettingsView({ onBack }: MobileSettingsViewProps) {
             </div>
 
             <div className="mv-section-group">
-              <div className="mv-section-group-title">Identity</div>
+              <div className="mv-section-group-title">{t("mobile.settings.identity")}</div>
               <div className="mv-section-row">
-                <span className="mv-section-label">Peer ID</span>
+                <span className="mv-section-label">{t("mobile.settings.peerId")}</span>
                 <span className="mv-section-value" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)" }}>
                   {peerId ? peerId.slice(0, 16) + "..." : "Loading..."}
                 </span>
@@ -110,16 +112,16 @@ export function MobileSettingsView({ onBack }: MobileSettingsViewProps) {
             <MobilePairHomeSection />
 
             <div className="mv-section-group">
-              <div className="mv-section-group-title">Network</div>
+              <div className="mv-section-group-title">{t("mobile.settings.network")}</div>
               <div className="mv-section-row">
                 <span className="mv-section-value">
-                  {nodeConfig?.relayEnabled !== false ? "On" : "Off"}
+                  {nodeConfig?.relayEnabled !== false ? t("mobile.settings.on") : t("mobile.settings.off")}
                 </span>
               </div>
               <div className="mv-section-row">
-                <span className="mv-section-label">Bootstrap Presets</span>
+                <span className="mv-section-label">{t("mobile.settings.bootstrapPresets")}</span>
                 <span className="mv-section-value">
-                  {(nodeConfig?.bootstrapPresets ?? []).length > 0 ? "Public" : "Private"}
+                  {(nodeConfig?.bootstrapPresets ?? []).length > 0 ? t("mobile.settings.public") : t("mobile.settings.private")}
                 </span>
               </div>
             </div>
@@ -130,18 +132,18 @@ export function MobileSettingsView({ onBack }: MobileSettingsViewProps) {
         {activeTab === "ai" && (
           <>
             <div className="mv-section-group">
-              <div className="mv-section-group-title">Bridge</div>
+              <div className="mv-section-group-title">{t("mobile.settings.bridge")}</div>
               <div className="mv-section-row">
                 <span className="mv-section-label">
-                  <BridgeIcon size={16} /> Agent Bridge
+                  <BridgeIcon size={16} /> {t("mobile.settings.agentBridge")}
                 </span>
                 <span className="mv-section-value">
-                  {bridgeStatus?.enabled ? "Enabled" : "Disabled"}
+                  {bridgeStatus?.enabled ? t("mobile.settings.enabled") : t("mobile.settings.disabled")}
                 </span>
               </div>
               {bridgeStatus?.enabled && (
                 <div className="mv-section-row">
-                  <span className="mv-section-label">Agent Name</span>
+                  <span className="mv-section-label">{t("mobile.settings.agentName")}</span>
                   <span className="mv-section-value">
                     {bridgeStatus.agentName ?? "My Agent"}
                   </span>
@@ -150,11 +152,11 @@ export function MobileSettingsView({ onBack }: MobileSettingsViewProps) {
             </div>
 
             <div className="mv-section-group">
-              <div className="mv-section-group-title">AI Features</div>
+              <div className="mv-section-group-title">{t("mobile.settings.aiFeatures")}</div>
               <div className="mv-section-row">
-                <span className="mv-section-label">Chat Assist</span>
+                <span className="mv-section-label">{t("mobile.settings.chatAssist")}</span>
                 <span className="mv-section-value">
-                  {nodeConfig?.chatAssistEnabled ? "On" : "Off"}
+                  {nodeConfig?.chatAssistEnabled ? t("mobile.settings.on") : t("mobile.settings.off")}
                 </span>
               </div>
             </div>
@@ -165,13 +167,13 @@ export function MobileSettingsView({ onBack }: MobileSettingsViewProps) {
         {activeTab === "app" && (
           <>
             <div className="mv-section-group">
-              <div className="mv-section-group-title">About</div>
+              <div className="mv-section-group-title">{t("mobile.settings.about")}</div>
               <div className="mv-section-row">
-                <span className="mv-section-label">Version</span>
+                <span className="mv-section-label">{t("mobile.settings.version")}</span>
                 <span className="mv-section-value">Phase 11</span>
               </div>
               <div className="mv-section-row">
-                <span className="mv-section-label">Platform</span>
+                <span className="mv-section-label">{t("mobile.settings.platform")}</span>
                 <span className="mv-section-value">Capacitor Mobile</span>
               </div>
             </div>
@@ -182,7 +184,7 @@ export function MobileSettingsView({ onBack }: MobileSettingsViewProps) {
                 onClick={handleSaveConfig}
                 disabled={saving}
               >
-                {saving ? "Refreshing..." : "Refresh Node Config"}
+                {saving ? t("mobile.settings.refreshing") : t("mobile.settings.refreshConfig")}
               </button>
             </div>
           </>

@@ -192,6 +192,19 @@ export const en = {
       settings: "Settings",
       app: "App",
     },
+    chat: {
+      chats: "Chats",
+      inbox: "Inbox",
+      threadHint: "Threads and alerts — bonds and discovery live under Contacts.",
+      aiName: "Envoy AI",
+      aiPrompt: "Ask anything",
+      helloRequest: "Hello request",
+      selectContact: "Select a contact",
+      selectContactDesc: "Choose a contact to start chatting",
+      askAi: "Ask AI...",
+      typeMessage: "Type a message...",
+      shareFile: "Share a vault file",
+    },
     settings: {
       tabs: {
         node: "Node",

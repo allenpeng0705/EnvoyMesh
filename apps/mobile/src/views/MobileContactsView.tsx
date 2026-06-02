@@ -6,6 +6,7 @@
  */
 import { useState, useCallback } from "react";
 import { useNodeState } from "@envoymesh/social/context/NodeStateContext.js";
+import { useT } from "@envoymesh/social/context/I18nContext.js";
 import { RemoveContactConfirmModal } from "@envoymesh/social/components/RemoveContactConfirmModal.js";
 import type { HelloProfile } from "@envoymesh/api";
 import { ChatIcon, SearchIcon } from "@envoymesh/social/icons.js";
@@ -16,6 +17,7 @@ export interface MobileContactsViewProps {
 }
 
 export function MobileContactsView({ onOpenChat, onGoDiscover }: MobileContactsViewProps) {
+  const t = useT();
   const { bonds, humanProfile, discoveredPeers, sendHello } = useNodeState();
 
   const [showAroundMe, setShowAroundMe] = useState(false);
@@ -48,11 +50,11 @@ export function MobileContactsView({ onOpenChat, onGoDiscover }: MobileContactsV
       <div className="mv-contacts">
         <div className="mv-empty-state">
           <div className="mv-empty-state-icon"><ChatIcon size={48} /></div>
-          <div className="mv-empty-state-title">No contacts yet</div>
-          <div className="mv-empty-state-desc">Use Discover to find people and start connecting</div>
+          <div className="mv-empty-state-title">{t("mobile.contacts.emptyTitle")}</div>
+          <div className="mv-empty-state-desc">{t("mobile.contacts.emptyDesc")}</div>
           <button type="button" className="mv-empty-state-cta" onClick={() => onGoDiscover?.()}>
             <SearchIcon size={16} />
-            Discover people
+            {t("mobile.contacts.emptyCta")}
           </button>
         </div>
       </div>
@@ -62,7 +64,7 @@ export function MobileContactsView({ onOpenChat, onGoDiscover }: MobileContactsV
   return (
     <div className="mv-contacts">
       <p className="mv-tab-hint">
-        Tap to chat — swipe left and tap Remove to drop a bond.
+        {t("contacts.tapHint")}
       </p>
       {/* Around Me section */}
       {discoveredPeers.length > 0 && (
@@ -71,7 +73,7 @@ export function MobileContactsView({ onOpenChat, onGoDiscover }: MobileContactsV
             className="mv-around-me-toggle"
             onClick={() => setShowAroundMe(!showAroundMe)}
           >
-            <span>Around Me ({discoveredPeers.length})</span>
+            <span>{t("mobile.contacts.aroundMe")} ({discoveredPeers.length})</span>
             <span className={`mv-around-me-chevron${showAroundMe ? " open" : ""}`}>
               &#9662;
             </span>
@@ -88,7 +90,7 @@ export function MobileContactsView({ onOpenChat, onGoDiscover }: MobileContactsV
                 onClick={() => handleSayHello(peer.nodeId)}
                 disabled={helloing[peer.nodeId]}
               >
-                {helloing[peer.nodeId] ? "..." : "Say Hello"}
+                {helloing[peer.nodeId] ? "..." : t("common.sayHello")}
               </button>
             </div>
           ))}
@@ -132,7 +134,7 @@ export function MobileContactsView({ onOpenChat, onGoDiscover }: MobileContactsV
                 className="mv-swipe-action remove"
                 onClick={() => handleRevokeBond(contact.peerOwnerId, label)}
               >
-                Remove
+                {t("contacts.remove")}
               </button>
             </div>
           </div>

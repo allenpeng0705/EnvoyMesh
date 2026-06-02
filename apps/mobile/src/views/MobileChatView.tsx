@@ -6,6 +6,7 @@
  * Reuses useNodeState / useNodeService / useChatMessages hooks.
  */
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useT } from "@envoymesh/social/context/I18nContext.js";
 import { useNodeState } from "@envoymesh/social/context/NodeStateContext.js";
 import { useNodeService } from "@envoymesh/social/hooks/useNodeService.js";
 import { useInboxActivityCount } from "@envoymesh/social/hooks/useInboxActivityCount.js";
@@ -56,6 +57,7 @@ export function MobileChatView({
   focusPeerId = null,
   onFocusPeerConsumed,
 }: MobileChatViewProps) {
+  const t = useT();
   const nodeService = useNodeService();
   const {
     bonds,
@@ -187,13 +189,13 @@ export function MobileChatView({
               type="button"
               onClick={() => setPanelMode("threads")}
             >
-              Chats
+              {t("mobile.chat.chats")}
             </button>
             <button
               type="button"
               className={`active${inboxActivityCount > 0 ? " has-inbox-tab" : ""}`}
             >
-              Inbox
+              {t("mobile.chat.inbox")}
               {inboxActivityCount > 0 ? (
                 <span className="inbox-badge">{inboxActivityCount > 99 ? "99+" : inboxActivityCount}</span>
               ) : null}
@@ -214,21 +216,21 @@ export function MobileChatView({
             className="active"
             onClick={() => setPanelMode("threads")}
           >
-            Chats
+            {t("mobile.chat.chats")}
           </button>
           <button
             type="button"
             className={inboxActivityCount > 0 ? "has-inbox-tab" : ""}
             onClick={() => setPanelMode("inbox")}
           >
-            Inbox
+            {t("mobile.chat.inbox")}
             {inboxActivityCount > 0 ? (
               <span className="inbox-badge">{inboxActivityCount > 99 ? "99+" : inboxActivityCount}</span>
             ) : null}
           </button>
         </div>
         <p className="mv-tab-hint">
-          Threads and alerts — bonds and discovery live under Contacts.
+          {t("mobile.chat.threadHint")}
         </p>
         {/* Contact list */}
         <div className={`mv-chat-contacts${showContacts ? "" : " collapsed"}`}>
@@ -239,8 +241,8 @@ export function MobileChatView({
           >
             <div className="mv-contact-avatar ai">AI</div>
             <div className="mv-contact-info">
-              <div className="mv-contact-name">Envoy AI</div>
-              <div className="mv-contact-preview">Ask anything</div>
+              <div className="mv-contact-name">{t("mobile.chat.aiName")}</div>
+              <div className="mv-contact-preview">{t("mobile.chat.aiPrompt")}</div>
             </div>
           </button>
 

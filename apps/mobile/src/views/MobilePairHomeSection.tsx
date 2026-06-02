@@ -5,9 +5,11 @@ import { useCallback, useState } from "react";
 import { parseEnvoyPairUri } from "@envoymesh/api";
 import { useNodeState } from "@envoymesh/social/context/NodeStateContext.js";
 import { useNodeService } from "@envoymesh/social/hooks/useNodeService.js";
+import { useT } from "@envoymesh/social/context/I18nContext.js";
 import { scanEnvoyPairUri } from "../lib/scan-envoy-pair-uri.js";
 
 export function MobilePairHomeSection() {
+  const t = useT();
   const nodeService = useNodeService();
   const { bridgeStatus, refreshConnectionStatus } = useNodeState();
   const [pairUri, setPairUri] = useState("");
@@ -56,9 +58,9 @@ export function MobilePairHomeSection() {
   if (bridgeStatus?.enabled) {
     return (
       <div className="mv-section-group">
-        <div className="mv-section-group-title">Home node</div>
+        <div className="mv-section-group-title">{t("mobile.settings.homeNode")}</div>
         <div className="mv-section-row">
-          <span className="mv-section-label">Bridge agent</span>
+          <span className="mv-section-label">{t("mobile.settings.bridgeAgent")}</span>
           <span className="mv-section-value">{bridgeStatus.agentName ?? "My Agent"}</span>
         </div>
         <p className="mv-field-desc">
@@ -71,12 +73,12 @@ export function MobilePairHomeSection() {
 
   return (
     <div className="mv-section-group">
-      <div className="mv-section-group-title">Pair with home node</div>
+      <div className="mv-section-group-title">{t("mobile.settings.pairWithHome")}</div>
       <p className="mv-field-desc">
-        On your computer, open Settings → Node → Show Pairing QR. Paste the link here or scan the QR code.
+        {t("mobile.settings.pairHint")}
       </p>
       <label className="mv-field-label" htmlFor="pair-uri">
-        Pairing link
+        {t("mobile.settings.pairUri")}
       </label>
       <textarea
         id="pair-uri"
@@ -89,10 +91,10 @@ export function MobilePairHomeSection() {
       />
       <div className="mv-pair-actions">
         <button type="button" className="mv-btn-primary" onClick={() => void handlePair()} disabled={busy || !pairUri.trim()}>
-          {busy ? "Pairing…" : "Pair"}
+          {busy ? "Pairing…" : t("mobile.settings.pair")}
         </button>
         <button type="button" className="mv-btn-secondary" onClick={() => void handleScan()} disabled={busy}>
-          Scan QR
+          {t("mobile.settings.scan")}
         </button>
       </div>
       {error && <p className="mv-field-error">{error}</p>}

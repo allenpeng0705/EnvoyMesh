@@ -2,6 +2,7 @@
  * MobileProfileView — Me tab with Photos | About sub-tabs (shared with desktop Social).
  */
 import { useState } from "react";
+import { useT } from "@envoymesh/social/context/I18nContext.js";
 import { ProfilePhotosTab } from "@envoymesh/social/components/profile/ProfilePhotosTab.js";
 import { ProfileAboutTab } from "@envoymesh/social/components/profile/ProfileAboutTab.js";
 import type { ProfileSubTab } from "@envoymesh/social/components/views/ProfileView.js";
@@ -12,6 +13,7 @@ interface MobileProfileViewProps {
 }
 
 export function MobileProfileView({ onNavigateSettings, onNavigateLibrary }: MobileProfileViewProps) {
+  const t = useT();
   const [tab, setTab] = useState<ProfileSubTab>("photos");
 
   return (
@@ -23,7 +25,7 @@ export function MobileProfileView({ onNavigateSettings, onNavigateLibrary }: Mob
           aria-pressed={tab === "photos"}
           onClick={() => setTab("photos")}
         >
-          Photos
+          {t("profile.photos")}
         </button>
         <button
           type="button"
@@ -31,7 +33,7 @@ export function MobileProfileView({ onNavigateSettings, onNavigateLibrary }: Mob
           aria-pressed={tab === "about"}
           onClick={() => setTab("about")}
         >
-          About
+          {t("profile.about")}
         </button>
       </nav>
 
@@ -42,13 +44,13 @@ export function MobileProfileView({ onNavigateSettings, onNavigateLibrary }: Mob
       )}
 
       <div className="mv-section-group mv-profile-links">
-        <div className="mv-section-group-title">App</div>
+        <div className="mv-section-group-title">{t("mobile.profile.app")}</div>
         <div className="mv-section-row" onClick={onNavigateLibrary} role="button" tabIndex={0}>
-          <span className="mv-section-label">Library</span>
+          <span className="mv-section-label">{t("mobile.profile.library")}</span>
           <span className="mv-section-row-chevron">&#8250;</span>
         </div>
         <div className="mv-section-row" onClick={onNavigateSettings} role="button" tabIndex={0}>
-          <span className="mv-section-label">Settings</span>
+          <span className="mv-section-label">{t("mobile.profile.settings")}</span>
           <span className="mv-section-row-chevron">&#8250;</span>
         </div>
       </div>
