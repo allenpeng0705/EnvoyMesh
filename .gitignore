@@ -21,4 +21,5 @@ apps/node/data/**
 apps/node/data/default/**
 !apps/node/data/default/node-config.example.jsonc
 !apps/node/data/default/agent-identity.example.md
+!apps/social/src/data/**
 shared_vault/
