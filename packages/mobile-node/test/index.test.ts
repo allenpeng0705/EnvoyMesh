@@ -1254,25 +1254,27 @@ describe("MobileNode", () => {
         level: "direct",
       });
 
-      // Create a mock mesh
-      let dialledPeer: string | null = null;
+      // Spy on the internal mesh-send to verify the resolved transport peer
+      // id and capture the bytes that would be sent over the wire.
+      let meshTransportPeerId: string | null = null;
       let sentData: string | null = null;
+      (node as any)._sendChatViaMeshWithAck = async (
+        transportPeerId: string,
+        data: string,
+        _targetOwnerId: string,
+      ) => {
+        meshTransportPeerId = transportPeerId;
+        sentData = data;
+        return { delivered: false };
+      };
+
+      // Mesh must be present for the mesh path to be tried.
       (node as any)._mesh = {
-        dialProtocol: async (peerId: string, _protocol: string) => {
-          dialledPeer = peerId;
-          return {
-            close: async () => {},
-          };
+        dialProtocol: async () => {
+          throw new Error("not used — test mocks the mesh send directly");
         },
         getMultiaddrs: () => [],
         peerId: { toString: () => "12D3KooWSelf" },
-      };
-
-      // Mock _sendViaMesh to verify correct peerId was resolved
-      const originalSendViaMesh = (node as any)._sendViaMesh;
-      (node as any)._sendViaMesh = async (peerId: string, data: string) => {
-        dialledPeer = peerId;
-        sentData = data;
       };
 
       await (node as any)._sendToRelay({
@@ -1281,15 +1283,16 @@ describe("MobileNode", () => {
         text: "hello via mesh",
       });
 
-      // Verify it resolved the libp2pPeerId from trust store
-      expect(dialledPeer).toBe(targetPeerId);
+      // Verify the routing resolved the libp2pPeerId from the trust store
+      // and dispatched via the mesh path.
+      expect(meshTransportPeerId).toBe(targetPeerId);
       expect(sentData).toBeTruthy();
       const parsed = JSON.parse(sentData!);
       expect(parsed.payload.text).toBe("hello via mesh");
       expect(parsed.payload.senderOwnerId).toBe(node.state.owner.ownerId);
 
       // Restore
-      (node as any)._sendViaMesh = originalSendViaMesh;
+      (node as any)._sendChatViaMeshWithAck = undefined;
       (node as any)._mesh = undefined;
     });
   });

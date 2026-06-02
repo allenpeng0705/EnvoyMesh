@@ -1015,6 +1015,7 @@ describe("HumanProfilePayload", () => {
       ownerId: "envoy:owner:alice",
       displayName: "Alice",
       username: "alice123",
+      profileVisibility: "private" as const,
       publicThumbnail: {
         vaultRelativePath: "profile/thumbnail.jpg",
         contentSha256: "a".repeat(64),
@@ -1043,6 +1044,7 @@ describe("HumanProfilePayload", () => {
       ownerId: "envoy:owner:bob",
       displayName: "Bob",
       username: "bob42",
+      profileVisibility: "private",
       updatedAt: "2026-04-27T10:00:00.000Z",
       signature: "signature456",
     };
@@ -1135,17 +1137,38 @@ describe("HumanProfilePayload", () => {
         ownerId: "envoy:owner:alice",
         displayName: "Alice",
         username,
+        profileVisibility: "private" as const,
         updatedAt: "2026-04-27T10:00:00.000Z",
         signature: "signature123",
       };
 
       const parsed = HumanProfilePayloadSchema.parse(profile);
       expect(parsed.username).toBe(username);
-      expect(parsed.profileVisibility).toBe("private"); // default
+      expect(parsed.profileVisibility).toBe("private");
     }
   });
 
-  it("defaults profileVisibility to private", () => {
+  it("accepts profile with discoveryLocationPrecision defaulting to 'hidden' when absent", () => {
+    // The schema accepts the missing field (no Zod .default()) for wire
+    // compatibility; consumers that need a value should treat absent as
+    // "hidden" themselves.
+    const profile = {
+      version: "0.1" as const,
+      ownerId: "envoy:owner:alice",
+      displayName: "Alice",
+      username: "alice123",
+      profileVisibility: "private" as const,
+      updatedAt: "2026-04-27T10:00:00.000Z",
+      signature: "signature123",
+    };
+
+    const parsed = HumanProfilePayloadSchema.parse(profile);
+    expect(parsed.discoveryLocationPrecision).toBeUndefined();
+  });
+
+  it("rejects profile without profileVisibility (no schema default)", () => {
+    // Schema deliberately omits the .default() so that signatures don't get
+    // silently broken by a field added at parse time.
     const profile = {
       version: "0.1" as const,
       ownerId: "envoy:owner:alice",
@@ -1155,8 +1178,8 @@ describe("HumanProfilePayload", () => {
       signature: "signature123",
     };
 
-    const parsed = HumanProfilePayloadSchema.parse(profile);
-    expect(parsed.profileVisibility).toBe("private");
+    const parsed = HumanProfilePayloadSchema.safeParse(profile);
+    expect(parsed.success).toBe(false);
   });
 
   it("rejects invalid profileVisibility", () => {
@@ -1197,6 +1220,7 @@ describe("HumanProfilePayload", () => {
       ownerId: "envoy:owner:alice",
       displayName: "Alice",
       username: "alice123",
+      profileVisibility: "private" as const,
       hobbies,
       updatedAt: "2026-04-27T10:00:00.000Z",
       signature: "signature123",

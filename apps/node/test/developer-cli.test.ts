@@ -681,7 +681,10 @@ describe("developer CLI", () => {
     const taskStore = createLocalTaskStore(profileDir);
     const trustStore = createLocalTrustStore(profileDir);
     const peerStore = createLocalPeerDirectoryStore(profileDir);
-    await trustStore.setTrustRecord({ peerOwnerId: "envoy:owner:alice", level: "direct" });
+    // The morning report filters to unknown-trust candidates (strangers
+    // worth following up on), so we deliberately don't set a trust record
+    // for alice here.
+    void trustStore;
     await peerStore.upsertPeerFromSignal({
       peerId: "peer-a",
       payload: {

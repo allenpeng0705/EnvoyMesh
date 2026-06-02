@@ -455,15 +455,23 @@ export const HumanProfilePayloadSchema = z.object({
   gender: z.string().max(40).optional(),
   hobbies: z.array(z.string().min(1).max(50)).max(20).optional(),
   knowledge: z.array(z.string().min(1).max(100)).max(50).optional(),
-  profileVisibility: z.enum(["public", "private"]).default("private"),
+  // profileVisibility is part of the signed material. Required: Zod 4's
+  // .default() injects the value during parse, which changes the canonical
+  // JSON and breaks the signature. Callers must set this explicitly.
+  profileVisibility: z.enum(["public", "private"]),
   /** Always public when set — small avatar for discovery and contacts. */
   publicThumbnail: ProfilePhotoRefSchema.optional(),
   /** Additional photos; visibility per entry. */
   galleryPhotos: z.array(ProfileGalleryPhotoSchema).max(12).optional(),
   /** Optional place metadata for geo-scoped DHT discovery (see Phase 17). */
   discoveryLocation: DiscoveryLocationSchema.optional(),
-  /** How much of `discoveryLocation` is advertised as `geo:*` capability topics. */
-  discoveryLocationPrecision: DiscoveryLocationPrecisionSchema.default("hidden"),
+  /**
+   * Optional so legacy senders that don't include it still parse. When the
+   * field is absent, callers should treat it as "hidden" (the default
+   * consumers want). Crucially, no `.default("hidden")` here — Zod 4 would
+   * otherwise inject the value during parse and break the signature.
+   */
+  discoveryLocationPrecision: DiscoveryLocationPrecisionSchema.optional(),
   // Rendezvous capabilities for peer discovery
   capabilities: z.array(CapabilityUnionSchema).max(20).optional(),
   updatedAt: z.string().datetime(),

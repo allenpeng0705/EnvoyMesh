@@ -177,6 +177,7 @@ describe("E2E NodeServiceImpl profile photos", () => {
         ownerId: profile.owner.ownerId,
         displayName: "Ghost",
         username: "ghost01",
+        profileVisibility: "private",
         updatedAt: new Date().toISOString(),
       },
       profile.owner.privateKeyPem,

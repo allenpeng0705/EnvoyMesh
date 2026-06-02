@@ -32,6 +32,10 @@ describe("NodeServiceImpl WAN join invite", () => {
   });
 
   it("createWanJoinInvite returns envoy://join URI and apply merges bootstrap", async () => {
+    // Seed a bootstrap peer so the invite has something to carry.
+    await svc.updateNodeConfig({
+      bootstrapPeers: ["/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWExistingBootstrap"],
+    });
     const created = await svc.createWanJoinInvite({ expiresInHours: 24, note: "test" });
     expect(created.uri.startsWith("envoy://join?")).toBe(true);
     expect(created.token).toBeTruthy();
