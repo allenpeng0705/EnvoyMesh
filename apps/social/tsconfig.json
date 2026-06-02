@@ -13,5 +13,5 @@
   "references": [
     { "path": "../../packages/api" }
   ],
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.json", "src/**/*.css"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts", "src/**/*.json", "src/**/*.css"]
 }

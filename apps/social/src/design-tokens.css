@@ -41,7 +41,8 @@
   --space-12: 3rem;
   --space-16: 4rem;
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Segoe UI Emoji", "Apple Color Emoji",
+    "Noto Color Emoji", emoji, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
   --text-2xs: 0.625rem;

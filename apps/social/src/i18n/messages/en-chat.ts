@@ -116,6 +116,8 @@ export const contactChatMessages = {
   contactOfflineHint: "Contact is offline — sending will try to connect and may take longer.",
   attachFileTitle: "Send image or file",
   attachFileAria: "Send image or file",
+  emojiPickerTitle: "Insert emoji",
+  emojiPickerAria: "Open emoji picker",
   shareVaultTitle: "Share a vault library file",
   shareVaultAria: "Share a vault library file",
   removeContactTitle: "Remove contact",

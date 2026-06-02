@@ -4093,6 +4093,7 @@ button:disabled {
 
 /* Form fields on elevated panels */
 .chat-input input,
+.chat-composer-textarea,
 .mv-chat-input input,
 .ai-input,
 .search-bar input,

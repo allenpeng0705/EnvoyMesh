@@ -26,6 +26,7 @@ import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatFileAttachment } from "../ChatFileAttachment.js";
 import { ChatIcon, EditIcon, AttachIcon } from "../../icons.js";
+import { ChatComposer } from "../ChatComposer.js";
 import { useToast } from "../../hooks/useToast.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import type { AssistantMode } from "../../lib/storage.js";
@@ -552,45 +553,40 @@ export function GroupChatPanel({
               <span />
             </div>
           ) : null}
-          <button
-            type="button"
-            className="secondary chat-attach-file-btn"
-            title={t("contactChat.attachFileTitle")}
-            aria-label={t("contactChat.attachFileAria")}
-            disabled={!nodeMeshOnline || attachBusy}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <AttachIcon size={18} />
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="chat-file-input-hidden"
-            accept="*/*"
-            aria-hidden
-            tabIndex={-1}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void handleAttachFile(file);
-            }}
-          />
-          <input
-            type="text"
-            placeholder={nodeMeshOnline ? t("groupChat.inputPlaceholder") : t("contactChat.inputOffline")}
+          <ChatComposer
             value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            enterKeyHint="send"
+            onChange={setChatInput}
+            onSend={handleSend}
+            placeholder={nodeMeshOnline ? t("groupChat.inputPlaceholder") : t("contactChat.inputOffline")}
+            sendLabel={t("contactChat.send")}
             disabled={!nodeMeshOnline}
+            leading={
+              <>
+                <button
+                  type="button"
+                  className="secondary chat-attach-file-btn"
+                  title={t("contactChat.attachFileTitle")}
+                  aria-label={t("contactChat.attachFileAria")}
+                  disabled={!nodeMeshOnline || attachBusy}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <AttachIcon size={18} />
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="chat-file-input-hidden"
+                  accept="*/*"
+                  aria-hidden
+                  tabIndex={-1}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleAttachFile(file);
+                  }}
+                />
+              </>
+            }
           />
-          <button type="button" onClick={handleSend} disabled={!chatInput.trim() || !nodeMeshOnline}>
-            {t("contactChat.send")}
-          </button>
         </footer>
       </div>
 

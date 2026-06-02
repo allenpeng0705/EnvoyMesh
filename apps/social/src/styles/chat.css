@@ -1117,7 +1117,8 @@
   box-shadow: var(--shadow-composer);
 }
 
-.chat-input input {
+.chat-input input,
+.chat-composer-textarea {
   flex: 1;
   min-width: 0;
   padding: var(--space-3) var(--space-4);
@@ -1126,16 +1127,71 @@
   background: var(--color-bg);
   color: var(--color-text);
   font-size: var(--text-base);
+  font-family: inherit;
+  line-height: 1.4;
 }
 
-.chat-input input::placeholder {
+.chat-composer-textarea {
+  resize: none;
+  overflow-y: auto;
+  min-height: 44px;
+  max-height: 120px;
+  field-sizing: content;
+}
+
+.chat-input input::placeholder,
+.chat-composer-textarea::placeholder {
   color: var(--color-text-subtle);
 }
 
-.chat-input input:focus {
+.chat-input input:focus,
+.chat-composer-textarea:focus {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: var(--shadow-ring);
+}
+
+.chat-composer-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-1);
+}
+
+.chat-composer-field .chat-composer-textarea {
+  flex: 1;
+}
+
+.chat-emoji-btn.is-active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.chat-emoji-picker-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--space-2));
+  z-index: var(--z-popover, 200);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.chat-emoji-picker {
+  --emoji-size: 1.375rem;
+  --num-columns: 8;
+  --background: var(--color-surface);
+  --border-color: var(--color-border-subtle);
+  --button-active-background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  --button-hover-background: var(--color-surface-elevated);
+  --input-border-color: var(--color-border);
+  --input-font-color: var(--color-text);
+  --outline-color: var(--color-primary);
+  width: min(20rem, calc(100vw - 2rem));
+  height: min(22rem, 50vh);
 }
 
 .chat-input > button[type="button"]:last-child {

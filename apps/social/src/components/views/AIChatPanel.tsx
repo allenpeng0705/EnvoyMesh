@@ -7,6 +7,7 @@ import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.
 import { messageVisualVariant } from "../../lib/chat-thread-kind.js";
 import { createAssistantDraftCrdt, ASSISTANT_DRAFT_SYNC_SCOPE } from "../../lib/assistant-draft-crdt.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
+import { ChatComposer } from "../ChatComposer.js";
 import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatIcon, RemoveIcon } from "../../icons.js";
 import type { TFunction } from "../../context/I18nContext.js";
@@ -280,28 +281,18 @@ export function AIChatPanel() {
         <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
       </div>
       <footer className="chat-input">
-        <input
-          type="text"
-          placeholder={t("aiChat.inputPlaceholder")}
+        <ChatComposer
           value={aiInput}
-          onChange={(e) => draftRef.current?.setPlainText(e.target.value)}
-          onKeyDown={async (e) => {
-            if (e.key === "Enter" && aiInput.trim() && !isAiLoading) {
-              e.preventDefault();
-              await sendAiMessage(aiInput);
-            }
+          onChange={(next) => draftRef.current?.setPlainText(next)}
+          onSend={() => {
+            const text = (draftRef.current?.getPlainText() ?? aiInput).trim();
+            if (text) void sendAiMessage(text);
           }}
+          placeholder={t("aiChat.inputPlaceholder")}
+          sendLabel={t("aiChat.send")}
           disabled={isAiLoading || !assistantReady}
+          sendDisabled={isAiLoading || !assistantReady}
         />
-        <button
-          type="button"
-          onClick={async () => {
-            if (aiInput.trim() && !isAiLoading) await sendAiMessage(aiInput);
-          }}
-          disabled={!aiInput.trim() || isAiLoading || !assistantReady}
-        >
-          {t("aiChat.send")}
-        </button>
       </footer>
     </>
   );
