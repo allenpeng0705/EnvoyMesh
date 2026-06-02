@@ -10,6 +10,7 @@ export const de = mergeMessages(en, {
     chatInboxOne: "Chat — {count} Element im Posteingang",
     chatInboxMany: "Chat — {count} Elemente im Posteingang",
     contacts: "Kontakte ({count})",
+    discover: "Entdecken",
     library: "Bibliothek",
     activity: "Aktivität",
     settings: "Einstellungen",
@@ -32,6 +33,9 @@ export const de = mergeMessages(en, {
     themeDark: "Dunkel",
     themeLight: "Hell",
     nodeConnectivity: "Knotenverbindung",
+    language: "Sprache: {language}",
+    languageMenu: "Sprache: {language}. Klicken zum Wechseln.",
+    languagePicker: "Sprache wählen",
   },
   common: {
     back: "← Zurück",

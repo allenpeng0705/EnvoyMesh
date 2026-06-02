@@ -10,6 +10,7 @@ export const zh = mergeMessages(en, {
     chatInboxOne: "聊天 — 收件箱 {count} 条待处理",
     chatInboxMany: "聊天 — 收件箱 {count} 条待处理",
     contacts: "联系人 ({count})",
+    discover: "发现",
     library: "资料库",
     activity: "动态",
     settings: "设置",
@@ -32,6 +33,9 @@ export const zh = mergeMessages(en, {
     themeDark: "深色",
     themeLight: "浅色",
     nodeConnectivity: "节点连接状态",
+    language: "语言：{language}",
+    languageMenu: "语言：{language}。点击切换。",
+    languagePicker: "选择语言",
   },
   common: {
     back: "← 返回",
