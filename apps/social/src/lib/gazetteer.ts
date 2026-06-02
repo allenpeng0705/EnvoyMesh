@@ -1,7 +1,8 @@
 import { normalizeCountryCode, normalizeLocationSlug } from "@envoymesh/api";
 
-// Vite-compatible JSON import
-const { default: rawGazetteer } = await import("../data/gazetteer.json", { assert: { type: "json" } });
+// Vite-compatible JSON import using raw loader
+const gazetteerJson = await import("../data/gazetteer.json?raw");
+const rawGazetteer = JSON.parse(gazetteerJson.default);
 
 export interface GazetteerRegion {
   code: string;
