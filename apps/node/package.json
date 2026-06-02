@@ -8,8 +8,8 @@
     "envoyctl": "./dist/src/cli.js"
   },
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "node:dev": "tsx src/index.ts",
+    "dev": "tsc -b ../../packages/api && tsx src/index.ts",
+    "node:dev": "tsc -b ../../packages/api && tsx src/index.ts",
     "cli": "tsx src/cli.ts",
     "connectivity:smoke": "tsx src/connectivity-smoke.ts",
     "poc:discovery": "tsx src/connectivity-smoke.ts",
