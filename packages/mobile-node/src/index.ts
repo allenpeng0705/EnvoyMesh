@@ -497,7 +497,15 @@ export class MobileNode implements NodeService {
   /** Inbound accept waiting for bytes — keyed by preview/share id. */
   private readonly _inboundTransferByShareId = new Map<
     string,
-    { senderNodeId: string; senderVaultRelativePath: string; savePath: string; senderOwnerId?: string }
+    {
+      senderNodeId: string;
+      senderVaultRelativePath: string;
+      savePath: string;
+      senderOwnerId?: string;
+      chatRoomId?: string;
+      chatMessageId?: string;
+      chatAttachmentId?: string;
+    }
   >();
   private readonly _peerDeviceByTransportId = new Map<
     string,
@@ -2232,6 +2240,52 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return mobileSendChatRoomMessage(this._mobileChatRoomHost(), roomId, text);
   }
 
+  async sendChatRoomAttachment(
+    params: import("@envoymesh/api").SendChatRoomAttachmentParams,
+  ): Promise<import("@envoymesh/api").SendChatRoomAttachmentResult> {
+    const { MAX_CHAT_ATTACHMENT_BYTES } = await import("@envoymesh/api");
+    const { mobileSendChatRoomAttachment } = await import("./mobile-chat-room.js");
+    const binary = atob(params.contentBase64);
+    if (binary.length === 0) {
+      throw new Error("Empty file");
+    }
+    if (binary.length > MAX_CHAT_ATTACHMENT_BYTES) {
+      throw new Error(`File exceeds ${MAX_CHAT_ATTACHMENT_BYTES} bytes`);
+    }
+    const attachmentId = _randomUUID();
+    const filename = _sanitizeChatFilename(params.filename);
+    const vaultRelativePath = `chat/out/${attachmentId}/${filename}`;
+    const mimeType = params.mimeType?.trim() || _mimeTypeForFilename(filename);
+    const sensitivity = params.sensitivity ?? "friends";
+    await this.importToLibrary({
+      relativePath: vaultRelativePath,
+      contentBase64: params.contentBase64,
+      mimeType,
+    });
+    const caption = params.caption?.trim();
+    const text = caption || `Sent ${filename}`;
+    const result = await mobileSendChatRoomAttachment(this._mobileChatRoomHost(), {
+      roomId: params.roomId,
+      text,
+      attachment: {
+        id: attachmentId,
+        filename,
+        mimeType,
+        sizeBytes: binary.length,
+        sensitivity,
+        vaultRelativePath,
+      },
+    });
+    return {
+      messageId: result.messageId,
+      attachmentId: result.attachmentId,
+      vaultRelativePath: result.vaultRelativePath,
+      deliveryReceipt: result.deliveryReceipt,
+      deliveredToOwnerIds: result.deliveredToOwnerIds,
+      pendingRecipientOwnerIds: result.pendingRecipientOwnerIds,
+    };
+  }
+
   async deleteChatMessage(peerOwnerId: string, messageId: string): Promise<{ ok: boolean }> {
     const ok = await this._chatLog.deleteMessage(peerOwnerId, messageId);
     return { ok };
@@ -2820,6 +2874,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
       path: string;
       sensitivity: "public" | "friends" | "private";
       deliveryChannel?: "inbox" | "chat";
+      chatRoomId?: string;
+      chatMessageId?: string;
+      chatAttachmentId?: string;
     },
   ): Promise<{ shareRequestMessageId: string }> {
     this._assertNodeRunning();
@@ -2849,6 +2906,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
         requestedSensitivity: file.sensitivity,
         fileOrigin: "sender",
         deliveryChannel: file.deliveryChannel ?? "inbox",
+        chatRoomId: file.chatRoomId,
+        chatMessageId: file.chatMessageId,
+        chatAttachmentId: file.chatAttachmentId,
       }),
     });
     const signed = signUnsignedEnvelope(unsigned, this._state.device.privateKeyPem);
@@ -2931,6 +2991,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
       senderVaultRelativePath: srcKey,
       savePath: saveNorm || srcKey || offer.filename,
       senderOwnerId: offer.senderOwnerId,
+      chatRoomId: offer.chatRoomId,
+      chatMessageId: offer.chatMessageId,
+      chatAttachmentId: offer.chatAttachmentId,
     });
     const emitPath = saveNorm || srcKey || offer.filename;
     this._events.emit("share:accepted", { shareId, savePath: emitPath });
@@ -4552,19 +4615,71 @@ You are the owner's personal AI assistant on EnvoyMesh.
         continue;
       }
       this._inboundTransferByShareId.delete(shareId);
-      void this._recordFileShareInChat({
-        peerOwnerId: pending.senderOwnerId ?? pending.senderNodeId,
-        outgoing: false,
-        vaultRelativePath: pending.savePath,
-        byteLength: totalBytes,
-      }).catch((err) => {
-        console.warn(
-          "[mobile-node] chat attachment record failed:",
-          err instanceof Error ? err.message : err,
-        );
-      });
+      if (pending.chatRoomId && pending.chatMessageId && pending.chatAttachmentId) {
+        void this._applyRoomAttachmentVaultPath({
+          roomId: pending.chatRoomId,
+          messageId: pending.chatMessageId,
+          attachmentId: pending.chatAttachmentId,
+          vaultRelativePath: pending.savePath,
+        }).catch((err) => {
+          console.warn(
+            "[mobile-node] group attachment vault update failed:",
+            err instanceof Error ? err.message : err,
+          );
+        });
+      } else {
+        void this._recordFileShareInChat({
+          peerOwnerId: pending.senderOwnerId ?? pending.senderNodeId,
+          outgoing: false,
+          vaultRelativePath: pending.savePath,
+          byteLength: totalBytes,
+        }).catch((err) => {
+          console.warn(
+            "[mobile-node] chat attachment record failed:",
+            err instanceof Error ? err.message : err,
+          );
+        });
+      }
       return;
     }
+  }
+
+  private async _applyRoomAttachmentVaultPath(input: {
+    roomId: string;
+    messageId: string;
+    attachmentId: string;
+    vaultRelativePath: string;
+  }): Promise<void> {
+    const { chatRoomThreadKey } = await import("@envoymesh/api");
+    const threadKey = chatRoomThreadKey(input.roomId.trim());
+    const vaultPath = input.vaultRelativePath.replace(/^[\\/]+/, "");
+    const updated = await this._chatLog.updateAttachmentVaultPath(
+      threadKey,
+      input.messageId,
+      input.attachmentId,
+      vaultPath,
+    );
+    if (!updated) return;
+    const rows = await this._chatLog.listThread(threadKey, 5000);
+    const row = rows.find((m) => m.messageId === input.messageId);
+    if (!row) return;
+    const message: ChatMessage = {
+      messageId: row.messageId,
+      sender: {
+        nodeId: row.sender.ownerId ?? "",
+        displayName: row.sender.displayName,
+        ownerId: row.sender.ownerId,
+      },
+      recipient: {
+        nodeId: row.recipient.ownerId ?? input.roomId,
+        ownerId: row.recipient.ownerId,
+        displayName: row.recipient.displayName,
+      },
+      content: row.content,
+      metadata: row.metadata,
+      signature: row.signature,
+    };
+    this._events.emit("chat:room-message", { roomId: input.roomId.trim(), message });
   }
 
   private async _recordFileShareInChat(input: {
@@ -4685,6 +4800,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
     sensitivity: "public" | "friends" | "private";
     relativePath: string;
     deliveryChannel?: "inbox" | "chat";
+    chatRoomId?: string;
+    chatMessageId?: string;
+    chatAttachmentId?: string;
   }): Promise<void> {
     const senderOwnerId =
       (await this._ownerIdForSender(input.senderEnvelopePeerId)) ??
@@ -4718,6 +4836,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
       preview: input.previewText,
       timestamp: new Date().toISOString(),
       senderVaultRelativePath: input.relativePath.replace(/^[\\/]+/, "") || undefined,
+      chatRoomId: input.chatRoomId,
+      chatMessageId: input.chatMessageId,
+      chatAttachmentId: input.chatAttachmentId,
     };
     this._pendingInboundShareOffers.set(input.shareId, offer);
     void this._publishAgentActivity(
@@ -4874,6 +4995,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
         sensitivity: effectiveSensitivity as "public" | "friends" | "private",
         relativePath: rel,
         deliveryChannel: payload.deliveryChannel,
+        chatRoomId: payload.chatRoomId,
+        chatMessageId: payload.chatMessageId,
+        chatAttachmentId: payload.chatAttachmentId,
       });
       if (
         payload.deliveryChannel === "chat" &&
@@ -6037,6 +6161,15 @@ You are the owner's personal AI assistant on EnvoyMesh.
       clearChatThread: (threadKey) => {
         void this.clearChatHistory(threadKey);
       },
+      shareChatFileToMember: (targetOwnerId, input) =>
+        this._shareFileInternal(targetOwnerId, {
+          path: input.vaultRelativePath,
+          sensitivity: input.sensitivity,
+          deliveryChannel: "chat",
+          chatRoomId: input.chatRoomId,
+          chatMessageId: input.chatMessageId,
+          chatAttachmentId: input.chatAttachmentId,
+        }).then(() => {}),
     };
   }
 

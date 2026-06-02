@@ -132,6 +132,15 @@ export async function routeRpcMethod(
       return ns.dismissChatRoom(params.roomId as string);
     case "sendChatRoomMessage":
       return ns.sendChatRoomMessage(params.roomId as string, params.text as string);
+    case "sendChatRoomAttachment":
+      return ns.sendChatRoomAttachment({
+        roomId: params.roomId as string,
+        filename: params.filename as string,
+        contentBase64: params.contentBase64 as string,
+        mimeType: params.mimeType as string | undefined,
+        caption: params.caption as string | undefined,
+        sensitivity: params.sensitivity as "public" | "friends" | "private" | undefined,
+      });
     case "listAgentActivity":
       return ns.listAgentActivity({
         since: params.since as string | undefined,

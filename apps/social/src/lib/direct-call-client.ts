@@ -240,6 +240,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.sendChatRoomMessage(roomId, text);
   }
 
+  async sendChatRoomAttachment(params: Parameters<NodeService["sendChatRoomAttachment"]>[0]) {
+    return this._ns.sendChatRoomAttachment(params);
+  }
+
   async listAgentActivity(params?: Parameters<NodeService["listAgentActivity"]>[0]) {
     return this._ns.listAgentActivity(params);
   }

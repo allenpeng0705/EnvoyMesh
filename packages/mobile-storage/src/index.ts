@@ -397,6 +397,12 @@ export interface MobileChatLogStore {
     messageId: string,
     recipientOwnerId: string,
   ): Promise<boolean>;
+  updateAttachmentVaultPath(
+    threadPeerOwnerId: string,
+    messageId: string,
+    attachmentId: string,
+    vaultRelativePath: string,
+  ): Promise<boolean>;
 }
 
 function _parseAttachmentsJson(raw: unknown): ChatLogEntry["content"]["attachments"] {
@@ -594,6 +600,33 @@ export function createMobileChatLogStore(db: MobileDatabase): MobileChatLogStore
           thread,
           id,
         ],
+      );
+      return true;
+    },
+
+    async updateAttachmentVaultPath(threadPeerOwnerId, messageId, attachmentId, vaultRelativePath) {
+      const thread = threadPeerOwnerId.trim();
+      const id = messageId.trim();
+      const attId = attachmentId.trim();
+      const vaultPath = vaultRelativePath.trim().replace(/^[\\/]+/, "");
+      if (!thread || !id || !attId || !vaultPath) return false;
+      const rows = await db.query(
+        `SELECT * FROM chat_messages WHERE threadPeerOwnerId = ? AND messageId = ? LIMIT 1`,
+        [thread, id],
+      ) as Record<string, unknown>[];
+      if (rows.length === 0) return false;
+      const current = _rowToChatLogEntry(rows[0]!);
+      const attachments = current.content.attachments;
+      if (!attachments?.length) return false;
+      const nextAttachments = attachments.map((att) =>
+        att.id === attId ? { ...att, vaultRelativePath: vaultPath } : att,
+      );
+      if (!nextAttachments.some((att) => att.id === attId && att.vaultRelativePath === vaultPath)) {
+        return false;
+      }
+      await db.execute(
+        `UPDATE chat_messages SET attachmentsJson = ? WHERE threadPeerOwnerId = ? AND messageId = ?`,
+        [JSON.stringify(nextAttachments), thread, id],
       );
       return true;
     },

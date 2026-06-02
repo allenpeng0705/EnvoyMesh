@@ -86,6 +86,13 @@ export interface LocalChatLogStore {
     messageId: string,
     recipientOwnerId: string,
   ): Promise<boolean>;
+  /** Set vault path on a group-chat attachment after inbound file transfer completes. */
+  updateAttachmentVaultPath(
+    threadPeerOwnerId: string,
+    messageId: string,
+    attachmentId: string,
+    vaultRelativePath: string,
+  ): Promise<boolean>;
 }
 
 function isMissingFileError(error: unknown): boolean {
@@ -293,6 +300,31 @@ export function createLocalChatLogStore(profileDir: string): LocalChatLogStore {
             changed = true;
             break;
           }
+        }
+        if (!changed) return false;
+        await writeChatLinesAtomic(path, rows);
+        return true;
+      });
+    },
+
+    updateAttachmentVaultPath(threadPeerOwnerId, messageId, attachmentId, vaultRelativePath) {
+      return enqueue(async () => {
+        const thread = threadPeerOwnerId.trim();
+        const id = messageId.trim();
+        const attId = attachmentId.trim();
+        const vaultPath = vaultRelativePath.trim().replace(/^[\\/]+/, "");
+        if (!thread || !id || !attId || !vaultPath) return false;
+        const rows = await readAllChatLines(path);
+        let changed = false;
+        for (const row of rows) {
+          if (row.threadPeerOwnerId !== thread || row.messageId !== id) continue;
+          const attachments = row.content.attachments;
+          if (!attachments?.length) return false;
+          const att = attachments.find((a) => a.id === attId);
+          if (!att) return false;
+          att.vaultRelativePath = vaultPath;
+          changed = true;
+          break;
         }
         if (!changed) return false;
         await writeChatLinesAtomic(path, rows);

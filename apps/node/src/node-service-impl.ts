@@ -66,6 +66,8 @@ import type {
   TransferStatus,
   SendChatAttachmentParams,
   SendChatAttachmentResult,
+  SendChatRoomAttachmentParams,
+  SendChatRoomAttachmentResult,
   ReadLibraryItemContentParams,
   ReadLibraryItemContentResult,
   AgentActivityRecord,
@@ -272,6 +274,7 @@ import {
   removeMembersFromChatRoomImpl,
   renameChatRoomImpl,
   sendChatRoomMessageImpl,
+  sendChatRoomAttachmentImpl,
   flushPendingRoomSyncsImpl,
   flushPendingRoomMessagesImpl,
   type ChatRoomServiceDeps,
@@ -579,7 +582,15 @@ class NodeServiceImpl implements NodeService {
   /** Inbound accept waiting for bytes — keyed by preview/share id. */
   private readonly _inboundTransferByShareId = new Map<
     string,
-    { senderNodeId: string; senderVaultRelativePath: string; savePath: string; senderOwnerId?: string }
+    {
+      senderNodeId: string;
+      senderVaultRelativePath: string;
+      savePath: string;
+      senderOwnerId?: string;
+      chatRoomId?: string;
+      chatMessageId?: string;
+      chatAttachmentId?: string;
+    }
   >();
 
   // Event listeners - stored for later emission
@@ -830,12 +841,21 @@ class NodeServiceImpl implements NodeService {
         updatedAt: new Date().toISOString(),
       });
       this._inboundTransferByShareId.delete(shareId);
-      void this._recordFileShareInChat({
-        peerOwnerId: pending.senderOwnerId ?? pending.senderNodeId,
-        outgoing: false,
-        vaultRelativePath: input.relativePath,
-        byteLength: input.totalBytes,
-      });
+      if (pending.chatRoomId && pending.chatMessageId && pending.chatAttachmentId) {
+        void this._applyRoomAttachmentVaultPath({
+          roomId: pending.chatRoomId,
+          messageId: pending.chatMessageId,
+          attachmentId: pending.chatAttachmentId,
+          vaultRelativePath: input.relativePath,
+        });
+      } else {
+        void this._recordFileShareInChat({
+          peerOwnerId: pending.senderOwnerId ?? pending.senderNodeId,
+          outgoing: false,
+          vaultRelativePath: input.relativePath,
+          byteLength: input.totalBytes,
+        });
+      }
       return;
     }
     this._upsertTransferStatus({
@@ -938,6 +958,9 @@ class NodeServiceImpl implements NodeService {
     sensitivity: "public" | "friends" | "private";
     relativePath: string;
     deliveryChannel?: "inbox" | "chat";
+    chatRoomId?: string;
+    chatMessageId?: string;
+    chatAttachmentId?: string;
   }): Promise<void> {
     const records = await this._peerDirectoryStore.listPeerRecords();
     const rec = records.find((r) => r.peerId === input.senderPeerId);
@@ -963,6 +986,9 @@ class NodeServiceImpl implements NodeService {
       preview: input.previewText,
       timestamp: new Date().toISOString(),
       senderVaultRelativePath: input.relativePath.replace(/^[\\/]+/, "") || undefined,
+      chatRoomId: input.chatRoomId,
+      chatMessageId: input.chatMessageId,
+      chatAttachmentId: input.chatAttachmentId,
     };
     this._pendingInboundShareOffers.set(input.shareId, offer);
     if (input.deliveryChannel !== "chat") {
@@ -2600,6 +2626,15 @@ class NodeServiceImpl implements NodeService {
       clearChatThread: (threadKey) => {
         void this.clearChatHistory(threadKey);
       },
+      shareChatFileToMember: (targetOwnerId, shareInput) =>
+        this._shareFileInternal(targetOwnerId, {
+          path: shareInput.vaultRelativePath,
+          sensitivity: shareInput.sensitivity,
+          deliveryChannel: "chat",
+          chatRoomId: shareInput.chatRoomId,
+          chatMessageId: shareInput.chatMessageId,
+          chatAttachmentId: shareInput.chatAttachmentId,
+        }).then(() => {}),
     };
   }
 
@@ -2807,6 +2842,29 @@ class NodeServiceImpl implements NodeService {
 
     this._persistChatMessage(threadPeerOwnerId, msg);
     this.emit("chat:message", msg);
+  }
+
+  private async _applyRoomAttachmentVaultPath(input: {
+    roomId: string;
+    messageId: string;
+    attachmentId: string;
+    vaultRelativePath: string;
+  }): Promise<void> {
+    if (!this._chatLogStore) return;
+    const threadKey = chatRoomThreadKey(input.roomId.trim());
+    const vaultPath = input.vaultRelativePath.replace(/^[\\/]+/, "");
+    const updated = await this._chatLogStore.updateAttachmentVaultPath(
+      threadKey,
+      input.messageId,
+      input.attachmentId,
+      vaultPath,
+    );
+    if (!updated) return;
+    const rows = await this._chatLogStore.listThread(threadKey, 5000);
+    const msg = rows.find((m) => m.messageId === input.messageId);
+    if (!msg) return;
+    const full: ChatMessage = { ...msg, signature: msg.signature };
+    this.emit("chat:room-message", { roomId: input.roomId.trim(), message: full });
   }
 
   private async _deliverChatEnvelope(
@@ -4071,6 +4129,56 @@ class NodeServiceImpl implements NodeService {
     return { attachmentId, vaultRelativePath, shareRequestMessageId };
   }
 
+  async sendChatRoomAttachment(
+    params: SendChatRoomAttachmentParams,
+  ): Promise<SendChatRoomAttachmentResult> {
+    this._assertOnline();
+    this.recordOwnerActivity();
+    const bytes = Buffer.from(params.contentBase64, "base64");
+    if (bytes.byteLength === 0) {
+      throw new Error("Empty file");
+    }
+    if (bytes.byteLength > MAX_CHAT_ATTACHMENT_BYTES) {
+      throw new Error(`File exceeds ${MAX_CHAT_ATTACHMENT_BYTES} bytes`);
+    }
+
+    const attachmentId = randomUUID();
+    const filename = sanitizeChatFilename(params.filename);
+    const vaultRelativePath = `chat/out/${attachmentId}/${filename}`;
+    const mimeType = params.mimeType?.trim() || mimeTypeForFilename(filename);
+    const sensitivity = params.sensitivity ?? "friends";
+
+    await this.importToLibrary({
+      relativePath: vaultRelativePath,
+      contentBase64: params.contentBase64,
+      mimeType,
+    });
+
+    const caption = params.caption?.trim();
+    const text = caption || `Sent ${filename}`;
+    const result = await sendChatRoomAttachmentImpl(this._chatRoomDeps(), {
+      roomId: params.roomId,
+      text,
+      attachment: {
+        id: attachmentId,
+        filename,
+        mimeType,
+        sizeBytes: bytes.byteLength,
+        sensitivity,
+        vaultRelativePath,
+      },
+    });
+
+    return {
+      messageId: result.messageId,
+      attachmentId: result.attachmentId,
+      vaultRelativePath: result.vaultRelativePath,
+      deliveryReceipt: result.deliveryReceipt,
+      deliveredToOwnerIds: result.deliveredToOwnerIds,
+      pendingRecipientOwnerIds: result.pendingRecipientOwnerIds,
+    };
+  }
+
   async readLibraryItemContent(
     params: ReadLibraryItemContentParams,
   ): Promise<ReadLibraryItemContentResult> {
@@ -4705,6 +4813,9 @@ class NodeServiceImpl implements NodeService {
       path: string;
       sensitivity: "public" | "friends" | "private";
       deliveryChannel?: "inbox" | "chat";
+      chatRoomId?: string;
+      chatMessageId?: string;
+      chatAttachmentId?: string;
     },
   ): Promise<{ shareRequestMessageId: string }> {
     this._assertOnline();
@@ -4784,6 +4895,9 @@ class NodeServiceImpl implements NodeService {
         requestedSensitivity: file.sensitivity,
         fileOrigin: "sender",
         deliveryChannel: file.deliveryChannel ?? "inbox",
+        chatRoomId: file.chatRoomId,
+        chatMessageId: file.chatMessageId,
+        chatAttachmentId: file.chatAttachmentId,
       }),
       correlationId,
     });
@@ -4893,6 +5007,9 @@ class NodeServiceImpl implements NodeService {
       senderVaultRelativePath: srcKey,
       savePath: saveNorm || srcKey || offer.filename,
       senderOwnerId,
+      chatRoomId: offer.chatRoomId,
+      chatMessageId: offer.chatMessageId,
+      chatAttachmentId: offer.chatAttachmentId,
     });
     this._upsertTransferStatus({
       correlationId: shareId,

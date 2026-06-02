@@ -460,6 +460,10 @@ export interface ShareOffer {
    * when remapping the local save path (must match the voucher’s `relativePath` on receive).
    */
   senderVaultRelativePath?: string;
+  /** Group chat: link completed transfer to an existing room message attachment. */
+  chatRoomId?: string;
+  chatMessageId?: string;
+  chatAttachmentId?: string;
 }
 
 /** Query for {@link NodeService.listLibraryItems} */
@@ -597,6 +601,24 @@ export interface SendChatAttachmentResult {
   attachmentId: string;
   vaultRelativePath: string;
   shareRequestMessageId: string;
+}
+
+export interface SendChatRoomAttachmentParams {
+  roomId: string;
+  filename: string;
+  contentBase64: string;
+  mimeType?: string;
+  caption?: string;
+  sensitivity?: ChatAttachment["sensitivity"];
+}
+
+export interface SendChatRoomAttachmentResult {
+  messageId: string;
+  attachmentId: string;
+  vaultRelativePath: string;
+  deliveryReceipt?: SendChatResult["deliveryReceipt"];
+  deliveredToOwnerIds?: string[];
+  pendingRecipientOwnerIds?: string[];
 }
 
 export interface ReadLibraryItemContentParams {
@@ -1138,6 +1160,8 @@ export interface NodeService {
 
   /** Send a message to all room members (fan-out chat.room.message). */
   sendChatRoomMessage(roomId: string, text: string): Promise<SendChatResult>;
+  /** Send a file attachment to all room members (message + per-member file transfer). */
+  sendChatRoomAttachment(params: SendChatRoomAttachmentParams): Promise<SendChatRoomAttachmentResult>;
 
   /**
    * Owner Activity timeline (`agent-activity.jsonl`).

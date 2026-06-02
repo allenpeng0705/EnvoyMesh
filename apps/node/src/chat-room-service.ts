@@ -10,6 +10,7 @@ export {
   removeMembersFromChatRoomImpl,
   renameChatRoomImpl,
   sendChatRoomMessageImpl,
+  sendChatRoomAttachmentImpl,
   flushPendingRoomSyncsImpl,
   flushPendingRoomMessagesImpl,
   type ChatRoomServiceDeps,

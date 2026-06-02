@@ -1,8 +1,14 @@
 import { randomUUID } from "node:crypto";
-import type { ChatMessage, ChatRoom, SendChatResult } from "./node-service.js";
 import type {
-  ChatRoomSyncPayload,
+  ChatAttachment,
+  ChatMessage,
+  ChatRoom,
+  SendChatResult,
+} from "./node-service.js";
+import type {
+  ChatRoomAttachment,
   ChatRoomMessagePayload,
+  ChatRoomSyncPayload,
   EnvoyEnvelope,
 } from "@envoymesh/protocol";
 import {
@@ -141,6 +147,17 @@ export interface ChatRoomServiceDeps {
     allRecipientOwnerIds: readonly string[];
   }) => void;
   clearChatThread?: (threadKey: string) => void | Promise<void>;
+  /** Push file bytes to one room member (chat-channel share linked to a room message). */
+  shareChatFileToMember?: (
+    targetOwnerId: string,
+    input: {
+      vaultRelativePath: string;
+      sensitivity: ChatAttachment["sensitivity"];
+      chatRoomId: string;
+      chatMessageId: string;
+      chatAttachmentId: string;
+    },
+  ) => Promise<void>;
 }
 
 async function assertDirectBond(deps: ChatRoomServiceDeps, ownerId: string): Promise<void> {
@@ -797,6 +814,197 @@ export async function sendChatRoomMessageImpl(
   };
 }
 
+function chatAttachmentSensitivity(
+  sensitivity: ChatRoomAttachment["sensitivity"],
+): ChatAttachment["sensitivity"] {
+  return sensitivity === "trusted" ? "friends" : sensitivity;
+}
+
+function roomAttachmentsToChatContent(
+  wire: ChatRoomAttachment[] | undefined,
+  localVaultById?: Map<string, string>,
+): ChatMessage["content"]["attachments"] {
+  if (!wire?.length) return undefined;
+  return wire.map((att) => ({
+    id: att.id,
+    filename: att.filename,
+    mimeType: att.mimeType,
+    sizeBytes: att.sizeBytes,
+    sensitivity: chatAttachmentSensitivity(att.sensitivity),
+    ...(localVaultById?.get(att.id) ? { vaultRelativePath: localVaultById.get(att.id) } : {}),
+  }));
+}
+
+export interface SendChatRoomAttachmentInput {
+  roomId: string;
+  text: string;
+  attachment: ChatAttachment;
+}
+
+export async function sendChatRoomAttachmentImpl(
+  deps: ChatRoomServiceDeps,
+  input: SendChatRoomAttachmentInput,
+): Promise<SendChatResult & { attachmentId: string; vaultRelativePath: string }> {
+  deps.assertOnline();
+  deps.recordOwnerActivity?.();
+  if (!deps.chatRoomStore) {
+    throw new Error("Chat room store unavailable");
+  }
+  if (!deps.shareChatFileToMember) {
+    throw new Error("Room file sharing is not available on this node");
+  }
+
+  const room = await deps.chatRoomStore.get(input.roomId.trim());
+  if (!room) {
+    throw new Error(`Unknown room: ${input.roomId}`);
+  }
+
+  const profile = deps.getProfile();
+  const selfOwnerId = profile.owner.ownerId;
+  if (!room.memberOwnerIds.includes(selfOwnerId)) {
+    throw new Error("You are not a member of this room");
+  }
+
+  const wireText = stripModelThinking(input.text);
+  if (!wireText.trim()) {
+    throw new Error("Message text is required");
+  }
+
+  const wireAttachments: ChatRoomAttachment[] = [
+    {
+      id: input.attachment.id,
+      filename: input.attachment.filename,
+      mimeType: input.attachment.mimeType,
+      sizeBytes: input.attachment.sizeBytes,
+      sensitivity: input.attachment.sensitivity,
+    },
+  ];
+
+  const meshPeerId = deps.requireMeshPeerId();
+  const selfHuman = await deps.humanProfileStore.loadHumanProfile();
+  const messagePayload = createChatRoomMessagePayload({
+    roomId: room.roomId,
+    senderOwnerId: selfOwnerId,
+    text: wireText,
+    attachments: wireAttachments,
+    ...chatMessagePayloadDeviceFields({
+      deviceCertificate: profile.deviceCertificate,
+      ownerPublicKeyPem: profile.owner.publicKeyPem,
+    }),
+  });
+
+  const envelope = signUnsignedEnvelope(
+    createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "human",
+      recipientRole: "human",
+      intent: "chat.room.message",
+      payload: messagePayload,
+    }),
+    profile.device.privateKeyPem,
+  );
+
+  const recipients = room.memberOwnerIds.filter((id) => id !== selfOwnerId);
+  const deliverResults = await fanOutEnvelopeToOwners(deps, recipients, (recipientEnvelopePeerId) =>
+    signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        messageId: envelope.messageId,
+        correlationId: envelope.correlationId,
+        createdAt: envelope.createdAt,
+        senderPeerId: envelope.senderPeerId,
+        senderPublicKey: envelope.senderPublicKey,
+        senderRole: "human",
+        recipientPeerId: recipientEnvelopePeerId,
+        recipientRole: "human",
+        intent: "chat.room.message",
+        payload: messagePayload,
+      }),
+      profile.device.privateKeyPem,
+    ),
+  );
+
+  await recordPendingMessageFailures(deps, {
+    messageId: envelope.messageId,
+    roomId: room.roomId,
+    envelopeCreatedAt: envelope.createdAt,
+    correlationId: envelope.correlationId,
+    messagePayload,
+    deliveries: deliverResults,
+  });
+
+  const vaultPath = input.attachment.vaultRelativePath?.replace(/^[\\/]+/, "") ?? "";
+  for (const memberOwnerId of recipients) {
+    try {
+      await deps.shareChatFileToMember(memberOwnerId, {
+        vaultRelativePath: vaultPath,
+        sensitivity: input.attachment.sensitivity,
+        chatRoomId: room.roomId,
+        chatMessageId: envelope.messageId,
+        chatAttachmentId: input.attachment.id,
+      });
+    } catch (err) {
+      console.warn(`[chat.room] attachment share to ${memberOwnerId} failed:`, err);
+    }
+  }
+
+  const threadKey = roomThreadKey(room.roomId);
+  const delivery = aggregateGroupDeliveryResults(deliverResults, recipients);
+  const localVault = new Map([[input.attachment.id, vaultPath]]);
+  const emittedMsg: ChatMessage = {
+    messageId: envelope.messageId,
+    sender: {
+      nodeId: meshPeerId,
+      ownerId: selfOwnerId,
+      displayName: selfHuman?.displayName ?? selfOwnerId,
+      actorRole: "human",
+    },
+    recipient: {
+      nodeId: room.roomId,
+      ownerId: threadKey,
+      displayName: room.title,
+    },
+    content: {
+      text: wireText,
+      attachments: roomAttachmentsToChatContent(wireAttachments, localVault),
+    },
+    metadata: {
+      timestamp: envelope.createdAt,
+      deliveryReceipt: delivery.deliveryReceipt ?? "sent",
+      deliveredToOwnerIds: delivery.deliveredToOwnerIds,
+      pendingRecipientOwnerIds: delivery.pendingRecipientOwnerIds,
+    },
+    signature: envelope.signature,
+  };
+
+  deps.persistChatMessage(threadKey, emittedMsg);
+  deps.emitRoomMessage(room.roomId, emittedMsg);
+
+  for (const ownerId of delivery.deliveredToOwnerIds) {
+    deps.recordGroupDeliveryProgress?.({
+      threadKey,
+      messageId: envelope.messageId,
+      recipientOwnerId: ownerId,
+      deliveredAt: delivery.deliveredAt ?? new Date().toISOString(),
+      allRecipientOwnerIds: recipients,
+    });
+  }
+
+  if (delivery.deliveryReceipt === "delivered" && delivery.deliveredAt) {
+    deps.markOutboundDelivered?.(threadKey, envelope.messageId, delivery.deliveredAt);
+  }
+
+  return {
+    messageId: envelope.messageId,
+    attachmentId: input.attachment.id,
+    vaultRelativePath: vaultPath,
+    deliveryReceipt: delivery.deliveryReceipt,
+    deliveredAt: delivery.deliveredAt,
+    deliveredToOwnerIds: delivery.deliveredToOwnerIds,
+    pendingRecipientOwnerIds: delivery.pendingRecipientOwnerIds,
+  };
+}
+
 export async function handleInboundChatRoomSyncImpl(
   deps: ChatRoomServiceDeps,
   envelope: EnvoyEnvelope,
@@ -970,7 +1178,10 @@ export async function handleInboundChatRoomMessageImpl(
       ownerId: roomThreadKey(room.roomId),
       displayName: room.title,
     },
-    content: { text: stripModelThinking(payload.text) },
+    content: {
+      text: stripModelThinking(payload.text),
+      attachments: roomAttachmentsToChatContent(payload.attachments),
+    },
     metadata: { timestamp: envelope.createdAt, deliveryReceipt: "delivered" },
     signature: envelope.signature,
   };

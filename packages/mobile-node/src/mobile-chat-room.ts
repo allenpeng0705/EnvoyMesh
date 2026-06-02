@@ -10,6 +10,7 @@ import {
   removeMembersFromChatRoomImpl,
   renameChatRoomImpl,
   sendChatRoomMessageImpl,
+  sendChatRoomAttachmentImpl,
   flushPendingRoomSyncsImpl,
   flushPendingRoomMessagesImpl,
   type ChatRoomServiceDeps,
@@ -63,6 +64,16 @@ export interface MobileChatRoomHost {
     allRecipientOwnerIds: readonly string[];
   }): void;
   clearChatThread?(threadKey: string): void | Promise<void>;
+  shareChatFileToMember?(
+    targetOwnerId: string,
+    input: {
+      vaultRelativePath: string;
+      sensitivity: "public" | "friends" | "private";
+      chatRoomId: string;
+      chatMessageId: string;
+      chatAttachmentId: string;
+    },
+  ): Promise<void>;
 }
 
 export function buildMobileChatRoomDeps(host: MobileChatRoomHost): ChatRoomServiceDeps {
@@ -132,6 +143,9 @@ export function buildMobileChatRoomDeps(host: MobileChatRoomHost): ChatRoomServi
       ? (input) => host.recordGroupDeliveryProgress!(input)
       : undefined,
     clearChatThread: host.clearChatThread ? (threadKey) => host.clearChatThread!(threadKey) : undefined,
+    shareChatFileToMember: host.shareChatFileToMember
+      ? (targetOwnerId, input) => host.shareChatFileToMember!(targetOwnerId, input)
+      : undefined,
   };
 }
 
@@ -204,6 +218,13 @@ export async function mobileSendChatRoomMessage(
   text: string,
 ) {
   return sendChatRoomMessageImpl(buildMobileChatRoomDeps(host), roomId, text);
+}
+
+export async function mobileSendChatRoomAttachment(
+  host: MobileChatRoomHost,
+  input: import("@envoymesh/api/chat-room-service").SendChatRoomAttachmentInput,
+) {
+  return sendChatRoomAttachmentImpl(buildMobileChatRoomDeps(host), input);
 }
 
 export async function mobileFlushPendingRoomSyncs(host: MobileChatRoomHost): Promise<void> {

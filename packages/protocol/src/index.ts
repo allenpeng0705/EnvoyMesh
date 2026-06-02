@@ -654,6 +654,10 @@ export const ShareRequestPayloadSchema = z.object({
   fileOrigin: z.enum(["responder", "sender"]).default("responder"),
   /** `chat`: deliver inline in a chat thread (direct bonds may auto-accept). Default: inbox offer. */
   deliveryChannel: z.enum(["inbox", "chat"]).default("inbox"),
+  /** When set, completed file transfer updates this group message attachment. */
+  chatRoomId: z.string().uuid().optional(),
+  chatMessageId: z.string().uuid().optional(),
+  chatAttachmentId: z.string().uuid().optional(),
 });
 
 export type ShareRequestPayload = z.infer<typeof ShareRequestPayloadSchema>;
@@ -1266,11 +1270,22 @@ export const ChatRoomSyncPayloadSchema = z
     }
   });
 
+export const ChatRoomAttachmentSchema = z.object({
+  id: z.string().uuid(),
+  filename: z.string().min(1).max(500),
+  mimeType: z.string().min(1).max(200),
+  sizeBytes: z.number().int().nonnegative(),
+  sensitivity: SensitivitySchema,
+});
+
+export type ChatRoomAttachment = z.infer<typeof ChatRoomAttachmentSchema>;
+
 export const ChatRoomMessagePayloadSchema = z
   .object({
     roomId: z.string().uuid(),
     senderOwnerId: z.string().min(1),
     text: z.string().min(1).max(128000),
+    attachments: z.array(ChatRoomAttachmentSchema).max(8).optional(),
     deviceCertificate: DeviceCertificateSchema.optional(),
     ownerPublicKeyPem: z.string().min(1).optional(),
   })
@@ -2181,6 +2196,9 @@ export interface CreateShareRequestPayloadInput {
   correlationId?: string;
   fileOrigin?: "responder" | "sender";
   deliveryChannel?: "inbox" | "chat";
+  chatRoomId?: string;
+  chatMessageId?: string;
+  chatAttachmentId?: string;
 }
 
 export function createShareRequestPayload(input: CreateShareRequestPayloadInput): ShareRequestPayload {
@@ -2192,6 +2210,9 @@ export function createShareRequestPayload(input: CreateShareRequestPayloadInput)
     correlationId: input.correlationId,
     fileOrigin: input.fileOrigin ?? "responder",
     deliveryChannel: input.deliveryChannel ?? "inbox",
+    chatRoomId: input.chatRoomId,
+    chatMessageId: input.chatMessageId,
+    chatAttachmentId: input.chatAttachmentId,
   });
 }
 
@@ -2688,6 +2709,7 @@ export interface CreateChatRoomMessagePayloadInput {
   roomId: string;
   senderOwnerId: string;
   text: string;
+  attachments?: ChatRoomAttachment[];
   deviceCertificate?: DeviceCertificate;
   ownerPublicKeyPem?: string;
 }
@@ -2699,6 +2721,7 @@ export function createChatRoomMessagePayload(
     roomId: input.roomId,
     senderOwnerId: input.senderOwnerId,
     text: input.text,
+    attachments: input.attachments,
     deviceCertificate: input.deviceCertificate,
     ownerPublicKeyPem: input.ownerPublicKeyPem,
   });

@@ -114,6 +114,7 @@ export type RpcMethods =
   | "renameChatRoom"
   | "dismissChatRoom"
   | "sendChatRoomMessage"
+  | "sendChatRoomAttachment"
   | "listAgentActivity"
   | "listCommerceReceipts"
   | "recordCommerceReceipt"

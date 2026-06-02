@@ -8,6 +8,7 @@ import type { ChatMessage, ChatRoom, ContactAiPreferences } from "@envoymesh/api
 import {
   chatMessageTextForDisplay,
   contactAiAccessLevelForAssistantMode,
+  MAX_CHAT_ATTACHMENT_BYTES,
   normalizeEnvoyDisclosureSettings,
   parseChatRoomThreadKey,
   stripModelThinking,
@@ -23,7 +24,9 @@ import { peerDisplayLabel } from "../../lib/display.js";
 import { resolveChatBubblePresentation } from "@envoymesh/api";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatMessageText } from "../ChatMessageText.js";
-import { ChatIcon, EditIcon } from "../../icons.js";
+import { ChatFileAttachment } from "../ChatFileAttachment.js";
+import { ChatIcon, EditIcon, AttachIcon } from "../../icons.js";
+import { useToast } from "../../hooks/useToast.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import type { AssistantMode } from "../../lib/storage.js";
 import { InviteMembersModal } from "./InviteMembersModal.js";
@@ -77,6 +80,7 @@ export function GroupChatPanel({
 }: GroupChatPanelProps) {
   const t = useT();
   const nodeService = useNodeService();
+  const { showToast } = useToast();
   const { humanProfile, nodeConfig, contactAiModes, setContactAiModes, refreshNodeConfig, connectionStatus } =
     useNodeState();
   const { messages, isOutgoing } = useChatMessages(threadKey);
@@ -87,7 +91,9 @@ export function GroupChatPanel({
   const [showManage, setShowManage] = useState(false);
   const [leaveBusy, setLeaveBusy] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastSendRef = useRef<{ at: number; text: string } | null>(null);
+  const [attachBusy, setAttachBusy] = useState(false);
 
   const roomId = parseChatRoomThreadKey(threadKey);
   const isCreator = !!room && humanProfile?.ownerId === room.creatorOwnerId;
@@ -205,6 +211,54 @@ export function GroupChatPanel({
     });
     return unsub;
   }, [nodeService]);
+
+  const fileToBase64 = async (file: File): Promise<string> => {
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+    return btoa(binary);
+  };
+
+  const handleAttachFile = async (file: File) => {
+    if (!roomId) return;
+    if (!nodeMeshOnline) {
+      setSendError(t("contactChat.nodeOffline"));
+      setTimeout(() => setSendError(null), 5000);
+      return;
+    }
+    if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+      showToast(
+        t("contactChat.fileTooLarge", { maxMb: Math.round(MAX_CHAT_ATTACHMENT_BYTES / (1024 * 1024)) }),
+        "error",
+      );
+      return;
+    }
+    setAttachBusy(true);
+    setSendError(null);
+    try {
+      const contentBase64 = await fileToBase64(file);
+      const caption = chatInput.trim() || undefined;
+      await nodeService.sendChatRoomAttachment({
+        roomId,
+        filename: file.name,
+        contentBase64,
+        mimeType: file.type || undefined,
+        caption,
+      });
+      if (caption) {
+        setChatInput("");
+      }
+      showToast(t("contactChat.sendingFile", { filename: file.name }), "success");
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : t("contactChat.sendFileFailed");
+      setSendError(msg);
+      showToast(msg, "error");
+    } finally {
+      setAttachBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const handleSend = () => {
     const text = stripModelThinking(chatInput).trim();
@@ -447,7 +501,12 @@ export function GroupChatPanel({
                             deliveryReceipt={index === stack.length - 1 ? msgReceipt : undefined}
                             deliveryDetail={index === stack.length - 1 ? msgDeliveryDetail : undefined}
                           >
-                            <ChatMessageText text={msg.content.text} identity={aiIdentity} />
+                            {msg.content.attachments?.map((attachment) => (
+                              <ChatFileAttachment key={attachment.id} attachment={attachment} />
+                            ))}
+                            {msg.content.text.trim() ? (
+                              <ChatMessageText text={msg.content.text} identity={aiIdentity} />
+                            ) : null}
                           </ChatMessageBubble>
                         );
                       })}
@@ -493,6 +552,28 @@ export function GroupChatPanel({
               <span />
             </div>
           ) : null}
+          <button
+            type="button"
+            className="secondary chat-attach-file-btn"
+            title={t("contactChat.attachFileTitle")}
+            aria-label={t("contactChat.attachFileAria")}
+            disabled={!nodeMeshOnline || attachBusy}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <AttachIcon size={18} />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="chat-file-input-hidden"
+            accept="*/*"
+            aria-hidden
+            tabIndex={-1}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleAttachFile(file);
+            }}
+          />
           <input
             type="text"
             placeholder={nodeMeshOnline ? t("groupChat.inputPlaceholder") : t("contactChat.inputOffline")}

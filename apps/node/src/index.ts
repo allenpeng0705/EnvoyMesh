@@ -1245,6 +1245,9 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           sensitivity: share.responsePayload.sensitivity as "public" | "friends" | "private",
           relativePath: shareRequestPayload.relativePath ?? "",
           deliveryChannel: shareRequestPayload.deliveryChannel,
+          chatRoomId: shareRequestPayload.chatRoomId,
+          chatMessageId: shareRequestPayload.chatMessageId,
+          chatAttachmentId: shareRequestPayload.chatAttachmentId,
         });
         if (shareRequestPayload.deliveryChannel === "chat" && nodeService instanceof NodeServiceImpl) {
           await nodeService.maybeAutoAcceptChatShare({

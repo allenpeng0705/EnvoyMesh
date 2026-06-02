@@ -83,4 +83,22 @@ describe("chat.room payloads", () => {
     });
     expect(parseChatRoomMessagePayload(payload)).toEqual(payload);
   });
+
+  it("parses chat.room.message with attachments", () => {
+    const payload = createChatRoomMessagePayload({
+      roomId: "11111111-1111-4111-8111-111111111111",
+      senderOwnerId: "envoy:owner:alice",
+      text: "Sent photo.jpg",
+      attachments: [
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          filename: "photo.jpg",
+          mimeType: "image/jpeg",
+          sizeBytes: 1024,
+          sensitivity: "friends",
+        },
+      ],
+    });
+    expect(parseChatRoomMessagePayload(payload)).toEqual(payload);
+  });
 });

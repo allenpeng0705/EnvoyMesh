@@ -134,6 +134,9 @@ export interface NodeServiceClient {
   renameChatRoom(roomId: string, title: string): Promise<ChatRoom>;
   dismissChatRoom(roomId: string): Promise<void>;
   sendChatRoomMessage(roomId: string, text: string): Promise<SendChatResult>;
+  sendChatRoomAttachment(
+    params: import("@envoymesh/api").SendChatRoomAttachmentParams,
+  ): Promise<import("@envoymesh/api").SendChatRoomAttachmentResult>;
   listAgentActivity(params?: import("@envoymesh/api").ListAgentActivityParams): Promise<import("@envoymesh/api").AgentActivityRecord[]>;
   listCommerceReceipts(
     params?: import("@envoymesh/api").ListCommerceReceiptsParams,
@@ -447,6 +450,9 @@ function createWsNodeServiceClient(
     },
     async sendChatRoomMessage(roomId: string, text: string) {
       return wsClient.rpc("sendChatRoomMessage", { roomId, text }) as Promise<SendChatResult>;
+    },
+    async sendChatRoomAttachment(params: import("@envoymesh/api").SendChatRoomAttachmentParams) {
+      return wsClient.rpc("sendChatRoomAttachment", params as unknown as Record<string, unknown>);
     },
     async listAgentActivity(params?: import("@envoymesh/api").ListAgentActivityParams) {
       return wsClient.rpc("listAgentActivity", (params ?? {}) as Record<string, unknown>) as Promise<
@@ -1116,8 +1122,11 @@ function appendChatToThreads(
     return null;
   }
   const list = prev[key] ?? [];
-  if (list.some((m) => m.messageId === msg.messageId)) {
-    return prev;
+  const existingIdx = list.findIndex((m) => m.messageId === msg.messageId);
+  if (existingIdx >= 0) {
+    const nextList = [...list];
+    nextList[existingIdx] = msg;
+    return { ...prev, [key]: nextList };
   }
   const ts = (m: ChatMessage) => {
     const raw = m.metadata?.timestamp;
