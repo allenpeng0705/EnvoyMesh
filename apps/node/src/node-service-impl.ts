@@ -426,6 +426,9 @@ function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Pro
   });
 }
 
+/** Per-topic DHT provide/cancel cap so profile save does not block on sparse WAN bootstrap. */
+const DISCOVERY_TOPIC_OP_TIMEOUT_MS = 10_000;
+
 /**
  * NodeServiceImpl implements the NodeService interface.
  *
@@ -1417,7 +1420,6 @@ class NodeServiceImpl implements NodeService {
 
     const signedProfile = await this._signAndSaveHumanProfile(updatedPayload);
 
-    // Handle DHT advertising based on visibility (run in background with timeout)
     const config = await this._configStore.load();
     const isPublicNetwork = config?.bootstrapPresets && config.bootstrapPresets.length > 0;
     const interests = [...(updatedPayload.hobbies ?? []), ...(updatedPayload.knowledge ?? [])];
@@ -1434,22 +1436,43 @@ class NodeServiceImpl implements NodeService {
       capabilityTags,
     );
 
-    // If profile is public AND we're on public network, advertise interests + geo + capabilities as DHT topics
+    // DHT advertise/cancel can hang on sparse networks — never block the RPC response.
+    void this._applyProfileDiscoveryAdvertising({
+      profileVisibility: updatedPayload.profileVisibility,
+      isPublicNetwork: Boolean(isPublicNetwork),
+      interests,
+      username,
+      locationTopics,
+      capabilityTopics,
+    }).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[node-service] profile discovery advertising failed: ${msg}`);
+    });
+
+    return signedProfile;
+  }
+
+  private async _applyProfileDiscoveryAdvertising(input: {
+    profileVisibility: HumanProfilePayload["profileVisibility"];
+    isPublicNetwork: boolean;
+    interests: string[];
+    username: string;
+    locationTopics: string[];
+    capabilityTopics: string[];
+  }): Promise<void> {
     console.log(
-      `[node-service] Checking DHT advertising: visibility=${updatedPayload.profileVisibility}, isPublicNetwork=${isPublicNetwork}, interests=${JSON.stringify(interests)}, locationTopics=${JSON.stringify(locationTopics)}, capabilityTopics=${JSON.stringify(capabilityTopics)}`,
+      `[node-service] Checking DHT advertising: visibility=${input.profileVisibility}, isPublicNetwork=${input.isPublicNetwork}, interests=${JSON.stringify(input.interests)}, locationTopics=${JSON.stringify(input.locationTopics)}, capabilityTopics=${JSON.stringify(input.capabilityTopics)}`,
     );
-    if (updatedPayload.profileVisibility === "public" && isPublicNetwork) {
+    if (input.profileVisibility === "public" && input.isPublicNetwork) {
       await this._advertisePublicDiscoveryTopics({
-        interests,
-        username,
-        locationTopics,
-        capabilityTopics,
+        interests: input.interests,
+        username: input.username,
+        locationTopics: input.locationTopics,
+        capabilityTopics: input.capabilityTopics,
       });
     } else {
       await this._cancelAutoAdvertisedDiscoveryTopics();
     }
-
-    return signedProfile;
   }
 
   private async _signAndSaveHumanProfile(
@@ -1457,8 +1480,14 @@ class NodeServiceImpl implements NodeService {
   ): Promise<HumanProfile> {
     const selfProfile = this._requireProfile();
     const signedProfile = signHumanProfile(payload, selfProfile.owner.privateKeyPem);
-    await this._humanProfileStore.saveHumanProfile(signedProfile);
-    await this._broadcastProfileSyncToBonds(signedProfile);
+    await raceWithTimeout(
+      this._humanProfileStore.saveHumanProfile(signedProfile),
+      15_000,
+      "saveHumanProfile",
+    );
+    void this._broadcastProfileSyncToBonds(signedProfile).catch((err) => {
+      console.warn("[profile.sync] broadcast failed:", err);
+    });
     return signedProfile as HumanProfile;
   }
 
@@ -1849,7 +1878,11 @@ class NodeServiceImpl implements NodeService {
     if (!mesh) return;
     for (const topic of topics) {
       try {
-        await mesh.cancelCapabilityTopicReprovide(topic);
+        await raceWithTimeout(
+          mesh.cancelCapabilityTopicReprovide(topic),
+          DISCOVERY_TOPIC_OP_TIMEOUT_MS,
+          `cancelCapabilityTopicReprovide(${topic})`,
+        );
         console.log(`[node-service] Cancelled DHT topic: ${topic}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -1930,7 +1963,11 @@ class NodeServiceImpl implements NodeService {
 
     const advertiseOnce = async (topic: string): Promise<boolean> => {
       try {
-        await this._requireMesh().provideCapabilityTopic(topic);
+        await raceWithTimeout(
+          this._requireMesh().provideCapabilityTopic(topic),
+          DISCOVERY_TOPIC_OP_TIMEOUT_MS,
+          `provideCapabilityTopic(${topic})`,
+        );
         console.log(`[node-service] Successfully advertised topic: ${topic}`);
         return true;
       } catch (err) {

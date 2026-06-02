@@ -117,9 +117,11 @@ describe("Profile capability discovery wiring", () => {
     expect(manifest?.capabilities).toContain("coding-help");
     expect(manifest?.capabilities).toContain("expertise:rust");
 
-    for (const topic of profileCapabilityDiscoveryTopics(["coding-help", "expertise:rust"])) {
-      expect(advertised).toContain(topic);
-    }
+    await vi.waitFor(() => {
+      for (const topic of profileCapabilityDiscoveryTopics(["coding-help", "expertise:rust"])) {
+        expect(advertised).toContain(topic);
+      }
+    });
   });
 
   it("removes dropped profile capability tags from manifest on save", async () => {

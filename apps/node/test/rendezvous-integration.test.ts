@@ -477,10 +477,12 @@ describe("NodeServiceImpl - Discovery Configuration", () => {
         hobbies: ["music"],
       });
 
-      expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("music");
-      expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("username:alice");
-      expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("geo:country:US");
-      expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("geo:city:US-boston");
+      await vi.waitFor(() => {
+        expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("music");
+        expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("username:alice");
+        expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("geo:country:US");
+        expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("geo:city:US-boston");
+      });
     });
   });
 
