@@ -1136,7 +1136,12 @@
   overflow-y: auto;
   min-height: 44px;
   max-height: 120px;
-  field-sizing: content;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.chat-composer-textarea::-webkit-scrollbar {
+  display: none;
 }
 
 .chat-input input::placeholder,
