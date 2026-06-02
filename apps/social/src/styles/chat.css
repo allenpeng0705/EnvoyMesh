@@ -720,6 +720,11 @@
   border-right: 1px solid var(--color-border-subtle);
 }
 
+.contact-list > .thread-row,
+.contact-list > .thread-row-with-actions {
+  margin-bottom: var(--space-2);
+}
+
 .contact-list-header {
   display: flex;
   align-items: center;
@@ -783,13 +788,21 @@
   width: 44px;
   height: 44px;
   border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.thread-row .thread-avatar,
+.thread-row .profile-avatar:not(.profile-avatar--photo) {
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: var(--font-bold);
   font-size: var(--text-sm);
-  flex-shrink: 0;
   color: var(--color-on-role);
+}
+
+.thread-row .profile-avatar--photo {
+  display: block;
   object-fit: cover;
 }
 
@@ -806,48 +819,73 @@
 }
 
 .thread-row-with-actions {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
+  position: relative;
   min-width: 0;
 }
 
 .thread-row-with-actions .thread-row {
-  flex: 1;
+  width: 100%;
   min-width: 0;
 }
 
-.thread-row-remove-btn {
-  flex-shrink: 0;
-  align-self: center;
-  width: 2rem;
-  height: 2rem;
-  margin-right: var(--space-1);
-  border: none;
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 1.25rem;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+.thread-row-with-actions .thread-meta {
+  padding-right: calc(1.75rem + var(--space-2));
 }
 
-.thread-row-with-actions:hover .thread-row-remove-btn,
-.thread-row-with-actions:focus-within .thread-row-remove-btn {
+.thread-row-remove-btn {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-1);
+  left: auto;
+  z-index: 2;
+  box-sizing: border-box;
+  width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  max-width: 1.75rem;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  box-shadow: var(--shadow-xs);
+}
+
+.thread-row-with-actions:hover .thread-row-remove-btn {
   opacity: 1;
+  pointer-events: auto;
 }
 
 @media (hover: none) {
   .thread-row-remove-btn {
-    opacity: 1;
+    opacity: 0.5;
+    pointer-events: auto;
   }
 }
 
-.thread-row-remove-btn:hover {
-  background: var(--color-surface-muted);
-  color: var(--color-danger, #c0392b);
+.thread-row-remove-btn:hover,
+.thread-row-remove-btn:focus-visible {
+  opacity: 1;
+  background: var(--color-surface-elevated);
+  border-color: var(--color-danger, #ef4444);
+  color: var(--color-danger, #ef4444);
+}
+
+.thread-row.active .thread-row-remove-btn {
+  background: var(--color-surface);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border-subtle));
 }
 
 .contact-list-hint {
@@ -949,6 +987,11 @@
   letter-spacing: 0.08em;
   color: var(--color-text-subtle);
   padding: var(--space-3) var(--space-3) var(--space-1);
+}
+
+.contact-list-section-header .contact-list-section-label {
+  padding-right: 0;
+  padding-bottom: 0;
 }
 
 .contact-notes-panel {
@@ -1166,14 +1209,14 @@
     background: var(--color-surface);
   }
 
-  .contact-list button {
+  .contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn) {
     border-radius: var(--radius-md);
     min-height: 48px;
     transition: background var(--transition-fast);
   }
 
-  .contact-list button.active,
-  .contact-list button[aria-current="true"] {
+  .contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn).active,
+  .contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn)[aria-current="true"] {
     background: var(--color-primary-subtle);
     border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
   }

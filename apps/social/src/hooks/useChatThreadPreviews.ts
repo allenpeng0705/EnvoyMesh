@@ -66,20 +66,26 @@ export function useChatThreadPreviews(peerOwnerIds: readonly string[]): Record<s
   const { humanProfile } = useNodeState();
   const selfOwnerId = humanProfile?.ownerId;
 
-  const sortedKey = useMemo(() => [...peerOwnerIds].sort().join("\0"), [peerOwnerIds]);
+  /** Stable string key — avoids re-fetch / re-subscribe when parent passes a new array with same ids. */
+  const peerIdsKey = [...peerOwnerIds].sort().join("\0");
+  const peerIdSet = useMemo(
+    () => new Set(peerIdsKey ? peerIdsKey.split("\0") : []),
+    [peerIdsKey],
+  );
 
   const [previews, setPreviews] = useState<Record<string, ThreadPreview>>({});
 
   useEffect(() => {
     let cancelled = false;
-    if (peerOwnerIds.length === 0) {
+    if (peerIdSet.size === 0) {
       setPreviews({});
       return;
     }
+    const ids = [...peerIdSet];
     void (async () => {
       const next: Record<string, ThreadPreview> = {};
       await Promise.all(
-        peerOwnerIds.map(async (pid) => {
+        ids.map(async (pid) => {
           try {
             const msgs = await nodeService.listChatHistory(pid, 48);
             const last = latestMessage(msgs);
@@ -99,12 +105,12 @@ export function useChatThreadPreviews(peerOwnerIds: readonly string[]): Record<s
     return () => {
       cancelled = true;
     };
-  }, [nodeService, sortedKey, peerOwnerIds]);
+  }, [nodeService, peerIdsKey]);
 
   useEffect(() => {
     const applyPreview = (msg: ChatMessage) => {
       const peer = previewThreadKey(msg, selfOwnerId);
-      if (!peer || !peerOwnerIds.includes(peer)) return;
+      if (!peer || !peerIdSet.has(peer)) return;
       setPreviews((prev) => ({
         ...prev,
         [peer]: {
@@ -122,7 +128,7 @@ export function useChatThreadPreviews(peerOwnerIds: readonly string[]): Record<s
       unsub();
       unsubRoom();
     };
-  }, [nodeService, selfOwnerId, sortedKey, peerOwnerIds]);
+  }, [nodeService, selfOwnerId, peerIdsKey, peerIdSet]);
 
   return previews;
 }

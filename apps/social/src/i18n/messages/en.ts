@@ -54,6 +54,9 @@ export const en = {
     themeDark: "Dark",
     themeLight: "Light",
     nodeConnectivity: "Node connectivity",
+    language: "Language: {language}",
+    languageMenu: "Language: {language}. Click to change.",
+    languagePicker: "Choose language",
   },
   common: {
     back: "← Back",

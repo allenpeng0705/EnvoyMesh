@@ -86,9 +86,8 @@ textarea::placeholder {
 
 .header-nav button.active {
   color: var(--color-primary);
-  box-shadow: inset 0 -2px 0 0 var(--color-primary);
-  border-radius: 0;
   background: transparent;
+  font-weight: var(--font-semibold);
 }
 
 .header-right {
@@ -211,6 +210,50 @@ textarea::placeholder {
 .theme-toggle-btn:hover {
   color: var(--color-text);
   background: var(--color-surface-elevated);
+}
+
+.locale-switcher {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.locale-switcher__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 200;
+  min-width: 9rem;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.locale-switcher__option {
+  display: block;
+  width: 100%;
+  padding: 0.375rem 0.625rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.locale-switcher__option:hover {
+  background: var(--color-surface);
+}
+
+.locale-switcher__option.active {
+  color: var(--color-primary);
+  font-weight: var(--font-semibold);
+  background: var(--color-primary-subtle);
 }
 
 .relay-warning {
@@ -532,7 +575,7 @@ textarea::placeholder {
   padding: 0 var(--space-4);
 }
 
-.contact-list button {
+.contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn) {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -547,15 +590,15 @@ textarea::placeholder {
   transition: background var(--transition-fast);
 }
 
-.contact-list button:has(.contact-thread-meta) {
+.contact-list button:has(.contact-thread-meta):not(.thread-row-remove-btn, .contact-list-section-add-btn) {
   align-items: flex-start;
 }
 
-.contact-list button:hover {
+.contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn):hover {
   background: var(--color-primary-subtle);
 }
 
-.contact-list button.active {
+.contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn).active {
   background: var(--color-primary-subtle);
   color: var(--color-primary);
   box-shadow: inset 3px 0 0 0 var(--color-primary);
@@ -1423,10 +1466,16 @@ textarea::placeholder {
 
 .library-view-toolbar {
   display: flex;
-  gap: 0.75rem;
+  gap: var(--space-2);
   margin-bottom: 1rem;
   flex-wrap: wrap;
   align-items: center;
+}
+
+.library-view-toolbar .primary,
+.library-view-toolbar .secondary {
+  min-height: 2.5rem;
+  flex-shrink: 0;
 }
 
 .library-view-search {
@@ -1499,16 +1548,44 @@ textarea::placeholder {
 
 .library-view-actions {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  align-items: flex-start;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.library-view-actions .primary,
+.library-view-actions .secondary {
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.library-published-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-elevated);
+  cursor: pointer;
+  user-select: none;
+}
+
+.library-published-toggle input {
+  accent-color: var(--color-primary);
 }
 
 .library-row-ipfs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: center;
+  width: 100%;
 }
 
 .library-view-cards {
@@ -1540,9 +1617,18 @@ textarea::placeholder {
 
 .library-view-card-actions {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   margin-top: 0.75rem;
+  align-items: center;
+}
+
+.library-view-card-actions .primary,
+.library-view-card-actions .secondary {
+  min-height: 2.25rem;
+  padding: 0.4rem 0.85rem;
+  font-size: var(--text-xs);
 }
 
 .chat-input .chat-share-file-btn {
@@ -1999,14 +2085,16 @@ textarea::placeholder {
 
 .contact-list-section-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding-right: 1rem;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding-right: var(--space-3);
+  padding-bottom: var(--space-1);
 }
 
 .contact-list-section-header .contact-list-section-label {
-  padding-bottom: 0.25rem;
+  padding-bottom: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .contact-list-section-add-btn {
@@ -2015,18 +2103,23 @@ textarea::placeholder {
   justify-content: center;
   width: 1.75rem;
   height: 1.75rem;
+  min-height: 1.75rem;
+  max-width: 1.75rem;
   padding: 0;
+  margin-left: auto;
+  margin-bottom: 1px;
   border: none;
   border-radius: var(--radius-full);
-  background: var(--color-primary-subtle);
-  color: var(--color-primary);
+  background: transparent;
+  color: var(--color-text-muted);
   cursor: pointer;
   flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .contact-list-section-add-btn:hover {
-  background: var(--color-primary);
-  color: var(--color-on-primary, #fff);
+  background: var(--color-surface-elevated);
+  color: var(--color-primary);
 }
 
 /* Pending contact items */
@@ -3857,10 +3950,10 @@ button:disabled {
 
   /* Clearer active tab on small screens (light + dark) */
   .header-nav button.active {
-    box-shadow: none;
-    border-radius: var(--radius-md);
-    background: var(--color-primary-subtle);
-    color: var(--color-on-primary-subtle);
+    box-shadow: inset 0 -2px 0 0 var(--color-primary);
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-primary);
   }
 
   .header-profile-btn {
@@ -3894,7 +3987,7 @@ button:disabled {
     display: none;
   }
 
-  .contact-list button {
+  .contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn) {
     padding: 0.625rem 0.75rem;
   }
 

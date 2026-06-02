@@ -137,8 +137,11 @@ export class WsServer {
     ws.on("message", async (data: Buffer) => {
       try {
         const message = JSON.parse(data.toString()) as JsonRpcRequest;
-        // Record owner activity for online/offline detection
-        this.nodeService.recordOwnerActivity();
+        // Record owner activity for online/offline detection,
+        // but skip subscription on/off RPCs — they're infrastructure, not user actions.
+        if (message.method !== "on" && message.method !== "off") {
+          this.nodeService.recordOwnerActivity();
+        }
         await this.handleMessage(ws, message);
       } catch (error) {
         console.error("[ws-server] Error handling message:", error);
@@ -304,7 +307,6 @@ export class WsServer {
   // ============================================
 
   private subscribe(ws: WebSocket, event: string): void {
-    console.log(`[ws-server] subscribe: ${event}`);
     if (!this.subscriptions.has(event)) {
       this.subscriptions.set(event, new Set());
     }
@@ -332,20 +334,13 @@ export class WsServer {
    * Emit an event to all subscribed clients
    */
   emitEvent(event: string, data: unknown): void {
-    console.log(`[ws-server] emitEvent: ${event}`, data);
     const listeners = this.subscriptions.get(event);
-    console.log(`[ws-server] listeners for ${event}: ${listeners?.size ?? 0}`);
     if (listeners) {
       for (const ws of listeners) {
         if (ws.readyState === WebSocket.OPEN) {
-          console.log(`[ws-server] sending event ${event} to a client, readyState=${ws.readyState}`);
           this.sendEvent(ws, event, data);
-        } else {
-          console.log(`[ws-server] skipping client - not OPEN, readyState=${ws.readyState}`);
         }
       }
-    } else {
-      console.log(`[ws-server] no listeners for ${event}!`);
     }
   }
 

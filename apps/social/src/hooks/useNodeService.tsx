@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createWsClient } from "../ws-client.js";
 import { DEFAULT_APP_SETTINGS, loadAppSettings } from "../lib/storage.js";
 import type {
@@ -806,6 +806,25 @@ export function NodeServiceProvider({
     }
   }, [clientFactory, connectionPrefs.autoConnect]);
 
+  // Proxy delegates all calls to the real client while overriding connection-tracked
+  // getters. Necessary because class instances (DirectCallClient) store methods on
+  // the prototype — { ...client } would lose them.
+  // Memoized so hooks depending on nodeService don't re-run on every render.
+  const ctx = useMemo(() => {
+    if (!client) return null;
+    return new Proxy(client, {
+      get(target, prop, receiver) {
+        if (prop === "isConnected") return connected;
+        if (prop === "isReady") return ready;
+        if (prop === "reconnectAttempts") return reconnectAttempts;
+        if (prop === "getLastError") return () => lastError;
+        return Reflect.get(target, prop, receiver);
+      },
+    }) as NodeServiceClient;
+  }, [client, connected, ready, reconnectAttempts, lastError]);
+
+  const nodeClientTransport: NodeClientTransport = clientFactory ? "direct-call" : "websocket";
+
   if (!client) {
     return (
       <div className="app">
@@ -818,21 +837,6 @@ export function NodeServiceProvider({
       </div>
     );
   }
-
-  // Proxy delegates all calls to the real client while overriding connection-tracked
-  // getters. Necessary because class instances (DirectCallClient) store methods on
-  // the prototype — { ...client } would lose them.
-  const ctx = new Proxy(client, {
-    get(target, prop, receiver) {
-      if (prop === "isConnected") return connected;
-      if (prop === "isReady") return ready;
-      if (prop === "reconnectAttempts") return reconnectAttempts;
-      if (prop === "getLastError") return () => lastError;
-      return Reflect.get(target, prop, receiver);
-    },
-  }) as NodeServiceClient;
-
-  const nodeClientTransport: NodeClientTransport = clientFactory ? "direct-call" : "websocket";
 
   return (
     <DesktopConnectionPrefsContext.Provider value={{ updatePrefs: updateConnectionPrefs }}>

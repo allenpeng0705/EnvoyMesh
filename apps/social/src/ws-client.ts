@@ -259,33 +259,12 @@ export class WsClient {
     }
     handlers.add(handler);
 
-    const registerOnServer = (): void => {
-      if (this._disposed || !this.isConnected()) return;
-      void this.rpc("on", { event }).catch((err) => {
-        console.warn(`[ws-client] subscribe ${event} failed:`, err);
-      });
-    };
-
-    if (this.isConnected()) {
-      registerOnServer();
-    } else {
-      const unsubConnect = this.onStatusChange((status) => {
-        if (status === "connected") {
-          unsubConnect();
-          registerOnServer();
-        }
-      });
-    }
+    // WsServer auto-subscribes connected clients to all push events — local handlers only.
 
     return () => {
       handlers?.delete(handler);
       if (handlers?.size === 0) {
         this.handlers.delete(event);
-        if (this.isConnected()) {
-          void this.rpc("off", { event }).catch((err) => {
-            console.warn(`[ws-client] unsubscribe ${event} failed:`, err);
-          });
-        }
       }
     };
   }

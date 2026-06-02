@@ -7150,12 +7150,6 @@ class NodeServiceImpl implements NodeService {
 
   recordOwnerActivity(): void {
     this.lastActivityTimestamp = Date.now();
-    void this.logOwnerActivityRecorded();
-  }
-
-  private async logOwnerActivityRecorded(): Promise<void> {
-    const online = await this.isOwnerOnline();
-    console.log(`[activity] owner activity recorded, isOnline=${online}`);
   }
 
   async isOwnerOnline(): Promise<boolean> {

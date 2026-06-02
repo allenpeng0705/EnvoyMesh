@@ -256,7 +256,7 @@ export function LibraryView() {
           )}
         </div>
       )}
-      <button type="button" className="secondary" onClick={() => setShareFor(row)}>
+      <button type="button" className="primary" onClick={() => setShareFor(row)}>
         {t("library.share")}
       </button>
     </>
@@ -280,7 +280,7 @@ export function LibraryView() {
         </button>
         <button
           type="button"
-          className="secondary"
+          className="primary"
           disabled={importBusy}
           onClick={() => fileInputRef.current?.click()}
         >

@@ -435,7 +435,6 @@ function recordOwnerActivity(): void {
   lastActivityTimestamp = Date.now();
   recordMeshActivity(lastActivityTimestamp);
   modeController.recordOwnerActivity();
-  console.log(`[activity] owner activity recorded, online=${isOwnerOnline()}, mode=${modeController.getCurrentMode()}`);
 }
 
 /** Relay-aware dial hints for outbound message/chat to a libp2p transport peer id. */

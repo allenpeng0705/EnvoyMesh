@@ -116,7 +116,11 @@ export function ChatSidebar({ selectedContact, onSelectContact, onGroupCreated, 
 
   const bondPeerIds = useMemo(() => bonds.map((b) => b.peerOwnerId), [bonds]);
   const roomThreadKeys = useMemo(() => chatRooms.map((r) => chatRoomThreadKey(r.roomId)), [chatRooms]);
-  const threadPreviews = useChatThreadPreviews([...bondPeerIds, ...roomThreadKeys]);
+  const previewThreadKeys = useMemo(
+    () => [...bondPeerIds, ...roomThreadKeys],
+    [bondPeerIds, roomThreadKeys],
+  );
+  const threadPreviews = useChatThreadPreviews(previewThreadKeys);
 
   const sortedChatRooms = useMemo(
     () => sortByLatestMessage(chatRooms, (room) => chatRoomThreadKey(room.roomId), threadPreviews),
@@ -340,7 +344,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onGroupCreated, 
                     openRemoveContact(contact.peerOwnerId, label);
                   }}
                 >
-                  ×
+                  <span aria-hidden="true">×</span>
                 </button>
               </div>
             );

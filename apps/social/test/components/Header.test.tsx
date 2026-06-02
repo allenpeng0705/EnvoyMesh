@@ -129,4 +129,12 @@ describe("Header", () => {
     expect(statuses.length).toBeGreaterThan(0);
     expect(statuses[0]).toBeDefined();
   });
+
+  it("opens language menu and lists locale options", () => {
+    renderHeader(baseProps);
+    fireEvent.click(screen.getByRole("button", { name: /language:/i }));
+    expect(screen.getByRole("listbox", { name: /choose language/i })).toBeDefined();
+    expect(screen.getByRole("option", { name: "English" })).toBeDefined();
+    expect(screen.getByRole("option", { name: "中文" })).toBeDefined();
+  });
 });

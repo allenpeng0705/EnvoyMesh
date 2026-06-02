@@ -233,9 +233,10 @@
 
 .app-header__nav button.active {
   color: var(--color-primary);
-  background: var(--color-primary-subtle);
+  background: transparent;
   box-shadow: inset 0 -2px 0 0 var(--color-primary);
-  border-radius: var(--radius-sm);
+  border-radius: 0;
+  font-weight: var(--font-semibold);
 }
 
 .header-status-strip {
@@ -944,7 +945,9 @@
   text-align: left;
 }
 
-.discover-primary-btn {
+.discover-primary-btn,
+button.primary,
+.primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -960,37 +963,54 @@
   transition: background var(--transition-fast);
 }
 
-.discover-primary-btn:hover:not(:disabled) {
+.discover-primary-btn:hover:not(:disabled),
+button.primary:hover:not(:disabled),
+.primary:hover:not(:disabled) {
   background: var(--color-primary-hover);
 }
 
-.discover-primary-btn:disabled {
+.discover-primary-btn:disabled,
+button.primary:disabled,
+.primary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.discover-secondary-btn {
+.discover-secondary-btn,
+button.secondary:not(.danger),
+.secondary:not(.danger) {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
   min-height: 44px;
   padding: var(--space-2) var(--space-4);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
-  background: var(--color-surface);
+  background: var(--color-surface-elevated);
   color: var(--color-text);
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
   cursor: pointer;
   transition:
     border-color var(--transition-fast),
-    background var(--transition-fast);
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 
-.discover-secondary-btn:hover {
+.discover-secondary-btn:hover:not(:disabled),
+button.secondary:not(.danger):hover:not(:disabled),
+.secondary:not(.danger):hover:not(:disabled) {
   border-color: var(--color-primary);
   background: var(--color-primary-subtle);
   color: var(--color-primary);
+}
+
+.discover-secondary-btn:disabled,
+button.secondary:not(.danger):disabled,
+.secondary:not(.danger):disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Status messages */

@@ -7,6 +7,7 @@ import type { ViewName } from "../App.js";
 import { useTheme } from "../context/ThemeContext.js";
 import { useT } from "../context/I18nContext.js";
 import { DarkModeIcon, LightModeIcon } from "../icons.js";
+import { LocaleSwitcher } from "./LocaleSwitcher.js";
 import { ProfilePhotoAvatar } from "./ProfilePhotoAvatar.js";
 
 interface HeaderProps {
@@ -167,6 +168,7 @@ export function Header({
             </span>
           )}
         </div>
+        <LocaleSwitcher />
         <button
           type="button"
           className="theme-toggle-btn"
