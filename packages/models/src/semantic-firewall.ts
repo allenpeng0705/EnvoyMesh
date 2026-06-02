@@ -1,6 +1,15 @@
 /** Hard cap for model-bound prompts (characters, not bytes). */
 export const MAX_MODEL_PROMPT_CHARS = 48_000;
 
+/** Max text scanned for egress secrets (planner/model answers). */
+const MAX_EGRESS_SCAN_CHARS = 16_384;
+
+/** Stop after this many pattern hits to avoid regex runaway on long prose. */
+const MAX_EGRESS_MATCHES = 32;
+
+/** Max matches collected per pattern (overlapping patterns like BIP39). */
+const MAX_MATCHES_PER_PATTERN = 8;
+
 /** Max consecutive newline characters after normalization (DoS / log spam guard). */
 const MAX_CONSECUTIVE_NEWLINES = 50;
 
@@ -93,9 +102,9 @@ const EGRESS_SECRET_PATTERNS: Array<{ pattern: RegExp; description: string }> = 
     pattern: /(?<![0-9A-Za-z])(?:ghp|gho|ghu|ghs|ghr|glpat|gitlab|password|passwd|secret)[^0-9A-Za-z]{0,5}[0-9A-Za-z_]{20,80}(?![0-9A-Za-z])/i,
     description: "Personal access token",
   },
-  // BIP39 seed phrase (12-24 word mnemonic)
+  // BIP39 seed phrase (12–24 lowercase words on one line — avoid prose backtracking)
   {
-    pattern: /\b(?:\w+\s+){11,23}\w+\b/,
+    pattern: /^(?:[a-z]{3,}\s+){11,23}[a-z]{3,}$/im,
     description: "Possible seed phrase (requires manual review)",
   },
   // JSON Web Token (header.payload.signature)
@@ -119,16 +128,16 @@ const EGRESS_SECRET_PATTERNS: Array<{ pattern: RegExp; description: string }> = 
  * Returns `ok: false` with match details if secrets are detected.
  */
 export function evaluateEgressContent(input: { text: string }): EgressScanResult {
-  const { text } = input;
-  if (!text || text.trim().length === 0) {
-    return { ok: true, text };
+  const text = (input.text ?? "").slice(0, MAX_EGRESS_SCAN_CHARS);
+  if (text.trim().length === 0) {
+    return { ok: true, text: input.text ?? "" };
   }
 
   const matches: EgressSecretMatch[] = [];
 
   for (const { pattern, description } of EGRESS_SECRET_PATTERNS) {
     let match: RegExpExecArray | null;
-    // Reset lastIndex before each search
+    let patternMatches = 0;
     pattern.lastIndex = 0;
     while ((match = pattern.exec(text)) !== null) {
       matches.push({
@@ -137,10 +146,16 @@ export function evaluateEgressContent(input: { text: string }): EgressScanResult
         index: match.index,
         length: match[0].length,
       });
-      // Prevent infinite loops on zero-length matches
+      patternMatches += 1;
+      if (patternMatches >= MAX_MATCHES_PER_PATTERN || matches.length >= MAX_EGRESS_MATCHES) {
+        break;
+      }
       if (match.index === pattern.lastIndex) {
         pattern.lastIndex += 1;
       }
+    }
+    if (matches.length >= MAX_EGRESS_MATCHES) {
+      break;
     }
   }
 
