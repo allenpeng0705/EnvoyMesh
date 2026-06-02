@@ -105,7 +105,7 @@ describe("NodeServiceImpl.runOwnerAgentTurn", () => {
 describe.skipIf(!isPhase18LiveModelConfigured())(
   `NodeServiceImpl.runOwnerAgentTurn live MiniMax (${phase18MinimaxSkipMessage()})`,
   () => {
-    it("planner selects tools via live MiniMax", async () => {
+    it("planner via live MiniMax with optional audit trail", async () => {
       const node = createTestNode();
       await node.updateCapabilityManifest({ capabilities: [] });
       await node.updateNodeConfig({ modelProviders: getPhase18ModelProviders() });
@@ -116,16 +116,10 @@ describe.skipIf(!isPhase18LiveModelConfigured())(
           turn.intent === "planner_answer" ||
           turn.intent === "planner_exhausted",
       ).toBe(true);
-    }, 120_000);
-
-    it("audits planner tool rounds when MiniMax invokes tools", async () => {
-      const node = createTestNode();
-      await node.updateCapabilityManifest({ capabilities: [] });
-      await node.updateNodeConfig({ modelProviders: getPhase18ModelProviders() });
-      const turn = await node.runOwnerAgentTurn("xyzzy plugh qwerty mesh topology overview");
-      if (turn.toolsUsed.length === 0) return;
-      const audits = await node.listAuditEvents({ limit: 50 });
-      expect(audits.some((row) => row.summary.includes("owner agent planner round"))).toBe(true);
+      if (turn.toolsUsed.length > 0) {
+        const audits = await node.listAuditEvents({ limit: 50 });
+        expect(audits.some((row) => row.summary.includes("owner agent planner round"))).toBe(true);
+      }
     }, 120_000);
   },
 );
