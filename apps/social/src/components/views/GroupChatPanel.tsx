@@ -369,7 +369,7 @@ export function GroupChatPanel({
           </div>
         ) : (
           messageGroups.map(([dateKey, msgs]) => (
-            <div key={dateKey}>
+            <div key={dateKey} className="chat-day-group">
               <div className="date-separator">
                 <span>{fmtDateLabel(msgs[0].metadata.timestamp, t)}</span>
               </div>

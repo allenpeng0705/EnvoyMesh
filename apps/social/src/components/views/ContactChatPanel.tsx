@@ -575,7 +575,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
           </div>
         ) : (
           messageGroups.map(([dateKey, msgs]) => (
-            <div key={dateKey}>
+            <div key={dateKey} className="chat-day-group">
               <div className="date-separator"><span>{fmtDateLabel(msgs[0].metadata.timestamp, t)}</span></div>
               {buildMessageStacks(msgs, (a, b) => isOutgoingMsg(a) === isOutgoingMsg(b)).map((stack) => {
                 const outgoing = isOutgoingMsg(stack[0]);

@@ -340,10 +340,21 @@
   display: flex;
   flex-direction: column;
   padding: var(--space-4) var(--space-5);
-  gap: var(--space-4);
+  gap: var(--space-5);
   background:
     radial-gradient(ellipse 80% 50% at 50% 0%, var(--chat-canvas-glow), transparent 70%),
     var(--chat-canvas-bg);
+}
+
+/* Vertical rhythm between message stacks within a day (group + direct chat) */
+.chat-day-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.chat-day-group .date-separator {
+  margin-bottom: var(--space-1);
 }
 
 .message-stack-row {
