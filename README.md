@@ -203,16 +203,40 @@ operations, and troubleshooting.
 
 ## Current status
 
-Phases 1–11 are shipped. **Phase 11** brings EnvoyMesh to mobile: a Capacitor iOS/Android
-wrapper that runs a full Envoy node in-process (Social UI + `MobileNode` in one WebView,
-native SQLite/Filesystem/Keychain, relay-only transport, multi-device shared identity).
-Earlier phases delivered the agent model, tool registry, memory, mode/sessions/style, triggers,
-approvals, external-agent digest, and the OpenClaw/HomeClaw P2P bridge.
+**Phase 18 — Native owner agent — is the active milestone and is complete.**
+The Social **Assistant** is no longer a thin LLM shell: it now drives the same `ToolRegistry`,
+route catalog, and async workers that the home-node agent uses, gated by the Bond Engine,
+mandates, and the approval queue. Owners can tell the Assistant to make friends (Trust-mode
+intros, warm pre-bond chat — the human still commits the bond), find documents (local vault,
+bonded libraries, async acquisition jobs), find capable peers (capability routing, ranked
+discovery), and run or request mandate-bound services.
+
+Phases 1–18 are shipped. Selected highlights:
+
+- **Phase 11 — Mobile (shipped).** Capacitor iOS/Android wrapper that runs a full Envoy node
+  in-process: Social UI + `MobileNode` in one WebView, native SQLite/Filesystem/Keychain,
+  relay-only transport, multi-device shared identity.
+- **Phase 12 — Trust mode & social mediation (shipped).** `social.intro.*` and `bond.*`
+  EMP payloads, rate limits, nonce-replay protection, `friendMatchingPreferencesSigned`,
+  end-to-end intro/bond flow smoke in CI.
+- **Phase 13 — A2A actor disclosure (shipped).** Required envelope roles, honest `agent`
+  wire role, chat badges, Activity feed, A2A orchestrator.
+- **Phases 15–17 — Reach, semantics, location (shipped).** WAN capability topics,
+  H2A channel semantics, location-scoped peer discovery.
+- **Phase 16 — Standing delegation & autonomous postures (shipped).** Social-proxy runtime
+  with standing mandate; reactive and proactive modes; human `bond.accept` policy.
+- **Phase 18 — Native owner agent (shipped, current).** Assistant orchestrates real
+  `mesh.*` tools, runs document-acquisition and capability-provider jobs from natural
+  language, and signs outbound work as `senderRole: "agent"` with an owner credential.
+
+Next pulls: **15E follow-ons** (hop-2 morning report ranking, physical two-NAT ledger,
+DID WAN resolver) and parked items (Story E payment rail, thin satellite app).
 
 The full phase-by-phase plan lives in [`docs/implementation-plan.md`](docs/implementation-plan.md).
-The current redesign strategy — including the rule that early-stage development allows breaking
-redesigns when they advance the architecture — is in
-[`docs/redesign-strategy.md`](docs/redesign-strategy.md).
+The current redesign strategy — including the rule that early-stage development allows
+breaking redesigns when they advance the architecture — is in
+[`docs/redesign-strategy.md`](docs/redesign-strategy.md). The Assistant-as-agent design
+rationale is in [`docs/native-owner-agent.md`](docs/native-owner-agent.md).
 
 ---
 
