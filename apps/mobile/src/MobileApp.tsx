@@ -11,6 +11,7 @@ import { useCallback, useState, type ReactNode } from "react";
 import { useNodeState } from "@envoymesh/social/context/NodeStateContext.js";
 import { useInboxActivityCount } from "@envoymesh/social/hooks/useInboxActivityCount.js";
 import { useTheme } from "@envoymesh/social/context/ThemeContext.js";
+import { useT } from "@envoymesh/social/context/I18nContext.js";
 import { ErrorBoundary } from "@envoymesh/social/components/ErrorBoundary.js";
 import { LibraryView } from "@envoymesh/social/components/views/LibraryView.js";
 import { MobileChatView } from "./views/MobileChatView.js";
@@ -76,10 +77,10 @@ function TabButton({ icon, label, active, onClick, id, badge }: TabButtonProps) 
 // ---------------------------------------------------------------------------
 
 const TAB_TITLES: Record<TabId, string> = {
-  chat: "Chats",
-  contacts: "Contacts",
-  discover: "Discover",
-  me: "Me",
+  chat: "mobile.tabs.chats",
+  contacts: "mobile.tabs.contacts",
+  discover: "mobile.tabs.discover",
+  me: "mobile.tabs.me",
 };
 
 function tabPanelClass(activeTab: TabId, panelTab: TabId): string {
@@ -91,6 +92,7 @@ function tabPanelClass(activeTab: TabId, panelTab: TabId): string {
 // ---------------------------------------------------------------------------
 
 export function MobileApp() {
+  const t = useT();
   const { isConnected, nodeStatus } = useNodeState();
   const inboxActivityCount = useInboxActivityCount();
   const { theme, resolved, setTheme } = useTheme();
@@ -121,7 +123,7 @@ export function MobileApp() {
       <div className="mobile-app">
         <div className="mobile-loading">
           <div className="spinner" />
-          <p style={{ marginTop: 16, fontSize: 14 }}>Connecting to EnvoyMesh...</p>
+          <p style={{ marginTop: 16, fontSize: 14 }}>{t("mobile.tabs.chats")}</p>
         </div>
       </div>
     );
@@ -137,7 +139,7 @@ export function MobileApp() {
           </div>
           <h2 style={{ marginTop: 16, fontWeight: 600 }}>EnvoyMesh</h2>
           <p style={{ fontSize: 14, lineHeight: 1.5 }}>
-            Node is offline. Pull to refresh or restart the app.
+            {t("splash.notConnected")}
           </p>
         </div>
       </div>
@@ -159,7 +161,7 @@ export function MobileApp() {
               >
                 &#8592;
               </button>
-              <span className="top-bar-title">Settings</span>
+              <span className="top-bar-title">{t("mobile.profile.settings")}</span>
             </>
           ) : currentTab === "me" && meView === "library" ? (
             <>
@@ -170,12 +172,12 @@ export function MobileApp() {
               >
                 &#8592;
               </button>
-              <span className="top-bar-title">Library</span>
+              <span className="top-bar-title">{t("mobile.profile.library")}</span>
             </>
           ) : (
             <>
               <div className="top-bar-logo">E</div>
-              <span className="top-bar-title">{TAB_TITLES[currentTab]}</span>
+              <span className="top-bar-title">{t(TAB_TITLES[currentTab])}</span>
             </>
           )}
         </div>
@@ -243,20 +245,20 @@ export function MobileApp() {
       {/* Bottom tab bar — WeChat-style 4 tabs */}
       <nav className="bottom-tabs" role="tablist">
         <TabButton
-          id="chat" icon={<ChatIcon size={22} />} label="Chats"
+          id="chat" icon={<ChatIcon size={22} />} label={t("mobile.tabs.chats")}
           active={currentTab === "chat"} onClick={(id) => { setCurrentTab(id); }}
           badge={inboxActivityCount}
         />
         <TabButton
-          id="contacts" icon={<ContactsIcon size={22} />} label="Contacts"
+          id="contacts" icon={<ContactsIcon size={22} />} label={t("mobile.tabs.contacts")}
           active={currentTab === "contacts"} onClick={(id) => { setCurrentTab(id); }}
         />
         <TabButton
-          id="discover" icon={<SearchIcon size={22} />} label="Discover"
+          id="discover" icon={<SearchIcon size={22} />} label={t("mobile.tabs.discover")}
           active={currentTab === "discover"} onClick={(id) => { setCurrentTab(id); }}
         />
         <TabButton
-          id="me" icon={<ProfileIcon size={22} />} label="Me"
+          id="me" icon={<ProfileIcon size={22} />} label={t("mobile.tabs.me")}
           active={currentTab === "me"} onClick={(id) => { setCurrentTab(id); setMeView("profile"); }}
         />
       </nav>
