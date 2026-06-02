@@ -592,6 +592,19 @@ export const zh = mergeMessages(en, {
       settings: "设置",
       app: "应用",
     },
+    chat: {
+      chats: "聊天",
+      inbox: "收件箱",
+      threadHint: "消息和提醒 — 绑定和发现功能在联系人页面。",
+      aiName: "Envoy AI",
+      aiPrompt: "问任何问题",
+      helloRequest: "打招呼请求",
+      selectContact: "选择联系人",
+      selectContactDesc: "选择联系人开始聊天",
+      askAi: "问 AI...",
+      typeMessage: "输入消息...",
+      shareFile: "分享库文件",
+    },
     settings: {
       tabs: {
         node: "节点",

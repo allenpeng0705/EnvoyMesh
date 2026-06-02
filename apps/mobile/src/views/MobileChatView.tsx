@@ -252,7 +252,7 @@ export function MobileChatView({
               <div className="mv-contact-avatar">{r.profile.displayName[0]}</div>
               <div className="mv-contact-info">
                 <div className="mv-contact-name">{r.profile.displayName}</div>
-                <div className="mv-contact-preview">Hello request</div>
+                <div className="mv-contact-preview">{t("mobile.chat.helloRequest")}</div>
               </div>
               <div style={{ display: "flex", gap: "var(--space-1)" }}>
                 <button
@@ -332,8 +332,8 @@ export function MobileChatView({
           {bonds.length === 0 && pendingHellOs.length === 0 && pendingMessages.length === 0 && (
             <div className="mv-empty-state" style={{ padding: "var(--space-8) var(--space-4)" }}>
               <div className="mv-empty-state-icon"><ChatIcon size={40} /></div>
-              <div className="mv-empty-state-title">No contacts yet</div>
-              <div className="mv-empty-state-desc">Go to Discover to find people</div>
+              <div className="mv-empty-state-title">{t("mobile.contacts.emptyTitle")}</div>
+              <div className="mv-empty-state-desc">{t("mobile.chat.selectContactDesc")}</div>
             </div>
           )}
         </div>
@@ -342,8 +342,8 @@ export function MobileChatView({
         <div className="mv-chat-panel">
           <div className="mv-empty-state" style={{ flex: 1 }}>
             <div className="mv-empty-state-icon"><ChatIcon size={48} /></div>
-            <div className="mv-empty-state-title">Select a contact</div>
-            <div className="mv-empty-state-desc">Choose a contact to start chatting</div>
+            <div className="mv-empty-state-title">{t("mobile.chat.selectContact")}</div>
+            <div className="mv-empty-state-desc">{t("mobile.chat.selectContactDesc")}</div>
           </div>
         </div>
       </div>
@@ -353,7 +353,7 @@ export function MobileChatView({
   // ---- Chat active ----
   const contact = bonds.find((b) => b.peerOwnerId === selectedContact);
   const headerLabel = selectedContact === AI_CONTACT_ID
-    ? "Envoy AI"
+    ? t("mobile.chat.aiName")
     : contact
       ? contactLabel(contact)
       : selectedContact;
@@ -380,7 +380,7 @@ export function MobileChatView({
             key={i}
             className={`mv-message ${msg.role === "user" ? "outgoing" : "incoming"}`}
           >
-            {msg.role === "ai" && <div className="mv-message-sender">Envoy AI</div>}
+            {msg.role === "ai" && <div className="mv-message-sender">{t("mobile.chat.aiName")}</div>}
             <Markdown text={msg.text} className="message-text" />
           </div>
         ))}
@@ -415,7 +415,7 @@ export function MobileChatView({
         {/* AI loading indicator */}
         {aiLoading && (
           <div className="mv-message incoming">
-            <div className="mv-message-sender">Envoy AI</div>
+            <div className="mv-message-sender">{t("mobile.chat.aiName")}</div>
             <div style={{ display: "flex", gap: "4px", padding: "4px 0" }}>
               <div className="mv-skeleton" style={{ width: 8, height: 8, borderRadius: "50%" }} />
               <div className="mv-skeleton" style={{ width: 8, height: 8, borderRadius: "50%", animationDelay: "0.15s" }} />
@@ -439,7 +439,7 @@ export function MobileChatView({
           <button
             type="button"
             className="mv-chat-share-btn"
-            aria-label="Share a vault file"
+            aria-label={t("mobile.chat.shareFile")}
             onClick={() => setShareOpen(true)}
           >
             <P2PIcon size={20} />
@@ -459,8 +459,8 @@ export function MobileChatView({
           }}
           placeholder={
             selectedContact === AI_CONTACT_ID
-              ? "Ask AI..."
-              : "Type a message..."
+              ? t("mobile.chat.askAi")
+              : t("mobile.chat.typeMessage")
           }
           enterKeyHint="send"
           autoComplete="off"

@@ -593,6 +593,19 @@ export const ja = mergeMessages(en, {
       settings: "設定",
       app: "アプリ",
     },
+    chat: {
+      chats: "チャット",
+      inbox: "インボックス",
+      threadHint: "スレッドと通知 — 結合と発見は連絡先の下にあります。",
+      aiName: "Envoy AI",
+      aiPrompt: "何でも質問",
+      helloRequest: "こんにちはリクエスト",
+      selectContact: "連絡先を選択",
+      selectContactDesc: "連絡先を選択してチャットを開始",
+      askAi: "AIに尋ねる...",
+      typeMessage: "メッセージを入力...",
+      shareFile: "ボールトファイルを共有",
+    },
     settings: {
       tabs: {
         node: "ノード",

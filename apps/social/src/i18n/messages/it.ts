@@ -603,6 +603,19 @@ export const it = mergeMessages(en, {
       settings: "Impostazioni",
       app: "App",
     },
+    chat: {
+      chats: "Chat",
+      inbox: "Posta in arrivo",
+      threadHint: "Thread e avvisi — legami e scoperta si trovano sotto Contatti.",
+      aiName: "Envoy AI",
+      aiPrompt: "Fai qualsiasi domanda",
+      helloRequest: "Richiesta di ciao",
+      selectContact: "Seleziona un contatto",
+      selectContactDesc: "Scegli un contatto per iniziare a chattare",
+      askAi: "Chiedi all'AI...",
+      typeMessage: "Scrivi un messaggio...",
+      shareFile: "Condividi un file del vault",
+    },
     settings: {
       tabs: {
         node: "Nodo",

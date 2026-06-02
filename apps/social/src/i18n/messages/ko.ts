@@ -593,6 +593,19 @@ export const ko = mergeMessages(en, {
       settings: "설정",
       app: "앱",
     },
+    chat: {
+      chats: "채팅",
+      inbox: "인박스",
+      threadHint: "스레드 및 알림 — 본드 및 발견은 연락처 아래에 있습니다.",
+      aiName: "Envoy AI",
+      aiPrompt: "무엇이든 물어보세요",
+      helloRequest: "안녕하세요 요청",
+      selectContact: "연락처 선택",
+      selectContactDesc: "연락처를 선택하여 채팅 시작",
+      askAi: "AI에게 물어보기...",
+      typeMessage: "메시지 입력...",
+      shareFile: "볼트 파일 공유",
+    },
     settings: {
       tabs: {
         node: "노드",
