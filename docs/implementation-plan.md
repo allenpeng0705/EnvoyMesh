@@ -2,7 +2,7 @@
 
 This is the living plan for EnvoyMesh. Update it whenever scope changes, decisions are made, or milestones are completed.
 
-**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · **[EMP / EnvoyAI](./protocol-standard.md)** · [EnvoyAI design guide](./envoyai-protocol.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Live connectivity testing](./live-connectivity-testing.md)** · **[Operator relay fleet](./operator-relay-fleet.md)** · **[SQLite adoption](./sqlite-adoption.md)** · **[P2P file sharing (design plan)](./p2p-file-sharing-plan.md)** · **[AI Document Backbone (agent publish/find/share)](./ai-document-backbone-plan.md)** · **[IPFS / Helia integration](./helia-ipfs-integration-plan.md)** · **[External distribution via IPFS](./external-distribution-ipfs-plan.md)** · **[Kubo + Helia operator runbook](./envoymesh-with-kubo-helia.md)** · **[Trust mode & bilateral social mediation](./trust-mode-social-protocol.md)** · **[Trust mode implementation plan](./trust-mode-implementation-plan.md)** · **[A2A routing, actor disclosure & owner visibility](./a2a-actor-visibility-plan.md)** · **[Redesign strategy](./redesign-strategy.md)**
+**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · **[EMP / EnvoyAI](./protocol-standard.md)** · [EnvoyAI design guide](./envoyai-protocol.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Live connectivity testing](./live-connectivity-testing.md)** · **[Operator relay fleet](./operator-relay-fleet.md)** · **[SQLite adoption](./sqlite-adoption.md)** · **[P2P file sharing (design plan)](./p2p-file-sharing-plan.md)** · **[AI Document Backbone (agent publish/find/share)](./ai-document-backbone-plan.md)** · **[Native owner agent (Assistant = Agent)](./native-owner-agent.md)** · **[IPFS / Helia integration](./helia-ipfs-integration-plan.md)** · **[External distribution via IPFS](./external-distribution-ipfs-plan.md)** · **[Kubo + Helia operator runbook](./envoymesh-with-kubo-helia.md)** · **[Trust mode & bilateral social mediation](./trust-mode-social-protocol.md)** · **[Trust mode implementation plan](./trust-mode-implementation-plan.md)** · **[A2A routing, actor disclosure & owner visibility](./a2a-actor-visibility-plan.md)** · **[Redesign strategy](./redesign-strategy.md)**
 
 ## Status Legend
 
@@ -59,6 +59,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 15 — Reach, semantics & platform scale](#phase-15-reach-semantics--platform-scale)
 - [Phase 16 — EnvoyAI standing delegation & autonomous postures](#phase-16-envoyai-standing-delegation--autonomous-postures)
 - [Phase 17 — Location-scoped peer discovery](#phase-17-location-scoped-peer-discovery)
+- [Phase 18 — Native owner agent (Assistant = Agent)](#phase-18-native-owner-agent-assistant--agent)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -72,10 +73,9 @@ Already shipped foundation:
 
 Active next direction:
 
-1. **Phase 16 — EnvoyAI in EMP** — standing postures (`social_proxy`, `document_acquisition`), mandate schemas, configurable UI disclosure. Spec: [protocol-standard § EnvoyAI](./protocol-standard.md#envoyai-ai-mediated-social-mesh).
-2. **Phase 17 — Location-scoped discovery** — geo capability topics on DHT (`geo:country:…`, `geo:city:…`, `geo:geohash:…`); profile location + Discover “By place” search. See [Phase 17](#phase-17-location-scoped-peer-discovery).
-3. **Phase 15E** — remaining parked backlog (commerce payments, DID resolver, hop-2 morning report). See [parked-backlog-15e.md](./parked-backlog-15e.md).
-4. **Parked until scoped:** Story E payment rail, thin satellite app.
+1. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row; DID WAN resolver.
+2. **Parked until scoped:** Story E payment rail, thin satellite app.
+3. **Phase 18 — Native owner agent** — **`[x]` complete** (see [Phase 18 exit criteria](#phase-18-exit-criteria-overall)).
 
 Product-level **user stories and epics** (discovery, broadcast termination, communication roles, and so on) live in [EnvoyMesh scenarios](./scenarios.md). Narrative journeys live in [UserStory.md](./UserStory.md). Periodically reconcile both with code via [alignment-review.md](./alignment-review.md). Use those files to prioritize; keep this plan aligned when scope or shipped work changes.
 
@@ -83,7 +83,7 @@ Product-level **user stories and epics** (discovery, broadcast termination, comm
 
 **North-star steps:** `[x]` protocol and trust boundaries · `[x]` local signed node · `[x]` P2P discovery/transport · `[x]` shared vault + policy · `[x]` model routing package behind policy · `[x]` node runtime uses model router for real `knowledge.query` · `[x]` agent/tool orchestration behind sandbox · `[x]` safe discovery/broadcast at scale · `[x]` agent identity, tool registry, proactive autonomy, digest (Phase 9A–9K).
 
-**Prioritization:** **Phase 15 complete** (2026-05-20). **Active next — Phase 16** (EnvoyAI postures within [EMP](./protocol-standard.md#envoyai-ai-mediated-social-mesh)).
+**Prioritization:** **Phases 16–18 complete.** Next pulls: **15E follow-ons** and parked Story E / satellite.
 
 **Phase 15 sequencing (recommended):** **15B WAN** (unblocks real-world nodes) → **15A discovery** (Scenario 2 / Story B product value) → **15C H2A** (Scenario 6 semantics) → **15D platform** (when [sqlite-adoption.md](./sqlite-adoption.md) triggers fire). **15E** items stay explicitly out of Phase 15 exit.
 
@@ -99,8 +99,8 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 | Social handshake (Scenario 4) | 2, 4B, 7, **12** | `[x]` Trust store, bonds/policy, approvals, mandates, A2A tasks, **EMP `bond.*` payloads + inbound bond path + CLI `bond.request`** · `[x]` **Design:** [Trust mode & bilateral social mediation](./trust-mode-social-protocol.md) · `[x]` Phase **12 A–F**: `@envoymesh/protocol` **`social.intro.*`** + **`bond.request`** refs; node inbound + Social Trust/inbox + **`mesh.intro.*`** tools + **`sendHello`** linkage + [EMP appendix](./protocol-standard.md#appendix-a-trust-mode-social-mediation-socialintro) + [Epic TM](./scenarios.md#epic-tm-trust-mode) + Phase **F** hardening (`friendMatchingPreferencesSigned`, **`social.intro.*`** rate limits + nonce replay, **`bond.accept`** audit) + integration smoke (**`trust-mode-intro-bond-flow.test.ts`**, **`npm run smoke:local`**) |
 | Intent-based file share (Scenario 5) | 5, Scenario 6 pick | `[x]` Shared vault, indexing, search, policy hooks, audit · `[x]` Voucher + verified P2P chunk stream (`/envoymesh/data/0.1.0`) |
 | Communication roles (Scenario 6) | Scenario 6 pick, **13** | `[x]` Required envelope roles, role-policy, channel split · `[x]` **Phase 13:** honest AI wire role, chat badges, Activity feed, A2A orchestrator ([Epic AV](./scenarios.md#epic-av--actor-disclosure--owner-visibility)) · `[ ]` **Phase 16D:** configurable UI disclosure (US-AV9) |
-| **Story M** (delegated social presence) | **16** | `[ ]` Standing `social_proxy` mandate + runtime loop · `[~]` Trust mode + friend autopilot (discovery-only) · `[x]` Human `bond.accept` inbound policy |
-| **Story N** (document acquisition) | **16**, ADB | `[~]` ADB + `runDocumentAgentTurn` + library tools · `[ ]` Async hunt orchestrator + mandate-gated auto share pull |
+| **Story M** (delegated social presence) | **16**, **18** | `[x]` Social proxy runtime + standing mandate · `[x]` Assistant chat orchestration (Phase **18**) · `[x]` Human `bond.accept` inbound policy |
+| **Story N** (document acquisition) | **16**, **18**, ADB | `[x]` Async acquisition worker + jobs · `[x]` ADB + library tools · `[x]` Assistant starts jobs from natural language (Phase **18**) |
 | **Story O** (UI actor disclosure) | **16** | `[x]` Honest wire (Phase 13) · `[ ]` `showAgentBadges` / peer collapse settings |
 | **Story A** (multi-device collaborator) | 4A, 5, 6, 7 | `[x]` Primary/Satellite **protocol** profiles, P2P, vault-backed tasks, pairing + primary-offline defer baseline (`Phase 4A`) · `[ ]` Thin mobile / satellite app **parked** |
 | **Stories B–C** (recruiter, researcher) | 4E, 2, 6, 7 | `[x]` Policy, approvals, audit, model path scaffolding · `[ ]` Discovery UX (**4E**), H2A wire path (**6**), morning report (**7**) |
@@ -1110,17 +1110,14 @@ Tasks:
 
 ## Current Milestone
 
-Milestone: **Phases 0–15 complete** — Core protocol through Trust mode, mobile Social + in-process node, IPFS/Helia export, Phase 13 actor disclosure + Activity, Phase 14 friend autopilot + knowledge syndication, Phase 15 reach (WAN invite + sign-off ledger), discovery UX, H2A channel, platform scale gate. **15E multi-hop (US-MH1–4) shipped** — see [parked-backlog-15e.md](./parked-backlog-15e.md) for remaining optional items.
+Milestone: **Phases 0–18 complete** — Core protocol through Trust mode, mobile Social + in-process node, IPFS/Helia export, Phase 13 actor disclosure + Activity, Phase 14 friend autopilot + knowledge syndication, Phase 15 reach, Phase 16 EnvoyAI postures + capability routing, Phase 17 geo discovery, **Phase 18 native owner agent (Assistant = Agent)**. **15E multi-hop (US-MH1–4) shipped** — see [parked-backlog-15e.md](./parked-backlog-15e.md).
 
-**Active milestone:** **Phase 16 — EnvoyAI in EMP** ([protocol-standard](./protocol-standard.md#envoyai-ai-mediated-social-mesh)) — standing postures, Stories M–O.
+**Active milestone:** **Phase 18 complete** — see [Phase 18 exit criteria](#phase-18-exit-criteria-overall) and [native-owner-agent.md](./native-owner-agent.md).
 
 ### Next planning pulls
 
-1. **Phase 16A — EMP schema extensions** — `mandate.posture` + `posturePolicy`, credential scopes, Appendix E; `supportedCapabilities` on `system.signal`.
-2. **Phase 16B — Social proxy** — US-SP1–SP5: [social-proxy-delegation.md](./social-proxy-delegation.md).
-3. **Phase 16C — Document acquisition** — US-DA1–DA5: [document-acquisition-agent.md](./document-acquisition-agent.md).
-4. **Phase 16D — UI disclosure** — US-AV9: [envoyai-disclosure-adr.md](./envoyai-disclosure-adr.md).
-5. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row; DID WAN resolver.
+1. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row; DID WAN resolver.
+2. **Parked until scoped:** Story E payment rail, thin satellite app.
 
 ### Phase 9 Architecture Overview
 
@@ -2585,12 +2582,144 @@ LAN **Nearby** panel unchanged (mDNS + profile probe).
 
 ---
 
+## Phase 18: Native owner agent (Assistant = Agent) **`[x]`**
+
+**Goal:** Make the Social **Assistant** the owner-facing surface of the **native home-node agent** — not a standalone LLM chat. Owners converse in H2A; the agent plans routes, calls `ToolRegistry` tools, starts posture jobs, and respects mandates/approvals.
+
+**Depends on:** Phase 9 ToolRegistry · Phase 15C H2A channel · Phase 16 postures (social proxy, document acquisition, capability provider) · Phase 16E capability routing · [native-owner-agent.md](./native-owner-agent.md).
+
+**Scenarios / stories:** Scenario 6 (H2A) · Story M (social presence) · Story N (document acquisition) · Story B/C (discovery/research) · Epic SP · Epic DA · capability provider.
+
+### Problem
+
+| Assistant today | Native agent (node) |
+|-----------------|---------------------|
+| Regex document router + one LLM call | 40+ tools + three autonomous workers |
+| No chat-driven friend-making | Social proxy + intro tools |
+| No async doc hunts from chat | Document acquisition jobs |
+| No capability/service orchestration | Capability provider + route executor |
+| External agents get tool API via bridge | Owner H2A does not |
+
+### Design principles
+
+1. **Single orchestration path** — `runOwnerAgentTurn` → `owner-agent-loop.ts` → `executeTool` / job starters (same as daemon).
+2. **Policy before LLM** — Phase 18A is route-driven; Phase 18B adds bounded LLM tool selection.
+3. **Sync answer + async jobs** — Turn returns plan/`jobId`; workers continue in background.
+4. **Four owner goals** — social (friends), document, discovery (capabilities), service (mandate-gated tasks).
+
+### Recommended sequencing
+
+| Order | Track | Why |
+|-------|-------|-----|
+| 1 | **18A Route-driven turn** | Unblocks product value without fragile JSON tool parsing |
+| 2 | **18B LLM tool loop** | Natural language beyond keyword routes |
+| 3 | **18C Assistant job UX** | Progress, approvals, task propose in UI |
+| 4 | **18D Deprecate regex-only H2A** | Planner replaces `classifyDocumentIntent` for most phrases |
+
+---
+
+### 18A — Route-driven owner agent turn
+
+**Goal:** `runOwnerAgentTurn(message)` classifies goals via `matchAgentCapabilityRoutes`, executes domain handlers, delegates explicit document commands to `runDocumentAgentTurn`.
+
+**Module layout:**
+
+| Path | Responsibility |
+|------|----------------|
+| `packages/api/src/owner-agent-loop.ts` | Pure orchestration + domain handlers |
+| `packages/api/test/owner-agent-loop.test.ts` | Unit tests |
+| `apps/node/src/node-service-impl.ts` | `runOwnerAgentTurn` + Activity |
+| `apps/social/.../AIChatPanel.tsx` | Primary RPC |
+| `json-rpc-router` / `ws-protocol` / `useNodeService` | RPC surface |
+
+**Owner tool allowlist (18A):**
+
+- Document: `mesh.library_*`, `vault.search`, internal `startDocumentAcquisitionJob`
+- Social: `mesh.match_capability_route`, `mesh.intro.broadcast_search`, `mesh.intro.run_autopilot`, `runSocialProxyPass`
+- Service: `mesh.match_capability_route`, `mesh.capability_provider.start`
+
+**Checklist:**
+
+- `[x]` Detail design: [native-owner-agent.md](./native-owner-agent.md)
+- `[x]` `owner-agent-loop.ts` + tests
+- `[x]` `NodeServiceImpl.runOwnerAgentTurn` + RPC wiring
+- `[x]` Social Assistant uses new RPC
+- `[x]` Activity rows include `domain`, `jobId`, `routeId` (via `recordH2aOwnerAgentTurn`)
+- `[x]` MobileNode inline adapter (delegates `_executeOwnerAgentTool`; job postures stubbed until SQLite parity)
+- `[x]` `apps/node/test/owner-agent-turn-integration.test.ts`
+
+**Exit:** Owner can start friend-discovery, document hunt, or capability-provider jobs from Assistant when postures enabled; disabled postures return actionable Settings guidance.
+
+---
+
+### 18B — LLM tool loop
+
+**Goal:** Bounded planner (max 5 rounds) selects tools from owner allowlist using structured model output.
+
+- `[x]` Planner prompt + JSON schema + parse fallback
+- `[x]` `@envoymesh/models` egress scan on planner I/O
+- `[x]` Unit tests with mocked planner loop (`owner-agent-planner.test.ts`)
+- `[x]` Audit every tool round (`auditPlannerRound` → `tool.called` audit events)
+- `[x]` Integration tests with mock model (`owner-agent-turn-integration.test.ts`)
+
+**Exit:** Owner asks free-form questions; agent selects tools without regex classification.
+
+---
+
+### 18C — Assistant job UX
+
+**Goal:** Surface long-running agent work in Assistant + Activity.
+
+- `[x]` Job status chips + Activity deep-links in `AIChatPanel`
+- `[x]` Inline approve/reject for pending tools in `AIChatPanel`
+- `[x]` `mesh.task.propose` for service negotiation
+- `[x]` WS push for job stage updates (`agent:activity` → Assistant job chips)
+
+**Exit:** Owner sees social-proxy / acquisition / capability-provider progress without leaving Assistant.
+
+---
+
+### 18D — Consolidate H2A backend
+
+- `[x]` `runDocumentAgentTurn` becomes internal helper only (RPC retained deprecated one release)
+- `[x]` Update [ai-document-backbone-plan.md](./ai-document-backbone-plan.md) + [emp-h2a-channel-adr.md](./emp-h2a-channel-adr.md)
+- `[x]` Remove duplicate heuristic paths covered by planner (explicit `classifyDocumentIntent` kept for model-off fast path; Assistant uses `runOwnerAgentTurn` only)
+
+---
+
+### Phase 18 exit criteria (overall)
+
+Verified by `apps/node/test/phase-18-e2e.test.ts` (+ unit/integration suites below).
+
+- `[x]` **Friends:** Assistant starts social discovery under `social_proxy` mandate (`runSocialProxyPass` + `mesh.intro.broadcast_search`); intro proposals still require Inbox approval.
+- `[x]` **Documents:** Assistant starts acquisition jobs or synchronous library/discover flows (`classifyDocumentIntent` fast path + route-driven acquisition; document hunt prefers document route over incidental social keyword matches).
+- `[x]` **Capabilities:** Assistant matches service routes and starts capability-provider jobs.
+- `[x]` **Services:** Task propose to bonded contacts + capability-provider jobs; inline approvals in Assistant.
+- `[x]` **Security:** Mesh I/O only via `executeTool` / job starters; autonomous kill switch blocks social proxy, document acquisition, and capability-provider starts from `runOwnerAgentTurn`.
+- `[x]` **18A–18D shipped:** Route-driven turn, LLM planner, Assistant job UX, deprecated `runDocumentAgentTurn` RPC.
+
+**Test matrix:**
+
+| Suite | Covers |
+|-------|--------|
+| `packages/api/test/owner-agent-loop.test.ts` | Domain routing, route priority, kill switch, bonded task parse |
+| `packages/api/test/owner-agent-planner.test.ts` | Planner JSON parse, bounded loop, egress block, audit callback |
+| `apps/node/test/owner-agent-turn-integration.test.ts` | NodeServiceImpl + ToolRegistry + Activity + planner audit |
+| `apps/node/test/phase-18-e2e.test.ts` | Two-node E2E exit criteria (friends, documents, capabilities, services, security, planner) |
+| `apps/node/test/phase-18-multinode-e2e.test.ts` | 2–3 node meshes: acquisition completion, publisher selection, capability worker, task routing, combined postures |
+| `apps/social/test/components/AIChatPanel.test.tsx` | Assistant RPC, chips, inline approvals |
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-05-28 | **Phase 18 complete:** Exit criteria E2E (`phase-18-e2e.test.ts`); document-hunt route priority fix; exit criteria + test matrix updated. |
+| 2026-05-28 | **Phase 18C–18D:** Assistant inline approval cards (`approvalItems` on turn); `runDocumentAgentTurn` deprecated (internal `_runDocumentAgentTurnCore`; RPC warning one release). |
+| 2026-05-28 | **Phase 18B–18C (first slices):** Owner-agent LLM planner loop (`runOwnerAgentPlannerLoop`, tool allowlist, node model wiring); Assistant turn meta chips (job/domain/approval) in `AIChatPanel`. |
+| 2026-05-28 | **Phase 18 started:** [native-owner-agent.md](./native-owner-agent.md) — Assistant = native agent; `runOwnerAgentTurn` route-driven orchestration (18A); LLM tool loop + job UX deferred to 18B–18C. |
 | 2026-05-28 | **Phase 17D:** Offline gazetteer autocomplete in Profile location editor; zh/ko/ja/fr/de/it i18n for countries/regions/cities; nearby map picker grid for geohash precision. WAN geo signoff green via cn-relay (`geo-discovery-wan-signoff.test.ts`). |
-| 2026-05-28 | **Phase 17C:** Friend-matching geo fields on signed prefs; hashed geo tags on bond-scoped `discovery.request`; morning report geo city peer count; Trust intro tools emit geo tag hashes. |
 | 2026-05-28 | **Phase 17B:** Geohash persisted on profile save; neighbor-cell nearby search via `locationSearchTopics`; stale geo topic cancellation on profile/network change; two-node geo DHT e2e test. |
 | 2026-05-28 | **Profile capabilities → discovery:** Profile About capability tags sync into capability manifest and DHT advertise (`capability:{tag}` + raw tag) on public profile save; agents match via `discovery.request` / `requestedCapabilities`. |
 | 2026-05-28 | **Phase 16E capability routing:** `@envoymesh/api` intent routing + route executor modules; capability provider worker + daemon tick; `mesh.capability_provider.start` in-process tool; [capability-route-executor.md](./capability-route-executor.md). |

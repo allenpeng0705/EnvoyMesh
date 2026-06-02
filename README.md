@@ -4,60 +4,181 @@
 
 # EnvoyMesh
 
-EnvoyMesh is an owner-controlled, peer-to-peer social agent network.
+**Your AI agent, your keys, your peers — no central server.**
 
-The core idea is simple: each person runs an AI agent, called an Envoy, on their own devices. The Envoy stands for its owner in a distributed mesh. It can discover trusted peers, exchange signed messages, answer from an explicitly shared vault, and coordinate asynchronous tasks without depending on a central application server.
+EnvoyMesh is a decentralized peer-to-peer mesh for AI agents and the people who own them.
+Each user runs an **Envoy** — a node that holds their Ed25519 identity, decides who to trust,
+talks to other Envoys over libp2p, and (optionally) drives an AI agent to answer questions,
+negotiate tasks, and move data on the owner's behalf.
 
-EnvoyMesh is designed around these priorities:
+There is no central account server, no platform lock-in, and no "company" reading your messages.
+Identities are self-sovereign, messages are signed envelopes, and every read of your data goes
+through owner-defined policy. The AI agent is a guest in your mesh — the keys, the trust
+decisions, and the vault are yours.
 
-- **Peer-first traffic**: communicate directly between Envoys whenever possible, using libp2p discovery, relay lookup, DHT hints, and owner-approved invite/bootstrap paths.
-- **Owner-controlled privacy**: an Envoy must only access explicitly shared data, not the whole computer.
-- **Model flexibility**: an Envoy may use local models, cloud models, or peer-provided compute when policy allows it.
-- **Agent-native social workflows**: trust, discovery, introductions, and task negotiation can be handled by agents over time.
+---
 
-Early-stage development intentionally allows **breaking redesigns** when they advance the documented architecture—see [redesign strategy](./docs/redesign-strategy.md).
+## What you can do
 
-## Why Build It
+### Communicate directly
+- **Signed chat** between Envoys — text, attachments, reactions, and read/delivered receipts.
+- **Discovery & introductions** by capability, tag, or person — peers find each other without a directory service.
+- **Task negotiation** — propose, accept, reject, heartbeat, and cancel structured tasks over signed envelopes.
+- **Asynchronous correlation** — `correlationId` stitches a multi-peer flow together across logs and audit trails.
 
-Most social and AI products depend on a central backend. That backend stores identity, routes messages, controls social graphs, and becomes expensive to operate as the network grows.
+### Stay in control
+- **Three-tier identity**: `Owner` (long-lived human) → `Device` (a specific machine) → `Agent` (an AI authorized by the owner).
+- **Trust tiers** (`blocked` / `public` / `referred` / `direct`) enforced by a deterministic **Bond Engine** before any data leaves your node.
+- **Mandates & capabilities** — owner-signed documents that say *what* an agent may do, *for how long*, and *with what data sensitivity*.
+- **Approval queue** — sensitive actions queue for human review; the agent cannot bypass it.
+- **JSONL audit log** with correlation IDs so every decision is replayable.
 
-EnvoyMesh explores a different architecture:
+### Run anywhere
+- **Desktop** — Tauri-wrapped Social UI plus a spawned Node process (Electron-era `apps/desktop` is gone).
+- **Mobile** — Capacitor iOS/Android wrapper that runs a **full Envoy in-process** in the WebView. Native SQLite, Filesystem, and Keychain; relay-only transport.
+- **CLI / headless server** — the same `apps/node` runtime runs without a UI for servers, bots, and CI.
 
-- Each user contributes their own compute and storage.
-- Devices connect through P2P protocols instead of a central server.
-- Trust is based on cryptographic identity and local policy.
-- AI agents act as private ambassadors rather than centrally controlled assistants.
+### Plug in your agent
+- EnvoyMesh nodes ship with a tiny **HTTP bridge** that pipes `chat.message` envelopes to whatever agent can speak HTTP — see [Connect to your AI agent](#connect-to-your-ai-agent) below.
 
-The result should be cheaper to operate, more resilient, and more aligned with personal data ownership.
+---
 
-## Current Status
+## How it works
 
-EnvoyMesh is a working TypeScript prototype **under active architectural refinement** around a libp2p-first mesh with lean relay nodes and intelligent normal nodes. Current capabilities include:
+### Identity tiers
+Every Envoy has three nested identities, each derived from an Ed25519 key:
 
-- Signed EMP messages and Ed25519 owner/device identities.
-- Local policy, trust records, approval queue, task journal, and audit logs.
-- A libp2p-based node with TCP, Noise, Yamux, mDNS, and opt-in DHT/relay/AutoNAT/DCUtR configuration.
-- Relay-node discovery primitives: `relay.checkin`, bounded `relay.lookup`, relay summaries, summary-guided relay graph routing, and local Relay Manager snapshots.
-- **Transport POC:** Stages **A–D** (LAN → WAN bootstrap/DHT → relay → full node) — [docs/poc-discovery-connectivity.md](./docs/poc-discovery-connectivity.md).
-- A restricted shared vault index/search package for `.txt`, `.md`, and `.json` files.
-- A model router with mock, LiteLLM-compatible, and Ollama-through-LiteLLM providers.
-- A developer CLI for local profile, trust, approval, audit, task, peer, vault, connectivity, and relay-status inspection.
-- A **Tauri** desktop shell for end users: a native window that loads the **Social** web UI (built static assets) and spawns the Node runtime—no separate Electron app.
-- A **P2P bridge** for external agents (OpenClaw, HomeClaw, Hermes): a lightweight HTTP pipe that lets external agents participate in P2P conversations via a configurable callback.
+| Identity | Format | Purpose |
+|----------|--------|---------|
+| **Owner** | `envoy:owner:<sha256(pubkey)>` | The human. Long-lived. Signs mandates and device certificates. |
+| **Device** | `envoy:device:<sha256(pubkey)>` | One physical machine authorized by the owner. |
+| **Agent** | `envoy:agent:<sha256(ownerId + agent-pubkey)>` | An AI running on the owner's node, authorized by an owner-signed mandate. |
+| **Peer** | `envoy_<sha256(pubkey)>` | Runtime signing identity for a single message stream. |
 
-## Quick Start
+All four share the same root: any peer can verify *this message was signed by the device belonging to this owner, and the agent is authorized by that owner*.
 
-Install dependencies:
+### The security pipeline
+Inbound traffic flows through four gates, each a separate module with a separate job:
+
+```
+  Wire   ┌────────────┐   ┌──────────────┐   ┌────────────┐   ┌──────────┐   ┌──────────┐
+  ─────▶ │  Diplomat  │──▶│ Bond Engine  │──▶│ Task Guard │──▶│  Brain   │──▶│  Vault   │
+         │  (network) │   │  (policy)    │   │ (mandates) │   │ (model)  │   │ (data)   │
+         └────────────┘   └──────────────┘   └────────────┘   └──────────┘   └──────────┘
+            libp2p,        trust tier +        expiry +         LiteLLM /     path-safety,
+            envelopes,     capability          cancellation     semantic      deny-by-default
+            size caps      policy              policy           firewall
+```
+
+A request is denied at the first gate that rejects it. The Brain never sees a message the
+Bond Engine didn't approve, and the Vault never answers a question the Brain wasn't asked.
+
+### The signed-envelope contract
+Every message on the wire is an **`EnvoyEnvelope`**:
+
+```ts
+{
+  version: "0.1",
+  messageId, correlationId?, createdAt,
+  senderPeerId, senderPublicKey, senderRole,     // human | agent | system
+  recipientPeerId?, recipientRole,
+  intent,                                          // one of 40+ typed intents
+  payload,                                         // typed per intent, validated by Zod
+  signature,                                       // Ed25519 over canonical JSON
+}
+```
+
+The signature is computed over a canonical JSON form (sorted keys, no `undefined`) of every
+field except `signature` itself. Recipients verify the signature against `senderPublicKey`,
+which must hash to `senderPeerId`. The Zod schema for the envelope is shared with
+`@envoymesh/protocol` and is the single source of truth for wire compatibility.
+
+### Relay graph
+EnvoyMesh distinguishes two node kinds:
+
+- **Normal nodes** — run the full stack: LLMs, vault RAG, tools, agents, and policy checks. These are the intelligent edges.
+- **Relay nodes** — stay lean. They handle connectivity, relay check-in/lookup, and routing hints. They do **not** run LLMs, read payloads, execute agents, or store private knowledge.
+
+A typical mesh looks like this:
+
+```
+   ┌──────────────┐                              ┌──────────────┐
+   │  Envoy (you) │◀──── signed envelopes ──────▶│ Envoy (peer) │
+   │  desktop     │                              │ desktop      │
+   └──────┬───────┘                              └──────┬───────┘
+          │ Agent bridge (HTTP)                         │
+          ▼                                             ▼
+   ┌──────────────┐                              ┌──────────────┐
+   │ HomeClaw /   │                              │ HomeClaw /   │
+   │ OpenClaw /   │                              │ OpenClaw /   │
+   │ your agent   │                              │ your agent   │
+   └──────────────┘                              └──────────────┘
+          │                                             │
+          ▼                                             ▼
+   ┌──────────────┐         ┌──────────────┐      ┌──────────────┐
+   │  Local vault │         │   Relay(s)   │      │  Local vault │
+   │  (RAG index) │         │  thin graph  │      │  (RAG index) │
+   └──────────────┘         └──────────────┘      └──────────────┘
+```
+
+Relays carry signed envelopes but cannot decrypt payloads they don't have keys for; normal
+nodes handle the actual work.
+
+---
+
+## Connect to your AI agent
+
+EnvoyMesh nodes expose a tiny HTTP bridge. You point the bridge at any agent that speaks HTTP,
+and `chat.message` envelopes arrive as JSON; the agent's reply flows back over `POST /bridge/send`.
+**The agent never holds libp2p keys** — EnvoyMesh signs, routes, and applies policy on every envelope.
+
+Default wire contract (one node, one bridge, one agent):
+
+```jsonc
+// ~/.envoymesh/my-node/bridge-config.json
+{
+  "enabled": true,
+  "agentUrl": "http://localhost:8010/message",  // POST { from, fromOwnerId, fromName, text }
+  "listenPort": 3031,                           // local HTTP server: POST /bridge/send { to, text }
+  "secret": "optional-shared-bearer-token"
+}
+```
+
+### HomeClaw
+If you already run HomeClaw, you're done. The default `agentUrl` (`http://localhost:8010/message`)
+points at HomeClaw's existing `channels/envoymesh` endpoint. Set `enabled: true` in the config above,
+restart the node, and bonded peers can chat with your agent.
+
+### OpenClaw
+OpenClaw uses the same wire contract, but its `webhookPath` lives behind the OpenClaw Gateway.
+Install the channel plugin (canonical source lives in this repo):
+
+```bash
+./scripts/install-openclaw-extension.sh /path/to/openclaw --with-docs
+cd /path/to/openclaw && pnpm install
+```
+
+Then point `agentUrl` at the OpenClaw Gateway webhook
+(`http://127.0.0.1:18789/webhook/envoymesh` by default). The plugin exposes the same mesh
+messages to OpenClaw as a regular channel and replies via the standard `/bridge/send` callback.
+See [`OpenClawExtension/README.md`](OpenClawExtension/README.md) and
+[`docs/openclaw-extension.md`](docs/openclaw-extension.md) for the full config.
+
+### Hermes, custom agents, or any HTTP service
+Anything that accepts a `POST` of `{ from, fromOwnerId, fromName, text }` and replies by
+`POST`ing `{ to, text }` to `http://127.0.0.1:3031/bridge/send` will work — no OpenClaw,
+no HomeClaw, no SDK. The bridge is **agent-agnostic**; you choose what runs behind it.
+
+Full reference: [`docs/agent_bridge_guide.md`](docs/agent_bridge_guide.md).
+
+---
+
+## Quick start
 
 ```bash
 npm install
-```
-
-Verify the workspace:
-
-```bash
-npm run typecheck
-npm test
+npm run typecheck     # strict TypeScript across all workspaces
+npm test              # full vitest suite (~2,400 tests)
 ```
 
 Run a local Envoy node:
@@ -66,172 +187,78 @@ Run a local Envoy node:
 npm run node:dev
 ```
 
-Use the developer CLI:
+Launch a UI (pick one):
 
 ```bash
-npm run cli -w @envoymesh/node -- profile
-npm run cli -w @envoymesh/node -- trust
-npm run cli -w @envoymesh/node -- vault-index --vault ./shared_vault
-npm run cli -w @envoymesh/node -- relay-status --profile ./data/default
+npm run tauri:dev    # native desktop window (Tauri + Social web UI)
+npm run social:dev   # browser-only dev server (needs node:dev running)
 ```
 
-Run the **Social** UI (pick one):
+For everything else — CLI commands, multi-machine flow, pairing, OpenClaw webhook setup,
+Tauri packaging, mobile build, smoke tests, relay walkthroughs — see
+[**`QuickStart.md`**](QuickStart.md). It is the single source of truth for installation,
+operations, and troubleshooting.
 
-**Native app (end users):** Tauri wraps the same web UI as a desktop window.
+---
 
-```bash
-npm run tauri:dev
+## Current status
+
+Phases 1–11 are shipped. **Phase 11** brings EnvoyMesh to mobile: a Capacitor iOS/Android
+wrapper that runs a full Envoy node in-process (Social UI + `MobileNode` in one WebView,
+native SQLite/Filesystem/Keychain, relay-only transport, multi-device shared identity).
+Earlier phases delivered the agent model, tool registry, memory, mode/sessions/style, triggers,
+approvals, external-agent digest, and the OpenClaw/HomeClaw P2P bridge.
+
+The full phase-by-phase plan lives in [`docs/implementation-plan.md`](docs/implementation-plan.md).
+The current redesign strategy — including the rule that early-stage development allows breaking
+redesigns when they advance the architecture — is in
+[`docs/redesign-strategy.md`](docs/redesign-strategy.md).
+
+---
+
+## Repository layout
+
+```
+EnvoyMesh/
+├── apps/
+│   ├── node/        # Node.js runtime: CLI, mesh, WebSocket API for the Social UI
+│   ├── tauri/       # Native desktop wrapper: WebView loads Social + spawns Node
+│   ├── social/      # Social/chat UI (Vite + React), used by desktop & mobile
+│   └── mobile/      # Capacitor iOS/Android wrapper, full in-process Envoy
+├── packages/
+│   ├── protocol/    # Zod schemas, payload constructors, canonical JSON (the wire contract)
+│   ├── identity/    # Ed25519 keys, signing, verification, device certs, mandates
+│   ├── bonds/       # Trust tiers, capability gating, mandate authorization
+│   ├── network/     # libp2p wrapper: TCP/QUIC, mDNS, DHT, circuit relay, envelope streams
+│   ├── vault/       # Local file vault: indexing, chunking, search, path safety
+│   ├── models/      # Model router: provider selection, semantic firewall, LiteLLM adapter
+│   ├── local-store/ # On-disk persistence: JSONL audit/journal, trust store, peer directory
+│   └── api/         # Shared TypeScript interfaces (NodeService, envelope types)
+├── docs/            # User stories, scenarios, security model, implementation plan
+├── OpenClawExtension/  # Canonical OpenClaw channel plugin (copy into OpenClaw)
+├── QuickStart.md    # Start here for build, run, CLI, multi-machine, bridge setup
+└── CLAUDE.md        # Full monorepo package graph and conventions
 ```
 
-**Browser (developers, or when you need `ENVOYMESH_PROFILE` / CLI flags on the node):** start the node, then the Vite dev server.
+The mobile-only packages (`mobile-identity`, `mobile-storage`, `mobile-vault`, `mobile-node`)
+are listed in `CLAUDE.md`; they're where the Capacitor-friendly alternatives live.
 
-```bash
-npm run node:dev
-# other terminal:
-npm run social:dev
-```
-
-See [QuickStart](QuickStart.md) for the full build and run guide.
-
-## Multi-Machine Test Flow
-
-Use two terminals on two machines in the same LAN (or reachable via known multiaddrs).
-
-1. Start receiver:
-
-```bash
-npm run node:dev -- --profile ./data/receiver --listen /ip4/0.0.0.0/tcp/0 --p2p-debug
-```
-
-2. Start sender:
-
-```bash
-npm run node:dev -- --profile ./data/sender --listen /ip4/0.0.0.0/tcp/0 --p2p-debug
-```
-
-3. Exchange signed signal and ping:
-
-```bash
-npm run node:dev -- --profile ./data/sender --signal "<receiver-multiaddr>" --correlation-id "sig-1"
-npm run node:dev -- --profile ./data/receiver --ping "<sender-multiaddr>" --correlation-id "ping-1"
-```
-
-4. Exercise chat/task/data paths:
-
-```bash
-npm run node:dev -- --profile ./data/sender --chat "<receiver-multiaddr>" --chat-text "hello" --correlation-id "chat-1"
-npm run node:dev -- --profile ./data/sender --task-propose "<receiver-multiaddr>" --task-id task-1 --objective "Find notes" --requested-result "One summary" --correlation-id "task-1"
-npm run node:dev -- --profile ./data/sender --data-send "<receiver-multiaddr>" --data-relative-path notes.md
-```
-
-5. Verify from CLI:
-
-```bash
-npm run cli -w @envoymesh/node -- audit --profile ./data/receiver --limit 40 --include-p2p-trace
-npm run cli -w @envoymesh/node -- tasks --profile ./data/receiver --limit 40
-npm run cli -w @envoymesh/node -- pairing list --profile ./data/receiver
-```
-
-6. Verify in the **Social** UI (with the node already running for `./data/receiver`):
-
-```bash
-npm run social:dev
-```
-
-### Cross-Network Relay Check (Mac Relay + Two Windows)
-
-For the original “two Windows nodes can discover the Mac relay but not each other” scenario, run the Mac as a relay server and use its printed multiaddr as the bootstrap peer for both Windows nodes.
-
-Mac relay:
-
-```bash
-npm run node:dev -- --profile "/Users/<you>/EnvoyMesh/data/mac-relay" --listen /ip4/0.0.0.0/tcp/4001 --discovery-profile wan-default --relay --relay-server --p2p-debug
-```
-
-Windows A:
-
-```powershell
-npm run node:dev -- --profile "$env:USERPROFILE\envoymesh\win_a" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap "<mac-relay-multiaddr>" --relay --autonat --dcutr --p2p-debug
-```
-
-Windows B:
-
-```powershell
-npm run node:dev -- --profile "$env:USERPROFILE\envoymesh\win_b" --listen /ip4/0.0.0.0/tcp/0 --discovery-profile wan-default --bootstrap "<mac-relay-multiaddr>" --relay --autonat --dcutr --p2p-debug
-```
-
-Confirm the relay has both Windows nodes checked in:
-
-```bash
-npm run cli -w @envoymesh/node -- relay-status --profile "/Users/<you>/EnvoyMesh/data/mac-relay"
-```
-
-Expected: `roster total=2 fresh=2 stale=0`. Each Windows profile should also show relay traces with `connectivity-status` and receive `/p2p-circuit` peer candidates from `relay.lookup`.
-
-Generate a reusable checklist with auto-correlation IDs:
-
-```bash
-npm run smoke:multimachine:guide
-```
-
-Run a same-machine rehearsal smoke test (two in-process local meshes):
-
-```bash
-npm run smoke:local
-```
-
-PRs now run the same rehearsal in CI via `.github/workflows/ci-smoke-local.yml`.
-
-## Workspace
-
-- `apps/node`: local Envoy node runtime, P2P messaging, CLI, and live connectivity smoke scripts.
-- `apps/tauri`: **Native wrapper** around the Social web UI (built static assets in the WebView) + spawns **`apps/node`**; Electron-era **`apps/desktop`** removed.
-- `packages/protocol`: EnvoyMesh Protocol schemas and helpers.
-- `packages/identity`: owner/device identity, signing, verification, certificates, mandates, and revocation helpers.
-- `packages/bonds`: trust, capability, and mandate policy evaluation.
-- `packages/network`: libp2p EnvoyMesh runtime.
-- `packages/vault`: shared vault indexing, chunking, search, and audit helpers.
-- `packages/models`: model routing policies and LiteLLM/Ollama provider adapters.
-- `packages/local-store`: file-backed profile, audit, task, approval, and trust stores.
-
-## Technology Direction
-
-EnvoyMesh will use TypeScript as the primary implementation language.
-
-TypeScript is a good fit because the project needs strong P2P networking, robust async workflows, shared code across desktop/mobile/web surfaces, and clear data contracts for agent-to-agent protocols.
-
-Current stack:
-
-- **Runtime**: Node.js 22+.
-- **P2P networking**: `js-libp2p`.
-- **Transport**: TCP with Noise encryption and Yamux stream muxing.
-- **Discovery/connectivity**: mDNS locally, plus configurable Kademlia DHT, bootstrap peers, Circuit Relay v2, AutoNAT, DCUtR, and EnvoyMesh relay check-in/lookup routing.
-- **Message validation**: `zod`.
-- **Identity**: Ed25519 keys first; DIDs and verifiable credentials later.
-- **Model routing**: policy-gated local, cloud, and peer providers, with LiteLLM/Ollama support.
-- **Local data**: file-backed profile, trust, approval, audit, task, and shared vault state.
-- **Desktop surface**: Tauri + Social (React); Electron operator console retired.
-- **Shared state**: CRDTs such as `loro` or `yjs` for replicated social/task data.
-- **Sandboxing**: OS sandboxing and WebAssembly/WASI for restricted execution.
-
-Python, Rust, Go, or native binaries can still be used where they are strongest. The TypeScript layer should own the network, trust workflow, protocol definitions, and application orchestration.
+---
 
 ## Documentation
 
-- [QuickStart](QuickStart.md)
-- [Vision](docs/vision.md)
-- [High-Level Design](docs/high-level-design.md)
-- [Detailed Design](docs/detailed-design.md)
-- [Implementation Plan](docs/implementation-plan.md)
-- [P2P Discovery Guide](docs/p2p-discovery.md)
-- [Layered Relay Network](docs/layered-relay-network.md)
-- [EnvoyMesh Protocol](docs/protocol-standard.md)
-- [Developer CLI](docs/developer-cli.md)
-- [Social UI + Tauri shell](docs/desktop-dashboard.md)
-- [Model Strategy](docs/model-strategy.md)
-- [Security Model](docs/security.md)
-- [Roadmap](docs/roadmap.md)
+- **Start here:** [`QuickStart.md`](QuickStart.md) — install, run, CLI, multi-machine, bridge.
+- **External agents:** [`docs/agent_bridge_guide.md`](docs/agent_bridge_guide.md) · [`docs/openclaw-extension.md`](docs/openclaw-extension.md) · [`OpenClawExtension/README.md`](OpenClawExtension/README.md)
+- **Architecture:** [`docs/high-level-design.md`](docs/high-level-design.md) · [`docs/detailed-design.md`](docs/detailed-design.md) · [`docs/network-model.md`](docs/network-model.md)
+- **Protocol & security:** [`docs/protocol-standard.md`](docs/protocol-standard.md) · [`docs/security.md`](docs/security.md)
+- **Networking & P2P:** [`docs/p2p-discovery.md`](docs/p2p-discovery.md) · [`docs/layered-relay-network.md`](docs/layered-relay-network.md) · [`docs/poc-discovery-connectivity.md`](docs/poc-discovery-connectivity.md)
+- **UI & desktop:** [`docs/desktop-dashboard.md`](docs/desktop-dashboard.md) · [`docs/profile-photos.md`](docs/profile-photos.md)
+- **Plans & vision:** [`docs/vision.md`](docs/vision.md) · [`docs/roadmap.md`](docs/roadmap.md) · [`docs/implementation-plan.md`](docs/implementation-plan.md) · [`docs/redesign-strategy.md`](docs/redesign-strategy.md)
+
+---
 
 ## Notes
 
-Live mDNS, DHT, relay, and DCUtR proof depends on real network interfaces and reachable peers. Use the smoke scripts in [Live Connectivity Testing](docs/live-connectivity-testing.md) outside restricted runners.
+Live mDNS, DHT, relay, and DCUtR behaviour depends on real network interfaces and reachable
+peers. Use the smoke scripts in [`docs/live-connectivity-testing.md`](docs/live-connectivity-testing.md)
+outside restricted CI runners.

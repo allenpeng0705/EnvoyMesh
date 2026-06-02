@@ -173,6 +173,7 @@ export type RpcMethods =
   // AI / Knowledge Query
   | "knowledgeQuery"
   | "runDocumentAgentTurn"
+  | "runOwnerAgentTurn"
   | "listSocialProxySessions"
   | "runSocialProxyPass"
   | "cancelSocialProxySession"

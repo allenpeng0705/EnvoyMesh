@@ -86,10 +86,12 @@ import type {
   MultiHopDiscoverySessionView,
   PeerProfileView,
 } from "@envoymesh/api";
-import type { DocumentAgentTurnResult, CapabilityProviderJob, DocumentAcquisitionCandidate, DocumentAcquisitionJob, SocialProxySession } from "@envoymesh/api";
+import type { DocumentAgentTurnResult, OwnerAgentTurnResult, CapabilityProviderJob, DocumentAcquisitionCandidate, DocumentAcquisitionJob, SocialProxySession } from "@envoymesh/api";
 import {
   DEFAULT_RAG_INDEX_STATUS,
   runDocumentAgentTurn as runDocumentAgentTurnLoop,
+  runOwnerAgentTurn as runOwnerAgentTurnLoop,
+  matchAgentCapabilityRoutes,
   normalizeDocumentAutonomyPolicy,
   normalizeProfileMediaPolicy,
   MAX_CHAT_ATTACHMENT_BYTES,
@@ -378,6 +380,8 @@ import { startNodeStatsInterval } from "./node-stats-log.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
+import { askOwnerAgentPlanner, scanOwnerAgentOutbound } from "./owner-agent-planner-inbound.js";
+import { loadAgentIdentitySection } from "./agent-identity-context.js";
 import { runInboundChatAssist } from "./inbound-chat-assist.js";
 import { recordTaskJournalActivity, emitOwnerReport } from "./agent-activity-hooks.js";
 import { recordCommerceReceiptFromTaskResult } from "./commerce-receipt-inbound.js";
@@ -7148,6 +7152,15 @@ class NodeServiceImpl implements NodeService {
   }
 
   async runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult> {
+    console.warn(
+      "[EnvoyMesh] runDocumentAgentTurn is deprecated — use runOwnerAgentTurn from Assistant; RPC retained for one release.",
+    );
+    const turn = await this._runDocumentAgentTurnCore(message);
+    await this.recordH2aOwnerTurn(message, turn);
+    return turn;
+  }
+
+  private async _runDocumentAgentTurnCore(message: string): Promise<DocumentAgentTurnResult> {
     this.recordOwnerActivity();
     const context = await this._requireToolExecutionContext();
     const turn = await runDocumentAgentTurnLoop({
@@ -7159,11 +7172,133 @@ class NodeServiceImpl implements NodeService {
       discoverPublishedLibrary: (p) => this.discoverPublishedLibrary(p),
       sendChat: (targetOwnerId, text) => this.sendAgentChat(targetOwnerId, text),
     });
-    await this.recordH2aOwnerTurn(message, turn);
     return { ...turn, answer: stripModelThinking(turn.answer) };
   }
 
-  /** Local H2A turn — Activity row for Assistant lane (Phase 15C). */
+  async runOwnerAgentTurn(message: string): Promise<OwnerAgentTurnResult> {
+    this.recordOwnerActivity();
+    const context = await this._requireToolExecutionContext();
+    const config = await this._configStore.load();
+    const nodeConfig = await this.getNodeConfig();
+    const mesh = this._mesh;
+    const agentIdentitySection = await loadAgentIdentitySection(this._agentIdentityStore);
+    let localManifestCapabilities: string[] | undefined;
+    if (this._capabilityManifestStore) {
+      const manifest = await this._capabilityManifestStore.loadManifest();
+      localManifestCapabilities = manifest?.capabilities;
+    }
+
+    const pendingBeforeIds = new Set((await this.listPendingApprovals()).map((p) => p.id));
+
+    const turn = await runOwnerAgentTurnLoop({
+      message,
+      runDocumentTurn: () => this._runDocumentAgentTurnCore(message),
+      executeTool: (toolName, params) => executeTool(toolName, params, context),
+      matchRoutes: (goal) =>
+        matchAgentCapabilityRoutes({
+          goal,
+          localManifestCapabilities,
+          maxResults: 3,
+        }),
+      postureEnabled: {
+        socialProxy: config?.socialProxyEnabled ?? false,
+        documentAcquisition: config?.documentAcquisitionEnabled ?? false,
+        capabilityProvider: config?.capabilityProviderEnabled ?? false,
+        trustMode: config?.trustModeEnabled ?? false,
+        autonomousKillSwitch: config?.autonomousKillSwitch ?? false,
+      },
+      agentIdentitySection,
+      askPlanner: (prompt) =>
+        askOwnerAgentPlanner({
+          prompt,
+          modelProviders: nodeConfig.modelProviders,
+          requesterPeerId: mesh?.peerId ?? "local-owner",
+          agentIdentityStore: this._agentIdentityStore,
+        }),
+      scanOutbound: scanOwnerAgentOutbound,
+      startDocumentAcquisitionJob: (query) => this.startDocumentAcquisitionJob({ query }),
+      startCapabilityProviderJob: (input) =>
+        this.startCapabilityProviderJob({
+          goal: input.goal,
+          capabilityIds: input.capabilityIds,
+        }),
+      runSocialProxyPass: () => this.runSocialProxyPass(),
+      countPendingApprovals: async () => {
+        const pending = await this.listPendingApprovals();
+        return pending.length;
+      },
+      getBonds: () => this.getBonds(),
+      auditPlannerRound: async (record) => {
+        if (!this._taskStore) return;
+        await this._taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "tool.called",
+            messageId: randomUUID(),
+            remotePeerId: "local",
+            direction: "local",
+            verificationStatus: "verified",
+            latencyMs: 0,
+            outcome: record.ok === false ? "deny" : "record",
+            summary: record.toolName
+              ? `owner agent planner round ${record.round}: ${record.toolName} — ${record.summary}`
+              : `owner agent planner round ${record.round}: ${record.summary}`,
+            createdAt: new Date().toISOString(),
+          }),
+        );
+      },
+    });
+
+    let approvalItems: OwnerAgentTurnResult["approvalItems"];
+    const pendingAfter = await this.listPendingApprovals();
+    const newApprovalItems = pendingAfter.filter((p) => !pendingBeforeIds.has(p.id));
+    if (turn.pendingApproval) {
+      approvalItems = newApprovalItems.length > 0 ? newApprovalItems : pendingAfter.slice(-1);
+    } else if (newApprovalItems.length > 0) {
+      approvalItems = newApprovalItems;
+    }
+
+    await this.recordH2aOwnerAgentTurn(message, turn);
+    return { ...turn, approvalItems, answer: stripModelThinking(turn.answer) };
+  }
+
+  /** Local H2A turn — Activity row for Assistant lane (Phase 15C / 18). */
+  async recordH2aOwnerAgentTurn(message: string, turn: OwnerAgentTurnResult): Promise<void> {
+    if (!this._agentActivityStore) return;
+    const preview = message.trim().slice(0, 80);
+    let kind: AgentActivityRecord["kind"] = "task_progress";
+    let domain: AgentActivityRecord["domain"] = "home";
+    if (turn.domain === "knowledge" || turn.intent === "knowledge") {
+      kind = "knowledge_answered";
+      domain = "knowledge";
+    } else if (turn.domain === "social") {
+      domain = "social";
+    } else if (turn.domain === "document") {
+      domain = "home";
+    } else if (turn.domain === "service") {
+      domain = "research";
+    }
+    if (turn.pendingApproval) {
+      kind = "approval_needed";
+    }
+    const jobHint = turn.jobId ? ` job=${turn.jobId}` : "";
+    const routeHint = turn.routeId ? ` route=${turn.routeId}` : "";
+    const record: AgentActivityRecord = {
+      activityId: randomUUID(),
+      domain,
+      kind,
+      summary:
+        kind === "knowledge_answered"
+          ? `H2A agent: ${preview}`
+          : `H2A ${turn.domain}${jobHint}${routeHint}: ${preview}`,
+      remoteActorRole: "agent",
+      createdAt: new Date().toISOString(),
+      correlationId: turn.correlationId,
+      taskId: turn.jobId,
+      evidence: turn.routeId ? [{ type: "route", ref: turn.routeId }] : undefined,
+    };
+    await this._agentActivityStore.append(record);
+    await this._publishAgentActivity(record);
+  }
   async recordH2aOwnerTurn(message: string, turn: DocumentAgentTurnResult): Promise<void> {
     if (!this._agentActivityStore) return;
     const preview = message.trim().slice(0, 80);

@@ -6,7 +6,7 @@
 
 ## Decision
 
-1. **Product channel** — Owner ↔ home agent assist is surfaced in Social as the dedicated **Assistant** view (not a contact thread). Local turns use `runDocumentAgentTurn` / `knowledgeQuery` RPC; cross-peer H2A uses existing EMP intents on the **message** protocol.
+1. **Product channel** — Owner ↔ home agent assist is surfaced in Social as the dedicated **Assistant** view (not a contact thread). Local turns use **`runOwnerAgentTurn`** (Phase 18; `runDocumentAgentTurn` deprecated) / `knowledgeQuery` RPC; cross-peer H2A uses existing EMP intents on the **message** protocol.
 
 2. **Wire identity** — Do **not** add a required `channel` field to `EnvoyEnvelope` in v0.1. Channel semantics are derived from:
    - **libp2p protocol path** (`/envoymesh/chat` vs `/message` vs `/data`)
@@ -25,7 +25,7 @@
 
 | User action | Wire? | Path / RPC |
 |-------------|-------|------------|
-| Assistant vault Q&A | No | `runDocumentAgentTurn` → Activity `knowledge_answered` |
+| Assistant vault Q&A | No | `runOwnerAgentTurn` → Activity `knowledge_answered` |
 | Peer human chat | Yes | `chat.message` on `/envoymesh/chat` |
 | Friend's agent knowledge assist | Yes | `knowledge.query` / `knowledge.response` on `/message` |
 | A2A task negotiation | Yes | `task.*` on `/message`, roles agent↔agent |

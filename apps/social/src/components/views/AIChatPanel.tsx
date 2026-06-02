@@ -3,6 +3,7 @@ import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { stripModelThinking } from "@envoymesh/api";
+import type { AgentActivityRecord, OwnerAgentApprovalSummary, OwnerAgentDomain, OwnerAgentTurnResult } from "@envoymesh/api";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
 import { messageVisualVariant } from "../../lib/chat-thread-kind.js";
 import { createAssistantDraftCrdt, ASSISTANT_DRAFT_SYNC_SCOPE } from "../../lib/assistant-draft-crdt.js";
@@ -12,11 +13,133 @@ import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatIcon, RemoveIcon } from "../../icons.js";
 import type { TFunction } from "../../context/I18nContext.js";
 
+interface AiMessageTurnMeta extends Pick<
+  OwnerAgentTurnResult,
+  "domain" | "jobId" | "correlationId" | "pendingApproval" | "routeId" | "intent" | "approvalItems"
+> {
+  approvalResolved?: Record<string, "approved" | "rejected">;
+  jobStage?: string;
+  jobStatusSummary?: string;
+}
+
 interface AiMessage {
   id: string;
   role: "user" | "ai";
   text: string;
   timestamp: string;
+  turn?: AiMessageTurnMeta;
+}
+
+export interface AIChatPanelProps {
+  onOpenActivity?: () => void;
+  onOpenInbox?: () => void;
+}
+
+function domainLabel(domain: OwnerAgentDomain, t: TFunction): string {
+  switch (domain) {
+    case "social":
+      return t("aiChat.turnDomainSocial");
+    case "document":
+      return t("aiChat.turnDomainDocument");
+    case "service":
+      return t("aiChat.turnDomainService");
+    default:
+      return t("aiChat.turnDomainKnowledge");
+  }
+}
+
+function AiTurnMetaChips({
+  turn,
+  t,
+  onOpenActivity,
+  onOpenInbox,
+}: {
+  turn: NonNullable<AiMessage["turn"]>;
+  t: TFunction;
+  onOpenActivity?: () => void;
+  onOpenInbox?: () => void;
+}) {
+  const showMeta = turn.domain !== "knowledge" || turn.jobId || turn.pendingApproval;
+  if (!showMeta) return null;
+
+  return (
+    <div className="ai-turn-meta" role="status">
+      {turn.domain !== "knowledge" && (
+        <span className="ai-turn-meta-chip ai-turn-meta-chip--domain">{domainLabel(turn.domain, t)}</span>
+      )}
+      {turn.jobId && (
+        <span className="ai-turn-meta-chip ai-turn-meta-chip--job" title={turn.correlationId ?? undefined}>
+          {t("aiChat.turnJobChip", { jobId: turn.jobId.slice(0, 8) })}
+        </span>
+      )}
+      {turn.jobStatusSummary && (
+        <span className="ai-turn-meta-chip ai-turn-meta-chip--stage" title={turn.jobStatusSummary}>
+          {turn.jobStage
+            ? t("aiChat.turnJobStage", { stage: turn.jobStage })
+            : turn.jobStatusSummary.slice(0, 48)}
+        </span>
+      )}
+      {turn.jobId && onOpenActivity && (
+        <button type="button" className="ai-turn-meta-link" onClick={onOpenActivity}>
+          {t("aiChat.turnViewActivity")}
+        </button>
+      )}
+      {turn.pendingApproval && !turn.approvalItems?.length && onOpenInbox && (
+        <button type="button" className="ai-turn-meta-link ai-turn-meta-link--approval" onClick={onOpenInbox}>
+          {t("aiChat.turnOpenInbox")}
+        </button>
+      )}
+      {turn.pendingApproval && !turn.approvalItems?.length && !onOpenInbox && (
+        <span className="ai-turn-meta-chip ai-turn-meta-chip--approval">{t("aiChat.turnPendingApproval")}</span>
+      )}
+    </div>
+  );
+}
+
+function AiInlineApprovalCard({
+  item,
+  resolved,
+  busy,
+  t,
+  onApprove,
+  onReject,
+}: {
+  item: OwnerAgentApprovalSummary;
+  resolved?: "approved" | "rejected";
+  busy: boolean;
+  t: TFunction;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div className="ai-inline-approval" data-testid={`ai-inline-approval-${item.id}`}>
+      <div className="ai-inline-approval__header">
+        <strong>{item.title}</strong>
+        <span className="ai-inline-approval__type">{item.actionType}</span>
+      </div>
+      {item.description ? <p className="ai-inline-approval__desc">{item.description}</p> : null}
+      {item.draftContent ? (
+        <p className="ai-inline-approval__draft">
+          &ldquo;{item.draftContent.slice(0, 240)}
+          {item.draftContent.length > 240 ? "…" : ""}&rdquo;
+        </p>
+      ) : null}
+      {resolved ? (
+        <p className="ai-inline-approval__resolved" role="status">
+          {resolved === "approved" ? t("aiChat.turnApproved") : t("aiChat.turnRejected")}
+        </p>
+      ) : (
+        <div className="ai-inline-approval__actions">
+          <button type="button" className="accept" disabled={busy} onClick={onApprove}>
+            {busy ? t("aiChat.turnApprovalBusy") : t("aiChat.turnApprove")}
+          </button>
+          <button type="button" className="decline" disabled={busy} onClick={onReject}>
+            {t("aiChat.turnReject")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function fmtDateLabel(dateStr: string, t: TFunction): string {
@@ -42,7 +165,7 @@ function groupByDate(msgs: AiMessage[]): [string, AiMessage[]][] {
   return [...groups.entries()];
 }
 
-export function AIChatPanel() {
+export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = {}) {
   const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig, humanProfile, nodeStatus } = useNodeState();
@@ -57,6 +180,7 @@ export function AIChatPanel() {
   const [aiMessages, setAiMessages] = useState<AiMessage[]>([]);
   const [aiInput, setAiInput] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const draftRef = useRef<ReturnType<typeof createAssistantDraftCrdt> | null>(null);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -91,6 +215,31 @@ export function AIChatPanel() {
     const unsub = nodeService.on("crdt:sync", (data) => {
       if (data.scope !== ASSISTANT_DRAFT_SYNC_SCOPE) return;
       draftRef.current?.applyRemoteUpdate(data.updateBase64);
+    });
+    return unsub;
+  }, [nodeService]);
+
+  useEffect(() => {
+    const unsub = nodeService.on("agent:activity", (record: AgentActivityRecord) => {
+      if (!record.taskId) return;
+      if (record.kind !== "document_acq_stage" && record.kind !== "capability_provider_stage") {
+        return;
+      }
+      const stageMatch = record.summary.match(/^([a-z_]+)/i);
+      setAiMessages((prev) =>
+        prev.map((msg) => {
+          const turn = msg.turn;
+          if (!turn || turn.jobId !== record.taskId) return msg;
+          return {
+            ...msg,
+            turn: {
+              ...turn,
+              jobStatusSummary: record.summary,
+              jobStage: stageMatch?.[1] ?? record.kind,
+            },
+          };
+        }),
+      );
     });
     return unsub;
   }, [nodeService]);
@@ -133,7 +282,7 @@ export function AIChatPanel() {
     setIsAiLoading(true);
 
     try {
-      const turn = await nodeService.runDocumentAgentTurn(question);
+      const turn = await nodeService.runOwnerAgentTurn(question);
       setAiMessages((prev) => [
         ...prev,
         {
@@ -141,6 +290,15 @@ export function AIChatPanel() {
           role: "ai",
           text: stripModelThinking(turn.answer),
           timestamp: new Date().toISOString(),
+          turn: {
+            domain: turn.domain,
+            jobId: turn.jobId,
+            correlationId: turn.correlationId,
+            pendingApproval: turn.pendingApproval,
+            routeId: turn.routeId,
+            intent: turn.intent,
+            approvalItems: turn.approvalItems,
+          },
         },
       ]);
     } catch (error) {
@@ -167,6 +325,47 @@ export function AIChatPanel() {
     if (aiMessages.length === 0) return;
     if (!window.confirm(t("aiChat.clearConfirm"))) return;
     setAiMessages([]);
+  };
+
+  const resolveInlineApproval = async (
+    messageId: string,
+    itemId: string,
+    action: "approved" | "rejected",
+  ) => {
+    setApprovalBusyId(itemId);
+    try {
+      if (action === "approved") {
+        const result = await nodeService.approvePendingApproval(itemId);
+        if (!result.ok) {
+          console.error("Inline approve failed:", result.error);
+          return;
+        }
+      } else {
+        const result = await nodeService.rejectPendingApproval(itemId);
+        if (!result.ok) {
+          console.error("Inline reject failed:", result.error);
+          return;
+        }
+      }
+      setAiMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id !== messageId || !msg.turn) return msg;
+          const approvalResolved = { ...(msg.turn.approvalResolved ?? {}), [itemId]: action };
+          const items = msg.turn.approvalItems ?? [];
+          const pendingApproval = items.some((item) => !approvalResolved[item.id]);
+          return {
+            ...msg,
+            turn: {
+              ...msg.turn,
+              approvalResolved,
+              pendingApproval,
+            },
+          };
+        }),
+      );
+    } finally {
+      setApprovalBusyId(null);
+    }
   };
 
   const modelStatusLabel =
@@ -246,19 +445,40 @@ export function AIChatPanel() {
                     )}
                     <div className="message-stack-bubbles">
                       {stack.map((msg, index) => (
-                        <ChatMessageBubble
-                          key={msg.id}
-                          variant={variant}
-                          position={stackPosition(index, stack.length)}
-                          timeLabel={new Date(msg.timestamp).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                          copyText={stripModelThinking(msg.text)}
-                          onDelete={() => handleDeleteAiMessage(msg.id)}
-                        >
-                          <ChatMessageText text={msg.text} className="message-text" />
-                        </ChatMessageBubble>
+                        <div key={msg.id} className="ai-message-stack-item">
+                          <ChatMessageBubble
+                            variant={variant}
+                            position={stackPosition(index, stack.length)}
+                            timeLabel={new Date(msg.timestamp).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                            copyText={stripModelThinking(msg.text)}
+                            onDelete={() => handleDeleteAiMessage(msg.id)}
+                          >
+                            <ChatMessageText text={msg.text} className="message-text" />
+                          </ChatMessageBubble>
+                          {msg.role === "ai" && msg.turn && (
+                            <AiTurnMetaChips
+                              turn={msg.turn}
+                              t={t}
+                              onOpenActivity={onOpenActivity}
+                              onOpenInbox={onOpenInbox}
+                            />
+                          )}
+                          {msg.role === "ai" &&
+                            msg.turn?.approvalItems?.map((item) => (
+                              <AiInlineApprovalCard
+                                key={item.id}
+                                item={item}
+                                resolved={msg.turn?.approvalResolved?.[item.id]}
+                                busy={approvalBusyId === item.id}
+                                t={t}
+                                onApprove={() => void resolveInlineApproval(msg.id, item.id, "approved")}
+                                onReject={() => void resolveInlineApproval(msg.id, item.id, "rejected")}
+                              />
+                            ))}
+                        </div>
                       ))}
                     </div>
                   </div>

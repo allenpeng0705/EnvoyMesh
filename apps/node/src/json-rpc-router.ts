@@ -305,6 +305,8 @@ export async function routeRpcMethod(
       return ns.knowledgeQuery(params.question as string);
     case "runDocumentAgentTurn":
       return ns.runDocumentAgentTurn(params.message as string);
+    case "runOwnerAgentTurn":
+      return ns.runOwnerAgentTurn(params.message as string);
     case "listSocialProxySessions":
       return ns.listSocialProxySessions();
     case "runSocialProxyPass":

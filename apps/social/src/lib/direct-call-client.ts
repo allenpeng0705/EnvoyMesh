@@ -416,6 +416,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.runDocumentAgentTurn(message);
   }
 
+  async runOwnerAgentTurn(message: string) {
+    return this._ns.runOwnerAgentTurn(message);
+  }
+
   async listLibraryItems(params?: Parameters<NodeService["listLibraryItems"]>[0]) {
     return this._ns.listLibraryItems(params);
   }

@@ -65,6 +65,8 @@ import { loadMobilePublishedDocumentIds, saveMobilePublishedDocumentIds } from "
 import { loadMobileExternalPublish, saveMobileExternalPublish } from "./mobile-external-publish.js";
 import { loadMobileNodePrefs, saveMobileNodePrefs, type MobileNodePrefs } from "./mobile-node-prefs.js";
 import { generateMobileChatDraft, resolveMobileContactAiAccessLevel } from "./mobile-chat-draft.js";
+import { appendMobileAuditEvent, createMobileAuditRecord } from "./mobile-audit-log.js";
+import { askMobileOwnerAgentPlanner, scanMobileOwnerAgentOutbound } from "./mobile-owner-agent-planner.js";
 import {
   applyMobileAutoReplyLimitDenied,
   checkMobileAutoReplyAllowed,
@@ -135,6 +137,8 @@ import {
   evaluateAutonomousPolicy,
   applyAiIdentityToDraftText,
   runDocumentAgentTurn as runDocumentAgentTurnLoop,
+  runOwnerAgentTurn as runOwnerAgentTurnLoop,
+  matchAgentCapabilityRoutes,
   stripModelThinking,
   MAX_PROFILE_GALLERY_PHOTOS,
   canAgentAutonomousShareGalleryPhoto,
@@ -241,6 +245,8 @@ import type {
   PublishedLibraryFileHit,
   SubmitAgentShareProposalParams,
   DocumentAgentTurnResult,
+  DocumentAgentToolResult,
+  OwnerAgentTurnResult,
   TransferStatus,
   NodeConfig,
   PairSharedIdentityResult,
@@ -3908,6 +3914,13 @@ You are the owner's personal AI assistant on EnvoyMesh.
   }
 
   async runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult> {
+    console.warn(
+      "[EnvoyMesh] runDocumentAgentTurn is deprecated — use runOwnerAgentTurn from Assistant; RPC retained for one release.",
+    );
+    return this._runDocumentAgentTurnCore(message);
+  }
+
+  private async _runDocumentAgentTurnCore(message: string): Promise<DocumentAgentTurnResult> {
     if (!this._state) {
       throw new Error("Node not initialized");
     }
@@ -3923,129 +3936,200 @@ You are the owner's personal AI assistant on EnvoyMesh.
         const wireText = applyAiIdentityToDraftText(text, cfg.aiSettings?.identity);
         return self.sendAgentChat(targetOwnerId, wireText);
       },
-      executeTool: async (toolName, params) => {
-        try {
-          if (toolName === "mesh.library_list") {
-            const items = await self.listLibraryItems();
-            return { ok: true, result: { items }, toolName, correlationId: "", latencyMs: 0 };
-          }
-          if (toolName === "mesh.library_discover") {
-            const peers = await self.discoverPublishedLibrary({
-              fileTitleQuery: params.fileTitleQuery as string | undefined,
-              contentHashPrefix: params.contentHashPrefix as string | undefined,
-            });
-            return { ok: true, result: { peers }, toolName, correlationId: "", latencyMs: 0 };
-          }
-          if (toolName === "mesh.library_publish") {
-            const documentId = params.documentId as string;
-            const published = params.published !== false;
-            await self.setLibraryItemPublished(documentId, published);
-            return { ok: true, result: { documentId, published }, toolName, correlationId: "", latencyMs: 0 };
-          }
-          if (toolName === "mesh.share_profile_gallery_photo") {
-            const targetOwnerId = params.targetOwnerId as string | undefined;
-            const photoId = params.photoId as string | undefined;
-            const vaultRelativePath = params.vaultRelativePath as string | undefined;
-            if (!targetOwnerId?.trim()) {
-              return { ok: false, error: "targetOwnerId is required", toolName, correlationId: "", latencyMs: 0 };
-            }
-            const hp = await self.getHumanProfile();
-            const gallery = hp?.galleryPhotos ?? [];
-            const photo = gallery.find(
-              (p) =>
-                (photoId?.trim() && p.photoId === photoId.trim()) ||
-                (vaultRelativePath?.trim() && p.vaultRelativePath === vaultRelativePath.trim()),
-            );
-            if (!photo) {
-              return { ok: false, error: "gallery photo not found on profile", toolName, correlationId: "", latencyMs: 0 };
-            }
-            const bonds = await self.getBonds();
-            const bondLevel = bonds.find((b) => b.peerOwnerId === targetOwnerId.trim())?.level ?? "public";
-            const cfg = await self.getNodeConfig();
-            const profileMedia = normalizeProfileMediaPolicy(cfg.aiSettings?.profileMedia);
-            const sensitivity = galleryPhotoShareSensitivity(photo.visibility);
-            if (
-              canAgentAutonomousShareGalleryPhoto({ policy: profileMedia, photo, bondLevel })
-            ) {
-              await self.shareFile(targetOwnerId.trim(), {
-                path: photo.vaultRelativePath,
-                sensitivity,
-              });
-              return {
-                ok: true,
-                result: { autoShared: true, targetOwnerId: targetOwnerId.trim(), photoId: photo.photoId },
-                toolName,
-                correlationId: "",
-                latencyMs: 0,
-              };
-            }
-            const proposal = await self.submitAgentShareProposal({
-              targetOwnerId: targetOwnerId.trim(),
-              vaultRelativePath: photo.vaultRelativePath,
-              sensitivity,
-              summary: params.summary as string | undefined,
-            });
-            return { ok: true, result: proposal, toolName, correlationId: "", latencyMs: 0 };
-          }
-          if (toolName === "mesh.share_propose") {
-            const proposal = await self.submitAgentShareProposal({
-              targetOwnerId: params.targetOwnerId as string,
-              vaultRelativePath: params.vaultRelativePath as string,
-              sensitivity: (params.sensitivity as "public" | "friends" | "private") ?? "friends",
-              summary: params.summary as string | undefined,
-            });
-            return { ok: true, result: proposal, toolName, correlationId: "", latencyMs: 0 };
-          }
-          if (toolName === "mesh.library_request_share") {
-            const { runLibraryRequestShare } = await import("@envoymesh/api");
-            const outcome = await runLibraryRequestShare(
-              {
-                getBonds: () => self.getBonds(),
-                discoverPublishedLibrary: (p) => self.discoverPublishedLibrary(p),
-                sendChat: async (targetOwnerId, text) => {
-                  const cfg = await self.getNodeConfig();
-                  const wireText = applyAiIdentityToDraftText(text, cfg.aiSettings?.identity);
-                  return self.sendAgentChat(targetOwnerId, wireText);
-                },
-              },
-              {
-                targetOwnerHint: params.targetOwnerHint as string,
-                fileTitleQuery: params.fileTitleQuery as string | undefined,
-                relativePath: params.relativePath as string | undefined,
-                contentHashPrefix: params.contentHashPrefix as string | undefined,
-              },
-            );
-            if (!outcome.ok) {
-              return { ok: false, error: outcome.error, toolName, correlationId: "", latencyMs: 0 };
-            }
-            return { ok: true, result: outcome.result, toolName, correlationId: "", latencyMs: 0 };
-          }
-          if (toolName === "mesh.transfer_status") {
-            const correlationId = params.correlationId as string | undefined;
-            if (correlationId?.trim()) {
-              return { ok: true, result: { status: undefined }, toolName, correlationId: "", latencyMs: 0 };
-            }
-            return { ok: true, result: { transfers: [] }, toolName, correlationId: "", latencyMs: 0 };
-          }
-          if (toolName === "mesh.share_list_pending") {
-            const offers = await self.listPendingShareOffers();
-            return { ok: true, result: { offers }, toolName, correlationId: "", latencyMs: 0 };
-          }
-          if (toolName === "mesh.share_list_proposals") {
-            const proposals = await self.listAgentShareProposals();
-            return { ok: true, result: { proposals }, toolName, correlationId: "", latencyMs: 0 };
-          }
-          return { ok: false, error: `Unsupported tool on mobile: ${toolName}`, toolName, correlationId: "", latencyMs: 0 };
-        } catch (error) {
+      executeTool: (toolName, params) => self._executeOwnerAgentTool(toolName, params),
+    });
+    return { ...turn, answer: stripModelThinking(turn.answer) };
+  }
+
+  private async _executeOwnerAgentTool(
+    toolName: string,
+    params: Record<string, unknown>,
+  ): Promise<DocumentAgentToolResult> {
+    const self = this;
+    try {
+      if (toolName === "mesh.library_list") {
+        const items = await self.listLibraryItems();
+        return { ok: true, result: { items }, toolName, correlationId: "", latencyMs: 0 };
+      }
+      if (toolName === "mesh.library_discover") {
+        const peers = await self.discoverPublishedLibrary({
+          fileTitleQuery: params.fileTitleQuery as string | undefined,
+          contentHashPrefix: params.contentHashPrefix as string | undefined,
+        });
+        return { ok: true, result: { peers }, toolName, correlationId: "", latencyMs: 0 };
+      }
+      if (toolName === "mesh.library_publish") {
+        const documentId = params.documentId as string;
+        const published = params.published !== false;
+        await self.setLibraryItemPublished(documentId, published);
+        return { ok: true, result: { documentId, published }, toolName, correlationId: "", latencyMs: 0 };
+      }
+      if (toolName === "mesh.share_profile_gallery_photo") {
+        const targetOwnerId = params.targetOwnerId as string | undefined;
+        const photoId = params.photoId as string | undefined;
+        const vaultRelativePath = params.vaultRelativePath as string | undefined;
+        if (!targetOwnerId?.trim()) {
+          return { ok: false, error: "targetOwnerId is required", toolName, correlationId: "", latencyMs: 0 };
+        }
+        const hp = await self.getHumanProfile();
+        const gallery = hp?.galleryPhotos ?? [];
+        const photo = gallery.find(
+          (p) =>
+            (photoId?.trim() && p.photoId === photoId.trim()) ||
+            (vaultRelativePath?.trim() && p.vaultRelativePath === vaultRelativePath.trim()),
+        );
+        if (!photo) {
+          return { ok: false, error: "gallery photo not found on profile", toolName, correlationId: "", latencyMs: 0 };
+        }
+        const bonds = await self.getBonds();
+        const bondLevel = bonds.find((b) => b.peerOwnerId === targetOwnerId.trim())?.level ?? "public";
+        const cfg = await self.getNodeConfig();
+        const profileMedia = normalizeProfileMediaPolicy(cfg.aiSettings?.profileMedia);
+        const sensitivity = galleryPhotoShareSensitivity(photo.visibility);
+        if (
+          canAgentAutonomousShareGalleryPhoto({ policy: profileMedia, photo, bondLevel })
+        ) {
+          await self.shareFile(targetOwnerId.trim(), {
+            path: photo.vaultRelativePath,
+            sensitivity,
+          });
           return {
-            ok: false,
-            error: error instanceof Error ? error.message : String(error),
+            ok: true,
+            result: { autoShared: true, targetOwnerId: targetOwnerId.trim(), photoId: photo.photoId },
             toolName,
             correlationId: "",
             latencyMs: 0,
           };
         }
+        const proposal = await self.submitAgentShareProposal({
+          targetOwnerId: targetOwnerId.trim(),
+          vaultRelativePath: photo.vaultRelativePath,
+          sensitivity,
+          summary: params.summary as string | undefined,
+        });
+        return { ok: true, result: proposal, toolName, correlationId: "", latencyMs: 0 };
+      }
+      if (toolName === "mesh.share_propose") {
+        const proposal = await self.submitAgentShareProposal({
+          targetOwnerId: params.targetOwnerId as string,
+          vaultRelativePath: params.vaultRelativePath as string,
+          sensitivity: (params.sensitivity as "public" | "friends" | "private") ?? "friends",
+          summary: params.summary as string | undefined,
+        });
+        return { ok: true, result: proposal, toolName, correlationId: "", latencyMs: 0 };
+      }
+      if (toolName === "mesh.library_request_share") {
+        const { runLibraryRequestShare } = await import("@envoymesh/api");
+        const outcome = await runLibraryRequestShare(
+          {
+            getBonds: () => self.getBonds(),
+            discoverPublishedLibrary: (p) => self.discoverPublishedLibrary(p),
+            sendChat: async (targetOwnerId, text) => {
+              const cfg = await self.getNodeConfig();
+              const wireText = applyAiIdentityToDraftText(text, cfg.aiSettings?.identity);
+              return self.sendAgentChat(targetOwnerId, wireText);
+            },
+          },
+          {
+            targetOwnerHint: params.targetOwnerHint as string,
+            fileTitleQuery: params.fileTitleQuery as string | undefined,
+            relativePath: params.relativePath as string | undefined,
+            contentHashPrefix: params.contentHashPrefix as string | undefined,
+          },
+        );
+        if (!outcome.ok) {
+          return { ok: false, error: outcome.error, toolName, correlationId: "", latencyMs: 0 };
+        }
+        return { ok: true, result: outcome.result, toolName, correlationId: "", latencyMs: 0 };
+      }
+      if (toolName === "mesh.transfer_status") {
+        const correlationId = params.correlationId as string | undefined;
+        if (correlationId?.trim()) {
+          return { ok: true, result: { status: undefined }, toolName, correlationId: "", latencyMs: 0 };
+        }
+        return { ok: true, result: { transfers: [] }, toolName, correlationId: "", latencyMs: 0 };
+      }
+      if (toolName === "mesh.share_list_pending") {
+        const offers = await self.listPendingShareOffers();
+        return { ok: true, result: { offers }, toolName, correlationId: "", latencyMs: 0 };
+      }
+      if (toolName === "mesh.share_list_proposals") {
+        const proposals = await self.listAgentShareProposals();
+        return { ok: true, result: { proposals }, toolName, correlationId: "", latencyMs: 0 };
+      }
+      if (toolName.startsWith("mesh.intro.")) {
+        return {
+          ok: false,
+          error: "Trust mode intro tools are not available on mobile yet",
+          toolName,
+          correlationId: "",
+          latencyMs: 0,
+        };
+      }
+      return { ok: false, error: `Unsupported tool on mobile: ${toolName}`, toolName, correlationId: "", latencyMs: 0 };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+        toolName,
+        correlationId: "",
+        latencyMs: 0,
+      };
+    }
+  }
+
+  async runOwnerAgentTurn(message: string): Promise<OwnerAgentTurnResult> {
+    if (!this._state) {
+      throw new Error("Node not initialized");
+    }
+    const self = this;
+    const config = await self.getNodeConfig();
+    const peerId = (self._meshPeerId || "").trim() || self._state.agent.agentPeerId;
+    const turn = await runOwnerAgentTurnLoop({
+      message,
+      runDocumentTurn: () => self._runDocumentAgentTurnCore(message),
+      executeTool: (toolName, params) => self._executeOwnerAgentTool(toolName, params),
+      matchRoutes: (goal) => matchAgentCapabilityRoutes({ goal, maxResults: 3 }),
+      postureEnabled: {
+        socialProxy: config.socialProxyEnabled ?? false,
+        documentAcquisition: config.documentAcquisitionEnabled ?? false,
+        capabilityProvider: config.capabilityProviderEnabled ?? false,
+        trustMode: config.trustModeEnabled ?? false,
+        autonomousKillSwitch: config.autonomousKillSwitch ?? false,
       },
+      agentIdentitySection: undefined,
+      askPlanner: (prompt) =>
+        askMobileOwnerAgentPlanner({
+          prompt,
+          modelProviders: config.modelProviders,
+          requesterPeerId: peerId,
+        }),
+      scanOutbound: scanMobileOwnerAgentOutbound,
+      auditPlannerRound: async (record) => {
+        await appendMobileAuditEvent(
+          self._profileDir,
+          createMobileAuditRecord({
+            type: "tool.called",
+            outcome: record.ok === false ? "deny" : "record",
+            summary: record.toolName
+              ? `owner agent planner round ${record.round}: ${record.toolName} — ${record.summary}`
+              : `owner agent planner round ${record.round}: ${record.summary}`,
+            direction: "local",
+          }),
+        );
+      },
+      startDocumentAcquisitionJob: (query) => self.startDocumentAcquisitionJob({ query }),
+      startCapabilityProviderJob: (input) =>
+        self.startCapabilityProviderJob({
+          goal: input.goal,
+          capabilityIds: input.capabilityIds,
+        }),
+      runSocialProxyPass: () => self.runSocialProxyPass(),
+      countPendingApprovals: async () => {
+        const pending = await self.listPendingApprovals();
+        return pending.length;
+      },
+      getBonds: () => self.getBonds(),
     });
     return { ...turn, answer: stripModelThinking(turn.answer) };
   }

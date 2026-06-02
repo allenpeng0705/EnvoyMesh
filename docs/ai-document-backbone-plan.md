@@ -96,7 +96,7 @@ EnvoyMesh already runs an on-node LLM path independent of any external agent:
 | **Approval queue** | `approval-queue.ts` | Owner review for sensitive autonomous actions |
 | **Semantic firewall** | `@envoymesh/models` | Pre/post-model filtering; egress scan on tool outputs |
 
-**Today:** native LLM runs **`runDocumentAgentTurn`** (heuristic planner + `ToolRegistry`) from Envoy AI chat, with tier-0 proposals by default and tier-2 autonomous share when configured in Settings → AI.
+**Today (Phase 18):** Assistant uses **`runOwnerAgentTurn`** (route + planner + document-loop fallback). **`runDocumentAgentTurn`** remains as a deprecated RPC / internal `_runDocumentAgentTurnCore` helper for explicit document commands and tests.
 
 **Shipped modules:** `packages/api/src/document-agent-loop.ts`, `NodeServiceImpl.runDocumentAgentTurn()`, `getToolExecutionContext()`, `packages/api/src/document-autonomy.ts`, `apps/node/src/transfer-tracker.ts`, bridge `POST /bridge/execute-tool` + async mesh replies.
 

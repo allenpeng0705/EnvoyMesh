@@ -9,6 +9,7 @@ import type {
   OwnerIdentity,
 } from "@envoymesh/identity";
 import type { DocumentAgentTurnResult } from "./document-agent-loop.js";
+import type { OwnerAgentTurnResult } from "./owner-agent-loop.js";
 import type { DocumentAcquisitionJob } from "./document-acquisition.js";
 import type { CapabilityProviderJob } from "./capability-provider.js";
 import type { SocialProxySession } from "./social-proxy-session.js";
@@ -1576,9 +1577,14 @@ export interface NodeService {
   knowledgeQuery(question: string): Promise<string>;
 
   /**
-   * Native Envoy AI turn: routes document intents to tools, falls back to vault knowledgeQuery.
+   * Native Envoy AI document turn (heuristic tool routing).
+   *
+   * @deprecated Use {@link NodeService.runOwnerAgentTurn} from the Assistant UI.
+   * RPC retained for one release; internal `_runDocumentAgentTurnCore` still powers owner-agent fallback.
    */
   runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult>;
+  /** Phase 18 — native owner agent orchestration (Assistant primary backend). */
+  runOwnerAgentTurn(message: string): Promise<OwnerAgentTurnResult>;
 
   // ----- Phase 16 — EnvoyAI postures -----
 

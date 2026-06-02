@@ -101,7 +101,7 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H
       </aside>
 
       <section className="h2a-channel-main chat-area">
-        <AIChatPanel />
+        <AIChatPanel onOpenActivity={onOpenActivity} onOpenInbox={onOpenInbox} />
       </section>
       </div>
     </div>

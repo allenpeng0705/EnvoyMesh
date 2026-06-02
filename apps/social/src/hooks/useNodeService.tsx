@@ -202,6 +202,7 @@ export interface NodeServiceClient {
   // AI / Knowledge Query
   knowledgeQuery(question: string): Promise<string>;
   runDocumentAgentTurn(message: string): Promise<import("@envoymesh/api").DocumentAgentTurnResult>;
+  runOwnerAgentTurn(message: string): Promise<import("@envoymesh/api").OwnerAgentTurnResult>;
 
   // Shared vault library
   listLibraryItems(params?: ListLibraryItemsParams): Promise<LibraryItem[]>;
@@ -583,6 +584,9 @@ function createWsNodeServiceClient(
     async knowledgeQuery(question: string) { return wsClient.rpc("knowledgeQuery", { question }) as Promise<string>; },
     async runDocumentAgentTurn(message: string) {
       return wsClient.rpc("runDocumentAgentTurn", { message }) as Promise<import("@envoymesh/api").DocumentAgentTurnResult>;
+    },
+    async runOwnerAgentTurn(message: string) {
+      return wsClient.rpc("runOwnerAgentTurn", { message }) as Promise<import("@envoymesh/api").OwnerAgentTurnResult>;
     },
     async listLibraryItems(params?: ListLibraryItemsParams) {
       return wsClient.rpc("listLibraryItems", (params ?? {}) as Record<string, unknown>) as Promise<LibraryItem[]>;

@@ -30,6 +30,7 @@ import {
 } from "@envoymesh/protocol";
 import { ApprovalQueue, isA2ATaskIntent } from "@envoymesh/api";
 import { EnvoyMesh } from "@envoymesh/network";
+import type { ModelProviderConfig } from "@envoymesh/api";
 import { buildVaultIndex } from "@envoymesh/vault";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -347,6 +348,30 @@ export async function waitForPhase13(
   throw new Error("waitForPhase13 timeout");
 }
 
+/** Dial every test node to every other (full mesh for small E2E clusters). */
+export async function connectPhase13Peers(...nodes: Phase13TestNode[]): Promise<void> {
+  for (let i = 0; i < nodes.length; i += 1) {
+    for (let j = 0; j < nodes.length; j += 1) {
+      if (i === j) continue;
+      const local = nodes[i]!;
+      const remote = nodes[j]!;
+      await local.mesh.probePeer(remote.mesh.multiaddrs[0]!);
+    }
+  }
+}
+
+/** Bond acquirer to each publisher and wire discovery/share handlers for acquisition E2E. */
+export async function wirePhase13AcquisitionCluster(
+  acquirer: Phase13TestNode,
+  publishers: Array<{ node: Phase13TestNode; displayName: string }>,
+): Promise<void> {
+  for (const { node, displayName } of publishers) {
+    await registerBondedPeer(acquirer, node, displayName);
+    await registerBondedPeer(node, acquirer, "Acquirer");
+    wireDiscoveryAndShareForAcquisition(node, acquirer);
+  }
+}
+
 export async function cleanupPhase13Node(node: Phase13TestNode): Promise<void> {
   await node.mesh.stop().catch(() => {});
   await rm(node.profileDir, { recursive: true, force: true }).catch(() => {});
@@ -578,7 +603,10 @@ export async function primeLocalVaultRagIndex(node: Phase13TestNode): Promise<vo
 /**
  * Full inbound knowledge.query handler (vault RAG + mock model) for E2E tests.
  */
-export async function wireInboundKnowledgeQueryReply(publisher: Phase13TestNode): Promise<void> {
+export async function wireInboundKnowledgeQueryReply(
+  publisher: Phase13TestNode,
+  modelProviders: ModelProviderConfig = { mode: "mock" },
+): Promise<void> {
   publisher.mesh.onMessage(async ({ envelope, remotePeerId, replyWithEnvelope }) => {
     if (!verifyInboundEnvelope(envelope) || envelope.intent !== "knowledge.query") return;
     const vaultIndex = await buildVaultIndex({ rootDir: publisher.vaultDir });
@@ -592,7 +620,7 @@ export async function wireInboundKnowledgeQueryReply(publisher: Phase13TestNode)
       peerDirectoryStore: publisher.peerDirectory,
       profile: publisher.profile,
       vaultIndex,
-      modelProviders: { mode: "mock" },
+      modelProviders,
     });
     if (!replyWithEnvelope) return;
     const refused = !result.ok || (result.responsePayload?.refused ?? false);

@@ -155,6 +155,20 @@ export const aiChatMessages = {
   badge: "Envoy AI",
   inputPlaceholder: "Ask Envoy AI anything…",
   send: "Send",
+  turnDomainSocial: "Social",
+  turnDomainDocument: "Documents",
+  turnDomainService: "Services",
+  turnDomainKnowledge: "Knowledge",
+  turnJobChip: "Job {jobId}",
+  turnViewActivity: "View in Activity",
+  turnPendingApproval: "Approval needed — open Inbox",
+  turnOpenInbox: "Open Inbox",
+  turnApprove: "Approve",
+  turnReject: "Reject",
+  turnApproved: "Approved",
+  turnRejected: "Rejected",
+  turnApprovalBusy: "Working…",
+  turnJobStage: "Stage: {stage}",
 } as const;
 
 export const h2aMessages = {
