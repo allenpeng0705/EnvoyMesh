@@ -118,6 +118,9 @@ export interface PersistedNodeConfig {
   /** Phase 16D — capability provider (agent intent routing jobs). */
   capabilityProviderEnabled?: boolean;
   capabilityProviderMandateId?: string;
+  /** Phase 19 — bond autonomy posture (agent-driven bond acceptance). */
+  bondAutonomyEnabled?: boolean;
+  bondAutonomyMandateId?: string;
 }
 
 export interface NodeConfigStore {

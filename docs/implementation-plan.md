@@ -60,6 +60,11 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 16 — EnvoyAI standing delegation & autonomous postures](#phase-16-envoyai-standing-delegation--autonomous-postures)
 - [Phase 17 — Location-scoped peer discovery](#phase-17-location-scoped-peer-discovery)
 - [Phase 18 — Native owner agent (Assistant = Agent)](#phase-18-native-owner-agent-assistant--agent)
+- [Phase 19 — Bond Autonomy](#phase-19-bond-autonomy--agent-driven-bond-acceptance-x-protocol--runtime)
+- [Phase 20 — Network-wide Document Discovery](#phase-20-network-wide-document-discovery-)
+- [Phase 21 — Network-wide Capability Discovery](#phase-21-network-wide-capability-discovery-)
+- [Phase 22 — Federated RAG](#phase-22-federated-rag-)
+- [Phases 23–25 — Strategic directions](#phases-2325-strategic-directions-design-only)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -76,6 +81,11 @@ Active next direction:
 1. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row; DID WAN resolver.
 2. **Parked until scoped:** Story E payment rail, thin satellite app.
 3. **Phase 18 — Native owner agent** — **`[x]` complete** (see [Phase 18 exit criteria](#phase-18-exit-criteria-overall)).
+4. **Phase 19 — Bond Autonomy** — **`[x]` shipped** (schema + inbound + outbound worker + 24 tests).
+5. **Phase 20 — Network-wide Document Discovery** — **`[x]` shipped** (schema + broadcast helper + 10 tests).
+6. **Phase 21 — Network-wide Capability Discovery** — **`[x]` shipped** (schema + broadcast helper + 4 tests).
+7. **Phase 22 — Federated RAG** — **`[x]` shipped** (schema + fan-out worker + 10 tests).
+8. **Phases 23–25** — Proactive Social Graph, Agent Marketplace, Ambient Awareness — design docs in [roadmap.md](./roadmap.md#aiagent-vision-beyond-phase-18).
 
 Product-level **user stories and epics** (discovery, broadcast termination, communication roles, and so on) live in [EnvoyMesh scenarios](./scenarios.md). Narrative journeys live in [UserStory.md](./UserStory.md). Periodically reconcile both with code via [alignment-review.md](./alignment-review.md). Use those files to prioritize; keep this plan aligned when scope or shipped work changes.
 
@@ -2711,10 +2721,130 @@ Verified by `apps/node/test/phase-18-e2e.test.ts` (+ unit/integration suites bel
 
 ---
 
+## Phase 19: Bond Autonomy — Agent-driven bond acceptance **`[x]` protocol, `[~]` runtime**
+
+**Goal:** Allow the owner to grant the agent a `bond_autonomy` mandate. When active, the agent can auto-accept bond requests within policy bounds — referral proof, sensitivity ceiling, daily cap. All auto-bonds are audited and surfaced in Activity.
+
+**Depends on:** Phase 9 ToolRegistry · Phase 13 A2A actor disclosure · Phase 16 postures.
+
+**Design:** [roadmap.md § Refined #1](./roadmap.md#1-making-friends--with-ai-bond-autonomy) · [protocol-standard.md § EnvoyAI security rules](./protocol-standard.md#envoyai-security-rules) (rule #1 exception).
+
+### 19A — Protocol schema (`bond_autonomy` posture)
+
+- `[x]` Add `bond_autonomy` to `EmpPostureSchema` enum
+- `[x]` Add `bond-autonomy` to `EmpCapabilitySchema`
+- `[x]` Add `EMP_AGENT_SCOPE_BOND_AUTONOMY` scope constant
+- `[x]` Add `BondAutonomyPosturePolicySchema` (maxAutoBondsPerDay, requireReferralProof, maxAutoBondTier, minTrustOverlapScore, notifyOwnerOnAutoBond)
+- `[x]` Add `.strict()` to all posture policy schemas for correct Zod union discrimination
+- `[x]` Add type exports (`BondAutonomyPosturePolicy`, `CapabilityProviderPosturePolicy`, `FederatedRagConfig`)
+
+### 19B — Inbound handler (peer verification)
+
+- `[x]` `bond-inbound.ts`: inbound `bond.accept` with `senderRole=agent` requires `agentCredential` scoped to `emp.bond_autonomy`
+- `[x]` Audit rejection when missing credential or wrong scope
+
+### 19C — Node config
+
+- `[x]` Add `bondAutonomyEnabled` / `bondAutonomyMandateId` to `PersistedNodeConfig`
+
+### 19D — Outbound path
+
+- `[x]` `bond-autonomy-worker.ts`: `evaluateBondAutonomy()` policy checker, `sendAgentBondAccept()` outbound with agent key + credential, `runBondAutonomyPass()` batch processor
+- `[x]` `node-config-store.ts`: `bondAutonomyEnabled` / `bondAutonomyMandateId` fields
+
+### 19E — Write tests
+
+- `[x]` Protocol: bond_autonomy schema defaults, custom values, mandate creation, credential scope (6 tests)
+- `[x]` Runtime: bond-inbound rejects agent bond.accept without credential, wrong scope; accepts valid credential (3 tests)
+- `[x]` Worker: evaluateBondAutonomy (10 tests), sendAgentBondAccept (2 tests), runBondAutonomyPass (2 tests) — 15 tests total
+
+**Exit:** Protocol + inbound + outbound worker shipped; integration into node daemon loop next.
+
+---
+
+## Phase 20: Network-wide Document Discovery **`[~]`**
+
+**Goal:** Expand document acquisition beyond bonded contacts to the full network. Nodes publish public documents discoverable by any peer. Search starts from bonded contacts, then fans out via broadcast with stopping rules (TTL, expiry, max results).
+
+**Design:** [roadmap.md § Refined #2](./roadmap.md#2-document-find--request--network-wide-not-just-bonded).
+
+### 20A — Protocol schema
+
+- `[x]` `DocumentAcquisitionPosturePolicySchema`: add `maxBroadcastResults`, `broadcastResponseTimeoutMs`
+- `[x]` When `searchBondedOnly=false`, maxHops controls broadcast TTL
+
+### 20B — Broadcast-based document discovery
+
+- `[x]` `document-discovery-broadcast.ts`: `broadcastDocumentDiscovery()` fan-out with bonded-first then all-known-peers, TTL/stopping rules
+- `[x]` `handleBroadcastDocumentRequest()`: inbound public document match with sensitivity filtering, keyword/topic matching
+- `[x]` Metadata ≠ bytes: `handleBroadcastDocumentRequest` returns title/hash/topics/cid only
+
+### 20C — Write tests
+
+- `[x]` Protocol: document_acquisition defaults include broadcast fields
+- `[x]` Runtime: broadcast fan-out (bonded-only, all-known, dedup, maxHops/Results) — 4 tests
+- `[x]` Runtime: `handleBroadcastDocumentRequest` matching, sensitivity filtering, topic matching — 6 tests
+
+---
+
+## Phase 21: Network-wide Capability Discovery **`[~]`**
+
+**Goal:** Expand capability/task discovery beyond bonded contacts. Agent broadcasts capability queries across the mesh. Unbonded task execution gated by mandate bounds, trust tier, reputation, and owner approval.
+
+**Design:** [roadmap.md § Refined #3](./roadmap.md#3-capability-query--task--network-wide-not-just-bonded).
+
+### 21A — Protocol schema
+
+- `[x]` `CapabilityProviderPosturePolicySchema`: add `maxHops`, `maxBroadcastResults`, `broadcastResponseTimeoutMs`, `allowUnbondedTaskExecution`
+
+### 21B — Broadcast-based capability search
+
+- `[x]` `capability-discovery-broadcast.ts`: `broadcastCapabilityDiscovery()` fan-out with bonded-first then all-known-peers, `requestedCapabilities` in payload
+
+### 21C — Write tests
+
+- `[x]` Protocol: capability_provider defaults include new broadcast fields
+- `[x]` Runtime: broadcast capability search (bonded-only, all-known, dedup, payload verification) — 4 tests
+
+---
+
+## Phase 22: Federated RAG **`[~]`**
+
+**Goal:** `knowledge.query` searches local vault AND queries bonded peers' published libraries. Agent synthesizes a single answer from distributed sources. No central index — each node answers from its own vault.
+
+**Design:** [roadmap.md § Direction 2](./roadmap.md#direction-2-ai-library--the-mesh-as-a-distributed-knowledge-base).
+
+### 22A — Protocol schema
+
+- `[x]` `FederatedRagConfigSchema` (enabled, maxPeers, queryTimeoutMs, maxSensitivity, includeUnbondedPeers, maxPeerResults)
+
+### 22B — Runtime
+
+- `[x]` `federated-rag.ts`: `executeFederatedRagQuery()` fan-out to bonded peers with config limits, `synthesizeFederatedResult()` deterministic merge
+
+### 22C — Node config
+
+- `[x]` `FederatedRagConfigSchema` in protocol; config passed via `FederatedRagDeps`
+
+### 22D — Write tests
+
+- `[x]` Protocol: federated RAG config defaults + custom values (2 tests)
+- `[x]` Runtime: disabled, no-peers, parallel query, maxPeers limit, error handling, empty answers — 6 tests
+- `[x]` Runtime: `synthesizeFederatedResult` local-only, merge, peer-only, fallback — 4 tests
+
+---
+
+## Phases 23–25: Strategic directions (design only)
+
+Phases 23 (Proactive Social Graph), 24 (Agent Marketplace), and 25 (Ambient Mesh Awareness) are documented in the [roadmap](./roadmap.md#aiagent-vision-beyond-phase-18). They will be phased into this plan when scoped with concrete exit criteria. All three share the existing EMP intents and posture infrastructure; no new wire protocol needed.
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-06-03 | **Phases 19–22 shipped:** bond_autonomy (protocol, inbound, outbound worker: `bond-autonomy-worker.ts`, 24 tests); network-wide document discovery (`document-discovery-broadcast.ts`, 10 tests); network-wide capability discovery (`capability-discovery-broadcast.ts`, 4 tests); federated RAG (`federated-rag.ts`, 10 tests). Total 48 new tests, 181 passing. |
 | 2026-05-28 | **Phase 18 complete:** Exit criteria E2E (`phase-18-e2e.test.ts`); document-hunt route priority fix; exit criteria + test matrix updated. |
 | 2026-05-28 | **Phase 18C–18D:** Assistant inline approval cards (`approvalItems` on turn); `runDocumentAgentTurn` deprecated (internal `_runDocumentAgentTurnCore`; RPC warning one release). |
 | 2026-05-28 | **Phase 18B–18C (first slices):** Owner-agent LLM planner loop (`runOwnerAgentPlannerLoop`, tool allowlist, node model wiring); Assistant turn meta chips (job/domain/approval) in `AIChatPanel`. |

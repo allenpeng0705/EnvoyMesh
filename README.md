@@ -31,9 +31,12 @@ agent into the same private network so it can talk to your friends on your behal
   negotiate tasks on your behalf (e.g. "find a time that works for both of us next week").
 - **Take it on your phone.** Install the mobile app, scan a QR code on your computer, and
   the same identity, contacts, and chat history show up on your phone — same person, two
-  devices.
+  devices. The full pairing handshake is in
+  [Pairing the phone with the desktop](#pairing-the-phone-with-the-desktop) below.
 - **Use the assistant you already have.** EnvoyMesh has a small "bridge" to **HomeClaw**
-  and **OpenClaw** so you can keep using your favorite agent.
+  and **OpenClaw** so you can keep using your favorite agent. The full bridge architecture
+  (sync chat + async `mesh.async_reply`, security boundary, wire contract) is in
+  [The agent bridge](#the-agent-bridge-homeclaw-openclaw-your-own) below.
 
 If you've ever wished WhatsApp, Signal, Discord, or ChatGPT were run by *you* — that's
 what this is.
@@ -206,7 +209,7 @@ POST http://127.0.0.1:3031/bridge/send
 {
   "to":       "envoy_<peer-id>",
   "replyTo":  "knowledge.query",
-  "payload":  { "matches": [ … ] }
+  "payload":  { "matches": [ ... ] }
 }
 ```
 
@@ -220,18 +223,18 @@ The mobile app is a **full EnvoyMesh node**, not a thin client. After pairing, t
 participates in the same P2P mesh as the desktop: same `ownerId`, same contacts, same chat
 log, same bonds — but a distinct `deviceId` and its own signing key.
 
-### What “pairing” actually does
+### What "pairing" actually does
 
 ```
    ┌──────────── desktop (home node) ────────────┐
    │  Settings → "Show pairing QR"              │
    │  ┌──────────────────────────────────────┐  │
    │  │  envoy://pair?                       │  │      ┌────────── phone ──────────┐
-   │  │     wsUrl=wss://relay…/ws            │──┼──▶   │  Scan QR with mobile app  │
+   │  │     wsUrl=wss://relay.../ws            │──┼──▶   │  Scan QR with mobile app  │
    │  │     token=<10-min one-shot>          │  │  QR  │  (Capacitor scanner)      │
    │  │     ownerId=envoy:owner:<sha256>     │  │      └────────────┬─────────────┘
    │  │     ownerPublicKey=<PEM>             │  │                   │
-   │  │     agentPeerId=envoy_agent_…        │  │                   ▼
+   │  │     agentPeerId=envoy_agent_...        │  │                   ▼
    │  │     agentName=My Agent               │  │   parseEnvoyPairUri() → params
    │  │  └──────────────────────────────────────┘  │
    └──────────────────────────────────────────┘     │
@@ -239,7 +242,7 @@ log, same bonds — but a distinct `deviceId` and its own signing key.
                                                       │     • deviceKeypair (Ed25519)
                                                       │     • ecdhKeyPair   (X25519)
                                                       ▼
-                          ws://relay/…?target=<home>&token=…
+                          ws://relay/...?target=<home>&token=...
                                       │
                                       ▼   pairSharedIdentity RPC
                           home node  ─────────────────────▶  mobile
@@ -251,7 +254,7 @@ log, same bonds — but a distinct `deviceId` and its own signing key.
                           ─ signs a Device Certificate (owner → device)
                           ─ returns: { encryptedOwnerKey, deviceCertificate,
                                        sessionToken, ownerId, ownerPublicKey,
-                                       agentPeerId, agentPubKey, … }
+                                       agentPeerId, agentPubKey, ... }
 ```
 
 The mobile app then:
@@ -405,7 +408,7 @@ Any HTTP service that accepts a `POST` of:
 { "from": "...", "fromOwnerId": "...", "fromName": "...", "text": "Hello!" }
 ```
 
-…and replies by `POST`ing `{ "to": "...", "text": "Hi back!" }` to
+...and replies by `POST`ing `{ "to": "...", "text": "Hi back!" }` to
 `http://127.0.0.1:3031/bridge/send` will work. No SDK, no library. The full reference
 (including OpenClaw's advanced `mesh.async_reply` flow) is in
 [`docs/agent_bridge_guide.md`](docs/agent_bridge_guide.md).
@@ -421,7 +424,7 @@ EnvoyMesh/
 │   ├── tauri/       # Native desktop window that bundles the Social app + node
 │   ├── social/      # The Social/chat UI (Vite + React), used by desktop & mobile
 │   └── mobile/      # Capacitor iOS/Android wrapper (full Envoy inside the app)
-├── packages/        # The building blocks — protocol, identity, network, vault, …
+├── packages/        # The building blocks — protocol, identity, network, vault, ...
 ├── docs/            # Design, security model, phase-by-phase plan
 ├── OpenClawExtension/  # The OpenClaw channel plugin (canonical source)
 ├── QuickStart.md    # ← Step-by-step: build, run, mobile, multi-machine, bridge
@@ -441,7 +444,7 @@ catalog, and async workers the home-node agent uses, gated by your trust list, m
 and approval queue. You can tell the Assistant to make friends, find documents, find
 capable peers, and run or request services — and the human still commits bonds.
 
-Phases 1–18 are shipped (Phases 11 mobile, 12 trust mode, 13 actor disclosure, 15–17
+Phases 1-18 are shipped (Phases 11 mobile, 12 trust mode, 13 actor disclosure, 15-17
 reach & semantics, 16 standing delegation, 18 native agent). The full phase-by-phase
 plan lives in [`docs/implementation-plan.md`](docs/implementation-plan.md); the
 Assistant design rationale is in [`docs/native-owner-agent.md`](docs/native-owner-agent.md).

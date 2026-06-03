@@ -256,6 +256,49 @@ export async function handleInboundBondIntent(
 
     if (envelope.intent === "bond.accept") {
       console.log(`[bond-inbound] handling bond.accept from ${remotePeerId}`);
+
+      // Phase 19: bond_autonomy posture — agent bond.accept requires bond_autonomy credential
+      if (envelope.senderRole === "agent") {
+        const credential = envelope.agentCredential;
+        if (!credential) {
+          await taskStore.appendAuditEvent(
+            createAuditEvent({
+              type: "message.rejected",
+              intent: envelope.intent,
+              messageId: envelope.messageId,
+              correlationId,
+              remotePeerId,
+              direction: "inbound",
+              verificationStatus: "rejected",
+              latencyMs: Date.now() - receivedAt,
+              outcome: "deny",
+              summary: "bond.accept from agent rejected: missing agentCredential (bond_autonomy required)",
+              createdAt: envelope.createdAt,
+            }),
+          );
+          return { ok: false, reason: "bond.accept from agent requires bond_autonomy agentCredential" };
+        }
+        if (!credential.scope.includes("emp.bond_autonomy")) {
+          await taskStore.appendAuditEvent(
+            createAuditEvent({
+              type: "message.rejected",
+              intent: envelope.intent,
+              messageId: envelope.messageId,
+              correlationId,
+              remotePeerId,
+              direction: "inbound",
+              verificationStatus: "rejected",
+              latencyMs: Date.now() - receivedAt,
+              outcome: "deny",
+              summary: `bond.accept from agent rejected: agentCredential scope missing emp.bond_autonomy (scopes: ${credential.scope.join(", ")})`,
+              createdAt: envelope.createdAt,
+            }),
+          );
+          return { ok: false, reason: "bond.accept from agent requires bond_autonomy scope in agentCredential" };
+        }
+        console.log(`[bond-inbound] bond.accept from agent: bond_autonomy credential verified (credentialId=${credential.credentialId})`);
+      }
+
       let payload;
       try {
         payload = parseBondAcceptPayload(envelope.payload);

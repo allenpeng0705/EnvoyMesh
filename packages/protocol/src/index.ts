@@ -86,7 +86,7 @@ export const CapabilitySchema = z.enum([
 ]);
 
 /** Standing delegation postures (EnvoyAI — part of emp/0.1). */
-export const EmpPostureSchema = z.enum(["social_proxy", "document_acquisition", "capability_provider"]);
+export const EmpPostureSchema = z.enum(["social_proxy", "document_acquisition", "capability_provider", "bond_autonomy"]);
 
 /** Advertised on Agent Card / system.signal when node supports EnvoyAI features. */
 export const EmpCapabilitySchema = z.enum([
@@ -94,12 +94,14 @@ export const EmpCapabilitySchema = z.enum([
   "social-proxy",
   "document-acquisition",
   "capability-provider",
+  "bond-autonomy",
 ]);
 
 /** Agent credential scope values for posture-gated intents. */
 export const EMP_AGENT_SCOPE_SOCIAL_PROXY = "emp.social_proxy" as const;
 export const EMP_AGENT_SCOPE_DOCUMENT_ACQUISITION = "emp.document_acquisition" as const;
 export const EMP_AGENT_SCOPE_CAPABILITY_PROVIDER = "emp.capability_provider" as const;
+export const EMP_AGENT_SCOPE_BOND_AUTONOMY = "emp.bond_autonomy" as const;
 
 export const SocialProxyPosturePolicySchema = z.object({
   autoHello: z.boolean().default(false),
@@ -109,28 +111,69 @@ export const SocialProxyPosturePolicySchema = z.object({
   requireOwnerCommitmentRefOnBondRequest: z.boolean().default(true),
   helloRequiresApproval: z.boolean().default(true),
   scheduleIntervalHours: z.union([z.literal(0), z.literal(24), z.literal(168)]).default(0),
-});
+}).strict();
 
 export const DocumentAcquisitionPosturePolicySchema = z.object({
   searchBondedOnly: z.boolean().default(true),
+  /** Max relay hops for network-wide discovery. 0 = bonded-only. */
   maxHops: z.number().int().min(0).max(8).default(0),
+  /** Max broadcast responses before stopping (Phase 20). */
+  maxBroadcastResults: z.number().int().min(1).max(100).default(10),
+  /** Timeout for broadcast responses in milliseconds (Phase 20). */
+  broadcastResponseTimeoutMs: z.number().int().min(1000).max(120000).default(30000),
   maxNegotiationRounds: z.number().int().min(1).max(32).default(5),
+  /** Sensitivity ceiling for auto-requesting shares (public = only public docs). */
   autoRequestShareUpTo: SensitivitySchema.default("public"),
   autoAcceptInboundShareUpTo: SensitivitySchema.default("friends"),
   maxActiveJobs: z.number().int().min(1).max(16).default(3),
   jobTtlHours: z.number().int().min(1).max(720).default(72),
-});
+}).strict();
 
 export const CapabilityProviderPosturePolicySchema = z.object({
   maxActiveJobs: z.number().int().min(1).max(16).default(3),
   jobTtlHours: z.number().int().min(1).max(720).default(72),
   searchBondedOnly: z.boolean().default(true),
-});
+  /** Max relay hops for network-wide capability search. 0 = bonded-only. */
+  maxHops: z.number().int().min(0).max(8).default(0),
+  /** Max broadcast responses before stopping (Phase 21). */
+  maxBroadcastResults: z.number().int().min(1).max(100).default(10),
+  /** Timeout for broadcast responses in milliseconds (Phase 21). */
+  broadcastResponseTimeoutMs: z.number().int().min(1000).max(120000).default(30000),
+  /** Whether to allow unbonded peers to execute tasks (narrow scope). */
+  allowUnbondedTaskExecution: z.boolean().default(false),
+}).strict();
+
+/** Federated RAG configuration (Phase 22) — agent queries bonded peers' published knowledge. */
+export const FederatedRagConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  maxPeers: z.number().int().min(1).max(16).default(5),
+  queryTimeoutMs: z.number().int().min(1000).max(60000).default(15000),
+  maxSensitivity: SensitivitySchema.default("public"),
+  /** Whether to include unbonded (but discovered) peers in query. */
+  includeUnbondedPeers: z.boolean().default(false),
+  /** Max results to return from peer queries before synthesizing. */
+  maxPeerResults: z.number().int().min(1).max(50).default(10),
+}).strict();
+
+/** Bond autonomy posture policy — bounds agent-driven bond acceptance (Phase 19). */
+export const BondAutonomyPosturePolicySchema = z.object({
+  /** Maximum auto-accepted bonds per day (0 = no limit beyond mandate expiry). */
+  maxAutoBondsPerDay: z.number().int().min(0).max(100).default(5),
+  /** Require a referral proof (intro correlation) before auto-accepting. */
+  requireReferralProof: z.boolean().default(true),
+  /** Maximum bond tier the agent may auto-accept (direct = bonded, referred = trust-mode intro). */
+  maxAutoBondTier: z.enum(["referred", "direct"]).default("direct"),
+  /** Minimum trust-mode overlap score (0.0–1.0) for auto-accept. */
+  minTrustOverlapScore: z.number().min(0).max(1).default(0.3),
+  /** Whether auto-accepted bonds require post-facto owner notification. Default: true. */
+  notifyOwnerOnAutoBond: z.boolean().default(true),
+}).strict();
 
 export const PosturePolicySchema = z.union([
-  SocialProxyPosturePolicySchema,
-  DocumentAcquisitionPosturePolicySchema,
+  BondAutonomyPosturePolicySchema,
   CapabilityProviderPosturePolicySchema,
+  DocumentAcquisitionPosturePolicySchema,
+  SocialProxyPosturePolicySchema,
 ]);
 
 export const PublicIdentitySchema = z.object({
@@ -1739,7 +1782,10 @@ export type EmpPosture = z.infer<typeof EmpPostureSchema>;
 export type EmpCapability = z.infer<typeof EmpCapabilitySchema>;
 export type SocialProxyPosturePolicy = z.infer<typeof SocialProxyPosturePolicySchema>;
 export type DocumentAcquisitionPosturePolicy = z.infer<typeof DocumentAcquisitionPosturePolicySchema>;
+export type CapabilityProviderPosturePolicy = z.infer<typeof CapabilityProviderPosturePolicySchema>;
+export type BondAutonomyPosturePolicy = z.infer<typeof BondAutonomyPosturePolicySchema>;
 export type PosturePolicy = z.infer<typeof PosturePolicySchema>;
+export type FederatedRagConfig = z.infer<typeof FederatedRagConfigSchema>;
 export type MandatePeerScope = z.infer<typeof MandatePeerScopeSchema>;
 export type MandateCostLimit = z.infer<typeof MandateCostLimitSchema>;
 export type UnsignedMandate = z.infer<typeof UnsignedMandateSchema>;

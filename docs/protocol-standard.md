@@ -329,9 +329,10 @@ A **posture** is a standing autonomous mode:
 
 | Posture | Purpose | Human commit still required for |
 |---------|---------|--------------------------------|
-| `social_proxy` | Discover candidates, intro sync, say hello, pre-bond chat with humans or peer agents | `bond.accept`, trust tier upgrade, sensitive profile disclosure |
+| `social_proxy` | Discover candidates, intro sync, say hello, pre-bond chat with humans or peer agents | `bond.accept` (unless `bond_autonomy` active), trust tier upgrade, sensitive profile disclosure |
 | `document_acquisition` | Hunt documents (vault → bonded catalog → optional discovery); negotiate; retrieve bytes when policy allows | Publishing local vault items, share above mandate ceiling |
 | `capability_provider` | Match capability routes; execute mesh tool steps; delegate `task.*` when bonded | Human bond commit, approval-gated chat |
+| `bond_autonomy` | Auto-accept bond requests within policy bounds (referral proof, sensitivity ceiling, daily cap) | bond tier upgrade beyond `maxAutoBondTier`, bond requests without referral proof |
 
 ### Three agent workflows (one protocol)
 
@@ -413,7 +414,7 @@ Long agent↔agent work MUST NOT spam human chat; summaries use Activity / `repo
 | Intro context | `social.intro.sync`, `social.intro.propose` | agent | Rate limits |
 | Say hello | `bond.request` | agent | **`ownerCommitmentRef`** required (Appendix A) |
 | Pre-bond chat | `chat.message` | agent | `agentCredential` required |
-| Commit friendship | `bond.accept` | **human** | Not delegatable in emp/0.1 |
+| Commit friendship | `bond.accept` | **human** (or **agent** under `bond_autonomy` mandate) | Delegatable via `bond_autonomy` posture; human-default otherwise |
 
 ### Posture: `document_acquisition`
 
@@ -437,13 +438,13 @@ vault.search → discoverPublishedLibrary (bonded) → optional discovery.reques
 
 ### EnvoyAI security rules
 
-1. **`bond.accept`** MUST use `senderRole=human` in emp/0.1.
+1. **`bond.accept`** MUST use `senderRole=human` in emp/0.1, **except** when the sender holds a valid `bond_autonomy` posture mandate — in which case `senderRole=agent` with a `bond_autonomy`-scoped `agentCredential` is permitted (Phase 19).
 2. Agent **`bond.request`** MUST include valid **`ownerCommitmentRef`** when credential-bearing (Appendix A).
 3. **`share.accept`** without human approval only when `posturePolicy` explicitly allows and sensitivity ≤ mandate ceiling.
 4. **`autonomousKillSwitch`** disables all postures immediately.
 5. Peers MUST verify `agentCredential` regardless of sender UI disclosure settings.
 
-Agent credential **`scope`** MAY include `emp.social_proxy`, `emp.document_acquisition` to gate delegated intents.
+Agent credential **`scope`** MAY include `emp.social_proxy`, `emp.document_acquisition`, `emp.capability_provider`, `emp.bond_autonomy` to gate delegated intents.
 
 ## Proof Of Intent
 

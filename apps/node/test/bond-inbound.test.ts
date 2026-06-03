@@ -231,4 +231,138 @@ describe("handleInboundBondIntent", () => {
     });
     expect(await taskStore.readAuditEvents()).toHaveLength(0);
   });
+
+  // Phase 19 — bond_autonomy posture: agent-sent bond.accept
+  it("rejects bond.accept from agent without agentCredential", async () => {
+    const profile = testProfile();
+    const taskStore = createLocalTaskStore(profileDir);
+    const trustStore = createLocalTrustStore(profileDir);
+    const envelope: EnvoyEnvelope = {
+      ...createUnsignedEnvelope({
+        senderPeerId: "peer-remote",
+        senderPublicKey: profile.device.publicKeyPem,
+        senderRole: "agent",
+        recipientPeerId: derivePeerId(profile.device.publicKeyPem),
+        recipientRole: "human",
+        intent: "bond.accept",
+        payload: {
+          responderOwnerId: "envoy:owner:win",
+          requesterOwnerId: profile.owner.ownerId,
+          message: "Hello from Win!",
+        },
+        createdAt: "2026-04-27T10:00:00.000Z",
+        messageId: "bond-agent-accept-no-cred",
+      }),
+      signature: "signature",
+    };
+
+    const result = await handleInboundBondIntent({
+      envelope,
+      profile,
+      remotePeerId: "libp2p-win",
+      receivedAt: Date.now(),
+      correlationId: undefined,
+      taskStore,
+      trustStore,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("bond_autonomy");
+    }
+  });
+
+  it("rejects bond.accept from agent without bond_autonomy scope in credential", async () => {
+    const profile = testProfile();
+    const taskStore = createLocalTaskStore(profileDir);
+    const trustStore = createLocalTrustStore(profileDir);
+    const strangerOwner = generateOwnerIdentity();
+    const strangerAgent = generateAgentIdentity(strangerOwner.ownerId);
+    const credential = createAgentCredential({
+      owner: strangerOwner,
+      agent: strangerAgent,
+      scope: ["emp.social_proxy"], // NOT emp.bond_autonomy
+    });
+    const envelope: EnvoyEnvelope = {
+      ...createUnsignedEnvelope({
+        senderPeerId: strangerAgent.agentPeerId,
+        senderPublicKey: strangerAgent.publicKeyPem,
+        senderRole: "agent",
+        recipientPeerId: derivePeerId(profile.device.publicKeyPem),
+        recipientRole: "human",
+        intent: "bond.accept",
+        payload: {
+          responderOwnerId: strangerOwner.ownerId,
+          requesterOwnerId: profile.owner.ownerId,
+          message: "Hello from Win!",
+        },
+        agentCredential: credential,
+        createdAt: "2026-04-27T10:00:00.000Z",
+        messageId: "bond-agent-accept-wrong-scope",
+      }),
+      signature: "signature",
+    };
+
+    const result = await handleInboundBondIntent({
+      envelope,
+      profile,
+      remotePeerId: "libp2p-win",
+      receivedAt: Date.now(),
+      correlationId: undefined,
+      taskStore,
+      trustStore,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("bond_autonomy scope");
+    }
+  });
+
+  it("accepts bond.accept from agent with valid bond_autonomy credential", async () => {
+    const profile = testProfile();
+    const taskStore = createLocalTaskStore(profileDir);
+    const trustStore = createLocalTrustStore(profileDir);
+    const strangerOwner = generateOwnerIdentity();
+    const strangerAgent = generateAgentIdentity(strangerOwner.ownerId);
+    const credential = createAgentCredential({
+      owner: strangerOwner,
+      agent: strangerAgent,
+      scope: ["emp.bond_autonomy", "emp.social_proxy"],
+    });
+    const envelope: EnvoyEnvelope = {
+      ...createUnsignedEnvelope({
+        senderPeerId: strangerAgent.agentPeerId,
+        senderPublicKey: strangerAgent.publicKeyPem,
+        senderRole: "agent",
+        recipientPeerId: derivePeerId(profile.device.publicKeyPem),
+        recipientRole: "human",
+        intent: "bond.accept",
+        payload: {
+          responderOwnerId: strangerOwner.ownerId,
+          requesterOwnerId: profile.owner.ownerId,
+          message: "Hello from Win!",
+        },
+        agentCredential: credential,
+        createdAt: "2026-04-27T10:00:00.000Z",
+        messageId: "bond-agent-accept-valid",
+      }),
+      signature: "signature",
+    };
+
+    const result = await handleInboundBondIntent({
+      envelope,
+      profile,
+      remotePeerId: "libp2p-win",
+      receivedAt: Date.now(),
+      correlationId: undefined,
+      taskStore,
+      trustStore,
+    });
+
+    expect(result.ok).toBe(true);
+    // Trust store should now have the bond
+    const record = await trustStore.getTrustRecord(strangerOwner.ownerId);
+    expect(record?.level).toBe("direct");
+  });
 });
