@@ -43,6 +43,24 @@ export interface OwnerAgentTurnDeps {
   countPendingApprovals?: () => Promise<number>;
   getBonds?: () => Promise<Parameters<typeof resolveBondTarget>[0]>;
   auditPlannerRound?: (record: OwnerAgentPlannerTurnRecord) => Promise<void>;
+  /** Phase 24B — Multi-step agent chain (decompose + execute). */
+  runAgentChain?: (
+    description: string,
+    initialInput?: string,
+  ) => Promise<{
+    ok: boolean;
+    completedSteps: number;
+    totalSteps: number;
+    finalOutput?: string;
+    error?: string;
+  }>;
+  /** Phase 24D — Pre-evaluate an inbound task.propose against the local auto-accept policy. */
+  evaluateServiceTask?: (task: {
+    capabilityTags: string[];
+    requestedSensitivity: string;
+    proposedActions: string[];
+    proposerBondLevel: string;
+  }) => Promise<{ accept: boolean; reason: string }>;
 }
 
 const ROUTE_SCORE_THRESHOLD = 5;

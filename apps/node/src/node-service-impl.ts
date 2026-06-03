@@ -282,6 +282,7 @@ import {
   type ChatRoomServiceDeps,
 } from "./chat-room-service.js";
 import { createTaskDispatcher } from "./task-dispatcher.js";
+import { predictIntent } from "./intent-predictor.js";
 import { buildVaultIndex, assertPathInsideVault } from "@envoymesh/vault";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -345,6 +346,9 @@ import {
   runFriendAutopilotPass,
 } from "./friend-autopilot-runner.js";
 import { runSocialProxyPass, advanceSocialProxySession } from "./social-proxy-orchestrator.js";
+import { AgentCircleStore } from "./agent-circle-store.js";
+import { proposeCircles, circleFromProposal } from "./circle-proposer.js";
+import type { AgentCircle } from "@envoymesh/api";
 import {
   advanceDocumentAcquisitionJob,
   runDocumentAcquisitionWorkerTick,
@@ -504,6 +508,7 @@ class NodeServiceImpl implements NodeService {
   private readonly _socialProxyStore: SocialProxySessionStore | null;
   private readonly _documentAcquisitionJobStore: DocumentAcquisitionJobStore | null;
   private readonly _capabilityProviderJobStore: CapabilityProviderJobStore | null;
+  private readonly _circleStore: AgentCircleStore | null;
   private _approvalQueue: ApprovalQueue | null = null;
 
   /** Best-effort last failure for {@link getConnectionStatus} (cleared on successful {@link startNode}). */
@@ -1225,6 +1230,8 @@ class NodeServiceImpl implements NodeService {
       profileDir && profileDir !== "/tmp/unknown" ? createLocalPeerReputationStore(profileDir) : null;
     this._socialProxyStore =
       profileDir && profileDir !== "/tmp/unknown" ? createSocialProxySessionStore(profileDir) : null;
+    this._circleStore =
+      profileDir && profileDir !== "/tmp/unknown" ? new AgentCircleStore(profileDir) : null;
     this._documentAcquisitionJobStore =
       profileDir && profileDir !== "/tmp/unknown" ? createDocumentAcquisitionJobStore(profileDir) : null;
     this._capabilityProviderJobStore =
@@ -3623,6 +3630,577 @@ class NodeServiceImpl implements NodeService {
     if (!session) return;
     const { session: next } = transitionSocialProxySession(session, "KILL_SWITCH");
     await this._socialProxyStore.save(next);
+  }
+
+  // ----- Phase 23A — Agent Circle CRUD -----
+
+  async listAgentCircles(): Promise<AgentCircle[]> {
+    if (!this._circleStore) return [];
+    return this._circleStore.listCircles();
+  }
+
+  async createAgentCircle(input: {
+    label: string;
+    memberOwnerIds: string[];
+    topicTags?: string[];
+  }): Promise<AgentCircle> {
+    if (!this._circleStore) throw new Error("circle store unavailable");
+    const now = new Date().toISOString();
+    const circle: AgentCircle = {
+      circleId: `circle-${Date.now()}`,
+      label: input.label,
+      status: "active",
+      memberOwnerIds: input.memberOwnerIds,
+      topicTags: input.topicTags ?? [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this._circleStore.saveCircle(circle);
+    return circle;
+  }
+
+  async updateAgentCircle(circleId: string, update: {
+    label?: string;
+    status?: AgentCircle["status"];
+    memberOwnerIds?: string[];
+    topicTags?: string[];
+  }): Promise<AgentCircle> {
+    if (!this._circleStore) throw new Error("circle store unavailable");
+    const circles = await this._circleStore.listCircles();
+    const circle = circles.find((c) => c.circleId === circleId);
+    if (!circle) throw new Error(`Circle not found: ${circleId}`);
+    if (update.label !== undefined) circle.label = update.label;
+    if (update.status !== undefined) circle.status = update.status;
+    if (update.memberOwnerIds !== undefined) circle.memberOwnerIds = update.memberOwnerIds;
+    if (update.topicTags !== undefined) circle.topicTags = update.topicTags;
+    circle.updatedAt = new Date().toISOString();
+    await this._circleStore.saveCircle(circle);
+    return circle;
+  }
+
+  async deleteAgentCircle(circleId: string): Promise<void> {
+    if (!this._circleStore) return;
+    await this._circleStore.deleteCircle(circleId);
+  }
+
+  async proposeAgentCircles(): Promise<AgentCircle[]> {
+    if (!this._circleStore) return [];
+    const bonds = await this.getBonds();
+    const deps = {
+      getBonds: async () => bonds.map((b) => ({ ...b })),
+      getContactTopics: (ownerId: string) => this._getContactTopicsFromLibrary(ownerId),
+      getContactCapabilities: async () => [] as string[],
+    };
+    const proposals = await proposeCircles(deps, { minMembers: 2 });
+    const circles = proposals.map((p) => circleFromProposal(p, "proposed"));
+    for (const c of circles) {
+      await this._circleStore!.saveCircle(c);
+    }
+    return circles;
+  }
+
+  // ----- End Phase 23A -----
+
+  // Phase 23C — Bond steward pass
+  async runBondStewardPass(thresholdDays?: number): Promise<{ dormantBonds: Array<{ peerOwnerId: string; displayName?: string; dormantDays: number }>; summary: string }> {
+    const { findDormantBonds } = await import("./bond-steward.js");
+    const deps = {
+      getBonds: async () => this.getBonds(),
+      getLastInteractionAt: async () => null, // TODO: wire chat log store
+    };
+    return findDormantBonds(deps, thresholdDays ?? 90);
+  }
+
+  // Phase 23B — Connection suggester pass
+  async runConnectionSuggesterPass(): Promise<Array<{ remoteOwnerId: string; remoteDisplayName: string; reason: string; relevanceScore: number }>> {
+    const { matchPeerInterests } = await import("./connection-suggester.js");
+    const { recordConnectionSuggestion } = await import("./agent-activity-hooks.js");
+    if (!this._taskStore) return [];
+
+    const config = await this._configStore.load();
+    const ownerTopics = config?.ownerProfile?.interests ?? [];
+    if (ownerTopics.length === 0) return [];
+
+    const bonds = await this.getBonds();
+    const results: Array<{ remoteOwnerId: string; remoteDisplayName: string; reason: string; relevanceScore: number }> = [];
+
+    for (const bond of bonds) {
+      const peerTopics = bond.interests ?? [];
+      const peerCaps: string[] = []; // Capabilities from manifest (wired separately)
+      const match = matchPeerInterests(ownerTopics, peerTopics, peerCaps);
+
+      if (match.score > 0) {
+        const suggestion = {
+          remoteOwnerId: bond.peerOwnerId,
+          remoteDisplayName: bond.displayName ?? bond.peerOwnerId,
+          reason: `Matching interests: ${match.matchedTopics.join(", ")}`,
+          relevanceScore: match.score,
+        };
+        results.push(suggestion);
+
+        await recordConnectionSuggestion(
+          this._taskStore,
+          suggestion,
+          this._profile?.owner.ownerId ?? "local-owner",
+          (record) => this.emit?.("agent:activity", record),
+        );
+      }
+    }
+
+    return results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+  }
+
+  // Phase 23A+ — Discovery-driven clusterer
+  async discoverAndCluster(
+    seedTopics?: string[],
+    seedCapabilities?: string[],
+  ): Promise<string> {
+    const { generateDiscoveryClusters, formatDiscoverySuggestions } = await import("./discovery-clusterer.js");
+    const config = await this._configStore.load();
+    const ownerTopics = seedTopics?.length ? seedTopics : (config?.ownerProfile?.interests ?? []);
+    if (ownerTopics.length === 0 && !seedCapabilities?.length) {
+      return "No seed topics or capabilities provided. Tell me what you're interested in discovering.";
+    }
+
+    const bonds = await this.getBonds();
+    const bondedPeers = bonds.map((b) => ({ ownerId: b.peerOwnerId, peerId: b.peerOwnerId }));
+    const bondedIds = new Set(bonds.map((b) => b.peerOwnerId));
+    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+
+    const deps = {
+      broadcastDocumentDiscovery: async (query: string, _maxHops?: number) => {
+        const { broadcastDocumentDiscovery } = await import("./document-discovery-broadcast.js");
+        const bdDeps = {
+          sendToPeer: async () => 0, // stub — needs mesh connectivity for real broadcast
+          getBondedPeers: async () => bondedPeers,
+          getAllKnownPeers: async () => bondedPeers,
+          signEnvelope: signUnsignedEnvelope,
+          profile: this._profile!,
+        };
+        const results = await broadcastDocumentDiscovery(bdDeps, {
+          query,
+          maxHops: _maxHops ?? 2,
+          maxResults: 20,
+          timeoutMs: 15000,
+        });
+        return results.map((r: any) => ({
+          ownerId: r.ownerId,
+          displayName: r.metadata?.title,
+          topics: r.metadata?.topics ?? [],
+          capabilities: [],
+          isBonded: bondedIds.has(r.ownerId),
+        }));
+      },
+      broadcastCapabilityDiscovery: async (caps: string[], _maxHops?: number) => {
+        const { broadcastCapabilityDiscovery } = await import("./capability-discovery-broadcast.js");
+        const bcdDeps = {
+          sendToPeer: async () => 0,
+          getBondedPeers: async () => bondedPeers,
+          getAllKnownPeers: async () => bondedPeers,
+          signEnvelope: signUnsignedEnvelope,
+          profile: this._profile!,
+        };
+        const results = await broadcastCapabilityDiscovery(bcdDeps, {
+          capabilityTags: caps,
+          maxHops: _maxHops ?? 2,
+          maxResults: 20,
+          timeoutMs: 15000,
+        });
+        return results.map((r: any) => ({
+          ownerId: r.ownerId,
+          topics: [],
+          capabilities: caps,
+          isBonded: bondedIds.has(r.ownerId),
+        }));
+      },
+      getBondedOwnerIds: async () => bondedIds,
+    };
+
+    const clusters = await generateDiscoveryClusters(deps, {
+      seedTopics: ownerTopics,
+      seedCapabilities: seedCapabilities ?? [],
+    });
+    return formatDiscoverySuggestions(clusters);
+  }
+
+  // Phase 23D — Chat RAG search
+  async chatRagSearch(query: string, opts?: { ownerId?: string; maxResults?: number }): Promise<Array<{ messageId: string; contactName: string; snippet: string; timestamp: string }>> {
+    const { searchChatHistory, formatChatRagResults } = await import("./chat-rag-service.js");
+    const deps = {
+      getMessages: async (ownerId?: string) => {
+        // TODO: wire to actual chat log store
+        return [];
+      },
+    };
+    const results = await searchChatHistory(deps, query, opts);
+    return formatChatRagResults(results, opts?.maxResults ?? 5);
+  }
+
+  // Phase 25A — Mesh awareness pass
+  async runMeshAwarenessPass(): Promise<Array<{ kind: string; summary: string; matchedTopic: string; peerCount: number; createdAt: string }>> {
+    const { generateMeshInsights } = await import("./mesh-awareness-worker.js");
+    const localOwnerId = this._profile?.owner.ownerId ?? "";
+    const bonds = await this.getBonds();
+    const deps = {
+      getOwnerInterestTopics: async () => this._getContactTopicsFromLibrary(localOwnerId),
+      getBondedPeerTopics: async () => {
+        const out: Array<{ ownerId: string; topics: string[] }> = [];
+        for (const b of bonds) {
+          const topics = await this._getContactTopicsFromLibrary(b.peerOwnerId);
+          if (topics.length > 0) out.push({ ownerId: b.peerOwnerId, topics });
+        }
+        return out;
+      },
+    };
+    const insights = await generateMeshInsights(deps);
+    if (insights.length > 0) {
+      for (const insight of insights) {
+        this.emit?.("agent:awareness", insight);
+      }
+    }
+    return insights;
+  }
+
+  // -------------------------------------------------------------------
+  // Phase 23 — Published library (E2E test support + cross-node topic sharing)
+  // -------------------------------------------------------------------
+  // Per-owner published-library store, keyed by ownerId. The local owner
+  // publishes via publishDocument(); bonded peers' libraries are recorded
+  // via setPeerPublishedLibrary() (called by the test harness today, and
+  // by the bond-handshake / agent.card sync in a follow-on). The circle
+  // proposer and mesh-awareness worker read from this map.
+  private readonly _publishedLibrary = new Map<string, Array<{
+    title: string;
+    topicTags: string[];
+    sensitivity: string;
+    publishedAt: string;
+  }>>();
+
+  // -------------------------------------------------------------------
+  // Phase 25D — Intent history (predictIntent source)
+  // -------------------------------------------------------------------
+  // Sliding window of the owner's most recent intents. Capped at
+  // INTENT_HISTORY_MAX entries to keep memory bounded. Persisted to
+  // disk so predictions survive restarts.
+  private static readonly INTENT_HISTORY_MAX = 50;
+  private readonly _intentHistory: Array<{ intent: string; query: string; timestamp: string }> = [];
+
+  private _intentHistoryFilePath(): string | null {
+    const dir = this._profileDir;
+    if (!dir) return null;
+    return join(dir, "intent-history.json");
+  }
+
+  /** Record a recent intent event for prediction. */
+  async recordIntent(intent: string, query: string): Promise<void> {
+    this._intentHistory.push({ intent, query, timestamp: new Date().toISOString() });
+    while (this._intentHistory.length > NodeServiceImpl.INTENT_HISTORY_MAX) {
+      this._intentHistory.shift();
+    }
+    const path = this._intentHistoryFilePath();
+    if (path) {
+      try {
+        await mkdir(dirname(path), { recursive: true });
+        await writeFile(path, JSON.stringify({ version: "0.1", history: this._intentHistory }, null, 2), { mode: 0o600 });
+      } catch {
+        // Best-effort persistence
+      }
+    }
+  }
+
+  /** Load intent history from disk (called at startup). */
+  async loadIntentHistoryFromDisk(): Promise<void> {
+    const path = this._intentHistoryFilePath();
+    if (!path) return;
+    try {
+      const raw = await readFile(path, "utf8");
+      const parsed = JSON.parse(raw) as { history?: Array<{ intent: string; query: string; timestamp: string }> };
+      if (Array.isArray(parsed.history)) {
+        this._intentHistory.length = 0;
+        for (const entry of parsed.history.slice(-NodeServiceImpl.INTENT_HISTORY_MAX)) {
+          this._intentHistory.push(entry);
+        }
+      }
+    } catch {
+      // No persisted history yet
+    }
+  }
+
+  private _publishedLibraryFilePath(): string | null {
+    const dir = this._profileDir;
+    if (!dir) return null;
+    return join(dir, "published-library.json");
+  }
+
+  /** Persist the published library to disk. */
+  private async _persistPublishedLibrary(): Promise<void> {
+    const path = this._publishedLibraryFilePath();
+    if (!path) return;
+    const snapshot: Array<{ ownerId: string; entries: Array<{ title: string; topicTags: string[]; sensitivity: string; publishedAt: string }> }> = [];
+    for (const [ownerId, entries] of this._publishedLibrary.entries()) {
+      snapshot.push({ ownerId, entries });
+    }
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, JSON.stringify({ version: "0.1", snapshot }, null, 2), { mode: 0o600 });
+  }
+
+  /** Restore the published library from disk (if present). */
+  async loadPublishedLibraryFromDisk(): Promise<void> {
+    const path = this._publishedLibraryFilePath();
+    if (!path) return;
+    try {
+      const raw = await readFile(path, "utf8");
+      const parsed = JSON.parse(raw) as { snapshot?: Array<{ ownerId: string; entries: Array<{ title: string; topicTags: string[]; sensitivity: string; publishedAt: string }> }> };
+      if (Array.isArray(parsed.snapshot)) {
+        for (const { ownerId, entries } of parsed.snapshot) {
+          this._publishedLibrary.set(ownerId, entries);
+        }
+      }
+    } catch {
+      // No persisted library yet — that's fine.
+    }
+  }
+
+  async publishDocument(input: {
+    title: string;
+    topicTags: string[];
+    sensitivity?: string;
+  }): Promise<{ title: string; topicTags: string[]; sensitivity: string; publishedAt: string }> {
+    const ownerId = this._profile?.owner.ownerId;
+    if (!ownerId) throw new Error("owner profile not loaded");
+    const entry = {
+      title: input.title,
+      topicTags: input.topicTags,
+      sensitivity: input.sensitivity ?? "public",
+      publishedAt: new Date().toISOString(),
+    };
+    const list = this._publishedLibrary.get(ownerId) ?? [];
+    list.push(entry);
+    this._publishedLibrary.set(ownerId, list);
+    await this._persistPublishedLibrary();
+    return entry;
+  }
+
+  /**
+   * Record a bonded peer's published library (called by the test harness
+   * or by agent.card sync). Idempotent: replaces any prior entries for
+   * the same ownerId.
+   */
+  setPeerPublishedLibrary(
+    ownerId: string,
+    entries: Array<{ title: string; topicTags: string[]; sensitivity: string }>,
+  ): void {
+    const now = new Date().toISOString();
+    this._publishedLibrary.set(
+      ownerId,
+      entries.map((e) => ({ ...e, publishedAt: now })),
+    );
+    void this._persistPublishedLibrary();
+  }
+
+  /**
+   * Look up the topic tags for a given owner from the published library.
+   * Returns [] for unknown owners.
+   */
+  private async _getContactTopicsFromLibrary(ownerId: string): Promise<string[]> {
+    const entries = this._publishedLibrary.get(ownerId) ?? [];
+    const tags = new Set<string>();
+    for (const e of entries) {
+      for (const t of e.topicTags) tags.add(t);
+    }
+    return Array.from(tags);
+  }
+
+  /**
+   * Return the published-library entries for a given owner (or all owners).
+   * Used by the test harness to share published-library data between
+   * test nodes without going through a real mesh.
+   */
+  getPublishedLibraryEntries(ownerId?: string): Array<{
+    title: string;
+    topicTags: string[];
+    sensitivity: string;
+    publishedAt: string;
+  }> {
+    if (ownerId !== undefined) {
+      return [...(this._publishedLibrary.get(ownerId) ?? [])];
+    }
+    const all: Array<{ title: string; topicTags: string[]; sensitivity: string; publishedAt: string }> = [];
+    for (const list of this._publishedLibrary.values()) all.push(...list);
+    return all;
+  }
+
+  // -------------------------------------------------------------------
+  // Phase 25 — Cross-device continuity sessions
+  // -------------------------------------------------------------------
+  // Thin NodeService surface that delegates to the continuity-service
+  // module. State is held in a per-profile JSON file so sessions
+  // survive restarts. Real cross-device sync is wired via sync.state
+  // (a follow-on).
+  private _continuityFilePath(): string | null {
+    const dir = this._profileDir;
+    if (!dir) return null;
+    return join(dir, "continuity-sessions.json");
+  }
+
+  private async _loadContinuitySessions(): Promise<Array<{
+    sessionId: string;
+    description: string;
+    progress: string;
+    currentStep: number;
+    totalSteps: number;
+    deviceType?: string;
+    correlationId: string;
+    originDevice: string;
+    lastUpdatedAt: string;
+    active: boolean;
+  }>> {
+    const path = this._continuityFilePath();
+    if (!path) return [];
+    try {
+      const raw = await readFile(path, "utf8");
+      const parsed = JSON.parse(raw) as { sessions?: unknown };
+      return Array.isArray(parsed.sessions)
+        ? (parsed.sessions as Array<{
+            sessionId: string;
+            description: string;
+            progress: string;
+            currentStep: number;
+            totalSteps: number;
+            deviceType?: string;
+            correlationId: string;
+            originDevice: string;
+            lastUpdatedAt: string;
+            active: boolean;
+          }>)
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async _saveContinuitySessions(
+    sessions: Array<{
+      sessionId: string;
+      description: string;
+      progress: string;
+      currentStep: number;
+      totalSteps: number;
+      deviceType?: string;
+      correlationId: string;
+      originDevice: string;
+      lastUpdatedAt: string;
+      active: boolean;
+    }>,
+  ): Promise<void> {
+    const path = this._continuityFilePath();
+    if (!path) return;
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, JSON.stringify({ version: "0.1", sessions }, null, 2), { mode: 0o600 });
+  }
+
+  async startContinuitySession(
+    description: string,
+    opts?: { correlationId?: string; deviceType?: string },
+  ): Promise<{
+    sessionId: string;
+    description: string;
+    progress: string;
+    currentStep: number;
+    totalSteps: number;
+    deviceType?: string;
+    correlationId: string;
+    originDevice: string;
+    lastUpdatedAt: string;
+    active: boolean;
+  }> {
+    const ownerId = this._profile?.owner.ownerId ?? "local-owner";
+    const { startContinuitySession: csStart } = await import("./continuity-service.js");
+    const session = await csStart(
+      {
+        listSessions: () => this._loadContinuitySessions(),
+        saveSession: async (s) => {
+          const all = await this._loadContinuitySessions();
+          const without = all.filter((x) => x.sessionId !== s.sessionId);
+          await this._saveContinuitySessions([...without, s]);
+        },
+        getDeviceId: () => opts?.deviceType ?? ownerId,
+      },
+      description,
+      opts?.correlationId,
+    );
+    const enriched = { ...session, deviceType: opts?.deviceType };
+    const all = await this._loadContinuitySessions();
+    const without = all.filter((x) => x.sessionId !== session.sessionId);
+    await this._saveContinuitySessions([...without, enriched]);
+    return enriched;
+  }
+
+  async updateContinuitySession(
+    sessionId: string,
+    update: { progress?: string; currentStep?: number; totalSteps?: number; description?: string },
+  ): Promise<{
+    sessionId: string;
+    description: string;
+    progress: string;
+    currentStep: number;
+    totalSteps: number;
+    deviceType?: string;
+    correlationId: string;
+    originDevice: string;
+    lastUpdatedAt: string;
+    active: boolean;
+  } | null> {
+    const { updateContinuitySession: csUpdate } = await import("./continuity-service.js");
+    return csUpdate(
+      {
+        listSessions: () => this._loadContinuitySessions(),
+        saveSession: async (s) => {
+          const all = await this._loadContinuitySessions();
+          const without = all.filter((x) => x.sessionId !== s.sessionId);
+          await this._saveContinuitySessions([...without, s]);
+        },
+        getDeviceId: () => this._profile?.owner.ownerId ?? "local-owner",
+      },
+      sessionId,
+      update,
+    );
+  }
+
+  async completeContinuitySession(sessionId: string): Promise<void> {
+    const { completeContinuitySession: csComplete } = await import("./continuity-service.js");
+    await csComplete(
+      {
+        listSessions: () => this._loadContinuitySessions(),
+        saveSession: async (s) => {
+          const all = await this._loadContinuitySessions();
+          const without = all.filter((x) => x.sessionId !== s.sessionId);
+          await this._saveContinuitySessions([...without, s]);
+        },
+        getDeviceId: () => this._profile?.owner.ownerId ?? "local-owner",
+      },
+      sessionId,
+    );
+  }
+
+  async getResumableSessions(): Promise<Array<{
+    sessionId: string;
+    description: string;
+    progress: string;
+    currentStep: number;
+    totalSteps: number;
+    deviceType?: string;
+    correlationId: string;
+    originDevice: string;
+    lastUpdatedAt: string;
+    active: boolean;
+  }>> {
+    const { getResumableSessions: csResumable } = await import("./continuity-service.js");
+    return csResumable({
+      listSessions: () => this._loadContinuitySessions(),
+      saveSession: async () => {},
+      getDeviceId: () => this._profile?.owner.ownerId ?? "local-owner",
+    });
   }
 
   async startDocumentAcquisitionJob(params: {
@@ -7223,6 +7801,182 @@ class NodeServiceImpl implements NodeService {
           capabilityIds: input.capabilityIds,
         }),
       runSocialProxyPass: () => this.runSocialProxyPass(),
+      discoverAndCluster: (seedTopics?: string[], seedCapabilities?: string[]) =>
+        this.discoverAndCluster(seedTopics, seedCapabilities),
+      chatRagSearch: (query: string, opts?: { ownerId?: string; maxResults?: number }) =>
+        this.chatRagSearch(query, opts),
+      predictIntent: (partial: string) => {
+        // Phase 25D — predict owner intent from partial input using
+        // the live in-process intent history (persisted across restarts).
+        if (!config?.intentPredictionEnabled) return [];
+        return predictIntent(
+          this._intentHistory.slice(),
+          partial,
+          { maxPredictions: config?.prefetchMaxResults ?? 3 },
+        );
+      },
+      runTaskNegotiation: async (objective: string, capabilityTags: string[]) => {
+        // Phase 24A — Full A2A negotiation lifecycle
+        const { runTaskNegotiationLoop } = await import("./task-negotiation-loop.js");
+        const result = await runTaskNegotiationLoop(
+          {
+            discoverCapabilityProviders: async (tags: string[]) => {
+              const matches = await matchAgentCapabilityRoutes({
+                goal: objective,
+                localManifestCapabilities,
+                maxResults: 5,
+              });
+              const bonds = await this.getBonds();
+              return matches.filter((m) => {
+                const bond = bonds.find((b) => b.peerOwnerId === m.ownerId);
+                return bond != null;
+              }).map((m) => ({
+                ownerId: m.ownerId,
+                peerId: m.peerId ?? m.ownerId,
+                capabilities: m.capabilityIds ?? [],
+                bondLevel: bonds.find((b) => b.peerOwnerId === m.ownerId)?.level ?? "public",
+                reputationScore: 0.5,
+              }));
+            },
+            sendTaskPropose: async (peerId, ownerId, objective, constraints) => {
+              const { sendAgentTaskPropose } = await import("./agent-task-propose-send.js");
+              const result = await sendAgentTaskPropose({
+                profile: this._profile!,
+                agentIdentity: agentIdentitySection,
+                recipientPeerId: peerId,
+                objective,
+                taskId: constraints?.correlationId as string ?? randomUUID(),
+              });
+              return result.ok ? peerId : null;
+            },
+          },
+          {
+            executeTool: (toolName, params) => executeTool(toolName, params, context),
+            sendTaskResult: async (peerId, ownerId, taskId, result, corrId) => {
+              if (!this._mesh) return false;
+              try {
+                const { createTaskResultPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+                const unsigned = createUnsignedEnvelope({
+                  senderPeerId: mesh!.peerId,
+                  senderPublicKey: this._profile!.device.publicKeyPem,
+                  senderRole: "agent",
+                  recipientPeerId: peerId,
+                  recipientRole: "agent",
+                  intent: "task.result",
+                  payload: createTaskResultPayload({
+                    taskId,
+                    result,
+                    completedAt: new Date().toISOString(),
+                  }),
+                  correlationId: corrId,
+                  agentCredential: agentIdentitySection?.credential,
+                });
+                const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+                const signed = signUnsignedEnvelope(unsigned, this._profile!.device.privateKeyPem);
+                await this._mesh.send(peerId, signed, {});
+                return true;
+              } catch { return false; }
+            },
+            sendTaskFeedback: async (peerId, ownerId, taskId, score, comment, corrId) => {
+              if (!this._mesh) return false;
+              try {
+                const { createTaskFeedbackPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+                const unsigned = createUnsignedEnvelope({
+                  senderPeerId: mesh!.peerId,
+                  senderPublicKey: this._profile!.device.publicKeyPem,
+                  senderRole: "agent",
+                  recipientPeerId: peerId,
+                  recipientRole: "agent",
+                  intent: "task.feedback",
+                  payload: createTaskFeedbackPayload({
+                    taskId,
+                    score,
+                    comment,
+                  }),
+                  correlationId: corrId,
+                  agentCredential: agentIdentitySection?.credential,
+                });
+                const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+                const signed = signUnsignedEnvelope(unsigned, this._profile!.device.privateKeyPem);
+                await this._mesh.send(peerId, signed, {});
+                return true;
+              } catch { return false; }
+            },
+          },
+          objective,
+          capabilityTags,
+        );
+        return result;
+      },
+      // Phase 24B — multi-step agent chain
+      runAgentChain: async (description: string, initialInput?: string) => {
+        const { runAgentChain, decomposeTask } = await import("./agent-chain-orchestrator.js");
+        const steps = decomposeTask(description);
+        if (steps.length === 0) {
+          return { ok: false, completedSteps: 0, totalSteps: 0, error: "no steps decomposed" };
+        }
+        // Local providers only — for now we use the capability manifest and
+        // bonded peer routes. A future wire-protocol extension can read
+        // remote provider cards.
+        const findProviders = async (capabilityTag: string) => {
+          const matches = await matchAgentCapabilityRoutes({
+            goal: description,
+            localManifestCapabilities,
+            maxResults: 5,
+          });
+          return matches
+            .filter((m) => (m.capabilityIds ?? []).includes(capabilityTag))
+            .map((m) => ({
+              ownerId: m.ownerId,
+              peerId: m.peerId ?? m.ownerId,
+              capabilities: m.capabilityIds ?? [],
+              reputationScore: 0.5,
+            }));
+        };
+        const executeStep = async (
+          provider: { ownerId: string; peerId: string },
+          step: { label: string; capabilityTag: string },
+          input: string | undefined,
+        ): Promise<string | null> => {
+          // Local-only executor: the chain module can call this for the local
+          // owner. Remote provider execution is a follow-on (requires A2A
+          // task dispatch in the chain).
+          if (provider.ownerId !== (this._profile?.owner.ownerId ?? "")) return null;
+          // For the local owner, synthesize a deterministic echo so the chain
+          // demonstrates the data flow. Real synthesis is a follow-on.
+          return `${step.label}: ${input ?? ""}`.trim();
+        };
+        return runAgentChain({ findProviders, executeStep }, steps, initialInput);
+      },
+      // Phase 24D — service-mesh auto-accept gate
+      evaluateServiceTask: async (task) => {
+        const { evaluateServiceTask } = await import("./service-mesh-worker.js");
+        const autoAcceptPolicy = {
+          enabled: (config?.autonomousKillSwitch ?? true) === false,
+          maxSensitivity: "friends" as const,
+          maxConcurrentTasks: 3,
+          allowedActions: ["read", "search", "summarize"],
+        };
+        return evaluateServiceTask(
+          {
+            hasCapability: (tag) => (localManifestCapabilities ?? []).includes(tag),
+            getAutoAcceptPolicy: async () => autoAcceptPolicy,
+            getActiveTaskCount: async () => {
+              try {
+                return (await this.listPendingApprovals()).length;
+              } catch {
+                return 0;
+              }
+            },
+          },
+          task,
+        );
+      },
+      listAgentCircles: () => this.listAgentCircles(),
+      createAgentCircle: (input: any) => this.createAgentCircle(input),
+      updateAgentCircle: (circleId: string, update: any) => this.updateAgentCircle(circleId, update),
+      deleteAgentCircle: (circleId: string) => this.deleteAgentCircle(circleId),
+      proposeAgentCircles: () => this.proposeAgentCircles(),
       countPendingApprovals: async () => {
         const pending = await this.listPendingApprovals();
         return pending.length;
@@ -7258,6 +8012,11 @@ class NodeServiceImpl implements NodeService {
     }
 
     await this.recordH2aOwnerAgentTurn(message, turn);
+    // Phase 25D — record the intent for future predictions (only if a
+    // domain/intent was returned by the turn).
+    if (turn.intent) {
+      void this.recordIntent(turn.intent, message);
+    }
     return { ...turn, approvalItems, answer: stripModelThinking(turn.answer) };
   }
 

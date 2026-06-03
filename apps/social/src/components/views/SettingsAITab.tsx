@@ -955,311 +955,329 @@ export function SettingsAITab() {
   );
 
   return (
-    <section className="settings-section">
-      <h3>{t("settings.ai.title")}</h3>
-      <p className="section-desc">{t("settings.ai.sectionDesc")}</p>
+    <>
+      <section className="settings-section">
+        <h3>{t("settings.ai.title")}</h3>
+        <p className="section-desc">{t("settings.ai.sectionDesc")}</p>
+      </section>
 
-      <ModelProviderSettings nodeConfig={nodeConfig} refreshNodeConfig={refreshNodeConfig} />
-
-      <h4>{t("settings.ai.chat.heading")}</h4>
-      <p className="field-desc">{t("settings.ai.chat.sectionDesc")}</p>
-      <div className="settings-toggle-row">
-        <div className="toggle-info">
-          <strong>{t("settings.ai.chat.chatAssist")}</strong>
-          <span className="toggle-desc">{t("settings.ai.chat.chatAssistDesc")}</span>
-        </div>
-        <label className="toggle-switch">
-          <input type="checkbox" checked={chatAssistToggle.checked} onChange={chatAssistToggle.onCheckboxChange} />
-          <span className="slider" />
-        </label>
-      </div>
-      <div className="settings-toggle-row">
-        <div className="toggle-info">
-          <strong>{t("settings.ai.chat.autoSendChat")}</strong>
-          <span className="toggle-desc">{t("settings.ai.chat.autoSendChatDesc")}</span>
-        </div>
-        <label className="toggle-switch">
-          <input type="checkbox" checked={autoSendChatToggle.checked} onChange={autoSendChatToggle.onCheckboxChange} />
-          <span className="slider" />
-        </label>
-      </div>
-      <div className="settings-toggle-row">
-        <div className="toggle-info">
-          <strong>{t("settings.ai.chat.pauseAllAi")}</strong>
-          <span className="toggle-desc">{t("settings.ai.chat.pauseAllAiDesc")}</span>
-        </div>
-        <label className="toggle-switch">
-          <input type="checkbox" checked={killSwitchToggle.checked} onChange={killSwitchToggle.onCheckboxChange} />
-          <span className="slider" />
-        </label>
-      </div>
-
-      <h4>{t("settings.ai.chat.limitsHeading")}</h4>
-      <p className="field-desc">{t("settings.ai.chat.limitsDesc")}</p>
-      <AutoReplyLimitsSettings aiSettings={aiSettings} updateAiSettings={updateAiSettings} />
-
-      <div className="form-group">
-        <label>{t("settings.ai.chat.activityNotifications")}</label>
-        <select
-          value={nodeConfig?.a2aChatNotifications ?? "off"}
-          onChange={(e) => {
-            void updateNodeConfigPartial({
-              a2aChatNotifications: e.target.value as A2aChatNotificationMode,
-            });
-          }}
-        >
-          <option value="off">{t("settings.ai.chat.notificationsOff")}</option>
-          <option value="milestones_only">{t("settings.ai.chat.notificationsMilestonesOnly")}</option>
-          <option value="all_reports">{t("settings.ai.chat.notificationsAllReports")}</option>
-        </select>
-      </div>
-      <div className="form-group">
-        <label>{t("settings.ai.chat.interactionMode")}</label>
-        <select
-          value={nodeConfig?.agentInteractionMode ?? "structured_preferred"}
-          onChange={(e) => {
-            void updateNodeConfigPartial({
-              agentInteractionMode: e.target.value as AgentInteractionMode,
-            });
-          }}
-        >
-          <option value="structured_preferred">{t("settings.ai.chat.interactionStructuredPreferred")}</option>
-          <option value="chat_ok">{t("settings.ai.chat.interactionChatOk")}</option>
-        </select>
-      </div>
-      <div className="form-group">
-        <label>{t("settings.ai.chat.visibilityByDomain")}</label>
-        {(["social", "knowledge", "home", "research"] as AgentActivityDomain[]).map((domain) => (
-          <div className="form-row" key={domain}>
-            <div className="form-group">
-              <label>
-                {domain === "social"
-                  ? t("settings.ai.chat.domainSocial")
-                  : domain === "knowledge"
-                    ? t("settings.ai.chat.domainKnowledge")
-                    : domain === "home"
-                      ? t("settings.ai.chat.domainHome")
-                      : t("settings.ai.chat.domainResearch")}
-              </label>
-              <select
-                value={nodeConfig?.agentVisibility?.[domain] ?? "instant"}
-                onChange={(e) => {
-                  void updateNodeConfigPartial({
-                    agentVisibility: {
-                      ...(nodeConfig?.agentVisibility ?? {}),
-                      [domain]: e.target.value as AgentNotifyMode,
-                    },
-                  });
-                }}
-              >
-                <option value="instant">{t("settings.ai.chat.notifyInstant")}</option>
-                <option value="brief">{t("settings.ai.chat.notifyBrief")}</option>
-                <option value="silent">{t("settings.ai.chat.notifySilent")}</option>
-                <option value="approval">{t("settings.ai.chat.notifyApprovalOnly")}</option>
-              </select>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <h4>{t("settings.ai.presence.heading")}</h4>
-      <div className="settings-toggle-row">
-        <div className="toggle-info">
-          <strong>{t("settings.ai.presence.onlineAssistant")}</strong>
-          <span className="toggle-desc">{t("settings.ai.presence.onlineAssistantDesc")}</span>
-        </div>
-        <label className="toggle-switch">
-          <input type="checkbox" checked={onlineAssistantToggle.checked}
-            onChange={onlineAssistantToggle.onCheckboxChange} />
-          <span className="slider" />
-        </label>
-      </div>
-
-      <div className="settings-toggle-row">
-        <div className="toggle-info">
-          <strong>{t("settings.ai.presence.offlineAgent")}</strong>
-          <span className="toggle-desc">{t("settings.ai.presence.offlineAgentDesc")}</span>
-        </div>
-        <label className="toggle-switch">
-          <input type="checkbox" checked={offlineAgentToggle.checked}
-            onChange={offlineAgentToggle.onCheckboxChange} />
-          <span className="slider" />
-        </label>
-      </div>
-
-      <h4>{t("settings.ai.presence.detectionHeading")}</h4>
-      <p className="field-desc">{t("settings.ai.presence.detectionDesc")}</p>
-      <div className="settings-radio-group">
-        {(["automatic", "manual"] as const).map((mode) => (
-          <label key={mode} className={`settings-radio-option ${currentStatus.statusMode === mode ? "active" : ""}`}>
-            <input type="radio" name="status-mode" value={mode}
-              checked={currentStatus.statusMode === mode}
-              onChange={async () => {
-                await updateAiSettings({ status: { ...currentStatus, statusMode: mode } });
-              }} />
-            <div className="radio-content">
-              <strong>
-                {mode === "automatic"
-                  ? t("settings.ai.presence.modeAutomatic")
-                  : t("settings.ai.presence.modeManual")}
-              </strong>
-              <span>
-                {mode === "automatic"
-                  ? t("settings.ai.presence.modeAutomaticDesc")
-                  : t("settings.ai.presence.modeManualDesc")}
-              </span>
-            </div>
-          </label>
-        ))}
-      </div>
-
-      {currentStatus.statusMode === "manual" && (
-        <div className="settings-toggle-row" style={{ marginTop: "0.75rem" }}>
+      <section className="settings-section">
+        <h4>{t("settings.ai.chat.heading")}</h4>
+        <p className="section-desc">{t("settings.ai.chat.sectionDesc")}</p>
+        <div className="settings-toggle-row">
           <div className="toggle-info">
-            <strong>{t("settings.ai.presence.currentStatus")}</strong>
-            <span className="toggle-desc">{t("settings.ai.presence.currentStatusDesc")}</span>
+            <strong>{t("settings.ai.chat.chatAssist")}</strong>
+            <span className="toggle-desc">{t("settings.ai.chat.chatAssistDesc")}</span>
           </div>
           <label className="toggle-switch">
-            <input type="checkbox" checked={manualStatusToggle.checked}
-              onChange={manualStatusToggle.onCheckboxChange} />
+            <input type="checkbox" checked={chatAssistToggle.checked} onChange={chatAssistToggle.onCheckboxChange} />
             <span className="slider" />
           </label>
         </div>
-      )}
-
-      <h4>{t("settings.ai.identity.heading")}</h4>
-      <p className="field-desc">{t("settings.ai.identity.sectionDesc")}</p>
-      <div className="identity-mode-options">
-        {(
-          [
-            ["invisible", "modeInvisible", "modeInvisibleDesc", "modeInvisibleExample"],
-            ["transparent", "modeTransparent", "modeTransparentDesc", "modeTransparentExample"],
-            ["defensive", "modeDefensive", "modeDefensiveDesc", "modeDefensiveExample"],
-          ] as const
-        ).map(([mode, titleKey, descKey, exampleKey]) => (
-          <label key={mode} className={`identity-mode-option ${aiSettings.identity.mode === mode ? "active" : ""}`}>
-            <input type="radio" name="ai-identity" value={mode}
-              checked={aiSettings.identity.mode === mode}
-              onChange={async () => {
-                await updateAiSettings({ identity: { ...aiSettings.identity, mode } });
-              }} />
-            <div className="identity-mode-content">
-              <strong>{t(`settings.ai.identity.${titleKey}`)}</strong>
-              <span>{t(`settings.ai.identity.${descKey}`)}</span>
-              <small>{t(`settings.ai.identity.${exampleKey}`)}</small>
-            </div>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.ai.chat.autoSendChat")}</strong>
+            <span className="toggle-desc">{t("settings.ai.chat.autoSendChatDesc")}</span>
+          </div>
+          <label className="toggle-switch">
+            <input type="checkbox" checked={autoSendChatToggle.checked} onChange={autoSendChatToggle.onCheckboxChange} />
+            <span className="slider" />
           </label>
-        ))}
-      </div>
+        </div>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.ai.chat.pauseAllAi")}</strong>
+            <span className="toggle-desc">{t("settings.ai.chat.pauseAllAiDesc")}</span>
+          </div>
+          <label className="toggle-switch">
+            <input type="checkbox" checked={killSwitchToggle.checked} onChange={killSwitchToggle.onCheckboxChange} />
+            <span className="slider" />
+          </label>
+        </div>
+      </section>
 
-      <h4>{t("settings.ai.identity.disclosureHeading")}</h4>
-      <p className="field-desc">{t("settings.ai.identity.disclosureDesc")}</p>
-      <div className="settings-field">
-        <label className="settings-checkbox-row">
-          <input
-            type="checkbox"
-            checked={disclosure.showAgentBadges}
-            onChange={async (e) => {
-              await updateAiSettings({
-                disclosure: { ...disclosure, showAgentBadges: e.target.checked },
+      <section className="settings-section">
+        <h4>{t("settings.ai.chat.limitsHeading")}</h4>
+        <p className="section-desc">{t("settings.ai.chat.limitsDesc")}</p>
+        <AutoReplyLimitsSettings aiSettings={aiSettings} updateAiSettings={updateAiSettings} />
+
+      </section>
+
+      <section className="settings-section">
+        <h4>{t("settings.ai.chat.notificationsHeading")}</h4>
+        <div className="form-group">
+          <label>{t("settings.ai.chat.activityNotifications")}</label>
+          <select
+            className="settings-input"
+            value={nodeConfig?.a2aChatNotifications ?? "off"}
+            onChange={(e) => {
+              void updateNodeConfigPartial({
+                a2aChatNotifications: e.target.value as A2aChatNotificationMode,
               });
             }}
-          />
-          <span>{t("settings.ai.identity.showAgentBadges")}</span>
-        </label>
-      </div>
-      <div className="settings-field">
-        <label className="settings-checkbox-row">
-          <input
-            type="checkbox"
-            checked={disclosure.collapsePeerAgentToContact}
-            onChange={async (e) => {
-              await updateAiSettings({
-                disclosure: {
-                  ...disclosure,
-                  collapsePeerAgentToContact: e.target.checked,
-                },
+          >
+            <option value="off">{t("settings.ai.chat.notificationsOff")}</option>
+            <option value="milestones_only">{t("settings.ai.chat.notificationsMilestonesOnly")}</option>
+            <option value="all_reports">{t("settings.ai.chat.notificationsAllReports")}</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label>{t("settings.ai.chat.interactionMode")}</label>
+          <select
+            className="settings-input"
+            value={nodeConfig?.agentInteractionMode ?? "structured_preferred"}
+            onChange={(e) => {
+              void updateNodeConfigPartial({
+                agentInteractionMode: e.target.value as AgentInteractionMode,
               });
             }}
-          />
-          <span>{t("settings.ai.identity.collapsePeerAgentToContact")}</span>
-        </label>
-      </div>
+          >
+            <option value="structured_preferred">{t("settings.ai.chat.interactionStructuredPreferred")}</option>
+            <option value="chat_ok">{t("settings.ai.chat.interactionChatOk")}</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label>{t("settings.ai.chat.visibilityByDomain")}</label>
+          {(["social", "knowledge", "home", "research"] as AgentActivityDomain[]).map((domain) => (
+            <div className="form-row" key={domain}>
+              <div className="form-group">
+                <label>
+                  {domain === "social"
+                    ? t("settings.ai.chat.domainSocial")
+                    : domain === "knowledge"
+                      ? t("settings.ai.chat.domainKnowledge")
+                      : domain === "home"
+                        ? t("settings.ai.chat.domainHome")
+                        : t("settings.ai.chat.domainResearch")}
+                </label>
+                <select
+                  className="settings-input"
+                  value={nodeConfig?.agentVisibility?.[domain] ?? "instant"}
+                  onChange={(e) => {
+                    void updateNodeConfigPartial({
+                      agentVisibility: {
+                        ...(nodeConfig?.agentVisibility ?? {}),
+                        [domain]: e.target.value as AgentNotifyMode,
+                      },
+                    });
+                  }}
+                >
+                  <option value="instant">{t("settings.ai.chat.notifyInstant")}</option>
+                  <option value="brief">{t("settings.ai.chat.notifyBrief")}</option>
+                  <option value="silent">{t("settings.ai.chat.notifySilent")}</option>
+                  <option value="approval">{t("settings.ai.chat.notifyApprovalOnly")}</option>
+                </select>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
-      <h4>{t("settings.ai.postures.heading")}</h4>
-      <p className="field-desc">{t("settings.ai.postures.sectionDesc")}</p>
-      <div className="settings-field">
-        <label className="settings-checkbox-row">
-          <input
-            type="checkbox"
-            checked={nodeConfig?.socialProxyEnabled === true}
-            disabled={!nodeConfig?.trustModeEnabled}
-            onChange={async (e) => {
-              const enabled = e.target.checked;
-              await nodeService.updateNodeConfig({
-                socialProxyEnabled: enabled,
-                ...(enabled ? { friendAutopilotEnabled: false } : {}),
-              });
-              await refreshNodeConfig();
-            }}
-          />
-          <span>{t("settings.ai.postures.socialProxy")}</span>
-        </label>
-      </div>
-      <div className="settings-field">
-        <label className="settings-checkbox-row">
-          <input
-            type="checkbox"
-            checked={nodeConfig?.documentAcquisitionEnabled === true}
-            onChange={async (e) => {
-              await nodeService.updateNodeConfig({ documentAcquisitionEnabled: e.target.checked });
-              await refreshNodeConfig();
-            }}
-          />
-          <span>{t("settings.ai.postures.documentAcquisition")}</span>
-        </label>
-      </div>
-      <div className="settings-field">
-        <label className="settings-checkbox-row">
-          <input
-            type="checkbox"
-            checked={nodeConfig?.capabilityProviderEnabled === true}
-            onChange={async (e) => {
-              await nodeService.updateNodeConfig({ capabilityProviderEnabled: e.target.checked });
-              await refreshNodeConfig();
-            }}
-          />
-          <span>{t("settings.ai.postures.capabilityProvider")}</span>
-        </label>
-      </div>
+      <section className="settings-section">
+        <h4>{t("settings.ai.presence.heading")}</h4>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.ai.presence.onlineAssistant")}</strong>
+            <span className="toggle-desc">{t("settings.ai.presence.onlineAssistantDesc")}</span>
+          </div>
+          <label className="toggle-switch">
+            <input type="checkbox" checked={onlineAssistantToggle.checked}
+              onChange={onlineAssistantToggle.onCheckboxChange} />
+            <span className="slider" />
+          </label>
+        </div>
 
-      <div className="settings-field">
-        <label className="settings-checkbox-row">
-          <input
-            type="checkbox"
-            checked={aiSettings.identity.debugPrefixInMessageText === true}
-            onChange={async (e) => {
-              await updateAiSettings({
-                identity: {
-                  ...aiSettings.identity,
-                  debugPrefixInMessageText: e.target.checked,
-                },
-              });
-            }}
-          />
-          <span>
-            <strong>{t("settings.ai.identity.debugEmbedPrefix")}</strong>
-            <span className="field-desc block">{t("settings.ai.identity.debugEmbedPrefixDesc")}</span>
-          </span>
-        </label>
-      </div>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.ai.presence.offlineAgent")}</strong>
+            <span className="toggle-desc">{t("settings.ai.presence.offlineAgentDesc")}</span>
+          </div>
+          <label className="toggle-switch">
+            <input type="checkbox" checked={offlineAgentToggle.checked}
+              onChange={offlineAgentToggle.onCheckboxChange} />
+            <span className="slider" />
+          </label>
+        </div>
 
-      <div className="settings-field">
-        <label htmlFor="ai-debug-prefix">{t("settings.ai.identity.debugPrefixLabel")}</label>
-        <input
-          id="ai-debug-prefix"
-          type="text"
-          className="settings-input"
+        <h5>{t("settings.ai.presence.detectionHeading")}</h5>
+        <p className="field-desc">{t("settings.ai.presence.detectionDesc")}</p>
+        <div className="settings-radio-group">
+          {(["automatic", "manual"] as const).map((mode) => (
+            <label key={mode} className={`settings-radio-option ${currentStatus.statusMode === mode ? "active" : ""}`}>
+              <input type="radio" name="status-mode" value={mode}
+                checked={currentStatus.statusMode === mode}
+                onChange={async () => {
+                  await updateAiSettings({ status: { ...currentStatus, statusMode: mode } });
+                }} />
+              <div className="radio-content">
+                <strong>
+                  {mode === "automatic"
+                    ? t("settings.ai.presence.modeAutomatic")
+                    : t("settings.ai.presence.modeManual")}
+                </strong>
+                <span>
+                  {mode === "automatic"
+                    ? t("settings.ai.presence.modeAutomaticDesc")
+                    : t("settings.ai.presence.modeManualDesc")}
+                </span>
+              </div>
+            </label>
+          ))}
+          {currentStatus.statusMode === "manual" && (
+            <div className="settings-toggle-row" style={{ marginTop: "0.75rem" }}>
+              <div className="toggle-info">
+                <strong>{t("settings.ai.presence.currentStatus")}</strong>
+                <span className="toggle-desc">{t("settings.ai.presence.currentStatusDesc")}</span>
+              </div>
+              <label className="toggle-switch">
+                <input type="checkbox" checked={manualStatusToggle.checked}
+                  onChange={manualStatusToggle.onCheckboxChange} />
+                <span className="slider" />
+              </label>
+            </div>
+            </div>
+          )}
+      </section>
+
+      <section className="settings-section">
+        <h4>{t("settings.ai.identity.heading")}</h4>
+        <p className="section-desc">{t("settings.ai.identity.sectionDesc")}</p>
+        <div className="identity-mode-options">
+          {(
+            [
+              ["invisible", "modeInvisible", "modeInvisibleDesc", "modeInvisibleExample"],
+              ["transparent", "modeTransparent", "modeTransparentDesc", "modeTransparentExample"],
+              ["defensive", "modeDefensive", "modeDefensiveDesc", "modeDefensiveExample"],
+            ] as const
+          ).map(([mode, titleKey, descKey, exampleKey]) => (
+            <label key={mode} className={`identity-mode-option ${aiSettings.identity.mode === mode ? "active" : ""}`}>
+              <input type="radio" name="ai-identity" value={mode}
+                checked={aiSettings.identity.mode === mode}
+                onChange={async () => {
+                  await updateAiSettings({ identity: { ...aiSettings.identity, mode } });
+                }} />
+              <div className="identity-mode-content">
+                <strong>{t(`settings.ai.identity.${titleKey}`)}</strong>
+                <span>{t(`settings.ai.identity.${descKey}`)}</span>
+                <small>{t(`settings.ai.identity.${exampleKey}`)}</small>
+              </div>
+            </label>
+          ))}
+        </div>
+
+        <h5>{t("settings.ai.identity.disclosureHeading")}</h5>
+        <p className="field-desc">{t("settings.ai.identity.disclosureDesc")}</p>
+        <div className="settings-field">
+          <label className="settings-checkbox-row">
+            <input
+              type="checkbox"
+              checked={disclosure.showAgentBadges}
+              onChange={async (e) => {
+                await updateAiSettings({
+                  disclosure: { ...disclosure, showAgentBadges: e.target.checked },
+                });
+              }}
+            />
+            <span>{t("settings.ai.identity.showAgentBadges")}</span>
+          </label>
+        </div>
+        <div className="settings-field">
+          <label className="settings-checkbox-row">
+            <input
+              type="checkbox"
+              checked={disclosure.collapsePeerAgentToContact}
+              onChange={async (e) => {
+                await updateAiSettings({
+                  disclosure: {
+                    ...disclosure,
+                    collapsePeerAgentToContact: e.target.checked,
+                  },
+                });
+              }}
+            />
+            <span>{t("settings.ai.identity.collapsePeerAgentToContact")}</span>
+          </label>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h4>{t("settings.ai.postures.heading")}</h4>
+        <p className="section-desc">{t("settings.ai.postures.sectionDesc")}</p>
+        <div className="settings-field">
+          <label className="settings-checkbox-row">
+            <input
+              type="checkbox"
+              checked={nodeConfig?.socialProxyEnabled === true}
+              disabled={!nodeConfig?.trustModeEnabled}
+              onChange={async (e) => {
+                const enabled = e.target.checked;
+                await nodeService.updateNodeConfig({
+                  socialProxyEnabled: enabled,
+                  ...(enabled ? { friendAutopilotEnabled: false } : {}),
+                });
+                await refreshNodeConfig();
+              }}
+            />
+            <span>{t("settings.ai.postures.socialProxy")}</span>
+          </label>
+        </div>
+        <div className="settings-field">
+          <label className="settings-checkbox-row">
+            <input
+              type="checkbox"
+              checked={nodeConfig?.documentAcquisitionEnabled === true}
+              onChange={async (e) => {
+                await nodeService.updateNodeConfig({ documentAcquisitionEnabled: e.target.checked });
+                await refreshNodeConfig();
+              }}
+            />
+            <span>{t("settings.ai.postures.documentAcquisition")}</span>
+          </label>
+        </div>
+        <div className="settings-field">
+          <label className="settings-checkbox-row">
+            <input
+              type="checkbox"
+              checked={nodeConfig?.capabilityProviderEnabled === true}
+              onChange={async (e) => {
+                await nodeService.updateNodeConfig({ capabilityProviderEnabled: e.target.checked });
+                await refreshNodeConfig();
+              }}
+            />
+            <span>{t("settings.ai.postures.capabilityProvider")}</span>
+          </label>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h4>{t("settings.ai.identity.debugHeading")}</h4>
+        <div className="settings-field">
+          <label className="settings-checkbox-row">
+            <input
+              type="checkbox"
+              checked={aiSettings.identity.debugPrefixInMessageText === true}
+              onChange={async (e) => {
+                await updateAiSettings({
+                  identity: {
+                    ...aiSettings.identity,
+                    debugPrefixInMessageText: e.target.checked,
+                  },
+                });
+              }}
+            />
+            <span>
+              <strong>{t("settings.ai.identity.debugEmbedPrefix")}</strong>
+              <span className="field-desc block">{t("settings.ai.identity.debugEmbedPrefixDesc")}</span>
+            </span>
+          </label>
+        </div>
+
+        <div className="settings-field">
+          <label htmlFor="ai-debug-prefix">{t("settings.ai.identity.debugPrefixLabel")}</label>
+          <input
+            id="ai-debug-prefix"
+            type="text"
+            className="settings-input"
           placeholder={t("settings.ai.identity.debugPrefixPlaceholder")}
           value={aiSettings.identity.transparentPrefix ?? ""}
           disabled={aiSettings.identity.debugPrefixInMessageText !== true}
@@ -1274,236 +1292,249 @@ export function SettingsAITab() {
           }}
         />
       </div>
+      </section>
 
-      <AgentIdentityEditor />
-
-      <h4>{t("settings.ai.contacts.defaultModeHeading")}</h4>
-      <p className="field-desc">{t("settings.ai.contacts.defaultModeDesc")}</p>
-      <select className="settings-select" value={aiSettings.defaultModeForNewContacts}
-        onChange={async (e) => {
-          await updateAiSettings({ defaultModeForNewContacts: e.target.value as "manual" | "assistant" | "auto" });
-        }}>
-        <option value="manual">{t("settings.ai.contacts.modeManual")}</option>
-        <option value="assistant">{t("settings.ai.contacts.modeAssistant")}</option>
-        <option value="auto">{t("settings.ai.contacts.modeAuto")}</option>
-      </select>
-
-      <h4>{t("settings.ai.rag.heading")}</h4>
-      <p className="field-desc">{t("settings.ai.rag.sectionDesc")}</p>
-      <KnowledgeBaseSettings
-        value={aiSettings.knowledgeBase ?? { ...DEFAULT_AI_KNOWLEDGE_BASE }}
-        onChange={async (knowledgeBase) => {
-          await updateAiSettings({ knowledgeBase });
-        }}
-      />
-
-      <h4>{t("settings.ai.profileMedia.heading")}</h4>
-      <p className="field-desc">{t("settings.ai.profileMedia.sectionDesc")}</p>
-      <div className="settings-toggle-row">
-        <div className="toggle-info">
-          <strong>{t("settings.ai.profileMedia.allowAgentShare")}</strong>
-          <span className="toggle-desc">{t("settings.ai.profileMedia.allowAgentShareDesc")}</span>
-        </div>
-        <label className="toggle-switch">
-          <input
-            type="checkbox"
-            checked={profileMedia.allowAgentShareGalleryPhotos}
-            onChange={async (e) => {
-              await updateAiSettings({
-                profileMedia: { ...profileMedia, allowAgentShareGalleryPhotos: e.target.checked },
-              });
-            }}
-          />
-          <span className="slider" />
-        </label>
-      </div>
-      <div className="form-group">
-        <label>{t("settings.ai.profileMedia.shareAutonomyTier")}</label>
-        <select
-          className="settings-select"
-          value={profileMedia.maxAutonomousShareTier}
-          disabled={!profileMedia.allowAgentShareGalleryPhotos}
+      <section className="settings-section">
+        <h4>{t("settings.ai.contacts.heading")}</h4>
+        <p className="section-desc">{t("settings.ai.contacts.sectionDesc")}</p>
+        <select className="settings-input" value={aiSettings.defaultModeForNewContacts}
           onChange={async (e) => {
-            const tier = Number(e.target.value) as ProfileMediaPolicy["maxAutonomousShareTier"];
-            await updateAiSettings({
-              profileMedia: { ...profileMedia, maxAutonomousShareTier: tier },
-            });
-          }}
-        >
-          <option value={0}>{t("settings.ai.profileMedia.tier0ProposeInbox")}</option>
-          <option value={2}>{t("settings.ai.profileMedia.tier2AutoShare")}</option>
+            await updateAiSettings({ defaultModeForNewContacts: e.target.value as "manual" | "assistant" | "auto" });
+          }}>
+          <option value="manual">{t("settings.ai.contacts.modeManual")}</option>
+          <option value="assistant">{t("settings.ai.contacts.modeAssistant")}</option>
+          <option value="auto">{t("settings.ai.contacts.modeAuto")}</option>
         </select>
-      </div>
-      <div className="form-group">
-        <label>{t("settings.ai.profileMedia.minVisibility")}</label>
-        <select
-          className="settings-select"
-          value={profileMedia.autonomousShareMinVisibility}
-          disabled={!profileMedia.allowAgentShareGalleryPhotos}
-          onChange={async (e) => {
-            await updateAiSettings({
-              profileMedia: {
-                ...profileMedia,
-                autonomousShareMinVisibility: e.target.value as ProfileMediaPolicy["autonomousShareMinVisibility"],
-              },
-            });
-          }}
-        >
-          <option value="public">{t("settings.ai.profileMedia.visibilityPublic")}</option>
-          <option value="referred">{t("settings.ai.profileMedia.visibilityReferred")}</option>
-          <option value="direct">{t("settings.ai.profileMedia.visibilityDirect")}</option>
-        </select>
-      </div>
+      </section>
 
-      <h4>{t("settings.ai.autonomy.heading")}</h4>
-      <p className="field-desc">{t("settings.ai.autonomy.sectionDesc")}</p>
-      <div className="form-group">
-        <label>{t("settings.ai.autonomy.shareAutonomyTier")}</label>
-        <select
-          className="settings-select"
-          value={documentAutonomy.maxAutonomousShareTier}
-          onChange={async (e) => {
-            const tier = Number(e.target.value) as DocumentAutonomyPolicy["maxAutonomousShareTier"];
-            await updateAiSettings({
-              documentAutonomy: { ...documentAutonomy, maxAutonomousShareTier: tier },
-            });
+      <section className="settings-section">
+        <h4>{t("settings.ai.rag.heading")}</h4>
+        <p className="section-desc">{t("settings.ai.rag.sectionDesc")}</p>
+        <KnowledgeBaseSettings
+          value={aiSettings.knowledgeBase ?? { ...DEFAULT_AI_KNOWLEDGE_BASE }}
+          onChange={async (knowledgeBase) => {
+            await updateAiSettings({ knowledgeBase });
           }}
-        >
-          <option value={0}>{t("settings.ai.autonomy.tier0ProposalsOnly")}</option>
-          <option value={1}>{t("settings.ai.autonomy.tier1Delegated")}</option>
-          <option value={2}>{t("settings.ai.autonomy.tier2AutoShareDirect")}</option>
-        </select>
-      </div>
-      <div className="settings-toggle-row">
-        <div className="toggle-info">
-          <strong>{t("settings.ai.autonomy.autonomousPublishMetadata")}</strong>
-          <span className="toggle-desc">{t("settings.ai.autonomy.autonomousPublishMetadataDesc")}</span>
+        />
+      </section>
+
+      <section className="settings-section">
+        <h4>{t("settings.ai.profileMedia.heading")}</h4>
+        <p className="section-desc">{t("settings.ai.profileMedia.sectionDesc")}</p>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.ai.profileMedia.allowAgentShare")}</strong>
+            <span className="toggle-desc">{t("settings.ai.profileMedia.allowAgentShareDesc")}</span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={profileMedia.allowAgentShareGalleryPhotos}
+              onChange={async (e) => {
+                await updateAiSettings({
+                  profileMedia: { ...profileMedia, allowAgentShareGalleryPhotos: e.target.checked },
+                });
+              }}
+            />
+            <span className="slider" />
+          </label>
         </div>
-        <label className="toggle-switch">
-          <input
-            type="checkbox"
-            checked={documentAutonomy.allowAutonomousPublish}
-            onChange={async (e) => {
-              await updateAiSettings({
-                documentAutonomy: { ...documentAutonomy, allowAutonomousPublish: e.target.checked },
-              });
-            }}
-          />
-          <span className="slider" />
-        </label>
-      </div>
-
-      <h4>{t("settings.ai.rules.heading")}</h4>
-      <p className="field-desc">{t("settings.ai.rules.sectionDesc")}</p>
-
-      {/* Rules List */}
-      {aiSettings.rules.length > 0 ? (
-        <div className="rules-list">
-          {aiSettings.rules.map((rule) => (
-            <div key={rule.id} className="rule-item">
-              <div className="rule-item-header">
-                <span className="rule-item-name">{rule.name}</span>
-                <span className="rule-item-category">{rule.category}</span>
-              </div>
-              <div className="rule-item-triggers">
-                {rule.trigger.isGreeting && `${t("settings.ai.rules.listGreetings")} `}
-                {rule.trigger.keywords && rule.trigger.keywords.length > 0
-                  && `${t("settings.ai.rules.listKeywordsPrefix")} ${rule.trigger.keywords.join(", ")} `}
-                {rule.trigger.messageContains
-                  && `${t("settings.ai.rules.listRegexPrefix")} ${rule.trigger.messageContains}`}
-                {rule.trigger.contactAiAccessLevel && rule.trigger.contactAiAccessLevel.length > 0
-                  && ` ${t("settings.ai.rules.listAccessPrefix")} ${rule.trigger.contactAiAccessLevel.join(", ")}`}
-                {!rule.trigger.isGreeting && (!rule.trigger.keywords || rule.trigger.keywords.length === 0) && !rule.trigger.messageContains && t("settings.ai.rules.listNoTriggers")}
-              </div>
-              <div className="rule-item-actions">
-                {t("settings.ai.rules.listActionPrefix")} {rule.action.type}
-                {rule.action.template && ` — "${rule.action.template.slice(0, 50)}${rule.action.template.length > 50 ? "..." : ""}"`}
-                {rule.action.aiIdentityOverride
-                  && ` | ${t("settings.ai.rules.listIdentityPrefix")} ${rule.action.aiIdentityOverride}`}
-              </div>
-              <div className="rule-item-controls">
-                <button className="delete" onClick={() => handleDeleteRule(rule.id)}>{t("settings.ai.rules.delete")}</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="field-desc" style={{ marginBottom: "1rem" }}>{t("settings.ai.rules.empty")}</p>
-      )}
-
-      {/* Add Rule Form — fully controlled */}
-      <div className="add-rule-form">
-        <h5>{t("settings.ai.rules.addHeading")}</h5>
         <div className="form-group">
-          <label>{t("settings.ai.rules.nameLabel")}</label>
-          <input type="text" placeholder={t("settings.ai.rules.namePlaceholder")}
-            value={ruleForm.name}
-            onChange={(e) => setRuleForm({ ...ruleForm, name: e.target.value })} />
+          <label>{t("settings.ai.profileMedia.shareAutonomyTier")}</label>
+          <select
+            className="settings-input"
+            value={profileMedia.maxAutonomousShareTier}
+            disabled={!profileMedia.allowAgentShareGalleryPhotos}
+            onChange={async (e) => {
+              const tier = Number(e.target.value) as ProfileMediaPolicy["maxAutonomousShareTier"];
+              await updateAiSettings({
+                profileMedia: { ...profileMedia, maxAutonomousShareTier: tier },
+              });
+            }}
+          >
+            <option value={0}>{t("settings.ai.profileMedia.tier0ProposeInbox")}</option>
+            <option value={2}>{t("settings.ai.profileMedia.tier2AutoShare")}</option>
+          </select>
         </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>{t("settings.ai.rules.categoryLabel")}</label>
-            <select value={ruleForm.category}
-              onChange={(e) => setRuleForm({ ...ruleForm, category: e.target.value as AiRuleCategory })}>
-              <option value="availability">{t("settings.ai.rules.categoryAvailability")}</option>
-              <option value="capability">{t("settings.ai.rules.categoryCapability")}</option>
-              <option value="catch_all">{t("settings.ai.rules.categoryCatchAll")}</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label>{t("settings.ai.rules.priorityLabel")}</label>
-            <input type="number" value={ruleForm.priority} min={1} max={100}
-              onChange={(e) => setRuleForm({ ...ruleForm, priority: parseInt(e.target.value) || 1 })} />
-          </div>
+        <div className="form-group">
+          <label>{t("settings.ai.profileMedia.minVisibility")}</label>
+          <select
+            className="settings-input"
+            value={profileMedia.autonomousShareMinVisibility}
+            disabled={!profileMedia.allowAgentShareGalleryPhotos}
+            onChange={async (e) => {
+              await updateAiSettings({
+                profileMedia: {
+                  ...profileMedia,
+                  autonomousShareMinVisibility: e.target.value as ProfileMediaPolicy["autonomousShareMinVisibility"],
+                },
+              });
+            }}
+          >
+            <option value="public">{t("settings.ai.profileMedia.visibilityPublic")}</option>
+            <option value="referred">{t("settings.ai.profileMedia.visibilityReferred")}</option>
+            <option value="direct">{t("settings.ai.profileMedia.visibilityDirect")}</option>
+          </select>
         </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>{t("settings.ai.rules.triggerKeywords")}</label>
-            <input type="text" placeholder={t("settings.ai.rules.triggerKeywordsPlaceholder")}
-              value={ruleForm.keywords}
-              onChange={(e) => setRuleForm({ ...ruleForm, keywords: e.target.value })} />
-          </div>
-          <div className="form-group">
-            <label>{t("settings.ai.rules.triggerRegex")}</label>
-            <input type="text" placeholder={t("settings.ai.rules.triggerRegexPlaceholder")}
-              value={ruleForm.regex}
-              onChange={(e) => setRuleForm({ ...ruleForm, regex: e.target.value })} />
-          </div>
+      </section>
+
+      <section className="settings-section">
+        <h4>{t("settings.ai.autonomy.heading")}</h4>
+        <p className="section-desc">{t("settings.ai.autonomy.sectionDesc")}</p>
+        <div className="form-group">
+          <label>{t("settings.ai.autonomy.shareAutonomyTier")}</label>
+          <select
+            className="settings-input"
+            value={documentAutonomy.maxAutonomousShareTier}
+            onChange={async (e) => {
+              const tier = Number(e.target.value) as DocumentAutonomyPolicy["maxAutonomousShareTier"];
+              await updateAiSettings({
+                documentAutonomy: { ...documentAutonomy, maxAutonomousShareTier: tier },
+              });
+            }}
+          >
+            <option value={0}>{t("settings.ai.autonomy.tier0ProposalsOnly")}</option>
+            <option value={1}>{t("settings.ai.autonomy.tier1Delegated")}</option>
+            <option value={2}>{t("settings.ai.autonomy.tier2AutoShareDirect")}</option>
+          </select>
         </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>{t("settings.ai.rules.triggerGreeting")}</label>
-            <select value={ruleForm.isGreeting ? "true" : ""}
-              onChange={(e) => setRuleForm({ ...ruleForm, isGreeting: e.target.value === "true" })}>
-              <option value="">{t("settings.ai.rules.triggerGreetingAny")}</option>
-              <option value="true">{t("settings.ai.rules.triggerGreetingYes")}</option>
-            </select>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.ai.autonomy.autonomousPublishMetadata")}</strong>
+            <span className="toggle-desc">{t("settings.ai.autonomy.autonomousPublishMetadataDesc")}</span>
           </div>
-          <div className="form-group">
-            <label>{t("settings.ai.rules.triggerAccessLevel")}</label>
-            <select value={ruleForm.accessLevel}
-              onChange={(e) => setRuleForm({ ...ruleForm, accessLevel: e.target.value as "" | "full" | "assistant_only" })}>
-              <option value="">{t("settings.ai.rules.triggerAccessAny")}</option>
-              <option value="full">{t("settings.ai.rules.triggerAccessFull")}</option>
-              <option value="assistant_only">{t("settings.ai.rules.triggerAccessAssistantOnly")}</option>
-            </select>
-          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={documentAutonomy.allowAutonomousPublish}
+              onChange={async (e) => {
+                await updateAiSettings({
+                  documentAutonomy: { ...documentAutonomy, allowAutonomousPublish: e.target.checked },
+                });
+              }}
+            />
+            <span className="slider" />
+          </label>
         </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>{t("settings.ai.rules.actionType")}</label>
-            <select value={ruleForm.actionType}
-              onChange={(e) => setRuleForm({ ...ruleForm, actionType: e.target.value as AiRuleActionType })}>
-              <option value="draft">{t("settings.ai.rules.actionDraft")}</option>
-              <option value="auto_send">{t("settings.ai.rules.actionAutoSend")}</option>
-              <option value="gatekeep">{t("settings.ai.rules.actionGatekeep")}</option>
-              <option value="defer">{t("settings.ai.rules.actionDefer")}</option>
-            </select>
+      </section>
+
+      <section className="settings-section">
+        <h4>{t("settings.ai.modelProvider.heading")}</h4>
+        <ModelProviderSettings nodeConfig={nodeConfig} refreshNodeConfig={refreshNodeConfig} />
+      </section>
+
+      <section className="settings-section">
+        <h4>{t("settings.ai.rules.heading")}</h4>
+        <p className="section-desc">{t("settings.ai.rules.sectionDesc")}</p>
+
+        {/* Rules List */}
+        {aiSettings.rules.length > 0 ? (
+          <div className="rules-list">
+            {aiSettings.rules.map((rule) => (
+              <div key={rule.id} className="rule-item">
+                <div className="rule-item-header">
+                  <span className="rule-item-name">{rule.name}</span>
+                  <span className="rule-item-category">{rule.category}</span>
+                </div>
+                <div className="rule-item-triggers">
+                  {rule.trigger.isGreeting && `${t("settings.ai.rules.listGreetings")} `}
+                  {rule.trigger.keywords && rule.trigger.keywords.length > 0
+                    && `${t("settings.ai.rules.listKeywordsPrefix")} ${rule.trigger.keywords.join(", ")} `}
+                  {rule.trigger.messageContains
+                    && `${t("settings.ai.rules.listRegexPrefix")} ${rule.trigger.messageContains}`}
+                  {rule.trigger.contactAiAccessLevel && rule.trigger.contactAiAccessLevel.length > 0
+                    && ` ${t("settings.ai.rules.listAccessPrefix")} ${rule.trigger.contactAiAccessLevel.join(", ")}`}
+                  {!rule.trigger.isGreeting && (!rule.trigger.keywords || rule.trigger.keywords.length === 0) && !rule.trigger.messageContains && t("settings.ai.rules.listNoTriggers")}
+                </div>
+                <div className="rule-item-actions">
+                  {t("settings.ai.rules.listActionPrefix")} {rule.action.type}
+                  {rule.action.template && ` — "${rule.action.template.slice(0, 50)}${rule.action.template.length > 50 ? "..." : ""}"`}
+                  {rule.action.aiIdentityOverride
+                    && ` | ${t("settings.ai.rules.listIdentityPrefix")} ${rule.action.aiIdentityOverride}`}
+                </div>
+                <div className="rule-item-controls">
+                  <button type="button" className="settings-button" onClick={() => handleDeleteRule(rule.id)}>{t("settings.ai.rules.delete")}</button>
+                </div>
+              </div>
+            ))}
           </div>
+        ) : (
+          <p className="field-desc" style={{ marginBottom: "1rem" }}>{t("settings.ai.rules.empty")}</p>
+        )}
+
+        {/* Add Rule Form — fully controlled */}
+        <div className="add-rule-form">
+          <h5>{t("settings.ai.rules.addHeading")}</h5>
           <div className="form-group">
-            <label>{t("settings.ai.rules.identityOverride")}</label>
-            <select value={ruleForm.identityOverride}
-              onChange={(e) => setRuleForm({ ...ruleForm, identityOverride: e.target.value as "" | AiIdentityMode })}>
+            <label>{t("settings.ai.rules.nameLabel")}</label>
+            <input type="text" className="settings-input" placeholder={t("settings.ai.rules.namePlaceholder")}
+              value={ruleForm.name}
+              onChange={(e) => setRuleForm({ ...ruleForm, name: e.target.value })} />
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>{t("settings.ai.rules.categoryLabel")}</label>
+              <select className="settings-input" value={ruleForm.category}
+                onChange={(e) => setRuleForm({ ...ruleForm, category: e.target.value as AiRuleCategory })}>
+                <option value="availability">{t("settings.ai.rules.categoryAvailability")}</option>
+                <option value="capability">{t("settings.ai.rules.categoryCapability")}</option>
+                <option value="catch_all">{t("settings.ai.rules.categoryCatchAll")}</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>{t("settings.ai.rules.priorityLabel")}</label>
+              <input type="number" className="settings-input" value={ruleForm.priority} min={1} max={100}
+                onChange={(e) => setRuleForm({ ...ruleForm, priority: parseInt(e.target.value) || 1 })} />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>{t("settings.ai.rules.triggerKeywords")}</label>
+              <input type="text" className="settings-input" placeholder={t("settings.ai.rules.triggerKeywordsPlaceholder")}
+                value={ruleForm.keywords}
+                onChange={(e) => setRuleForm({ ...ruleForm, keywords: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label>{t("settings.ai.rules.triggerRegex")}</label>
+              <input type="text" className="settings-input" placeholder={t("settings.ai.rules.triggerRegexPlaceholder")}
+                value={ruleForm.regex}
+                onChange={(e) => setRuleForm({ ...ruleForm, regex: e.target.value })} />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>{t("settings.ai.rules.triggerGreeting")}</label>
+              <select className="settings-input" value={ruleForm.isGreeting ? "true" : ""}
+                onChange={(e) => setRuleForm({ ...ruleForm, isGreeting: e.target.value === "true" })}>
+                <option value="">{t("settings.ai.rules.triggerGreetingAny")}</option>
+                <option value="true">{t("settings.ai.rules.triggerGreetingYes")}</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>{t("settings.ai.rules.triggerAccessLevel")}</label>
+              <select className="settings-input" value={ruleForm.accessLevel}
+                onChange={(e) => setRuleForm({ ...ruleForm, accessLevel: e.target.value as "" | "full" | "assistant_only" })}>
+                <option value="">{t("settings.ai.rules.triggerAccessAny")}</option>
+                <option value="full">{t("settings.ai.rules.triggerAccessFull")}</option>
+                <option value="assistant_only">{t("settings.ai.rules.triggerAccessAssistantOnly")}</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>{t("settings.ai.rules.actionType")}</label>
+              <select className="settings-input" value={ruleForm.actionType}
+                onChange={(e) => setRuleForm({ ...ruleForm, actionType: e.target.value as AiRuleActionType })}>
+                <option value="draft">{t("settings.ai.rules.actionDraft")}</option>
+                <option value="auto_send">{t("settings.ai.rules.actionAutoSend")}</option>
+                <option value="gatekeep">{t("settings.ai.rules.actionGatekeep")}</option>
+                <option value="defer">{t("settings.ai.rules.actionDefer")}</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>{t("settings.ai.rules.identityOverride")}</label>
+              <select className="settings-input" value={ruleForm.identityOverride}
+                onChange={(e) => setRuleForm({ ...ruleForm, identityOverride: e.target.value as "" | AiIdentityMode })}>
               <option value="">{t("settings.ai.rules.identityUseDefault")}</option>
               <option value="invisible">{t("settings.ai.rules.identityInvisible")}</option>
               <option value="transparent">{t("settings.ai.rules.identityTransparent")}</option>
@@ -1513,14 +1544,19 @@ export function SettingsAITab() {
         </div>
         <div className="form-group">
           <label>{t("settings.ai.rules.templateLabel")}</label>
-          <textarea placeholder={t("settings.ai.rules.templatePlaceholder")}
+          <textarea className="settings-input" placeholder={t("settings.ai.rules.templatePlaceholder")}
             value={ruleForm.template}
             onChange={(e) => setRuleForm({ ...ruleForm, template: e.target.value })} />
         </div>
-        <div className="form-actions">
-          <button className="btn-primary" onClick={handleAddRule}>{t("settings.ai.rules.addButton")}</button>
+        <div className="settings-buttons">
+          <button type="button" className="settings-save-btn" onClick={handleAddRule}>{t("settings.ai.rules.addButton")}</button>
         </div>
       </div>
-    </section>
+      </section>
+
+      <section className="settings-section">
+        <AgentIdentityEditor />
+      </section>
+    </>
   );
 }

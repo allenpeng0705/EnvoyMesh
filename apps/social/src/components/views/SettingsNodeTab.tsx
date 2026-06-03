@@ -545,9 +545,9 @@ export function SettingsNodeTab() {
         </dl>
         <div className="node-controls">
           {nodeStatus === "running" ? (
-            <button onClick={handleStopNode}>{t("settings.network.nodeControl.stopNode")}</button>
+            <button type="button" className="settings-button" onClick={handleStopNode}>{t("settings.network.nodeControl.stopNode")}</button>
           ) : (
-            <button onClick={handleStartNode}>{t("settings.network.nodeControl.startNode")}</button>
+            <button type="button" className="settings-button" onClick={handleStartNode}>{t("settings.network.nodeControl.startNode")}</button>
           )}
         </div>
       </section>
@@ -1147,11 +1147,14 @@ export function SettingsNodeTab() {
           <h4>{t("settings.network.relays.addTitle")}</h4>
           <input
             type="text"
+            className="settings-input"
             placeholder={t("settings.network.relays.addPlaceholder")}
             value={newRelayAddr}
             onChange={(e) => setNewRelayAddr(e.target.value)}
           />
           <button
+            type="button"
+            className="settings-button"
             onClick={async () => {
               if (!newRelayAddr.trim()) return;
               try {
@@ -1286,6 +1289,7 @@ export function SettingsNodeTab() {
         <div className="form-group">
           <label>{t("settings.network.aiChatBehavior.chatNotifications")}</label>
           <select
+            className="settings-input"
             value={nodeConfig?.a2aChatNotifications ?? "off"}
             onChange={(e) => {
               void updateNodeConfig({
@@ -1305,6 +1309,7 @@ export function SettingsNodeTab() {
         <div className="form-group">
           <label>{t("settings.network.aiChatBehavior.agentInteractionMode")}</label>
           <select
+            className="settings-input"
             value={nodeConfig?.agentInteractionMode ?? "structured_preferred"}
             onChange={(e) => {
               void updateNodeConfig({
@@ -1330,6 +1335,7 @@ export function SettingsNodeTab() {
               <div className="form-group">
                 <label>{domain}</label>
                 <select
+                  className="settings-input"
                   value={nodeConfig?.agentVisibility?.[domain] ?? "instant"}
                   onChange={(e) => {
                     void updateNodeConfig({

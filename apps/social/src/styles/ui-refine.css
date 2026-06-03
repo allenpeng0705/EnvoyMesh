@@ -1306,6 +1306,74 @@ button.secondary:not(.danger):disabled,
     z-index: 2;
   }
 
+  .settings-section .settings-button,
+  .settings-buttons .settings-button {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-height: 44px !important;
+    padding: var(--space-2) var(--space-4) !important;
+    border: 1px solid var(--color-border-subtle) !important;
+    border-radius: var(--radius-md) !important;
+    background: var(--color-surface-elevated) !important;
+    color: var(--color-text-primary) !important;
+    font-size: var(--font-sm) !important;
+    font-weight: var(--font-medium) !important;
+    cursor: pointer !important;
+    transition: all var(--transition-fast) !important;
+    box-shadow: none !important;
+  }
+
+  .settings-section .settings-button:hover:not(:disabled),
+  .settings-buttons .settings-button:hover:not(:disabled) {
+    border-color: var(--color-primary) !important;
+    background: var(--color-primary-subtle) !important;
+    color: var(--color-primary) !important;
+  }
+
+  .settings-section .settings-button:disabled,
+  .settings-buttons .settings-button:disabled {
+    opacity: 0.6 !important;
+    cursor: not-allowed !important;
+  }
+
+  .settings-checkbox-inline {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: var(--space-2) !important;
+    margin-left: var(--space-3) !important;
+    cursor: pointer !important;
+  }
+
+  .settings-checkbox-inline input[type="checkbox"] {
+    width: 18px !important;
+    height: 18px !important;
+    cursor: pointer !important;
+    margin: 0 !important;
+  }
+
+  .settings-checkbox-row {
+    display: flex !important;
+    align-items: flex-start !important;
+    gap: var(--space-2) !important;
+    cursor: pointer !important;
+    padding: var(--space-2) 0 !important;
+  }
+
+  .settings-checkbox-row input[type="checkbox"] {
+    width: 18px !important;
+    height: 18px !important;
+    cursor: pointer !important;
+    margin: 0 !important;
+    flex-shrink: 0 !important;
+    margin-top: 2px !important;
+  }
+
+  .settings-checkbox-row span {
+    flex: 1 !important;
+    line-height: 1.5 !important;
+  }
+
   .settings-save-btn,
   .settings-cancel-btn {
     flex: 1;

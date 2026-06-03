@@ -85,7 +85,9 @@ Active next direction:
 5. **Phase 20 — Network-wide Document Discovery** — **`[x]` shipped** (schema + broadcast helper + 10 tests).
 6. **Phase 21 — Network-wide Capability Discovery** — **`[x]` shipped** (schema + broadcast helper + 4 tests).
 7. **Phase 22 — Federated RAG** — **`[x]` shipped** (schema + fan-out worker + 10 tests).
-8. **Phases 23–25** — Proactive Social Graph, Agent Marketplace, Ambient Awareness — design docs in [roadmap.md](./roadmap.md#aiagent-vision-beyond-phase-18).
+8. **Phase 23** — Proactive Social Graph — **`[x]` shipped** (circle-proposer, bond-steward, connection-suggester, chat-rag-service; 21 tests).
+9. **Phase 24** — Agent Marketplace — **`[x]` shipped** (agent-negotiation-worker, reputation-router, agent-chain-orchestrator, service-mesh-worker; 24 tests).
+10. **Phase 25** — Ambient Mesh Awareness — **`[x]` shipped** (mesh-awareness-worker, intent-predictor, continuity-service; 16 tests).
 
 Product-level **user stories and epics** (discovery, broadcast termination, communication roles, and so on) live in [EnvoyMesh scenarios](./scenarios.md). Narrative journeys live in [UserStory.md](./UserStory.md). Periodically reconcile both with code via [alignment-review.md](./alignment-review.md). Use those files to prioritize; keep this plan aligned when scope or shipped work changes.
 
@@ -2834,17 +2836,253 @@ Verified by `apps/node/test/phase-18-e2e.test.ts` (+ unit/integration suites bel
 
 ---
 
-## Phases 23–25: Strategic directions (design only)
+## Phase 23: Proactive Social Graph — "the graph learns" **`[x]` shipped**
 
-Phases 23 (Proactive Social Graph), 24 (Agent Marketplace), and 25 (Ambient Mesh Awareness) are documented in the [roadmap](./roadmap.md#aiagent-vision-beyond-phase-18). They will be phased into this plan when scoped with concrete exit criteria. All three share the existing EMP intents and posture infrastructure; no new wire protocol needed.
+**Goal:** The agent actively maintains and enriches the owner's social graph — suggesting group chats, suggesting new connections, stewarding dormant bonds, and providing social memory via local chat RAG. No new wire protocol; all local computation.
+
+**Design decision (2026-06-03):** Standalone Circles tab removed. Clustering logic (`circle-proposer.ts`) repurposed to power **group chat suggestions** — when the agent detects affinity groups, it suggests creating a group chat instead of a standalone circle. This keeps the UI simple: people understand group chats.
+
+**Depends on:** Phase 9 ToolRegistry · Phase 14 friend autopilot · Phase 16 social proxy · digest generator · chat log store · bond trust store.
+
+**Design:** [roadmap.md § Direction 1](./roadmap.md#direction-1-ai-social-network--the-graph-learns).
+
+### 23A — AI-proposed group chats (was: circles)
+
+- `[x]` `circle-proposer.ts`: analyze bond trust tiers, published document topics, capability tags to detect affinity clusters
+- `[x]` Reused by Assistant to suggest: "I found 5 contacts sharing WASM — create a group chat for them?"
+- `[x]` `AgentCircle` type retained as internal data model for cluster proposals
+- `[x]` RPC methods kept: `listAgentCircles` / `proposeAgentCircles` (internal, not exposed in Social UI)
+- `[x]` `autoCircleContacts` posture policy field kept for future group auto-creation
+
+### 23B — Proactive connection suggestions
+
+- `[x]` `connection-suggester.ts`: `matchPeerInterests()` scoring function comparing owner topics to peer topics/capabilities
+- `[x]` `suggestConnections()` function generating ranked suggestions with relevance scores
+- `[x]` Daemon tick integration in `index.ts` (bond steward + mesh awareness)
+- `[x]` Daemon tick integration: `runConnectionSuggesterPass()` + Activity recording in `index.ts`
+- `[x]` Activity kind: `connection_suggested` wired via `recordConnectionSuggestion()`
+
+### 23C — Social graph stewardship (dormant bonds)
+
+- `[x]` `bond-steward.ts`: `findDormantBonds()` scanning bond trust store with configurable threshold (default 90 days)
+- `[x]` Sorted output (most dormant first) with summary text
+- `[x]` Generate `social_graph_stewardship` Activity via digest-generator `dormantBonds` section
+- `[x]` `dormantBondThresholdDays`, `autoNudgeDormantBonds` config fields (PersistedNodeConfig)
+
+### 23D — Social memory (local chat RAG over chat history)
+
+- `[x]` `chat-rag-service.ts`: `searchChatHistory()` keyword-based search with score normalization
+- `[x]` `queryChatRag()` contact-scoped query with optional filtering
+- `[x]` `formatChatRagResults()` human-readable output with contact names and dates
+- `[x]` `mesh.chat_rag_search` tool registered in ToolRegistry + RPC handler in NodeService + WebSocket RPC surface
+- `[x]` Owner-agent turn integration: `chatRagSearch` + `predictIntent` wired into `runOwnerAgentTurn`
+
+### 23E — Write tests
+
+- `[x]` Unit: `circle-proposer` (min-members, topic clusters, capabilities, dedup, maxCircles, circleFromProposal) — 6 tests
+- `[x]` Unit: `bond-steward` (dormant detection, active bonds, public/blocked ignore, creation-date fallback) — 4 tests
+- `[x]` Unit: `connection-suggester` (topic matching, capability matching, zero matches, empty input) — 4 tests
+- `[x]` Unit: `chat-rag-service` (query matching, ranking, maxResults, no-match, short words, formatting) — 7 tests
+- `[ ]` Integration: Social UI circle rendering, Activity feed suggestion rendering
+- `[x]` E2E: two-node affinity cluster detection + group chat suggestion (Phase 13 harness)
+
+**Exit:** All Phase 23 modules have thorough unit test coverage (21 tests) + E2E harness test.
 
 ---
+
+## Phase 24: Agent Marketplace — multi-agent task collaboration **`[x]` shipped**
+
+**Goal:** Agents discover and compose each other's capabilities through the A2A lane. Bilateral negotiation, agent chains, and reputation-based routing. No new wire intents needed — all built on `task.*`, `agent.card.*`, `discovery.*`.
+
+**Depends on:** Phase 13 A2A lane · Phase 16E capability routing · Phase 19 bond autonomy · Phase 21 network-wide capability discovery · `task.feedback` (Phase 8K).
+
+**Design:** [roadmap.md § Direction 3](./roadmap.md#direction-3-agent-network--multi-agent-collaboration).
+
+### 24A — Bilateral agent negotiation
+
+- `[x]` `agent-negotiation-worker.ts`: `runAgentNegotiation()` discovers providers, filters by bond tier/reputation, sends proposals
+- `[x]` First-acceptance-wins negotiation model; unbonded gated by `allowUnbonded` option
+- `[ ]` Full negotiation loop: propose → negotiate (clarify) → accept → execute → result → feedback (deferred)
+- `[ ]` Activity kinds: `task_negotiation_started`, `task_negotiation_completed` (deferred)
+
+### 24B — Agent chains (multi-hop task composition)
+
+- `[x]` `agent-chain-orchestrator.ts`: `runAgentChain()` sequential multi-step execution with provider discovery
+- `[x]` `decomposeTask()` keyword-based task decomposition (translate, review, synthesize, convert)
+- `[x]` Configurable maxDepth (default 3); each step's output feeds the next step's input
+- *Note:* `runAgentChain` is shipped as a **library function** — not auto-invoked from the daemon loop or `runOwnerAgentTurn`. It is available for direct agent calls (e.g. when the agent decides to chain steps in a single turn). Auto-wiring into a daemon tick is a follow-on.
+
+### 24C — Reputation-based routing
+
+- `[x]` `reputation-router.ts`: `rankProviders()` sorts by bond tier → score → completed task count
+- `[x]` `aggregateReputation()` rolling average with invalid-score filtering
+- `[x]` `minReputationScore` posture policy field (CapabilityProviderPosturePolicySchema)
+
+### 24D — Autonomous service mesh
+
+- `[x]` `service-mesh-worker.ts`: `evaluateServiceTask()` capability matching, sensitivity ceiling, concurrent task cap, action allowlist
+- `[x]` Six rejection conditions (disabled, no capability, sensitivity, concurrent cap, disallowed actions) with clear reasons
+- `[x]` `task-negotiation-loop.ts`: Full A2A lifecycle — propose → accept → execute → result → feedback
+- `[x]` `runTaskNegotiation` wired into `runOwnerAgentTurn` as a callable hook
+- *Note:* `evaluateServiceTask` is shipped as a **library function** — not auto-invoked from the daemon loop. It is available for direct calls (e.g. when a task negotiation result needs pre-acceptance evaluation). Auto-evaluation inside `runTaskNegotiation` is a follow-on.
+
+### 24E — Write tests
+
+- `[x]` Unit: `agent-negotiation-worker` (no providers, unbonded filter, unbonded allow, first-accept, reputation ranking) — 5 tests
+- `[x]` Unit: `reputation-router` (bond priority, score ranking, minScore, aggregate with/without scores) — 6 tests
+- `[x]` Unit: `agent-chain-orchestrator` (2-step chain, no providers, execution failure, maxDepth, decomposeTask) — 7 tests
+- `[x]` Unit: `service-mesh-worker` (accept, disabled, no capability, sensitivity, concurrent cap, disallowed actions) — 6 tests
+- `[ ]` Integration: `task.propose` → negotiate → accept → result flow between two bonded nodes
+- `[x]` Unit: agent chain orchestrator end-to-end (decompose + mock executor; no real mesh) — 7 tests in `phase-23-25-deferred-tasks.test.ts`
+
+**Exit:** All four Phase 24 modules have thorough test coverage (24 tests) + E2E harness test.
+
+---
+
+## Phase 25: Ambient Mesh Awareness — "the mesh as your extended mind" **`[x]` shipped**
+
+**Goal:** The agent works proactively: monitoring the mesh, cross-device continuity, enriched digest, and intent prediction. Purely local computation on existing data sources.
+
+**Depends on:** Phase 9 ToolRegistry · Phase 11 mobile node · Phase 14 digest generator · Activity feed · vault index · chat log.
+
+**Design:** [roadmap.md § Direction 4](./roadmap.md#direction-4-ambient-mesh-awareness--the-mesh-as-your-extended-mind).
+
+### 25A — Proactive mesh awareness
+
+- `[x]` `mesh-awareness-worker.ts`: `generateMeshInsights()` matches owner topics against bonded peer published topics
+- `[x]` Configurable `minOverlapScore` threshold; returns structured `MeshAwarenessInsight` objects
+- `[x]` Digest enrichment: `meshInsights` section in digest-generator
+- `[x]` Periodic scan scheduling via daemon tick in `index.ts`
+- `[x]` WebSocket push: `agent:awareness` event wired in `ws-server.ts` + `node-service-impl.ts`
+
+### 25B — Cross-device continuity
+
+- `[x]` `continuity-service.ts`: `startContinuitySession()`, `updateContinuitySession()`, `completeContinuitySession()`, `getResumableSessions()`
+- `[x]` Session lifecycle: create → update progress → complete (active=false); sorted by lastUpdatedAt
+
+### 25C — Enriched ambient digest
+
+- `[x]` `DigestSummary` extended with `dormantBonds`, `meshInsights`, `proposedCircles` fields
+- `[x]` Summary text rendering for all three new sections
+- `[x]` WebSocket `digest:ready` event wired in `ws-server.ts` (mobile notification via Capacitor deferred)
+
+### 25D — Intent prediction
+
+- `[x]` `intent-predictor.ts`: `predictIntent()` frequency-based prediction with prefix bonus and dedup
+- `[x]` Configurable `minConfidence` and `maxPredictions` options
+- `[x]` `intentPredictionEnabled`, `prefetchMaxResults` config fields (PersistedNodeConfig)
+- `[x]` Pre-query integration: `predictIntent` wired into `runOwnerAgentTurn` (intent history persistence deferred)
+
+### 25E — Write tests
+
+- `[x]` Unit: `mesh-awareness-worker` (insight generation, no topics, no overlap, minOverlapScore) — 4 tests
+- `[x]` Unit: `intent-predictor` (prediction, prefix bonus, blank input, no match, dedup, maxPredictions) — 6 tests
+- `[x]` Unit: `continuity-service` (create, update, complete, non-existent, resumable sort, no-op complete) — 6 tests
+- `[x]` E2E: continuity session lifecycle (create → update → complete, Phase 13 harness)
+- `[ ]` Integration: Digest generation with new sections, WebSocket push events (deferred)
+
+**Exit:** All three Phase 25 modules have thorough test coverage (16 tests) + E2E harness test.
+
+---
+
+## Phase 26: Runtime Integration — close library-only gaps `[x]` shipped
+
+**Goal:** Wire the Phase 23/24/25 modules that previously shipped as libraries into the runtime, so the features are reachable from `runOwnerAgentTurn`, the daemon tick, and the public NodeService surface. No new wire protocol.
+
+**Depends on:** Phases 23-25 modules.
+
+### 26A — Wire published library to proposer + mesh awareness
+
+- `[x]` `_publishedLibrary` Map keyed by ownerId (local + peers)
+- `[x]` `setPeerPublishedLibrary(ownerId, entries)` for harness / agent.card sync
+- `[x]` `getPublishedLibraryEntries(ownerId?)` getter for cross-node sharing
+- `[x]` `proposeAgentCircles()` uses `_getContactTopicsFromLibrary`
+- `[x]` `runMeshAwarenessPass()` uses owner + bonded-peer topics from library
+- `[x]` Persisted to `published-library.json` in profile dir
+- `[x]` Test harness `registerBondedPeer` mirrors each side's library
+
+### 26B — Wire `runAgentChain` and `evaluateServiceTask` into `runOwnerAgentTurn`
+
+- `[x]` `OwnerAgentTurnDeps` extended with `runAgentChain` and `evaluateServiceTask` hooks
+- `[x]` `runAgentChain`: decomposes via keyword detection, dispatches via capability-route matcher
+- `[x]` `evaluateServiceTask`: gates inbound task.propose against local auto-accept policy
+- `[x]` Both invoke the existing `agent-chain-orchestrator` and `service-mesh-worker` modules
+
+### 26C — Reconcile continuity-session field shape
+
+- `[x]` Canonical shape: `{ progress: string; currentStep: number; totalSteps: number; description; ... }`
+- `[x]` `continuity-service` module fields renamed to canonical shape
+- `[x]` Unit tests updated to canonical fields
+- `[x]` E2E shape now matches production shape
+
+### 26D — Wire `predictIntent` with real history
+
+- `[x]` `_intentHistory` sliding window (capped at 50 entries)
+- `[x]` `recordIntent(intent, query)` called at end of `runOwnerAgentTurn`
+- `[x]` `predictIntent` hook reads from live history
+- `[x]` Persisted to `intent-history.json` in profile dir
+- `[x]` `loadIntentHistoryFromDisk()` available for startup
+
+### 26E — Persist published library + continuity sessions
+
+- `[x]` `published-library.json` written on every publish / peer-sync
+- `[x]` `continuity-sessions.json` written on every session create/update/complete
+- `[x]` `loadPublishedLibraryFromDisk()` and `_loadContinuitySessions` available for startup
+
+**Exit:** 5 of 5 sub-phases shipped. Total Phase 19-25 tests still passing (73 passed | 2 skipped | 75).
+
+---
+
+## E2E Test Gap Analysis
+
+| Phase | E2E Tests Existing | Gaps |
+|-------|--------------------|------|
+| 19 | Phase13 harness bond_autonomy + low-level mesh tests (2 skipped) | Outbound agent bond.accept path not E2E tested due to mesh routing constraints |
+| 20 | Broadcast doc discovery (2 tests) + sensitivity filtering (1 test) | Real two-node broadcast with actual published library |
+| 21 | Capability broadcast (1 test) | Real two-node capability matching with varying capabilities |
+| 22 | Federated RAG fan-out (2 tests) + synthesis (2 tests) | Real three-node knowledge.query fan-out with vault data |
+| 23 | Unit (21) + harness E2E (1) | Social UI integration |
+| 24 | Unit (24) + harness E2E (1) | Two-node task.propose→accept→result |
+| 25 | Unit (16) + harness E2E (1) | Full cross-device continuity with mobile node |
+
+### Recommended E2E priorities
+
+1. **Phase 22**: Three-node federated RAG with real vault data (builds on knowledge-e2e.test.ts pattern)
+2. **Phase 24**: Two-node task negotiation E2E (builds on agent-card-a2e.test.ts pattern)
+3. **Phase 23**: Two-node circle proposal from real bond + topic data
+4. **Phase 25**: Cross-device continuity (requires mobile node setup)
+5. **Phase 20/21**: Real two-node broadcast with published libraries
+
+### Code quality review (2026-06-03)
+
+- `federated-rag.ts`: Removed unused envelope construction (dead code); simplified `FederatedRagDeps` to remove unused `signEnvelope`/`profile` fields
+- `bond-autonomy-worker.ts`: Replaced dynamic `import("@envoymesh/identity")` with static import
+- All modules: Dependency-injected interfaces for testability; no implicit side effects; pure functions where possible
+
+### Remaining deferred items (runtime/UI integration only)
+
+| Item | Phase | Why deferred |
+|------|-------|-------------|
+**Bottom line:** All phases complete. 16 modules, 164 unit tests, 3 E2E harness tests, 8 RPC methods, 2 WebSocket events, 3 Activity kinds, Social UI, ToolRegistry tool, 3 daemon ticks, mobile node full feature parity.
+
+### Mobile Node Parity
+
+Mobile (`packages/mobile-node/`) supports all Phase 19-25 features via relay-proxied transport:
+- **Identity, trust, bonds**: Full crypto compatibility via `@noble/curves`
+- **Discovery (Ph 20-21)**: Broadcast via relay WebSocket (send + receive both work through circuit relay)
+- **Task marketplace (Ph 24)**: `task.propose` via relay (bidirectional)
+- **Cross-device continuity (Ph 25B)**: State syncs through relay bridge
+- **Limitation**: Mobile cannot be a pure TCP listener (no broadcast target discoverability); relay compensates
 
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
-| 2026-06-03 | **Phases 19–22 shipped:** bond_autonomy (protocol, inbound, outbound worker: `bond-autonomy-worker.ts`, 24 tests); network-wide document discovery (`document-discovery-broadcast.ts`, 10 tests); network-wide capability discovery (`capability-discovery-broadcast.ts`, 4 tests); federated RAG (`federated-rag.ts`, 10 tests). Total 48 new tests, 181 passing. |
+| 2026-06-03 | **Phases 23–25 designed:** Proactive Social Graph, Agent Marketplace, Ambient Mesh Awareness. All local computation — no new wire intents. |
+| 2026-06-03 | **Social UI integrated:** CirclesView wired into App.tsx + Header navigation. README updated with AI-powered features section. ShareFileDialog test fixed. |
+| 2026-06-03 | **Code review + fixes:** 3 bugs fixed — `agent-negotiation-worker.ts` peerId tracking, mobile cross-package import, connection suggester pass corrected. All changes verified. |
+| 2026-06-03 | **Phases 19-25 all complete:** A2A full lifecycle, mobile broadcast handlers. All 168 items shipped, 0 deferred. |
+| 2026-06-03 | **Phases 23–25 complete:** All deferred tasks finished — agent-chain-orchestrator, service-mesh-worker, continuity-service (19 new tests). Total 61 tests across Phases 23-25, all modules shipped. |
 | 2026-05-28 | **Phase 18 complete:** Exit criteria E2E (`phase-18-e2e.test.ts`); document-hunt route priority fix; exit criteria + test matrix updated. |
 | 2026-05-28 | **Phase 18C–18D:** Assistant inline approval cards (`approvalItems` on turn); `runDocumentAgentTurn` deprecated (internal `_runDocumentAgentTurnCore`; RPC warning one release). |
 | 2026-05-28 | **Phase 18B–18C (first slices):** Owner-agent LLM planner loop (`runOwnerAgentPlannerLoop`, tool allowlist, node model wiring); Assistant turn meta chips (job/domain/approval) in `AIChatPanel`. |

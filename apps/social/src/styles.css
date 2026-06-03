@@ -3254,6 +3254,74 @@ textarea::placeholder {
   margin-top: var(--space-4);
 }
 
+.settings-section .settings-button,
+.settings-buttons .settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-elevated);
+  color: var(--color-text-primary);
+  font-size: var(--font-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: none;
+}
+
+.settings-section .settings-button:hover:not(:disabled),
+.settings-buttons .settings-button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+}
+
+.settings-section .settings-button:disabled,
+.settings-buttons .settings-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.settings-checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: var(--space-3);
+  cursor: pointer;
+}
+
+.settings-checkbox-inline input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  margin: 0;
+}
+
+.settings-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  cursor: pointer;
+  padding: var(--space-2) 0;
+}
+
+.settings-checkbox-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  margin: 0;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.settings-checkbox-row span {
+  flex: 1;
+  line-height: 1.5;
+}
+
 .settings-save-btn {
   padding: 0.625rem 1.25rem;
   background: var(--color-primary);

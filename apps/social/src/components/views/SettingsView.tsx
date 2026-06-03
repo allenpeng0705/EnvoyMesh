@@ -2,6 +2,8 @@ import { SettingsAccountTab } from "./SettingsAccountTab.js";
 import { SettingsNodeTab } from "./SettingsNodeTab.js";
 import { SettingsAITab } from "./SettingsAITab.js";
 import { SettingsAppTab } from "./SettingsAppTab.js";
+import { SettingsPrivacyTab } from "./SettingsPrivacyTab.js";
+import { SettingsDevicesTab } from "./SettingsDevicesTab.js";
 import { ActivityView } from "./ActivityView.js";
 import { useT } from "../../context/I18nContext.js";
 
@@ -76,8 +78,8 @@ export function SettingsView({
       {tab === "network" && <SettingsNodeTab />}
       {tab === "ai" && <SettingsAITab />}
       {tab === "activity" && <ActivityView embedded />}
-      {tab === "privacy" && <SettingsNodeTab />}
-      {tab === "devices" && <SettingsNodeTab />}
+      {tab === "privacy" && <SettingsPrivacyTab />}
+      {tab === "devices" && <SettingsDevicesTab />}
       {tab === "app" && <SettingsAppTab />}
     </div>
   );

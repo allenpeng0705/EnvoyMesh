@@ -1592,6 +1592,24 @@ export interface NodeService {
   runSocialProxyPass(): Promise<{ ok: boolean; error?: string; correlationId?: string }>;
   cancelSocialProxySession(sessionId: string): Promise<void>;
 
+  // ----- Phase 23A — Agent Circles -----
+  listAgentCircles(): Promise<import("./agent-circle.js").AgentCircle[]>;
+  createAgentCircle(input: {
+    label: string;
+    memberOwnerIds: string[];
+    topicTags?: string[];
+  }): Promise<import("./agent-circle.js").AgentCircle>;
+  updateAgentCircle(circleId: string, update: {
+    label?: string;
+    status?: import("./agent-circle.js").AgentCircle["status"];
+    memberOwnerIds?: string[];
+    topicTags?: string[];
+  }): Promise<import("./agent-circle.js").AgentCircle>;
+  deleteAgentCircle(circleId: string): Promise<void>;
+  proposeAgentCircles(): Promise<import("./agent-circle.js").AgentCircle[]>;
+  chatRagSearch(query: string, opts?: { ownerId?: string; maxResults?: number }): Promise<Array<{ messageId: string; contactName: string; snippet: string; timestamp: string }>>;
+  discoverAndCluster(seedTopics?: string[], seedCapabilities?: string[]): Promise<string>;
+
   startDocumentAcquisitionJob(params: {
     query: string;
     fileTitleHint?: string;
