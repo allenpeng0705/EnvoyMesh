@@ -106,28 +106,32 @@ export async function broadcastDocumentDiscovery(
 
   // 1. Send to bonded peers first
   const bondedPeers = await deps.getBondedPeers();
+  let sentCount = 0;
   for (const peer of bondedPeers) {
     if (seenOwnerIds.has(peer.ownerId)) continue;
+    if (sentCount >= maxResults) break;
     seenOwnerIds.add(peer.ownerId);
     try {
       await deps.sendToPeer(peer.peerId, signedEnvelope);
+      sentCount++;
     } catch {
       // Peer unreachable — skip
     }
   }
 
-  // 2. If maxHops > 1, fan out to all known peers
-  if (maxHops > 1) {
+  // 2. If maxHops > 1 and we still have budget, fan out to all known peers
+  if (maxHops > 1 && sentCount < maxResults) {
     const allPeers = await deps.getAllKnownPeers();
     for (const peer of allPeers) {
       if (seenOwnerIds.has(peer.ownerId)) continue;
+      if (sentCount >= maxResults) break;
       seenOwnerIds.add(peer.ownerId);
       try {
         await deps.sendToPeer(peer.peerId, signedEnvelope);
+        sentCount++;
       } catch {
         // Peer unreachable — skip
       }
-      if (results.length >= maxResults) break;
     }
   }
 

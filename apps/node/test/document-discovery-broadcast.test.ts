@@ -93,9 +93,8 @@ describe("broadcastDocumentDiscovery", () => {
       maxHops: 3,
       maxResults: 5,
     });
-    // The fan-out stops when results.length >= maxResults
-    // Since results are populated independently of send, we just verify sends happened
-    expect(sendSpy).toHaveBeenCalled();
+    // 2 bonded + 3 from all-known = 5 total (cap respected)
+    expect(sendSpy).toHaveBeenCalledTimes(5);
   });
 });
 

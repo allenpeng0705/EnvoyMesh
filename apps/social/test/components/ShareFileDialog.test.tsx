@@ -3,7 +3,7 @@
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, act } from "@testing-library/react";
 import { ShareFileDialog } from "../../src/components/file-share/ShareFileDialog.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import type { BondRecord, LibraryItem } from "@envoymesh/api";
@@ -13,13 +13,18 @@ const mockListLibraryItems = vi.fn();
 const mockShareFile = vi.fn();
 const mockOn = vi.fn(() => () => {});
 
+// Return stable object reference to avoid infinite re-renders.
+// The component's useEffect depends on nodeService, so a new
+// object each render would trigger continuous effect execution.
+const mockNodeService = {
+  getBonds: mockGetBonds,
+  listLibraryItems: mockListLibraryItems,
+  shareFile: mockShareFile,
+  on: mockOn,
+};
+
 vi.mock("../../src/hooks/useNodeService.js", () => ({
-  useNodeService: () => ({
-    getBonds: mockGetBonds,
-    listLibraryItems: mockListLibraryItems,
-    shareFile: mockShareFile,
-    on: mockOn,
-  }),
+  useNodeService: () => mockNodeService,
 }));
 
 vi.mock("../../src/hooks/useToast.js", () => ({
@@ -111,8 +116,8 @@ describe("ShareFileDialog", () => {
   it("disables send button when no contact selected", async () => {
     renderWithI18n(<ShareFileDialog onClose={vi.fn()} />);
     await screen.findByRole("dialog");
-    const sendBtn = screen.getByRole("button", { name: /send request/i });
-    expect(sendBtn).toBeDisabled();
+    const sendBtn = screen.getByText("Send share request").closest("button")!;
+    expect((sendBtn as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("disables send button when no vault file selected", async () => {
@@ -120,8 +125,8 @@ describe("ShareFileDialog", () => {
       <ShareFileDialog onClose={vi.fn()} targetOwnerId="envoy:owner:bob" />,
     );
     await screen.findByRole("dialog");
-    const sendBtn = screen.getByRole("button", { name: /send request/i });
-    expect(sendBtn).toBeDisabled();
+    const sendBtn = screen.getByText("Send share request").closest("button")!;
+    expect((sendBtn as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("calls shareFile and closes on success", async () => {
@@ -144,7 +149,8 @@ describe("ShareFileDialog", () => {
     const sensSelect = screen.getByLabelText(/sensitivity/i) as HTMLSelectElement;
     fireEvent.change(sensSelect, { target: { value: "private" } });
 
-    fireEvent.click(screen.getByRole("button", { name: /send request/i }));
+    const sendBtn = screen.getByText("Send share request").closest("button")!;
+    fireEvent.click(sendBtn);
 
     await waitFor(() => {
       expect(mockShareFile).toHaveBeenCalledWith("envoy:owner:bob", {
@@ -172,7 +178,8 @@ describe("ShareFileDialog", () => {
     );
 
     await screen.findByRole("dialog");
-    fireEvent.click(screen.getByRole("button", { name: /send request/i }));
+    const sendBtn = screen.getByText("Send share request").closest("button")!;
+    fireEvent.click(sendBtn);
 
     expect(await screen.findByText("Network error")).toBeDefined();
   });

@@ -21,13 +21,16 @@ import {
   createBondAcceptPayload,
   createBondRequestPayload,
   createBroadcastRequestPayload,
+  createBroadcastResponsePayload,
   createKnowledgeQueryPayload,
   createKnowledgeResponsePayload,
   createUnsignedEnvelope,
   parseBondAcceptPayload,
   parseBondRequestPayload,
   parseBroadcastRequestPayload,
+  parseBroadcastResponsePayload,
   parseKnowledgeQueryPayload,
+  parseKnowledgeResponsePayload,
   type AgentCredential,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
@@ -293,16 +296,17 @@ describe("Phase 20 E2E — network-wide document discovery via broadcast", () =>
 
       if (envelope.intent === "broadcast.request") {
         const payload = parseBroadcastRequestPayload(envelope.payload);
-        // Alice checks her "published library" (simulated)
-        const query = (payload as any).query?.toLowerCase() ?? "";
-        // Build a broadcast response (simplified - just send back)
-        const responsePayload = {
+        // Build a properly-typed broadcast response. The schema requires
+        // matchedTagHashes / matchedCapabilities / done; we send empty arrays
+        // since the real matcher lives in the production handler.
+        const responsePayload = createBroadcastResponsePayload({
           queryId: payload.queryId,
           responderOwnerId: aliceProfile.owner.ownerId,
           responderPeerId: alice.peerId,
-          matchedKeywords: query ? [query] : [],
-          responseSensitivity: "public" as const,
-        };
+          matchedTagHashes: [],
+          matchedCapabilities: [],
+          done: true,
+        });
 
         const unsignedResp = createUnsignedEnvelope({
           senderPeerId: derivePeerId(aliceProfile.device.publicKeyPem),
@@ -319,11 +323,16 @@ describe("Phase 20 E2E — network-wide document discovery via broadcast", () =>
       }
     });
 
+    let receivedResponse: ReturnType<typeof parseBroadcastResponsePayload> | null = null;
     const bobReceived: string[] = [];
 
     bob.onMessage(async ({ envelope }) => {
       if (!verifyInboundEnvelope(envelope)) return;
       bobReceived.push(envelope.intent);
+      if (envelope.intent === "broadcast.response") {
+        // Parse to verify the response payload is schema-valid
+        receivedResponse = parseBroadcastResponsePayload(envelope.payload);
+      }
     });
 
     // Bob broadcasts a document search
@@ -351,12 +360,21 @@ describe("Phase 20 E2E — network-wide document discovery via broadcast", () =>
     const signedReq = signUnsignedEnvelope(unsignedReq, bobProfile.device.privateKeyPem);
     await bob.send(alice.multiaddrs[0], signedReq);
 
-    await waitFor(() => aliceReceived.includes("broadcast.request") && bobReceived.includes("broadcast.response"));
+    await waitFor(() => aliceReceived.includes("broadcast.request") && receivedResponse !== null);
     expect(aliceReceived).toContain("broadcast.request");
-    expect(bobReceived).toContain("broadcast.response");
+    // The response must parse cleanly and have the schema-required fields
+    expect(receivedResponse).not.toBeNull();
+    expect(receivedResponse!.queryId).toBe("doc-search-1");
+    expect(receivedResponse!.responderOwnerId).toBe(aliceProfile.owner.ownerId);
+    expect(receivedResponse!.done).toBe(true);
   });
 
-  it("broadcast deduplication: node doesn't process same queryId twice", async () => {
+  it("duplicate broadcasts are received at the mesh level", async () => {
+    // NOTE: This test exercises the mesh layer, not the production
+    // broadcast-inbound handler. The mesh's onMessage callback fires for
+    // every envelope it receives, so duplicates are observed. Real
+    // queryId dedup, if needed, must be implemented in handleInboundBroadcastRequest
+    // (broadcast-inbound.ts) — currently it has rate limiting only.
     const aliceProfile = testProfile();
     const bobProfile = testProfile();
 
@@ -397,10 +415,10 @@ describe("Phase 20 E2E — network-wide document discovery via broadcast", () =>
 
     await waitFor(() => aliceBroadcastsProcessed >= 2);
 
-    // The broadcast-inbound handler has built-in dedup for queryId
-    // Both should be received at the mesh level, but the handler should
-    // rate-limit or dedup. For this test we just verify both arrived.
-    expect(aliceBroadcastsProcessed).toBeGreaterThanOrEqual(1);
+    // Mesh layer receives both (no dedup at the mesh layer).
+    // If queryId dedup is added to handleInboundBroadcastRequest, this
+    // assertion should be tightened to test the handler-level count, not the mesh-level count.
+    expect(aliceBroadcastsProcessed).toBe(2);
   });
 });
 
@@ -423,14 +441,14 @@ describe("Phase 21 E2E — network-wide capability discovery via broadcast", () 
 
       if (envelope.intent === "broadcast.request") {
         const payload = parseBroadcastRequestPayload(envelope.payload);
-        // Respond with capability match
-        const responsePayload = {
+        // Respond with capability match via the schema-valid constructor
+        const responsePayload = createBroadcastResponsePayload({
           queryId: payload.queryId,
           responderOwnerId: aliceProfile.owner.ownerId,
           responderPeerId: alice.peerId,
-          matchedKeywords: payload.requestedCapabilities ?? [],
-          responseSensitivity: "public" as const,
-        };
+          matchedCapabilities: payload.requestedCapabilities ?? [],
+          done: true,
+        });
 
         const unsignedResp = createUnsignedEnvelope({
           senderPeerId: derivePeerId(aliceProfile.device.publicKeyPem),
@@ -447,11 +465,15 @@ describe("Phase 21 E2E — network-wide capability discovery via broadcast", () 
       }
     });
 
+    let receivedResponse: ReturnType<typeof parseBroadcastResponsePayload> | null = null;
     const bobReceived: string[] = [];
 
     bob.onMessage(async ({ envelope }) => {
       if (!verifyInboundEnvelope(envelope)) return;
       bobReceived.push(envelope.intent);
+      if (envelope.intent === "broadcast.response") {
+        receivedResponse = parseBroadcastResponsePayload(envelope.payload);
+      }
     });
 
     // Bob broadcasts a capability search for "rust_reviewer"
@@ -478,9 +500,12 @@ describe("Phase 21 E2E — network-wide capability discovery via broadcast", () 
     const signedReq = signUnsignedEnvelope(unsignedReq, bobProfile.device.privateKeyPem);
     await bob.send(alice.multiaddrs[0], signedReq);
 
-    await waitFor(() => aliceReceived.includes("broadcast.request") && bobReceived.includes("broadcast.response"));
+    await waitFor(() => aliceReceived.includes("broadcast.request") && receivedResponse !== null);
     expect(aliceReceived).toContain("broadcast.request");
-    expect(bobReceived).toContain("broadcast.response");
+    expect(receivedResponse).not.toBeNull();
+    expect(receivedResponse!.queryId).toBe("cap-search-1");
+    expect(receivedResponse!.matchedCapabilities).toEqual(["rust_reviewer", "translation"]);
+    expect(receivedResponse!.done).toBe(true);
   });
 });
 
@@ -488,7 +513,11 @@ describe("Phase 21 E2E — network-wide capability discovery via broadcast", () 
 // Phase 22 E2E: Federated RAG — knowledge query fan-out
 // ---------------------------------------------------------------------------
 describe("Phase 22 E2E — federated RAG knowledge query fan-out", () => {
-  it("bonded peers exchange knowledge queries and synthesize results", async () => {
+  it("executeFederatedRagQuery fans out to bonded peers, correlates by inReplyTo, and synthesizes", async () => {
+    // The E2E test should exercise the production executeFederatedRagQuery
+    // and synthesizeFederatedResult, not re-implement the fan-out.
+    // We use real meshes for the peers, and a queryPeer adapter that sends
+    // a real knowledge.query envelope and waits for a matching knowledge.response.
     const aliceProfile = testProfile();
     const bobProfile = testProfile();
     const charlieProfile = testProfile();
@@ -497,24 +526,16 @@ describe("Phase 22 E2E — federated RAG knowledge query fan-out", () => {
     const bob = await startMesh();
     const charlie = await startMesh();
 
-    const aliceReceived: string[] = [];
-    const bobReceived: string[] = [];
-    const charlieReceived: string[] = [];
-
-    // Bob responds to knowledge queries with an answer
+    // Bob responds to knowledge queries
     bob.onMessage(async ({ envelope }) => {
       if (!verifyInboundEnvelope(envelope)) return;
-      bobReceived.push(envelope.intent);
-
       if (envelope.intent === "knowledge.query") {
         const queryPayload = parseKnowledgeQueryPayload(envelope.payload);
-
         const responsePayload = createKnowledgeResponsePayload({
           inReplyTo: envelope.messageId,
           answer: `Bob knows about ${queryPayload.query}: it's a great topic!`,
           sensitivity: "public",
         });
-
         const unsignedResp = createUnsignedEnvelope({
           senderPeerId: derivePeerId(bobProfile.device.publicKeyPem),
           senderPublicKey: bobProfile.device.publicKeyPem,
@@ -524,26 +545,21 @@ describe("Phase 22 E2E — federated RAG knowledge query fan-out", () => {
           intent: "knowledge.response",
           payload: responsePayload,
         });
-
         const signedResp = signUnsignedEnvelope(unsignedResp, bobProfile.device.privateKeyPem);
         await bob.send(alice.multiaddrs[0], signedResp);
       }
     });
 
-    // Charlie also responds
+    // Charlie responds
     charlie.onMessage(async ({ envelope }) => {
       if (!verifyInboundEnvelope(envelope)) return;
-      charlieReceived.push(envelope.intent);
-
       if (envelope.intent === "knowledge.query") {
         const queryPayload = parseKnowledgeQueryPayload(envelope.payload);
-
         const responsePayload = createKnowledgeResponsePayload({
           inReplyTo: envelope.messageId,
           answer: `Charlie's take on ${queryPayload.query}: very interesting!`,
           sensitivity: "public",
         });
-
         const unsignedResp = createUnsignedEnvelope({
           senderPeerId: derivePeerId(charlieProfile.device.publicKeyPem),
           senderPublicKey: charlieProfile.device.publicKeyPem,
@@ -553,106 +569,142 @@ describe("Phase 22 E2E — federated RAG knowledge query fan-out", () => {
           intent: "knowledge.response",
           payload: responsePayload,
         });
-
         const signedResp = signUnsignedEnvelope(unsignedResp, charlieProfile.device.privateKeyPem);
         await charlie.send(alice.multiaddrs[0], signedResp);
       }
     });
 
-    // Alice collects knowledge responses
-    const knowledgeResponses: Array<{ ownerId: string; answer: string }> = [];
+    // Alice's response collector — keyed by inReplyTo so we don't accept stale
+    // or unrelated responses. The resolvers below unblock each pending query.
+    const pendingByMessageId = new Map<string, (answer: string | undefined) => void>();
 
     alice.onMessage(async ({ envelope }) => {
       if (!verifyInboundEnvelope(envelope)) return;
-      aliceReceived.push(envelope.intent);
-
-      if (envelope.intent === "knowledge.response") {
-        // In real federated RAG, the synthesizer collects and merges these
-        knowledgeResponses.push({
-          ownerId: envelope.senderPeerId,
-          answer: (envelope.payload as any).answer ?? "",
-        });
+      if (envelope.intent !== "knowledge.response") return;
+      const resp = parseKnowledgeResponsePayload(envelope.payload);
+      const resolver = pendingByMessageId.get(resp.inReplyTo);
+      if (resolver) {
+        pendingByMessageId.delete(resp.inReplyTo);
+        resolver(resp.answer);
       }
     });
 
-    // Alice sends knowledge.query to both Bob and Charlie (federated fan-out)
-    const queryPayload = createKnowledgeQueryPayload({
-      query: "distributed systems",
-      requestedSensitivity: "public",
-    });
+    /**
+     * queryPeer adapter: builds a knowledge.query envelope, sends it to the peer,
+     * and resolves when a knowledge.response with matching inReplyTo arrives.
+     */
+    const queryPeer = async (
+      peerId: string,
+      _ownerId: string,
+      query: string,
+    ): Promise<{ ok: boolean; answerText?: string }> => {
+      const queryPayload = createKnowledgeQueryPayload({
+        query,
+        requestedSensitivity: "public",
+      });
+      const unsigned = createUnsignedEnvelope({
+        senderPeerId: derivePeerId(aliceProfile.device.publicKeyPem),
+        senderPublicKey: aliceProfile.device.publicKeyPem,
+        senderRole: "agent",
+        recipientPeerId: peerId,
+        recipientRole: "agent",
+        intent: "knowledge.query",
+        payload: queryPayload,
+      });
+      const signed = signUnsignedEnvelope(unsigned, aliceProfile.device.privateKeyPem);
+      const messageId = signed.messageId;
 
-    const unsignedQuery = createUnsignedEnvelope({
-      senderPeerId: derivePeerId(aliceProfile.device.publicKeyPem),
-      senderPublicKey: aliceProfile.device.publicKeyPem,
-      senderRole: "agent",
-      recipientRole: "agent",
-      intent: "knowledge.query",
-      payload: queryPayload,
-    });
+      const answerPromise = new Promise<string | undefined>((resolve) => {
+        pendingByMessageId.set(messageId, resolve);
+        // Safety: if no response arrives in 3s, resolve with undefined so
+        // Promise.allSettled doesn't hang. This is a local test safety net,
+        // not a production timeout.
+        setTimeout(() => {
+          if (pendingByMessageId.has(messageId)) {
+            pendingByMessageId.delete(messageId);
+            resolve(undefined);
+          }
+        }, 3000);
+      });
 
-    // Send to Bob
-    const unsignedToBob = { ...unsignedQuery, recipientPeerId: bob.peerId, messageId: `${unsignedQuery.messageId}-bob` };
-    const signedToBob = signUnsignedEnvelope(unsignedToBob, aliceProfile.device.privateKeyPem);
-    await alice.send(bob.multiaddrs[0], signedToBob);
+      await alice.send(peerId === bob.peerId ? bob.multiaddrs[0] : charlie.multiaddrs[0], signed);
+      const answer = await answerPromise;
+      return answer ? { ok: true, answerText: answer } : { ok: false };
+    };
 
-    // Send to Charlie
-    const unsignedToCharlie = { ...unsignedQuery, recipientPeerId: charlie.peerId, messageId: `${unsignedQuery.messageId}-charlie` };
-    const signedToCharlie = signUnsignedEnvelope(unsignedToCharlie, aliceProfile.device.privateKeyPem);
-    await alice.send(charlie.multiaddrs[0], signedToCharlie);
+    // Import here to avoid a circular import with the helpers above
+    const { executeFederatedRagQuery, synthesizeFederatedResult } = await import(
+      "../src/federated-rag.js"
+    );
 
-    // Wait for both responses
-    await waitFor(() => bobReceived.includes("knowledge.query") && charlieReceived.includes("knowledge.query"));
-    await waitFor(() => knowledgeResponses.length >= 2);
+    const ragResult = await executeFederatedRagQuery(
+      {
+        config: {
+          enabled: true,
+          maxPeers: 5,
+          queryTimeoutMs: 5000,
+          maxSensitivity: "public",
+          includeUnbondedPeers: false,
+          maxPeerResults: 10,
+        },
+        getBondedPeers: async () => [
+          { ownerId: bobProfile.owner.ownerId, peerId: bob.peerId },
+          { ownerId: charlieProfile.owner.ownerId, peerId: charlie.peerId },
+        ],
+        queryPeer,
+        signEnvelope: (unsigned: unknown) => unsigned, // adapter signs itself
+        profile: {
+          owner: { ownerId: aliceProfile.owner.ownerId },
+          device: {
+            peerId: alice.peerId,
+            publicKeyPem: aliceProfile.device.publicKeyPem,
+            privateKeyPem: aliceProfile.device.privateKeyPem,
+          },
+        },
+      },
+      "distributed systems",
+    );
 
-    expect(bobReceived).toContain("knowledge.query");
-    expect(charlieReceived).toContain("knowledge.query");
-    expect(knowledgeResponses.length).toBeGreaterThanOrEqual(2);
+    expect(ragResult.peersQueried).toBe(2);
+    expect(ragResult.peersResponded).toBe(2);
+    expect(ragResult.peerAnswers).toHaveLength(2);
 
-    // Synthesize (simulating what synthesizeFederatedResult does)
-    const merged = knowledgeResponses.map((r) => r.answer).join("\n\n");
+    const merged = synthesizeFederatedResult(undefined, ragResult.peerAnswers);
     expect(merged).toContain("Bob knows about");
     expect(merged).toContain("Charlie's take on");
   });
 
-  it("federated query handles peer timeout gracefully", async () => {
-    const aliceProfile = testProfile();
-    const bobProfile = testProfile();
+  it("federated query returns empty when peer doesn't respond", async () => {
+    // No real meshes needed — we test executeFederatedRagQuery directly with
+    // a queryPeer that returns { ok: false } (simulating a non-responding peer).
+    const { executeFederatedRagQuery } = await import("../src/federated-rag.js");
 
-    const alice = await startMesh();
-    const bob = await startMesh();
+    const ragResult = await executeFederatedRagQuery(
+      {
+        config: {
+          enabled: true,
+          maxPeers: 5,
+          queryTimeoutMs: 5000,
+          maxSensitivity: "public",
+          includeUnbondedPeers: false,
+          maxPeerResults: 10,
+        },
+        getBondedPeers: async () => [
+          { ownerId: "envoy:owner:unresponsive-1", peerId: "peer-unresp-1" },
+        ],
+        queryPeer: async () => ({ ok: false }),
+        signEnvelope: (u: unknown) => u,
+        profile: {
+          owner: { ownerId: "envoy:owner:local" },
+          device: { peerId: "local-peer", publicKeyPem: "pk", privateKeyPem: "sk" },
+        },
+      },
+      "test",
+    );
 
-    // Bob does NOT respond to knowledge queries (simulating timeout)
-    const aliceReceived: string[] = [];
-
-    alice.onMessage(async ({ envelope }) => {
-      if (!verifyInboundEnvelope(envelope)) return;
-      aliceReceived.push(envelope.intent);
-    });
-
-    // Send query to Bob who doesn't respond
-    const queryPayload = createKnowledgeQueryPayload({
-      query: "timeout test",
-      requestedSensitivity: "public",
-    });
-
-    const unsignedQuery = createUnsignedEnvelope({
-      senderPeerId: derivePeerId(aliceProfile.device.publicKeyPem),
-      senderPublicKey: aliceProfile.device.publicKeyPem,
-      senderRole: "agent",
-      recipientPeerId: bob.peerId,
-      recipientRole: "agent",
-      intent: "knowledge.query",
-      payload: queryPayload,
-    });
-
-    const signedQuery = signUnsignedEnvelope(unsignedQuery, aliceProfile.device.privateKeyPem);
-    await alice.send(bob.multiaddrs[0], signedQuery);
-
-    // After timeout, Alice should have sent query but not received response
-    await new Promise((r) => setTimeout(r, 500));
-
-    // Bob received the query but didn't respond
-    expect(aliceReceived).not.toContain("knowledge.response");
+    expect(ragResult.peersQueried).toBe(1);
+    expect(ragResult.peersResponded).toBe(0);
+    expect(ragResult.peerAnswers).toHaveLength(0);
   });
 });
 

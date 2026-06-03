@@ -6,6 +6,7 @@ import {
   broadcastCapabilityDiscovery,
   type BroadcastCapabilityDiscoveryDeps,
 } from "../src/capability-discovery-broadcast.js";
+import { parseBroadcastRequestPayload } from "@envoymesh/protocol";
 
 function makeDeps(overrides?: Partial<BroadcastCapabilityDiscoveryDeps>): BroadcastCapabilityDiscoveryDeps {
   return {
@@ -81,5 +82,9 @@ describe("broadcastCapabilityDiscovery", () => {
     const envelope = call[1] as any;
     expect(envelope.intent).toBe("broadcast.request");
     expect(envelope.senderRole).toBe("agent");
+    // Parse the unsigned envelope's payload and verify the capability tags
+    // made it into the broadcast payload (not just the envelope wrapper).
+    const parsedPayload = parseBroadcastRequestPayload(envelope.payload);
+    expect(parsedPayload.requestedCapabilities).toEqual(["rust_reviewer", "translation"]);
   });
 });

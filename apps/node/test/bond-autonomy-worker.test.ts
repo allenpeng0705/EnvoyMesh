@@ -282,5 +282,11 @@ describe("runBondAutonomyPass", () => {
     expect(result.ok).toBe(true);
     expect(result.accepted).toBe(1);
     expect(result.rejected).toBe(0);
+    // Side effects: trust record written, daily counter incremented, mesh send called
+    expect(deps.trustStore.setTrustRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ peerOwnerId: "envoy:owner:peer", level: "direct" }),
+    );
+    expect(deps.incrementDailyAutoBondCount).toHaveBeenCalledOnce();
+    expect(deps.sendMeshEnvelope).toHaveBeenCalledOnce();
   });
 });
