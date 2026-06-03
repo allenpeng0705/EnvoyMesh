@@ -94,19 +94,256 @@ You set the answers to those questions. The assistant can't bypass them.
 
 Your AI agent doesn't speak the peer-to-peer language itself — that would mean giving it
 your keys, which is risky. Instead, EnvoyMesh runs a small **bridge** on your computer that
-translates between the mesh and whatever agent you choose:
+translates between the mesh and whatever agent you choose. **HomeClaw** and **OpenClaw**
+share the exact same wire contract — the only thing that changes is which HTTP endpoint the
+bridge points at.
 
 ```
-   Mesh peer ──chat──▶ EnvoyMesh node ──HTTP──▶ Your agent (HomeClaw, OpenClaw, custom)
-                              ▲                          │
-                              │                          │
-                              └──── HTTP reply ──────────┘
-                            (assistant's response goes
-                             back out as a signed message)
+                    ┌──────────────────────────────────────────────────┐
+                    │              Your computer (home node)            │
+                    │                                                  │
+   chat.message     │   ┌──────────────────┐    HTTP POST    ┌──────┐  │
+   ───────────────▶ │   │   EnvoyMesh node │ ──────────────▶ │Agent │  │
+   (signed)         │   │                  │  { from,        │      │  │
+                    │   │  • signs         │    fromOwnerId, │Home- │  │
+                    │   │  • policy-checks │    fromName,    │Claw  │  │
+                    │   │  • rate-limits   │    text }       │  or  │  │
+                    │   │                  │                 │Open- │  │
+                    │   │  ┌────────────┐  │  HTTP POST      │Claw  │  │
+                    │   │  │  /bridge/  │◀─┼──────────────── │      │  │
+                    │   │  │   send     │  │  { to, text }   │      │  │
+                    │   │  └────────────┘  │                 └──────┘  │
+                    │   └──────────────────┘                            │
+                    │         │                                        │
+                    │         │  signed chat.message                   │
+                    │         ▼                                        │
+                    └─────────┼────────────────────────────────────────┘
+                              │
+                              ▼
+                         Mesh peer
 ```
 
 **The agent never holds your identity keys.** EnvoyMesh signs everything, applies your
 policy, and the agent just answers plain HTTP requests.
+
+#### Two flows on one bridge
+
+The same bridge handles two different traffic shapes, picked by the inbound `intent`:
+
+```
+  ┌─────────── chat (real-time) ───────────┐    ┌────── async (later) ─────────────┐
+  │                                        │    │                                   │
+  │  friend ─chat.message─▶ node           │    │  friend ─knowledge.query─▶ node  │
+  │  node ─HTTP POST {from, text}─▶ agent  │    │  node ─async_reply {intent,     │
+  │  agent ─POST /bridge/send {to, text}─▶ │    │       correlationId, payload}─▶  │
+  │  node ─signed chat.message─▶ friend   │    │  agent                            │
+  │                                        │    │  agent ─POST /bridge/send        │
+  │  Sync; the agent answers inline.       │    │       { to, replyTo, payload }─▶  │
+  │  No payload in the HTTP response.      │    │  node ─signed response─▶ friend  │
+  │                                        │    │                                   │
+  │                                        │    │  Used for discovery / knowledge;  │
+  │                                        │    │  the agent may answer minutes     │
+  │                                        │    │  later. The `correlationId`       │
+  │                                        │    │  stitches the two halves.         │
+  └────────────────────────────────────────┘    └───────────────────────────────────┘
+```
+
+The `async` shape is the OpenClaw plugin's `mesh.async_reply` payload
+(`type: "mesh.async_reply"`, `intent`, `correlationId`, `payload`). HomeClaw uses the
+sync `chat` shape only; OpenClaw can do both.
+
+#### Security boundary
+
+```
+  ┌─────────────────── trust zone: EnvoyMesh ───────────────────┐
+  │  libp2p keys, Ed25519 signing, bond-tier policy, replay     │
+  │  dedup, audit log, rate limit, schema validation            │
+  │     ┌────────────────────────────────────────────────────┐  │
+  │     │  localhost HTTP only  (127.0.0.1:<listenPort>)     │  │  ◀── single rule
+  │     └────────────────────────────────────────────────────┘  │
+  └──────────────────────────────────────────────────────────────┘
+                              │
+                              │  plain JSON over HTTP,
+                              │  optional bearer secret
+                              ▼
+  ┌─────────────────── untrusted zone: agent ────────────────────┐
+  │  HomeClaw, OpenClaw, or your custom service                 │
+  │  No keys. No P2P. Just answers `POST`s and makes `POST`s.  │
+  └──────────────────────────────────────────────────────────────┘
+```
+
+A few rules keep the boundary clean:
+
+- The bridge listens on **127.0.0.1 only** (default port `3031`); the agent never needs
+  to be reachable from the network.
+- The bridge signs every outbound message itself; the agent never sees the private key.
+- Inbound `chat.message` from a stranger is **denied by policy** before it reaches the
+  agent — only contacts at *direct* trust (or above your per-agent threshold) make it
+  through.
+- The agent's reply is **routed, not echoed**: the bridge looks at the inbound envelope's
+  `senderPeerId` and sends the reply to *that* peer, not whoever called the webhook last.
+- One bridge = one `agentUrl`. To A/B HomeClaw vs. OpenClaw, run two profiles.
+
+The wire contract is the smallest thing that could possibly work:
+
+```http
+# inbound  — bridge → agent
+POST <agentUrl>
+Content-Type: application/json
+{
+  "from":        "envoy_<peer-id>",
+  "fromOwnerId": "envoy:owner:<sha256>",
+  "fromName":    "Alice",
+  "text":        "hi"
+}
+
+# outbound — agent → bridge
+POST http://127.0.0.1:3031/bridge/send
+{ "to": "envoy_<peer-id>", "text": "hello back" }
+
+# async    — OpenClaw → bridge (mesh.async_reply)
+POST http://127.0.0.1:3031/bridge/send
+{
+  "to":       "envoy_<peer-id>",
+  "replyTo":  "knowledge.query",
+  "payload":  { "matches": [ … ] }
+}
+```
+
+That's the whole contract. No SDK, no library, no agent-side signing.
+
+---
+
+## Pairing the phone with the desktop
+
+The mobile app is a **full EnvoyMesh node**, not a thin client. After pairing, the phone
+participates in the same P2P mesh as the desktop: same `ownerId`, same contacts, same chat
+log, same bonds — but a distinct `deviceId` and its own signing key.
+
+### What “pairing” actually does
+
+```
+   ┌──────────── desktop (home node) ────────────┐
+   │  Settings → "Show pairing QR"              │
+   │  ┌──────────────────────────────────────┐  │
+   │  │  envoy://pair?                       │  │      ┌────────── phone ──────────┐
+   │  │     wsUrl=wss://relay…/ws            │──┼──▶   │  Scan QR with mobile app  │
+   │  │     token=<10-min one-shot>          │  │  QR  │  (Capacitor scanner)      │
+   │  │     ownerId=envoy:owner:<sha256>     │  │      └────────────┬─────────────┘
+   │  │     ownerPublicKey=<PEM>             │  │                   │
+   │  │     agentPeerId=envoy_agent_…        │  │                   ▼
+   │  │     agentName=My Agent               │  │   parseEnvoyPairUri() → params
+   │  │  └──────────────────────────────────────┘  │
+   └──────────────────────────────────────────┘     │
+                                                      │   generate:
+                                                      │     • deviceKeypair (Ed25519)
+                                                      │     • ecdhKeyPair   (X25519)
+                                                      ▼
+                          ws://relay/…?target=<home>&token=…
+                                      │
+                                      ▼   pairSharedIdentity RPC
+                          home node  ─────────────────────▶  mobile
+                          ─ validates token (10-min TTL)
+                          ─ generates persistent sessionToken (no TTL)
+                          ─ creates device trust record at "direct"
+                          ─ registers device in peer directory
+                          ─ encrypts owner private key with ECDH(shared)
+                          ─ signs a Device Certificate (owner → device)
+                          ─ returns: { encryptedOwnerKey, deviceCertificate,
+                                       sessionToken, ownerId, ownerPublicKey,
+                                       agentPeerId, agentPubKey, … }
+```
+
+The mobile app then:
+
+1. **Decrypts** the owner private key with the ECDH-derived shared secret.
+2. **Imports** the owner identity — same `ownerId` as the desktop, different `deviceId`.
+3. **Persists** the device cert + the long-lived `sessionToken` (so it can reconnect
+   without re-scanning the QR).
+4. Connects to the relay over WebSocket and starts sending signed envelopes.
+
+### What ends up where
+
+```
+                            ┌──── shared ────┐    ┌──── per-device ────┐
+   owner identity           │                │    │                   │
+   (Ed25519 keypair)        │  same on both  │    │                   │
+                            │                │    │                   │
+   ownerId                  │  same          │    │                   │
+                            │                │    │                   │
+   contact list, bonds,     │  same          │    │                   │
+   chat log, vault index    │  (synced)      │    │                   │
+                            │                │    │                   │
+   device keypair           │                │    │  distinct         │
+   deviceId                 │                │    │  distinct         │
+   device certificate       │                │    │  signed by owner  │
+   libp2p peerId            │                │    │  distinct         │
+                            │                │    │                   │
+   storage backend          │  JSONL / JSON  │    │  SQLite + FS +    │
+                            │  (node side)   │    │  Keychain (mobile)│
+                            └────────────────┘    └───────────────────┘
+```
+
+Two devices, one identity, three separate signing keys (owner + device-A + device-B). The
+phone can't read the desktop's session, and vice versa, even though they share the
+underlying human identity.
+
+### How messages flow once paired
+
+```
+   ┌───────── phone ─────────┐         ┌───── relay mesh ─────┐        ┌───────── desktop ─────────┐
+   │  MobileNode             │  ws     │                       │  ws    │  NodeService              │
+   │  (in WebView)           │ ──────▶ │  signed envelope      │ ─────▶ │  (child process)          │
+   │                         │         │  → home-node peer id  │        │                           │
+   │  DirectCallClient       │         │                       │        │  inbox guard              │
+   │  (in-process calls)     │         │  on behalf of phone:  │        │  → policy                 │
+   └─────────────────────────┘         │  • chat.message       │        │  → bridge → HomeClaw/     │
+            ▲                         │  • knowledge.query    │        │    OpenClaw                │
+            │                         │  • task.*             │        │                           │
+            │                         │                       │        │  reply path:               │
+            │                         │                       │ ◀───── │  agent → /bridge/send      │
+            │                         │                       │        │  → signed reply            │
+            │                         │                       │  ws    │                           │
+            │                         │  signed reply         │ ──────▶│                           │
+            │  displayed in Social    │                       │        └───────────────────────────┘
+            │  UI (same React app)    │                       │               ▲
+            └─────────────────────────┘                       │               │ same identity
+                                                              │               │
+                                          (also: phone ↔ friend directly
+                                           if friend is on the same relay)
+```
+
+Two things worth noticing:
+
+- **No central server holds messages.** The relay is dumb routing — it forwards signed
+  envelopes; it can't read them.
+- **The phone and the desktop can talk to the same friend independently.** Either one
+  can answer a `chat.message`. If both are online, the friend's device will see two
+  signed envelopes (one from each), each verifiable against the same `ownerId`.
+
+### Two identity modes
+
+The mobile app ships with a toggle for which mode you want:
+
+| Mode | How it boots | When to use it |
+|------|-------------|----------------|
+| **Standalone** (default) | App generates its own owner keypair on first launch, persists to SQLite + Keychain. Restores on next launch. | A second person using the same device, or a quick test install. |
+| **Shared** (after QR scan) | Imports the home node's owner private key (encrypted in the QR handshake), keeps its own device keypair, stores the device certificate. | Your phone, paired with your Mac. Same `ownerId`, same contacts. |
+
+You can switch modes by uninstalling and re-pairing — the data is local, there's no
+account to delete.
+
+### What's actually portable
+
+- ✅ Contacts, bonds, chat history, vault index — shared through `ownerId`
+- ✅ Trust records and mandate credentials
+- ✅ The agent's `peerId` and public key (so the phone can `chat.message` the agent)
+- ❌ Running model state (LLM context windows) — phones start cold; the desktop's brain
+  is its own
+- ❌ In-flight WebSocket sessions — each device opens its own to the relay
+
+Full step-by-step for building, running, and scanning is in
+[**`QuickStart.md`**](QuickStart.md#mobile-app-capacitor--ios--android).
 
 ---
 
