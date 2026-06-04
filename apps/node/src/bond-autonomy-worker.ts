@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { derivePeerId } from "@envoymesh/identity";
+import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import type {
   AgentCredential,
   BondAutonomyPosturePolicy,
@@ -182,7 +182,6 @@ export async function sendAgentBondAccept(
     });
 
     // Sign with agent's key
-    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
     const signedEnvelope = signUnsignedEnvelope(
       unsignedEnvelope,
       agentIdentity.privateKeyPem,

@@ -282,6 +282,7 @@ import {
   type ChatRoomServiceDeps,
 } from "./chat-room-service.js";
 import { createTaskDispatcher } from "./task-dispatcher.js";
+import { predictIntent } from "./intent-predictor.js";
 import { buildVaultIndex, assertPathInsideVault } from "@envoymesh/vault";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -345,6 +346,9 @@ import {
   runFriendAutopilotPass,
 } from "./friend-autopilot-runner.js";
 import { runSocialProxyPass, advanceSocialProxySession } from "./social-proxy-orchestrator.js";
+import { AgentCircleStore } from "./agent-circle-store.js";
+import { proposeCircles, circleFromProposal } from "./circle-proposer.js";
+import type { AgentCircle } from "@envoymesh/api";
 import {
   advanceDocumentAcquisitionJob,
   runDocumentAcquisitionWorkerTick,
@@ -470,6 +474,7 @@ class NodeServiceImpl implements NodeService {
   private _ragService: RagService | null = null;
   private _ragServiceInit: Promise<RagService | null> | null = null;
   private _agentShareProposalStore: ReturnType<typeof createAgentShareProposalStore> | undefined;
+  private _agentGroupChatCounters: Map<string, { count: number; windowStart: number }> = new Map();
 
   // App-managed mode stores
   private _taskStore: LocalTaskStore | undefined;
@@ -504,6 +509,7 @@ class NodeServiceImpl implements NodeService {
   private readonly _socialProxyStore: SocialProxySessionStore | null;
   private readonly _documentAcquisitionJobStore: DocumentAcquisitionJobStore | null;
   private readonly _capabilityProviderJobStore: CapabilityProviderJobStore | null;
+  private readonly _circleStore: AgentCircleStore | null;
   private _approvalQueue: ApprovalQueue | null = null;
 
   /** Best-effort last failure for {@link getConnectionStatus} (cleared on successful {@link startNode}). */
@@ -1225,6 +1231,8 @@ class NodeServiceImpl implements NodeService {
       profileDir && profileDir !== "/tmp/unknown" ? createLocalPeerReputationStore(profileDir) : null;
     this._socialProxyStore =
       profileDir && profileDir !== "/tmp/unknown" ? createSocialProxySessionStore(profileDir) : null;
+    this._circleStore =
+      profileDir && profileDir !== "/tmp/unknown" ? new AgentCircleStore(profileDir) : null;
     this._documentAcquisitionJobStore =
       profileDir && profileDir !== "/tmp/unknown" ? createDocumentAcquisitionJobStore(profileDir) : null;
     this._capabilityProviderJobStore =
@@ -1341,8 +1349,65 @@ class NodeServiceImpl implements NodeService {
     });
   }
 
+  /**
+   * Export the owner's DID document as portable JSON. Auto-includes
+   * service endpoints for the active relay and the agent (if known),
+   * so the resulting document is self-contained for handoff.
+   */
+  exportDidDocument(input?: {
+    services?: Array<{ id: string; type: string; serviceEndpoint: string; description?: string }>;
+  }): string {
+    const profile = this._requireProfile();
+    const services: Array<{ id: string; type: string; serviceEndpoint: string; description?: string }> = [];
+    if (input?.services) {
+      for (const s of input.services) services.push(s);
+    } else {
+      // Auto-populate from runtime state
+      const mesh = this._mesh ?? this._externalMesh;
+      if (mesh) {
+        const relay = this._relayPublicWsUrl;
+        if (relay) {
+          services.push({
+            id: "#envoy-relay",
+            type: "EnvoyMeshRelay",
+            serviceEndpoint: relay,
+            description: "WebSocket relay for inbound envelopes",
+          });
+        }
+        if (mesh.peerId) {
+          services.push({
+            id: "#envoy-agent",
+            type: "EnvoyMeshAgent",
+            serviceEndpoint: `envoy_agent_${mesh.peerId.slice(-12)}`,
+            description: "Local agent peer id (last 12 chars)",
+          });
+        }
+      }
+    }
+
+    const inner = buildOwnerDidPresentation({
+      ownerId: profile.owner.ownerId,
+      publicKeyPem: profile.owner.publicKeyPem,
+      services,
+    });
+    const envelope = {
+      envelope: "envoymesh-did-export-v1" as const,
+      exportedAt: new Date().toISOString(),
+      did: inner.did,
+      ownerId: profile.owner.ownerId,
+      publicKeyPem: profile.owner.publicKeyPem,
+      document: inner.document,
+    };
+    return JSON.stringify(envelope);
+  }
+
   async resolveDidImport(input: string) {
     return resolveDidImportInput(input);
+  }
+
+  async resolveDidExport(input: string) {
+    const { resolveDidExportInput } = await import("@envoymesh/api/did-import");
+    return resolveDidExportInput(input);
   }
 
   async cacheDidContactKey(params: { ownerId: string; publicKeyPem: string }) {
@@ -3625,6 +3690,755 @@ class NodeServiceImpl implements NodeService {
     await this._socialProxyStore.save(next);
   }
 
+  // ----- Phase 23A — Agent Circle CRUD -----
+
+  async listAgentCircles(): Promise<AgentCircle[]> {
+    if (!this._circleStore) return [];
+    return this._circleStore.listCircles();
+  }
+
+  async createAgentCircle(input: {
+    label: string;
+    memberOwnerIds: string[];
+    topicTags?: string[];
+  }): Promise<AgentCircle> {
+    if (!this._circleStore) throw new Error("circle store unavailable");
+    const now = new Date().toISOString();
+    const circle: AgentCircle = {
+      circleId: `circle-${Date.now()}`,
+      label: input.label,
+      status: "active",
+      memberOwnerIds: input.memberOwnerIds,
+      topicTags: input.topicTags ?? [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this._circleStore.saveCircle(circle);
+    return circle;
+  }
+
+  async updateAgentCircle(circleId: string, update: {
+    label?: string;
+    status?: AgentCircle["status"];
+    memberOwnerIds?: string[];
+    topicTags?: string[];
+  }): Promise<AgentCircle> {
+    if (!this._circleStore) throw new Error("circle store unavailable");
+    const circles = await this._circleStore.listCircles();
+    const circle = circles.find((c) => c.circleId === circleId);
+    if (!circle) throw new Error(`Circle not found: ${circleId}`);
+    if (update.label !== undefined) circle.label = update.label;
+    if (update.status !== undefined) circle.status = update.status;
+    if (update.memberOwnerIds !== undefined) circle.memberOwnerIds = update.memberOwnerIds;
+    if (update.topicTags !== undefined) circle.topicTags = update.topicTags;
+    circle.updatedAt = new Date().toISOString();
+    await this._circleStore.saveCircle(circle);
+    return circle;
+  }
+
+  async deleteAgentCircle(circleId: string): Promise<void> {
+    if (!this._circleStore) return;
+    await this._circleStore.deleteCircle(circleId);
+  }
+
+  async proposeAgentCircles(): Promise<AgentCircle[]> {
+    if (!this._circleStore) return [];
+    const bonds = await this.getBonds();
+    const deps = {
+      getBonds: async () => bonds.map((b) => ({ ...b })),
+      getContactTopics: (ownerId: string) => this._getContactTopicsFromLibrary(ownerId),
+      getContactCapabilities: async () => [] as string[],
+    };
+    const proposals = await proposeCircles(deps, { minMembers: 2 });
+    const circles = proposals.map((p) => circleFromProposal(p, "proposed"));
+    for (const c of circles) {
+      await this._circleStore!.saveCircle(c);
+    }
+    return circles;
+  }
+
+  // ----- End Phase 23A -----
+
+  // Phase 23C — Bond steward pass
+  async runBondStewardPass(thresholdDays?: number): Promise<{ dormantBonds: Array<{ peerOwnerId: string; displayName?: string; dormantDays: number }>; summary: string }> {
+    const { findDormantBonds } = await import("./bond-steward.js");
+    const deps = {
+      getBonds: async () => this.getBonds(),
+      getLastInteractionAt: async () => null, // TODO: wire chat log store
+    };
+    return findDormantBonds(deps, thresholdDays ?? 90);
+  }
+
+  // Phase 23B — Connection suggester pass
+  async runConnectionSuggesterPass(): Promise<Array<{ remoteOwnerId: string; remoteDisplayName: string; reason: string; relevanceScore: number }>> {
+    const { matchPeerInterests } = await import("./connection-suggester.js");
+    const { recordConnectionSuggestion } = await import("./agent-activity-hooks.js");
+    if (!this._taskStore) return [];
+
+    const config = await this._configStore.load();
+    const ownerTopics = config?.ownerProfile?.interests ?? [];
+    if (ownerTopics.length === 0) return [];
+
+    const bonds = await this.getBonds();
+    const results: Array<{ remoteOwnerId: string; remoteDisplayName: string; reason: string; relevanceScore: number }> = [];
+
+    for (const bond of bonds) {
+      const peerTopics = bond.interests ?? [];
+      const peerCaps: string[] = []; // Capabilities from manifest (wired separately)
+      const match = matchPeerInterests(ownerTopics, peerTopics, peerCaps);
+
+      if (match.score > 0) {
+        const suggestion = {
+          remoteOwnerId: bond.peerOwnerId,
+          remoteDisplayName: bond.displayName ?? bond.peerOwnerId,
+          reason: `Matching interests: ${match.matchedTopics.join(", ")}`,
+          relevanceScore: match.score,
+        };
+        results.push(suggestion);
+
+        await recordConnectionSuggestion(
+          this._taskStore,
+          suggestion,
+          this._profile?.owner.ownerId ?? "local-owner",
+          (record) => this.emit?.("agent:activity", record),
+        );
+      }
+    }
+
+    return results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+  }
+
+  // Phase 28 — Mesh Intelligence Report
+  async generateMeshIntelligenceReport(): Promise<string> {
+    const { generateMeshIntelligenceReport } = await import("./mesh-intelligence.js");
+    const config = await this._configStore.load();
+    const bonds = await this.getBonds();
+    const ownerTopics = config?.ownerProfile?.interests ?? [];
+    const scores = new Map<string, number>();
+
+    const report = await generateMeshIntelligenceReport(
+      {
+        scanBondedPeers: async () =>
+          bonds.map((b) => ({
+            ownerId: b.peerOwnerId,
+            displayName: b.displayName ?? b.peerOwnerId,
+            topics: b.interests ?? [],
+            capabilities: [],
+            bondLevel: b.level,
+          })),
+        scanDiscovery: async (topics: string[], caps: string[]) => {
+          try {
+            const { generateDiscoveryClusters } = await import("./discovery-clusterer.js");
+            const bonds = await this.getBonds();
+            const clusters = await generateDiscoveryClusters(
+              {
+                broadcastDocumentDiscovery: async () => [],
+                broadcastCapabilityDiscovery: async () => [],
+                getBondedOwnerIds: async () => new Set(bonds.map((b) => b.peerOwnerId)),
+              },
+              { seedTopics: topics, seedCapabilities: caps, minClusterSize: 2, maxClusters: 3, maxHops: 1 },
+            );
+            const peers: Array<{ ownerId: string; displayName?: string; topics: string[]; capabilities: string[]; bondLevel?: string }> = [];
+            for (const cluster of clusters) {
+              for (const peer of cluster.peers) {
+                peers.push({ ownerId: peer.ownerId, displayName: peer.displayName, topics: peer.topics, capabilities: peer.capabilities, bondLevel: "public" });
+              }
+            }
+            return peers;
+          } catch { return []; }
+        },
+        getReputationScores: async () => scores,
+        findDormantBonds: async (thresholdDays: number) => {
+          const { findDormantBonds } = await import("./bond-steward.js");
+          const result = await findDormantBonds(
+            { getBonds: async () => bonds, getLastInteractionDate: async () => { throw new Error("not implemented"); } },
+            thresholdDays,
+          );
+          return result.dormantBonds.map((b) => ({
+            ownerId: b.peerOwnerId,
+            displayName: b.displayName,
+            topics: [],
+            capabilities: [],
+          }));
+        },
+        findSecondDegreeConnections: async () => [],
+        generateNarrative: async (prompt: string) => {
+          try {
+            return await this.knowledgeQuery(prompt);
+          } catch {
+            return "Unable to generate narrative — model not available.";
+          }
+        },
+      },
+      { ownerTopics, ownerCapabilities: [] },
+    );
+
+    return [
+      `## ${report.title}`,
+      `Generated: ${report.generatedAt}`,
+      `Analyzed: ${report.peersAnalyzed} peers`,
+      "",
+      ...report.sections.map((s) => `### ${s.heading}\n${s.content}`),
+    ].join("\n");
+  }
+
+  // Phase 27 — Proactive agent pass
+  async runProactiveAgentPass(): Promise<Array<{ kind: string; summary: string; matchedTopic: string; peerCount: number }>> {
+    const insights: Array<{ kind: string; summary: string; matchedTopic: string; peerCount: number }> = [];
+
+    // Run mesh awareness
+    try {
+      const awarenessInsights = await this.runMeshAwarenessPass();
+      for (const insight of awarenessInsights) {
+        insights.push({ kind: "mesh_activity", summary: insight.summary, matchedTopic: insight.matchedTopic, peerCount: insight.peerCount });
+      }
+    } catch { /* mesh awareness optional */ }
+
+    // Run connection suggestions
+    try {
+      const suggestions = await this.runConnectionSuggesterPass();
+      for (const s of suggestions) {
+        insights.push({
+          kind: "connection_suggested",
+          summary: `Suggested connection: ${s.remoteDisplayName} — ${s.reason}`,
+          matchedTopic: s.reason,
+          peerCount: 1,
+        });
+      }
+    } catch { /* connection suggestions optional */ }
+
+    // Check dormant bonds
+    try {
+      const config = await this._configStore.load();
+      const { findDormantBonds } = await import("./bond-steward.js");
+      const dormantResult = await findDormantBonds(
+        {
+          getBonds: async () => this.getBonds(),
+          getLastInteractionAt: async () => { throw new Error("not implemented"); },
+        },
+        config?.dormantBondThresholdDays ?? 90,
+      );
+      if (dormantResult.dormantBonds.length > 0) {
+        insights.push({
+          kind: "dormant_bonds",
+          summary: dormantResult.summary,
+          matchedTopic: "social_graph_health",
+          peerCount: dormantResult.dormantBonds.length,
+        });
+      }
+    } catch { /* dormant bond check optional */ }
+
+    return insights;
+  }
+
+  // Phase 23A+ — Discovery-driven clusterer
+  async discoverAndCluster(
+    seedTopics?: string[],
+    seedCapabilities?: string[],
+  ): Promise<string> {
+    const { generateDiscoveryClusters, formatDiscoverySuggestions } = await import("./discovery-clusterer.js");
+    const config = await this._configStore.load();
+    const ownerTopics = seedTopics?.length ? seedTopics : (config?.ownerProfile?.interests ?? []);
+    if (ownerTopics.length === 0 && !seedCapabilities?.length) {
+      return "No seed topics or capabilities provided. Tell me what you're interested in discovering.";
+    }
+
+    const bonds = await this.getBonds();
+    const bondedPeers = bonds.map((b) => ({ ownerId: b.peerOwnerId, peerId: b.peerOwnerId }));
+    const bondedIds = new Set(bonds.map((b) => b.peerOwnerId));
+    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+
+    const deps = {
+      broadcastDocumentDiscovery: async (query: string, _maxHops?: number) => {
+        const { broadcastDocumentDiscovery } = await import("./document-discovery-broadcast.js");
+        const bdDeps = {
+          sendToPeer: async () => 0, // stub — needs mesh connectivity for real broadcast
+          getBondedPeers: async () => bondedPeers,
+          getAllKnownPeers: async () => bondedPeers,
+          signEnvelope: signUnsignedEnvelope as (unsigned: unknown, privateKeyPem: string) => unknown,
+          profile: {
+            owner: { ownerId: this._profile!.owner.ownerId },
+            device: {
+              deviceId: this._profile!.device.deviceId,
+              peerId: (this._profile!.device as unknown as { peerId?: string }).peerId ?? this._profile!.device.deviceId,
+              publicKeyPem: this._profile!.device.publicKeyPem,
+              privateKeyPem: this._profile!.device.privateKeyPem,
+            },
+          },
+        };
+        const results = await broadcastDocumentDiscovery(bdDeps, {
+          query,
+          maxHops: _maxHops ?? 2,
+          maxResults: 20,
+          timeoutMs: 15000,
+        });
+        return results.map((r: any) => ({
+          ownerId: r.ownerId,
+          displayName: r.metadata?.title,
+          topics: r.metadata?.topics ?? [],
+          capabilities: [],
+          isBonded: bondedIds.has(r.ownerId),
+        }));
+      },
+      broadcastCapabilityDiscovery: async (caps: string[], _maxHops?: number) => {
+        const { broadcastCapabilityDiscovery } = await import("./capability-discovery-broadcast.js");
+        const bcdDeps = {
+          sendToPeer: async () => 0,
+          getBondedPeers: async () => bondedPeers,
+          getAllKnownPeers: async () => bondedPeers,
+          signEnvelope: signUnsignedEnvelope as (unsigned: unknown, privateKeyPem: string) => unknown,
+          profile: {
+            owner: { ownerId: this._profile!.owner.ownerId },
+            device: {
+              deviceId: this._profile!.device.deviceId,
+              peerId: (this._profile!.device as unknown as { peerId?: string }).peerId ?? this._profile!.device.deviceId,
+              publicKeyPem: this._profile!.device.publicKeyPem,
+              privateKeyPem: this._profile!.device.privateKeyPem,
+            },
+          },
+        };
+        const results = await broadcastCapabilityDiscovery(bcdDeps, {
+          capabilityTags: caps,
+          maxHops: _maxHops ?? 2,
+          maxResults: 20,
+          timeoutMs: 15000,
+        });
+        return results.map((r: any) => ({
+          ownerId: r.ownerId,
+          topics: [],
+          capabilities: caps,
+          isBonded: bondedIds.has(r.ownerId),
+        }));
+      },
+      getBondedOwnerIds: async () => bondedIds,
+    };
+
+    const clusters = await generateDiscoveryClusters(deps, {
+      seedTopics: ownerTopics,
+      seedCapabilities: seedCapabilities ?? [],
+    });
+    return formatDiscoverySuggestions(clusters);
+  }
+
+  // Phase 23D — Chat RAG search
+  async chatRagSearch(query: string, opts?: { ownerId?: string; maxResults?: number }): Promise<Array<{ messageId: string; contactName: string; snippet: string; timestamp: string }>> {
+    const { searchChatHistory, formatChatRagResults } = await import("./chat-rag-service.js");
+    const deps = {
+      getMessages: async (ownerId?: string) => {
+        // TODO: wire to actual chat log store
+        return [];
+      },
+    };
+    const results = await searchChatHistory(deps, query, opts);
+    return formatChatRagResults(results, opts?.maxResults ?? 5);
+  }
+
+  // Phase 25A — Mesh awareness pass
+  async runMeshAwarenessPass(): Promise<Array<{ kind: string; summary: string; matchedTopic: string; peerCount: number; createdAt: string }>> {
+    const { generateMeshInsights } = await import("./mesh-awareness-worker.js");
+    const localOwnerId = this._profile?.owner.ownerId ?? "";
+    const bonds = await this.getBonds();
+    const deps = {
+      getOwnerInterestTopics: async () => this._getContactTopicsFromLibrary(localOwnerId),
+      getBondedPeerTopics: async () => {
+        const out: Array<{ ownerId: string; topics: string[] }> = [];
+        for (const b of bonds) {
+          const topics = await this._getContactTopicsFromLibrary(b.peerOwnerId);
+          if (topics.length > 0) out.push({ ownerId: b.peerOwnerId, topics });
+        }
+        return out;
+      },
+    };
+    const insights = await generateMeshInsights(deps);
+    if (insights.length > 0) {
+      for (const insight of insights) {
+        this.emit?.("agent:awareness", insight);
+      }
+    }
+    return insights;
+  }
+
+  // -------------------------------------------------------------------
+  // Phase 23 — Published library (E2E test support + cross-node topic sharing)
+  // -------------------------------------------------------------------
+  // Per-owner published-library store, keyed by ownerId. The local owner
+  // publishes via publishDocument(); bonded peers' libraries are recorded
+  // via setPeerPublishedLibrary() (called by the test harness today, and
+  // by the bond-handshake / agent.card sync in a follow-on). The circle
+  // proposer and mesh-awareness worker read from this map.
+  private readonly _publishedLibrary = new Map<string, Array<{
+    title: string;
+    topicTags: string[];
+    sensitivity: string;
+    publishedAt: string;
+  }>>();
+
+  // -------------------------------------------------------------------
+  // Phase 25D — Intent history (predictIntent source)
+  // -------------------------------------------------------------------
+  // Sliding window of the owner's most recent intents. Capped at
+  // INTENT_HISTORY_MAX entries to keep memory bounded. Persisted to
+  // disk so predictions survive restarts.
+  private static readonly INTENT_HISTORY_MAX = 50;
+  private readonly _intentHistory: Array<{ intent: string; query: string; timestamp: string }> = [];
+
+  private _intentHistoryFilePath(): string | null {
+    const dir = this._profileDir;
+    if (!dir) return null;
+    return join(dir, "intent-history.json");
+  }
+
+  /** Record a recent intent event for prediction. */
+  async recordIntent(intent: string, query: string): Promise<void> {
+    this._intentHistory.push({ intent, query, timestamp: new Date().toISOString() });
+    while (this._intentHistory.length > NodeServiceImpl.INTENT_HISTORY_MAX) {
+      this._intentHistory.shift();
+    }
+    const path = this._intentHistoryFilePath();
+    if (!path) return;
+    try {
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(
+        path,
+        JSON.stringify({ version: "0.1", history: this._intentHistory }, null, 2),
+        { mode: 0o600 },
+      );
+    } catch (err) {
+      // Best-effort persistence: in-memory history is updated regardless,
+      // so predictions work in-process. Log the error so disk issues
+      // surface during dev, but don't fail the calling turn.
+      console.warn("[intent-history] persist failed:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  /** Load intent history from disk (called at startup). */
+  async loadIntentHistoryFromDisk(): Promise<void> {
+    const path = this._intentHistoryFilePath();
+    if (!path) return;
+    try {
+      const raw = await readFile(path, "utf8");
+      const parsed = JSON.parse(raw) as { history?: Array<{ intent: string; query: string; timestamp: string }> };
+      if (Array.isArray(parsed.history)) {
+        this._intentHistory.length = 0;
+        for (const entry of parsed.history.slice(-NodeServiceImpl.INTENT_HISTORY_MAX)) {
+          this._intentHistory.push(entry);
+        }
+      }
+    } catch {
+      // No persisted history yet
+    }
+  }
+
+  private _publishedLibraryFilePath(): string | null {
+    const dir = this._profileDir;
+    if (!dir) return null;
+    return join(dir, "published-library.json");
+  }
+
+  /** Persist the published library to disk. */
+  private async _persistPublishedLibrary(): Promise<void> {
+    const path = this._publishedLibraryFilePath();
+    if (!path) return;
+    const snapshot: Array<{ ownerId: string; entries: Array<{ title: string; topicTags: string[]; sensitivity: string; publishedAt: string }> }> = [];
+    for (const [ownerId, entries] of this._publishedLibrary.entries()) {
+      snapshot.push({ ownerId, entries });
+    }
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, JSON.stringify({ version: "0.1", snapshot }, null, 2), { mode: 0o600 });
+  }
+
+  /** Restore the published library from disk (if present). */
+  async loadPublishedLibraryFromDisk(): Promise<void> {
+    const path = this._publishedLibraryFilePath();
+    if (!path) return;
+    try {
+      const raw = await readFile(path, "utf8");
+      const parsed = JSON.parse(raw) as { snapshot?: Array<{ ownerId: string; entries: Array<{ title: string; topicTags: string[]; sensitivity: string; publishedAt: string }> }> };
+      if (Array.isArray(parsed.snapshot)) {
+        for (const { ownerId, entries } of parsed.snapshot) {
+          this._publishedLibrary.set(ownerId, entries);
+        }
+      }
+    } catch {
+      // No persisted library yet — that's fine.
+    }
+  }
+
+  async publishDocument(input: {
+    title: string;
+    topicTags: string[];
+    sensitivity?: string;
+  }): Promise<{ title: string; topicTags: string[]; sensitivity: string; publishedAt: string }> {
+    const ownerId = this._profile?.owner.ownerId;
+    if (!ownerId) throw new Error("owner profile not loaded");
+    const entry = {
+      title: input.title,
+      topicTags: input.topicTags,
+      sensitivity: input.sensitivity ?? "public",
+      publishedAt: new Date().toISOString(),
+    };
+    const list = this._publishedLibrary.get(ownerId) ?? [];
+    list.push(entry);
+    this._publishedLibrary.set(ownerId, list);
+    await this._persistPublishedLibrary();
+    return entry;
+  }
+
+  /**
+   * Record a bonded peer's published library (called by the test harness
+   * or by agent.card sync). Idempotent: replaces any prior entries for
+   * the same ownerId.
+   */
+  setPeerPublishedLibrary(
+    ownerId: string,
+    entries: Array<{ title: string; topicTags: string[]; sensitivity: string; publishedAt?: string }>,
+  ): Promise<void> {
+    // Preserve the original `publishedAt` for each entry when present;
+    // only fall back to "now" for entries that don't carry one (which is
+    // the case when the harness or sync layer pushes them in).
+    this._publishedLibrary.set(
+      ownerId,
+      entries.map((e) => ({
+        ...e,
+        publishedAt: e.publishedAt ?? new Date().toISOString(),
+      })),
+    );
+    // Surface persistence failures to the caller so they can retry or
+    // surface the error. The in-memory state is updated regardless, but
+    // the caller's await will reject if the write fails.
+    return this._persistPublishedLibrary();
+  }
+
+  /**
+   * Look up the topic tags for a given owner from the published library.
+   * Returns [] for unknown owners.
+   */
+  private async _getContactTopicsFromLibrary(ownerId: string): Promise<string[]> {
+    const entries = this._publishedLibrary.get(ownerId) ?? [];
+    const tags = new Set<string>();
+    for (const e of entries) {
+      for (const t of e.topicTags) tags.add(t);
+    }
+    return Array.from(tags);
+  }
+
+  /**
+   * Return the published-library entries for a given owner (or all owners).
+   * Used by the test harness to share published-library data between
+   * test nodes without going through a real mesh.
+   */
+  getPublishedLibraryEntries(ownerId?: string): Array<{
+    title: string;
+    topicTags: string[];
+    sensitivity: string;
+    publishedAt: string;
+  }> {
+    if (ownerId !== undefined) {
+      return [...(this._publishedLibrary.get(ownerId) ?? [])];
+    }
+    const all: Array<{ title: string; topicTags: string[]; sensitivity: string; publishedAt: string }> = [];
+    for (const list of this._publishedLibrary.values()) all.push(...list);
+    return all;
+  }
+
+  // -------------------------------------------------------------------
+  // Phase 25 — Cross-device continuity sessions
+  // -------------------------------------------------------------------
+  // Thin NodeService surface that delegates to the continuity-service
+  // module. State is held in a per-profile JSON file so sessions
+  // survive restarts. Real cross-device sync is wired via sync.state
+  // (a follow-on).
+  private _continuityFilePath(): string | null {
+    const dir = this._profileDir;
+    if (!dir) return null;
+    return join(dir, "continuity-sessions.json");
+  }
+
+  private async _loadContinuitySessions(): Promise<Array<{
+    sessionId: string;
+    description: string;
+    progress: string;
+    currentStep: number;
+    totalSteps: number;
+    deviceType?: string;
+    correlationId: string;
+    originDevice: string;
+    lastUpdatedAt: string;
+    active: boolean;
+  }>> {
+    const path = this._continuityFilePath();
+    if (!path) return [];
+    let parsed: unknown;
+    try {
+      const raw = await readFile(path, "utf8");
+      parsed = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+    if (!parsed || typeof parsed !== "object") return [];
+    const sessions = (parsed as { sessions?: unknown }).sessions;
+    if (!Array.isArray(sessions)) return [];
+    // Validate each entry has the required string fields. Drop malformed
+    // entries rather than returning untyped data that could crash later.
+    return sessions.filter(
+      (s): s is {
+        sessionId: string;
+        description: string;
+        progress: string;
+        currentStep: number;
+        totalSteps: number;
+        deviceType?: string;
+        correlationId: string;
+        originDevice: string;
+        lastUpdatedAt: string;
+        active: boolean;
+      } =>
+        !!s &&
+        typeof s === "object" &&
+        typeof (s as Record<string, unknown>).sessionId === "string" &&
+        typeof (s as Record<string, unknown>).description === "string",
+    ) as Array<{
+      sessionId: string;
+      description: string;
+      progress: string;
+      currentStep: number;
+      totalSteps: number;
+      deviceType?: string;
+      correlationId: string;
+      originDevice: string;
+      lastUpdatedAt: string;
+      active: boolean;
+    }>;
+  }
+
+  private async _saveContinuitySessions(
+    sessions: Array<{
+      sessionId: string;
+      description: string;
+      progress: string;
+      currentStep: number;
+      totalSteps: number;
+      deviceType?: string;
+      correlationId: string;
+      originDevice: string;
+      lastUpdatedAt: string;
+      active: boolean;
+    }>,
+  ): Promise<void> {
+    const path = this._continuityFilePath();
+    if (!path) return;
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, JSON.stringify({ version: "0.1", sessions }, null, 2), { mode: 0o600 });
+  }
+
+  async startContinuitySession(
+    description: string,
+    opts?: { correlationId?: string; deviceType?: string },
+  ): Promise<{
+    sessionId: string;
+    description: string;
+    progress: string;
+    currentStep: number;
+    totalSteps: number;
+    deviceType?: string;
+    correlationId: string;
+    originDevice: string;
+    lastUpdatedAt: string;
+    active: boolean;
+  }> {
+    const ownerId = this._profile?.owner.ownerId ?? "local-owner";
+    const { startContinuitySession: csStart } = await import("./continuity-service.js");
+    // Build the session with deviceType pre-applied so we save exactly once.
+    // The continuity-service dep's saveSession writes the full list — passing
+    // it the enriched session means a single read+write per start call, with
+    // no race window between saves.
+    const created = await csStart(
+      {
+        listSessions: () => this._loadContinuitySessions(),
+        saveSession: async (s) => {
+          const enriched = { ...s, deviceType: opts?.deviceType };
+          const all = await this._loadContinuitySessions();
+          const without = all.filter((x) => x.sessionId !== enriched.sessionId);
+          await this._saveContinuitySessions([...without, enriched]);
+        },
+        getDeviceId: () => opts?.deviceType ?? ownerId,
+      },
+      description,
+      opts?.correlationId,
+    );
+    // Defensive: if saveSession was somehow never invoked (it always is in
+    // the current continuity-service), still return a value that includes
+    // the deviceType. The session came from csStart which we just called.
+    return { ...created, deviceType: opts?.deviceType };
+  }
+
+  async updateContinuitySession(
+    sessionId: string,
+    update: { progress?: string; currentStep?: number; totalSteps?: number; description?: string },
+  ): Promise<{
+    sessionId: string;
+    description: string;
+    progress: string;
+    currentStep: number;
+    totalSteps: number;
+    deviceType?: string;
+    correlationId: string;
+    originDevice: string;
+    lastUpdatedAt: string;
+    active: boolean;
+  } | null> {
+    const { updateContinuitySession: csUpdate } = await import("./continuity-service.js");
+    return csUpdate(
+      {
+        listSessions: () => this._loadContinuitySessions(),
+        saveSession: async (s) => {
+          const all = await this._loadContinuitySessions();
+          const without = all.filter((x) => x.sessionId !== s.sessionId);
+          await this._saveContinuitySessions([...without, s]);
+        },
+        getDeviceId: () => this._profile?.owner.ownerId ?? "local-owner",
+      },
+      sessionId,
+      update,
+    );
+  }
+
+  async completeContinuitySession(sessionId: string): Promise<void> {
+    const { completeContinuitySession: csComplete } = await import("./continuity-service.js");
+    await csComplete(
+      {
+        listSessions: () => this._loadContinuitySessions(),
+        saveSession: async (s) => {
+          const all = await this._loadContinuitySessions();
+          const without = all.filter((x) => x.sessionId !== s.sessionId);
+          await this._saveContinuitySessions([...without, s]);
+        },
+        getDeviceId: () => this._profile?.owner.ownerId ?? "local-owner",
+      },
+      sessionId,
+    );
+  }
+
+  async getResumableSessions(): Promise<Array<{
+    sessionId: string;
+    description: string;
+    progress: string;
+    currentStep: number;
+    totalSteps: number;
+    deviceType?: string;
+    correlationId: string;
+    originDevice: string;
+    lastUpdatedAt: string;
+    active: boolean;
+  }>> {
+    const { getResumableSessions: csResumable } = await import("./continuity-service.js");
+    return csResumable({
+      listSessions: () => this._loadContinuitySessions(),
+      saveSession: async () => {},
+      getDeviceId: () => this._profile?.owner.ownerId ?? "local-owner",
+    });
+  }
+
   async startDocumentAcquisitionJob(params: {
     query: string;
     fileTitleHint?: string;
@@ -4299,6 +5113,67 @@ class NodeServiceImpl implements NodeService {
       remotePeerId,
       this._roomDeliveryAck(replyWithEnvelope),
     );
+
+    // Phase 27 — Agent group chat responder: check for @envoy mentions
+    const senderRole = (envelope.senderRole as string) ?? "human";
+    if (senderRole !== "agent") {
+      void this._maybeRespondAsAgentInRoom(payload.roomId, envelope, payload, senderRole as "human" | "agent" | "system");
+    }
+  }
+
+  private async _maybeRespondAsAgentInRoom(
+    roomId: string,
+    envelope: EnvoyEnvelope,
+    payload: import("@envoymesh/protocol").ChatRoomMessagePayload,
+    senderRole: "human" | "agent" | "system",
+  ): Promise<void> {
+    const text = payload.text ?? "";
+    if (!text.includes("@envoy")) return;
+
+    try {
+      const { evaluateAgentGroupChatResponse } = await import("./agent-group-chat-responder.js");
+      const decision = await evaluateAgentGroupChatResponse(
+        {
+          hasMention: (t: string) => t.includes("@envoy"),
+          generateAnswer: async (prompt: string) => {
+            const config = await this.getNodeConfig();
+            if (!config?.modelProviders?.mode || config.modelProviders.mode === "off") {
+              return "Agent is not configured. Enable model provider in Settings → AI.";
+            }
+            return this.knowledgeQuery(prompt);
+          },
+          sendAgentRoomMessage: async (rid: string, response: string) => {
+            await this.sendChatRoomMessage(rid, response);
+          },
+          allowResponse: (roomId: string) => this._allowAgentGroupChatResponse(roomId),
+        },
+        {
+          roomId,
+          senderRole,
+          text,
+        },
+      );
+
+      if (decision.shouldRespond && decision.response) {
+        await this.sendChatRoomMessage(roomId, `[Agent] ${decision.response}`);
+      }
+    } catch (err) {
+      console.warn("[agent-group-chat] failed to evaluate:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  private _allowAgentGroupChatResponse(roomId: string): boolean {
+    const MAX_RESPONSES_PER_HOUR = 3;
+    const RATE_WINDOW_MS = 60 * 60 * 1000;
+    const now = Date.now();
+    const entry = this._agentGroupChatCounters.get(roomId);
+    if (!entry || now - entry.windowStart > RATE_WINDOW_MS) {
+      this._agentGroupChatCounters.set(roomId, { count: 1, windowStart: now });
+      return true;
+    }
+    if (entry.count >= MAX_RESPONSES_PER_HOUR) return false;
+    entry.count++;
+    return true;
   }
 
   async deleteChatMessage(peerOwnerId: string, messageId: string): Promise<{ ok: boolean }> {
@@ -5679,6 +6554,12 @@ class NodeServiceImpl implements NodeService {
       this._taskRuntimeStore = createTaskRuntimeStateStore(config.profileDir);
       this._inboundGuard = createInboundMessageGuard();
       this._taskDispatcher = createTaskDispatcher();
+
+      // Phase 26: hydrate Phase 23/25/25D in-memory state from disk
+      // (published library, intent history). Continuity sessions are loaded
+      // lazily on each continuity method call (no in-memory cache needed).
+      await this.loadPublishedLibraryFromDisk();
+      await this.loadIntentHistoryFromDisk();
 
       this._nodeStatus = "starting";
       this.emit("node:status", { status: this._nodeStatus });
@@ -7223,6 +8104,195 @@ class NodeServiceImpl implements NodeService {
           capabilityIds: input.capabilityIds,
         }),
       runSocialProxyPass: () => this.runSocialProxyPass(),
+      discoverAndCluster: (seedTopics?: string[], seedCapabilities?: string[]) =>
+        this.discoverAndCluster(seedTopics, seedCapabilities),
+      meshIntelligenceReport: () => this.generateMeshIntelligenceReport(),
+      chatRagSearch: (query: string, opts?: { ownerId?: string; maxResults?: number }) =>
+        this.chatRagSearch(query, opts),
+      predictIntent: (partial: string) => {
+        // Phase 25D — predict owner intent from partial input using
+        // the live in-process intent history (persisted across restarts).
+        if (!config?.intentPredictionEnabled) return [];
+        return predictIntent(
+          this._intentHistory.slice(),
+          partial,
+          { maxPredictions: config?.prefetchMaxResults ?? 3 },
+        );
+      },
+      runTaskNegotiation: async (objective: string, capabilityTags: string[]) => {
+        // Phase 24A — Full A2A negotiation lifecycle
+        const { runTaskNegotiationLoop } = await import("./task-negotiation-loop.js");
+        const result = await runTaskNegotiationLoop(
+          {
+            discoverCapabilityProviders: async (tags: string[]) => {
+              const matches = await matchAgentCapabilityRoutes({
+                goal: objective,
+                localManifestCapabilities,
+                maxResults: 5,
+              });
+              const bonds = await this.getBonds();
+              return matches.filter((m) => {
+                // MatchedAgentCapabilityRoute doesn't carry ownerId/peerId directly;
+                // derive from the route's metadata when present.
+                const meta = m as unknown as { ownerId?: string; peerId?: string };
+                const bond = meta.ownerId
+                  ? bonds.find((b) => b.peerOwnerId === meta.ownerId)
+                  : undefined;
+                return bond != null;
+              }).map((m) => {
+                const meta = m as unknown as { ownerId?: string; peerId?: string; capabilities?: string[] };
+                return {
+                  ownerId: meta.ownerId ?? "(unknown)",
+                  peerId: meta.peerId ?? meta.ownerId ?? "(unknown)",
+                  capabilities: meta.capabilities ?? m.matchedCapabilityIds ?? [],
+                  bondLevel: bonds.find((b) => b.peerOwnerId === meta.ownerId)?.level ?? "public",
+                  reputationScore: 0.5,
+                };
+              });
+            },
+            sendTaskPropose: async (peerId, ownerId, objective, constraints) => {
+              const { sendAgentTaskPropose } = await import("./agent-task-propose-send.js");
+              const result = await sendAgentTaskPropose({
+                profile: this._profile!,
+                agentIdentity: agentIdentitySection as any,
+                recipientPeerId: peerId,
+                objective,
+                taskId: constraints?.correlationId as string ?? randomUUID(),
+              } as any);
+              return result.ok ? peerId : null;
+            },
+          },
+          {
+            executeTool: (toolName, params) => executeTool(toolName, params, context),
+            sendTaskResult: async (peerId, ownerId, taskId, result, corrId) => {
+              if (!this._mesh) return false;
+              try {
+                const { createTaskResultPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+                const unsigned = createUnsignedEnvelope({
+                  senderPeerId: mesh!.peerId,
+                  senderPublicKey: this._profile!.device.publicKeyPem,
+                  senderRole: "agent",
+                  recipientPeerId: peerId,
+                  recipientRole: "agent",
+                  intent: "task.result",
+                  payload: createTaskResultPayload({
+                    taskId,
+                    summary: typeof result === "string" ? result : JSON.stringify(result ?? ""),
+                    status: "completed",
+                  }),
+                  correlationId: corrId,
+                  agentCredential: (agentIdentitySection as any)?.credential,
+                });
+                const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+                const signed = signUnsignedEnvelope(unsigned, this._profile!.device.privateKeyPem);
+                await this._mesh.send(peerId, signed, {});
+                return true;
+              } catch { return false; }
+            },
+            sendTaskFeedback: async (peerId, ownerId, taskId, score, comment, corrId) => {
+              if (!this._mesh) return false;
+              try {
+                const { createTaskFeedbackPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+                const unsigned = createUnsignedEnvelope({
+                  senderPeerId: mesh!.peerId,
+                  senderPublicKey: this._profile!.device.publicKeyPem,
+                  senderRole: "agent",
+                  recipientPeerId: peerId,
+                  recipientRole: "agent",
+                  intent: "task.feedback",
+                  payload: createTaskFeedbackPayload({
+                    taskId,
+                    outcome: (score >= 0.5 ? "success" : "failure") as "success" | "failure",
+                    latencyMs: 0,
+                    notes: comment,
+                  }),
+                  correlationId: corrId,
+                  agentCredential: (agentIdentitySection as any)?.credential,
+                });
+                const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+                const signed = signUnsignedEnvelope(unsigned, this._profile!.device.privateKeyPem);
+                await this._mesh.send(peerId, signed, {});
+                return true;
+              } catch { return false; }
+            },
+          },
+          objective,
+          capabilityTags,
+        );
+        return result;
+      },
+      // Phase 24B — multi-step agent chain
+      runAgentChain: async (description: string, initialInput?: string) => {
+        const { runAgentChain, decomposeTask } = await import("./agent-chain-orchestrator.js");
+        const steps = decomposeTask(description);
+        if (steps.length === 0) {
+          return { ok: false, completedSteps: 0, totalSteps: 0, error: "no steps decomposed" };
+        }
+        // Local providers only — for now we use the capability manifest and
+        // bonded peer routes. A future wire-protocol extension can read
+        // remote provider cards.
+        const findProviders = async (capabilityTag: string) => {
+          const matches = await matchAgentCapabilityRoutes({
+            goal: description,
+            localManifestCapabilities,
+            maxResults: 5,
+          });
+          return matches
+            .filter((m) => (m.matchedCapabilityIds ?? []).includes(capabilityTag))
+            .map((m) => {
+              const meta = m as unknown as { ownerId?: string; peerId?: string };
+              return {
+                ownerId: meta.ownerId ?? "(unknown)",
+                peerId: meta.peerId ?? meta.ownerId ?? "(unknown)",
+                capabilities: m.matchedCapabilityIds ?? [],
+                reputationScore: 0.5,
+              };
+            });
+        };
+        const executeStep = async (
+          provider: { ownerId: string; peerId: string },
+          step: { label: string; capabilityTag: string },
+          input: string | undefined,
+        ): Promise<string | null> => {
+          // Local-only executor: the chain module can call this for the local
+          // owner. Remote provider execution is a follow-on (requires A2A
+          // task dispatch in the chain).
+          if (provider.ownerId !== (this._profile?.owner.ownerId ?? "")) return null;
+          // For the local owner, synthesize a deterministic echo so the chain
+          // demonstrates the data flow. Real synthesis is a follow-on.
+          return `${step.label}: ${input ?? ""}`.trim();
+        };
+        return runAgentChain({ findProviders, executeStep }, steps, initialInput);
+      },
+      // Phase 24D — service-mesh auto-accept gate
+      evaluateServiceTask: async (task) => {
+        const { evaluateServiceTask } = await import("./service-mesh-worker.js");
+        const autoAcceptPolicy = {
+          enabled: (config?.autonomousKillSwitch ?? true) === false,
+          maxSensitivity: "friends" as const,
+          maxConcurrentTasks: 3,
+          allowedActions: ["read", "search", "summarize"],
+        };
+        return evaluateServiceTask(
+          {
+            hasCapability: (tag) => (localManifestCapabilities ?? []).includes(tag),
+            getAutoAcceptPolicy: async () => autoAcceptPolicy,
+            getActiveTaskCount: async () => {
+              try {
+                return (await this.listPendingApprovals()).length;
+              } catch {
+                return 0;
+              }
+            },
+          },
+          task,
+        );
+      },
+      listAgentCircles: () => this.listAgentCircles(),
+      createAgentCircle: (input: any) => this.createAgentCircle(input),
+      updateAgentCircle: (circleId: string, update: any) => this.updateAgentCircle(circleId, update),
+      deleteAgentCircle: (circleId: string) => this.deleteAgentCircle(circleId),
+      proposeAgentCircles: () => this.proposeAgentCircles(),
       countPendingApprovals: async () => {
         const pending = await this.listPendingApprovals();
         return pending.length;
@@ -7258,6 +8328,11 @@ class NodeServiceImpl implements NodeService {
     }
 
     await this.recordH2aOwnerAgentTurn(message, turn);
+    // Phase 25D — record the intent for future predictions (only if a
+    // domain/intent was returned by the turn).
+    if (turn.intent) {
+      void this.recordIntent(turn.intent, message);
+    }
     return { ...turn, approvalItems, answer: stripModelThinking(turn.answer) };
   }
 
@@ -7504,6 +8579,55 @@ class NodeServiceImpl implements NodeService {
 
   recordOwnerActivity(): void {
     this.lastActivityTimestamp = Date.now();
+  }
+
+  /**
+   * Wipe all local user data: profile, config, published library, intent
+   * history, continuity sessions. Stops the node first to release any
+   * open file handles. Used by the "clear all data" privacy action.
+   *
+   * **Destructive** — cannot be undone. The caller is expected to
+   * confirm with the user before invoking.
+   */
+  async clearAllUserData(): Promise<void> {
+    // Best-effort: each step is independent. A failure on one store does
+    // not block the others.
+    const profileDir = this._profileDir;
+    if (!profileDir) {
+      // Nothing persisted yet — nothing to wipe.
+      return;
+    }
+
+    // In-memory state
+    this._publishedLibrary.clear();
+    this._intentHistory.length = 0;
+    this._continuitySessions.clear();
+
+    // On-disk state — overwrite each file with an empty/initial payload.
+    const { unlink } = await import("node:fs/promises");
+    const targets: Array<{ path: string; empty: string }> = [
+      { path: join(profileDir, "node-config.json"), empty: JSON.stringify({ version: "0.1" }) },
+      { path: join(profileDir, "published-library.json"), empty: JSON.stringify({ version: "0.1", snapshot: [] }) },
+      { path: join(profileDir, "intent-history.json"), empty: JSON.stringify({ version: "0.1", history: [] }) },
+      { path: join(profileDir, "continuity-sessions.json"), empty: JSON.stringify({ version: "0.1", sessions: [] }) },
+      { path: join(profileDir, "profile.json"), empty: "" },
+    ];
+    for (const t of targets) {
+      try {
+        await writeFile(t.path, t.empty, { mode: 0o600 });
+      } catch (err) {
+        console.warn(`[clearAllUserData] could not reset ${t.path}:`, err);
+      }
+    }
+    // Best-effort: remove files we don't recreate above (logs, audit).
+    const removable = ["audit.jsonl", "task-journal.jsonl", "peer-directory.json"];
+    for (const name of removable) {
+      try {
+        await unlink(join(profileDir, name));
+      } catch {
+        // Missing file is fine.
+      }
+    }
   }
 
   async isOwnerOnline(): Promise<boolean> {

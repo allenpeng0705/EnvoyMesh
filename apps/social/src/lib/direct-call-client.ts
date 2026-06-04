@@ -420,6 +420,40 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.runOwnerAgentTurn(message);
   }
 
+  // Phase 23A — AI-curated circles
+  async listAgentCircles() {
+    return this._ns.listAgentCircles();
+  }
+  async createAgentCircle(input: {
+    label: string;
+    memberOwnerIds: string[];
+    topicTags: string[];
+  }) {
+    return this._ns.createAgentCircle(input);
+  }
+  async updateAgentCircle(
+    circleId: string,
+    update: { label?: string; memberOwnerIds?: string[]; topicTags?: string[]; status?: "proposed" | "active" | "declined" | "removed" },
+  ) {
+    return this._ns.updateAgentCircle(circleId, update);
+  }
+  async deleteAgentCircle(circleId: string) {
+    return this._ns.deleteAgentCircle(circleId);
+  }
+  async proposeAgentCircles() {
+    return this._ns.proposeAgentCircles();
+  }
+
+  // Phase 27B — Mesh intelligence report
+  async generateMeshIntelligenceReport() {
+    return this._ns.generateMeshIntelligenceReport();
+  }
+
+  // Privacy — wipe all local data
+  async clearAllUserData() {
+    return this._ns.clearAllUserData();
+  }
+
   async listLibraryItems(params?: Parameters<NodeService["listLibraryItems"]>[0]) {
     return this._ns.listLibraryItems(params);
   }

@@ -86,6 +86,10 @@ export class WsServer {
       nodeServiceImpl.on("discovery:multihop-update", (data: unknown) =>
         this.emitEvent("discovery:multihop-update", data),
       );
+      // Phase 25A — Mesh awareness insights
+      nodeServiceImpl.on("agent:awareness", (data: unknown) => this.emitEvent("agent:awareness", data));
+      // Phase 25C — Digest ready notification
+      nodeServiceImpl.on("digest:ready", (data: unknown) => this.emitEvent("digest:ready", data));
     } else {
       console.log(`[ws-server] ERROR: nodeServiceImpl.on is not a function!`);
     }

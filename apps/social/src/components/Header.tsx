@@ -6,9 +6,10 @@ import type {
 import type { ViewName } from "../App.js";
 import { useTheme } from "../context/ThemeContext.js";
 import { useT } from "../context/I18nContext.js";
-import { DarkModeIcon, LightModeIcon } from "../icons.js";
+import { DarkModeIcon, LightModeIcon, ChevronDownIcon } from "../icons.js";
 import { LocaleSwitcher } from "./LocaleSwitcher.js";
 import { ProfilePhotoAvatar } from "./ProfilePhotoAvatar.js";
+import { useState } from "react";
 
 interface HeaderProps {
   currentView: ViewName;
@@ -38,6 +39,7 @@ export function Header({
 }: HeaderProps) {
   const t = useT();
   const { theme, resolved, setTheme } = useTheme();
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
 
   const cycleTheme = () => {
     if (theme === "system") setTheme("dark");
@@ -130,7 +132,17 @@ export function Header({
         </button>
       </nav>
       <div className="header-right app-header__meta">
-        <div className="header-status-strip" role="group" aria-label={t("header.nodeConnectivity")}>
+        <button
+          type="button"
+          className="status-dropdown-toggle"
+          onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+          aria-expanded={statusDropdownOpen}
+          aria-label={t("header.statusToggle")}
+        >
+          <span className={`status-indicator status-indicator--${nodeStatusClass}`} />
+          <ChevronDownIcon size={14} className={`status-dropdown-toggle__chevron ${statusDropdownOpen ? "rotated" : ""}`} />
+        </button>
+        <div className={`header-status-strip ${statusDropdownOpen ? "open" : ""}`} role="group" aria-label={t("header.nodeConnectivity")}>
           {relayUnreachable && isPublicNetwork && (
             <button
               type="button"

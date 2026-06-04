@@ -2,10 +2,13 @@ import { SettingsAccountTab } from "./SettingsAccountTab.js";
 import { SettingsNodeTab } from "./SettingsNodeTab.js";
 import { SettingsAITab } from "./SettingsAITab.js";
 import { SettingsAppTab } from "./SettingsAppTab.js";
+import { SettingsPrivacyTab } from "./SettingsPrivacyTab.js";
+import { SettingsDevicesTab } from "./SettingsDevicesTab.js";
+import { SettingsIdentityTab } from "./SettingsIdentityTab.js";
 import { ActivityView } from "./ActivityView.js";
 import { useT } from "../../context/I18nContext.js";
 
-export type SettingsTabId = "account" | "network" | "ai" | "activity" | "privacy" | "devices" | "app";
+export type SettingsTabId = "account" | "network" | "ai" | "activity" | "privacy" | "devices" | "identity" | "app";
 
 export function SettingsView({
   tab,
@@ -65,6 +68,13 @@ export function SettingsView({
         </button>
         <button
           type="button"
+          className={tab === "identity" ? "active" : ""}
+          onClick={() => onTabChange("identity")}
+        >
+          {t("settings.tabs.identity", "Identity")}
+        </button>
+        <button
+          type="button"
           className={tab === "app" ? "active" : ""}
           onClick={() => onTabChange("app")}
         >
@@ -76,8 +86,9 @@ export function SettingsView({
       {tab === "network" && <SettingsNodeTab />}
       {tab === "ai" && <SettingsAITab />}
       {tab === "activity" && <ActivityView embedded />}
-      {tab === "privacy" && <SettingsNodeTab />}
-      {tab === "devices" && <SettingsNodeTab />}
+      {tab === "privacy" && <SettingsPrivacyTab />}
+      {tab === "devices" && <SettingsDevicesTab />}
+      {tab === "identity" && <SettingsIdentityTab />}
       {tab === "app" && <SettingsAppTab />}
     </div>
   );

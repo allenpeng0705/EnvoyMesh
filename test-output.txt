@@ -1,0 +1,41 @@
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div>[31m
+    [36m<img[31m
+      [33malt[31m=[32m""[31m
+      [33mclass[31m=[32m"profile-avatar profile-avatar--photo thread-avatar"[31m
+      [33msrc[31m=[32m"data:image/png;base64,iVBORw0KGgo"[31m
+    [36m/>[31m
+  [36m</div>[31m
+[36m</body>[31m
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div>[31m
+    [36m<img[31m
+      [33malt[31m=[32m""[31m
+      [33mclass[31m=[32m"profile-avatar profile-avatar--photo thread-avatar"[31m
+      [33msrc[31m=[32m"data:image/png;base64,iVBORw0KGgo"[31m
+    [36m/>[31m
+  [36m</div>[31m
+[36m</body>[31m[39m
+[90m [2m❯[22m waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:[2m163:27[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m86:33[22m[39m
+[36m [2m❯[22m apps/social/test/components/PeerProfileAvatar.test.tsx:[2m86:30[22m[39m
+    [90m 84|[39m     })[33m;[39m
+    [90m 85|[39m     render(<PeerProfileAvatar {...baseProps} className="thread-avatar"…
+    [90m 86|[39m     [35mconst[39m img [33m=[39m [35mawait[39m screen[33m.[39m[34mfindByRole[39m([32m"img"[39m)[33m;[39m
+    [90m   |[39m                              [31m^[39m
+    [90m 87|[39m     [34mexpect[39m(img[33m.[39mclassName)[33m.[39m[34mtoContain[39m([32m"thread-avatar"[39m)[33m;[39m
+    [90m 88|[39m   })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/28]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m8 failed[39m[22m[2m | [22m[1m[32m365 passed[39m[22m[2m | [22m[33m7 skipped[39m[90m (380)[39m
+[2m      Tests [22m [1m[31m25 failed[39m[22m[2m | [22m[1m[32m2598 passed[39m[22m[2m | [22m[33m30 skipped[39m[90m (2653)[39m
+[2m   Start at [22m 20:51:46
+[2m   Duration [22m 224.16s[2m (transform 10.37s, setup 0ms, import 93.03s, tests 319.66s, environment 23.54s)[22m
+
+DONE

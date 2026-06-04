@@ -20,7 +20,7 @@ import {
 } from "../../lib/discover-empty-hints.js";
 import { extractGeoCitySummary } from "../../lib/discover-friend-suggestion.js";
 import { loadOutboundHellos, markOutboundHello, resolvePeerHelloState } from "../../lib/discover-peer-state.js";
-import { SearchIcon } from "../../icons.js";
+import { SearchIcon, CloseIcon } from "../../icons.js";
 import {
   type HelloProfile,
   type MorningReportEntry,
@@ -430,24 +430,37 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
 
         <div className="search-bar discover-search-bar">
           {isPaste || widerMode !== "place" ? (
-          <input
-            type="text"
-            placeholder={
-              isPaste
-                ? t("discover.paste.placeholder")
-                : widerMode === "topic"
-                  ? t("discover.search.topicPlaceholder")
-                  : t("discover.search.namePlaceholder")
-            }
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                void handleSearch(panel);
+          <div className="search-input-wrapper">
+            <input
+              type="text"
+              placeholder={
+                isPaste
+                  ? t("discover.paste.placeholder")
+                  : widerMode === "topic"
+                    ? t("discover.search.topicPlaceholder")
+                    : t("discover.search.namePlaceholder")
               }
-            }}
-          />
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleSearch(panel);
+                }
+              }}
+            />
+            {query && (
+              <button
+                type="button"
+                className="search-clear-btn"
+                onClick={() => setQuery("")}
+                aria-label={t("common.clear")}
+                title={t("common.clear")}
+              >
+                <CloseIcon size={14} />
+              </button>
+            )}
+          </div>
           ) : (
             <p className="discover-status discover-status--muted">{t("discover.search.geoSearching")}</p>
           )}

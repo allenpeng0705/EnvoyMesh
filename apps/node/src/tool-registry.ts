@@ -911,6 +911,55 @@ export class ToolRegistry {
       isMeshTool: false,
     });
 
+    // Phase 28 — Mesh Intelligence Report
+    this.register({
+      name: "mesh.intelligence_report",
+      description: "Generate a comprehensive AI analysis of your entire mesh — network health, trending topics, dormant bonds, reputation, and growth opportunities",
+      paramSchema: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    // Phase 23A+ — Discovery clustering tool
+    this.register({
+      name: "mesh.discover_cluster",
+      description: "Broadcast discovery across the mesh, cluster results into group chat suggestions",
+      paramSchema: {
+        type: "object",
+        properties: {
+          seedTopics: { type: "array", items: { type: "string" }, description: "Topic keywords to seed discovery" },
+          seedCapabilities: { type: "array", items: { type: "string" }, description: "Capability tags to seed discovery" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "public",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    // Phase 23D — Chat RAG search tool
+    this.register({
+      name: "mesh.chat_rag_search",
+      description: "Search local chat history for relevant past conversations",
+      paramSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query to find in chat history" },
+          ownerId: { type: "string", description: "Optional: filter to a specific contact's owner ID" },
+          maxResults: { type: "number", description: "Maximum results to return (default: 5)" },
+        },
+        required: ["query"],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
     if (this.enableTrustIntroTools) {
       this.register({
         name: "mesh.intro.matching_context",

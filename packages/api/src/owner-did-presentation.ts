@@ -3,6 +3,13 @@
  * Read-only bridge: `envoy:owner:*` remains canonical; DID is for import/export UX.
  */
 
+export interface DidServiceEndpoint {
+  id: string;
+  type: "EnvoyMeshRelay" | "EnvoyMeshAgent" | "EnvoyMeshProfile" | string;
+  serviceEndpoint: string;
+  description?: string;
+}
+
 export interface DidKeyDocument {
   "@context": string | string[];
   id: string;
@@ -14,6 +21,7 @@ export interface DidKeyDocument {
     publicKeyMultibase: string;
   }>;
   authentication: string[];
+  service?: DidServiceEndpoint[];
 }
 
 export interface OwnerDidPresentation {
@@ -89,10 +97,14 @@ export function deriveDidKeyFromEd25519PublicKey(rawPublicKey: Uint8Array): stri
   return `did:key:z${base58Encode(prefixed)}`;
 }
 
-export function buildOwnerDidPresentation(input: {
+export interface OwnerDidPresentationInput {
   ownerId: string;
   publicKeyPem: string;
-}): OwnerDidPresentation {
+  /** Optional service endpoints to embed in the DID document. */
+  services?: DidServiceEndpoint[];
+}
+
+export function buildOwnerDidPresentation(input: OwnerDidPresentationInput): OwnerDidPresentation {
   const ownerId = input.ownerId.trim();
   if (!ownerId) {
     throw new Error("ownerId is required");
@@ -120,6 +132,7 @@ export function buildOwnerDidPresentation(input: {
         },
       ],
       authentication: [verificationMethodId],
+      service: input.services && input.services.length > 0 ? input.services : undefined,
     },
   };
 }

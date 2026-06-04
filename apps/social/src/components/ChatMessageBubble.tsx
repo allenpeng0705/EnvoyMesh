@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useT } from "../context/I18nContext.js";
-import { CopyIcon, RemoveIcon } from "../icons.js";
+import { CopyIcon, RemoveIcon, CheckIcon } from "../icons.js";
 import type { MessageStackPosition } from "../lib/chat-message-stack.js";
 import { stackPositionClass } from "../lib/chat-message-stack.js";
 import type { MessageVisualVariant } from "../lib/chat-thread-kind.js";
@@ -98,7 +98,24 @@ export function ChatMessageBubble({
         <div className="message-bubble-footer">
           {showDelivery ? (
             <span className={`message-delivery-status status-${deliveryReceipt}`}>
-              {deliveryLabel}
+              {deliveryReceipt === "read" && (
+                <span className="delivery-checkmarks">
+                  <CheckIcon size={12} className="checkmark" />
+                  <CheckIcon size={12} className="checkmark" />
+                </span>
+              )}
+              {deliveryReceipt === "delivered" && (
+                <span className="delivery-checkmarks">
+                  <CheckIcon size={12} className="checkmark" />
+                  <CheckIcon size={12} className="checkmark" />
+                </span>
+              )}
+              {deliveryReceipt === "sent" && (
+                <span className="delivery-checkmarks">
+                  <CheckIcon size={12} className="checkmark" />
+                </span>
+              )}
+              <span className="delivery-label">{deliveryLabel}</span>
             </span>
           ) : null}
           {trimmedCopyText || onDelete ? (

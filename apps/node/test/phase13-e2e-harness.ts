@@ -151,6 +151,26 @@ export async function registerBondedPeer(
     JSON.stringify({ version: "0.1", records: [...withoutOwner, nextRecord] }, null, 2),
     { mode: 0o600 },
   );
+
+  // Mirror the remote peer's published library onto the local node so the
+  // circle proposer and mesh-awareness worker can read shared topics.
+  // In production this would come from agent.card sync; the harness
+  // simulates it inline. Awaited so persistence errors surface.
+  const remoteEntries = remote.service.getPublishedLibraryEntries(remote.profile.owner.ownerId);
+  if (remoteEntries.length > 0) {
+    await local.service.setPeerPublishedLibrary(
+      remote.profile.owner.ownerId,
+      remoteEntries.map((e) => ({ title: e.title, topicTags: e.topicTags, sensitivity: e.sensitivity })),
+    );
+  }
+  // And vice versa — local's published library onto the remote node.
+  const localEntries = local.service.getPublishedLibraryEntries(local.profile.owner.ownerId);
+  if (localEntries.length > 0) {
+    await remote.service.setPeerPublishedLibrary(
+      local.profile.owner.ownerId,
+      localEntries.map((e) => ({ title: e.title, topicTags: e.topicTags, sensitivity: e.sensitivity })),
+    );
+  }
 }
 
 /** Persist bridge agent identity (required for requestAgentCard / agent.card). */

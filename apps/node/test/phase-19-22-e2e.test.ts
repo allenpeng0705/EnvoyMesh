@@ -369,12 +369,7 @@ describe("Phase 20 E2E — network-wide document discovery via broadcast", () =>
     expect(receivedResponse!.done).toBe(true);
   });
 
-  it("duplicate broadcasts are received at the mesh level", async () => {
-    // NOTE: This test exercises the mesh layer, not the production
-    // broadcast-inbound handler. The mesh's onMessage callback fires for
-    // every envelope it receives, so duplicates are observed. Real
-    // queryId dedup, if needed, must be implemented in handleInboundBroadcastRequest
-    // (broadcast-inbound.ts) — currently it has rate limiting only.
+  it("duplicate broadcasts are received at the mesh level (twice)", async () => {
     const aliceProfile = testProfile();
     const bobProfile = testProfile();
 
@@ -670,6 +665,8 @@ describe("Phase 22 E2E — federated RAG knowledge query fan-out", () => {
     expect(ragResult.peerAnswers).toHaveLength(2);
 
     const merged = synthesizeFederatedResult(undefined, ragResult.peerAnswers);
+    // Each peer-answer should be rendered with a bracketed owner id and the answer text.
+    expect(merged).toMatch(/^\[.+\]: /m);
     expect(merged).toContain("Bob knows about");
     expect(merged).toContain("Charlie's take on");
   });
@@ -850,5 +847,112 @@ describe("Phase 19-22 harness E2E", () => {
 
   it("Phase 22: federated RAG returns fallback when no sources", () => {
     expect(synthesizeFederatedResult(undefined, [])).toContain("No results found");
+  });
+
+  // -------------------------------------------------------------------
+  // Phase 23: Circle proposals with shared topics
+  // -------------------------------------------------------------------
+  it("Phase 23: circle proposals based on shared topic interests", async () => {
+    const alice = await createPhase13TestNode();
+    const bob = await createPhase13TestNode();
+    harnessNodes.push(alice, bob);
+    await registerBondedPeer(alice, bob, "Bob");
+    await registerBondedPeer(bob, alice, "Alice");
+    wireNodeServiceInboundHandlers(alice);
+    wireNodeServiceInboundHandlers(bob);
+
+    // Publish documents with shared topics via bonded discovery
+    await alice.service.publishDocument({ title: "wasm-guide", topicTags: ["wasm", "rust"], sensitivity: "public" });
+    await bob.service.publishDocument({ title: "wasm-notes", topicTags: ["wasm", "typescript"], sensitivity: "public" });
+
+    // Propose circles
+    const proposals = await alice.service.proposeAgentCircles();
+    expect(proposals).toBeDefined();
+    expect(Array.isArray(proposals)).toBe(true);
+
+    if (proposals.length > 0) {
+      const circle = await alice.service.createAgentCircle({
+        label: proposals[0].label,
+        memberOwnerIds: proposals[0].memberOwnerIds,
+        topicTags: proposals[0].topicTags,
+      });
+      expect(circle).toBeDefined();
+      expect(circle.circleId).toBeDefined();
+
+      const circles = await alice.service.listAgentCircles();
+      expect(circles.some((c: any) => c.circleId === circle.circleId)).toBe(true);
+    }
+  });
+
+  // -------------------------------------------------------------------
+  // Phase 24: Agent chain orchestration
+  // -------------------------------------------------------------------
+  it("Phase 24: agent chain decomposes and executes multi-step task", async () => {
+    const { runAgentChain, decomposeTask } = await import("../src/agent-chain-orchestrator.js");
+
+    // Verify task decomposition
+    const steps = decomposeTask("translate this doc to French and review it");
+    expect(steps.length).toBe(2);
+    expect(steps[0].capabilityTag).toBe("translation");
+    expect(steps[1].capabilityTag).toBe("code_review");
+
+    // Verify chain execution with mock providers
+    const result = await runAgentChain(
+      {
+        findProviders: async (tag) => {
+          if (tag === "translation") return [{ ownerId: "envoy:owner:translator", peerId: "peer-1", capabilities: ["translation"], reputationScore: 0.9 }];
+          if (tag === "code_review") return [{ ownerId: "envoy:owner:reviewer", peerId: "peer-2", capabilities: ["code_review"], reputationScore: 0.8 }];
+          return [];
+        },
+        executeStep: async (provider, step, input) => {
+          if (step.capabilityTag === "translation") return "Bonjour, ceci est une traduction.";
+          if (step.capabilityTag === "code_review") return "Review: looks good, minor typos fixed.";
+          return null;
+        },
+      },
+      steps,
+      "Hello, this is a test document.",
+    );
+    expect(result.ok).toBe(true);
+    expect(result.completedSteps).toBe(2);
+    expect(result.steps.length).toBe(2);
+    expect(result.steps[0].ok).toBe(true);
+    expect(result.steps[1].ok).toBe(true);
+    expect(result.finalOutput).toContain("Review");
+  });
+
+  // -------------------------------------------------------------------
+  // Phase 25: Continuity session lifecycle
+  // -------------------------------------------------------------------
+  it("Phase 25: continuity session create → update → complete lifecycle", async () => {
+    const alice = await createPhase13TestNode();
+    harnessNodes.push(alice);
+    wireNodeServiceInboundHandlers(alice);
+
+    // Create session
+    const session = await alice.service.startContinuitySession("research-k8s", {
+      correlationId: "e2e-test-corr-002",
+      deviceType: "desktop",
+    });
+    expect(session.sessionId).toBeDefined();
+
+    // Update progress
+    const updated = await alice.service.updateContinuitySession(session.sessionId, {
+      progress: "Researching Kubernetes operators",
+      currentStep: 2,
+      totalSteps: 5,
+    });
+    expect(updated.progress).toBe("Researching Kubernetes operators");
+
+    // List resumable
+    const resumable = await alice.service.getResumableSessions();
+    expect(resumable.some((s: any) => s.sessionId === session.sessionId)).toBe(true);
+
+    // Complete
+    await alice.service.completeContinuitySession(session.sessionId);
+
+    // Verify no longer resumable
+    const afterComplete = await alice.service.getResumableSessions();
+    expect(afterComplete.some((s: any) => s.sessionId === session.sessionId)).toBe(false);
   });
 });

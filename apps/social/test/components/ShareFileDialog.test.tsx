@@ -13,9 +13,7 @@ const mockListLibraryItems = vi.fn();
 const mockShareFile = vi.fn();
 const mockOn = vi.fn(() => () => {});
 
-// Return stable object reference to avoid infinite re-renders.
-// The component's useEffect depends on nodeService, so a new
-// object each render would trigger continuous effect execution.
+// Stable reference to prevent React re-render loops
 const mockNodeService = {
   getBonds: mockGetBonds,
   listLibraryItems: mockListLibraryItems,
@@ -116,8 +114,8 @@ describe("ShareFileDialog", () => {
   it("disables send button when no contact selected", async () => {
     renderWithI18n(<ShareFileDialog onClose={vi.fn()} />);
     await screen.findByRole("dialog");
-    const sendBtn = screen.getByText("Send share request").closest("button")!;
-    expect((sendBtn as HTMLButtonElement).disabled).toBe(true);
+    const sendBtn = screen.getByText("Send share request").closest("button") as HTMLButtonElement;
+    expect(sendBtn!.disabled).toBe(true);
   });
 
   it("disables send button when no vault file selected", async () => {
@@ -125,8 +123,8 @@ describe("ShareFileDialog", () => {
       <ShareFileDialog onClose={vi.fn()} targetOwnerId="envoy:owner:bob" />,
     );
     await screen.findByRole("dialog");
-    const sendBtn = screen.getByText("Send share request").closest("button")!;
-    expect((sendBtn as HTMLButtonElement).disabled).toBe(true);
+    const sendBtn = screen.getByText("Send share request").closest("button") as HTMLButtonElement;
+    expect(sendBtn!.disabled).toBe(true);
   });
 
   it("calls shareFile and closes on success", async () => {
@@ -149,8 +147,8 @@ describe("ShareFileDialog", () => {
     const sensSelect = screen.getByLabelText(/sensitivity/i) as HTMLSelectElement;
     fireEvent.change(sensSelect, { target: { value: "private" } });
 
-    const sendBtn = screen.getByText("Send share request").closest("button")!;
-    fireEvent.click(sendBtn);
+    const submitBtn = screen.getByText("Send share request").closest("button")!;
+    fireEvent.click(submitBtn);
 
     await waitFor(() => {
       expect(mockShareFile).toHaveBeenCalledWith("envoy:owner:bob", {
@@ -188,7 +186,8 @@ describe("ShareFileDialog", () => {
     const onClose = vi.fn();
     renderWithI18n(<ShareFileDialog onClose={onClose} />);
     await screen.findByRole("dialog");
-    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    const cancelBtn = screen.getByText("Cancel").closest("button")!;
+    fireEvent.click(cancelBtn);
     expect(onClose).toHaveBeenCalled();
   });
 });

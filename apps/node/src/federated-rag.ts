@@ -5,31 +5,20 @@
  * and synthesizes results from distributed sources.
  */
 
-import { randomUUID } from "node:crypto";
 import type { FederatedRagConfig } from "@envoymesh/protocol";
-import {
-  createKnowledgeQueryPayload,
-  createUnsignedEnvelope,
-} from "@envoymesh/protocol";
 
 export interface FederatedRagDeps {
   /** Federated RAG configuration. */
   config: FederatedRagConfig;
   /** Get bonded peer records with their peer IDs. */
   getBondedPeers: () => Promise<Array<{ ownerId: string; peerId: string }>>;
-  /** Send a knowledge query to a specific peer and await the response. */
+  /** Send a knowledge query to a specific peer and await the response.
+   *  The implementation handles envelope construction, signing, and dispatch. */
   queryPeer: (
     peerId: string,
     ownerId: string,
     query: string,
   ) => Promise<{ ok: boolean; answerText?: string }>;
-  /** Sign an unsigned envelope. */
-  signEnvelope: (unsigned: unknown, privateKeyPem: string) => unknown;
-  /** Node profile. */
-  profile: {
-    owner: { ownerId: string };
-    device: { peerId: string; publicKeyPem: string; privateKeyPem: string };
-  };
 }
 
 export interface FederatedRagResult {
@@ -67,26 +56,8 @@ export async function executeFederatedRagQuery(
     return { peerAnswers: [], peersQueried: 0, peersResponded: 0 };
   }
 
-  const correlationId = randomUUID();
-
-  // Build knowledge query payload
-  const payload = createKnowledgeQueryPayload({
-    query,
-    requestedSensitivity: config.maxSensitivity,
-    correlationId,
-  });
-
-  const unsigned = createUnsignedEnvelope({
-    senderPeerId: deps.profile.device.peerId,
-    senderPublicKey: deps.profile.device.publicKeyPem,
-    senderRole: "agent",
-    recipientRole: "agent",
-    intent: "knowledge.query",
-    payload,
-    correlationId,
-  });
-
-  // Fan out queries to all peers concurrently
+  // Fan out queries to all peers concurrently.
+  // Note: deps.queryPeer handles envelope construction, signing, and dispatch.
   const results = await Promise.allSettled(
     peersToQuery.map((peer) =>
       deps.queryPeer(peer.peerId, peer.ownerId, query),

@@ -4,7 +4,11 @@ import { MESSAGES } from "../i18n/messages/index.js";
 import { translate, type TranslateParams } from "../i18n/translate.js";
 import { LOCALE_OPTIONS, normalizeLocale, type LocaleId } from "../i18n/types.js";
 
-export type TFunction = (key: string, params?: TranslateParams) => string;
+export type TFunction = (
+  key: string,
+  fallbackOrParams?: TranslateParams | string,
+  params?: TranslateParams,
+) => string;
 
 interface I18nContextValue {
   locale: LocaleId;

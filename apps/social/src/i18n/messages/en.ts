@@ -23,6 +23,8 @@ import {
   libraryViewMessages,
   fileShareMessages,
   setupMessages,
+  privacySettingsMessages,
+  deviceSettingsMessages,
 } from "./en-misc.js";
 
 export const en = {
@@ -140,6 +142,8 @@ export const en = {
     network: networkSettingsMessages,
     ai: aiSettingsMessages,
     account: accountSettingsMessages,
+    privacy: privacySettingsMessages,
+    devices: deviceSettingsMessages,
   },
   chat: chatMessages,
   inbox: inboxMessages,

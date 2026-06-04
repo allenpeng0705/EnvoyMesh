@@ -515,3 +515,47 @@ export const accountSettingsMessages = {
   shareWithFriend: "Share with a friend",
   shareDesc: "Send this link or code so they can add you under Find people → Paste a code.",
 } as const;
+
+export const privacySettingsMessages = {
+  autonomy: {
+    title: "Autonomy Controls",
+    desc: "Manage autonomous AI behavior and safety limits.",
+    killSwitch: "Master Kill Switch",
+    killSwitchDesc: "When enabled, all autonomous actions are paused immediately",
+  },
+  trustMode: {
+    title: "Trust Mode",
+    desc: "Advanced features for trusted networks.",
+    enable: "Enable Trust Mode",
+    enableDesc: "Allows automatic actions with bonded contacts",
+  },
+  dataManagement: {
+    title: "Data Management",
+    desc: "Control your personal data and storage.",
+    clearAllData: "Clear All Data",
+  },
+  sharing: {
+    title: "Knowledge Sharing",
+    desc: "Control how your knowledge is shared with others.",
+    knowledgeSyndication: "Knowledge syndication",
+    bondOnly: "Bonded contacts only",
+    public: "Public",
+    friends: "Friends",
+    private: "Private",
+    syndicationHint: "Who can receive knowledge summaries from your vault",
+  },
+  clearDataConfirm: "Are you sure you want to clear all personal data? This cannot be undone.",
+} as const;
+
+export const deviceSettingsMessages = {
+  title: "Authorized Devices",
+  desc: "Manage devices authorized to access your EnvoyMesh account.",
+  loading: "Loading devices…",
+  noDevices: "No authorized devices yet.",
+  revoke: "Revoke",
+  revoking: "Revoking…",
+  revoked: "revoked",
+  revokeConfirm: "Are you sure you want to revoke access for {label}? This device will no longer be able to access your account.",
+  refresh: "Refresh",
+  mobileNotAvailable: "Device management is not available on mobile devices.",
+} as const;

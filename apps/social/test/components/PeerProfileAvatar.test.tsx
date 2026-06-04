@@ -48,9 +48,9 @@ describe("PeerProfileAvatar", () => {
       thumbnailMimeType: "image/png",
     });
 
-    render(<PeerProfileAvatar {...baseProps} />);
+    const { container } = render(<PeerProfileAvatar {...baseProps} />);
 
-    const img = await screen.findByRole("img");
+    const img = await waitForImg(container);
     expect(img).toBeDefined();
     expect(img.tagName).toBe("IMG");
     // Must have profile-avatar--photo for object-fit: cover to apply
@@ -82,8 +82,21 @@ describe("PeerProfileAvatar", () => {
       thumbnailContentBase64: "iVBORw0KGgo",
       thumbnailMimeType: "image/png",
     });
-    render(<PeerProfileAvatar {...baseProps} className="thread-avatar" />);
-    const img = await screen.findByRole("img");
+    const { container } = render(<PeerProfileAvatar {...baseProps} className="thread-avatar" />);
+    const img = await waitForImg(container);
     expect(img.className).toContain("thread-avatar");
   });
 });
+
+/**
+ * Wait for the avatar thumbnail to render. The <img> uses alt="" (decorative), which
+ * makes it inaccessible-by-name to `screen.findByRole("img")`, so query the DOM directly.
+ */
+async function waitForImg(container: HTMLElement): Promise<HTMLImageElement> {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const img = container.querySelector("img");
+    if (img) return img;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("img element never appeared");
+}

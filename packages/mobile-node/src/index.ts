@@ -951,6 +951,44 @@ export class MobileNode implements NodeService {
    *
    * Throws if no persisted state, no secure storage, or keys are missing.
    */
+  /**
+   * Wipe all local data: identity state, peer directory, chat log.
+   * Mobile equivalent of the desktop `clearAllUserData`. Used by the
+   * social app's "clear all data" privacy action.
+   */
+  async clearAllUserData(): Promise<void> {
+    // Persisted identity state (owner keys, device cert, shared identity)
+    if (this._identityStateStore) {
+      try {
+        await this._identityStateStore.save({
+          version: "0.1",
+          ownerPrivateKeyPem: null,
+          ownerPublicKeyPem: null,
+          deviceCertificate: null,
+          sharedIdentity: null,
+          persistedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn("[clearAllUserData] identity state:", err);
+      }
+    }
+    // Best-effort: remove storage-backed stores we don't recreate above.
+    if (this._peerDirectoryStore) {
+      try {
+        await this._peerDirectoryStore.save({ version: "0.1", records: [] });
+      } catch (err) {
+        console.warn("[clearAllUserData] peer directory:", err);
+      }
+    }
+    if (this._chatLogStore) {
+      try {
+        await this._chatLogStore.save({ version: "0.1", messages: [] });
+      } catch (err) {
+        console.warn("[clearAllUserData] chat log:", err);
+      }
+    }
+  }
+
   async restoreFromSecureStorage(): Promise<MobileNodeState> {
     if (!this._secureStorage) {
       throw new Error("SecureStorage not configured");
@@ -5562,6 +5600,11 @@ You are the owner's personal AI assistant on EnvoyMesh.
             })),
           );
         }
+      } else if (intent === "broadcast.request") {
+        // Phase 20/21 — Handle broadcast document/capability discovery on mobile
+        void this._handleInboundBroadcast(msg, opts?.transportPeerId).catch((err) =>
+          console.warn("[mobile-node] broadcast.request handler:", err instanceof Error ? err.message : err),
+        );
       }
       return;
     }
@@ -6692,6 +6735,75 @@ You are the owner's personal AI assistant on EnvoyMesh.
         envelope.agentCredential?.ownerId ?? envelope.senderPeerId,
         signed,
       );
+    }
+  }
+
+  /**
+   * Phase 20/21 — Handle broadcast document/capability discovery on mobile.
+   * Performs local library/capability matching and sends broadcast.response.
+   */
+  private async _handleInboundBroadcast(
+    msg: Record<string, unknown>,
+    transportPeerId?: string,
+  ): Promise<void> {
+    if (!this._state) return;
+    const payload = (msg.payload as Record<string, unknown>) ?? {};
+    const query = (payload.query as string) ?? "";
+    const requestedCapabilities = (payload.requestedCapabilities as string[]) ?? [];
+    const requestedSensitivity = (payload.requestedSensitivity as string) ?? "public";
+
+    // Document discovery — search local vault library
+    if (query) {
+      const library = await this._vault.listLibrary();
+      const lowerQuery = query.toLowerCase();
+      const results = library
+        .filter((item: any) => {
+          // Sensitivity gating
+          const sens = item.sensitivity ?? "public";
+          if (requestedSensitivity === "public" && sens !== "public") return false;
+          if (requestedSensitivity === "friends" && sens === "private") return false;
+          // Match on title or topic tags
+          const title = (item.title ?? item.path ?? "").toLowerCase();
+          const tags = (item.topicTags ?? []).map((t: string) => t.toLowerCase());
+          return title.includes(lowerQuery) || tags.some((t: string) => t.includes(lowerQuery));
+        })
+        .slice(0, 10)
+        .map((item: any) => ({
+          title: item.title ?? item.path ?? "",
+          sensitivity: item.sensitivity ?? "public",
+          topicTags: item.topicTags ?? [],
+          cid: item.cid,
+          hash: item.hash,
+        }));
+
+      if (results.length > 0 && transportPeerId) {
+        await this._sendViaMesh(transportPeerId, JSON.stringify({
+          type: "broadcast.response",
+          intent: "broadcast.response",
+          correlationId: msg.correlationId,
+          payload: { results, originalQuery: query },
+        }));
+      }
+    }
+
+    // Capability discovery — match against local manifest
+    if (requestedCapabilities.length > 0) {
+      const manifest = this._capabilityManifestStore
+        ? await this._capabilityManifestStore.loadManifest()
+        : null;
+      const localCaps = (manifest?.capabilities ?? []).map((c: string) => c.toLowerCase());
+      const matched = requestedCapabilities.filter((rc) =>
+        localCaps.some((lc: string) => lc.includes(rc.toLowerCase()) || rc.toLowerCase().includes(lc)),
+      );
+
+      if (matched.length > 0 && transportPeerId) {
+        await this._sendViaMesh(transportPeerId, JSON.stringify({
+          type: "broadcast.response",
+          intent: "broadcast.response",
+          correlationId: msg.correlationId,
+          payload: { capabilities: matched, originalQuery: requestedCapabilities },
+        }));
+      }
     }
   }
 

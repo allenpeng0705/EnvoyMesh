@@ -313,6 +313,33 @@ export async function routeRpcMethod(
       return ns.runSocialProxyPass();
     case "cancelSocialProxySession":
       return ns.cancelSocialProxySession(params.sessionId as string);
+    case "listAgentCircles":
+      return ns.listAgentCircles();
+    case "createAgentCircle":
+      return ns.createAgentCircle({
+        label: params.label as string,
+        memberOwnerIds: params.memberOwnerIds as string[],
+        topicTags: (params.topicTags as string[]) ?? [],
+      });
+    case "updateAgentCircle":
+      return ns.updateAgentCircle(params.circleId as string, {
+        label: params.label as string | undefined,
+        memberOwnerIds: params.memberOwnerIds as string[] | undefined,
+        topicTags: params.topicTags as string[] | undefined,
+      });
+    case "deleteAgentCircle":
+      return ns.deleteAgentCircle(params.circleId as string);
+    case "proposeAgentCircles":
+      return ns.proposeAgentCircles();
+    case "meshIntelligenceReport":
+      return ns.generateMeshIntelligenceReport();
+    case "discoverAndCluster":
+      return ns.discoverAndCluster(params.seedTopics as string[] | undefined, params.seedCapabilities as string[] | undefined);
+    case "chatRagSearch":
+      return ns.chatRagSearch(params.query as string, {
+        ownerId: params.ownerId as string | undefined,
+        maxResults: params.maxResults as number | undefined,
+      });
     case "startDocumentAcquisitionJob":
       return ns.startDocumentAcquisitionJob({
         query: params.query as string,

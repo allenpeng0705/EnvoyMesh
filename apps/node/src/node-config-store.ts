@@ -121,6 +121,14 @@ export interface PersistedNodeConfig {
   /** Phase 19 — bond autonomy posture (agent-driven bond acceptance). */
   bondAutonomyEnabled?: boolean;
   bondAutonomyMandateId?: string;
+  /** Phase 23C — bond steward dormant threshold in days. */
+  dormantBondThresholdDays?: number;
+  /** Phase 23C — auto-nudge owner about dormant bonds. */
+  autoNudgeDormantBonds?: boolean;
+  /** Phase 25D — intent prediction enabled. */
+  intentPredictionEnabled?: boolean;
+  /** Phase 25D — max prefetch results for intent prediction. */
+  prefetchMaxResults?: number;
 }
 
 export interface NodeConfigStore {

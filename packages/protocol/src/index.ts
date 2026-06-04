@@ -111,6 +111,8 @@ export const SocialProxyPosturePolicySchema = z.object({
   requireOwnerCommitmentRefOnBondRequest: z.boolean().default(true),
   helloRequiresApproval: z.boolean().default(true),
   scheduleIntervalHours: z.union([z.literal(0), z.literal(24), z.literal(168)]).default(0),
+  /** Phase 23A: auto-sort bonded contacts into circles. */
+  autoCircleContacts: z.boolean().default(false),
 }).strict();
 
 export const DocumentAcquisitionPosturePolicySchema = z.object({
@@ -141,6 +143,8 @@ export const CapabilityProviderPosturePolicySchema = z.object({
   broadcastResponseTimeoutMs: z.number().int().min(1000).max(120000).default(30000),
   /** Whether to allow unbonded peers to execute tasks (narrow scope). */
   allowUnbondedTaskExecution: z.boolean().default(false),
+  /** Phase 24C: minimum reputation score for unbonded providers. */
+  minReputationScore: z.number().min(0).max(1).default(0),
 }).strict();
 
 /** Federated RAG configuration (Phase 22) — agent queries bonded peers' published knowledge. */

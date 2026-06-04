@@ -126,6 +126,15 @@ export interface DigestSummary {
   /** Friend autopilot passes in period (Phase 14A). */
   friendAutopilotPassCount: number;
 
+  /** Dormant bonds detected (Phase 23C). */
+  dormantBonds: Array<{ peerOwnerId: string; displayName?: string; dormantDays: number }>;
+
+  /** Proactive mesh insights (Phase 25A). */
+  meshInsights: Array<{ kind: string; summary: string; matchedTopic: string }>;
+
+  /** Agent-proposed circles (Phase 23A). */
+  proposedCircles: Array<{ label: string; memberCount: number; reason?: string }>;
+
   // Summary text
   summaryText: string;
 }
@@ -224,6 +233,37 @@ export function generateSummaryText(digest: DigestSummary): string {
     lines.push("");
   }
 
+  // Phase 23C — Dormant bonds
+  const dormantBonds = digest.dormantBonds ?? [];
+  if (dormantBonds.length > 0) {
+    lines.push("### Dormant Bonds");
+    for (const db of dormantBonds) {
+      lines.push(`- ${db.displayName ?? db.peerOwnerId}: ${db.dormantDays} days since last interaction`);
+    }
+    lines.push("");
+  }
+
+  // Phase 25A — Mesh insights
+  const meshInsights = digest.meshInsights ?? [];
+  if (meshInsights.length > 0) {
+    lines.push("### Mesh Activity");
+    for (const mi of meshInsights) {
+      lines.push(`- ${mi.summary}`);
+    }
+    lines.push("");
+  }
+
+  // Phase 23A — Proposed circles
+  const proposedCircles = digest.proposedCircles ?? [];
+  if (proposedCircles.length > 0) {
+    lines.push("### Proposed Circles");
+    for (const pc of proposedCircles) {
+      const note = pc.reason ? ` (${pc.reason})` : "";
+      lines.push(`- ${pc.label}: ${pc.memberCount} members${note}`);
+    }
+    lines.push("");
+  }
+
   // Mode transitions
   if (digest.modeTransitions.length > 0) {
     lines.push("### Mode Changes");
@@ -279,6 +319,12 @@ export class DigestGenerator {
       styleAdaptationsApplied?: number;
       a2aActivityCount?: number;
       friendAutopilotPassCount?: number;
+      // Phase 23C — Dormant bonds
+      dormantBonds?: Array<{ peerOwnerId: string; displayName?: string; dormantDays: number }>;
+      // Phase 25A — Mesh awareness insights
+      meshInsights?: Array<{ kind: string; summary: string; matchedTopic: string }>;
+      // Phase 23A — Proposed circles
+      proposedCircles?: Array<{ label: string; memberCount: number; reason?: string }>;
     },
   ): Promise<DigestSummary> {
     const { start, end } = getDigestPeriodDates(period);
@@ -316,6 +362,9 @@ export class DigestGenerator {
       styleAdaptationsApplied: data.styleAdaptationsApplied || 0,
       a2aActivityCount: data.a2aActivityCount ?? 0,
       friendAutopilotPassCount: data.friendAutopilotPassCount ?? 0,
+      dormantBonds: data.dormantBonds || [],
+      meshInsights: data.meshInsights || [],
+      proposedCircles: data.proposedCircles || [],
       summaryText: "",
     };
 

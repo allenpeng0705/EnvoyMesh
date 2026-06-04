@@ -3,13 +3,13 @@ import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { stripModelThinking } from "@envoymesh/api";
-import type { AgentActivityRecord, OwnerAgentApprovalSummary, OwnerAgentDomain, OwnerAgentTurnResult } from "@envoymesh/api";
+import type { AgentActivityRecord, AnswerFormat, OwnerAgentApprovalSummary, OwnerAgentDomain, OwnerAgentTurnResult, StructuredBlock } from "@envoymesh/api";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
 import { messageVisualVariant } from "../../lib/chat-thread-kind.js";
 import { createAssistantDraftCrdt, ASSISTANT_DRAFT_SYNC_SCOPE } from "../../lib/assistant-draft-crdt.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatComposer } from "../ChatComposer.js";
-import { ChatMessageText } from "../ChatMessageText.js";
+import { AnswerRenderer } from "../AnswerRenderer.js";
 import { ChatIcon, RemoveIcon } from "../../icons.js";
 import type { TFunction } from "../../context/I18nContext.js";
 
@@ -20,6 +20,8 @@ interface AiMessageTurnMeta extends Pick<
   approvalResolved?: Record<string, "approved" | "rejected">;
   jobStage?: string;
   jobStatusSummary?: string;
+  format?: AnswerFormat;
+  blocks?: StructuredBlock[];
 }
 
 interface AiMessage {
@@ -298,6 +300,8 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
             routeId: turn.routeId,
             intent: turn.intent,
             approvalItems: turn.approvalItems,
+            format: turn.format,
+            blocks: turn.blocks,
           },
         },
       ]);
@@ -456,7 +460,12 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
                             copyText={stripModelThinking(msg.text)}
                             onDelete={() => handleDeleteAiMessage(msg.id)}
                           >
-                            <ChatMessageText text={msg.text} className="message-text" />
+                            <AnswerRenderer
+                              text={msg.text}
+                              format={msg.role === "ai" ? msg.turn?.format : undefined}
+                              blocks={msg.role === "ai" ? msg.turn?.blocks : undefined}
+                              className="message-text"
+                            />
                           </ChatMessageBubble>
                           {msg.role === "ai" && msg.turn && (
                             <AiTurnMetaChips

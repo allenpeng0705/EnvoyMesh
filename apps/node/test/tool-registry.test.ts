@@ -81,20 +81,22 @@ describe("ToolRegistry", () => {
       });
 
       const tools = registry.listTools();
-      // 49 default tools + 2 additional = 51
-      expect(tools).toHaveLength(51);
+      // 52 default tools + 2 additional = 54
+      expect(tools).toHaveLength(54);
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "bond.send_hello", "chat.send", "discovery.search", "knowledge.query",
           "mesh.acknowledge-escalation", "mesh.add-trigger", "mesh.agent_card.request",
-          "mesh.approve", "mesh.escalate", "mesh.get-contact-disclosure", "mesh.get-digest",
+          "mesh.approve", "mesh.capability_provider.start", "mesh.chat_rag_search",
+          "mesh.discover_cluster", "mesh.escalate", "mesh.get-contact-disclosure", "mesh.get-digest",
           "mesh.get-digest-config", "mesh.get-external-agent", "mesh.get_agent_card",
-          "mesh.get-mode", "mesh.get-style", "mesh.library_discover", "mesh.library_export_ipfs",
+          "mesh.get-mode", "mesh.get-style", "mesh.intelligence_report",
+          "mesh.library_discover", "mesh.library_export_ipfs",
           "mesh.library_list", "mesh.library_publish", "mesh.library_request_share", "mesh.library_verify_ipfs_gateway",
           "mesh.list-all-approvals",
           "mesh.list-external-agent-actions",
           "mesh.list-external-sessions", "mesh.list-pending", "mesh.list-sessions",
-          "mesh.list-triggers", "mesh.capability_provider.start", "mesh.match_capability_route",
+          "mesh.list-triggers", "mesh.match_capability_route",
           "mesh.reject", "mesh.reject-all", "mesh.remove-trigger",
           "mesh.revoke-external-agent", "mesh.session-summary", "mesh.set-contact-disclosure",
           "mesh.set-contact-mode", "mesh.set-digest-schedule", "mesh.set-mode",
@@ -109,8 +111,8 @@ describe("ToolRegistry", () => {
     it("default tools are pre-registered", () => {
       const registry = new ToolRegistry();
       const tools = registry.listTools();
-      // Default tools: 49 (includes mesh.task.propose)
-      expect(tools.length).toBe(49);
+      // Default tools: 52 (includes mesh.task.propose, mesh.chat_rag_search, mesh.discover_cluster, mesh.intelligence_report)
+      expect(tools.length).toBe(52);
     });
   });
 

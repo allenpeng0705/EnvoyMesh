@@ -131,6 +131,13 @@ describe("Geo discovery two-node E2E", () => {
       ];
     });
 
+    const advertisingComplete = new Promise<void>((resolve) => {
+      const unsub = advertiser.service.on("discovery:advertising-complete", () => {
+        unsub();
+        resolve();
+      });
+    });
+
     await advertiser.service.updateHumanProfile({
       displayName: "Boston Alice",
       username: "bostonalice",
@@ -140,6 +147,8 @@ describe("Geo discovery two-node E2E", () => {
       discoveryLocation,
       discoveryLocationPrecision: "city",
     });
+
+    await advertisingComplete;
 
     expect(advertisedTopics).toContain(cityTopic);
     expect(advertisedTopics).toContain("geo:country:US");
@@ -197,6 +206,13 @@ describe("Geo discovery two-node E2E", () => {
       .spyOn(advertiser.mesh, "cancelCapabilityTopicReprovide")
       .mockResolvedValue(undefined);
 
+    const firstAdvertisingComplete = new Promise<void>((resolve) => {
+      const unsub = advertiser.service.on("discovery:advertising-complete", () => {
+        unsub();
+        resolve();
+      });
+    });
+
     await advertiser.service.updateHumanProfile({
       displayName: "Boston Alice",
       username: "bostonalice",
@@ -206,6 +222,8 @@ describe("Geo discovery two-node E2E", () => {
       discoveryLocation: { countryCode: "US", city: "Boston" },
       discoveryLocationPrecision: "city",
     });
+
+    await firstAdvertisingComplete;
 
     cancelSpy.mockClear();
 
@@ -219,9 +237,12 @@ describe("Geo discovery two-node E2E", () => {
       discoveryLocationPrecision: "city",
     });
 
-    expect(cancelSpy).toHaveBeenCalledWith("geo:city:US-boston");
-    expect(cancelSpy).toHaveBeenCalledWith("geo:country:US");
-    expect(cancelSpy).toHaveBeenCalledWith("username:bostonalice");
+    // Discovery cancellation is fire-and-forget from updateHumanProfile; wait for all 3 topics to be cancelled.
+    await vi.waitFor(() => {
+      expect(cancelSpy).toHaveBeenCalledWith("geo:city:US-boston");
+      expect(cancelSpy).toHaveBeenCalledWith("geo:country:US");
+      expect(cancelSpy).toHaveBeenCalledWith("username:bostonalice");
+    });
   });
 
   it("multi-topic search dedupes providers by peer", async () => {

@@ -1,6 +1,9 @@
 export const aiSettingsMessages = {
   title: "AI Assistant Settings",
   sectionDesc: "Configure how the AI responds on your behalf.",
+  modelProvider: {
+    heading: "Model Provider",
+  },
   model: {
     heading: "Model provider",
     sectionDescCloud: "Configure a cloud API for chat assist and knowledge answers on this device.",
@@ -79,6 +82,7 @@ export const aiSettingsMessages = {
     notifyBrief: "Brief",
     notifySilent: "Silent",
     notifyApprovalOnly: "Approval only",
+    notificationsHeading: "Notifications & Visibility",
   },
   presence: {
     heading: "Status",
@@ -118,6 +122,7 @@ export const aiSettingsMessages = {
       "When enabled, adds your configurable prefix (default [AI Agent]) to outbound message bytes for logs and wire inspection. Never shown in the Social chat UI.",
     debugPrefixLabel: "Debug prefix string",
     debugPrefixPlaceholder: "[AI Agent]",
+    debugHeading: "Debug Options",
   },
   postures: {
     heading: "EnvoyAI postures",
@@ -138,6 +143,8 @@ export const aiSettingsMessages = {
     lastSaved: "Last saved {time}",
   },
   contacts: {
+    heading: "Contact Defaults",
+    sectionDesc: "Default behavior for new contacts.",
     defaultModeHeading: "Default Mode for New Contacts",
     defaultModeDesc:
       "Default AI mode when you open a chat with someone who has no per-contact override. To change mode for an existing contact, use the Manual / Assistant / Auto buttons in that chat's header.",

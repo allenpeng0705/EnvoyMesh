@@ -410,7 +410,10 @@ let friendAutopilotRunInFlight = false;
 let socialProxyRunInFlight = false;
 let documentAcquisitionRunInFlight = false;
 let capabilityProviderRunInFlight = false;
-
+let bondStewardRunInFlight = false;
+let meshAwarenessRunInFlight = false;
+let connectionSuggesterRunInFlight = false;
+let proactiveAgentRunInFlight = false;
 // Activity tracking for online/offline detection (inbound path)
 // Note: node-service-impl.ts has its own activity tracking for outbound paths (sendChat).
 // The index.ts version tracks activity from WebSocket messages (inbound).
@@ -2838,6 +2841,60 @@ modeTransitionTimer = setInterval(() => {
       .finally(() => {
         capabilityProviderRunInFlight = false;
       });
+  }
+  // Phase 23C — bond steward pass (dormant bond detection)
+  if (nodeService instanceof NodeServiceImpl && !bondStewardRunInFlight) {
+    bondStewardRunInFlight = true;
+    void nodeService
+      .getNodeConfig()
+      .then((cfg) => nodeService.runBondStewardPass(cfg.dormantBondThresholdDays ?? 90))
+      .then((result) => {
+        if (result.dormantBonds.length > 0) {
+          console.log(`[bond-steward] ${result.summary}`);
+        }
+      })
+      .catch((err) => console.warn("[bond-steward] pass failed:", err))
+      .finally(() => { bondStewardRunInFlight = false; });
+  }
+  // Phase 25A — mesh awareness pass
+  if (nodeService instanceof NodeServiceImpl && !meshAwarenessRunInFlight) {
+    meshAwarenessRunInFlight = true;
+    void nodeService
+      .runMeshAwarenessPass()
+      .then((insights) => {
+        if (insights.length > 0) {
+          console.log(`[mesh-awareness] ${insights.length} insight(s) generated`);
+        }
+      })
+      .catch((err) => console.warn("[mesh-awareness] pass failed:", err))
+      .finally(() => { meshAwarenessRunInFlight = false; });
+  }
+  // Phase 23B — connection suggestion pass
+  if (nodeService instanceof NodeServiceImpl && !connectionSuggesterRunInFlight) {
+    connectionSuggesterRunInFlight = true;
+    void nodeService
+      .runConnectionSuggesterPass()
+      .then((suggestions) => {
+        if (suggestions.length > 0) {
+          const msg = suggestions.map((s) => `${s.remoteDisplayName} (${s.reason})`).join("; ");
+          console.log(`[connection-suggester] ${suggestions.length} suggestion(s): ${msg}`);
+        }
+      })
+      .catch((err) => console.warn("[connection-suggester] pass failed:", err))
+      .finally(() => { connectionSuggesterRunInFlight = false; });
+  }
+  // Phase 27 — proactive agent: pre-compute summaries when clusters detected
+  if (nodeService instanceof NodeServiceImpl && !proactiveAgentRunInFlight) {
+    proactiveAgentRunInFlight = true;
+    void nodeService
+      .runProactiveAgentPass()
+      .then((insights) => {
+        if (insights.length > 0) {
+          console.log(`[proactive-agent] ${insights.length} proactive insight(s) ready`);
+        }
+      })
+      .catch((err) => console.warn("[proactive-agent] pass failed:", err))
+      .finally(() => { proactiveAgentRunInFlight = false; });
   }
   // Check digest schedule (Phase 9J)
   const digestConfig = digestGenerator.getConfig();

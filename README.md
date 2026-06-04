@@ -29,6 +29,34 @@ agent into the same private network so it can talk to your friends on your behal
   find a recipe, draft a reply. It's running on your hardware, with your keys.
 - **Let your AI talk to a friend's AI.** When both of you opt in, your assistants can
   negotiate tasks on your behalf (e.g. "find a time that works for both of us next week").
+
+### AI-powered features (new in 2026)
+
+Your Envoy AI agent can now do much more than draft replies:
+
+- **Make friends for you.** Grant your agent bond autonomy — it can meet new people and
+  establish connections within your safety rules (referral-proof, daily caps, trust tiers).
+- **Search the whole network for documents.** Beyond your contacts, your agent broadcasts
+  discovery queries across the mesh with stopping rules. Public documents from any node
+  are returned; sensitive documents stay gated.
+- **Find people by what they can do.** Need a code reviewer? A translator? Your agent
+  discovers capability providers across the network and matches them to your tasks.
+- **Ask the mesh, not just your vault.** Federated RAG fans out knowledge queries to your
+  bonded peers' published libraries and synthesizes a single answer — no central index.
+- **Agent-crafted group suggestions.** The agent watches shared interests, document topics,
+  and chat patterns, then suggests creating group chats around affinity clusters.
+- **Multi-agent task marketplace.** Your agent negotiates tasks with other agents —
+  propose, negotiate, execute, review, and leave feedback. Reputation scores guide
+  future provider selection.
+- **Agent chains.** "Translate this, then have someone review it, then summarize" —
+  your agent decomposes complex tasks, finds providers for each step, and orchestrates
+  the chain.
+- **Proactive mesh awareness.** While you're away, the agent monitors the mesh for
+  relevant activity, surfaces dormant bonds, and predicts what you might want next.
+
+All of this is **local-first** — computation runs on your device, policies are enforced
+by the Bond Engine, and you can kill-switch everything instantly.
+
 - **Take it on your phone.** Install the mobile app, scan a QR code on your computer, and
   the same identity, contacts, and chat history show up on your phone — same person, two
   devices. The full pairing handshake is in

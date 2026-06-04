@@ -5,10 +5,22 @@ import {
   type DocumentAgentTurnResult,
 } from "./document-agent-loop.js";
 import type { MatchedAgentCapabilityRoute } from "./capability-intent-routing.js";
-import type { OwnerAgentDomain, OwnerAgentPostureFlags, OwnerAgentApprovalSummary } from "./owner-agent-types.js";
+import type {
+  AnswerFormat,
+  OwnerAgentDomain,
+  OwnerAgentPostureFlags,
+  OwnerAgentApprovalSummary,
+  StructuredBlock,
+} from "./owner-agent-types.js";
 import { runOwnerAgentPlannerLoop, type OwnerAgentPlannerTurnRecord } from "./owner-agent-planner.js";
 
-export type { OwnerAgentDomain, OwnerAgentPostureFlags, OwnerAgentApprovalSummary } from "./owner-agent-types.js";
+export type {
+  AnswerFormat,
+  OwnerAgentDomain,
+  OwnerAgentPostureFlags,
+  OwnerAgentApprovalSummary,
+  StructuredBlock,
+} from "./owner-agent-types.js";
 
 export interface OwnerAgentTurnResult {
   answer: string;
@@ -22,6 +34,17 @@ export interface OwnerAgentTurnResult {
   pendingApproval?: boolean;
   approvalItems?: OwnerAgentApprovalSummary[];
   matchedRoutes?: MatchedAgentCapabilityRoute[];
+  /**
+   * How `answer` (and `blocks`) should be rendered. Default: "markdown".
+   * The LLM planner chooses this; legacy callers can leave it unset.
+   */
+  format?: AnswerFormat;
+  /**
+   * Structured content chosen by the LLM. Only populated when
+   * `format === "structured"`. The UI renders these as React components
+   * instead of Markdown.
+   */
+  blocks?: StructuredBlock[];
 }
 
 export interface OwnerAgentTurnDeps {
@@ -43,6 +66,41 @@ export interface OwnerAgentTurnDeps {
   countPendingApprovals?: () => Promise<number>;
   getBonds?: () => Promise<Parameters<typeof resolveBondTarget>[0]>;
   auditPlannerRound?: (record: OwnerAgentPlannerTurnRecord) => Promise<void>;
+  /** Phase 24A — Full A2A task negotiation lifecycle. */
+  runTaskNegotiation?: (
+    objective: string,
+    capabilityTags: string[],
+  ) => Promise<unknown>;
+  /** Phase 24B — Multi-step agent chain (decompose + execute). */
+  runAgentChain?: (
+    description: string,
+    initialInput?: string,
+  ) => Promise<{
+    ok: boolean;
+    completedSteps: number;
+    totalSteps: number;
+    finalOutput?: string;
+    error?: string;
+  }>;
+  /** Phase 24D — Pre-evaluate an inbound task.propose against the local auto-accept policy. */
+  evaluateServiceTask?: (task: {
+    capabilityTags: string[];
+    requestedSensitivity: string;
+    proposedActions: string[];
+    proposerBondLevel: string;
+  }) => Promise<{ accept: boolean; reason: string }>;
+  /** Phase 18 — Cluster discovery results. */
+  discoverAndCluster?: (seedTopics?: string[], seedCapabilities?: string[]) => Promise<unknown>;
+  /** Phase 23D — Local chat RAG over chat history. */
+  chatRagSearch?: (query: string, opts?: { ownerId?: string; maxResults?: number }) => Promise<unknown>;
+  /** Phase 25D — Predict owner intent from partial input. */
+  predictIntent?: (partial: string) => unknown;
+  /** Phase 23A — Agent circle operations. */
+  listAgentCircles?: () => Promise<unknown>;
+  createAgentCircle?: (input: unknown) => Promise<unknown>;
+  updateAgentCircle?: (circleId: string, update: unknown) => Promise<unknown>;
+  deleteAgentCircle?: (circleId: string) => Promise<unknown>;
+  proposeAgentCircles?: () => Promise<unknown>;
 }
 
 const ROUTE_SCORE_THRESHOLD = 5;
@@ -98,7 +156,17 @@ export function pickOwnerAgentRoute(
   routes: MatchedAgentCapabilityRoute[],
   posture: OwnerAgentPostureFlags,
 ): MatchedAgentCapabilityRoute | undefined {
-  const ranked = routes.filter((route) => route.score >= ROUTE_SCORE_THRESHOLD);
+  // Casual messages (greetings, meta-questions like "what can you do?") should
+  // fall through to the LLM planner rather than triggering an internal route.
+  // We bump the threshold based on the message's token count so a short message
+  // needs a stronger match to fire a route.
+  const tokens = message
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2);
+  const dynamicThreshold = tokens.length <= 2 ? 10 : tokens.length <= 4 ? 7 : ROUTE_SCORE_THRESHOLD;
+  const ranked = routes.filter((route) => route.score >= dynamicThreshold);
   if (ranked.length === 0) return undefined;
 
   if (
@@ -401,7 +469,18 @@ async function handleServiceDomain(
 
 /**
  * Owner-facing native agent turn (Phase 18A).
- * Route-driven orchestration over ToolRegistry + posture jobs.
+ *
+ * Decision flow:
+ *   1. Explicit document commands ("list my library") go straight to the
+ *      document turn — they're unambiguous and don't need LLM arbitration.
+ *   2. Explicit bonded-task syntax ("ask Bob to X") calls the contact directly.
+ *   3. When an LLM planner is configured, it is the primary decision maker:
+ *      routes are passed as hints, and the LLM picks a tool or composes a
+ *      natural-language answer. The user sees a conversational reply — never
+ *      the internal "Matched route / Planned steps" scaffolding.
+ *   4. When the LLM is unavailable (no model, model disabled, or planner
+ *      returned null), fall back to the route-driven handlers so the system
+ *      stays functional.
  */
 export async function runOwnerAgentTurn(deps: OwnerAgentTurnDeps): Promise<OwnerAgentTurnResult> {
   const message = deps.message.trim();
@@ -430,23 +509,10 @@ export async function runOwnerAgentTurn(deps: OwnerAgentTurnDeps): Promise<Owner
   }
 
   const routes = deps.matchRoutes(message);
-  const top = pickOwnerAgentRoute(message, routes, deps.postureEnabled);
 
-  if (top) {
-    toolsUsed.push("mesh.match_capability_route");
-
-    switch (top.domain) {
-      case "document":
-        return handleDocumentDomain(deps, top, message, toolsUsed);
-      case "social":
-        return handleSocialDomain(deps, top, message, toolsUsed);
-      case "service":
-        return handleServiceDomain(deps, top, message, toolsUsed);
-      default:
-        break;
-    }
-  }
-
+  // LLM is the primary decision maker when available. The matched routes are
+  // passed as context so the LLM can pick the right tool without ever showing
+  // the user the internal "Matched route" scaffolding.
   if (deps.askPlanner) {
     const planned = await runOwnerAgentPlannerLoop({
       message,
@@ -462,6 +528,26 @@ export async function runOwnerAgentTurn(deps: OwnerAgentTurnDeps): Promise<Owner
     });
     if (planned) {
       return planned;
+    }
+  }
+
+  // No LLM available — fall back to the route-driven path so legacy flows
+  // (document acquisition jobs, social proxy passes, capability provider
+  // jobs) still work without a configured model.
+  const top = pickOwnerAgentRoute(message, routes, deps.postureEnabled);
+
+  if (top) {
+    toolsUsed.push("mesh.match_capability_route");
+
+    switch (top.domain) {
+      case "document":
+        return handleDocumentDomain(deps, top, message, toolsUsed);
+      case "social":
+        return handleSocialDomain(deps, top, message, toolsUsed);
+      case "service":
+        return handleServiceDomain(deps, top, message, toolsUsed);
+      default:
+        break;
     }
   }
 

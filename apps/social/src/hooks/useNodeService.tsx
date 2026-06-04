@@ -204,6 +204,26 @@ export interface NodeServiceClient {
   runDocumentAgentTurn(message: string): Promise<import("@envoymesh/api").DocumentAgentTurnResult>;
   runOwnerAgentTurn(message: string): Promise<import("@envoymesh/api").OwnerAgentTurnResult>;
 
+  // Phase 23A — AI-curated circles
+  listAgentCircles(): Promise<import("@envoymesh/api").AgentCircle[]>;
+  createAgentCircle(input: {
+    label: string;
+    memberOwnerIds: string[];
+    topicTags: string[];
+  }): Promise<import("@envoymesh/api").AgentCircle>;
+  updateAgentCircle(
+    circleId: string,
+    update: { label?: string; memberOwnerIds?: string[]; topicTags?: string[]; status?: "proposed" | "active" | "declined" | "removed" },
+  ): Promise<import("@envoymesh/api").AgentCircle>;
+  deleteAgentCircle(circleId: string): Promise<void>;
+  proposeAgentCircles(): Promise<import("@envoymesh/api").AgentCircle[]>;
+
+  // Phase 27B — Mesh intelligence report
+  generateMeshIntelligenceReport(): Promise<string>;
+
+  // Phase 9-style data wipe
+  clearAllUserData(): Promise<void>;
+
   // Shared vault library
   listLibraryItems(params?: ListLibraryItemsParams): Promise<LibraryItem[]>;
   setLibraryItemPublished(documentId: string, published: boolean): Promise<void>;
@@ -587,6 +607,34 @@ function createWsNodeServiceClient(
     },
     async runOwnerAgentTurn(message: string) {
       return wsClient.rpc("runOwnerAgentTurn", { message }) as Promise<import("@envoymesh/api").OwnerAgentTurnResult>;
+    },
+    async listAgentCircles() {
+      return wsClient.rpc("listAgentCircles", {}) as Promise<import("@envoymesh/api").AgentCircle[]>;
+    },
+    async createAgentCircle(input: {
+      label: string;
+      memberOwnerIds: string[];
+      topicTags: string[];
+    }) {
+      return wsClient.rpc("createAgentCircle", input as Record<string, unknown>) as Promise<import("@envoymesh/api").AgentCircle>;
+    },
+    async updateAgentCircle(
+      circleId: string,
+      update: { label?: string; memberOwnerIds?: string[]; topicTags?: string[]; status?: "proposed" | "active" | "declined" | "removed" },
+    ) {
+      return wsClient.rpc("updateAgentCircle", { circleId, update } as Record<string, unknown>) as Promise<import("@envoymesh/api").AgentCircle>;
+    },
+    async deleteAgentCircle(circleId: string) {
+      return wsClient.rpc("deleteAgentCircle", { circleId });
+    },
+    async proposeAgentCircles() {
+      return wsClient.rpc("proposeAgentCircles", {}) as Promise<import("@envoymesh/api").AgentCircle[]>;
+    },
+    async generateMeshIntelligenceReport() {
+      return wsClient.rpc("generateMeshIntelligenceReport", {}) as Promise<string>;
+    },
+    async clearAllUserData() {
+      await wsClient.rpc("clearAllUserData", {});
     },
     async listLibraryItems(params?: ListLibraryItemsParams) {
       return wsClient.rpc("listLibraryItems", (params ?? {}) as Record<string, unknown>) as Promise<LibraryItem[]>;
