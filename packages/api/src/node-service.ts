@@ -13,8 +13,8 @@ import type { OwnerAgentTurnResult } from "./owner-agent-loop.js";
 import type { DocumentAcquisitionJob } from "./document-acquisition.js";
 import type { CapabilityProviderJob } from "./capability-provider.js";
 import type { SocialProxySession } from "./social-proxy-session.js";
-import type { OwnerDidPresentation } from "./owner-did-presentation.js";
-import type { ResolveDidImportResult, ResolvedDidImport } from "./did-import.js";
+import type { OwnerDidPresentation, DidServiceEndpoint } from "./owner-did-presentation.js";
+import type { ResolveDidImportResult, ResolvedDidImport, ResolveDidExportResult } from "./did-import.js";
 import type {
   CommerceReceiptRecord,
   ListCommerceReceiptsParams,
@@ -945,6 +945,14 @@ export interface NodeServiceEvents {
 
   // P2P relay events — raw inbound envelopes for remote clients with their own identity
   "p2p:envelope": { envelope: Record<string, unknown>; remotePeerId: string };
+  // Phase 25A — mesh-awareness insight surfaced to UI.
+  "agent:awareness": {
+    kind: string;
+    summary: string;
+    matchedTopic: string;
+    peerCount: number;
+    createdAt: string;
+  };
 }
 
 export interface NodeService {
@@ -964,6 +972,20 @@ export interface NodeService {
    * Resolve external `did:key` or JSON DID document to envoy owner id + PEM (no WAN gateway).
    */
   resolveDidImport(input: string): Promise<ResolveDidImportResult>;
+
+  /**
+   * Export the owner's DID document as portable JSON (with optional service
+   * endpoints). The returned string is suitable for sharing, file export,
+   * or handoff to another tool.
+   */
+  exportDidDocument(input?: { services?: DidServiceEndpoint[] }): string;
+
+  /**
+   * Resolve an envelope-wrapped DID export (output of exportDidDocument).
+   * Validates the envelope, the DID/key/owner-id consistency, and the
+   * service endpoints.
+   */
+  resolveDidExport(input: string): Promise<ResolveDidExportResult>;
 
   /**
    * Store a contact owner public key for bonded DID search lookup.
@@ -1609,6 +1631,7 @@ export interface NodeService {
   proposeAgentCircles(): Promise<import("./agent-circle.js").AgentCircle[]>;
   chatRagSearch(query: string, opts?: { ownerId?: string; maxResults?: number }): Promise<Array<{ messageId: string; contactName: string; snippet: string; timestamp: string }>>;
   discoverAndCluster(seedTopics?: string[], seedCapabilities?: string[]): Promise<string>;
+  generateMeshIntelligenceReport(): Promise<string>;
 
   startDocumentAcquisitionJob(params: {
     query: string;
@@ -1643,4 +1666,12 @@ export interface NodeService {
    * - Automatic mode: returns true if activity within timeout (5 min)
    */
   isOwnerOnline(): Promise<boolean>;
+
+  /**
+   * Wipe all local user data: profile, config, published library,
+   * intent history, continuity sessions, audit log, task journal,
+   * peer directory. The caller is expected to confirm with the user
+   * before invoking — this is destructive and cannot be undone.
+   */
+  clearAllUserData(): Promise<void>;
 }

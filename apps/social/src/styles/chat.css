@@ -285,6 +285,29 @@
   color: var(--color-danger, #ef4444);
 }
 
+.delivery-checkmarks {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 4px;
+}
+
+.delivery-checkmarks .checkmark {
+  stroke-width: 2;
+}
+
+.message-delivery-status.status-sent .delivery-checkmarks {
+  color: var(--color-text-muted);
+}
+
+.message-delivery-status.status-delivered .delivery-checkmarks {
+  color: var(--color-text-muted);
+}
+
+.message-delivery-status.status-read .delivery-checkmarks {
+  color: var(--color-success, #16a34a);
+}
+
 .message-bubble-footer {
   display: flex;
   align-items: center;

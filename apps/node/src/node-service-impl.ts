@@ -474,6 +474,7 @@ class NodeServiceImpl implements NodeService {
   private _ragService: RagService | null = null;
   private _ragServiceInit: Promise<RagService | null> | null = null;
   private _agentShareProposalStore: ReturnType<typeof createAgentShareProposalStore> | undefined;
+  private _agentGroupChatCounters: Map<string, { count: number; windowStart: number }> = new Map();
 
   // App-managed mode stores
   private _taskStore: LocalTaskStore | undefined;
@@ -1348,8 +1349,65 @@ class NodeServiceImpl implements NodeService {
     });
   }
 
+  /**
+   * Export the owner's DID document as portable JSON. Auto-includes
+   * service endpoints for the active relay and the agent (if known),
+   * so the resulting document is self-contained for handoff.
+   */
+  exportDidDocument(input?: {
+    services?: Array<{ id: string; type: string; serviceEndpoint: string; description?: string }>;
+  }): string {
+    const profile = this._requireProfile();
+    const services: Array<{ id: string; type: string; serviceEndpoint: string; description?: string }> = [];
+    if (input?.services) {
+      for (const s of input.services) services.push(s);
+    } else {
+      // Auto-populate from runtime state
+      const mesh = this._mesh ?? this._externalMesh;
+      if (mesh) {
+        const relay = this._relayPublicWsUrl;
+        if (relay) {
+          services.push({
+            id: "#envoy-relay",
+            type: "EnvoyMeshRelay",
+            serviceEndpoint: relay,
+            description: "WebSocket relay for inbound envelopes",
+          });
+        }
+        if (mesh.peerId) {
+          services.push({
+            id: "#envoy-agent",
+            type: "EnvoyMeshAgent",
+            serviceEndpoint: `envoy_agent_${mesh.peerId.slice(-12)}`,
+            description: "Local agent peer id (last 12 chars)",
+          });
+        }
+      }
+    }
+
+    const inner = buildOwnerDidPresentation({
+      ownerId: profile.owner.ownerId,
+      publicKeyPem: profile.owner.publicKeyPem,
+      services,
+    });
+    const envelope = {
+      envelope: "envoymesh-did-export-v1" as const,
+      exportedAt: new Date().toISOString(),
+      did: inner.did,
+      ownerId: profile.owner.ownerId,
+      publicKeyPem: profile.owner.publicKeyPem,
+      document: inner.document,
+    };
+    return JSON.stringify(envelope);
+  }
+
   async resolveDidImport(input: string) {
     return resolveDidImportInput(input);
+  }
+
+  async resolveDidExport(input: string) {
+    const { resolveDidExportInput } = await import("@envoymesh/api/did-import");
+    return resolveDidExportInput(input);
   }
 
   async cacheDidContactKey(params: { ownerId: string; publicKeyPem: string }) {
@@ -3750,6 +3808,129 @@ class NodeServiceImpl implements NodeService {
     return results.sort((a, b) => b.relevanceScore - a.relevanceScore);
   }
 
+  // Phase 28 — Mesh Intelligence Report
+  async generateMeshIntelligenceReport(): Promise<string> {
+    const { generateMeshIntelligenceReport } = await import("./mesh-intelligence.js");
+    const config = await this._configStore.load();
+    const bonds = await this.getBonds();
+    const ownerTopics = config?.ownerProfile?.interests ?? [];
+    const scores = new Map<string, number>();
+
+    const report = await generateMeshIntelligenceReport(
+      {
+        scanBondedPeers: async () =>
+          bonds.map((b) => ({
+            ownerId: b.peerOwnerId,
+            displayName: b.displayName ?? b.peerOwnerId,
+            topics: b.interests ?? [],
+            capabilities: [],
+            bondLevel: b.level,
+          })),
+        scanDiscovery: async (topics: string[], caps: string[]) => {
+          try {
+            const { generateDiscoveryClusters } = await import("./discovery-clusterer.js");
+            const bonds = await this.getBonds();
+            const clusters = await generateDiscoveryClusters(
+              {
+                broadcastDocumentDiscovery: async () => [],
+                broadcastCapabilityDiscovery: async () => [],
+                getBondedOwnerIds: async () => new Set(bonds.map((b) => b.peerOwnerId)),
+              },
+              { seedTopics: topics, seedCapabilities: caps, minClusterSize: 2, maxClusters: 3, maxHops: 1 },
+            );
+            const peers: Array<{ ownerId: string; displayName?: string; topics: string[]; capabilities: string[]; bondLevel?: string }> = [];
+            for (const cluster of clusters) {
+              for (const peer of cluster.peers) {
+                peers.push({ ownerId: peer.ownerId, displayName: peer.displayName, topics: peer.topics, capabilities: peer.capabilities, bondLevel: "public" });
+              }
+            }
+            return peers;
+          } catch { return []; }
+        },
+        getReputationScores: async () => scores,
+        findDormantBonds: async (thresholdDays: number) => {
+          const { findDormantBonds } = await import("./bond-steward.js");
+          const result = await findDormantBonds(
+            { getBonds: async () => bonds, getLastInteractionDate: async () => { throw new Error("not implemented"); } },
+            thresholdDays,
+          );
+          return result.dormantBonds.map((b) => ({
+            ownerId: b.peerOwnerId,
+            displayName: b.displayName,
+            topics: [],
+            capabilities: [],
+          }));
+        },
+        findSecondDegreeConnections: async () => [],
+        generateNarrative: async (prompt: string) => {
+          try {
+            return await this.knowledgeQuery(prompt);
+          } catch {
+            return "Unable to generate narrative — model not available.";
+          }
+        },
+      },
+      { ownerTopics, ownerCapabilities: [] },
+    );
+
+    return [
+      `## ${report.title}`,
+      `Generated: ${report.generatedAt}`,
+      `Analyzed: ${report.peersAnalyzed} peers`,
+      "",
+      ...report.sections.map((s) => `### ${s.heading}\n${s.content}`),
+    ].join("\n");
+  }
+
+  // Phase 27 — Proactive agent pass
+  async runProactiveAgentPass(): Promise<Array<{ kind: string; summary: string; matchedTopic: string; peerCount: number }>> {
+    const insights: Array<{ kind: string; summary: string; matchedTopic: string; peerCount: number }> = [];
+
+    // Run mesh awareness
+    try {
+      const awarenessInsights = await this.runMeshAwarenessPass();
+      for (const insight of awarenessInsights) {
+        insights.push({ kind: "mesh_activity", summary: insight.summary, matchedTopic: insight.matchedTopic, peerCount: insight.peerCount });
+      }
+    } catch { /* mesh awareness optional */ }
+
+    // Run connection suggestions
+    try {
+      const suggestions = await this.runConnectionSuggesterPass();
+      for (const s of suggestions) {
+        insights.push({
+          kind: "connection_suggested",
+          summary: `Suggested connection: ${s.remoteDisplayName} — ${s.reason}`,
+          matchedTopic: s.reason,
+          peerCount: 1,
+        });
+      }
+    } catch { /* connection suggestions optional */ }
+
+    // Check dormant bonds
+    try {
+      const config = await this._configStore.load();
+      const { findDormantBonds } = await import("./bond-steward.js");
+      const dormantResult = await findDormantBonds(
+        {
+          getBonds: async () => this.getBonds(),
+          getLastInteractionAt: async () => { throw new Error("not implemented"); },
+        },
+        config?.dormantBondThresholdDays ?? 90,
+      );
+      if (dormantResult.dormantBonds.length > 0) {
+        insights.push({
+          kind: "dormant_bonds",
+          summary: dormantResult.summary,
+          matchedTopic: "social_graph_health",
+          peerCount: dormantResult.dormantBonds.length,
+        });
+      }
+    } catch { /* dormant bond check optional */ }
+
+    return insights;
+  }
+
   // Phase 23A+ — Discovery-driven clusterer
   async discoverAndCluster(
     seedTopics?: string[],
@@ -3774,8 +3955,16 @@ class NodeServiceImpl implements NodeService {
           sendToPeer: async () => 0, // stub — needs mesh connectivity for real broadcast
           getBondedPeers: async () => bondedPeers,
           getAllKnownPeers: async () => bondedPeers,
-          signEnvelope: signUnsignedEnvelope,
-          profile: this._profile!,
+          signEnvelope: signUnsignedEnvelope as (unsigned: unknown, privateKeyPem: string) => unknown,
+          profile: {
+            owner: { ownerId: this._profile!.owner.ownerId },
+            device: {
+              deviceId: this._profile!.device.deviceId,
+              peerId: (this._profile!.device as unknown as { peerId?: string }).peerId ?? this._profile!.device.deviceId,
+              publicKeyPem: this._profile!.device.publicKeyPem,
+              privateKeyPem: this._profile!.device.privateKeyPem,
+            },
+          },
         };
         const results = await broadcastDocumentDiscovery(bdDeps, {
           query,
@@ -3797,8 +3986,16 @@ class NodeServiceImpl implements NodeService {
           sendToPeer: async () => 0,
           getBondedPeers: async () => bondedPeers,
           getAllKnownPeers: async () => bondedPeers,
-          signEnvelope: signUnsignedEnvelope,
-          profile: this._profile!,
+          signEnvelope: signUnsignedEnvelope as (unsigned: unknown, privateKeyPem: string) => unknown,
+          profile: {
+            owner: { ownerId: this._profile!.owner.ownerId },
+            device: {
+              deviceId: this._profile!.device.deviceId,
+              peerId: (this._profile!.device as unknown as { peerId?: string }).peerId ?? this._profile!.device.deviceId,
+              publicKeyPem: this._profile!.device.publicKeyPem,
+              privateKeyPem: this._profile!.device.privateKeyPem,
+            },
+          },
         };
         const results = await broadcastCapabilityDiscovery(bcdDeps, {
           capabilityTags: caps,
@@ -3898,13 +4095,19 @@ class NodeServiceImpl implements NodeService {
       this._intentHistory.shift();
     }
     const path = this._intentHistoryFilePath();
-    if (path) {
-      try {
-        await mkdir(dirname(path), { recursive: true });
-        await writeFile(path, JSON.stringify({ version: "0.1", history: this._intentHistory }, null, 2), { mode: 0o600 });
-      } catch {
-        // Best-effort persistence
-      }
+    if (!path) return;
+    try {
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(
+        path,
+        JSON.stringify({ version: "0.1", history: this._intentHistory }, null, 2),
+        { mode: 0o600 },
+      );
+    } catch (err) {
+      // Best-effort persistence: in-memory history is updated regardless,
+      // so predictions work in-process. Log the error so disk issues
+      // surface during dev, but don't fail the calling turn.
+      console.warn("[intent-history] persist failed:", err instanceof Error ? err.message : err);
     }
   }
 
@@ -3988,14 +4191,22 @@ class NodeServiceImpl implements NodeService {
    */
   setPeerPublishedLibrary(
     ownerId: string,
-    entries: Array<{ title: string; topicTags: string[]; sensitivity: string }>,
-  ): void {
-    const now = new Date().toISOString();
+    entries: Array<{ title: string; topicTags: string[]; sensitivity: string; publishedAt?: string }>,
+  ): Promise<void> {
+    // Preserve the original `publishedAt` for each entry when present;
+    // only fall back to "now" for entries that don't carry one (which is
+    // the case when the harness or sync layer pushes them in).
     this._publishedLibrary.set(
       ownerId,
-      entries.map((e) => ({ ...e, publishedAt: now })),
+      entries.map((e) => ({
+        ...e,
+        publishedAt: e.publishedAt ?? new Date().toISOString(),
+      })),
     );
-    void this._persistPublishedLibrary();
+    // Surface persistence failures to the caller so they can retry or
+    // surface the error. The in-memory state is updated regardless, but
+    // the caller's await will reject if the write fails.
+    return this._persistPublishedLibrary();
   }
 
   /**
@@ -4057,26 +4268,47 @@ class NodeServiceImpl implements NodeService {
   }>> {
     const path = this._continuityFilePath();
     if (!path) return [];
+    let parsed: unknown;
     try {
       const raw = await readFile(path, "utf8");
-      const parsed = JSON.parse(raw) as { sessions?: unknown };
-      return Array.isArray(parsed.sessions)
-        ? (parsed.sessions as Array<{
-            sessionId: string;
-            description: string;
-            progress: string;
-            currentStep: number;
-            totalSteps: number;
-            deviceType?: string;
-            correlationId: string;
-            originDevice: string;
-            lastUpdatedAt: string;
-            active: boolean;
-          }>)
-        : [];
+      parsed = JSON.parse(raw);
     } catch {
       return [];
     }
+    if (!parsed || typeof parsed !== "object") return [];
+    const sessions = (parsed as { sessions?: unknown }).sessions;
+    if (!Array.isArray(sessions)) return [];
+    // Validate each entry has the required string fields. Drop malformed
+    // entries rather than returning untyped data that could crash later.
+    return sessions.filter(
+      (s): s is {
+        sessionId: string;
+        description: string;
+        progress: string;
+        currentStep: number;
+        totalSteps: number;
+        deviceType?: string;
+        correlationId: string;
+        originDevice: string;
+        lastUpdatedAt: string;
+        active: boolean;
+      } =>
+        !!s &&
+        typeof s === "object" &&
+        typeof (s as Record<string, unknown>).sessionId === "string" &&
+        typeof (s as Record<string, unknown>).description === "string",
+    ) as Array<{
+      sessionId: string;
+      description: string;
+      progress: string;
+      currentStep: number;
+      totalSteps: number;
+      deviceType?: string;
+      correlationId: string;
+      originDevice: string;
+      lastUpdatedAt: string;
+      active: boolean;
+    }>;
   }
 
   private async _saveContinuitySessions(
@@ -4116,24 +4348,28 @@ class NodeServiceImpl implements NodeService {
   }> {
     const ownerId = this._profile?.owner.ownerId ?? "local-owner";
     const { startContinuitySession: csStart } = await import("./continuity-service.js");
-    const session = await csStart(
+    // Build the session with deviceType pre-applied so we save exactly once.
+    // The continuity-service dep's saveSession writes the full list — passing
+    // it the enriched session means a single read+write per start call, with
+    // no race window between saves.
+    const created = await csStart(
       {
         listSessions: () => this._loadContinuitySessions(),
         saveSession: async (s) => {
+          const enriched = { ...s, deviceType: opts?.deviceType };
           const all = await this._loadContinuitySessions();
-          const without = all.filter((x) => x.sessionId !== s.sessionId);
-          await this._saveContinuitySessions([...without, s]);
+          const without = all.filter((x) => x.sessionId !== enriched.sessionId);
+          await this._saveContinuitySessions([...without, enriched]);
         },
         getDeviceId: () => opts?.deviceType ?? ownerId,
       },
       description,
       opts?.correlationId,
     );
-    const enriched = { ...session, deviceType: opts?.deviceType };
-    const all = await this._loadContinuitySessions();
-    const without = all.filter((x) => x.sessionId !== session.sessionId);
-    await this._saveContinuitySessions([...without, enriched]);
-    return enriched;
+    // Defensive: if saveSession was somehow never invoked (it always is in
+    // the current continuity-service), still return a value that includes
+    // the deviceType. The session came from csStart which we just called.
+    return { ...created, deviceType: opts?.deviceType };
   }
 
   async updateContinuitySession(
@@ -4877,6 +5113,67 @@ class NodeServiceImpl implements NodeService {
       remotePeerId,
       this._roomDeliveryAck(replyWithEnvelope),
     );
+
+    // Phase 27 — Agent group chat responder: check for @envoy mentions
+    const senderRole = (envelope.senderRole as string) ?? "human";
+    if (senderRole !== "agent") {
+      void this._maybeRespondAsAgentInRoom(payload.roomId, envelope, payload, senderRole as "human" | "agent" | "system");
+    }
+  }
+
+  private async _maybeRespondAsAgentInRoom(
+    roomId: string,
+    envelope: EnvoyEnvelope,
+    payload: import("@envoymesh/protocol").ChatRoomMessagePayload,
+    senderRole: "human" | "agent" | "system",
+  ): Promise<void> {
+    const text = payload.text ?? "";
+    if (!text.includes("@envoy")) return;
+
+    try {
+      const { evaluateAgentGroupChatResponse } = await import("./agent-group-chat-responder.js");
+      const decision = await evaluateAgentGroupChatResponse(
+        {
+          hasMention: (t: string) => t.includes("@envoy"),
+          generateAnswer: async (prompt: string) => {
+            const config = await this.getNodeConfig();
+            if (!config?.modelProviders?.mode || config.modelProviders.mode === "off") {
+              return "Agent is not configured. Enable model provider in Settings → AI.";
+            }
+            return this.knowledgeQuery(prompt);
+          },
+          sendAgentRoomMessage: async (rid: string, response: string) => {
+            await this.sendChatRoomMessage(rid, response);
+          },
+          allowResponse: (roomId: string) => this._allowAgentGroupChatResponse(roomId),
+        },
+        {
+          roomId,
+          senderRole,
+          text,
+        },
+      );
+
+      if (decision.shouldRespond && decision.response) {
+        await this.sendChatRoomMessage(roomId, `[Agent] ${decision.response}`);
+      }
+    } catch (err) {
+      console.warn("[agent-group-chat] failed to evaluate:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  private _allowAgentGroupChatResponse(roomId: string): boolean {
+    const MAX_RESPONSES_PER_HOUR = 3;
+    const RATE_WINDOW_MS = 60 * 60 * 1000;
+    const now = Date.now();
+    const entry = this._agentGroupChatCounters.get(roomId);
+    if (!entry || now - entry.windowStart > RATE_WINDOW_MS) {
+      this._agentGroupChatCounters.set(roomId, { count: 1, windowStart: now });
+      return true;
+    }
+    if (entry.count >= MAX_RESPONSES_PER_HOUR) return false;
+    entry.count++;
+    return true;
   }
 
   async deleteChatMessage(peerOwnerId: string, messageId: string): Promise<{ ok: boolean }> {
@@ -6257,6 +6554,12 @@ class NodeServiceImpl implements NodeService {
       this._taskRuntimeStore = createTaskRuntimeStateStore(config.profileDir);
       this._inboundGuard = createInboundMessageGuard();
       this._taskDispatcher = createTaskDispatcher();
+
+      // Phase 26: hydrate Phase 23/25/25D in-memory state from disk
+      // (published library, intent history). Continuity sessions are loaded
+      // lazily on each continuity method call (no in-memory cache needed).
+      await this.loadPublishedLibraryFromDisk();
+      await this.loadIntentHistoryFromDisk();
 
       this._nodeStatus = "starting";
       this.emit("node:status", { status: this._nodeStatus });
@@ -7803,6 +8106,7 @@ class NodeServiceImpl implements NodeService {
       runSocialProxyPass: () => this.runSocialProxyPass(),
       discoverAndCluster: (seedTopics?: string[], seedCapabilities?: string[]) =>
         this.discoverAndCluster(seedTopics, seedCapabilities),
+      meshIntelligenceReport: () => this.generateMeshIntelligenceReport(),
       chatRagSearch: (query: string, opts?: { ownerId?: string; maxResults?: number }) =>
         this.chatRagSearch(query, opts),
       predictIntent: (partial: string) => {
@@ -7828,25 +8132,33 @@ class NodeServiceImpl implements NodeService {
               });
               const bonds = await this.getBonds();
               return matches.filter((m) => {
-                const bond = bonds.find((b) => b.peerOwnerId === m.ownerId);
+                // MatchedAgentCapabilityRoute doesn't carry ownerId/peerId directly;
+                // derive from the route's metadata when present.
+                const meta = m as unknown as { ownerId?: string; peerId?: string };
+                const bond = meta.ownerId
+                  ? bonds.find((b) => b.peerOwnerId === meta.ownerId)
+                  : undefined;
                 return bond != null;
-              }).map((m) => ({
-                ownerId: m.ownerId,
-                peerId: m.peerId ?? m.ownerId,
-                capabilities: m.capabilityIds ?? [],
-                bondLevel: bonds.find((b) => b.peerOwnerId === m.ownerId)?.level ?? "public",
-                reputationScore: 0.5,
-              }));
+              }).map((m) => {
+                const meta = m as unknown as { ownerId?: string; peerId?: string; capabilities?: string[] };
+                return {
+                  ownerId: meta.ownerId ?? "(unknown)",
+                  peerId: meta.peerId ?? meta.ownerId ?? "(unknown)",
+                  capabilities: meta.capabilities ?? m.matchedCapabilityIds ?? [],
+                  bondLevel: bonds.find((b) => b.peerOwnerId === meta.ownerId)?.level ?? "public",
+                  reputationScore: 0.5,
+                };
+              });
             },
             sendTaskPropose: async (peerId, ownerId, objective, constraints) => {
               const { sendAgentTaskPropose } = await import("./agent-task-propose-send.js");
               const result = await sendAgentTaskPropose({
                 profile: this._profile!,
-                agentIdentity: agentIdentitySection,
+                agentIdentity: agentIdentitySection as any,
                 recipientPeerId: peerId,
                 objective,
                 taskId: constraints?.correlationId as string ?? randomUUID(),
-              });
+              } as any);
               return result.ok ? peerId : null;
             },
           },
@@ -7865,11 +8177,11 @@ class NodeServiceImpl implements NodeService {
                   intent: "task.result",
                   payload: createTaskResultPayload({
                     taskId,
-                    result,
-                    completedAt: new Date().toISOString(),
+                    summary: typeof result === "string" ? result : JSON.stringify(result ?? ""),
+                    status: "completed",
                   }),
                   correlationId: corrId,
-                  agentCredential: agentIdentitySection?.credential,
+                  agentCredential: (agentIdentitySection as any)?.credential,
                 });
                 const { signUnsignedEnvelope } = await import("@envoymesh/identity");
                 const signed = signUnsignedEnvelope(unsigned, this._profile!.device.privateKeyPem);
@@ -7890,11 +8202,12 @@ class NodeServiceImpl implements NodeService {
                   intent: "task.feedback",
                   payload: createTaskFeedbackPayload({
                     taskId,
-                    score,
-                    comment,
+                    outcome: (score >= 0.5 ? "success" : "failure") as "success" | "failure",
+                    latencyMs: 0,
+                    notes: comment,
                   }),
                   correlationId: corrId,
-                  agentCredential: agentIdentitySection?.credential,
+                  agentCredential: (agentIdentitySection as any)?.credential,
                 });
                 const { signUnsignedEnvelope } = await import("@envoymesh/identity");
                 const signed = signUnsignedEnvelope(unsigned, this._profile!.device.privateKeyPem);
@@ -7925,13 +8238,16 @@ class NodeServiceImpl implements NodeService {
             maxResults: 5,
           });
           return matches
-            .filter((m) => (m.capabilityIds ?? []).includes(capabilityTag))
-            .map((m) => ({
-              ownerId: m.ownerId,
-              peerId: m.peerId ?? m.ownerId,
-              capabilities: m.capabilityIds ?? [],
-              reputationScore: 0.5,
-            }));
+            .filter((m) => (m.matchedCapabilityIds ?? []).includes(capabilityTag))
+            .map((m) => {
+              const meta = m as unknown as { ownerId?: string; peerId?: string };
+              return {
+                ownerId: meta.ownerId ?? "(unknown)",
+                peerId: meta.peerId ?? meta.ownerId ?? "(unknown)",
+                capabilities: m.matchedCapabilityIds ?? [],
+                reputationScore: 0.5,
+              };
+            });
         };
         const executeStep = async (
           provider: { ownerId: string; peerId: string },
@@ -8263,6 +8579,55 @@ class NodeServiceImpl implements NodeService {
 
   recordOwnerActivity(): void {
     this.lastActivityTimestamp = Date.now();
+  }
+
+  /**
+   * Wipe all local user data: profile, config, published library, intent
+   * history, continuity sessions. Stops the node first to release any
+   * open file handles. Used by the "clear all data" privacy action.
+   *
+   * **Destructive** — cannot be undone. The caller is expected to
+   * confirm with the user before invoking.
+   */
+  async clearAllUserData(): Promise<void> {
+    // Best-effort: each step is independent. A failure on one store does
+    // not block the others.
+    const profileDir = this._profileDir;
+    if (!profileDir) {
+      // Nothing persisted yet — nothing to wipe.
+      return;
+    }
+
+    // In-memory state
+    this._publishedLibrary.clear();
+    this._intentHistory.length = 0;
+    this._continuitySessions.clear();
+
+    // On-disk state — overwrite each file with an empty/initial payload.
+    const { unlink } = await import("node:fs/promises");
+    const targets: Array<{ path: string; empty: string }> = [
+      { path: join(profileDir, "node-config.json"), empty: JSON.stringify({ version: "0.1" }) },
+      { path: join(profileDir, "published-library.json"), empty: JSON.stringify({ version: "0.1", snapshot: [] }) },
+      { path: join(profileDir, "intent-history.json"), empty: JSON.stringify({ version: "0.1", history: [] }) },
+      { path: join(profileDir, "continuity-sessions.json"), empty: JSON.stringify({ version: "0.1", sessions: [] }) },
+      { path: join(profileDir, "profile.json"), empty: "" },
+    ];
+    for (const t of targets) {
+      try {
+        await writeFile(t.path, t.empty, { mode: 0o600 });
+      } catch (err) {
+        console.warn(`[clearAllUserData] could not reset ${t.path}:`, err);
+      }
+    }
+    // Best-effort: remove files we don't recreate above (logs, audit).
+    const removable = ["audit.jsonl", "task-journal.jsonl", "peer-directory.json"];
+    for (const name of removable) {
+      try {
+        await unlink(join(profileDir, name));
+      } catch {
+        // Missing file is fine.
+      }
+    }
   }
 
   async isOwnerOnline(): Promise<boolean> {

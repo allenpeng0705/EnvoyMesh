@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildOwnerAgentPlannerPrompt,
+  cleanPlannerText,
   parseOwnerAgentPlannerResponse,
+  parseStructuredBlocks,
   runOwnerAgentPlannerLoop,
 } from "../src/owner-agent-planner.js";
 
@@ -14,7 +16,52 @@ describe("parseOwnerAgentPlannerResponse", () => {
       action: "answer",
       text: "Here is what I found.",
       domain: "document",
+      format: undefined,
+      blocks: undefined,
     });
+  });
+
+  it("parses answer with format=plain", () => {
+    const parsed = parseOwnerAgentPlannerResponse(
+      '{"action":"answer","text":"Hi!","format":"plain"}',
+    );
+    expect(parsed).toMatchObject({ action: "answer", text: "Hi!", format: "plain" });
+  });
+
+  it("parses answer with format=markdown", () => {
+    const parsed = parseOwnerAgentPlannerResponse(
+      '{"action":"answer","text":"# Hello","format":"markdown"}',
+    );
+    expect(parsed).toMatchObject({ action: "answer", format: "markdown" });
+  });
+
+  it("parses answer with format=structured and valid blocks", () => {
+    const parsed = parseOwnerAgentPlannerResponse(
+      JSON.stringify({
+        action: "answer",
+        text: "Here are your files:",
+        format: "structured",
+        blocks: [
+          { type: "list", items: ["a.pdf", "b.md"] },
+          { type: "status", tone: "info", text: "2 items" },
+        ],
+      }),
+    );
+    expect(parsed?.format).toBe("structured");
+    expect(parsed?.blocks).toHaveLength(2);
+  });
+
+  it("falls back to markdown when structured has no valid blocks", () => {
+    const parsed = parseOwnerAgentPlannerResponse(
+      '{"action":"answer","text":"x","format":"structured","blocks":[]}',
+    );
+    expect(parsed?.format).toBe("markdown");
+    expect(parsed?.blocks).toBeUndefined();
+  });
+
+  it("ignores unknown block types", () => {
+    const parsed = parseStructuredBlocks([{ type: "bogus", text: "x" }]);
+    expect(parsed).toBeUndefined();
   });
 
   it("parses tool action with params", () => {
@@ -30,6 +77,34 @@ describe("parseOwnerAgentPlannerResponse", () => {
 
   it("returns null for invalid JSON", () => {
     expect(parseOwnerAgentPlannerResponse("not json")).toBeNull();
+  });
+});
+
+describe("cleanPlannerText", () => {
+  it("converts bullet markers to hyphen+space", () => {
+    expect(cleanPlannerText("• first\n* second\n+ third")).toBe("- first\n- second\n- third");
+  });
+
+  it("ensures numbered lists have a trailing space", () => {
+    expect(cleanPlannerText("1.first\n2.second")).toBe("1. first\n2. second");
+  });
+
+  it("inserts a blank line before a list", () => {
+    expect(cleanPlannerText("Here is the list:\n- one\n- two")).toBe(
+      "Here is the list:\n\n- one\n- two",
+    );
+  });
+
+  it("unescapes literal \\n and \\t", () => {
+    expect(cleanPlannerText("line1\\nline2\\tindented")).toBe("line1\nline2\tindented");
+  });
+
+  it("collapses 3+ blank lines to one", () => {
+    expect(cleanPlannerText("a\n\n\n\n\nb")).toBe("a\n\nb");
+  });
+
+  it("trims trailing whitespace per line", () => {
+    expect(cleanPlannerText("hello   \nworld")).toBe("hello\nworld");
   });
 });
 

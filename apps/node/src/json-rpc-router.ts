@@ -331,6 +331,8 @@ export async function routeRpcMethod(
       return ns.deleteAgentCircle(params.circleId as string);
     case "proposeAgentCircles":
       return ns.proposeAgentCircles();
+    case "meshIntelligenceReport":
+      return ns.generateMeshIntelligenceReport();
     case "discoverAndCluster":
       return ns.discoverAndCluster(params.seedTopics as string[] | undefined, params.seedCapabilities as string[] | undefined);
     case "chatRagSearch":

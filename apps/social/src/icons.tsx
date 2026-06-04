@@ -353,6 +353,20 @@ export const PendingIcon = mkIcon(
   "PendingIcon",
 );
 
+export const RefreshCwIcon = mkIcon(
+  <>
+    <polyline points="23 4 23 10 17 10" />
+    <polyline points="1 20 1 14 7 14" />
+    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+  </>,
+  "RefreshCwIcon",
+);
+
+export const ChevronDownIcon = mkIcon(
+  <polyline points="6 9 12 15 18 9" />,
+  "ChevronDownIcon",
+);
+
 // ---- Icon name map for programmatic use ----
 export type IconName =
   | "chat"
@@ -388,7 +402,9 @@ export type IconName =
   | "error"
   | "info"
   | "decline"
-  | "pending";
+  | "pending"
+  | "refreshCw"
+  | "chevronDown";
 
 export const ICON_MAP: Record<IconName, React.FC<IconProps>> = {
   chat: ChatIcon,
@@ -425,4 +441,6 @@ export const ICON_MAP: Record<IconName, React.FC<IconProps>> = {
   info: InfoIcon,
   decline: DeclineIcon,
   pending: PendingIcon,
+  refreshCw: RefreshCwIcon,
+  chevronDown: ChevronDownIcon,
 };

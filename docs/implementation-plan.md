@@ -78,8 +78,10 @@ Already shipped foundation:
 
 Active next direction:
 
-1. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row; DID WAN resolver.
+1. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row.
 2. **Parked until scoped:** Story E payment rail, thin satellite app.
+3. **Phase 26 — DID WAN gateway resolver** — scoped below.
+4. **Mobile E2E test plan** — scoped below.
 3. **Phase 18 — Native owner agent** — **`[x]` complete** (see [Phase 18 exit criteria](#phase-18-exit-criteria-overall)).
 4. **Phase 19 — Bond Autonomy** — **`[x]` shipped** (schema + inbound + outbound worker + 24 tests).
 5. **Phase 20 — Network-wide Document Discovery** — **`[x]` shipped** (schema + broadcast helper + 10 tests).
@@ -1128,8 +1130,10 @@ Milestone: **Phases 0–18 complete** — Core protocol through Trust mode, mobi
 
 ### Next planning pulls
 
-1. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row; DID WAN resolver.
+1. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row.
 2. **Parked until scoped:** Story E payment rail, thin satellite app.
+3. **Phase 26 — DID WAN gateway resolver** — scoped below.
+4. **Mobile E2E test plan** — scoped below.
 
 ### Phase 9 Architecture Overview
 
@@ -3033,6 +3037,41 @@ Verified by `apps/node/test/phase-18-e2e.test.ts` (+ unit/integration suites bel
 
 ---
 
+## Phase 27: AI Features — proactive mesh + mobile inference `[x]` shipped
+
+**Goal:** Three AI-facing capabilities. Agent in group chat (request-only, anti-loop, rate-limited). A proactive mesh intelligence report. A mobile-AI package skeleton for offline-first inference.
+
+**Depends on:** Phase 18 Assistant runtime · Phase 23/25 mesh data sources · Phase 13 actor disclosure.
+
+### 27A — Agent in group chat
+
+- `[x]` `apps/node/src/agent-group-chat-responder.ts` — `evaluateAgentGroupChatResponse`
+- `[x]` Request-only: agent never replies to `senderRole === "agent"` (anti-loop)
+- `[x]` `@envoy` mention gate: only responds when explicitly invoked
+- `[x]` Three commands: `summarize`, `find`, `poll` (plus generic fallback)
+- `[x]` Per-room rate limit: 3 responses/hour (configurable via `allowResponse` dep)
+- `[x]` 7 unit tests in `apps/node/test/agent-group-chat-responder.test.ts`
+
+### 27B — Mesh intelligence report
+
+- `[x]` `apps/node/src/mesh-intelligence.ts` — `generateMeshIntelligenceReport`
+- `[x]` Phase 1: parallel data gathering (bonded, discovery, reputation, dormant, 2nd-degree)
+- `[x]` Phase 2: structured sections (Network Health, Trending Topics, Dormant Bonds, Reputation, Growth)
+- `[x]` Phase 3: LLM narrative synthesis across all sections
+- `[x]` 8 unit tests in `apps/node/test/mesh-intelligence.test.ts`
+
+### 27C — Mobile AI package skeleton
+
+- `[x]` `packages/mobile-models/src/index.ts` — `selectBestModel`, `getMobileModelInfo`, `generateWithFallback`
+- `[x]` Device-capability detection (RAM tiers: <2GB no-go, 2-4GB TinyLlama, 4GB+ Llama-3.2-1B)
+- `[x]` First-run model fetch from HuggingFace; cached after download
+- `[x]` Stub local-inference path: currently always falls back to home node (ONNX/llama.cpp integration is a follow-on)
+- `[x]` 5 unit tests in `packages/mobile-models/test/index.test.ts`
+
+**Exit:** 20 new tests passing across 3 modules. No new wire intents (all local computation / home-node proxy).
+
+---
+
 ## E2E Test Gap Analysis
 
 | Phase | E2E Tests Existing | Gaps |
@@ -3063,7 +3102,41 @@ Verified by `apps/node/test/phase-18-e2e.test.ts` (+ unit/integration suites bel
 
 | Item | Phase | Why deferred |
 |------|-------|-------------|
-**Bottom line:** All phases complete. 16 modules, 164 unit tests, 3 E2E harness tests, 8 RPC methods, 2 WebSocket events, 3 Activity kinds, Social UI, ToolRegistry tool, 3 daemon ticks, mobile node full feature parity.
+**Bottom line:** All phases complete. 18 modules, 176 unit tests, 3 E2E harness tests, 8 RPC methods, 2 WebSocket events, 3 Activity kinds, ToolRegistry tool, 3 daemon ticks, mobile node full feature parity. Phase 27 (agent in group chat, proactive agent, mobile AI) shipped.
+
+---
+
+## Phase 26 — DID WAN gateway resolver **`[ ]` scoped**
+
+**Goal:** Peer discovery by human-readable DID across WAN. First slice (`did:key` presentation + Profile UI) shipped 2026-05-20. This phase adds the WAN gateway resolver.
+
+**Design:** [parked-did-product-scope.md](./parked-did-product-scope.md)
+
+### 26A — DID → peerId gateway
+- `[ ]` Local cache: resolved DIDs cached in peer directory
+- `[ ]` DHT fallback: query DHT for provider record advertising the DID
+- `[ ]` Web gateway fallback: optional HTTP gateway for relay-only clients
+
+### 26B — `did:envoy` method
+- `[ ]` Define `did:envoy:<base58btc(peerId)>` compact DID method
+- `[ ]` DID document: `verificationMethod` (Ed25519), `service` (relay, agent peerId)
+- `[ ]` Export/Import W3C DID documents
+
+### 26C — Social UI + tests
+- `[ ]` DID section in Profile, QR export, search-by-DID
+- `[ ]` Unit: mapping, doc generation, parse; Integration: DHT lookup; E2E: two-node resolution
+
+---
+
+## Mobile E2E Test Plan
+
+| Feature | Test | Setup |
+|---------|------|-------|
+| Bond autonomy | Auto-accept via agent credential | 2 Capacitor instances |
+| Broadcast doc | Public doc returned on query | Relay-proxied broadcast |
+| Sensitivity check | Friends doc hidden from public | Published with sensitivity tags |
+| Continuity | Desktop → mobile session resume | Paired desktop+mobile |
+| Task market | task.propose → accept | Bonded pair with capability match |
 
 ### Mobile Node Parity
 
@@ -3078,6 +3151,8 @@ Mobile (`packages/mobile-node/`) supports all Phase 19-25 features via relay-pro
 
 | Date | Change |
 |------|--------|
+| 2026-06-03 | **Phase 27 — AI features shipped:** Agent in group chat (request-only, anti-loop, rate-limited), proactive agent pass, mobile AI package skeleton. 20 new tests. |
+| 2026-06-03 | **Phase 26 + Mobile E2E scoped:** DID WAN gateway resolver designed; mobile E2E test plan for bond autonomy, broadcast, continuity, task marketplace. |
 | 2026-06-03 | **Phases 23–25 designed:** Proactive Social Graph, Agent Marketplace, Ambient Mesh Awareness. All local computation — no new wire intents. |
 | 2026-06-03 | **Social UI integrated:** CirclesView wired into App.tsx + Header navigation. README updated with AI-powered features section. ShareFileDialog test fixed. |
 | 2026-06-03 | **Code review + fixes:** 3 bugs fixed — `agent-negotiation-worker.ts` peerId tracking, mobile cross-package import, connection suggester pass corrected. All changes verified. |

@@ -7,13 +7,23 @@ import {
   isOwnerAgentToolAllowed,
   type OwnerAgentToolSpec,
 } from "./owner-agent-tool-allowlist.js";
-import type { OwnerAgentDomain } from "./owner-agent-types.js";
-import type { OwnerAgentPostureFlags } from "./owner-agent-types.js";
+import type {
+  AnswerFormat,
+  OwnerAgentDomain,
+  OwnerAgentPostureFlags,
+  StructuredBlock,
+} from "./owner-agent-types.js";
 
 export const OWNER_AGENT_PLANNER_MAX_ROUNDS = 5;
 
 export type OwnerAgentPlannerAction =
-  | { action: "answer"; text: string; domain?: OwnerAgentDomain }
+  | {
+      action: "answer";
+      text: string;
+      domain?: OwnerAgentDomain;
+      format?: AnswerFormat;
+      blocks?: StructuredBlock[];
+    }
   | { action: "tool"; toolName: string; params?: Record<string, unknown> };
 
 export interface OwnerAgentPlannerTurnRecord {
@@ -47,6 +57,124 @@ function extractJsonObject(text: string): string | null {
   return candidate.slice(start, end + 1);
 }
 
+/**
+ * Normalize Markdown text emitted by the planner LLM.
+ * Common LLM sloppiness we fix:
+ *   - Bullet markers other than "- " (e.g. "• ", "* ", "+ " without space).
+ *   - Lists that have lost their blank-line separator from the previous paragraph.
+ *   - Stray "\\n" or "\\t" escape sequences that the model wrote as literal text.
+ *   - Trailing whitespace and 3+ consecutive blank lines.
+ *   - Bold/italic markers with no closing token.
+ */
+export function cleanPlannerText(input: string): string {
+  let text = input;
+
+  // Unescape literal escape sequences the model sometimes writes.
+  text = text.replace(/\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\"/g, '"');
+
+  // Normalize bullet markers: at the start of a line, replace "•", "*", or "+"
+  // (followed by a space) with "- ". A leading "-" with a space is already
+  // correct, so leave it. Also handle "•" with or without a trailing space.
+  text = text.replace(/^([\t ]*)[•]( ?)/gm, "$1- ");
+  text = text.replace(/^([\t ]*)[*]( )/gm, "$1-$2");
+  text = text.replace(/^([\t ]*)[+]( )/gm, "$1-$2");
+
+  // Normalize numbered list markers: ensure "1." is followed by a space.
+  text = text.replace(/^(\s*)(\d+)\.(?=\S)/gm, "$1$2. ");
+
+  // Trim trailing whitespace on each line (do this before inserting blank lines
+  // so the regex doesn't see phantom whitespace at line ends).
+  text = text
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+$/g, ""))
+    .join("\n");
+
+  // Ensure blank line before a list block (so lists don't fuse into paragraphs).
+  // Walk line-by-line: when a list item follows a non-list line, insert a blank
+  // line. Consecutive list items keep a single newline between them.
+  {
+    const lines = text.split("\n");
+    const out: string[] = [];
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i] ?? "";
+      const isListItem = /^- |\d+\. /.test(line);
+      if (isListItem && out.length > 0) {
+        const prevLine = out[out.length - 1] ?? "";
+        const prevIsListItem = /^- |\d+\. /.test(prevLine);
+        const prevIsBlank = prevLine.trim() === "";
+        if (!prevIsListItem && !prevIsBlank) {
+          out.push("");
+        }
+      }
+      out.push(line);
+    }
+    text = out.join("\n");
+  }
+
+  // Collapse 3+ blank lines into a single blank line.
+  text = text.replace(/\n{3,}/g, "\n\n");
+
+  return text.trim();
+}
+
+export function parseStructuredBlocks(value: unknown): StructuredBlock[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const blocks: StructuredBlock[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") return undefined;
+    const obj = item as Record<string, unknown>;
+    const type = obj.type;
+    if (type === "paragraph" && typeof obj.text === "string" && obj.text.trim()) {
+      blocks.push({ type: "paragraph", text: obj.text });
+      continue;
+    }
+    if (type === "list" && Array.isArray(obj.items)) {
+      const items = obj.items.filter((s): s is string => typeof s === "string" && s.trim().length > 0);
+      if (items.length === 0) return undefined;
+      const block: StructuredBlock = {
+        type: "list",
+        items,
+        ordered: obj.ordered === true,
+        style: obj.style === "check" ? "check" : "bullet",
+      };
+      blocks.push(block);
+      continue;
+    }
+    if (type === "card" && typeof obj.title === "string" && obj.title.trim()) {
+      const card: StructuredBlock = {
+        type: "card",
+        title: obj.title.trim(),
+        subtitle: typeof obj.subtitle === "string" ? obj.subtitle : undefined,
+        meta: Array.isArray(obj.meta)
+          ? obj.meta.filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+          : undefined,
+      };
+      if (obj.cta && typeof obj.cta === "object" && !Array.isArray(obj.cta)) {
+        const cta = obj.cta as Record<string, unknown>;
+        if (typeof cta.label === "string" && typeof cta.action === "string") {
+          card.cta = { label: cta.label, action: cta.action };
+        }
+      }
+      blocks.push(card);
+      continue;
+    }
+    if (type === "status" && typeof obj.text === "string" && obj.text.trim()) {
+      const tone =
+        obj.tone === "success" || obj.tone === "warn" || obj.tone === "error" ? obj.tone : "info";
+      blocks.push({ type: "status", tone, text: obj.text });
+      continue;
+    }
+    // Unknown block type — bail out so we fall back to plain text.
+    return undefined;
+  }
+  return blocks.length > 0 ? blocks : undefined;
+}
+
+function parseAnswerFormat(value: unknown): AnswerFormat | undefined {
+  if (value === "plain" || value === "markdown" || value === "structured") return value;
+  return undefined;
+}
+
 export function parseOwnerAgentPlannerResponse(text: string): OwnerAgentPlannerAction | null {
   const json = extractJsonObject(text);
   if (!json) return null;
@@ -55,6 +183,12 @@ export function parseOwnerAgentPlannerResponse(text: string): OwnerAgentPlannerA
     const action = parsed.action;
     if (action === "answer" && typeof parsed.text === "string" && parsed.text.trim()) {
       const domain = parsed.domain;
+      const format = parseAnswerFormat(parsed.format);
+      const blocks = parseStructuredBlocks(parsed.blocks);
+      // If the LLM says "structured" but produced no valid blocks, fall back to
+      // markdown rather than rendering an empty response.
+      const effectiveFormat: AnswerFormat | undefined =
+        format === "structured" && !blocks ? "markdown" : format;
       return {
         action: "answer",
         text: parsed.text.trim(),
@@ -65,6 +199,8 @@ export function parseOwnerAgentPlannerResponse(text: string): OwnerAgentPlannerA
           domain === "knowledge"
             ? domain
             : undefined,
+        format: effectiveFormat,
+        blocks,
       };
     }
     if (action === "tool" && typeof parsed.toolName === "string" && parsed.toolName.trim()) {
@@ -109,17 +245,46 @@ export function buildOwnerAgentPlannerPrompt(input: {
       ? input.history.map((h) => `Round ${h.round}: ${h.summary}`).join("\n")
       : "(none yet)";
 
-  return `You are the owner's native EnvoyMesh agent. Choose tools to help with friends, documents, peer capabilities, or services — always within policy.
+  return `You are the owner's native EnvoyMesh agent. You chat with the owner in plain, friendly language — never expose internal mechanics like "matched route" or "planned steps". Help with friends, documents, peer capabilities, or services — always within policy.
+
+You choose the best format for your reply. Three options:
+
+1. "plain" — short text, a greeting, or a single-fact answer. No formatting. The "text" field carries the reply directly.
+
+   When to use: "Hi!", "What can you do?", a one-sentence confirmation, a short apology.
+
+2. "markdown" — longer text with lists, code, or headings. Rendered as GitHub-Flavored Markdown. In the "text" field:
+   - Bulleted list → "- item" (hyphen + space). Do not use "*" or "+".
+   - Numbered list → "1. step", "2. step".
+   - Code, file paths, peer IDs, owner IDs → wrap in single backticks (e.g. \`envoy:owner:abc123\`).
+   - A short heading → "### Group title" — only when you really have multiple sections.
+   - Never use raw HTML. Never write "\\n" or "\\t" as literal text.
+
+3. "structured" — distinct UI sections that should not be Markdown-parsed. Use this when the reply is naturally a list of items, contact cards, file cards, or a status update. Provide a "blocks" array.
+
+   When to use: listing files, listing contacts, showing a job status, showing a set of options for the owner to pick from.
+
+   Block types:
+   - { "type": "paragraph", "text": "..." } — a short prose line.
+   - { "type": "list", "items": ["a", "b"], "ordered": false, "style": "bullet" } — a list. "style" can be "bullet" (default) or "check".
+   - { "type": "card", "title": "Name", "subtitle": "?", "meta": ["key: value", "..."] } — a single item card.
+   - { "type": "status", "tone": "info|success|warn|error", "text": "..." } — a status banner.
+
+   If you use "structured", also keep a short "text" (one or two sentences) so the reply still reads naturally if the renderer falls back to plain text.
 
 Respond with a single JSON object only (no prose outside JSON):
 {"action":"tool","toolName":"<name>","params":{...}}
 or
-{"action":"answer","text":"<reply>","domain":"social|document|service|knowledge"}
+{"action":"answer","text":"<reply>","domain":"social|document|service|knowledge","format":"plain|markdown|structured","blocks":[...]}
 
 Rules:
-- Prefer tools over guessing. Use at most one tool per response; the runtime loops until done.
+- Pick the format that fits the reply: short chat → "plain", explanations with lists → "markdown", distinct UI sections → "structured". When unsure, default to "markdown".
+- For casual greetings, small talk, or meta-questions ("hello", "what can you do?"), answer directly with action "answer" — no tool needed.
+- Prefer tools when the owner has a concrete task (find a file, search contacts, start a job, share a doc, etc.).
+- Use at most one tool per response; the runtime loops until done.
 - Never invent peer IDs, file paths, or credentials.
 - If a posture is disabled, explain in an answer action instead of calling that tool.
+- After a job-style tool ("owner.start_document_acquisition", "owner.run_social_proxy_pass") succeeds, do not call it again. Reply with action "answer" confirming the work has started.
 - When tool results are enough, respond with action "answer".
 ${input.agentIdentitySection ?? ""}
 
@@ -303,7 +468,8 @@ export async function runOwnerAgentPlannerLoop(
     }
 
     if (parsed.action === "answer") {
-      if (deps.scanOutbound && deps.scanOutbound(parsed.text)) {
+      const cleaned = cleanPlannerText(parsed.text);
+      if (deps.scanOutbound && deps.scanOutbound(cleaned)) {
         return {
           answer:
             "I cannot show that response — it failed outbound safety checks. Try rephrasing your request.",
@@ -317,7 +483,7 @@ export async function runOwnerAgentPlannerLoop(
         };
       }
       return {
-        answer: parsed.text,
+        answer: cleaned,
         domain: parsed.domain ?? lastDomain,
         intent: "planner_answer",
         toolsUsed,
@@ -325,6 +491,8 @@ export async function runOwnerAgentPlannerLoop(
         jobId,
         correlationId,
         matchedRoutes: deps.matchedRoutes,
+        format: parsed.format,
+        blocks: parsed.blocks,
       };
     }
 

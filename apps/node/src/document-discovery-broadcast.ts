@@ -24,7 +24,7 @@ export interface BroadcastDocumentDiscoveryDeps {
   /** Node profile for self identity. */
   profile: {
     owner: { ownerId: string };
-    device: { peerId: string; publicKeyPem: string; privateKeyPem: string };
+    device: { deviceId: string; peerId: string; publicKeyPem: string; privateKeyPem: string };
   };
 }
 

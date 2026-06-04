@@ -911,6 +911,20 @@ export class ToolRegistry {
       isMeshTool: false,
     });
 
+    // Phase 28 — Mesh Intelligence Report
+    this.register({
+      name: "mesh.intelligence_report",
+      description: "Generate a comprehensive AI analysis of your entire mesh — network health, trending topics, dormant bonds, reputation, and growth opportunities",
+      paramSchema: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
     // Phase 23A+ — Discovery clustering tool
     this.register({
       name: "mesh.discover_cluster",

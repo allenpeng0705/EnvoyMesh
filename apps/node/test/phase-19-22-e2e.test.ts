@@ -28,6 +28,7 @@ import {
   parseBondRequestPayload,
   parseBroadcastRequestPayload,
   parseKnowledgeQueryPayload,
+  parseKnowledgeResponsePayload,
   type AgentCredential,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
@@ -356,7 +357,7 @@ describe("Phase 20 E2E — network-wide document discovery via broadcast", () =>
     expect(bobReceived).toContain("broadcast.response");
   });
 
-  it("broadcast deduplication: node doesn't process same queryId twice", async () => {
+  it("duplicate broadcasts are received at the mesh level (twice)", async () => {
     const aliceProfile = testProfile();
     const bobProfile = testProfile();
 
@@ -560,17 +561,17 @@ describe("Phase 22 E2E — federated RAG knowledge query fan-out", () => {
     });
 
     // Alice collects knowledge responses
-    const knowledgeResponses: Array<{ ownerId: string; answer: string }> = [];
+    const knowledgeResponses: Array<{ ownerId: string; answerText: string }> = [];
 
     alice.onMessage(async ({ envelope }) => {
       if (!verifyInboundEnvelope(envelope)) return;
       aliceReceived.push(envelope.intent);
 
       if (envelope.intent === "knowledge.response") {
-        // In real federated RAG, the synthesizer collects and merges these
+        const resp = parseKnowledgeResponsePayload(envelope.payload);
         knowledgeResponses.push({
           ownerId: envelope.senderPeerId,
-          answer: (envelope.payload as any).answer ?? "",
+          answerText: resp.answer ?? "",
         });
       }
     });
@@ -608,8 +609,15 @@ describe("Phase 22 E2E — federated RAG knowledge query fan-out", () => {
     expect(charlieReceived).toContain("knowledge.query");
     expect(knowledgeResponses.length).toBeGreaterThanOrEqual(2);
 
-    // Synthesize (simulating what synthesizeFederatedResult does)
-    const merged = knowledgeResponses.map((r) => r.answer).join("\n\n");
+    // Use the production synthesizeFederatedResult
+    const { synthesizeFederatedResult } = await import("../src/federated-rag.js");
+    // eslint-disable-next-line no-console
+    console.log("[test] knowledgeResponses before synth:", JSON.stringify(knowledgeResponses));
+    const merged = synthesizeFederatedResult(undefined, knowledgeResponses);
+    // eslint-disable-next-line no-console
+    console.log("[test] merged:", merged);
+    // Each peer-answer should be rendered with a bracketed owner id and the answer text.
+    expect(merged).toMatch(/^\[.+\]: /m);
     expect(merged).toContain("Bob knows about");
     expect(merged).toContain("Charlie's take on");
   });

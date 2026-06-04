@@ -234,27 +234,30 @@ export function generateSummaryText(digest: DigestSummary): string {
   }
 
   // Phase 23C — Dormant bonds
-  if (digest.dormantBonds.length > 0) {
+  const dormantBonds = digest.dormantBonds ?? [];
+  if (dormantBonds.length > 0) {
     lines.push("### Dormant Bonds");
-    for (const db of digest.dormantBonds) {
+    for (const db of dormantBonds) {
       lines.push(`- ${db.displayName ?? db.peerOwnerId}: ${db.dormantDays} days since last interaction`);
     }
     lines.push("");
   }
 
   // Phase 25A — Mesh insights
-  if (digest.meshInsights.length > 0) {
+  const meshInsights = digest.meshInsights ?? [];
+  if (meshInsights.length > 0) {
     lines.push("### Mesh Activity");
-    for (const mi of digest.meshInsights) {
+    for (const mi of meshInsights) {
       lines.push(`- ${mi.summary}`);
     }
     lines.push("");
   }
 
   // Phase 23A — Proposed circles
-  if (digest.proposedCircles.length > 0) {
+  const proposedCircles = digest.proposedCircles ?? [];
+  if (proposedCircles.length > 0) {
     lines.push("### Proposed Circles");
-    for (const pc of digest.proposedCircles) {
+    for (const pc of proposedCircles) {
       const note = pc.reason ? ` (${pc.reason})` : "";
       lines.push(`- ${pc.label}: ${pc.memberCount} members${note}`);
     }

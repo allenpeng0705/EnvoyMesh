@@ -18,7 +18,7 @@ export interface BroadcastCapabilityDiscoveryDeps {
   signEnvelope: (unsigned: unknown, privateKeyPem: string) => unknown;
   profile: {
     owner: { ownerId: string };
-    device: { peerId: string; publicKeyPem: string; privateKeyPem: string };
+    device: { deviceId: string; peerId: string; publicKeyPem: string; privateKeyPem: string };
   };
 }
 

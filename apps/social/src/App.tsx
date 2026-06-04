@@ -6,6 +6,7 @@ import { useInboxActivityCount } from "./hooks/useInboxActivityCount.js";
 import { ToastProvider } from "./hooks/useToast.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { Header } from "./components/Header.js";
+import { SwipeBack } from "./components/SwipeBack.js";
 import { SetupView } from "./components/views/SetupView.js";
 import { ChatView } from "./components/views/ChatView.js";
 import { DiscoverView } from "./components/views/DiscoverView.js";
@@ -256,23 +257,39 @@ export function App() {
               />
             )}
             {currentView === "assistant" && (
-              <H2AChannelView
-                onBackToChats={() => setCurrentView("chat")}
-                onOpenActivity={() => {
-                  setSettingsTab("activity");
-                  setCurrentView("settings");
-                }}
-                onOpenInbox={() => {
-                  setCurrentView("chat");
-                  setChatPanelMode("inbox");
-                }}
-              />
+              <SwipeBack onSwipeBack={() => setCurrentView("chat")}>
+                <H2AChannelView
+                  onBackToChats={() => setCurrentView("chat")}
+                  onOpenActivity={() => {
+                    setSettingsTab("activity");
+                    setCurrentView("settings");
+                  }}
+                  onOpenInbox={() => {
+                    setCurrentView("chat");
+                    setChatPanelMode("inbox");
+                  }}
+                />
+              </SwipeBack>
             )}
-            {currentView === "discover" && <DiscoverView />}
-            {currentView === "library" && <LibraryView />}
-            {currentView === "profile" && <ProfileView />}
+            {currentView === "discover" && (
+              <SwipeBack onSwipeBack={() => setCurrentView("chat")}>
+                <DiscoverView />
+              </SwipeBack>
+            )}
+            {currentView === "library" && (
+              <SwipeBack onSwipeBack={() => setCurrentView("chat")}>
+                <LibraryView />
+              </SwipeBack>
+            )}
+            {currentView === "profile" && (
+              <SwipeBack onSwipeBack={() => setCurrentView("chat")}>
+                <ProfileView />
+              </SwipeBack>
+            )}
             {currentView === "settings" && (
-              <SettingsView tab={settingsTab} onTabChange={setSettingsTab} />
+              <SwipeBack onSwipeBack={() => setCurrentView("chat")}>
+                <SettingsView tab={settingsTab} onTabChange={setSettingsTab} />
+              </SwipeBack>
             )}
           </main>
         </ErrorBoundary>

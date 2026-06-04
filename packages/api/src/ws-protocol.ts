@@ -183,6 +183,7 @@ export type RpcMethods =
   | "deleteAgentCircle"
   | "chatRagSearch"
   | "discoverAndCluster"
+  | "meshIntelligenceReport"
   | "proposeAgentCircles"
   | "startDocumentAcquisitionJob"
   | "getDocumentAcquisitionJob"

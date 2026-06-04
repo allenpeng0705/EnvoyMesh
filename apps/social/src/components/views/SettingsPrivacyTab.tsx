@@ -112,7 +112,9 @@ export function SettingsPrivacyTab() {
                 const value = e.target.value;
                 await nodeService.updateNodeConfig({
                   knowledgeSyndicationMaxSensitivity:
-                    value === "" ? null : (value as "public" | "friends" | "private"),
+                    value === ""
+                      ? undefined
+                      : (value as "public" | "friends" | "private"),
                 });
                 await refreshNodeConfig();
               }}

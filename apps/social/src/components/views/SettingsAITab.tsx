@@ -1123,6 +1123,7 @@ export function SettingsAITab() {
               </div>
             </label>
           ))}
+        </div>
           {currentStatus.statusMode === "manual" && (
             <div className="settings-toggle-row" style={{ marginTop: "0.75rem" }}>
               <div className="toggle-info">
@@ -1135,9 +1136,8 @@ export function SettingsAITab() {
                 <span className="slider" />
               </label>
             </div>
-            </div>
           )}
-      </section>
+        </section>
 
       <section className="settings-section">
         <h4>{t("settings.ai.identity.heading")}</h4>

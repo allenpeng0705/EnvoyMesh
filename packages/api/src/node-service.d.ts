@@ -747,6 +747,14 @@ export interface NodeServiceEvents {
         envelope: Record<string, unknown>;
         remotePeerId: string;
     };
+    /** Phase 25A — mesh-awareness insight surfaced to UI. */
+    "agent:awareness": {
+        kind: string;
+        summary: string;
+        matchedTopic: string;
+        peerCount: number;
+        createdAt: string;
+    };
 }
 export interface NodeService {
     /**

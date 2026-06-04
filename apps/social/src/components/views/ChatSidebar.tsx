@@ -15,6 +15,7 @@ import { ChatIcon, BridgeIcon, AddIcon } from "../../icons.js";
 import { useChatThreadPreviews } from "../../hooks/useChatThreadPreviews.js";
 import { CreateGroupModal } from "./CreateGroupModal.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
+import { PullToRefresh } from "../PullToRefresh.js";
 import type { BondRecord } from "@envoymesh/api";
 
 function sortByLatestMessage<T>(
@@ -58,6 +59,16 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
   const [removeTarget, setRemoveTarget] = useState<{ ownerId: string; name: string } | null>(null);
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshNodeConfig();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -168,7 +179,8 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
 
   return (
     <aside className="contact-list">
-      {/* AI — assistant + home agent bridge */}
+      <PullToRefresh onRefresh={handleRefresh} isRefreshing={isRefreshing}>
+        {/* AI — assistant + home agent bridge */}
       {showAiSection ? (
         <>
           <div className="contact-list-section-label">{t("chat.aiSection")}</div>
@@ -369,6 +381,8 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
           ) : null}
         </div>
       ) : null}
+
+      </PullToRefresh>
 
       {/* Context menu for AI access level */}
       {contextMenu && (

@@ -951,6 +951,44 @@ export class MobileNode implements NodeService {
    *
    * Throws if no persisted state, no secure storage, or keys are missing.
    */
+  /**
+   * Wipe all local data: identity state, peer directory, chat log.
+   * Mobile equivalent of the desktop `clearAllUserData`. Used by the
+   * social app's "clear all data" privacy action.
+   */
+  async clearAllUserData(): Promise<void> {
+    // Persisted identity state (owner keys, device cert, shared identity)
+    if (this._identityStateStore) {
+      try {
+        await this._identityStateStore.save({
+          version: "0.1",
+          ownerPrivateKeyPem: null,
+          ownerPublicKeyPem: null,
+          deviceCertificate: null,
+          sharedIdentity: null,
+          persistedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn("[clearAllUserData] identity state:", err);
+      }
+    }
+    // Best-effort: remove storage-backed stores we don't recreate above.
+    if (this._peerDirectoryStore) {
+      try {
+        await this._peerDirectoryStore.save({ version: "0.1", records: [] });
+      } catch (err) {
+        console.warn("[clearAllUserData] peer directory:", err);
+      }
+    }
+    if (this._chatLogStore) {
+      try {
+        await this._chatLogStore.save({ version: "0.1", messages: [] });
+      } catch (err) {
+        console.warn("[clearAllUserData] chat log:", err);
+      }
+    }
+  }
+
   async restoreFromSecureStorage(): Promise<MobileNodeState> {
     if (!this._secureStorage) {
       throw new Error("SecureStorage not configured");

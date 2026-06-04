@@ -142,6 +142,10 @@ export function parseExternalDidDocumentJson(raw: string): ResolveDidImportResul
     return { ok: false, reason: "DID document missing Ed25519 publicKeyMultibase" };
   }
 
+  // Validate service endpoints if present (the resolver returns them via
+  // ResolvedDidImport for the caller to surface in the UI).
+  const servicesResult = validateDidServices(doc.service);
+
   try {
     const rawKey = ed25519RawPublicKeyFromDidKeyMultibase(multibase);
     const publicKeyPem = ed25519SpkiPemFromRawPublicKey(rawKey);
@@ -158,6 +162,161 @@ export function parseExternalDidDocumentJson(raw: string): ResolveDidImportResul
       reason: error instanceof Error ? error.message : "failed to parse DID document key",
     };
   }
+}
+
+/** Result of resolving an envelope-wrapped DID export. */
+export interface ResolvedDidExport {
+  did: string;
+  ownerId: string;
+  publicKeyPem: string;
+  document: import("./owner-did-presentation.js").DidKeyDocument;
+  services: import("./owner-did-presentation.js").DidServiceEndpoint[];
+  exportedAt: string;
+}
+
+export type ResolveDidExportResult =
+  | { ok: true; resolved: ResolvedDidExport }
+  | { ok: false; reason: string };
+
+/**
+ * Resolve an envelope-wrapped DID export (output of exportDidDocumentJson).
+ * Validates the envelope version, the DID/key/owner-id consistency, and
+ * the service endpoints.
+ */
+export function resolveDidExportInput(raw: string): ResolveDidExportResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ok: false, reason: "invalid JSON" };
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return { ok: false, reason: "DID export must be a JSON object" };
+  }
+  const env = parsed as {
+    envelope?: unknown;
+    did?: unknown;
+    ownerId?: unknown;
+    publicKeyPem?: unknown;
+    document?: unknown;
+    exportedAt?: unknown;
+  };
+  if (env.envelope !== "envoymesh-did-export-v1") {
+    return { ok: false, reason: "not an EnvoyMesh DID export" };
+  }
+  if (typeof env.did !== "string" || !env.did.startsWith("did:key:")) {
+    return { ok: false, reason: "missing or invalid did field" };
+  }
+  if (typeof env.ownerId !== "string" || !env.ownerId.startsWith("envoy:owner:")) {
+    return { ok: false, reason: "missing or invalid ownerId field" };
+  }
+  if (typeof env.publicKeyPem !== "string" || !env.publicKeyPem.includes("BEGIN PUBLIC KEY")) {
+    return { ok: false, reason: "missing or invalid publicKeyPem field" };
+  }
+  if (!env.document || typeof env.document !== "object") {
+    return { ok: false, reason: "missing document field" };
+  }
+  if (typeof env.exportedAt !== "string") {
+    return { ok: false, reason: "missing exportedAt field" };
+  }
+
+  // Re-resolve the public key to confirm everything is consistent.
+  const docImportResult = parseExternalDidDocumentJson(JSON.stringify(env.document));
+  if (!docImportResult.ok) return docImportResult;
+  if (docImportResult.resolved.did !== env.did) {
+    return { ok: false, reason: "exported did does not match document" };
+  }
+  if (docImportResult.resolved.ownerId !== env.ownerId) {
+    return { ok: false, reason: "exported ownerId does not match document" };
+  }
+
+  const servicesCheck = validateDidServices((env.document as { service?: unknown }).service);
+
+  return {
+    ok: true,
+    resolved: {
+      did: env.did,
+      ownerId: env.ownerId,
+      publicKeyPem: env.publicKeyPem,
+      document: env.document as import("./owner-did-presentation.js").DidKeyDocument,
+      services: servicesCheck.ok ? servicesCheck.services : [],
+      exportedAt: env.exportedAt,
+    },
+  };
+}
+
+/**
+ * Validate service endpoints in an external DID document. Returns the
+ * validated endpoints on success, or a reason string on failure.
+ */
+export function validateDidServices(services: unknown):
+  | { ok: true; services: import("./owner-did-presentation.js").DidServiceEndpoint[] }
+  | { ok: false; reason: string } {
+  if (!Array.isArray(services)) {
+    return { ok: false, reason: "service must be an array" };
+  }
+  const out: import("./owner-did-presentation.js").DidServiceEndpoint[] = [];
+  for (const s of services) {
+    if (!s || typeof s !== "object") {
+      return { ok: false, reason: "service entry must be an object" };
+    }
+    const entry = s as Record<string, unknown>;
+    if (typeof entry.id !== "string" || !entry.id.startsWith("#")) {
+      return { ok: false, reason: "service.id must be a string starting with '#'" };
+    }
+    if (typeof entry.type !== "string" || entry.type.length === 0) {
+      return { ok: false, reason: "service.type must be a non-empty string" };
+    }
+    if (typeof entry.serviceEndpoint !== "string" || entry.serviceEndpoint.length === 0) {
+      return { ok: false, reason: "service.serviceEndpoint must be a non-empty string" };
+    }
+    const out2: import("./owner-did-presentation.js").DidServiceEndpoint = {
+      id: entry.id,
+      type: entry.type,
+      serviceEndpoint: entry.serviceEndpoint,
+    };
+    if (typeof entry.description === "string") {
+      out2.description = entry.description;
+    }
+    out.push(out2);
+  }
+  return { ok: true, services: out };
+}
+
+/**
+ * Serialize a DID document (with optional service endpoints) as portable
+ * JSON suitable for sharing, exporting, or handing off to another tool.
+ * Includes an EnvoyMesh-specific envelope so an importer can detect the
+ * source as EnvoyMesh-exported.
+ */
+export function exportDidDocumentJson(input: {
+  did: string;
+  ownerId: string;
+  publicKeyPem: string;
+  services?: import("./owner-did-presentation.js").DidServiceEndpoint[];
+  /** ISO timestamp of export; defaults to now. */
+  exportedAt?: string;
+}): {
+  envelope: "envoymesh-did-export-v1";
+  exportedAt: string;
+  did: string;
+  ownerId: string;
+  publicKeyPem: string;
+  document: import("./owner-did-presentation.js").DidKeyDocument;
+} {
+  const presentation = buildOwnerDidPresentation({
+    ownerId: input.ownerId,
+    publicKeyPem: input.publicKeyPem,
+    services: input.services,
+  });
+  return {
+    envelope: "envoymesh-did-export-v1",
+    exportedAt: input.exportedAt ?? new Date().toISOString(),
+    did: presentation.did,
+    ownerId: input.ownerId,
+    publicKeyPem: input.publicKeyPem,
+    document: presentation.document,
+  };
 }
 
 /** Resolve `did:key:…`, `envoy:owner:…`, or a JSON DID document string. */

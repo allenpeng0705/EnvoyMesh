@@ -7,6 +7,7 @@ export * from "./contact-ai-access.js";
 export * from "./ai-identity-prefix.js";
 export * from "./autonomous-policy.js";
 export * from "./auto-reply-limits.js";
+export * from "./agent-circle.js";
 export * from "./envoy-pair-uri.js";
 export * from "./envoy-contact-link.js";
 export * from "./chat-device-auth.js";

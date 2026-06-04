@@ -413,6 +413,7 @@ let capabilityProviderRunInFlight = false;
 let bondStewardRunInFlight = false;
 let meshAwarenessRunInFlight = false;
 let connectionSuggesterRunInFlight = false;
+let proactiveAgentRunInFlight = false;
 // Activity tracking for online/offline detection (inbound path)
 // Note: node-service-impl.ts has its own activity tracking for outbound paths (sendChat).
 // The index.ts version tracks activity from WebSocket messages (inbound).
@@ -2875,11 +2876,25 @@ modeTransitionTimer = setInterval(() => {
       .runConnectionSuggesterPass()
       .then((suggestions) => {
         if (suggestions.length > 0) {
-          console.log(`[connection-suggester] ${suggestions.length} suggestion(s) generated`);
+          const msg = suggestions.map((s) => `${s.remoteDisplayName} (${s.reason})`).join("; ");
+          console.log(`[connection-suggester] ${suggestions.length} suggestion(s): ${msg}`);
         }
       })
       .catch((err) => console.warn("[connection-suggester] pass failed:", err))
       .finally(() => { connectionSuggesterRunInFlight = false; });
+  }
+  // Phase 27 — proactive agent: pre-compute summaries when clusters detected
+  if (nodeService instanceof NodeServiceImpl && !proactiveAgentRunInFlight) {
+    proactiveAgentRunInFlight = true;
+    void nodeService
+      .runProactiveAgentPass()
+      .then((insights) => {
+        if (insights.length > 0) {
+          console.log(`[proactive-agent] ${insights.length} proactive insight(s) ready`);
+        }
+      })
+      .catch((err) => console.warn("[proactive-agent] pass failed:", err))
+      .finally(() => { proactiveAgentRunInFlight = false; });
   }
   // Check digest schedule (Phase 9J)
   const digestConfig = digestGenerator.getConfig();

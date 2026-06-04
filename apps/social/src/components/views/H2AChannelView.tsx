@@ -16,6 +16,7 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H
   const nodeService = useNodeService();
   const [activity, setActivity] = useState<AgentActivityRecord[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalSummary[]>([]);
+  const [reportLoading, setReportLoading] = useState(false);
 
   useEffect(() => {
     void nodeService
@@ -97,6 +98,33 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H
               {t("h2a.viewAllActivity")}
             </button>
           )}
+        </div>
+
+        <div className="h2a-rail-block">
+          <h4>{t("h2a.quickActions", "Quick Actions")}</h4>
+          <button
+            type="button"
+            className="primary"
+            style={{ width: "100%", marginTop: "4px" }}
+            disabled={reportLoading}
+            onClick={() => {
+              setReportLoading(true);
+              nodeService.generateMeshIntelligenceReport?.()
+                ?.then((report) => {
+                  if (typeof report === "string") {
+                    setReportLoading(false);
+                  }
+                })
+                ?.catch(() => setReportLoading(false));
+            }}
+          >
+            {reportLoading
+              ? t("h2a.generatingReport", "Generating...")
+              : t("h2a.meshIntelligenceReport", "Mesh Intelligence Report")}
+          </button>
+          <p className="field-desc" style={{ marginTop: "4px" }}>
+            {t("h2a.reportDesc", "AI analysis of your entire mesh — health, trends, dormant bonds, reputation.")}
+          </p>
         </div>
       </aside>
 

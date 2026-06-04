@@ -313,8 +313,20 @@ function scoreRoute(
     capabilitySet.has(id.toLowerCase()),
   );
 
+  // Require a meaningful keyword match: either the token equals the keyword,
+  // the longer contains the shorter AND the shorter is at least 5 chars long,
+  // or both are at least 5 chars with significant overlap. This avoids short
+  // incidental tokens like "help" or "code" from triggering long custom
+  // keywords like "coding-help" purely via substring containment, which made
+  // every greeting (e.g. "What can you help me with?") route to a custom
+  // service.
   const matchedKeywords = route.keywords.filter((kw) =>
-    goalTokens.some((token) => token.includes(kw) || kw.includes(token)),
+    goalTokens.some((token) => {
+      if (token === kw) return true;
+      const [shorter, longer] = token.length <= kw.length ? [token, kw] : [kw, token];
+      if (shorter.length < 5) return false;
+      return longer.includes(shorter);
+    }),
   );
 
   let score = 0;
@@ -327,6 +339,17 @@ function scoreRoute(
     capabilityIds.length > 0 &&
     matchedCapabilityIds.length === 0 &&
     goalTokens.length === 0
+  ) {
+    score = 0;
+  } else if (
+    // When the user gave a real goal, a manifest capability alone (no keyword
+    // overlap with the goal) should NOT promote the route — otherwise any
+    // owner message ("Hello", "what can you do?") would always pick the first
+    // custom manifest route.
+    goalTokens.length > 0 &&
+    matchedKeywords.length === 0 &&
+    matchedCapabilityIds.length > 0 &&
+    route.routeId.startsWith("custom:")
   ) {
     score = 0;
   }
