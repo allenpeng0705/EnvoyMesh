@@ -1,27 +1,25 @@
 /**
- * OpenClaw Runtime — Bundled OpenClaw agent inside EnvoyMesh.
+ * OpenClaw Runtime — Auto-discovery and process management.
  *
- * Instead of requiring users to install and configure OpenClaw separately,
- * EnvoyMesh spawns it as a child process and communicates via stdio.
- * The bridge protocol (JSON messages over stdin/stdout) is the same as
- * the HTTP bridge but without the HTTP layer.
+ * Supports three installation methods:
+ *   1. npm: @openclaw/core as a project dependency
+ *   2. binary: openclaw on PATH or in packages/openclaw-runtime/bin/
+ *   3. source: packages/openclaw/ as a git submodule
  *
- * Architecture:
- *   EnvoyMesh ──spawn──▶ OpenClaw child process
- *                         stdin: JSON messages
- *                         stdout: JSON responses
- *
- * Fallback: if OpenClaw isn't installed, falls back to configured model
- * providers (OpenAI-compatible, Ollama, etc.).
+ * Priority: npm > PATH binary > bundled binary > source build > fallback
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { resolve, join } from "node:path";
+
+// ---- Types ----
 
 export interface OpenClawRuntimeConfig {
-  /** Path to the OpenClaw executable. */
-  executablePath: string;
+  /** Override the auto-detected OpenClaw path. */
+  executablePath?: string;
   /** CLI arguments for the OpenClaw process. */
   args?: string[];
   /** Working directory for OpenClaw. */
@@ -30,28 +28,67 @@ export interface OpenClawRuntimeConfig {
   responseTimeoutMs?: number;
 }
 
-export interface OpenClawMessage {
-  type: "request" | "response" | "error";
+interface OpenClawMessage {
+  type: "request" | "response" | "error" | "ping" | "pong";
   id: string;
-  /** Request: the prompt to send. Response: the answer. */
   text?: string;
-  /** Error message if type is "error". */
   error?: string;
 }
 
 interface PendingRequest {
   resolve: (text: string) => void;
   reject: (error: Error) => void;
-  timer: NodeJS.Timeout;
+  timer: ReturnType<typeof setTimeout>;
 }
+
+// ---- Path Discovery ----
+
+const BUNDLED_BIN_DIR = join(__dirname, "..", "bin");
+const SOURCE_DIR = join(__dirname, "..", "..", "openclaw");
+
+/**
+ * Discover the best available OpenClaw installation.
+ * Returns the executable path or null if not found.
+ */
+export async function discoverOpenClaw(): Promise<string | null> {
+  // 1. Try npm package (@openclaw/core)
+  try {
+    const { getOpenClawPath } = await import("@openclaw/core");
+    const path = getOpenClawPath?.();
+    if (path && existsSync(path)) return path;
+  } catch { /* @openclaw/core not installed */ }
+
+  // 2. Try PATH
+  const pathCandidates = [
+    "openclaw",
+    resolve(BUNDLED_BIN_DIR, "openclaw"),
+    resolve(SOURCE_DIR, "bin", "openclaw"),
+  ];
+
+  for (const candidate of pathCandidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  // 3. Source build — check if package.json exists
+  const sourcePkg = join(SOURCE_DIR, "package.json");
+  if (existsSync(sourcePkg)) {
+    // Needs `npm run build` — can't use directly
+    console.log("[openclaw-runtime] source found at", SOURCE_DIR, "— run npm run build first");
+  }
+
+  return null;
+}
+
+// ---- Runtime ----
 
 export class OpenClawRuntime {
   private process: ChildProcess | null = null;
   private pending = new Map<string, PendingRequest>();
   private ready = false;
   private config: OpenClawRuntimeConfig;
+  private executablePath: string | null = null;
 
-  constructor(config: OpenClawRuntimeConfig) {
+  constructor(config: OpenClawRuntimeConfig = {}) {
     this.config = {
       responseTimeoutMs: 120_000,
       ...config,
@@ -59,29 +96,46 @@ export class OpenClawRuntime {
   }
 
   /**
-   * Start the OpenClaw child process and establish stdio communication.
+   * Discover and start OpenClaw.
+   * Returns true if started successfully, false if not available.
    */
-  async start(): Promise<void> {
-    if (this.process) return;
+  async start(): Promise<boolean> {
+    if (this.process) return true;
 
-    return new Promise((resolve, reject) => {
-      const proc = spawn(this.config.executablePath, this.config.args ?? [], {
+    // Auto-discover if no explicit path
+    if (!this.config.executablePath) {
+      this.executablePath = await discoverOpenClaw();
+    } else {
+      this.executablePath = this.config.executablePath;
+    }
+
+    if (!this.executablePath) {
+      console.log("[openclaw-runtime] OpenClaw not found — using fallback model providers");
+      return false;
+    }
+
+    console.log(`[openclaw-runtime] Starting OpenClaw from ${this.executablePath}`);
+
+    return new Promise((resolve) => {
+      const proc = spawn(this.executablePath!, this.config.args ?? ["--stdio"], {
         cwd: this.config.cwd,
         stdio: ["pipe", "pipe", "pipe"],
+        env: { ...process.env, OPENCLAW_STDIO: "1" },
       });
 
-      proc.on("error", (err) => {
-        reject(new Error(`Failed to start OpenClaw: ${err.message}`));
+      proc.on("error", () => {
+        console.log("[openclaw-runtime] failed to start — using fallback");
+        resolve(false);
       });
 
       proc.on("exit", (code) => {
         this.ready = false;
         if (code !== 0 && code !== null) {
-          console.warn(`[openclaw-runtime] process exited with code ${code}`);
+          console.warn(`[openclaw-runtime] exited with code ${code}`);
         }
       });
 
-      // Read responses line by line from stdout
+      // Read JSON responses from stdout
       const rl = createInterface({ input: proc.stdout! });
       rl.on("line", (line: string) => {
         try {
@@ -98,41 +152,39 @@ export class OpenClawRuntime {
               }
             }
           }
-        } catch {
-          // Ignore non-JSON lines
-        }
+          if (msg.type === "pong") {
+            this.ready = true;
+            this.process = proc;
+          }
+        } catch { /* ignore non-JSON */ }
       });
-
-      // Buffer for startup — wait for first response
-      const startupTimeout = setTimeout(() => {
-        this.ready = true;
-        this.process = proc;
-        resolve();
-      }, 5000);
-
-      // Send a ping to verify
-      proc.stdin!.write(JSON.stringify({ type: "ping" }) + "\n");
 
       proc.stderr!.on("data", (data: Buffer) => {
-        console.log(`[openclaw] ${data.toString().trim()}`);
+        const line = data.toString().trim();
+        if (line) console.log(`[openclaw] ${line}`);
       });
 
-      // If we get any response, OpenClaw is ready
-      rl.once("line", () => {
-        clearTimeout(startupTimeout);
-        this.ready = true;
-        this.process = proc;
-        resolve();
-      });
+      // Send ping to verify readiness
+      proc.stdin!.write(JSON.stringify({ type: "ping", id: "startup" }) + "\n");
+
+      // Fallback: assume ready after 5s even without pong
+      setTimeout(() => {
+        if (!this.ready) {
+          this.ready = true;
+          this.process = proc;
+        }
+        resolve(true);
+      }, 5000);
     });
   }
 
   /**
-   * Send a prompt to OpenClaw and wait for the response.
+   * Ask OpenClaw a question. Falls back to returning an error string
+   * if not started — caller should use their own model provider.
    */
   async ask(prompt: string, context?: string): Promise<string> {
     if (!this.ready || !this.process) {
-      throw new Error("OpenClaw runtime not started");
+      throw new Error("OpenClaw not available");
     }
 
     const id = randomUUID();
@@ -145,39 +197,25 @@ export class OpenClawRuntime {
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`OpenClaw response timeout after ${this.config.responseTimeoutMs}ms`));
+        reject(new Error(`OpenClaw response timeout`));
       }, this.config.responseTimeoutMs ?? 120_000);
 
       this.pending.set(id, { resolve, reject, timer });
-
-      try {
-        this.process!.stdin!.write(JSON.stringify(message) + "\n");
-      } catch (err) {
-        clearTimeout(timer);
-        this.pending.delete(id);
-        reject(err);
-      }
+      this.process!.stdin!.write(JSON.stringify(message) + "\n");
     });
   }
 
-  /**
-   * Check if OpenClaw is running and ready.
-   */
   isReady(): boolean {
     return this.ready && this.process !== null && !this.process.killed;
   }
 
-  /**
-   * Stop the OpenClaw child process.
-   */
   async stop(): Promise<void> {
     if (!this.process) return;
     this.ready = false;
 
-    // Reject all pending requests
-    for (const [id, pending] of this.pending) {
+    for (const [, pending] of this.pending) {
       clearTimeout(pending.timer);
-      pending.reject(new Error("OpenClaw runtime stopped"));
+      pending.reject(new Error("OpenClaw stopped"));
     }
     this.pending.clear();
 
@@ -187,19 +225,13 @@ export class OpenClawRuntime {
   }
 }
 
-/**
- * Check if OpenClaw is available on the system.
- */
-export function isOpenClawInstalled(executablePath: string): boolean {
-  try {
-    const result = spawn(executablePath, ["--version"], {
-      stdio: "ignore",
-      timeout: 3000,
-    });
-    result.on("error", () => {});
-    // If spawn doesn't throw immediately, the executable exists
-    return true;
-  } catch {
-    return false;
+// ---- Singleton ----
+
+let _instance: OpenClawRuntime | null = null;
+
+export function getOpenClawRuntime(config?: OpenClawRuntimeConfig): OpenClawRuntime {
+  if (!_instance) {
+    _instance = new OpenClawRuntime(config);
   }
+  return _instance;
 }

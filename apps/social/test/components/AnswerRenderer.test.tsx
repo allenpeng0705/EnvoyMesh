@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { AnswerRenderer } from "../../../components/AnswerRenderer.js";
+import { render } from "@testing-library/react";
+import { AnswerRenderer } from "../../src/components/AnswerRenderer.js";
 
 describe("AnswerRenderer", () => {
   it("renders markdown by default (no format)", () => {
@@ -55,9 +55,9 @@ describe("AnswerRenderer", () => {
     );
     expect(container.querySelector(".answer-block-paragraph")).not.toBeNull();
     expect(container.querySelector(".answer-block-list--check")).not.toBeNull();
-    expect(screen.getByText("report.pdf")).toBeInTheDocument();
+    expect(container.textContent).toContain("report.pdf");
     expect(container.querySelector(".answer-block-card")).not.toBeNull();
-    expect(screen.getByText("Quarterly Report")).toBeInTheDocument();
+    expect(container.textContent).toContain("Quarterly Report");
     expect(container.querySelector(".answer-block-status--success")).not.toBeNull();
   });
 
