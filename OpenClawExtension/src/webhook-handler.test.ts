@@ -87,6 +87,33 @@ describe("createEnvoymeshWebhookHandler", () => {
     }
   });
 
+  it("forwards optional EnvoyMesh context for trusted system append", async () => {
+    resetInboundDedupForTests();
+    resetMeshPeerRoutingForTests();
+    const deliver = vi.fn().mockResolvedValue(undefined);
+    const handler = createEnvoymeshWebhookHandler({
+      account: baseAccount,
+      deliver,
+    });
+    const { port, close } = await listen(handler);
+    try {
+      const result = await postJson(port, {
+        fromOwnerId: "envoy:owner:alice",
+        text: "what can you help me with",
+        policyPrompt: "Bond autonomy: DENIED",
+        retrievedContext: "Recent with Bob\n- prior note",
+      });
+      expect(result.status).toBe(200);
+      expect(deliver.mock.calls[0]?.[0]).toMatchObject({
+        policyPrompt: "Bond autonomy: DENIED",
+        retrievedContext: "Recent with Bob\n- prior note",
+        text: "what can you help me with",
+      });
+    } finally {
+      await close();
+    }
+  });
+
   it("accepts mesh.async_reply payloads", async () => {
     resetInboundDedupForTests();
     const deliverAsync = vi.fn().mockResolvedValue(undefined);

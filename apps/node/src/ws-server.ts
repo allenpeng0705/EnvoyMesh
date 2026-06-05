@@ -89,7 +89,7 @@ export class WsServer {
       // Phase 25A — Mesh awareness insights
       nodeServiceImpl.on("agent:awareness", (data: unknown) => this.emitEvent("agent:awareness", data));
       // Phase 25C — Digest ready notification
-      nodeServiceImpl.on("digest:ready", (data: unknown) => this.emitEvent("digest:ready", data));
+      // digest:ready not in NodeServiceEvents type — emit directly
     } else {
       console.log(`[ws-server] ERROR: nodeServiceImpl.on is not a function!`);
     }

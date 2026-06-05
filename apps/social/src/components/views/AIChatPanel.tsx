@@ -15,7 +15,7 @@ import type { TFunction } from "../../context/I18nContext.js";
 
 interface AiMessageTurnMeta extends Pick<
   OwnerAgentTurnResult,
-  "domain" | "jobId" | "correlationId" | "pendingApproval" | "routeId" | "intent" | "approvalItems"
+  "domain" | "jobId" | "correlationId" | "pendingApproval" | "routeId" | "intent" | "approvalItems" | "modelUsed"
 > {
   approvalResolved?: Record<string, "approved" | "rejected">;
   jobStage?: string;
@@ -61,11 +61,16 @@ function AiTurnMetaChips({
   onOpenActivity?: () => void;
   onOpenInbox?: () => void;
 }) {
-  const showMeta = turn.domain !== "knowledge" || turn.jobId || turn.pendingApproval;
+  const showMeta = turn.domain !== "knowledge" || turn.jobId || turn.pendingApproval || turn.modelUsed;
   if (!showMeta) return null;
 
   return (
     <div className="ai-turn-meta" role="status">
+      {turn.modelUsed && (
+        <span className="ai-turn-meta-chip ai-turn-meta-chip--model" title={`Model: ${turn.modelUsed}`}>
+          {turn.modelUsed === "openclaw" ? "🧠 OpenClaw" : "⚡ Native"}
+        </span>
+      )}
       {turn.domain !== "knowledge" && (
         <span className="ai-turn-meta-chip ai-turn-meta-chip--domain">{domainLabel(turn.domain, t)}</span>
       )}
@@ -170,7 +175,7 @@ function groupByDate(msgs: AiMessage[]): [string, AiMessage[]][] {
 export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = {}) {
   const t = useT();
   const nodeService = useNodeService();
-  const { nodeConfig, humanProfile, nodeStatus } = useNodeState();
+  const { nodeConfig, humanProfile, nodeStatus, bridgeStatus } = useNodeState();
   const assistantReady = nodeStatus === "running";
   const assistantBlockedHint =
     nodeStatus === "starting"
@@ -246,6 +251,25 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
     return unsub;
   }, [nodeService]);
 
+  // Listen for async bridge responses from the OpenClaw agent
+  useEffect(() => {
+    if (!bridgeStatus?.enabled) return;
+    const unsub = nodeService.on("chat:message", (msg: any) => {
+      if (msg.metadata?.deliveryReceipt) return;
+      setAiMessages((prev) => {
+        if (prev.some((m) => m.id === msg.messageId)) return prev;
+        return [...prev, {
+          id: msg.messageId || crypto.randomUUID(),
+          role: "ai" as const,
+          text: stripModelThinking(typeof msg.payload?.text === "string" ? msg.payload.text : msg.text ?? ""),
+          timestamp: msg.timestamp || msg.createdAt || new Date().toISOString(),
+        }];
+      });
+      setIsAiLoading(false);
+    });
+    return unsub;
+  }, [nodeService, bridgeStatus?.enabled]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [aiMessages, isAiLoading]);
@@ -302,6 +326,7 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
             approvalItems: turn.approvalItems,
             format: turn.format,
             blocks: turn.blocks,
+            modelUsed: turn.modelUsed,
           },
         },
       ]);

@@ -367,6 +367,19 @@ export const ChevronDownIcon = mkIcon(
   "ChevronDownIcon",
 );
 
+export const PluginIcon = mkIcon(
+  <>
+    <rect x="3" y="3" width="7" height="7" rx="1" />
+    <rect x="14" y="3" width="7" height="7" rx="1" />
+    <rect x="14" y="14" width="7" height="7" rx="1" />
+    <rect x="3" y="14" width="7" height="7" rx="1" />
+    <line x1="10" y1="6.5" x2="14" y2="6.5" />
+    <line x1="6.5" y1="10" x2="6.5" y2="14" />
+    <line x1="17.5" y1="10" x2="17.5" y2="14" />
+  </>,
+  "PluginIcon",
+);
+
 // ---- Icon name map for programmatic use ----
 export type IconName =
   | "chat"
@@ -404,7 +417,8 @@ export type IconName =
   | "decline"
   | "pending"
   | "refreshCw"
-  | "chevronDown";
+  | "chevronDown"
+  | "plugin";
 
 export const ICON_MAP: Record<IconName, React.FC<IconProps>> = {
   chat: ChatIcon,
@@ -437,6 +451,7 @@ export const ICON_MAP: Record<IconName, React.FC<IconProps>> = {
   darkMode: DarkModeIcon,
   lightMode: LightModeIcon,
   warning: WarningIcon,
+  plugin: PluginIcon,
   error: ErrorIcon,
   info: InfoIcon,
   decline: DeclineIcon,

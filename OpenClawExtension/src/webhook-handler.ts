@@ -103,10 +103,23 @@ function toInboundMessage(payload: EnvoymeshWebhookPayload): EnvoymeshInboundMes
   const fromOwnerId = (payload.fromOwnerId ?? "").trim();
   const text = (payload.text ?? "").trim();
   const fromName = (payload.fromName ?? fromOwnerId).trim();
+  const correlationId = (payload.correlationId ?? "").trim() || undefined;
+  const policyPrompt = (payload.policyPrompt ?? "").trim() || undefined;
+  const retrievedContext = (payload.retrievedContext ?? "").trim() || undefined;
+  const systemPrompt = (payload.systemPrompt ?? "").trim() || undefined;
   if (!fromOwnerId || !text) {
     return null;
   }
-  return { from, fromOwnerId, fromName, text };
+  return {
+    from,
+    fromOwnerId,
+    fromName,
+    text,
+    policyPrompt,
+    retrievedContext,
+    systemPrompt,
+    correlationId,
+  };
 }
 
 export function createEnvoymeshWebhookHandler(deps: EnvoymeshWebhookHandlerDeps) {
@@ -155,6 +168,8 @@ export function createEnvoymeshWebhookHandler(deps: EnvoymeshWebhookHandlerDeps)
         res.end(JSON.stringify({ error: "invalid JSON" }));
         return;
       }
+
+      deps.log?.info?.(`EnvoyMesh webhook received: fromOwnerId=${payload.fromOwnerId ?? ""} text=${(payload.text ?? "").slice(0, 50)} cid=${payload.correlationId ?? ""}`);
 
       const asyncMsg = toAsyncInboundMessage(payload);
       if (asyncMsg) {

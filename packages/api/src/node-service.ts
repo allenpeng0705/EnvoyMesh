@@ -1505,6 +1505,17 @@ export interface NodeService {
    */
   getBridgeStatus(): Promise<BridgeStatus>;
 
+  // ClawHub skill marketplace
+  getOpenClawPlugins(): Promise<string[]>;
+  searchOpenClawPlugins(query: string): Promise<string[]>;
+  getTrendingOpenClawPlugins(): Promise<string[]>;
+  installOpenClawPlugin(name: string): Promise<{ ok: boolean; message: string }>;
+  uninstallOpenClawPlugin(name: string): Promise<{ ok: boolean; message: string }>;
+  saveClawhubToken(token: string): Promise<{ ok: boolean }>;
+  saveSkillApiKeys(keys: Record<string, string>): Promise<{ ok: boolean }>;
+  saveWebSearchEnabled(enabled: boolean): Promise<{ ok: boolean }>;
+  sendToOpenClaw(text: string): Promise<void>;
+
   /**
    * Get pairing payload for mobile-app QR pairing (Phase 10A).
    *

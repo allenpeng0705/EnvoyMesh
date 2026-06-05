@@ -291,7 +291,7 @@ export const deNetworkSettingsMessages = {
     agentPeerId: "Agent-Peer-ID",
     agentUrl: "Agent-URL",
     listenPort: "Lauschport",
-    defaultAgentName: "Mein Agent",
+    defaultAgentName: "Ext Agent",
     enabledOnRestart: "Bridge wird beim nächsten Knotenneustart aktiviert.",
     enableHint:
       "Aktivieren Sie die Bridge in bridge-config.json Ihres Knotens, um einen externen Agenten (HomeClaw, OpenClaw) zu verbinden.",

@@ -1,5 +1,7 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
+import { composeEnvoyMeshGroupSystemPrompt } from "./context-compose.js";
 import { sendBridgeMessage } from "./bridge-client.js";
+import { setPendingCorrelationId, takePendingCorrelationId } from "./channel.js";
 import { rememberMeshPeer, resolveMeshReplyPeerId } from "./peer-routing.js";
 import { getEnvoymeshRuntime } from "./runtime.js";
 import { buildEnvoymeshInboundSessionKey } from "./session-key.js";
@@ -43,14 +45,19 @@ function resolveEnvoymeshInboundRoute(params: {
 async function deliverEnvoymeshReply(params: {
   account: ResolvedEnvoymeshAccount;
   replyPeerId: string;
+  fromOwnerId: string;
   payload: { text?: string; body?: string };
 }): Promise<{ visibleReplySent: boolean }> {
   const text = params.payload.text ?? params.payload.body;
   if (!text?.trim()) {
     return { visibleReplySent: false };
   }
-  const to = resolveMeshReplyPeerId(params.replyPeerId);
-  if (!to.startsWith("envoy_")) {
+  const correlationId =
+    takePendingCorrelationId(params.fromOwnerId) ??
+    takePendingCorrelationId(params.replyPeerId);
+  const resolvedTo = resolveMeshReplyPeerId(params.replyPeerId);
+  const bridgeTo = resolvedTo.startsWith("envoy_") ? resolvedTo : params.fromOwnerId;
+  if (!correlationId && !resolvedTo.startsWith("envoy_")) {
     throw new Error(
       `Cannot route EnvoyMesh reply: missing peer id for target "${params.replyPeerId}". ` +
         "Wait for an inbound P2P message first.",
@@ -59,8 +66,9 @@ async function deliverEnvoymeshReply(params: {
   await sendBridgeMessage({
     bridgeUrl: params.account.bridgeUrl,
     bridgeSecret: params.account.bridgeSecret,
-    to,
+    to: bridgeTo,
     text,
+    correlationId,
   });
   return { visibleReplySent: true };
 }
@@ -70,6 +78,14 @@ export async function dispatchEnvoymeshInboundEvent(params: {
   msg: EnvoymeshInboundMessage;
   log?: EnvoymeshChannelLog;
 }): Promise<null> {
+  // Thread correlationId for sync ask() replies — key by ownerId and mesh peer id.
+  if (params.msg.correlationId) {
+    console.log(`[envoymesh] dispatchInbound: storing cid=${params.msg.correlationId} for ownerId=${params.msg.fromOwnerId}`);
+    setPendingCorrelationId(params.msg.fromOwnerId, params.msg.correlationId);
+    if (params.msg.from?.trim()) {
+      setPendingCorrelationId(params.msg.from.trim(), params.msg.correlationId);
+    }
+  }
   const rt = getEnvoymeshRuntime();
   const currentCfg = rt.config.current() as OpenClawConfig;
   const replyPeerId = params.msg.from || params.msg.fromOwnerId;
@@ -125,6 +141,10 @@ export async function dispatchEnvoymeshInboundEvent(params: {
             commandBody: input.textForCommands,
             bodyForAgent: input.textForAgent,
           },
+          supplemental: (() => {
+            const groupSystemPrompt = composeEnvoyMeshGroupSystemPrompt(params.msg);
+            return groupSystemPrompt ? { groupSystemPrompt } : undefined;
+          })(),
           extra: {
             meshPeerId: params.msg.from,
           },
@@ -151,6 +171,7 @@ export async function dispatchEnvoymeshInboundEvent(params: {
               return await deliverEnvoymeshReply({
                 account: params.account,
                 replyPeerId,
+                fromOwnerId: params.msg.fromOwnerId,
                 payload,
               });
             },

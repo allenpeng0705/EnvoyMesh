@@ -291,7 +291,7 @@ export const frNetworkSettingsMessages = {
     agentPeerId: "Peer ID agent",
     agentUrl: "URL agent",
     listenPort: "Port d'écoute",
-    defaultAgentName: "Mon agent",
+    defaultAgentName: "Ext Agent",
     enabledOnRestart: "Le pont sera activé au prochain redémarrage du nœud.",
     enableHint:
       "Activez le pont dans bridge-config.json de votre nœud pour connecter un agent externe (HomeClaw, OpenClaw).",

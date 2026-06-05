@@ -16,6 +16,7 @@
     { "path": "../../packages/api" },
     { "path": "../../packages/models" },
     { "path": "../../packages/rag" },
-    { "path": "../../packages/ipfs-helia" }
+    { "path": "../../packages/ipfs-helia" },
+    { "path": "../../packages/openclaw-runtime" }
   ]
 }

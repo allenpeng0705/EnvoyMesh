@@ -68,6 +68,17 @@ export function resolveAccount(
       ? "explicit"
       : "default";
 
+  let dmPolicy = merged.dmPolicy ?? "allowlist";
+  let allowedOwnerIds = parseAllowedOwnerIds(
+    merged.allowedOwnerIds ?? process.env.ENVOYMESH_ALLOWED_OWNER_IDS,
+  );
+
+  // Zero-config: if no owner IDs configured, default to open for local use.
+  if (allowedOwnerIds.length === 0 && dmPolicy === "allowlist") {
+    dmPolicy = "open";
+    allowedOwnerIds = ["*"];
+  }
+
   return {
     accountId: id,
     enabled: merged.enabled ?? true,
@@ -76,9 +87,7 @@ export function resolveAccount(
     inboundSecret: merged.inboundSecret ?? process.env.ENVOYMESH_INBOUND_SECRET ?? "",
     webhookPath: merged.webhookPath ?? DEFAULT_WEBHOOK_PATH,
     webhookPathSource,
-    dmPolicy: merged.dmPolicy ?? "allowlist",
-    allowedOwnerIds: parseAllowedOwnerIds(
-      merged.allowedOwnerIds ?? process.env.ENVOYMESH_ALLOWED_OWNER_IDS,
-    ),
+    dmPolicy,
+    allowedOwnerIds,
   };
 }

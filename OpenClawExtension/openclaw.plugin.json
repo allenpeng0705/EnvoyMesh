@@ -1,7 +1,7 @@
 {
   "id": "envoymesh",
   "activation": {
-    "onStartup": false
+    "onStartup": true
   },
   "channels": ["envoymesh"],
   "channelEnvVars": {
@@ -10,6 +10,13 @@
       "ENVOYMESH_BRIDGE_SECRET",
       "ENVOYMESH_INBOUND_SECRET",
       "ENVOYMESH_ALLOWED_OWNER_IDS"
+    ]
+  },
+  "contracts": {
+    "tools": [
+      "envoymesh_list_mesh_tools",
+      "envoymesh_execute_mesh_tool",
+      "envoymesh_current_time"
     ]
   },
   "configSchema": {

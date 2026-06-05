@@ -28,6 +28,13 @@ export type EnvoymeshInboundMessage = {
   fromOwnerId: string;
   fromName: string;
   text: string;
+  /** Trusted EnvoyMesh policy (appended to OpenClaw system prompt). */
+  policyPrompt?: string;
+  /** Trusted EnvoyMesh retrieved context: vault RAG, chat history, profile. */
+  retrievedContext?: string;
+  /** @deprecated Use policyPrompt — kept for backward compatibility. */
+  systemPrompt?: string;
+  correlationId?: string;
 };
 
 export type EnvoymeshChatWebhookPayload = {
@@ -35,6 +42,10 @@ export type EnvoymeshChatWebhookPayload = {
   fromOwnerId?: string;
   fromName?: string;
   text?: string;
+  policyPrompt?: string;
+  retrievedContext?: string;
+  systemPrompt?: string;
+  correlationId?: string;
 };
 
 export type EnvoymeshAsyncWebhookPayload = {

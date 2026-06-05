@@ -49,7 +49,7 @@ export function threadKindLabel(kind: ChatThreadKind): string {
     case "ai":
       return "Envoy AI";
     case "agent":
-      return "Home agent";
+      return "";
     default:
       return "Direct message";
   }

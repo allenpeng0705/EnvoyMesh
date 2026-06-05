@@ -75,5 +75,20 @@ export function registerEnvoymeshMeshBridgeTools(api: OpenClawPluginApi): void {
     },
     { name: "envoymesh_execute_mesh_tool" },
   );
+
+  api.registerTool(
+    {
+      name: "envoymesh_current_time",
+      label: "Current Time",
+      description: "Returns the current date and time in ISO 8601 format.",
+      parameters: Type.Object({}),
+      async execute() {
+        return {
+          content: [{ type: "text", text: new Date().toISOString() }],
+        };
+      },
+    },
+    { name: "envoymesh_current_time" },
+  );
 }
 

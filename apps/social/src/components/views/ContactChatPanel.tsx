@@ -446,7 +446,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     Boolean(bridgeStatus?.enabled) && selectedContact === bridgeStatus?.agentPeerId;
   const displayName =
     selectedContact === bridgeStatus?.agentPeerId
-      ? (bridgeStatus.agentName ?? t("chat.myAgent"))
+      ? (bridgeStatus.agentName || t("chat.myAgent"))
       : contactLabel(
           bonds.find((c) => c.peerOwnerId === selectedContact) ?? { peerOwnerId: selectedContact },
         );

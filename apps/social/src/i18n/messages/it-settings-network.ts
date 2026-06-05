@@ -291,7 +291,7 @@ export const itNetworkSettingsMessages = {
     agentPeerId: "Peer ID agente",
     agentUrl: "URL agente",
     listenPort: "Porta in ascolto",
-    defaultAgentName: "Il mio agente",
+    defaultAgentName: "Ext Agent",
     enabledOnRestart: "Il bridge sarà abilitato al prossimo riavvio del nodo.",
     enableHint:
       "Abilita il bridge in bridge-config.json del nodo per collegare un agente esterno (HomeClaw, OpenClaw).",

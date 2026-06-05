@@ -10,7 +10,11 @@
     "apps/*",
     "packages/*"
   ],
+  "bin": {
+    "envoymesh": "apps/cli/src/index.ts"
+  },
   "scripts": {
+    "cli": "tsx apps/cli/src/index.ts",
     "node:dev": "tsc -b packages/api && npm exec -w @envoymesh/node -- tsx src/index.ts",
     "relay:dev": "npm exec -w @envoymesh/relay -- tsx src/index.ts",
     "relay:build": "npm run build -w @envoymesh/relay",
@@ -42,5 +46,6 @@
   },
   "dependencies": {
     "qrcode": "^1.5.4"
-  }
+  },
+  "optionalDependencies": {}
 }

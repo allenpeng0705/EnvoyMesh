@@ -376,6 +376,16 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getBridgeStatus();
   }
 
+  async getOpenClawPlugins() { return this._ns.getOpenClawPlugins(); }
+  async searchOpenClawPlugins(query: string) { return this._ns.searchOpenClawPlugins(query); }
+  async getTrendingOpenClawPlugins() { return this._ns.getTrendingOpenClawPlugins(); }
+  async installOpenClawPlugin(name: string) { return this._ns.installOpenClawPlugin(name); }
+  async uninstallOpenClawPlugin(name: string) { return this._ns.uninstallOpenClawPlugin(name); }
+  async saveClawhubToken(token: string) { return this._ns.saveClawhubToken(token); }
+  async saveSkillApiKeys(keys: Record<string, string>) { return this._ns.saveSkillApiKeys(keys); }
+  async saveWebSearchEnabled(enabled: boolean) { return this._ns.saveWebSearchEnabled(enabled); }
+  async sendToOpenClaw(text: string) { return this._ns.sendToOpenClaw(text); }
+
   async getPairingPayload() {
     return this._ns.getPairingPayload();
   }

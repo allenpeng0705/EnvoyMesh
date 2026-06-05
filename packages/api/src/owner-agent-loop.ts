@@ -45,6 +45,8 @@ export interface OwnerAgentTurnResult {
    * instead of Markdown.
    */
   blocks?: StructuredBlock[];
+  /** "openclaw" if answered by bundled agent, "native" if fallback model, absent if unknown. */
+  modelUsed?: "openclaw" | "native";
 }
 
 export interface OwnerAgentTurnDeps {

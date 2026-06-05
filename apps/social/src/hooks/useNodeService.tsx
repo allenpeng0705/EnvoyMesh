@@ -221,6 +221,17 @@ export interface NodeServiceClient {
   // Phase 27B — Mesh intelligence report
   generateMeshIntelligenceReport(): Promise<string>;
 
+  // OpenClaw skill/plugin management
+  getOpenClawPlugins?(): Promise<string[]>;
+  searchOpenClawPlugins?(query: string): Promise<string[]>;
+  getTrendingOpenClawPlugins?(): Promise<string[]>;
+  installOpenClawPlugin?(name: string): Promise<{ ok: boolean; message: string }>;
+  uninstallOpenClawPlugin?(name: string): Promise<{ ok: boolean; message: string }>;
+  saveClawhubToken?(token: string): Promise<{ ok: boolean }>;
+  saveSkillApiKeys(keys: Record<string, string>): Promise<{ ok: boolean }>;
+  saveWebSearchEnabled?(enabled: boolean): Promise<{ ok: boolean }>;
+  sendToOpenClaw?(text: string): Promise<void>;
+
   // Phase 9-style data wipe
   clearAllUserData(): Promise<void>;
 
@@ -606,7 +617,9 @@ function createWsNodeServiceClient(
       return wsClient.rpc("runDocumentAgentTurn", { message }) as Promise<import("@envoymesh/api").DocumentAgentTurnResult>;
     },
     async runOwnerAgentTurn(message: string) {
-      return wsClient.rpc("runOwnerAgentTurn", { message }) as Promise<import("@envoymesh/api").OwnerAgentTurnResult>;
+      return wsClient.rpc("runOwnerAgentTurn", { message }, {
+        timeoutMs: 300_000,
+      }) as Promise<import("@envoymesh/api").OwnerAgentTurnResult>;
     },
     async listAgentCircles() {
       return wsClient.rpc("listAgentCircles", {}) as Promise<import("@envoymesh/api").AgentCircle[]>;
@@ -632,6 +645,33 @@ function createWsNodeServiceClient(
     },
     async generateMeshIntelligenceReport() {
       return wsClient.rpc("generateMeshIntelligenceReport", {}) as Promise<string>;
+    },
+    async getOpenClawPlugins() {
+      return wsClient.rpc("getOpenClawPlugins", {}) as Promise<string[]>;
+    },
+    async searchOpenClawPlugins(query: string) {
+      return wsClient.rpc("searchOpenClawPlugins", { query }) as Promise<string[]>;
+    },
+    async getTrendingOpenClawPlugins() {
+      return wsClient.rpc("getTrendingOpenClawPlugins", {}) as Promise<string[]>;
+    },
+    async installOpenClawPlugin(name: string) {
+      return wsClient.rpc("installOpenClawPlugin", { name }) as Promise<{ ok: boolean; message: string }>;
+    },
+    async uninstallOpenClawPlugin(name: string) {
+      return wsClient.rpc("uninstallOpenClawPlugin", { name }) as Promise<{ ok: boolean; message: string }>;
+    },
+    async saveClawhubToken(token: string) {
+      return wsClient.rpc("saveClawhubToken", { token }) as Promise<{ ok: boolean }>;
+    },
+    async saveSkillApiKeys(keys: Record<string, string>) {
+      return wsClient.rpc("saveSkillApiKeys", { keys }) as Promise<{ ok: boolean }>;
+    },
+    async saveWebSearchEnabled(enabled: boolean) {
+      return wsClient.rpc("saveWebSearchEnabled", { enabled }) as Promise<{ ok: boolean }>;
+    },
+    async sendToOpenClaw(text: string) {
+      return wsClient.rpc("sendToOpenClaw", { text }) as Promise<void>;
     },
     async clearAllUserData() {
       await wsClient.rpc("clearAllUserData", {});

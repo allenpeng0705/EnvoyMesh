@@ -2847,7 +2847,7 @@ modeTransitionTimer = setInterval(() => {
     bondStewardRunInFlight = true;
     void nodeService
       .getNodeConfig()
-      .then((cfg) => nodeService.runBondStewardPass(cfg.dormantBondThresholdDays ?? 90))
+      .then(() => nodeService.runBondStewardPass(90))
       .then((result) => {
         if (result.dormantBonds.length > 0) {
           console.log(`[bond-steward] ${result.summary}`);
@@ -3009,6 +3009,10 @@ function getRecipientPeerId(ownerOrPeerId: string): Promise<string | null> {
   if (ownerOrPeerId.startsWith("12D3") || ownerOrPeerId.startsWith("envoy_")) {
     return Promise.resolve(ownerOrPeerId);
   }
+  // Self-send: owner's own ID resolves to the mesh peer ID
+  if (profile?.owner?.ownerId && ownerOrPeerId === profile.owner.ownerId) {
+    return Promise.resolve(mesh.peerId);
+  }
   // Otherwise look up by ownerId in the peer directory
   return peerDirectoryStore.getPeerByOwnerId(ownerOrPeerId).then((record) => record?.peerId ?? null);
 }
@@ -3026,11 +3030,17 @@ const bridge = createBridge({
     if (!(nodeService instanceof NodeServiceImpl)) {
       throw new Error("NodeService not ready");
     }
+    nodeService.recordOpenClawToolCall(toolName);
     const ctx = await nodeService.getToolExecutionContext();
     if (!ctx) {
       throw new Error("Tool execution context unavailable");
     }
     return runRegistryTool(toolName, params, ctx);
+  },
+  resolveOpenClawReply: (correlationId, text) => {
+    if (nodeService instanceof NodeServiceImpl) {
+      nodeService.resolveOpenClawReply(correlationId, text);
+    }
   },
   onSelfSendEnvelope: async (envelope, _remotePeerId) => {
     // Deliver bridge agent reply locally — emit chat:message + persist to log
@@ -3044,7 +3054,7 @@ const bridge = createBridge({
       sender: {
         nodeId: bridgeIdentity.agentPeerId,
         ownerId: bridgeIdentity.agentPeerId,
-        displayName: bridgeConfig.agentName ?? "My Agent",
+        displayName: bridgeConfig.agentName ?? "",
       },
       recipient: {
         nodeId: mesh.peerId,
@@ -3067,6 +3077,17 @@ bridgeHandleMessage = bridge._handleMessage;
 if (nodeService instanceof NodeServiceImpl) {
   nodeService.setBridgeChatHandler(bridge._handleMessage);
   nodeService.setStyleAdapter(styleAdapter);
+  void nodeService.startOpenClaw().then((started) => {
+    if (started && nodeService.isOpenClawReady()) {
+      console.log("[openclaw] Built-in agent ready (EnvoyAI)");
+    } else if (started) {
+      console.warn("[openclaw] Gateway spawned but webhook not reachable yet — EnvoyAI will retry on first message");
+    } else {
+      console.log("[openclaw] Gateway not started — EnvoyAI will use native LLM fallback");
+    }
+  }).catch((err) => {
+    console.warn("[openclaw] Init failed:", err instanceof Error ? err.message : String(err));
+  });
 }
 
 // Emit bridge status for Social UI and register bridge agent in peer directory.
@@ -3077,7 +3098,7 @@ if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
     agentPeerId: bridge.agentPeerId,
     agentUrl: bridgeConfig.agentUrl,
     listenPort: bridgeConfig.listenPort,
-    agentName: bridgeConfig.agentName ?? "My Agent",
+    agentName: bridgeConfig.agentName ?? "",
     agentPublicKeyPem: bridgeIdentity.agentPublicKeyPem,
   });
   // Register bridge agent as a virtual peer so sendChat can resolve it.
@@ -3097,12 +3118,12 @@ if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
     createExternalAgentSession(
       bridgeIdentity.agentCredential.agentId,
       bridgeIdentity.agentPeerId,
-      bridgeConfig.agentName ?? "My Agent",
+      bridgeConfig.agentName ?? "",
       bridgeIdentity.ownerId,
       DEFAULT_AGENT_CAPABILITIES,
     ),
   );
-  console.log(`[gateway] registered agent: ${bridgeIdentity.agentCredential.agentId} (${bridgeConfig.agentName ?? "My Agent"})`);
+  console.log(`[gateway] registered agent: ${bridgeIdentity.agentCredential.agentId} (${bridgeConfig.agentName || "unnamed"})`);
 }
 
 if (args.configPath) {
@@ -3517,6 +3538,7 @@ console.log("Press Ctrl+C to stop.");
 async function shutdown(): Promise<void> {
   await bridge.stop();
   if (nodeService instanceof NodeServiceImpl) {
+    try { await nodeService.stopOpenClaw?.(); } catch { /* ok */ }
     nodeService.setBridgeStatus({ enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0, agentName: "" });
   }
   wsServer.stop();

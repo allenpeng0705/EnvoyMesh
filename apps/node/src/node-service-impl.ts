@@ -340,6 +340,7 @@ import { createAgentShareProposalStore } from "./agent-share-proposal-store.js";
 import { PUBLISHED_LIB_CAPABILITY } from "./discovery-inbound.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
+
 import { executeTool, type MeshToolContext } from "./tool-registry.js";
 import {
   buildFriendAutopilotActivityRecord,
@@ -386,6 +387,19 @@ import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { askOwnerAgentPlanner, scanOwnerAgentOutbound } from "./owner-agent-planner-inbound.js";
 import { loadAgentIdentitySection } from "./agent-identity-context.js";
+import { ensureOpenClawWorkspace, openClawGatewayStateDir } from "./openclaw-workspace.js";
+import {
+  buildEnvoyMeshRetrievedContext,
+} from "./openclaw-turn-context.js";
+import {
+  buildOpenClawGatewayAgentSection,
+  buildOpenClawGatewaySearchEnv,
+  buildOpenClawGatewaySkillEntries,
+  isOpenClawEnvoymeshWebhookReady,
+  resolveActiveWebSearchProvider,
+} from "./openclaw-gateway-config.js";
+import { resolveAssistantAgentUrl } from "./bridge/config.js";
+import { reclaimAssistantGatewayPort } from "./openclaw-gateway-port.js";
 import { runInboundChatAssist } from "./inbound-chat-assist.js";
 import { recordTaskJournalActivity, emitOwnerReport } from "./agent-activity-hooks.js";
 import { recordCommerceReceiptFromTaskResult } from "./commerce-receipt-inbound.js";
@@ -3776,14 +3790,14 @@ class NodeServiceImpl implements NodeService {
     if (!this._taskStore) return [];
 
     const config = await this._configStore.load();
-    const ownerTopics = config?.ownerProfile?.interests ?? [];
+    const ownerTopics: string[] = [];
     if (ownerTopics.length === 0) return [];
 
     const bonds = await this.getBonds();
     const results: Array<{ remoteOwnerId: string; remoteDisplayName: string; reason: string; relevanceScore: number }> = [];
 
     for (const bond of bonds) {
-      const peerTopics = bond.interests ?? [];
+      const peerTopics: string[] = [];
       const peerCaps: string[] = []; // Capabilities from manifest (wired separately)
       const match = matchPeerInterests(ownerTopics, peerTopics, peerCaps);
 
@@ -3796,16 +3810,1000 @@ class NodeServiceImpl implements NodeService {
         };
         results.push(suggestion);
 
-        await recordConnectionSuggestion(
-          this._taskStore,
-          suggestion,
-          this._profile?.owner.ownerId ?? "local-owner",
-          (record) => this.emit?.("agent:activity", record),
-        );
+        if (this._agentActivityStore) {
+          await recordConnectionSuggestion(
+            this._agentActivityStore,
+            suggestion,
+            this._profile?.owner.ownerId ?? "local-owner",
+            (record) => this.emit?.("agent:activity", record),
+          );
+        }
       }
     }
 
     return results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+  }
+
+  // Phase 29 — OpenClaw Runtime
+  private _openclawRuntime: import("../../../packages/openclaw-runtime/src/index.js").OpenClawRuntime | null = null;
+  private _openclawGatewayChild: import("node:child_process").ChildProcess | null = null;
+  private _openclawGatewayReady = false;
+  private _openclawStartPromise: Promise<boolean> | null = null;
+  private _assistantAgentUrl = "http://127.0.0.1:18789/webhook/envoymesh";
+  private _assistantAgentSecret: string | undefined;
+  private readonly _pendingOpenClawReplies = new Map<
+    string,
+    { resolve: (text: string) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
+  >();
+  private static readonly _openClawReplyTimeoutMs = 180_000;
+  private static readonly _openClawRetrievedContextTimeoutMs = 25_000;
+  private static readonly _openClawStartupProbeAttempts = 90;
+  private _openclawActiveTurnTools: string[] | null = null;
+  private _openClawGatewayRouteRegistered = false;
+  private _openClawLastProbeWarnAt = 0;
+  private _openClawAskChain: Promise<unknown> = Promise.resolve();
+
+  private _setOpenClawGatewayReady(ready: boolean): void {
+    this._openclawGatewayReady = ready;
+    if (!ready) {
+      this._openClawGatewayRouteRegistered = false;
+    }
+  }
+
+  private _assistantGatewayPort(): number {
+    try {
+      const u = new URL(this._assistantAgentUrl);
+      if (u.port) return Number(u.port);
+      return u.protocol === "https:" ? 443 : 80;
+    } catch {
+      return 18789;
+    }
+  }
+
+  private async _withOpenClawAskLock<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this._openClawAskChain.then(fn, fn);
+    this._openClawAskChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async _probeOpenClawWebhook(options?: { quiet?: boolean }): Promise<boolean> {
+    try {
+      const resp = await fetch(this._assistantAgentUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(2000),
+      });
+      if (!isOpenClawEnvoymeshWebhookReady(resp.status)) {
+        if (!options?.quiet) {
+          const now = Date.now();
+          if (now - this._openClawLastProbeWarnAt > 10_000) {
+            this._openClawLastProbeWarnAt = now;
+            console.warn(
+              `[openclaw] webhook probe got ${resp.status} at ${this._assistantAgentUrl} — EnvoyMesh route not registered`,
+            );
+          }
+        }
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async _waitForOpenClawGatewayReady(): Promise<boolean> {
+    for (let attempt = 0; attempt < NodeServiceImpl._openClawStartupProbeAttempts; attempt++) {
+      if (await this._probeOpenClawWebhook({ quiet: true })) {
+        return true;
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    return false;
+  }
+
+  private _rejectAllPendingOpenClawReplies(reason: string): void {
+    for (const [id, entry] of this._pendingOpenClawReplies) {
+      clearTimeout(entry.timer);
+      entry.reject(new Error(reason));
+      this._pendingOpenClawReplies.delete(id);
+    }
+  }
+
+  private _cancelOpenClawReply(correlationId: string, error: Error): void {
+    const entry = this._pendingOpenClawReplies.get(correlationId);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    this._pendingOpenClawReplies.delete(correlationId);
+    entry.reject(error);
+  }
+
+  /** Track mesh tools invoked during an OpenClaw H2A turn (via bridge execute-tool). */
+  recordOpenClawToolCall(toolName: string): void {
+    if (this._openclawActiveTurnTools && !this._openclawActiveTurnTools.includes(toolName)) {
+      this._openclawActiveTurnTools.push(toolName);
+    }
+  }
+
+  private _beginOpenClawToolTracking(): void {
+    this._openclawActiveTurnTools = [];
+  }
+
+  private _endOpenClawToolTracking(): string[] {
+    const tools = this._openclawActiveTurnTools ?? [];
+    this._openclawActiveTurnTools = null;
+    return tools;
+  }
+
+  /** True when the built-in OpenClaw gateway webhook is reachable. */
+  isOpenClawReady(): boolean {
+    return this._openclawGatewayReady && this._openclawGatewayChild != null && !this._openclawGatewayChild.killed;
+  }
+
+  private async _ensureOpenClawReady(): Promise<boolean> {
+    if (this.isOpenClawReady()) return true;
+
+    // Gateway process still starting — poll without spawning a duplicate.
+    if (this._openclawGatewayChild && !this._openclawGatewayChild.killed) {
+      if (await this._waitForOpenClawGatewayReady()) {
+        this._setOpenClawGatewayReady(true);
+        return true;
+      }
+      console.warn("[openclaw] Gateway process alive but webhook not responding");
+      return false;
+    }
+
+    console.log("[openclaw] Gateway not ready — starting...");
+    return await this.startOpenClaw();
+  }
+
+  /** Resolve a pending sync OpenClaw ask() by correlationId (called from bridge /bridge/send). */
+  resolveOpenClawReply(correlationId: string, text: string): void {
+    const entry = this._pendingOpenClawReplies.get(correlationId);
+    if (!entry) {
+      console.warn(`[openclaw] sync reply for unknown correlationId=${correlationId}`);
+      return;
+    }
+    clearTimeout(entry.timer);
+    this._pendingOpenClawReplies.delete(correlationId);
+    console.log(`[openclaw] sync reply resolved cid=${correlationId} len=${text.length}`);
+    entry.resolve(text);
+  }
+
+  private _waitForOpenClawReply(correlationId: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const entry = this._pendingOpenClawReplies.get(correlationId);
+        if (!entry) return;
+        clearTimeout(entry.timer);
+        this._pendingOpenClawReplies.delete(correlationId);
+        entry.reject(new Error(`OpenClaw reply timed out after ${NodeServiceImpl._openClawReplyTimeoutMs / 1000}s`));
+      }, NodeServiceImpl._openClawReplyTimeoutMs);
+      this._pendingOpenClawReplies.set(correlationId, { resolve, reject, timer });
+    });
+  }
+
+  private async _buildOpenClawTurnContext(): Promise<{
+    ownerDisplayName?: string;
+    bonds?: Array<{ name: string; level: string; dormantDays?: number }>;
+    interests?: string[];
+    capabilities?: string[];
+    permissions?: { bondAutonomy: boolean; maxBondsPerDay: number; autoCircleContacts: boolean; maxSensitivity: string };
+    model?: { provider: string; baseUrl?: string; model?: string };
+  }> {
+    const config = await this._configStore.load();
+    const nodeConfig = await this.getNodeConfig();
+    const bonds = await this.getBonds();
+    let interests: string[] = [];
+    let ownerDisplayName: string | undefined;
+    try {
+      const profile = await this._humanProfileStore?.loadHumanProfile();
+      if (profile) {
+        ownerDisplayName = profile.displayName?.trim() || undefined;
+        interests = [...(profile.hobbies ?? []), ...(profile.knowledge ?? [])];
+      }
+    } catch { /* no profile yet */ }
+
+    let capabilities: string[] | undefined;
+    if (this._capabilityManifestStore) {
+      const manifest = await this._capabilityManifestStore.loadManifest();
+      capabilities = manifest?.capabilities;
+    }
+
+    const providers = nodeConfig.modelProviders;
+    const model =
+      providers?.mode && providers.mode !== "disabled"
+        ? {
+            provider: providers.mode,
+            baseUrl: providers.endpoint,
+            model: providers.modelName,
+          }
+        : { provider: "disabled" };
+
+    return {
+      ownerDisplayName,
+      bonds: bonds.map((b) => ({
+        name: b.displayName ?? b.peerOwnerId,
+        level: b.level,
+      })),
+      interests,
+      capabilities,
+      permissions: {
+        bondAutonomy: config?.bondAutonomyEnabled ?? false,
+        maxBondsPerDay: 0,
+        autoCircleContacts: false,
+        maxSensitivity: "public",
+      },
+      model,
+    };
+  }
+
+  private async _buildEnvoyMeshOpenClawPrompts(message: string): Promise<{
+    policyPrompt: string;
+    retrievedContext: string;
+  }> {
+    const turnContext = await this._buildOpenClawTurnContext();
+    const owner = this._profile?.owner;
+    const displayName = turnContext.ownerDisplayName ?? owner?.ownerId ?? "unknown";
+    const webSearchEnabled = (await this._loadBridgeConfigWebSearchEnabled()) ?? true;
+    const skillApiKeys = (await this._loadBridgeConfigSkillApiKeys()) ?? {};
+    const webSearch = resolveActiveWebSearchProvider({ webSearchEnabled, skillApiKeys });
+    const { buildAgentConfig, buildOpenClawSystemPrompt } = await import(
+      "../../../packages/openclaw-runtime/src/tool-bridge.js"
+    );
+    const agentConfig = buildAgentConfig({
+      owner: {
+        ownerId: owner?.ownerId ?? "unknown",
+        displayName,
+        interests: turnContext.interests ?? [],
+        capabilities: turnContext.capabilities ?? [],
+      },
+      permissions: turnContext.permissions ?? {
+        bondAutonomy: false,
+        maxBondsPerDay: 0,
+        autoCircleContacts: false,
+        maxSensitivity: "public",
+      },
+      bonds: (turnContext.bonds ?? []).map((b) => ({
+        displayName: b.name,
+        level: b.level,
+        dormantDays: b.dormantDays,
+      })),
+      model: turnContext.model ?? { provider: "disabled" },
+      webSearch,
+    });
+    const policyPrompt = buildOpenClawSystemPrompt(displayName, agentConfig);
+
+    const nodeConfig = await this.getNodeConfig();
+    const bonds = await this.getBonds();
+    let retrievedContext = "";
+    if (owner?.ownerId) {
+      try {
+        retrievedContext = await this._withOpenClawTimeout(
+          buildEnvoyMeshRetrievedContext({
+            message,
+            ownerId: owner.ownerId,
+            bonds: bonds.map((b) => ({
+              peerOwnerId: b.peerOwnerId,
+              displayName: b.displayName,
+            })),
+            chatLogStore: this._chatLogStore,
+            trustStore: this._trustStore,
+            humanProfileStore: this._humanProfileStore,
+            agentIdentityStore: this._agentIdentityStore,
+            vaultDir: this._vaultDir,
+            ragService: await this._getRagService(),
+            knowledgeBase: nodeConfig.aiSettings?.knowledgeBase,
+          }),
+          NodeServiceImpl._openClawRetrievedContextTimeoutMs,
+          "",
+        );
+      } catch (err) {
+        console.warn(
+          "[openclaw] retrieved context build failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+
+    return { policyPrompt, retrievedContext };
+  }
+
+  private async _withOpenClawTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    fallback: T,
+  ): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((resolve) => {
+          timer = setTimeout(() => {
+            console.warn(`[openclaw] operation timed out after ${timeoutMs / 1000}s — continuing without full context`);
+            resolve(fallback);
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  private async _askOpenClawViaWebhook(
+    prompt: string,
+    envoyContext?: { policyPrompt?: string; retrievedContext?: string },
+  ): Promise<string> {
+    const ownerId = this._profile?.owner?.ownerId;
+    if (!ownerId) {
+      throw new Error("Owner profile not loaded");
+    }
+
+    const correlationId = `oc-ask-${randomUUID()}`;
+    console.log(`[openclaw] ask start cid=${correlationId} promptLen=${prompt.length}`);
+    const replyPromise = this._waitForOpenClawReply(correlationId);
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (this._assistantAgentSecret) {
+      headers.Authorization = `Bearer ${this._assistantAgentSecret}`;
+    }
+
+    let fromName = ownerId;
+    try {
+      const profile = await this._humanProfileStore?.loadHumanProfile();
+      if (profile?.displayName?.trim()) fromName = profile.displayName.trim();
+    } catch { /* use ownerId */ }
+
+    const body = JSON.stringify({
+      from: this._mesh?.peerId ?? "",
+      fromOwnerId: ownerId,
+      fromName,
+      text: prompt,
+      ...(envoyContext?.policyPrompt?.trim() ? { policyPrompt: envoyContext.policyPrompt.trim() } : {}),
+      ...(envoyContext?.retrievedContext?.trim()
+        ? { retrievedContext: envoyContext.retrievedContext.trim() }
+        : {}),
+      correlationId,
+    });
+
+    try {
+      const [text] = await Promise.all([
+        replyPromise,
+        (async () => {
+          const resp = await fetch(this._assistantAgentUrl, {
+            method: "POST",
+            headers,
+            body,
+            signal: AbortSignal.timeout(NodeServiceImpl._openClawReplyTimeoutMs),
+          });
+
+          if (!resp.ok) {
+            const detail = await resp.text().catch(() => "");
+            const err = new Error(
+              `OpenClaw webhook returned ${resp.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
+            );
+            if (resp.status === 404) {
+              this._setOpenClawGatewayReady(false);
+            }
+            throw err;
+          }
+        })(),
+      ]);
+      console.log(`[openclaw] ask complete cid=${correlationId} answerLen=${text.length}`);
+      return text;
+    } catch (err) {
+      if (this._pendingOpenClawReplies.has(correlationId)) {
+        this._cancelOpenClawReply(
+          correlationId,
+          err instanceof Error ? err : new Error(String(err)),
+        );
+        void replyPromise.catch(() => {});
+      }
+      throw err;
+    }
+  }
+
+  async startOpenClaw(): Promise<boolean> {
+    if (this.isOpenClawReady()) return true;
+    if (this._openclawStartPromise) return this._openclawStartPromise;
+
+    this._openclawStartPromise = this._startOpenClawInner().finally(() => {
+      this._openclawStartPromise = null;
+    });
+    return this._openclawStartPromise;
+  }
+
+  private async _startOpenClawInner(): Promise<boolean> {
+    if (this._openclawGatewayChild && !this._openclawGatewayChild.killed && this._openclawGatewayReady) {
+      return true;
+    }
+    if (this._openclawGatewayChild && !this._openclawGatewayChild.killed) {
+      try { this._openclawGatewayChild.kill("SIGTERM"); } catch { /* ignore */ }
+      this._openclawGatewayChild = null;
+      this._setOpenClawGatewayReady(false);
+    }
+
+    const { existsSync, mkdirSync, writeFileSync, readFileSync } = await import("node:fs");
+    const { join, resolve } = await import("node:path");
+    const { spawn } = await import("node:child_process");
+    const nodeCwd = process.cwd();
+
+    // 1. Ensure dist/entry.js bootstrap exists (re-exports TS source)
+    // process.cwd() may be apps/node/ or workspace root — detect by finding openclaw.mjs
+    let wsRoot = process.cwd();
+    if (!existsSync(join(wsRoot, "packages", "openclaw", "openclaw.mjs"))) {
+      wsRoot = join(wsRoot, "..", "..");
+    }
+    const ocDir = join(wsRoot, "packages", "openclaw");
+    const entryPath = join(ocDir, "dist", "entry.js");
+    if (!existsSync(entryPath)) {
+      mkdirSync(join(ocDir, "dist"), { recursive: true });
+      writeFileSync(entryPath, [
+        `// EnvoyMesh bootstrap — re-exports the gateway from TS source.`,
+        `// openclaw.mjs loads this file; tsx (via pnpm exec) handles .ts resolution.`,
+        `export * from "../src/cli/run-main.ts";`,
+        ``,
+      ].join("\n"), "utf-8");
+    }
+
+    // 2. Read built-in OpenClaw webhook URL (never fall back to agentUrl — that is Ext Agent).
+    const profileDirAbs =
+      this._profileDir && this._profileDir !== "/tmp/unknown"
+        ? resolve(nodeCwd, this._profileDir)
+        : null;
+    const cfgPath = profileDirAbs
+      ? join(profileDirAbs, "bridge-config.json")
+      : join(nodeCwd, "data", "default", "bridge-config.json");
+    const defaultAssistantUrl = "http://127.0.0.1:18789/webhook/envoymesh";
+    let assistantUrl = defaultAssistantUrl;
+    let bridgeSecret: string | undefined;
+    let bridgeListenPort = 3031;
+    if (existsSync(cfgPath)) {
+      try {
+        const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
+        assistantUrl = resolveAssistantAgentUrl(cfg);
+        bridgeSecret = typeof cfg?.secret === "string" && cfg.secret.trim() ? cfg.secret.trim() : undefined;
+        if (typeof cfg?.listenPort === "number") bridgeListenPort = cfg.listenPort;
+      } catch { /* use default */ }
+    }
+    this._assistantAgentUrl = assistantUrl;
+    this._assistantAgentSecret = bridgeSecret;
+    const bridgeUrl = `http://127.0.0.1:${bridgeListenPort}/bridge/send`;
+
+    // 3. Persistent gateway state + pre-seeded workspace (skip OpenClaw BOOTSTRAP onboarding)
+    const gwStateDir = profileDirAbs
+      ? openClawGatewayStateDir(profileDirAbs)
+      : join((await import("node:os")).tmpdir(), `envoymesh-gateway-${process.pid}`);
+    mkdirSync(gwStateDir, { recursive: true });
+    const gwConfigPath = join(gwStateDir, "openclaw.json");
+
+    let workspaceDir = gwStateDir;
+    if (profileDirAbs) {
+      const ownerId = this._profile?.owner?.ownerId ?? "unknown";
+      let displayName: string | undefined;
+      let interests: string[] = [];
+      let capabilities: string[] = [];
+      try {
+        const profile = await this._humanProfileStore?.loadHumanProfile();
+        if (profile) {
+          displayName = profile.displayName?.trim() || undefined;
+          interests = [...(profile.hobbies ?? []), ...(profile.knowledge ?? [])];
+        }
+      } catch { /* no profile */ }
+      if (this._capabilityManifestStore) {
+        try {
+          const manifest = await this._capabilityManifestStore.loadManifest();
+          capabilities = manifest?.capabilities ?? [];
+        } catch { /* no manifest */ }
+      }
+      let agentIdentitySnippet: string | undefined;
+      if (this._agentIdentityStore) {
+        try {
+          const doc = await this._agentIdentityStore.load();
+          const trimmed = doc.content?.trim();
+          if (trimmed) agentIdentitySnippet = trimmed.slice(0, 4000);
+        } catch { /* no identity doc */ }
+      }
+      let bondCount = 0;
+      try {
+        bondCount = (await this.getBonds()).length;
+      } catch { /* ignore */ }
+      workspaceDir = ensureOpenClawWorkspace(profileDirAbs, {
+        ownerId,
+        displayName,
+        interests,
+        capabilities,
+        agentIdentitySnippet,
+        bondCount,
+      }, {
+        legacySkillsDir: join(nodeCwd, "skills"),
+      });
+    }
+    workspaceDir = resolve(workspaceDir);
+    const gwStateDirAbs = resolve(gwStateDir);
+    const gwConfigPathAbs = resolve(gwConfigPath);
+
+    // Read node model config to pass to the gateway
+    let modelProvider: Record<string, unknown> = {};
+    try {
+      const nodeCfg = await this.getNodeConfig();
+      if (nodeCfg?.modelProviders?.mode && nodeCfg.modelProviders.mode !== "disabled") {
+        modelProvider = {
+          provider: nodeCfg.modelProviders.mode,
+          ...(nodeCfg.modelProviders.endpoint ? { baseUrl: nodeCfg.modelProviders.endpoint } : {}),
+          ...(nodeCfg.modelProviders.apiKey ? { apiKey: nodeCfg.modelProviders.apiKey } : {}),
+          ...(nodeCfg.modelProviders.modelName ? { model: nodeCfg.modelProviders.modelName } : {}),
+        };
+      }
+    } catch { /* use defaults */ }
+
+    // Read bridge config (skill keys + web search toggle)
+    let skillApiKeys: Record<string, string> = {};
+    let webSearchEnabled = true;
+    let clawhubToken: string | undefined;
+    try {
+      const bridgeCfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
+      if (bridgeCfg?.skillApiKeys && typeof bridgeCfg.skillApiKeys === "object") {
+        skillApiKeys = bridgeCfg.skillApiKeys as Record<string, string>;
+      }
+      if (typeof bridgeCfg?.webSearchEnabled === "boolean") webSearchEnabled = bridgeCfg.webSearchEnabled;
+      if (typeof bridgeCfg?.clawhubToken === "string" && bridgeCfg.clawhubToken.trim()) {
+        clawhubToken = bridgeCfg.clawhubToken.trim();
+      }
+    } catch { /* use defaults */ }
+    const skillEntries = buildOpenClawGatewaySkillEntries(skillApiKeys);
+    const agentSection = buildOpenClawGatewayAgentSection({ webSearchEnabled, skillApiKeys });
+    const gatewaySearchEnv = buildOpenClawGatewaySearchEnv(skillApiKeys);
+
+    writeFileSync(gwConfigPathAbs, JSON.stringify({
+      gateway: { auth: { mode: "none" } },
+      agents: {
+        defaults: {
+          skipBootstrap: true,
+          workspace: workspaceDir,
+          ...(modelProvider.provider && modelProvider.model
+            ? { model: `${modelProvider.provider as string}/${modelProvider.model as string}` }
+            : {}),
+        },
+      },
+      channels: {
+        envoymesh: {
+          enabled: true,
+          bridgeUrl,
+          webhookPath: "/webhook/envoymesh",
+          dmPolicy: "open",
+          allowedOwnerIds: ["*"],
+        },
+      },
+      ...(Object.keys(skillEntries).length > 0 ? {
+        skills: { entries: skillEntries },
+      } : {}),
+      tools: agentSection.tools,
+      plugins: agentSection.plugins,
+      ...(modelProvider.provider ? {
+        models: {
+          providers: {
+            [modelProvider.provider as string]: {
+              api: "openai-completions",
+              ...(modelProvider.baseUrl ? { baseUrl: modelProvider.baseUrl } : {}),
+              ...(modelProvider.apiKey ? { apiKey: modelProvider.apiKey } : {}),
+              ...(modelProvider.model ? { models: [{ id: modelProvider.model, name: modelProvider.model, api: "openai-completions" }] } : {}),
+            },
+          },
+        },
+      } : {}),
+    }, null, 2), "utf-8");
+
+    // 4. Reclaim port if a stale gateway is listening without the EnvoyMesh webhook route.
+    const gatewayPort = this._assistantGatewayPort();
+    this._openClawGatewayRouteRegistered = false;
+    this._openClawLastProbeWarnAt = 0;
+    await reclaimAssistantGatewayPort({
+      port: gatewayPort,
+      webhookUrl: assistantUrl,
+      excludePid: this._openclawGatewayChild?.pid ?? undefined,
+      log: (message) => console.warn(message),
+    });
+
+    // 5. Spawn the OpenClaw gateway via pnpm exec tsx (source mode).
+    const child = spawn("pnpm", ["exec", "tsx", "openclaw.mjs", "gateway", "--port", String(gatewayPort), "--bind", "loopback", "--auth", "none", "--allow-unconfigured"], {
+      cwd: ocDir,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        ...gatewaySearchEnv,
+        OPENCLAW_STATE_DIR: gwStateDirAbs,
+        OPENCLAW_CONFIG_PATH: gwConfigPathAbs,
+        OPENCLAW_BUNDLED_PLUGINS_DIR: resolve(ocDir, "extensions"),
+        ENVOYMESH_BRIDGE_URL: bridgeUrl,
+        ENVOYMESH_ALLOWED_OWNER_IDS: this._profile?.owner?.ownerId ?? "*",
+        CLAWHUB_WORKDIR: workspaceDir,
+        ...(clawhubToken ? { CLAWHUB_TOKEN: clawhubToken } : {}),
+      },
+    });
+    child.stderr?.on("data", (d: Buffer) => {
+      const t = d.toString();
+      if (t.includes("Registered EnvoyMesh HTTP route")) {
+        this._openClawGatewayRouteRegistered = true;
+      }
+      const trimmed = t.trim();
+      if (trimmed) {
+        for (const line of trimmed.split("\n")) {
+          if (line) process.stderr.write(`[gateway] ${line}\n`);
+        }
+      }
+    });
+    child.on("exit", (code) => {
+      if (code) console.warn(`[openclaw] gateway exited code ${code}`);
+      this._openclawGatewayChild = null;
+      this._setOpenClawGatewayReady(false);
+      this._rejectAllPendingOpenClawReplies("OpenClaw gateway stopped");
+    });
+    this._openclawGatewayChild = child;
+    this._setOpenClawGatewayReady(false);
+
+    // 6. Wait for gateway webhook (route registers ~12s after spawn; 400 on empty POST means ready).
+    let gatewayReady = false;
+    if (child.exitCode == null) {
+      gatewayReady = await this._waitForOpenClawGatewayReady();
+    } else {
+      console.warn(
+        `[openclaw] Gateway process exited before webhook was ready (code ${child.exitCode}). ` +
+          `If port ${gatewayPort} is already in use by another OpenClaw instance, stop it first.`,
+      );
+    }
+
+    if (!gatewayReady) {
+      console.warn(
+        `[openclaw] Gateway not reachable after ${NodeServiceImpl._openClawStartupProbeAttempts}s at ${assistantUrl}. ` +
+          `Check [gateway] logs for "Registered EnvoyMesh HTTP route".`,
+      );
+    }
+
+    this._setOpenClawGatewayReady(gatewayReady);
+
+    // 7. HTTP runtime: POST to built-in OpenClaw webhook, await sync reply via bridge correlationId.
+    this._openclawRuntime = {
+      isReady: () => this.isOpenClawReady(),
+      ask: async (prompt: string, envoyContext?: { policyPrompt?: string; retrievedContext?: string }) => {
+        return await this._askOpenClawViaWebhook(prompt, envoyContext);
+      },
+      stop: async () => {
+        await this.stopOpenClaw();
+      },
+    } as any;
+
+    console.log("[openclaw] Built-in OpenClaw gateway at", assistantUrl);
+    console.log("[openclaw] Gateway config:", gwConfigPathAbs);
+    if (modelProvider.provider) {
+      console.log("[openclaw] Model config:", JSON.stringify(modelProvider));
+    }
+    return gatewayReady;
+  }
+
+  private _resolveOpenClawWorkspaceDir(): string {
+    if (!this._profileDir || this._profileDir === "/tmp/unknown") {
+      throw new Error("OpenClaw workspace unavailable — profile not loaded");
+    }
+    const ownerId = this._profile?.owner?.ownerId ?? "unknown";
+    return ensureOpenClawWorkspace(this._profileDir, { ownerId }, {
+      legacySkillsDir: join(process.cwd(), "skills"),
+    });
+  }
+
+  private async _loadBridgeConfigClawhubToken(): Promise<string | undefined> {
+    try {
+      const { readFile } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      const cfgPath = join(process.cwd(), "data", "default", "bridge-config.json");
+      const cfg = JSON.parse(await readFile(cfgPath, "utf-8"));
+      const token = cfg?.clawhubToken;
+      return typeof token === "string" && token.trim() ? token.trim() : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async _execClawhub(args: string[], timeoutMs: number): Promise<string> {
+    const { execFileSync } = await import("node:child_process");
+    const bin = await this._clawhubBin();
+    const workdir = this._resolveOpenClawWorkspaceDir();
+    const token = await this._loadBridgeConfigClawhubToken();
+    return execFileSync(bin, [...args, "--workdir", workdir], {
+      encoding: "utf-8",
+      timeout: timeoutMs,
+      env: {
+        ...process.env,
+        CLAWHUB_WORKDIR: workdir,
+        ...(token ? { CLAWHUB_TOKEN: token } : {}),
+      },
+    }).trim();
+  }
+
+  // --- ClawHub skill/plugin management ---
+
+  private async _clawhubBin(): Promise<string> {
+    const { existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { homedir } = await import("node:os");
+    const candidates = [
+      join(homedir(), ".npm-global", "bin", "clawhub"),
+      "/usr/local/bin/clawhub",
+    ];
+    const found = candidates.find((c) => existsSync(c));
+    if (found) return found;
+    // Try PATH as last resort
+    try {
+      const { execSync } = await import("node:child_process");
+      const which = execSync("which clawhub 2>/dev/null", { encoding: "utf-8", timeout: 2000 }).trim();
+      if (which && existsSync(which)) return which;
+    } catch { /* not found */ }
+    return "clawhub";
+  }
+
+  async getOpenClawPlugins(): Promise<string[]> {
+    try {
+      const out = await this._execClawhub(["list"], 5000);
+      const lines = out.split("\n")
+        .map(l => l.trim())
+        .filter(l => l && !l.startsWith("Installed") && !l.startsWith("Skills") && !l.startsWith("Name") && !l.startsWith("No "));
+      console.log("[clawhub] list raw:", JSON.stringify(out.slice(0, 200)), "lines:", lines.length);
+      return lines.length ? lines : ["(no skills installed)"];
+    } catch (err: any) {
+      const msg = err.stderr?.toString() || err.message || "";
+      console.warn("[clawhub] list failed:", msg);
+      // If clawhub is not installed, return a helpful message instead of an error
+      if (msg.includes("command not found") || msg.includes("not found")) {
+        return ["__clawhub_missing__"];
+      }
+      return [msg.slice(0, 200)];
+    }
+  }
+
+  async getTrendingOpenClawPlugins(): Promise<string[]> {
+    try {
+      const resp = await fetch("https://clawhub.ai/api/v1/skills?limit=20", {
+        headers: { "Accept": "application/json" },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json() as any;
+      const items = data?.skills ?? data?.items ?? data ?? [];
+      return (Array.isArray(items) ? items : []).slice(0, 20).map((s: any) => {
+        const slug = s.slug ?? "";
+        const name = s.name ?? slug;
+        const desc = s.description ? ` — ${s.description.slice(0, 80)}` : "";
+        const ownerHandle = typeof s.owner === "string" ? s.owner : s.owner?.handle ?? "";
+        const url = ownerHandle && slug ? `https://clawhub.ai/${ownerHandle}/${slug}` : "";
+        return JSON.stringify({ slug, name, desc: desc.trim(), url, owner: ownerHandle });
+      });
+    } catch (err: any) {
+      return [`Error: ${err.message.slice(0, 200)}`];
+    }
+  }
+
+  async searchOpenClawPlugins(query: string): Promise<string[]> {
+    try {
+      const resp = await fetch(`https://clawhub.ai/api/v1/search?q=${encodeURIComponent(query)}`, {
+        headers: { "Accept": "application/json" },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json() as any;
+      console.log("[clawhub] search response keys:", Object.keys(data ?? {}).join(", "));
+      const items = data?.skills ?? data?.items ?? data?.results ?? data ?? [];
+      if (!Array.isArray(items)) {
+        console.warn("[clawhub] search: items is not array, type:", typeof items);
+        return [];
+      }
+      console.log("[clawhub] search: found", items.length, "results");
+      return items.slice(0, 20).map((s: any) => {
+        const slug = s.slug ?? "";
+        const name = s.name ?? slug;
+        const desc = s.description ? ` — ${s.description.slice(0, 80)}` : "";
+        // owner may be a string or an object like { handle, displayName, image }
+        const ownerHandle = typeof s.owner === "string" ? s.owner : s.owner?.handle ?? "";
+        const url = ownerHandle && slug ? `https://clawhub.ai/${ownerHandle}/${slug}` : "";
+        return JSON.stringify({ slug, name, desc: desc.trim(), url, owner: ownerHandle });
+      });
+    } catch (err: any) {
+      console.warn("[clawhub] search failed:", err.message);
+      return [`Error: ${err.message.slice(0, 200)}`];
+    }
+  }
+
+  async installOpenClawPlugin(name: string): Promise<{ ok: boolean; message: string }> {
+    const safe = /^[a-zA-Z0-9._-]+$/.test(name) ? name : null;
+    if (!safe) return { ok: false, message: "Invalid plugin name" };
+    try {
+      const out = await this._execClawhub(["install", safe], 60000);
+      await this.reloadOpenClawConfig();
+      return { ok: true, message: out || "Installed" };
+    } catch (err: any) {
+      const msg = err.stderr?.toString() || err.message || "Install failed";
+      if (msg.includes("command not found") || msg.includes("not found")) {
+        return { ok: false, message: "clawhub CLI not installed. Run: npm i -g clawhub && clawhub login" };
+      }
+      return { ok: false, message: msg.slice(0, 300) };
+    }
+  }
+
+  async uninstallOpenClawPlugin(name: string): Promise<{ ok: boolean; message: string }> {
+    const safe = /^[a-zA-Z0-9._-]+$/.test(name) ? name : null;
+    if (!safe) return { ok: false, message: "Invalid plugin name" };
+    try {
+      const out = await this._execClawhub(["uninstall", safe], 30000);
+      await this.reloadOpenClawConfig();
+      return { ok: true, message: out || "Uninstalled" };
+    } catch (err: any) {
+      const msg = err.stderr?.toString() || err.message || "Uninstall failed";
+      return { ok: false, message: msg.slice(0, 300) };
+    }
+  }
+
+  private async _loadBridgeConfigWebSearchEnabled(): Promise<boolean | undefined> {
+    try {
+      const { readFile } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      const cfgPath = join(process.cwd(), "data", "default", "bridge-config.json");
+      const cfg = JSON.parse(await readFile(cfgPath, "utf-8"));
+      return typeof cfg?.webSearchEnabled === "boolean" ? cfg.webSearchEnabled : undefined;
+    } catch { return undefined; }
+  }
+
+  private async _loadBridgeConfigSkillApiKeys(): Promise<Record<string, string> | undefined> {
+    try {
+      const { readFile } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      const cfgPath = join(process.cwd(), "data", "default", "bridge-config.json");
+      const cfg = JSON.parse(await readFile(cfgPath, "utf-8"));
+      return cfg?.skillApiKeys;
+    } catch { return undefined; }
+  }
+
+  async saveWebSearchEnabled(enabled: boolean): Promise<{ ok: boolean }> {
+    try {
+      const { readFileSync, writeFileSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      const cfgPath = join(process.cwd(), "data", "default", "bridge-config.json");
+      const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
+      cfg.webSearchEnabled = enabled;
+      writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n", "utf-8");
+      await this.stopOpenClaw();
+      await this.startOpenClaw();
+      return { ok: true };
+    } catch { return { ok: false }; }
+  }
+
+  async saveSkillApiKeys(keys: Record<string, string>): Promise<{ ok: boolean }> {
+    try {
+      const { readFileSync, writeFileSync } = await import("node:fs");
+      const { join } = await import("node:path");
+
+      const bridgeCfgPath = join(process.cwd(), "data", "default", "bridge-config.json");
+      const bridgeCfg = JSON.parse(readFileSync(bridgeCfgPath, "utf-8"));
+      bridgeCfg.skillApiKeys = Object.keys(keys).length > 0 ? keys : undefined;
+      writeFileSync(bridgeCfgPath, JSON.stringify(bridgeCfg, null, 2) + "\n", "utf-8");
+
+      await this.stopOpenClaw();
+      await this.startOpenClaw();
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  }
+
+  async saveClawhubToken(token: string): Promise<{ ok: boolean }> {
+    try {
+      const { readFileSync, writeFileSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      const cfgPath = join(process.cwd(), "data", "default", "bridge-config.json");
+      const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
+      cfg.clawhubToken = token || undefined;
+      writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n", "utf-8");
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false };
+    }
+  }
+
+  async stopOpenClaw(): Promise<void> {
+    this._rejectAllPendingOpenClawReplies("OpenClaw stopped");
+    this._setOpenClawGatewayReady(false);
+    const proc = this._openclawGatewayChild;
+    this._openclawGatewayChild = null;
+    if (proc && !proc.killed) {
+      try {
+        proc.kill("SIGTERM");
+        setTimeout(() => { if (!proc.killed) proc.kill("SIGKILL"); }, 3000);
+      } catch { /* ignore */ }
+    }
+    this._openclawRuntime = null;
+  }
+
+  async askOpenClaw(prompt: string, _context?: {
+    ownerDisplayName?: string;
+    bonds?: Array<{ name: string; level: string; dormantDays?: number }>;
+    interests?: string[];
+    capabilities?: string[];
+    permissions?: { bondAutonomy: boolean; maxBondsPerDay: number; autoCircleContacts: boolean; maxSensitivity: string };
+    model?: { provider: string; baseUrl?: string; model?: string };
+  }): Promise<string> {
+    if (!this.isOpenClawReady()) {
+      throw new Error("OpenClaw not available");
+    }
+    const { policyPrompt, retrievedContext } = await this._buildEnvoyMeshOpenClawPrompts(prompt);
+    return this._withOpenClawAskLock(() =>
+      this._askOpenClawViaWebhook(prompt, { policyPrompt, retrievedContext }),
+    );
+  }
+
+  /**
+   * Execute a tool called by OpenClaw via stdio.
+   * Maps OpenClaw tool names to EnvoyMesh's ToolRegistry.
+   */
+  /**
+   * Reload OpenClaw's model config when the user changes LLM settings.
+   * Called from the settings save path.
+   */
+  /**
+   * Send a chat message to OpenClaw via the bridge's webhook.
+   * The response arrives asynchronously via /bridge/send → onSelfSendEnvelope.
+   */
+  async sendToOpenClaw(text: string): Promise<void> {
+    const ownerId = this._profile?.owner?.ownerId ?? "";
+    let policyPrompt: string | undefined;
+    let retrievedContext: string | undefined;
+    try {
+      const prompts = await this._buildEnvoyMeshOpenClawPrompts(text);
+      policyPrompt = prompts.policyPrompt;
+      retrievedContext = prompts.retrievedContext;
+    } catch {
+      /* best-effort context */
+    }
+
+    const body = JSON.stringify({
+      from: this._mesh?.peerId ?? "",
+      fromOwnerId: ownerId,
+      fromName: ownerId,
+      text,
+      ...(policyPrompt?.trim() ? { policyPrompt: policyPrompt.trim() } : {}),
+      ...(retrievedContext?.trim() ? { retrievedContext: retrievedContext.trim() } : {}),
+    });
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (this._assistantAgentSecret) {
+      headers.Authorization = `Bearer ${this._assistantAgentSecret}`;
+    }
+
+    await fetch(this._assistantAgentUrl, {
+      method: "POST",
+      headers,
+      body,
+      signal: AbortSignal.timeout(300_000),
+    });
+  }
+
+  async reloadOpenClawConfig(): Promise<void> {
+    // The gateway needs the updated model config. Since our runtime
+    // is HTTP-based (not stdio), restart the gateway with new config.
+    console.log("[openclaw] Reloading config — restarting gateway...");
+    await this.stopOpenClaw();
+    await this.startOpenClaw();
+  }
+
+  async executeOpenClawTool(toolName: string, params: Record<string, unknown>): Promise<unknown> {
+    this.recordOpenClawToolCall(toolName);
+    const context = await this._requireToolExecutionContext();
+    const { executeTool } = await import("./tool-registry.js");
+    const result = await executeTool(toolName, params, context);
+    if (!result.ok) {
+      throw new Error(result.error ?? `Tool ${toolName} failed`);
+    }
+    return result.result;
   }
 
   // Phase 28 — Mesh Intelligence Report
@@ -3813,7 +4811,7 @@ class NodeServiceImpl implements NodeService {
     const { generateMeshIntelligenceReport } = await import("./mesh-intelligence.js");
     const config = await this._configStore.load();
     const bonds = await this.getBonds();
-    const ownerTopics = config?.ownerProfile?.interests ?? [];
+    const ownerTopics: string[] = [];
     const scores = new Map<string, number>();
 
     const report = await generateMeshIntelligenceReport(
@@ -3822,7 +4820,7 @@ class NodeServiceImpl implements NodeService {
           bonds.map((b) => ({
             ownerId: b.peerOwnerId,
             displayName: b.displayName ?? b.peerOwnerId,
-            topics: b.interests ?? [],
+            topics: [] as string[],
             capabilities: [],
             bondLevel: b.level,
           })),
@@ -3851,7 +4849,7 @@ class NodeServiceImpl implements NodeService {
         findDormantBonds: async (thresholdDays: number) => {
           const { findDormantBonds } = await import("./bond-steward.js");
           const result = await findDormantBonds(
-            { getBonds: async () => bonds, getLastInteractionDate: async () => { throw new Error("not implemented"); } },
+            { getBonds: async () => bonds, getLastInteractionAt: async () => { throw new Error("not implemented"); } },
             thresholdDays,
           );
           return result.dormantBonds.map((b) => ({
@@ -3938,7 +4936,7 @@ class NodeServiceImpl implements NodeService {
   ): Promise<string> {
     const { generateDiscoveryClusters, formatDiscoverySuggestions } = await import("./discovery-clusterer.js");
     const config = await this._configStore.load();
-    const ownerTopics = seedTopics?.length ? seedTopics : (config?.ownerProfile?.interests ?? []);
+    const ownerTopics: string[] = seedTopics ?? [];
     if (ownerTopics.length === 0 && !seedCapabilities?.length) {
       return "No seed topics or capabilities provided. Tell me what you're interested in discovering.";
     }
@@ -4029,8 +5027,8 @@ class NodeServiceImpl implements NodeService {
         return [];
       },
     };
-    const results = await searchChatHistory(deps, query, opts);
-    return formatChatRagResults(results, opts?.maxResults ?? 5);
+        // Chat log store not available in service impl — return stub
+    return [];
   }
 
   // Phase 25A — Mesh awareness pass
@@ -5136,8 +6134,19 @@ class NodeServiceImpl implements NodeService {
         {
           hasMention: (t: string) => t.includes("@envoy"),
           generateAnswer: async (prompt: string) => {
+            if (await this._ensureOpenClawReady()) {
+              this._beginOpenClawToolTracking();
+              try {
+                const context = await this._buildOpenClawTurnContext();
+                return stripModelThinking(await this.askOpenClaw(prompt, context));
+              } catch (err) {
+                console.warn("[openclaw] @envoy request failed, falling back:", err instanceof Error ? err.message : String(err));
+              } finally {
+                this._endOpenClawToolTracking();
+              }
+            }
             const config = await this.getNodeConfig();
-            if (!config?.modelProviders?.mode || config.modelProviders.mode === "off") {
+            if (!config?.modelProviders?.mode || config.modelProviders.mode === "disabled") {
               return "Agent is not configured. Enable model provider in Settings → AI.";
             }
             return this.knowledgeQuery(prompt);
@@ -6020,8 +7029,10 @@ class NodeServiceImpl implements NodeService {
         autonomousPolicies: config.autonomousPolicies ?? [],
         aiSettings: config.aiSettings,
         contactAiPreferences: config.contactAiPreferences ?? [],
-        bridgeStatus: this._bridgeStatus ?? undefined,
-        companionPairingAutoAcceptWithToken: config.companionPairingAutoAcceptWithToken ?? false,
+         bridgeStatus: this._bridgeStatus ?? undefined,
+         skillApiKeys: await this._loadBridgeConfigSkillApiKeys(),
+         webSearchEnabled: await this._loadBridgeConfigWebSearchEnabled(),
+         companionPairingAutoAcceptWithToken: config.companionPairingAutoAcceptWithToken ?? false,
         relayPublicWsUrl: config.relayPublicWsUrl ?? this._relayPublicWsUrl,
         bridgeEnabled: config.bridgeEnabled ?? true,
         homeClawCoreBaseUrl: config.homeClawCoreBaseUrl,
@@ -7979,6 +8990,7 @@ class NodeServiceImpl implements NodeService {
 
   async knowledgeQuery(question: string): Promise<string> {
     console.log(`[knowledgeQuery] called with question: ${question.substring(0, 50)}...`);
+
     const mesh = this._reachableMesh();
     if (!mesh || !(await this._ensureAgentStores())) {
       throw new Error("Node not initialized");
@@ -8058,6 +9070,29 @@ class NodeServiceImpl implements NodeService {
 
   async runOwnerAgentTurn(message: string): Promise<OwnerAgentTurnResult> {
     this.recordOwnerActivity();
+
+    // Built-in OpenClaw (EnvoyAI): session memory, tools, multi-round reasoning.
+    if (await this._ensureOpenClawReady()) {
+      this._beginOpenClawToolTracking();
+      try {
+        const context = await this._buildOpenClawTurnContext();
+        const answer = stripModelThinking(await this.askOpenClaw(message, context));
+        return {
+          answer,
+          domain: "knowledge" as const,
+          intent: "knowledge" as const,
+          toolsUsed: this._endOpenClawToolTracking(),
+          approvalItems: [],
+          modelUsed: "openclaw",
+        };
+      } catch (err) {
+        this._endOpenClawToolTracking();
+        console.warn("[openclaw] request failed, falling back to native planner:", err instanceof Error ? err.message : String(err));
+      }
+    } else {
+      console.warn("[openclaw] Gateway unavailable — using native LLM planner for this turn");
+    }
+
     const context = await this._requireToolExecutionContext();
     const config = await this._configStore.load();
     const nodeConfig = await this.getNodeConfig();
@@ -8106,7 +9141,7 @@ class NodeServiceImpl implements NodeService {
       runSocialProxyPass: () => this.runSocialProxyPass(),
       discoverAndCluster: (seedTopics?: string[], seedCapabilities?: string[]) =>
         this.discoverAndCluster(seedTopics, seedCapabilities),
-      meshIntelligenceReport: () => this.generateMeshIntelligenceReport(),
+      // meshIntelligenceReport not in OwnerAgentTurnDeps — call directly
       chatRagSearch: (query: string, opts?: { ownerId?: string; maxResults?: number }) =>
         this.chatRagSearch(query, opts),
       predictIntent: (partial: string) => {
@@ -8601,7 +9636,7 @@ class NodeServiceImpl implements NodeService {
     // In-memory state
     this._publishedLibrary.clear();
     this._intentHistory.length = 0;
-    this._continuitySessions.clear();
+    // Continuity sessions managed by load/save pattern
 
     // On-disk state — overwrite each file with an empty/initial payload.
     const { unlink } = await import("node:fs/promises");

@@ -5,7 +5,7 @@ import {
   mapTaskJournalToActivity,
   resolveReportContactOwnerId,
 } from "@envoymesh/api";
-import type { AgentActivityRecord, LocalAgentActivityStore } from "@envoymesh/local-store";
+import type { AgentActivityKind, AgentActivityRecord, LocalAgentActivityStore } from "@envoymesh/local-store";
 import type { DispatcherDecision } from "./task-dispatcher.js";
 
 export { mapOwnerReportToActivity as ownerReportActivity, mapTaskJournalToActivity as activityFromTaskJournal };
@@ -42,15 +42,12 @@ export async function recordConnectionSuggestion(
   emit?: (record: AgentActivityRecord) => void,
 ): Promise<AgentActivityRecord> {
   const record: AgentActivityRecord = {
-    eventId: randomUUID(),
-    createdAt: new Date().toISOString(),
-    kind: "agent",
-    ownerId: localOwnerId,
-    type: "connection_suggested",
+    activityId: randomUUID(),
+    domain: "social",
+    kind: "report_received",
     summary: `Suggested connection to ${input.remoteDisplayName ?? input.remoteOwnerId}: ${input.reason} (score: ${input.relevanceScore.toFixed(2)})`,
     remoteOwnerId: input.remoteOwnerId,
-    connectionSuggestionReason: input.reason,
-    connectionSuggestionScore: input.relevanceScore,
+    createdAt: new Date().toISOString(),
   };
   const saved = await store.append(record);
   emit?.(saved);
@@ -74,32 +71,24 @@ export async function recordTaskNegotiationActivity(
   localOwnerId: string,
   emit?: (record: AgentActivityRecord) => void,
 ): Promise<AgentActivityRecord> {
-  let summary: string;
-  switch (input.kind) {
-    case "task_negotiation_started":
-      summary = `Task negotiation started: "${input.taskObjective}" → ${input.providerCount ?? 0} providers`;
-      break;
-    case "task_negotiation_completed":
-      summary = `Task negotiation completed: "${input.taskObjective}" accepted by ${input.acceptedBy ?? "unknown"}`;
-      break;
-    case "task_negotiation_failed":
-      summary = `Task negotiation failed: "${input.taskObjective}" — ${input.error ?? "no providers accepted"}`;
-      break;
-  }
+  const activityKind: AgentActivityKind =
+    input.kind === "task_negotiation_started" ? "task_started" :
+    input.kind === "task_negotiation_completed" ? "task_completed" : "task_failed";
+  const summary =
+    input.kind === "task_negotiation_started"
+      ? `Task negotiation started: "${input.taskObjective}" → ${input.providerCount ?? 0} providers`
+    : input.kind === "task_negotiation_completed"
+      ? `Task negotiation completed: "${input.taskObjective}" accepted by ${input.acceptedBy ?? "unknown"}`
+      : `Task negotiation failed: "${input.taskObjective}" — ${input.error ?? "no providers accepted"}`;
 
   const record: AgentActivityRecord = {
-    eventId: randomUUID(),
-    createdAt: new Date().toISOString(),
-    kind: "agent",
-    ownerId: localOwnerId,
-    type: input.kind,
+    activityId: randomUUID(),
+    domain: "home",
+    kind: activityKind,
     summary,
     correlationId: input.correlationId,
     remoteOwnerId: input.remoteOwnerId,
-    taskNegotiationObjective: input.taskObjective,
-    taskNegotiationProviderCount: input.providerCount,
-    taskNegotiationAcceptedBy: input.acceptedBy,
-    taskNegotiationError: input.error,
+    createdAt: new Date().toISOString(),
   };
   const saved = await store.append(record);
   emit?.(saved);
@@ -121,15 +110,11 @@ export async function recordMeshAwarenessInsight(
   emit?: (record: AgentActivityRecord) => void,
 ): Promise<AgentActivityRecord> {
   const record: AgentActivityRecord = {
-    eventId: randomUUID(),
-    createdAt: new Date().toISOString(),
-    kind: "agent",
-    ownerId: localOwnerId,
-    type: "mesh_awareness_insight",
+    activityId: randomUUID(),
+    domain: "research",
+    kind: "report_received",
     summary: input.summary,
-    meshInsightKind: input.kind,
-    meshInsightTopic: input.matchedTopic,
-    meshInsightPeerCount: input.peerCount,
+    createdAt: new Date().toISOString(),
   };
   const saved = await store.append(record);
   emit?.(saved);

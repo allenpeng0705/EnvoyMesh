@@ -45,6 +45,8 @@ export interface CreateBridgeOptions {
   listTools?: () => ToolDefinition[];
   /** Live AI identity from node config (transparent prefix enforcement). */
   getAiIdentity?: () => AiIdentity | undefined;
+  /** Resolves pending OpenClaw ask() calls when bridge receives a reply. */
+  resolveOpenClawReply?: (correlationId: string, text: string) => void;
 }
 
 /**
@@ -80,6 +82,7 @@ export function createBridge(options: CreateBridgeOptions): {
     gateway: options.gateway,
     agentId,
     getAiIdentity: options.getAiIdentity,
+    resolveOpenClawReply: options.resolveOpenClawReply,
   };
 
   // --- HTTP server: agent → P2P / tools ---
@@ -203,9 +206,21 @@ export function createBridge(options: CreateBridgeOptions): {
 
     try {
       const raw = await readBody(req, MAX_BRIDGE_BODY_BYTES);
-      const { to, text } = JSON.parse(raw);
+      const body = JSON.parse(raw) as Record<string, unknown>;
+      const to = body.to;
+      const text = body.text;
+      const correlationId = body.correlationId;
       if (typeof to !== "string" || typeof text !== "string" || !to.trim() || !text.trim()) {
         res.writeHead(400).end(JSON.stringify({ ok: false, reason: "to and text are required" }));
+        return;
+      }
+
+      // Sync H2A ask(): resolve pending OpenClaw reply without P2P chat delivery.
+      if (typeof correlationId === "string" && correlationId.trim()) {
+        console.log(`[bridge] OpenClaw sync reply cid=${correlationId.trim()} len=${text.length}`);
+        options.resolveOpenClawReply?.(correlationId.trim(), text);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, mode: "sync-reply" }));
         return;
       }
 

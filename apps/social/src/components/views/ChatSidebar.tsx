@@ -199,6 +199,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
               </span>
             </button>
           ) : null}
+
           {bridgeStatus?.enabled ? (
             <button
               type="button"
@@ -208,9 +209,9 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
               <span className="thread-avatar" aria-hidden>AG</span>
               <span className="thread-meta">
                 <span className="thread-title-row">
-                  <span className="thread-title">{bridgeStatus.agentName ?? t("chat.myAgent")}</span>
+                  <span className="thread-title">{t("chat.myAgent")}</span>
                 </span>
-                <span className="thread-subtitle">{t("chat.homeclawBridge")}</span>
+                <span className="thread-subtitle">{bridgeStatus.agentName || ""}</span>
               </span>
             </button>
           ) : null}

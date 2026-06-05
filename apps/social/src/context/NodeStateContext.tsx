@@ -238,6 +238,10 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       if (data.status === "running" || data.status === "offline") {
         void refreshConnectionStatus();
       }
+      // Bridge status may have been set after initial load
+      nodeService.getBridgeStatus().then((s) => {
+        if (s?.enabled) setBridgeStatus(s);
+      }).catch(() => {});
     });
     return unsub;
   }, [nodeService, wsTransportOpen, refreshConnectionStatus]);

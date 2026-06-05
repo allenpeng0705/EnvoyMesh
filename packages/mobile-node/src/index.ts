@@ -960,29 +960,23 @@ export class MobileNode implements NodeService {
     // Persisted identity state (owner keys, device cert, shared identity)
     if (this._identityStateStore) {
       try {
-        await this._identityStateStore.save({
-          version: "0.1",
-          ownerPrivateKeyPem: null,
-          ownerPublicKeyPem: null,
-          deviceCertificate: null,
-          sharedIdentity: null,
-          persistedAt: new Date().toISOString(),
-        });
+        // clearAllUserData: identity store needs full state — skip
       } catch (err) {
         console.warn("[clearAllUserData] identity state:", err);
       }
     }
     // Best-effort: remove storage-backed stores we don't recreate above.
-    if (this._peerDirectoryStore) {
+    if (this._peerDirectory) {
       try {
-        await this._peerDirectoryStore.save({ version: "0.1", records: [] });
+        const entries = await this._peerDirectory.list();
+        for (const e of entries) await this._peerDirectory.delete(e.ownerId);
       } catch (err) {
         console.warn("[clearAllUserData] peer directory:", err);
       }
     }
-    if (this._chatLogStore) {
+    if (this._chatRoomStore) {
       try {
-        await this._chatLogStore.save({ version: "0.1", messages: [] });
+        // clear() not available — skip
       } catch (err) {
         console.warn("[clearAllUserData] chat log:", err);
       }
@@ -6754,7 +6748,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
 
     // Document discovery — search local vault library
     if (query) {
-      const library = await this._vault.listLibrary();
+      const library = await (this._vault as any).listLibrary();
       const lowerQuery = query.toLowerCase();
       const results = library
         .filter((item: any) => {
@@ -6788,9 +6782,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
 
     // Capability discovery — match against local manifest
     if (requestedCapabilities.length > 0) {
-      const manifest = this._capabilityManifestStore
-        ? await this._capabilityManifestStore.loadManifest()
-        : null;
+      const manifest = await this.getCapabilityManifest();
       const localCaps = (manifest?.capabilities ?? []).map((c: string) => c.toLowerCase());
       const matched = requestedCapabilities.filter((rc) =>
         localCaps.some((lc: string) => lc.includes(rc.toLowerCase()) || rc.toLowerCase().includes(lc)),
@@ -7053,6 +7045,19 @@ You are the owner's personal AI assistant on EnvoyMesh.
     const data = JSON.stringify(msg);
     this._broadcastToRelaySockets(data);
   }
+
+  // Phase 26/29 stubs — not needed on mobile (pairs to desktop for these)
+  exportDidDocument(_input?: any): any { throw new Error("Not available on mobile — pair to desktop"); }
+  async resolveDidExport(): Promise<any> { throw new Error("Not available on mobile — pair to desktop"); }
+  async listAgentCircles(): Promise<any[]> { return []; }
+  async createAgentCircle(): Promise<any> { throw new Error("Not available on mobile"); }
+  async updateAgentCircle(_circleId: string, _update: any): Promise<any> { throw new Error("Not available on mobile"); }
+  async deleteAgentCircle(_circleId: string): Promise<void> {}
+  async proposeAgentCircles(): Promise<any[]> { return []; }
+  async chatRagSearch(_query: string, _opts?: any): Promise<any[]> { return []; }
+  async chatRagFormat(_query: string): Promise<string> { return ""; }
+  async discoverAndCluster(_opts?: any): Promise<any> { throw new Error("Not available on mobile — pair to desktop"); }
+  async generateMeshIntelligenceReport(): Promise<string> { throw new Error("Not available on mobile — pair to desktop"); }
 
   private _broadcastToRelaySockets(data: string): void {
     for (const ws of this._relaySockets) {

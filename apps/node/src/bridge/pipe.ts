@@ -26,6 +26,8 @@ export interface BridgeDeps {
   agentId?: string;
   /** Current AI identity settings (for outbound prefix enforcement). */
   getAiIdentity?: () => AiIdentity | undefined;
+  /** Resolves OpenClaw ask() pending replies by correlationId. */
+  resolveOpenClawReply?: (correlationId: string, text: string) => void;
 }
 
 export interface P2PMessage {

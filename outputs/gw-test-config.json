@@ -1,0 +1,1 @@
+{"channels":{"envoymesh":{"enabled":true,"bridgeUrl":"http://127.0.0.1:3031/bridge/send","webhookPath":"/webhook/envoymesh","dmPolicy":"open","allowedOwnerIds":["*"]}}}

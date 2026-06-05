@@ -191,9 +191,19 @@ export type RpcMethods =
   | "cancelDocumentAcquisitionJob"
   | "listActiveTransfers"
   | "getTransferStatus"
-  // Agent Bridge
-  | "getBridgeStatus"
-  | "getPairingPayload"
+   // Agent Bridge
+   | "getBridgeStatus"
+   // ClawHub skills
+   | "getOpenClawPlugins"
+    | "searchOpenClawPlugins"
+    | "getTrendingOpenClawPlugins"
+    | "installOpenClawPlugin"
+   | "uninstallOpenClawPlugin"
+    | "saveClawhubToken"
+    | "saveWebSearchEnabled"
+    | "sendToOpenClaw"
+    | "saveSkillApiKeys"
+   | "getPairingPayload"
   | "createWanJoinInvite"
   | "applyWanJoinInvite"
   | "pairDevice"
@@ -327,6 +337,10 @@ export interface NodeConfig {
   contactAiPreferences: ContactAiPreferences[];
   /** Agent bridge status — when an external agent (HomeClaw/OpenClaw) is bridged into the mesh. */
   bridgeStatus?: BridgeStatus;
+  /** API keys for ClawHub skills. */
+  skillApiKeys?: Record<string, string>;
+  /** Whether built-in web search (DuckDuckGo) is enabled. Default: true. */
+  webSearchEnabled?: boolean;
   /**
    * Whether the agent bridge is enabled (toggle in Settings UI).
    * When true, the bridge is active on next node start. Default: false.

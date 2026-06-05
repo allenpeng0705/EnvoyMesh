@@ -34,6 +34,22 @@ import type { ResolvedEnvoymeshAccount } from "./types.js";
 
 const CHANNEL_ID = "envoymesh";
 
+/** Pending correlation IDs for sync ask() calls, keyed by ownerId. */
+const pendingCorrelationIds = new Map<string, string>();
+export function setPendingCorrelationId(ownerId: string, correlationId: string): void {
+  pendingCorrelationIds.set(ownerId, correlationId);
+}
+
+/** Take and remove a pending correlationId for an inbound reply target. */
+export function takePendingCorrelationId(targetId: string): string | undefined {
+  const cid = pendingCorrelationIds.get(targetId);
+  if (cid) {
+    pendingCorrelationIds.delete(targetId);
+    return cid;
+  }
+  return undefined;
+}
+
 const resolveEnvoymeshDmPolicy = createScopedDmSecurityResolver<ResolvedEnvoymeshAccount>({
   channelKey: CHANNEL_ID,
   resolvePolicy: (account) => account.dmPolicy,
@@ -188,22 +204,31 @@ async function sendEnvoymeshText(
   ctx: EnvoymeshChannelSendTextContext,
 ): Promise<EnvoymeshOutboundResult> {
   const account = resolveAccount(ctx.cfg ?? {}, ctx.accountId);
-  const to = resolveMeshReplyPeerId(ctx.to.replace(/^envoymesh:/i, "").trim());
-  if (!to.startsWith("envoy_")) {
+  const replyTarget = ctx.to.replace(/^envoymesh:/i, "").trim();
+  const correlationId = takePendingCorrelationId(replyTarget);
+  const to = resolveMeshReplyPeerId(replyTarget);
+  if (!correlationId && !to.startsWith("envoy_")) {
     throw new Error(
       `EnvoyMesh send requires a mesh peer id (envoy_…). Got "${ctx.to}". ` +
         "Use the peer id from the latest inbound message.",
     );
   }
+  if (correlationId) {
+    console.log(`[envoymesh] sendBridgeMessage: sending reply with cid=${correlationId} for target=${replyTarget}`);
+  } else {
+    console.log(`[envoymesh] sendBridgeMessage: no pending cid for target=${replyTarget}, pending keys=[${[...pendingCorrelationIds.keys()].join(",")}]`);
+  }
+
   await sendBridgeMessage({
     bridgeUrl: account.bridgeUrl,
     bridgeSecret: account.bridgeSecret,
-    to,
+    to: to.startsWith("envoy_") ? to : replyTarget,
     text: ctx.text,
+    correlationId,
   });
   return createEnvoymeshSendResult({
     messageId: `em-${Date.now()}`,
-    chatId: to,
+    chatId: to.startsWith("envoy_") ? to : replyTarget,
     kind: "text",
   });
 }

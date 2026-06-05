@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { AIChatPanel } from "./AIChatPanel.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
-import { BackIcon } from "../../icons.js";
+import { BackIcon, PluginIcon } from "../../icons.js";
 import type { AgentActivityRecord, PendingApprovalSummary } from "@envoymesh/api";
+import { SkillManagerModal } from "../SkillManagerModal.js";
 
 export interface H2AChannelViewProps {
   onBackToChats?: () => void;
@@ -17,6 +18,8 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H
   const [activity, setActivity] = useState<AgentActivityRecord[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalSummary[]>([]);
   const [reportLoading, setReportLoading] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [webSearchOn, setWebSearchOn] = useState(true);
 
   useEffect(() => {
     void nodeService
@@ -27,6 +30,9 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H
       .listPendingApprovals()
       .then(setPendingApprovals)
       .catch(() => setPendingApprovals([]));
+    void nodeService.getNodeConfig?.().then((cfg: any) => {
+      if (typeof cfg?.webSearchEnabled === "boolean") setWebSearchOn(cfg.webSearchEnabled);
+    }).catch(() => {});
   }, [nodeService]);
 
   return (
@@ -51,8 +57,12 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H
             <h2 className="h2a-channel-toolbar__heading">{t("h2a.assistant")}</h2>
             <p className="h2a-channel-toolbar__subtitle">{t("h2a.subtitle")}</p>
           </div>
+          <button type="button" className="h2a-header-btn" onClick={() => setSkillsOpen(true)} title="Skills & Plugins">
+            <PluginIcon size={18} />
+          </button>
         </div>
       </header>
+      {skillsOpen && <SkillManagerModal onClose={() => setSkillsOpen(false)} />}
       <div className="h2a-channel-body">
       <aside className="h2a-channel-rail" aria-label={t("h2a.contextAria")}>
         <h3>{t("h2a.railTitle")}</h3>
@@ -124,6 +134,40 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H
           </button>
           <p className="field-desc" style={{ marginTop: "4px" }}>
             {t("h2a.reportDesc", "AI analysis of your entire mesh — health, trends, dormant bonds, reputation.")}
+          </p>
+        </div>
+
+        <div className="h2a-rail-block">
+          <h4>Web Search</h4>
+          <label className="toggle-row" style={{ marginTop: "4px" }}>
+            <span>Built-in web search</span>
+            <input
+              type="checkbox"
+              checked={webSearchOn}
+              onChange={async (e) => {
+                const on = e.target.checked;
+                setWebSearchOn(on);
+                await (nodeService as any).saveWebSearchEnabled?.(on);
+              }}
+            />
+          </label>
+          <p className="field-desc" style={{ marginTop: "4px" }}>
+            Uses DuckDuckGo when no search API key is configured; uses Tavily (or other keys from Skills) when present.
+          </p>
+        </div>
+
+        <div className="h2a-rail-block">
+          <h4>Skills & Plugins</h4>
+          <button
+            type="button"
+            className="secondary"
+            style={{ width: "100%", marginTop: "4px" }}
+            onClick={() => setSkillsOpen(true)}
+          >
+            Manage OpenClaw Skills
+          </button>
+          <p className="field-desc" style={{ marginTop: "4px" }}>
+            Browse installed skills, search ClawHub, and install new plugins.
           </p>
         </div>
       </aside>

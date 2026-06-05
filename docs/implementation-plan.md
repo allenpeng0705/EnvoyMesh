@@ -90,6 +90,7 @@ Active next direction:
 8. **Phase 23** — Proactive Social Graph — **`[x]` shipped** (circle-proposer, bond-steward, connection-suggester, chat-rag-service; 21 tests).
 9. **Phase 24** — Agent Marketplace — **`[x]` shipped** (agent-negotiation-worker, reputation-router, agent-chain-orchestrator, service-mesh-worker; 24 tests).
 10. **Phase 25** — Ambient Mesh Awareness — **`[x]` shipped** (mesh-awareness-worker, intent-predictor, continuity-service; 16 tests).
+11. **Phase 29** — OpenClaw Integration — **`[~]` designed** (runtime, tool catalog, install scripts built; session context, two-tier routing, tool execution pending).
 
 Product-level **user stories and epics** (discovery, broadcast termination, communication roles, and so on) live in [EnvoyMesh scenarios](./scenarios.md). Narrative journeys live in [UserStory.md](./UserStory.md). Periodically reconcile both with code via [alignment-review.md](./alignment-review.md). Use those files to prioritize; keep this plan aligned when scope or shipped work changes.
 
@@ -3102,7 +3103,7 @@ Verified by `apps/node/test/phase-18-e2e.test.ts` (+ unit/integration suites bel
 
 | Item | Phase | Why deferred |
 |------|-------|-------------|
-**Bottom line:** All phases complete. 18 modules, 176 unit tests, 3 E2E harness tests, 8 RPC methods, 2 WebSocket events, 3 Activity kinds, ToolRegistry tool, 3 daemon ticks, mobile node full feature parity. Phase 27 (agent in group chat, proactive agent, mobile AI) shipped.
+**Bottom line:** All phases complete. 18 modules, 176 unit tests, 3 E2E harness tests, 8 RPC methods, 2 WebSocket events, 3 Activity kinds, ToolRegistry tool, 3 daemon ticks, mobile node full feature parity. Phase 27 (agent in group chat, proactive agent, mobile AI) shipped. Phase 29 (OpenClaw integration) designed below.
 
 ---
 
@@ -3147,11 +3148,109 @@ Mobile (`packages/mobile-node/`) supports all Phase 19-25 features via relay-pro
 - **Cross-device continuity (Ph 25B)**: State syncs through relay bridge
 - **Limitation**: Mobile cannot be a pure TCP listener (no broadcast target discoverability); relay compensates
 
+---
+
+## Phase 29 — OpenClaw as EnvoyMesh's Built-in Agent **`[~]` designed, partially built**
+
+**Goal:** Bundle OpenClaw as EnvoyMesh's default agent. Users get a complete agent experience out of the box — one install, one start, everything works. OpenClaw owns memory and reasoning; EnvoyMesh owns network, security, and tools.
+
+**Design decisions (2026-06-04):**
+
+| Decision | Rationale |
+|----------|-----------|
+| Two-tier model routing | EnvoyMesh native handles chat/auto-replies (fast, secure). OpenClaw handles assistant + @envoy (complex, multi-turn). |
+| OpenClaw owns memory | If OpenClaw is stateless, we should call the model directly. Its value is persistent memory across sessions. |
+| Stdio JSON protocol | Same format as HTTP bridge. No ports, no secrets. OpenClaw logs show on EnvoyMesh console. |
+| Independent upgradability | OpenClaw is a child process. Any version works as long as it speaks `envoy-openclaw/1.0`. Update independently. |
+| Tool catalog at startup | EnvoyMesh exports its tool list. OpenClaw doesn't need to know EnvoyMesh internals — just tool names and descriptions. |
+
+### 29A — OpenClaw Runtime (child process + stdio)
+
+- `[x]` `packages/openclaw-runtime/src/index.ts`: `OpenClawRuntime` class — spawns child process, JSON-over-stdio protocol, ping/pong readiness check, request/response multiplexing with correlation IDs
+- `[x]` `discoverOpenClaw()`: auto-detects via npm (`@openclaw/core`), PATH, bundled binary (`bin/`), source submodule (`packages/openclaw/`)
+- `[x]` Singleton `getOpenClawRuntime()` for process lifecycle management
+- `[x]` Wire `OpenClawRuntime.start()` into NodeServiceImpl startup (index.ts + node-service-impl.ts)
+- `[x]` `askOpenClaw()` method with context passing (bonds, interests)
+- `[x]` `executeOpenClawTool()` — executes EnvoyMesh tools for OpenClaw via ToolRegistry
+
+### 29B — Tool Bridge (EnvoyMesh tools → OpenClaw)
+
+- `[x]` `packages/openclaw-runtime/src/tool-bridge.ts`: `ENVOY_TOOL_CATALOG` — 7 tools with names, descriptions, parameters, `useWhen` hints, and `resultShape` descriptions
+- `[x]` `buildOpenClawSystemPrompt()`: system instructions telling OpenClaw what EnvoyMesh is and how to use its tools
+- `[x]` Tool mapping: make friends → `mesh.discover_cluster` + `mesh.send_hello`, find docs → `mesh.library_discover`, ask for help → `mesh.task_propose`, A2A → `mesh.task_propose` + `mesh.task_result`, knowledge → `mesh.knowledge_query`, chat history → `mesh.chat_rag_search`, network intelligence → `mesh.intelligence_report`
+- `[x]` Tool execution handler: `executeOpenClawTool()` maps tool names → ToolRegistry executeTool
+- `[ ]` Dynamic tool list: build catalog from live ToolRegistry, not hardcoded (deferred)
+
+### 29C — Session Context (per-request memory bridge)
+
+- `[x]` Each request to OpenClaw carries session context (bonds, interests) via `askOpenClaw()`
+- `[x]` Bonds: displayName + trust level
+- `[x]` Interests: owner profile interests
+- `[ ]` Chat history context (deferred — needs chat log integration)
+- `[ ]` Tool call multi-round: execute tool → return result → next prompt (deferred)
+  ```typescript
+  {
+    sessionId: string;       // For OpenClaw memory binding
+    prompt: string;          // The user's request
+    context: {
+      owner: { interests: string[], capabilities: string[] },
+      bonds: Array<{ name: string, level: string }>,
+      recentChats: Array<{ contact: string, text: string }>,
+      discoveryResults?: unknown;
+    };
+    availableTools: EnvoyToolDefinition[];
+  }
+  ```
+- `[ ]` OpenClaw returns: decision + tool calls + response text
+- `[ ]` EnvoyMesh executes tool calls, passes results back to OpenClaw (multi-round within one turn)
+
+### 29D — Two-Tier Model Routing
+
+- `[x]` Request router wired in `runOwnerAgentTurn` + `_maybeRespondAsAgentInRoom`:
+  ```
+  chat draft / auto-reply → EnvoyMesh native model (Ollama / OpenAI) — unchanged
+  Assistant / @envoy       → OpenClaw (if available) → fallback to native
+  ```
+- `[x]` EnvoyMesh model settings remain for chat/auto-replies (security: chat content stays in EnvoyMesh)
+- `[x]` OpenClaw manages its own LLM config independently
+- `[ ]` Settings → AI shows all three tiers: "Native model" (chat), "OpenClaw" (assistant), "OpenClaw model" (deferred)
+
+### 29E — Unified Install
+
+- `[x]` `scripts/setup.sh`: one command — npm install + OpenClaw + build
+- `[x]` `scripts/install-openclaw.sh`: OpenClaw-specific install via npm / binary download / source build
+- `[ ]` Post-install verification: `openclaw --version` check
+- `[ ]` First-run experience: if OpenClaw not found, show helpful message with install instructions
+
+### 29F — Version Negotiation & Upgradability
+
+- `[x]` Protocol handshake at startup via `hello`/`hello_ack` JSON messages
+- `[x]` Version logging on connect: `[openclaw-runtime] v2.3.1, protocol envoy-openclaw/1.0`
+- `[x]` Fallback: assume compatible after 5s timeout
+- `[ ]` Version mismatch handling: warn if incompatible (deferred — needs actual incompatible version to test)
+- `[x]` Update path: `./scripts/install-openclaw.sh` + restart EnvoyMesh
+
+### 29G — Write Tests
+
+- `[x]` Unit: `OpenClawRuntime` start/stop/ready states, `ask` throws when not ready
+- `[x]` Unit: `discoverOpenClaw()` return type validation
+- `[x]` Unit: `ENVOY_TOOL_CATALOG` schema (7 tools, each with required fields)
+- `[x]` Unit: `buildOpenClawSystemPrompt` content validation
+- `[x]` Unit: Version negotiation handshake format
+- `[x]` File: `packages/openclaw-runtime/test/index.test.ts` — 12 tests
+- `[ ]` Integration: EnvoyMesh → mock OpenClaw → tool call → result (deferred)
+- `[ ]` E2E: Real OpenClaw process flows (deferred — requires OpenClaw binary)
+
+**Exit:** Runtime + tool catalog + two-tier routing + version negotiation + tests complete. Ready for integration testing with real OpenClaw.
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
 | 2026-06-03 | **Phases 19–22 shipped:** bond_autonomy (protocol, inbound, outbound worker: `bond-autonomy-worker.ts`, 24 tests); network-wide document discovery (`document-discovery-broadcast.ts`, 10 tests); network-wide capability discovery (`capability-discovery-broadcast.ts`, 4 tests); federated RAG (`federated-rag.ts`, 10 tests). Total 48 new tests, 181 passing. Pre-existing `ShareFileDialog.test.tsx` fixed (stable mock + getByText workaround). |
+| 2026-06-04 | **Phase 29 — OpenClaw integration designed:** Two-tier model routing, tool bridge (7 EnvoyMesh tools → OpenClaw), session context protocol, version negotiation, unified install scripts. Runtime + tool catalog partially built. |
 | 2026-06-03 | **Phase 27 — AI features shipped:** Agent in group chat (request-only, anti-loop, rate-limited), proactive agent pass, mobile AI package skeleton. 20 new tests. |
 | 2026-06-03 | **Phase 26 + Mobile E2E scoped:** DID WAN gateway resolver designed; mobile E2E test plan for bond autonomy, broadcast, continuity, task marketplace. |
 | 2026-06-03 | **Phases 23–25 designed:** Proactive Social Graph, Agent Marketplace, Ambient Mesh Awareness. All local computation — no new wire intents. |

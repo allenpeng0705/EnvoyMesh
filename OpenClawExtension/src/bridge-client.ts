@@ -12,11 +12,15 @@ export async function sendBridgeMessage(params: {
   bridgeSecret?: string;
   to: string;
   text: string;
+  /** Passed through so the bridge can match async replies to pending ask() calls. */
+  correlationId?: string;
 }): Promise<boolean> {
+  const body: Record<string, unknown> = { to: params.to, text: params.text };
+  if (params.correlationId) body.correlationId = params.correlationId;
   const res = await fetch(params.bridgeUrl, {
     method: "POST",
     headers: bridgeAuthHeaders(params.bridgeSecret),
-    body: JSON.stringify({ to: params.to, text: params.text }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(310_000),
   });
   if (!res.ok) {

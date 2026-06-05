@@ -71,6 +71,20 @@ what this is.
 
 ---
 
+## Getting Started
+
+```bash
+git clone https://github.com/envoymesh/envoymesh.git
+cd envoymesh
+./scripts/setup.sh
+
+# Run
+npm run node:dev      # Start the P2P node
+npm run social:dev    # Open http://localhost:5173
+```
+
+For detailed setup, configuration, Docker, mobile, and packaging: **[QuickStart.md](QuickStart.md)** · **[packaging.md](packaging.md)**
+
 ## How does it actually work?
 
 You don't need to read this section to use EnvoyMesh — but if you're curious, here's the
