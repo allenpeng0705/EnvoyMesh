@@ -85,4 +85,28 @@ describe("createEnvoymeshPlugin", () => {
     );
     expect(result.channel).toBe("envoymesh");
   });
+
+  it("sendText posts proactive reminder to owner id", async () => {
+    const plugin = createEnvoymeshPlugin();
+    const account = makeAccount();
+    await plugin.outbound.sendText({
+      cfg: {
+        channels: {
+          envoymesh: {
+            bridgeUrl: account.bridgeUrl,
+            allowedOwnerIds: account.allowedOwnerIds,
+          },
+        },
+      },
+      to: "envoy:owner:test",
+      text: "Time to drink water",
+      accountId: "default",
+    });
+    expect(mockSendBridgeMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "envoy:owner:test",
+        text: "Time to drink water",
+      }),
+    );
+  });
 });

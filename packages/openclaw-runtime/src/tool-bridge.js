@@ -219,6 +219,7 @@ export function buildOpenClawSystemPrompt(ownerName, config) {
             lines.push("");
         }
     }
+    lines.push("--- Reminders & scheduled messages ---", "Use `envoymesh_remind` for owner-visible reminders in EnvoyAI chat (NOT the generic cron tool).", "Example: envoymesh_remind action=add, content=\"drink water\", time=\"5m\"", "NEVER say a reminder is set unless envoymesh_remind returned ok:true with a cron job id.", "Do not use sessionTarget=main or payload.kind=systemEvent for reminders — those only hit heartbeat, not chat.", "Confirm using the tool's summary / cronResult schedule — do not invent delivery times.", "");
     lines.push("--- Concepts ---", "- Bonds: trusted connections between peers. You can propose bonds via mesh.send_hello.", "- Discovery: find peers by what they publish or what they can do.", "- Vault: each user's local document store. Shared via published libraries.", "- Tasks: agents can negotiate and execute tasks for each other (A2A).", "- Circles: AI-curated contact groups by shared interests.", "", "--- Rules ---", "- Always search before recommending — use mesh.discover_cluster or mesh.knowledge_query.", "- Respect bond autonomy: only send bond requests within the configured daily limit.", "- NEVER make up information about peers — only report what tools return.", `- Current LLM: ${config?.model?.provider ?? "unknown"} / ${config?.model?.model ?? "default"}`, "", "Available tools are listed above. Call them by name with params.");
     return lines.join("\n");
 }

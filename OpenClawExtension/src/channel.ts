@@ -28,7 +28,7 @@ import {
   registerEnvoymeshWebhookRoute,
   validateEnvoymeshGatewayAccountStartup,
 } from "./gateway-runtime.js";
-import { resolveMeshReplyPeerId } from "./peer-routing.js";
+import { resolveEnvoymeshBridgeSendTarget, resolveMeshReplyPeerId, canSendEnvoymeshBridgeMessage } from "./peer-routing.js";
 import { envoymeshSetupAdapter, envoymeshSetupWizard } from "./setup-surface.js";
 import type { ResolvedEnvoymeshAccount } from "./types.js";
 
@@ -205,30 +205,32 @@ async function sendEnvoymeshText(
 ): Promise<EnvoymeshOutboundResult> {
   const account = resolveAccount(ctx.cfg ?? {}, ctx.accountId);
   const replyTarget = ctx.to.replace(/^envoymesh:/i, "").trim();
-  const correlationId = takePendingCorrelationId(replyTarget);
-  const to = resolveMeshReplyPeerId(replyTarget);
-  if (!correlationId && !to.startsWith("envoy_")) {
+  const correlationId =
+    takePendingCorrelationId(replyTarget) ??
+    takePendingCorrelationId(resolveMeshReplyPeerId(replyTarget));
+  const bridgeTo = resolveEnvoymeshBridgeSendTarget(replyTarget);
+  if (!canSendEnvoymeshBridgeMessage(replyTarget, correlationId)) {
     throw new Error(
-      `EnvoyMesh send requires a mesh peer id (envoy_…). Got "${ctx.to}". ` +
-        "Use the peer id from the latest inbound message.",
+      `EnvoyMesh send requires a mesh peer id (envoy_…) or owner id (envoy:owner:…). Got "${ctx.to}". ` +
+        "Use the peer id from the latest inbound message, or the owner's envoy:owner id for proactive reminders.",
     );
   }
   if (correlationId) {
     console.log(`[envoymesh] sendBridgeMessage: sending reply with cid=${correlationId} for target=${replyTarget}`);
   } else {
-    console.log(`[envoymesh] sendBridgeMessage: no pending cid for target=${replyTarget}, pending keys=[${[...pendingCorrelationIds.keys()].join(",")}]`);
+    console.log(`[envoymesh] sendBridgeMessage: proactive message to=${bridgeTo}`);
   }
 
   await sendBridgeMessage({
     bridgeUrl: account.bridgeUrl,
     bridgeSecret: account.bridgeSecret,
-    to: to.startsWith("envoy_") ? to : replyTarget,
+    to: bridgeTo,
     text: ctx.text,
     correlationId,
   });
   return createEnvoymeshSendResult({
     messageId: `em-${Date.now()}`,
-    chatId: to.startsWith("envoy_") ? to : replyTarget,
+    chatId: bridgeTo.startsWith("envoy_") ? bridgeTo : replyTarget,
     kind: "text",
   });
 }
@@ -328,6 +330,7 @@ export function createEnvoymeshPlugin(): EnvoymeshPlugin {
           "### EnvoyMesh bridge",
           "Replies are delivered to the mesh via POST /bridge/send on the EnvoyMesh node.",
           "Use the sender's mesh peer id (envoy_…) as the reply target when sending proactively.",
+          "For reminders ('in 5 minutes', etc.): use `envoymesh_remind` — NOT the generic cron tool.",
           "Mesh capabilities: use tools `envoymesh_list_mesh_tools` and `envoymesh_execute_mesh_tool`.",
           "Async discovery/knowledge responses arrive as `[EnvoyMesh async …]` messages on this channel.",
         ],

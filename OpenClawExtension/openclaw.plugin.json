@@ -16,7 +16,8 @@
     "tools": [
       "envoymesh_list_mesh_tools",
       "envoymesh_execute_mesh_tool",
-      "envoymesh_current_time"
+      "envoymesh_current_time",
+      "envoymesh_remind"
     ]
   },
   "configSchema": {
