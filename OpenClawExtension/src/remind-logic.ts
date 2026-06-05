@@ -1,4 +1,10 @@
 import { resolveExpiresAtMsFromDurationMs } from "openclaw/plugin-sdk/number-runtime";
+import { canonicalEnvoymeshDeliveryTarget, normalizeEnvoymeshDeliveryTarget } from "./remind-delivery-target.js";
+import { encodeEnvoymeshCronPayload } from "./remind-payload.js";
+import {
+  extractCronJobId,
+  registerPendingEnvoymeshReminder,
+} from "./remind-delivery-registry.js";
 
 const CHANNEL_ID = "envoymesh";
 const DEFAULT_ACCOUNT_ID = "default";
@@ -34,6 +40,9 @@ type RemindCronPlan =
       action: RemindParams["action"];
       cronAction: RemindCronAction;
       summary?: string;
+      fireAtMs?: number;
+      deliveryTo?: string;
+      reminderContent?: string;
     }
   | {
       ok: false;
@@ -131,29 +140,18 @@ export function generateJobName(content: string): string {
   return `Reminder: ${short}`;
 }
 
-export function buildReminderPrompt(content: string): string {
-  return (
-    `Send the owner exactly this reminder and nothing else (no greeting, no sign-off): ${content.trim()}`
-  );
-}
-
-function normalizeEnvoymeshDeliveryTarget(to: string): string {
-  const trimmed = to.trim();
-  if (!trimmed) {
-    return trimmed;
-  }
-  if (/^envoymesh:/i.test(trimmed)) {
-    return trimmed;
-  }
-  if (trimmed.startsWith("envoy:owner:") || trimmed.startsWith("envoy_")) {
-    return `envoymesh:${trimmed}`;
-  }
-  return trimmed;
+function buildDirectReminderCronMessage(content: string, to: string): string {
+  return encodeEnvoymeshCronPayload({
+    type: "cron_reminder",
+    content: content.trim(),
+    targetAddress: normalizeEnvoymeshDeliveryTarget(to),
+  });
 }
 
 function buildOnceJob(params: RemindParams, atMs: number, to: string, accountId: string) {
   const content = params.content!;
   const name = params.name || generateJobName(content);
+  const normalizedTo = normalizeEnvoymeshDeliveryTarget(to);
   return {
     action: "add" as const,
     job: {
@@ -164,7 +162,9 @@ function buildOnceJob(params: RemindParams, atMs: number, to: string, accountId:
       deleteAfterRun: true,
       payload: {
         kind: "agentTurn" as const,
-        message: buildReminderPrompt(content),
+        message: buildDirectReminderCronMessage(content, normalizedTo),
+        lightContext: true,
+        toolsAllow: [],
       },
       delivery: {
         mode: "announce" as const,
@@ -180,6 +180,7 @@ function buildCronJob(params: RemindParams, to: string, accountId: string) {
   const content = params.content!;
   const name = params.name || generateJobName(content);
   const tz = params.timezone?.trim();
+  const normalizedTo = normalizeEnvoymeshDeliveryTarget(to);
   return {
     action: "add" as const,
     job: {
@@ -193,7 +194,9 @@ function buildCronJob(params: RemindParams, to: string, accountId: string) {
       wakeMode: "now" as const,
       payload: {
         kind: "agentTurn" as const,
-        message: buildReminderPrompt(content),
+        message: buildDirectReminderCronMessage(content, normalizedTo),
+        lightContext: true,
+        toolsAllow: [],
       },
       delivery: {
         mode: "announce" as const,
@@ -269,12 +272,17 @@ export function prepareRemindCronAction(
   }
   const resolvedAccountId = ctx.fallbackAccountId?.trim() || DEFAULT_ACCOUNT_ID;
 
+  const normalizedTo = canonicalEnvoymeshDeliveryTarget(resolvedTo);
+
   if (isCronExpression(params.time)) {
     return {
       ok: true,
       action: "add",
       cronAction: buildCronJob(params, resolvedTo, resolvedAccountId),
       summary: `⏰ Recurring reminder: "${params.content.trim()}" (${params.time.trim()}${params.timezone ? `, tz=${params.timezone}` : ""})`,
+      fireAtMs: Date.now(),
+      deliveryTo: normalizedTo,
+      reminderContent: params.content.trim(),
     };
   }
 
@@ -298,6 +306,9 @@ export function prepareRemindCronAction(
     action: "add",
     cronAction: buildOnceJob(params, atMs, resolvedTo, resolvedAccountId),
     summary: `⏰ Reminder in ${formatDelay(delayMs)}: "${params.content.trim()}"`,
+    fireAtMs: atMs,
+    deliveryTo: normalizedTo,
+    reminderContent: params.content.trim(),
   };
 }
 
@@ -313,6 +324,22 @@ export async function executeScheduledRemind(
 
   try {
     const cronResult = await scheduler(plan.cronAction);
+    if (
+      plan.action === "add" &&
+      plan.deliveryTo &&
+      plan.reminderContent &&
+      typeof plan.fireAtMs === "number"
+    ) {
+      const jobId = extractCronJobId(cronResult);
+      if (jobId) {
+        registerPendingEnvoymeshReminder({
+          jobId,
+          content: plan.reminderContent,
+          to: plan.deliveryTo,
+          fireAtMs: plan.fireAtMs,
+        });
+      }
+    }
     return json({
       ok: true,
       action: plan.action,

@@ -39,6 +39,7 @@ import type {
   SendHelloOptions,
   SocialIntroProposal,
 } from "@envoymesh/api";
+import { ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
 
 // ---------------------------------------------------------------------------
 // Shared state
@@ -375,6 +376,17 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       if (msg.metadata?.deliveryReceipt === "sent") return;
       // Skip own messages by libp2p id
       if (peerId && msg.sender.nodeId === peerId) return;
+      // EnvoyAI chat → persisted under __envoy_ai__, not Inbox
+      if (
+        msg.metadata?.deliveryChannel === "ai" ||
+        msg.sender.ownerId === ENVOY_AI_THREAD_KEY ||
+        msg.recipient.ownerId === ENVOY_AI_THREAD_KEY ||
+        (bridgeStatus?.agentPeerId &&
+          (msg.sender.nodeId === bridgeStatus.agentPeerId ||
+            msg.sender.ownerId === bridgeStatus.agentPeerId))
+      ) {
+        return;
+      }
       // Skip if bonded
       const isBonded = bonds.some(
         (b) =>
@@ -389,7 +401,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       });
     });
     return unsub;
-  }, [nodeService, wsTransportOpen, bonds, peerId, humanProfile?.ownerId]);
+  }, [nodeService, wsTransportOpen, bonds, peerId, humanProfile?.ownerId, bridgeStatus?.agentPeerId]);
 
   // bond:established — remove pending messages from that peer
   useEffect(() => {

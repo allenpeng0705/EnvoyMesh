@@ -143,6 +143,8 @@ export interface ChatMessage {
     metadata: {
         timestamp: string;
         deliveryReceipt?: "pending" | "sent" | "delivered" | "read" | "failed";
+        deliveryChannel?: "ai" | "inbox" | "chat";
+        deliverySource?: "bridge";
     };
     signature: string;
 }

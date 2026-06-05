@@ -9,6 +9,7 @@ vi.mock("openclaw/plugin-sdk/agent-harness-runtime", () => ({
 }));
 
 import { createEnvoymeshRemindTool } from "./remind-tool.js";
+import { takeDueEnvoymeshReminderForTarget } from "./remind-delivery-registry.js";
 
 describe("envoymesh remind tool", () => {
   beforeEach(() => {
@@ -36,8 +37,15 @@ describe("envoymesh remind tool", () => {
     const payload = addCall?.[2] as { job?: Record<string, unknown> };
     expect(payload?.job?.sessionTarget).toBe("isolated");
     expect(payload?.job?.payload).toEqual(
-      expect.objectContaining({ kind: "agentTurn" }),
+      expect.objectContaining({
+        kind: "agentTurn",
+        lightContext: true,
+        toolsAllow: [],
+      }),
     );
+    expect(
+      (payload?.job?.payload as { message?: string } | undefined)?.message?.startsWith("ENVOYMESH_CRON:"),
+    ).toBe(true);
     expect(payload?.job?.delivery).toEqual({
       mode: "announce",
       channel: "envoymesh",
@@ -47,5 +55,7 @@ describe("envoymesh remind tool", () => {
     expect(result.details).toEqual(
       expect.objectContaining({ ok: true, cronResult: { id: "job-1" } }),
     );
+    const due = takeDueEnvoymeshReminderForTarget("envoy:owner:test", Date.now() + 300_000);
+    expect(due?.content).toBe("drink water");
   });
 });

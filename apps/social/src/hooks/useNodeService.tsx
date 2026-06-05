@@ -49,7 +49,7 @@ import type {
   IpfsEngineStatus,
   RagIndexStatus,
 } from "@envoymesh/api";
-import { isChatRoomThreadKey } from "@envoymesh/api";
+import { isChatRoomThreadKey, ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
 
 type InitNodeOptions = {
@@ -1177,6 +1177,9 @@ function partnerOwnerIdForChat(
 
   if (rcvO && isChatRoomThreadKey(rcvO)) {
     return rcvO;
+  }
+  if (rcvO === ENVOY_AI_THREAD_KEY || sndO === ENVOY_AI_THREAD_KEY) {
+    return ENVOY_AI_THREAD_KEY;
   }
 
   // Use ownerId as primary routing key (ownerIds are distinct even when

@@ -225,6 +225,21 @@ export interface ChatMessage {
   metadata: {
     timestamp: string;
     deliveryReceipt?: "pending" | "sent" | "delivered" | "read" | "failed";
+    /** UI routing: bridge reminders and proactive OpenClaw replies → EnvoyAI chat. */
+    deliveryChannel?: "ai" | "inbox" | "chat";
+    /** Origin of a locally delivered bridge message (diagnostics only). */
+    deliverySource?: "bridge";
+    /** EnvoyAI turn metadata for job chips / approvals after reload. */
+    assistantTurn?: {
+      domain?: string;
+      intent?: string;
+      jobId?: string;
+      correlationId?: string;
+      pendingApproval?: boolean;
+      routeId?: string;
+      modelUsed?: "openclaw" | "native";
+      format?: string;
+    };
     /** Group chat: owners who have acked delivery. */
     deliveredToOwnerIds?: string[];
     /** Group chat: owners still awaiting delivery ack. */

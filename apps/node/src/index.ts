@@ -152,7 +152,7 @@ import {
 } from "./auto-reply-gate.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
 import { resolveContactAiAccessLevel, buildVaultIndexOptionsFromKnowledgeBase } from "@envoymesh/api";
-import { stripModelThinking, applyAiIdentityForIdentity } from "@envoymesh/api";
+import { stripModelThinking, applyAiIdentityForIdentity, ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
 import { installEnvoyDataTransferReceiver } from "./data-transfer-inbound.js";
@@ -3053,8 +3053,11 @@ const bridge = createBridge({
       messageId: envelope.messageId,
       sender: {
         nodeId: bridgeIdentity.agentPeerId,
-        ownerId: bridgeIdentity.agentPeerId,
-        displayName: bridgeConfig.agentName ?? "",
+        ownerId: ENVOY_AI_THREAD_KEY,
+        displayName: bridgeConfig.agentName ?? "EnvoyAI",
+        actorRole: "agent" as const,
+        agentId: bridgeIdentity.agentCredential.agentId,
+        agentVerified: true,
       },
       recipient: {
         nodeId: mesh.peerId,
@@ -3062,13 +3065,22 @@ const bridge = createBridge({
         displayName: selfHuman?.displayName ?? profile.owner.ownerId,
       },
       content: { text: stripModelThinking(payload.text) },
-      metadata: { timestamp: envelope.createdAt, deliveryReceipt: "delivered" as const },
+      metadata: {
+        timestamp: envelope.createdAt,
+        deliveryReceipt: "delivered" as const,
+        deliveryChannel: "ai" as const,
+        deliverySource: "bridge" as const,
+      },
       signature: envelope.signature,
     };
-    void chatLogStore.append(bridgeIdentity.agentPeerId, chatMsg).catch((err) =>
-      console.warn(`[bridge] chat log append failed:`, err),
-    );
-    wsServerForEvents.emitEvent("chat:message", chatMsg);
+    if (nodeService instanceof NodeServiceImpl) {
+      nodeService.recordEnvoyAiChatMessage(chatMsg);
+    } else {
+      void chatLogStore.append(ENVOY_AI_THREAD_KEY, chatMsg).catch((err) =>
+        console.warn(`[bridge] chat log append failed:`, err),
+      );
+      wsServerForEvents.emitEvent("chat:message", chatMsg);
+    }
   },
 });
 bridgeHandleMessage = bridge._handleMessage;

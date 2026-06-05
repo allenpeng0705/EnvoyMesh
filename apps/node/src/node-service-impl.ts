@@ -144,6 +144,7 @@ import {
   formatA2aChatSystemLine,
   resolveReportContactOwnerId,
   chatRoomThreadKey,
+  ENVOY_AI_THREAD_KEY,
 } from "@envoymesh/api";
 
 import {
@@ -2704,6 +2705,123 @@ class NodeServiceImpl implements NodeService {
       if (!view) return;
       return rag.indexChatMessage(threadPeerOwnerId, view);
     }).catch((err) => console.warn(`[rag] chat index failed:`, err));
+  }
+
+  /** Append one EnvoyAI row to the shared chat log and push to connected Social clients. */
+  recordEnvoyAiChatMessage(msg: ChatMessage): void {
+    this._persistChatMessage(ENVOY_AI_THREAD_KEY, msg);
+    this.emit("chat:message", msg);
+  }
+
+  private async _loadEnvoyAiChatHistory(limit?: number): Promise<ChatMessage[]> {
+    if (!this._chatLogStore) return [];
+    const primary = await this._chatLogStore.listThread(ENVOY_AI_THREAD_KEY, limit);
+    const legacyPeerId = this._bridgeStatus?.agentPeerId?.trim();
+    if (!legacyPeerId || legacyPeerId === ENVOY_AI_THREAD_KEY) {
+      return primary as ChatMessage[];
+    }
+    const legacy = await this._chatLogStore.listThread(legacyPeerId, limit);
+    if (legacy.length === 0) {
+      return primary as ChatMessage[];
+    }
+    const byId = new Map<string, ChatMessage>();
+    for (const row of [...legacy, ...primary]) {
+      byId.set(row.messageId, row as ChatMessage);
+    }
+    return [...byId.values()].sort(
+      (a, b) =>
+        new Date(a.metadata.timestamp).getTime() - new Date(b.metadata.timestamp).getTime(),
+    );
+  }
+
+  private async _persistEnvoyAiChatExchange(
+    userText: string,
+    turn: OwnerAgentTurnResult,
+  ): Promise<void> {
+    const profile = this._profile;
+    const mesh = this._reachableMesh();
+    if (!profile || !mesh || !this._chatLogStore) {
+      return;
+    }
+
+    const trimmed = userText.trim();
+    const answer = turn.answer.trim();
+    if (!trimmed && !answer) {
+      return;
+    }
+
+    let selfHuman: Awaited<ReturnType<HumanProfileStore["loadHumanProfile"]>> | null = null;
+    try {
+      selfHuman = await this._humanProfileStore.loadHumanProfile();
+    } catch {
+      /* ignore */
+    }
+
+    const ownerId = profile.owner.ownerId;
+    const displayName = selfHuman?.displayName ?? ownerId;
+    const timestamp = new Date().toISOString();
+    const bridgeAgentPeerId = this._bridgeStatus?.agentPeerId?.trim() || ENVOY_AI_THREAD_KEY;
+    const bridgeAgentId = this._bridgeStatus?.agentName?.trim();
+    const assistantTurn: NonNullable<ChatMessage["metadata"]["assistantTurn"]> = {
+      domain: turn.domain,
+      intent: turn.intent,
+      jobId: turn.jobId,
+      correlationId: turn.correlationId,
+      pendingApproval: turn.pendingApproval,
+      routeId: turn.routeId,
+      modelUsed: turn.modelUsed,
+      format: turn.format,
+    };
+
+    if (trimmed) {
+      this.recordEnvoyAiChatMessage({
+        messageId: randomUUID(),
+        sender: {
+          nodeId: mesh.peerId,
+          ownerId,
+          displayName,
+          actorRole: "human",
+        },
+        recipient: {
+          nodeId: bridgeAgentPeerId,
+          ownerId: ENVOY_AI_THREAD_KEY,
+          displayName: bridgeAgentId ?? "EnvoyAI",
+        },
+        content: { text: trimmed },
+        metadata: {
+          timestamp,
+          deliveryReceipt: "delivered",
+          deliveryChannel: "ai",
+        },
+        signature: "",
+      });
+    }
+
+    if (answer) {
+      this.recordEnvoyAiChatMessage({
+        messageId: randomUUID(),
+        sender: {
+          nodeId: bridgeAgentPeerId,
+          ownerId: ENVOY_AI_THREAD_KEY,
+          displayName: bridgeAgentId ?? "EnvoyAI",
+          actorRole: "agent",
+          agentVerified: true,
+        },
+        recipient: {
+          nodeId: mesh.peerId,
+          ownerId,
+          displayName,
+        },
+        content: { text: answer },
+        metadata: {
+          timestamp,
+          deliveryReceipt: "delivered",
+          deliveryChannel: "ai",
+          assistantTurn,
+        },
+        signature: "",
+      });
+    }
   }
 
   private _chatRoomDeps(): ChatRoomServiceDeps {
@@ -6055,6 +6173,9 @@ class NodeServiceImpl implements NodeService {
 
   async listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]> {
     if (!this._chatLogStore) return [];
+    if (peerOwnerId.trim() === ENVOY_AI_THREAD_KEY) {
+      return this._loadEnvoyAiChatHistory(limit);
+    }
     const rows = await this._chatLogStore.listThread(peerOwnerId.trim(), limit);
     return rows as ChatMessage[];
   }
@@ -6204,10 +6325,22 @@ class NodeServiceImpl implements NodeService {
     if (!thread || !this._chatLogStore) {
       return { deletedCount: 0 };
     }
-    const deletedCount = await this._chatLogStore.clearThread(thread);
+    let deletedCount = await this._chatLogStore.clearThread(thread);
+    if (thread === ENVOY_AI_THREAD_KEY) {
+      const legacyPeerId = this._bridgeStatus?.agentPeerId?.trim();
+      if (legacyPeerId && legacyPeerId !== ENVOY_AI_THREAD_KEY) {
+        deletedCount += await this._chatLogStore.clearThread(legacyPeerId);
+      }
+    }
     if (deletedCount > 0 && (await this._shouldPurgeChatRagOnDelete())) {
       const rag = await this._getRagService();
       await rag?.clearChatThread(thread);
+      if (thread === ENVOY_AI_THREAD_KEY) {
+        const legacyPeerId = this._bridgeStatus?.agentPeerId?.trim();
+        if (legacyPeerId && legacyPeerId !== ENVOY_AI_THREAD_KEY) {
+          await rag?.clearChatThread(legacyPeerId);
+        }
+      }
     }
     return { deletedCount };
   }
@@ -9077,7 +9210,7 @@ class NodeServiceImpl implements NodeService {
       try {
         const context = await this._buildOpenClawTurnContext();
         const answer = stripModelThinking(await this.askOpenClaw(message, context));
-        return {
+        const result: OwnerAgentTurnResult = {
           answer,
           domain: "knowledge" as const,
           intent: "knowledge" as const,
@@ -9085,6 +9218,8 @@ class NodeServiceImpl implements NodeService {
           approvalItems: [],
           modelUsed: "openclaw",
         };
+        await this._persistEnvoyAiChatExchange(message, result);
+        return result;
       } catch (err) {
         this._endOpenClawToolTracking();
         console.warn("[openclaw] request failed, falling back to native planner:", err instanceof Error ? err.message : String(err));
@@ -9368,7 +9503,9 @@ class NodeServiceImpl implements NodeService {
     if (turn.intent) {
       void this.recordIntent(turn.intent, message);
     }
-    return { ...turn, approvalItems, answer: stripModelThinking(turn.answer) };
+    const result = { ...turn, approvalItems, answer: stripModelThinking(turn.answer) };
+    await this._persistEnvoyAiChatExchange(message, result);
+    return result;
   }
 
   /** Local H2A turn — Activity row for Assistant lane (Phase 15C / 18). */

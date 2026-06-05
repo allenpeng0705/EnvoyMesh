@@ -18,6 +18,16 @@ describe("envoymesh remind-logic", () => {
     }
     expect(plan.cronAction.job.sessionTarget).toBe("isolated");
     expect(plan.cronAction.job.payload.kind).toBe("agentTurn");
+    const payload = plan.cronAction.job.payload;
+    if (payload.kind !== "agentTurn") {
+      throw new Error("expected agentTurn payload");
+    }
+    expect(payload.lightContext).toBe(true);
+    expect(payload.toolsAllow).toEqual([]);
+    expect(payload.message.startsWith("ENVOYMESH_CRON:")).toBe(true);
+    expect(plan.fireAtMs).toBeTypeOf("number");
+    expect(plan.deliveryTo).toBe("envoy:owner:test");
+    expect(plan.reminderContent).toBe("drink water");
     expect(plan.cronAction.job.delivery).toEqual({
       mode: "announce",
       channel: "envoymesh",

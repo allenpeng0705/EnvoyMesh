@@ -22,6 +22,11 @@ import { createEmptyChannelDirectoryAdapter } from "openclaw/plugin-sdk/director
 import { normalizeStringEntries } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { listAccountIds, resolveAccount } from "./accounts.js";
 import { sendBridgeMessage } from "./bridge-client.js";
+import {
+  decodeEnvoymeshCronPayload,
+  formatReminderDeliveryText,
+} from "./remind-payload.js";
+import { takeDueEnvoymeshReminderForTarget } from "./remind-delivery-registry.js";
 import { EnvoymeshChannelConfigSchema } from "./config-schema.js";
 import {
   collectEnvoymeshGatewayRoutingWarnings,
@@ -215,6 +220,26 @@ async function sendEnvoymeshText(
         "Use the peer id from the latest inbound message, or the owner's envoy:owner id for proactive reminders.",
     );
   }
+
+  let outboundText = ctx.text ?? "";
+  let usedDirectReminder = false;
+  if (!correlationId) {
+    const decoded = decodeEnvoymeshCronPayload(outboundText);
+    if (decoded.payload) {
+      outboundText = decoded.payload.content;
+      usedDirectReminder = true;
+    } else {
+      const pending = takeDueEnvoymeshReminderForTarget(bridgeTo);
+      if (pending) {
+        outboundText = pending.content;
+        usedDirectReminder = true;
+      }
+    }
+  }
+  if (usedDirectReminder) {
+    outboundText = formatReminderDeliveryText(outboundText);
+  }
+
   if (correlationId) {
     console.log(`[envoymesh] sendBridgeMessage: sending reply with cid=${correlationId} for target=${replyTarget}`);
   } else {
@@ -225,7 +250,7 @@ async function sendEnvoymeshText(
     bridgeUrl: account.bridgeUrl,
     bridgeSecret: account.bridgeSecret,
     to: bridgeTo,
-    text: ctx.text,
+    text: outboundText,
     correlationId,
   });
   return createEnvoymeshSendResult({

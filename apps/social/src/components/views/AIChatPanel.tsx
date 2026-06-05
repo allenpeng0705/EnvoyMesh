@@ -1,10 +1,16 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { stripModelThinking } from "@envoymesh/api";
-import type { AgentActivityRecord, AnswerFormat, OwnerAgentApprovalSummary, OwnerAgentDomain, OwnerAgentTurnResult, StructuredBlock } from "@envoymesh/api";
+import type { AgentActivityRecord, AnswerFormat, ChatMessage, OwnerAgentApprovalSummary, OwnerAgentDomain, OwnerAgentTurnResult, StructuredBlock } from "@envoymesh/api";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
+import {
+  chatMessageToAiMessage,
+  ENVOY_AI_THREAD_KEY,
+  mergeAiChatMessages,
+  type AiChatMessageView,
+} from "../../lib/envoy-ai-chat.js";
 import { messageVisualVariant } from "../../lib/chat-thread-kind.js";
 import { createAssistantDraftCrdt, ASSISTANT_DRAFT_SYNC_SCOPE } from "../../lib/assistant-draft-crdt.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
@@ -175,7 +181,7 @@ function groupByDate(msgs: AiMessage[]): [string, AiMessage[]][] {
 export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = {}) {
   const t = useT();
   const nodeService = useNodeService();
-  const { nodeConfig, humanProfile, nodeStatus, bridgeStatus } = useNodeState();
+  const { nodeConfig, humanProfile, nodeStatus } = useNodeState();
   const assistantReady = nodeStatus === "running";
   const assistantBlockedHint =
     nodeStatus === "starting"
@@ -191,7 +197,56 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const draftRef = useRef<ReturnType<typeof createAssistantDraftCrdt> | null>(null);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const ownerId = humanProfile?.ownerId ?? nodeConfig?.profileDir ?? "anonymous";
+  const reloadSeqRef = useRef(0);
+  const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
+  const ownerId = selfOwnerId || nodeConfig?.profileDir || "anonymous";
+
+  const reloadEnvoyAiHistory = useCallback(async (turn?: OwnerAgentTurnResult) => {
+    if (!selfOwnerId) return;
+    const seq = ++reloadSeqRef.current;
+    try {
+      const rows = await nodeService.listChatHistory(ENVOY_AI_THREAD_KEY);
+      if (seq !== reloadSeqRef.current) return;
+      let converted = rows
+        .map((row) => chatMessageToAiMessage(row, selfOwnerId))
+        .filter((row): row is NonNullable<ReturnType<typeof chatMessageToAiMessage>> => row !== null)
+        .map((row) => ({
+          ...row,
+          turn: row.turn as AiMessage["turn"],
+        }));
+      if (turn) {
+        const latestAiIndex = converted.map((m) => m.role).lastIndexOf("ai");
+        if (latestAiIndex >= 0) {
+          converted = converted.map((msg, index) =>
+            index === latestAiIndex
+              ? {
+                  ...msg,
+                  turn: {
+                    domain: turn.domain,
+                    jobId: turn.jobId,
+                    correlationId: turn.correlationId,
+                    pendingApproval: turn.pendingApproval,
+                    routeId: turn.routeId,
+                    intent: turn.intent,
+                    approvalItems: turn.approvalItems,
+                    format: turn.format,
+                    blocks: turn.blocks,
+                    modelUsed: turn.modelUsed,
+                  },
+                }
+              : msg,
+          );
+        }
+      }
+      setAiMessages(converted);
+    } catch {
+      /* node may still be starting */
+    }
+  }, [nodeService, selfOwnerId]);
+
+  useEffect(() => {
+    void reloadEnvoyAiHistory();
+  }, [reloadEnvoyAiHistory]);
 
   const messageGroups = useMemo(() => groupByDate(aiMessages), [aiMessages]);
 
@@ -251,24 +306,22 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
     return unsub;
   }, [nodeService]);
 
-  // Listen for async bridge responses from the OpenClaw agent
   useEffect(() => {
-    if (!bridgeStatus?.enabled) return;
-    const unsub = nodeService.on("chat:message", (msg: any) => {
-      if (msg.metadata?.deliveryReceipt) return;
-      setAiMessages((prev) => {
-        if (prev.some((m) => m.id === msg.messageId)) return prev;
-        return [...prev, {
-          id: msg.messageId || crypto.randomUUID(),
-          role: "ai" as const,
-          text: stripModelThinking(typeof msg.payload?.text === "string" ? msg.payload.text : msg.text ?? ""),
-          timestamp: msg.timestamp || msg.createdAt || new Date().toISOString(),
-        }];
-      });
+    if (!selfOwnerId) return;
+    const unsub = nodeService.on("chat:message", (msg: ChatMessage) => {
+      const view = chatMessageToAiMessage(msg, selfOwnerId);
+      if (!view) return;
+      reloadSeqRef.current += 1;
+      setAiMessages((prev) =>
+        mergeAiChatMessages(prev as AiChatMessageView[], [view]).map((row) => ({
+          ...row,
+          turn: row.turn as AiMessage["turn"],
+        })),
+      );
       setIsAiLoading(false);
     });
     return unsub;
-  }, [nodeService, bridgeStatus?.enabled]);
+  }, [nodeService, selfOwnerId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -306,30 +359,11 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
     setAiMessages((prev) => [...prev, userMsg]);
     draftRef.current?.setPlainText("");
     setIsAiLoading(true);
+    reloadSeqRef.current += 1;
 
     try {
       const turn = await nodeService.runOwnerAgentTurn(question);
-      setAiMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "ai",
-          text: stripModelThinking(turn.answer),
-          timestamp: new Date().toISOString(),
-          turn: {
-            domain: turn.domain,
-            jobId: turn.jobId,
-            correlationId: turn.correlationId,
-            pendingApproval: turn.pendingApproval,
-            routeId: turn.routeId,
-            intent: turn.intent,
-            approvalItems: turn.approvalItems,
-            format: turn.format,
-            blocks: turn.blocks,
-            modelUsed: turn.modelUsed,
-          },
-        },
-      ]);
+      await reloadEnvoyAiHistory(turn);
     } catch (error) {
       const msg = error instanceof Error ? error.message : t("aiChat.responseFailed");
       setAiMessages((prev) => [
@@ -347,13 +381,19 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
   };
 
   const handleDeleteAiMessage = (messageId: string) => {
-    setAiMessages((prev) => prev.filter((msg) => msg.id !== messageId));
+    void nodeService.deleteChatMessage(ENVOY_AI_THREAD_KEY, messageId).then((result) => {
+      if (result.ok) {
+        setAiMessages((prev) => prev.filter((msg) => msg.id !== messageId));
+      }
+    });
   };
 
   const handleClearAiChat = () => {
     if (aiMessages.length === 0) return;
     if (!window.confirm(t("aiChat.clearConfirm"))) return;
-    setAiMessages([]);
+    void nodeService.clearChatHistory(ENVOY_AI_THREAD_KEY).then(() => {
+      setAiMessages([]);
+    });
   };
 
   const resolveInlineApproval = async (
