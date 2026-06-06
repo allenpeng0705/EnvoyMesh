@@ -19,7 +19,7 @@ import { isTauriShell, restartTauriNodeProcess } from "./lib/tauri-shell.js";
 
 export type ViewName = "chat" | "assistant" | "discover" | "library" | "profile" | "settings";
 
-export type ChatPanelMode = "threads" | "inbox";
+export type ChatPanelMode = "threads" | "inbox" | "terminals";
 
 function ConnectingSplash({
   reconnectAttempts,

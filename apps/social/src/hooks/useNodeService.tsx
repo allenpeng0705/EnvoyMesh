@@ -204,6 +204,12 @@ export interface NodeServiceClient {
   ): Promise<import("@envoymesh/api").RevokeAuthorizedDeviceResult>;
   listDeviceRevocations(): Promise<import("@envoymesh/api").ListDeviceRevocationsResult>;
 
+  listTerminalSessions(): Promise<import("@envoymesh/api").TerminalSessionSummary[]>;
+  createTerminalSession(params?: import("@envoymesh/api").CreateTerminalSessionParams): Promise<import("@envoymesh/api").TerminalSessionSummary>;
+  closeTerminalSession(params: import("@envoymesh/api").CloseTerminalSessionParams): Promise<void>;
+  renameTerminalSession(params: import("@envoymesh/api").RenameTerminalSessionParams): Promise<import("@envoymesh/api").TerminalSessionSummary>;
+  terminalAttach(params: import("@envoymesh/api").TerminalAttachParams): Promise<import("@envoymesh/api").TerminalAttachResult>;
+
   // AI / Knowledge Query
   knowledgeQuery(question: string): Promise<string>;
   runDocumentAgentTurn(message: string): Promise<import("@envoymesh/api").DocumentAgentTurnResult>;
@@ -618,6 +624,27 @@ function createWsNodeServiceClient(
     async listDeviceRevocations() {
       return wsClient.rpc("listDeviceRevocations", {}) as Promise<
         import("@envoymesh/api").ListDeviceRevocationsResult
+      >;
+    },
+    async listTerminalSessions() {
+      return wsClient.rpc("listTerminalSessions", {}) as Promise<import("@envoymesh/api").TerminalSessionSummary[]>;
+    },
+    async createTerminalSession(params?: import("@envoymesh/api").CreateTerminalSessionParams) {
+      return wsClient.rpc("createTerminalSession", (params ?? {}) as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalSessionSummary
+      >;
+    },
+    async closeTerminalSession(params: import("@envoymesh/api").CloseTerminalSessionParams) {
+      return wsClient.rpc("closeTerminalSession", params as unknown as Record<string, unknown>);
+    },
+    async renameTerminalSession(params: import("@envoymesh/api").RenameTerminalSessionParams) {
+      return wsClient.rpc("renameTerminalSession", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalSessionSummary
+      >;
+    },
+    async terminalAttach(params: import("@envoymesh/api").TerminalAttachParams) {
+      return wsClient.rpc("terminalAttach", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalAttachResult
       >;
     },
     async knowledgeQuery(question: string) { return wsClient.rpc("knowledgeQuery", { question }) as Promise<string>; },

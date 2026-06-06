@@ -756,6 +756,8 @@ export interface ConnectionStatus {
   lastError?: string;
   /** ISO timestamp for {@link lastError}. */
   lastErrorAt?: string;
+  /** True when this node can spawn local PTY sessions (desktop home node). */
+  terminalsAvailable?: boolean;
 }
 
 /**
@@ -1008,6 +1010,9 @@ export interface NodeServiceEvents {
     peerCount: number;
     createdAt: string;
   };
+
+  /** Terminal session list changed (Phase 30). */
+  "terminal:session-updated": { sessions: import("./terminal.js").TerminalSessionSummary[] };
 }
 
 export interface NodeService {
@@ -1645,6 +1650,14 @@ export interface NodeService {
 
   /** List signed device revocation records for this owner. */
   listDeviceRevocations(): Promise<ListDeviceRevocationsResult>;
+
+  // ----- Terminals (Phase 30) -----
+
+  listTerminalSessions(): Promise<import("./terminal.js").TerminalSessionSummary[]>;
+  createTerminalSession(params?: import("./terminal.js").CreateTerminalSessionParams): Promise<import("./terminal.js").TerminalSessionSummary>;
+  closeTerminalSession(params: import("./terminal.js").CloseTerminalSessionParams): Promise<void>;
+  renameTerminalSession(params: import("./terminal.js").RenameTerminalSessionParams): Promise<import("./terminal.js").TerminalSessionSummary>;
+  terminalAttach(params: import("./terminal.js").TerminalAttachParams): Promise<import("./terminal.js").TerminalAttachResult>;
 
   // ----- Connection Status -----
 

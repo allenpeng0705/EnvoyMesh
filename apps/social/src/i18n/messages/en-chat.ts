@@ -5,6 +5,7 @@ export const chatMessages = {
   selectContact: "Select a contact",
   selectContactDesc: "Choose a bonded contact from the list to start a human conversation.",
   openAssistant: "Open EnvoyAI",
+  terminals: "Terminals",
   assistant: "EnvoyAI",
   assistantSubtitle: "OpenClaw",
   myAgent: "Ext Agent",
@@ -169,6 +170,23 @@ export const aiChatMessages = {
   turnRejected: "Rejected",
   turnApprovalBusy: "Working…",
   turnJobStage: "Stage: {stage}",
+} as const;
+
+export const terminalMessages = {
+  sessions: "Sessions",
+  new: "New terminal",
+  empty: "No terminals yet",
+  running: "Running",
+  exited: "Exited",
+  close: "Close session",
+  runningCount: "{count} / {max} running",
+  selectSession: "Select a terminal",
+  selectSessionDesc: "Choose a session from the sidebar or create a new terminal.",
+  sessionExited: "This session has exited.",
+  connecting: "Connecting…",
+  connectionError: "Connection error",
+  disconnected: "Disconnected",
+  exitedWithCode: "[Process exited with code {code}]",
 } as const;
 
 export const h2aMessages = {

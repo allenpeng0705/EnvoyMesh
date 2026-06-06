@@ -159,6 +159,8 @@ import { installEnvoyDataTransferReceiver } from "./data-transfer-inbound.js";
 import { createNodeService, NodeServiceImpl } from "./node-service-impl.js";
 import { createNodeConfigStore } from "./node-config-store.js";
 import { WsServer } from "./ws-server.js";
+import { TerminalManager } from "./terminal-manager.js";
+import { TerminalWsServer } from "./terminal-ws-server.js";
 import type { ModelProviderConfig } from "@envoymesh/api";
 import { evaluateInboundEnvelopeRolePolicy } from "./role-policy.js";
 import { createBridge } from "./bridge/index.js";
@@ -2738,11 +2740,33 @@ const wsServer = new WsServer(3030, "/ws", {
     }
   },
 });
+
+const terminalManager = new TerminalManager({
+  profileDir: args.profileDir,
+  taskStore,
+  onSessionsChanged: () => {
+    if (nodeService instanceof NodeServiceImpl) {
+      nodeService.emitTerminalSessionsUpdated();
+    }
+    wsServerForEvents?.emitEvent("terminal:session-updated", {
+      sessions: terminalManager.listSessionSummaries(),
+    });
+  },
+});
+const terminalWsServer = new TerminalWsServer({
+  port: 3031,
+  pathPrefix: "/ws/terminal",
+  manager: terminalManager,
+});
+terminalWsServer.start();
+terminalManager.setTerminalWsListenAddress(3031, "/ws/terminal");
+
 wsServer.start(nodeService);
 wsServerForEvents = wsServer;
 // Tell NodeServiceImpl the ws listen address so it can generate pairing QR data
 if (nodeService instanceof NodeServiceImpl) {
   nodeService.setWsListenAddress(3030, "/ws");
+  nodeService.setTerminalManager(terminalManager);
 }
 
 // Register client-proxy protocol handler (Phase 10A relay bridge)

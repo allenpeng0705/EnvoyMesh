@@ -197,7 +197,11 @@ export type AuditEventType =
   | "tool.called"
   | "discovery.capability.verified"
   | "discovery.capability.rejected"
-  | "trigger.fired";
+  | "trigger.fired"
+  | "terminal.session.created"
+  | "terminal.session.closed"
+  | "terminal.session.renamed"
+  | "terminal.session.exited";
 
 export type AuditDirection = "inbound" | "outbound" | "local";
 

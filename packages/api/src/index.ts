@@ -57,6 +57,8 @@ export * from "./discovery-privacy.js";
 export type { UnsignedDiscoveryReferralAttestation } from "./discovery-referral-attestation.js";
 export * from "./sync-state.js";
 export * from "./ws-protocol.js";
+export * from "./terminal.js";
+export * from "./terminal-wire.js";
 /** Explicit export: Vite pre-bundle can skip `bondTrustRank` when re-exported only via star from `node-service`. */
 export { bondTrustRank } from "./bond-trust-rank.js";
 /** Explicit export: Vite/Rollup may not trace star re-exports from `node-service`. */

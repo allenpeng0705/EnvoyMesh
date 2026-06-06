@@ -414,6 +414,26 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.listDeviceRevocations();
   }
 
+  async listTerminalSessions() {
+    return this._ns.listTerminalSessions();
+  }
+
+  async createTerminalSession(params?: import("@envoymesh/api").CreateTerminalSessionParams) {
+    return this._ns.createTerminalSession(params);
+  }
+
+  async closeTerminalSession(params: import("@envoymesh/api").CloseTerminalSessionParams) {
+    return this._ns.closeTerminalSession(params);
+  }
+
+  async renameTerminalSession(params: import("@envoymesh/api").RenameTerminalSessionParams) {
+    return this._ns.renameTerminalSession(params);
+  }
+
+  async terminalAttach(params: import("@envoymesh/api").TerminalAttachParams) {
+    return this._ns.terminalAttach(params);
+  }
+
   // -----------------------------------------------------------------------
   // AI / Knowledge Query
   // -----------------------------------------------------------------------

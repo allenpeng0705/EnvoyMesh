@@ -393,6 +393,28 @@ export async function routeRpcMethod(
       return ns.revokeAuthorizedDevice(params as any);
     case "listDeviceRevocations":
       return ns.listDeviceRevocations();
+    case "listTerminalSessions":
+      return ns.listTerminalSessions();
+    case "createTerminalSession":
+      return ns.createTerminalSession({
+        title: params.title as string | undefined,
+        cwd: params.cwd as string | undefined,
+        cols: params.cols as number | undefined,
+        rows: params.rows as number | undefined,
+      });
+    case "closeTerminalSession":
+      return ns.closeTerminalSession({ sessionId: String(params.sessionId ?? "") });
+    case "renameTerminalSession":
+      return ns.renameTerminalSession({
+        sessionId: String(params.sessionId ?? ""),
+        title: String(params.title ?? ""),
+      });
+    case "terminalAttach":
+      return ns.terminalAttach({
+        sessionId: String(params.sessionId ?? ""),
+        cols: params.cols as number | undefined,
+        rows: params.rows as number | undefined,
+      });
     case "forwardEnvelope":
       return ns.forwardEnvelope(params.envelope as Record<string, unknown>, params.dialHints as string[] | undefined);
     case "getOpenClawPlugins":

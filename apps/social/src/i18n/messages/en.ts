@@ -8,6 +8,7 @@ import {
   h2aMessages,
   inboxMessages,
   messageBubbleMessages,
+  terminalMessages,
 } from "./en-chat.js";
 import {
   accountSettingsMessages,
@@ -147,6 +148,7 @@ export const en = {
   },
   chat: chatMessages,
   inbox: inboxMessages,
+  terminals: terminalMessages,
   contactChat: contactChatMessages,
   groupChat: groupChatMessages,
   aiChat: aiChatMessages,

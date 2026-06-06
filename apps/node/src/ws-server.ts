@@ -88,6 +88,9 @@ export class WsServer {
       );
       // Phase 25A — Mesh awareness insights
       nodeServiceImpl.on("agent:awareness", (data: unknown) => this.emitEvent("agent:awareness", data));
+      nodeServiceImpl.on("terminal:session-updated", (data: unknown) =>
+        this.emitEvent("terminal:session-updated", data),
+      );
       // Phase 25C — Digest ready notification
       // digest:ready not in NodeServiceEvents type — emit directly
     } else {
@@ -213,6 +216,7 @@ export class WsServer {
       "trigger:fired",
       "digest:ready",
       "homeclawCoreWs:rx",
+      "terminal:session-updated",
     ];
     for (const event of allEvents) {
       this.subscribe(ws, event);

@@ -234,6 +234,12 @@ export type RpcMethods =
   | "homeClawCoreWsOpen"
   | "homeClawCoreWsSend"
   | "homeClawCoreWsClose"
+  // Terminals (Phase 30)
+  | "listTerminalSessions"
+  | "createTerminalSession"
+  | "closeTerminalSession"
+  | "renameTerminalSession"
+  | "terminalAttach"
   // Event subscription
   | "on"
   | "off"

@@ -521,6 +521,7 @@ class NodeServiceImpl implements NodeService {
   private _wsPort: number = 3030;
   private _wsPath: string = "/ws";
   private _relayPublicWsUrl: string | undefined;
+  private _terminalManager: import("./terminal-manager.js").TerminalManager | null = null;
 
   /** Latest QR / `getPairingPayload` token for optional companion auto-pair (short TTL). */
   private _pairingToken: string | null = null;
@@ -8494,6 +8495,7 @@ class NodeServiceImpl implements NodeService {
         multiaddrs: [],
         connectedRelays: [],
         bondedPeers: 0,
+        terminalsAvailable: Boolean(this._terminalManager),
         ...diagnostics,
       };
     }
@@ -8503,6 +8505,7 @@ class NodeServiceImpl implements NodeService {
       multiaddrs: mesh.multiaddrs,
       connectedRelays: mesh.getConnectionStats().circuitPeerIds,
       bondedPeers: 0,
+      terminalsAvailable: Boolean(this._terminalManager),
       ...diagnostics,
     };
   }
@@ -8530,6 +8533,43 @@ class NodeServiceImpl implements NodeService {
   setWsListenAddress(port: number, path: string): void {
     this._wsPort = port;
     this._wsPath = path;
+  }
+
+  /** Wire Phase 30 terminal manager (desktop home node only). */
+  setTerminalManager(manager: import("./terminal-manager.js").TerminalManager): void {
+    this._terminalManager = manager;
+  }
+
+  emitTerminalSessionsUpdated(): void {
+    if (!this._terminalManager) return;
+    this.emit("terminal:session-updated", { sessions: this._terminalManager.listSessionSummaries() });
+  }
+
+  private _requireTerminalManager(): import("./terminal-manager.js").TerminalManager {
+    if (!this._terminalManager) {
+      throw new Error("terminal.notAvailable");
+    }
+    return this._terminalManager;
+  }
+
+  listTerminalSessions(): Promise<import("@envoymesh/api").TerminalSessionSummary[]> {
+    return Promise.resolve(this._requireTerminalManager().listTerminalSessions());
+  }
+
+  createTerminalSession(params?: import("@envoymesh/api").CreateTerminalSessionParams): Promise<import("@envoymesh/api").TerminalSessionSummary> {
+    return this._requireTerminalManager().createTerminalSession(params);
+  }
+
+  closeTerminalSession(params: import("@envoymesh/api").CloseTerminalSessionParams): Promise<void> {
+    return this._requireTerminalManager().closeTerminalSession(params);
+  }
+
+  renameTerminalSession(params: import("@envoymesh/api").RenameTerminalSessionParams): Promise<import("@envoymesh/api").TerminalSessionSummary> {
+    return this._requireTerminalManager().renameTerminalSession(params);
+  }
+
+  terminalAttach(params: import("@envoymesh/api").TerminalAttachParams): Promise<import("@envoymesh/api").TerminalAttachResult> {
+    return Promise.resolve(this._requireTerminalManager().terminalAttach(params));
   }
 
   /**

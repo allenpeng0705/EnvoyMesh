@@ -933,6 +933,41 @@ export class MobileNode implements NodeService {
     return { revocations: this._deviceRevocations };
   }
 
+  listTerminalSessions(): Promise<import("@envoymesh/api").TerminalSessionSummary[]> {
+    if (this.sharedIdentity && this._state?.homeNodePeerId) {
+      return Promise.reject(new Error("terminal.pairHomeRequired"));
+    }
+    return Promise.reject(new Error("terminal.notSupportedOnMobile"));
+  }
+
+  createTerminalSession(): Promise<import("@envoymesh/api").TerminalSessionSummary> {
+    if (this.sharedIdentity && this._state?.homeNodePeerId) {
+      return Promise.reject(new Error("terminal.pairHomeRequired"));
+    }
+    return Promise.reject(new Error("terminal.notSupportedOnMobile"));
+  }
+
+  closeTerminalSession(): Promise<void> {
+    if (this.sharedIdentity && this._state?.homeNodePeerId) {
+      return Promise.reject(new Error("terminal.pairHomeRequired"));
+    }
+    return Promise.reject(new Error("terminal.notSupportedOnMobile"));
+  }
+
+  renameTerminalSession(): Promise<import("@envoymesh/api").TerminalSessionSummary> {
+    if (this.sharedIdentity && this._state?.homeNodePeerId) {
+      return Promise.reject(new Error("terminal.pairHomeRequired"));
+    }
+    return Promise.reject(new Error("terminal.notSupportedOnMobile"));
+  }
+
+  terminalAttach(): Promise<import("@envoymesh/api").TerminalAttachResult> {
+    if (this.sharedIdentity && this._state?.homeNodePeerId) {
+      return Promise.reject(new Error("terminal.pairHomeRequired"));
+    }
+    return Promise.reject(new Error("terminal.notSupportedOnMobile"));
+  }
+
   // -----------------------------------------------------------------------
   // Persistence helpers
   // -----------------------------------------------------------------------
@@ -3353,6 +3388,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
       multiaddrs: this._mesh ? this._mesh.getMultiaddrs().map((a: any) => a.toString()) : this._relayUrls,
       connectedRelays: this._relayUrls,
       bondedPeers: 0,
+      terminalsAvailable: false,
       lastError: this._lastNodeError ?? undefined,
       lastErrorAt: this._lastNodeErrorAt ?? undefined,
     };

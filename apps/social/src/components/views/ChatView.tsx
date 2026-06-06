@@ -2,11 +2,15 @@ import { ChatSidebar } from "./ChatSidebar.js";
 import { ContactChatPanel } from "./ContactChatPanel.js";
 import { GroupChatPanel } from "./GroupChatPanel.js";
 import { InboxView } from "./InboxView.js";
+import { TerminalPanel } from "../terminals/TerminalPanel.js";
+import { TerminalSidebar } from "../terminals/TerminalSidebar.js";
 import { ChatIcon } from "../../icons.js";
 import { useT } from "../../context/I18nContext.js";
+import { useNodeState } from "../../context/NodeStateContext.js";
 import type { ChatPanelMode } from "../../App.js";
 import { isChatRoomThreadKey, parseChatRoomThreadKey } from "@envoymesh/api";
-import { useEffect, useState } from "react";
+import type { TerminalSessionSummary } from "@envoymesh/api";
+import { useEffect, useMemo, useState } from "react";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import type { ChatRoom } from "@envoymesh/api";
 
@@ -35,10 +39,25 @@ export function ChatView({
 }: ChatViewProps) {
   const t = useT();
   const nodeService = useNodeService();
+  const { connectionStatus } = useNodeState();
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+  const [terminalSessions, setTerminalSessions] = useState<TerminalSessionSummary[]>([]);
+  const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
+  const terminalsAvailable = connectionStatus?.terminalsAvailable === true;
+  const selectedTerminal = useMemo(
+    () => terminalSessions.find((s) => s.sessionId === selectedTerminalId) ?? null,
+    [selectedTerminalId, terminalSessions],
+  );
+
   const selectedRoom = isChatRoomThreadKey(selectedContact ?? "")
     ? chatRooms.find((r) => r.roomId === parseChatRoomThreadKey(selectedContact!))
     : undefined;
+
+  useEffect(() => {
+    if (!terminalsAvailable && panelMode === "terminals") {
+      onPanelModeChange("threads");
+    }
+  }, [terminalsAvailable, panelMode, onPanelModeChange]);
 
   useEffect(() => {
     if (!nodeService.isConnected) return;
@@ -71,7 +90,7 @@ export function ChatView({
   }, [nodeService, nodeService.isConnected, onSelectedContactChange, selectedContact]);
 
   return (
-    <div className="chat-view">
+    <div className={`chat-view${panelMode === "terminals" ? " chat-view--terminals" : ""}`}>
       <div className="chat-view-primary-tabs" aria-label={t("chat.tabsLabel")}>
         <button
           type="button"
@@ -94,11 +113,30 @@ export function ChatView({
             </span>
           ) : null}
         </button>
+        {terminalsAvailable ? (
+          <button
+            type="button"
+            aria-pressed={panelMode === "terminals"}
+            className={panelMode === "terminals" ? "active" : ""}
+            onClick={() => onPanelModeChange("terminals")}
+          >
+            {t("chat.terminals")}
+          </button>
+        ) : null}
       </div>
 
       {panelMode === "inbox" ? (
         <div className="chat-view-inbox-panel">
           <InboxView embedded />
+        </div>
+      ) : panelMode === "terminals" ? (
+        <div className="chat-view-terminals-shell">
+          <TerminalSidebar
+            selectedSessionId={selectedTerminalId}
+            onSelectSession={(id) => setSelectedTerminalId(id || null)}
+            onSessionsChange={setTerminalSessions}
+          />
+          <TerminalPanel session={selectedTerminal} />
         </div>
       ) : (
         <div className="chat-view-threads-shell">
