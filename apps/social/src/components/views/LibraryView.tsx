@@ -3,10 +3,11 @@ import { useNodeState } from "../../context/NodeStateContext.js";
 import { useT } from "../../context/I18nContext.js";
 import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
-import { openVaultLibraryFile, revealVaultLibraryFile } from "../../lib/library-file-actions.js";
+import { openLocalFile, revealVaultLibraryFile } from "../../lib/library-file-actions.js";
+import { localFileRowKey, vaultLibraryItemFromLocalFile } from "../../lib/local-file-display.js";
 import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
 import { FriendsFilesPanel } from "../discover/FriendsFilesPanel.js";
-import type { LibraryItem } from "@envoymesh/api";
+import type { LibraryItem, LocalFileItem } from "@envoymesh/api";
 
 export function LibraryView() {
   const t = useT();
@@ -27,7 +28,7 @@ export function LibraryView() {
   const ipfsGatewayVerifyEnabled =
     ipfsPolicyEnabled && (nodeConfig?.externalPublish?.gatewayAllowlist?.length ?? 0) > 0;
   const [query, setQuery] = useState("");
-  const [rawItems, setRawItems] = useState<LibraryItem[]>([]);
+  const [rawItems, setRawItems] = useState<LocalFileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [importBusy, setImportBusy] = useState(false);
@@ -40,13 +41,22 @@ export function LibraryView() {
   const [ipfsOk, setIpfsOk] = useState<string | null>(null);
   const [fileActionBusy, setFileActionBusy] = useState<string | null>(null);
 
-  const runLibraryFileAction = async (relativePath: string, action: "open" | "reveal") => {
-    setFileActionBusy(`${action}:${relativePath}`);
+  const runLibraryFileAction = async (row: LocalFileItem, action: "open" | "reveal") => {
+    const busyKey = `${action}:${localFileRowKey(row)}`;
+    setFileActionBusy(busyKey);
     try {
       if (action === "open") {
-        await openVaultLibraryFile(nodeService, relativePath);
+        await openLocalFile(nodeService, {
+          source: row.source,
+          relativePath: row.relativePath,
+          documentId: row.documentId,
+        });
       } else {
-        await revealVaultLibraryFile(nodeService, relativePath);
+        if (row.source !== "vault") {
+          showToast(t("library.revealVaultOnly"), "error");
+          return;
+        }
+        await revealVaultLibraryFile(nodeService, row.relativePath);
       }
     } catch (err) {
       showToast(err instanceof Error ? err.message : String(err), "error");
@@ -67,8 +77,8 @@ export function LibraryView() {
     setLoading(true);
     setError(null);
     try {
-      const list = await nodeService.listLibraryItems();
-      setRawItems(list);
+      const result = await nodeService.listAllLocalFiles();
+      setRawItems(result.items);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setRawItems([]);
@@ -107,32 +117,39 @@ export function LibraryView() {
     }
   };
 
-  const renderRowActions = (row: LibraryItem) => (
+  const renderRowActions = (row: LocalFileItem) => {
+    const rowKey = localFileRowKey(row);
+    const vaultItem = vaultLibraryItemFromLocalFile(row);
+    return (
     <>
       <button
         type="button"
         className="secondary"
-        disabled={fileActionBusy === `open:${row.relativePath}`}
-        onClick={() => void runLibraryFileAction(row.relativePath, "open")}
+        disabled={fileActionBusy === `open:${rowKey}`}
+        onClick={() => void runLibraryFileAction(row, "open")}
       >
-        {fileActionBusy === `open:${row.relativePath}` ? t("library.opening") : t("library.open")}
+        {fileActionBusy === `open:${rowKey}` ? t("library.opening") : t("library.open")}
       </button>
-      <button
-        type="button"
-        className="secondary"
-        disabled={fileActionBusy === `reveal:${row.relativePath}`}
-        onClick={() => void runLibraryFileAction(row.relativePath, "reveal")}
-      >
-        {fileActionBusy === `reveal:${row.relativePath}` ? t("library.opening") : t("library.showInFolder")}
-      </button>
+      {!isMobileNode && row.source === "vault" ? (
+        <button
+          type="button"
+          className="secondary"
+          disabled={fileActionBusy === `reveal:${rowKey}`}
+          onClick={() => void runLibraryFileAction(row, "reveal")}
+        >
+          {fileActionBusy === `reveal:${rowKey}` ? t("library.opening") : t("library.showInFolder")}
+        </button>
+      ) : null}
+      {vaultItem ? (
+      <>
       <label className="library-published-toggle">
         <input
           type="checkbox"
-          checked={row.published}
+          checked={vaultItem.published}
           onChange={(e) => {
             void (async () => {
               try {
-                await nodeService.setLibraryItemPublished(row.documentId, e.target.checked);
+                await nodeService.setLibraryItemPublished(vaultItem.documentId, e.target.checked);
                 await load();
               } catch (err) {
                 console.error(err);
@@ -140,20 +157,20 @@ export function LibraryView() {
             })();
           }}
         />{" "}
-        {row.published ? t("library.published") : t("library.private")}
+        {vaultItem.published ? t("library.published") : t("library.private")}
       </label>
       {ipfsExportActionsEnabled && (
         <div className="library-row-ipfs">
-          {row.publishedExternal ? (
+          {vaultItem.publishedExternal ? (
             <>
-              <code className="library-view-path" title={row.publishedExternal.cid}>
-                {row.publishedExternal.cid.slice(0, 12)}…
+              <code className="library-view-path" title={vaultItem.publishedExternal.cid}>
+                {vaultItem.publishedExternal.cid.slice(0, 12)}…
               </code>
               <button
                 type="button"
                 className="secondary"
                 onClick={() => {
-                  void navigator.clipboard.writeText(row.publishedExternal!.cid);
+                  void navigator.clipboard.writeText(vaultItem.publishedExternal!.cid);
                   setIpfsOk(t("library.cidCopied"));
                   setIpfsErr(null);
                 }}
@@ -165,14 +182,14 @@ export function LibraryView() {
           <button
             type="button"
             className="secondary"
-            disabled={ipfsBusyId === row.documentId}
+            disabled={ipfsBusyId === vaultItem.documentId}
             onClick={() => {
               void (async () => {
                 setIpfsErr(null);
                 setIpfsOk(null);
-                setIpfsBusyId(row.documentId);
+                setIpfsBusyId(vaultItem.documentId);
                 try {
-                  await nodeService.exportLibraryItemToIpfs(row.documentId);
+                  await nodeService.exportLibraryItemToIpfs(vaultItem.documentId);
                   showToast(t("library.ipfsExportComplete"), "success");
                   await load();
                 } catch (err) {
@@ -183,24 +200,24 @@ export function LibraryView() {
               })();
             }}
           >
-            {ipfsBusyId === row.documentId
+            {ipfsBusyId === vaultItem.documentId
               ? t("library.exporting")
-              : row.publishedExternal
+              : vaultItem.publishedExternal
                 ? t("library.reExport")
                 : t("library.export")}
           </button>
-          {ipfsPinningEnabled && row.publishedExternal && (
+          {ipfsPinningEnabled && vaultItem.publishedExternal && (
             <button
               type="button"
               className="secondary"
-              disabled={ipfsPinBusyId === row.documentId}
+              disabled={ipfsPinBusyId === vaultItem.documentId}
               onClick={() => {
                 void (async () => {
                   setIpfsErr(null);
                   setIpfsOk(null);
-                  setIpfsPinBusyId(row.documentId);
+                  setIpfsPinBusyId(vaultItem.documentId);
                   try {
-                    const result = await nodeService.pinLibraryItemExternal(row.documentId);
+                    const result = await nodeService.pinLibraryItemExternal(vaultItem.documentId);
                     if (!result.ok) {
                       throw new Error(result.error ?? t("library.pinFailed"));
                     }
@@ -219,22 +236,22 @@ export function LibraryView() {
                 })();
               }}
             >
-              {ipfsPinBusyId === row.documentId ? t("library.pinning") : t("library.pin")}
+              {ipfsPinBusyId === vaultItem.documentId ? t("library.pinning") : t("library.pin")}
             </button>
           )}
-          {ipfsGatewayVerifyEnabled && row.publishedExternal && (
+          {ipfsGatewayVerifyEnabled && vaultItem.publishedExternal && (
             <button
               type="button"
               className="secondary"
-              disabled={ipfsVerifyBusyId === row.documentId}
+              disabled={ipfsVerifyBusyId === vaultItem.documentId}
               onClick={() => {
                 void (async () => {
                   setIpfsErr(null);
                   setIpfsOk(null);
-                  setIpfsVerifyBusyId(row.documentId);
+                  setIpfsVerifyBusyId(vaultItem.documentId);
                   try {
                     const result = await nodeService.verifyLibraryItemIpfsGateway({
-                      documentId: row.documentId,
+                      documentId: vaultItem.documentId,
                     });
                     setIpfsOk(
                       t("library.gatewayVerifiedStatus", {
@@ -251,16 +268,19 @@ export function LibraryView() {
                 })();
               }}
             >
-              {ipfsVerifyBusyId === row.documentId ? t("library.verifying") : t("library.verifyGateway")}
+              {ipfsVerifyBusyId === vaultItem.documentId ? t("library.verifying") : t("library.verifyGateway")}
             </button>
           )}
         </div>
       )}
-      <button type="button" className="primary" onClick={() => setShareFor(row)}>
+      <button type="button" className="primary" onClick={() => setShareFor(vaultItem)}>
         {t("library.share")}
       </button>
+      </>
+      ) : null}
     </>
   );
+  };
 
   return (
     <div className="library-view">
@@ -335,7 +355,7 @@ export function LibraryView() {
             </thead>
             <tbody>
               {items.map((row) => (
-                <tr key={row.documentId}>
+                <tr key={localFileRowKey(row)}>
                   <td>{row.title}</td>
                   <td className="library-view-path">{row.relativePath}</td>
                   <td>{formatBytes(row.byteLength)}</td>
@@ -347,7 +367,7 @@ export function LibraryView() {
           </table>
           <ul className="library-view-cards" aria-label={t("library.filesAria")}>
             {items.map((row) => (
-              <li key={row.documentId} className="library-view-card">
+              <li key={localFileRowKey(row)} className="library-view-card">
                 <div className="library-view-card-head">
                   <strong>{row.title}</strong>
                   <span className="library-view-card-meta">{formatBytes(row.byteLength)}</span>

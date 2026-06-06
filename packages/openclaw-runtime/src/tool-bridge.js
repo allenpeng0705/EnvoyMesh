@@ -73,21 +73,104 @@ export const ENVOY_TOOL_CATALOG = [
         resultShape: "List of { ownerId, metadata: { title, hash, topics, sensitivity } }",
     },
     {
-        name: "mesh.knowledge_query",
-        description: "Query the local vault + bonded peers' published knowledge bases. Returns a synthesized answer.",
+        name: "mesh.library_list",
+        description: "List documents in the EnvoyMesh vault (metadata only). Does not include the OpenClaw workspace — use OpenClaw read/exec for that.",
         parameters: {
             type: "object",
             properties: {
-                question: { type: "string", description: "The question to answer" },
+                query: { type: "string", description: "Optional title or path substring filter" },
             },
-            required: ["question"],
         },
         useWhen: [
-            "User asks a knowledge question",
-            "User wants information from their vault or bonded peers",
-            "Before recommending an action that needs factual grounding",
+            "User asks what files are in their vault or library",
+            "Before mesh.library_read — pick relativePath or documentId from results",
         ],
-        resultShape: "String: synthesized answer from local vault + bonded peers",
+        resultShape: "List of { documentId, relativePath, title, byteLength, published }",
+    },
+    {
+        name: "mesh.library_read",
+        description: "Read full contents of a vault file by relativePath or documentId (from mesh.library_list). Text files include textContent; binary returns base64.",
+        parameters: {
+            type: "object",
+            properties: {
+                relativePath: { type: "string", description: "Vault-relative path from mesh.library_list" },
+                documentId: { type: "string", description: "Alternative: document id from mesh.library_list" },
+                maxBytes: { type: "number", description: "Optional byte limit (default up to 5 MiB)" },
+            },
+        },
+        useWhen: [
+            "User asks to read or open a specific vault document",
+            "After mesh.library_list or vault.search — need full file text, not just a snippet",
+        ],
+        resultShape: "{ relativePath, mimeType, sizeBytes, textContent? | contentBase64 }",
+    },
+    {
+        name: "mesh.files_list_all",
+        description: "List all of the user's local files in one unified view: EnvoyMesh vault plus OpenClaw workspace. Prefer this when the user asks to list or browse their documents.",
+        parameters: {
+            type: "object",
+            properties: {
+                query: { type: "string", description: "Optional title or path substring filter across both locations" },
+            },
+        },
+        useWhen: [
+            "User asks to list, browse, or show their files or documents",
+            "User does not distinguish vault vs workspace — treat as one library",
+        ],
+        resultShape: "{ items: [{ source: 'vault'|'workspace', relativePath, title, ... }], vaultCount, workspaceCount }",
+    },
+    {
+        name: "mesh.files_read",
+        description: "Read a local file from vault or workspace using source + relativePath from mesh.files_list_all.",
+        parameters: {
+            type: "object",
+            properties: {
+                source: { type: "string", enum: ["vault", "workspace"], description: "From mesh.files_list_all" },
+                relativePath: { type: "string", description: "Path from mesh.files_list_all" },
+                documentId: { type: "string", description: "Vault only: document id" },
+                maxBytes: { type: "number", description: "Optional byte limit (default up to 5 MiB)" },
+            },
+        },
+        useWhen: [
+            "User asks to open or read a specific file after mesh.files_list_all",
+            "Need full file contents, not vault.search snippets",
+        ],
+        resultShape: "{ source, relativePath, mimeType, sizeBytes, textContent? | contentBase64 }",
+    },
+    {
+        name: "vault.search",
+        description: "Full-text search in the local EnvoyMesh vault. Returns matching snippets — use mesh.library_read for full file contents.",
+        parameters: {
+            type: "object",
+            properties: {
+                query: { type: "string", description: "Search query" },
+                limit: { type: "number", description: "Maximum results" },
+            },
+            required: ["query"],
+        },
+        useWhen: [
+            "User asks to find documents in their vault by topic or keyword",
+            "Before mesh.library_read when you only know the subject, not the path",
+        ],
+        resultShape: "Ranked list of matching document chunks with snippets",
+    },
+    {
+        name: "knowledge.query",
+        description: "Query a bonded contact's knowledge base over the mesh (RAG answer from their vault).",
+        parameters: {
+            type: "object",
+            properties: {
+                targetOwnerId: { type: "string", description: "Peer owner id (envoy:owner:...)" },
+                query: { type: "string", description: "The knowledge question" },
+                requestedSensitivity: { type: "string", enum: ["public", "friends", "trusted", "private"] },
+            },
+            required: ["targetOwnerId", "query"],
+        },
+        useWhen: [
+            "User asks a knowledge question about a specific bonded contact's documents",
+            "Peer-specific factual grounding (not local vault search)",
+        ],
+        resultShape: "Knowledge query response envelope from the peer",
     },
     {
         name: "mesh.intelligence_report",
@@ -183,7 +266,7 @@ export function buildOpenClawSystemPrompt(ownerName, config) {
         "network intelligence.",
         "",
         "When the user asks what you can help with, list concrete EnvoyMesh capabilities:",
-        "peer discovery, bonds, vault/knowledge queries, document library search,",
+        "peer discovery, bonds, unified local files (mesh.files_list_all / mesh.files_read), vault search,",
         "task proposals to other agents, mesh intelligence reports, chat history search,",
         "and web search for current events.",
         "",
@@ -220,7 +303,7 @@ export function buildOpenClawSystemPrompt(ownerName, config) {
         }
     }
     lines.push("--- Reminders & scheduled messages ---", "Use `envoymesh_remind` for owner-visible reminders in EnvoyAI chat (NOT the generic cron tool).", "Example: envoymesh_remind action=add, content=\"drink water\", time=\"5m\"", "NEVER say a reminder is set unless envoymesh_remind returned ok:true with a cron job id.", "Do not use sessionTarget=main or payload.kind=systemEvent for reminders — those only hit heartbeat, not chat.", "Confirm using the tool's summary / cronResult schedule — do not invent delivery times.", "");
-    lines.push("--- Concepts ---", "- Bonds: trusted connections between peers. You can propose bonds via mesh.send_hello.", "- Discovery: find peers by what they publish or what they can do.", "- Vault: each user's local document store. Shared via published libraries.", "- Tasks: agents can negotiate and execute tasks for each other (A2A).", "- Circles: AI-curated contact groups by shared interests.", "", "--- Rules ---", "- Always search before recommending — use mesh.discover_cluster or mesh.knowledge_query.", "- Respect bond autonomy: only send bond requests within the configured daily limit.", "- NEVER make up information about peers — only report what tools return.", `- Current LLM: ${config?.model?.provider ?? "unknown"} / ${config?.model?.model ?? "default"}`, "", "Available tools are listed above. Call them by name with params.");
+    lines.push("--- Concepts ---", "- Bonds: trusted connections between peers. You can propose bonds via mesh.send_hello.", "- Discovery: find peers by what they publish or what they can do.", "- Local files: vault (shared_vault) and OpenClaw workspace are one library for the user — use mesh.files_list_all / mesh.files_read.", "- Tasks: agents can negotiate and execute tasks for each other (A2A).", "- Circles: AI-curated contact groups by shared interests.", "", "--- Rules ---", "- Local files: mesh.files_list_all + mesh.files_read (vault and workspace together). vault.search for keyword search.", "- Do not tell the user about separate vault vs workspace unless troubleshooting.", "- Always search before recommending — use mesh.discover_cluster, vault.search, or knowledge.query.", "- Respect bond autonomy: only send bond requests within the configured daily limit.", "- NEVER make up information about peers — only report what tools return.", `- Current LLM: ${config?.model?.provider ?? "unknown"} / ${config?.model?.model ?? "default"}`, "", "Available tools are listed above. Call them by name with params.");
     return lines.join("\n");
 }
 //# sourceMappingURL=tool-bridge.js.map

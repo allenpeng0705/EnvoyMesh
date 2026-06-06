@@ -41,6 +41,11 @@ import type {
   NodeStatus,
   LibraryItem,
   ListLibraryItemsParams,
+  LocalFileItem,
+  ListAllLocalFilesParams,
+  ListAllLocalFilesResult,
+  ReadLocalFileContentParams,
+  OpenLocalFileParams,
   ExportLibraryItemToIpfsResult,
   VerifyLibraryItemIpfsGatewayParams,
   VerifyLibraryItemIpfsGatewayResult,
@@ -237,6 +242,9 @@ export interface NodeServiceClient {
 
   // Shared vault library
   listLibraryItems(params?: ListLibraryItemsParams): Promise<LibraryItem[]>;
+  listAllLocalFiles(params?: ListAllLocalFilesParams): Promise<ListAllLocalFilesResult>;
+  readLocalFileContent(params: ReadLocalFileContentParams): Promise<ReadLibraryItemContentResult>;
+  openLocalFile(params: OpenLocalFileParams): Promise<void>;
   setLibraryItemPublished(documentId: string, published: boolean): Promise<void>;
   exportLibraryItemToIpfs(documentId: string): Promise<ExportLibraryItemToIpfsResult>;
   pinLibraryItemExternal(documentId: string): Promise<import("@envoymesh/api").PinLibraryItemExternalResult>;
@@ -678,6 +686,19 @@ function createWsNodeServiceClient(
     },
     async listLibraryItems(params?: ListLibraryItemsParams) {
       return wsClient.rpc("listLibraryItems", (params ?? {}) as Record<string, unknown>) as Promise<LibraryItem[]>;
+    },
+    async listAllLocalFiles(params?: ListAllLocalFilesParams) {
+      return wsClient.rpc("listAllLocalFiles", (params ?? {}) as Record<string, unknown>) as Promise<
+        ListAllLocalFilesResult
+      >;
+    },
+    async readLocalFileContent(params: ReadLocalFileContentParams) {
+      return wsClient.rpc("readLocalFileContent", params as unknown as Record<string, unknown>) as Promise<
+        ReadLibraryItemContentResult
+      >;
+    },
+    async openLocalFile(params: OpenLocalFileParams) {
+      return wsClient.rpc("openLocalFile", params as unknown as Record<string, unknown>);
     },
     async setLibraryItemPublished(documentId: string, published: boolean) {
       return wsClient.rpc("setLibraryItemPublished", { documentId, published });

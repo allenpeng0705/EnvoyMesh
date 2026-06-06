@@ -9,7 +9,7 @@ import type { LibraryItem } from "@envoymesh/api";
 import { LibraryView } from "../../src/components/views/LibraryView.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
-const listLibraryItems = vi.fn();
+const listAllLocalFiles = vi.fn();
 const getBonds = vi.fn();
 const setLibraryItemPublished = vi.fn();
 const exportLibraryItemToIpfs = vi.fn();
@@ -39,9 +39,28 @@ const publishedItem: LibraryItem = {
   published: true,
 };
 
+function unifiedList(items: LibraryItem[] = [privateItem]) {
+  return {
+    items: items.map((item) => ({
+      source: "vault" as const,
+      relativePath: item.relativePath,
+      title: item.title,
+      extension: item.extension,
+      byteLength: item.byteLength,
+      updatedAt: item.updatedAt,
+      documentId: item.documentId,
+      contentHash: item.contentHash,
+      published: item.published,
+      publishedExternal: item.publishedExternal,
+    })),
+    vaultCount: items.length,
+    workspaceCount: 0,
+  };
+}
+
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
-    listLibraryItems,
+    listAllLocalFiles,
     getBonds,
     setLibraryItemPublished,
     exportLibraryItemToIpfs,
@@ -76,10 +95,10 @@ afterEach(() => {
 beforeEach(() => {
   nodeConfig = { externalPublish: { allowIpfs: false, gatewayAllowlist: [] } };
   isInProcessMobileNode = false;
-  listLibraryItems.mockResolvedValue([privateItem]);
+  listAllLocalFiles.mockResolvedValue(unifiedList([privateItem]));
   getBonds.mockResolvedValue([]);
   setLibraryItemPublished.mockImplementation(async (_documentId, published) => {
-    listLibraryItems.mockResolvedValue([published ? publishedItem : privateItem]);
+    listAllLocalFiles.mockResolvedValue(unifiedList([published ? publishedItem : privateItem]));
   });
 });
 
@@ -115,7 +134,7 @@ describe("E2E Library publish toggle", () => {
   });
 
   it("unpublish toggle calls setLibraryItemPublished(false) and refreshes to Private", async () => {
-    listLibraryItems.mockResolvedValue([publishedItem]);
+    listAllLocalFiles.mockResolvedValue(unifiedList([publishedItem]));
     renderLibrary();
 
     const table = await screen.findByRole("table");
@@ -135,15 +154,17 @@ describe("E2E Library publish toggle", () => {
   });
 
   it("publish toggle works on filtered row after search", async () => {
-    listLibraryItems.mockResolvedValue([
-      privateItem,
-      {
-        ...privateItem,
-        documentId: "doc-other",
-        title: "other-file",
-        relativePath: "docs/other.txt",
-      },
-    ]);
+    listAllLocalFiles.mockResolvedValue(
+      unifiedList([
+        privateItem,
+        {
+          ...privateItem,
+          documentId: "doc-other",
+          title: "other-file",
+          relativePath: "docs/other.txt",
+        },
+      ]),
+    );
     renderLibrary();
 
     fireEvent.change(screen.getByLabelText(/filter library/i), {

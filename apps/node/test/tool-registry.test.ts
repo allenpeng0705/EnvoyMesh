@@ -81,8 +81,8 @@ describe("ToolRegistry", () => {
       });
 
       const tools = registry.listTools();
-      // 52 default tools + 2 additional = 54
-      expect(tools).toHaveLength(54);
+      // 55 default tools + 2 additional = 57
+      expect(tools).toHaveLength(57);
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "bond.send_hello", "chat.send", "discovery.search", "knowledge.query",
@@ -92,7 +92,7 @@ describe("ToolRegistry", () => {
           "mesh.get-digest-config", "mesh.get-external-agent", "mesh.get_agent_card",
           "mesh.get-mode", "mesh.get-style", "mesh.intelligence_report",
           "mesh.library_discover", "mesh.library_export_ipfs",
-          "mesh.library_list", "mesh.library_publish", "mesh.library_request_share", "mesh.library_verify_ipfs_gateway",
+          "mesh.library_list", "mesh.library_publish", "mesh.library_read", "mesh.files_list_all", "mesh.files_read", "mesh.library_request_share", "mesh.library_verify_ipfs_gateway",
           "mesh.list-all-approvals",
           "mesh.list-external-agent-actions",
           "mesh.list-external-sessions", "mesh.list-pending", "mesh.list-sessions",
@@ -111,8 +111,8 @@ describe("ToolRegistry", () => {
     it("default tools are pre-registered", () => {
       const registry = new ToolRegistry();
       const tools = registry.listTools();
-      // Default tools: 52 (includes mesh.task.propose, mesh.chat_rag_search, mesh.discover_cluster, mesh.intelligence_report)
-      expect(tools.length).toBe(52);
+      // Default tools: 55
+      expect(tools.length).toBe(55);
     });
   });
 
@@ -277,6 +277,121 @@ describe("listAgentTools", () => {
 });
 
 describe("executeTool — IPFS library hooks", () => {
+  it("mesh.files_list_all merges vault and workspace items", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-tool-files-"));
+    try {
+      const taskStore = createLocalTaskStore(profileDir);
+      const result = await executeTool(
+        "mesh.files_list_all",
+        {},
+        {
+          trustStore: {} as never,
+          peerDirectoryStore: {} as never,
+          taskStore,
+          agentIdentity: {} as never,
+          ownerIdentity: { ownerId: "envoy:owner:test" },
+          agentCredential: {} as never,
+          listLibraryItems: async () => [
+            {
+              documentId: "doc-1",
+              relativePath: "vault/report.pdf",
+              title: "report.pdf",
+              extension: "pdf",
+              byteLength: 100,
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              published: false,
+            },
+          ],
+          listOpenClawWorkspaceFiles: async () => [
+            {
+              relativePath: "IDENTITY.md",
+              title: "IDENTITY.md",
+              extension: "md",
+              byteLength: 20,
+              updatedAt: "2026-01-02T00:00:00.000Z",
+            },
+          ],
+        },
+      );
+      expect(result.ok).toBe(true);
+      const payload = result.result as {
+        items?: Array<{ source: string; relativePath: string }>;
+        vaultCount?: number;
+        workspaceCount?: number;
+      };
+      expect(payload.vaultCount).toBe(1);
+      expect(payload.workspaceCount).toBe(1);
+      expect(payload.items?.map((item) => `${item.source}:${item.relativePath}`)).toEqual([
+        "workspace:IDENTITY.md",
+        "vault:vault/report.pdf",
+      ]);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  it("mesh.files_read returns workspace textContent", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-tool-files-read-"));
+    try {
+      const taskStore = createLocalTaskStore(profileDir);
+      const result = await executeTool(
+        "mesh.files_read",
+        { source: "workspace", relativePath: "notes.txt" },
+        {
+          trustStore: {} as never,
+          peerDirectoryStore: {} as never,
+          taskStore,
+          agentIdentity: {} as never,
+          ownerIdentity: { ownerId: "envoy:owner:test" },
+          agentCredential: {} as never,
+          readOpenClawWorkspaceFile: async () => ({
+            contentBase64: Buffer.from("unified read", "utf-8").toString("base64"),
+            mimeType: "text/plain",
+            sizeBytes: 12,
+            truncated: false,
+          }),
+        },
+      );
+      expect(result.ok).toBe(true);
+      const payload = result.result as { source?: string; textContent?: string };
+      expect(payload.source).toBe("workspace");
+      expect(payload.textContent).toBe("unified read");
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  it("mesh.library_read returns textContent for text files", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-tool-read-"));
+    try {
+      const taskStore = createLocalTaskStore(profileDir);
+      const result = await executeTool(
+        "mesh.library_read",
+        { relativePath: "notes/hello.txt" },
+        {
+          trustStore: {} as never,
+          peerDirectoryStore: {} as never,
+          taskStore,
+          agentIdentity: {} as never,
+          ownerIdentity: { ownerId: "envoy:owner:test" },
+          agentCredential: {} as never,
+          readLibraryItemContent: async ({ relativePath }) => ({
+            contentBase64: Buffer.from("hello vault", "utf-8").toString("base64"),
+            mimeType: "text/plain",
+            sizeBytes: 11,
+            truncated: false,
+          }),
+        },
+      );
+      expect(result.ok).toBe(true);
+      const payload = result.result as { textContent?: string; relativePath?: string };
+      expect(payload.textContent).toBe("hello vault");
+      expect(payload.relativePath).toBe("notes/hello.txt");
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
   it("mesh.library_export_ipfs requires approval", () => {
     const tool = listAgentTools().find((t) => t.name === "mesh.library_export_ipfs");
     expect(tool?.requiresApproval).toBe(true);

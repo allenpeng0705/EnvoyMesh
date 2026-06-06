@@ -76,6 +76,7 @@ import {
 import { loadMobilePublishedExternalMap } from "./mobile-published-external.js";
 import { exportMobileLibraryDocumentToIpfs } from "./mobile-ipfs-export.js";
 import { verifyMobileLibraryDocumentIpfsGateway } from "./mobile-ipfs-gateway-verify.js";
+import { openBase64FileInMobileViewer } from "./mobile-file-open.js";
 import {
   mobileVaultBasename,
   mobileVaultExtension,
@@ -2729,12 +2730,78 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return { vaultRelativePath: norm, absolutePath: vaultPath };
   }
 
-  async openLibraryItem(_relativePath: string): Promise<void> {
-    throw new Error("Opening files in the system viewer is not supported on mobile yet.");
+  async openLibraryItem(relativePath: string): Promise<void> {
+    const content = await this._readVaultFileForOpen(relativePath);
+    await openBase64FileInMobileViewer({
+      filename: content.filename,
+      contentBase64: content.contentBase64,
+    });
   }
 
   async revealLibraryItemInFileManager(_relativePath: string): Promise<void> {
     throw new Error("Show in folder is not supported on mobile yet.");
+  }
+
+  async listAllLocalFiles(
+    params?: import("@envoymesh/api").ListAllLocalFilesParams,
+  ): Promise<import("@envoymesh/api").ListAllLocalFilesResult> {
+    const vaultItems = await this.listLibraryItems(params);
+    return {
+      items: vaultItems.map((item) => ({
+        source: "vault" as const,
+        relativePath: item.relativePath,
+        title: item.title,
+        extension: item.extension,
+        byteLength: item.byteLength,
+        updatedAt: item.updatedAt,
+        documentId: item.documentId,
+        contentHash: item.contentHash,
+        published: item.published,
+        publishedExternal: item.publishedExternal,
+      })),
+      vaultCount: vaultItems.length,
+      workspaceCount: 0,
+    };
+  }
+
+  async readLocalFileContent(
+    params: import("@envoymesh/api").ReadLocalFileContentParams,
+  ): Promise<import("@envoymesh/api").ReadLibraryItemContentResult> {
+    if (params.source === "workspace") {
+      throw new Error("OpenClaw workspace files are not available on mobile");
+    }
+    let relativePath = params.relativePath.trim().replace(/^[\\/]+/, "");
+    if (!relativePath && params.documentId?.trim()) {
+      const match = (await this.listLibraryItems()).find((item) => item.documentId === params.documentId!.trim());
+      if (!match) {
+        throw new Error(`Document not found: ${params.documentId}`);
+      }
+      relativePath = match.relativePath;
+    }
+    return this.readLibraryItemContent({ relativePath, maxBytes: params.maxBytes });
+  }
+
+  async openLocalFile(params: import("@envoymesh/api").OpenLocalFileParams): Promise<void> {
+    if (params.source === "workspace") {
+      throw new Error("OpenClaw workspace files are not available on mobile");
+    }
+    await this.openLibraryItem(params.relativePath);
+  }
+
+  private async _readVaultFileForOpen(relativePath: string): Promise<{
+    filename: string;
+    contentBase64: string;
+  }> {
+    const norm = relativePath.trim().replace(/^[\\/]+/, "");
+    this._validateRelativeVaultPathForShare(norm);
+    const vaultPath = norm.startsWith("/") ? norm : `/${norm}`;
+    const entry = await this._vault.readFile(vaultPath);
+    const bytes = entry.content;
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
+    const slash = norm.lastIndexOf("/");
+    const filename = slash >= 0 ? norm.slice(slash + 1) : norm;
+    return { filename: filename || "file", contentBase64: btoa(binary) };
   }
 
   async discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]> {
@@ -3980,8 +4047,96 @@ You are the owner's personal AI assistant on EnvoyMesh.
     const self = this;
     try {
       if (toolName === "mesh.library_list") {
-        const items = await self.listLibraryItems();
+        const query = typeof params.query === "string" ? params.query : undefined;
+        const items = await self.listLibraryItems(query ? { query } : undefined);
         return { ok: true, result: { items }, toolName, correlationId: "", latencyMs: 0 };
+      }
+      if (toolName === "mesh.library_read") {
+        const relativePath =
+          typeof params.relativePath === "string"
+            ? params.relativePath.trim()
+            : typeof params.documentId === "string"
+              ? (await self.listLibraryItems()).find((i) => i.documentId === params.documentId.trim())
+                  ?.relativePath ?? ""
+              : "";
+        if (!relativePath) {
+          return { ok: false, error: "relativePath or documentId is required", toolName, correlationId: "", latencyMs: 0 };
+        }
+        const content = await self.readLibraryItemContent({
+          relativePath,
+          maxBytes: typeof params.maxBytes === "number" ? params.maxBytes : undefined,
+        });
+        const result: Record<string, unknown> = {
+          relativePath,
+          mimeType: content.mimeType,
+          sizeBytes: content.sizeBytes,
+          truncated: content.truncated,
+          contentBase64: content.contentBase64,
+        };
+        if (content.mimeType.startsWith("text/")) {
+          result.textContent = Buffer.from(content.contentBase64, "base64").toString("utf-8");
+        }
+        return { ok: true, result, toolName, correlationId: "", latencyMs: 0 };
+      }
+      if (toolName === "mesh.files_list_all") {
+        const query = typeof params.query === "string" ? params.query : undefined;
+        const vaultItems = await self.listLibraryItems(query ? { query } : undefined);
+        const items = vaultItems
+          .map((item) => ({
+            source: "vault" as const,
+            relativePath: item.relativePath,
+            title: item.title,
+            extension: item.extension,
+            byteLength: item.byteLength,
+            updatedAt: item.updatedAt,
+            documentId: item.documentId,
+            published: item.published,
+          }))
+          .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+        return {
+          ok: true,
+          result: { items, vaultCount: vaultItems.length, workspaceCount: 0 },
+          toolName,
+          correlationId: "",
+          latencyMs: 0,
+        };
+      }
+      if (toolName === "mesh.files_read") {
+        if (params.source === "workspace") {
+          return {
+            ok: false,
+            error: "OpenClaw workspace files are not available on mobile — use vault files only",
+            toolName,
+            correlationId: "",
+            latencyMs: 0,
+          };
+        }
+        const relativePath =
+          typeof params.relativePath === "string"
+            ? params.relativePath.trim()
+            : typeof params.documentId === "string"
+              ? (await self.listLibraryItems()).find((i) => i.documentId === params.documentId.trim())
+                  ?.relativePath ?? ""
+              : "";
+        if (!relativePath) {
+          return { ok: false, error: "relativePath or documentId is required", toolName, correlationId: "", latencyMs: 0 };
+        }
+        const content = await self.readLibraryItemContent({
+          relativePath,
+          maxBytes: typeof params.maxBytes === "number" ? params.maxBytes : undefined,
+        });
+        const result: Record<string, unknown> = {
+          source: "vault",
+          relativePath,
+          mimeType: content.mimeType,
+          sizeBytes: content.sizeBytes,
+          truncated: content.truncated,
+          contentBase64: content.contentBase64,
+        };
+        if (content.mimeType.startsWith("text/")) {
+          result.textContent = Buffer.from(content.contentBase64, "base64").toString("utf-8");
+        }
+        return { ok: true, result, toolName, correlationId: "", latencyMs: 0 };
       }
       if (toolName === "mesh.library_discover") {
         const peers = await self.discoverPublishedLibrary({

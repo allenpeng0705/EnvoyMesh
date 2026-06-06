@@ -10,7 +10,7 @@ import { LibraryView } from "../../src/components/views/LibraryView.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
 const discoverPublishedLibrary = vi.fn();
-const listLibraryItems = vi.fn().mockResolvedValue([]);
+const listAllLocalFiles = vi.fn().mockResolvedValue({ items: [], vaultCount: 0, workspaceCount: 0 });
 
 const samResults: DiscoverPublishedLibraryPeerResult[] = [
   {
@@ -35,7 +35,7 @@ const samResults: DiscoverPublishedLibraryPeerResult[] = [
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
     discoverPublishedLibrary,
-    listLibraryItems,
+    listAllLocalFiles,
   }),
   useIsInProcessMobileNode: () => false,
 }));

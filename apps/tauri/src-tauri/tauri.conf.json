@@ -7,7 +7,7 @@
     "frontendDist": "../../social/src/dist",
     "devUrl": null,
     "beforeDevCommand": "",
-    "beforeBuildCommand": "bash ../../scripts/fetch-node-sidecar.sh && bash ../../scripts/fetch-openclaw-sidecar.sh && bash ../../scripts/stage-tauri-node-bundle.sh"
+    "beforeBuildCommand": "bash ../../scripts/fetch-node-sidecar.sh && bash ../../scripts/stage-tauri-openclaw-bundle.sh && bash ../../scripts/stage-tauri-node-bundle.sh"
   },
   "app": {
     "windows": [

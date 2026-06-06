@@ -71,4 +71,17 @@ while IFS= read -r mod_path; do
   cp -R "$mod_path" "$dest_mod"
 done < <(npm ls --omit=dev -w @envoymesh/node --all --parseable 2>/dev/null || true)
 
+SKILLS_SRC="$ROOT/apps/node/skills"
+SKILLS_DEST="$DEST/skills"
+if [ -d "$SKILLS_SRC" ]; then
+  echo "Staging bundled OpenClaw skills..."
+  rm -rf "$SKILLS_DEST"
+  mkdir -p "$SKILLS_DEST"
+  cp -R "$SKILLS_SRC/." "$SKILLS_DEST/"
+  echo "  ✓ $(find "$SKILLS_DEST" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ') skill(s) at $SKILLS_DEST"
+else
+  echo "  ⚠ No apps/node/skills/ — bundled skills dir empty"
+  mkdir -p "$SKILLS_DEST"
+fi
+
 echo "Staged node bundle at $DEST"

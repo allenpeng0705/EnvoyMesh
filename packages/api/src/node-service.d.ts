@@ -326,6 +326,37 @@ export interface LibraryItem {
     /** Latest Kubo-aligned IPFS export for this document, when present. */
     publishedExternal?: PublishedExternalRecord;
 }
+export type LocalFileSource = "vault" | "workspace";
+export interface LocalFileItem {
+    source: LocalFileSource;
+    relativePath: string;
+    title: string;
+    extension: string;
+    byteLength: number;
+    updatedAt: string;
+    documentId?: string;
+    contentHash?: string;
+    published?: boolean;
+    publishedExternal?: PublishedExternalRecord;
+}
+export interface ListAllLocalFilesParams {
+    query?: string;
+}
+export interface ListAllLocalFilesResult {
+    items: LocalFileItem[];
+    vaultCount: number;
+    workspaceCount: number;
+}
+export interface ReadLocalFileContentParams {
+    source: LocalFileSource;
+    relativePath: string;
+    documentId?: string;
+    maxBytes?: number;
+}
+export interface OpenLocalFileParams {
+    source: LocalFileSource;
+    relativePath: string;
+}
 /** Persisted metadata from an explicit owner-approved IPFS export (canonical root CID). */
 export interface PublishedExternalRecord {
     exportRevision: number;
@@ -900,6 +931,9 @@ export interface NodeService {
      * Read vault file bytes for inline previews (images in chat). Size-capped.
      */
     readLibraryItemContent(params: ReadLibraryItemContentParams): Promise<ReadLibraryItemContentResult>;
+    readLocalFileContent(params: ReadLocalFileContentParams): Promise<ReadLibraryItemContentResult>;
+    listAllLocalFiles(params?: ListAllLocalFilesParams): Promise<ListAllLocalFilesResult>;
+    openLocalFile(params: OpenLocalFileParams): Promise<void>;
     /**
      * Forward a pre-signed EnvoyEnvelope from a remote client (e.g. mobile app)
      * into the P2P mesh. The envelope must already be signed by the sender's key.

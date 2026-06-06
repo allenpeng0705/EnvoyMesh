@@ -1,0 +1,6 @@
+# Placeholder — full tree is generated at build time.
+#
+# Run before Tauri build:
+#   bash scripts/stage-tauri-openclaw-bundle.sh
+#
+# See docs/packaging.md

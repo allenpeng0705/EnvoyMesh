@@ -503,6 +503,46 @@ export interface LibraryItem {
   publishedExternal?: PublishedExternalRecord;
 }
 
+/** Vault or OpenClaw workspace — unified local file entry for Library UI and agent tools. */
+export type LocalFileSource = "vault" | "workspace";
+
+export interface LocalFileItem {
+  source: LocalFileSource;
+  relativePath: string;
+  title: string;
+  extension: string;
+  byteLength: number;
+  updatedAt: string;
+  /** Present for vault files */
+  documentId?: string;
+  contentHash?: string;
+  published?: boolean;
+  publishedExternal?: PublishedExternalRecord;
+}
+
+export interface ListAllLocalFilesParams {
+  /** Case-insensitive substring match on title or relative path */
+  query?: string;
+}
+
+export interface ListAllLocalFilesResult {
+  items: LocalFileItem[];
+  vaultCount: number;
+  workspaceCount: number;
+}
+
+export interface ReadLocalFileContentParams {
+  source: LocalFileSource;
+  relativePath: string;
+  documentId?: string;
+  maxBytes?: number;
+}
+
+export interface OpenLocalFileParams {
+  source: LocalFileSource;
+  relativePath: string;
+}
+
 /** Persisted metadata from an explicit owner-approved IPFS export (canonical root CID). */
 export interface PublishedExternalRecord {
   exportRevision: number;
@@ -1150,6 +1190,21 @@ export interface NodeService {
    * Read vault file bytes for inline previews (images in chat). Size-capped.
    */
   readLibraryItemContent(params: ReadLibraryItemContentParams): Promise<ReadLibraryItemContentResult>;
+
+  /**
+   * Read a local file from the vault or OpenClaw workspace (for Library preview/open).
+   */
+  readLocalFileContent(params: ReadLocalFileContentParams): Promise<ReadLibraryItemContentResult>;
+
+  /**
+   * List all local files (vault + OpenClaw workspace) in one unified view.
+   */
+  listAllLocalFiles(params?: ListAllLocalFilesParams): Promise<ListAllLocalFilesResult>;
+
+  /**
+   * Open a local file with the OS default app or mobile viewer (full file; no preview size cap).
+   */
+  openLocalFile(params: OpenLocalFileParams): Promise<void>;
 
   /**
    * Forward a pre-signed EnvoyEnvelope from a remote client (e.g. mobile app)

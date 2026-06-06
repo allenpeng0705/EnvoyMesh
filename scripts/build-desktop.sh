@@ -25,7 +25,7 @@ echo ""
 echo "[1/4] Fetching sidecars..."
 cd "${PROJECT_DIR}"
 bash scripts/fetch-node-sidecar.sh
-bash scripts/fetch-openclaw-sidecar.sh
+bash scripts/stage-tauri-openclaw-bundle.sh
 bash scripts/stage-tauri-node-bundle.sh
 echo ""
 

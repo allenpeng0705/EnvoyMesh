@@ -9,6 +9,7 @@ import { LibraryView } from "../../src/components/views/LibraryView.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
 const listLibraryItems = vi.fn();
+const listAllLocalFiles = vi.fn();
 const getBonds = vi.fn();
 const setLibraryItemPublished = vi.fn();
 const exportLibraryItemToIpfs = vi.fn();
@@ -25,6 +26,7 @@ let isInProcessMobileNode = false;
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
     listLibraryItems,
+    listAllLocalFiles,
     getBonds,
     setLibraryItemPublished,
     exportLibraryItemToIpfs,
@@ -54,6 +56,25 @@ const sampleItem: LibraryItem = {
   published: false,
 };
 
+function unifiedList(items: LibraryItem[] = [sampleItem]) {
+  return {
+    items: items.map((item) => ({
+      source: "vault" as const,
+      relativePath: item.relativePath,
+      title: item.title,
+      extension: item.extension,
+      byteLength: item.byteLength,
+      updatedAt: item.updatedAt,
+      documentId: item.documentId,
+      contentHash: item.contentHash,
+      published: item.published,
+      publishedExternal: item.publishedExternal,
+    })),
+    vaultCount: items.length,
+    workspaceCount: 0,
+  };
+}
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -63,6 +84,7 @@ beforeEach(() => {
   nodeConfig = { externalPublish: { allowIpfs: false, gatewayAllowlist: [] } };
   isInProcessMobileNode = false;
   listLibraryItems.mockResolvedValue([sampleItem]);
+  listAllLocalFiles.mockResolvedValue(unifiedList());
   getBonds.mockResolvedValue([]);
 });
 
@@ -115,19 +137,21 @@ describe("LibraryView IPFS UI", () => {
       },
     };
     isInProcessMobileNode = true;
-    listLibraryItems.mockResolvedValue([
-      {
-        ...sampleItem,
-        publishedExternal: {
-          exportRevision: 1,
-          exportedAt: "2026-05-20T12:00:00.000Z",
-          cid: "bafytest",
-          ipfsInteropRecipe: "v1",
-          kuboVersion: "",
-          contentHash: "hash123",
+    listAllLocalFiles.mockResolvedValue(
+      unifiedList([
+        {
+          ...sampleItem,
+          publishedExternal: {
+            exportRevision: 1,
+            exportedAt: "2026-05-20T12:00:00.000Z",
+            cid: "bafytest",
+            ipfsInteropRecipe: "v1",
+            kuboVersion: "",
+            contentHash: "hash123",
+          },
         },
-      },
-    ]);
+      ]),
+    );
     renderWithI18n(<LibraryView />);
 
     const table = await screen.findByRole("table");

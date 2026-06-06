@@ -35,7 +35,7 @@ if [ "${OPENCLAW_PLATFORM}" = "windows" ]; then
     OPENCLAW_FILENAME="${OPENCLAW_FILENAME}.exe"
 fi
 
-DOWNLOAD_URL="https://github.com/envoymesh/openclaw/releases/${VERSION}/download/${OPENCLAW_FILENAME}"
+DOWNLOAD_URL="https://github.com/openclaw/openclaw/releases/${VERSION}/download/${OPENCLAW_FILENAME}"
 
 echo "Downloading OpenClaw ${VERSION} for ${OPENCLAW_PLATFORM}-${OPENCLAW_ARCH}..."
 echo "  ${DOWNLOAD_URL}"

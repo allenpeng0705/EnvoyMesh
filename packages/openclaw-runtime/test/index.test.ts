@@ -74,8 +74,8 @@ describe("discoverOpenClaw", () => {
 // ENVOY_TOOL_CATALOG — schema validation
 // =========================================================================
 describe("ENVOY_TOOL_CATALOG", () => {
-  it("contains 7 tools", () => {
-    expect(ENVOY_TOOL_CATALOG).toHaveLength(7);
+  it("contains 12 tools", () => {
+    expect(ENVOY_TOOL_CATALOG).toHaveLength(12);
   });
 
   it("every tool has required fields", () => {
@@ -92,8 +92,8 @@ describe("ENVOY_TOOL_CATALOG", () => {
     }
   });
 
-  it("tool names follow mesh.* convention", () => {
-    for (const tool of ENVOY_TOOL_CATALOG) {
+  it("mesh tool names follow mesh.* convention", () => {
+    for (const tool of ENVOY_TOOL_CATALOG.filter((t) => t.name.startsWith("mesh."))) {
       expect(tool.name).toMatch(/^mesh\./);
     }
   });
@@ -103,7 +103,12 @@ describe("ENVOY_TOOL_CATALOG", () => {
     expect(names).toContain("mesh.discover_cluster");
     expect(names).toContain("mesh.send_hello");
     expect(names).toContain("mesh.library_discover");
-    expect(names).toContain("mesh.knowledge_query");
+    expect(names).toContain("mesh.library_list");
+    expect(names).toContain("mesh.library_read");
+    expect(names).toContain("mesh.files_list_all");
+    expect(names).toContain("mesh.files_read");
+    expect(names).toContain("vault.search");
+    expect(names).toContain("knowledge.query");
     expect(names).toContain("mesh.intelligence_report");
     expect(names).toContain("mesh.task_propose");
     expect(names).toContain("mesh.chat_rag_search");
@@ -142,7 +147,7 @@ describe("buildOpenClawSystemPrompt", () => {
     const prompt = buildOpenClawSystemPrompt();
     expect(prompt).toContain("Bonds");
     expect(prompt).toContain("Discovery");
-    expect(prompt).toContain("Vault");
+    expect(prompt).toContain("Local files");
     expect(prompt).toContain("Tasks");
     expect(prompt).toContain("Circles");
   });

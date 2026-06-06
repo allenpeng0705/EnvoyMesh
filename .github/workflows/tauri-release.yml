@@ -47,6 +47,12 @@ jobs:
           npm run social:build
           npm run node:build
 
+      - name: Install pnpm (OpenClaw gateway build)
+        run: npm install -g pnpm@9
+
+      - name: Stage OpenClaw + bundled skills for Tauri
+        run: bash scripts/stage-tauri-openclaw-bundle.sh
+
       - name: Tauri bundle (Kubo sidecar)
         run: npm run build:full -w @envoymesh/tauri
         env:
@@ -91,6 +97,12 @@ jobs:
         run: |
           npm run social:build
           npm run node:build
+
+      - name: Install pnpm (OpenClaw gateway build)
+        run: npm install -g pnpm@9
+
+      - name: Stage OpenClaw + bundled skills for Tauri
+        run: bash scripts/stage-tauri-openclaw-bundle.sh
 
       - name: Tauri bundle (Helia-only slim — no Kubo sidecar)
         run: npm run build:slim -w @envoymesh/tauri

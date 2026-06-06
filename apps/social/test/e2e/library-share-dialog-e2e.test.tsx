@@ -10,6 +10,7 @@ import { LibraryView } from "../../src/components/views/LibraryView.js";
 import { ShareFileDialog } from "../../src/components/file-share/ShareFileDialog.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
+const listAllLocalFiles = vi.fn();
 const listLibraryItems = vi.fn();
 const getBonds = vi.fn();
 const setLibraryItemPublished = vi.fn();
@@ -41,8 +42,28 @@ const alexBond: BondRecord = {
   displayName: "Alex",
 };
 
+function unifiedList(items: LibraryItem[] = [sampleItem]) {
+  return {
+    items: items.map((item) => ({
+      source: "vault" as const,
+      relativePath: item.relativePath,
+      title: item.title,
+      extension: item.extension,
+      byteLength: item.byteLength,
+      updatedAt: item.updatedAt,
+      documentId: item.documentId,
+      contentHash: item.contentHash,
+      published: item.published,
+      publishedExternal: item.publishedExternal,
+    })),
+    vaultCount: items.length,
+    workspaceCount: 0,
+  };
+}
+
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
+    listAllLocalFiles,
     listLibraryItems,
     getBonds,
     setLibraryItemPublished,
@@ -69,6 +90,7 @@ afterEach(() => {
 
 beforeEach(() => {
   nodeConfig = { externalPublish: { allowIpfs: false, gatewayAllowlist: [] } };
+  listAllLocalFiles.mockResolvedValue(unifiedList([sampleItem]));
   listLibraryItems.mockResolvedValue([sampleItem]);
   getBonds.mockResolvedValue([alexBond]);
   shareFile.mockResolvedValue(undefined);

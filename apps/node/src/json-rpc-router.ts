@@ -211,6 +211,20 @@ export async function routeRpcMethod(
       return ns.listPendingShareOffers();
     case "listLibraryItems":
       return ns.listLibraryItems(params as ListLibraryItemsParams | undefined);
+    case "listAllLocalFiles":
+      return ns.listAllLocalFiles(params as import("@envoymesh/api").ListAllLocalFilesParams | undefined);
+    case "readLocalFileContent":
+      return ns.readLocalFileContent({
+        source: params.source as import("@envoymesh/api").LocalFileSource,
+        relativePath: params.relativePath as string,
+        documentId: params.documentId as string | undefined,
+        maxBytes: params.maxBytes as number | undefined,
+      });
+    case "openLocalFile":
+      return ns.openLocalFile({
+        source: params.source as import("@envoymesh/api").LocalFileSource,
+        relativePath: params.relativePath as string,
+      });
     case "setLibraryItemPublished":
       return ns.setLibraryItemPublished(params.documentId as string, params.published as boolean);
     case "exportLibraryItemToIpfs":

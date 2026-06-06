@@ -416,7 +416,7 @@ export const profilePhotosMessages = {
 export const libraryViewMessages = {
   title: "Library",
   hint:
-    "Files in your shared vault — publish metadata for discovery, export to IPFS, or offer P2P shares. Only .md / .txt / .json are full-text searchable for vault RAG.",
+    "Your local files — vault documents and agent workspace files in one list. Publish vault metadata for discovery, export to IPFS, or share P2P. Only vault .md / .txt / .json are full-text searchable for RAG.",
   filterPlaceholder: "Filter by name or path…",
   filterAria: "Filter library",
   importFile: "Import file…",
@@ -424,6 +424,7 @@ export const libraryViewMessages = {
   open: "Open",
   opening: "Opening…",
   showInFolder: "Show in folder",
+  revealVaultOnly: "Show in folder is only available for vault files on desktop",
   published: "Published",
   private: "Private",
   share: "Share…",

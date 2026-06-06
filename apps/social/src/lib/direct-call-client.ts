@@ -468,6 +468,18 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.listLibraryItems(params);
   }
 
+  async listAllLocalFiles(params?: Parameters<NodeService["listAllLocalFiles"]>[0]) {
+    return this._ns.listAllLocalFiles(params);
+  }
+
+  async readLocalFileContent(params: Parameters<NodeService["readLocalFileContent"]>[0]) {
+    return this._ns.readLocalFileContent(params);
+  }
+
+  async openLocalFile(params: Parameters<NodeService["openLocalFile"]>[0]) {
+    return this._ns.openLocalFile(params);
+  }
+
   async setLibraryItemPublished(documentId: string, published: boolean) {
     return this._ns.setLibraryItemPublished(documentId, published);
   }

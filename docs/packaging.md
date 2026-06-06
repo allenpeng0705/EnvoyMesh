@@ -6,28 +6,45 @@ EnvoyMesh supports different deployment scenarios for different use cases.
 
 ## Scenario 1: End-user desktop (Tauri + Social web UI)
 
-**Use case:** Someone runs EnvoyMesh like a normal desktop app. **Tauri is only a native wrapper** around the same **Social** frontend (HTML/CSS/JS) you can also open in a browser during development; the bundled app also spawns the Node process.
+**Use case:** Someone runs EnvoyMesh like a normal desktop app. **Tauri is only a native wrapper** around the same **Social** frontend (HTML/CSS/JS) you can also open in a browser during development; the bundled app also spawns the Node process and **OpenClaw (EnvoyAI)** gateway.
 
 ```
-┌─────────────────────────────────────────┐
-│  Your Desktop                            │
-│  ┌─────────────────────────────────┐    │
-│  │  Tauri window (WebView)          │    │
-│  │    → Social UI (React SPA)      │    │
-│  │  + child: Node (libp2p, WS API)  │    │
-│  └─────────────────────────────────┘    │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│  Your Desktop                                            │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │  Tauri window (WebView)                          │    │
+│  │    → Social UI (React SPA)                      │    │
+│  │  + child: Node (libp2p, WS API, vault, bridge)    │    │
+│  │  + child: OpenClaw gateway (EnvoyAI assistant)  │    │
+│  └─────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────┘
 ```
 
 **Characteristics:**
 - User-facing surface is the **web** Social app; Tauri provides the window, menus, and lifecycle.
 - Node + relay behavior matches other scenarios; profile for the packaged app is under the OS app-data path (see `apps/tauri/src-tauri/src/main.rs`).
+- **EnvoyAI** is OpenClaw running as a child gateway on port **18789** with the **envoymesh** channel plugin and pre-seeded workspace/skills.
+- Bundled **Node.js runtime** (`resources/node-runtime/`) — no system Node required for end users.
 
-**How to run:**
+**How to run (development):**
 ```bash
 npm run tauri:dev          # Development (native window)
-npm run tauri:build        # Production bundle (after social:build + node:build)
 ```
+
+**How to build (production installer):**
+```bash
+npm run social:build
+npm run node:build
+npm run build -w @envoymesh/tauri
+# or: ./scripts/build-desktop.sh macos
+```
+
+The build pipeline runs, in order:
+1. `scripts/fetch-node-sidecar.sh` — bundled Node.js binary
+2. `scripts/stage-tauri-openclaw-bundle.sh` — OpenClaw gateway + envoymesh extension
+3. `scripts/stage-tauri-node-bundle.sh` — compiled node + deps + **bundled skills**
+
+CI release: tag `tauri-v*` or `desktop-v*` (see `.github/workflows/tauri-release.yml`).
 
 ---
 
@@ -53,11 +70,13 @@ npm run tauri:build        # Production bundle (after social:build + node:build)
 **Characteristics:**
 - Node + UI served from same process
 - All features enabled by default
+- **OpenClaw gateway** auto-started for EnvoyAI (Assistant / @envoy turns)
 - Good for local development and testing
 - Can also act as bootstrap peer for others
 
 **How to run:**
 ```bash
+./scripts/setup.sh       # once: OpenClaw + envoymesh extension + build
 npm run node:dev
 # Open http://localhost:5173
 ```
@@ -203,14 +222,114 @@ Share as: `/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWSJXmS7N94yFj1fqoH4anmbNXW6rZBcsGWrW
 |--------|-------------|-----------------|-------------|
 | Social UI | (bundled) | (port 5173) | - |
 | WebSocket server | (port 3030) | (port 3030) | - |
-| Relay client | | | |
-| Relay server | | | (pure) |
-| DHT discovery | | | |
-| App logic | | | - |
+| OpenClaw / EnvoyAI | bundled gateway | dev `packages/openclaw` | - |
+| Pre-installed skills | bundled in app | `apps/node/skills/` | - |
+| Relay client | ✓ | ✓ | - |
+| Relay server | optional | optional | (pure) |
+| DHT discovery | ✓ | ✓ | ✓ |
+| App logic | ✓ | ✓ | - |
 | Runs 24/7 | No | No | Yes |
 | Public IP needed | No | No | Yes |
-| Resource usage | Medium | Medium | Low |
+| Resource usage | Medium–High | Medium | Low |
 | Best for | End users | Developers | Infrastructure |
+
+---
+
+## OpenClaw + EnvoyAI (built-in agent)
+
+EnvoyMesh bundles **OpenClaw** as the default assistant brain. The node spawns an OpenClaw **gateway** child process; Social/H2A sends turns to `http://127.0.0.1:18789/webhook/envoymesh`.
+
+| Component | Dev path | Tauri bundle path |
+|-----------|----------|-------------------|
+| OpenClaw source tree | `packages/openclaw/` | `resources/openclaw/` |
+| EnvoyMesh channel plugin | `OpenClawExtension/` → `extensions/envoymesh/` | same (staged at build) |
+| Gateway state | `<profile>/openclaw-gateway/openclaw.json` | app data profile dir |
+| Agent workspace | `<profile>/openclaw-workspace/` | app data profile dir |
+| Bridge config | `<profile>/bridge-config.json` or `apps/node/data/default/` | profile dir |
+
+**First-time dev setup:**
+```bash
+./scripts/setup.sh
+# Installs deps, clones/builds packages/openclaw, copies OpenClawExtension, smoke-tests gateway
+```
+
+**Verify in node logs:**
+```
+[openclaw] Built-in OpenClaw gateway at http://127.0.0.1:18789/webhook/envoymesh
+[gateway] Registered EnvoyMesh HTTP route
+```
+
+**Runtime path resolution** (`apps/node/src/bundled-paths.ts`):
+
+| Env var | Purpose |
+|---------|---------|
+| `ENVOYMESH_OPENCLAW_DIR` | OpenClaw tree (Tauri sets from `TAURI_RESOURCE_DIR/openclaw`) |
+| `ENVOYMESH_BUNDLED_SKILLS_DIR` | Pre-installed skills source (Tauri: `resources/node/skills`) |
+| `ENVOYMESH_NODE_EXE` | Node binary used to run `tsx openclaw.mjs gateway` |
+| `TAURI_RESOURCE_DIR` | Tauri app Resources folder |
+
+Gateway spawn order: bundled **tsx + openclaw.mjs** → standalone binary fallback → dev **pnpm exec tsx**.
+
+See also: [openclaw-extension.md](./openclaw-extension.md), Phase 29 in [implementation-plan.md](./implementation-plan.md).
+
+---
+
+## Bundled OpenClaw skills
+
+Skills ship in **`apps/node/skills/<slug>/`** (repo) and are copied into the Tauri node bundle at **`resources/node/skills/`**.
+
+On first profile init, the node copies bundled skills into the user's workspace:
+
+```
+apps/node/skills/tavily/     ──seed──►  <profile>/openclaw-workspace/skills/tavily/
+```
+
+Existing workspace skills are **not overwritten** — delete `<profile>/openclaw-workspace/skills/<slug>/` to re-seed.
+
+### Install a skill for packaging
+
+Use the helper script (installs via ClawHub into the canonical bundled path):
+
+```bash
+npm i -g clawhub
+clawhub login
+./scripts/install-bundled-skill.sh tavily
+# → apps/node/skills/tavily/
+```
+
+Manual equivalent:
+
+```bash
+STAGE="$(pwd)/.bundled-skills-staging/openclaw-workspace"
+mkdir -p "$STAGE/skills"
+clawhub install tavily --workdir "$STAGE"
+cp -R "$STAGE/skills/tavily" apps/node/skills/
+```
+
+Each bundled skill needs:
+- `SKILL.md` (required)
+- Optional `scripts/`, `references/`, `.clawhub/origin.json`
+
+**Do not commit API keys.** Configure at runtime in `bridge-config.json`:
+
+```json
+{
+  "skillApiKeys": {
+    "tavily": "tvly-..."
+  },
+  "webSearchEnabled": true
+}
+```
+
+Keys flow into the generated OpenClaw gateway config (`skills.entries` + web search plugins). See `apps/node/src/openclaw-gateway-config.ts`.
+
+### Runtime vs bundled skill paths
+
+| Action | Target path |
+|--------|-------------|
+| Ship with EnvoyMesh / Tauri | `apps/node/skills/<slug>/` |
+| User installs via Social Skill Manager | `<profile>/openclaw-workspace/skills/<slug>/` (ClawHub `--workdir`) |
+| Agent reads skills | OpenClaw workspace `skills/` |
 
 ---
 
@@ -251,12 +370,34 @@ git clone https://github.com/your/envoymesh.git
 cd EnvoyMesh
 npm install
 
+# Dev: OpenClaw + envoymesh extension (once)
+./scripts/setup.sh
+
 # Build for all scenarios
-npm run node:build     # Node + UI for scenarios 1, 2
+npm run node:build     # Node runtime for scenarios 1, 2
 npm run relay:build    # Relay server for scenario 3
-npm run social:build   # UI (if needed separately)
-npm run tauri:build    # Desktop app installer
+npm run social:build   # Social UI (required for Tauri)
+npm run build -w @envoymesh/tauri   # Desktop installer (stages OpenClaw + skills)
 ```
+
+### Tauri staging scripts
+
+| Script | Output |
+|--------|--------|
+| `scripts/fetch-node-sidecar.sh` | `apps/tauri/src-tauri/resources/node-runtime/` |
+| `scripts/stage-tauri-openclaw-bundle.sh` | `apps/tauri/src-tauri/resources/openclaw/` |
+| `scripts/stage-tauri-node-bundle.sh` | `apps/tauri/src-tauri/resources/node/` (+ `skills/`) |
+| `scripts/fetch-kubo-sidecar.sh` | `resources/kubo/` (full build only) |
+| `scripts/install-bundled-skill.sh` | `apps/node/skills/<slug>/` |
+| `scripts/build-desktop.sh` | Runs sidecar + staging + `tauri build` |
+
+**Tauri config variants:**
+
+| Config | Kubo IPFS | OpenClaw | Skills |
+|--------|-----------|----------|--------|
+| `tauri.conf.json` | optional | ✓ | ✓ |
+| `tauri.conf.full.json` | ✓ | ✓ | ✓ |
+| `tauri.conf.slim.json` | ✗ (Helia only) | ✓ | ✓ |
 
 ---
 
@@ -309,8 +450,25 @@ scripts\run-relay.bat --advertise YOUR_PUBLIC_IP
 
 ### "Failed to spawn node process"
 ```bash
-node --version  # Must be 18+
+node --version  # Must be 18+ (dev only; Tauri bundles its own Node)
 ```
+
+### EnvoyAI / OpenClaw not starting
+
+1. **Dev:** run `./scripts/setup.sh` — ensures `packages/openclaw` is built and `OpenClawExtension` is copied.
+2. **Desktop:** rebuild with staging scripts; check logs for `[openclaw] Built-in OpenClaw gateway`.
+3. **Port 18789 in use:** stop other OpenClaw instances.
+4. **Gateway exits immediately:** check `[gateway]` stderr — often missing `tsx` in staged `resources/openclaw/node_modules`.
+
+### Bundled skills not appearing
+
+1. Confirm skill exists under `apps/node/skills/<slug>/SKILL.md`.
+2. Rebuild Tauri so `stage-tauri-node-bundle.sh` copies skills into `resources/node/skills/`.
+3. Delete `<profile>/openclaw-workspace/skills/<slug>/` and restart node to re-seed from bundled copy.
+
+### Skill API keys
+
+Set `skillApiKeys` in profile `bridge-config.json` — never commit keys into `apps/node/skills/`.
 
 ### "WebView not found" on Linux
 ```bash
@@ -334,9 +492,16 @@ lsof -ti:3030 | xargs kill -9
 
 | Component | Path |
 |-----------|------|
-| Node Profile | `./data/default/` or `ENVOYMESH_PROFILE` |
+| Node Profile (dev) | `./data/default/` or `ENVOYMESH_PROFILE` |
+| Bundled skills (repo) | `apps/node/skills/<slug>/` |
+| Bundled skills (Tauri) | `resources/node/skills/<slug>/` (inside app bundle) |
+| OpenClaw source (dev) | `packages/openclaw/` |
+| OpenClaw bundle (Tauri) | `resources/openclaw/` |
+| User OpenClaw workspace | `<profile>/openclaw-workspace/` |
+| User skill installs (runtime) | `<profile>/openclaw-workspace/skills/` |
+| Gateway config (generated) | `<profile>/openclaw-gateway/openclaw.json` |
 | Relay Profile | `./data/relay/` or `--profile <dir>` |
-| App Data (macOS) | `~/Library/Application Support/dev.envoymesh.app/` |
+| App Data (macOS) | `~/Library/Application Support/dev.envoymesh.app/profile/` |
 | App Data (Linux) | `~/.config/envoymesh/` |
 | App Data (Windows) | `%APPDATA%\envoymesh\` |
 
@@ -344,7 +509,9 @@ lsof -ti:3030 | xargs kill -9
 
 ## TODO
 
-- [ ] Bundle Node.js into Tauri app (no external dependency)
+- [x] Bundle Node.js into Tauri app (`resources/node-runtime/`)
+- [x] Bundle OpenClaw gateway + envoymesh extension (`stage-tauri-openclaw-bundle.sh`)
+- [x] Bundle pre-installed skills (`apps/node/skills/` → `resources/node/skills/`)
 - [ ] Auto-update support
 - [ ] System tray icon
 - [ ] Auto-start on login

@@ -133,7 +133,10 @@ function buildToolsMd(): string {
     "",
     "## EnvoyMesh mesh tools",
     "",
-    "- Use `envoymesh_list_mesh_tools` / `envoymesh_execute_mesh_tool` for P2P mesh operations.",
+    "- All local files: `mesh.files_list_all` and `mesh.files_read` (vault + OpenClaw workspace in one view).",
+    "- Vault-only shortcuts: `mesh.library_list`, `mesh.library_read`, `vault.search`.",
+    "- OpenClaw built-in `read` / `exec` also work on openclaw-workspace/ when needed.",
+    "- Use `envoymesh_list_mesh_tools` / `envoymesh_execute_mesh_tool` for other P2P mesh operations.",
     "",
   ].join("\n");
 }

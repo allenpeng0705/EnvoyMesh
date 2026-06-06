@@ -14,6 +14,7 @@ struct NodeSpawnConfig {
     profile_dir: PathBuf,
     ipfs_repo_dir: PathBuf,
     bundled_ipfs: Option<PathBuf>,
+    tauri_resource_dir: Option<PathBuf>,
 }
 
 struct NodeProcessState {
@@ -244,6 +245,23 @@ fn spawn_node_process(config: &NodeSpawnConfig) -> Result<Child, String> {
         command.env("ENVOYMESH_IPFS_EXE", exe);
     }
 
+    if let Some(ref dir) = config.tauri_resource_dir {
+        command.env("TAURI_RESOURCE_DIR", dir);
+        let openclaw_dir = dir.join("openclaw");
+        if openclaw_dir.is_dir() {
+            command.env("ENVOYMESH_OPENCLAW_DIR", &openclaw_dir);
+        }
+    }
+
+    let bundled_skills = config.node_cwd.join("skills");
+    if bundled_skills.is_dir() {
+        command.env("ENVOYMESH_BUNDLED_SKILLS_DIR", &bundled_skills);
+    }
+
+    if config.node_exe.is_file() {
+        command.env("ENVOYMESH_NODE_EXE", &config.node_exe);
+    }
+
     command.spawn().map_err(|e| {
         format!(
             "Failed to spawn node process ({:?}): {}",
@@ -337,6 +355,7 @@ fn main() {
                 profile_dir: profile_dir.clone(),
                 ipfs_repo_dir: ipfs_repo_dir.clone(),
                 bundled_ipfs: bundled_ipfs.clone(),
+                tauri_resource_dir: resource_dir.clone(),
             };
 
             let initial_child = match spawn_node_process(&spawn_config) {

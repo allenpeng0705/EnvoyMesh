@@ -7,6 +7,7 @@
  * Tool definitions are extensible: new intents automatically become available.
  */
 
+import { buildAllLocalFilesList } from "./local-files.js";
 import { randomUUID } from "node:crypto";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import { createAuditEvent } from "@envoymesh/local-store";
@@ -34,6 +35,7 @@ import type {
   DiscoverPublishedLibraryPeerResult,
   DocumentAutonomyPolicy,
   HumanProfile,
+  LibraryItem,
   ProfileMediaPolicy,
 } from "@envoymesh/api";
 import {
@@ -232,8 +234,68 @@ export class ToolRegistry {
 
     this.register({
       name: "mesh.library_list",
-      description: "List documents in the local vault (including published flags when the hook is configured)",
-      paramSchema: { type: "object", properties: {}, required: [] },
+      description:
+        "List vault documents only. Prefer mesh.files_list_all when the user asks to list their files or documents.",
+      paramSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Optional title or path substring filter" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.library_read",
+      description:
+        "Read a vault file only. Prefer mesh.files_read with source from mesh.files_list_all for user-facing reads.",
+      paramSchema: {
+        type: "object",
+        properties: {
+          relativePath: { type: "string", description: "Vault-relative path (from mesh.library_list)" },
+          documentId: { type: "string", description: "Alternative: document id from mesh.library_list" },
+          maxBytes: { type: "number", description: "Max bytes to read (default 5 MiB cap)" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.files_list_all",
+      description:
+        "List all of the user's local files in one view: EnvoyMesh vault plus OpenClaw workspace. Use this when the user asks to list, browse, or find their documents.",
+      paramSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Optional title or path substring filter across both locations" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "private",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.files_read",
+      description:
+        "Read a local file from vault or OpenClaw workspace. Use source + relativePath from mesh.files_list_all (source auto-detected when unambiguous).",
+      paramSchema: {
+        type: "object",
+        properties: {
+          source: { type: "string", enum: ["vault", "workspace"], description: "From mesh.files_list_all (optional if path is unique)" },
+          relativePath: { type: "string", description: "Path from mesh.files_list_all" },
+          documentId: { type: "string", description: "Vault only: document id from mesh.files_list_all" },
+          maxBytes: { type: "number", description: "Max bytes to read (default 5 MiB cap)" },
+        },
+        required: [],
+      },
       sensitivityCeiling: "private",
       requiresApproval: false,
       isMeshTool: false,
@@ -1125,7 +1187,26 @@ export interface MeshToolContext {
     correlationId?: string;
   }) => Promise<void>;
   /** Optional FS-D hooks — populated when the agent runtime is wired to NodeService. */
-  listLibraryItems?: () => Promise<unknown>;
+  listLibraryItems?: (query?: string) => Promise<unknown>;
+  readLibraryItemContent?: (params: {
+    relativePath: string;
+    maxBytes?: number;
+  }) => Promise<{
+    contentBase64: string;
+    mimeType: string;
+    sizeBytes: number;
+    truncated: boolean;
+  }>;
+  listOpenClawWorkspaceFiles?: (query?: string) => Promise<unknown>;
+  readOpenClawWorkspaceFile?: (params: {
+    relativePath: string;
+    maxBytes?: number;
+  }) => Promise<{
+    contentBase64: string;
+    mimeType: string;
+    sizeBytes: number;
+    truncated: boolean;
+  }>;
   discoverPublishedLibrary?: (params: Record<string, unknown> | undefined) => Promise<unknown>;
   exportLibraryItemToIpfs?: (documentId: string) => Promise<unknown>;
   verifyLibraryItemIpfsGateway?: (params: {
@@ -1235,10 +1316,101 @@ export async function executeTool(
           latencyMs: Date.now() - startTime,
         };
       }
-      const items = await context.listLibraryItems();
+      const query = typeof params.query === "string" ? params.query : undefined;
+      const items = await context.listLibraryItems(query);
       return {
         ok: true,
         result: { items },
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.library_read") {
+      if (!context.readLibraryItemContent) {
+        return {
+          ok: false,
+          error: "readLibraryItemContent is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      let relativePath = typeof params.relativePath === "string" ? params.relativePath.trim() : "";
+      const documentId = typeof params.documentId === "string" ? params.documentId.trim() : "";
+      if (!relativePath && documentId) {
+        if (!context.listLibraryItems) {
+          return {
+            ok: false,
+            error: "listLibraryItems is required to resolve documentId",
+            toolName,
+            correlationId,
+            latencyMs: Date.now() - startTime,
+          };
+        }
+        const items = (await context.listLibraryItems()) as Array<{
+          documentId: string;
+          relativePath: string;
+        }>;
+        const match = items.find((item) => item.documentId === documentId);
+        if (!match) {
+          return {
+            ok: false,
+            error: `Document not found: ${documentId}`,
+            toolName,
+            correlationId,
+            latencyMs: Date.now() - startTime,
+          };
+        }
+        relativePath = match.relativePath;
+      }
+      if (!relativePath) {
+        return {
+          ok: false,
+          error: "relativePath or documentId is required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      try {
+        const maxBytes = typeof params.maxBytes === "number" ? params.maxBytes : undefined;
+        const content = await context.readLibraryItemContent({ relativePath, maxBytes });
+        return {
+          ok: true,
+          result: formatAgentFileReadResult({ source: "vault", relativePath, content }),
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+    } else if (toolName === "mesh.files_list_all") {
+      const query = typeof params.query === "string" ? params.query : undefined;
+      const vaultItems = context.listLibraryItems
+        ? ((await context.listLibraryItems(query)) as LibraryItem[])
+        : [];
+      const workspaceItems = context.listOpenClawWorkspaceFiles
+        ? ((await context.listOpenClawWorkspaceFiles(query)) as WorkspaceListItem[])
+        : [];
+      const result = buildAllLocalFilesList({ vaultItems, workspaceItems });
+      return {
+        ok: true,
+        result,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.files_read") {
+      const readResult = await executeUnifiedFileRead(params, context);
+      return {
+        ...readResult,
         toolName,
         correlationId,
         latencyMs: Date.now() - startTime,
@@ -2372,6 +2544,181 @@ async function executeMeshTool(
 /**
  * Execute a local vault search.
  */
+type VaultListItem = {
+  documentId: string;
+  relativePath: string;
+  title: string;
+  extension: string;
+  byteLength: number;
+  updatedAt: string;
+  published: boolean;
+};
+
+type WorkspaceListItem = {
+  relativePath: string;
+  title: string;
+  extension: string;
+  byteLength: number;
+  updatedAt: string;
+};
+
+type FileContentResult = {
+  contentBase64: string;
+  mimeType: string;
+  sizeBytes: number;
+  truncated: boolean;
+};
+
+function formatAgentFileReadResult(params: {
+  source: "vault" | "workspace";
+  relativePath: string;
+  content: FileContentResult;
+}): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    source: params.source,
+    relativePath: params.relativePath,
+    mimeType: params.content.mimeType,
+    sizeBytes: params.content.sizeBytes,
+    truncated: params.content.truncated,
+    contentBase64: params.content.contentBase64,
+  };
+  if (isAgentReadableTextMime(params.content.mimeType)) {
+    result.textContent = Buffer.from(params.content.contentBase64, "base64").toString("utf-8");
+  }
+  return result;
+}
+
+async function executeUnifiedFileRead(
+  params: ToolParams,
+  context: MeshToolContext,
+): Promise<Omit<ToolResult, "toolName" | "correlationId" | "latencyMs">> {
+  let relativePath = typeof params.relativePath === "string" ? params.relativePath.trim() : "";
+  const documentId = typeof params.documentId === "string" ? params.documentId.trim() : "";
+  const maxBytes = typeof params.maxBytes === "number" ? params.maxBytes : undefined;
+  const requestedSource =
+    params.source === "vault" || params.source === "workspace" ? params.source : undefined;
+
+  if (!relativePath && documentId) {
+    if (!context.listLibraryItems) {
+      return { ok: false, error: "listLibraryItems is required to resolve documentId" };
+    }
+    const items = (await context.listLibraryItems()) as VaultListItem[];
+    const match = items.find((item) => item.documentId === documentId);
+    if (!match) {
+      return { ok: false, error: `Document not found: ${documentId}` };
+    }
+    relativePath = match.relativePath;
+  }
+
+  if (!relativePath) {
+    return { ok: false, error: "relativePath or documentId is required" };
+  }
+
+  let source = requestedSource;
+  if (!source) {
+    const listed = await resolveUnifiedFileSourceFromLists(context, relativePath);
+    if (listed === "ambiguous") {
+      return {
+        ok: false,
+        error: 'Path exists in both vault and workspace — pass source: "vault" or "workspace"',
+      };
+    }
+    source = listed;
+  }
+
+  if (!source && context.readLibraryItemContent) {
+    try {
+      const content = await context.readLibraryItemContent({ relativePath, maxBytes });
+      return {
+        ok: true,
+        result: formatAgentFileReadResult({ source: "vault", relativePath, content }),
+      };
+    } catch {
+      /* try workspace next */
+    }
+  }
+
+  if (!source && context.readOpenClawWorkspaceFile) {
+    try {
+      const content = await context.readOpenClawWorkspaceFile({ relativePath, maxBytes });
+      return {
+        ok: true,
+        result: formatAgentFileReadResult({ source: "workspace", relativePath, content }),
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  if (!source) {
+    return {
+      ok: false,
+      error: "Could not determine file source — pass source from mesh.files_list_all",
+    };
+  }
+
+  try {
+    if (source === "workspace") {
+      if (!context.readOpenClawWorkspaceFile) {
+        return { ok: false, error: "readOpenClawWorkspaceFile is not configured on this tool context" };
+      }
+      const content = await context.readOpenClawWorkspaceFile({ relativePath, maxBytes });
+      return {
+        ok: true,
+        result: formatAgentFileReadResult({ source, relativePath, content }),
+      };
+    }
+    if (!context.readLibraryItemContent) {
+      return { ok: false, error: "readLibraryItemContent is not configured on this tool context" };
+    }
+    const content = await context.readLibraryItemContent({ relativePath, maxBytes });
+    return {
+      ok: true,
+      result: formatAgentFileReadResult({ source: "vault", relativePath, content }),
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function resolveUnifiedFileSourceFromLists(
+  context: MeshToolContext,
+  relativePath: string,
+): Promise<"vault" | "workspace" | "ambiguous" | undefined> {
+  let inVault = false;
+  let inWorkspace = false;
+  if (context.listLibraryItems) {
+    const items = (await context.listLibraryItems()) as VaultListItem[];
+    inVault = items.some((item) => item.relativePath === relativePath);
+  }
+  if (context.listOpenClawWorkspaceFiles) {
+    const items = (await context.listOpenClawWorkspaceFiles()) as WorkspaceListItem[];
+    inWorkspace = items.some((item) => item.relativePath === relativePath);
+  }
+  if (inVault && inWorkspace) {
+    return "ambiguous";
+  }
+  if (inVault) {
+    return "vault";
+  }
+  if (inWorkspace) {
+    return "workspace";
+  }
+  return undefined;
+}
+
+function isAgentReadableTextMime(mimeType: string): boolean {
+  const normalized = mimeType.trim().toLowerCase();
+  return (
+    normalized.startsWith("text/") ||
+    normalized === "application/json" ||
+    normalized === "application/xml" ||
+    normalized === "application/javascript" ||
+    normalized.endsWith("+json") ||
+    normalized.endsWith("+xml")
+  );
+}
+
 async function executeVaultSearch(
   params: ToolParams,
   vaultSearchFn: ((query: string, limit?: number) => Promise<unknown>) | undefined,

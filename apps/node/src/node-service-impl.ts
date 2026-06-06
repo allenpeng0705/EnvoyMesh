@@ -38,6 +38,10 @@ import type {
   HomeClawCoreProxyResult,
   LibraryItem,
   ListLibraryItemsParams,
+  ListAllLocalFilesParams,
+  ListAllLocalFilesResult,
+  ReadLocalFileContentParams,
+  OpenLocalFileParams,
   ShareOffer,
   PairDeviceParams,
   PairDeviceResult,
@@ -388,7 +392,18 @@ import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { askOwnerAgentPlanner, scanOwnerAgentOutbound } from "./owner-agent-planner-inbound.js";
 import { loadAgentIdentitySection } from "./agent-identity-context.js";
-import { ensureOpenClawWorkspace, openClawGatewayStateDir } from "./openclaw-workspace.js";
+import { resolveBundledSkillsDir } from "./bundled-paths.js";
+import { spawnOpenClawGateway } from "./openclaw-gateway-spawn.js";
+import { ensureOpenClawWorkspace, openClawGatewayStateDir, openClawWorkspaceDir } from "./openclaw-workspace.js";
+import {
+  buildAllLocalFilesList,
+} from "./local-files.js";
+import {
+  assertPathInsideOpenClawWorkspace,
+  listOpenClawWorkspaceFilesFromDir,
+  readOpenClawWorkspaceFileFromDir,
+  type WorkspaceFileItem,
+} from "./openclaw-workspace-files.js";
 import {
   buildEnvoyMeshRetrievedContext,
 } from "./openclaw-turn-context.js";
@@ -4346,28 +4361,10 @@ class NodeServiceImpl implements NodeService {
 
     const { existsSync, mkdirSync, writeFileSync, readFileSync } = await import("node:fs");
     const { join, resolve } = await import("node:path");
-    const { spawn } = await import("node:child_process");
     const nodeCwd = process.cwd();
+    const bundledSkillsDir = resolveBundledSkillsDir(nodeCwd);
 
-    // 1. Ensure dist/entry.js bootstrap exists (re-exports TS source)
-    // process.cwd() may be apps/node/ or workspace root — detect by finding openclaw.mjs
-    let wsRoot = process.cwd();
-    if (!existsSync(join(wsRoot, "packages", "openclaw", "openclaw.mjs"))) {
-      wsRoot = join(wsRoot, "..", "..");
-    }
-    const ocDir = join(wsRoot, "packages", "openclaw");
-    const entryPath = join(ocDir, "dist", "entry.js");
-    if (!existsSync(entryPath)) {
-      mkdirSync(join(ocDir, "dist"), { recursive: true });
-      writeFileSync(entryPath, [
-        `// EnvoyMesh bootstrap — re-exports the gateway from TS source.`,
-        `// openclaw.mjs loads this file; tsx (via pnpm exec) handles .ts resolution.`,
-        `export * from "../src/cli/run-main.ts";`,
-        ``,
-      ].join("\n"), "utf-8");
-    }
-
-    // 2. Read built-in OpenClaw webhook URL (never fall back to agentUrl — that is Ext Agent).
+    // 1. Read built-in OpenClaw webhook URL (never fall back to agentUrl — that is Ext Agent).
     const profileDirAbs =
       this._profileDir && this._profileDir !== "/tmp/unknown"
         ? resolve(nodeCwd, this._profileDir)
@@ -4437,7 +4434,7 @@ class NodeServiceImpl implements NodeService {
         agentIdentitySnippet,
         bondCount,
       }, {
-        legacySkillsDir: join(nodeCwd, "skills"),
+        legacySkillsDir: bundledSkillsDir,
       });
     }
     workspaceDir = resolve(workspaceDir);
@@ -4526,16 +4523,14 @@ class NodeServiceImpl implements NodeService {
       log: (message) => console.warn(message),
     });
 
-    // 5. Spawn the OpenClaw gateway via pnpm exec tsx (source mode).
-    const child = spawn("pnpm", ["exec", "tsx", "openclaw.mjs", "gateway", "--port", String(gatewayPort), "--bind", "loopback", "--auth", "none", "--allow-unconfigured"], {
-      cwd: ocDir,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...process.env,
+    // 5. Spawn the OpenClaw gateway (bundled tsx tree, standalone binary, or dev pnpm).
+    const child = spawnOpenClawGateway({
+      nodeCwd,
+      gatewayPort,
+      gatewayEnv: {
         ...gatewaySearchEnv,
         OPENCLAW_STATE_DIR: gwStateDirAbs,
         OPENCLAW_CONFIG_PATH: gwConfigPathAbs,
-        OPENCLAW_BUNDLED_PLUGINS_DIR: resolve(ocDir, "extensions"),
         ENVOYMESH_BRIDGE_URL: bridgeUrl,
         ENVOYMESH_ALLOWED_OWNER_IDS: this._profile?.owner?.ownerId ?? "*",
         CLAWHUB_WORKDIR: workspaceDir,
@@ -4608,7 +4603,7 @@ class NodeServiceImpl implements NodeService {
     }
     const ownerId = this._profile?.owner?.ownerId ?? "unknown";
     return ensureOpenClawWorkspace(this._profileDir, { ownerId }, {
-      legacySkillsDir: join(process.cwd(), "skills"),
+      legacySkillsDir: resolveBundledSkillsDir(process.cwd()),
     });
   }
 
@@ -6506,6 +6501,61 @@ class NodeServiceImpl implements NodeService {
       published: publishedIds.has(d.documentId),
       publishedExternal: externalExports.get(d.documentId),
     }));
+  }
+
+  async listOpenClawWorkspaceFiles(params?: { query?: string }): Promise<WorkspaceFileItem[]> {
+    return listOpenClawWorkspaceFilesFromDir(openClawWorkspaceDir(this._profileDir), params?.query);
+  }
+
+  async listAllLocalFiles(params?: ListAllLocalFilesParams): Promise<ListAllLocalFilesResult> {
+    const [vaultItems, workspaceItems] = await Promise.all([
+      this.listLibraryItems(params),
+      this.listOpenClawWorkspaceFiles(params),
+    ]);
+    return buildAllLocalFilesList({ vaultItems, workspaceItems });
+  }
+
+  async readLocalFileContent(
+    params: ReadLocalFileContentParams,
+  ): Promise<ReadLibraryItemContentResult> {
+    if (params.source === "workspace") {
+      return this.readOpenClawWorkspaceFile({
+        relativePath: params.relativePath,
+        maxBytes: params.maxBytes,
+      });
+    }
+    let relativePath = params.relativePath.trim().replace(/^[\\/]+/, "");
+    if (!relativePath && params.documentId?.trim()) {
+      const match = (await this.listLibraryItems()).find((item) => item.documentId === params.documentId!.trim());
+      if (!match) {
+        throw new Error(`Document not found: ${params.documentId}`);
+      }
+      relativePath = match.relativePath;
+    }
+    return this.readLibraryItemContent({ relativePath, maxBytes: params.maxBytes });
+  }
+
+  async openLocalFile(params: OpenLocalFileParams): Promise<void> {
+    if (params.source === "workspace") {
+      const { absolutePath } = await this.resolveOpenClawWorkspacePath(params.relativePath);
+      await openPathWithDefaultApp(absolutePath);
+      return;
+    }
+    await this.openLibraryItem(params.relativePath);
+  }
+
+  async resolveOpenClawWorkspacePath(relativePath: string): Promise<{ absolutePath: string }> {
+    const absolutePath = assertPathInsideOpenClawWorkspace(
+      openClawWorkspaceDir(this._profileDir),
+      relativePath,
+    );
+    return { absolutePath };
+  }
+
+  async readOpenClawWorkspaceFile(
+    params: ReadLibraryItemContentParams,
+  ): Promise<ReadLibraryItemContentResult> {
+    return readOpenClawWorkspaceFileFromDir(openClawWorkspaceDir(this._profileDir), params);
   }
 
   async setLibraryItemPublished(documentId: string, published: boolean): Promise<void> {
@@ -9653,7 +9703,10 @@ class NodeServiceImpl implements NodeService {
         humanProfileLocation,
       },
       recordFriendAutopilotPass: (input) => this._recordFriendAutopilotPass(input),
-      listLibraryItems: () => this.listLibraryItems(),
+      listLibraryItems: (query) => this.listLibraryItems(query ? { query } : undefined),
+      readLibraryItemContent: (params) => this.readLibraryItemContent(params),
+      listOpenClawWorkspaceFiles: (query) => this.listOpenClawWorkspaceFiles(query ? { query } : undefined),
+      readOpenClawWorkspaceFile: (params) => this.readOpenClawWorkspaceFile(params),
       discoverPublishedLibrary: (p) =>
         this.discoverPublishedLibrary(p as DiscoverPublishedLibraryParams | undefined),
       exportLibraryItemToIpfs: (documentId) => this.exportLibraryItemToIpfs(documentId),
