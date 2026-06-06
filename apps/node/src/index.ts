@@ -160,9 +160,11 @@ import { createNodeService, NodeServiceImpl } from "./node-service-impl.js";
 import { createNodeConfigStore } from "./node-config-store.js";
 import { WsServer } from "./ws-server.js";
 import { TerminalManager } from "./terminal-manager.js";
+import { TerminalAgentAssist } from "./terminal-agent-assist.js";
 import { TerminalWsServer } from "./terminal-ws-server.js";
 import type { ModelProviderConfig } from "@envoymesh/api";
 import { evaluateInboundEnvelopeRolePolicy } from "./role-policy.js";
+import { TERMINAL_WS_PORT } from "./service-ports.js";
 import { createBridge } from "./bridge/index.js";
 import { executeTool as runRegistryTool, listAgentTools } from "./tool-registry.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
@@ -2741,6 +2743,9 @@ const wsServer = new WsServer(3030, "/ws", {
   },
 });
 
+const { loadPersistedAssistState } = await import("./terminal-assist-persist.js");
+const initialAssistPersist = await loadPersistedAssistState(args.profileDir);
+let terminalAgentAssist!: TerminalAgentAssist;
 const terminalManager = new TerminalManager({
   profileDir: args.profileDir,
   taskStore,
@@ -2752,14 +2757,93 @@ const terminalManager = new TerminalManager({
       sessions: terminalManager.listSessionSummaries(),
     });
   },
+  onSessionActivity: (sessionId) => {
+    void terminalAgentAssist.onSessionActivity(sessionId).then((events) => {
+      for (const event of events) {
+        if (nodeService instanceof NodeServiceImpl) {
+          nodeService.emit("terminal:watch-ready", event);
+        }
+        wsServerForEvents?.emitEvent("terminal:watch-ready", event);
+      }
+    });
+  },
+});
+const { execFile } = await import("node:child_process");
+const { promisify } = await import("node:util");
+const execFileAsync = promisify(execFile);
+terminalAgentAssist = new TerminalAgentAssist({
+  manager: terminalManager,
+  taskStore,
+  profileDir: args.profileDir,
+  initialPersistedSessions: initialAssistPersist.sessions,
+  contextReaders:
+    nodeService instanceof NodeServiceImpl
+      ? {
+          readVaultSnippet: async (relativePath, maxBytes) => {
+            const result = await nodeService.readLibraryItemContent({ relativePath, maxBytes });
+            return Buffer.from(result.contentBase64, "base64").toString("utf8");
+          },
+          readWorkspaceSnippet: async (relativePath, maxBytes) => {
+            const result = await nodeService.readOpenClawWorkspaceFile({ relativePath, maxBytes });
+            return Buffer.from(result.contentBase64, "base64").toString("utf8");
+          },
+          runReadOnlyGit: async (cwd, gitArgs, maxBytes) => {
+            const { stdout } = await execFileAsync("git", gitArgs, {
+              cwd,
+              timeout: 5000,
+              maxBuffer: maxBytes,
+            });
+            return stdout;
+          },
+        }
+      : {},
+  getModelProviders: async () => (await nodeService.getNodeConfig()).modelProviders,
+  getAssistSettings: async () => {
+    const cfg = await nodeService.getNodeConfig();
+    return {
+      terminalAssistModelName: cfg.terminalAssistModelName,
+      chatModelName: cfg.modelProviders.modelName,
+      terminalCommandAllowPatterns: cfg.terminalCommandAllowPatterns,
+      terminalCommandDenyPatterns: cfg.terminalCommandDenyPatterns,
+      terminalCommandDestructivePatterns: cfg.terminalCommandDestructivePatterns,
+      terminalAgentModeDefault: cfg.terminalAgentModeDefault,
+      terminalAutoRunPolicy: cfg.terminalAutoRunPolicy,
+      terminalInlineSuggestEnabled: cfg.terminalInlineSuggestEnabled,
+    };
+  },
+  askOpenClaw:
+    nodeService instanceof NodeServiceImpl
+      ? async (prompt: string) => {
+          const { stripModelThinking } = await import("@envoymesh/api");
+          try {
+            return stripModelThinking(await nodeService.askOpenClaw(prompt));
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (/OpenClaw not available/i.test(msg)) {
+              throw new Error("terminal.agent.openclawUnavailable");
+            }
+            throw err instanceof Error ? err : new Error(msg);
+          }
+        }
+      : undefined,
+  sendToAssistant:
+    nodeService instanceof NodeServiceImpl
+      ? async (message: string, correlationId: string) => {
+          const { stripModelThinking } = await import("@envoymesh/api");
+          const result = await nodeService.runOwnerAgentTurn(
+            `[correlationId=${correlationId}]\n${message}`,
+          );
+          return stripModelThinking(result.answer);
+        }
+      : undefined,
 });
 const terminalWsServer = new TerminalWsServer({
-  port: 3031,
+  port: TERMINAL_WS_PORT,
   pathPrefix: "/ws/terminal",
   manager: terminalManager,
 });
 terminalWsServer.start();
-terminalManager.setTerminalWsListenAddress(3031, "/ws/terminal");
+terminalManager.setTerminalWsListenAddress(TERMINAL_WS_PORT, "/ws/terminal");
 
 wsServer.start(nodeService);
 wsServerForEvents = wsServer;
@@ -2767,6 +2851,7 @@ wsServerForEvents = wsServer;
 if (nodeService instanceof NodeServiceImpl) {
   nodeService.setWsListenAddress(3030, "/ws");
   nodeService.setTerminalManager(terminalManager);
+  nodeService.setTerminalAgentAssist(terminalAgentAssist);
 }
 
 // Register client-proxy protocol handler (Phase 10A relay bridge)

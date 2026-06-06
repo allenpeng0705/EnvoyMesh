@@ -434,6 +434,117 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.terminalAttach(params);
   }
 
+  async terminalRunFromNaturalLanguage(params: import("@envoymesh/api").TerminalRunFromNaturalLanguageParams) {
+    return this._ns.terminalRunFromNaturalLanguage(params);
+  }
+
+  async terminalExecuteProposal(params: import("@envoymesh/api").TerminalExecuteProposalParams) {
+    return this._ns.terminalExecuteProposal(params);
+  }
+
+  async terminalSetAssistModelOverride(params: import("@envoymesh/api").TerminalSetAssistModelOverrideParams) {
+    return this._ns.terminalSetAssistModelOverride(params);
+  }
+
+  async terminalGetAssistState(sessionId: string) {
+    return this._ns.terminalGetAssistState(sessionId);
+  }
+
+  async terminalExplainScrollback(params: import("@envoymesh/api").TerminalExplainScrollbackParams) {
+    return this._ns.terminalExplainScrollback(params);
+  }
+
+  async terminalSuggestCommand(params: import("@envoymesh/api").TerminalSuggestCommandParams) {
+    return this._ns.terminalSuggestCommand(params);
+  }
+
+  async terminalObserveStep(params: import("@envoymesh/api").TerminalObserveStepParams) {
+    return this._ns.terminalObserveStep(params);
+  }
+
+  async terminalSetInlineSuggestEnabled(params: import("@envoymesh/api").TerminalSetInlineSuggestParams) {
+    return this._ns.terminalSetInlineSuggestEnabled(params);
+  }
+
+  async terminalOpenClawPlan(params: import("@envoymesh/api").TerminalOpenClawPlanParams) {
+    return this._ns.terminalOpenClawPlan(params);
+  }
+
+  async terminalRunPlanStep(params: import("@envoymesh/api").TerminalRunPlanStepParams) {
+    return this._ns.terminalRunPlanStep(params);
+  }
+
+  async terminalEnablePrepareMode(params: import("@envoymesh/api").TerminalEnablePrepareModeParams) {
+    return this._ns.terminalEnablePrepareMode(params);
+  }
+
+  async terminalWatchStep(params: import("@envoymesh/api").TerminalWatchStepParams) {
+    return this._ns.terminalWatchStep(params);
+  }
+
+  async terminalPinContextSession(params: import("@envoymesh/api").TerminalPinContextSessionParams) {
+    return this._ns.terminalPinContextSession(params);
+  }
+
+  async terminalDetectFailure(params: import("@envoymesh/api").TerminalDetectFailureParams) {
+    return this._ns.terminalDetectFailure(params);
+  }
+
+  async terminalSuggestFixFromFailure(params: import("@envoymesh/api").TerminalSuggestFixParams) {
+    return this._ns.terminalSuggestFixFromFailure(params);
+  }
+
+  async terminalStartGoalLoop(params: import("@envoymesh/api").TerminalStartGoalLoopParams) {
+    return this._ns.terminalStartGoalLoop(params);
+  }
+
+  async terminalAdvanceGoalLoop(params: import("@envoymesh/api").TerminalAdvanceGoalLoopParams) {
+    return this._ns.terminalAdvanceGoalLoop(params);
+  }
+
+  async terminalCancelGoalLoop(params: import("@envoymesh/api").TerminalCancelGoalLoopParams) {
+    return this._ns.terminalCancelGoalLoop(params);
+  }
+  async terminalClearResumeGoal(sessionId: string) {
+    return this._ns.terminalClearResumeGoal(sessionId);
+  }
+
+  async terminalSendContextToAssistant(params: import("@envoymesh/api").TerminalSendContextToAssistantParams) {
+    return this._ns.terminalSendContextToAssistant(params);
+  }
+
+  async terminalUpdatePlanProgress(params: import("@envoymesh/api").TerminalUpdatePlanProgressParams) {
+    return this._ns.terminalUpdatePlanProgress(params);
+  }
+
+  async terminalGetScrollbackPreview(params: import("@envoymesh/api").TerminalGetScrollbackPreviewParams) {
+    return this._ns.terminalGetScrollbackPreview(params);
+  }
+
+  async terminalResumeGoalLoop(params: import("@envoymesh/api").TerminalResumeGoalLoopParams) {
+    return this._ns.terminalResumeGoalLoop(params);
+  }
+
+  async terminalEnableExecPane(params: import("@envoymesh/api").TerminalEnableExecPaneParams) {
+    return this._ns.terminalEnableExecPane(params);
+  }
+
+  async terminalSetBackgroundWatch(params: import("@envoymesh/api").TerminalSetBackgroundWatchParams) {
+    return this._ns.terminalSetBackgroundWatch(params);
+  }
+
+  async terminalClearBackgroundWatch(params: import("@envoymesh/api").TerminalClearBackgroundWatchParams) {
+    return this._ns.terminalClearBackgroundWatch(params);
+  }
+
+  async openInHerdr(params?: import("@envoymesh/api").OpenInHerdrParams) {
+    return this._ns.openInHerdr(params);
+  }
+
+  async terminalGetHerdrExportHint(params: import("@envoymesh/api").TerminalHerdrExportHintParams) {
+    return this._ns.terminalGetHerdrExportHint(params);
+  }
+
   async homeTerminalWsOpen(params: import("@envoymesh/api").HomeTerminalWsOpenParams) {
     return this._ns.homeTerminalWsOpen(params);
   }

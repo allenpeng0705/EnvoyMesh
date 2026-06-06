@@ -370,6 +370,20 @@ describe("buildModelProviders trustedLocalAssist", () => {
     expect(providers[0]?.policy.requiresOwnerApproval).toBe(false);
     expect(providers[0]?.policy.allowedSensitivity).toContain("private");
   });
+
+  it("applies modelNameOverride over config modelName", async () => {
+    const providers = buildModelProviders(
+      { mode: "mock", modelName: "default-model" },
+      true,
+      { modelNameOverride: "assist-model" },
+    );
+    const result = await providers[0]!.complete({
+      taskType: "terminal.assist",
+      prompt: "test",
+      sensitivity: "private",
+    });
+    expect(result.modelName).toBe("assist-model");
+  });
 });
 
 describe("owner knowledge query helpers", () => {

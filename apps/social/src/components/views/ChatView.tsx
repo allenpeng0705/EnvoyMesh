@@ -13,6 +13,7 @@ import type { TerminalSessionSummary } from "@envoymesh/api";
 import { useEffect, useMemo, useState } from "react";
 import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
 import type { ChatRoom } from "@envoymesh/api";
+import { loadTerminalSelectedSessionId, saveTerminalSelectedSessionId } from "../../lib/storage.js";
 
 /**
  * ChatView is a layout shell: sidebar + AI or contact thread, with Inbox as a second panel.
@@ -43,7 +44,7 @@ export function ChatView({
   const { connectionStatus } = useNodeState();
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [terminalSessions, setTerminalSessions] = useState<TerminalSessionSummary[]>([]);
-  const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
+  const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(() => loadTerminalSelectedSessionId());
   const homeRemote = connectionStatus?.homeRemote;
   const terminalsAvailable =
     connectionStatus?.terminalsAvailable === true || homeRemote?.terminalsAvailable === true;
@@ -64,6 +65,20 @@ export function ChatView({
       onPanelModeChange("threads");
     }
   }, [showTerminalsTab, panelMode, onPanelModeChange]);
+
+  useEffect(() => {
+    saveTerminalSelectedSessionId(selectedTerminalId);
+  }, [selectedTerminalId]);
+
+  useEffect(() => {
+    const running = terminalSessions.filter((s) => s.state === "running");
+    if (running.length === 0) {
+      if (selectedTerminalId) setSelectedTerminalId(null);
+      return;
+    }
+    if (selectedTerminalId && running.some((s) => s.sessionId === selectedTerminalId)) return;
+    setSelectedTerminalId(running[0]?.sessionId ?? null);
+  }, [selectedTerminalId, terminalSessions]);
 
   useEffect(() => {
     if (!nodeService.isConnected) return;
@@ -148,8 +163,9 @@ export function ChatView({
               onSelectSession={(id) => setSelectedTerminalId(id || null)}
               onSessionsChange={setTerminalSessions}
               disabled={!terminalsAvailable}
+              onOpenAssistant={onOpenAssistant}
             />
-            <TerminalPanel session={selectedTerminal} />
+            <TerminalPanel session={selectedTerminal} onOpenAssistant={onOpenAssistant} active={panelMode === "terminals"} />
           </div>
         )
       ) : (

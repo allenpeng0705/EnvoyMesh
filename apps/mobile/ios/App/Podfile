@@ -1,6 +1,6 @@
 require_relative '../../../../node_modules/@capacitor/ios/scripts/pods_helpers'
 
-platform :ios, '13.0'
+platform :ios, '15.0'
 use_frameworks!
 
 # workaround to avoid Xcode caching of Pods that requires
@@ -11,6 +11,7 @@ install! 'cocoapods', :disable_input_output_paths => true
 def capacitor_pods
   pod 'Capacitor', :path => '../../../../node_modules/@capacitor/ios'
   pod 'CapacitorCordova', :path => '../../../../node_modules/@capacitor/ios'
+  pod 'CapacitorCommunityBarcodeScanner', :path => '../../../../node_modules/@capacitor-community/barcode-scanner'
   pod 'CapacitorCommunitySqlite', :path => '../../../../node_modules/@capacitor-community/sqlite'
   pod 'CapacitorFilesystem', :path => '../../../../node_modules/@capacitor/filesystem'
   pod 'CapacitorSecureStoragePlugin', :path => '../../../../node_modules/capacitor-secure-storage-plugin'
@@ -23,4 +24,9 @@ end
 
 post_install do |installer|
   assertDeploymentTarget(installer)
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+    end
+  end
 end

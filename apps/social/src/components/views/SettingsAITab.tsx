@@ -828,9 +828,255 @@ function ModelProviderSettings({
   );
 }
 
+function TerminalAssistSettings({
+  nodeConfig,
+  refreshNodeConfig,
+  isMobileNode,
+}: {
+  nodeConfig: import("@envoymesh/api").NodeConfig | null;
+  refreshNodeConfig: () => Promise<void>;
+  isMobileNode: boolean;
+}) {
+  const t = useT();
+  const nodeService = useNodeService();
+  const [assistModel, setAssistModel] = useState(nodeConfig?.terminalAssistModelName ?? "");
+  const [allowPatterns, setAllowPatterns] = useState(
+    (nodeConfig?.terminalCommandAllowPatterns ?? []).join("\n"),
+  );
+  const [denyPatterns, setDenyPatterns] = useState(
+    (nodeConfig?.terminalCommandDenyPatterns ?? []).join("\n"),
+  );
+  const [destructivePatterns, setDestructivePatterns] = useState(
+    (nodeConfig?.terminalCommandDestructivePatterns ?? []).join("\n"),
+  );
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [herdrStatus, setHerdrStatus] = useState<"idle" | "opening" | "done" | "error">("idle");
+  const [herdrMessage, setHerdrMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (saveStatus === "saving") return;
+    setAssistModel(nodeConfig?.terminalAssistModelName ?? "");
+    setAllowPatterns((nodeConfig?.terminalCommandAllowPatterns ?? []).join("\n"));
+    setDenyPatterns((nodeConfig?.terminalCommandDenyPatterns ?? []).join("\n"));
+    setDestructivePatterns((nodeConfig?.terminalCommandDestructivePatterns ?? []).join("\n"));
+  }, [nodeConfig, saveStatus]);
+
+  if (isMobileNode) {
+    return (
+      <p className="section-desc">{t("settings.ai.terminalAssist.sectionDesc")}</p>
+    );
+  }
+
+  const splitPatterns = (raw: string) =>
+    raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+  return (
+    <>
+      <p className="section-desc">{t("settings.ai.terminalAssist.sectionDesc")}</p>
+      <dl className="settings-list">
+        <dt>{t("settings.ai.terminalAssist.modelName")}</dt>
+        <dd>
+          <input
+            type="text"
+            className="settings-input"
+            placeholder={
+              nodeConfig?.modelProviders?.modelName?.trim() ||
+              t("settings.ai.terminalAssist.modelNamePlaceholder")
+            }
+            value={assistModel}
+            onChange={(e) => setAssistModel(e.target.value)}
+          />
+          <p className="settings-hint">{t("settings.ai.terminalAssist.modelNameHint")}</p>
+        </dd>
+        <dt>{t("settings.ai.terminalAssist.autoRunPolicy")}</dt>
+        <dd>
+          <select
+            className="settings-select"
+            value={nodeConfig?.terminalAutoRunPolicy ?? "always-confirm"}
+            onChange={async (e) => {
+              await nodeService.updateNodeConfig({
+                terminalAutoRunPolicy: e.target.value as import("@envoymesh/api").TerminalAutoRunPolicy,
+              });
+              await refreshNodeConfig();
+            }}
+          >
+            <option value="always-confirm">{t("settings.ai.terminalAssist.autoRunAlwaysConfirm")}</option>
+            <option value="safe-only">{t("settings.ai.terminalAssist.autoRunSafeOnly")}</option>
+            <option value="off">{t("settings.ai.terminalAssist.autoRunOff")}</option>
+          </select>
+        </dd>
+        <dt>{t("settings.ai.terminalAssist.allowPatterns")}</dt>
+        <dd>
+          <textarea
+            className="settings-input"
+            rows={3}
+            placeholder={t("settings.ai.terminalAssist.allowPatternsPlaceholder")}
+            value={allowPatterns}
+            onChange={(e) => setAllowPatterns(e.target.value)}
+          />
+          <p className="settings-hint">{t("settings.ai.terminalAssist.allowPatternsDesc")}</p>
+        </dd>
+        <dt>{t("settings.ai.terminalAssist.denyPatterns")}</dt>
+        <dd>
+          <textarea
+            className="settings-input"
+            rows={3}
+            placeholder={t("settings.ai.terminalAssist.denyPatternsPlaceholder")}
+            value={denyPatterns}
+            onChange={(e) => setDenyPatterns(e.target.value)}
+          />
+          <p className="settings-hint">{t("settings.ai.terminalAssist.denyPatternsDesc")}</p>
+        </dd>
+        <dt>{t("settings.ai.terminalAssist.destructivePatterns")}</dt>
+        <dd>
+          <textarea
+            className="settings-input"
+            rows={3}
+            placeholder={t("settings.ai.terminalAssist.destructivePatternsPlaceholder")}
+            value={destructivePatterns}
+            onChange={(e) => setDestructivePatterns(e.target.value)}
+          />
+          <p className="settings-hint">{t("settings.ai.terminalAssist.destructivePatternsDesc")}</p>
+        </dd>
+      </dl>
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>{t("settings.ai.terminalAssist.agentModeDefault")}</strong>
+          <span className="toggle-desc">{t("settings.ai.terminalAssist.agentModeDefaultDesc")}</span>
+        </div>
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={nodeConfig?.terminalAgentModeDefault ?? false}
+            onChange={async (e) => {
+              await nodeService.updateNodeConfig({ terminalAgentModeDefault: e.target.checked });
+              await refreshNodeConfig();
+            }}
+          />
+          <span className="slider" />
+        </label>
+      </div>
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>{t("settings.ai.terminalAssist.inlineSuggest")}</strong>
+          <span className="toggle-desc">{t("settings.ai.terminalAssist.inlineSuggestDesc")}</span>
+        </div>
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={nodeConfig?.terminalInlineSuggestEnabled ?? false}
+            onChange={async (e) => {
+              await nodeService.updateNodeConfig({ terminalInlineSuggestEnabled: e.target.checked });
+              await refreshNodeConfig();
+            }}
+          />
+          <span className="slider" />
+        </label>
+      </div>
+      <div className="settings-toggle-row">
+        <div className="toggle-info">
+          <strong>{t("settings.ai.terminalAssist.xtermSlashIntercept")}</strong>
+          <span className="toggle-desc">{t("settings.ai.terminalAssist.xtermSlashInterceptDesc")}</span>
+        </div>
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={nodeConfig?.terminalXtermSlashIntercept ?? false}
+            onChange={async (e) => {
+              await nodeService.updateNodeConfig({ terminalXtermSlashIntercept: e.target.checked });
+              await refreshNodeConfig();
+            }}
+          />
+          <span className="slider" />
+        </label>
+      </div>
+      <div className="settings-buttons">
+        <button
+          type="button"
+          className="settings-save-btn"
+          disabled={saveStatus === "saving"}
+          onClick={async () => {
+            setSaveStatus("saving");
+            try {
+              await nodeService.updateNodeConfig({
+                terminalAssistModelName: assistModel.trim() || undefined,
+                terminalCommandAllowPatterns: splitPatterns(allowPatterns),
+                terminalCommandDenyPatterns: splitPatterns(denyPatterns),
+                terminalCommandDestructivePatterns: splitPatterns(destructivePatterns),
+              });
+              await refreshNodeConfig();
+              setSaveStatus("saved");
+              setTimeout(() => setSaveStatus("idle"), 2000);
+            } catch {
+              setSaveStatus("error");
+              setTimeout(() => setSaveStatus("idle"), 2000);
+            }
+          }}
+        >
+          {saveStatus === "saving"
+            ? t("settings.ai.terminalAssist.saving")
+            : saveStatus === "saved"
+              ? t("settings.ai.terminalAssist.saved")
+              : t("settings.ai.terminalAssist.save")}
+        </button>
+        {saveStatus === "error" ? (
+          <span className="settings-save-error">{t("settings.ai.terminalAssist.saveFailed")}</span>
+        ) : null}
+      </div>
+      <div className="settings-subsection">
+        <h5>{t("settings.ai.terminalAssist.herdrHeading")}</h5>
+        <p className="settings-hint">{t("settings.ai.terminalAssist.herdrDesc")}</p>
+        <div className="settings-buttons">
+          <button
+            type="button"
+            className="secondary"
+            disabled={herdrStatus === "opening"}
+            onClick={async () => {
+              setHerdrStatus("opening");
+              setHerdrMessage(null);
+              try {
+                const result = await nodeService.openInHerdr({});
+                if (result.ok) {
+                  setHerdrStatus("done");
+                  setHerdrMessage(t("settings.ai.terminalAssist.herdrOpened", { cwd: result.cwd }));
+                } else {
+                  setHerdrStatus("error");
+                  const reasonKey =
+                    result.reason === "herdr.unsupportedPlatform"
+                      ? "settings.ai.terminalAssist.herdrUnsupportedPlatform"
+                      : result.reason === "herdr.mobileUnsupported"
+                        ? "settings.ai.terminalAssist.herdrMobileUnsupported"
+                        : result.reason === "herdr.workspaceUnavailable"
+                          ? "settings.ai.terminalAssist.herdrWorkspaceUnavailable"
+                          : "settings.ai.terminalAssist.herdrSpawnFailed";
+                  setHerdrMessage(t(reasonKey));
+                }
+              } catch (e: unknown) {
+                setHerdrStatus("error");
+                setHerdrMessage(e instanceof Error ? e.message : String(e));
+              }
+              setTimeout(() => setHerdrStatus("idle"), 4000);
+            }}
+          >
+            {herdrStatus === "opening"
+              ? t("settings.ai.terminalAssist.herdrOpening")
+              : t("settings.ai.terminalAssist.herdrOpen")}
+          </button>
+        </div>
+        {herdrMessage ? <p className="settings-hint">{herdrMessage}</p> : null}
+        <p className="settings-hint">{t("settings.ai.terminalAssist.herdrExportNote")}</p>
+      </div>
+    </>
+  );
+}
+
 export function SettingsAITab() {
   const t = useT();
   const nodeService = useNodeService();
+  const isMobileNode = useIsInProcessMobileNode();
   const { nodeConfig, refreshNodeConfig } = useNodeState();
   const aiSettings = nodeConfig?.aiSettings ?? defaultAiSettings();
   const documentAutonomy = normalizeDocumentAutonomyPolicy(aiSettings.documentAutonomy);
@@ -1421,6 +1667,15 @@ export function SettingsAITab() {
       <section className="settings-section">
         <h4>{t("settings.ai.modelProvider.heading")}</h4>
         <ModelProviderSettings nodeConfig={nodeConfig} refreshNodeConfig={refreshNodeConfig} />
+      </section>
+
+      <section className="settings-section">
+        <h4>{t("settings.ai.terminalAssist.heading")}</h4>
+        <TerminalAssistSettings
+          nodeConfig={nodeConfig}
+          refreshNodeConfig={refreshNodeConfig}
+          isMobileNode={isMobileNode}
+        />
       </section>
 
       <section className="settings-section">

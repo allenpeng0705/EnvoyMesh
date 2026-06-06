@@ -427,6 +427,8 @@ export interface BuildModelProvidersOptions {
    * Chat-assist / trusted-node paths: relax cloud provider policies so drafts work without per-call owner approval.
    */
   trustedLocalAssist?: boolean;
+  /** Override configured model name (e.g. terminal assist model or per-session override). */
+  modelNameOverride?: string;
 }
 
 /**
@@ -446,7 +448,10 @@ export function buildModelProviders(
     mode: (readEnvoyModelEnv("ENVOY_MODEL_MODE") as ModelProviderConfig["mode"]) ?? config.mode,
     endpoint: readEnvoyModelEnv("ENVOY_MODEL_ENDPOINT") ?? config.endpoint,
     apiKey: readEnvoyModelEnv("ENVOY_MODEL_API_KEY") ?? config.apiKey,
-    modelName: readEnvoyModelEnv("ENVOY_MODEL_NAME") ?? config.modelName,
+    modelName:
+      options?.modelNameOverride?.trim() ||
+      readEnvoyModelEnv("ENVOY_MODEL_NAME") ||
+      config.modelName,
   };
 
   const relaxedCloudPolicy: Partial<ModelProviderPolicy> | undefined =
@@ -465,6 +470,7 @@ export function buildModelProviders(
         createMockModelProvider({
           providerId: "local.mock",
           providerType: "local",
+          modelName: effectiveConfig.modelName,
         }),
       ];
     case "ollama": {
@@ -745,3 +751,18 @@ export type {
   ToolCallAuditEvent,
   ToolImplementation,
 } from "./tools.js";
+
+export {
+  TerminalCommandProposalSchema,
+  classifyTerminalCommandRisk,
+  compileTerminalCommandPatterns,
+  extractJsonPayload,
+  matchesAnyPattern,
+  inferTerminalCommandFallback,
+  parseTerminalCommandProposal,
+  requiresConfirmationForRisk,
+  resolveProposalRisk,
+} from "./terminal-command-proposal.js";
+export type { ParsedTerminalCommandProposal } from "./terminal-command-proposal.js";
+export { parseTerminalSuggestResponse, TerminalSuggestResponseSchema } from "./terminal-suggest-response.js";
+export type { ParsedTerminalSuggestResponse } from "./terminal-suggest-response.js";

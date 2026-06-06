@@ -81,7 +81,7 @@
     "@anthropic-ai/claude-agent-sdk-win32-arm64" "0.3.156"
     "@anthropic-ai/claude-agent-sdk-win32-x64" "0.3.156"
 
-"@anthropic-ai/sdk@>=0.50.3 <1", "@anthropic-ai/sdk@>=0.93.0", "@anthropic-ai/sdk@0.100.1", "@anthropic-ai/sdk@0.98.0":
+"@anthropic-ai/sdk@>=0.50.3 <1", "@anthropic-ai/sdk@0.100.1", "@anthropic-ai/sdk@0.98.0":
   version "0.100.1"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@anthropic-ai/sdk/-/sdk-0.100.1.tgz"
   integrity sha512-RANcEe7LpiLczkKGOwoXOTuFdPhuubS0i4xaAKOMpcqc55YO0mukgxppV7eygx3DXNjxWT6RYOLPyOy0aIAmwg==
@@ -565,7 +565,7 @@
   resolved "https://mirrors.huaweicloud.com/repository/npm/@babel/compat-data/-/compat-data-7.29.0.tgz"
   integrity sha512-T1NCJqT/j9+cn8fvkt7jtwbLBfLC/1y1c7NtCeXFRgzGTsafi68MRv8yzkYSapBnFA6L3U2VSc02ciDzoAJhJg==
 
-"@babel/core@^7.0.0", "@babel/core@^7.0.0-0", "@babel/core@^7.25.2", "@babel/core@^7.28.0":
+"@babel/core@^7.25.2", "@babel/core@^7.28.0":
   version "7.29.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@babel/core/-/core-7.29.0.tgz"
   integrity sha512-CGOfOJqWjg2qW/Mb6zNsDm+u5vFQ8DxXfbM09z69p5Z6+mE1ikP2jUXw+j42Pf1XTYED2Rni5f95npYeuwMDQA==
@@ -845,6 +845,14 @@
     hashery "^1.5.1"
     keyv "^5.6.0"
 
+"@capacitor-community/barcode-scanner@^3.0.3":
+  version "3.0.3"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@capacitor-community/barcode-scanner/-/barcode-scanner-3.0.3.tgz"
+  integrity sha512-XXxiumONhaIgCwzzoZazmNIybsBq0KFvgQZxtv4TWH2zakmr6dOAvj7DYp6KZOapHS/zg3s6czF8MCpFTjbQWQ==
+  dependencies:
+    "@zxing/browser" "^0.1.1"
+    "@zxing/library" "^0.19.2"
+
 "@capacitor-community/sqlite@^6.0.0":
   version "6.0.2"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@capacitor-community/sqlite/-/sqlite-6.0.2.tgz"
@@ -856,6 +864,13 @@
   version "6.2.1"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@capacitor/android/-/android-6.2.1.tgz"
   integrity sha512-8gd4CIiQO5LAIlPIfd5mCuodBRxMMdZZEdj8qG8m+dQ1sQ2xyemVpzHmRK8qSCHorsBUCg3D62j2cp6bEBAkdw==
+
+"@capacitor/barcode-scanner@^3.0.2":
+  version "3.0.2"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@capacitor/barcode-scanner/-/barcode-scanner-3.0.2.tgz"
+  integrity sha512-eD8G0dj/vDTytzFY3qK/5EWZtv17NHMN97gx5KSHUuqFXOScf+5e4Rwwak8zDkX17VLXNym6y3eIn8AvCLY+Pg==
+  dependencies:
+    html5-qrcode "2.3.8"
 
 "@capacitor/cli@^6.0.0":
   version "6.2.1"
@@ -880,7 +895,7 @@
     tslib "^2.4.0"
     xml2js "^0.5.0"
 
-"@capacitor/core@^6.0.0", "@capacitor/core@^6.2.0":
+"@capacitor/core@^6.0.0":
   version "6.2.1"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@capacitor/core/-/core-6.2.1.tgz"
   integrity sha512-urZwxa7hVE/BnA18oCFAdizXPse6fCKanQyEqpmz6cBJ2vObwMpyJDG5jBeoSsgocS9+Ax+9vb4ducWJn0y2qQ==
@@ -1212,6 +1227,7 @@
   dependencies:
     "@capacitor-community/sqlite" "^6.0.0"
     "@capacitor/android" "^6.2.1"
+    "@capacitor/barcode-scanner" "^3.0.2"
     "@capacitor/core" "^6.0.0"
     "@capacitor/filesystem" "^6.0.0"
     "@capacitor/ios" "^6.2.1"
@@ -1231,6 +1247,7 @@
   dependencies:
     "@envoymesh/api" "0.1.0"
     "@envoymesh/protocol" "0.1.0"
+    zod "^4.3.6"
 
 "@envoymesh/network@0.1.0", "@envoymesh/network@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/network":
   version "0.1.0"
@@ -1310,6 +1327,8 @@
   resolved "file:apps/social"
   dependencies:
     "@envoymesh/api" "0.1.0"
+    "@xterm/addon-fit" "^0.11.0"
+    "@xterm/xterm" "^6.0.0"
     dompurify "^3.4.3"
     emoji-picker-element "^1.29.1"
     loro-crdt "^1.12.1"
@@ -2533,7 +2552,7 @@
     zod "^3.25.0 || ^4.0.0"
     zod-to-json-schema "^3.25.0"
 
-"@modelcontextprotocol/sdk@^1.25.2", "@modelcontextprotocol/sdk@^1.29.0", "@modelcontextprotocol/sdk@1.29.0":
+"@modelcontextprotocol/sdk@1.29.0":
   version "1.29.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@modelcontextprotocol/sdk/-/sdk-1.29.0.tgz"
   integrity sha512-zo37mZA9hJWpULgkRpowewez1y6ML5GsXJPY8FI0tBBCd77HEvza4jDqRKOXgHNn867PVGCyTdzqpz0izu5ZjQ==
@@ -2660,15 +2679,15 @@
   dependencies:
     "@noble/hashes" "2.0.1"
 
-"@noble/hashes@^1.8.0 || ^2.0.0", "@noble/hashes@^2.0.1", "@noble/hashes@2.2.0":
-  version "2.2.0"
-  resolved "https://mirrors.huaweicloud.com/repository/npm/@noble/hashes/-/hashes-2.2.0.tgz"
-  integrity sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==
-
 "@noble/hashes@^1.8.0", "@noble/hashes@1.8.0":
   version "1.8.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@noble/hashes/-/hashes-1.8.0.tgz"
   integrity sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==
+
+"@noble/hashes@^2.0.1", "@noble/hashes@2.2.0":
+  version "2.2.0"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@noble/hashes/-/hashes-2.2.0.tgz"
+  integrity sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==
 
 "@noble/hashes@2.0.1":
   version "2.0.1"
@@ -2718,7 +2737,7 @@
   dependencies:
     "@opentelemetry/api" "^1.3.0"
 
-"@opentelemetry/api@^1.0.0", "@opentelemetry/api@^1.3.0", "@opentelemetry/api@^1.9.0", "@opentelemetry/api@>=1.0.0 <1.10.0", "@opentelemetry/api@>=1.3.0 <1.10.0", "@opentelemetry/api@>=1.4.0 <1.10.0", "@opentelemetry/api@>=1.9.0 <1.10.0":
+"@opentelemetry/api@^1.3.0":
   version "1.9.1"
 
 "@opentelemetry/configuration@0.218.0":
@@ -3730,20 +3749,6 @@
     "@tauri-apps/cli-win32-ia32-msvc" "2.11.0"
     "@tauri-apps/cli-win32-x64-msvc" "2.11.0"
 
-"@testing-library/dom@^10.0.0":
-  version "10.4.1"
-  resolved "https://mirrors.huaweicloud.com/repository/npm/@testing-library/dom/-/dom-10.4.1.tgz"
-  integrity sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==
-  dependencies:
-    "@babel/code-frame" "^7.10.4"
-    "@babel/runtime" "^7.12.5"
-    "@types/aria-query" "^5.0.1"
-    aria-query "5.3.0"
-    dom-accessibility-api "^0.5.9"
-    lz-string "^1.5.0"
-    picocolors "1.1.1"
-    pretty-format "^27.0.2"
-
 "@testing-library/jest-dom@^6.9.1":
   version "6.9.1"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@testing-library/jest-dom/-/jest-dom-6.9.1.tgz"
@@ -3791,16 +3796,6 @@
   version "8.1.4"
   dependencies:
     "@d-fischer/shared-utils" "^3.6.1"
-    "@twurple/common" "8.1.4"
-    tslib "^2.0.3"
-
-"@twurple/auth@8.1.4":
-  version "8.1.4"
-  dependencies:
-    "@d-fischer/logger" "^4.2.1"
-    "@d-fischer/shared-utils" "^3.6.1"
-    "@d-fischer/typed-event-emitter" "^3.3.3"
-    "@twurple/api-call" "8.1.4"
     "@twurple/common" "8.1.4"
     tslib "^2.0.3"
 
@@ -3943,7 +3938,7 @@
     "@types/range-parser" "*"
     "@types/send" "*"
 
-"@types/express@^5.0.0", "@types/express@5.0.6":
+"@types/express@5.0.6":
   version "5.0.6"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@types/express/-/express-5.0.6.tgz"
   integrity sha512-sKYVuV7Sv9fbPIt/442koC7+IIwK5olP1KWeD88e/idgoJqDm3JV/YUiPwkoKK92ylff2MGxSz1CSjsXelx0YA==
@@ -4049,7 +4044,7 @@
     "@types/dns-packet" "*"
     "@types/node" "*"
 
-"@types/node@*", "@types/node@^18.0.0 || ^20.0.0 || >=22.0.0", "@types/node@^20.0.0 || ^22.0.0 || >=24.0.0", "@types/node@^20.19.0 || >=22.12.0", "@types/node@^25.6.0", "@types/node@>=13.7.0", "@types/node@>=18", "@types/node@25.9.1":
+"@types/node@*", "@types/node@^25.6.0", "@types/node@>=13.7.0", "@types/node@>=18", "@types/node@25.9.1":
   version "25.9.1"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@types/node/-/node-25.9.1.tgz"
   integrity sha512-xfrlY7UD5rMJk3ZVJP8BNzS28J36YJg+xp+LPXV1TdWxr8uMH5A860QNxYDGQe/ylDSgjxE52Q9VnO7p75tJxg==
@@ -4102,12 +4097,12 @@
   resolved "https://mirrors.huaweicloud.com/repository/npm/@types/range-parser/-/range-parser-1.2.7.tgz"
   integrity sha512-hKormJbkJqzQGhziax5PItDUTMAM9uE2XXQmM37dyd4hVM+5aVl7oVxMVUiVQn2oCQFN/LKCZdvSM0pFRqbSmQ==
 
-"@types/react-dom@^18.0.0 || ^19.0.0", "@types/react-dom@^19.2.3":
+"@types/react-dom@^19.2.3":
   version "19.2.3"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@types/react-dom/-/react-dom-19.2.3.tgz"
   integrity sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==
 
-"@types/react@^18.0.0 || ^19.0.0", "@types/react@^19.1.1", "@types/react@^19.2.0", "@types/react@^19.2.7":
+"@types/react@^19.2.7":
   version "19.2.14"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@types/react/-/react-19.2.14.tgz"
   integrity sha512-ilcTH/UniCkMdtexkoCN0bI7pMcJDvmQFPvuPvmEaYA/NSfFTAgdUSLAoVjaRJm7+6PvcM+q1zYOwS4wTYMF9w==
@@ -4188,7 +4183,7 @@
   resolved "https://mirrors.huaweicloud.com/repository/npm/@typescript/native-preview-darwin-arm64/-/native-preview-darwin-arm64-7.0.0-dev.20260527.2.tgz"
   integrity sha512-3LqSu4DlxkEfeC/Z/29QMCJn5jjkDtXI7LYuxfmjdmAatS6umDKqm8J17fnP/7fyrZUMBTIYRwSDpChGV3G1ew==
 
-"@typescript/native-preview@>=7.0.0-dev.20260325.1", "@typescript/native-preview@7.0.0-dev.20260527.2":
+"@typescript/native-preview@7.0.0-dev.20260527.2":
   version "7.0.0-dev.20260527.2"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@typescript/native-preview/-/native-preview-7.0.0-dev.20260527.2.tgz"
   integrity sha512-piqkDwikVeizCFqA1lcwI5F4wOAtBdxuliWe77ApBNRyBPPvfCJB+u/HYi9/8t5nd0sWvFs6/qt/AzJ1CCoykQ==
@@ -4225,13 +4220,6 @@
     "@types/babel__core" "^7.20.5"
     react-refresh "^0.17.0"
 
-"@vitest/browser-playwright@4.1.7":
-  version "4.1.7"
-  dependencies:
-    "@vitest/browser" "4.1.7"
-    "@vitest/mocker" "4.1.7"
-    tinyrainbow "^3.1.0"
-
 "@vitest/browser@4.1.7":
   version "4.1.7"
   dependencies:
@@ -4244,7 +4232,7 @@
     tinyrainbow "^3.1.0"
     ws "^8.19.0"
 
-"@vitest/coverage-v8@^4.1.5", "@vitest/coverage-v8@4.1.5":
+"@vitest/coverage-v8@^4.1.5":
   version "4.1.5"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@vitest/coverage-v8/-/coverage-v8-4.1.5.tgz"
   integrity sha512-38C0/Ddb7HcRG0Z4/DUem8x57d2p9jYgp18mkaYswEOQBGsI1CG4f/hjm0ZCeaJfWhSZ4k7jgs29V1Zom7Ki9A==
@@ -4442,6 +4430,27 @@
 "@zed-industries/codex-acp-darwin-arm64@0.15.0":
   version "0.15.0"
 
+"@zxing/browser@^0.1.1":
+  version "0.1.5"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@zxing/browser/-/browser-0.1.5.tgz"
+  integrity sha512-4Lmrn/il4+UNb87Gk8h1iWnhj39TASEHpd91CwwSJtY5u+wa0iH9qS0wNLAWbNVYXR66WmT5uiMhZ7oVTrKfxw==
+  optionalDependencies:
+    "@zxing/text-encoding" "^0.9.0"
+
+"@zxing/library@^0.19.2":
+  version "0.19.3"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@zxing/library/-/library-0.19.3.tgz"
+  integrity sha512-RUv5svewpDoD0ymXleOP8yVTO5BLkR0zn5coGC/Vs1671u0OBJ4xdtR8WVWf08OcvrieEMHdSfQY3ZKtqII/hg==
+  dependencies:
+    ts-custom-error "^3.2.1"
+  optionalDependencies:
+    "@zxing/text-encoding" "~0.9.0"
+
+"@zxing/text-encoding@^0.9.0", "@zxing/text-encoding@~0.9.0":
+  version "0.9.0"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@zxing/text-encoding/-/text-encoding-0.9.0.tgz"
+  integrity sha512-U/4aVJ2mxI0aDNI8Uq0wEhMgY+u4CNtEb0om3+y3+niDAsoTCOB33UF0sxpzqzdqXLqmvc+vZyAt4O8pPdfkwA==
+
 abort-controller@^3.0.0:
   version "3.0.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/abort-controller/-/abort-controller-3.0.0.tgz"
@@ -4481,15 +4490,15 @@ acorn-jsx@^5.0.0:
   resolved "https://mirrors.huaweicloud.com/repository/npm/acorn-jsx/-/acorn-jsx-5.3.2.tgz"
   integrity sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==
 
-"acorn@^6.0.0 || ^7.0.0 || ^8.0.0", acorn@^8, acorn@^8.0.0, acorn@^8.15.0:
-  version "8.16.0"
-  resolved "https://mirrors.huaweicloud.com/repository/npm/acorn/-/acorn-8.16.0.tgz"
-  integrity sha512-UVJyE9MttOsBQIDKw1skb9nAwQuR5wuGD3+82K6JgJlm/Y+KI92oNsMNGZCYdDsVtRHSak0pcV5Dno5+4jh9sw==
-
 acorn@^7.1.1:
   version "7.4.1"
   resolved "https://mirrors.huaweicloud.com/repository/npm/acorn/-/acorn-7.4.1.tgz"
   integrity sha512-nQyp0o1/mNdbTO1PO6kHkwSrmgZ0MT/jCCpNiwbUjGoRN4dlBhqJtoQuCnEOKzgTVwg0ZWiCoQy6SxMebQVh8A==
+
+acorn@^8.0.0, acorn@^8.15.0:
+  version "8.16.0"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/acorn/-/acorn-8.16.0.tgz"
+  integrity sha512-UVJyE9MttOsBQIDKw1skb9nAwQuR5wuGD3+82K6JgJlm/Y+KI92oNsMNGZCYdDsVtRHSak0pcV5Dno5+4jh9sw==
 
 adler-32@~1.3.0:
   version "1.3.1"
@@ -4559,19 +4568,6 @@ any-signal@^4.1.1, any-signal@^4.2.0:
   version "4.2.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/any-signal/-/any-signal-4.2.0.tgz"
   integrity sha512-LndMvYuAPf4rC195lk7oSFuHOYFpOszIYrNYv0gHAvz+aEhE9qPZLhmrIz5pXP2BSsPOXvsuHDXEGaiQhIh9wA==
-
-"apache-arrow@>=15.0.0 <=18.1.0":
-  version "21.1.0"
-  dependencies:
-    "@swc/helpers" "^0.5.11"
-    "@types/command-line-args" "^5.2.3"
-    "@types/command-line-usage" "^5.0.4"
-    "@types/node" "^24.0.3"
-    command-line-args "^6.0.1"
-    command-line-usage "^7.0.1"
-    flatbuffers "^25.1.24"
-    json-bignum "^0.0.3"
-    tslib "^2.6.2"
 
 argparse@^2.0.1:
   version "2.0.1"
@@ -4676,18 +4672,6 @@ atomic-sleep@^1.0.0:
 audio-buffer@^5.0.0:
   version "5.0.0"
 
-audio-decode@^2.1.3:
-  version "2.2.3"
-  dependencies:
-    "@wasm-audio-decoders/flac" "^0.2.4"
-    "@wasm-audio-decoders/ogg-vorbis" "^0.1.15"
-    audio-buffer "^5.0.0"
-    audio-type "^2.2.1"
-    mpg123-decoder "^1.0.0"
-    node-wav "^0.0.2"
-    ogg-opus-decoder "^1.6.12"
-    qoa-format "^1.0.1"
-
 audio-type@^2.2.1:
   version "2.4.1"
 
@@ -4745,7 +4729,7 @@ balanced-match@^4.0.2:
   resolved "https://mirrors.huaweicloud.com/repository/npm/balanced-match/-/balanced-match-4.0.4.tgz"
   integrity sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==
 
-bare-events@*, bare-events@^2.5.4, bare-events@^2.7.0:
+bare-events@^2.5.4, bare-events@^2.7.0:
   version "2.8.3"
 
 bare-fs@^4.5.5:
@@ -4960,7 +4944,7 @@ browser-readablestream-to-it@^2.0.9:
   resolved "https://mirrors.huaweicloud.com/repository/npm/browser-readablestream-to-it/-/browser-readablestream-to-it-2.0.12.tgz"
   integrity sha512-VDAcuM39JVtxZ7auqE2p0zHYk1fq+pac0cWLOQJ48MIChTZ1RjCR2PYCdL3kIisst7oGZCxYrJhfHlbNYIa0Tg==
 
-browserslist@^4.24.0, "browserslist@>= 4.21.0":
+browserslist@^4.24.0:
   version "4.28.2"
   resolved "https://mirrors.huaweicloud.com/repository/npm/browserslist/-/browserslist-4.28.2.tgz"
   integrity sha512-48xSriZYYg+8qXna9kwqjIVzuQxi+KYWp2+5nCYnYKPTr0LvD89Jqk2Or5ogxz0NUMfIjhh2lIUX/LyX9B4oIg==
@@ -5926,7 +5910,7 @@ esbuild@^0.25.0:
     "@esbuild/win32-ia32" "0.25.12"
     "@esbuild/win32-x64" "0.25.12"
 
-"esbuild@^0.27.0 || ^0.28.0", esbuild@~0.28.0, esbuild@0.28.0:
+esbuild@~0.28.0, esbuild@0.28.0:
   version "0.28.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/esbuild/-/esbuild-0.28.0.tgz"
   integrity sha512-sNR9MHpXSUV/XB4zmsFKN+QgVG82Cc7+/aaxJ8Adi8hyOac+EXptIp45QBPaVyX3N70664wRbTcLTOemCAnyqw==
@@ -6112,7 +6096,7 @@ express-rate-limit@^8.2.1:
   dependencies:
     ip-address "^10.2.0"
 
-express@^5.0.0, express@^5.2.1, "express@>= 4.11", express@5.2.1:
+express@^5.0.0, express@^5.2.1, express@5.2.1:
   version "5.2.1"
   resolved "https://mirrors.huaweicloud.com/repository/npm/express/-/express-5.2.1.tgz"
   integrity sha512-hIS4idWWai69NezIdRt2xFVofaF4j+6INOpJlVOLDO8zXGpUVEVzIYk12UUi2JzjEzWL3IOAxcTubgz9Po0yXw==
@@ -6412,13 +6396,10 @@ fs.realpath@^1.0.0:
   resolved "https://mirrors.huaweicloud.com/repository/npm/fs.realpath/-/fs.realpath-1.0.0.tgz"
   integrity sha512-OO0pH2lK6a0hZnAdau5ItzHPI6pUlvI7jMVnxUQRtw4owF2wk8lOSabtGDCTP4Ggrg2MbGnWO9X8K1t4+fGMDw==
 
-fsevents@~2.3.2, fsevents@~2.3.3:
+fsevents@~2.3.2, fsevents@~2.3.3, fsevents@2.3.2:
   version "2.3.3"
   resolved "https://mirrors.huaweicloud.com/repository/npm/fsevents/-/fsevents-2.3.3.tgz"
   integrity sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==
-
-fsevents@2.3.2:
-  version "2.3.2"
 
 function-bind@^1.1.2:
   version "1.1.2"
@@ -6607,7 +6588,7 @@ graceful-fs@^4.1.6, graceful-fs@^4.2.0, graceful-fs@^4.2.4, graceful-fs@^4.2.9:
   resolved "https://mirrors.huaweicloud.com/repository/npm/graceful-fs/-/graceful-fs-4.2.11.tgz"
   integrity sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==
 
-grammy@^1.0.0, grammy@^1.13.1, grammy@1.43.0:
+grammy@1.43.0:
   version "1.43.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/grammy/-/grammy-1.43.0.tgz"
   integrity sha512-7dYm06A945mXuIk/5HUlSjeyIYChW8vCEiU2dkOKKqJJzwAWxTkCc91Eqbz7TgODh2rtFFKWI/fekowWHOkmjQ==
@@ -6816,7 +6797,7 @@ hnswlib-node@^3.0.0:
     bindings "^1.5.0"
     node-addon-api "^8.0.0"
 
-hono@^4, hono@^4.11.4:
+hono@^4.11.4:
   version "4.12.23"
   resolved "https://mirrors.huaweicloud.com/repository/npm/hono/-/hono-4.12.23.tgz"
   integrity sha512-eIaZ9qDgu7XV0pxOCrg7/WhnQ6Ivm22UcxhXx/A3dcbqbbYgBEkc6e/J/s7j2tS96zoB0S9VBdLwQNCWwUo4LA==
@@ -6865,6 +6846,11 @@ html-void-elements@^3.0.0:
   version "3.0.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/html-void-elements/-/html-void-elements-3.0.0.tgz"
   integrity sha512-bEqo66MRXsUGxWHV5IP0PUiAWwoEjba4VCzg0LjFJBpchPaTfyfCKTG6bc5F8ucKec3q5y6qOdGyYTSBEvhCrg==
+
+html5-qrcode@2.3.8:
+  version "2.3.8"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/html5-qrcode/-/html5-qrcode-2.3.8.tgz"
+  integrity sha512-jsr4vafJhwoLVEDW3n1KvPnCCXWaQfRng0/EEYk1vNcQGcG/htAdhJX0be8YyqMoSz7+hZvOZSTAepsabiuhiQ==
 
 htmlparser2@^10.0.0:
   version "10.1.0"
@@ -7586,7 +7572,7 @@ jest-worker@^29.7.0:
     merge-stream "^2.0.0"
     supports-color "^8.0.0"
 
-jiti@>=1.21.0, jiti@2.7.0:
+jiti@2.7.0:
   version "2.7.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/jiti/-/jiti-2.7.0.tgz"
   integrity sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==
@@ -7643,7 +7629,34 @@ jscpd@4.2.4:
     fs-extra "^11.2.0"
     jscpd-sarif-reporter "4.2.4"
 
-jsdom@*, jsdom@^29.1.1, jsdom@29.1.1:
+jsdom@^29.1.1:
+  version "29.1.1"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/jsdom/-/jsdom-29.1.1.tgz"
+  integrity sha512-ECi4Fi2f7BdJtUKTflYRTiaMxIB0O6zfR1fX0GXpUrf6flp8QIYn1UT20YQqdSOfk2dfkCwS8LAFoJDEppNK5Q==
+  dependencies:
+    "@asamuzakjp/css-color" "^5.1.11"
+    "@asamuzakjp/dom-selector" "^7.1.1"
+    "@bramus/specificity" "^2.4.2"
+    "@csstools/css-syntax-patches-for-csstree" "^1.1.3"
+    "@exodus/bytes" "^1.15.0"
+    css-tree "^3.2.1"
+    data-urls "^7.0.0"
+    decimal.js "^10.6.0"
+    html-encoding-sniffer "^6.0.0"
+    is-potential-custom-element-name "^1.0.1"
+    lru-cache "^11.3.5"
+    parse5 "^8.0.1"
+    saxes "^6.0.0"
+    symbol-tree "^3.2.4"
+    tough-cookie "^6.0.1"
+    undici "^7.25.0"
+    w3c-xmlserializer "^5.0.0"
+    webidl-conversions "^8.0.1"
+    whatwg-mimetype "^5.0.0"
+    whatwg-url "^16.0.1"
+    xml-name-validator "^5.0.0"
+
+jsdom@29.1.1:
   version "29.1.1"
   resolved "https://mirrors.huaweicloud.com/repository/npm/jsdom/-/jsdom-29.1.1.tgz"
   integrity sha512-ECi4Fi2f7BdJtUKTflYRTiaMxIB0O6zfR1fX0GXpUrf6flp8QIYn1UT20YQqdSOfk2dfkCwS8LAFoJDEppNK5Q==
@@ -7884,7 +7897,7 @@ lightningcss-darwin-arm64@1.32.0:
   resolved "https://mirrors.huaweicloud.com/repository/npm/lightningcss-darwin-arm64/-/lightningcss-darwin-arm64-1.32.0.tgz"
   integrity sha512-RzeG9Ju5bag2Bv1/lwlVJvBE3q6TtXskdZLLCyfg5pt+HLz9BqlICO7LZM7VHNTTn/5PRhHFBSjk5lc4cmscPQ==
 
-lightningcss@^1.21.0, lightningcss@^1.32.0:
+lightningcss@^1.32.0:
   version "1.32.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/lightningcss/-/lightningcss-1.32.0.tgz"
   integrity sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ==
@@ -9410,7 +9423,7 @@ oxfmt@0.52.0:
     "@oxfmt/binding-win32-ia32-msvc" "0.52.0"
     "@oxfmt/binding-win32-x64-msvc" "0.52.0"
 
-oxlint-tsgolint@>=0.22.1, oxlint-tsgolint@0.23.0:
+oxlint-tsgolint@0.23.0:
   version "0.23.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/oxlint-tsgolint/-/oxlint-tsgolint-0.23.0.tgz"
   integrity sha512-3mBv3CoPbh8dFbzfDGIWa2ytZjn2v+3EX4aKRXjIhsoGFzG8GCjfRirz3rwZf1wYbZzsNLTSgpw8VjQuWdp/jA==
@@ -9655,7 +9668,7 @@ picomatch@^2.3.1:
   resolved "https://mirrors.huaweicloud.com/repository/npm/picomatch/-/picomatch-2.3.2.tgz"
   integrity sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA==
 
-"picomatch@^3 || ^4", picomatch@^4.0.2, picomatch@^4.0.3, picomatch@^4.0.4:
+picomatch@^4.0.2, picomatch@^4.0.3, picomatch@^4.0.4:
   version "4.0.4"
   resolved "https://mirrors.huaweicloud.com/repository/npm/picomatch/-/picomatch-4.0.4.tgz"
   integrity sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==
@@ -9693,8 +9706,10 @@ playwright-core@1.60.0:
   resolved "https://mirrors.huaweicloud.com/repository/npm/playwright-core/-/playwright-core-1.60.0.tgz"
   integrity sha512-9bW6zvX/m0lEbgTKJ6YppOKx8H3VOPBMOCFh2irXFOT4BbHgrx5hPjwJYLT40Lu+4qtD36qKc/Hn56StUW57IA==
 
-playwright@*:
+playwright@^1.60.0:
   version "1.60.0"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/playwright/-/playwright-1.60.0.tgz"
+  integrity sha512-hheHdokM8cdqCb0lcE3s+zT4t4W+vvjpGxsZlDnikarzx8tSzMebh3UiFtgqwFwnTnjYQcsyMF8ei2mCO/tpeA==
   dependencies:
     playwright-core "1.60.0"
   optionalDependencies:
@@ -10170,7 +10185,7 @@ react-devtools-core@^6.1.5:
     shell-quote "^1.6.1"
     ws "^7"
 
-"react-dom@^18.0.0 || ^19.0.0", "react-dom@^18.3.1 || ^19.0.0", react-dom@^19.2.3:
+react-dom@^19.2.3:
   version "19.2.5"
   resolved "https://mirrors.huaweicloud.com/repository/npm/react-dom/-/react-dom-19.2.5.tgz"
   integrity sha512-J5bAZz+DXMMwW/wV3xzKke59Af6CHY7G4uYLN1OvBcKEsWOs4pQExj86BBKamxl/Ik5bx9whOrvBlSDfWzgSag==
@@ -10196,44 +10211,6 @@ react-native-webrtc@^124.0.6:
     debug "4.3.4"
     event-target-shim "6.0.2"
 
-react-native@>=0.60.0, react-native@0.85.3:
-  version "0.85.3"
-  resolved "https://mirrors.huaweicloud.com/repository/npm/react-native/-/react-native-0.85.3.tgz"
-  integrity sha512-HN/fGC+3nZVcDNcw7gfbM/DuqZAvI9Mz+/SxuhODaua4JY0BPzhfTzWXRyTR4mRgMHmShTPpH2PYMTxvZrsdZA==
-  dependencies:
-    "@react-native/assets-registry" "0.85.3"
-    "@react-native/codegen" "0.85.3"
-    "@react-native/community-cli-plugin" "0.85.3"
-    "@react-native/gradle-plugin" "0.85.3"
-    "@react-native/js-polyfills" "0.85.3"
-    "@react-native/normalize-colors" "0.85.3"
-    "@react-native/virtualized-lists" "0.85.3"
-    abort-controller "^3.0.0"
-    anser "^1.4.9"
-    ansi-regex "^5.0.0"
-    babel-plugin-syntax-hermes-parser "0.33.3"
-    base64-js "^1.5.1"
-    commander "^12.0.0"
-    flow-enums-runtime "^0.0.6"
-    hermes-compiler "250829098.0.10"
-    invariant "^2.2.4"
-    memoize-one "^5.0.0"
-    metro-runtime "^0.84.3"
-    metro-source-map "^0.84.3"
-    nullthrows "^1.1.1"
-    pretty-format "^29.7.0"
-    promise "^8.3.0"
-    react-devtools-core "^6.1.5"
-    react-refresh "^0.14.0"
-    regenerator-runtime "^0.13.2"
-    scheduler "0.27.0"
-    semver "^7.1.3"
-    stacktrace-parser "^0.1.10"
-    tinyglobby "^0.2.15"
-    whatwg-fetch "^3.0.0"
-    ws "^7.5.10"
-    yargs "^17.6.2"
-
 react-refresh@^0.14.0:
   version "0.14.2"
   resolved "https://mirrors.huaweicloud.com/repository/npm/react-refresh/-/react-refresh-0.14.2.tgz"
@@ -10244,13 +10221,10 @@ react-refresh@^0.17.0:
   resolved "https://mirrors.huaweicloud.com/repository/npm/react-refresh/-/react-refresh-0.17.0.tgz"
   integrity sha512-z6F7K9bV85EfseRCp2bzrpyQ0Gkw1uLoCel9XBVWPg/TjRj94SkJzUTGfOa4bs7iJvBWtQG0Wq7wnI0syw3EBQ==
 
-react@*, "react@^18.0.0 || ^19.0.0", "react@^18.3.1 || ^19.0.0", react@^19.2.3, react@^19.2.5:
+react@^19.2.3:
   version "19.2.5"
   resolved "https://mirrors.huaweicloud.com/repository/npm/react/-/react-19.2.5.tgz"
   integrity sha512-llUJLzz1zTUBrskt2pwZgLq59AemifIftw4aB7JxOqf1HY2FDaGDxgwpAPVzHU1kdWabH7FauP4i1oEeer2WCA==
-
-react@^19.2.4:
-  version "19.2.4"
 
 readable-stream@^3.0.2, readable-stream@^3.1.1, readable-stream@^3.4.0, readable-stream@^3.6.0, readable-stream@3:
   version "3.6.2"
@@ -10559,7 +10533,7 @@ rolldown@1.0.2:
     "@rolldown/binding-win32-arm64-msvc" "1.0.2"
     "@rolldown/binding-win32-x64-msvc" "1.0.2"
 
-rollup@^1.20.0||^2.0.0||^3.0.0||^4.0.0, rollup@^4.34.9:
+rollup@^4.34.9:
   version "4.60.2"
   resolved "https://mirrors.huaweicloud.com/repository/npm/rollup/-/rollup-4.60.2.tgz"
   integrity sha512-J9qZyW++QK/09NyN/zeO0dG/1GdGfyp9lV8ajHnRVLfo/uFsbji5mHnDgn/qYdUHyCkM2N+8VyspgZclfAh0eQ==
@@ -10798,7 +10772,7 @@ shiki@^3.0.0:
     "@shikijs/vscode-textmate" "^10.0.2"
     "@types/hast" "^3.0.4"
 
-shiki@>=1.0.0, shiki@4.1.0:
+shiki@4.1.0:
   version "4.1.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/shiki/-/shiki-4.1.0.tgz"
   integrity sha512-l/ABZPUR5v70jI10EzqfMS/I96vjSGv2y0ihUV+WYFzv0EfvW4s54m0Lg8wCrrL+2IkwBzFTuxkZjPf8b2NX9Q==
@@ -11232,7 +11206,7 @@ teex@^1.0.1:
   dependencies:
     streamx "^2.12.5"
 
-terser@^5.15.0, terser@^5.16.0:
+terser@^5.15.0:
   version "5.47.1"
   resolved "https://mirrors.huaweicloud.com/repository/npm/terser/-/terser-5.47.1.tgz"
   integrity sha512-tPbLXTI6ohPASb/1YViL428oEHu6/qv1OxqYnfaonVCFHqx4+wCd95pHrQWsL5X4pl90CTyW9piSAsS2L0VoMw==
@@ -11417,6 +11391,11 @@ ts-algebra@^2.0.0:
   resolved "https://mirrors.huaweicloud.com/repository/npm/ts-algebra/-/ts-algebra-2.0.0.tgz"
   integrity sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw==
 
+ts-custom-error@^3.2.1:
+  version "3.3.1"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/ts-custom-error/-/ts-custom-error-3.3.1.tgz"
+  integrity sha512-5OX1tzOjxWEgsr/YEUWSuPrQ00deKLh6D7OTWcvNHm12/7QPyRh8SYpyWvA4IZv8H/+GQWQEh/kwo95Q9OVW1A==
+
 tsdown@0.22.1:
   version "0.22.1"
   resolved "https://mirrors.huaweicloud.com/repository/npm/tsdown/-/tsdown-0.22.1.tgz"
@@ -11456,7 +11435,16 @@ tslog@4.10.2:
 tsscmp@^1.0.6:
   version "1.0.6"
 
-tsx@*, tsx@^4.19.0, tsx@^4.21.0, tsx@^4.22.0, tsx@^4.8.1, tsx@4.22.3:
+tsx@^4.19.0, tsx@^4.21.0:
+  version "4.22.3"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/tsx/-/tsx-4.22.3.tgz"
+  integrity sha512-mdoNxBC/cSQObGGVQ5Bpn5i+yv7j68gk3Nfm3wFjcJg3Z0Mix9jzAFfP12prmm5eVGmDKtp0yyArrs0Q+8gZHg==
+  dependencies:
+    esbuild "~0.28.0"
+  optionalDependencies:
+    fsevents "~2.3.3"
+
+tsx@^4.22.0, tsx@4.22.3:
   version "4.22.3"
   resolved "https://mirrors.huaweicloud.com/repository/npm/tsx/-/tsx-4.22.3.tgz"
   integrity sha512-mdoNxBC/cSQObGGVQ5Bpn5i+yv7j68gk3Nfm3wFjcJg3Z0Mix9jzAFfP12prmm5eVGmDKtp0yyArrs0Q+8gZHg==
@@ -11503,15 +11491,20 @@ typedarray@^0.0.6:
   resolved "https://mirrors.huaweicloud.com/repository/npm/typedarray/-/typedarray-0.0.6.tgz"
   integrity sha512-/aCDEGatGvZ2BIk+HmLf4ifCJFwvKFNb9/JeZPMulfgFracn9QFcAf5GO8B/mweUjSoblS5In0cWhqpfs/5PQA==
 
-"typescript@^5.0.0 || ^6.0.0", typescript@^6.0.3, typescript@>=5.0.0, typescript@6.0.3:
-  version "6.0.3"
-  resolved "https://mirrors.huaweicloud.com/repository/npm/typescript/-/typescript-6.0.3.tgz"
-  integrity sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==
-
 typescript@^5.7.0:
   version "5.9.3"
   resolved "https://mirrors.huaweicloud.com/repository/npm/typescript/-/typescript-5.9.3.tgz"
   integrity sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==
+
+typescript@^6.0.3:
+  version "6.0.3"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/typescript/-/typescript-6.0.3.tgz"
+  integrity sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==
+
+typescript@6.0.3:
+  version "6.0.3"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/typescript/-/typescript-6.0.3.tgz"
+  integrity sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==
 
 typical@^7.3.0:
   version "7.3.0"
@@ -11592,7 +11585,7 @@ undici@^8.0.3:
   resolved "https://mirrors.huaweicloud.com/repository/npm/undici/-/undici-8.3.0.tgz"
   integrity sha512-TkUDgb6tl7KOGZ+7e8E3d2FYgUQgF6z5YypqjWmixVQSQERFcVrVg0ySADm2LVLRh5ljAaHTCR5Fmz3Q34rB7Q==
 
-"undici@>=8.3.0 <9", undici@8.3.0:
+undici@8.3.0:
   version "8.3.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/undici/-/undici-8.3.0.tgz"
   integrity sha512-TkUDgb6tl7KOGZ+7e8E3d2FYgUQgF6z5YypqjWmixVQSQERFcVrVg0ySADm2LVLRh5ljAaHTCR5Fmz3Q34rB7Q==
@@ -11676,7 +11669,7 @@ unpipe@~1.0.0:
   resolved "https://mirrors.huaweicloud.com/repository/npm/unpipe/-/unpipe-1.0.0.tgz"
   integrity sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==
 
-unrun@*, unrun@0.3.0:
+unrun@0.3.0:
   version "0.3.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/unrun/-/unrun-0.3.0.tgz"
   integrity sha512-5xw2AIVS2WR9Lqhz76qDIQLxipKRidf7Nq+Iz5SZ8shk1OmRlxnc6FyI/1Q2m99WLj6cbqaKFdESfWE99KPzlA==
@@ -11766,7 +11759,7 @@ vite-plugin-wasm@^3.6.0:
   resolved "https://mirrors.huaweicloud.com/repository/npm/vite-plugin-wasm/-/vite-plugin-wasm-3.6.0.tgz"
   integrity sha512-mL/QPziiIA4RAA6DkaZZzOstdwbW5jO4Vz7Zenj0wieKWBlNvIvX5L5ljum9lcUX0ShNfBgCNLKTjNkRVVqcsw==
 
-"vite@^2 || ^3 || ^4 || ^5 || ^6 || ^7 || ^8", "vite@^6.0.0 || ^7.0.0 || ^8.0.0", vite@>=2.8:
+"vite@^6.0.0 || ^7.0.0 || ^8.0.0":
   version "8.0.10"
   resolved "https://mirrors.huaweicloud.com/repository/npm/vite/-/vite-8.0.10.tgz"
   integrity sha512-rZuUu9j6J5uotLDs+cAA4O5H4K1SfPliUlQwqa6YEwSrWDZzP4rhm00oJR5snMewjxF5V/K3D4kctsUTsIU9Mw==
@@ -11779,7 +11772,7 @@ vite-plugin-wasm@^3.6.0:
   optionalDependencies:
     fsevents "~2.3.3"
 
-"vite@^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0", vite@^6.0.0:
+vite@^6.0.0:
   version "6.4.2"
   resolved "https://mirrors.huaweicloud.com/repository/npm/vite/-/vite-6.4.2.tgz"
   integrity sha512-2N/55r4JDJ4gdrCvGgINMy+HH3iRpNIz8K6SFwVsA+JbQScLiC+clmAxBgwiSPgcG9U15QmvqCGWzMbqda5zGQ==
@@ -11793,7 +11786,7 @@ vite-plugin-wasm@^3.6.0:
   optionalDependencies:
     fsevents "~2.3.3"
 
-vitest@^4.1.5, vitest@>=3, vitest@4.1.5:
+vitest@^4.1.5:
   version "4.1.5"
   resolved "https://mirrors.huaweicloud.com/repository/npm/vitest/-/vitest-4.1.5.tgz"
   integrity sha512-9Xx1v3/ih3m9hN+SbfkUyy0JAs72ap3r7joc87XL6jwF0jGg6mFBvQ1SrwaX+h8BlkX6Hz9shdd1uo6AF+ZGpg==
@@ -12051,7 +12044,7 @@ ws@^7.5.10:
   resolved "https://mirrors.huaweicloud.com/repository/npm/ws/-/ws-7.5.10.tgz"
   integrity sha512-+dbF1tHwZpXcbOJdVOkzLDxZP1ailvSxM6ZweXTegylPny803bFhA+vqBYw4s31NSAk4S2Qz+AKXK9a4wkdjcQ==
 
-ws@^8, ws@^8.11.0, ws@^8.13.0, ws@^8.18.0, ws@^8.18.3, ws@^8.19.0, ws@^8.2.0, ws@^8.20.0, ws@8.21.0:
+ws@^8, ws@^8.11.0, ws@^8.13.0, ws@^8.18.0, ws@^8.18.3, ws@^8.19.0, ws@^8.20.0, ws@8.21.0:
   version "8.21.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/ws/-/ws-8.21.0.tgz"
   integrity sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==
@@ -12151,7 +12144,12 @@ yallist@^5.0.0:
   resolved "https://mirrors.huaweicloud.com/repository/npm/yallist/-/yallist-5.0.0.tgz"
   integrity sha512-YgvUTfwqyc7UXVMrB+SImsVYSmTS8X/tSrtdNZMImM+n7+QTriRXyXim0mBrTXNeqzVF0KWGgHPeiyViFFrNDw==
 
-yaml@^2.0.0, yaml@^2.4.2, yaml@^2.6.1, yaml@^2.8.1, yaml@^2.8.4, yaml@2.9.0:
+yaml@^2.0.0, yaml@^2.8.4, yaml@2.9.0:
+  version "2.9.0"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/yaml/-/yaml-2.9.0.tgz"
+  integrity sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==
+
+yaml@^2.6.1, yaml@^2.8.1:
   version "2.9.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/yaml/-/yaml-2.9.0.tgz"
   integrity sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==
@@ -12232,7 +12230,7 @@ zod-to-json-schema@^3.25.0, zod-to-json-schema@^3.25.1:
   resolved "https://mirrors.huaweicloud.com/repository/npm/zod-to-json-schema/-/zod-to-json-schema-3.25.2.tgz"
   integrity sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==
 
-"zod@^3.25 || ^4.0", "zod@^3.25.0 || ^4.0.0", "zod@^3.25.28 || ^4", zod@^4.3.6:
+"zod@^3.25 || ^4.0", "zod@^3.25.0 || ^4.0.0", zod@^4.3.6:
   version "4.3.6"
   resolved "https://mirrors.huaweicloud.com/repository/npm/zod/-/zod-4.3.6.tgz"
   integrity sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==
@@ -12242,7 +12240,7 @@ zod@^3.25.76:
   resolved "https://mirrors.huaweicloud.com/repository/npm/zod/-/zod-3.25.76.tgz"
   integrity sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==
 
-zod@^4.0.0, zod@^4.4.3, zod@4.4.3:
+zod@^4.4.3, zod@4.4.3:
   version "4.4.3"
   resolved "https://mirrors.huaweicloud.com/repository/npm/zod/-/zod-4.4.3.tgz"
   integrity sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==

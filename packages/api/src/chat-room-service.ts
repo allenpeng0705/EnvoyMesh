@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type {
   ChatAttachment,
   ChatMessage,
@@ -343,7 +342,7 @@ export async function createChatRoomImpl(
   }
 
   const room: ChatRoomRecord = {
-    roomId: randomUUID(),
+    roomId: crypto.randomUUID(),
     title: trimmedTitle,
     creatorOwnerId: selfOwnerId,
     memberOwnerIds: [selfOwnerId, ...uniqueMembers],

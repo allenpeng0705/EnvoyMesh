@@ -54,7 +54,7 @@ import type {
   IpfsEngineStatus,
   RagIndexStatus,
 } from "@envoymesh/api";
-import { isChatRoomThreadKey, ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
+import { isChatRoomThreadKey, ENVOY_AI_THREAD_KEY, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
 
 type InitNodeOptions = {
@@ -209,6 +209,82 @@ export interface NodeServiceClient {
   closeTerminalSession(params: import("@envoymesh/api").CloseTerminalSessionParams): Promise<void>;
   renameTerminalSession(params: import("@envoymesh/api").RenameTerminalSessionParams): Promise<import("@envoymesh/api").TerminalSessionSummary>;
   terminalAttach(params: import("@envoymesh/api").TerminalAttachParams): Promise<import("@envoymesh/api").TerminalAttachResult>;
+  terminalRunFromNaturalLanguage(
+    params: import("@envoymesh/api").TerminalRunFromNaturalLanguageParams,
+  ): Promise<import("@envoymesh/api").TerminalCommandProposal>;
+  terminalExecuteProposal(params: import("@envoymesh/api").TerminalExecuteProposalParams): Promise<void>;
+  terminalSetAssistModelOverride(
+    params: import("@envoymesh/api").TerminalSetAssistModelOverrideParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState>;
+  terminalGetAssistState(sessionId: string): Promise<import("@envoymesh/api").TerminalAssistState>;
+  terminalExplainScrollback(
+    params: import("@envoymesh/api").TerminalExplainScrollbackParams,
+  ): Promise<import("@envoymesh/api").TerminalExplainScrollbackResult>;
+  terminalSuggestCommand(
+    params: import("@envoymesh/api").TerminalSuggestCommandParams,
+  ): Promise<import("@envoymesh/api").TerminalSuggestCommandResult>;
+  terminalObserveStep(
+    params: import("@envoymesh/api").TerminalObserveStepParams,
+  ): Promise<import("@envoymesh/api").TerminalObserveStepResult>;
+  terminalSetInlineSuggestEnabled(
+    params: import("@envoymesh/api").TerminalSetInlineSuggestParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState>;
+  terminalOpenClawPlan(
+    params: import("@envoymesh/api").TerminalOpenClawPlanParams,
+  ): Promise<import("@envoymesh/api").TerminalOpenClawPlanResult>;
+  terminalRunPlanStep(
+    params: import("@envoymesh/api").TerminalRunPlanStepParams,
+  ): Promise<import("@envoymesh/api").TerminalCommandProposal>;
+  terminalEnablePrepareMode(
+    params: import("@envoymesh/api").TerminalEnablePrepareModeParams,
+  ): Promise<import("@envoymesh/api").TerminalEnablePrepareModeResult>;
+  terminalWatchStep(
+    params: import("@envoymesh/api").TerminalWatchStepParams,
+  ): Promise<import("@envoymesh/api").TerminalWatchStepResult>;
+  terminalPinContextSession(
+    params: import("@envoymesh/api").TerminalPinContextSessionParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState>;
+  terminalDetectFailure(
+    params: import("@envoymesh/api").TerminalDetectFailureParams,
+  ): Promise<import("@envoymesh/api").TerminalFailureDetection>;
+  terminalSuggestFixFromFailure(
+    params: import("@envoymesh/api").TerminalSuggestFixParams,
+  ): Promise<import("@envoymesh/api").TerminalCommandProposal>;
+  terminalStartGoalLoop(
+    params: import("@envoymesh/api").TerminalStartGoalLoopParams,
+  ): Promise<import("@envoymesh/api").TerminalGoalLoopStepResult>;
+  terminalAdvanceGoalLoop(
+    params: import("@envoymesh/api").TerminalAdvanceGoalLoopParams,
+  ): Promise<import("@envoymesh/api").TerminalGoalLoopStepResult>;
+  terminalCancelGoalLoop(
+    params: import("@envoymesh/api").TerminalCancelGoalLoopParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState>;
+  terminalClearResumeGoal(sessionId: string): Promise<import("@envoymesh/api").TerminalAssistState>;
+  terminalSendContextToAssistant(
+    params: import("@envoymesh/api").TerminalSendContextToAssistantParams,
+  ): Promise<import("@envoymesh/api").TerminalSendContextToAssistantResult>;
+  terminalUpdatePlanProgress(
+    params: import("@envoymesh/api").TerminalUpdatePlanProgressParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState>;
+  terminalGetScrollbackPreview(
+    params: import("@envoymesh/api").TerminalGetScrollbackPreviewParams,
+  ): Promise<import("@envoymesh/api").TerminalGetScrollbackPreviewResult>;
+  terminalResumeGoalLoop(
+    params: import("@envoymesh/api").TerminalResumeGoalLoopParams,
+  ): Promise<import("@envoymesh/api").TerminalGoalLoopStepResult>;
+  terminalEnableExecPane(
+    params: import("@envoymesh/api").TerminalEnableExecPaneParams,
+  ): Promise<import("@envoymesh/api").TerminalEnableExecPaneResult>;
+  terminalSetBackgroundWatch(
+    params: import("@envoymesh/api").TerminalSetBackgroundWatchParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState>;
+  terminalClearBackgroundWatch(
+    params: import("@envoymesh/api").TerminalClearBackgroundWatchParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState>;
+  openInHerdr(params?: import("@envoymesh/api").OpenInHerdrParams): Promise<import("@envoymesh/api").OpenInHerdrResult>;
+  terminalGetHerdrExportHint(
+    params: import("@envoymesh/api").TerminalHerdrExportHintParams,
+  ): Promise<import("@envoymesh/api").TerminalHerdrExportHintResult>;
   homeTerminalWsOpen(params: import("@envoymesh/api").HomeTerminalWsOpenParams): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult>;
   homeTerminalWsSend(params: import("@envoymesh/api").HomeTerminalWsSendParams): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult>;
   homeTerminalWsClose(): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult>;
@@ -648,6 +724,144 @@ function createWsNodeServiceClient(
     async terminalAttach(params: import("@envoymesh/api").TerminalAttachParams) {
       return wsClient.rpc("terminalAttach", params as unknown as Record<string, unknown>) as Promise<
         import("@envoymesh/api").TerminalAttachResult
+      >;
+    },
+    async terminalRunFromNaturalLanguage(params: import("@envoymesh/api").TerminalRunFromNaturalLanguageParams) {
+      return wsClient.rpc("terminalRunFromNaturalLanguage", params as unknown as Record<string, unknown>, {
+        timeoutMs: TERMINAL_ASSIST_RPC_TIMEOUT_MS,
+      }) as Promise<import("@envoymesh/api").TerminalCommandProposal>;
+    },
+    async terminalExecuteProposal(params: import("@envoymesh/api").TerminalExecuteProposalParams) {
+      return wsClient.rpc("terminalExecuteProposal", params as unknown as Record<string, unknown>);
+    },
+    async terminalSetAssistModelOverride(params: import("@envoymesh/api").TerminalSetAssistModelOverrideParams) {
+      return wsClient.rpc("terminalSetAssistModelOverride", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalAssistState
+      >;
+    },
+    async terminalGetAssistState(sessionId: string) {
+      return wsClient.rpc("terminalGetAssistState", { sessionId }) as Promise<
+        import("@envoymesh/api").TerminalAssistState
+      >;
+    },
+    async terminalExplainScrollback(params: import("@envoymesh/api").TerminalExplainScrollbackParams) {
+      return wsClient.rpc("terminalExplainScrollback", params as unknown as Record<string, unknown>, {
+        timeoutMs: TERMINAL_ASSIST_RPC_TIMEOUT_MS,
+      }) as Promise<import("@envoymesh/api").TerminalExplainScrollbackResult>;
+    },
+    async terminalSuggestCommand(params: import("@envoymesh/api").TerminalSuggestCommandParams) {
+      return wsClient.rpc("terminalSuggestCommand", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalSuggestCommandResult
+      >;
+    },
+    async terminalObserveStep(params: import("@envoymesh/api").TerminalObserveStepParams) {
+      return wsClient.rpc("terminalObserveStep", params as unknown as Record<string, unknown>, {
+        timeoutMs: TERMINAL_ASSIST_RPC_TIMEOUT_MS,
+      }) as Promise<import("@envoymesh/api").TerminalObserveStepResult>;
+    },
+    async terminalSetInlineSuggestEnabled(params: import("@envoymesh/api").TerminalSetInlineSuggestParams) {
+      return wsClient.rpc("terminalSetInlineSuggestEnabled", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalAssistState
+      >;
+    },
+    async terminalOpenClawPlan(params: import("@envoymesh/api").TerminalOpenClawPlanParams) {
+      return wsClient.rpc("terminalOpenClawPlan", params as unknown as Record<string, unknown>, {
+        timeoutMs: TERMINAL_ASSIST_RPC_TIMEOUT_MS,
+      }) as Promise<import("@envoymesh/api").TerminalOpenClawPlanResult>;
+    },
+    async terminalRunPlanStep(params: import("@envoymesh/api").TerminalRunPlanStepParams) {
+      return wsClient.rpc("terminalRunPlanStep", params as unknown as Record<string, unknown>, {
+        timeoutMs: TERMINAL_ASSIST_RPC_TIMEOUT_MS,
+      }) as Promise<import("@envoymesh/api").TerminalCommandProposal>;
+    },
+    async terminalEnablePrepareMode(params: import("@envoymesh/api").TerminalEnablePrepareModeParams) {
+      return wsClient.rpc("terminalEnablePrepareMode", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalEnablePrepareModeResult
+      >;
+    },
+    async terminalWatchStep(params: import("@envoymesh/api").TerminalWatchStepParams) {
+      return wsClient.rpc("terminalWatchStep", params as unknown as Record<string, unknown>, {
+        timeoutMs: TERMINAL_ASSIST_RPC_TIMEOUT_MS,
+      }) as Promise<import("@envoymesh/api").TerminalWatchStepResult>;
+    },
+    async terminalPinContextSession(params: import("@envoymesh/api").TerminalPinContextSessionParams) {
+      return wsClient.rpc("terminalPinContextSession", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalAssistState
+      >;
+    },
+    async terminalDetectFailure(params: import("@envoymesh/api").TerminalDetectFailureParams) {
+      return wsClient.rpc("terminalDetectFailure", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalFailureDetection
+      >;
+    },
+    async terminalSuggestFixFromFailure(params: import("@envoymesh/api").TerminalSuggestFixParams) {
+      return wsClient.rpc("terminalSuggestFixFromFailure", params as unknown as Record<string, unknown>, {
+        timeoutMs: TERMINAL_ASSIST_RPC_TIMEOUT_MS,
+      }) as Promise<import("@envoymesh/api").TerminalCommandProposal>;
+    },
+    async terminalStartGoalLoop(params: import("@envoymesh/api").TerminalStartGoalLoopParams) {
+      return wsClient.rpc("terminalStartGoalLoop", params as unknown as Record<string, unknown>, {
+        timeoutMs: TERMINAL_ASSIST_RPC_TIMEOUT_MS,
+      }) as Promise<import("@envoymesh/api").TerminalGoalLoopStepResult>;
+    },
+    async terminalAdvanceGoalLoop(params: import("@envoymesh/api").TerminalAdvanceGoalLoopParams) {
+      return wsClient.rpc("terminalAdvanceGoalLoop", params as unknown as Record<string, unknown>, {
+        timeoutMs: TERMINAL_ASSIST_RPC_TIMEOUT_MS,
+      }) as Promise<import("@envoymesh/api").TerminalGoalLoopStepResult>;
+    },
+    async terminalCancelGoalLoop(params: import("@envoymesh/api").TerminalCancelGoalLoopParams) {
+      return wsClient.rpc("terminalCancelGoalLoop", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalAssistState
+      >;
+    },
+    async terminalClearResumeGoal(sessionId: string) {
+      return wsClient.rpc("terminalClearResumeGoal", { sessionId }) as Promise<
+        import("@envoymesh/api").TerminalAssistState
+      >;
+    },
+    async terminalSendContextToAssistant(params: import("@envoymesh/api").TerminalSendContextToAssistantParams) {
+      return wsClient.rpc("terminalSendContextToAssistant", params as unknown as Record<string, unknown>, {
+        timeoutMs: 180_000,
+      }) as Promise<import("@envoymesh/api").TerminalSendContextToAssistantResult>;
+    },
+    async terminalUpdatePlanProgress(params: import("@envoymesh/api").TerminalUpdatePlanProgressParams) {
+      return wsClient.rpc("terminalUpdatePlanProgress", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalAssistState
+      >;
+    },
+    async terminalGetScrollbackPreview(params: import("@envoymesh/api").TerminalGetScrollbackPreviewParams) {
+      return wsClient.rpc("terminalGetScrollbackPreview", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalGetScrollbackPreviewResult
+      >;
+    },
+    async terminalResumeGoalLoop(params: import("@envoymesh/api").TerminalResumeGoalLoopParams) {
+      return wsClient.rpc("terminalResumeGoalLoop", params as unknown as Record<string, unknown>, {
+        timeoutMs: TERMINAL_ASSIST_RPC_TIMEOUT_MS,
+      }) as Promise<import("@envoymesh/api").TerminalGoalLoopStepResult>;
+    },
+    async terminalEnableExecPane(params: import("@envoymesh/api").TerminalEnableExecPaneParams) {
+      return wsClient.rpc("terminalEnableExecPane", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalEnableExecPaneResult
+      >;
+    },
+    async terminalSetBackgroundWatch(params: import("@envoymesh/api").TerminalSetBackgroundWatchParams) {
+      return wsClient.rpc("terminalSetBackgroundWatch", params as unknown as Record<string, unknown>, {
+        timeoutMs: 120_000,
+      }) as Promise<import("@envoymesh/api").TerminalAssistState>;
+    },
+    async terminalClearBackgroundWatch(params: import("@envoymesh/api").TerminalClearBackgroundWatchParams) {
+      return wsClient.rpc("terminalClearBackgroundWatch", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalAssistState
+      >;
+    },
+    async openInHerdr(params?: import("@envoymesh/api").OpenInHerdrParams) {
+      return wsClient.rpc("openInHerdr", (params ?? {}) as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").OpenInHerdrResult
+      >;
+    },
+    async terminalGetHerdrExportHint(params: import("@envoymesh/api").TerminalHerdrExportHintParams) {
+      return wsClient.rpc("terminalGetHerdrExportHint", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").TerminalHerdrExportHintResult
       >;
     },
     async homeTerminalWsOpen(params: import("@envoymesh/api").HomeTerminalWsOpenParams) {

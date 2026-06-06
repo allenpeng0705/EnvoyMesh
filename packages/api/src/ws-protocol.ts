@@ -240,6 +240,34 @@ export type RpcMethods =
   | "closeTerminalSession"
   | "renameTerminalSession"
   | "terminalAttach"
+  | "terminalRunFromNaturalLanguage"
+  | "terminalExecuteProposal"
+  | "terminalSetAssistModelOverride"
+  | "terminalGetAssistState"
+  | "terminalExplainScrollback"
+  | "terminalSuggestCommand"
+  | "terminalObserveStep"
+  | "terminalSetInlineSuggestEnabled"
+  | "terminalOpenClawPlan"
+  | "terminalRunPlanStep"
+  | "terminalEnablePrepareMode"
+  | "terminalWatchStep"
+  | "terminalPinContextSession"
+  | "terminalDetectFailure"
+  | "terminalSuggestFixFromFailure"
+  | "terminalStartGoalLoop"
+  | "terminalAdvanceGoalLoop"
+  | "terminalCancelGoalLoop"
+  | "terminalClearResumeGoal"
+  | "terminalSendContextToAssistant"
+  | "terminalUpdatePlanProgress"
+  | "terminalGetScrollbackPreview"
+  | "terminalResumeGoalLoop"
+  | "terminalEnableExecPane"
+  | "terminalSetBackgroundWatch"
+  | "terminalClearBackgroundWatch"
+  | "openInHerdr"
+  | "terminalGetHerdrExportHint"
   | "homeTerminalWsOpen"
   | "homeTerminalWsSend"
   | "homeTerminalWsClose"
@@ -307,6 +335,21 @@ export interface NodeConfig {
   bootstrapPresets: string[];
   /** Model provider configuration. Default: mock provider only. */
   modelProviders: ModelProviderConfig;
+  /** Optional model name override for terminal assist (Phase 30I). Falls back to modelProviders.modelName. */
+  terminalAssistModelName?: string;
+  /** Regex patterns — matching commands are treated as safe (owner allowlist). */
+  terminalCommandAllowPatterns?: readonly string[];
+  /** Regex patterns — matching commands are treated as destructive (owner denylist). */
+  terminalCommandDenyPatterns?: readonly string[];
+  terminalCommandDestructivePatterns?: readonly string[];
+  /** Default Agent mode when opening a terminal session. */
+  terminalAgentModeDefault?: boolean;
+  /** Auto-run policy for safe read-only proposals. Default: always-confirm. */
+  terminalAutoRunPolicy?: import("./terminal-agent.js").TerminalAutoRunPolicy;
+  /** Enable inline command suggestions in Manual mode by default. */
+  terminalInlineSuggestEnabled?: boolean;
+  /** Opt-in /envoy intercept in Manual xterm (Phase 31D). */
+  terminalXtermSlashIntercept?: boolean;
   /** Enable LLM-assisted chat drafts. Default: false (disabled). */
   chatAssistEnabled: boolean;
   /**
@@ -1007,6 +1050,16 @@ export interface UpdateNodeConfigParams {
   /** Owner-signed preferences (validated server-side). When set, overrides plain text from signature payload. */
   friendMatchingPreferencesSigned?: FriendMatchingPreferencesPayload;
   maxConnections?: number;
+  /** Optional model name for terminal assist LLM calls. */
+  terminalAssistModelName?: string;
+  terminalCommandAllowPatterns?: readonly string[];
+  terminalCommandDenyPatterns?: readonly string[];
+  /** Owner-extended destructive regex patterns (in addition to built-in list). */
+  terminalCommandDestructivePatterns?: readonly string[];
+  terminalAgentModeDefault?: boolean;
+  terminalAutoRunPolicy?: import("./terminal-agent.js").TerminalAutoRunPolicy;
+  terminalInlineSuggestEnabled?: boolean;
+  terminalXtermSlashIntercept?: boolean;
   mdnsIntervalMs?: number;
   capabilityDiscoveryIntervalMs?: number;
   lazyCapabilityDiscovery?: boolean;

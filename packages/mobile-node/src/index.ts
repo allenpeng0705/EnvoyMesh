@@ -963,6 +963,162 @@ export class MobileNode implements NodeService {
     return this._homeRemoteCall("terminalAttach", params as unknown as Record<string, unknown>);
   }
 
+  terminalRunFromNaturalLanguage(
+    params: import("@envoymesh/api").TerminalRunFromNaturalLanguageParams,
+  ): Promise<import("@envoymesh/api").TerminalCommandProposal> {
+    return this._homeRemoteCall("terminalRunFromNaturalLanguage", params as unknown as Record<string, unknown>);
+  }
+
+  terminalExecuteProposal(params: import("@envoymesh/api").TerminalExecuteProposalParams): Promise<void> {
+    return this._homeRemoteCall("terminalExecuteProposal", params as unknown as Record<string, unknown>);
+  }
+
+  terminalSetAssistModelOverride(
+    params: import("@envoymesh/api").TerminalSetAssistModelOverrideParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._homeRemoteCall("terminalSetAssistModelOverride", params as unknown as Record<string, unknown>);
+  }
+
+  terminalGetAssistState(sessionId: string): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._homeRemoteCall("terminalGetAssistState", { sessionId });
+  }
+
+  terminalExplainScrollback(
+    params: import("@envoymesh/api").TerminalExplainScrollbackParams,
+  ): Promise<import("@envoymesh/api").TerminalExplainScrollbackResult> {
+    return this._homeRemoteCall("terminalExplainScrollback", params as unknown as Record<string, unknown>);
+  }
+
+  terminalSuggestCommand(
+    params: import("@envoymesh/api").TerminalSuggestCommandParams,
+  ): Promise<import("@envoymesh/api").TerminalSuggestCommandResult> {
+    return this._homeRemoteCall("terminalSuggestCommand", params as unknown as Record<string, unknown>);
+  }
+
+  terminalObserveStep(
+    params: import("@envoymesh/api").TerminalObserveStepParams,
+  ): Promise<import("@envoymesh/api").TerminalObserveStepResult> {
+    return this._homeRemoteCall("terminalObserveStep", params as unknown as Record<string, unknown>);
+  }
+
+  terminalSetInlineSuggestEnabled(
+    params: import("@envoymesh/api").TerminalSetInlineSuggestParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._homeRemoteCall("terminalSetInlineSuggestEnabled", params as unknown as Record<string, unknown>);
+  }
+
+  terminalOpenClawPlan(
+    params: import("@envoymesh/api").TerminalOpenClawPlanParams,
+  ): Promise<import("@envoymesh/api").TerminalOpenClawPlanResult> {
+    return this._homeRemoteCall("terminalOpenClawPlan", params as unknown as Record<string, unknown>);
+  }
+
+  terminalRunPlanStep(
+    params: import("@envoymesh/api").TerminalRunPlanStepParams,
+  ): Promise<import("@envoymesh/api").TerminalCommandProposal> {
+    return this._homeRemoteCall("terminalRunPlanStep", params as unknown as Record<string, unknown>);
+  }
+
+  terminalEnablePrepareMode(
+    params: import("@envoymesh/api").TerminalEnablePrepareModeParams,
+  ): Promise<import("@envoymesh/api").TerminalEnablePrepareModeResult> {
+    return this._homeRemoteCall("terminalEnablePrepareMode", params as unknown as Record<string, unknown>);
+  }
+
+  terminalWatchStep(
+    params: import("@envoymesh/api").TerminalWatchStepParams,
+  ): Promise<import("@envoymesh/api").TerminalWatchStepResult> {
+    return this._homeRemoteCall("terminalWatchStep", params as unknown as Record<string, unknown>);
+  }
+
+  terminalPinContextSession(
+    params: import("@envoymesh/api").TerminalPinContextSessionParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._homeRemoteCall("terminalPinContextSession", params as unknown as Record<string, unknown>);
+  }
+
+  terminalDetectFailure(
+    params: import("@envoymesh/api").TerminalDetectFailureParams,
+  ): Promise<import("@envoymesh/api").TerminalFailureDetection> {
+    return this._homeRemoteCall("terminalDetectFailure", params as unknown as Record<string, unknown>);
+  }
+
+  terminalSuggestFixFromFailure(
+    params: import("@envoymesh/api").TerminalSuggestFixParams,
+  ): Promise<import("@envoymesh/api").TerminalCommandProposal> {
+    return this._homeRemoteCall("terminalSuggestFixFromFailure", params as unknown as Record<string, unknown>);
+  }
+
+  terminalStartGoalLoop(
+    params: import("@envoymesh/api").TerminalStartGoalLoopParams,
+  ): Promise<import("@envoymesh/api").TerminalGoalLoopStepResult> {
+    return this._homeRemoteCall("terminalStartGoalLoop", params as unknown as Record<string, unknown>);
+  }
+
+  terminalAdvanceGoalLoop(
+    params: import("@envoymesh/api").TerminalAdvanceGoalLoopParams,
+  ): Promise<import("@envoymesh/api").TerminalGoalLoopStepResult> {
+    return this._homeRemoteCall("terminalAdvanceGoalLoop", params as unknown as Record<string, unknown>);
+  }
+
+  terminalCancelGoalLoop(
+    params: import("@envoymesh/api").TerminalCancelGoalLoopParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._homeRemoteCall("terminalCancelGoalLoop", params as unknown as Record<string, unknown>);
+  }
+
+  terminalSendContextToAssistant(
+    params: import("@envoymesh/api").TerminalSendContextToAssistantParams,
+  ): Promise<import("@envoymesh/api").TerminalSendContextToAssistantResult> {
+    return this._homeRemoteCall("terminalSendContextToAssistant", params as unknown as Record<string, unknown>);
+  }
+
+  terminalUpdatePlanProgress(
+    params: import("@envoymesh/api").TerminalUpdatePlanProgressParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._homeRemoteCall("terminalUpdatePlanProgress", params as unknown as Record<string, unknown>);
+  }
+
+  terminalGetScrollbackPreview(
+    params: import("@envoymesh/api").TerminalGetScrollbackPreviewParams,
+  ): Promise<import("@envoymesh/api").TerminalGetScrollbackPreviewResult> {
+    return this._homeRemoteCall("terminalGetScrollbackPreview", params as unknown as Record<string, unknown>);
+  }
+
+  terminalResumeGoalLoop(
+    params: import("@envoymesh/api").TerminalResumeGoalLoopParams,
+  ): Promise<import("@envoymesh/api").TerminalGoalLoopStepResult> {
+    return this._homeRemoteCall("terminalResumeGoalLoop", params as unknown as Record<string, unknown>);
+  }
+
+  terminalEnableExecPane(
+    params: import("@envoymesh/api").TerminalEnableExecPaneParams,
+  ): Promise<import("@envoymesh/api").TerminalEnableExecPaneResult> {
+    return this._homeRemoteCall("terminalEnableExecPane", params as unknown as Record<string, unknown>);
+  }
+
+  terminalSetBackgroundWatch(
+    params: import("@envoymesh/api").TerminalSetBackgroundWatchParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._homeRemoteCall("terminalSetBackgroundWatch", params as unknown as Record<string, unknown>);
+  }
+
+  terminalClearBackgroundWatch(
+    params: import("@envoymesh/api").TerminalClearBackgroundWatchParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._homeRemoteCall("terminalClearBackgroundWatch", params as unknown as Record<string, unknown>);
+  }
+
+  openInHerdr(): Promise<import("@envoymesh/api").OpenInHerdrResult> {
+    return Promise.resolve({ ok: false, reason: "herdr.mobileUnsupported" });
+  }
+
+  terminalGetHerdrExportHint(
+    params: import("@envoymesh/api").TerminalHerdrExportHintParams,
+  ): Promise<import("@envoymesh/api").TerminalHerdrExportHintResult> {
+    return this._homeRemoteCall("terminalGetHerdrExportHint", params as unknown as Record<string, unknown>);
+  }
+
   async homeTerminalWsOpen(
     params: import("@envoymesh/api").HomeTerminalWsOpenParams,
   ): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult> {
@@ -2041,6 +2197,12 @@ You are the owner's personal AI assistant on EnvoyMesh.
   }
 
   async listPendingApprovals(): Promise<import("@envoymesh/api").PendingApprovalSummary[]> {
+    if (this._isHomeRemotePaired()) {
+      if (!this._homeRemoteOnline) {
+        return [];
+      }
+      return this._homeRemoteCall("listPendingApprovals", {});
+    }
     return this._approvalQueue.listPending().map((item) => ({
       id: item.id,
       actionType: item.actionType,
@@ -2058,6 +2220,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
     itemId: string,
     notes?: string,
   ): Promise<import("@envoymesh/api").ApprovePendingApprovalResult> {
+    if (this._isHomeRemotePaired()) {
+      return this._homeRemoteCall("approvePendingApproval", { itemId, notes });
+    }
     const approved = this._approvalQueue.approve(itemId.trim(), notes);
     if (!approved) {
       return { ok: false, error: "Item not found or not pending" };
@@ -2075,6 +2240,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
     itemId: string,
     notes?: string,
   ): Promise<{ ok: boolean; error?: string }> {
+    if (this._isHomeRemotePaired()) {
+      return this._homeRemoteCall("rejectPendingApproval", { itemId, notes });
+    }
     const rejected = this._approvalQueue.reject(itemId.trim(), notes);
     if (!rejected) {
       return { ok: false, error: "Item not found or not pending" };
@@ -3416,11 +3584,13 @@ You are the owner's personal AI assistant on EnvoyMesh.
             paired: true,
             homeOnline,
             terminalsAvailable: homeOnline,
+            assistantProxied: homeOnline,
           }
         : {
             paired: false,
             homeOnline: false,
             terminalsAvailable: false,
+            assistantProxied: false,
           },
       lastError: this._lastNodeError ?? undefined,
       lastErrorAt: this._lastNodeErrorAt ?? undefined,
@@ -4337,6 +4507,13 @@ You are the owner's personal AI assistant on EnvoyMesh.
   async runOwnerAgentTurn(message: string): Promise<OwnerAgentTurnResult> {
     if (!this._state) {
       throw new Error("Node not initialized");
+    }
+    if (this._isHomeRemotePaired()) {
+      if (!this._homeRemoteOnline) {
+        throw new Error("assistant.homeOffline");
+      }
+      const turn = await this._homeRemoteCall<OwnerAgentTurnResult>("runOwnerAgentTurn", { message });
+      return { ...turn, answer: stripModelThinking(turn.answer) };
     }
     const self = this;
     const config = await self.getNodeConfig();
@@ -7223,6 +7400,15 @@ You are the owner's personal AI assistant on EnvoyMesh.
       this._homeRemote.on("terminal:session-updated", (data) => {
         this._events.emit("terminal:session-updated", data as { sessions: import("@envoymesh/api").TerminalSessionSummary[] });
       });
+      this._homeRemote.on("terminal:watch-ready", (data) => {
+        this._events.emit("terminal:watch-ready", data as import("@envoymesh/api").TerminalWatchReadyEvent);
+      });
+      this._homeRemote.on("terminal:assistant-proposal", (data) => {
+        this._events.emit(
+          "terminal:assistant-proposal",
+          data as import("@envoymesh/api").TerminalAssistantProposalEvent,
+        );
+      });
     }
     return this._homeRemote;
   }
@@ -7240,6 +7426,10 @@ You are the owner's personal AI assistant on EnvoyMesh.
       }
       throw err;
     }
+  }
+
+  private _isHomeRemotePaired(): boolean {
+    return Boolean(this.sharedIdentity && this._state?.homeNodePeerId?.trim());
   }
 
   private async _buildHomeProxyWsUrl(): Promise<string | undefined> {
@@ -7276,7 +7466,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
         rpcTimer = setTimeout(() => {
           settled = true;
           reject(new Error(`${method} timeout`));
-        }, 30000);
+        }, 120_000);
         ws.onmessage = (event) => {
           if (settled) return;
           try {

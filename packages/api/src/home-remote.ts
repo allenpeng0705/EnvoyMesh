@@ -3,6 +3,8 @@ export interface HomeRemoteStatus {
   paired: boolean;
   homeOnline: boolean;
   terminalsAvailable: boolean;
+  /** True when paired mobile Assistant RPCs are proxied to the home node (Slice 4). */
+  assistantProxied?: boolean;
 }
 
 export interface HomeTerminalWsOpenParams {

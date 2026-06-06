@@ -201,7 +201,11 @@ export type AuditEventType =
   | "terminal.session.created"
   | "terminal.session.closed"
   | "terminal.session.renamed"
-  | "terminal.session.exited";
+  | "terminal.session.exited"
+  | "terminal.agent.proposed"
+  | "terminal.agent.executed"
+  | "terminal.agent.denied"
+  | "terminal.agent.modelChanged";
 
 export type AuditDirection = "inbound" | "outbound" | "local";
 

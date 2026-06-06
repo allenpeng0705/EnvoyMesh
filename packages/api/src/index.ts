@@ -29,6 +29,7 @@ export * from "./strip-image-metadata.js";
 export * from "./document-agent-loop.js";
 export * from "./owner-agent-loop.js";
 export * from "./owner-agent-types.js";
+export * from "./answer-block-file.js";
 export * from "./owner-agent-tool-allowlist.js";
 export * from "./owner-agent-planner.js";
 export * from "./library-request-share.js";
@@ -58,6 +59,7 @@ export type { UnsignedDiscoveryReferralAttestation } from "./discovery-referral-
 export * from "./sync-state.js";
 export * from "./ws-protocol.js";
 export * from "./terminal.js";
+export * from "./terminal-agent.js";
 export * from "./terminal-wire.js";
 export * from "./home-remote.js";
 /** Explicit export: Vite pre-bundle can skip `bondTrustRank` when re-exported only via star from `node-service`. */

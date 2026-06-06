@@ -13,6 +13,7 @@ import type {
   OwnerAgentPostureFlags,
   StructuredBlock,
 } from "./owner-agent-types.js";
+import { parseStructuredCardFile } from "./answer-block-file.js";
 
 export const OWNER_AGENT_PLANNER_MAX_ROUNDS = 5;
 
@@ -149,6 +150,10 @@ export function parseStructuredBlocks(value: unknown): StructuredBlock[] | undef
           ? obj.meta.filter((s): s is string => typeof s === "string" && s.trim().length > 0)
           : undefined,
       };
+      const file = parseStructuredCardFile(obj.file);
+      if (file) {
+        (card as Extract<StructuredBlock, { type: "card" }>).file = file;
+      }
       if (obj.cta && typeof obj.cta === "object" && !Array.isArray(obj.cta)) {
         const cta = obj.cta as Record<string, unknown>;
         if (typeof cta.label === "string" && typeof cta.action === "string") {
@@ -267,7 +272,7 @@ You choose the best format for your reply. Three options:
    Block types:
    - { "type": "paragraph", "text": "..." } — a short prose line.
    - { "type": "list", "items": ["a", "b"], "ordered": false, "style": "bullet" } — a list. "style" can be "bullet" (default) or "check".
-   - { "type": "card", "title": "Name", "subtitle": "?", "meta": ["key: value", "..."] } — a single item card.
+   - { "type": "card", "title": "report.pdf", "subtitle": "PDF · 1.2 MB", "meta": ["path: reports/q1.pdf"], "file": { "source": "vault", "relativePath": "reports/q1.pdf" }, "cta": { "label": "Open", "action": "openLocalFile" } } — a single item card. Include "file" (and optional "cta") when showing a local vault/workspace file the owner can open.
    - { "type": "status", "tone": "info|success|warn|error", "text": "..." } — a status banner.
 
    If you use "structured", also keep a short "text" (one or two sentences) so the reply still reads naturally if the renderer falls back to plain text.

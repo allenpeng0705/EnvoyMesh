@@ -1,4 +1,4 @@
-import { encodeTerminalFrame, encodeTerminalResize, TerminalWireType } from "@envoymesh/api";
+import { encodeTerminalFrame, encodeTerminalResize, TerminalWireType, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
 
 type EventHandler = (data: unknown) => void;
 
@@ -166,7 +166,7 @@ export class HomeRemoteClient {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`homeRemote.${method}Timeout`));
-      }, 60_000);
+      }, TERMINAL_ASSIST_RPC_TIMEOUT_MS);
       this.pending.set(id, {
         resolve: (value) => {
           clearTimeout(timer);

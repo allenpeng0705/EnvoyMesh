@@ -1,7 +1,9 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useNodeService } from "../../hooks/useNodeService.js";
+import { useNodeService, useIsInProcessMobileNode } from "../../hooks/useNodeService.js";
+import { useToast } from "../../hooks/useToast.js";
+import { openLocalFile } from "../../lib/library-file-actions.js";
 import { stripModelThinking } from "@envoymesh/api";
 import type { AgentActivityRecord, AnswerFormat, ChatMessage, OwnerAgentApprovalSummary, OwnerAgentDomain, OwnerAgentTurnResult, StructuredBlock } from "@envoymesh/api";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
@@ -12,6 +14,10 @@ import {
   type AiChatMessageView,
 } from "../../lib/envoy-ai-chat.js";
 import { messageVisualVariant } from "../../lib/chat-thread-kind.js";
+import {
+  loadAssistantLinkedTerminalSessionId,
+  saveAssistantLinkedTerminalSessionId,
+} from "../../lib/storage.js";
 import { createAssistantDraftCrdt, ASSISTANT_DRAFT_SYNC_SCOPE } from "../../lib/assistant-draft-crdt.js";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatComposer } from "../ChatComposer.js";
@@ -181,10 +187,16 @@ function groupByDate(msgs: AiMessage[]): [string, AiMessage[]][] {
 export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = {}) {
   const t = useT();
   const nodeService = useNodeService();
-  const { nodeConfig, humanProfile, nodeStatus } = useNodeState();
-  const assistantReady = nodeStatus === "running";
-  const assistantBlockedHint =
-    nodeStatus === "starting"
+  const toast = useToast();
+  const isMobileNode = useIsInProcessMobileNode();
+  const { nodeConfig, humanProfile, nodeStatus, connectionStatus } = useNodeState();
+  const homeRemote = connectionStatus?.homeRemote;
+  const assistantHomeOffline =
+    isMobileNode && homeRemote?.paired === true && homeRemote?.homeOnline === false;
+  const assistantReady = nodeStatus === "running" && !assistantHomeOffline;
+  const assistantBlockedHint = assistantHomeOffline
+    ? t("aiChat.homeOffline")
+    : nodeStatus === "starting"
       ? t("aiChat.nodeStarting")
       : nodeStatus === "stopping"
         ? t("aiChat.nodeStopping")
@@ -193,6 +205,9 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
   const [aiMessages, setAiMessages] = useState<AiMessage[]>([]);
   const [aiInput, setAiInput] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [linkedTerminalSessionId, setLinkedTerminalSessionId] = useState<string | null>(() =>
+    loadAssistantLinkedTerminalSessionId(),
+  );
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const draftRef = useRef<ReturnType<typeof createAssistantDraftCrdt> | null>(null);
@@ -247,6 +262,24 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
   useEffect(() => {
     void reloadEnvoyAiHistory();
   }, [reloadEnvoyAiHistory]);
+
+  useEffect(() => {
+    if (!linkedTerminalSessionId || !nodeService.isConnected) return;
+    let cancelled = false;
+    void nodeService.listTerminalSessions().then((sessions) => {
+      if (cancelled) return;
+      const running = sessions.some(
+        (s) => s.sessionId === linkedTerminalSessionId && s.state === "running",
+      );
+      if (!running) {
+        saveAssistantLinkedTerminalSessionId(null);
+        setLinkedTerminalSessionId(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [linkedTerminalSessionId, nodeService, nodeService.isConnected]);
 
   const messageGroups = useMemo(() => groupByDate(aiMessages), [aiMessages]);
 
@@ -362,16 +395,23 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
     reloadSeqRef.current += 1;
 
     try {
-      const turn = await nodeService.runOwnerAgentTurn(question);
+      const outbound = linkedTerminalSessionId
+        ? `[correlationId=${linkedTerminalSessionId}]\n${question.trim()}`
+        : question.trim();
+      const turn = await nodeService.runOwnerAgentTurn(outbound);
       await reloadEnvoyAiHistory(turn);
     } catch (error) {
       const msg = error instanceof Error ? error.message : t("aiChat.responseFailed");
+      const displayMsg =
+        msg === "assistant.homeOffline" || msg === "homeRemote.offline"
+          ? t("aiChat.homeOffline")
+          : msg;
       setAiMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           role: "ai",
-          text: t("aiChat.errorPrefix", { message: msg }),
+          text: t("aiChat.errorPrefix", { message: displayMsg }),
           timestamp: new Date().toISOString(),
         },
       ]);
@@ -395,6 +435,18 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
       setAiMessages([]);
     });
   };
+
+  const handleOpenAiFile = useCallback(
+    async (params: import("@envoymesh/api").OpenLocalFileParams) => {
+      try {
+        await openLocalFile(nodeService, params);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        toast.showToast(message, "error");
+      }
+    },
+    [nodeService, toast],
+  );
 
   const resolveInlineApproval = async (
     messageId: string,
@@ -530,6 +582,9 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
                               format={msg.role === "ai" ? msg.turn?.format : undefined}
                               blocks={msg.role === "ai" ? msg.turn?.blocks : undefined}
                               className="message-text"
+                              onOpenFile={handleOpenAiFile}
+                              openFileLabel={t("library.open")}
+                              openingFileLabel={t("library.opening")}
                             />
                           </ChatMessageBubble>
                           {msg.role === "ai" && msg.turn && (
@@ -574,6 +629,23 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
         )}
         <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
       </div>
+      {linkedTerminalSessionId ? (
+        <div className="ai-linked-terminal-banner" role="status">
+          <span>
+            {t("aiChat.linkedTerminal", { sessionId: linkedTerminalSessionId.slice(0, 8) })}
+          </span>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => {
+              saveAssistantLinkedTerminalSessionId(null);
+              setLinkedTerminalSessionId(null);
+            }}
+          >
+            {t("aiChat.unlinkTerminal")}
+          </button>
+        </div>
+      ) : null}
       <footer className="chat-input">
         <ChatComposer
           value={aiInput}

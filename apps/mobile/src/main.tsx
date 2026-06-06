@@ -6,11 +6,13 @@
  * In browser dev mode, falls back to in-memory storage.
  */
 import { createRoot } from "react-dom/client";
+import type { NodeService } from "@envoymesh/api";
 import { MobileNode } from "@envoymesh/mobile-node";
 import { createDirectCallClient } from "@envoymesh/social/lib/direct-call-client.js";
 import { NodeServiceProvider } from "@envoymesh/social/hooks/useNodeService.js";
 import { NodeStateProvider } from "@envoymesh/social/context/NodeStateContext.js";
 import { ThemeProvider } from "@envoymesh/social/context/ThemeContext.js";
+import { I18nProvider } from "@envoymesh/social/context/I18nContext.js";
 import { ToastProvider } from "@envoymesh/social/hooks/useToast.js";
 import { ErrorBoundary } from "@envoymesh/social/components/ErrorBoundary.js";
 import { MobileApp } from "./MobileApp.js";
@@ -53,17 +55,19 @@ async function main(): Promise<void> {
   // Render the Social UI with DirectCallClient
   // -------------------------------------------------------------------------
 
-  const directClient = createDirectCallClient(mobileNode);
+  const directClient = createDirectCallClient(mobileNode as unknown as NodeService);
 
   createRoot(document.getElementById("root")!).render(
     <NodeServiceProvider clientFactory={() => directClient} modelProviderUiScope="cloud-only">
       <NodeStateProvider>
         <ThemeProvider>
-          <ToastProvider>
-            <ErrorBoundary>
-              <MobileApp />
-            </ErrorBoundary>
-          </ToastProvider>
+          <I18nProvider>
+            <ToastProvider>
+              <ErrorBoundary>
+                <MobileApp />
+              </ErrorBoundary>
+            </ToastProvider>
+          </I18nProvider>
         </ThemeProvider>
       </NodeStateProvider>
     </NodeServiceProvider>,

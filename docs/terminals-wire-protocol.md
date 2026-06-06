@@ -5,7 +5,7 @@ Slice 1 uses a dedicated WebSocket endpoint on the home node, separate from JSON
 ## Endpoint
 
 ```
-ws://127.0.0.1:3031/ws/terminal/{sessionId}?token={attachToken}
+ws://127.0.0.1:3032/ws/terminal/{sessionId}?token={attachToken}
 ```
 
 - `{sessionId}` — UUID from `createTerminalSession` / `listTerminalSessions`

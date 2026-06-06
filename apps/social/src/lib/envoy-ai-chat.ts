@@ -12,7 +12,6 @@ export interface AiChatMessageView {
     approvalResolved?: never;
     jobStage?: string;
     jobStatusSummary?: string;
-    blocks?: never;
   };
 }
 

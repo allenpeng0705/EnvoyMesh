@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { AnswerRenderer } from "../../src/components/AnswerRenderer.js";
 
@@ -43,7 +43,8 @@ describe("AnswerRenderer", () => {
             type: "card",
             title: "Quarterly Report",
             subtitle: "PDF · 1.2 MB",
-            meta: ["Author: Alice", "Updated: yesterday"],
+            meta: ["path: reports/q1.pdf", "Author: Alice", "Updated: yesterday"],
+            cta: { label: "Open", action: "openLocalFile" },
           },
           {
             type: "status",
@@ -51,6 +52,7 @@ describe("AnswerRenderer", () => {
             text: "3 items found in your vault",
           },
         ]}
+        onOpenFile={async () => {}}
       />,
     );
     expect(container.querySelector(".answer-block-paragraph")).not.toBeNull();
@@ -58,7 +60,30 @@ describe("AnswerRenderer", () => {
     expect(container.textContent).toContain("report.pdf");
     expect(container.querySelector(".answer-block-card")).not.toBeNull();
     expect(container.textContent).toContain("Quarterly Report");
+    expect(container.querySelector(".answer-block-card-cta")).not.toBeNull();
     expect(container.querySelector(".answer-block-status--success")).not.toBeNull();
+  });
+
+  it("calls onOpenFile when card Open is clicked", async () => {
+    const onOpenFile = vi.fn().mockResolvedValue(undefined);
+    const { container } = render(
+      <AnswerRenderer
+        text="Found it"
+        format="structured"
+        blocks={[
+          {
+            type: "card",
+            title: "readme.md",
+            file: { source: "vault", relativePath: "docs/readme.md" },
+            cta: { label: "Open", action: "openLocalFile" },
+          },
+        ]}
+        onOpenFile={onOpenFile}
+      />,
+    );
+    container.querySelector(".answer-block-card-cta")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    expect(onOpenFile).toHaveBeenCalledWith({ source: "vault", relativePath: "docs/readme.md" });
   });
 
   it("falls back to markdown when structured has no blocks", () => {

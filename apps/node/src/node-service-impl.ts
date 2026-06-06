@@ -287,6 +287,10 @@ import {
   type ChatRoomServiceDeps,
 } from "./chat-room-service.js";
 import { createTaskDispatcher } from "./task-dispatcher.js";
+import {
+  parseTerminalAssistantCorrelationId,
+  stripTerminalAssistantCorrelationPrefix,
+} from "./terminal-assistant-command.js";
 import { predictIntent } from "./intent-predictor.js";
 import { buildVaultIndex, assertPathInsideVault } from "@envoymesh/vault";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
@@ -522,6 +526,7 @@ class NodeServiceImpl implements NodeService {
   private _wsPath: string = "/ws";
   private _relayPublicWsUrl: string | undefined;
   private _terminalManager: import("./terminal-manager.js").TerminalManager | null = null;
+  private _terminalAgentAssist: import("./terminal-agent-assist.js").TerminalAgentAssist | null = null;
 
   /** Latest QR / `getPairingPayload` token for optional companion auto-pair (short TTL). */
   private _pairingToken: string | null = null;
@@ -2787,6 +2792,7 @@ class NodeServiceImpl implements NodeService {
       routeId: turn.routeId,
       modelUsed: turn.modelUsed,
       format: turn.format,
+      ...(turn.blocks?.length ? { blocks: turn.blocks } : {}),
     };
 
     if (trimmed) {
@@ -3973,6 +3979,7 @@ class NodeServiceImpl implements NodeService {
   private static readonly _openClawRetrievedContextTimeoutMs = 25_000;
   private static readonly _openClawStartupProbeAttempts = 90;
   private _openclawActiveTurnTools: string[] | null = null;
+  private _openClawAskInFlight = 0;
   private _openClawGatewayRouteRegistered = false;
   private _openClawLastProbeWarnAt = 0;
   private _openClawAskChain: Promise<unknown> = Promise.resolve();
@@ -3995,12 +4002,17 @@ class NodeServiceImpl implements NodeService {
   }
 
   private async _withOpenClawAskLock<T>(fn: () => Promise<T>): Promise<T> {
-    const run = this._openClawAskChain.then(fn, fn);
-    this._openClawAskChain = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+    this._openClawAskInFlight += 1;
+    try {
+      const run = this._openClawAskChain.then(fn, fn);
+      this._openClawAskChain = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return await run;
+    } finally {
+      this._openClawAskInFlight = Math.max(0, this._openClawAskInFlight - 1);
+    }
   }
 
   private async _probeOpenClawWebhook(options?: { quiet?: boolean }): Promise<boolean> {
@@ -4846,7 +4858,7 @@ class NodeServiceImpl implements NodeService {
     permissions?: { bondAutonomy: boolean; maxBondsPerDay: number; autoCircleContacts: boolean; maxSensitivity: string };
     model?: { provider: string; baseUrl?: string; model?: string };
   }): Promise<string> {
-    if (!this.isOpenClawReady()) {
+    if (!(await this._ensureOpenClawReady())) {
       throw new Error("OpenClaw not available");
     }
     const { policyPrompt, retrievedContext } = await this._buildEnvoyMeshOpenClawPrompts(prompt);
@@ -7204,6 +7216,14 @@ class NodeServiceImpl implements NodeService {
         bootstrapPeers: config.bootstrapPeers,
         bootstrapPresets: config.bootstrapPresets,
         modelProviders,
+        terminalAssistModelName: config.terminalAssistModelName,
+        terminalCommandAllowPatterns: config.terminalCommandAllowPatterns,
+        terminalCommandDenyPatterns: config.terminalCommandDenyPatterns,
+        terminalCommandDestructivePatterns: config.terminalCommandDestructivePatterns,
+        terminalAgentModeDefault: config.terminalAgentModeDefault,
+        terminalAutoRunPolicy: config.terminalAutoRunPolicy,
+        terminalInlineSuggestEnabled: config.terminalInlineSuggestEnabled,
+        terminalXtermSlashIntercept: config.terminalXtermSlashIntercept,
         chatAssistEnabled: config.chatAssistEnabled ?? false,
         anonymousDiscoveryMode: config.anonymousDiscoveryMode ?? "off",
         anonymousIntentAllowlist: config.anonymousIntentAllowlist ?? ["discovery.request"],
@@ -7393,6 +7413,30 @@ class NodeServiceImpl implements NodeService {
       ...(config.bootstrapPresets !== undefined && { bootstrapPresets: config.bootstrapPresets }),
       ...(config.configuredRelays !== undefined && { configuredRelays: config.configuredRelays }),
       ...(config.modelProviders && { modelProviders: { ...current.modelProviders, ...config.modelProviders } }),
+      ...(config.terminalAssistModelName !== undefined && {
+        terminalAssistModelName: config.terminalAssistModelName,
+      }),
+      ...(config.terminalCommandAllowPatterns !== undefined && {
+        terminalCommandAllowPatterns: config.terminalCommandAllowPatterns,
+      }),
+      ...(config.terminalCommandDenyPatterns !== undefined && {
+        terminalCommandDenyPatterns: config.terminalCommandDenyPatterns,
+      }),
+      ...(config.terminalCommandDestructivePatterns !== undefined && {
+        terminalCommandDestructivePatterns: config.terminalCommandDestructivePatterns,
+      }),
+      ...(config.terminalAgentModeDefault !== undefined && {
+        terminalAgentModeDefault: config.terminalAgentModeDefault,
+      }),
+      ...(config.terminalAutoRunPolicy !== undefined && {
+        terminalAutoRunPolicy: config.terminalAutoRunPolicy,
+      }),
+      ...(config.terminalInlineSuggestEnabled !== undefined && {
+        terminalInlineSuggestEnabled: config.terminalInlineSuggestEnabled,
+      }),
+      ...(config.terminalXtermSlashIntercept !== undefined && {
+        terminalXtermSlashIntercept: config.terminalXtermSlashIntercept,
+      }),
       ...(config.chatAssistEnabled !== undefined && { chatAssistEnabled: config.chatAssistEnabled }),
       ...(config.anonymousDiscoveryMode !== undefined && { anonymousDiscoveryMode: config.anonymousDiscoveryMode }),
       ...(config.anonymousIntentAllowlist !== undefined && { anonymousIntentAllowlist: config.anonymousIntentAllowlist }),
@@ -8540,9 +8584,58 @@ class NodeServiceImpl implements NodeService {
     this._terminalManager = manager;
   }
 
+  /** Wire Phase 30I terminal agent assist (desktop home node only). */
+  setTerminalAgentAssist(assist: import("./terminal-agent-assist.js").TerminalAgentAssist): void {
+    this._terminalAgentAssist = assist;
+  }
+
   emitTerminalSessionsUpdated(): void {
     if (!this._terminalManager) return;
-    this.emit("terminal:session-updated", { sessions: this._terminalManager.listSessionSummaries() });
+    void this._emitTerminalSessionsUpdated();
+  }
+
+  private async _emitTerminalSessionsUpdated(): Promise<void> {
+    if (!this._terminalManager) return;
+    const sessions = await this.listTerminalSessions();
+    this.emit("terminal:session-updated", { sessions });
+  }
+
+  private _maybeIngestTerminalAssistantReply(
+    terminalSessionId: string | undefined,
+    answer: string,
+  ): void {
+    const sessionId = terminalSessionId?.trim();
+    if (!sessionId || !answer.trim()) return;
+    const assist = this._terminalAgentAssist;
+    const manager = this._terminalManager;
+    if (!assist || !manager) return;
+    const live = manager.listTerminalSessions().find((s) => s.sessionId === sessionId && s.state === "running");
+    if (!live) return;
+    void assist.ingestAssistantReply(sessionId, answer).then((proposal) => {
+      if (proposal) {
+        this.emit("terminal:assistant-proposal", { sessionId, proposal });
+      }
+    });
+  }
+
+  private _isOpenClawTurnInProgress(): boolean {
+    return this._openClawAskInFlight > 0 || this._openclawActiveTurnTools !== null;
+  }
+
+  private async _enrichTerminalSessions(
+    summaries: import("@envoymesh/api").TerminalSessionSummary[],
+  ): Promise<import("@envoymesh/api").TerminalSessionSummary[]> {
+    const { enrichTerminalSessionSummaries } = await import("./terminal-activity.js");
+    const pendingApprovalCount = (await this.listPendingApprovals()).length;
+    const manager = this._terminalManager!;
+    return enrichTerminalSessionSummaries(
+      summaries,
+      (sessionId) => manager.getScrollbackTail(sessionId),
+      {
+        pendingApprovalCount,
+        openClawTurnInProgress: this._isOpenClawTurnInProgress(),
+      },
+    );
   }
 
   private _requireTerminalManager(): import("./terminal-manager.js").TerminalManager {
@@ -8552,8 +8645,16 @@ class NodeServiceImpl implements NodeService {
     return this._terminalManager;
   }
 
+  private _requireTerminalAgentAssist(): import("./terminal-agent-assist.js").TerminalAgentAssist {
+    if (!this._terminalAgentAssist) {
+      throw new Error("terminal.agent.notAvailable");
+    }
+    return this._terminalAgentAssist;
+  }
+
   listTerminalSessions(): Promise<import("@envoymesh/api").TerminalSessionSummary[]> {
-    return Promise.resolve(this._requireTerminalManager().listTerminalSessions());
+    const summaries = this._requireTerminalManager().listTerminalSessions();
+    return this._enrichTerminalSessions(summaries);
   }
 
   createTerminalSession(params?: import("@envoymesh/api").CreateTerminalSessionParams): Promise<import("@envoymesh/api").TerminalSessionSummary> {
@@ -8570,6 +8671,243 @@ class NodeServiceImpl implements NodeService {
 
   terminalAttach(params: import("@envoymesh/api").TerminalAttachParams): Promise<import("@envoymesh/api").TerminalAttachResult> {
     return Promise.resolve(this._requireTerminalManager().terminalAttach(params));
+  }
+
+  terminalRunFromNaturalLanguage(
+    params: import("@envoymesh/api").TerminalRunFromNaturalLanguageParams,
+  ): Promise<import("@envoymesh/api").TerminalCommandProposal> {
+    return this._requireTerminalAgentAssist().runFromNaturalLanguage(params);
+  }
+
+  terminalExecuteProposal(params: import("@envoymesh/api").TerminalExecuteProposalParams): Promise<void> {
+    return this._requireTerminalAgentAssist().executeProposal(params);
+  }
+
+  terminalSetAssistModelOverride(
+    params: import("@envoymesh/api").TerminalSetAssistModelOverrideParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._requireTerminalAgentAssist().setAssistModelOverride(params);
+  }
+
+  terminalGetAssistState(sessionId: string): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._requireTerminalAgentAssist().getAssistState(sessionId.trim());
+  }
+
+  terminalExplainScrollback(
+    params: import("@envoymesh/api").TerminalExplainScrollbackParams,
+  ): Promise<import("@envoymesh/api").TerminalExplainScrollbackResult> {
+    return this._requireTerminalAgentAssist().explainScrollback(params);
+  }
+
+  terminalSuggestCommand(
+    params: import("@envoymesh/api").TerminalSuggestCommandParams,
+  ): Promise<import("@envoymesh/api").TerminalSuggestCommandResult> {
+    return this._requireTerminalAgentAssist().suggestCommand(params);
+  }
+
+  terminalObserveStep(
+    params: import("@envoymesh/api").TerminalObserveStepParams,
+  ): Promise<import("@envoymesh/api").TerminalObserveStepResult> {
+    return this._requireTerminalAgentAssist().observeStep(params);
+  }
+
+  terminalSetInlineSuggestEnabled(
+    params: import("@envoymesh/api").TerminalSetInlineSuggestParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._requireTerminalAgentAssist().setInlineSuggestEnabled(params);
+  }
+
+  terminalOpenClawPlan(
+    params: import("@envoymesh/api").TerminalOpenClawPlanParams,
+  ): Promise<import("@envoymesh/api").TerminalOpenClawPlanResult> {
+    return this._requireTerminalAgentAssist().openClawPlan(params);
+  }
+
+  terminalRunPlanStep(
+    params: import("@envoymesh/api").TerminalRunPlanStepParams,
+  ): Promise<import("@envoymesh/api").TerminalCommandProposal> {
+    return this._requireTerminalAgentAssist().runPlanStep(params);
+  }
+
+  terminalEnablePrepareMode(
+    params: import("@envoymesh/api").TerminalEnablePrepareModeParams,
+  ): Promise<import("@envoymesh/api").TerminalEnablePrepareModeResult> {
+    return this._requireTerminalAgentAssist().enablePrepareMode(params);
+  }
+
+  terminalWatchStep(
+    params: import("@envoymesh/api").TerminalWatchStepParams,
+  ): Promise<import("@envoymesh/api").TerminalWatchStepResult> {
+    return this._requireTerminalAgentAssist().watchStep(params);
+  }
+
+  terminalPinContextSession(
+    params: import("@envoymesh/api").TerminalPinContextSessionParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._requireTerminalAgentAssist().pinContextSession(params);
+  }
+
+  terminalDetectFailure(
+    params: import("@envoymesh/api").TerminalDetectFailureParams,
+  ): Promise<import("@envoymesh/api").TerminalFailureDetection> {
+    return this._requireTerminalAgentAssist().detectFailure(params);
+  }
+
+  terminalSuggestFixFromFailure(
+    params: import("@envoymesh/api").TerminalSuggestFixParams,
+  ): Promise<import("@envoymesh/api").TerminalCommandProposal> {
+    return this._requireTerminalAgentAssist().suggestFixFromFailure(params);
+  }
+
+  terminalStartGoalLoop(
+    params: import("@envoymesh/api").TerminalStartGoalLoopParams,
+  ): Promise<import("@envoymesh/api").TerminalGoalLoopStepResult> {
+    return this._requireTerminalAgentAssist().startGoalLoop(params);
+  }
+
+  terminalAdvanceGoalLoop(
+    params: import("@envoymesh/api").TerminalAdvanceGoalLoopParams,
+  ): Promise<import("@envoymesh/api").TerminalGoalLoopStepResult> {
+    return this._requireTerminalAgentAssist().advanceGoalLoop(params);
+  }
+
+  terminalCancelGoalLoop(
+    params: import("@envoymesh/api").TerminalCancelGoalLoopParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._requireTerminalAgentAssist().cancelGoalLoop(params);
+  }
+
+  terminalClearResumeGoal(sessionId: string): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._requireTerminalAgentAssist().clearResumeGoal({ sessionId });
+  }
+
+  terminalSendContextToAssistant(
+    params: import("@envoymesh/api").TerminalSendContextToAssistantParams,
+  ): Promise<import("@envoymesh/api").TerminalSendContextToAssistantResult> {
+    return this._requireTerminalAgentAssist().sendContextToAssistant(params);
+  }
+
+  terminalUpdatePlanProgress(
+    params: import("@envoymesh/api").TerminalUpdatePlanProgressParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._requireTerminalAgentAssist().updatePlanProgress(params);
+  }
+
+  terminalGetScrollbackPreview(
+    params: import("@envoymesh/api").TerminalGetScrollbackPreviewParams,
+  ): Promise<import("@envoymesh/api").TerminalGetScrollbackPreviewResult> {
+    return this._requireTerminalAgentAssist().getScrollbackPreview(params);
+  }
+
+  terminalResumeGoalLoop(
+    params: import("@envoymesh/api").TerminalResumeGoalLoopParams,
+  ): Promise<import("@envoymesh/api").TerminalGoalLoopStepResult> {
+    return this._requireTerminalAgentAssist().resumeGoalLoop(params);
+  }
+
+  terminalEnableExecPane(
+    params: import("@envoymesh/api").TerminalEnableExecPaneParams,
+  ): Promise<import("@envoymesh/api").TerminalEnableExecPaneResult> {
+    return this._requireTerminalAgentAssist().enableExecPane(params);
+  }
+
+  terminalSetBackgroundWatch(
+    params: import("@envoymesh/api").TerminalSetBackgroundWatchParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._requireTerminalAgentAssist().setBackgroundWatch(params);
+  }
+
+  terminalClearBackgroundWatch(
+    params: import("@envoymesh/api").TerminalClearBackgroundWatchParams,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._requireTerminalAgentAssist().clearBackgroundWatch(params);
+  }
+
+  async openInHerdr(
+    params?: import("@envoymesh/api").OpenInHerdrParams,
+  ): Promise<import("@envoymesh/api").OpenInHerdrResult> {
+    if (process.platform === "win32") {
+      return { ok: false, reason: "herdr.unsupportedPlatform" };
+    }
+    let cwd: string;
+    try {
+      cwd = params?.cwd?.trim() || this._resolveOpenClawWorkspaceDir();
+    } catch {
+      return { ok: false, reason: "herdr.workspaceUnavailable" };
+    }
+    const { spawn } = await import("node:child_process");
+    return await new Promise((resolve) => {
+      let settled = false;
+      const finish = (result: import("@envoymesh/api").OpenInHerdrResult) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+      const child = spawn("herdr", [], {
+        cwd,
+        detached: true,
+        stdio: "ignore",
+      });
+      child.once("error", () => finish({ ok: false, reason: "herdr.spawnFailed" }));
+      child.unref();
+      process.nextTick(() => {
+        if (!settled) finish({ ok: true, cwd });
+      });
+    });
+  }
+
+  async terminalGetHerdrExportHint(
+    params: import("@envoymesh/api").TerminalHerdrExportHintParams,
+  ): Promise<import("@envoymesh/api").TerminalHerdrExportHintResult> {
+    const sessionId = params.sessionId.trim();
+    if (!sessionId) {
+      throw new Error("terminal.sessionNotFound");
+    }
+    const manager = this._requireTerminalManager();
+    const summary = manager.listTerminalSessions().find((s) => s.sessionId === sessionId);
+    if (!summary) {
+      throw new Error("terminal.sessionNotFound");
+    }
+    if (summary.state !== "running") {
+      throw new Error("terminal.sessionNotRunning");
+    }
+    const scrollback = manager.getScrollbackTail(sessionId, 64 * 1024);
+    const { writeHerdrExportFile } = await import("./herdr-export.js");
+    return writeHerdrExportFile(this._profileDir, sessionId, summary.title, scrollback);
+  }
+
+  async lookupSessionToken(token: string): Promise<import("@envoymesh/local-store").SessionTokenRecord | undefined> {
+    if (!this._sessionTokenStore) {
+      return undefined;
+    }
+    return this._sessionTokenStore.getTokenByValue(token.trim());
+  }
+
+  async auditHomeRemoteRpc(input: {
+    method: string;
+    deviceId: string;
+    ownerId?: string;
+  }): Promise<void> {
+    if (!this._taskStore) {
+      return;
+    }
+    try {
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "tool.called",
+          intent: "chat.message",
+          messageId: randomUUID(),
+          remotePeerId: input.ownerId ?? "mobile",
+          direction: "inbound",
+          verificationStatus: "verified",
+          latencyMs: 0,
+          outcome: "record",
+          summary: `homeRemote proxy remoteClient=mobile deviceId=${input.deviceId} method=${input.method}`,
+        }),
+      );
+    } catch {
+      //
+    }
   }
 
   homeTerminalWsOpen(): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult> {
@@ -9311,13 +9649,17 @@ class NodeServiceImpl implements NodeService {
 
   async runOwnerAgentTurn(message: string): Promise<OwnerAgentTurnResult> {
     this.recordOwnerActivity();
+    const terminalSessionId = parseTerminalAssistantCorrelationId(message);
+    const agentMessage = terminalSessionId
+      ? stripTerminalAssistantCorrelationPrefix(message)
+      : message;
 
     // Built-in OpenClaw (EnvoyAI): session memory, tools, multi-round reasoning.
     if (await this._ensureOpenClawReady()) {
       this._beginOpenClawToolTracking();
       try {
         const context = await this._buildOpenClawTurnContext();
-        const answer = stripModelThinking(await this.askOpenClaw(message, context));
+        const answer = stripModelThinking(await this.askOpenClaw(agentMessage, context));
         const result: OwnerAgentTurnResult = {
           answer,
           domain: "knowledge" as const,
@@ -9327,6 +9669,7 @@ class NodeServiceImpl implements NodeService {
           modelUsed: "openclaw",
         };
         await this._persistEnvoyAiChatExchange(message, result);
+        this._maybeIngestTerminalAssistantReply(terminalSessionId, answer);
         return result;
       } catch (err) {
         this._endOpenClawToolTracking();
@@ -9350,8 +9693,8 @@ class NodeServiceImpl implements NodeService {
     const pendingBeforeIds = new Set((await this.listPendingApprovals()).map((p) => p.id));
 
     const turn = await runOwnerAgentTurnLoop({
-      message,
-      runDocumentTurn: () => this._runDocumentAgentTurnCore(message),
+      message: agentMessage,
+      runDocumentTurn: () => this._runDocumentAgentTurnCore(agentMessage),
       executeTool: (toolName, params) => executeTool(toolName, params, context),
       matchRoutes: (goal) =>
         matchAgentCapabilityRoutes({
@@ -9609,10 +9952,11 @@ class NodeServiceImpl implements NodeService {
     // Phase 25D — record the intent for future predictions (only if a
     // domain/intent was returned by the turn).
     if (turn.intent) {
-      void this.recordIntent(turn.intent, message);
+      void this.recordIntent(turn.intent, agentMessage);
     }
     const result = { ...turn, approvalItems, answer: stripModelThinking(turn.answer) };
     await this._persistEnvoyAiChatExchange(message, result);
+    this._maybeIngestTerminalAssistantReply(terminalSessionId, result.answer);
     return result;
   }
 

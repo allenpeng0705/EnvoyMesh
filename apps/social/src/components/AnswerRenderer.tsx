@@ -1,8 +1,16 @@
+import { useCallback, useState } from "react";
 import type {
   AnswerFormat,
+  OpenLocalFileParams,
   StructuredBlock,
 } from "@envoymesh/api";
-import { chatMessageTextForDisplay, stripModelThinking, type AiIdentity } from "@envoymesh/api";
+import {
+  chatMessageTextForDisplay,
+  inferFileFromStructuredCard,
+  isOpenFileCtaAction,
+  stripModelThinking,
+  type AiIdentity,
+} from "@envoymesh/api";
 import { Markdown } from "./Markdown.js";
 
 export interface AnswerRendererProps {
@@ -11,6 +19,9 @@ export interface AnswerRendererProps {
   blocks?: StructuredBlock[];
   className?: string;
   identity?: AiIdentity | null;
+  onOpenFile?: (params: OpenLocalFileParams) => Promise<void>;
+  openFileLabel?: string;
+  openingFileLabel?: string;
 }
 
 function CheckIcon() {
@@ -49,9 +60,32 @@ function BlockList({ block }: { block: Extract<StructuredBlock, { type: "list" }
   );
 }
 
-function BlockCard({ block }: { block: Extract<StructuredBlock, { type: "card" }> }) {
+function BlockCard({
+  block,
+  onOpenFile,
+  openFileLabel,
+  openingFileLabel,
+  busy,
+}: {
+  block: Extract<StructuredBlock, { type: "card" }>;
+  onOpenFile?: (params: OpenLocalFileParams) => Promise<void>;
+  openFileLabel: string;
+  openingFileLabel: string;
+  busy: boolean;
+}) {
+  const fileTarget = inferFileFromStructuredCard(block);
+  const showOpen = Boolean(fileTarget && onOpenFile);
+  const ctaLabel =
+    block.cta?.label ??
+    (showOpen || isOpenFileCtaAction(block.cta?.action) ? openFileLabel : undefined);
+
+  const handleOpen = () => {
+    if (!fileTarget || !onOpenFile || busy) return;
+    void onOpenFile(fileTarget);
+  };
+
   return (
-    <div className="answer-block-card" role="group">
+    <div className={`answer-block-card${showOpen ? " answer-block-card--interactive" : ""}`} role="group">
       <div className="answer-block-card-title">{block.title}</div>
       {block.subtitle ? <div className="answer-block-card-subtitle">{block.subtitle}</div> : null}
       {block.meta && block.meta.length > 0 ? (
@@ -61,14 +95,17 @@ function BlockCard({ block }: { block: Extract<StructuredBlock, { type: "card" }
           ))}
         </ul>
       ) : null}
-      {block.cta ? (
+      {showOpen && ctaLabel ? (
         <button
           type="button"
           className="answer-block-card-cta"
-          data-cta-action={block.cta.action}
+          disabled={busy}
+          onClick={handleOpen}
         >
-          {block.cta.label}
+          {busy ? openingFileLabel : ctaLabel}
         </button>
+      ) : block.cta && !showOpen ? (
+        <span className="answer-block-card-cta answer-block-card-cta--static">{block.cta.label}</span>
       ) : null}
     </div>
   );
@@ -86,11 +123,32 @@ function BlockParagraph({ block }: { block: Extract<StructuredBlock, { type: "pa
   return <p className="answer-block-paragraph">{block.text}</p>;
 }
 
-export function AnswerRenderer({ text, format, blocks, className = "message-text", identity }: AnswerRendererProps) {
+export function AnswerRenderer({
+  text,
+  format,
+  blocks,
+  className = "message-text",
+  identity,
+  onOpenFile,
+  openFileLabel = "Open",
+  openingFileLabel = "Opening…",
+}: AnswerRendererProps) {
   const display = chatMessageTextForDisplay(stripModelThinking(text), identity);
+  const [openingPath, setOpeningPath] = useState<string | null>(null);
 
-  // structured → render blocks (plus the text as a fallback if the LLM
-  // didn't put a leading paragraph block in).
+  const handleOpenFile = useCallback(
+    async (params: OpenLocalFileParams) => {
+      if (!onOpenFile) return;
+      setOpeningPath(params.relativePath);
+      try {
+        await onOpenFile(params);
+      } finally {
+        setOpeningPath(null);
+      }
+    },
+    [onOpenFile],
+  );
+
   if (format === "structured" && blocks && blocks.length > 0) {
     return (
       <div className={className}>
@@ -102,7 +160,16 @@ export function AnswerRenderer({ text, format, blocks, className = "message-text
               case "list":
                 return <BlockList key={idx} block={block} />;
               case "card":
-                return <BlockCard key={idx} block={block} />;
+                return (
+                  <BlockCard
+                    key={idx}
+                    block={block}
+                    onOpenFile={handleOpenFile}
+                    openFileLabel={openFileLabel}
+                    openingFileLabel={openingFileLabel}
+                    busy={openingPath !== null}
+                  />
+                );
               case "status":
                 return <BlockStatus key={idx} block={block} />;
               default: {
@@ -120,7 +187,6 @@ export function AnswerRenderer({ text, format, blocks, className = "message-text
     );
   }
 
-  // plain → render as plain text (preserve newlines, no Markdown parsing).
   if (format === "plain") {
     return (
       <div className={className}>
@@ -129,6 +195,5 @@ export function AnswerRenderer({ text, format, blocks, className = "message-text
     );
   }
 
-  // markdown (default) → existing Markdown renderer.
   return <Markdown text={display} className={className} />;
 }

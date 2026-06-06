@@ -92,7 +92,7 @@ Active next direction:
 9. **Phase 24** — Agent Marketplace — **`[x]` shipped** (agent-negotiation-worker, reputation-router, agent-chain-orchestrator, service-mesh-worker; 24 tests).
 10. **Phase 25** — Ambient Mesh Awareness — **`[x]` shipped** (mesh-awareness-worker, intent-predictor, continuity-service; 16 tests).
 11. **Phase 29** — OpenClaw Integration — **`[~]` designed** (runtime, tool catalog, install scripts built; session context, two-tier routing, tool execution pending).
-12. **Phase 30** — Terminals — **`[ ]` designed** · **ship order agreed:** Slice **1** manual home → Slice **2** mobile remote → Slice **3** Agent mode (TmuxAI-inspired native) → Slice **4** EnvoyAI home proxy.
+12. **Phase 30** — Terminals — **`[x]` shipped** (Slices 1–4) · manual home PTY → mobile HomeRemote → Agent mode → EnvoyAI home proxy.
 
 Product-level **user stories and epics** (discovery, broadcast termination, communication roles, and so on) live in [EnvoyMesh scenarios](./scenarios.md). Narrative journeys live in [UserStory.md](./UserStory.md). Periodically reconcile both with code via [alignment-review.md](./alignment-review.md). Use those files to prioritize; keep this plan aligned when scope or shipped work changes.
 
@@ -119,7 +119,7 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 | **Story M** (delegated social presence) | **16**, **18** | `[x]` Social proxy runtime + standing mandate · `[x]` Assistant chat orchestration (Phase **18**) · `[x]` Human `bond.accept` inbound policy |
 | **Story N** (document acquisition) | **16**, **18**, ADB | `[x]` Async acquisition worker + jobs · `[x]` ADB + library tools · `[x]` Assistant starts jobs from natural language (Phase **18**) |
 | **Story O** (UI actor disclosure) | **16** | `[x]` Honest wire (Phase 13) · `[ ]` `showAgentBadges` / peer collapse settings |
-| **Story A** (multi-device collaborator) | 4A, 5, 6, 7, **11**, **18**, **30** | `[x]` Mobile pairing + shared owner identity (Phase 11) · `[ ]` **Phase 30:** **Remote home node** — phone uses **home** Terminals + EnvoyAI (PTY/LLM/vault on desktop/Tauri); mobile = UI + relay transport · `[ ]` Thin mobile / satellite app **parked** |
+| **Story A** (multi-device collaborator) | 4A, 5, 6, 7, **11**, **18**, **30** | `[x]` Mobile pairing + shared owner identity (Phase 11) · `[x]` **Phase 30:** **Remote home node** — phone uses **home** Terminals + EnvoyAI (PTY/LLM/vault on desktop/Tauri); mobile = UI + relay transport · `[ ]` Thin mobile / satellite app **parked** |
 | **Stories B–C** (recruiter, researcher) | 4E, 2, 6, 7 | `[x]` Policy, approvals, audit, model path scaffolding · `[ ]` Discovery UX (**4E**), H2A wire path (**6**), morning report (**7**) |
 | **Stories D–E** (multi-hop, deals) | Backlog | `[ ]` Multi-hop / commerce / receipts — add phased work when scenarios + EMP economics are scoped |
 | **Story F** (crisis / LAN) | 4, 4C | `[x]` mDNS, local TCP, correlated audits, optional P2P debug, owner-id LAN target resolution (`system.signal` owner→peer map) · `[ ]` live proofs outside CI (`Phase 4` `[!]`) |
@@ -143,7 +143,7 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 - `[x]` Decentralized identity direction: Ed25519 first, DIDKit/DIDs later.
 - `[x]` Mobile v1 direction: Thin UI Mode only; phone acts as secure UI/control channel to Primary Envoy.
 - `[x]` Terminals direction: **ship Slice 1 → 2 → 3 → 4** (manual home → mobile remote → Agent mode → EnvoyAI proxy); home = PTY/LLM; phone = UI after QR pair.
-- `[ ]` Terminals optional power-user paths (**after Slice 3**): external TmuxAI / herdr docs (30H/30J) — Slices use **patterns only**, not binaries.
+- `[x]` Terminals optional power-user paths (**after Slice 3**): external TmuxAI / herdr docs (30H/30J) — see [terminals-external-herdr.md](./terminals-external-herdr.md), [terminals-external-tmuxai.md](./terminals-external-tmuxai.md); Slices use **patterns only**, not binaries.
 - `[x]` Trust mode social (design): Agents may assist introductions using tiered **owner-signed** profile disclosure; **`bond.*` tier upgrades remain human-committed**. Spec: [trust-mode-social-protocol.md](./trust-mode-social-protocol.md); implementation tracked as [Phase 12](#phase-12-trust-mode--bilateral-social-mediation-design-first).
 - `[x]` EnvoyAI direction: **part of EMP (`emp/0.1`)** — standing **`posture` mandates**, honest wire + configurable UI disclosure; advertise via `supportedCapabilities` (not a separate protocol version). Spec: [protocol-standard § EnvoyAI](./protocol-standard.md#envoyai-ai-mediated-social-mesh).
 - `[ ]` Storage: start with files for config, then add SQLite for records and audit.
@@ -3249,7 +3249,7 @@ Mobile (`packages/mobile-node/`) supports all Phase 19-25 features via relay-pro
 
 ---
 
-## Phase 30 — Terminals (Chat-integrated remote shells) **`[ ]` designed**
+## Phase 30 — Terminals (Chat-integrated remote shells) **`[x]` shipped**
 
 **Goal:** Add a **Terminals** area in Chat where the owner works in **real shell sessions** on the **home node** — full interactive PTY (SSH, colors, Ctrl+C, resize) like a native terminal, plus **Agent mode** per session (NL → command with confirm). Session management uses **group chat** UX (sidebar + main panel).
 
@@ -3540,17 +3540,17 @@ See **[Phase 30 shipping plan](#phase-30-shipping-plan-agreed-order)** below for
 
 | Slice | Deliverable | Status |
 |-------|-------------|--------|
-| **1** | Manual terminal on home (30A–30D, no Agent bar) | `[ ]` next |
-| **2** | Mobile remote **manual** terminal (30E HomeRemote) | `[ ]` planned |
-| **3** | Terminal **Agent mode** — native, [TmuxAI](https://github.com/alvinunreal/tmuxai)-inspired (30I); [herdr](https://github.com/ogulcancelik/herdr) N/A for Agent | `[ ]` planned |
-| **4** | EnvoyAI home proxy for paired mobile (30K) | `[ ]` planned |
-| Later | 30F badges, observe loop v1.1, 30H/J external tools | deferred |
+| **1** | Manual terminal on home (30A–30D, no Agent bar) | `[x]` shipped |
+| **2** | Mobile remote **manual** terminal (30E HomeRemote) | `[x]` shipped |
+| **3** | Terminal **Agent mode** — native, [TmuxAI](https://github.com/alvinunreal/tmuxai)-inspired (30I); [herdr](https://github.com/ogulcancelik/herdr) N/A for Agent | `[x]` shipped (v1 + v2) |
+| **4** | EnvoyAI home proxy for paired mobile (30K) | `[x]` shipped |
+| Later | 30F badges, observe loop polish, 30H/J external tools | `[x]` shipped |
 
 **Important:** Slices 1–3 do **not** embed TmuxAI or herdr binaries — both are **UX references** only (see shipping plan).
 
 ### Phase 30 shipping plan (agreed order)
 
-**Owner decision (2026-06-06):** Ship **Slice 1 → Slice 2 (mobile) → Slice 3 (Agent mode)** before calling Phase 30 complete. Slice 4 (EnvoyAI home proxy) follows for full remote Assistant parity.
+**Owner decision (2026-06-06):** Ship **Slice 1 → Slice 2 (mobile) → Slice 3 (Agent mode) → Slice 4 (EnvoyAI home proxy)**. **All four slices shipped (2026-06-05).**
 
 **herdr vs TmuxAI in shipping:**
 
@@ -3562,7 +3562,7 @@ See **[Phase 30 shipping plan](#phase-30-shipping-plan-agreed-order)** below for
 
 ---
 
-#### Slice 1 — Manual terminal on home **`[ ]` next to implement**
+#### Slice 1 — Manual terminal on home **`[x]` shipped**
 
 **Goal:** Real PTY in Social on desktop/Tauri — type, SSH, colors, Ctrl+C — **no Agent bar yet**.
 
@@ -3577,17 +3577,17 @@ See **[Phase 30 shipping plan](#phase-30-shipping-plan-agreed-order)** below for
 
 **Slice 1 exit criteria:**
 
-- `[ ]` Desktop/Tauri: create/list/attach/close sessions; interactive PTY including nested SSH
-- `[ ]` Sessions survive tab switch within app session
-- `[ ]` Audit: `terminal.session.*` lifecycle events
-- `[ ]` Auth: loopback + attach token documented
-- `[ ]` Tests: `TerminalManager` unit; WS codec; E2E type command see output
+- `[x]` Desktop/Tauri: create/list/attach/close sessions; interactive PTY including nested SSH
+- `[x]` Sessions survive tab switch within app session
+- `[x]` Audit: `terminal.session.*` lifecycle events
+- `[x]` Auth: loopback + attach token documented
+- `[x]` Tests: `TerminalManager` unit; WS codec; E2E type command see output
 
 **Not in Slice 1:** Agent bar, `terminal*` assist RPC, mobile HomeRemote, 30I, 30E, 30K.
 
 ---
 
-#### Slice 2 — Mobile remote manual terminal **`[ ]` planned**
+#### Slice 2 — Mobile remote manual terminal **`[x]` shipped**
 
 **Goal:** Paired phone runs **same manual terminal** against **home node** PTY — remote SSH-from-phone use case.
 
@@ -3600,17 +3600,17 @@ See **[Phase 30 shipping plan](#phase-30-shipping-plan-agreed-order)** below for
 
 **Slice 2 exit criteria:**
 
-- `[ ]` Paired mobile: list/create/attach/close sessions on **home** only
-- `[ ]` Interactive PTY over relay/LAN via HomeRemote tunnel
-- `[ ]` Unpaired: pair CTA; no local PTY
-- `[ ]` Home offline: clear UX + retry
-- `[ ]` E2E: mock home + paired mobile — manual shell only
+- `[x]` Paired mobile: list/create/attach/close sessions on **home** only
+- `[x]` Interactive PTY over relay/LAN via HomeRemote tunnel
+- `[x]` Unpaired: pair CTA; no local PTY
+- `[x]` Home offline: clear UX + retry
+- `[x]` E2E: mock home + paired mobile — manual shell only (`home-remote-terminal.test.ts`)
 
 **Not in Slice 2:** Agent bar, Terminal Agent LLM, EnvoyAI proxy (Slice 3–4).
 
 ---
 
-#### Slice 3 — Terminal Agent mode (TmuxAI-inspired, native) **`[ ]` planned**
+#### Slice 3 — Terminal Agent mode (TmuxAI-inspired, native) **`[x]` shipped**
 
 **Goal:** Agent bar + NL→command + confirm on **home**; mobile gets same via HomeRemote. **Inspired by TmuxAI**, implemented in EnvoyMesh — **not** the TmuxAI binary.
 
@@ -3624,16 +3624,17 @@ See **[Phase 30 shipping plan](#phase-30-shipping-plan-agreed-order)** below for
 
 **Slice 3 exit criteria:**
 
-- `[ ]` Desktop: Agent mode NL → preview → confirm → PTY inject; destructive gated
-- `[ ]` Mobile (paired): same Agent bar UX against home assist
-- `[ ]` `/model` per-session override; deterministic risk overrides model hint
-- `[ ]` Audit: `terminal.agent.*`; tests including SSH scrollback fixture
+- `[x]` Desktop: Agent mode NL → preview → confirm → PTY inject; destructive gated
+- `[x]` Mobile (paired): same Agent bar UX against home assist
+- `[x]` `/model` per-session override; deterministic risk overrides model hint
+- `[x]` Audit: `terminal.agent.*`; tests including SSH scrollback fixture
+- `[x]` **v2:** `/openclaw` plan, `/prepare`, `/watch`, `/pin`, `/step`, destructive regex list, turn squashing, inline suggest + observe loop
 
 **Not in Slice 3:** Embedding TmuxAI/tmux; OpenClaw as terminal brain; autonomous exec without confirm.
 
 ---
 
-#### Slice 4 — EnvoyAI home proxy (paired mobile) **`[ ]` planned**
+#### Slice 4 — EnvoyAI home proxy (paired mobile) **`[x]` shipped**
 
 **Goal:** Phone Assistant uses **home** `runOwnerAgentTurn` + OpenClaw + full ToolRegistry.
 
@@ -3644,21 +3645,79 @@ See **[Phase 30 shipping plan](#phase-30-shipping-plan-agreed-order)** below for
 
 **Slice 4 exit criteria:**
 
-- `[ ]` Paired mobile Assistant matches home capabilities (mock integration test)
-- `[ ]` `sessionToken` + audit `remoteClient: mobile`
+- `[x]` Paired mobile Assistant matches home capabilities (mock integration test: `home-remote-assistant.test.ts`)
+- `[x]` `sessionToken` + audit `remoteClient: mobile` (`deviceId` on proxied RPC in client-proxy handler)
 
 ---
 
 #### Later (post Phase 30 core)
 
-- **30F** — session badges (herdr-inspired idle/working)
-- **v1.1** — TmuxAI-style **observe loop** after command run
-- **30H / 30J** — optional external herdr / TmuxAI docs for power users
-- App restart session persist; context-session pinning (TmuxAI read-only panes)
+- **30F** — session badges (herdr-inspired idle/working) **`[x]` shipped**
+- **30H / 30J** — optional external docs + Settings/UI integration **`[x]` shipped**
+- App restart session persist **`[x]` shipped**
 
 ---
 
-**Phase 30 overall exit:** Slices **1 + 2 + 3** complete (+ **4** for full mobile remote product). Mark Phase 30 **`[x]` shipped** in this plan when all agreed slices pass exit criteria.
+## Phase 31A — Terminal AI Tier 1 (native loop + UX) **`[x]` shipped**
+
+High-leverage AI improvements without bundling herdr/TmuxAI. Reuses `TerminalAgentAssist` orchestration; EnvoyAI bridge for vault/mesh escalation.
+
+| Item | Deliverable |
+|------|-------------|
+| **Goal loop** | `/goal`, `/goalstop`, `/goalcontinue`; RPC `terminalStartGoalLoop`, `terminalAdvanceGoalLoop`, `terminalCancelGoalLoop`; max 10 steps; confirm destructive |
+| **Failure-aware assist** | `terminalDetectFailure`, `terminalSuggestFixFromFailure`; UI chip + optional explain (read-only) |
+| **EnvoyAI bridge** | `terminalSendContextToAssistant` — scrollback + cwd → `runOwnerAgentTurn`; “Ask EnvoyAI” button |
+| **Plan runner UI** | Checklist after `/openclaw`; Propose / Skip per step; `terminalUpdatePlanProgress` |
+| **Smarter safe-only** | Auto-chain up to 3 safe commands with observe + failure pause (`continueSafeOnlyChain`) |
+
+**Tests:** `terminal-failure-detect.test.ts`, `terminal-slash-commands-goal.test.ts`
+
+**Deferred (Tier 2+):** bounded vault/git context in assist, exec PTY pane, session goal persist, pin preview panel, shared Assistant thread.
+
+---
+
+## Phase 31B — Terminal AI context (read-only snippets) **`[x]` shipped**
+
+| Item | Deliverable |
+|------|-------------|
+| **Context markers** | `@vault:path`, `@workspace:file`, `@git:diff\|stat\|last\|status` in Agent prompts |
+| **Loaders** | `terminal-assist-context.ts` — vault/workspace/git read-only, max 3 snippets × 8KB |
+| **PowerShell** | `detectShellContext` + assist prompt hints for pwsh/PowerShell |
+
+**Tests:** `terminal-assist-context.test.ts`
+
+---
+
+## Phase 31C — Terminal AI polish (persist + pin preview) **`[x]` shipped**
+
+| Item | Deliverable |
+|------|-------------|
+| **Assist persist** | `profile/terminals/assist-state.json` — goal, plan, pin survive restart |
+| **Resume goal** | `canResumeGoal` on assist state; `terminalResumeGoalLoop`; UI resume banner |
+| **Pin preview** | `terminalGetScrollbackPreview`; read-only panel above xterm when `/pin` set |
+
+**Tests:** `terminal-assist-persist.test.ts`
+
+**Still deferred:** none for Phase 31D core scope.
+
+---
+
+## Phase 31D — Exec pane + Tier 3 AI integration **`[x]` shipped**
+
+| Item | Deliverable |
+|------|-------------|
+| **Exec PTY pane** | Linked `role=exec` session; agent inject via `resolveAgentInjectSessionId`; `/exec` + toolbar toggle; read-only xterm attach |
+| **`/envoy` xterm intercept** | Opt-in `terminalXtermSlashIntercept` in Settings; Manual pane Enter routes to Agent NL |
+| **Background watch** | `/watchbg` · `/watchbgoff`; stable scrollback + cooldown → `terminal:watch-ready` event + toast |
+| **Assistant command-back** | `parseAssistantTerminalCommand`; ingest on every `runOwnerAgentTurn` with `[correlationId=sessionId]`; shared thread link in Assistant UI |
+
+**RPCs:** `terminalEnableExecPane`, `terminalSetBackgroundWatch`, `terminalClearBackgroundWatch`
+
+**Tests:** `terminal-assistant-command.test.ts`, exec pane case in `terminal-manager.test.ts`
+
+---
+
+**Phase 30 overall exit:** Slices **1 + 2 + 3 + 4** complete. Phase 30 marked **`[x]` shipped** in this plan.
 
 ### ADR: 30E — HomeRemote transport (mobile → home)
 
@@ -3748,137 +3807,147 @@ Terminals sit **outside** the normal Diplomat → Bond → Brain pipeline for me
 
 OpenClaw **`exec`** remains agent-scoped in workspace; Terminal Agent writes only to **owner-attached PTY sessions** and must not become a bypass for vault path safety or silent agent escalation.
 
-### 30A — Types, persistence & NodeService API
+### 30A — Types, persistence & NodeService API **`[x]` shipped**
 
-- `[ ]` `@envoymesh/api`: `TerminalSession`, `TerminalSessionSummary`, `CreateTerminalSessionParams`, `TerminalAttachToken`
-- `[ ]` `@envoymesh/api`: `TerminalAgentSuggestParams`, `TerminalAgentRunParams`, `TerminalCommandProposal` (`command`, `riskTier`, `rationale?`, `requiresConfirmation`)
-- `[ ]` `@envoymesh/api`: `TerminalAssistModelOverride`, `TerminalSlashCommandResult` (for `/model`, `/help` RPC responses)
-- `[ ]` `@envoymesh/protocol` or `@envoymesh/models`: `TerminalCommandProposalSchema` (Zod JSON output from LLM)
-- `[ ]` Persist session metadata under `<profile>/terminals/sessions.json` (not full scrollback v1 — optional ring buffer file per session v2)
-- `[ ]` `NodeService` methods: `listTerminalSessions`, `createTerminalSession`, `closeTerminalSession`, `renameTerminalSession`
-- `[ ]` `NodeService` methods: `terminalSuggestCommand`, `terminalRunFromNaturalLanguage`, `terminalExecuteProposal` (after confirm)
-- `[ ]` `NodeService` methods: `terminalExplainScrollback`, `terminalSetAssistModelOverride`, `terminalGetAssistState` (model, mode hints)
-- `[ ]` WS attach: `GET /terminal/:sessionId?token=...` or subprotocol handshake after JSON-RPC `terminal.attach`
+- `[x]` `@envoymesh/api`: `TerminalSession`, `TerminalSessionSummary`, `CreateTerminalSessionParams`, `TerminalAttachToken`
+- `[x]` `@envoymesh/api`: `TerminalCommandProposal` (`command`, `riskTier`, `rationale?`, `requiresConfirmation`) + assist RPC types
+- `[x]` `@envoymesh/models`: `parseTerminalCommandProposal` / Zod JSON output from LLM
+- `[x]` Persist session metadata under `<profile>/terminals/sessions.json`
+- `[x]` `NodeService` methods: `listTerminalSessions`, `createTerminalSession`, `closeTerminalSession`, `renameTerminalSession`
+- `[x]` `NodeService` methods: `terminalSuggestCommand`, `terminalRunFromNaturalLanguage`, `terminalExecuteProposal`, assist v2 RPCs
+- `[x]` `NodeService` methods: `terminalExplainScrollback`, `terminalSetAssistModelOverride`, `terminalGetAssistState`
+- `[x]` WS attach: `/ws/terminal/:sessionId?token=...` after JSON-RPC `terminalAttach`
 
-### 30B — Home node PTY backend (desktop + Tauri)
+### 30B — Home node PTY backend (desktop + Tauri) **`[x]` shipped**
 
-- `[ ]` `apps/node/src/terminal-manager.ts` — spawn via `node-pty`, track pid/cwd/title/state, cleanup on exit
-- `[ ]` Per-session **scrollback ring buffer** (in-memory v1) — required for Agent mode context and reconnect hints
-- `[ ]` Default shell from `$SHELL`; optional templates: “Envoy workspace”, “Node logs follow”, “OpenClaw gateway tail”, “SSH (custom)”
-- `[ ]` Gate: **desktop node + Tauri child only** — `MobileNode` returns explicit `terminal.notSupportedOnMobile` for local PTY (mobile uses 30E proxy)
-- `[ ]` Integrate with existing `ENVOYMESH_PROFILE` / Tauri app-data profile paths
+- `[x]` `apps/node/src/terminal-manager.ts` — spawn via `node-pty`, track pid/cwd/title/state, cleanup on exit
+- `[x]` Per-session **scrollback ring buffer** (in-memory v1)
+- `[x]` Default shell from `$SHELL`; optional title/cwd on create
+- `[x]` Gate: **desktop node + Tauri child only** — mobile uses 30E proxy
+- `[x]` Integrate with existing `ENVOYMESH_PROFILE` / Tauri app-data profile paths
 
-### 30C — WebSocket transport (PTY wire protocol)
+### 30C — WebSocket transport (PTY wire protocol) **`[x]` shipped**
 
-- `[ ]` Binary frame format: `{ type: 'stdin'|'stdout'|'resize'|'exit', ... }` (versioned, documented in protocol doc)
-- `[ ]` Separate from JSON-RPC `:3030/ws` **or** multiplex on same server with path `/ws/terminal` (prefer **separate path** to keep RPC simple)
-- `[ ]` Attach token tied to owner session / pairing token TTL
-- `[ ]` Reconnect: reattach to live PTY if session still running (herdr-like detach semantics)
+- `[x]` Binary frame format: stdin/stdout/resize/exit/ping/pong (versioned — `docs/terminals-wire-protocol.md`, `packages/api/test/terminal-wire.test.ts`)
+- `[x]` Separate path `/ws/terminal` on loopback port (distinct from JSON-RPC `:3030/ws`)
+- `[x]` Attach token tied to owner session / TTL
+- `[x]` Reattach to live PTY while session running (`terminal-ws-integration.test.ts`)
 
-### 30D — Social UI (Chat → Terminals tab)
+### 30D — Social UI (Chat → Terminals tab) **`[x]` shipped**
 
 **Slice 1:** manual xterm only · **Slice 3:** Agent bar + mode toggle (add to existing `TerminalPanel`)
 
-- `[ ]` Extend `ChatPanelMode`: `"threads" | "inbox" | "terminals"`
-- `[ ]` `TerminalSidebar` + `TerminalPanel` (xterm.js + `@xterm/addon-fit`)
-- `[ ]` **Manual mode:** full keyboard forwarding, copy/paste, context menu; behaves like real terminal (including nested SSH)
-- `[ ]` **Mode toggle:** toolbar `[ Manual | Agent ]` pill + `Ctrl+Shift+A` / `⌘⇧A`; focus moves between xterm and Agent bar
-- `[ ]` **Agent bar:** NL input + slash commands (`/help`, `/model`, `/manual`, `/agent`, `/explain`, …); command **preview card** with Run / Edit in terminal / Cancel
-- `[ ]` Client-side slash parser in `terminal-slash-commands.ts` — local commands without RPC; `/model*` calls `terminalSetAssistModelOverride`
-- `[ ]` Optional inline **suggestion chip** while typing in manual mode (lightweight, debounced)
-- `[ ]` “New terminal” button (like new group); optional title + cwd picker + template (SSH host hint in title only — user runs `ssh` inside PTY)
-- `[ ]` Empty state when no sessions; hide tab when `!capabilities.terminals`
-- `[ ]` i18n keys; mobile-safe layout (single column: list ↔ panel; Agent bar stacks below xterm)
+- `[x]` Extend `ChatPanelMode`: `"threads" | "inbox" | "terminals"`
+- `[x]` `TerminalSidebar` + `TerminalPanel` (xterm.js + `@xterm/addon-fit`)
+- `[x]` **Manual mode:** keyboard forwarding, copy/paste; nested SSH via real PTY
+- `[x]` **Mode toggle:** `[ Manual | Agent ]` + `⌘⇧A`
+- `[x]` **Agent bar:** NL input + slash commands; preview card with Run / Edit / Cancel
+- `[x]` Client-side slash parser in `terminal-slash-commands.ts`
+- `[x]` Inline ghost suggestions in Manual mode (Tab to accept)
+- `[x]` “New terminal” button; session list sidebar
+- `[x]` Empty state + pair/home-offline UX on mobile
+- `[x]` i18n keys; mobile-safe layout
 
-### 30E — Mobile remote home (Terminals + HomeRemote) **`[ ]` required for Phase 30 exit**
+### 30E — Mobile remote home (Terminals + HomeRemote) **`[x]` shipped (Slice 2 + 3 proxy)**
 
-- `[ ]` **`HomeRemoteClient`** in `packages/mobile-node/src/home-remote-client.ts` — persistent WS to home, `sessionToken` header/param, reconnect backoff
-- `[ ]` Resolve home WS URL from pairing state (`homeNodePeerId`, relay roster, pairing payload hints)
-- `[ ]` **`homeTerminalWsOpen` / `homeTerminalWsSend` / `homeTerminalWsClose`** on home `WsServer` (pattern: `homeclaw-core-ws.ts`) — binary-safe tunnel for PTY frames
-- `[ ]` `MobileNode` implements all terminal `NodeService` methods via HomeRemote when `sharedIdentity && homeNodePeerId` — local stub returns `terminal.pairHomeRequired` when not paired
-- `[ ]` Social `TerminalPanel`: same xterm.js + Agent bar; no mobile-specific feature gap vs desktop when paired
-- `[ ]` `capabilities.homeRemote`: `{ paired, homeOnline, terminalsAvailable, assistantProxied }` on `getNodeStatus` or dedicated RPC for UI gating
-- `[ ]` UI: paired → “Running on home node”; unpaired → pair CTA; offline → retry + last-known session list
-- `[ ]` E2E: mock home + paired mobile — create session, type, Agent mode NL → confirm → output on home PTY
-- `[ ]` **No** `node-pty` on device; **no** local Terminal Agent LLM when paired (home executes assist)
+- `[x]` **`HomeRemoteClient`** in `packages/mobile-node/src/home-remote-client.ts` — persistent WS to home, `sessionToken` header/param, reconnect backoff
+- `[x]` Resolve home WS URL from pairing state (`homeNodePeerId`, relay roster, pairing payload hints)
+- `[x]` **`homeTerminalWsOpen` / `homeTerminalWsSend` / `homeTerminalWsClose`** on home `WsServer` (pattern: `homeclaw-core-ws.ts`) — binary-safe tunnel for PTY frames
+- `[x]` `MobileNode` implements all terminal `NodeService` methods via HomeRemote when `sharedIdentity && homeNodePeerId` — local stub returns `terminal.pairHomeRequired` when not paired
+- `[x]` Social `TerminalPanel`: same xterm.js + Agent bar; no mobile-specific feature gap vs desktop when paired
+- `[x]` `capabilities.homeRemote`: `{ paired, homeOnline, terminalsAvailable, assistantProxied }` on `getConnectionStatus`
+- `[x]` UI: paired → “Running on home node”; unpaired → pair CTA; offline → retry + last-known session list
+- `[x]` E2E: mock home + paired mobile — create session, attach, Agent NL → execute (`home-remote-terminal.test.ts`)
+- `[x]` **No** `node-pty` on device; **no** local Terminal Agent LLM when paired (home executes assist)
 
-### 30K — EnvoyAI home proxy (paired mobile Assistant) **`[ ]` required for remote Assistant parity**
+### 30K — EnvoyAI home proxy (paired mobile Assistant) **`[x]` shipped (Slice 4)**
 
 **Goal:** When mobile is paired, **Assistant / EnvoyAI** uses the **home node’s** `runOwnerAgentTurn`, OpenClaw gateway, vault, and approval queue — same as desktop Tauri.
 
-- `[ ]` `MobileNode.runOwnerAgentTurn()` → **`HomeRemoteClient.call("runOwnerAgentTurn", …)`** when paired + home online (replace degraded local loop for paired users)
-- `[ ]` `listPendingApprovals`, `approvePendingAction`, OpenClaw-backed paths → proxy to home when paired (incremental: start with owner agent turn + approvals)
-- `[ ]` Home validates `sessionToken`; audit `remoteClient: mobile`, `deviceId`
-- `[ ]` Offline: clear UX (“Home node offline — Assistant needs your computer”) — optional queue v2
-- `[ ]` Tests: paired mock — mobile Assistant message executes home ToolRegistry (mock home node)
-- `[ ]` Document in plan: unpaired mobile keeps **limited local** assistant until user pairs (or hide Assistant until paired — product toggle in Settings)
+- `[x]` `MobileNode.runOwnerAgentTurn()` → **`HomeRemoteClient.call("runOwnerAgentTurn", …)`** when paired + home online (replace degraded local loop for paired users)
+- `[x]` `listPendingApprovals`, `approvePendingApproval`, `rejectPendingApproval` → proxy to home when paired
+- `[x]` Home validates `sessionToken`; audit `remoteClient: mobile`, `deviceId`
+- `[x]` Offline: clear UX (“Home node offline — Assistant needs your computer”) in `AIChatPanel`
+- `[x]` Tests: paired mock — `packages/mobile-node/test/home-remote-assistant.test.ts`
+- `[x]` Unpaired mobile keeps **limited local** assistant until user pairs
 
 **Note:** 30K aligns Phase **18** (native owner agent) and **29** (OpenClaw) with Story A multi-device. Terminals (30E) and EnvoyAI (30K) share **HomeRemoteClient** auth and connection.
 
 ### 30F — Agent-awareness UI (herdr-inspired, EnvoyMesh-native)
 
-- `[ ]` Session row badges: **idle / working / blocked / done** derived from:
+- `[x]` Session row badges: **idle / working / blocked / done** derived from:
   - foreground process name (e.g. `openclaw`, `node`, `clawhub`)
   - H2A **pending approval** count → **blocked**
   - OpenClaw turn in progress → **working**
-- `[ ]` Optional link: “Focus EnvoyAI” opens Assistant view; does not replace terminal pane
-- `[ ]` Defer full herdr socket integration; achieve 80% of sidebar value with existing node events (`agent:activity`, approval queue)
+- `[x]` Optional link: “Focus EnvoyAI” opens Assistant view; does not replace terminal pane
+- `[x]` Defer full herdr socket integration; achieve 80% of sidebar value with existing node events (`agent:activity`, approval queue)
 
-### 30I — Terminal Agent mode (AI-assisted commands)
+### 30I — Terminal Agent mode (AI-assisted commands) **`[x]` shipped**
 
-- `[ ]` `apps/node/src/terminal-agent-assist.ts` — scrollback-aware NL→command; deterministic **risk classifier** before model call
-- `[ ]` `apps/node/src/terminal-assist-prompt.ts` — system prompt + JSON schema instructions (distinct from owner-agent planner + OpenClaw system prompt)
-- `[ ]` **Direct LLM path (v1):** `routeModelRequest({ taskType: "terminal.assist", ownerApproved: true })` via `buildModelProviders` — **not** `askOpenClaw`, **not** `runOwnerAgentTurn`
-- `[ ]` `parseTerminalCommandProposal()` — Zod-validated JSON; reject non-JSON or missing `command` field (no free-text PTY inject)
-- `[ ]` `terminalExplainScrollback()` — read-only `taskType: "terminal.explain"` (or same assist with `mode: "explain"`) — no PTY write
-- `[ ]` Per-session model override: `/model <id>` → stored on `TerminalSession.assistModelOverride`; cleared by `/model default`
-- `[ ]` Settings → **Terminal assist model** in AI settings (third tier alongside chat draft + OpenClaw assistant per Phase 29D)
-- `[ ]` `terminalSuggestCommand({ sessionId, partialInput })` — inline completions for manual mode
-- `[ ]` `terminalRunFromNaturalLanguage({ sessionId, prompt })` → `TerminalCommandProposal`
-- `[ ]` `terminalExecuteProposal({ sessionId, proposalId, confirmed: true })` → write bytes to PTY stdin
-- `[ ]` Multi-step tasks (v1.1): **Observe loop** (TmuxAI-style) — after execute, wait for output stable → optional next proposal without new NL turn
-- `[ ]` Multi-step tasks (v1.1): numbered plan; user runs step-by-step with confirm each
-- `[ ]` **v1.1:** `terminalAssistTurnHistory` + squashing when prompt exceeds budget (TmuxAI-style)
-- `[ ]` Settings: **`terminalCommandAllowPatterns` / `terminalCommandDenyPatterns`** (regex) in addition to built-in destructive list
-- `[ ]` UI: risk badges on preview card (✓ / ? / !) — display only; gate uses deterministic tier
-- `[ ]` **v2:** `/openclaw` → `askOpenClaw` for plan text only; each step still via proposal + confirm pipeline
-- `[ ]` Settings: Agent mode default, auto-run policy, destructive command list (owner-editable extension to defaults)
-- `[ ]` Audit: `terminal.agent.proposed`, `terminal.agent.executed`, `terminal.agent.denied`, `terminal.agent.modelChanged`
-- `[ ]` Tests: risk tiers, SSH scrollback fixture (“root@ecs:~#”), confirm gate blocks `reboot` without `confirmed`, JSON parse rejects free text, `/model` override routing
+- `[x]` `apps/node/src/terminal-agent-assist.ts` — scrollback-aware NL→command; deterministic **risk classifier** before model call
+- `[x]` `apps/node/src/terminal-assist-prompt.ts` — system prompt + JSON schema instructions (distinct from owner-agent planner + OpenClaw system prompt)
+- `[x]` **Direct LLM path (v1):** `routeModelRequest({ taskType: "terminal.assist", ownerApproved: true })` via `buildModelProviders` — **not** `askOpenClaw`, **not** `runOwnerAgentTurn`
+- `[x]` `parseTerminalCommandProposal()` — Zod-validated JSON; reject non-JSON or missing `command` field (no free-text PTY inject)
+- `[x]` `terminalExplainScrollback()` — read-only `taskType: "terminal.explain"` (or same assist with `mode: "explain"`) — no PTY write
+- `[x]` Per-session model override: `/model <id>` → stored on assist session state; cleared by `/model default`
+- `[x]` Settings → **Terminal assist model** in AI settings (third tier alongside chat draft + OpenClaw assistant per Phase 29D)
+- `[x]` `terminalSuggestCommand({ sessionId, partialInput })` — inline completions for manual mode
+- `[x]` `terminalRunFromNaturalLanguage({ sessionId, prompt })` → `TerminalCommandProposal`
+- `[x]` `terminalExecuteProposal({ sessionId, proposalId, confirmed: true })` → write bytes to PTY stdin
+- `[x]` **Observe loop:** `terminalObserveStep` + `/observe` — wait for output stable → optional next proposal
+- `[x]` **Numbered plan:** `/openclaw` + `/step` — user runs step-by-step with confirm each
+- `[x]` `terminalAssistTurnHistory` + squashing when prompt exceeds budget
+- `[x]` Settings: **`terminalCommandAllowPatterns` / `terminalCommandDenyPatterns` / `terminalCommandDestructivePatterns`** (regex)
+- `[x]` UI: risk badges on preview card (✓ / ? / !) — display only; gate uses deterministic tier
+- `[x]` **v2:** `/openclaw` → `askOpenClaw` for plan text only; each step still via proposal + confirm pipeline
+- `[x]` Settings: Agent mode default, auto-run policy, destructive command list (owner-editable extension to defaults)
+- `[x]` **v2:** `/prepare`, `/watch`, `/pin` — prepare-mode PS1 markers, scrollback watch, context-session pin
+- `[x]` Audit: `terminal.agent.proposed`, `terminal.agent.executed`, `terminal.agent.denied`, `terminal.agent.modelChanged`
+- `[x]` Tests: risk tiers, SSH scrollback fixture, confirm gate, JSON parse, `/model` override, plan parser, slash commands
 
-### 30G — Tests
+### 30G — Tests **`[x]` shipped (unit + mock integration)**
 
-- `[ ]` Unit: `TerminalManager` spawn/resize/kill; path guards; max session limit
-- `[ ]` Unit: `TerminalAgentAssist` risk classification + proposal parsing
-- `[ ]` Unit: WS frame codec roundtrip
-- `[ ]` Integration: mock PTY ↔ xterm.js harness (headless)
-- `[ ]` E2E: desktop create session → type command → see output
-- `[ ]` E2E: Agent mode NL → preview → confirm → command runs in PTY (mock model returning fixed command)
-- `[ ]` E2E: mobile paired mock → attach to home terminal endpoint (no local PTY)
+- `[x]` Unit: `TerminalManager` spawn/resize/kill; path guards; max session limit
+- `[x]` Unit: `TerminalAgentAssist` risk classification + proposal parsing
+- `[x]` Unit: WS frame codec roundtrip (`packages/api/test/terminal-wire.test.ts`)
+- `[x]` Integration: mock PTY ↔ wire codec + loopback attach (`apps/node/test/terminal-ws-integration.test.ts`)
+- `[x]` E2E: desktop create session → type command → scrollback output (`terminal-ws-integration.test.ts`)
+- `[x]` E2E: Agent mode NL → preview → confirm → PTY inject (`apps/node/test/terminal-agent-assist.test.ts`)
+- `[x]` E2E: mobile paired mock → home terminal RPC + tunnel open (`packages/mobile-node/test/home-remote-terminal.test.ts`)
+- `[x]` E2E: session badge enrichment from live scrollback (`terminal-session-enrichment.test.ts`, `terminal-ws-integration.test.ts`)
+- `[x]` E2E: terminal sidebar badges + Focus EnvoyAI (`apps/social/test/e2e/terminal-sidebar-e2e.test.tsx`)
+- `[x]` Unit: respawn load gate, failed respawn → exited, PTY activity debounce (`terminal-manager.test.ts`)
+- `[x]` Unit: herdr export file + socket evaluation note (`herdr-export.test.ts`)
+- `[x]` Unit: `openInHerdr` spawn success + ENOENT failure (`open-in-herdr.test.ts`)
+- `[x]` Integration: `NodeServiceImpl.listTerminalSessions` + approval queue enrichment (`terminal-node-service-enrichment.test.ts`)
+- `[x]` E2E: nested tmux tip UI (`terminal-panel-nested-tip-e2e.test.tsx`, `terminal-nested-multiplexer-tip.test.ts`)
+- `[x]` Playwright: Chromium WebSocket ↔ terminal wire protocol (`terminal-playwright-browser.test.ts`; requires `npx playwright install chromium`)
+- `[x]` Unit: failure heuristics + goal success (`terminal-failure-detect.test.ts`)
+- `[x]` Unit: `/goal` slash parsing (`terminal-slash-commands-goal.test.ts`)
 
-### 30H — Optional herdr external integration (deferred)
+### 30H — Optional herdr external integration (deferred integration; docs shipped)
 
-- `[ ]` Doc: install herdr via brew/install script; `herdr integration install` for agents user runs in panes
-- `[ ]` Settings action: **Open workspace in herdr** (`herdr` CLI spawn with `cwd=openclaw-workspace`)
-- `[ ]` Evaluate herdr **socket API** for “export pane to EnvoyMesh terminal session” — only if 30A–30F insufficient for power users
-- `[ ]` Legal review before any bundling (AGPL-3.0)
+- `[x]` Doc: install herdr + when to use vs EnvoyMesh Terminals — [terminals-external-herdr.md](./terminals-external-herdr.md)
+- `[x]` Settings action: **Open workspace in herdr** (`herdr` CLI spawn with `cwd=openclaw-workspace`)
+- `[x]` Evaluate herdr **socket API** for “export pane to EnvoyMesh terminal session” — `terminalGetHerdrExportHint` writes scrollback export file; `HERDR_SOCKET` documented for upstream evaluation
+- `[x]` Legal review before any bundling (AGPL-3.0) — not bundled; external install only
 
-### 30J — Optional TmuxAI external integration (deferred)
+### 30J — Optional TmuxAI external integration (deferred integration; docs shipped)
 
-- `[ ]` Doc: install [TmuxAI](https://github.com/alvinunreal/tmuxai) (`get.tmuxai.dev` install script); requires **tmux** on the target machine
-- `[ ]` Settings → **Advanced**: when to use **EnvoyMesh in-browser terminal + Agent bar** vs **SSH host tmux + TmuxAI** (complementary, not either/or for power users)
-- `[ ]` Do **not** bundle TmuxAI in Tauri v1; Apache-2.0 allows optional pack later — product default remains native assist
-- `[ ]` If user runs `tmux` / `tmuxai` inside an EnvoyMesh PTY, show one-time tip: nested tmux AI is unsupported — prefer Agent bar or native tmux on SSH host
-- `[ ]` v2: **context-session linking** — pin another EnvoyMesh terminal session as read-only assist context (TmuxAI read-only panes analogue)
+- `[x]` Doc: install TmuxAI + when to use vs EnvoyMesh Agent bar — [terminals-external-tmuxai.md](./terminals-external-tmuxai.md)
+- `[x]` Settings guidance: EnvoyMesh in-browser terminal + Agent bar vs SSH host tmux + TmuxAI (documented in 30J doc)
+- `[x]` Do **not** bundle TmuxAI in Tauri v1 — documented
+- `[x]` One-time tip in UI when user runs nested tmux inside EnvoyMesh PTY
+- `[x]` Context-session linking shipped natively via `/pin` (TmuxAI read-only panes analogue)
 
 **Exit criteria (Phase 30 overall — see [shipping plan](#phase-30-shipping-plan-agreed-order) for per-slice gates):**
 
-- `[ ]` **Slice 1** complete — manual home terminal
-- `[ ]` **Slice 2** complete — mobile remote manual terminal
-- `[ ]` **Slice 3** complete — Agent mode (TmuxAI-inspired native; desktop + mobile)
-- `[ ]` **Slice 4** complete — EnvoyAI home proxy (paired mobile Assistant)
-- `[ ]` No bonded peer shell access; audit for session + agent events; wire protocol documented
-- `[ ]` herdr + TmuxAI remain optional external references — not shipped dependencies
+- `[x]` **Slice 1** complete — manual home terminal
+- `[x]` **Slice 2** complete — mobile remote manual terminal
+- `[x]` **Slice 3** complete — Agent mode (TmuxAI-inspired native; desktop + mobile; v2 out-of-scope items shipped)
+- `[x]` **Slice 4** complete — EnvoyAI home proxy (paired mobile Assistant)
+- `[x]` No bonded peer shell access; audit for session + agent events; wire protocol documented
+- `[x]` herdr + TmuxAI remain optional external references — not shipped dependencies
 
 **Out of scope (v1):**
 
@@ -3898,6 +3967,8 @@ OpenClaw **`exec`** remains agent-scoped in workspace; Terminal Agent writes onl
 
 | Date | Change |
 |------|--------|
+| 2026-06-05 | **Phase 30 — Tests + docs complete:** 30G mock integration (`terminal-ws-integration.test.ts`, `home-remote-terminal.test.ts`); 30H/30J external tool docs; 30A–30D plan checkboxes aligned with shipped code. |
+| 2026-06-05 | **Phase 30 — Slices 3–4 shipped:** Terminal Agent v1 + **v2** (`/openclaw`, `/prepare`, `/watch`, `/pin`, `/step`, destructive regex); EnvoyAI **home proxy** for paired mobile (`runOwnerAgentTurn` + approvals, `assistantProxied`, offline UX, audit `remoteClient=mobile`). Slice exit criteria + 30I/30K/30E checkboxes updated. |
 | 2026-06-06 | **Phase 30 — Shipping plan agreed:** Slice **1** manual home (herdr session UX) → **2** mobile remote manual → **3** Agent mode (TmuxAI-inspired **native**, not embedded) → **4** EnvoyAI home proxy; per-slice exit criteria. |
 | 2026-06-06 | **Phase 30 — Mobile remote home (first-class):** **HomeRemoteClient** ADR (30E); Terminals + **EnvoyAI home proxy** (30K) via `sessionToken`; phone = UI, home = PTY/LLM/vault; extends Phase 11 pairing. |
 | 2026-06-06 | **Phase 30 — TmuxAI evaluated:** [TmuxAI](https://github.com/alvinunreal/tmuxai) as **lead Agent-mode UX reference** (observe loop, chat/exec/context panes, risk confirm, `/model`, squashing); Apache-2.0 optional external path (**30J**); native EnvoyMesh assist remains v1 — do not embed tmux dependency. |

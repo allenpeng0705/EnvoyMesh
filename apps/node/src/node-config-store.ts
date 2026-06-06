@@ -44,6 +44,16 @@ export interface PersistedNodeConfig {
   bootstrapPresets: string[];
   configuredRelays: RelayConfig[];
   modelProviders: ModelProviderConfig;
+  /** Optional model name override for terminal assist (Phase 30I). */
+  terminalAssistModelName?: string;
+  terminalCommandAllowPatterns?: readonly string[];
+  terminalCommandDenyPatterns?: readonly string[];
+  terminalCommandDestructivePatterns?: readonly string[];
+  terminalAgentModeDefault?: boolean;
+  terminalAutoRunPolicy?: import("@envoymesh/api").TerminalAutoRunPolicy;
+  terminalInlineSuggestEnabled?: boolean;
+  /** Opt-in: intercept /envoy in Manual xterm input (Phase 31D). */
+  terminalXtermSlashIntercept?: boolean;
   chatAssistEnabled: boolean;
   updatedAt: string;
   /** Anonymous discovery mode. Default: "off". */

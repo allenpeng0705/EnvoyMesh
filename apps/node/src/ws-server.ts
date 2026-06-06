@@ -9,6 +9,7 @@ import type {
 import type { NodeService } from "@envoymesh/api";
 import { NodeServiceImpl } from "./node-service-impl.js";
 import { routeRpcMethod } from "./json-rpc-router.js";
+import { TERMINAL_WS_PORT } from "./service-ports.js";
 import {
   closeHomeClawCoreWsForCompanion,
   rpcHomeClawCoreWsClose,
@@ -96,6 +97,12 @@ export class WsServer {
       nodeServiceImpl.on("agent:awareness", (data: unknown) => this.emitEvent("agent:awareness", data));
       nodeServiceImpl.on("terminal:session-updated", (data: unknown) =>
         this.emitEvent("terminal:session-updated", data),
+      );
+      nodeServiceImpl.on("terminal:watch-ready", (data: unknown) =>
+        this.emitEvent("terminal:watch-ready", data),
+      );
+      nodeServiceImpl.on("terminal:assistant-proposal", (data: unknown) =>
+        this.emitEvent("terminal:assistant-proposal", data),
       );
       // Phase 25C — Digest ready notification
       // digest:ready not in NodeServiceEvents type — emit directly
@@ -226,6 +233,8 @@ export class WsServer {
       "homeTerminalWs:rx",
       "homeTerminalWs:closed",
       "terminal:session-updated",
+      "terminal:watch-ready",
+      "terminal:assistant-proposal",
     ];
     for (const event of allEvents) {
       this.subscribe(ws, event);
@@ -314,7 +323,7 @@ export class WsServer {
         const err = await rpcHomeTerminalWsOpen(
           ws,
           (params ?? {}) as { pathWithQuery: string },
-          3031,
+          TERMINAL_WS_PORT,
           (event, data) => this.sendEvent(ws, event, data),
         );
         this.sendResponse(ws, String(id), err === null ? { ok: true } : { ok: false, error: err });

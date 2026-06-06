@@ -7,6 +7,7 @@ import {
   rpcHomeTerminalWsOpen,
   rpcHomeTerminalWsSend,
 } from "./home-terminal-ws.js";
+import { TERMINAL_WS_PORT } from "./service-ports.js";
 
 /**
  * Creates a libp2p protocol handler for the client-proxy relay bridge.
@@ -47,6 +48,14 @@ export function createClientProxyHandler(
         return;
       }
 
+      const tokenRecord = await nodeService.lookupSessionToken(token);
+      const PROXY_AUDIT_METHODS = new Set([
+        "runOwnerAgentTurn",
+        "listPendingApprovals",
+        "approvePendingApproval",
+        "rejectPendingApproval",
+      ]);
+
       await streamIo.write(encoder.encode(JSON.stringify({ type: "proxy-accept" })));
 
       while (true) {
@@ -66,7 +75,7 @@ export function createClientProxyHandler(
             const err = await rpcHomeTerminalWsOpen(
               companion,
               (msg.params ?? {}) as { pathWithQuery: string },
-              3031,
+              TERMINAL_WS_PORT,
               (event, data) => {
                 void emitEvent(event, data);
               },
@@ -99,6 +108,14 @@ export function createClientProxyHandler(
             rpcHomeTerminalWsClose(companion);
             await streamIo.write(encoder.encode(JSON.stringify({ id: msg.id, result: { ok: true } })));
             continue;
+          }
+
+          if (PROXY_AUDIT_METHODS.has(msg.method) && tokenRecord?.deviceId) {
+            void nodeService.auditHomeRemoteRpc({
+              method: msg.method,
+              deviceId: tokenRecord.deviceId,
+              ownerId: tokenRecord.ownerId,
+            });
           }
 
           const result = await routeRpcMethod(nodeService, msg.method, msg.params ?? {});

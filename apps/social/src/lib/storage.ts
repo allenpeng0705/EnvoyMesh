@@ -84,3 +84,47 @@ export function loadContactAiPrefs(): Record<string, ContactAiPrefs> {
   }
   return {};
 }
+
+export const TERMINAL_SELECTED_SESSION_KEY = "envoymesh:terminal:selectedSessionId";
+export const ASSISTANT_LINKED_TERMINAL_KEY = "envoymesh:assistant:linkedTerminalSessionId";
+export const TERMINAL_NESTED_MULTIPLEXER_TIP_KEY = "envoymesh:terminal:nestedMultiplexerTipDismissed";
+
+export function loadTerminalSelectedSessionId(): string | null {
+  try {
+    return localStorage.getItem(TERMINAL_SELECTED_SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function saveTerminalSelectedSessionId(sessionId: string | null): void {
+  try {
+    if (!sessionId) {
+      localStorage.removeItem(TERMINAL_SELECTED_SESSION_KEY);
+      return;
+    }
+    localStorage.setItem(TERMINAL_SELECTED_SESSION_KEY, sessionId);
+  } catch {
+    //
+  }
+}
+
+export function loadAssistantLinkedTerminalSessionId(): string | null {
+  try {
+    return localStorage.getItem(ASSISTANT_LINKED_TERMINAL_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function saveAssistantLinkedTerminalSessionId(sessionId: string | null): void {
+  try {
+    if (!sessionId) {
+      localStorage.removeItem(ASSISTANT_LINKED_TERMINAL_KEY);
+      return;
+    }
+    localStorage.setItem(ASSISTANT_LINKED_TERMINAL_KEY, sessionId);
+  } catch {
+    //
+  }
+}

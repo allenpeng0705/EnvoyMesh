@@ -6200,8 +6200,25 @@ button.activity-row:hover,
   font-weight: var(--font-weight-semibold, 600);
 }
 
-.answer-block-card-cta:hover {
+.answer-block-card-cta:hover:not(:disabled) {
   filter: brightness(1.1);
+}
+
+.answer-block-card-cta:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.answer-block-card-cta--static {
+  display: inline-block;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-subtle);
+  cursor: default;
+}
+
+.answer-block-card--interactive {
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, var(--color-border-subtle));
 }
 
 .answer-block-status {

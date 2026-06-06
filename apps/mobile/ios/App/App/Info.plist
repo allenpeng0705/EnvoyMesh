@@ -45,5 +45,9 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>EnvoyMesh uses the camera to scan pairing QR codes from your home computer.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>EnvoyMesh can read a pairing QR code from a photo when camera scanning is unavailable.</string>
 </dict>
 </plist>

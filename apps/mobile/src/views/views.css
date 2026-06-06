@@ -1135,6 +1135,47 @@
   color: var(--color-success, #2e7d32);
 }
 
+.mv-qr-scan-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.mv-qr-scan-card {
+  width: min(100%, 360px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--color-surface, #fff);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.mv-qr-scan-video {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--radius-md, 8px);
+  background: #000;
+  object-fit: cover;
+}
+
+.mv-qr-scan-status {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted, #666);
+  text-align: center;
+}
+
+.mv-qr-scan-cancel {
+  width: 100%;
+}
+
 /* ==========================================================================
    Settings View
    ========================================================================== */

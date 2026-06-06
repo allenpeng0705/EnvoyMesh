@@ -1,6 +1,8 @@
 import WebSocket, { RawData } from "ws";
 
-const DEFAULT_TERMINAL_WS_PORT = 3031;
+import { TERMINAL_WS_PORT } from "./service-ports.js";
+
+const DEFAULT_TERMINAL_WS_PORT = TERMINAL_WS_PORT;
 
 interface Session {
   terminal: WebSocket | null;

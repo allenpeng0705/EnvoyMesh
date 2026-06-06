@@ -37,5 +37,12 @@ export type AnswerFormat = "plain" | "markdown" | "structured";
 export type StructuredBlock =
   | { type: "paragraph"; text: string }
   | { type: "list"; items: string[]; ordered?: boolean; style?: "bullet" | "check" }
-  | { type: "card"; title: string; subtitle?: string; meta?: string[]; cta?: { label: string; action: string } }
+  | {
+      type: "card";
+      title: string;
+      subtitle?: string;
+      meta?: string[];
+      file?: { source: "vault" | "workspace"; relativePath: string; documentId?: string };
+      cta?: { label: string; action: string };
+    }
   | { type: "status"; tone: "info" | "success" | "warn" | "error"; text: string };

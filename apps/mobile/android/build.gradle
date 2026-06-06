@@ -21,6 +21,14 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // OutSystems Maven mirror required by @capacitor/barcode-scanner (ML Kit scanner).
+        maven {
+            url 'https://pkgs.dev.azure.com/OutSystemsRD/9e79bc5b-69b2-4476-9ca5-d67594972a52/_packaging/PublicArtifactRepository/maven/v1'
+            name 'Azure'
+            content {
+                includeGroup "com.github.outsystems"
+            }
+        }
     }
 }
 

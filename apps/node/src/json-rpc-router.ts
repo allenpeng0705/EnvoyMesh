@@ -415,6 +415,126 @@ export async function routeRpcMethod(
         cols: params.cols as number | undefined,
         rows: params.rows as number | undefined,
       });
+    case "terminalRunFromNaturalLanguage":
+      return ns.terminalRunFromNaturalLanguage({
+        sessionId: String(params.sessionId ?? ""),
+        prompt: String(params.prompt ?? ""),
+      });
+    case "terminalExecuteProposal":
+      return ns.terminalExecuteProposal({
+        sessionId: String(params.sessionId ?? ""),
+        proposalId: String(params.proposalId ?? ""),
+        confirmed: params.confirmed as boolean | undefined,
+      });
+    case "terminalSetAssistModelOverride":
+      return ns.terminalSetAssistModelOverride({
+        sessionId: String(params.sessionId ?? ""),
+        modelName: params.modelName as string | undefined,
+      });
+    case "terminalGetAssistState":
+      return ns.terminalGetAssistState(String(params.sessionId ?? ""));
+    case "terminalExplainScrollback":
+      return ns.terminalExplainScrollback({
+        sessionId: String(params.sessionId ?? ""),
+        topic: params.topic as string | undefined,
+      });
+    case "terminalSuggestCommand":
+      return ns.terminalSuggestCommand({
+        sessionId: String(params.sessionId ?? ""),
+        partialInput: String(params.partialInput ?? ""),
+      });
+    case "terminalObserveStep":
+      return ns.terminalObserveStep({
+        sessionId: String(params.sessionId ?? ""),
+        goal: params.goal as string | undefined,
+        timeoutMs: params.timeoutMs as number | undefined,
+        stableMs: params.stableMs as number | undefined,
+      });
+    case "terminalSetInlineSuggestEnabled":
+      return ns.terminalSetInlineSuggestEnabled({
+        sessionId: String(params.sessionId ?? ""),
+        enabled: Boolean(params.enabled),
+      });
+    case "terminalOpenClawPlan":
+      return ns.terminalOpenClawPlan({
+        sessionId: String(params.sessionId ?? ""),
+        prompt: String(params.prompt ?? ""),
+      });
+    case "terminalRunPlanStep":
+      return ns.terminalRunPlanStep({
+        sessionId: String(params.sessionId ?? ""),
+        planId: String(params.planId ?? ""),
+        stepIndex: Number(params.stepIndex ?? 0),
+      });
+    case "terminalEnablePrepareMode":
+      return ns.terminalEnablePrepareMode({
+        sessionId: String(params.sessionId ?? ""),
+        enabled: Boolean(params.enabled),
+      });
+    case "terminalWatchStep":
+      return ns.terminalWatchStep({
+        sessionId: String(params.sessionId ?? ""),
+        goal: String(params.goal ?? ""),
+        lastScrollbackBytes: params.lastScrollbackBytes as number | undefined,
+      });
+    case "terminalPinContextSession":
+      return ns.terminalPinContextSession({
+        sessionId: String(params.sessionId ?? ""),
+        contextSessionId: params.contextSessionId as string | undefined,
+      });
+    case "terminalDetectFailure":
+      return ns.terminalDetectFailure({ sessionId: String(params.sessionId ?? "") });
+    case "terminalSuggestFixFromFailure":
+      return ns.terminalSuggestFixFromFailure({ sessionId: String(params.sessionId ?? "") });
+    case "terminalStartGoalLoop":
+      return ns.terminalStartGoalLoop({
+        sessionId: String(params.sessionId ?? ""),
+        goal: String(params.goal ?? ""),
+        maxSteps: params.maxSteps as number | undefined,
+      });
+    case "terminalAdvanceGoalLoop":
+      return ns.terminalAdvanceGoalLoop({ sessionId: String(params.sessionId ?? "") });
+    case "terminalCancelGoalLoop":
+      return ns.terminalCancelGoalLoop({ sessionId: String(params.sessionId ?? "") });
+    case "terminalClearResumeGoal":
+      return ns.terminalClearResumeGoal(String(params.sessionId ?? ""));
+    case "terminalSendContextToAssistant":
+      return ns.terminalSendContextToAssistant({
+        sessionId: String(params.sessionId ?? ""),
+        userPrompt: params.userPrompt as string | undefined,
+        maxBytes: params.maxBytes as number | undefined,
+      });
+    case "terminalUpdatePlanProgress":
+      return ns.terminalUpdatePlanProgress({
+        sessionId: String(params.sessionId ?? ""),
+        planId: String(params.planId ?? ""),
+        completedStepIndex: params.completedStepIndex as number | undefined,
+        skippedStepIndex: params.skippedStepIndex as number | undefined,
+      });
+    case "terminalGetScrollbackPreview":
+      return ns.terminalGetScrollbackPreview({
+        sessionId: String(params.sessionId ?? ""),
+        maxBytes: params.maxBytes as number | undefined,
+      });
+    case "terminalResumeGoalLoop":
+      return ns.terminalResumeGoalLoop({ sessionId: String(params.sessionId ?? "") });
+    case "terminalEnableExecPane":
+      return ns.terminalEnableExecPane({
+        sessionId: String(params.sessionId ?? ""),
+        enabled: Boolean(params.enabled),
+      });
+    case "terminalSetBackgroundWatch":
+      return ns.terminalSetBackgroundWatch({
+        sessionId: String(params.sessionId ?? ""),
+        goal: String(params.goal ?? ""),
+        stableMs: params.stableMs as number | undefined,
+      });
+    case "terminalClearBackgroundWatch":
+      return ns.terminalClearBackgroundWatch({ sessionId: String(params.sessionId ?? "") });
+    case "openInHerdr":
+      return ns.openInHerdr({ cwd: params.cwd as string | undefined });
+    case "terminalGetHerdrExportHint":
+      return ns.terminalGetHerdrExportHint({ sessionId: String(params.sessionId ?? "") });
     case "homeTerminalWsOpen":
       return ns.homeTerminalWsOpen({ pathWithQuery: String(params.pathWithQuery ?? "") });
     case "homeTerminalWsSend":

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,6 +19,7 @@ vi.mock("node-pty", () => ({
 }));
 
 import { TerminalManager } from "../src/terminal-manager.js";
+import { spawn } from "node-pty";
 
 describe("TerminalManager", () => {
   let profileDir: string;
@@ -27,6 +28,7 @@ describe("TerminalManager", () => {
   beforeEach(async () => {
     profileDir = await mkdtemp(join(tmpdir(), "envoy-term-"));
     manager = new TerminalManager({ profileDir });
+    await manager.waitUntilReady();
     mockPty.onData.mockClear();
     mockPty.onExit.mockClear();
     mockPty.write.mockClear();
@@ -72,5 +74,139 @@ describe("TerminalManager", () => {
       await manager.createTerminalSession({ title: `s${i}` });
     }
     await expect(manager.createTerminalSession({})).rejects.toThrow("terminal.maxSessions");
+  });
+
+  it("respawns running sessions from sessions.json on startup", async () => {
+    const sessionId = "respawn-session-id";
+    const now = new Date().toISOString();
+    await mkdir(join(profileDir, "terminals"), { recursive: true });
+    await writeFile(
+      join(profileDir, "terminals", "sessions.json"),
+      JSON.stringify({
+        version: 1,
+        sessions: [
+          {
+            sessionId,
+            title: "Respawn me",
+            cwd: profileDir,
+            shell: "/bin/bash",
+            createdAt: now,
+            state: "running",
+            lastActivityAt: now,
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+
+    const restarted = new TerminalManager({ profileDir });
+    await restarted.waitUntilReady();
+    const list = restarted.listTerminalSessions();
+    expect(list.some((s) => s.sessionId === sessionId && s.state === "running")).toBe(true);
+    await restarted.closeTerminalSession({ sessionId });
+  });
+
+  it("drops sessions that fail respawn instead of leaving exited rows", async () => {
+    const sessionId = "bad-respawn-id";
+    const now = new Date().toISOString();
+    await mkdir(join(profileDir, "terminals"), { recursive: true });
+    await writeFile(
+      join(profileDir, "terminals", "sessions.json"),
+      JSON.stringify({
+        version: 1,
+        sessions: [
+          {
+            sessionId,
+            title: "Spawn fail",
+            cwd: profileDir,
+            shell: "/bin/bash",
+            createdAt: now,
+            state: "running",
+            lastActivityAt: now,
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+
+    vi.mocked(spawn).mockImplementationOnce(() => {
+      throw new Error("spawn failed");
+    });
+
+    const restarted = new TerminalManager({ profileDir });
+    await restarted.waitUntilReady();
+    const row = restarted.listTerminalSessions().find((s) => s.sessionId === sessionId);
+    expect(row).toBeUndefined();
+  });
+
+  it("debounces session change notifications on PTY output", async () => {
+    vi.useFakeTimers();
+    const onSessionsChanged = vi.fn();
+    const debouncedManager = new TerminalManager({ profileDir, onSessionsChanged });
+    await debouncedManager.waitUntilReady();
+    onSessionsChanged.mockClear();
+
+    const created = await debouncedManager.createTerminalSession({});
+    onSessionsChanged.mockClear();
+
+    const onDataCb = mockPty.onData.mock.calls.at(-1)?.[0] as ((data: string) => void) | undefined;
+    expect(onDataCb).toBeTypeOf("function");
+    onDataCb!("output chunk");
+    expect(onSessionsChanged).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(onSessionsChanged).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+    await debouncedManager.closeTerminalSession({ sessionId: created.sessionId });
+  });
+
+  it("waits for persisted load before creating sessions", async () => {
+    const sessionId = "race-session-id";
+    const now = new Date().toISOString();
+    await mkdir(join(profileDir, "terminals"), { recursive: true });
+    await writeFile(
+      join(profileDir, "terminals", "sessions.json"),
+      JSON.stringify({
+        version: 1,
+        sessions: [
+          {
+            sessionId,
+            title: "Race",
+            cwd: profileDir,
+            shell: "/bin/bash",
+            createdAt: now,
+            state: "running",
+            lastActivityAt: now,
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+
+    const racing = new TerminalManager({ profileDir });
+    const created = await racing.createTerminalSession({ title: "After load" });
+    await racing.waitUntilReady();
+    const list = racing.listTerminalSessions();
+    expect(list.some((s) => s.sessionId === sessionId && s.state === "running")).toBe(true);
+    expect(list.some((s) => s.sessionId === created.sessionId)).toBe(true);
+    await racing.closeTerminalSession({ sessionId });
+    await racing.closeTerminalSession({ sessionId: created.sessionId });
+  });
+
+  it("creates exec pane linked to parent and routes agent inject", async () => {
+    const parent = await manager.createTerminalSession({ title: "main" });
+    const execId = await manager.enableExecPane(parent.sessionId);
+    expect(execId).toBeTruthy();
+    expect(manager.getExecSessionId(parent.sessionId)).toBe(execId);
+    expect(manager.resolveAgentInjectSessionId(parent.sessionId)).toBe(execId);
+
+    const summaries = manager.listSessionSummaries();
+    expect(summaries.some((s) => s.sessionId === parent.sessionId)).toBe(true);
+    expect(summaries.some((s) => s.sessionId === execId)).toBe(false);
+
+    manager.writeStdin(parent.sessionId, Buffer.from("echo hi\n"));
+    expect(mockPty.write).toHaveBeenCalled();
+    await manager.disableExecPane(parent.sessionId);
+    expect(manager.isExecPaneEnabled(parent.sessionId)).toBe(false);
   });
 });

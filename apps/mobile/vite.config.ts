@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import wasm from "vite-plugin-wasm";
+import topLevelAwait from "vite-plugin-top-level-await";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const socialSrc = resolve(repoRoot, "apps/social/src");
@@ -22,6 +24,8 @@ function readHeliaVersionForDefine(): string {
 export default defineConfig({
   plugins: [
     react(),
+    wasm(),
+    topLevelAwait(),
     // Strip crossorigin attributes for Capacitor WebView compatibility.
     // WKWebView can be strict about CORS on file:///capacitor:// schemes.
     {
@@ -38,6 +42,17 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
+    target: "esnext",
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      target: "esnext",
+    },
+    exclude: [
+      "@capacitor-community/sqlite",
+      "@capacitor/filesystem",
+      "capacitor-secure-storage-plugin",
+    ],
   },
   resolve: {
     alias: {
@@ -49,6 +64,9 @@ export default defineConfig({
         repoRoot,
         "packages/api/src/discovery-referral-attestation.ts",
       ),
+      "@envoymesh/api/group-chat-delivery": resolve(repoRoot, "packages/api/src/group-chat-delivery.ts"),
+      "@envoymesh/api/chat-room-thread": resolve(repoRoot, "packages/api/src/chat-room-thread.ts"),
+      "@envoymesh/api/chat-room-service": resolve(repoRoot, "packages/api/src/chat-room-service.ts"),
       "@envoymesh/api": resolve(repoRoot, "packages/api/src/index.ts"),
       "@envoymesh/protocol": resolve(repoRoot, "packages/protocol/src/index.ts"),
 
@@ -78,13 +96,5 @@ export default defineConfig({
       // Social UI source (shared between desktop and mobile)
       "@envoymesh/social": socialSrc,
     },
-  },
-  // Capacitor native plugins are only available on-device via dynamic await import()
-  optimizeDeps: {
-    exclude: [
-      "@capacitor-community/sqlite",
-      "@capacitor/filesystem",
-      "capacitor-secure-storage-plugin",
-    ],
   },
 });

@@ -239,6 +239,7 @@ export interface ChatMessage {
       routeId?: string;
       modelUsed?: "openclaw" | "native";
       format?: string;
+      blocks?: import("./owner-agent-types.js").StructuredBlock[];
     };
     /** Group chat: owners who have acked delivery. */
     deliveredToOwnerIds?: string[];
@@ -1016,6 +1017,12 @@ export interface NodeServiceEvents {
   /** Terminal session list changed (Phase 30). */
   "terminal:session-updated": { sessions: import("./terminal.js").TerminalSessionSummary[] };
 
+  /** Background terminal watch fired after stable output (Phase 31D). */
+  "terminal:watch-ready": import("./terminal-agent.js").TerminalWatchReadyEvent;
+
+  /** EnvoyAI replied with a terminal command proposal for a correlated session (Phase 31D). */
+  "terminal:assistant-proposal": import("./terminal-agent.js").TerminalAssistantProposalEvent;
+
   /** Home terminal PTY tunnel bytes (Phase 30E — mobile HomeRemote). */
   "homeTerminalWs:rx": { dataBase64: string };
   "homeTerminalWs:closed": Record<string, never>;
@@ -1664,6 +1671,82 @@ export interface NodeService {
   closeTerminalSession(params: import("./terminal.js").CloseTerminalSessionParams): Promise<void>;
   renameTerminalSession(params: import("./terminal.js").RenameTerminalSessionParams): Promise<import("./terminal.js").TerminalSessionSummary>;
   terminalAttach(params: import("./terminal.js").TerminalAttachParams): Promise<import("./terminal.js").TerminalAttachResult>;
+  terminalRunFromNaturalLanguage(
+    params: import("./terminal-agent.js").TerminalRunFromNaturalLanguageParams,
+  ): Promise<import("./terminal-agent.js").TerminalCommandProposal>;
+  terminalExecuteProposal(params: import("./terminal-agent.js").TerminalExecuteProposalParams): Promise<void>;
+  terminalSetAssistModelOverride(
+    params: import("./terminal-agent.js").TerminalSetAssistModelOverrideParams,
+  ): Promise<import("./terminal-agent.js").TerminalAssistState>;
+  terminalSetInlineSuggestEnabled(
+    params: import("./terminal-agent.js").TerminalSetInlineSuggestParams,
+  ): Promise<import("./terminal-agent.js").TerminalAssistState>;
+  terminalGetAssistState(sessionId: string): Promise<import("./terminal-agent.js").TerminalAssistState>;
+  terminalExplainScrollback(
+    params: import("./terminal-agent.js").TerminalExplainScrollbackParams,
+  ): Promise<import("./terminal-agent.js").TerminalExplainScrollbackResult>;
+  terminalSuggestCommand(
+    params: import("./terminal-agent.js").TerminalSuggestCommandParams,
+  ): Promise<import("./terminal-agent.js").TerminalSuggestCommandResult>;
+  terminalObserveStep(
+    params: import("./terminal-agent.js").TerminalObserveStepParams,
+  ): Promise<import("./terminal-agent.js").TerminalObserveStepResult>;
+  terminalOpenClawPlan(
+    params: import("./terminal-agent.js").TerminalOpenClawPlanParams,
+  ): Promise<import("./terminal-agent.js").TerminalOpenClawPlanResult>;
+  terminalRunPlanStep(
+    params: import("./terminal-agent.js").TerminalRunPlanStepParams,
+  ): Promise<import("./terminal-agent.js").TerminalCommandProposal>;
+  terminalEnablePrepareMode(
+    params: import("./terminal-agent.js").TerminalEnablePrepareModeParams,
+  ): Promise<import("./terminal-agent.js").TerminalEnablePrepareModeResult>;
+  terminalWatchStep(
+    params: import("./terminal-agent.js").TerminalWatchStepParams,
+  ): Promise<import("./terminal-agent.js").TerminalWatchStepResult>;
+  terminalPinContextSession(
+    params: import("./terminal-agent.js").TerminalPinContextSessionParams,
+  ): Promise<import("./terminal-agent.js").TerminalAssistState>;
+  terminalDetectFailure(
+    params: import("./terminal-agent.js").TerminalDetectFailureParams,
+  ): Promise<import("./terminal-agent.js").TerminalFailureDetection>;
+  terminalSuggestFixFromFailure(
+    params: import("./terminal-agent.js").TerminalSuggestFixParams,
+  ): Promise<import("./terminal-agent.js").TerminalCommandProposal>;
+  terminalStartGoalLoop(
+    params: import("./terminal-agent.js").TerminalStartGoalLoopParams,
+  ): Promise<import("./terminal-agent.js").TerminalGoalLoopStepResult>;
+  terminalAdvanceGoalLoop(
+    params: import("./terminal-agent.js").TerminalAdvanceGoalLoopParams,
+  ): Promise<import("./terminal-agent.js").TerminalGoalLoopStepResult>;
+  terminalCancelGoalLoop(
+    params: import("./terminal-agent.js").TerminalCancelGoalLoopParams,
+  ): Promise<import("./terminal-agent.js").TerminalAssistState>;
+  terminalClearResumeGoal(sessionId: string): Promise<import("./terminal-agent.js").TerminalAssistState>;
+  terminalSendContextToAssistant(
+    params: import("./terminal-agent.js").TerminalSendContextToAssistantParams,
+  ): Promise<import("./terminal-agent.js").TerminalSendContextToAssistantResult>;
+  terminalUpdatePlanProgress(
+    params: import("./terminal-agent.js").TerminalUpdatePlanProgressParams,
+  ): Promise<import("./terminal-agent.js").TerminalAssistState>;
+  terminalGetScrollbackPreview(
+    params: import("./terminal-agent.js").TerminalGetScrollbackPreviewParams,
+  ): Promise<import("./terminal-agent.js").TerminalGetScrollbackPreviewResult>;
+  terminalResumeGoalLoop(
+    params: import("./terminal-agent.js").TerminalResumeGoalLoopParams,
+  ): Promise<import("./terminal-agent.js").TerminalGoalLoopStepResult>;
+  terminalEnableExecPane(
+    params: import("./terminal-agent.js").TerminalEnableExecPaneParams,
+  ): Promise<import("./terminal-agent.js").TerminalEnableExecPaneResult>;
+  terminalSetBackgroundWatch(
+    params: import("./terminal-agent.js").TerminalSetBackgroundWatchParams,
+  ): Promise<import("./terminal-agent.js").TerminalAssistState>;
+  terminalClearBackgroundWatch(
+    params: import("./terminal-agent.js").TerminalClearBackgroundWatchParams,
+  ): Promise<import("./terminal-agent.js").TerminalAssistState>;
+  openInHerdr(params?: import("./terminal.js").OpenInHerdrParams): Promise<import("./terminal.js").OpenInHerdrResult>;
+  terminalGetHerdrExportHint(
+    params: import("./terminal.js").TerminalHerdrExportHintParams,
+  ): Promise<import("./terminal.js").TerminalHerdrExportHintResult>;
   homeTerminalWsOpen(params: import("./home-remote.js").HomeTerminalWsOpenParams): Promise<import("./home-remote.js").HomeTerminalWsRpcResult>;
   homeTerminalWsSend(params: import("./home-remote.js").HomeTerminalWsSendParams): Promise<import("./home-remote.js").HomeTerminalWsRpcResult>;
   homeTerminalWsClose(): Promise<import("./home-remote.js").HomeTerminalWsRpcResult>;

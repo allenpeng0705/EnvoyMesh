@@ -14,6 +14,7 @@
     "envoymesh": "apps/cli/src/index.ts"
   },
   "scripts": {
+    "postinstall": "node scripts/fix-node-pty-perms.js",
     "cli": "tsx apps/cli/src/index.ts",
     "node:dev": "tsc -b packages/api && npm exec -w @envoymesh/node -- tsx src/index.ts",
     "relay:dev": "npm exec -w @envoymesh/relay -- tsx src/index.ts",
@@ -28,6 +29,7 @@
     "node:build": "tsc -b apps/node",
     "test": "vitest run",
     "test:social-ui": "vitest run apps/social/test",
+    "test:terminal-playwright": "vitest run apps/node/test/terminal-playwright-browser.test.ts",
     "typecheck": "tsc -b",
     "smoke:multimachine:guide": "npm run cli -w @envoymesh/node -- smoke-checklist --machine-a primary --machine-b satellite",
     "smoke:local": "npm run smoke:local-two-node -w @envoymesh/node",
@@ -40,12 +42,12 @@
     "@types/qrcode": "^1.5.6",
     "@vitest/coverage-v8": "^4.1.5",
     "it-pair": "^2.0.6",
+    "playwright": "^1.60.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
   },
   "dependencies": {
     "qrcode": "^1.5.4"
-  },
-  "optionalDependencies": {}
+  }
 }
