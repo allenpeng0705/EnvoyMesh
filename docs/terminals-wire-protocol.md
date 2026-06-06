@@ -49,7 +49,9 @@ Invalid version or type → server closes the socket.
 - Token is issued only via authenticated JSON-RPC on loopback (Social UI / Tauri)
 - Slice 2 adds `sessionToken` validation for paired mobile clients on home `homeTerminalWsOpen`
 
-## Implementation
+## Mobile remote (Slice 2)
+
+When paired via relay proxy, mobile calls `homeTerminalWsOpen` over JSON-RPC; the home node bridges to loopback `/ws/terminal/...` and pushes `homeTerminalWs:rx` events with `{ dataBase64 }` (same binary frames, base64-wrapped).
 
 - Codec: `@envoymesh/api` → `terminal-wire.ts`
 - Server: `apps/node/src/terminal-ws-server.ts`

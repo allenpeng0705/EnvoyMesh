@@ -187,6 +187,10 @@ export const terminalMessages = {
   connectionError: "Connection error",
   disconnected: "Disconnected",
   exitedWithCode: "[Process exited with code {code}]",
+  runningOnHome: "Running on home node",
+  homeOffline: "Home node offline — connect your computer and try again.",
+  pairRequired: "Pair with your home node to use remote terminals.",
+  pairRequiredDesc: "Scan the pairing QR on your desktop Envoy app (Settings → Devices).",
 } as const;
 
 export const h2aMessages = {

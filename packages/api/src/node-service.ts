@@ -758,6 +758,8 @@ export interface ConnectionStatus {
   lastErrorAt?: string;
   /** True when this node can spawn local PTY sessions (desktop home node). */
   terminalsAvailable?: boolean;
+  /** Paired mobile → home remote capabilities (Slice 2). */
+  homeRemote?: import("./home-remote.js").HomeRemoteStatus;
 }
 
 /**
@@ -1013,6 +1015,10 @@ export interface NodeServiceEvents {
 
   /** Terminal session list changed (Phase 30). */
   "terminal:session-updated": { sessions: import("./terminal.js").TerminalSessionSummary[] };
+
+  /** Home terminal PTY tunnel bytes (Phase 30E — mobile HomeRemote). */
+  "homeTerminalWs:rx": { dataBase64: string };
+  "homeTerminalWs:closed": Record<string, never>;
 }
 
 export interface NodeService {
@@ -1658,6 +1664,9 @@ export interface NodeService {
   closeTerminalSession(params: import("./terminal.js").CloseTerminalSessionParams): Promise<void>;
   renameTerminalSession(params: import("./terminal.js").RenameTerminalSessionParams): Promise<import("./terminal.js").TerminalSessionSummary>;
   terminalAttach(params: import("./terminal.js").TerminalAttachParams): Promise<import("./terminal.js").TerminalAttachResult>;
+  homeTerminalWsOpen(params: import("./home-remote.js").HomeTerminalWsOpenParams): Promise<import("./home-remote.js").HomeTerminalWsRpcResult>;
+  homeTerminalWsSend(params: import("./home-remote.js").HomeTerminalWsSendParams): Promise<import("./home-remote.js").HomeTerminalWsRpcResult>;
+  homeTerminalWsClose(): Promise<import("./home-remote.js").HomeTerminalWsRpcResult>;
 
   // ----- Connection Status -----
 

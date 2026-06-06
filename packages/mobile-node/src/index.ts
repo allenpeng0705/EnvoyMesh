@@ -269,6 +269,8 @@ function _normalizeMobileStoredOpenAiEndpoint(mp: ModelProviderConfig): ModelPro
   return { ...mp, endpoint: normalizeOpenAiCompatibleBaseUrl(mp.endpoint) };
 }
 
+import { HomeRemoteClient } from "./home-remote-client.js";
+
 function _randomUUID(): string { return crypto.randomUUID(); }
 
 function _sanitizeChatFilename(name: string): string {
@@ -541,6 +543,8 @@ export class MobileNode implements NodeService {
   /** Best-effort last failure for diagnostics ({@link getConnectionStatus}). */
   private _lastNodeError: string | null = null;
   private _lastNodeErrorAt: string | null = null;
+  private _homeRemote: HomeRemoteClient | null = null;
+  private _homeRemoteOnline = false;
   /** Cached node prefs loaded from localStorage (model, AI settings, autonomy, etc.). */
   private _aiPrefsOwnerId: string | null = null;
   private _aiPrefs: MobileNodePrefs = {
@@ -934,38 +938,48 @@ export class MobileNode implements NodeService {
   }
 
   listTerminalSessions(): Promise<import("@envoymesh/api").TerminalSessionSummary[]> {
-    if (this.sharedIdentity && this._state?.homeNodePeerId) {
-      return Promise.reject(new Error("terminal.pairHomeRequired"));
-    }
-    return Promise.reject(new Error("terminal.notSupportedOnMobile"));
+    return this._homeRemoteCall("listTerminalSessions", {});
   }
 
-  createTerminalSession(): Promise<import("@envoymesh/api").TerminalSessionSummary> {
-    if (this.sharedIdentity && this._state?.homeNodePeerId) {
-      return Promise.reject(new Error("terminal.pairHomeRequired"));
-    }
-    return Promise.reject(new Error("terminal.notSupportedOnMobile"));
+  createTerminalSession(
+    params?: import("@envoymesh/api").CreateTerminalSessionParams,
+  ): Promise<import("@envoymesh/api").TerminalSessionSummary> {
+    return this._homeRemoteCall("createTerminalSession", (params ?? {}) as Record<string, unknown>);
   }
 
-  closeTerminalSession(): Promise<void> {
-    if (this.sharedIdentity && this._state?.homeNodePeerId) {
-      return Promise.reject(new Error("terminal.pairHomeRequired"));
-    }
-    return Promise.reject(new Error("terminal.notSupportedOnMobile"));
+  closeTerminalSession(params: import("@envoymesh/api").CloseTerminalSessionParams): Promise<void> {
+    return this._homeRemoteCall("closeTerminalSession", params as unknown as Record<string, unknown>);
   }
 
-  renameTerminalSession(): Promise<import("@envoymesh/api").TerminalSessionSummary> {
-    if (this.sharedIdentity && this._state?.homeNodePeerId) {
-      return Promise.reject(new Error("terminal.pairHomeRequired"));
-    }
-    return Promise.reject(new Error("terminal.notSupportedOnMobile"));
+  renameTerminalSession(
+    params: import("@envoymesh/api").RenameTerminalSessionParams,
+  ): Promise<import("@envoymesh/api").TerminalSessionSummary> {
+    return this._homeRemoteCall("renameTerminalSession", params as unknown as Record<string, unknown>);
   }
 
-  terminalAttach(): Promise<import("@envoymesh/api").TerminalAttachResult> {
-    if (this.sharedIdentity && this._state?.homeNodePeerId) {
-      return Promise.reject(new Error("terminal.pairHomeRequired"));
-    }
-    return Promise.reject(new Error("terminal.notSupportedOnMobile"));
+  terminalAttach(
+    params: import("@envoymesh/api").TerminalAttachParams,
+  ): Promise<import("@envoymesh/api").TerminalAttachResult> {
+    return this._homeRemoteCall("terminalAttach", params as unknown as Record<string, unknown>);
+  }
+
+  async homeTerminalWsOpen(
+    params: import("@envoymesh/api").HomeTerminalWsOpenParams,
+  ): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult> {
+    return this._ensureHomeRemote().openTerminalTunnel(params.pathWithQuery);
+  }
+
+  homeTerminalWsSend(
+    params: import("@envoymesh/api").HomeTerminalWsSendParams,
+  ): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult> {
+    const bytes = Uint8Array.from(Buffer.from(params.dataBase64, "base64"));
+    const result = this._ensureHomeRemote().sendTerminalFrame(bytes);
+    return Promise.resolve({ ok: result.ok, error: result.error });
+  }
+
+  async homeTerminalWsClose(): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult> {
+    this._ensureHomeRemote().closeTerminalTunnel();
+    return { ok: true };
   }
 
   // -----------------------------------------------------------------------
@@ -1173,6 +1187,9 @@ export class MobileNode implements NodeService {
     this._status = "running";
     await this._registerHomeBridgeAgentRoute();
     if (this._state?.sharedIdentity) {
+      void this._ensureHomeRemote().ensureConnected().catch(() => {
+        /* home may be offline at startup */
+      });
       void this._syncDeviceRevocationsFromHome().catch((err) =>
         console.warn(
           "[mobile-node] device revocation sync failed:",
@@ -1205,6 +1222,9 @@ export class MobileNode implements NodeService {
       try { ws.close(); } catch { /* ignore */ }
     }
     this._relaySockets = [];
+    this._homeRemote?.dispose();
+    this._homeRemote = null;
+    this._homeRemoteOnline = false;
     // Stop libp2p mesh
     await this._stopLibp2p();
     this._status = "offline";
@@ -3382,6 +3402,8 @@ You are the owner's personal AI assistant on EnvoyMesh.
   }
 
   getConnectionStatus() {
+    const paired = this.sharedIdentity && Boolean(this._state?.homeNodePeerId?.trim());
+    const homeOnline = paired ? this._homeRemoteOnline : false;
     return {
       online: this._status === "running",
       peerId: this._state?.agent?.agentPeerId ?? "",
@@ -3389,6 +3411,17 @@ You are the owner's personal AI assistant on EnvoyMesh.
       connectedRelays: this._relayUrls,
       bondedPeers: 0,
       terminalsAvailable: false,
+      homeRemote: paired
+        ? {
+            paired: true,
+            homeOnline,
+            terminalsAvailable: homeOnline,
+          }
+        : {
+            paired: false,
+            homeOnline: false,
+            terminalsAvailable: false,
+          },
       lastError: this._lastNodeError ?? undefined,
       lastErrorAt: this._lastNodeErrorAt ?? undefined,
     };
@@ -7155,18 +7188,71 @@ You are the owner's personal AI assistant on EnvoyMesh.
   }
 
   private async _syncDeviceRevocationsFromHome(): Promise<void> {
-    const wsUrl = this._relayRpcWsUrl();
-    if (!wsUrl) return;
-    const result = await this._callHomeRpc<{ revocations?: Record<string, unknown>[] }>(
-      "listDeviceRevocations",
-      {},
-      wsUrl,
-    );
-    const records = Array.isArray(result.revocations)
-      ? result.revocations.map((entry) => parseDeviceRevocationRecord(entry))
-      : [];
-    this._deviceRevocations = records;
-    await this._saveDeviceRevocations();
+    try {
+      const result = await this._homeRemoteCall<{ revocations?: Record<string, unknown>[] }>(
+        "listDeviceRevocations",
+        {},
+      );
+      const records = Array.isArray(result.revocations)
+        ? result.revocations.map((entry) => parseDeviceRevocationRecord(entry))
+        : [];
+      this._deviceRevocations = records;
+      await this._saveDeviceRevocations();
+    } catch (err) {
+      console.warn("[mobile-node] device revocation sync from home failed:", err);
+    }
+  }
+
+  private _ensureHomeRemote(): HomeRemoteClient {
+    if (!this.sharedIdentity || !this._state?.homeNodePeerId?.trim()) {
+      throw new Error("terminal.pairHomeRequired");
+    }
+    if (!this._homeRemote) {
+      this._homeRemote = new HomeRemoteClient({
+        resolveProxyWsUrl: () => this._buildHomeProxyWsUrl(),
+        onHomeOnlineChange: (online) => {
+          this._homeRemoteOnline = online;
+        },
+      });
+      this._homeRemote.on("homeTerminalWs:rx", (data) => {
+        this._events.emit("homeTerminalWs:rx", data as { dataBase64: string });
+      });
+      this._homeRemote.on("homeTerminalWs:closed", (data) => {
+        this._events.emit("homeTerminalWs:closed", (data ?? {}) as Record<string, never>);
+      });
+      this._homeRemote.on("terminal:session-updated", (data) => {
+        this._events.emit("terminal:session-updated", data as { sessions: import("@envoymesh/api").TerminalSessionSummary[] });
+      });
+    }
+    return this._homeRemote;
+  }
+
+  private async _homeRemoteCall<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    if (!this.sharedIdentity || !this._state?.homeNodePeerId?.trim()) {
+      throw new Error("terminal.pairHomeRequired");
+    }
+    try {
+      return await this._ensureHomeRemote().call<T>(method, params);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("notConnected") || msg.includes("connectFailed") || msg.includes("disconnected")) {
+        throw new Error("homeRemote.offline");
+      }
+      throw err;
+    }
+  }
+
+  private async _buildHomeProxyWsUrl(): Promise<string | undefined> {
+    const homeNodePeerId = this._state?.homeNodePeerId?.trim();
+    const relayBase = this._relayUrls[0]?.trim();
+    const ownerId = this._state?.owner?.ownerId;
+    if (!homeNodePeerId || !relayBase || !ownerId) return undefined;
+    const tokens = await this._sessionTokenStore.listTokens();
+    const record = tokens.find((t) => t.ownerId === ownerId);
+    if (!record?.token) return undefined;
+    const base = relayBase.replace(/\/+$/, "");
+    const wsBase = /\/ws$/i.test(base) ? base : `${base}/ws`;
+    return `${wsBase}?target=${encodeURIComponent(homeNodePeerId)}&token=${encodeURIComponent(record.token)}`;
   }
 
   private async _callHomeRpc<T>(

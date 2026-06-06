@@ -15,6 +15,12 @@ import {
   rpcHomeClawCoreWsOpen,
   rpcHomeClawCoreWsSend,
 } from "./homeclaw-core-ws.js";
+import {
+  closeHomeTerminalWsForCompanion,
+  rpcHomeTerminalWsClose,
+  rpcHomeTerminalWsOpen,
+  rpcHomeTerminalWsSend,
+} from "./home-terminal-ws.js";
 
 
 /**
@@ -173,6 +179,7 @@ export class WsServer {
         this.clientSubscriptions.delete(ws);
       }
       closeHomeClawCoreWsForCompanion(ws);
+      closeHomeTerminalWsForCompanion(ws);
       // Notify connection change (after cleanup, count does not include this client)
       this.onConnectionChange?.(this.wss.clients.size);
     });
@@ -216,6 +223,8 @@ export class WsServer {
       "trigger:fired",
       "digest:ready",
       "homeclawCoreWs:rx",
+      "homeTerminalWs:rx",
+      "homeTerminalWs:closed",
       "terminal:session-updated",
     ];
     for (const event of allEvents) {
@@ -296,6 +305,34 @@ export class WsServer {
 
     if (method === "homeClawCoreWsClose") {
       rpcHomeClawCoreWsClose(ws);
+      this.sendResponse(ws, String(id), { ok: true });
+      return;
+    }
+
+    if (method === "homeTerminalWsOpen") {
+      try {
+        const err = await rpcHomeTerminalWsOpen(
+          ws,
+          (params ?? {}) as { pathWithQuery: string },
+          3031,
+          (event, data) => this.sendEvent(ws, event, data),
+        );
+        this.sendResponse(ws, String(id), err === null ? { ok: true } : { ok: false, error: err });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        this.sendResponse(ws, String(id), { ok: false, error: errorMessage });
+      }
+      return;
+    }
+
+    if (method === "homeTerminalWsSend") {
+      const err = rpcHomeTerminalWsSend(ws, (params ?? {}) as { dataBase64: string });
+      this.sendResponse(ws, String(id), err === null ? { ok: true } : { ok: false, error: err });
+      return;
+    }
+
+    if (method === "homeTerminalWsClose") {
+      rpcHomeTerminalWsClose(ws);
       this.sendResponse(ws, String(id), { ok: true });
       return;
     }

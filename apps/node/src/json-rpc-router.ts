@@ -415,6 +415,12 @@ export async function routeRpcMethod(
         cols: params.cols as number | undefined,
         rows: params.rows as number | undefined,
       });
+    case "homeTerminalWsOpen":
+      return ns.homeTerminalWsOpen({ pathWithQuery: String(params.pathWithQuery ?? "") });
+    case "homeTerminalWsSend":
+      return ns.homeTerminalWsSend({ dataBase64: String(params.dataBase64 ?? "") });
+    case "homeTerminalWsClose":
+      return ns.homeTerminalWsClose();
     case "forwardEnvelope":
       return ns.forwardEnvelope(params.envelope as Record<string, unknown>, params.dialHints as string[] | undefined);
     case "getOpenClawPlugins":

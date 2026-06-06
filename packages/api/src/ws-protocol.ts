@@ -240,6 +240,9 @@ export type RpcMethods =
   | "closeTerminalSession"
   | "renameTerminalSession"
   | "terminalAttach"
+  | "homeTerminalWsOpen"
+  | "homeTerminalWsSend"
+  | "homeTerminalWsClose"
   // Event subscription
   | "on"
   | "off"

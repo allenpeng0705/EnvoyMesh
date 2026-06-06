@@ -235,6 +235,14 @@
   color: var(--color-text-muted);
 }
 
+.terminal-panel-badge {
+  font-size: var(--text-2xs);
+  color: var(--color-primary);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+  border-radius: var(--radius-full);
+  padding: 0.125rem 0.5rem;
+}
+
 .terminal-panel-xterm {
   flex: 1;
   min-height: 0;

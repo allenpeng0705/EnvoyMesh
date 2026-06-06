@@ -434,6 +434,18 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.terminalAttach(params);
   }
 
+  async homeTerminalWsOpen(params: import("@envoymesh/api").HomeTerminalWsOpenParams) {
+    return this._ns.homeTerminalWsOpen(params);
+  }
+
+  async homeTerminalWsSend(params: import("@envoymesh/api").HomeTerminalWsSendParams) {
+    return this._ns.homeTerminalWsSend(params);
+  }
+
+  async homeTerminalWsClose() {
+    return this._ns.homeTerminalWsClose();
+  }
+
   // -----------------------------------------------------------------------
   // AI / Knowledge Query
   // -----------------------------------------------------------------------

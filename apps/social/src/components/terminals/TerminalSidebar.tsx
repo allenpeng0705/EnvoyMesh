@@ -9,12 +9,14 @@ interface TerminalSidebarProps {
   selectedSessionId: string | null;
   onSelectSession: (sessionId: string) => void;
   onSessionsChange: (sessions: TerminalSessionSummary[]) => void;
+  disabled?: boolean;
 }
 
 export function TerminalSidebar({
   selectedSessionId,
   onSelectSession,
   onSessionsChange,
+  disabled = false,
 }: TerminalSidebarProps) {
   const nodeService = useNodeService();
   const t = useT();
@@ -23,6 +25,7 @@ export function TerminalSidebar({
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    if (disabled) return;
     try {
       const list = await nodeService.listTerminalSessions();
       setSessions(list);
@@ -31,18 +34,20 @@ export function TerminalSidebar({
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [nodeService, onSessionsChange]);
+  }, [disabled, nodeService, onSessionsChange]);
 
   useEffect(() => {
+    if (disabled) return;
     void refresh();
     const unsub = nodeService.on("terminal:session-updated", (payload) => {
       setSessions(payload.sessions);
       onSessionsChange(payload.sessions);
     });
     return unsub;
-  }, [nodeService, onSessionsChange, refresh]);
+  }, [disabled, nodeService, onSessionsChange, refresh]);
 
   const handleNew = async () => {
+    if (disabled) return;
     setBusy(true);
     try {
       const created = await nodeService.createTerminalSession({});
@@ -76,7 +81,7 @@ export function TerminalSidebar({
     <aside className="terminal-sidebar">
       <div className="terminal-sidebar-header">
         <h3>{t("terminals.sessions")}</h3>
-        <button type="button" className="primary" disabled={busy} onClick={() => void handleNew()}>
+        <button type="button" className="primary" disabled={busy || disabled} onClick={() => void handleNew()}>
           {t("terminals.new")}
         </button>
       </div>

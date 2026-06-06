@@ -8572,6 +8572,24 @@ class NodeServiceImpl implements NodeService {
     return Promise.resolve(this._requireTerminalManager().terminalAttach(params));
   }
 
+  homeTerminalWsOpen(): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult> {
+    return Promise.resolve({
+      ok: false,
+      error: "homeTerminalWs tunnel requires direct WebSocket or relay proxy channel",
+    });
+  }
+
+  homeTerminalWsSend(): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult> {
+    return Promise.resolve({
+      ok: false,
+      error: "homeTerminalWs tunnel requires direct WebSocket or relay proxy channel",
+    });
+  }
+
+  homeTerminalWsClose(): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult> {
+    return Promise.resolve({ ok: true });
+  }
+
   /**
    * Set the relay's public WebSocket URL for mobile pairing through relay proxy (Phase 10A).
    * When set, `getPairingPayload()` returns this URL as `wsUrl` instead of the LAN IP,

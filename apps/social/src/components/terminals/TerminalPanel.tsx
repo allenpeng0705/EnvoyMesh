@@ -5,9 +5,15 @@ import "@xterm/xterm/css/xterm.css";
 
 import type { TerminalSessionSummary } from "@envoymesh/api";
 
+import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { useT } from "../../context/I18nContext.js";
-import { TerminalWsClient } from "../../lib/terminal-ws-client.js";
+import {
+  HomeRemoteTerminalClient,
+  TerminalWsClient,
+  terminalPathFromAttachWsUrl,
+  type TerminalTransport,
+} from "../../lib/terminal-ws-client.js";
 
 interface TerminalPanelProps {
   session: TerminalSessionSummary | null;
@@ -15,12 +21,15 @@ interface TerminalPanelProps {
 
 export function TerminalPanel({ session }: TerminalPanelProps) {
   const nodeService = useNodeService();
+  const { connectionStatus } = useNodeState();
   const t = useT();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  const wsRef = useRef<TerminalWsClient | null>(null);
+  const transportRef = useRef<TerminalTransport | null>(null);
   const [status, setStatus] = useState<string>("");
+  const useHomeRemote = connectionStatus?.homeRemote?.paired === true;
+  const homeOffline = useHomeRemote && connectionStatus?.homeRemote?.homeOnline === false;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -42,16 +51,14 @@ export function TerminalPanel({ session }: TerminalPanelProps) {
 
     const onResize = () => {
       fit.fit();
-      const cols = term.cols;
-      const rows = term.rows;
-      wsRef.current?.sendResize(cols, rows);
+      transportRef.current?.sendResize(term.cols, term.rows);
     };
     window.addEventListener("resize", onResize);
 
     return () => {
       window.removeEventListener("resize", onResize);
-      wsRef.current?.close();
-      wsRef.current = null;
+      transportRef.current?.close();
+      transportRef.current = null;
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -59,12 +66,12 @@ export function TerminalPanel({ session }: TerminalPanelProps) {
   }, []);
 
   useEffect(() => {
-    wsRef.current?.close();
-    wsRef.current = null;
+    transportRef.current?.close();
+    transportRef.current = null;
     termRef.current?.reset();
     setStatus("");
 
-    if (!session || session.state !== "running") {
+    if (!session || session.state !== "running" || homeOffline) {
       return;
     }
 
@@ -79,46 +86,74 @@ export function TerminalPanel({ session }: TerminalPanelProps) {
         });
         if (cancelled || !termRef.current) return;
 
-        const client = new TerminalWsClient({
-          wsUrl: attach.wsUrl,
+        const callbacks = {
           cols: attach.cols,
           rows: attach.rows,
-          onData: (data) => {
+          onData: (data: Uint8Array) => {
             termRef.current?.write(new TextDecoder().decode(data));
           },
-          onExit: (code) => {
+          onExit: (code: number) => {
             termRef.current?.writeln(`\r\n${t("terminals.exitedWithCode", { code: String(code) })}`);
           },
-          onStatusChange: (s) => {
+          onStatusChange: (s: "connecting" | "open" | "closed" | "error") => {
             if (s === "connecting") setStatus(t("terminals.connecting"));
-            else if (s === "open") setStatus("");
+            else if (s === "open") setStatus(useHomeRemote ? t("terminals.runningOnHome") : "");
             else if (s === "error") setStatus(t("terminals.connectionError"));
             else if (s === "closed") setStatus(t("terminals.disconnected"));
           },
-        });
-        wsRef.current = client;
-        client.connect();
+        };
 
+        let transport: TerminalTransport;
+        if (useHomeRemote) {
+          transport = new HomeRemoteTerminalClient({
+            ...callbacks,
+            pathWithQuery: terminalPathFromAttachWsUrl(attach.wsUrl),
+            homeTerminalWsOpen: (params) => nodeService.homeTerminalWsOpen(params),
+            homeTerminalWsSend: (params) => nodeService.homeTerminalWsSend(params),
+            homeTerminalWsClose: () => nodeService.homeTerminalWsClose(),
+            subscribeRx: (handler) => nodeService.on("homeTerminalWs:rx", handler),
+            subscribeClosed: (handler) => nodeService.on("homeTerminalWs:closed", handler),
+          });
+          await transport.connect();
+        } else {
+          transport = new TerminalWsClient({
+            ...callbacks,
+            wsUrl: attach.wsUrl,
+          });
+          transport.connect();
+        }
+
+        transportRef.current = transport;
         termRef.current.onData((data) => {
-          client.sendInput(data);
+          transport.sendInput(data);
         });
       } catch (e: unknown) {
-        setStatus(e instanceof Error ? e.message : String(e));
+        const msg = e instanceof Error ? e.message : String(e);
+        setStatus(msg === "homeRemote.offline" ? t("terminals.homeOffline") : msg);
       }
     })();
 
     return () => {
       cancelled = true;
-      wsRef.current?.close();
-      wsRef.current = null;
+      transportRef.current?.close();
+      transportRef.current = null;
     };
-  }, [nodeService, session?.sessionId, session?.state, t]);
+  }, [homeOffline, nodeService, session?.sessionId, session?.state, t, useHomeRemote]);
 
   if (!session) {
     return (
       <div className="terminal-panel terminal-panel-empty">
         <h3>{t("terminals.selectSession")}</h3>
         <p>{t("terminals.selectSessionDesc")}</p>
+      </div>
+    );
+  }
+
+  if (homeOffline) {
+    return (
+      <div className="terminal-panel terminal-panel-empty">
+        <h3>{session.title}</h3>
+        <p>{t("terminals.homeOffline")}</p>
       </div>
     );
   }
@@ -136,6 +171,7 @@ export function TerminalPanel({ session }: TerminalPanelProps) {
     <div className="terminal-panel">
       <div className="terminal-panel-toolbar">
         <span className="terminal-panel-title">{session.title}</span>
+        {useHomeRemote ? <span className="terminal-panel-badge">{t("terminals.runningOnHome")}</span> : null}
         {status ? <span className="terminal-panel-status">{status}</span> : null}
       </div>
       <div className="terminal-panel-xterm" ref={containerRef} />

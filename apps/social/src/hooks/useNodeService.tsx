@@ -209,6 +209,9 @@ export interface NodeServiceClient {
   closeTerminalSession(params: import("@envoymesh/api").CloseTerminalSessionParams): Promise<void>;
   renameTerminalSession(params: import("@envoymesh/api").RenameTerminalSessionParams): Promise<import("@envoymesh/api").TerminalSessionSummary>;
   terminalAttach(params: import("@envoymesh/api").TerminalAttachParams): Promise<import("@envoymesh/api").TerminalAttachResult>;
+  homeTerminalWsOpen(params: import("@envoymesh/api").HomeTerminalWsOpenParams): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult>;
+  homeTerminalWsSend(params: import("@envoymesh/api").HomeTerminalWsSendParams): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult>;
+  homeTerminalWsClose(): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult>;
 
   // AI / Knowledge Query
   knowledgeQuery(question: string): Promise<string>;
@@ -646,6 +649,19 @@ function createWsNodeServiceClient(
       return wsClient.rpc("terminalAttach", params as unknown as Record<string, unknown>) as Promise<
         import("@envoymesh/api").TerminalAttachResult
       >;
+    },
+    async homeTerminalWsOpen(params: import("@envoymesh/api").HomeTerminalWsOpenParams) {
+      return wsClient.rpc("homeTerminalWsOpen", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").HomeTerminalWsRpcResult
+      >;
+    },
+    async homeTerminalWsSend(params: import("@envoymesh/api").HomeTerminalWsSendParams) {
+      return wsClient.rpc("homeTerminalWsSend", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").HomeTerminalWsRpcResult
+      >;
+    },
+    async homeTerminalWsClose() {
+      return wsClient.rpc("homeTerminalWsClose", {}) as Promise<import("@envoymesh/api").HomeTerminalWsRpcResult>;
     },
     async knowledgeQuery(question: string) { return wsClient.rpc("knowledgeQuery", { question }) as Promise<string>; },
     async runDocumentAgentTurn(message: string) {

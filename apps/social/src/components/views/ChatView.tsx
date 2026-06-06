@@ -11,7 +11,7 @@ import type { ChatPanelMode } from "../../App.js";
 import { isChatRoomThreadKey, parseChatRoomThreadKey } from "@envoymesh/api";
 import type { TerminalSessionSummary } from "@envoymesh/api";
 import { useEffect, useMemo, useState } from "react";
-import { useNodeService } from "../../hooks/useNodeService.js";
+import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
 import type { ChatRoom } from "@envoymesh/api";
 
 /**
@@ -39,11 +39,17 @@ export function ChatView({
 }: ChatViewProps) {
   const t = useT();
   const nodeService = useNodeService();
+  const isMobileNode = useIsInProcessMobileNode();
   const { connectionStatus } = useNodeState();
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [terminalSessions, setTerminalSessions] = useState<TerminalSessionSummary[]>([]);
   const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
-  const terminalsAvailable = connectionStatus?.terminalsAvailable === true;
+  const homeRemote = connectionStatus?.homeRemote;
+  const terminalsAvailable =
+    connectionStatus?.terminalsAvailable === true || homeRemote?.terminalsAvailable === true;
+  const showTerminalsTab =
+    connectionStatus?.terminalsAvailable === true || isMobileNode;
+  const terminalsNeedPair = isMobileNode && homeRemote?.paired !== true;
   const selectedTerminal = useMemo(
     () => terminalSessions.find((s) => s.sessionId === selectedTerminalId) ?? null,
     [selectedTerminalId, terminalSessions],
@@ -54,10 +60,10 @@ export function ChatView({
     : undefined;
 
   useEffect(() => {
-    if (!terminalsAvailable && panelMode === "terminals") {
+    if (!showTerminalsTab && panelMode === "terminals") {
       onPanelModeChange("threads");
     }
-  }, [terminalsAvailable, panelMode, onPanelModeChange]);
+  }, [showTerminalsTab, panelMode, onPanelModeChange]);
 
   useEffect(() => {
     if (!nodeService.isConnected) return;
@@ -113,7 +119,7 @@ export function ChatView({
             </span>
           ) : null}
         </button>
-        {terminalsAvailable ? (
+        {showTerminalsTab ? (
           <button
             type="button"
             aria-pressed={panelMode === "terminals"}
@@ -130,14 +136,22 @@ export function ChatView({
           <InboxView embedded />
         </div>
       ) : panelMode === "terminals" ? (
-        <div className="chat-view-terminals-shell">
-          <TerminalSidebar
-            selectedSessionId={selectedTerminalId}
-            onSelectSession={(id) => setSelectedTerminalId(id || null)}
-            onSessionsChange={setTerminalSessions}
-          />
-          <TerminalPanel session={selectedTerminal} />
-        </div>
+        terminalsNeedPair ? (
+          <div className="terminal-panel terminal-panel-empty chat-view-terminals-shell">
+            <h3>{t("terminals.pairRequired")}</h3>
+            <p>{t("terminals.pairRequiredDesc")}</p>
+          </div>
+        ) : (
+          <div className="chat-view-terminals-shell">
+            <TerminalSidebar
+              selectedSessionId={selectedTerminalId}
+              onSelectSession={(id) => setSelectedTerminalId(id || null)}
+              onSessionsChange={setTerminalSessions}
+              disabled={!terminalsAvailable}
+            />
+            <TerminalPanel session={selectedTerminal} />
+          </div>
+        )
       ) : (
         <div className="chat-view-threads-shell">
           <ChatSidebar
