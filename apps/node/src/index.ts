@@ -211,6 +211,7 @@ import {
   type NodeHealthState,
 } from "./node-health.js";
 import { createClientProxyHandler } from "./client-proxy-handler.js";
+import { RelayTunnelClient } from "./relay-tunnel-client.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { recordRelayCheckinCycle, recordRelayLookupResult } from "./relay-diagnostics-state.js";
 import { runCapabilityDiscoveryCycle, buildAutoCapabilityTopics } from "./capability-discovery.js";
@@ -2861,6 +2862,33 @@ if (nodeService instanceof NodeServiceImpl) {
   console.log(`[node] client-proxy protocol handler registered: ${CLIENT_PROXY_PROTOCOL}`);
 } else {
   console.warn(`[node] client-proxy handler NOT registered: nodeService is not NodeServiceImpl`);
+}
+
+// Register persistent WebSocket tunnel to the relay (TURN-like, NAT-traversal).
+// The home node dials OUT to the relay's /ws/home?peerId=<homePeerId>. The relay
+// uses this to bridge mobile clients to the home node's local ws-server (port
+// 3030) for pairing and as a fallback when direct libp2p dials fail. This is
+// the primary fix for pairing from any network — it removes the requirement
+// that the relay can reach the home node via libp2p.
+let relayTunnelClient: RelayTunnelClient | null = null;
+if (nodeService instanceof NodeServiceImpl) {
+  try {
+    const relayWsUrl = await nodeService.resolveRelayWsUrl();
+    if (relayWsUrl) {
+      relayTunnelClient = new RelayTunnelClient({
+        relayWsUrl,
+        homePeerId: mesh.peerId,
+        localWsServerUrl: `ws://127.0.0.1:3030/ws`,
+        log: (msg) => console.log(msg),
+      });
+      relayTunnelClient.start();
+      console.log(`[node] relay-tunnel: connecting to ${relayWsUrl} (peerId=${mesh.peerId.slice(0, 12)}…)`);
+    } else {
+      console.log(`[node] relay-tunnel: skipped (no relay reachable — set relayPublicWsUrl or ensure a configured relay is connected)`);
+    }
+  } catch (err) {
+    console.warn(`[node] relay-tunnel: failed to resolve relay URL: ${(err as Error).message}`);
+  }
 }
 
 await runNodeHealthCycle("startup");

@@ -8939,6 +8939,20 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
+   * Resolve the relay's WebSocket URL — either the explicitly configured one
+   * or the auto-discovered one (from a connected relay). Returns `undefined`
+   * if no relay is reachable or relay is explicitly disabled (empty string).
+   *
+   * Used by the relay-tunnel-client to know where to dial OUT to.
+   */
+  async resolveRelayWsUrl(): Promise<string | undefined> {
+    if (this._relayPublicWsUrl !== undefined) {
+      return this._relayPublicWsUrl || undefined;
+    }
+    return this._autoDiscoverRelayWsUrl();
+  }
+
+  /**
    * Returns true if [token] matches either:
    * 1. The latest QR pairing token from [getPairingPayload] (10-min TTL), or
    * 2. A persisted session token (no TTL — for reconnections without QR re-scan).
