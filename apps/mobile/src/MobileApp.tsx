@@ -19,6 +19,7 @@ import { MobileContactsView } from "./views/MobileContactsView.js";
 import { MobileDiscoverView } from "./views/MobileDiscoverView.js";
 import { MobileProfileView } from "./views/MobileProfileView.js";
 import { MobileSettingsView } from "./views/MobileSettingsView.js";
+import { MobilePairScanView, type PairScanResult } from "./views/MobilePairScanView.js";
 import {
   ChatIcon,
   ContactsIcon,
@@ -37,7 +38,10 @@ import "./MobileApp.css";
 type TabId = "chat" | "contacts" | "discover" | "me";
 
 /** Sub-views within the "Me" tab */
-type MeView = "profile" | "settings" | "library";
+type MeView = "profile" | "settings" | "library" | "pair-scan";
+
+/** URI returned by the scan view, applied to MobilePairHomeSection on return. */
+type PairScanReturn = { uri: string } | { error: string } | null;
 
 interface TabButtonProps {
   id: TabId;
@@ -100,6 +104,8 @@ export function MobileApp() {
   const [meView, setMeView] = useState<MeView>("profile");
   /** Contacts tab taps "open chat" — merges into focused thread while Chats stays mounted */
   const [chatFocusPeerId, setChatFocusPeerId] = useState<string | null>(null);
+  /** Result from the live-scan page, applied to the Settings form on return. */
+  const [pairScanReturn, setPairScanReturn] = useState<PairScanReturn>(null);
 
   const handleContactsOpenChat = useCallback((peerOwnerId: string) => {
     setChatFocusPeerId(peerOwnerId);
@@ -107,6 +113,23 @@ export function MobileApp() {
   }, []);
 
   const handleChatFocusConsumed = useCallback(() => setChatFocusPeerId(null), []);
+
+  const handleOpenPairScan = useCallback(() => {
+    setPairScanReturn(null);
+    setMeView("pair-scan");
+  }, []);
+
+  const handlePairScanResult = useCallback((result: PairScanResult) => {
+    if (result.ok) {
+      setPairScanReturn({ uri: result.uri });
+    } else if (result.reason === "cancelled") {
+      // User dismissed the scanner — no need to surface anything.
+      setPairScanReturn(null);
+    } else {
+      setPairScanReturn({ error: result.error ?? "Scan failed" });
+    }
+    setMeView("settings");
+  }, []);
 
   const cycleTheme = () => {
     if (theme === "system") setTheme("dark");
@@ -174,6 +197,17 @@ export function MobileApp() {
               </button>
               <span className="top-bar-title">{t("mobile.profile.library")}</span>
             </>
+          ) : currentTab === "me" && meView === "pair-scan" ? (
+            <>
+              <button
+                className="top-bar-back-btn"
+                onClick={() => handlePairScanResult({ ok: false, reason: "cancelled", error: "Cancelled" })}
+                aria-label="Back to settings"
+              >
+                &#8592;
+              </button>
+              <span className="top-bar-title">{t("mobile.settings.scanLive")}</span>
+            </>
           ) : (
             <>
               <div className="top-bar-logo">E</div>
@@ -191,15 +225,19 @@ export function MobileApp() {
               <SettingsIcon size={18} />
             </button>
           )}
-          <button
-            className="top-bar-theme-btn"
-            onClick={cycleTheme}
-            title={`Theme: ${themeLabel}`}
-            aria-label={`Theme: ${themeLabel}. Tap to cycle Auto, Dark, and Light.`}
-          >
-            {isDark ? <LightModeIcon size={18} /> : <DarkModeIcon size={18} />}
-          </button>
-          <div className="top-bar-status" />
+          {currentTab === "me" && meView !== "pair-scan" && (
+            <button
+              className="top-bar-theme-btn"
+              onClick={cycleTheme}
+              title={`Theme: ${themeLabel}`}
+              aria-label={`Theme: ${themeLabel}. Tap to cycle Auto, Dark, and Light.`}
+            >
+              {isDark ? <LightModeIcon size={18} /> : <DarkModeIcon size={18} />}
+            </button>
+          )}
+          {currentTab === "me" && meView !== "pair-scan" && (
+            <div className="top-bar-status" />
+          )}
         </div>
       </header>
 
@@ -231,12 +269,20 @@ export function MobileApp() {
               />
             )}
             {currentTab === "me" && meView === "settings" && (
-              <MobileSettingsView onBack={() => setMeView("profile")} />
+              <MobileSettingsView
+                onBack={() => setMeView("profile")}
+                onOpenLiveScan={handleOpenPairScan}
+                pairScanReturn={pairScanReturn}
+                onPairScanReturnConsumed={() => setPairScanReturn(null)}
+              />
             )}
             {currentTab === "me" && meView === "library" && (
               <div className="mv-library-shell">
                 <LibraryView />
               </div>
+            )}
+            {currentTab === "me" && meView === "pair-scan" && (
+              <MobilePairScanView onResult={handlePairScanResult} />
             )}
           </div>
         </ErrorBoundary>

@@ -1,7 +1,7 @@
 /**
  * Mobile-only home node pairing — paste or scan desktop Settings QR link.
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { parseEnvoyPairUri } from "@envoymesh/api";
 import { useNodeState } from "@envoymesh/social/context/NodeStateContext.js";
 import { useIsInProcessMobileNode, useNodeService } from "@envoymesh/social/hooks/useNodeService.js";
@@ -9,7 +9,17 @@ import { useT } from "@envoymesh/social/context/I18nContext.js";
 import { scanEnvoyPairUriNative } from "../lib/scan-envoy-pair-native.js";
 import { decodeEnvoyPairUriFromFile } from "../lib/decode-envoy-pair-qr.js";
 
-export function MobilePairHomeSection() {
+export interface MobilePairHomeSectionProps {
+  onOpenLiveScan?: () => void;
+  pairScanReturn?: { uri: string } | { error: string } | null;
+  onPairScanReturnConsumed?: () => void;
+}
+
+export function MobilePairHomeSection({
+  onOpenLiveScan,
+  pairScanReturn,
+  onPairScanReturnConsumed,
+}: MobilePairHomeSectionProps = {}) {
   const t = useT();
   const nodeService = useNodeService();
   const isMobileNode = useIsInProcessMobileNode();
@@ -26,14 +36,12 @@ export function MobilePairHomeSection() {
     setSuccess(null);
     try {
       const params = parseEnvoyPairUri(pairUri);
-      const wasRunning = (await nodeService.getNodeStatus()).status === "running";
-      if (wasRunning) {
-        await nodeService.stopNode();
-      }
+      // pairWithHomeNode operates on the in-process MobileNode and can be called
+      // while it is running. The previous stop/start around it was unnecessary
+      // and caused a brief "Not connected" flicker (MobileApp renders the
+      // offline splash while nodeStatus is "offline"), making it look like
+      // pairing had failed.
       const result = await nodeService.pairWithHomeNode(params);
-      if (wasRunning) {
-        await nodeService.startNode();
-      }
       await refreshConnectionStatus();
       setSuccess(t("mobile.settings.pairSuccess", { ownerId: result.ownerId }));
       setPairUri("");
@@ -93,6 +101,13 @@ export function MobilePairHomeSection() {
   const handleLiveScan = useCallback(() => {
     setError(null);
     setSuccess(null);
+    if (onOpenLiveScan) {
+      // New full-screen scan page is wired in by the parent (MobileApp).
+      onOpenLiveScan();
+      return;
+    }
+    // Fallback for callers that didn't pass onOpenLiveScan (e.g. tests):
+    // run the in-place scan directly.
     void (async () => {
       setBusy(true);
       try {
@@ -104,7 +119,27 @@ export function MobilePairHomeSection() {
         setBusy(false);
       }
     })();
-  }, [applyScannedUri]);
+  }, [applyScannedUri, onOpenLiveScan]);
+
+  // Apply the URI returned from the dedicated scan page.
+  useEffect(() => {
+    if (!pairScanReturn) return;
+    if ("uri" in pairScanReturn) {
+      setPairUri(pairScanReturn.uri);
+      setError(null);
+      setSuccess(t("mobile.settings.scanCaptured"));
+    } else {
+      // Don't show a red error for a user-initiated cancel — silently dismiss.
+      if (pairScanReturn.error.toLowerCase().includes("cancel")) {
+        setError(null);
+        setSuccess(null);
+      } else {
+        setError(pairScanReturn.error);
+        setSuccess(null);
+      }
+    }
+    onPairScanReturnConsumed?.();
+  }, [pairScanReturn, onPairScanReturnConsumed, t]);
 
   if (bridgeStatus?.enabled) {
     return (

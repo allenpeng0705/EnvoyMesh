@@ -257,6 +257,8 @@ export const en = {
       scanCancel: "Cancel",
       scanCancelled: "Scan cancelled.",
       scanInvalid: "That code was not a valid EnvoyMesh pairing link.",
+      scanHint: "Point your camera at the QR code in your computer's Settings.",
+      scanFailedHint: "Couldn't read that as a pairing code. Try again, or paste the link below.",
       pairSuccess: "Paired as {ownerId}. Home agent is ready when your computer is online.",
       bridgeActiveHint:
         "Shared identity is active. Chat with {agent} from Contacts when your home computer is online.",

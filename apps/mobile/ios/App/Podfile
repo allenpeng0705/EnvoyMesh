@@ -19,7 +19,10 @@ end
 
 target 'App' do
   capacitor_pods
-  # Add your Pods here
+  # Local Pod for our AVFoundation-based QR scanner. Lives outside the
+  # `capacitor_pods` block because `npx cap sync` rewrites that block on
+  # every run and would otherwise drop this entry.
+  pod 'EnvoyQrScanner', :path => 'Plugins/EnvoyQrScanner'
 end
 
 post_install do |installer|

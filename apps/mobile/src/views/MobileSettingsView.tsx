@@ -15,9 +15,17 @@ type SettingsTab = "node" | "ai" | "app";
 
 interface MobileSettingsViewProps {
   onBack?: () => void;
+  onOpenLiveScan?: () => void;
+  pairScanReturn?: { uri: string } | { error: string } | null;
+  onPairScanReturnConsumed?: () => void;
 }
 
-export function MobileSettingsView({ onBack }: MobileSettingsViewProps) {
+export function MobileSettingsView({
+  onBack,
+  onOpenLiveScan,
+  pairScanReturn,
+  onPairScanReturnConsumed,
+}: MobileSettingsViewProps) {
   const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig, nodeStatus, peerId, connectionStatus, bridgeStatus, refreshNodeConfig, refreshConnectionStatus } =
@@ -109,7 +117,11 @@ export function MobileSettingsView({ onBack }: MobileSettingsViewProps) {
               </div>
             </div>
 
-            <MobilePairHomeSection />
+            <MobilePairHomeSection
+              onOpenLiveScan={onOpenLiveScan}
+              pairScanReturn={pairScanReturn}
+              onPairScanReturnConsumed={onPairScanReturnConsumed}
+            />
 
             <div className="mv-section-group">
               <div className="mv-section-group-title">{t("mobile.settings.network")}</div>

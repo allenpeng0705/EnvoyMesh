@@ -6,10 +6,19 @@
  * --------------------------------------------------------------------------- */
 
 /* ---- Reset & viewport ---- */
+/* On iOS Capacitor, `100dvh` is the WebView's visible area excluding the
+ * home-indicator inset, which leaves a sliver of WebView background
+ * (white) visible below the bottom tab bar. `100vh` resolves to the
+ * full screen height on iOS Capacitor, so the body and the bar extend
+ * all the way to the bottom of the device — the home indicator then
+ * overlays the bar (the standard iOS look) instead of sitting in a
+ * white gap. The top bar still uses `env(safe-area-inset-top)` to
+ * push its content below the status bar / dynamic island. */
 html, body, #root {
   margin: 0;
   padding: 0;
   height: 100%;
+  height: 100vh;
   overflow: hidden;
   overscroll-behavior: none;
 }
@@ -24,6 +33,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+  height: 100vh;
   background: var(--color-bg, #f8fafc);
 }
 
@@ -212,10 +222,16 @@ body {
 .bottom-tabs {
   display: flex;
   justify-content: space-around;
-  align-items: center;
+  align-items: stretch;
   flex-shrink: 0;
-  padding: 2px 0;
-  padding-bottom: max(2px, env(safe-area-inset-bottom, 0px));
+  /* iOS standard tab-bar layout: a 49px row for icons/labels plus a
+   * safe-area pad for the home indicator. The bar's surface color
+   * extends through the safe area, so the home indicator overlays the
+   * bar's background instead of the page content beneath. The bar
+   * matches what other iOS apps do (icons sit at the top of the 49px
+   * row; the safe area below is also the bar's color). */
+  min-height: 49px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   background: var(--color-surface, #ffffff);
   box-shadow: 0 -0.5px 0 0 var(--color-border-subtle, #f1f5f9);
 }
@@ -228,11 +244,13 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 2px;
   flex: 1;
-  padding: 0;
-  min-height: 44px;
+  /* Stretch to fill the 49px row. Icons sit at the top of the row
+   * (the standard iOS tab bar look). `min-width: 44px` is the iOS
+   * HIG touch-target floor. */
+  padding: 4px 0 0 0;
   min-width: 44px;
   border: none;
   background: none;

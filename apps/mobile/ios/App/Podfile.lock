@@ -1,18 +1,22 @@
 PODS:
-  - Capacitor (6.2.1):
+  - Capacitor (8.4.0):
     - CapacitorCordova
   - CapacitorCommunityBarcodeScanner (3.0.3):
     - Capacitor
-  - CapacitorCommunitySqlite (6.0.2):
+  - CapacitorCommunitySqlite (8.1.0):
     - Capacitor
     - SQLCipher
     - ZIPFoundation
-  - CapacitorCordova (6.2.1)
-  - CapacitorFilesystem (6.0.4):
+  - CapacitorCordova (8.4.0)
+  - CapacitorFilesystem (8.1.2):
     - Capacitor
-  - CapacitorSecureStoragePlugin (0.10.0):
+    - IONFilesystemLib (~> 1.1.1)
+  - CapacitorSecureStoragePlugin (0.13.0):
     - Capacitor
     - SwiftKeychainWrapper
+  - EnvoyQrScanner (0.1.0):
+    - Capacitor
+  - IONFilesystemLib (1.1.2)
   - SQLCipher (4.10.0):
     - SQLCipher/standard (= 4.10.0)
   - SQLCipher/common (4.10.0)
@@ -28,9 +32,11 @@ DEPENDENCIES:
   - "CapacitorCordova (from `../../../../node_modules/@capacitor/ios`)"
   - "CapacitorFilesystem (from `../../../../node_modules/@capacitor/filesystem`)"
   - CapacitorSecureStoragePlugin (from `../../../../node_modules/capacitor-secure-storage-plugin`)
+  - EnvoyQrScanner (from `Plugins/EnvoyQrScanner`)
 
 SPEC REPOS:
   trunk:
+    - IONFilesystemLib
     - SQLCipher
     - SwiftKeychainWrapper
     - ZIPFoundation
@@ -48,18 +54,22 @@ EXTERNAL SOURCES:
     :path: "../../../../node_modules/@capacitor/filesystem"
   CapacitorSecureStoragePlugin:
     :path: "../../../../node_modules/capacitor-secure-storage-plugin"
+  EnvoyQrScanner:
+    :path: Plugins/EnvoyQrScanner
 
 SPEC CHECKSUMS:
-  Capacitor: 1e0d0e7330dea9f983b50da737d8918abcf273f8
+  Capacitor: 8273022511838f32d2b245105fdee086195b1304
   CapacitorCommunityBarcodeScanner: c61469507bb16f41ef2d3f6d92069974aeb7890d
-  CapacitorCommunitySqlite: 47dab3a2d9a9581a0fe7642cf9cffd34c5d5b358
-  CapacitorCordova: 8d93e14982f440181be7304aa9559ca631d77fff
-  CapacitorFilesystem: 45e086a4396be03456c3d53d34b17c89169dd8cd
-  CapacitorSecureStoragePlugin: ced6025438fbbdbfb9fffec4398e748572fc147b
+  CapacitorCommunitySqlite: f3d9be57fc49fa7245f7935c2be993e3243e53a8
+  CapacitorCordova: 71d81f350e6c30bf2a846593b5c480fbd68e9bac
+  CapacitorFilesystem: 7d3e3df84be4f0d999a5d6baa23aeb30c2de6450
+  CapacitorSecureStoragePlugin: a4b8ec11c5347dd9d74f04b867e24e8786a76428
+  EnvoyQrScanner: c49a8210e2f907929576ceaf436da7a786ed4953
+  IONFilesystemLib: 21a63377696b2d8fab5632ecfb7d2ac67bddb68a
   SQLCipher: eb79c64049cb002b4e9fcb30edb7979bf4706dfc
   SwiftKeychainWrapper: 807ba1d63c33a7d0613288512399cd1eda1e470c
   ZIPFoundation: dfd3d681c4053ff7e2f7350bc4e53b5dba3f5351
 
-PODFILE CHECKSUM: 11b5eab7d2e1abbbb53598608a099f6b11efb79c
+PODFILE CHECKSUM: 70641e0d212ed4b6e42e09d53ee25ea4a28013f8
 
 COCOAPODS: 1.16.2

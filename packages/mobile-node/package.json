@@ -12,7 +12,7 @@
     "#network/capability-topic-cid": "@envoymesh/network/capability-topic-cid"
   },
   "dependencies": {
-    "@capacitor/filesystem": "^6.0.0",
+    "@capacitor/filesystem": "^8.0.0",
     "@chainsafe/libp2p-noise": "^17.0.0",
     "@chainsafe/libp2p-yamux": "^8.0.0",
     "@envoymesh/api": "0.1.0",

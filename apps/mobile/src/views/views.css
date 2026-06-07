@@ -1361,3 +1361,94 @@
     transition: none;
   }
 }
+
+/* ---- Pair Scan (live QR scanner) ---- */
+
+/*
+ * The full-screen scanner relies on the iOS Capacitor WebView being
+ * transparent so the native AVCapture preview mounted beneath it is
+ * visible.  We must keep this layer's background transparent — the
+ * hint/raw/error text floats on top in its own surface.
+ */
+
+/* Force the document body transparent so the WebView paints clear above
+ * the native camera preview layer (mounted as a subview of the WebView
+ * superview on iOS via EnvoyQrScanner). */
+body.mobile-pair-scan-active,
+body.mobile-pair-scan-active #root,
+body.mobile-pair-scan-active .mobile-app {
+  background: transparent !important;
+}
+
+.mobile-pair-scan {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+  color: #fff;
+  z-index: 9999;
+}
+
+.mobile-pair-scan__top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0) 100%);
+  padding-top: calc(env(safe-area-inset-top, 0px) + var(--space-2));
+}
+
+.mobile-pair-scan__back {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 18px;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.mobile-pair-scan__title {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+}
+
+.mobile-pair-scan__hint {
+  margin: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  text-align: center;
+  /* Hint sits over the camera preview — keep it well above the bottom UI. */
+  margin-top: auto;
+  margin-bottom: var(--space-4);
+}
+
+.mobile-pair-scan__raw,
+.mobile-pair-scan__error {
+  margin: 0 var(--space-4) var(--space-2);
+  padding: var(--space-3);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.mobile-pair-scan__error {
+  background: rgba(160, 30, 30, 0.85);
+  border: 1px solid rgba(255, 120, 120, 0.4);
+}
+

@@ -892,6 +892,27 @@ export class MobileNode implements NodeService {
       // 6. Persist to storage (public state → SQLite, private keys → SecureStorage)
       await this.persistSharedIdentity();
 
+      // Save the relay URL from the QR so the home remote client can reach the
+      // home node through the relay after pairing. The home node's getPairingPayload
+      // sets `wsUrl` to its first relay's WebSocket URL (e.g. ws://<relay-host>:<port>/ws).
+      // Without this, the mobile app has no relay URL configured and cannot
+      // proxy terminal / agent calls to the home node.
+      const relayUrl = qrPayload.wsUrl?.trim();
+      if (relayUrl && !this._relayUrls.includes(relayUrl)) {
+        this._relayUrls.push(relayUrl);
+        if (this._status === "running") {
+          this._connectRelay(relayUrl);
+        }
+        try {
+          localStorage.setItem(
+            "envoymesh_relay_urls",
+            JSON.stringify([...this._relayUrls]),
+          );
+        } catch {
+          /* best effort — localStorage may be unavailable in some contexts */
+        }
+      }
+
       // Store session token for reconnection
       if (response.sessionToken && this._sessionTokenStore) {
         await this._sessionTokenStore.setToken({
