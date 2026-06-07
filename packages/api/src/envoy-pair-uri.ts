@@ -16,6 +16,7 @@ function paramsToPairWithHomeNode(searchParams: URLSearchParams): PairWithHomeNo
 
   return {
     wsUrl: required("wsUrl"),
+    lanWsUrl: optional("lanWsUrl"),
     token: required("token"),
     ownerPublicKey: required("ownerPublicKey"),
     ownerId: required("ownerId"),

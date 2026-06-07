@@ -528,6 +528,10 @@ export interface ConnectionStatus {
     lastError?: string;
     /** ISO timestamp for {@link lastError}. */
     lastErrorAt?: string;
+    /** True when this node can spawn local PTY sessions (desktop home node). */
+    terminalsAvailable?: boolean;
+    /** Paired mobile → home remote capabilities (Slice 2). */
+    homeRemote?: import("./home-remote.js").HomeRemoteStatus;
 }
 /**
  * Connection info for a specific peer (direct P2P vs relay-mediated).

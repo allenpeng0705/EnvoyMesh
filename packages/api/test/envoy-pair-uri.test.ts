@@ -29,4 +29,12 @@ describe("parseEnvoyPairUri", () => {
   it("rejects missing required fields", () => {
     expect(() => parseEnvoyPairUri("envoy://pair?wsUrl=ws://relay:9000")).toThrow(/token/i);
   });
+
+  it("parses lanWsUrl when present (preferred for same-WiFi pairing)", () => {
+    const uri =
+      "envoy://pair?wsUrl=ws%3A%2F%2Frelay.example%3A9000%2Fws&token=tok123&ownerPublicKey=pk&ownerId=envoy%3Aowner%3Aabc&lanWsUrl=ws%3A%2F%2F192.168.1.100%3A3030%2Fws";
+    const parsed = parseEnvoyPairUri(uri);
+    expect(parsed.wsUrl).toBe("ws://relay.example:9000/ws");
+    expect(parsed.lanWsUrl).toBe("ws://192.168.1.100:3030/ws");
+  });
 });

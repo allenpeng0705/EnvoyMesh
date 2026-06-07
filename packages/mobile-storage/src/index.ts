@@ -267,6 +267,7 @@ export function mobileStorageSchema(): string[] {
       agentPublicKeyPem TEXT,
       homeNodePeerId TEXT,
       relayUrls TEXT NOT NULL DEFAULT '[]',
+      lanWsUrl TEXT,
       agentPeerId_home TEXT,
       agentPubKey_home TEXT,
       agentName_home TEXT,
@@ -647,6 +648,12 @@ export interface PersistedIdentityState {
   agentPublicKeyPem: string;
   homeNodePeerId?: string;
   relayUrls: string[];
+  /**
+   * Direct LAN WebSocket URL of the home node (e.g. `ws://192.168.x.x:3030/ws`).
+   * Captured at pairing time so the mobile can prefer it for ongoing traffic
+   * (lowest latency, no relay) when reachable on the same WiFi.
+   */
+  lanWsUrl?: string;
   /** Home node's agent peer ID (for messaging the AI agent) */
   homeAgentPeerId?: string;
   /** Home node's agent public key PEM */
@@ -673,10 +680,10 @@ export function createMobileIdentityStateStore(db: MobileDatabase): MobileIdenti
       await db.execute(
         `INSERT OR REPLACE INTO identity_state
          (id, sharedIdentity, ownerId, ownerPublicKeyPem, deviceId, devicePublicKeyPem,
-          agentPeerId, agentPublicKeyPem, homeNodePeerId, relayUrls,
+          agentPeerId, agentPublicKeyPem, homeNodePeerId, relayUrls, lanWsUrl,
           agentPeerId_home, agentPubKey_home, deviceCertificateJson, sessionToken,
           createdAt, updatedAt, agentName_home)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           1,
           state.sharedIdentity ? 1 : 0,
@@ -688,6 +695,7 @@ export function createMobileIdentityStateStore(db: MobileDatabase): MobileIdenti
           state.agentPublicKeyPem,
           state.homeNodePeerId ?? null,
           JSON.stringify(state.relayUrls),
+          state.lanWsUrl ?? null,
           state.homeAgentPeerId ?? null,
           state.homeAgentPubKey ?? null,
           state.deviceCertificateJson ?? null,
@@ -720,6 +728,7 @@ function _rowToIdentityState(row: Record<string, unknown>): PersistedIdentitySta
     agentPublicKeyPem: String(row.agentPublicKeyPem ?? ""),
     homeNodePeerId: row.homeNodePeerId != null ? String(row.homeNodePeerId) : undefined,
     relayUrls: JSON.parse(String(row.relayUrls ?? "[]")),
+    lanWsUrl: row.lanWsUrl != null ? String(row.lanWsUrl) : undefined,
     homeAgentPeerId: row.agentPeerId_home != null ? String(row.agentPeerId_home) : undefined,
     homeAgentPubKey: row.agentPubKey_home != null ? String(row.agentPubKey_home) : undefined,
     homeAgentName: row.agentName_home != null ? String(row.agentName_home) : undefined,

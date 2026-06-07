@@ -47,6 +47,11 @@ export const MOBILE_STORAGE_MIGRATIONS: readonly MobileStorageMigration[] = [
     description: "Add agentName_home to identity_state",
     sql: "ALTER TABLE identity_state ADD COLUMN agentName_home TEXT",
   },
+  {
+    version: 5,
+    description: "Add lanWsUrl to identity_state (home LAN transport)",
+    sql: "ALTER TABLE identity_state ADD COLUMN lanWsUrl TEXT",
+  },
 ];
 
 /**

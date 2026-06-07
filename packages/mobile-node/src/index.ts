@@ -59,7 +59,7 @@ import {
 } from "@envoymesh/mobile-storage";
 import { evaluatePolicy, type BondLevel as PolicyBondLevel } from "@envoymesh/bonds";
 import { cidForCapabilityTopic } from "#network/capability-topic-cid";
-import { ENVOY_CHAT_PROTOCOL, ENVOY_MESSAGE_PROTOCOL } from "#network/protocols";
+import { CLIENT_PROXY_PROTOCOL, ENVOY_CHAT_PROTOCOL, ENVOY_MESSAGE_PROTOCOL } from "#network/protocols";
 import { installMobileDataTransferReceiver, sendMobileVaultFileDataTransfer } from "./data-transfer.js";
 import { loadMobilePublishedDocumentIds, saveMobilePublishedDocumentIds } from "./mobile-published-library.js";
 import { loadMobileExternalPublish, saveMobileExternalPublish } from "./mobile-external-publish.js";
@@ -270,6 +270,7 @@ function _normalizeMobileStoredOpenAiEndpoint(mp: ModelProviderConfig): ModelPro
 }
 
 import { HomeRemoteClient } from "./home-remote-client.js";
+import { Libp2pStreamSocket, libp2pStreamToIo } from "./libp2p-stream-socket.js";
 
 function _randomUUID(): string { return crypto.randomUUID(); }
 
@@ -367,6 +368,12 @@ export interface MobileNodeState {
   sharedIdentity: boolean;
   /** Home node peer ID (if shared identity). */
   homeNodePeerId?: string;
+  /**
+   * Direct LAN WebSocket URL of the home node (e.g. `ws://192.168.x.x:3030/ws`).
+   * Captured at pairing time so the mobile can prefer it for ongoing traffic
+   * (lowest latency, no relay) when reachable on the same WiFi.
+   */
+  lanWsUrl?: string;
   /** Home bridge agent peer ID (HomeClaw/OpenClaw via home node). */
   homeAgentPeerId?: string;
   homeAgentPubKey?: string;
@@ -545,6 +552,8 @@ export class MobileNode implements NodeService {
   private _lastNodeErrorAt: string | null = null;
   private _homeRemote: HomeRemoteClient | null = null;
   private _homeRemoteOnline = false;
+  /** Name of the currently active home-remote transport (`"lan"` | `"libp2p"` | `"tunnel"` | null). */
+  private _homeRemoteTransport: string | null = null;
   /** Cached node prefs loaded from localStorage (model, AI settings, autonomy, etc.). */
   private _aiPrefsOwnerId: string | null = null;
   private _aiPrefs: MobileNodePrefs = {
@@ -625,6 +634,7 @@ export class MobileNode implements NodeService {
       homeAgentPubKey?: string;
       homeAgentName?: string;
       deviceCertificate?: DeviceCertificate;
+      lanWsUrl?: string;
     },
   ): Promise<MobileNodeState> {
     const ownerId = deriveOwnerId(ownerPublicKeyPem);
@@ -648,6 +658,7 @@ export class MobileNode implements NodeService {
       deviceCertificate: opts?.deviceCertificate,
       profileDir,
       relayUrls: this._relayUrls,
+      lanWsUrl: opts?.lanWsUrl,
     };
     this._profileDir = profileDir;
     await this._registerHomeBridgeAgentRoute();
@@ -706,6 +717,7 @@ export class MobileNode implements NodeService {
       deviceCertificate: _parsePersistedDeviceCertificate(persisted.deviceCertificateJson),
       profileDir: this._profileDir,
       relayUrls: persisted.relayUrls,
+      lanWsUrl: persisted.lanWsUrl,
     };
     this._relayUrls.length = 0;
     this._relayUrls.push(...persisted.relayUrls);
@@ -744,6 +756,7 @@ export class MobileNode implements NodeService {
       homeAgentName: s.homeAgentName,
       deviceCertificateJson: s.deviceCertificate ? JSON.stringify(s.deviceCertificate) : undefined,
       relayUrls: [...this._relayUrls],
+      lanWsUrl: s.lanWsUrl,
       createdAt,
       updatedAt: new Date().toISOString(),
     };
@@ -886,6 +899,7 @@ export class MobileNode implements NodeService {
           homeAgentPubKey,
           homeAgentName,
           deviceCertificate,
+          lanWsUrl: qrPayload.lanWsUrl?.trim() || undefined,
         },
       );
 
@@ -1301,6 +1315,7 @@ export class MobileNode implements NodeService {
               homeAgentName: persisted.homeAgentName,
               profileDir: this._profileDir,
               relayUrls: persisted.relayUrls,
+              lanWsUrl: persisted.sharedIdentity ? persisted.lanWsUrl : undefined,
             };
             this._relayUrls.length = 0;
             this._relayUrls.push(...persisted.relayUrls);
@@ -3606,12 +3621,14 @@ You are the owner's personal AI assistant on EnvoyMesh.
             homeOnline,
             terminalsAvailable: homeOnline,
             assistantProxied: homeOnline,
+            transport: (this._homeRemoteTransport as "lan" | "libp2p" | "tunnel" | null) ?? null,
           }
         : {
             paired: false,
             homeOnline: false,
             terminalsAvailable: false,
             assistantProxied: false,
+            transport: null,
           },
       lastError: this._lastNodeError ?? undefined,
       lastErrorAt: this._lastNodeErrorAt ?? undefined,
@@ -7407,10 +7424,16 @@ You are the owner's personal AI assistant on EnvoyMesh.
     }
     if (!this._homeRemote) {
       this._homeRemote = new HomeRemoteClient({
-        resolveProxyWsUrl: () => this._buildHomeProxyWsUrl(),
+        resolveCandidates: () => this._buildHomeRemoteCandidates(),
+        createTransport: (candidate) => this._openHomeRemoteTransport(candidate),
         onHomeOnlineChange: (online) => {
           this._homeRemoteOnline = online;
         },
+        onActiveTransportChange: (candidate) => {
+          this._homeRemoteTransport = candidate?.name ?? null;
+        },
+        perCandidateTimeoutMs: 8_000,
+        upgradeSweepMs: 30_000,
       });
       this._homeRemote.on("homeTerminalWs:rx", (data) => {
         this._events.emit("homeTerminalWs:rx", data as { dataBase64: string });
@@ -7453,17 +7476,104 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return Boolean(this.sharedIdentity && this._state?.homeNodePeerId?.trim());
   }
 
-  private async _buildHomeProxyWsUrl(): Promise<string | undefined> {
+  private async _buildHomeRemoteCandidates(): Promise<{ name: string; url: string }[]> {
     const homeNodePeerId = this._state?.homeNodePeerId?.trim();
-    const relayBase = this._relayUrls[0]?.trim();
     const ownerId = this._state?.owner?.ownerId;
-    if (!homeNodePeerId || !relayBase || !ownerId) return undefined;
+    if (!homeNodePeerId || !ownerId) return [];
     const tokens = await this._sessionTokenStore.listTokens();
     const record = tokens.find((t) => t.ownerId === ownerId);
-    if (!record?.token) return undefined;
-    const base = relayBase.replace(/\/+$/, "");
-    const wsBase = /\/ws$/i.test(base) ? base : `${base}/ws`;
-    return `${wsBase}?target=${encodeURIComponent(homeNodePeerId)}&token=${encodeURIComponent(record.token)}`;
+    if (!record?.token) return [];
+
+    const candidates: { name: string; url: string }[] = [];
+
+    // 1) Direct LAN: lowest latency, no relay. Captured at pairing time
+    //    from the QR's `lanWsUrl` (the home node's LAN WebSocket endpoint).
+    //    When the iPhone is on the same WiFi as the home node, this wins.
+    const lanWsUrl = this._state?.lanWsUrl?.trim();
+    if (lanWsUrl) {
+      // Reuse the session token as a query param so the home node's
+      // ws-server can authenticate the LAN connection the same way it
+      // authenticates relay-proxied ones.
+      const lanUrl = new URL(lanWsUrl);
+      lanUrl.searchParams.set("token", record.token);
+      candidates.push({ name: "lan", url: lanUrl.toString() });
+    }
+
+    // 2) Direct libp2p: open a libp2p stream to the home's
+    //    CLIENT_PROXY_PROTOCOL handler. Works whenever the home has any
+    //    reachable libp2p path — same WiFi, public IP, or a public
+    //    circuit relay that has a reservation for the home. When the
+    //    mobile is on cellular and the home is behind NAT, this succeeds
+    //    if (and only if) the home has reserved a slot on a public
+    //    libp2p circuit relay. The EnvoyMesh relay tunnel below remains
+    //    the always-works fallback.
+    if (this._mesh) {
+      candidates.push({ name: "libp2p", url: `libp2p://${homeNodePeerId}` });
+    }
+
+    // 3) Relay tunnel: always works when a reachable relay URL is configured.
+    //    The relay's /ws/home endpoint is held open by the home node itself
+    //    (outbound), so the mobile only needs to dial the relay's /ws path
+    //    with the home node's peer ID and session token. This is the
+    //    fallback path when neither LAN nor a public libp2p circuit
+    //    reservation is reachable.
+    const relayBase = this._relayUrls[0]?.trim();
+    if (relayBase) {
+      const base = relayBase.replace(/\/+$/, "");
+      const wsBase = /\/ws$/i.test(base) ? base : `${base}/ws`;
+      candidates.push({
+        name: "tunnel",
+        url: `${wsBase}?target=${encodeURIComponent(homeNodePeerId)}&token=${encodeURIComponent(record.token)}`,
+      });
+    }
+
+    return candidates;
+  }
+
+  /**
+   * Open a transport for a HomeRemote candidate.
+   * Dispatches on URL scheme:
+   *   - `libp2p://<peerId>`  → open a libp2p stream on CLIENT_PROXY_PROTOCOL
+   *   - `ws://` or `wss://`   → open a real WebSocket (default)
+   *
+   * Returns a WebSocket-shaped object that {@link HomeRemoteClient} drives
+   * with the same JSON-RPC wire protocol regardless of underlying transport.
+   */
+  private async _openHomeRemoteTransport(candidate: { name: string; url: string }) {
+    if (candidate.url.startsWith("libp2p://")) {
+      const homePeerId = candidate.url.slice("libp2p://".length);
+      const sessionToken = await this._lookupHomeSessionToken();
+      if (!sessionToken) {
+        throw new Error("libp2pStreamSocket.missingSessionToken");
+      }
+      if (!this._mesh) {
+        throw new Error("libp2pStreamSocket.meshNotReady");
+      }
+      const mesh = this._mesh;
+      return Libp2pStreamSocket.open(
+        async () => {
+          const stream = await mesh.dialProtocol(
+            `/p2p/${homePeerId}` as any,
+            CLIENT_PROXY_PROTOCOL,
+          );
+          return libp2pStreamToIo(stream);
+        },
+        sessionToken,
+        8_000,
+      );
+    }
+    return new WebSocket(candidate.url) as unknown as import("./home-remote-client.js").WebSocketLike;
+  }
+
+  /**
+   * Look up the persistent home session token for the currently paired owner.
+   * Returns undefined when not paired or no token is stored.
+   */
+  private async _lookupHomeSessionToken(): Promise<string | undefined> {
+    const ownerId = this._state?.owner?.ownerId;
+    if (!ownerId) return undefined;
+    const tokens = await this._sessionTokenStore.listTokens();
+    return tokens.find((t) => t.ownerId === ownerId)?.token;
   }
 
   private async _callHomeRpc<T>(

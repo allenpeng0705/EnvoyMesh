@@ -505,6 +505,12 @@ export interface PairingPayload {
   /** WebSocket URL the mobile app connects to. Either the home node's direct LAN WS URL, or the relay's public WS URL when relay-proxy is configured. */
   wsUrl: string;
   /**
+   * Direct LAN WebSocket URL of the home node (e.g. `ws://192.168.x.x:3030/ws`).
+   * When present, the mobile app will prefer this URL for ongoing traffic (lowest latency, no relay).
+   * The relay URL is used as a fallback when the LAN is unreachable (e.g. mobile on cellular).
+   */
+  lanWsUrl?: string;
+  /**
    * Home node's libp2p peer ID (optional).
    * When connecting through a relay, this is passed as the `target` query param so the relay knows which node to proxy to.
    */
@@ -533,6 +539,11 @@ export interface PairingPayload {
 /** Params decoded from an `envoy://pair` URI for mobile shared-identity pairing. */
 export interface PairWithHomeNodeParams {
   wsUrl: string;
+  /**
+   * Direct LAN WebSocket URL of the home node (optional).
+   * When present, the mobile uses this for ongoing traffic when reachable, falling back to `wsUrl` (relay) otherwise.
+   */
+  lanWsUrl?: string;
   token: string;
   ownerPublicKey: string;
   ownerId: string;

@@ -92,6 +92,20 @@ export function MobileSettingsView({
                   {connectionStatus?.online ? t("mobile.settings.online") : t("mobile.settings.offline")}
                 </span>
               </div>
+              {connectionStatus?.homeRemote?.paired && (
+                <div className="mv-section-row">
+                  <span className="mv-section-label">{t("mobile.settings.transport")}</span>
+                  <span className="mv-section-value">
+                    {connectionStatus.homeRemote.transport === "lan"
+                      ? t("mobile.settings.transportLan")
+                      : connectionStatus.homeRemote.transport === "libp2p"
+                      ? t("mobile.settings.transportLibp2p")
+                      : connectionStatus.homeRemote.transport === "tunnel"
+                      ? t("mobile.settings.transportTunnel")
+                      : t("mobile.settings.transportNone")}
+                  </span>
+                </div>
+              )}
               {connectionStatus?.lastError && (
                 <>
                   <div className="mv-section-row mv-diag-error-meta">

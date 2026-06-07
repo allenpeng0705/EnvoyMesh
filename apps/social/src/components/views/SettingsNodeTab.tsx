@@ -252,6 +252,7 @@ export function SettingsNodeTab() {
       const payload = await nodeService.getPairingPayload();
       // Build envoy://pair URI
       const params = new URLSearchParams({ wsUrl: payload.wsUrl });
+      if (payload.lanWsUrl) params.set("lanWsUrl", payload.lanWsUrl);
       if (payload.relayPeerId) params.set("relayPeerId", payload.relayPeerId);
       if (payload.relayWsUrl) params.set("relayWsUrl", payload.relayWsUrl);
       if (payload.agentPeerId) params.set("agentPeerId", payload.agentPeerId);

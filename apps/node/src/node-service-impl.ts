@@ -9044,6 +9044,13 @@ class NodeServiceImpl implements NodeService {
     }
 
     const payload: PairingPayload = { wsUrl };
+    // Expose the direct LAN URL separately so the mobile app can prefer it for
+    // ongoing traffic (lowest latency, no relay) when reachable. The relay URL
+    // remains the `wsUrl` for cold-start connectivity. Skip the placeholder
+    // "localhost" value — it's never useful to a mobile device.
+    if (lanIp && lanIp !== "localhost") {
+      payload.lanWsUrl = lanWsUrl;
+    }
     payload.token = this._pairingToken;
 
     // Include the relay's peer ID (not the home node's) so the mobile app can
