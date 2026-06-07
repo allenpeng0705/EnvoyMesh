@@ -16,6 +16,15 @@ export interface ChatRoomPendingMessageRecord {
   correlationId?: string;
   messagePayload: ChatRoomMessagePayload;
   createdAt: string;
+  /**
+   * Number of delivery attempts so far. Optional for backward compatibility with
+   * records written by older versions (treated as 0 on read).
+   */
+  attempts?: number;
+  /** ISO timestamp of the most recent attempt. */
+  lastAttemptAt?: string;
+  /** Earliest ISO timestamp at which the next attempt is allowed. */
+  nextAttemptAt?: string;
 }
 
 interface PendingMessageFile {

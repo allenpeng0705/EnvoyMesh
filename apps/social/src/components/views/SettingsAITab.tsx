@@ -198,6 +198,30 @@ function KnowledgeBaseSettings(props: {
           </select>
         </div>
         <div className="form-group">
+          <label>{t("settings.ai.rag.embeddingProvider")}</label>
+          <select
+            value={kb.embedding?.mode ?? "inherit"}
+            onChange={async (e) => {
+              const nextMode = e.target.value as "inherit" | "mock" | "ollama" | "openai-compatible";
+              await patch({
+                embedding: {
+                  ...kb.embedding,
+                  mode: nextMode,
+                  modelName: kb.embedding?.modelName,
+                  endpoint: kb.embedding?.endpoint,
+                  apiKey: kb.embedding?.apiKey,
+                  maxInputTokens: kb.embedding?.maxInputTokens,
+                },
+              });
+            }}
+          >
+            <option value="inherit">{t("settings.ai.rag.embeddingModeInherit")}</option>
+            <option value="openai-compatible">{t("settings.ai.rag.embeddingModeOpenAiCompatible")}</option>
+            <option value="ollama">{t("settings.ai.rag.embeddingModeOllama")}</option>
+            <option value="mock">{t("settings.ai.rag.embeddingModeMock")}</option>
+          </select>
+        </div>
+        <div className="form-group">
           <label>{t("settings.ai.rag.embeddingModel")}</label>
           <input
             type="text"
@@ -213,6 +237,64 @@ function KnowledgeBaseSettings(props: {
               });
             }}
           />
+        </div>
+      </div>
+
+      <div className="form-row">
+        <div className="form-group">
+          <label>{t("settings.ai.rag.embeddingEndpoint")}</label>
+          <input
+            type="text"
+            placeholder={t("settings.ai.rag.embeddingEndpointPlaceholder")}
+            value={kb.embedding?.endpoint ?? ""}
+            onChange={async (e) => {
+              await patch({
+                embedding: {
+                  ...kb.embedding,
+                  mode: kb.embedding?.mode ?? "inherit",
+                  endpoint: e.target.value.trim() || undefined,
+                },
+              });
+            }}
+          />
+          <p className="field-desc">{t("settings.ai.rag.embeddingEndpointHint")}</p>
+        </div>
+        <div className="form-group">
+          <label>{t("settings.ai.rag.embeddingApiKey")}</label>
+          <input
+            type="password"
+            placeholder={t("settings.ai.rag.embeddingApiKeyPlaceholder")}
+            value={kb.embedding?.apiKey ?? ""}
+            onChange={async (e) => {
+              await patch({
+                embedding: {
+                  ...kb.embedding,
+                  mode: kb.embedding?.mode ?? "inherit",
+                  apiKey: e.target.value.trim() || undefined,
+                },
+              });
+            }}
+          />
+        </div>
+        <div className="form-group">
+          <label>{t("settings.ai.rag.embeddingMaxInputTokens")}</label>
+          <input
+            type="number"
+            min={1}
+            placeholder="4096"
+            value={kb.embedding?.maxInputTokens ?? ""}
+            onChange={async (e) => {
+              const raw = e.target.value.trim();
+              await patch({
+                embedding: {
+                  ...kb.embedding,
+                  mode: kb.embedding?.mode ?? "inherit",
+                  maxInputTokens: raw ? Number.parseInt(raw, 10) : undefined,
+                },
+              });
+            }}
+          />
+          <p className="field-desc">{t("settings.ai.rag.embeddingMaxInputTokensHint")}</p>
         </div>
       </div>
 

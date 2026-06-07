@@ -57,4 +57,40 @@ describe("createLocalChatRoomPendingMessageStore", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it("persists attempts and backoff fields across upserts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "envoy-chat-room-pending-msg-"));
+    try {
+      const store = createLocalChatRoomPendingMessageStore(dir);
+      const payload = createChatRoomMessagePayload({
+        roomId: "11111111-1111-4111-8111-111111111111",
+        senderOwnerId: "envoy:owner:alice",
+        text: "Hello",
+      });
+      const base = {
+        messageId: "msg-1",
+        roomId: "11111111-1111-4111-8111-111111111111",
+        targetOwnerId: "envoy:owner:bob",
+        envelopeCreatedAt: "2026-05-28T12:00:00.000Z",
+        messagePayload: payload,
+        createdAt: "2026-05-28T12:00:01.000Z",
+      };
+      await store.upsert({ ...base });
+      const stored = (await store.list())[0];
+      expect(stored?.attempts).toBeUndefined();
+
+      await store.upsert({
+        ...base,
+        attempts: 3,
+        lastAttemptAt: "2026-05-28T12:00:05.000Z",
+        nextAttemptAt: "2026-05-28T12:00:35.000Z",
+      });
+      const updated = (await store.list())[0];
+      expect(updated?.attempts).toBe(3);
+      expect(updated?.lastAttemptAt).toBe("2026-05-28T12:00:05.000Z");
+      expect(updated?.nextAttemptAt).toBe("2026-05-28T12:00:35.000Z");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

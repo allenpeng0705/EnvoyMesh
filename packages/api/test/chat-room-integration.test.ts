@@ -247,6 +247,11 @@ describe("chat room multi-node integration", () => {
     expect(bob.messages.get(threadKey)).toBeUndefined();
 
     alice.deliverFailOwners.delete(OWNER_BOB);
+    // The first failure scheduled a backoff; advance the pending record so the
+    // next flush is allowed to attempt delivery again.
+    for (const record of alice.pendingMessages.snapshot()) {
+      record.nextAttemptAt = undefined;
+    }
     await flushPendingRoomMessagesImpl(alice.deps());
 
     expect(alice.pendingMessages.snapshot()).toHaveLength(0);

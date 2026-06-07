@@ -969,6 +969,17 @@ export interface NodeServiceEvents {
   "agent:activity": AgentActivityRecord;
   "chat:delivered": { messageId: string; timestamp: string; recipientOwnerId?: string };
   "chat:read": { messageId: string; timestamp: string };
+  /**
+   * Emitted when an outbound chat message has given up trying to reach a
+   * specific recipient (e.g. peer unreachable after max retries). UI can
+   * surface this so the user knows which contacts are offline.
+   */
+  "chat:delivery-failed": {
+    threadKey: string;
+    messageId: string;
+    recipientOwnerId: string;
+    reason: string;
+  };
 
   // File sharing events
   "share:offered": ShareOffer;

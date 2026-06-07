@@ -131,6 +131,12 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
     }
   }, 500);
 
+  // When the embeddings provider is misconfigured, every backfill batch throws
+  // the same error. Track the last failure and skip re-running until enough
+  // time has passed so the user isn't spammed with identical warnings.
+  let lastBackfillFailureAt = 0;
+  const BACKFILL_FAILURE_BACKOFF_MS = 5 * 60_000;
+
   async function ensureRuntime(): Promise<{ embedder: EmbeddingProvider; store: VectorStore }> {
     const nextEmbedder = createEmbeddingProvider({
       embedding: knowledgeBase?.embedding,
@@ -204,6 +210,14 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
       const kb = resolveAiKnowledgeBaseSettings(knowledgeBase);
       if (kb.ragMode === "lexical") return;
 
+      const nowMs = Date.now();
+      if (nowMs - lastBackfillFailureAt < BACKFILL_FAILURE_BACKOFF_MS) {
+        // Skip — the previous run hit a configuration error and we don't want
+        // to log the same warning every 90s. Will retry on the next config
+        // change or after the backoff expires.
+        return;
+      }
+
       const rows = await chatLogStore.listAllMessages(20_000);
       if (rows.length === 0) return;
 
@@ -254,11 +268,27 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
             existingByCollection.get(record.collection)?.add(record.sourceKey);
           }
         } catch (error) {
-          console.warn(`[rag] chat backfill batch failed: ${error}`);
-          break;
+          const errMsg = error instanceof Error ? error.message : String(error);
+          lastBackfillFailureAt = nowMs;
+          console.warn(
+            `[rag] chat backfill batch failed (provider=${activeEmbedder.modelKey}, will retry in ${Math.round(
+              BACKFILL_FAILURE_BACKOFF_MS / 1000,
+            )}s): ${errMsg}`,
+          );
+          // Surface a one-time hint to help the user fix misconfigured embeddings.
+          if (/missing vector/i.test(errMsg)) {
+            console.warn(
+              "[rag] hint: the embeddings endpoint returned a response without a vector field. " +
+                "If you are using an OpenAI-compatible chat-completions provider as the embeddings endpoint, " +
+                "switch the embedding mode to 'mock' (or 'ollama' for a local model) in AI Settings → Knowledge.",
+            );
+          }
+          return;
         }
       }
 
+      // Successful run — clear the failure flag.
+      lastBackfillFailureAt = 0;
       void flushSoon();
       console.log(`[rag] chat history backfill complete (${rows.length} message(s) scanned)`);
     },

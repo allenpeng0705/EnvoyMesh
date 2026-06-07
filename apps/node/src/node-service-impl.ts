@@ -2880,6 +2880,9 @@ class NodeServiceImpl implements NodeService {
       markOutboundDelivered: (threadKey, messageId, deliveredAt) => {
         void this._markOutboundChatDelivered(threadKey, messageId, deliveredAt);
       },
+      markOutboundFailed: (threadKey, messageId, recipientOwnerId, reason) => {
+        void this._markOutboundChatFailed(threadKey, messageId, recipientOwnerId, reason);
+      },
       recordGroupDeliveryProgress: (input) => {
         this._recordGroupDeliveryProgress(input);
       },
@@ -3157,6 +3160,24 @@ class NodeServiceImpl implements NodeService {
         .catch((err) => console.warn(`[chat-log] delivery update failed:`, err));
     }
     this.emit("chat:delivered", { messageId, timestamp: deliveredAt });
+  }
+
+  private async _markOutboundChatFailed(
+    threadKey: string,
+    messageId: string,
+    recipientOwnerId: string,
+    reason: string,
+  ): Promise<void> {
+    if (this._chatLogStore && !threadKey.startsWith("room:")) {
+      // 1:1 thread — recipientOwnerId is the thread key. Room messages use
+      // `room:<roomId>` and track per-recipient delivery in
+      // deliveredToOwnerIds/pendingRecipientOwnerIds; for those we only
+      // emit the event so the UI can update without needing a new field.
+      await this._chatLogStore
+        .updateDeliveryReceipt(threadKey, messageId, "failed")
+        .catch((err) => console.warn(`[chat-log] failed-receipt update failed:`, err));
+    }
+    this.emit("chat:delivery-failed", { threadKey, messageId, recipientOwnerId, reason });
   }
 
   private async _withChatSendLock<T>(transportPeerId: string, fn: () => Promise<T>): Promise<T> {

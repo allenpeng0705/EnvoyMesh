@@ -215,6 +215,20 @@ export const aiSettingsMessages = {
     retrievalLexical: "Lexical (keywords only)",
     embeddingModel: "Embedding model",
     embeddingPlaceholder: "inherit from chat model or e.g. nomic-embed-text",
+    embeddingMode: "Embedding provider",
+    embeddingModeInherit: "Inherit from chat model (default)",
+    embeddingModeOpenAiCompatible: "OpenAI-compatible (e.g. embo-01 at MiniMax)",
+    embeddingModeOllama: "Ollama (local)",
+    embeddingModeMock: "Mock (testing only, no remote calls)",
+    embeddingEndpoint: "Embedding endpoint",
+    embeddingEndpointPlaceholder: "https://api.minimaxi.com/v1",
+    embeddingEndpointHint:
+      "API root for embeddings. OpenAI-compatible uses POST {endpoint}/embeddings; Ollama uses POST {endpoint}/api/embeddings. Leave blank to inherit from chat model.",
+    embeddingApiKey: "Embedding API key",
+    embeddingApiKeyPlaceholder: "sk-… (blank = inherit chat key)",
+    embeddingMaxInputTokens: "Max input tokens per embed call",
+    embeddingMaxInputTokensHint:
+      "Caps vault chunk size and truncates long messages at embed time. embo-01 = 4096, text-embedding-3-* = 8191. Blank = auto-detect from model name.",
     purgeRagOnDelete: "Purge RAG when deleting chat",
     purgeRagOnDeleteDesc:
       "Off (default): deleted messages stay in the vector index for AI context. On: delete/clear also removes chat RAG vectors.",

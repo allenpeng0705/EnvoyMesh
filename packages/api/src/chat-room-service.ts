@@ -40,8 +40,60 @@ export interface HumanProfileStoreLike {
 
 export type ChatDeliverResult = { delivered: boolean; deliveredAt?: string };
 
+/** Max retry attempts before a pending delivery is given up on. */
+export const PENDING_DELIVERY_MAX_ATTEMPTS = 10;
+/** Base backoff in ms for the first failure — doubles each attempt, capped at 5 min. */
+const PENDING_DELIVERY_BACKOFF_BASE_MS = 30_000;
+const PENDING_DELIVERY_BACKOFF_MAX_MS = 5 * 60_000;
+
+/**
+ * Returns the number of milliseconds to wait before the next delivery attempt.
+ * Doubles from the base delay, capped at the maximum.
+ */
+export function pendingDeliveryBackoffMs(attempts: number): number {
+  if (attempts <= 0) return PENDING_DELIVERY_BACKOFF_BASE_MS;
+  const exp = Math.min(attempts, 16);
+  const delay = PENDING_DELIVERY_BACKOFF_BASE_MS * 2 ** exp;
+  return Math.min(delay, PENDING_DELIVERY_BACKOFF_MAX_MS);
+}
+
+/** Returns true when the record's `nextAttemptAt` is in the future. */
+function isInBackoff(record: { nextAttemptAt?: string }, nowMs: number): boolean {
+  if (!record.nextAttemptAt) return false;
+  const nextMs = Date.parse(record.nextAttemptAt);
+  if (Number.isNaN(nextMs)) return false;
+  return nextMs > nowMs;
+}
+
 function roomThreadKey(roomId: string): string {
   return `room:${roomId}`;
+}
+
+/**
+ * Persist a backoff state for a pending delivery record. Always preserves
+ * `createdAt` and the original identifying fields, only mutating the
+ * attempt-tracking fields.
+ */
+async function scheduleNextPendingAttempt(
+  store: ChatRoomPendingSyncStoreLike | ChatRoomPendingMessageStoreLike | null | undefined,
+  record: {
+    attempts?: number;
+    lastAttemptAt?: string;
+    nextAttemptAt?: string;
+    [key: string]: unknown;
+  },
+  nextAttempts: number,
+  nowMs: number,
+): Promise<void> {
+  if (!store) return;
+  const backoffMs = pendingDeliveryBackoffMs(nextAttempts);
+  const now = new Date(nowMs).toISOString();
+  await store.upsert({
+    ...record,
+    attempts: nextAttempts,
+    lastAttemptAt: now,
+    nextAttemptAt: new Date(nowMs + backoffMs).toISOString(),
+  } as never);
 }
 
 export interface ChatRoomPendingSyncStoreLike {
@@ -52,6 +104,9 @@ export interface ChatRoomPendingSyncStoreLike {
       targetOwnerId: string;
       syncPayload: ChatRoomSyncPayload;
       createdAt: string;
+      attempts?: number;
+      lastAttemptAt?: string;
+      nextAttemptAt?: string;
     }>
   >;
   upsert(record: {
@@ -60,6 +115,9 @@ export interface ChatRoomPendingSyncStoreLike {
     targetOwnerId: string;
     syncPayload: ChatRoomSyncPayload;
     createdAt: string;
+    attempts?: number;
+    lastAttemptAt?: string;
+    nextAttemptAt?: string;
   }): Promise<void>;
   remove(roomId: string, revision: number, targetOwnerId: string): Promise<void>;
   removeForRoom(roomId: string): Promise<void>;
@@ -76,6 +134,9 @@ export interface ChatRoomPendingMessageStoreLike {
       correlationId?: string;
       messagePayload: ChatRoomMessagePayload;
       createdAt: string;
+      attempts?: number;
+      lastAttemptAt?: string;
+      nextAttemptAt?: string;
     }>
   >;
   upsert(record: {
@@ -86,6 +147,9 @@ export interface ChatRoomPendingMessageStoreLike {
     correlationId?: string;
     messagePayload: ChatRoomMessagePayload;
     createdAt: string;
+    attempts?: number;
+    lastAttemptAt?: string;
+    nextAttemptAt?: string;
   }): Promise<void>;
   remove(messageId: string, targetOwnerId: string): Promise<void>;
   removeForMessage(messageId: string): Promise<void>;
@@ -137,6 +201,17 @@ export interface ChatRoomServiceDeps {
     correlationId?: string;
   }) => Promise<void>;
   markOutboundDelivered?: (threadKey: string, messageId: string, deliveredAt: string) => void;
+  /**
+   * Mark a message as permanently undeliverable to a specific recipient
+   * (e.g. peer unreachable after max retries). Optional — if absent, the
+   * delivery receipt is left as-is.
+   */
+  markOutboundFailed?: (
+    threadKey: string,
+    messageId: string,
+    recipientOwnerId: string,
+    reason: string,
+  ) => void;
   /** Update per-recipient group delivery progress (all acked → mark delivered). */
   recordGroupDeliveryProgress?: (input: {
     threadKey: string;
@@ -213,7 +288,9 @@ async function recordPendingSyncFailures(
   deliveries: Array<{ ownerId: string; result: ChatDeliverResult }>,
 ): Promise<void> {
   if (!deps.pendingSyncStore) return;
-  const createdAt = new Date().toISOString();
+  const nowMs = Date.now();
+  const createdAt = new Date(nowMs).toISOString();
+  const backoffIso = new Date(nowMs + pendingDeliveryBackoffMs(1)).toISOString();
   for (const { ownerId, result } of deliveries) {
     if (result.delivered) {
       await deps.pendingSyncStore.remove(room.roomId, room.revision, ownerId);
@@ -225,6 +302,9 @@ async function recordPendingSyncFailures(
       targetOwnerId: ownerId,
       syncPayload,
       createdAt,
+      attempts: 1,
+      lastAttemptAt: createdAt,
+      nextAttemptAt: backoffIso,
     });
   }
   await deps.pendingSyncStore.removeBelowRevision(room.roomId, room.revision);
@@ -242,7 +322,9 @@ async function recordPendingMessageFailures(
   },
 ): Promise<void> {
   if (!deps.pendingMessageStore) return;
-  const createdAt = new Date().toISOString();
+  const nowMs = Date.now();
+  const createdAt = new Date(nowMs).toISOString();
+  const backoffIso = new Date(nowMs + pendingDeliveryBackoffMs(1)).toISOString();
   for (const { ownerId, result } of input.deliveries) {
     if (result.delivered) {
       await deps.pendingMessageStore.remove(input.messageId, ownerId);
@@ -256,6 +338,9 @@ async function recordPendingMessageFailures(
       correlationId: input.correlationId,
       messagePayload: input.messagePayload,
       createdAt,
+      attempts: 1,
+      lastAttemptAt: createdAt,
+      nextAttemptAt: backoffIso,
     });
   }
 }
@@ -583,6 +668,7 @@ export async function flushPendingRoomMessagesImpl(deps: ChatRoomServiceDeps): P
 
   const profile = deps.getProfile();
   const selfOwnerId = profile.owner.ownerId;
+  const nowMs = Date.now();
 
   for (const record of pending) {
     const room = await deps.chatRoomStore.get(record.roomId);
@@ -592,6 +678,23 @@ export async function flushPendingRoomMessagesImpl(deps: ChatRoomServiceDeps): P
     }
     if (!room.memberOwnerIds.includes(record.targetOwnerId)) {
       await deps.pendingMessageStore.remove(record.messageId, record.targetOwnerId);
+      continue;
+    }
+    const priorAttempts = record.attempts ?? 0;
+    if (isInBackoff(record, nowMs)) {
+      continue;
+    }
+    if (priorAttempts >= PENDING_DELIVERY_MAX_ATTEMPTS) {
+      await deps.pendingMessageStore.remove(record.messageId, record.targetOwnerId);
+      deps.markOutboundFailed?.(
+        roomThreadKey(record.roomId),
+        record.messageId,
+        record.targetOwnerId,
+        "recipient-unreachable",
+      );
+      console.warn(
+        `[chat.room] giving up on pending message to ${record.targetOwnerId} after ${priorAttempts} failed attempt(s)`,
+      );
       continue;
     }
     try {
@@ -630,9 +733,27 @@ export async function flushPendingRoomMessagesImpl(deps: ChatRoomServiceDeps): P
           deliveredAt: result.deliveredAt ?? new Date().toISOString(),
           allRecipientOwnerIds: recipients,
         });
+      } else {
+        await scheduleNextPendingAttempt(deps.pendingMessageStore, record, priorAttempts + 1, nowMs);
       }
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.warn(`[chat.room] pending message retry to ${record.targetOwnerId} failed:`, err);
+      const nextAttempts = priorAttempts + 1;
+      if (nextAttempts >= PENDING_DELIVERY_MAX_ATTEMPTS) {
+        await deps.pendingMessageStore.remove(record.messageId, record.targetOwnerId);
+        deps.markOutboundFailed?.(
+          roomThreadKey(record.roomId),
+          record.messageId,
+          record.targetOwnerId,
+          errMsg,
+        );
+        console.warn(
+          `[chat.room] giving up on pending message to ${record.targetOwnerId} after ${nextAttempts} failed attempt(s): ${errMsg}`,
+        );
+      } else {
+        await scheduleNextPendingAttempt(deps.pendingMessageStore, record, nextAttempts, nowMs);
+      }
     }
   }
 }
@@ -645,10 +766,24 @@ export async function flushPendingRoomSyncsImpl(deps: ChatRoomServiceDeps): Prom
   const profile = deps.getProfile();
   if (!profile.deviceCertificate) return;
 
+  const nowMs = Date.now();
   for (const record of pending) {
     const room = await deps.chatRoomStore.get(record.roomId);
     if (!room || room.revision > record.revision) {
       await deps.pendingSyncStore.remove(record.roomId, record.revision, record.targetOwnerId);
+      continue;
+    }
+    const priorAttempts = record.attempts ?? 0;
+    if (isInBackoff(record, nowMs)) {
+      // Still cooling off from a previous failure — leave the record alone.
+      continue;
+    }
+    if (priorAttempts >= PENDING_DELIVERY_MAX_ATTEMPTS) {
+      // Already gave up. Drop the record so the loop doesn't churn forever.
+      await deps.pendingSyncStore.remove(record.roomId, record.revision, record.targetOwnerId);
+      console.warn(
+        `[chat.room] giving up on pending sync to ${record.targetOwnerId} after ${priorAttempts} failed attempt(s)`,
+      );
       continue;
     }
     try {
@@ -676,9 +811,21 @@ export async function flushPendingRoomSyncsImpl(deps: ChatRoomServiceDeps): Prom
       );
       if (result.delivered) {
         await deps.pendingSyncStore.remove(record.roomId, record.revision, record.targetOwnerId);
+      } else {
+        await scheduleNextPendingAttempt(deps.pendingSyncStore, record, priorAttempts + 1, nowMs);
       }
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.warn(`[chat.room] pending sync retry to ${record.targetOwnerId} failed:`, err);
+      const nextAttempts = priorAttempts + 1;
+      if (nextAttempts >= PENDING_DELIVERY_MAX_ATTEMPTS) {
+        await deps.pendingSyncStore.remove(record.roomId, record.revision, record.targetOwnerId);
+        console.warn(
+          `[chat.room] giving up on pending sync to ${record.targetOwnerId} after ${nextAttempts} failed attempt(s): ${errMsg}`,
+        );
+      } else {
+        await scheduleNextPendingAttempt(deps.pendingSyncStore, record, nextAttempts, nowMs);
+      }
     }
   }
 }

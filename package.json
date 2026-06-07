@@ -48,6 +48,8 @@
     "vitest": "^4.1.5"
   },
   "dependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "markdown-it": "14.2.0",
     "qrcode": "^1.5.4"
   }
 }
