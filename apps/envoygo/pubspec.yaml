@@ -1,0 +1,54 @@
+name: envoygo
+description: EnvoyGo — Flutter thin client for EnvoyMesh remote access
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.0
+  flutter: '>=3.35.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Transport
+  web_socket_channel: ^3.0.2
+  # State
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+  # Storage
+  flutter_secure_storage: ^9.2.4
+  sqflite: ^2.4.2
+  path: ^1.9.1
+  # QR scanning (mobile only)
+  mobile_scanner: ^6.0.7
+  # URI parsing
+  uri: ^1.0.0
+  # JSON
+  json_annotation: ^4.9.0
+  # Crypto
+  pinenacl: ^0.6.0
+  # Push notifications (mobile only)
+  firebase_core: ^3.0.1
+  firebase_messaging: ^15.0.1
+  # UI
+  google_fonts: ^6.2.1
+  cached_network_image: ^3.4.1
+  intl: ^0.19.0
+  # Platform detection
+  flutter_web_plugins:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.0
+  json_serializable: ^6.8.0
+  riverpod_generator: ^2.6.1
+  mockito: ^5.4.4
+  # For sqflite on web in tests
+  sqflite_common_ffi: ^2.3.4
+
+flutter:
+  uses-material-design: true
+  assets: []

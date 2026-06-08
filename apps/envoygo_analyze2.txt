@@ -1,0 +1,11 @@
+Analyzing envoygo...                                            
+
+   info • Place 'package:' imports before relative imports • lib/providers/chat_provider.dart:3:1 • directives_ordering
+   info • Sort directive sections alphabetically • lib/screens/home_screen.dart:3:1 • directives_ordering
+   info • Place 'package:' imports before relative imports • lib/screens/home_screen.dart:5:1 • directives_ordering
+   info • Place 'package:' imports before relative imports • lib/screens/home_screen.dart:6:1 • directives_ordering
+   info • Use 'const' with the constructor to improve performance • lib/screens/me/me_screen.dart:41:9 • prefer_const_constructors
+   info • Use 'const' with the constructor to improve performance • lib/screens/me/me_screen.dart:86:9 • prefer_const_constructors
+   info • Use 'const' with the constructor to improve performance • lib/screens/me/me_screen.dart:100:9 • prefer_const_constructors
+
+7 issues found. (ran in 0.8s)

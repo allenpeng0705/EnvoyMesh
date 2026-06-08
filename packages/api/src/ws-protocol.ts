@@ -562,6 +562,22 @@ export interface PairWithHomeNodeResult {
   ownerId: string;
 }
 
+/** Params for thin-client pairing (EnvoyGo Flutter app). */
+export interface PairThinClientParams {
+  /** Short-lived pairing token from the home node's QR code. */
+  pairingToken: string;
+  /** Human-readable device name (e.g. "iPhone 17", "Pixel 9"). */
+  deviceName: string;
+  /** Platform identifier: "ios", "android", "flutter", "web". */
+  platform: string;
+}
+
+/** Result of thin-client pairing. No device certificate needed. */
+export interface PairThinClientResult {
+  sessionToken: string;
+  ownerId: string;
+}
+
 /**
  * Defines what the node may do autonomously in a given domain without prompting the owner.
  */

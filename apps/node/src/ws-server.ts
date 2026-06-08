@@ -37,6 +37,8 @@ export class WsServer {
   private nodeService!: NodeService;
   private readonly subscriptions = new Map<string, Set<WebSocket>>();
   private readonly clientSubscriptions = new Map<WebSocket, Set<string>>();
+  /** Track authenticated thin-client sessions (token → ws). */
+  private readonly authenticatedClients = new Map<WebSocket, string>();
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private readonly heartbeatIntervalMs = 30000; // 30 seconds
   private onConnectionChange?: (connectedCount: number) => void;
@@ -110,9 +112,9 @@ export class WsServer {
       console.log(`[ws-server] ERROR: nodeServiceImpl.on is not a function!`);
     }
 
-    this.wss.on("connection", (ws: WebSocket) => {
+    this.wss.on("connection", (ws: WebSocket, req: any) => {
       console.log(`[ws-server] Client connected`);
-      void this.handleConnection(ws);
+      void this.handleConnection(ws, req);
     });
 
     this.wss.on("listening", () => {
@@ -148,11 +150,32 @@ export class WsServer {
     this.wss.close();
   }
 
-  private async handleConnection(ws: WebSocket): Promise<void> {
+  private async handleConnection(ws: WebSocket, req?: any): Promise<void> {
     const clientId = randomUUID();
 
     // Notify connection change
     this.onConnectionChange?.(this.wss.clients.size);
+
+    // Extract session token from query string.
+    let isAuthenticated = false;
+    try {
+      const url = new URL(req?.url ?? "/ws", "ws://localhost");
+      const token = url.searchParams.get("token")?.trim();
+      if (token) {
+        // Validate against session token store.
+        const record = await (this.nodeService as any).lookupSessionToken?.(token);
+        if (record) {
+          isAuthenticated = true;
+          this.authenticatedClients.set(ws, record.ownerId);
+          console.log(`[ws-server] Client ${clientId} authenticated via session token (owner: ${record.ownerId})`);
+        }
+      }
+    } catch {
+      // URL parsing failed — treat as unauthenticated.
+    }
+
+    // Store auth state on the ws object.
+    (ws as any).isThinClientAuthenticated = isAuthenticated;
 
     // Initialize subscription tracking for this client
     this.clientSubscriptions.set(ws, new Set());
@@ -174,6 +197,8 @@ export class WsServer {
 
     ws.on("close", () => {
       console.log(`[ws-server] Client ${clientId} disconnected`);
+      // Clean up auth tracking.
+      this.authenticatedClients.delete(ws);
       // Clean up subscriptions
       const subs = this.clientSubscriptions.get(ws);
       if (subs) {
@@ -286,6 +311,13 @@ export class WsServer {
       const eventName = (params?.event as string) ?? "";
       this.unsubscribe(ws, eventName);
       this.sendResponse(ws, id, { success: true });
+      return;
+    }
+
+    // Gate: unauthenticated thin clients can only call pairThinClient.
+    const isAuth = (ws as any).isThinClientAuthenticated === true;
+    if (!isAuth && method !== "pairThinClient") {
+      this.sendError(ws, id ?? "unknown", "Authentication required");
       return;
     }
 

@@ -2,6 +2,10 @@
 # EnvoyMesh Unified Setup
 # One command: EnvoyMesh + built-in OpenClaw (EnvoyAI) + envoymesh channel extension.
 #
+# PowerShell twin: scripts/setup.ps1 (Windows). The two scripts MUST stay
+# in sync step-for-step. If you change this file, update setup.ps1 in the
+# same commit and vice versa.
+#
 # Usage: ./scripts/setup.sh
 #
 # After setup:

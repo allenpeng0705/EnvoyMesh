@@ -1,52 +1,40 @@
 # Parked scope — Thin satellite mobile app (Story A)
 
-**Status:** Scoping closed (2026-05-20) — **ADR accepted:** single Capacitor app. See [satellite-app-adr.md](./satellite-app-adr.md).
+**Status:** Unparked (2026-06-09) — **Phase 31 active.** Two-app strategy: Capacitor stays as standalone full node; new Flutter app "EnvoyGo" as thin-client remote access. See [satellite-app-adr.md](./satellite-app-adr.md) and [implementation-plan.md § Phase 31](./implementation-plan.md#phase-31--flutter-thin-client-envoygo-design).
 
 **Story:** [UserStory.md § Story A](./UserStory.md) · Protocol baseline: Phase 4A primary/satellite device profiles
 
 ---
 
-## What already ships (Phase 11)
+## What shipped (Phase 11 — now deprecated)
 
-The **Capacitor mobile app** is a **full EnvoyMesh node** — not a thin client:
+The **Capacitor mobile app** was a **full EnvoyMesh node** — not a thin client:
 
 - In-process `MobileNode` + Social UI
 - Own peer identity, relay-only transport, full intent support
 - QR pairing with home node; shared owner identity
 
-This satisfies most Story A **protocol** requirements (pairing, P2P, vault-backed tasks on home node).
+This is now being replaced by the Flutter thin client (Phase 31).
 
 ---
 
-## What “thin satellite” meant in Phase 4A
+## What the Flutter thin client becomes (Phase 31)
 
-A **separate** minimal app profile:
+A **pure thin client** — no local mesh participation:
 
-| Capability | Full mobile node (11) | Thin satellite (parked) |
-|------------|----------------------|-------------------------|
-| libp2p mesh participation | Yes (relay WS) | No — talks only to primary |
-| Vault RAG on device | Mobile vault (SQLite) | Remote via primary RPC |
-| Offline queue | Partial (local stores) | Explicit defer to primary |
-| UI surface | Full Social | Chat + approvals + status only |
+| Capability | Phase 11 (Capacitor) | Phase 31 (Flutter) |
+|------------|---------------------|-------------------|
+| libp2p mesh participation | Yes (relay WS) | No — WebSocket to home node only |
+| Vault RAG on device | Mobile vault (SQLite) | None — remote via home RPC |
+| Identity | Own owner/device keys | None — session token auth |
+| UI surface | Full Social (27+ components, 7 settings tabs) | 3-tab minimal: Chats, People, Me |
 | Binary size / battery | Higher | Lower |
-
----
-
-## Open product question
-
-**Is a second mobile binary justified?** Phase 11 may be sufficient if:
-
-- Home node stays always-on on desktop/Tauri
-- Phone uses full node only when owner needs mesh participation away from home
-
-If product confirms **yes, thin satellite**, un-park with:
-
-1. `deviceProfile: "satellite"` UX spec (already in protocol-standard)
-2. WebSocket-only channel to primary (no relay mesh on phone)
-3. Explicit `device.pair.deferred` + approval surfacing (Phase 4A baseline exists)
+| Multi-node | No | Yes — pair with multiple home nodes, switch between them |
 
 ---
 
 ## Decision
 
-**Closed (Option A).** [satellite-app-adr.md](./satellite-app-adr.md) — Phase 11 Capacitor full node remains the single mobile product. Reopen only if battery/size constraints require a constrained satellite binary.
+**Closed (Option A) → Superseded.** [satellite-app-adr.md](./satellite-app-adr.md) was reversed on 2026-06-09. Two-app strategy: Phase 11 Capacitor stays as standalone full node; Phase 31 EnvoyGo is the thin-client remote access app.
+
+**Related:** [satellite-app-adr.md](./satellite-app-adr.md) · [Phase 31](./implementation-plan.md#phase-31--flutter-thin-client-envoygo-design) · [Flutter Thin Client Design](./flutter-thin-client-design.md)

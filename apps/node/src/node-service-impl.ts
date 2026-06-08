@@ -9323,6 +9323,38 @@ class NodeServiceImpl implements NodeService {
     throw new Error("pairWithHomeNode is only supported on the mobile app");
   }
 
+  async pairThinClient(params: import("@envoymesh/api").PairThinClientParams): Promise<import("@envoymesh/api").PairThinClientResult> {
+    const pairingToken = params.pairingToken?.trim();
+    if (!pairingToken) {
+      throw new Error("pairingToken is required");
+    }
+
+    // Validate the QR pairing token.
+    const valid = await this.validatePairingToken(pairingToken);
+    if (!valid) {
+      throw new Error("Invalid or expired pairing token");
+    }
+
+    // Generate a persistent session token.
+    const sessionToken = randomUUID();
+    const now = new Date().toISOString();
+    const deviceName = params.deviceName?.trim() || "EnvoyGo";
+    const deviceId = `thin-client:${deviceName.toLowerCase().replace(/\s+/g, "-")}:${sessionToken.substring(0, 8)}`;
+    if (this._sessionTokenStore) {
+      await this._sessionTokenStore.setToken({
+        token: sessionToken,
+        ownerId: this._mesh?.ownerId ?? "",
+        deviceId,
+        displayName: deviceName,
+        createdAt: now,
+        lastUsedAt: now,
+      });
+    }
+
+    const ownerId = this._mesh?.ownerId ?? "";
+    return { sessionToken, ownerId };
+  }
+
   async listAuthorizedDevices(): Promise<ListAuthorizedDevicesResult> {
     if (!this._deviceAuthorizationStore) {
       return { devices: [] };

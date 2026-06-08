@@ -14,6 +14,10 @@
     "envoymesh": "apps/cli/src/index.ts"
   },
   "scripts": {
+    "setup": "bash scripts/setup.sh",
+    "setup:win": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1",
+    "install:openclaw": "bash scripts/install-openclaw.sh",
+    "install:openclaw:win": "powershell -ExecutionPolicy Bypass -File scripts/install-openclaw.ps1",
     "postinstall": "node scripts/fix-node-pty-perms.js",
     "cli": "tsx apps/cli/src/index.ts",
     "node:dev": "tsc -b packages/api && npm exec -w @envoymesh/node -- tsx src/index.ts",

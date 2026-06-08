@@ -1,0 +1,15 @@
+Found 3 connected devices:
+  AP16PM (mobile) • 00008140-000A60DA1491801C • ios            • iOS 26.5 23F77
+  macOS (desktop) • macos                     • darwin-arm64   • macOS 15.6.1 24G90 darwin-arm64
+  Chrome (web)    • chrome                    • web-javascript • Google Chrome 149.0.7827.53
+
+Checking for wireless devices...
+
+No wireless devices were found.
+
+Error: Browsing on the local area network for iPhone (3). Ensure the device is unlocked and attached with a cable or associated with the same local area network as this Mac.
+The device must be opted into Developer Mode to connect wirelessly. (code -27)
+
+Run "flutter emulators" to list and start any available device emulators.
+
+If you expected another device to be detected, please run "flutter doctor" to diagnose potential issues. You may also try increasing the time to wait for connected devices with the "--device-timeout" flag. Visit https://flutter.dev/setup/ for troubleshooting tips.

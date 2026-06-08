@@ -47,6 +47,8 @@ import type {
   PairSharedIdentityResult,
   PairWithHomeNodeParams,
   PairWithHomeNodeResult,
+  PairThinClientParams,
+  PairThinClientResult,
   ListAuthorizedDevicesResult,
   RevokeAuthorizedDeviceParams,
   RevokeAuthorizedDeviceResult,
@@ -1675,6 +1677,14 @@ export interface NodeService {
    * Desktop nodes reject this call.
    */
   pairWithHomeNode(params: PairWithHomeNodeParams): Promise<PairWithHomeNodeResult>;
+
+  /**
+   * Thin-client pairing (EnvoyGo Flutter app).
+   * Lightweight pairing that does not require identity keys or device certificates.
+   * The client presents a short-lived pairing token from the home node's QR code.
+   * Returns a persistent session token for subsequent WS connections.
+   */
+  pairThinClient(params: PairThinClientParams): Promise<PairThinClientResult>;
 
   /** List owner-authorized satellite devices (shared-identity pairing). */
   listAuthorizedDevices(): Promise<ListAuthorizedDevicesResult>;

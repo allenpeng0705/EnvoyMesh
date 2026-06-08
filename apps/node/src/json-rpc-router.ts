@@ -387,6 +387,8 @@ export async function routeRpcMethod(
       return ns.pairSharedIdentity(params as any);
     case "pairWithHomeNode":
       return ns.pairWithHomeNode(params as any);
+    case "pairThinClient":
+      return ns.pairThinClient(params as any);
     case "listAuthorizedDevices":
       return ns.listAuthorizedDevices();
     case "revokeAuthorizedDevice":

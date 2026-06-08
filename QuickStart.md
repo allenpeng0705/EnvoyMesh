@@ -15,8 +15,38 @@ Requirements narrative: [docs/UserStory.md](docs/UserStory.md). Scenario backlog
 From the repository root:
 
 ```bash
-npm install
+# macOS / Linux
+./scripts/setup.sh
+# or
+npm run setup
 ```
+
+```powershell
+# Windows (PowerShell 5.1+ — built into Windows 10/11)
+.\scripts\setup.ps1
+# or
+npm run setup:win
+```
+
+If you only need the OpenClaw (EnvoyAI) bootstrap without the full build:
+
+```bash
+# macOS / Linux
+./scripts/install-openclaw.sh                # bundled copy
+./scripts/install-openclaw.sh --local /path/to/openclaw   # external copy
+
+# Windows PowerShell
+.\scripts\install-openclaw.ps1
+.\scripts\install-openclaw.ps1 -LocalOpenClawPath C:\path\to\openclaw
+```
+
+`setup.sh` and `setup.ps1` are kept in sync step-for-step. If you change
+one, change the other in the same commit.
+
+The plain `npm install` from a fresh clone also works; the setup scripts
+are an opinionated one-shot that also bootstraps the OpenClaw submodule,
+copies the envoymesh channel extension, builds the OpenClaw gateway, and
+smoke-tests the webhook.
 
 ## Build And Verify
 

@@ -66,6 +66,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 22 — Federated RAG](#phase-22-federated-rag-)
 - [Phase 29 — OpenClaw as EnvoyMesh's built-in agent](#phase-29--openclaw-as-envoymeshs-built-in-agent-designed-partially-built)
 - [Phase 30 — Terminals (Chat-integrated shells)](#phase-30--terminals-chat-integrated-remote-shells--designed) · [Shipping plan (Slices 1–4)](#phase-30-shipping-plan-agreed-order)
+- [Phase 31 — Flutter Thin Client (EnvoyGo)](#phase-31--flutter-thin-client-envoygo-design)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -79,11 +80,12 @@ Already shipped foundation:
 
 Active next direction:
 
-1. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row.
-2. **Parked until scoped:** Story E payment rail, thin satellite app.
-3. **Phase 26 — DID WAN gateway resolver** — scoped below.
-4. **Mobile E2E test plan** — scoped below.
-3. **Phase 18 — Native owner agent** — **`[x]` complete** (see [Phase 18 exit criteria](#phase-18-exit-criteria-overall)).
+1. **Phase 31 — Flutter Thin Client (EnvoyGo)** — active milestone; Flutter thin-client as remote access app. See [flutter-thin-client-design.md](./flutter-thin-client-design.md) for architecture.
+2. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row.
+3. **Parked until scoped:** Story E payment rail.
+4. **Phase 26 — DID WAN gateway resolver** — scoped below.
+5. **Mobile E2E test plan** — scoped below.
+6. **Phase 18 — Native owner agent** — **`[x]` complete** (see [Phase 18 exit criteria](#phase-18-exit-criteria-overall)).
 4. **Phase 19 — Bond Autonomy** — **`[x]` shipped** (schema + inbound + outbound worker + 24 tests).
 5. **Phase 20 — Network-wide Document Discovery** — **`[x]` shipped** (schema + broadcast helper + 10 tests).
 6. **Phase 21 — Network-wide Capability Discovery** — **`[x]` shipped** (schema + broadcast helper + 4 tests).
@@ -141,7 +143,7 @@ Shipped vs gap (see [alignment-review](./alignment-review.md) for narrative). Up
 - `[x]` Sandbox direction: Wasm/WASI isolation later, with process boundaries first.
 - `[x]` Distributed state direction: evaluate `loro` and `yjs` when shared social/task state is ready.
 - `[x]` Decentralized identity direction: Ed25519 first, DIDKit/DIDs later.
-- `[x]` Mobile v1 direction: Thin UI Mode only; phone acts as secure UI/control channel to Primary Envoy.
+- `[x]` Mobile v1 direction: ~~Thin UI Mode only; phone acts as secure UI/control channel to Primary Envoy.~~ **Superseded (2026-06-09):** Flutter thin-client rewrite as EnvoyGo. See [satellite-app-adr.md](./satellite-app-adr.md) and [Phase 31](#phase-31--flutter-thin-client-envoygo-design).
 - `[x]` Terminals direction: **ship Slice 1 → 2 → 3 → 4** (manual home → mobile remote → Agent mode → EnvoyAI proxy); home = PTY/LLM; phone = UI after QR pair.
 - `[x]` Terminals optional power-user paths (**after Slice 3**): external TmuxAI / herdr docs (30H/30J) — see [terminals-external-herdr.md](./terminals-external-herdr.md), [terminals-external-tmuxai.md](./terminals-external-tmuxai.md); Slices use **patterns only**, not binaries.
 - `[x]` Trust mode social (design): Agents may assist introductions using tiered **owner-signed** profile disclosure; **`bond.*` tier upgrades remain human-committed**. Spec: [trust-mode-social-protocol.md](./trust-mode-social-protocol.md); implementation tracked as [Phase 12](#phase-12-trust-mode--bilateral-social-mediation-design-first).
@@ -1129,16 +1131,16 @@ Tasks:
 
 ## Current Milestone
 
-Milestone: **Phases 0–18 complete** — Core protocol through Trust mode, mobile Social + in-process node, IPFS/Helia export, Phase 13 actor disclosure + Activity, Phase 14 friend autopilot + knowledge syndication, Phase 15 reach, Phase 16 EnvoyAI postures + capability routing, Phase 17 geo discovery, **Phase 18 native owner agent (Assistant = Agent)**. **15E multi-hop (US-MH1–4) shipped** — see [parked-backlog-15e.md](./parked-backlog-15e.md).
+Milestone: **Phases 0–30 complete + Phase 31 active** — Core protocol through Terminals, Flutter thin-client rewrite underway for mobile app. See [satellite-app-adr.md](./satellite-app-adr.md) and [flutter-thin-client-design.md](./flutter-thin-client-design.md).
 
-**Active milestone:** **Phase 18 complete** — see [Phase 18 exit criteria](#phase-18-exit-criteria-overall) and [native-owner-agent.md](./native-owner-agent.md).
+**Active milestone:** **Phase 31 — Flutter Thin Client (EnvoyGo)** — see [Phase 31](#phase-31--flutter-thin-client-envoygo-design) and [flutter-thin-client-design.md](./flutter-thin-client-design.md).
 
 ### Next planning pulls
 
-1. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row.
-2. **Parked until scoped:** Story E payment rail, thin satellite app.
-3. **Phase 26 — DID WAN gateway resolver** — scoped below.
-4. **Mobile E2E test plan** — scoped below.
+1. **Phase 31B–31H** — Transport, pairing, chat, groups, AI, terminals, multi-node, polish (see Phase 31 checklist).
+2. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row.
+3. **Parked until scoped:** Story E payment rail.
+4. **Phase 26 — DID WAN gateway resolver** — scoped below.
 
 ### Phase 9 Architecture Overview
 
@@ -1184,7 +1186,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | Scenario 5 — **vault path** | Phase 5 | Indexing, policy, audit. | `[x]` |
 | Scenario 5 — **voucher + verified P2P chunk stream** | Phase 5 + Scenario 6 pick | `/envoymesh/data/0.1.0` voucher + chunk stream shipped. | `[x]` |
 | Scenario 6 — **roles, `/chat` `/agent` `/data`** | Scenario 6 pick + **Open questions** | Strict roles + `/chat`/`/message`/`/data` split baseline shipped; **H2A Assistant product channel** + Appendix D + wire semantics ADR (Phase **15C**). | `[x]` |
-| Story A — **pairing (+ thin mobile parked)** | Phase **4A** | Pairing + offline defer baseline **`[x]`**; thin mobile **`[ ]`** *parked*. | `[~]` |
+| Story A — **pairing + thin mobile** | Phase **4A**, **31** | Pairing + offline defer baseline **`[x]`**; thin mobile rewrite as EnvoyGo **`[~]`** (Phase 31 active). | `[~]` |
 | Story A — **offline primary, defer / notify** | Phase **4A** | Baseline defer + owner surface in approval/audit path; richer notify/retry UX later. | `[~]` |
 | Story B — **morning report / ranked discovery UX** | Phase **7** | Morning report digest baseline in dashboard + CLI. Relay graph routing now supplies bounded relay-reachability lookup beneath higher-level discovery. | `[x]` |
 | Story C — **H2A as distinct channel** | Scenario 6 pick + Phase 8 | Phase 8A real `knowledge.query` path shipped; **Assistant** lane + local Activity on H2A turns (Phase **15C**). | `[x]` |
@@ -3964,10 +3966,538 @@ OpenClaw **`exec`** remains agent-scoped in workspace; Terminal Agent writes onl
 
 ---
 
+## Phase 31 — Flutter Thin Client (EnvoyGo) **`[~]` design**
+
+**Goal:** A **Flutter thin client** ("EnvoyGo") that connects to a home EnvoyMesh node via WebSocket/JSON-RPC for remote access. No local libp2p node, no identity generation, no vault — a pure remote UI. Complements the Phase 11 Capacitor app, which remains as the **standalone full-node** option.
+
+**ADR:** [satellite-app-adr.md](./satellite-app-adr.md) — reversed the May 2026 decision to keep a single Capacitor app.  
+**Design doc:** [flutter-thin-client-design.md](./flutter-thin-client-design.md) — full architecture, transport, pairing, UI, storage, security.
+
+### Core design principles
+
+1. **Thin always.** Every feature delegates to the home node via RPC. No local mesh participation.
+2. **Pair once, persist.** QR pairing produces a session token stored in `flutter_secure_storage`. Reconnection is automatic across app restarts.
+3. **Minimal UI.** Three tabs — Chats, Contacts, Me. No Discover, no Library, no 7-tab Settings. Everything the user doesn't need on a phone stays on the home node.
+4. **Unified thread list.** Contacts, group chats, EnvoyAI, external agents, and terminals all appear in one chat list — the user doesn't care about "protocol types," they care about "who/what am I talking to."
+5. **Multi-transport resilience.** Try LAN WebSocket first (ws://), fall back to relay tunnel (wss://), add libp2p circuit relay later. Transparent to the user.
+6. **Multi-node pairing.** Pair with multiple home nodes. Switch between them. Only interact with one at a time.
+7. **Minimal server changes.** The thin client needs three small additions to the home node: a `pairThinClient` RPC, optional WS token auth, and push notifications (optional). All other features work with zero changes — the existing JSON-RPC protocol already supports everything.
+
+### Companion Protocol (Thin-Client ↔ Home Node)
+
+The thin client uses a **curated subset** of the existing `ws-protocol.ts` JSON-RPC methods plus a few convenience RPCs designed for thin-client bootstrap:
+
+#### Bootstrap/Sync RPCs (called once on connect)
+
+| Method | Purpose |
+|--------|---------|
+| `pairThinClient` | Initial pairing — one-time, no identity keys needed. Takes `{ pairingToken, deviceName, platform }`, returns `{ sessionToken, ownerId }`. |
+| `getBonds` | Sync bonded contacts |
+| `listChatRooms` | Sync group chat rooms |
+| `getBridgeStatus` | Check EnvoyAI + external agent availability |
+| `listTerminalSessions` | Sync active terminal sessions |
+| `getHumanProfile` | Load owner profile (read-only display) |
+
+#### Chat RPCs
+
+| Method | Purpose |
+|--------|---------|
+| `sendChat` | Send direct message to contact |
+| `sendChatAttachment` | Send file/image to contact |
+| `listChatHistory` | Load chat thread (paginated) |
+| `markRead` | Mark thread as read |
+| `deleteChatMessage` | Delete a sent message |
+
+#### Group Chat RPCs
+
+| Method | Purpose |
+|--------|---------|
+| `sendChatRoomMessage` | Send to group |
+| `sendChatRoomAttachment` | Send file to group |
+| `createChatRoom` | Create new group |
+| `inviteToChatRoom` | Add members |
+| `leaveChatRoom` | Leave group |
+| `renameChatRoom` | Rename group |
+
+#### AI Chat RPCs
+
+| Method | Purpose |
+|--------|---------|
+| `sendToOpenClaw` | Chat with EnvoyAI (built-in OpenClaw agent) |
+| `sendAgentChat` | Chat via external agent (HomeClaw / other) |
+
+#### Terminal RPCs
+
+| Method | Purpose |
+|--------|---------|
+| `listTerminalSessions` | List active PTY sessions |
+| `createTerminalSession` | New terminal |
+| `closeTerminalSession` | Close terminal |
+| `homeTerminalWsOpen` | Attach to PTY (binary WS tunnel) |
+| `homeTerminalWsSend` | Send keystrokes (base64-encoded) |
+| `homeTerminalWsClose` | Detach from PTY |
+
+#### Node Management RPCs
+
+| Method | Purpose |
+|--------|---------|
+| `listAuthorizedDevices` | Show paired devices |
+| `revokeAuthorizedDevice` | Unpair this device |
+| `getConnectionStatus` | Home node connectivity |
+| `getNodeStatus` | Node health |
+
+#### Push Events (subscribed on connect)
+
+| Event | Drives |
+|-------|-------|
+| `chat:message` | New direct message → thread list update + notification |
+| `chat:room-message` | New group message → room thread update |
+| `hello:request` | New bond request → inbox badge |
+| `bond:established` | New bond → contacts refresh |
+| `bridge:status` | Agent status change → AI chat availability |
+| `terminal:rx` | PTY output → terminal display |
+| `node:online` / `node:offline` | Connection indicator |
+
+### Home-Node Changes Required
+
+Three small additions. All other thin-client features work with zero server changes.
+
+**A. `pairThinClient` RPC (required)** — The existing `pairWithHomeNode` throws `"only supported on mobile app"` on the home node. `pairSharedIdentity` requires the client to generate Ed25519 identity keys, which the thin client does not do. New RPC takes `{ pairingToken, deviceName, platform }`, validates the token (reuses `validatePairingToken`), generates a UUID session token, stores it in `_sessionTokenStore`, returns `{ sessionToken, ownerId }`. ~20 lines of code.
+
+**B. WS token auth (recommended)** — WS server currently accepts all connections. Add optional `?token=<sessionToken>` query param. Valid token → full RPC access. No token → only `pairThinClient` allowed. Reuses existing `validatePairingToken()`.
+
+**C. Push notifications (optional, 31I)** — Gated behind `PUSH_NOTIFICATIONS_ENABLED`.
+
+### UI — Three Tabs, One Unified Thread List
+
+```
+┌──────────────────────────────────────────────┐
+│  EnvoyGo                        ●● My Mac    │
+├──────────────────────────────────────────────┤
+│  ┌───────────┬───────────┬───────────┐       │
+│  │  💬 Chats │ 👥 People │  👤 Me    │       │
+│  └───────────┴───────────┴───────────┘       │
+│                                              │
+│  Chats tab — unified thread list:            │
+│  ┌──────────────────────────────────────────┐│
+│  │ 💬 Alice                    10:32 AM     ││  ← Direct contact
+│  │    "Sure, let's meet up then"            ││
+│  ├──────────────────────────────────────────┤│
+│  │ 👥 Book Club                 9:15 AM     ││  ← Group chat
+│  │    Bob: "Chapter 5 was great"            ││
+│  ├──────────────────────────────────────────┤│
+│  │ 🧠 EnvoyAI                               ││  ← Built-in AI agent
+│  │    "I found 3 documents matching..."     ││
+│  ├──────────────────────────────────────────┤│
+│  │ 🤖 HomeClaw                              ││  ← External agent
+│  │    "Task completed: PR #342 merged"      ││
+│  ├──────────────────────────────────────────┤│
+│  │ 🖥 Terminal: project                     ││  ← Terminal session
+│  │    $ npm run build                       ││
+│  └──────────────────────────────────────────┘│
+│                                              │
+│  People tab — bonded contacts:               │
+│  ┌──────────────────────────────────────────┐│
+│  │ ● Alice                        bonded   ││
+│  │ ○ Bob                          bonded   ││
+│  │ ● Charlie                      bonded   ││
+│  └──────────────────────────────────────────┘│
+│                                              │
+│  Me tab — profile + node management:         │
+│  ┌──────────────────────────────────────────┐│
+│  │         Display Name (from home node)    ││
+│  │         ownerId (truncated)              ││
+│  │                                          ││
+│  │  ● My Mac Mini (active)      [Switch]    ││
+│  │  ○ Work PC                               ││
+│  │                                          ││
+│  │  + Pair New Node                         ││
+│  │  ───────────────────────                 ││
+│  │  Paired Devices                          ││
+│  │  Theme                        🌙 Dark    ││
+│  │  ───────────────────────                 ││
+│  │  Unpair This Device                      ││
+│  └──────────────────────────────────────────┘│
+└──────────────────────────────────────────────┘
+```
+
+### Phase 31 Task Breakdown
+
+#### 31A — Project Scaffold & Foundation
+
+**Goal:** Create the Flutter project, establish folder structure, configure CI.
+
+- `[ ]` Create Flutter project: `flutter create --org envoymesh --project-name envoygo`
+- `[ ]` Set up folder structure per [flutter-thin-client-design.md § 11](./flutter-thin-client-design.md#11-project-structure)
+- `[ ]` Add dependencies to `pubspec.yaml` (web_socket_channel, flutter_riverpod, flutter_secure_storage, sqflite, mobile_scanner, pinenacl)
+- `[ ]` Configure `analysis_options.yaml` (strict mode, lint rules)
+- `[ ]` Set up Riverpod `ProviderScope` in `main.dart`
+- `[ ]` Material 3 theme (dark/light, color scheme from EnvoyMesh design tokens)
+- `[ ]` GitHub Actions CI: `flutter analyze`, `flutter test`, `flutter build apk --debug`, `flutter build ios --debug --no-codesign`
+- `[ ]` `README.md` with build instructions for iOS and Android
+
+**Exit criteria:**
+- `[ ]` `flutter analyze` passes clean
+- `[ ]` `flutter test` runs (even if 0 tests)
+- `[ ]` CI green on PR
+
+#### 31B — Transport Layer (`HomeRemoteClient`)
+
+**Goal:** Port the TypeScript `home-remote-client.ts` to Dart. Transport-agnostic WebSocket client with multi-candidate support and JSON-RPC multiplexing.
+
+- `[ ]` Define Dart data classes: `JsonRpcRequest`, `JsonRpcResponse`, `JsonRpcEvent`, `HomeRemoteCandidate`
+- `[ ]` Implement `CandidateResolver` — build transport URLs from stored node data (LAN IP, relay URL)
+- `[ ]` Implement `HomeRemoteClient`:
+  - `connect(candidates)` — try candidates in priority order with 8s timeout each
+  - `call(method, params)` → `Future<dynamic>` — JSON-RPC request/response with id matching
+  - `on(String event, handler)` / `off(String event)` — push event subscription
+  - Auto-reconnect with exponential backoff (1s → 2s → 4s → ... → 30s max)
+  - Background upgrade sweep (30s) — re-check higher-priority transports
+  - `dispose()` — clean disconnect
+- `[ ]` `WebSocketLike` interface (matching the TS version) so libp2p transport can be added later
+- `[ ]` Unit tests: mock WebSocket, test candidate fallback, auto-reconnect, JSON-RPC id matching, push event dispatch
+
+**Exit criteria:**
+- `[ ]` `HomeRemoteClient` connects to a real home node WebSocket and completes `getNodeStatus` RPC
+- `[ ]` Candidate fallback: LAN fail → relay succeed
+- `[ ]` Reconnect after socket close triggers backoff and re-connection
+- `[ ]` All unit tests pass
+
+#### 31C — Pairing & Authentication
+
+**Goal:** QR code scan → parse `envoy://pair?...` URI → `pairWithHomeNode` RPC → store session token persistently.
+
+- `[ ]` `PairingService` class:
+  - `parsePairingUri(String uri)` → `PairingData` (token, peerId, wsPort, relayWsUrl, name, lanIp)
+  - `pair(PairingData data, String deviceName)` → calls `pairThinClient` RPC → returns `PairResult` (sessionToken, ownerId)
+- `[ ]]` QR scanner screen using `mobile_scanner` package
+  - Camera permission handling (iOS Info.plist, Android manifest)
+  - Scan overlay with corner brackets
+  - Handle `envoy://pair?...` URI, ignore non-EnvoyMesh QR codes
+  - Show error for invalid/malformed pairing URIs
+- `[ ]` `SecureStorage` wrapper:
+  - `saveSessionToken(nodeId, token)` / `getSessionToken(nodeId)` / `deleteSessionToken(nodeId)`
+  - iOS Keychain / Android EncryptedSharedPreferences via `flutter_secure_storage`
+- `[ ]` `LocalDatabase` — `nodes` table:
+  - `upsertNode(StoredNode)` / `getNode(nodeId)` / `listNodes()` / `deleteNode(nodeId)`
+  - Auto-set `lastConnectedAt` on successful connect
+- `[ ]` Pairing flow UI:
+  - "Pair with Node" button on Me tab (or onboarding screen on first launch)
+  - QR scanner → parse URI → confirm screen ("Connect to My Mac Mini?") → pair → success
+  - On success: save node + token, connect, sync contacts
+- `[ ]` On next app launch: load stored nodes → select last-used → load token → connect → authenticate
+- `[ ]` Handle token rejection (expired/revoked): clear node data, show re-pair prompt
+
+**Home node tasks (31C):**
+- `[ ]` Implement `pairThinClient` RPC in `node-service-impl.ts` (~20 lines, reuses `validatePairingToken` + `_sessionTokenStore`)
+- `[ ]` Add `pairThinClient` to `ws-protocol.ts` types, `json-rpc-router.ts`, `NodeService` interface
+- `[ ]` Add optional WS token auth in `ws-server.ts`: parse `?token=` query param, call `validatePairingToken`, gate RPC access
+
+**Exit criteria:**
+- `[ ]` Scan a real EnvoyMesh pairing QR code → pair successfully → token stored
+- `[ ]` Kill app, relaunch → auto-connects without re-pairing
+- `[ ]` Revoke device from home node → app shows "Device revoked" on next connect
+- `[ ]]` All unit tests pass (URI parsing, pairing RPC mock, storage CRUD)
+
+#### 31D — Contacts Sync & Direct Chat
+
+**Goal:** Sync bonded contacts from home node, display contact list, send/receive direct messages.
+
+- `[ ]` `NodeServiceClient` typed wrappers:
+  - `getBonds()` → `List<BondRecord>`
+  - `sendChat(targetOwnerId, text)` → `SendResult`
+  - `sendChatAttachment(params)` → `SendResult`
+  - `listChatHistory(targetOwnerId, before?, limit?)` → `List<ChatMessage>`
+  - `markRead(targetOwnerId)`
+  - `getPeerProfile(ownerId)` → `PeerProfile`
+- `[ ]` Local cache in SQLite:
+  - `contacts` table (ownerId, displayName, bondLevel, avatarUrl)
+  - `chat_threads` table (id, contactOwnerId, lastMessageText, lastMessageAt, unreadCount)
+  - `messages` table (id, threadId, senderOwnerId, text, createdAt, isOutbound)
+- `[ ]` `ContactProvider` (Riverpod):
+  - On connect: `getBonds()` → populate cache → emit state
+  - On `bond:established` push event: refresh bonds
+  - On `bond:revoked` push event: remove contact + thread
+- `[ ]` `ChatProvider` (Riverpod):
+  - Build thread list from cache + push events
+  - On `chat:message` push event: upsert thread, increment unread, emit
+  - `sendMessage(targetOwnerId, text)` → RPC → optimistic local insert → reconcile on response
+  - Load history: `listChatHistory(before: oldestCachedId)` on scroll-up
+  - `sendFile(targetOwnerId, filePath)` → read file bytes → base64 encode → `sendChatAttachment`
+- `[ ]` People tab UI:
+  - `ListView` of contacts, sorted alphabetically
+  - Each tile: avatar (or initial), display name, bond level badge, online indicator
+  - Tap → switch to Chats tab and open thread
+  - Pull-to-refresh → `getBonds()`
+- `[ ]` Chat detail screen:
+  - Message list (`ListView.builder` with reverse scroll)
+  - Chat bubbles (sent right-aligned, received left-aligned)
+  - Timestamp headers for date breaks
+  - Attachment display (image thumbnails, file name + size)
+  - Text input bar with send button and attachment button
+  - Image picker for photos (camera + gallery)
+  - File picker for documents
+  - Auto mark-read when thread is visible
+
+**Exit criteria:**
+- `[ ]` Contacts sync from home node on connect
+- `[ ]` Send text message → appears in thread → home node relays to contact
+- `[ ]` Receive text message → appears in thread with notification badge
+- `[ ]` Send image attachment → appears as thumbnail
+- `[ ]` Chat history loads on scroll-up (pagination)
+- `[ ]` All unit + widget tests pass
+
+#### 31E — Group Chat
+
+**Goal:** List chat rooms, send/receive group messages, basic room management.
+
+- `[ ]` `NodeServiceClient` group wrappers:
+  - `listChatRooms()` → `List<ChatRoom>`
+  - `sendChatRoomMessage(roomId, text)` → `SendResult`
+  - `sendChatRoomAttachment(roomId, params)` → `SendResult`
+  - `createChatRoom(name, memberOwnerIds)` → `ChatRoom`
+  - `inviteToChatRoom(roomId, memberOwnerIds)`
+  - `leaveChatRoom(roomId)`
+  - `renameChatRoom(roomId, name)`
+- `[ ]` Local cache: `chat_rooms` table (id, name, memberCount, lastMessageText, lastMessageAt)
+- `[ ]` `ChatProvider` group support:
+  - On `chat:room-message` push event: update room thread
+  - Group thread tiles show room name + sender prefix ("Bob: ...")
+  - Room detail screen: message list + member list (tap header)
+- `[ ]` Create group flow: select members from contacts → set name → `createChatRoom`
+- `[ ]` Room info sheet: member list, invite button, leave/rename options
+
+**Exit criteria:**
+- `[ ]` Group chats from home node appear in thread list
+- `[ ]` Send group message → appears for all members
+- `[ ]` Receive group message → appears with sender name prefix
+- `[ ]` Create new group from contacts
+- `[ ]` All unit + widget tests pass
+
+#### 31F — AI Chat (EnvoyAI + External Agents)
+
+**Goal:** Chat with the built-in OpenClaw agent (EnvoyAI) and external agents (HomeClaw, etc.) through the same chat UI.
+
+- `[ ]` `NodeServiceClient` AI wrappers:
+  - `getBridgeStatus()` → `BridgeStatus` (isConnected, agentType, agentName)
+  - `sendToOpenClaw(text)` → `SendResult`
+  - `sendAgentChat(targetOwnerId, text)` → `SendResult` (for external agents)
+- `[ ]` AI thread identification:
+  - EnvoyAI: agent peer ID from `getBridgeStatus`
+  - External agents: listed in bridge status, each with own peer ID
+- `[ ]` AI chat provider:
+  - On connect: check bridge status → create/update AI threads
+  - On `bridge:status` push event: update availability
+  - AI messages render with 🧠 (EnvoyAI) or 🤖 (external agent) badge
+  - Agent "typing" indicator when bridge reports turn in progress
+- `[ ]` AI chat detail:
+  - Same chat UI as direct messages
+  - Agent identity bar at top ("EnvoyAI — powered by OpenClaw")
+  - Agent offline state: "Agent unavailable — home node offline or bridge disconnected"
+  - File attachments supported (agent can receive files too)
+
+**Exit criteria:**
+- `[ ]` EnvoyAI thread appears when home node bridge is active
+- `[ ]` Send message to EnvoyAI → response appears in thread
+- `[ ]` External agent thread appears when external bridge is connected
+- `[ ]` AI "typing" indicator during agent processing
+- `[ ]]` All unit + widget tests pass
+
+#### 31G — Remote Terminals
+
+**Goal:** List active terminal sessions on home node, attach to PTY, view output, send keystrokes.
+
+- `[ ]` `TerminalService`:
+  - `listSessions()` → calls `listTerminalSessions` RPC
+  - `createSession(cwd?, command?)` → calls `createTerminalSession` RPC
+  - `closeSession(sessionId)` → calls `closeTerminalSession` RPC
+  - `attach(sessionId)` → calls `homeTerminalWsOpen` → manages binary WebSocket sub-channel
+  - `sendKeystrokes(data)` → base64-encode → `homeTerminalWsSend`
+  - `detach()` → `homeTerminalWsClose`
+  - On `terminal:rx` push event: decode base64 → append to output buffer
+- `[ ]` `TerminalWidget`:
+  - Renders PTY output as a scrollable, monospaced text view
+  - ANSI color support (basic: colors, bold, underline; 16-color palette)
+  - Auto-scroll to bottom on new output (with "scroll lock" toggle)
+  - Input bar at bottom (text field + send button)
+  - Special keys: Ctrl+C button, Tab button
+  - Resize handling (sends resize on widget size change)
+- `[ ]` Terminal thread in Chats list:
+  - Identified by `listTerminalSessions` response
+  - Shows session name, last output line as preview
+  - Tap → open Terminal detail screen
+- `[ ]` Terminal detail screen:
+  - Full-screen terminal (similar to SSH client apps)
+  - Session info bar: name, cwd, running process
+  - Close button with confirmation
+  - New terminal button (createSession with default shell)
+
+**Exit criteria:**
+- `[ ]` Active terminal sessions from home node appear in thread list
+- `[ ]` Open terminal → PTY output streams in real-time
+- `[ ]` Type command → output appears
+- `[ ]` Create new terminal session from mobile
+- `[ ]` Close terminal session
+- `[ ]]` All unit + widget tests pass
+
+#### 31H — Multi-Node Support & Polish
+
+**Goal:** Support pairing with multiple home nodes, switching between them. Unpair, push notifications, and final polish.
+
+- `[ ]` Multi-node data model:
+  - `nodes` table in SQLite with all pairing data
+  - `activeNodeId` stored in `SecureStorage`
+  - On switch: disconnect current `HomeRemoteClient`, dispose providers, connect to new node, re-sync
+- `[ ]` Node switcher UI:
+  - Bottom sheet from Me tab showing all paired nodes
+  - Each node shows: name, ownerId truncated, lastConnectedAt, online status
+  - Tap to switch → loading spinner → connected
+  - "Pair New Node" button opens QR scanner
+- `[ ]` Unpair flow:
+  - "Unpair This Device" on Me tab
+  - Confirmation dialog: "This will disconnect and remove all data for My Mac Mini. Continue?"
+  - On confirm: `revokeAuthorizedDevice` RPC → clear local data → show onboarding
+- `[ ]` Push notifications — see **31I** below
+- `[ ]` Polish:
+  - Loading states (shimmer for thread list, spinner for RPC calls)
+  - Error states (connection lost, "Reconnecting..." banner, RPC timeout)
+  - Empty states ("No contacts yet — pair with your home node to get started")
+  - Dark mode (responsive to system setting)
+  - Haptic feedback on send and tab switch
+  - App icon and splash screen
+- `[ ]]` Integration test: full flow from pairing to chat to unpair
+- `[ ]` Manual E2E smoke test checklist
+
+**Exit criteria:**
+- `[ ]` Pair with two different home nodes, switch between them
+- `[ ]` Unpair deletes all local data and shows onboarding
+- `[ ]` Push notification received when app is backgrounded
+- `[ ]` Integration test passes (pair → sync → chat → unpair)
+- `[ ]` Manual smoke test checklist completed on iOS and Android
+
+#### 31I — Push Notifications
+
+**Goal:** Home node sends push notifications to paired mobile devices when the companion app is closed or backgrounded. Uses **native APNs for iOS** (no Firebase dependency — works in China) and **Firebase FCM for Android only**.
+
+| Platform | Push service | Why |
+|----------|-------------|-----|
+| **iOS** | Native APNs (`api.push.apple.com`) | Works globally including China. No Google dependency. |
+| **Android** | Firebase FCM | Standard Android push. Requires Play Services (Chinese Android phones w/o Play Services: documented limitation, deferred). |
+
+**This is the one meaningful home-node change for the thin client.** The home node needs an APNs HTTP/2 client and Firebase Admin SDK.
+
+**Architecture:**
+
+```
+Home Node                              Flutter App
+──────────                             ───────────
+                                       1. On connect → registerPushToken({
+                                            platform: "ios" | "android",
+                                            token: "apns-token" | "fcm-token"
+                                          })
+                                       2. App backgrounded →
+                ┌── disconnect ────────  WebSocket closes
+                │
+3. chat:message │                      (device offline)
+   arrives      │
+                │
+4. Check device │
+   offline? →   │
+   route by     │
+   platform:    │
+   ┌──────────  │
+   │ iOS:       │  HTTP/2
+   │ api.push.  ├────────────────────→ APNs → system notification
+   │ apple.com  │
+   │            │
+   │ Android:   │  HTTP/1.1
+   │ fcm.google ├────────────────────→ FCM → system notification
+   │ apis.com   │
+   └──────────  │
+                │                       5. Tap → app opens
+                ←── reconnect ──────── → → Navigate to thread
+```
+
+**Trigger events (push when device offline):**
+
+| Event | Title | Body | Data |
+|-------|-------|------|------|
+| `chat:message` | `{senderName}` | First 120 chars | `{ threadType, senderOwnerId, messageId }` |
+| `chat:room-message` | `{sender} · {room}` | First 120 chars | `{ threadType, roomId, messageId }` |
+| `hello:request` | "New contact request" | `{sender} wants to connect` | `{ threadType, messageId }` |
+
+**Rate limiting:** max 1 push/30s per device, max 10/hour, coalesce bursts.
+
+**Home node tasks (`apps/node/src/push-notification.ts`):**
+
+- `[ ]` **iOS:** `@parse/node-apn` (or `apns2`) npm package for native APNs HTTP/2
+- `[ ]` **iOS:** APNs auth key (`.p8` file) from Apple Developer → env vars `APNS_KEY_PATH`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC`
+- `[ ]` **iOS:** APNs JWT token generation (ES256, 1-hour expiry, auto-refresh)
+- `[ ]` **Android:** `firebase-admin` npm package + `FCM_SERVICE_ACCOUNT_JSON` env var
+- `[ ]` `PUSH_NOTIFICATIONS_ENABLED` config flag (default: false)
+- `[ ]` `PushTokenStore` — persists `deviceId → { platform: "ios"|"android", token, updatedAt }` JSON
+- `[ ]` `PushNotificationService` class with two backends: `ApnsBackend` + `FcmBackend`
+- `[ ]` RPC method `registerPushToken({ platform, token })` added to `ws-protocol.ts` and `NodeServiceImpl`
+- `[ ]` RPC method `unregisterPushToken()` added (called on unpair)
+- `[ ]` Integration: `ws-server.ts` marks device online/offline
+- `[ ]` Integration: `chat-draft-inbound.ts`, `chat-room-service.ts`, `bond-inbound.ts` trigger push for offline devices
+- `[ ]` Token cleanup on device revocation
+
+**Flutter app tasks:**
+
+- `[ ]` **iOS:** Native APNs registration via `FlutterApns` plugin or Swift in `AppDelegate`
+  - Request notification permission, obtain device token, send to home node
+  - Handle notification tap → deep link to thread
+  - No Firebase dependency on iOS
+- `[ ]` **Android:** `firebase_core` + `firebase_messaging` in `pubspec.yaml`
+  - `google-services.json`, FCM token retrieval, notification channels
+  - Handle notification tap → deep link to thread
+- `[ ]` `PushNotificationService` (Dart): platform-adaptive token retrieval + message handlers
+- `[ ]` `registerPushToken` RPC on every connect (token may refresh)
+- `[ ]` Foreground: in-app banner; Background: system notification; Terminated: deep link after connect
+- `[ ]` Deep linking from notification `data` payload to correct thread
+
+**Chinese Android phones (documented limitation):**
+
+Chinese-market phones (Huawei/Xiaomi/OPPO/Vivo) lack Google Play Services → FCM unavailable. V1 documents the limitation; v2 may add Chinese push SDKs (Huawei HMS, unified push like JPush). App is fully usable without push — WebSocket reconnect on foreground pulls pending messages.
+
+### Phase 31 Exit Criteria (Overall)
+
+- `[ ]` Flutter app launches on iOS and Android
+- `[ ]` QR pairing with home node works (scan → connect → persist)
+- `[ ]` Contacts, groups, EnvoyAI, external agents, and terminals all appear in unified thread list
+- `[ ]` Send/receive text messages (direct, group, AI)
+- `[ ]` Send/receive file attachments (images, documents)
+- `[ ]` Terminal sessions stream PTY output in real-time
+- `[ ]` Pair with multiple nodes and switch between them
+- `[ ]` Unpair works from both mobile and home node
+- `[ ]` Reconnection after app restart works without re-pairing
+- `[ ]]` Dark mode support
+- `[ ]` Home node requires only `pairThinClient` RPC + WS token auth + push module (all other features work with zero server changes)
+- `[ ]` Push notifications delivered when app is backgrounded
+- `[ ]` All unit tests pass (`flutter test`)
+- `[ ]` `flutter analyze` clean
+- `[ ]` CI green (analyze + test + build)
+
+### Phase 31 Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| `dart_libp2p` unstable/missing features for later phases | Medium | v1 uses WebSocket only; libp2p is v2. Two proven transports (LAN + relay) are sufficient. |
+| Terminal emulation fidelity (ANSI, colors, cursor) | Medium | Start with basic text output; incrementally add ANSI support. Evaluate `flutter_terminal` package vs custom widget. |
+| File attachment size limits over WebSocket | Low | Use same base64 encoding as existing `sendChatAttachment` RPC. Home node already handles size limits. |
+| iOS background WebSocket disconnection | Low | Push notifications (FCM/APNs — 31I) wake the app. Auto-reconnect on foreground. |
+| Session token expiration during long disconnects | Low | Token refresh RPC can be added if needed; home node tokens are long-lived by design. |
+| Firebase project setup complexity | Medium | Document step-by-step Firebase setup. Push is an optional feature gated behind `PUSH_NOTIFICATIONS_ENABLED` flag. App works without it. |
+| FCM cost at scale | Low | Rate limiting (1/30s, 10/hr per device). FCM free tier is generous (unlimited Android, 100M iOS/month). |
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-06-09 | **Phase 31 — Flutter Thin Client designed:** Two-app strategy: Phase 11 Capacitor stays as standalone full node; new Flutter app "EnvoyGo" as thin-client remote access. Full architecture, transport layer, pairing flow, curated companion protocol (29 RPCs + 8 events), 3-tab UI, multi-node support, push notifications (native APNs for iOS, FCM for Android), 9 sub-phases (31A–31I). Design doc: [flutter-thin-client-design.md](./flutter-thin-client-design.md). |
 | 2026-06-08 | **De-duplicate model provider form (Settings → Network → AI):** the **Network** tab was rendering the *same* `modelProviders` form (mode/endpoint/modelName/apiKey) as the **AI** tab — both saving to the same `nodeConfig.modelProviders` field. Phase 8B originally placed it under Network; Phase 8C created a parallel form on the AI tab and never removed the old one. Removed the duplicate form from `SettingsNodeTab.tsx` (whole `<section>` + Save/Reset button that only saved `modelProviders`), along with its now-unused state vars (`modelEndpoint`/`modelName`/`modelApiKey`/`settingsSaveStatus`/`modelProviderFieldsDirtyRef`/`modelMode`/`modelProviderHints`/`cloudOnlyMobile`), the `useModelProviderUiScope` hook call, and the `ModelProviderMode` import. Removed the now-dead `modelProvider:` block + 5 unused `aiChatBehavior` keys (`save`/`saving`/`saved`/`cancel`/`saveFailed`) from all 7 locale files (`en`/`zh`/`ja`/`ko`/`de`/`fr`/`it`). Canonical home for the model provider form is now **Settings → AI → Model Provider**; the Network tab focuses on connectivity (bootstrap presets, relays, mDNS, IPFS, two-NAT checklist). |
 | 2026-06-07 | **Pending chat-room delivery backoff + give-up:** the 90s flush of `pending-sync.json` and `pending-message.json` was retrying the same unreachable contact every cycle, generating log noise (`[chat.room] pending sync retry to … failed: NO_RESERVATION`). Both pending stores now persist per-record `attempts` / `lastAttemptAt` / `nextAttemptAt`; the flush skips records still in the backoff window, schedules a doubling backoff (30s → 60s → … → 5min) on failure, and **drops** the record after `PENDING_DELIVERY_MAX_ATTEMPTS` (10) with a final `console.warn` instead of an infinite loop. `recordPendingSyncFailures` / `recordPendingMessageFailures` stamp the initial backoff on first failure so a single failed fan-out doesn't immediately retry 90s later. Added a new optional `markOutboundFailed` dep to `chat-room-service` and a `chat:delivery-failed` event on the home node so the UI can surface "this contact is unreachable" without a brand new schema. New tests: 5 in `chat-room-service.test.ts`, 1 in `chat-room-integration.test.ts`, 2 in the two pending store tests. |
 | 2026-06-07 | **OpenClaw `envoymesh` plugin crash on registration — root cause fix:** the home node logs `Error: Cannot find module 'markdown-it'` at gateway startup, which prevents the envoymesh plugin (and therefore the EnvoyAI gateway webhook) from registering. `@openclaw/markdown-core` (a private OpenClaw sub-package) declares `markdown-it` as a runtime dep, but it was never installed in the root `node_modules` (only `@types/markdown-it` was in `devDependencies`). Added `"markdown-it": "14.2.0"` to the root `package.json` `dependencies` (matching the version OpenClaw expects) and ran `npm install` to update `package-lock.json` and `node_modules`. Result: the envoymesh plugin registers cleanly and EnvoyAI uses the OpenClaw gateway instead of falling back to the native LLM planner. |
