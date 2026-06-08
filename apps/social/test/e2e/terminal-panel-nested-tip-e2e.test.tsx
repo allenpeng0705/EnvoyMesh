@@ -3,7 +3,7 @@
  * E2E (UI integration): nested tmux/TmuxAI tip in TerminalPanel with mocked xterm + transport.
  */
 import React from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { TerminalSessionSummary } from "@envoymesh/api";
 import { TERMINAL_NESTED_MULTIPLEXER_TIP_KEY } from "../../src/lib/storage.js";
@@ -21,6 +21,7 @@ vi.mock("@xterm/xterm", () => ({
   Terminal: class MockTerminal {
     cols = 80;
     rows = 24;
+    options: Record<string, unknown> = {};
     open() {}
     loadAddon() {}
     dispose() {}
@@ -91,9 +92,21 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
       inlineSuggestEnabled: false,
       agentModeDefault: false,
     }),
+    getNodeConfig: vi.fn().mockResolvedValue({}),
     on: () => () => {},
   }),
 }));
+
+// jsdom does not provide ResizeObserver; xterm's FitAddon needs it.
+beforeAll(() => {
+  if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === "undefined") {
+    (globalThis as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+  }
+});
 
 const runningSession: TerminalSessionSummary = {
   sessionId: "sess-tip",

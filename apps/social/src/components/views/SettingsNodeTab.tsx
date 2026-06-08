@@ -3,7 +3,6 @@ import { useNodeState } from "../../context/NodeStateContext.js";
 import { useT } from "../../context/I18nContext.js";
 import {
   useIsInProcessMobileNode,
-  useModelProviderUiScope,
   useNodeService,
   useShareOffers,
   useAgentShareProposals,
@@ -20,7 +19,6 @@ import {
 } from "@envoymesh/api";
 import type {
   DiscoveryProfile,
-  ModelProviderMode,
   NodeConfig,
   RelayConfig,
   AutonomousDomain,
@@ -52,8 +50,6 @@ function loadWanTwoNatChecklistDone(): Record<string, boolean> {
 
 export function SettingsNodeTab() {
   const t = useT();
-  const modelProviderUiScope = useModelProviderUiScope();
-  const cloudOnlyMobile = modelProviderUiScope === "cloud-only";
   const isMobileNode = useIsInProcessMobileNode();
   const nodeService = useNodeService();
   const { nodeConfig, nodeStatus, peerId, bridgeStatus, refreshNodeConfig, connectionStatus, refreshConnectionStatus, bonds } =
@@ -61,15 +57,10 @@ export function SettingsNodeTab() {
 
   // Local state mirrors nodeConfig fields for debounced editing
   const [newRelayAddr, setNewRelayAddr] = useState("");
-  const [modelEndpoint, setModelEndpoint] = useState(nodeConfig?.modelProviders?.endpoint ?? "");
-  const [modelName, setModelName] = useState(nodeConfig?.modelProviders?.modelName ?? "");
-  const [modelApiKey, setModelApiKey] = useState(nodeConfig?.modelProviders?.apiKey ?? "");
-  const [settingsSaveStatus, setSettingsSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [bootstrapPresets, setBootstrapPresets] = useState<string[]>(
     nodeConfig?.bootstrapPresets ?? [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
   );
   const bootstrapPresetsSavingRef = useRef(0);
-  const modelProviderFieldsDirtyRef = useRef(false);
   const [bootstrapPresetSyncNonce, setBootstrapPresetSyncNonce] = useState(0);
 
   const [friendMatchingDraft, setFriendMatchingDraft] = useState("");
@@ -100,15 +91,6 @@ export function SettingsNodeTab() {
   }, []);
 
   // Sync local state when nodeConfig loads/changes (async load after mount)
-  useEffect(() => {
-    if (settingsSaveStatus === "saving" || modelProviderFieldsDirtyRef.current) return;
-    const mp = nodeConfig?.modelProviders;
-    if (!mp) return;
-    setModelEndpoint(mp.endpoint ?? "");
-    setModelName(mp.modelName ?? "");
-    setModelApiKey(mp.apiKey ?? "");
-  }, [nodeConfig?.modelProviders, settingsSaveStatus]);
-
   useEffect(() => {
     if (bootstrapPresetsSavingRef.current > 0) return;
     const fromServer = nodeConfig?.bootstrapPresets;
@@ -158,42 +140,6 @@ export function SettingsNodeTab() {
   const isPublicLibp2pDiscovery = discoveryProfile === "wan-default";
   const isPublicNetwork = bootstrapPresets.length > 0;
   const relays = (nodeConfig?.configuredRelays ?? []) as RelayConfig[];
-
-  const modelMode = nodeConfig?.modelProviders?.mode ?? "mock";
-  const modelProviderHints = useMemo(() => {
-    switch (modelMode) {
-      case "ollama":
-        return {
-          endpointPlaceholder: "http://127.0.0.1:11434/v1",
-          hint: t("settings.network.modelProvider.ollama.hint"),
-          apiKeyHint: t("settings.network.modelProvider.ollama.apiKeyHint"),
-        };
-      case "litellm":
-        return {
-          endpointPlaceholder: "http://127.0.0.1:4000/v1",
-          hint: t("settings.network.modelProvider.litellm.hint"),
-          apiKeyHint: t("settings.network.modelProvider.litellm.apiKeyHint"),
-        };
-      case "openai-compatible":
-        return {
-          endpointPlaceholder: "https://api.minimaxi.com/v1",
-          hint: t("settings.network.modelProvider.openaiCompatible.hint"),
-          apiKeyHint: t("settings.network.modelProvider.openaiCompatible.apiKeyHint"),
-        };
-      case "anthropic-compatible":
-        return {
-          endpointPlaceholder: "https://api.anthropic.com",
-          hint: t("settings.network.modelProvider.anthropicCompatible.hint"),
-          apiKeyHint: t("settings.network.modelProvider.anthropicCompatible.apiKeyHint"),
-        };
-      default:
-        return {
-          endpointPlaceholder: "",
-          hint: "",
-          apiKeyHint: "",
-        };
-    }
-  }, [modelMode, t]);
 
   // QR pairing state
   const [pairingQR, setPairingQR] = useState<string | null>(null); // data URL
@@ -1173,80 +1119,6 @@ export function SettingsNodeTab() {
       </section>
 
       <section className="settings-section">
-        <h3>{t("settings.network.modelProvider.title")}</h3>
-        <p className="section-desc">
-          {cloudOnlyMobile
-            ? t("settings.network.modelProvider.descMobile")
-            : t("settings.network.modelProvider.descDesktop")}
-        </p>
-        <dl className="settings-list">
-          <dt>{t("settings.network.modelProvider.providerMode")}</dt>
-          <dd>
-            <select
-              className="settings-select"
-              value={nodeConfig?.modelProviders?.mode ?? "mock"}
-              onChange={async (e) => {
-                const mode = e.target.value as ModelProviderMode;
-                await updateNodeConfig({
-                  modelProviders: { ...nodeConfig?.modelProviders, mode },
-                });
-              }}
-            >
-              <option value="mock">{t("settings.network.modelProvider.modeMock")}</option>
-              <option value="openai-compatible">{t("settings.network.modelProvider.modeOpenAi")}</option>
-              <option value="anthropic-compatible">{t("settings.network.modelProvider.modeAnthropic")}</option>
-              {!cloudOnlyMobile && (
-                <>
-                  <option value="ollama">{t("settings.network.modelProvider.modeOllama")}</option>
-                  <option value="litellm">{t("settings.network.modelProvider.modeLitellm")}</option>
-                </>
-              )}
-              <option value="disabled">{t("settings.network.modelProvider.modeDisabled")}</option>
-            </select>
-          </dd>
-          <dt>{t("settings.network.modelProvider.endpointUrl")}</dt>
-          <dd>
-            <input
-              type="text"
-              className="settings-input"
-              placeholder={modelProviderHints.endpointPlaceholder || t("settings.network.modelProvider.endpointPlaceholderDefault")}
-              value={modelEndpoint}
-              onChange={(e) => {
-                modelProviderFieldsDirtyRef.current = true;
-                setModelEndpoint(e.target.value);
-              }}
-            />
-            {modelProviderHints.hint ? (
-              <p className="settings-hint" style={{ marginTop: "6px" }}>
-                {modelProviderHints.hint}
-              </p>
-            ) : null}
-          </dd>
-          <dt>{t("settings.network.modelProvider.modelName")}</dt>
-          <dd>
-            <input type="text" className="settings-input" placeholder={t("settings.network.modelProvider.modelNamePlaceholder")}
-              value={modelName} onChange={(e) => {
-                modelProviderFieldsDirtyRef.current = true;
-                setModelName(e.target.value);
-              }} />
-          </dd>
-          <dt>{t("settings.network.modelProvider.apiKey")}</dt>
-          <dd>
-            <input type="password" className="settings-input" placeholder={t("settings.network.modelProvider.apiKeyPlaceholder")}
-              value={modelApiKey} onChange={(e) => {
-                modelProviderFieldsDirtyRef.current = true;
-                setModelApiKey(e.target.value);
-              }} />
-            {modelProviderHints.apiKeyHint ? (
-              <p className="settings-hint" style={{ marginTop: "6px" }}>
-                {modelProviderHints.apiKeyHint}
-              </p>
-            ) : null}
-          </dd>
-        </dl>
-      </section>
-
-      <section className="settings-section">
         <h3>{t("settings.network.aiChatBehavior.title")}</h3>
         <p className="section-desc">{t("settings.network.aiChatBehavior.desc")}</p>
 
@@ -1355,43 +1227,6 @@ export function SettingsNodeTab() {
               </div>
             </div>
           ))}
-        </div>
-
-        <div className="settings-buttons">
-          <button type="button" className="settings-save-btn"
-            disabled={settingsSaveStatus === "saving"}
-            onClick={async () => {
-              setSettingsSaveStatus("saving");
-              try {
-                await updateNodeConfig({
-                  modelProviders: {
-                    ...(nodeConfig?.modelProviders ?? { mode: "mock" as ModelProviderMode }),
-                    endpoint: modelEndpoint,
-                    modelName,
-                    apiKey: modelApiKey,
-                  },
-                });
-                modelProviderFieldsDirtyRef.current = false;
-                setSettingsSaveStatus("saved");
-                setTimeout(() => setSettingsSaveStatus("idle"), 2000);
-              } catch {
-                setSettingsSaveStatus("error");
-                setTimeout(() => setSettingsSaveStatus("idle"), 2000);
-              }
-            }}>
-            {settingsSaveStatus === "saving" ? t("settings.network.aiChatBehavior.saving") : settingsSaveStatus === "saved" ? t("settings.network.aiChatBehavior.saved") : t("settings.network.aiChatBehavior.save")}
-          </button>
-          <button type="button" className="settings-cancel-btn"
-            onClick={() => {
-              modelProviderFieldsDirtyRef.current = false;
-              setModelEndpoint(nodeConfig?.modelProviders?.endpoint ?? "");
-              setModelName(nodeConfig?.modelProviders?.modelName ?? "");
-              setModelApiKey(nodeConfig?.modelProviders?.apiKey ?? "");
-              setSettingsSaveStatus("idle");
-            }}>
-            {t("settings.network.aiChatBehavior.cancel")}
-          </button>
-          {settingsSaveStatus === "error" && <span className="settings-save-error">{t("settings.network.aiChatBehavior.saveFailed")}</span>}
         </div>
       </section>
 

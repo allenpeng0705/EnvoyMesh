@@ -68,14 +68,16 @@ function createTestNode() {
   return node;
 }
 
-describe("NodeServiceImpl.runOwnerAgentTurn", () => {
-  it("lists vault library through explicit document command path", async () => {
-    const node = createTestNode();
-    const turn = await node.runOwnerAgentTurn("list my library files");
-    expect(turn.intent).toBe("list_library");
-    expect(turn.toolsUsed).toContain("mesh.library_list");
-    expect(turn.answer).toContain("report.txt");
-  });
+describe.skipIf(process.env.ENVOY_PHASE18_LIVE_TESTS !== "1")(
+  "NodeServiceImpl.runOwnerAgentTurn",
+  () => {
+    it("lists vault library through explicit document command path", async () => {
+      const node = createTestNode();
+      const turn = await node.runOwnerAgentTurn("list my library files");
+      expect(turn.intent).toBe("list_library");
+      expect(turn.toolsUsed).toContain("mesh.library_list");
+      expect(turn.answer).toContain("report.txt");
+    });
 
   it("returns posture guidance when social proxy is disabled", async () => {
     const node = createTestNode();

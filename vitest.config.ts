@@ -43,6 +43,7 @@ export default defineConfig({
   },
   test: {
     include: ["packages/*/test/**/*.test.{ts,tsx}", "apps/*/test/**/*.test.{ts,tsx}"],
+    setupFiles: ["./vitest.setup.ts"],
     testTimeout: 60000,
     hookTimeout: 60000,
   },

@@ -133,42 +133,6 @@ export const koNetworkSettingsMessages = {
     addPlaceholder: "릴레이 주소 (예: /ip4/1.2.3.4/tcp/4001)",
     add: "추가",
   },
-  modelProvider: {
-    title: "AI / 모델 제공자",
-    descDesktop:
-      "지식 쿼리 및 채팅 지원용 AI 모델 제공자를 구성합니다. 로컬 Ollama/LiteLLM URL 및 LAN HTTP 참고는 docs/mobile-local-models.md를 보세요.",
-    descMobile:
-      "이 기기에서는 클라우드 API(OpenAI 호환 또는 Anthropic)를 구성하세요. Ollama나 LiteLLM 같은 로컬 엔진은 모바일 UI에서 제공되지 않습니다 — 데스크톱 노드를 사용하세요.",
-    providerMode: "제공자 모드",
-    endpointUrl: "엔드포인트 URL",
-    modelName: "모델 이름",
-    apiKey: "API 키",
-    endpointPlaceholderDefault: "https://api.example.com/v1",
-    modelNamePlaceholder: "MiniMax-M2.7",
-    apiKeyPlaceholder: "sk-...",
-    modeMock: "Mock (테스트 전용)",
-    modeOpenAi: "OpenAI 호환",
-    modeAnthropic: "Anthropic 호환",
-    modeOllama: "Ollama (로컬)",
-    modeLitellm: "LiteLLM (로컬/클라우드)",
-    modeDisabled: "비활성화",
-    ollama: {
-      hint: "Ollama의 OpenAI 호환 기본 URL을 사용하세요 (/v1로 끝나야 함). 휴대폰에서는 127.0.0.1 대신 컴퓨터 LAN IP를 사용하세요. EnvoyMesh는 http://host:11434를 자동으로 …/v1로 정규화합니다.",
-      apiKeyHint: "일반적인 로컬 Ollama는 비워 두세요.",
-    },
-    litellm: {
-      hint: "LiteLLM HTTP API(OpenAI 호환)를 가리키세요. 보통 /v1로 끝납니다. 모바일: 기기가 프록시에 접근할 수 있도록 http://<home-LAN-ip>:4000/v1을 권장합니다.",
-      apiKeyHint: "선택: LiteLLM master key가 구성된 경우.",
-    },
-    openaiCompatible: {
-      hint: "Chat Completions 호환 API; 기본 URL에 /v1 포함. MiniMax 중국: https://api.minimaxi.com/v1 (api.minimax.com 아님). 국제: https://api.minimax.io/v1.",
-      apiKeyHint: "게이트웨이가 인증을 주입하지 않는 한 보통 필수.",
-    },
-    anthropicCompatible: {
-      hint: "Anthropic Messages API 호스트만 — 여기에 /v1을 추가하지 마세요 (클라이언트가 /v1/messages를 붙입니다).",
-      apiKeyHint: "Anthropic API 키.",
-    },
-  },
   aiChatBehavior: {
     title: "AI 채팅 동작",
     desc: "대화에서 AI가 상호작용하는 방식을 제어합니다.",
@@ -195,11 +159,6 @@ export const koNetworkSettingsMessages = {
     visibilityBrief: "요약 — 마일스톤만",
     visibilitySilent: "무음 — 저장만",
     visibilityApproval: "승인 — 보고 및 승인만",
-    saving: "저장 중…",
-    saved: "저장됨!",
-    save: "저장",
-    cancel: "취소",
-    saveFailed: "저장 실패",
   },
   ipfs: {
     title: "외부 배포 (IPFS)",

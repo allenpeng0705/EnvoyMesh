@@ -133,42 +133,6 @@ export const networkSettingsMessages = {
     addPlaceholder: "Relay address (e.g., /ip4/1.2.3.4/tcp/4001)",
     add: "Add",
   },
-  modelProvider: {
-    title: "AI / Model Provider",
-    descDesktop:
-      "Configure the AI model provider for knowledge queries and chat assistance. For local Ollama/LiteLLM URLs and LAN HTTP notes, see docs/mobile-local-models.md.",
-    descMobile:
-      "On this device, configure a cloud API (OpenAI-compatible or Anthropic). Local engines such as Ollama or LiteLLM are not exposed in the mobile UI — use your desktop node for those.",
-    providerMode: "Provider Mode",
-    endpointUrl: "Endpoint URL",
-    modelName: "Model Name",
-    apiKey: "API Key",
-    endpointPlaceholderDefault: "https://api.example.com/v1",
-    modelNamePlaceholder: "MiniMax-M2.7",
-    apiKeyPlaceholder: "sk-...",
-    modeMock: "Mock (testing only)",
-    modeOpenAi: "OpenAI-Compatible",
-    modeAnthropic: "Anthropic-Compatible",
-    modeOllama: "Ollama (local)",
-    modeLitellm: "LiteLLM (local/cloud)",
-    modeDisabled: "Disabled",
-    ollama: {
-      hint: "Use Ollama’s OpenAI-compatible base URL (must end with /v1). On a phone, use your computer’s LAN IP instead of 127.0.0.1. EnvoyMesh normalizes bare http://host:11434 to …/v1 automatically.",
-      apiKeyHint: "Leave empty for typical local Ollama.",
-    },
-    litellm: {
-      hint: "Point at LiteLLM’s HTTP API (OpenAI-compatible), usually ending with /v1. Mobile: prefer http://<home-LAN-ip>:4000/v1 so the device can reach your proxy.",
-      apiKeyHint: "Optional: LiteLLM master key if configured.",
-    },
-    openaiCompatible: {
-      hint: "Any Chat Completions–compatible API; base URL should include /v1. MiniMax China: https://api.minimaxi.com/v1 (not api.minimax.com). International: https://api.minimax.io/v1.",
-      apiKeyHint: "Usually required unless your gateway injects auth.",
-    },
-    anthropicCompatible: {
-      hint: "Anthropic Messages API host only — do not add /v1 here (the client appends /v1/messages).",
-      apiKeyHint: "Anthropic API key.",
-    },
-  },
   aiChatBehavior: {
     title: "AI Chat Behavior",
     desc: "Control how AI interacts in conversations.",
@@ -195,11 +159,6 @@ export const networkSettingsMessages = {
     visibilityBrief: "Brief — milestones only",
     visibilitySilent: "Silent — store only",
     visibilityApproval: "Approval — reports and approvals only",
-    saving: "Saving...",
-    saved: "Saved!",
-    save: "Save",
-    cancel: "Cancel",
-    saveFailed: "Save failed",
   },
   ipfs: {
     title: "External distribution (IPFS)",

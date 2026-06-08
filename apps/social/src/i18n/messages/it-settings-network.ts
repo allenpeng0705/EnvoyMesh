@@ -133,42 +133,6 @@ export const itNetworkSettingsMessages = {
     addPlaceholder: "Indirizzo relay (es. /ip4/1.2.3.4/tcp/4001)",
     add: "Aggiungi",
   },
-  modelProvider: {
-    title: "IA / Provider modello",
-    descDesktop:
-      "Configura il provider di modelli IA per query di conoscenza e assistenza chat. Per URL Ollama/LiteLLM locali e note HTTP LAN, vedi docs/mobile-local-models.md.",
-    descMobile:
-      "Su questo dispositivo, configura un'API cloud (compatibile OpenAI o Anthropic). Motori locali come Ollama o LiteLLM non sono esposti nell'UI mobile — usa il nodo desktop.",
-    providerMode: "Modalità provider",
-    endpointUrl: "URL endpoint",
-    modelName: "Nome modello",
-    apiKey: "Chiave API",
-    endpointPlaceholderDefault: "https://api.example.com/v1",
-    modelNamePlaceholder: "MiniMax-M2.7",
-    apiKeyPlaceholder: "sk-...",
-    modeMock: "Mock (solo test)",
-    modeOpenAi: "Compatibile OpenAI",
-    modeAnthropic: "Compatibile Anthropic",
-    modeOllama: "Ollama (locale)",
-    modeLitellm: "LiteLLM (locale/cloud)",
-    modeDisabled: "Disabilitato",
-    ollama: {
-      hint: "Usa l'URL base compatibile OpenAI di Ollama (deve terminare con /v1). Su telefono, usa l'IP LAN del computer invece di 127.0.0.1. EnvoyMesh normalizza automaticamente http://host:11434 in …/v1.",
-      apiKeyHint: "Lascia vuoto per Ollama locale tipico.",
-    },
-    litellm: {
-      hint: "Punta all'API HTTP LiteLLM (compatibile OpenAI), di solito terminante con /v1. Mobile: preferisci http://<home-LAN-ip>:4000/v1 così il dispositivo raggiunge il proxy.",
-      apiKeyHint: "Facoltativo: chiave master LiteLLM se configurata.",
-    },
-    openaiCompatible: {
-      hint: "Qualsiasi API compatibile Chat Completions; l'URL base deve includere /v1. MiniMax Cina: https://api.minimaxi.com/v1 (non api.minimax.com). Internazionale: https://api.minimax.io/v1.",
-      apiKeyHint: "Di solito richiesta salvo se il gateway inietta l'autenticazione.",
-    },
-    anthropicCompatible: {
-      hint: "Solo host API Anthropic Messages — non aggiungere /v1 qui (il client aggiunge /v1/messages).",
-      apiKeyHint: "Chiave API Anthropic.",
-    },
-  },
   aiChatBehavior: {
     title: "Comportamento chat IA",
     desc: "Controlla come l'IA interagisce nelle conversazioni.",
@@ -195,11 +159,6 @@ export const itNetworkSettingsMessages = {
     visibilityBrief: "Breve — solo traguardi",
     visibilitySilent: "Silenzioso — solo archiviazione",
     visibilityApproval: "Approvazione — solo report e approvazioni",
-    saving: "Salvataggio…",
-    saved: "Salvato!",
-    save: "Salva",
-    cancel: "Annulla",
-    saveFailed: "Salvataggio fallito",
   },
   ipfs: {
     title: "Distribuzione esterna (IPFS)",

@@ -133,42 +133,6 @@ export const frNetworkSettingsMessages = {
     addPlaceholder: "Adresse relais (ex. /ip4/1.2.3.4/tcp/4001)",
     add: "Ajouter",
   },
-  modelProvider: {
-    title: "IA / Fournisseur de modèle",
-    descDesktop:
-      "Configurez le fournisseur de modèle IA pour les requêtes de connaissances et l'assistance chat. Pour les URL Ollama/LiteLLM locales et les notes HTTP LAN, voir docs/mobile-local-models.md.",
-    descMobile:
-      "Sur cet appareil, configurez une API cloud (compatible OpenAI ou Anthropic). Les moteurs locaux comme Ollama ou LiteLLM ne sont pas exposés dans l'UI mobile — utilisez votre nœud de bureau.",
-    providerMode: "Mode fournisseur",
-    endpointUrl: "URL du point de terminaison",
-    modelName: "Nom du modèle",
-    apiKey: "Clé API",
-    endpointPlaceholderDefault: "https://api.example.com/v1",
-    modelNamePlaceholder: "MiniMax-M2.7",
-    apiKeyPlaceholder: "sk-...",
-    modeMock: "Mock (tests uniquement)",
-    modeOpenAi: "Compatible OpenAI",
-    modeAnthropic: "Compatible Anthropic",
-    modeOllama: "Ollama (local)",
-    modeLitellm: "LiteLLM (local/cloud)",
-    modeDisabled: "Désactivé",
-    ollama: {
-      hint: "Utilisez l'URL de base compatible OpenAI d'Ollama (doit se terminer par /v1). Sur téléphone, utilisez l'IP LAN de votre ordinateur au lieu de 127.0.0.1. EnvoyMesh normalise automatiquement http://host:11434 en …/v1.",
-      apiKeyHint: "Laisser vide pour Ollama local typique.",
-    },
-    litellm: {
-      hint: "Pointer vers l'API HTTP LiteLLM (compatible OpenAI), généralement se terminant par /v1. Mobile : préférez http://<home-LAN-ip>:4000/v1 pour que l'appareil atteigne votre proxy.",
-      apiKeyHint: "Facultatif : clé maître LiteLLM si configurée.",
-    },
-    openaiCompatible: {
-      hint: "Toute API compatible Chat Completions ; l'URL de base doit inclure /v1. MiniMax Chine : https://api.minimaxi.com/v1 (pas api.minimax.com). International : https://api.minimax.io/v1.",
-      apiKeyHint: "Généralement requis sauf si votre passerelle injecte l'authentification.",
-    },
-    anthropicCompatible: {
-      hint: "Hôte API Anthropic Messages uniquement — n'ajoutez pas /v1 ici (le client ajoute /v1/messages).",
-      apiKeyHint: "Clé API Anthropic.",
-    },
-  },
   aiChatBehavior: {
     title: "Comportement du chat IA",
     desc: "Contrôlez comment l'IA interagit dans les conversations.",
@@ -195,11 +159,6 @@ export const frNetworkSettingsMessages = {
     visibilityBrief: "Bref — jalons uniquement",
     visibilitySilent: "Silencieux — stockage uniquement",
     visibilityApproval: "Approbation — rapports et approbations uniquement",
-    saving: "Enregistrement…",
-    saved: "Enregistré !",
-    save: "Enregistrer",
-    cancel: "Annuler",
-    saveFailed: "Échec de l'enregistrement",
   },
   ipfs: {
     title: "Distribution externe (IPFS)",

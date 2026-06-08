@@ -6,6 +6,9 @@
  * connections, which is the foundation for all P2P communication.
  *
  * Run with: TEST_RELAY_ADDR=/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo npx vitest run apps/node/test/agent-e2e-real.test.ts
+ *
+ * All suites are skipped unless `TEST_RELAY_ADDR` is set or
+ * `RUN_E2E_RELAY_TESTS=1` is provided.
  */
 
 import { derivePeerId, generateDeviceIdentity, generateOwnerIdentity, signUnsignedEnvelope, verifyInboundEnvelope } from "@envoymesh/identity";
@@ -17,7 +20,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const REAL_RELAY_ADDR = "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
+const REAL_RELAY_ADDR = process.env.TEST_RELAY_ADDR
+  ?? "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
+// Allow `RUN_E2E_RELAY_TESTS=1` to opt in to these live-relay tests in addition
+// to the explicit multiaddr override.
+const RELAY_E2E_ENABLED = Boolean(process.env.TEST_RELAY_ADDR) || process.env.RUN_E2E_RELAY_TESTS === "1";
 
 const meshes: EnvoyMesh[] = [];
 
@@ -29,7 +36,7 @@ afterEach(async () => {
 // E2E: Node Connectivity Through Relay
 // ============================================================================
 
-describe("E2E: Node connectivity through relay", () => {
+describe.skipIf(!RELAY_E2E_ENABLED)("E2E: Node connectivity through relay", () => {
   it("node connects to relay and maintains connection", async () => {
     const mesh = await startMeshWithRelay();
 
@@ -86,7 +93,7 @@ describe("E2E: Node connectivity through relay", () => {
 // E2E: Rendezvous Registration Through Relay
 // ============================================================================
 
-describe("E2E: Rendezvous registration through relay", () => {
+describe.skipIf(!RELAY_E2E_ENABLED)("E2E: Rendezvous registration through relay", () => {
   it("node can send rendezvous.register through relay", async () => {
     const mesh = await startMeshWithRelay();
     const profile = testProfile();
@@ -148,7 +155,7 @@ describe("E2E: Rendezvous registration through relay", () => {
 // E2E: Heartbeat Through Relay
 // ============================================================================
 
-describe("E2E: Heartbeat through relay", () => {
+describe.skipIf(!RELAY_E2E_ENABLED)("E2E: Heartbeat through relay", () => {
   it("node can send task.heartbeat through relay", async () => {
     const ownerMesh = await startMeshWithRelay();
     const agentMesh = await startMeshWithRelay();
@@ -209,7 +216,7 @@ describe("E2E: Heartbeat through relay", () => {
 // E2E: Minimax LLM Integration
 // ============================================================================
 
-describe("E2E: Minimax LLM integration", () => {
+describe.skipIf(!RELAY_E2E_ENABLED)("E2E: Minimax LLM integration", () => {
   it("knowledge.query returns response from Minimax", async () => {
     const { handleInboundKnowledgeQuery } = await import("../src/knowledge-query-inbound.js");
     const { createKnowledgeQueryPayload, createUnsignedEnvelope, parseKnowledgeQueryPayload, parseKnowledgeResponsePayload } = await import("@envoymesh/protocol");
@@ -713,7 +720,7 @@ describe("E2E: Minimax LLM integration", () => {
 // E2E: LLM Model Provider Modes
 // ============================================================================
 
-describe("E2E: LLM model provider modes", () => {
+describe.skipIf(!RELAY_E2E_ENABLED)("E2E: LLM model provider modes", () => {
   it("mock provider returns configured custom response", async () => {
     const { handleInboundKnowledgeQuery } = await import("../src/knowledge-query-inbound.js");
     const { createKnowledgeQueryPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
@@ -772,7 +779,7 @@ describe("E2E: LLM model provider modes", () => {
 // E2E: Chat Message Exchange
 // ============================================================================
 
-describe("E2E: Chat message exchange", () => {
+describe.skipIf(!RELAY_E2E_ENABLED)("E2E: Chat message exchange", () => {
   it("two nodes exchange chat messages through relay", async () => {
     const mesh1 = await startMeshWithRelay();
     const mesh2 = await startMeshWithRelay();
@@ -898,7 +905,7 @@ describe("E2E: Chat message exchange", () => {
 // E2E: Task Result
 // ============================================================================
 
-describe("E2E: Task result", () => {
+describe.skipIf(!RELAY_E2E_ENABLED)("E2E: Task result", () => {
   it("agent sends task.result to owner through relay", async () => {
     const ownerMesh = await startMeshWithRelay();
     const agentMesh = await startMeshWithRelay();
@@ -989,7 +996,7 @@ describe("E2E: Task result", () => {
 // E2E: Task Cancellation
 // ============================================================================
 
-describe("E2E: Task cancellation", () => {
+describe.skipIf(!RELAY_E2E_ENABLED)("E2E: Task cancellation", () => {
   it("owner sends task.cancel to agent through relay", async () => {
     const ownerMesh = await startMeshWithRelay();
     const agentMesh = await startMeshWithRelay();
@@ -1087,7 +1094,7 @@ describe("E2E: Task cancellation", () => {
 // E2E: Multiple Heartbeats
 // ============================================================================
 
-describe("E2E: Multiple heartbeats", () => {
+describe.skipIf(!RELAY_E2E_ENABLED)("E2E: Multiple heartbeats", () => {
   it("agent sends multiple heartbeats through relay", async () => {
     const ownerMesh = await startMeshWithRelay();
     const agentMesh = await startMeshWithRelay();
@@ -1185,7 +1192,7 @@ describe("E2E: Multiple heartbeats", () => {
 // E2E: Peer Discovery
 // ============================================================================
 
-describe("E2E: Peer discovery", () => {
+describe.skipIf(!RELAY_E2E_ENABLED)("E2E: Peer discovery", () => {
   it("node can send discovery.request through relay", async () => {
     const mesh1 = await startMeshWithRelay();
     const mesh2 = await startMeshWithRelay();
@@ -1280,7 +1287,7 @@ describe("E2E: Peer discovery", () => {
 // E2E: Bond/Trust Relationships
 // ============================================================================
 
-describe("E2E: Bond/trust relationships", () => {
+describe.skipIf(!RELAY_E2E_ENABLED)("E2E: Bond/trust relationships", () => {
   it("node can send bond.request through relay", async () => {
     const mesh1 = await startMeshWithRelay();
     const mesh2 = await startMeshWithRelay();
@@ -1372,7 +1379,7 @@ describe("E2E: Bond/trust relationships", () => {
 // E2E: Share Operations
 // ============================================================================
 
-describe("E2E: Share operations", () => {
+describe.skipIf(!RELAY_E2E_ENABLED)("E2E: Share operations", () => {
   it("node can send share.request through relay", async () => {
     const mesh1 = await startMeshWithRelay();
     const mesh2 = await startMeshWithRelay();
@@ -1507,7 +1514,7 @@ describe("E2E: Share operations", () => {
 // E2E: Multi-node Chat (3+ nodes)
 // ============================================================================
 
-describe("E2E: Multi-node chat", () => {
+describe.skipIf(!RELAY_E2E_ENABLED)("E2E: Multi-node chat", () => {
   it("three nodes exchange messages through relay", async () => {
     const mesh1 = await startMeshWithRelay();
     const mesh2 = await startMeshWithRelay();
@@ -1657,7 +1664,7 @@ describe("E2E: Multi-node chat", () => {
 // E2E: Relay Operations
 // ============================================================================
 
-describe("E2E: Relay operations", () => {
+describe.skipIf(!RELAY_E2E_ENABLED)("E2E: Relay operations", () => {
   it("node can send relay.register through relay", async () => {
     const mesh1 = await startMeshWithRelay();
     const relayMesh = await startMeshWithRelay();

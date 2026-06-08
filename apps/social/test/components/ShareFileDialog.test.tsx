@@ -27,6 +27,8 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
 
 vi.mock("../../src/hooks/useToast.js", () => ({
   useToast: () => ({ showToast: vi.fn() }),
+  useToastOptional: () => ({ showToast: vi.fn() }),
+  ToastProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 afterEach(() => {

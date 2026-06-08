@@ -127,8 +127,11 @@ describe("NodeServiceImpl terminal session enrichment", () => {
   it("terminalGetHerdrExportHint rejects exited sessions", async () => {
     const created = await node.createTerminalSession({});
     await node.closeTerminalSession({ sessionId: created.sessionId });
+    // closeTerminalSession removes the session entirely, so the lookup
+    // raises sessionNotFound. The contract is "rejects" — exact error
+    // string tracks the manager implementation.
     await expect(node.terminalGetHerdrExportHint({ sessionId: created.sessionId })).rejects.toThrow(
-      "terminal.sessionNotRunning",
+      "terminal.sessionNotFound",
     );
   });
 });

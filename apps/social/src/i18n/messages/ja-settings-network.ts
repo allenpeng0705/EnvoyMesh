@@ -133,42 +133,6 @@ export const jaNetworkSettingsMessages = {
     addPlaceholder: "リレーアドレス（例: /ip4/1.2.3.4/tcp/4001）",
     add: "追加",
   },
-  modelProvider: {
-    title: "AI / モデルプロバイダー",
-    descDesktop:
-      "ナレッジクエリとチャット支援用の AI モデルプロバイダーを設定します。ローカル Ollama/LiteLLM URL や LAN HTTP の注意事項は docs/mobile-local-models.md を参照してください。",
-    descMobile:
-      "このデバイスではクラウド API（OpenAI 互換または Anthropic）を設定してください。Ollama や LiteLLM などのローカルエンジンはモバイル UI では利用できません — デスクトップノードをご利用ください。",
-    providerMode: "プロバイダーモード",
-    endpointUrl: "エンドポイント URL",
-    modelName: "モデル名",
-    apiKey: "API キー",
-    endpointPlaceholderDefault: "https://api.example.com/v1",
-    modelNamePlaceholder: "MiniMax-M2.7",
-    apiKeyPlaceholder: "sk-...",
-    modeMock: "Mock（テストのみ）",
-    modeOpenAi: "OpenAI 互換",
-    modeAnthropic: "Anthropic 互換",
-    modeOllama: "Ollama（ローカル）",
-    modeLitellm: "LiteLLM（ローカル/クラウド）",
-    modeDisabled: "無効",
-    ollama: {
-      hint: "Ollama の OpenAI 互換ベース URL を使用してください（末尾は /v1 必須）。スマートフォンでは 127.0.0.1 の代わりに PC の LAN IP を使用してください。EnvoyMesh は http://host:11434 を自動的に …/v1 に正規化します。",
-      apiKeyHint: "ローカル Ollama では通常空欄のままで問題ありません。",
-    },
-    litellm: {
-      hint: "LiteLLM の HTTP API（OpenAI 互換）を指定してください。通常は /v1 で終わります。モバイル: デバイスから到達可能な http://<home-LAN-ip>:4000/v1 を推奨します。",
-      apiKeyHint: "任意: LiteLLM マスターキーが設定されている場合。",
-    },
-    openaiCompatible: {
-      hint: "Chat Completions 互換 API すべてに対応。ベース URL には /v1 を含めてください。MiniMax 中国: https://api.minimaxi.com/v1（api.minimax.com ではありません）。国際: https://api.minimax.io/v1。",
-      apiKeyHint: "ゲートウェイが認証を注入しない限り、通常は必須です。",
-    },
-    anthropicCompatible: {
-      hint: "Anthropic Messages API ホストのみ — ここに /v1 は追加しないでください（クライアントが /v1/messages を付加します）。",
-      apiKeyHint: "Anthropic API キー。",
-    },
-  },
   aiChatBehavior: {
     title: "AI チャット動作",
     desc: "会話における AI の動作を制御します。",
@@ -195,11 +159,6 @@ export const jaNetworkSettingsMessages = {
     visibilityBrief: "簡潔 — マイルストーンのみ",
     visibilitySilent: "サイレント — 保存のみ",
     visibilityApproval: "承認 — レポートと承認のみ",
-    saving: "保存中…",
-    saved: "保存しました！",
-    save: "保存",
-    cancel: "キャンセル",
-    saveFailed: "保存に失敗しました",
   },
   ipfs: {
     title: "外部配布 (IPFS)",

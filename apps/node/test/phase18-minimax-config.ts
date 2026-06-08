@@ -87,6 +87,9 @@ let cached: ModelProviderConfig | null | undefined;
 
 /** True when a live chat model (typically MiniMax openai-compatible) is configured. */
 export function isPhase18LiveModelConfigured(): boolean {
+  // Opt in via env var to avoid accidental live-model hits in environments
+  // that have credentials on disk but cannot reach the network (CI, sandboxes).
+  if (process.env.ENVOY_PHASE18_LIVE_TESTS !== "1") return false;
   return tryGetPhase18ModelProviders() !== null;
 }
 

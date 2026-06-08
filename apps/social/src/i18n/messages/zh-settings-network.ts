@@ -133,42 +133,6 @@ export const zhNetworkSettingsMessages = {
     addPlaceholder: "中继地址（例如 /ip4/1.2.3.4/tcp/4001）",
     add: "添加",
   },
-  modelProvider: {
-    title: "AI / 模型提供商",
-    descDesktop:
-      "配置知识查询和聊天辅助的 AI 模型提供商。本地 Ollama/LiteLLM URL 及 LAN HTTP 说明，请参阅 docs/mobile-local-models.md。",
-    descMobile:
-      "在此设备上，配置云端 API（OpenAI 兼容或 Anthropic）。本地引擎（如 Ollama 或 LiteLLM）不在移动 UI 中提供 — 请使用桌面节点。",
-    providerMode: "提供商模式",
-    endpointUrl: "端点 URL",
-    modelName: "模型名称",
-    apiKey: "API 密钥",
-    endpointPlaceholderDefault: "https://api.example.com/v1",
-    modelNamePlaceholder: "MiniMax-M2.7",
-    apiKeyPlaceholder: "sk-...",
-    modeMock: "Mock（仅测试）",
-    modeOpenAi: "OpenAI 兼容",
-    modeAnthropic: "Anthropic 兼容",
-    modeOllama: "Ollama（本地）",
-    modeLitellm: "LiteLLM（本地/云端）",
-    modeDisabled: "已禁用",
-    ollama: {
-      hint: "使用 Ollama 的 OpenAI 兼容基础 URL（必须以 /v1 结尾）。在手机上，请使用电脑的 LAN IP 而非 127.0.0.1。EnvoyMesh 会自动将 http://host:11434 规范化为 …/v1。",
-      apiKeyHint: "典型本地 Ollama 可留空。",
-    },
-    litellm: {
-      hint: "指向 LiteLLM 的 HTTP API（OpenAI 兼容），通常以 /v1 结尾。移动端：优先使用 http://<home-LAN-ip>:4000/v1，以便设备访问您的代理。",
-      apiKeyHint: "可选：若已配置 LiteLLM master key。",
-    },
-    openaiCompatible: {
-      hint: "任何 Chat Completions 兼容 API；基础 URL 应包含 /v1。MiniMax 中国：https://api.minimaxi.com/v1（非 api.minimax.com）。国际：https://api.minimax.io/v1。",
-      apiKeyHint: "通常必填，除非您的网关注入认证。",
-    },
-    anthropicCompatible: {
-      hint: "仅 Anthropic Messages API 主机 — 请勿在此添加 /v1（客户端会自动追加 /v1/messages）。",
-      apiKeyHint: "Anthropic API 密钥。",
-    },
-  },
   aiChatBehavior: {
     title: "AI 聊天行为",
     desc: "控制 AI 在对话中的交互方式。",
@@ -195,11 +159,6 @@ export const zhNetworkSettingsMessages = {
     visibilityBrief: "简要 — 仅里程碑",
     visibilitySilent: "静默 — 仅存储",
     visibilityApproval: "审批 — 仅报告和审批",
-    saving: "保存中…",
-    saved: "已保存！",
-    save: "保存",
-    cancel: "取消",
-    saveFailed: "保存失败",
   },
   ipfs: {
     title: "外部分发（IPFS）",

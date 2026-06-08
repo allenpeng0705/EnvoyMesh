@@ -58,7 +58,7 @@ const CLAIM_KEYWORDS: ClaimRule[] = [
       const isErrorMessageInspection =
         /does not treat .*timeout|ack timeout|timeout.*failure|allows retry/i.test(lower);
       if (isErrorMessageInspection) return true;
-      return /setTimeout\(|AbortSignal\.timeout\(|Promise\.race\(|new Promise\(\([^)]*\)\s*=>\s*setTimeout\(/.test(body);
+      return /setTimeout\(|AbortSignal\.timeout\(|Promise\.race\(|new Promise\(\([^)]*\)\s*=>\s*setTimeout\(|vi\.useFakeTimers\(|vi\.advanceTimersByTime\(/.test(body);
     },
   },
   {

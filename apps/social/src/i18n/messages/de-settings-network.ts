@@ -133,42 +133,6 @@ export const deNetworkSettingsMessages = {
     addPlaceholder: "Relay-Adresse (z. B. /ip4/1.2.3.4/tcp/4001)",
     add: "Hinzufügen",
   },
-  modelProvider: {
-    title: "KI / Modellanbieter",
-    descDesktop:
-      "Konfigurieren Sie den KI-Modellanbieter für Wissensabfragen und Chat-Unterstützung. Für lokale Ollama/LiteLLM-URLs und LAN-HTTP-Hinweise siehe docs/mobile-local-models.md.",
-    descMobile:
-      "Auf diesem Gerät konfigurieren Sie eine Cloud-API (OpenAI-kompatibel oder Anthropic). Lokale Engines wie Ollama oder LiteLLM sind in der mobilen UI nicht verfügbar — nutzen Sie Ihren Desktop-Knoten.",
-    providerMode: "Anbietermodus",
-    endpointUrl: "Endpunkt-URL",
-    modelName: "Modellname",
-    apiKey: "API-Schlüssel",
-    endpointPlaceholderDefault: "https://api.example.com/v1",
-    modelNamePlaceholder: "MiniMax-M2.7",
-    apiKeyPlaceholder: "sk-...",
-    modeMock: "Mock (nur Tests)",
-    modeOpenAi: "OpenAI-kompatibel",
-    modeAnthropic: "Anthropic-kompatibel",
-    modeOllama: "Ollama (lokal)",
-    modeLitellm: "LiteLLM (lokal/Cloud)",
-    modeDisabled: "Deaktiviert",
-    ollama: {
-      hint: "Verwenden Sie Ollamas OpenAI-kompatible Basis-URL (muss mit /v1 enden). Auf dem Telefon die LAN-IP Ihres Computers statt 127.0.0.1. EnvoyMesh normalisiert http://host:11434 automatisch zu …/v1.",
-      apiKeyHint: "Für typisches lokales Ollama leer lassen.",
-    },
-    litellm: {
-      hint: "Auf LiteLLMs HTTP-API (OpenAI-kompatibel) zeigen, normalerweise mit /v1. Mobil: http://<home-LAN-ip>:4000/v1 bevorzugen, damit das Gerät Ihren Proxy erreicht.",
-      apiKeyHint: "Optional: LiteLLM-Masterschlüssel falls konfiguriert.",
-    },
-    openaiCompatible: {
-      hint: "Jede Chat-Completions-kompatible API; Basis-URL sollte /v1 enthalten. MiniMax China: https://api.minimaxi.com/v1 (nicht api.minimax.com). International: https://api.minimax.io/v1.",
-      apiKeyHint: "In der Regel erforderlich, sofern Ihr Gateway keine Auth injiziert.",
-    },
-    anthropicCompatible: {
-      hint: "Nur Anthropic Messages API-Host — hier kein /v1 hinzufügen (Client hängt /v1/messages an).",
-      apiKeyHint: "Anthropic-API-Schlüssel.",
-    },
-  },
   aiChatBehavior: {
     title: "KI-Chat-Verhalten",
     desc: "Steuern Sie, wie KI in Unterhaltungen interagiert.",
@@ -195,11 +159,6 @@ export const deNetworkSettingsMessages = {
     visibilityBrief: "Kurz — nur Meilensteine",
     visibilitySilent: "Stumm — nur speichern",
     visibilityApproval: "Genehmigung — nur Berichte und Genehmigungen",
-    saving: "Wird gespeichert…",
-    saved: "Gespeichert!",
-    save: "Speichern",
-    cancel: "Abbrechen",
-    saveFailed: "Speichern fehlgeschlagen",
   },
   ipfs: {
     title: "Externe Verteilung (IPFS)",

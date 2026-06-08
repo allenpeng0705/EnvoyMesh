@@ -20,6 +20,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     sendSyncStateUpdate,
     on,
   }),
+  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({
@@ -37,7 +38,7 @@ beforeEach(() => {
 describe("H2AChannelView", () => {
   it("renders owner-home-agent rail and chat panel", () => {
     renderWithI18n(<H2AChannelView />);
-    expect(screen.getByRole("heading", { name: /^assistant$/i })).toBeDefined();
+    expect(screen.getByRole("heading", { name: /envoyai/i })).toBeDefined();
     expect(screen.getByText(/chat with your ai assistant/i)).toBeDefined();
   });
 

@@ -5,7 +5,7 @@ import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const WS_ROOT = resolve(__dirname, "..", "..");
+const WS_ROOT = resolve(__dirname, "..", "..", "..");
 
 // ---- helpers ----
 
@@ -425,6 +425,21 @@ Debug:
   discover [query]   Search for peers on the mesh
   version            Show versions
   help               This help
+
+Workspace:
+  build              Build all packages
+  test [args]        Run the test suite
+  typecheck          Run TypeScript type checking
+  clean              Clean build outputs
+  social [args]      Run the Social web app
+  tauri [args]       Run the Tauri desktop app
+
+Node operations:
+  identity / id      Show local identity
+  inbox              Show inbox
+  send <to> <msg>    Send a message via the bridge
+  agent / ask <msg>  Ask the agent a question
+  vault <list|search> List or search the local vault
 
 Examples:
   envoymesh setup

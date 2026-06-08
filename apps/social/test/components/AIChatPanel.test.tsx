@@ -48,6 +48,7 @@ let nodeConfig = {
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,
+  useIsInProcessMobileNode: () => false,
 }));
 
 let nodeStatus: "offline" | "starting" | "running" | "stopping" = "running";
