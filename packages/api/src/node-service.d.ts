@@ -790,6 +790,22 @@ export interface NodeServiceEvents {
         aiSettings?: AiSettings;
         contactAiPreferences: ContactAiPreferences[];
     };
+    /** Paired-mode bootstrap events (mobile only, but harmless for the desktop) —
+     * emitted by the bootstrap that runs after a successful home pairing, refreshing
+     * the UI to show the home's actual state. */
+    "home:config-updated": {
+        config: import("./ws-protocol.js").NodeConfig;
+    };
+    "home:bonds-updated": {
+        bonds: BondRecord[];
+    };
+    "home:bootstrap-ok": {};
+    "home:bootstrap-failed": {
+        error: string;
+    };
+    "home:agent-cards-updated": {
+        cards: CachedAgentCardSummary[];
+    };
     "bridge:status": BridgeStatus;
     "p2p:envelope": {
         envelope: Record<string, unknown>;

@@ -6632,6 +6632,28 @@ button.activity-row:hover,
 }
 .skill-manager__token-hint a { color: var(--color-primary); }
 
+/* ==========================================================================
+   Paired Status Bar (mobile thin-client)
+   ========================================================================== */
+.paired-status-bar {
+  padding: var(--space-2) var(--space-4);
+  min-height: 24px;
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+  border-bottom: 1px solid var(--color-border-subtle);
+  line-height: 1.4;
+  word-break: break-all;
+}
+.paired-status-bar--error {
+  background: color-mix(in srgb, var(--color-error, #dc2626) 15%, transparent);
+  color: var(--color-error, #dc2626);
+}
+.paired-status-bar--ok {
+  background: color-mix(in srgb, var(--color-success, #2e7d32) 10%, transparent);
+  color: var(--color-success, #2e7d32);
+}
+
 .skill-manager__hint {
   margin: var(--space-2) 0 0;
   font-size: var(--text-xs);

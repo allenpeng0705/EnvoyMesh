@@ -393,11 +393,24 @@ export type MobileNodeStatus = "uninitialized" | "starting" | "running" | "stopp
  * JSON-RPC `/ws` server into `/ws/client` — fleet relay and home-node URLs remain different hops.
  */
 export function toRelayDirectClientWsUrl(url: string): string {
-  const trimmed = url.trim().replace(/\/+$/, "");
-  if (!trimmed) return "";
-  if (trimmed.includes("/ws/client")) return trimmed;
-  if (/\/ws$/i.test(trimmed)) return trimmed.replace(/\/ws$/i, "/ws/client");
-  return `${trimmed}/ws/client`;
+  // `_relayUrls[0]` may be the *full* pairing URL captured from the QR
+  // (e.g. `ws://relay:15432/ws?target=…&token=…`). The relay's libp2p
+  // direct-client endpoint lives at `/ws/client`, so we must first strip
+  // any query string the QR may have appended before we can decide whether
+  // `/ws` is already at the end of the path.
+  let pathOnly = url.trim().replace(/\/+$/, "");
+  if (pathOnly) {
+    try {
+      const parsed = new URL(pathOnly);
+      pathOnly = `${parsed.protocol}//${parsed.host}${parsed.pathname}`.replace(/\/+$/, "");
+    } catch {
+      pathOnly = pathOnly.split("?")[0] ?? pathOnly;
+    }
+  }
+  if (!pathOnly) return "";
+  if (pathOnly.includes("/ws/client")) return pathOnly;
+  if (/\/ws$/i.test(pathOnly)) return pathOnly.replace(/\/ws$/i, "/ws/client");
+  return `${pathOnly}/ws/client`;
 }
 
 // ---------------------------------------------------------------------------
@@ -554,6 +567,9 @@ export class MobileNode implements NodeService {
   private _homeRemoteOnline = false;
   /** Name of the currently active home-remote transport (`"lan"` | `"libp2p"` | `"tunnel"` | null). */
   private _homeRemoteTransport: string | null = null;
+  private _lastBootstrapOk: boolean | null = null;
+  private _lastBootstrapError: string | null = null;
+  private _lastBootstrapCounts: Record<string, unknown> = {};
   /** Cached node prefs loaded from localStorage (model, AI settings, autonomy, etc.). */
   private _aiPrefsOwnerId: string | null = null;
   private _aiPrefs: MobileNodePrefs = {
@@ -574,6 +590,14 @@ export class MobileNode implements NodeService {
    * `null` when not paired or bootstrap hasn't run yet.
    */
   private _homeNodeConfig: NodeConfig | null = null;
+  /**
+   * Cache of the home's bonded contacts (the home's trust store), populated by the
+   * post-pairing bootstrap. In paired mode the mobile acts as a thin client, so
+   * `getBonds()` returns this list rather than the mobile's local trust store
+   * (which is empty by design — the mobile has no own bonds in v1 paired mode).
+   * `null` when not paired or bootstrap hasn't run yet.
+   */
+  private _homeBonds: import("@envoymesh/api").BondRecord[] | null = null;
   /**
    * Last bootstrap timestamp (ms since epoch). Used to debounce re-bootstraps
    * when the home reconnects — we don't want to re-fetch everything on every
@@ -962,12 +986,27 @@ export class MobileNode implements NodeService {
 
       // Pull the home's state (peer profiles, agent cards, AI config) so the
       // mobile's UI shows the home's data, not the mobile's empty local cache.
-      void this._bootstrapPairedStateFromHome().catch((err) =>
-        console.warn(
-          "[mobile-node] paired-state bootstrap after pairing failed:",
-          err instanceof Error ? err.message : err,
-        ),
-      );
+      // Retry up to 3 times with 2s/4s/8s backoff — relay connections can take a moment.
+      let bootstrapOk = false;
+      let lastErr = "";
+      for (let attempt = 0; attempt < 3 && !bootstrapOk; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 2000 * (2 ** (attempt - 1))));
+        try {
+          await this._bootstrapPairedStateFromHome();
+          bootstrapOk = true;
+          this._lastBootstrapOk = true;
+          this._lastBootstrapError = null;
+          this._events.emit("home:bootstrap-ok", {});
+        } catch (err) {
+          lastErr = err instanceof Error ? err.message : String(err);
+          console.warn(`[mobile-node] paired-state bootstrap attempt ${attempt + 1}/3 failed:`, lastErr);
+          if (attempt === 2) {
+            this._lastBootstrapOk = false;
+            this._lastBootstrapError = lastErr;
+            this._events.emit("home:bootstrap-failed", { error: lastErr });
+          }
+        }
+      }
 
       return {
         sessionToken: response.sessionToken,
@@ -2071,7 +2110,31 @@ You are the owner's personal AI assistant on EnvoyMesh.
     this._events.emit("bond:revoked", { peerOwnerId });
   }
 
+  async getPairedDiagnostics(): Promise<Record<string, unknown>> {
+    return {
+      paired: this._isHomeRemotePaired(),
+      homeOnline: this._homeRemoteOnline,
+      homeTransport: this._homeRemoteTransport,
+      homePeerId: (this._state?.homeNodePeerId ?? null) as unknown,
+      relayUrls: this._relayUrls,
+      lanWsUrl: this._state?.lanWsUrl ?? null,
+      homeBondsCount: this._homeBonds?.length ?? 0,
+      lastBootstrapOk: this._lastBootstrapOk,
+      lastBootstrapError: this._lastBootstrapError ?? null,
+      lastBootstrapCounts: this._lastBootstrapCounts,
+      sessionTokens: (await this._sessionTokenStore?.listTokens() ?? []).length,
+    };
+  }
+
   async getBonds(): Promise<BondRecord[]> {
+    // In paired mode the mobile is a thin client: the source of truth for bonded
+    // contacts is the home's trust store, surfaced via the bootstrap cache. The
+    // mobile's local trust store is empty in v1 paired mode (the mobile has no
+    // own bonds). Fall back to the local store when the bootstrap hasn't run yet
+    // or the user has explicitly switched back to standalone.
+    if (this._isHomeRemotePaired() && this._homeBonds !== null) {
+      return this._homeBonds;
+    }
     return this._trustStore.list();
   }
 
@@ -2081,6 +2144,18 @@ You are the owner's personal AI assistant on EnvoyMesh.
 
   async sendChat(targetOwnerId: string, text: string): Promise<import("@envoymesh/api").SendChatResult> {
     this._assertDeviceNotRevoked();
+    // In paired mode, proxy sendChat through the home node so the message
+    // is delivered by the home's mesh to the recipient.
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<import("@envoymesh/api").SendChatResult>("sendChat", { targetOwnerId, text });
+      } catch (err) {
+        if (err instanceof Error && err.message === "homeRemote.offline") {
+          throw err;
+        }
+        // fall through to local path
+      }
+    }
     const msgId = _randomUUID();
     const ts = new Date().toISOString();
     const wireText = stripModelThinking(text);
@@ -2504,6 +2579,12 @@ You are the owner's personal AI assistant on EnvoyMesh.
   }
 
   async listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]> {
+    // In paired mode, proxy to home — the mobile chat log is empty on a fresh pair.
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<ChatMessage[]>("listChatHistory", { peerOwnerId, limit });
+      } catch { /* fall back to local */ }
+    }
     const rows = await this._chatLog.listThread(peerOwnerId, limit);
     return rows.map((row) => ({
       messageId: row.messageId,
@@ -3453,8 +3534,12 @@ You are the owner's personal AI assistant on EnvoyMesh.
   }
 
   async getNodeConfig(): Promise<NodeConfig> {
+    // In paired mode, merge the home node config with mobile-local fields.
+    const homeConfig = (this._isHomeRemotePaired() && this._homeNodeConfig)
+      ? this._homeNodeConfig
+      : null;
     this._loadAiPrefsIfNeeded();
-    const mpRaw = this._state?.owner.ownerId ? this._aiPrefs.modelProviders : { mode: "mock" as const };
+    const mpRaw = homeConfig?.modelProviders ?? (this._state?.owner.ownerId ? this._aiPrefs.modelProviders : { mode: "mock" as const });
     const mp = this._state?.owner.ownerId ? _normalizeMobileStoredOpenAiEndpoint(mpRaw) : mpRaw;
     const chatAssist = Boolean(this._state?.owner.ownerId && this._aiPrefs.chatAssistEnabled);
     const externalPublish = this._state?.owner.ownerId
@@ -7474,9 +7559,14 @@ You are the owner's personal AI assistant on EnvoyMesh.
    * after a fresh pairing and after a home reconnect.
    */
   private async _bootstrapPairedStateFromHome(): Promise<void> {
-    if (!this._isHomeRemotePaired()) return;
+    if (!this._isHomeRemotePaired()) {
+      console.log("[mobile-node] paired bootstrap: skipped — not paired (sharedIdentity=%s homeNodePeerId=%s)",
+        this.sharedIdentity, this._state?.homeNodePeerId);
+      return;
+    }
     this._lastPairedBootstrapAt = Date.now();
     const log = (msg: string) => console.log(`[mobile-node] paired bootstrap: ${msg}`);
+    log(`starting — homeNodePeerId=${this._state?.homeNodePeerId}, lanWsUrl=${this._state?.lanWsUrl}`);
 
     // 1. Peer profiles → _peerProfileCache
     try {
@@ -7496,8 +7586,10 @@ You are the owner's personal AI assistant on EnvoyMesh.
         this._events.emit("profile:updated", { ownerId: "*", source: "home-bootstrap" });
       }
       log(`synced ${profiles.length} peer profile(s)`);
+      this._lastBootstrapCounts = { ...this._lastBootstrapCounts, profiles: profiles.length };
     } catch (err) {
       console.warn("[mobile-node] paired bootstrap: peer profiles failed:", err);
+      this._lastBootstrapCounts = { ...this._lastBootstrapCounts, profiles: 0 };
     }
 
     // 2. Node config → _homeNodeConfig (for AI/EnvoyAI display)
@@ -7506,18 +7598,22 @@ You are the owner's personal AI assistant on EnvoyMesh.
       this._homeNodeConfig = cfg;
       this._events.emit("home:config-updated", { config: cfg });
       log(`synced node config (model=${cfg.modelProviders?.mode ?? "mock"})`);
+      this._lastBootstrapCounts = { ...this._lastBootstrapCounts, config: cfg.modelProviders?.mode ?? "mock" };
     } catch (err) {
       console.warn("[mobile-node] paired bootstrap: node config failed:", err);
+      this._lastBootstrapCounts = { ...this._lastBootstrapCounts, config: "failed" };
     }
 
-    // 3. Bond records → re-emit for any UI subscribers
+    // 3. Bond records → cache locally + re-emit for any UI subscribers
     try {
       const bonds = await this._homeRemoteCall<import("@envoymesh/api").BondRecord[]>(
         "getBonds",
         {},
       );
+      this._homeBonds = bonds;
       this._events.emit("home:bonds-updated", { bonds });
       log(`synced ${bonds.length} bond(s)`);
+      this._lastBootstrapCounts = { ...this._lastBootstrapCounts, bonds: bonds.length };
     } catch (err) {
       console.warn("[mobile-node] paired bootstrap: bonds failed:", err);
     }
@@ -7673,10 +7769,23 @@ You are the owner's personal AI assistant on EnvoyMesh.
     //    with the home node's peer ID and session token. This is the
     //    fallback path when neither LAN nor a public libp2p circuit
     //    reservation is reachable.
-    const relayBase = this._relayUrls[0]?.trim();
-    if (relayBase) {
-      const base = relayBase.replace(/\/+$/, "");
-      const wsBase = /\/ws$/i.test(base) ? base : `${base}/ws`;
+    const relayRaw = this._relayUrls[0]?.trim();
+    if (relayRaw) {
+      // `_relayUrls[0]` may be the *full* pairing URL captured from the QR
+      // (e.g. `ws://relay:15432/ws?target=…&token=…`). Using it directly as
+      // the base would re-append `?target=…&token=…` and produce a malformed
+      // URL like `ws://relay:15432/ws?target=…&token=…?target=…&token=…` —
+      // which the relay would reject, the bootstrap would silently fail, and
+      // contacts/AI would never reach the home. Parse the URL and rebuild
+      // from the origin + pathname so we always end up with a clean base.
+      let basePath: string;
+      try {
+        const parsed = new URL(relayRaw);
+        basePath = `${parsed.protocol}//${parsed.host}${parsed.pathname}`.replace(/\/+$/, "");
+      } catch {
+        basePath = relayRaw.replace(/\/+$/, "").split("?")[0] ?? relayRaw;
+      }
+      const wsBase = /\/ws$/i.test(basePath) ? basePath : `${basePath}/ws`;
       candidates.push({
         name: "tunnel",
         url: `${wsBase}?target=${encodeURIComponent(homeNodePeerId)}&token=${encodeURIComponent(record.token)}`,

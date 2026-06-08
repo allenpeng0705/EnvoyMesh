@@ -321,6 +321,7 @@ export interface NodeServiceClient {
   saveSkillApiKeys(keys: Record<string, string>): Promise<{ ok: boolean }>;
   saveWebSearchEnabled?(enabled: boolean): Promise<{ ok: boolean }>;
   sendToOpenClaw?(text: string): Promise<void>;
+  getPairedDiagnostics?(): Promise<Record<string, unknown>>;
 
   // Phase 9-style data wipe
   clearAllUserData(): Promise<void>;
@@ -938,6 +939,9 @@ function createWsNodeServiceClient(
     async sendToOpenClaw(text: string) {
       return wsClient.rpc("sendToOpenClaw", { text }) as Promise<void>;
     },
+    async getPairedDiagnostics() {
+      return wsClient.rpc("getPairedDiagnostics", {}) as Promise<Record<string, unknown>>;
+    },
     async clearAllUserData() {
       await wsClient.rpc("clearAllUserData", {});
     },
@@ -1258,20 +1262,22 @@ export function useBonds() {
   useEffect(() => {
     if (!wsOpen || !client.isConnected) return;
 
+    const refresh = () => client.getBonds().then(setBonds).catch(console.error);
+
     // Initial load
-    client.getBonds().then(setBonds).catch(console.error);
+    refresh();
 
     // Listen for changes
-    const unsubEstablished = client.on("bond:established", () => {
-      client.getBonds().then(setBonds).catch(console.error);
-    });
-    const unsubRevoked = client.on("bond:revoked", () => {
-      client.getBonds().then(setBonds).catch(console.error);
-    });
+    const unsubEstablished = client.on("bond:established", refresh);
+    const unsubRevoked = client.on("bond:revoked", refresh);
+    // In paired mode, the bootstrap fetches the home's bonds and emits
+    // `home:bonds-updated`. The hook must re-fetch to surface them.
+    const unsubHomeBonds = client.on("home:bonds-updated", refresh);
 
     return () => {
       unsubEstablished();
       unsubRevoked();
+      unsubHomeBonds();
     };
   }, [client, wsOpen]);
 

@@ -1011,6 +1011,15 @@ export interface NodeServiceEvents {
   // Config events
   "config:updated": { autonomousKillSwitch: boolean; autonomousPolicies: readonly AutonomousPolicy[]; chatAssistEnabled: boolean; modelProviders: ModelProviderConfig; aiSettings?: AiSettings; contactAiPreferences: ContactAiPreferences[] };
 
+  // Paired-mode bootstrap events (mobile only, but harmless for the desktop) —
+  // emitted by the bootstrap that runs after a successful home pairing, refreshing
+  // the UI to show the home's actual state.
+  "home:config-updated": { config: import("./ws-protocol.js").NodeConfig };
+  "home:bonds-updated": { bonds: BondRecord[] };
+  "home:bootstrap-ok": {};
+  "home:bootstrap-failed": { error: string };
+  "home:agent-cards-updated": { cards: CachedAgentCardSummary[] };
+
   // Agent bridge events
   "bridge:status": BridgeStatus;
 
@@ -1614,6 +1623,7 @@ export interface NodeService {
   saveSkillApiKeys(keys: Record<string, string>): Promise<{ ok: boolean }>;
   saveWebSearchEnabled(enabled: boolean): Promise<{ ok: boolean }>;
   sendToOpenClaw(text: string): Promise<void>;
+  getPairedDiagnostics(): Promise<Record<string, unknown>>;
 
   /**
    * Get pairing payload for mobile-app QR pairing (Phase 10A).

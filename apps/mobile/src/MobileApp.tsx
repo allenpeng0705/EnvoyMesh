@@ -97,7 +97,7 @@ function tabPanelClass(activeTab: TabId, panelTab: TabId): string {
 
 export function MobileApp() {
   const t = useT();
-  const { isConnected, nodeStatus } = useNodeState();
+  const { isConnected, nodeStatus, pairedDiag } = useNodeState();
   const inboxActivityCount = useInboxActivityCount();
   const { theme, resolved, setTheme } = useTheme();
   const [currentTab, setCurrentTab] = useState<TabId>("chat");
@@ -144,6 +144,9 @@ export function MobileApp() {
   if (!isConnected) {
     return (
       <div className="mobile-app">
+        <div style={{ background: "red", color: "white", padding: "4px", fontSize: "12px", textAlign: "center" }}>
+          NOT CONNECTED — {String(isConnected)}
+        </div>
         <div className="mobile-loading">
           <div className="spinner" />
           <p style={{ marginTop: 16, fontSize: 14 }}>{t("mobile.tabs.chats")}</p>
@@ -172,6 +175,31 @@ export function MobileApp() {
   // -- Main app --------------------------------------------------------------
   return (
     <div className="mobile-app">
+      {/* Paired diagnostics bar — ALWAYS visible for debugging */}
+      <div style={{ background: "#ff0", color: "#000", padding: "4px", fontSize: "11px", textAlign: "center" }}>
+        DIAG: paired={String(pairedDiag?.paired)} bonds={String(pairedDiag?.homeBondsCount)} peer={String(pairedDiag?.homePeerId ?? "??").slice(0, 12)}
+      </div>
+      {/* Paired diagnostics bar */}
+      <div
+        style={{
+          fontSize: "10px",
+          padding: "2px 8px",
+          background: pairedDiag?.paired ? (pairedDiag.lastBootstrapOk ? "#2e7d32" : "#dc2626") : "#333",
+          color: "#fff",
+          textAlign: "center",
+          minHeight: "20px",
+          lineHeight: "20px",
+          position: "sticky",
+          top: 0,
+          zIndex: 100,
+        }}
+      >
+        {pairedDiag?.paired
+          ? pairedDiag.lastBootstrapOk
+            ? `✓ ${pairedDiag.homeBondsCount ?? "?"} bonds`
+            : `⚠ ${String(pairedDiag.lastBootstrapError ?? "?")}`
+          : pairedDiag ? "not paired" : "Loading diag..."}
+      </div>
       {/* Top bar */}
       <header className="top-bar">
         <div className="top-bar-left">

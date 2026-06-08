@@ -385,6 +385,7 @@ export class DirectCallClient implements NodeServiceClient {
   async saveSkillApiKeys(keys: Record<string, string>) { return this._ns.saveSkillApiKeys(keys); }
   async saveWebSearchEnabled(enabled: boolean) { return this._ns.saveWebSearchEnabled(enabled); }
   async sendToOpenClaw(text: string) { return this._ns.sendToOpenClaw(text); }
+  async getPairedDiagnostics() { return this._ns.getPairedDiagnostics(); }
 
   async getPairingPayload() {
     return this._ns.getPairingPayload();

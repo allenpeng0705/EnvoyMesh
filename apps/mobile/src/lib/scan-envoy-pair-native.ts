@@ -26,19 +26,6 @@ export interface NativeScanOptions {
   forceWeb?: boolean;
 }
 
-interface EnvoyQrScannerPlugin {
-  startScan(options?: { cameraDirection?: "back" | "front" }): Promise<{
-    hasContent: boolean;
-    content?: string;
-  }>;
-  stopScan(): Promise<void>;
-  checkPermission(): Promise<
-    { granted?: boolean; denied?: boolean; restricted?: boolean; neverAsked?: boolean; unknown?: boolean }
-  >;
-}
-
-const EnvoyQrScanner = registerPlugin<EnvoyQrScannerPlugin>("EnvoyQrScanner");
-
 const isCapacitorNative = (): boolean =>
   Capacitor?.isNativePlatform?.() === true &&
   (Capacitor.getPlatform?.() === "ios" || Capacitor.getPlatform?.() === "android");
@@ -57,49 +44,7 @@ export async function scanEnvoyPairUriNative(options: NativeScanOptions = {}): P
   if (options.forceWeb !== true && isCapacitorNative()) {
     const platform = Capacitor.getPlatform();
 
-    // iOS — our own AVFoundation-based plugin.
-    if (platform === "ios") {
-      try {
-        const perm = await EnvoyQrScanner.checkPermission();
-        if (perm?.denied || perm?.restricted) {
-          throw new Error(
-            "Camera access is blocked. Enable Camera in Settings → EnvoyMesh, then try again.",
-          );
-        }
-        const result = await EnvoyQrScanner.startScan({ cameraDirection: "back" });
-        if (!result?.hasContent || !result.content) {
-          throw new Error("Scanning was cancelled before a code was detected.");
-        }
-        try {
-          return assertEnvoyPairQrText(result.content);
-        } catch (validationError) {
-          // Surface what we actually scanned so the user can tell whether they
-          // scanned a wrong/stale QR vs. a partial capture.
-          const preview = result.content.length > 80
-            ? `${result.content.slice(0, 80)}…`
-            : result.content;
-          const reason = validationError instanceof Error
-            ? validationError.message
-            : String(validationError);
-          throw new Error(
-            `QR doesn't look like an envoy://pair link (${reason}). Scanned: ${preview}`,
-          );
-        }
-      } catch (err) {
-        if (userDenied(err)) {
-          throw new Error("Camera scanning was cancelled or denied. Paste the link instead.");
-        }
-        throw err;
-      } finally {
-        try {
-          await EnvoyQrScanner.stopScan();
-        } catch {
-          /* ignore — best effort */
-        }
-      }
-    }
-
-    // Android — community barcode scanner (ZXing).
+    // Both iOS and Android — community barcode scanner.
     const mod = await import("@capacitor-community/barcode-scanner");
     const BarcodeScanner = mod.BarcodeScanner;
     const SupportedFormat = mod.SupportedFormat;

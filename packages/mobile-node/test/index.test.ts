@@ -69,6 +69,27 @@ describe("MobileNode", () => {
     it("returns empty string for whitespace-only URL", () => {
       expect(toRelayDirectClientWsUrl("   ")).toBe("");
     });
+    it("strips the QR's ?target=…&token=… query string before resolving the path (regression)", () => {
+      // The relay URL persisted from QR pairing looks exactly like this:
+      //   ws://relay:15432/ws?target=12D3KooW…&token=one-time-pairing-token
+      // The libp2p direct-client endpoint lives at /ws/client, so we must
+      // ignore the query string when deciding whether the path already
+      // ends with /ws. Otherwise we produce the malformed URL
+      //   ws://relay:15432/ws?target=…&token=…/ws/client
+      // which the relay rejects — the mobile's libp2p mesh never
+      // reaches the relay, and circuit-relay / inbound-message routing
+      // silently fail.
+      expect(
+        toRelayDirectClientWsUrl(
+          "ws://relay.example.com:15432/ws?target=12D3KooWPeerId&token=pairing-token",
+        ),
+      ).toBe("ws://relay.example.com:15432/ws/client");
+    });
+    it("strips query string from a bare-origin URL before appending /ws/client", () => {
+      expect(
+        toRelayDirectClientWsUrl("ws://relay.example.com:15432?foo=bar"),
+      ).toBe("ws://relay.example.com:15432/ws/client");
+    });
   });
 
   // -----------------------------------------------------------------------
@@ -825,6 +846,200 @@ describe("MobileNode", () => {
       expect(state.sharedIdentity).toBe(true);
       expect(state.owner.ownerId).toBe(owner.ownerId);
       expect(state.owner.privateKeyPem).toBe(owner.privateKeyPem);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Paired-mode thin client
+  // -----------------------------------------------------------------------
+
+  describe("paired-mode thin client (getBonds)", () => {
+    it("returns local trust store when not paired", async () => {
+      node = new MobileNode(makeConfig());
+      await node.initStandalone("/test-profile");
+      const bonds = await node.getBonds();
+      expect(bonds).toEqual([]);
+    });
+
+    it("returns local trust store when paired but bootstrap has not run yet", async () => {
+      node = new MobileNode(makeConfig());
+      const { generateOwnerIdentity } = await import("@envoymesh/mobile-identity");
+      const owner = generateOwnerIdentity();
+      await node.importOwnerIdentity(
+        "/test-profile",
+        owner.privateKeyPem,
+        owner.publicKeyPem,
+        "home-node-peer-id",
+      );
+      // Pairing flag is set, but no bootstrap has populated the home bonds cache.
+      expect(node.sharedIdentity).toBe(true);
+      const bonds = await node.getBonds();
+      expect(bonds).toEqual([]);
+    });
+
+    it("returns the home's bonds (not the local trust store) when paired and bootstrap has run", async () => {
+      node = new MobileNode(makeConfig());
+      const { generateOwnerIdentity } = await import("@envoymesh/mobile-identity");
+      const owner = generateOwnerIdentity();
+      await node.importOwnerIdentity(
+        "/test-profile",
+        owner.privateKeyPem,
+        owner.publicKeyPem,
+        "home-node-peer-id",
+      );
+      // Simulate the bootstrap having populated the home bonds cache. We reach
+      // in for the private field because the bootstrap requires a live home RPC
+      // which is not the point of this unit test — the getBonds() override only
+      // cares that the cache is populated.
+      const homeBonds = [
+        {
+          peerOwnerId: "envoy:owner:home-contact-1",
+          displayName: "Alice (Home)",
+          level: "direct" as const,
+          establishedAt: new Date().toISOString(),
+          tags: [],
+        },
+        {
+          peerOwnerId: "envoy:owner:home-contact-2",
+          displayName: "Bob (Home)",
+          level: "referred" as const,
+          establishedAt: new Date().toISOString(),
+          tags: [],
+        },
+      ];
+      (node as unknown as { _homeBonds: typeof homeBonds })._homeBonds = homeBonds;
+
+      const bonds = await node.getBonds();
+      expect(bonds).toHaveLength(2);
+      expect(bonds.map((b) => b.displayName).sort()).toEqual(["Alice (Home)", "Bob (Home)"]);
+    });
+
+    it("falls back to the local trust store when paired but _homeBonds is null (bootstrap failed)", async () => {
+      node = new MobileNode(makeConfig());
+      const { generateOwnerIdentity } = await import("@envoymesh/mobile-identity");
+      const owner = generateOwnerIdentity();
+      await node.importOwnerIdentity(
+        "/test-profile",
+        owner.privateKeyPem,
+        owner.publicKeyPem,
+        "home-node-peer-id",
+      );
+      // Bootstrap hasn't run (or failed silently) → _homeBonds is null.
+      // Should still return the local store (empty) rather than throw.
+      expect(node.sharedIdentity).toBe(true);
+      const bonds = await node.getBonds();
+      expect(bonds).toEqual([]);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Home-remote tunnel URL construction
+  //
+  // Regression: the relay URL stored at pairing time is the *full* pairing
+  // URL (e.g. `ws://relay:15432/ws?target=…&token=…`). Re-using it as the
+  // tunnel base without stripping the query string produced a malformed URL
+  // like `ws://relay:15432/ws?target=…&token=…?target=…&token=…` — the relay
+  // rejected it, the bootstrap silently failed, and the mobile never saw the
+  // home's bonds or AI config.
+  // -----------------------------------------------------------------------
+
+  describe("home-remote tunnel URL (paired)", () => {
+    async function makePairedNodeWithSessionToken(): Promise<{
+      node: MobileNode;
+      ownerId: string;
+      homeNodePeerId: string;
+      sessionToken: string;
+    }> {
+      node = new MobileNode(makeConfig());
+      const { generateOwnerIdentity } = await import("@envoymesh/mobile-identity");
+      const owner = generateOwnerIdentity();
+      const homeNodePeerId = "12D3KooWHomeNodePeerIdExample";
+      await node.importOwnerIdentity(
+        "/test-profile",
+        owner.privateKeyPem,
+        owner.publicKeyPem,
+        homeNodePeerId,
+      );
+      const sessionToken = "test-session-token-uuid";
+      const db = (node as unknown as { _db: { execute: (sql: string, params?: unknown[]) => Promise<unknown> } })._db;
+      await db.execute(
+        "INSERT INTO session_tokens (token, ownerId, deviceId, displayName, createdAt, lastUsedAt) VALUES (?, ?, ?, ?, ?, ?)",
+        [sessionToken, owner.ownerId, "test-device", "Home Node", new Date().toISOString(), new Date().toISOString()],
+      );
+      return { node, ownerId: owner.ownerId, homeNodePeerId, sessionToken };
+    }
+
+    it("builds a clean tunnel URL when the stored relay URL has a trailing /ws path", async () => {
+      const { node: pairedNode, homeNodePeerId } = await makePairedNodeWithSessionToken();
+      (pairedNode as unknown as { _relayUrls: string[] })._relayUrls = [
+        "ws://relay.example.com:15432/ws",
+      ];
+      const candidates = await (pairedNode as unknown as {
+        _buildHomeRemoteCandidates: () => Promise<{ name: string; url: string }[]>;
+      })._buildHomeRemoteCandidates();
+      const tunnel = candidates.find((c) => c.name === "tunnel");
+      expect(tunnel).toBeDefined();
+      expect(tunnel!.url).toBe(
+        `ws://relay.example.com:15432/ws?target=${encodeURIComponent(homeNodePeerId)}&token=${encodeURIComponent("test-session-token-uuid")}`,
+      );
+      // The URL must not contain double `?` (regression guard).
+      expect((tunnel!.url.match(/\?/g) ?? []).length).toBe(1);
+    });
+
+    it("strips query string from the pairing-time relay URL before rebuilding (regression)", async () => {
+      const { node: pairedNode, homeNodePeerId } = await makePairedNodeWithSessionToken();
+      // This is exactly the URL captured from the QR at pairing time —
+      // includes the original `?target=…&token=…` from the QR's wsUrl.
+      (pairedNode as unknown as { _relayUrls: string[] })._relayUrls = [
+        `ws://relay.example.com:15432/ws?target=${encodeURIComponent("12D3KooWOldTarget")}&token=old-token`,
+      ];
+      const candidates = await (pairedNode as unknown as {
+        _buildHomeRemoteCandidates: () => Promise<{ name: string; url: string }[]>;
+      })._buildHomeRemoteCandidates();
+      const tunnel = candidates.find((c) => c.name === "tunnel");
+      expect(tunnel).toBeDefined();
+      // Must use the NEW session token, not the old one in the URL.
+      expect(tunnel!.url).toContain("token=test-session-token-uuid");
+      expect(tunnel!.url).not.toContain("token=old-token");
+      // Must not have the original target either.
+      expect(tunnel!.url).toContain(`target=${encodeURIComponent(homeNodePeerId)}`);
+      expect(tunnel!.url).not.toContain("12D3KooWOldTarget");
+      // Must not have a doubled path or query.
+      expect(tunnel!.url).not.toMatch(/\/ws\?.*\/ws/);
+      expect((tunnel!.url.match(/\?/g) ?? []).length).toBe(1);
+    });
+
+    it("appends /ws when the stored relay URL is the bare origin", async () => {
+      const { node: pairedNode } = await makePairedNodeWithSessionToken();
+      (pairedNode as unknown as { _relayUrls: string[] })._relayUrls = [
+        "ws://relay.example.com:15432",
+      ];
+      const candidates = await (pairedNode as unknown as {
+        _buildHomeRemoteCandidates: () => Promise<{ name: string; url: string }[]>;
+      })._buildHomeRemoteCandidates();
+      const tunnel = candidates.find((c) => c.name === "tunnel");
+      expect(tunnel).toBeDefined();
+      expect(tunnel!.url.startsWith("ws://relay.example.com:15432/ws?")).toBe(true);
+    });
+
+    it("returns no candidates when there is no session token", async () => {
+      node = new MobileNode(makeConfig());
+      const { generateOwnerIdentity } = await import("@envoymesh/mobile-identity");
+      const owner = generateOwnerIdentity();
+      await node.importOwnerIdentity(
+        "/test-profile",
+        owner.privateKeyPem,
+        owner.publicKeyPem,
+        "home-node-peer-id",
+      );
+      (node as unknown as { _relayUrls: string[] })._relayUrls = [
+        "ws://relay.example.com:15432/ws?target=foo&token=bar",
+      ];
+      const candidates = await (node as unknown as {
+        _buildHomeRemoteCandidates: () => Promise<{ name: string; url: string }[]>;
+      })._buildHomeRemoteCandidates();
+      // No session token → no candidates.
+      expect(candidates).toEqual([]);
     });
   });
 

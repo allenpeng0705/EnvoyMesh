@@ -559,6 +559,8 @@ export async function routeRpcMethod(
       return ns.saveWebSearchEnabled(Boolean(params.enabled));
     case "sendToOpenClaw":
       return ns.sendToOpenClaw(String(params.text ?? ""));
+    case "getPairedDiagnostics":
+      return ns.getPairedDiagnostics();
     case "saveSkillApiKeys":
       return ns.saveSkillApiKeys(params.keys as Record<string, string> ?? {});
     case "homeclawCoreProxy":

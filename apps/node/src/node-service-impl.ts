@@ -4900,6 +4900,14 @@ class NodeServiceImpl implements NodeService {
    * Send a chat message to OpenClaw via the bridge's webhook.
    * The response arrives asynchronously via /bridge/send → onSelfSendEnvelope.
    */
+  async getPairedDiagnostics(): Promise<Record<string, unknown>> {
+    return {
+      paired: false,
+      type: "desktop",
+      ownerId: this._profile?.owner?.ownerId ?? null,
+    };
+  }
+
   async sendToOpenClaw(text: string): Promise<void> {
     const ownerId = this._profile?.owner?.ownerId ?? "";
     let policyPrompt: string | undefined;
@@ -9094,6 +9102,11 @@ class NodeServiceImpl implements NodeService {
       if (bridgeStatus.agentName?.trim()) {
         payload.agentName = bridgeStatus.agentName.trim();
       }
+    }
+
+    // Include home node peer ID — needed by mobile to route back after pairing
+    if (reachable?.peerId) {
+      payload.homeNodePeerId = reachable.peerId;
     }
 
     // Phase 11: Include owner identity for multi-device shared-identity pairing.
