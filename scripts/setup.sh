@@ -102,9 +102,29 @@ if [ -f packages/openclaw/package.json ]; then
   fi
 
   echo "  Generating channel metadata (envoymesh)..."
-  CI=true pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts 2>&1 | tail -3 || {
-    echo "  ⚠ Metadata generation failed — extension may still work at runtime"
-  }
+  # OpenClaw's metadata generator uses `git ls-files` to enumerate bundled
+  # extensions. The envoymesh extension was just `cp -R`'d in and is therefore
+  # untracked from OpenClaw's perspective. Stage it in a throwaway index so
+  # the generator sees it WITHOUT modifying OpenClaw's git state (we don't
+  # own that repo and want clean upstream upgrades).
+  if [ -d extensions/envoymesh ]; then
+    _oc_tmp_idx=$(mktemp)
+    if GIT_INDEX_FILE="$_oc_tmp_idx" git read-tree HEAD >/dev/null 2>&1 \
+        && GIT_INDEX_FILE="$_oc_tmp_idx" git add extensions/envoymesh >/dev/null 2>&1; then
+      GIT_INDEX_FILE="$_oc_tmp_idx" CI=true pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts 2>&1 | tail -3 || {
+        echo "  ⚠ Metadata generation failed — extension may still work at runtime"
+      }
+    else
+      CI=true pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts 2>&1 | tail -3 || {
+        echo "  ⚠ Metadata generation failed — extension may still work at runtime"
+      }
+    fi
+    rm -f "$_oc_tmp_idx"
+  else
+    CI=true pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts 2>&1 | tail -3 || {
+      echo "  ⚠ Metadata generation failed — extension may still work at runtime"
+    }
+  fi
 
   echo "  Building..."
   CI=true pnpm run build 2>&1 | tail -8 || {

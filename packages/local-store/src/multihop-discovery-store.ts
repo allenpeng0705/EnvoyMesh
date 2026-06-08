@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export const MULTIHOP_DISCOVERY_SESSIONS_FILE = "multihop-discovery-sessions.json";
@@ -65,14 +65,24 @@ function isMissingFileError(error: unknown): boolean {
 }
 
 async function readFileJson(path: string): Promise<MultiHopDiscoverySessionFile> {
+  let raw: string;
   try {
-    const raw = await readFile(path, "utf8");
+    raw = await readFile(path, "utf8");
+  } catch (error) {
+    if (isMissingFileError(error)) return { version: "0.1", sessions: [] };
+    throw error;
+  }
+  // Tolerate empty files (writer can briefly truncate to 0 bytes during
+  // a rename-replace, or the OS may report a partially-written file).
+  if (raw.trim().length === 0) return { version: "0.1", sessions: [] };
+  try {
     const parsed = JSON.parse(raw) as MultiHopDiscoverySessionFile;
     if (parsed.version === "0.1" && Array.isArray(parsed.sessions)) {
       return parsed;
     }
-  } catch (error) {
-    if (!isMissingFileError(error)) throw error;
+  } catch {
+    // Malformed file: treat as empty rather than crashing the caller.
+    return { version: "0.1", sessions: [] };
   }
   return { version: "0.1", sessions: [] };
 }
@@ -106,7 +116,11 @@ export function createMultiHopDiscoveryStore(profileDir: string): MultiHopDiscov
 
   async function writeFileJson(file: MultiHopDiscoverySessionFile): Promise<void> {
     await mkdir(profileDir, { recursive: true });
-    await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+    // Atomic write: stage to a tmp file then rename. Prevents readers from
+    // observing a half-written or empty file mid-update.
+    const tmp = `${path}.tmp-${process.pid}-${Date.now().toString(36)}`;
+    await writeFile(tmp, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+    await rename(tmp, path);
   }
 
   return {

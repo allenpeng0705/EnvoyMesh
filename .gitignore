@@ -27,3 +27,4 @@ apps/node/data/default/**
 !apps/social/src/data/**
 shared_vault/
 /packages/openclaw
+/.pnpm-store
