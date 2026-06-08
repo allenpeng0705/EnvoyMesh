@@ -33,6 +33,14 @@ export interface CreateBridgeOptions {
   mesh: EnvoyMesh;
   /** Resolve an ownerId or peerId to the current libp2p peer ID. */
   getRecipientPeerId: (ownerOrPeerId: string) => Promise<string | null>;
+  /**
+   * Resolve outbound dial hints for a recipient peer — peer directory
+   * listen addrs + synthetic relay circuit paths. Used so the bridge's
+   * reply to a NAT-traversed mobile (e.g. a paired phone) can be re-dialed
+   * if the original libp2p connection has dropped while the agent was
+   * thinking. Optional.
+   */
+  getRecipientDialHints?: (peerId: string) => Promise<string[] | undefined>;
   /** Called when the bridge needs to deliver an envelope to the local node (self-send). */
   onSelfSendEnvelope?: (envelope: any, remotePeerId: string) => Promise<void>;
   /** Gateway for external agent session management and action logging (Phase 9I). */
@@ -69,16 +77,38 @@ export function createBridge(options: CreateBridgeOptions): {
   const deps: BridgeDeps = {
     config,
     identity: options.identity,
-    sendChat: async (peerId, envelope) => {
+    sendChat: async (peerId, envelope, options2) => {
       if (peerId === options.mesh.peerId && options.onSelfSendEnvelope) {
         console.log(`[bridge] self-send reply to=${peerId.slice(0, 20)}… intent=${envelope.intent}`);
         await options.onSelfSendEnvelope(envelope, options.mesh.peerId);
         return;
       }
-      console.log(`[bridge] P2P send to=${peerId.slice(0, 20)}… intent=${envelope.intent}`);
-      await options.mesh.sendChat(peerId, envelope, {});
+      // Resolve dial hints for the recipient (peer directory listen addrs +
+      // synthetic relay circuit paths) so a NAT-traversed peer like a paired
+      // mobile can be reached even when the original libp2p connection has
+      // dropped. `receiveFromAgent` already passes the hints it fetched; if
+      // a caller didn't supply any, fetch a fresh set here as a final safety
+      // net before redialing.
+      let dialHints = options2?.dialHints;
+      if (!dialHints || dialHints.length === 0) {
+        if (options.getRecipientDialHints) {
+          try {
+            dialHints = await options.getRecipientDialHints(peerId);
+          } catch (err) {
+            console.warn(
+              `[bridge] getRecipientDialHints failed for ${peerId.slice(0, 20)}…:`,
+              err instanceof Error ? err.message : err,
+            );
+          }
+        }
+      }
+      console.log(
+        `[bridge] P2P send to=${peerId.slice(0, 20)}… intent=${envelope.intent} dialHints=${dialHints?.length ?? 0}`,
+      );
+      await options.mesh.sendChat(peerId, envelope, { ...(dialHints ? { dialHints } : {}) });
     },
     getRecipientPeerId: options.getRecipientPeerId,
+    getRecipientDialHints: options.getRecipientDialHints,
     gateway: options.gateway,
     agentId,
     getAiIdentity: options.getAiIdentity,

@@ -44,10 +44,12 @@ describe("receiveFromAgent", () => {
     expect(deps.getRecipientPeerId).toHaveBeenCalledWith("envoy:owner:friend1");
     expect(sendChat).toHaveBeenCalledTimes(1);
 
-    const [peerId, envelope] = sendChat.mock.calls[0];
+    const [peerId, envelope, sendOptions] = sendChat.mock.calls[0];
     expect(peerId).toBe("12D3PeerId");
     expect(envelope.intent).toBe("chat.message");
     expect(envelope.senderRole).toBe("agent");
+    // No getRecipientDialHints configured → no hints forwarded (undefined / empty options)
+    expect(sendOptions === undefined || sendOptions?.dialHints === undefined).toBe(true);
     expect(envelope.recipientRole).toBe("human");
     expect(envelope.senderPeerId).toBe(agent.agentPeerId);
     expect(envelope.agentCredential).toEqual(agentCredential);
@@ -69,6 +71,51 @@ describe("receiveFromAgent", () => {
     await expect(
       receiveFromAgent(deps, { to: "unknown", text: "hi" }),
     ).rejects.toThrow("Cannot resolve peer ID for: unknown");
+  });
+
+  it("forwards dial hints to sendChat when getRecipientDialHints is configured", async () => {
+    const sendChat = vi.fn();
+    const getRecipientDialHints = vi.fn().mockResolvedValue([
+      "/ip4/192.168.3.42/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3PeerId",
+    ]);
+    const deps = makeDeps({ sendChat, getRecipientDialHints });
+
+    await receiveFromAgent(deps, { to: "envoy:owner:friend1", text: "hi" });
+
+    expect(getRecipientDialHints).toHaveBeenCalledWith("12D3PeerId");
+    const [, , sendOptions] = sendChat.mock.calls[0];
+    expect(sendOptions?.dialHints).toEqual([
+      "/ip4/192.168.3.42/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3PeerId",
+    ]);
+  });
+
+  it("omits dial hints when getRecipientDialHints returns undefined", async () => {
+    const sendChat = vi.fn();
+    const deps = makeDeps({
+      sendChat,
+      getRecipientDialHints: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await receiveFromAgent(deps, { to: "envoy:owner:friend1", text: "hi" });
+
+    const [, , sendOptions] = sendChat.mock.calls[0];
+    expect(sendOptions === undefined || sendOptions?.dialHints === undefined).toBe(true);
+  });
+
+  it("does not throw when getRecipientDialHints fails", async () => {
+    const sendChat = vi.fn();
+    const deps = makeDeps({
+      sendChat,
+      getRecipientDialHints: vi.fn().mockRejectedValue(new Error("boom")),
+    });
+
+    await expect(
+      receiveFromAgent(deps, { to: "envoy:owner:friend1", text: "hi" }),
+    ).resolves.toBeDefined();
+
+    expect(sendChat).toHaveBeenCalledTimes(1);
+    const [, , sendOptions] = sendChat.mock.calls[0];
+    expect(sendOptions === undefined || sendOptions?.dialHints === undefined).toBe(true);
   });
 });
 

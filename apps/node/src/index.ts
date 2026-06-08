@@ -3154,11 +3154,46 @@ function getRecipientPeerId(ownerOrPeerId: string): Promise<string | null> {
   return peerDirectoryStore.getPeerByOwnerId(ownerOrPeerId).then((record) => record?.peerId ?? null);
 }
 
+/**
+ * Resolve outbound dial hints for the bridge's chat reply to a recipient.
+ *
+ * Looks up the peer's recorded listen addrs in the peer directory and merges
+ * them with synthetic relay-circuit paths so a NAT-traversed peer (e.g. a
+ * paired mobile) can still be reached if the original libp2p connection has
+ * dropped while the agent was thinking.
+ */
+async function getRecipientDialHints(recipientPeerId: string): Promise<string[] | undefined> {
+  if (!recipientPeerId?.trim()) return undefined;
+  // Look up the peer's recorded listen addrs in the directory (skip self).
+  let peerListenAddrs: string[] | undefined;
+  if (recipientPeerId !== mesh.peerId) {
+    const records = await peerDirectoryStore.listPeerRecords();
+    const match = records.find((r) => r.peerId === recipientPeerId);
+    peerListenAddrs = match?.listenAddrs;
+  }
+  try {
+    return await buildOutboundDialHints({
+      recipientPeerId,
+      peerListenAddrs,
+      discoverySeedStore,
+      config: persistedNodeConfig,
+      profileDir: args.profileDir,
+    });
+  } catch (err) {
+    console.warn(
+      `[bridge] buildOutboundDialHints failed for ${recipientPeerId.slice(0, 20)}…:`,
+      err instanceof Error ? err.message : err,
+    );
+    return undefined;
+  }
+}
+
 const bridge = createBridge({
   config: bridgeConfig,
   identity: bridgeIdentity,
   mesh,
   getRecipientPeerId,
+  getRecipientDialHints,
   gateway,
   submitAgentShareProposal: (params) => nodeService.submitAgentShareProposal(params),
   getAiIdentity: () => currentAiSettings?.identity,

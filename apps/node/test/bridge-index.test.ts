@@ -158,6 +158,54 @@ describe("bridge runtime", () => {
     }
   });
 
+  it("forwards dial hints from getRecipientDialHints to mesh.sendChat for NAT-traversed peers", async () => {
+    const port = await getFreePort();
+    const identity = makeBridgeIdentity();
+    const sendChat = vi.fn().mockResolvedValue(1);
+    const relayHints = [
+      "/ip4/192.168.3.42/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3Sender",
+    ];
+    const getRecipientDialHints = vi.fn().mockResolvedValue(relayHints);
+
+    const bridge = createBridge({
+      config: {
+        enabled: true,
+        agentUrl: "http://localhost:8080/message",
+        listenPort: port,
+        secret: "test-secret-token",
+      },
+      identity,
+      mesh: makeMesh({ sendChat }),
+      getRecipientPeerId: async (id) => id,
+      getRecipientDialHints,
+    });
+
+    try {
+      await new Promise<void>((resolve) => {
+        const server = createServer();
+        server.on("error", () => resolve());
+        server.listen(port, "127.0.0.1", () => {
+          server.close(() => resolve());
+        });
+      });
+
+      const httpRes = await globalThis.fetch(`http://127.0.0.1:${port}/bridge/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-secret-token" },
+        body: JSON.stringify({ to: "12D3Sender", text: "agent reply" }),
+      });
+      expect(httpRes.ok).toBe(true);
+      await vi.waitFor(() => expect(sendChat).toHaveBeenCalledTimes(1), { timeout: 5000 });
+
+      expect(getRecipientDialHints).toHaveBeenCalledWith("12D3Sender");
+      const [, , sendOptions] = sendChat.mock.calls[0];
+      expect(sendOptions?.dialHints).toEqual(relayHints);
+    } finally {
+      await bridge.stop();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("forwards discovery.response to external agent as async mesh reply", async () => {
     const port = await getFreePort();
     const identity = makeBridgeIdentity();

@@ -567,6 +567,20 @@ export class MobileNode implements NodeService {
   private _multihopDiscoveryStore: MultiHopDiscoveryStore | null = null;
   private _contactOwnerKeys: MobileContactOwnerKeyStore | null = null;
   private _peerProfileCache: MobilePeerProfileCache | null = null;
+  /**
+   * Cache of the home's `NodeConfig` (AI settings, model provider, etc.) — populated
+   * by the post-pairing bootstrap. Surfaced to the mobile UI so the user can see
+   * the home's actual AI configuration rather than the mobile's local defaults.
+   * `null` when not paired or bootstrap hasn't run yet.
+   */
+  private _homeNodeConfig: NodeConfig | null = null;
+  /**
+   * Last bootstrap timestamp (ms since epoch). Used to debounce re-bootstraps
+   * when the home reconnects — we don't want to re-fetch everything on every
+   * transport upgrade, but we do want a refresh after a fresh reconnection
+   * that took more than a few seconds.
+   */
+  private _lastPairedBootstrapAt = 0;
   constructor(config: MobileNodeConfig) {
     this._profileDir = config.profileDir;
     this._relayUrls = [...config.relayUrls];
@@ -942,6 +956,15 @@ export class MobileNode implements NodeService {
       void this._syncDeviceRevocationsFromHome().catch((err) =>
         console.warn(
           "[mobile-node] device revocation sync after pairing failed:",
+          err instanceof Error ? err.message : err,
+        ),
+      );
+
+      // Pull the home's state (peer profiles, agent cards, AI config) so the
+      // mobile's UI shows the home's data, not the mobile's empty local cache.
+      void this._bootstrapPairedStateFromHome().catch((err) =>
+        console.warn(
+          "[mobile-node] paired-state bootstrap after pairing failed:",
           err instanceof Error ? err.message : err,
         ),
       );
@@ -3437,7 +3460,8 @@ You are the owner's personal AI assistant on EnvoyMesh.
     const externalPublish = this._state?.owner.ownerId
       ? loadMobileExternalPublish(this._state.owner.ownerId)
       : { allowIpfs: false, gatewayAllowlist: [], ipfsExportEngine: "helia" as const };
-    return {
+    // Local-only fields (mobile's own state). These don't come from the home.
+    const local: NodeConfig = {
       profileDir: this._profileDir,
       discoveryProfile: "wan-default",
       relayEnabled: true,
@@ -3463,6 +3487,28 @@ You are the owner's personal AI assistant on EnvoyMesh.
       friendMatchingPreferencesText: this._aiPrefs.friendMatchingPreferencesText,
       externalPublish,
     };
+    // In paired mode, prefer the home's values for fields the home owns (AI
+    // model, chat-assist, autonomous policies, AI identity). The UI's
+    // AIChatPanel reads `modelProviders.modelName` to label the model — without
+    // this override the mobile always shows "mock" because it has no local
+    // model. Keep mobile-local fields (relay URLs, profileDir, mesh bootstrap)
+    // from the mobile.
+    if (this._isHomeRemotePaired() && this._homeNodeConfig) {
+      const home = this._homeNodeConfig;
+      return {
+        ...local,
+        modelProviders: home.modelProviders ?? local.modelProviders,
+        chatAssistEnabled: home.chatAssistEnabled ?? local.chatAssistEnabled,
+        autonomousKillSwitch: home.autonomousKillSwitch ?? local.autonomousKillSwitch,
+        autonomousPolicies: home.autonomousPolicies ?? local.autonomousPolicies,
+        aiSettings: home.aiSettings ?? local.aiSettings,
+        contactAiPreferences: home.contactAiPreferences ?? local.contactAiPreferences,
+        trustModeEnabled: home.trustModeEnabled ?? local.trustModeEnabled,
+        friendMatchingPreferencesText:
+          home.friendMatchingPreferencesText ?? local.friendMatchingPreferencesText,
+      };
+    }
+    return local;
   }
 
   async updateNodeConfig(config: Partial<NodeConfig> & { relayUrls?: string[] }): Promise<void> {
@@ -7418,6 +7464,86 @@ You are the owner's personal AI assistant on EnvoyMesh.
     }
   }
 
+  /**
+   * One-shot post-pairing bootstrap. Pulls the home's state (peer profiles,
+   * agent cards, node config) into the mobile's local cache so the UI shows
+   * the same data the home has. Best-effort: any individual step that fails
+   * is logged and skipped — partial bootstrap is still useful.
+   *
+   * Idempotent: re-running it overwrites the cached snapshots. Safe to call
+   * after a fresh pairing and after a home reconnect.
+   */
+  private async _bootstrapPairedStateFromHome(): Promise<void> {
+    if (!this._isHomeRemotePaired()) return;
+    this._lastPairedBootstrapAt = Date.now();
+    const log = (msg: string) => console.log(`[mobile-node] paired bootstrap: ${msg}`);
+
+    // 1. Peer profiles → _peerProfileCache
+    try {
+      const profiles = await this._homeRemoteCall<import("@envoymesh/api").PeerProfileView[]>(
+        "listPeerProfiles",
+        {},
+      );
+      if (this._peerProfileCache) {
+        for (const p of profiles) {
+          if (!p?.ownerId || !p.profile) continue;
+          const thumbnail =
+            p.thumbnailContentBase64 && p.thumbnailMimeType
+              ? { contentBase64: p.thumbnailContentBase64, mimeType: p.thumbnailMimeType }
+              : undefined;
+          await this._peerProfileCache.upsert(p.profile, thumbnail);
+        }
+        this._events.emit("profile:updated", { ownerId: "*", source: "home-bootstrap" });
+      }
+      log(`synced ${profiles.length} peer profile(s)`);
+    } catch (err) {
+      console.warn("[mobile-node] paired bootstrap: peer profiles failed:", err);
+    }
+
+    // 2. Node config → _homeNodeConfig (for AI/EnvoyAI display)
+    try {
+      const cfg = await this._homeRemoteCall<NodeConfig>("getNodeConfig", {});
+      this._homeNodeConfig = cfg;
+      this._events.emit("home:config-updated", { config: cfg });
+      log(`synced node config (model=${cfg.modelProviders?.mode ?? "mock"})`);
+    } catch (err) {
+      console.warn("[mobile-node] paired bootstrap: node config failed:", err);
+    }
+
+    // 3. Bond records → re-emit for any UI subscribers
+    try {
+      const bonds = await this._homeRemoteCall<import("@envoymesh/api").BondRecord[]>(
+        "getBonds",
+        {},
+      );
+      this._events.emit("home:bonds-updated", { bonds });
+      log(`synced ${bonds.length} bond(s)`);
+    } catch (err) {
+      console.warn("[mobile-node] paired bootstrap: bonds failed:", err);
+    }
+
+    // 4. Agent cards (EnvoyAI + external agents) → re-emit
+    try {
+      const cards = await this._homeRemoteCall<import("@envoymesh/api").CachedAgentCardSummary[]>(
+        "listAgentCards",
+        {},
+      );
+      this._events.emit("home:agent-cards-updated", { cards });
+      log(`synced ${cards.length} agent card(s)`);
+    } catch (err) {
+      console.warn("[mobile-node] paired bootstrap: agent cards failed:", err);
+    }
+  }
+
+  /**
+   * Public accessor for the home's NodeConfig (only meaningful when paired).
+   * Returns `null` if the bootstrap hasn't completed or the mobile isn't paired.
+   * The mobile UI uses this to show the home's actual AI configuration.
+   */
+  getHomeNodeConfig(): NodeConfig | null {
+    return this._homeNodeConfig;
+  }
+
   private _ensureHomeRemote(): HomeRemoteClient {
     if (!this.sharedIdentity || !this._state?.homeNodePeerId?.trim()) {
       throw new Error("terminal.pairHomeRequired");
@@ -7428,6 +7554,18 @@ You are the owner's personal AI assistant on EnvoyMesh.
         createTransport: (candidate) => this._openHomeRemoteTransport(candidate),
         onHomeOnlineChange: (online) => {
           this._homeRemoteOnline = online;
+          // On a fresh (re)connection, re-run the post-pairing bootstrap so the
+          // local cache reflects the home's current state. We only do this if
+          // the last bootstrap was more than 10s ago, to avoid re-fetching on
+          // every transport upgrade (e.g. LAN → tunnel).
+          if (online && Date.now() - this._lastPairedBootstrapAt > 10_000) {
+            void this._bootstrapPairedStateFromHome().catch((err) =>
+              console.warn(
+                "[mobile-node] paired-state bootstrap on home reconnect failed:",
+                err instanceof Error ? err.message : err,
+              ),
+            );
+          }
         },
         onActiveTransportChange: (candidate) => {
           this._homeRemoteTransport = candidate?.name ?? null;
@@ -7453,6 +7591,24 @@ You are the owner's personal AI assistant on EnvoyMesh.
           data as import("@envoymesh/api").TerminalAssistantProposalEvent,
         );
       });
+      // Keep the mobile's local cache in sync with the home's state by
+      // re-bootstrapping when the home emits relevant events. This avoids
+      // stale contacts/AI config when the home changes something and the
+      // mobile app happens to be open.
+      const rebootstrap = (source: string) => {
+        if (Date.now() - this._lastPairedBootstrapAt < 5_000) return; // debounce
+        void this._bootstrapPairedStateFromHome().catch((err) =>
+          console.warn(
+            `[mobile-node] paired-state bootstrap (event=${source}) failed:`,
+            err instanceof Error ? err.message : err,
+          ),
+        );
+      };
+      this._homeRemote.on("config:updated", () => rebootstrap("config:updated"));
+      this._homeRemote.on("profile:updated", () => rebootstrap("profile:updated"));
+      this._homeRemote.on("bond:established", () => rebootstrap("bond:established"));
+      this._homeRemote.on("bond:revoked", () => rebootstrap("bond:revoked"));
+      this._homeRemote.on("peer:discovered", () => rebootstrap("peer:discovered"));
     }
     return this._homeRemote;
   }

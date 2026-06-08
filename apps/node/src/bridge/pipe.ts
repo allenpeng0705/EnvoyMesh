@@ -17,9 +17,23 @@ export interface BridgeIdentity {
 export interface BridgeDeps {
   config: BridgeConfig;
   identity: BridgeIdentity;
-  sendChat: (peerId: string, envelope: EnvoyEnvelope) => Promise<void>;
+  /**
+   * Send a chat envelope to a peer. Implementations should pass any
+   * `dialHints` through to the underlying libp2p `dialHints` option so that
+   * NAT-traversed peers (e.g. mobile behind a relay) can still be reached if
+   * the original connection has dropped.
+   */
+  sendChat: (peerId: string, envelope: EnvoyEnvelope, options?: { dialHints?: string[] }) => Promise<void>;
   /** Resolve an ownerId or peerId to the current libp2p peer ID (for routing replies). */
   getRecipientPeerId: (ownerOrPeerId: string) => Promise<string | null>;
+  /**
+   * Resolve outbound dial hints for a recipient peer (multiaddrs from the
+   * peer directory + synthetic relay circuit paths). Used so the bridge's
+   * reply to a NAT-traversed mobile can be re-dialed when the original
+   * libp2p connection has expired by the time the agent finishes thinking.
+   * Optional — if absent, no hints are forwarded.
+   */
+  getRecipientDialHints?: (peerId: string) => Promise<string[] | undefined>;
   /** Gateway for external agent session management and action logging (Phase 9I). */
   gateway?: ExternalAgentGateway;
   /** Agent ID used to key gateway session lookups and action logs. */
@@ -122,7 +136,23 @@ export async function receiveFromAgent(
 
   const envelope = signUnsignedEnvelope(unsigned, deps.identity.agentPrivateKeyPem);
 
-  await deps.sendChat(recipientPeerId, envelope);
+  // Forward dial hints (peer directory listen addrs + synthetic relay
+  // circuit paths) so the bridge's reply can re-dial a NAT-traversed
+  // mobile if the original libp2p connection has dropped while the agent
+  // was thinking.
+  let dialHints: string[] | undefined;
+  if (deps.getRecipientDialHints) {
+    try {
+      dialHints = await deps.getRecipientDialHints(recipientPeerId);
+    } catch (err) {
+      console.warn(
+        `[bridge] receiveFromAgent: getRecipientDialHints failed for ${recipientPeerId.slice(0, 20)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  await deps.sendChat(recipientPeerId, envelope, dialHints ? { dialHints } : undefined);
 
   if (deps.gateway && deps.agentId) {
     deps.gateway.logAction({

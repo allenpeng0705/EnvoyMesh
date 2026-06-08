@@ -692,10 +692,15 @@ export async function encryptOwnerKeyForDevice(
     await crypto.subtle.exportKey("raw", ephemeralKeyPair.publicKey),
   );
 
-  // Import peer's public key
+  // Import peer's public key. When the caller passes a Node.js `Buffer`,
+  // its underlying `ArrayBuffer` is pool-allocated and may be larger than
+  // the Buffer's actual length (e.g. 8192 bytes for a 65-byte key). WebCrypto
+  // reads the entire ArrayBuffer, so we must pass a tightly-sized copy —
+  // otherwise it throws `DataError: Invalid keyData` on import.
+  const peerPubKeyBytes = new Uint8Array(peerEcdhPublicKeyRaw);
   const peerPubKey = await crypto.subtle.importKey(
     "raw",
-    peerEcdhPublicKeyRaw.buffer as ArrayBuffer,
+    peerPubKeyBytes.buffer as ArrayBuffer,
     { name: "ECDH", namedCurve: "P-256" },
     false,
     [],
