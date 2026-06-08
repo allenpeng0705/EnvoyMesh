@@ -55,7 +55,7 @@ let nodeStatus: "offline" | "starting" | "running" | "stopping" = "running";
 const humanProfile = { ownerId: "envoy:owner:test" };
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({
-  useNodeState: () => ({ nodeConfig, nodeStatus, humanProfile }),
+  useNodeState: () => ({ nodeConfig, nodeStatus, humanProfile, bridgeStatus: null }),
 }));
 
 afterEach(() => {

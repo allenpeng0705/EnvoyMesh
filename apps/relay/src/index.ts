@@ -831,6 +831,7 @@ try {
       (tunnel as any).__registerClaim?.(channelId, claimResolver);
 
       // Ask the home node to open a local ws-server connection for us.
+      console.log(`[relay] home-tunnel-proxy: sending 'open' to ${targetPeerId.slice(0, 12)}… channel=${channelId.slice(0, 8)}…`);
       (tunnel as any).__send?.({
         type: "open",
         channelId,

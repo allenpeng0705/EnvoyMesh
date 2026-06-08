@@ -49,5 +49,10 @@
 	<string>EnvoyMesh uses the camera to scan pairing QR codes from your home computer.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>EnvoyMesh can read a pairing QR code from a photo when camera scanning is unavailable.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

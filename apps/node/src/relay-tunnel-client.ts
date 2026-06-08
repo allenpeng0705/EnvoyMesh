@@ -152,6 +152,7 @@ export class RelayTunnelClient {
         : Array.isArray(raw)
           ? Buffer.concat(raw as Buffer[]).toString("utf-8")
           : new TextDecoder().decode(new Uint8Array(raw as ArrayBuffer));
+    this.opts.log?.(`[relay-tunnel] inbound frame: ${text}`);
     let env: { type?: string; channelId?: string; data?: string; token?: string; targetPeerId?: string };
     try {
       env = JSON.parse(text);
