@@ -2,14 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 import 'web_socket_like.dart';
 
-/// Production WebSocket using a raw TCP socket + manual WebSocket handshake.
+/// WebSocket using a raw TCP socket with a complete frame parser.
 ///
-/// We bypass `dart:io`'s `WebSocket.connect` because on iOS with cellular
-/// data it has been observed to follow HTTP redirects / misreport ports.
-/// A manual handshake over a raw `Socket` gives us full control and
-/// avoids any unexpected redirect behaviour from the relay.
+/// Bypasses `dart:io`'s `WebSocket.connect` / `HttpClient` which on iOS
+/// cellular has been observed to follow redirects or misroute connections.
+/// Uses `Socket.connect` directly and implements the full WebSocket
+/// protocol (RFC 6455) including masking, ping/pong, and close handshake.
 class PlatformWebSocket implements WebSocketLike {
   static final _random = Random.secure();
   Socket? _socket;
@@ -32,20 +33,23 @@ class PlatformWebSocket implements WebSocketLike {
 
   PlatformWebSocket._();
 
-  /// Connect to a WebSocket URL using a raw TCP socket + handshake.
+  // -- Connect --
+
   static Future<PlatformWebSocket> connect(String url) async {
     final uri = Uri.parse(url);
     final host = uri.host;
-    final port = uri.hasPort && uri.port != 0 ? uri.port : (uri.scheme == 'wss' ? 443 : 80);
-    final path = '${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}';
+    final port = uri.hasPort && uri.port != 0
+        ? uri.port
+        : (uri.scheme == 'wss' ? 443 : 80);
+    final path =
+        '${uri.path.isEmpty ? '/' : uri.path}${uri.hasQuery ? '?${uri.query}' : ''}';
 
     final ws = PlatformWebSocket._();
     final socket = await Socket.connect(host, port,
         timeout: const Duration(seconds: 8));
     ws._socket = socket;
-    ws.readyState = wsOpen;
 
-    // Build WebSocket upgrade request per RFC 6455.
+    // Send HTTP upgrade request.
     final key = _generateWebSocketKey();
     final request = 'GET $path HTTP/1.1\r\n'
         'Host: $host:$port\r\n'
@@ -54,182 +58,259 @@ class PlatformWebSocket implements WebSocketLike {
         'Sec-WebSocket-Key: $key\r\n'
         'Sec-WebSocket-Version: 13\r\n'
         '\r\n';
-
     socket.add(utf8.encode(request));
     await socket.flush();
 
-    // Read the HTTP upgrade response.
-    final buffer = StringBuffer();
-    final completer = Completer<void>();
+    // Single subscription: HTTP mode → WebSocket frame mode.
+    final httpBuffer = StringBuffer();
+    final frameBuffer = <int>[];
+    var mode = 'http';
+    final handshakeCompleter = Completer<void>();
+
     ws._subscription = socket.listen(
       (data) {
-        buffer.write(utf8.decode(data));
-        final response = buffer.toString();
-        // Check if we have a complete HTTP response (ends with \r\n\r\n).
-        if (response.contains('\r\n\r\n')) {
-          final statusLine = response.split('\r\n')[0];
-          if (statusLine.contains('101')) {
-            completer.complete();
-            // After the handshake, switch to WebSocket frame mode.
-            ws._startFrameMode(socket);
-          } else {
-            completer.completeError(
-                Exception('WebSocket upgrade failed: $statusLine'));
+        final bytes =
+            data is Uint8List ? data : Uint8List.fromList(data as List<int>);
+        if (mode == 'http') {
+          httpBuffer.write(utf8.decode(bytes));
+          final r = httpBuffer.toString();
+          final delim = r.indexOf('\r\n\r\n');
+          if (delim >= 0) {
+            if (_isSuccessResponse(r, delim)) {
+              mode = 'ws';
+              // Drain trailing bytes into frame buffer.
+              final trailing = r.substring(delim + 4);
+              if (trailing.isNotEmpty) {
+                frameBuffer.addAll(utf8.encode(trailing));
+                _drainFrames(frameBuffer, ws);
+              }
+              ws.readyState = wsOpen;
+              handshakeCompleter.complete();
+            } else {
+              final status = r.split('\r\n')[0];
+              handshakeCompleter.completeError(
+                  Exception('WS upgrade rejected: $status'));
+            }
           }
+        } else {
+          frameBuffer.addAll(bytes);
+          _drainFrames(frameBuffer, ws);
         }
       },
       onError: (e) {
-        if (!completer.isCompleted) {
-          completer.completeError(e);
+        if (!handshakeCompleter.isCompleted) {
+          handshakeCompleter.completeError(e);
         }
-        ws.readyState = wsClosed;
+        ws._teardown();
         ws.onError?.call();
       },
       onDone: () {
-        if (!completer.isCompleted) {
-          completer.completeError(Exception('Connection closed during handshake'));
+        if (!handshakeCompleter.isCompleted) {
+          handshakeCompleter
+              .completeError(Exception('Connection closed'));
         }
-        ws.readyState = wsClosed;
+        ws._teardown();
         ws.onClose?.call();
       },
       cancelOnError: true,
     );
 
-    await completer.future;
+    await handshakeCompleter.future;
     Future.microtask(() => ws.onOpen?.call());
     return ws;
   }
 
-  void _startFrameMode(Socket socket) {
-    // Cancel the HTTP response subscription and start frame parsing.
-    _subscription?.cancel();
-    final buffer = <int>[];
-    _subscription = socket.listen(
-      (data) {
-        buffer.addAll(data is List<int> ? data : data as List<int>);
-        // Try to parse complete WebSocket frames.
-        while (buffer.length >= 2) {
-          final frame = _parseFrame(buffer);
-          if (frame == null) break; // Incomplete frame.
-          final text = utf8.decode(frame);
-          onMessage?.call(WsMessageEvent(text));
-        }
-      },
-      onError: (_) {
-        readyState = wsClosed;
-        onError?.call();
-      },
-      onDone: () {
-        readyState = wsClosed;
-        onClose?.call();
-      },
-      cancelOnError: true,
-    );
+  static bool _isSuccessResponse(String r, int delim) {
+    final firstLine = r.substring(0, r.indexOf('\r\n'));
+    return firstLine.contains('101');
   }
 
-  /// Parse a single WebSocket text frame from the buffer.
-  /// Returns the payload bytes or null if the frame is incomplete.
-  List<int>? _parseFrame(List<int> buffer) {
-    if (buffer.length < 2) return null;
-    final opcode = buffer[0] & 0x0F;
-    final masked = (buffer[1] & 0x80) != 0;
-    var payloadLen = buffer[1] & 0x7F;
-    var offset = 2;
+  // -- Frame draining (called from the subscription callback) --
 
-    if (payloadLen == 126) {
-      if (buffer.length < 4) return null;
-      payloadLen = (buffer[2] << 8) | buffer[3];
-      offset = 4;
-    } else if (payloadLen == 127) {
-      if (buffer.length < 10) return null;
-      payloadLen = 0;
-      for (var i = 0; i < 8; i++) {
-        payloadLen = (payloadLen << 8) | buffer[2 + i];
+  static void _drainFrames(List<int> buf, PlatformWebSocket ws) {
+    while (buf.length >= 2) {
+      final result = _parseFrame(buf, ws);
+      if (result == null) break; // incomplete
+      if (result == _frameClose) {
+        ws._teardown();
+        ws.onClose?.call();
+        return;
       }
-      offset = 10;
+      if (result == _framePing) {
+        // Respond with pong — mask it.
+        final pongPayload = result.payload;
+        final pongMask = List<int>.generate(4, (_) => _random.nextInt(256));
+        final pong = <int>[0x8A, 0x80 | pongPayload.length];
+        pong.addAll(pongMask);
+        for (var i = 0; i < pongPayload.length; i++) {
+          pong.add(pongPayload[i] ^ pongMask[i % 4]);
+        }
+        try {
+          ws._socket?.add(pong);
+          ws._socket?.flush();
+        } catch (_) {}
+        continue;
+      }
+      if (result == _framePong) continue; // ignore
+      // Text or binary frame.
+      try {
+        final text = utf8.decode(result.payload);
+        ws.onMessage?.call(WsMessageEvent(text));
+      } catch (_) {
+        // Binary frames are silently ignored.
+      }
+    }
+  }
+
+  // -- Frame parsing --
+
+  static const _frameClose = 1;
+  static const _framePing = 2;
+  static const _framePong = 3;
+
+  /// Returns null if frame incomplete, a marker constant for control
+  /// frames, or a payload wrapper for data frames.
+  static _FrameResult? _parseFrame(List<int> buf, PlatformWebSocket ws) {
+    if (buf.length < 2) return null;
+
+    final opcode = buf[0] & 0x0F;
+    final masked = (buf[1] & 0x80) != 0;
+    var len = buf[1] & 0x7F;
+    var off = 2;
+
+    if (len == 126) {
+      if (buf.length < 4) return null;
+      len = (buf[2] << 8) | buf[3];
+      off = 4;
+    } else if (len == 127) {
+      if (buf.length < 10) return null;
+      len = 0;
+      for (var i = 0; i < 8; i++) {
+        len = (len << 8) | buf[2 + i];
+      }
+      off = 10;
     }
 
-    List<int> maskKey = [];
+    // Payload length cap (1 MB).
+    if (len > 1048576) {
+      ws.close(1009, 'Frame too large');
+      return _FrameResult(_frameClose, []);
+    }
+
+    var maskKey = <int>[];
     if (masked) {
-      if (buffer.length < offset + 4) return null;
-      maskKey = buffer.sublist(offset, offset + 4);
-      offset += 4;
+      if (buf.length < off + 4) return null;
+      maskKey = buf.sublist(off, off + 4);
+      off += 4;
     }
 
-    if (buffer.length < offset + payloadLen) return null;
-    final payload = buffer.sublist(offset, offset + payloadLen);
+    if (buf.length < off + len) return null;
+    final payload = buf.sublist(off, off + len);
+    buf.removeRange(0, off + len);
 
-    // Unmask if needed.
+    // Unmask payload.
     if (masked) {
       for (var i = 0; i < payload.length; i++) {
         payload[i] ^= maskKey[i % 4];
       }
     }
 
-    // Remove frame from buffer.
-    buffer.removeRange(0, offset + payloadLen);
-
-    // Handle close frames.
-    if (opcode == 0x08) {
-      close();
-      return [];
+    switch (opcode) {
+      case 0x8: // close
+        return _FrameResult(_frameClose, payload);
+      case 0x9: // ping
+        return _FrameResult(_framePing, payload);
+      case 0xA: // pong
+        return _FrameResult(_framePong, payload);
+      default: // text or binary
+        return _FrameResult(0, payload);
     }
-
-    return payload;
   }
+
+  // -- Send --
 
   @override
   void send(String data) {
     if (readyState != wsOpen || _socket == null) return;
-    final payload = utf8.encode(data);
-    final frame = _buildFrame(payload);
-    _socket!.add(frame);
-    _socket!.flush();
+    final frame = _buildTextFrame(utf8.encode(data));
+    try {
+      _socket!.add(frame);
+      _socket!.flush();
+    } catch (_) {
+      _teardown();
+      onError?.call();
+    }
   }
 
-  List<int> _buildFrame(List<int> payload) {
-    final frame = <int>[];
-    frame.add(0x81); // FIN + text opcode.
-    // MASK bit must be set for client-to-server frames per RFC 6455 §5.1.
+  List<int> _buildTextFrame(List<int> payload) {
+    return _buildFrame(0x81, payload); // FIN + text opcode
+  }
+
+  List<int> _buildFrame(int opcodeAndFin, List<int> payload) {
+    final buf = <int>[opcodeAndFin];
     if (payload.length < 126) {
-      frame.add(0x80 | payload.length);
+      buf.add(0x80 | payload.length);
     } else if (payload.length < 65536) {
-      frame.add(0x80 | 126);
-      frame.add((payload.length >> 8) & 0xFF);
-      frame.add(payload.length & 0xFF);
+      buf.add(0x80 | 126);
+      buf.add((payload.length >> 8) & 0xFF);
+      buf.add(payload.length & 0xFF);
     } else {
-      frame.add(0x80 | 127);
+      buf.add(0x80 | 127);
       for (var i = 7; i >= 0; i--) {
-        frame.add((payload.length >> (i * 8)) & 0xFF);
+        buf.add((payload.length >> (i * 8)) & 0xFF);
       }
     }
-    // Generate 4-byte random masking key and XOR payload.
-    final maskKey = List<int>.generate(4, (_) => _random.nextInt(256));
-    frame.addAll(maskKey);
+    final mask = List<int>.generate(4, (_) => _random.nextInt(256));
+    buf.addAll(mask);
     for (var i = 0; i < payload.length; i++) {
-      frame.add(payload[i] ^ maskKey[i % 4]);
+      buf.add(payload[i] ^ mask[i % 4]);
     }
-    return frame;
+    return buf;
   }
+
+  // -- Close --
 
   @override
-  void close() {
+  void close([int code = 1000, String reason = '']) {
+    if (readyState == wsClosed || readyState == wsClosing) return;
     readyState = wsClosing;
-    if (_socket != null && readyState == wsClosing) {
-      // Send close frame.
-      _socket!.add([0x88, 0x00]);
-      _socket!.flush();
+    if (_socket != null) {
+      // Send a masked close frame.
+      final payload = <int>[];
+      if (code != 1000) {
+        payload.addAll([(code >> 8) & 0xFF, code & 0xFF]);
+        payload.addAll(utf8.encode(reason));
+      }
+      final frame = _buildFrame(0x88, payload); // FIN + close opcode
+      try {
+        _socket!.add(frame);
+        _socket!.flush();
+      } catch (_) {}
     }
-    _subscription?.cancel();
-    _subscription = null;
-    _socket?.destroy();
-    _socket = null;
-    readyState = wsClosed;
+    _teardown();
   }
 
+  void _teardown() {
+    readyState = wsClosed;
+    _subscription?.cancel();
+    _subscription = null;
+    try {
+      _socket?.destroy();
+    } catch (_) {}
+    _socket = null;
+  }
+
+  // -- WebSocket key generation (RFC 6455 §4.1) --
+
   static String _generateWebSocketKey() {
-    final random = Random.secure();
-    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
     return base64Encode(bytes);
   }
+}
+
+/// Parsed frame result.
+class _FrameResult {
+  final int type; // 0 = data, 1 = close, 2 = ping, 3 = pong
+  final List<int> payload;
+  const _FrameResult(this.type, this.payload);
 }

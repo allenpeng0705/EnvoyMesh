@@ -185,41 +185,124 @@ class NodeNotifier extends StateNotifier<NodeState> {
     final chatNotifier = _ref.read(chatProvider.notifier);
     final contactNotifier = _ref.read(contactProvider.notifier);
     final terminalNotifier = _ref.read(terminalProvider.notifier);
+    final nodeService = _nodeService;
     final client = _client;
-    if (client == null) return;
+    if (client == null || nodeService == null) return;
 
     // Subscribe to push events from the home node.
     _subscribeToPushEvents(client, chatNotifier, contactNotifier,
         terminalNotifier);
 
-    // Sync contacts first, then load threads from cache.
-    contactNotifier.syncBonds().then((_) {
+    // Sync contacts directly using _nodeService.
+    _syncBondsDirect(nodeService, contactNotifier).then((_) {
       final node = state.activeNode;
       if (node != null) {
         chatNotifier.loadThreads(node.id);
       }
     });
 
-    // Rooms, terminals, and inbox can sync in parallel.
-    chatNotifier.syncRooms();
-    chatNotifier.syncTerminals();
-    _syncInbox(chatNotifier);
+    // Rooms and terminals sync directly using _nodeService.
+    _syncRoomsDirect(nodeService, chatNotifier);
+    _syncTerminalsDirect(nodeService, chatNotifier, terminalNotifier);
+    _syncInboxDirect(nodeService, chatNotifier);
 
     // Bridge status check for AI agent threads.
-    final nodeService = _nodeService;
-    if (nodeService != null) {
-      nodeService.getBridgeStatus().then((status) {
-        chatNotifier.onBridgeStatus(status);
-      }).catchError((e) {
-        debugPrint('getBridgeStatus failed: $e');
-        // Still create a default EnvoyAI thread even if bridge check fails.
-        chatNotifier.onBridgeStatus({
-          'enabled': true,
-          'agentName': 'EnvoyAI',
-          'agentType': 'envoyai',
-        });
+    nodeService.getBridgeStatus().then((status) {
+      chatNotifier.onBridgeStatus(status);
+    }).catchError((e) {
+      debugPrint('getBridgeStatus failed: $e');
+      chatNotifier.onBridgeStatus({
+        'enabled': true,
+        'agentName': 'EnvoyAI',
+        'agentType': 'envoyai',
       });
+    });
+  }
+
+  Future<void> _syncBondsDirect(
+      NodeServiceClient nodeService, ContactNotifier contactNotifier) async {
+    final nodeState = state;
+    if (nodeState.activeNode == null) return;
+    try {
+      final bonds = await nodeService.getBonds();
+      // Filter out self-identity.
+      final selfOwnerId = nodeState.ownerId;
+      final filtered = selfOwnerId != null
+          ? bonds.where((c) => c.ownerId != selfOwnerId).toList()
+          : bonds;
+      final localDb = LocalDatabase();
+      await localDb.upsertContacts(
+        nodeState.activeNode!.id,
+        filtered.map((c) => c.toJson()).toList(),
+      );
+      // Use the contact notifier's state update.
+      _ref.read(contactProvider.notifier).syncBonds();
+    } catch (e) {
+      debugPrint('_syncBondsDirect failed: $e');
     }
+  }
+
+  void _syncRoomsDirect(
+      NodeServiceClient nodeService, ChatNotifier chatNotifier) {
+    nodeService.listChatRooms().then((rooms) {
+      final nodeState = state;
+      if (nodeState.activeNode == null) return;
+      final localDb = LocalDatabase();
+      localDb.upsertRooms(
+        nodeState.activeNode!.id,
+        rooms.map((r) => r.toJson()).toList(),
+      );
+      for (final room in rooms) {
+        chatNotifier.onRoomMessage({
+          'roomId': room.id,
+          'roomName': room.name,
+          'senderOwnerId': '',
+          'text': room.lastMessageText ?? '',
+          'createdAt': room.lastMessageAt?.toIso8601String(),
+        });
+      }
+    }).catchError((e) {
+      debugPrint('_syncRoomsDirect failed: $e');
+    });
+  }
+
+  void _syncTerminalsDirect(NodeServiceClient nodeService,
+      ChatNotifier chatNotifier, TerminalNotifier terminalNotifier) {
+    nodeService.listTerminalSessions().then((sessions) {
+      for (final session in sessions) {
+        chatNotifier.onChatMessage({
+          'senderOwnerId': 'terminal',
+          'text': '${session.runningProcess ?? 'shell'} — ${session.cwd ?? '~'}',
+          'messageId': 'term_${session.id}',
+          'createdAt': session.createdAt?.toIso8601String(),
+          'terminalId': session.id,
+          'terminalName': session.name,
+        });
+      }
+    }).catchError((e) {
+      debugPrint('_syncTerminalsDirect failed: $e');
+    });
+  }
+
+  void _syncInboxDirect(
+      NodeServiceClient nodeService, ChatNotifier chatNotifier) {
+    nodeService.listPendingSocialIntroProposals().then((result) {
+      for (final item in result) {
+        final from = item['fromOwnerId'] as String?;
+        final displayName = item['fromDisplayName'] as String?;
+        if (from != null) {
+          chatNotifier.onChatMessage({
+            'senderOwnerId': from,
+            'senderDisplayName': displayName ?? from,
+            'text': 'Wants to connect',
+            'messageId': 'intro_${from}',
+            'createdAt': DateTime.now().toIso8601String(),
+          });
+        }
+      }
+    }).catchError((e) {
+      debugPrint('_syncInboxDirect failed: $e');
+    });
   }
 
   /// Sync pending social intro proposals (Inbox).
