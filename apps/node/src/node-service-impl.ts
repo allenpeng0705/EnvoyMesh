@@ -9343,7 +9343,7 @@ class NodeServiceImpl implements NodeService {
     if (this._sessionTokenStore) {
       await this._sessionTokenStore.setToken({
         token: sessionToken,
-        ownerId: this._mesh?.ownerId ?? "",
+        ownerId: this._profile?.owner.ownerId ?? "",
         deviceId,
         displayName: deviceName,
         createdAt: now,
@@ -9351,7 +9351,7 @@ class NodeServiceImpl implements NodeService {
       });
     }
 
-    const ownerId = this._mesh?.ownerId ?? "";
+    const ownerId = this._profile?.owner.ownerId ?? "";
     return { sessionToken, ownerId };
   }
 

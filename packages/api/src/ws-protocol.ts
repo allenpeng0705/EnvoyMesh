@@ -213,6 +213,7 @@ export type RpcMethods =
   | "pairDevice"
   | "pairSharedIdentity"
   | "pairWithHomeNode"
+  | "pairThinClient"
   | "listAuthorizedDevices"
   | "revokeAuthorizedDevice"
   | "listDeviceRevocations"
