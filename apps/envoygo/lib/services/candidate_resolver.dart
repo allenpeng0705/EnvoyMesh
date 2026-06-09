@@ -31,12 +31,14 @@ class CandidateResolver {
     }
 
     // 3. Relay tunnel WebSocket (WAN fallback via fixed port 15432).
-    // Pass peer=<homePeerId> so the relay does simple WS forwarding
-    // instead of circuit relay (which assigns dynamic firewalled ports).
+    // The relay's /ws endpoint REQUIRES a target parameter. The home
+    // node registers a persistent tunnel at /ws/home. When the relay
+    // sees a matching target, it forwards through the tunnel without
+    // assigning dynamic circuit-relay ports.
     if (node.relayWsUrl != null && node.relayWsUrl!.isNotEmpty) {
-      var url = _stripTokenParam(node.relayWsUrl!);
+      var url = _stripPairingToken(node.relayWsUrl!);
       if (node.homePeerId.isNotEmpty) {
-        url += '${url.contains('?') ? '&' : '?'}peer=${node.homePeerId}';
+        url += '${url.contains('?') ? '&' : '?'}target=${node.homePeerId}';
       }
       if (sessionToken != null) {
         url += '${url.contains('?') ? '&' : '?'}token=$sessionToken';
@@ -47,21 +49,19 @@ class CandidateResolver {
     return candidates;
   }
 
-  /// Remove `token` and `target` query parameters from a relay URL.
+  /// Remove only the `token` query parameter from a relay URL.
   ///
-  /// - `token` is a short-lived pairing token from the QR that must not
-  ///   shadow the session token on reconnection.
-  /// - `target` is a libp2p peer ID that causes the relay to attempt a
-  ///   circuit-relay connection on a random port. The cloud relay only
-  ///   exposes fixed ports (e.g. 15432), so circuit-relay ports are blocked.
-  String _stripTokenParam(String url) {
+  /// The pairing QR includes a short-lived pairing token in the relay URL
+  /// that must not shadow the session token on reconnection. We keep
+  /// `target` because the relay's /ws endpoint requires it for routing.
+  String _stripPairingToken(String url) {
     final qIdx = url.indexOf('?');
     if (qIdx < 0) return url;
     final base = url.substring(0, qIdx);
     final query = url.substring(qIdx + 1);
     final params = query
         .split('&')
-        .where((p) => !p.startsWith('token=') && !p.startsWith('target='))
+        .where((p) => !p.startsWith('token='))
         .toList();
     if (params.isEmpty) return base;
     return '$base?${params.join('&')}';
