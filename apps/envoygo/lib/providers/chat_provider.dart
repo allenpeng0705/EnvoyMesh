@@ -189,11 +189,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final threadId = isAgent
         ? '${nodeState.activeNode!.id}:envoyai'
         : '${nodeState.activeNode!.id}:$senderOwnerId';
+
+    // Look up the contact's display name for non-agent messages.
+    var displayName = data['senderDisplayName'] as String?;
+    if (!isAgent && displayName == null) {
+      final contactNotifier = _ref.read(contactProvider.notifier);
+      final contact = contactNotifier.getContact(senderOwnerId);
+      displayName = contact?.displayName;
+    }
     final msg = ChatMessage(
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
       senderOwnerId: senderOwnerId,
-      senderDisplayName: data['senderDisplayName'] as String?,
+      senderDisplayName: displayName,
       text: text,
       createdAt: createdAt,
       isOutbound: false,
@@ -207,7 +215,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
       type: isAgent ? ChatThreadType.envoyai : ChatThreadType.direct,
-      displayName: isAgent ? 'EnvoyAI' : senderOwnerId,
+      displayName: isAgent
+          ? 'EnvoyAI'
+          : (displayName ?? senderOwnerId),
       contactOwnerId: isAgent ? null : senderOwnerId,
       agentType: isAgent ? 'envoyai' : null,
       lastMessageText: text ?? '',

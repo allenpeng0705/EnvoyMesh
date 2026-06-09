@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/stored_node.dart';
+import '../services/web_socket_like.dart';
 import 'chat_provider.dart';
 import 'contact_provider.dart';
 import 'terminal_provider.dart';
@@ -211,7 +213,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
   void _syncInbox(ChatNotifier chatNotifier) {
     final nodeService = _nodeService;
     if (nodeService == null) return;
-    nodeService.call('listPendingSocialIntroProposals').then((result) {
+    nodeService.listPendingSocialIntroProposals().then((result) {
       // Create threads for pending intros.
       if (result is List) {
         for (final item in result) {

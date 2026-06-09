@@ -149,6 +149,17 @@ class NodeServiceClient {
         .call('closeTerminalSession', {'sessionId': sessionId});
   }
 
+  // -- Inbox / Intro proposals --
+
+  Future<List<Map<String, dynamic>>>
+      listPendingSocialIntroProposals() async {
+    final result =
+        await _client.call('listPendingSocialIntroProposals');
+    return (result as List<dynamic>)
+        .map((e) => e as Map<String, dynamic>)
+        .toList();
+  }
+
   // -- Profile --
 
   Future<Map<String, dynamic>> getHumanProfile() async {
