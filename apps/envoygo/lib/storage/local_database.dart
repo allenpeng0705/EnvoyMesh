@@ -22,7 +22,13 @@ class LocalDatabase {
     final dbPath = p.join(await getDatabasesPath(), 'envoygo.db');
     _db = await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('ALTER TABLE nodes ADD COLUMN public_host TEXT');
+          await db.execute('ALTER TABLE nodes ADD COLUMN public_port INTEGER DEFAULT 3030');
+        }
+      },
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE nodes (
@@ -34,7 +40,9 @@ class LocalDatabase {
             ws_port INTEGER DEFAULT 3030,
             relay_ws_url TEXT,
             paired_at TEXT NOT NULL,
-            last_connected_at TEXT
+            last_connected_at TEXT,
+            public_host TEXT,
+            public_port INTEGER DEFAULT 3030
           )
         ''');
         await db.execute('''

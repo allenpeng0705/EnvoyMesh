@@ -3,7 +3,7 @@ import 'home_remote_client.dart';
 
 /// Builds transport candidate URLs from stored pairing data.
 ///
-/// Priority order: LAN → public IP → libp2p → relay.
+/// Priority order: LAN → public IP → relay tunnel.
 class CandidateResolver {
   /// Resolve transport candidates for a stored node.
   ///
@@ -13,16 +13,12 @@ class CandidateResolver {
     final candidates = <HomeRemoteCandidate>[];
 
     // 1. LAN WebSocket (always try first — lowest latency).
-    // The node stores the full lanWsUrl from the pairing QR.
     if (node.lanIp != null && node.lanIp!.isNotEmpty) {
       var url = node.lanIp!;
       if (sessionToken != null) {
         url += '${url.contains('?') ? '&' : '?'}token=$sessionToken';
       }
-      candidates.add(HomeRemoteCandidate(
-        name: 'lan',
-        url: url,
-      ));
+      candidates.add(HomeRemoteCandidate(name: 'lan', url: url));
     }
 
     // 2. Public IP/domain (direct WAN access, no relay needed).
@@ -31,39 +27,37 @@ class CandidateResolver {
       if (sessionToken != null) {
         url += '?token=$sessionToken';
       }
-      candidates.add(HomeRemoteCandidate(
-        name: 'public',
-        url: url,
-      ));
+      candidates.add(HomeRemoteCandidate(name: 'public', url: url));
     }
 
-    // 3. libp2p via relay circuit (Phase 31D).
-    // Connects through the relay's libp2p routing using the client-proxy
-    // handshake. The relay routes the stream to the home node, which
-    // accepts it via createClientProxyHandler. This is more efficient
-    // than the raw WebSocket relay tunnel.
-    if (node.relayWsUrl != null &&
-        node.relayWsUrl!.isNotEmpty &&
-        node.homePeerId.isNotEmpty) {
-      candidates.add(HomeRemoteCandidate(
-        name: 'libp2p',
-        url: 'libp2p://${node.homePeerId}?relay=${Uri.encodeComponent(node.relayWsUrl!)}'
-            '${sessionToken != null ? '&token=$sessionToken' : ''}',
-      ));
-    }
-
-    // 4. Relay tunnel WebSocket (WAN fallback).
+    // 3. Relay tunnel WebSocket (WAN fallback via fixed port 15432).
+    // Strip any existing token param from the relay URL before appending
+    // the session token, so the server sees our token first.
     if (node.relayWsUrl != null && node.relayWsUrl!.isNotEmpty) {
-      var url = node.relayWsUrl!;
+      var url = _stripTokenParam(node.relayWsUrl!);
       if (sessionToken != null) {
         url += '${url.contains('?') ? '&' : '?'}token=$sessionToken';
       }
-      candidates.add(HomeRemoteCandidate(
-        name: 'relay',
-        url: url,
-      ));
+      candidates.add(HomeRemoteCandidate(name: 'relay', url: url));
     }
 
     return candidates;
+  }
+
+  /// Remove any `token` query parameter from a URL so we can replace it
+  /// with a fresh session token. The pairing QR includes a short-lived
+  /// pairing token in the relay URL — that token must not shadow the
+  /// session token on reconnection.
+  String _stripTokenParam(String url) {
+    final qIdx = url.indexOf('?');
+    if (qIdx < 0) return url;
+    final base = url.substring(0, qIdx);
+    final query = url.substring(qIdx + 1);
+    final params = query
+        .split('&')
+        .where((p) => !p.startsWith('token='))
+        .toList();
+    if (params.isEmpty) return base;
+    return '$base?${params.join('&')}';
   }
 }

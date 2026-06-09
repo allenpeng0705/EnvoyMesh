@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/chat_message.dart';
 import '../models/chat_thread.dart';
@@ -267,8 +268,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
           lastMessageAt: room.lastMessageAt,
         );
       }
-    } catch (_) {
-      // Silently ignore — rooms will retry on next sync.
+    } catch (e) {
+      // Log the error so we can diagnose sync issues.
+      debugPrint('syncRooms failed: $e');
     }
   }
 

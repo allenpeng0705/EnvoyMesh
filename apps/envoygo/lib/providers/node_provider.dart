@@ -115,6 +115,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
     state = state.copyWith(
         connectionState: NodeConnectionState.connecting);
 
+    // Ensure the local database is initialized before we write to it.
+    // On a fresh install, loadPairedNodes may not have completed yet.
+    await _localDb.initialize();
+
     final opts = HomeRemoteClientOptions(
       resolveCandidates: () async => candidates,
       createTransport: (c) => _createTransportForCandidate(c),

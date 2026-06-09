@@ -108,6 +108,6 @@ class StoredNode {
         if (lastConnectedAt != null)
           'last_connected_at': lastConnectedAt!.toIso8601String(),
         if (publicHost != null) 'public_host': publicHost,
-        'public_port': publicPort,
+        if (publicPort != 3030) 'public_port': publicPort,
       };
 }
