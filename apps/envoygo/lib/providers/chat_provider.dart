@@ -186,7 +186,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (senderOwnerId == null) return;
 
     // Route agent responses to the appropriate agent thread.
-    final isAgent = senderOwnerId.startsWith('envoy_agent_');
+    // Check for agent sender patterns: envoy_agent_*, or the home node's
+    // owner ID (agent responds on behalf of owner).
+    final selfOwnerId = nodeState.ownerId;
+    final isAgent = senderOwnerId.startsWith('envoy_agent_') ||
+        (selfOwnerId != null && senderOwnerId == selfOwnerId);
     final threadId = isAgent
         ? '${nodeState.activeNode!.id}:envoyai'
         : '${nodeState.activeNode!.id}:$senderOwnerId';

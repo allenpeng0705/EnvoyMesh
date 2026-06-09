@@ -54,7 +54,13 @@ class ContactNotifier extends StateNotifier<ContactState> {
         bonds.map((c) => c.toJson()).toList(),
       );
 
-      state = state.copyWith(bonds: bonds, isLoading: false);
+      // Filter out self-identity "Mobile" shared-identity contact.
+      final selfOwnerId = nodeState.ownerId;
+      final filtered = selfOwnerId != null
+          ? bonds.where((c) => c.ownerId != selfOwnerId).toList()
+          : bonds;
+
+      state = state.copyWith(bonds: filtered, isLoading: false);
     } catch (e) {
       state = state.copyWith(isLoading: false);
     }

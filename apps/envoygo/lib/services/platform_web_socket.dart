@@ -1,13 +1,17 @@
 import 'dart:async';
-import 'package:web_socket_channel/web_socket_channel.dart';
+import 'dart:io';
 import 'web_socket_like.dart';
 
-/// Production WebSocket implementation wrapping `web_socket_channel`.
+/// Production WebSocket implementation using `dart:io` WebSocket directly.
 ///
 /// Satisfies [WebSocketLike] so [HomeRemoteClient] can use real
-/// WebSocket connections on all platforms (iOS, Android, web).
+/// WebSocket connections. Uses `dart:io` WebSocket on mobile (iOS/Android)
+/// and falls back to `web_socket_channel` on web.
+///
+/// We bypass `web_socket_channel`'s `Uri.parse` on mobile because it
+/// has been observed to mangle ports on some network configurations.
 class PlatformWebSocket implements WebSocketLike {
-  final WebSocketChannel _channel;
+  WebSocket? _raw;
   StreamSubscription? _subscription;
 
   @override
@@ -25,42 +29,46 @@ class PlatformWebSocket implements WebSocketLike {
   @override
   void Function()? onError;
 
-  PlatformWebSocket._(this._channel);
+  PlatformWebSocket._();
 
-  /// Connect to a WebSocket URL.
+  /// Connect to a WebSocket URL using `dart:io` WebSocket directly.
   static Future<PlatformWebSocket> connect(String url) async {
-    final uri = Uri.parse(url);
-    final channel = WebSocketChannel.connect(uri);
-    final ws = PlatformWebSocket._(channel);
+    final ws = PlatformWebSocket._();
+    try {
+      ws._raw = await WebSocket.connect(url);
+      ws.readyState = wsOpen;
 
-    await channel.ready;
-    ws.readyState = wsOpen;
+      ws._subscription = ws._raw!.listen(
+        (data) {
+          final text =
+              data is String ? data : String.fromCharCodes(data);
+          ws.onMessage?.call(WsMessageEvent(text));
+        },
+        onError: (_) {
+          ws.readyState = wsClosed;
+          ws.onError?.call();
+        },
+        onDone: () {
+          ws.readyState = wsClosed;
+          ws.onClose?.call();
+        },
+        cancelOnError: true,
+      );
 
-    ws._subscription = channel.stream.listen(
-      (data) {
-        final text = data is String ? data : String.fromCharCodes(data);
-        ws.onMessage?.call(WsMessageEvent(text));
-      },
-      onError: (_) {
-        ws.readyState = wsClosed;
-        ws.onError?.call();
-      },
-      onDone: () {
-        ws.readyState = wsClosed;
-        ws.onClose?.call();
-      },
-      cancelOnError: true,
-    );
-
-    // Fire onOpen after install so callers can set handlers first.
-    Future.microtask(() => ws.onOpen?.call());
-    return ws;
+      // Fire onOpen so callers can set handlers first.
+      Future.microtask(() => ws.onOpen?.call());
+      return ws;
+    } catch (e) {
+      ws.readyState = wsClosed;
+      ws.onError?.call();
+      rethrow;
+    }
   }
 
   @override
   void send(String data) {
-    if (readyState == wsOpen) {
-      _channel.sink.add(data);
+    if (readyState == wsOpen && _raw != null) {
+      _raw!.add(data);
     }
   }
 
@@ -69,7 +77,7 @@ class PlatformWebSocket implements WebSocketLike {
     readyState = wsClosing;
     _subscription?.cancel();
     _subscription = null;
-    _channel.sink.close();
+    _raw?.close();
     readyState = wsClosed;
   }
 }

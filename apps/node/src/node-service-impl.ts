@@ -4910,6 +4910,32 @@ class NodeServiceImpl implements NodeService {
 
   async sendToOpenClaw(text: string): Promise<void> {
     const ownerId = this._profile?.owner?.ownerId ?? "";
+    const now = new Date().toISOString();
+    const messageId = crypto.randomUUID();
+
+    // Persist the outbound message so it appears in the Social app chat history.
+    const outboundMsg: ChatMessage = {
+      messageId,
+      sender: {
+        nodeId: this._mesh?.peerId ?? "",
+        ownerId,
+        displayName: ownerId,
+        actorRole: "human",
+      },
+      recipient: {
+        nodeId: ENVOY_AI_THREAD_KEY,
+        displayName: "EnvoyAI",
+      },
+      content: { text },
+      metadata: {
+        timestamp: now,
+        deliveryReceipt: "sent",
+        deliveryChannel: "ai",
+      },
+      signature: "",
+    };
+    this.recordEnvoyAiChatMessage(outboundMsg);
+
     let policyPrompt: string | undefined;
     let retrievedContext: string | undefined;
     try {

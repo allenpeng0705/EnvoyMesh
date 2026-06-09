@@ -44,10 +44,13 @@ class CandidateResolver {
     return candidates;
   }
 
-  /// Remove any `token` query parameter from a URL so we can replace it
-  /// with a fresh session token. The pairing QR includes a short-lived
-  /// pairing token in the relay URL — that token must not shadow the
-  /// session token on reconnection.
+  /// Remove `token` and `target` query parameters from a relay URL.
+  ///
+  /// - `token` is a short-lived pairing token from the QR that must not
+  ///   shadow the session token on reconnection.
+  /// - `target` is a libp2p peer ID that causes the relay to attempt a
+  ///   circuit-relay connection on a random port. The cloud relay only
+  ///   exposes fixed ports (e.g. 15432), so circuit-relay ports are blocked.
   String _stripTokenParam(String url) {
     final qIdx = url.indexOf('?');
     if (qIdx < 0) return url;
@@ -55,7 +58,7 @@ class CandidateResolver {
     final query = url.substring(qIdx + 1);
     final params = query
         .split('&')
-        .where((p) => !p.startsWith('token='))
+        .where((p) => !p.startsWith('token=') && !p.startsWith('target='))
         .toList();
     if (params.isEmpty) return base;
     return '$base?${params.join('&')}';

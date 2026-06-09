@@ -24,13 +24,17 @@ class TerminalSession {
   });
 
   factory TerminalSession.fromJson(Map<String, dynamic> json) {
+    // Home node returns 'sessionId' and 'title'; we also accept 'id' and
+    // 'name' for local DB cache compatibility.
     return TerminalSession(
-      id: json['id'] as String,
-      name: json['name'] as String,
+      id: (json['sessionId'] ?? json['id'] ?? '') as String,
+      name: (json['title'] ?? json['name'] ?? '') as String,
       cwd: json['cwd'] as String?,
-      runningProcess: json['running_process'] as String?,
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
+      runningProcess: json['runningProcess'] as String? ??
+          json['running_process'] as String?,
+      createdAt: (json['createdAt'] ?? json['created_at']) != null
+          ? DateTime.parse(
+              (json['createdAt'] ?? json['created_at']) as String)
           : null,
     );
   }

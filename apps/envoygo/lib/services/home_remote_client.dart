@@ -196,7 +196,9 @@ class HomeRemoteClient {
       }
     }
 
-    throw lastError ?? Exception('homeRemote.connectFailed');
+    final tried = candidates.map((c) => '${c.name}=${c.url}').join(', ');
+    throw Exception(
+        'homeRemote.connectFailed — tried: [$tried] — last error: $lastError');
   }
 
   /// Open a WebSocket to a candidate with timeout.

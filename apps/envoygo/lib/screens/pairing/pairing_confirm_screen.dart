@@ -146,10 +146,7 @@ class _PairingConfirmScreenState
 
     try {
       // Build candidates from pairing data.
-      // Use the clean relayWsUrl (or strip query params from wsUrl).
-      final relayUrl = widget.data.relayPeerId != null
-          ? widget.data.wsUrl.split('?').first // Strip query params from wsUrl
-          : widget.data.wsUrl;
+      // relayWsUrl is the clean relay endpoint without routing params.
       final tempNode = StoredNode(
         id: '',
         name: widget.data.agentName ?? 'Home Node',
@@ -157,7 +154,7 @@ class _PairingConfirmScreenState
         homePeerId: widget.data.homeNodePeerId ?? '',
         lanIp: widget.data.lanWsUrl,
         wsPort: 3030,
-        relayWsUrl: relayUrl,
+        relayWsUrl: widget.data.relayWsUrl,
         pairedAt: DateTime.now(),
       );
       final resolver = CandidateResolver();

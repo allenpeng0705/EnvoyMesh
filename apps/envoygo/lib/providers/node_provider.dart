@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/stored_node.dart';
 import '../services/web_socket_like.dart';
@@ -154,7 +155,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       homePeerId: data.homeNodePeerId ?? '',
       lanIp: data.lanWsUrl,
       wsPort: 3030,
-      relayWsUrl: data.wsUrl,
+      relayWsUrl: data.relayWsUrl,
       pairedAt: DateTime.now(),
       lastConnectedAt: DateTime.now(),
     );
@@ -209,7 +210,15 @@ class NodeNotifier extends StateNotifier<NodeState> {
     if (nodeService != null) {
       nodeService.getBridgeStatus().then((status) {
         chatNotifier.onBridgeStatus(status);
-      }).catchError((_) {});
+      }).catchError((e) {
+        debugPrint('getBridgeStatus failed: $e');
+        // Still create a default EnvoyAI thread even if bridge check fails.
+        chatNotifier.onBridgeStatus({
+          'enabled': true,
+          'agentName': 'EnvoyAI',
+          'agentType': 'envoyai',
+        });
+      });
     }
   }
 
@@ -289,6 +298,11 @@ class NodeNotifier extends StateNotifier<NodeState> {
     client.on('bridge:status', (data) {
       if (data is Map<String, dynamic>) {
         chatNotifier.onBridgeStatus(data);
+      }
+    });
+    client.on('agent:activity', (data) {
+      if (data is Map<String, dynamic>) {
+        chatNotifier.onChatMessage(data);
       }
     });
     client.on('terminal:session-updated', (_) {

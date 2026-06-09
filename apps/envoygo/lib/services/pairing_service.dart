@@ -34,21 +34,27 @@ class PairingService {
 
     final token = parsed.queryParameters['token']?.trim();
     final wsUrl = parsed.queryParameters['wsUrl']?.trim();
-    final ownerId = parsed.queryParameters['ownerId']?.trim();
 
     // token and wsUrl are required for pairing.
     if (token == null || token.isEmpty) return null;
     if (wsUrl == null || wsUrl.isEmpty) return null;
 
+    // Prefer relayWsUrl (clean URL from QR) over wsUrl (has ?target=.&token=.).
+    // relayWsUrl is the relay WebSocket endpoint without routing params.
+    final relayWsUrl =
+        parsed.queryParameters['relayWsUrl']?.trim() ?? wsUrl;
+
     return PairingData(
       token: token,
       wsUrl: wsUrl,
+      relayWsUrl: relayWsUrl,
       lanWsUrl: parsed.queryParameters['lanWsUrl']?.trim(),
-      ownerId: ownerId,
+      ownerId: parsed.queryParameters['ownerId']?.trim(),
       homeNodePeerId: parsed.queryParameters['homeNodePeerId']?.trim(),
       agentPeerId: parsed.queryParameters['agentPeerId']?.trim(),
       agentName: parsed.queryParameters['agentName']?.trim(),
       relayPeerId: parsed.queryParameters['relayPeerId']?.trim(),
+      ownerPublicKey: parsed.queryParameters['ownerPublicKey']?.trim(),
     );
   }
 
@@ -71,8 +77,11 @@ class PairingData {
   /// Short-lived pairing token.
   final String token;
 
-  /// Relay WebSocket URL (required).
+  /// Relay WebSocket URL (required, has ?target=...&token=...).
   final String wsUrl;
+
+  /// Clean relay WebSocket URL without routing params (preferred).
+  final String relayWsUrl;
 
   /// LAN WebSocket URL (optional, direct LAN access).
   final String? lanWsUrl;
@@ -92,15 +101,20 @@ class PairingData {
   /// Relay libp2p peer ID.
   final String? relayPeerId;
 
+  /// Owner's Ed25519 public key (PEM).
+  final String? ownerPublicKey;
+
   const PairingData({
     required this.token,
     required this.wsUrl,
+    required this.relayWsUrl,
     this.lanWsUrl,
     this.ownerId,
     this.homeNodePeerId,
     this.agentPeerId,
     this.agentName,
     this.relayPeerId,
+    this.ownerPublicKey,
   });
 }
 
