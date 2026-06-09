@@ -143,28 +143,39 @@ class NodeNotifier extends StateNotifier<NodeState> {
     }
 
     // Store session token securely.
-    final nodeId = _generateNodeId();
+    // Reuse existing nodeId if this homePeerId was already paired.
+    final existingNode = state.pairedNodes
+        .where((n) => n.homePeerId == data.homeNodePeerId)
+        .firstOrNull;
+    final nodeId = existingNode?.id ?? _generateNodeId();
     await _secureStorage.saveSessionToken(nodeId, result.sessionToken);
     await _secureStorage.saveActiveNodeId(nodeId);
 
     // Store node info in local DB.
     final node = StoredNode(
       id: nodeId,
-      name: data.agentName ?? 'Home Node',
+      name: existingNode?.name ?? data.agentName ?? 'Home Node',
       ownerId: result.ownerId,
       homePeerId: data.homeNodePeerId ?? '',
       lanIp: data.lanWsUrl,
       wsPort: 3030,
       relayWsUrl: data.relayWsUrl,
-      pairedAt: DateTime.now(),
+      pairedAt: existingNode?.pairedAt ?? DateTime.now(),
       lastConnectedAt: DateTime.now(),
+      publicHost: existingNode?.publicHost,
+      publicPort: existingNode?.publicPort ?? 3030,
     );
     await _localDb.upsertNode(node.toJson());
     await _localDb.updateNodeLastConnected(nodeId);
 
-    // Add node to state before reconnecting.
+    // Update paired nodes list — replace existing or add new.
+    final updatedNodes = existingNode != null
+        ? state.pairedNodes
+            .map((n) => n.homePeerId == data.homeNodePeerId ? node : n)
+            .toList()
+        : [...state.pairedNodes, node];
     state = state.copyWith(
-      pairedNodes: [...state.pairedNodes, node],
+      pairedNodes: updatedNodes,
       ownerId: result.ownerId,
     );
 
@@ -427,10 +438,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
       resolveCandidates: () async => candidates,
       createTransport: (c) => _createTransportForCandidate(c),
       onHomeOnlineChange: (online) {
-        if (!online) {
-          state = state.copyWith(
-              connectionState: NodeConnectionState.disconnected);
-        }
+        state = state.copyWith(
+            connectionState: online
+                ? NodeConnectionState.connected
+                : NodeConnectionState.disconnected);
       },
       onActiveTransportChange: (candidate) {
         state = state.copyWith(activeTransport: candidate?.name);

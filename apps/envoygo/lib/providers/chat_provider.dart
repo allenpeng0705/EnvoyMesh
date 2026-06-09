@@ -197,10 +197,24 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     // Look up the contact's display name for non-agent messages.
     var displayName = data['senderDisplayName'] as String?;
-    if (!isAgent && displayName == null) {
+    if (!isAgent && (displayName == null || displayName!.isEmpty)) {
       final contactNotifier = _ref.read(contactProvider.notifier);
       final contact = contactNotifier.getContact(senderOwnerId);
       displayName = contact?.displayName;
+      // Fall back to local DB cache if not in memory yet.
+      if ((displayName == null || displayName!.isEmpty) && senderOwnerId.isNotEmpty) {
+        // Try looking up from the contact's own state (bonds list).
+        final contacts = _ref.read(contactProvider).bonds;
+        displayName = contacts
+            .where((c) => c.ownerId == senderOwnerId)
+            .firstOrNull
+            ?.displayName;
+      }
+    }
+    // Never use the raw owner ID as display name.
+    if (displayName == null || displayName!.isEmpty || displayName!.startsWith('envoy:owner:')) {
+      // Still unknown — keep the raw ID but the UI will try to resolve later.
+      displayName = displayName ?? senderOwnerId;
     }
     final msg = ChatMessage(
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',

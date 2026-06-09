@@ -9365,7 +9365,10 @@ class NodeServiceImpl implements NodeService {
     const sessionToken = randomUUID();
     const now = new Date().toISOString();
     const deviceName = params.deviceName?.trim() || "EnvoyGo";
-    const deviceId = `thin-client:${deviceName.toLowerCase().replace(/\s+/g, "-")}:${sessionToken.substring(0, 8)}`;
+    const platform = params.platform?.trim() || "flutter";
+    // Stable deviceId so the same device always gets the same id.
+    // SessionTokenStore.setToken deduplicates by deviceId.
+    const deviceId = `thin-client:${deviceName.toLowerCase().replace(/\s+/g, "-")}:${platform}`;
     if (this._sessionTokenStore) {
       await this._sessionTokenStore.setToken({
         token: sessionToken,
