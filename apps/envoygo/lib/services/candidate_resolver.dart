@@ -31,10 +31,13 @@ class CandidateResolver {
     }
 
     // 3. Relay tunnel WebSocket (WAN fallback via fixed port 15432).
-    // Strip any existing token param from the relay URL before appending
-    // the session token, so the server sees our token first.
+    // Pass peer=<homePeerId> so the relay does simple WS forwarding
+    // instead of circuit relay (which assigns dynamic firewalled ports).
     if (node.relayWsUrl != null && node.relayWsUrl!.isNotEmpty) {
       var url = _stripTokenParam(node.relayWsUrl!);
+      if (node.homePeerId.isNotEmpty) {
+        url += '${url.contains('?') ? '&' : '?'}peer=${node.homePeerId}';
+      }
       if (sessionToken != null) {
         url += '${url.contains('?') ? '&' : '?'}token=$sessionToken';
       }
