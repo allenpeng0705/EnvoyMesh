@@ -423,40 +423,6 @@ class NodeNotifier extends StateNotifier<NodeState> {
       return;
     }
 
-    // Validate the session token before attempting sync.
-    // If the token is expired/invalid, fail early with a clear message.
-    var sessionValid = false;
-    try {
-      final tempClient = HomeRemoteClient(HomeRemoteClientOptions(
-        resolveCandidates: () async => candidates,
-        createTransport: (c) => _createTransportForCandidate(c),
-        perCandidateTimeoutMs: 6000,
-        upgradeSweepMs: 0,
-      ));
-      await tempClient.ensureConnected();
-      final tempNs = NodeServiceClient(tempClient);
-      try {
-        final status = await tempNs.getConnectionStatus();
-        sessionValid = status['authenticated'] == true;
-      } catch (_) {
-        // getConnectionStatus may not exist — fall through to main connect.
-        sessionValid = true; // optimistic
-      }
-      tempClient.dispose();
-    } catch (_) {
-      // Can't even connect — let the main connect attempt handle it.
-      sessionValid = true; // optimistic, let main path surface the real error
-    }
-
-    if (!sessionValid) {
-      await _secureStorage.deleteSessionToken(node.id);
-      state = state.copyWith(
-        connectionState: NodeConnectionState.error,
-        errorMessage: 'Session expired — pair again to reconnect.',
-      );
-      return;
-    }
-
     final opts = HomeRemoteClientOptions(
       resolveCandidates: () async => candidates,
       createTransport: (c) => _createTransportForCandidate(c),
@@ -489,8 +455,6 @@ class NodeNotifier extends StateNotifier<NodeState> {
       _syncAllData();
     } catch (e) {
       final msg = e.toString();
-      // If the error looks auth-related, clear the token so the user
-      // sees "Session token not found" on the next attempt.
       if (msg.contains('Authentication') ||
           msg.contains('auth') ||
           msg.contains('Unauthorized') ||
