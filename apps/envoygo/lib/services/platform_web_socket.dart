@@ -11,6 +11,7 @@ import 'web_socket_like.dart';
 /// A manual handshake over a raw `Socket` gives us full control and
 /// avoids any unexpected redirect behaviour from the relay.
 class PlatformWebSocket implements WebSocketLike {
+  static final _random = Random.secure();
   Socket? _socket;
   StreamSubscription? _subscription;
 
