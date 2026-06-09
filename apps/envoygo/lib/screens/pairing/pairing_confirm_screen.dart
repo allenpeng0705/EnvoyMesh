@@ -44,16 +44,17 @@ class _PairingConfirmScreenState
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
-              Text(
-                'Peer: ${widget.data.peerId.length > 20 ? '${widget.data.peerId.substring(0, 10)}...' : widget.data.peerId}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              if (widget.data.lanIp != null) ...[
+              if (widget.data.homeNodePeerId != null)
+                Text(
+                  'Peer: ${widget.data.homeNodePeerId!.length > 20 ? widget.data.homeNodePeerId!.substring(0, 10) : widget.data.homeNodePeerId}...',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              if (widget.data.lanWsUrl != null) ...[
                 const SizedBox(height: 4),
-                Text('LAN: ${widget.data.lanIp}:${widget.data.wsPort}',
+                Text('LAN: available',
                     style: Theme.of(context).textTheme.bodySmall),
               ],
-              if (widget.data.relayWsUrl != null) ...[
+              if (widget.data.wsUrl.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text('Relay: available',
                     style: Theme.of(context).textTheme.bodySmall),
@@ -95,14 +96,18 @@ class _PairingConfirmScreenState
 
     try {
       // Build candidates from pairing data.
+      // Use the clean relayWsUrl (or strip query params from wsUrl).
+      final relayUrl = widget.data.relayPeerId != null
+          ? widget.data.wsUrl.split('?').first // Strip query params from wsUrl
+          : widget.data.wsUrl;
       final tempNode = StoredNode(
         id: '',
-        name: widget.data.name ?? 'Home Node',
-        ownerId: '',
-        homePeerId: widget.data.peerId,
-        lanIp: widget.data.lanIp,
-        wsPort: widget.data.wsPort,
-        relayWsUrl: widget.data.relayWsUrl,
+        name: widget.data.agentName ?? 'Home Node',
+        ownerId: widget.data.ownerId ?? '',
+        homePeerId: widget.data.homeNodePeerId ?? '',
+        lanIp: widget.data.lanWsUrl,
+        wsPort: 3030,
+        relayWsUrl: relayUrl,
         pairedAt: DateTime.now(),
       );
       final resolver = CandidateResolver();

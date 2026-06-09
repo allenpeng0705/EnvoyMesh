@@ -137,11 +137,7 @@ export function App() {
     humanProfile,
     connectionStatus,
     appSettings,
-    pairedDiag,
   } = useNodeState();
-
-  const pairedError = pairedDiag?.lastBootstrapError as string | undefined;
-  const pairedOk = pairedDiag?.lastBootstrapOk as boolean | undefined;
 
   const inboxActivityCount = useInboxActivityCount();
 
@@ -229,9 +225,6 @@ export function App() {
     <ToastProvider>
       <div className="app">
         <AutoReplyPausedNotifier />
-        <div className="paired-status-bar" style={{ fontSize: "11px", background: "#333", color: "#fff", padding: "4px 8px", textAlign: "center" }}>
-          pairedDiag: {pairedDiag ? String(pairedDiag.paired) + " ok=" + String(pairedDiag.lastBootstrapOk) : "NULL"}
-        </div>
         <ErrorBoundary>
           <Header
             currentView={currentView}

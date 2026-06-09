@@ -184,7 +184,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     if (senderOwnerId == null) return;
 
-    final threadId = '${nodeState.activeNode!.id}:$senderOwnerId';
+    // Route agent responses to the appropriate agent thread.
+    final isAgent = senderOwnerId.startsWith('envoy_agent_');
+    final threadId = isAgent
+        ? '${nodeState.activeNode!.id}:envoyai'
+        : '${nodeState.activeNode!.id}:$senderOwnerId';
     final msg = ChatMessage(
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
@@ -202,9 +206,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _upsertThread(
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
-      type: ChatThreadType.direct,
-      displayName: senderOwnerId,
-      contactOwnerId: senderOwnerId,
+      type: isAgent ? ChatThreadType.envoyai : ChatThreadType.direct,
+      displayName: isAgent ? 'EnvoyAI' : senderOwnerId,
+      contactOwnerId: isAgent ? null : senderOwnerId,
+      agentType: isAgent ? 'envoyai' : null,
       lastMessageText: text ?? '',
       lastMessageAt: createdAt != null
           ? DateTime.tryParse(createdAt)

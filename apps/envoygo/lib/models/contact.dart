@@ -24,13 +24,16 @@ class Contact {
   });
 
   factory Contact.fromJson(Map<String, dynamic> json) {
+    // Home node uses camelCase (BondRecord: peerOwnerId, level).
+    // We also accept snake_case for local DB cache.
     return Contact(
-      ownerId: json['owner_id'] as String,
-      displayName: json['display_name'] as String?,
-      bondLevel: json['bond_level'] as String,
-      avatarUrl: json['avatar_url'] as String?,
-      lastSeen: json['last_seen'] != null
-          ? DateTime.parse(json['last_seen'] as String)
+      ownerId: (json['peerOwnerId'] ?? json['owner_id'] ?? '') as String,
+      displayName: (json['displayName'] ?? json['display_name']) as String?,
+      bondLevel: (json['level'] ?? json['bond_level'] ?? 'public') as String,
+      avatarUrl: (json['avatarUrl'] ?? json['avatar_url']) as String?,
+      lastSeen: (json['lastSeen'] ?? json['last_seen']) != null
+          ? DateTime.tryParse(
+              (json['lastSeen'] ?? json['last_seen']) as String)
           : null,
     );
   }

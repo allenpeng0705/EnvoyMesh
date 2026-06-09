@@ -157,11 +157,14 @@ export class WsServer {
     this.onConnectionChange?.(this.wss.clients.size);
 
     // Extract session token from query string.
+    // Three states: no token (legacy client), valid token (thin-client), invalid token.
     let isAuthenticated = false;
+    let hadToken = false;
     try {
       const url = new URL(req?.url ?? "/ws", "ws://localhost");
       const token = url.searchParams.get("token")?.trim();
       if (token) {
+        hadToken = true;
         // Validate against session token store.
         const record = await (this.nodeService as any).lookupSessionToken?.(token);
         if (record) {
@@ -176,6 +179,10 @@ export class WsServer {
 
     // Store auth state on the ws object.
     (ws as any).isThinClientAuthenticated = isAuthenticated;
+    // Track whether a token was attempted — only gate clients that
+    // tried to use a token but had an invalid one. Clients without
+    // any token (Social UI, Capacitor app) are legacy and unrestricted.
+    (ws as any).hadThinClientToken = hadToken;
 
     // Initialize subscription tracking for this client
     this.clientSubscriptions.set(ws, new Set());
@@ -314,9 +321,12 @@ export class WsServer {
       return;
     }
 
-    // Gate: unauthenticated thin clients can only call pairThinClient.
+    // Gate: only enforce auth for clients that attempted token-based
+    // authentication but failed. Legacy clients (Social UI, Capacitor
+    // app) connect without a token and are unrestricted.
     const isAuth = (ws as any).isThinClientAuthenticated === true;
-    if (!isAuth && method !== "pairThinClient") {
+    const hadToken = (ws as any).hadThinClientToken === true;
+    if (hadToken && !isAuth && method !== "pairThinClient") {
       this.sendError(ws, id ?? "unknown", "Authentication required");
       return;
     }

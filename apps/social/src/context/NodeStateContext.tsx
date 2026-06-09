@@ -90,7 +90,6 @@ interface NodeStateValue {
 
   // Agent bridge
   bridgeStatus: BridgeStatus | null;
-  pairedDiag: Record<string, unknown> | null;
 
   // Per-contact AI modes (persisted)
   contactAiModes: Record<string, AssistantMode>;
@@ -164,7 +163,6 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
 
   // --- Agent bridge ---
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus | null>(null);
-  const [pairedDiag, setPairedDiag] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     if (!wsTransportOpen) {
@@ -225,10 +223,6 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     nodeService.getBridgeStatus().then((status) => {
       if (status.enabled) setBridgeStatus(status);
     }).catch(() => {});
-    // Paired diagnostics (mobile thin-client)
-    nodeService.getPairedDiagnostics?.().then((d) => {
-      setPairedDiag(d as Record<string, unknown>);
-    }).catch(() => {});
   }, [nodeService, wsTransportOpen, refreshConnectionStatus]);
 
   // -----------------------------------------------------------------------
@@ -248,10 +242,6 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       // Bridge status may have been set after initial load
       nodeService.getBridgeStatus().then((s) => {
         if (s?.enabled) setBridgeStatus(s);
-      }).catch(() => {});
-      // Load paired diagnostics (mobile thin-client)
-      nodeService.getPairedDiagnostics?.().then((d) => {
-        setPairedDiag(d as Record<string, unknown>);
       }).catch(() => {});
     });
     return unsub;
@@ -326,18 +316,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     const unsub = nodeService.on("bridge:status", (data) => {
       setBridgeStatus(data);
     });
-    // Listen for pairing bootstrap events (mobile thin-client)
-    const unsubOk = nodeService.on("home:bootstrap-ok", () => {
-      nodeService.getPairedDiagnostics?.().then((d) => {
-        setPairedDiag(d as Record<string, unknown>);
-      }).catch(() => {});
-    });
-    const unsubFail = nodeService.on("home:bootstrap-failed", (data: any) => {
-      nodeService.getPairedDiagnostics?.().then((d) => {
-        setPairedDiag(d as Record<string, unknown>);
-      }).catch(() => {});
-    });
-    return () => { unsub(); unsubOk(); unsubFail(); };
+    return unsub;
   }, [nodeService, wsTransportOpen]);
 
   // peer:discovered — track nearby peers
@@ -538,7 +517,6 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     pendingMessages,
     appSettings,
     bridgeStatus,
-    pairedDiag,
     contactAiModes,
     setAppSettings: wrappedSetAppSettings,
     refreshNodeConfig,

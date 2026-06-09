@@ -1,9 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/stored_node.dart';
+import 'chat_provider.dart';
+import 'contact_provider.dart';
+import 'terminal_provider.dart';
 import '../services/candidate_resolver.dart';
 import '../services/home_remote_client.dart';
 import '../services/node_service_client.dart';
 import '../services/pairing_service.dart';
+import '../services/client_proxy_transport.dart';
+import '../services/platform_web_socket.dart';
 import '../storage/local_database.dart';
 import '../storage/secure_storage.dart';
 
@@ -56,12 +61,14 @@ class NodeState {
 final nodeProvider =
     StateNotifierProvider<NodeNotifier, NodeState>((ref) {
   return NodeNotifier(
+    ref: ref,
     secureStorage: SecureStorage(),
     localDb: LocalDatabase(),
   );
 });
 
 class NodeNotifier extends StateNotifier<NodeState> {
+  final Ref _ref;
   final SecureStorage _secureStorage;
   final LocalDatabase _localDb;
 
@@ -70,9 +77,11 @@ class NodeNotifier extends StateNotifier<NodeState> {
   PairingService? _pairingService;
 
   NodeNotifier({
+    required Ref ref,
     required SecureStorage secureStorage,
     required LocalDatabase localDb,
-  })  : _secureStorage = secureStorage,
+  })  : _ref = ref,
+        _secureStorage = secureStorage,
         _localDb = localDb,
         super(const NodeState());
 
@@ -106,6 +115,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     final opts = HomeRemoteClientOptions(
       resolveCandidates: () async => candidates,
+      createTransport: (c) => _createTransportForCandidate(c),
     );
     _client = HomeRemoteClient(opts);
     PairResult result;
@@ -133,26 +143,152 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // Store node info in local DB.
     final node = StoredNode(
       id: nodeId,
-      name: data.name ?? 'Home Node',
+      name: data.agentName ?? 'Home Node',
       ownerId: result.ownerId,
-      homePeerId: data.peerId,
-      lanIp: data.lanIp,
-      wsPort: data.wsPort,
-      relayWsUrl: data.relayWsUrl,
+      homePeerId: data.homeNodePeerId ?? '',
+      lanIp: data.lanWsUrl,
+      wsPort: 3030,
+      relayWsUrl: data.wsUrl,
       pairedAt: DateTime.now(),
       lastConnectedAt: DateTime.now(),
     );
     await _localDb.upsertNode(node.toJson());
     await _localDb.updateNodeLastConnected(nodeId);
 
+    // Add node to state before reconnecting.
     state = state.copyWith(
-      activeNode: node,
       pairedNodes: [...state.pairedNodes, node],
-      connectionState: NodeConnectionState.connected,
       ownerId: result.ownerId,
     );
 
+    // Dispose the pairing connection (used QR pairing token, not session token).
+    _client?.dispose();
+    _client = null;
+    _nodeService = null;
+    _pairingService = null;
+
+    // Reconnect with the new session token so all RPCs are authenticated.
+    await connectToNode(node);
+
     return result;
+  }
+
+  /// Sync all data from the home node after a successful connection.
+  void _syncAllData() {
+    final chatNotifier = _ref.read(chatProvider.notifier);
+    final contactNotifier = _ref.read(contactProvider.notifier);
+    final terminalNotifier = _ref.read(terminalProvider.notifier);
+    final client = _client;
+    if (client == null) return;
+
+    // Subscribe to push events from the home node.
+    _subscribeToPushEvents(client, chatNotifier, contactNotifier,
+        terminalNotifier);
+
+    // Sync contacts first, then load threads from cache.
+    contactNotifier.syncBonds().then((_) {
+      final node = state.activeNode;
+      if (node != null) {
+        chatNotifier.loadThreads(node.id);
+      }
+    });
+
+    // Rooms, terminals, and inbox can sync in parallel.
+    chatNotifier.syncRooms();
+    chatNotifier.syncTerminals();
+    _syncInbox(chatNotifier);
+
+    // Bridge status check for AI agent threads.
+    final nodeService = _nodeService;
+    if (nodeService != null) {
+      nodeService.getBridgeStatus().then((status) {
+        chatNotifier.onBridgeStatus(status);
+      }).catchError((_) {});
+    }
+  }
+
+  /// Sync pending social intro proposals (Inbox).
+  void _syncInbox(ChatNotifier chatNotifier) {
+    final nodeService = _nodeService;
+    if (nodeService == null) return;
+    nodeService.call('listPendingSocialIntroProposals').then((result) {
+      // Create threads for pending intros.
+      if (result is List) {
+        for (final item in result) {
+          if (item is Map<String, dynamic>) {
+            final from = item['fromOwnerId'] as String?;
+            final displayName = item['fromDisplayName'] as String?;
+            if (from != null) {
+              chatNotifier.onChatMessage({
+                'senderOwnerId': from,
+                'senderDisplayName': displayName ?? from,
+                'text': 'Wants to connect',
+                'messageId': 'intro_${from}',
+                'createdAt': DateTime.now().toIso8601String(),
+              });
+            }
+          }
+        }
+      }
+    }).catchError((_) {});
+  }
+
+  /// Create the appropriate transport for a candidate URL scheme.
+  FutureOr<WebSocketLike> _createTransportForCandidate(
+      HomeRemoteCandidate candidate) {
+    if (candidate.url.startsWith('libp2p://')) {
+      // Parse libp2p URL: libp2p://<peerId>?relay=<relayWsUrl>&token=<token>
+      final uri = Uri.parse(candidate.url);
+      final peerId = uri.host;
+      final relayWsUrl = uri.queryParameters['relay'];
+      final token = uri.queryParameters['token'];
+      if (relayWsUrl == null || token == null) {
+        throw Exception('Invalid libp2p candidate URL');
+      }
+      return ClientProxyTransport.connect(
+        relayWsUrl: relayWsUrl,
+        homePeerId: peerId,
+        sessionToken: token,
+      );
+    }
+    return PlatformWebSocket.connect(candidate.url);
+  }
+
+  /// Subscribe to server push events and forward to providers.
+  void _subscribeToPushEvents(
+    HomeRemoteClient client,
+    ChatNotifier chatNotifier,
+    ContactNotifier contactNotifier,
+    TerminalNotifier terminalNotifier,
+  ) {
+    client.on('chat:message', (data) {
+      if (data is Map<String, dynamic>) {
+        chatNotifier.onChatMessage(data);
+      }
+    });
+    client.on('chat:room-message', (data) {
+      if (data is Map<String, dynamic>) {
+        chatNotifier.onRoomMessage(data);
+      }
+    });
+    client.on('bond:established', (_) {
+      contactNotifier.onBondEstablished();
+    });
+    client.on('bond:revoked', (data) {
+      if (data is Map<String, dynamic>) {
+        contactNotifier
+            .onBondRevoked(data['peerOwnerId'] as String? ?? '');
+      }
+    });
+    client.on('bridge:status', (data) {
+      if (data is Map<String, dynamic>) {
+        chatNotifier.onBridgeStatus(data);
+      }
+    });
+    client.on('terminal:session-updated', (_) {
+      terminalNotifier.loadSessions();
+      chatNotifier.syncTerminals();
+    });
   }
 
   /// Connect to a stored node.
@@ -182,6 +318,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     final opts = HomeRemoteClientOptions(
       resolveCandidates: () async => candidates,
+      createTransport: (c) => _createTransportForCandidate(c),
       onHomeOnlineChange: (online) {
         if (!online) {
           state = state.copyWith(
@@ -209,6 +346,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
         connectionState: NodeConnectionState.connected,
         ownerId: node.ownerId,
       );
+
+      // Trigger full data sync.
+      _syncAllData();
     } catch (e) {
       state = state.copyWith(
         connectionState: NodeConnectionState.error,
@@ -237,6 +377,29 @@ class NodeNotifier extends StateNotifier<NodeState> {
     if (node == null) return;
     await disconnect();
     await connectToNode(node);
+  }
+
+  /// Update the public IP/domain for a paired node.
+  Future<void> updatePublicAccess(
+      String nodeId, String host, int port) async {
+    final rows = await _localDb.listNodes();
+    final node = rows
+        .where((r) => r['id'] == nodeId)
+        .firstOrNull;
+    if (node == null) return;
+
+    final updated = {...node, 'public_host': host, 'public_port': port};
+    await _localDb.upsertNode(updated);
+
+    final stored = StoredNode.fromJson(updated);
+    state = state.copyWith(
+      activeNode: state.activeNode?.id == nodeId
+          ? stored
+          : state.activeNode,
+      pairedNodes: state.pairedNodes.map((n) {
+        return n.id == nodeId ? stored : n;
+      }).toList(),
+    );
   }
 
   /// Remove a paired node.

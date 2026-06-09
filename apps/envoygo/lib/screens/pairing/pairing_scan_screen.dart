@@ -57,7 +57,7 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => PairingConfirmScreen(
-          nodeName: data.name ?? 'Home Node',
+          nodeName: data.agentName ?? 'Home Node',
           data: data,
         ),
       ),

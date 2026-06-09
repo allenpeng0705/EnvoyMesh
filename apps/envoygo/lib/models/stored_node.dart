@@ -27,6 +27,12 @@ class StoredNode {
   /// When this node was last connected.
   final DateTime? lastConnectedAt;
 
+  /// Public IP or domain for direct WAN access (e.g. 1.2.3.4 or mynode.example.com).
+  final String? publicHost;
+
+  /// Public WebSocket port (default 3030).
+  final int publicPort;
+
   const StoredNode({
     required this.id,
     required this.name,
@@ -37,6 +43,8 @@ class StoredNode {
     this.relayWsUrl,
     required this.pairedAt,
     this.lastConnectedAt,
+    this.publicHost,
+    this.publicPort = 3030,
   });
 
   StoredNode copyWith({
@@ -49,6 +57,8 @@ class StoredNode {
     String? relayWsUrl,
     DateTime? pairedAt,
     DateTime? lastConnectedAt,
+    String? publicHost,
+    int? publicPort,
     bool clearLanIp = false,
     bool clearRelayWsUrl = false,
   }) {
@@ -63,6 +73,8 @@ class StoredNode {
           clearRelayWsUrl ? null : (relayWsUrl ?? this.relayWsUrl),
       pairedAt: pairedAt ?? this.pairedAt,
       lastConnectedAt: lastConnectedAt ?? this.lastConnectedAt,
+      publicHost: publicHost ?? this.publicHost,
+      publicPort: publicPort ?? this.publicPort,
     );
   }
 
@@ -79,6 +91,8 @@ class StoredNode {
       lastConnectedAt: json['last_connected_at'] != null
           ? DateTime.parse(json['last_connected_at'] as String)
           : null,
+      publicHost: json['public_host'] as String?,
+      publicPort: (json['public_port'] as int?) ?? 3030,
     );
   }
 
@@ -93,5 +107,7 @@ class StoredNode {
         'paired_at': pairedAt.toIso8601String(),
         if (lastConnectedAt != null)
           'last_connected_at': lastConnectedAt!.toIso8601String(),
+        if (publicHost != null) 'public_host': publicHost,
+        'public_port': publicPort,
       };
 }
