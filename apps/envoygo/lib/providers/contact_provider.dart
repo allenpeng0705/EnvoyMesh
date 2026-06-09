@@ -82,6 +82,11 @@ class ContactNotifier extends StateNotifier<ContactState> {
     );
   }
 
+  /// Update bonds directly (used by NodeProvider after fetching).
+  void setBonds(List<Contact> bonds) {
+    state = state.copyWith(bonds: bonds, isLoading: false);
+  }
+
   /// Get a contact by owner ID.
   Contact? getContact(String ownerId) {
     return state.bonds

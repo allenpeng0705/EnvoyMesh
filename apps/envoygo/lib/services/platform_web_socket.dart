@@ -69,9 +69,10 @@ class PlatformWebSocket implements WebSocketLike {
 
     ws._subscription = socket.listen(
       (data) {
-        final bytes =
-            data is Uint8List ? data : Uint8List.fromList(data as List<int>);
-        if (mode == 'http') {
+        try {
+          final bytes =
+              data is Uint8List ? data : Uint8List.fromList(data as List<int>);
+          if (mode == 'http') {
           httpBuffer.write(utf8.decode(bytes));
           final r = httpBuffer.toString();
           final delim = r.indexOf('\r\n\r\n');
@@ -93,8 +94,11 @@ class PlatformWebSocket implements WebSocketLike {
             }
           }
         } else {
-          frameBuffer.addAll(bytes);
-          _drainFrames(frameBuffer, ws);
+            frameBuffer.addAll(bytes);
+            _drainFrames(frameBuffer, ws);
+          }
+        } catch (_) {
+          // Never let a frame parse error cancel the subscription.
         }
       },
       onError: (e) {

@@ -225,18 +225,22 @@ class NodeNotifier extends StateNotifier<NodeState> {
     if (nodeState.activeNode == null) return;
     try {
       final bonds = await nodeService.getBonds();
-      // Filter out self-identity.
+      // Filter out self-identity (shared-identity devices are bonds to self).
       final selfOwnerId = nodeState.ownerId;
       final filtered = selfOwnerId != null
-          ? bonds.where((c) => c.ownerId != selfOwnerId).toList()
+          ? bonds
+              .where((c) =>
+                  c.ownerId != selfOwnerId &&
+                  !c.ownerId.startsWith('envoy_device_'))
+              .toList()
           : bonds;
       final localDb = LocalDatabase();
       await localDb.upsertContacts(
         nodeState.activeNode!.id,
         filtered.map((c) => c.toJson()).toList(),
       );
-      // Use the contact notifier's state update.
-      _ref.read(contactProvider.notifier).syncBonds();
+      // Update contact state directly (avoid nodeServiceProvider null cache).
+      contactNotifier.setBonds(filtered);
     } catch (e) {
       debugPrint('_syncBondsDirect failed: $e');
     }
@@ -401,7 +405,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     final sessionToken =
         await _secureStorage.getSessionToken(node.id);
-    if (sessionToken == null) {
+    if (sessionToken == null || sessionToken.isEmpty) {
       state = state.copyWith(
         connectionState: NodeConnectionState.error,
         errorMessage: 'Session token not found — re-pair required.',
@@ -415,6 +419,40 @@ class NodeNotifier extends StateNotifier<NodeState> {
       state = state.copyWith(
         connectionState: NodeConnectionState.error,
         errorMessage: 'No transport candidates available.',
+      );
+      return;
+    }
+
+    // Validate the session token before attempting sync.
+    // If the token is expired/invalid, fail early with a clear message.
+    var sessionValid = false;
+    try {
+      final tempClient = HomeRemoteClient(HomeRemoteClientOptions(
+        resolveCandidates: () async => candidates,
+        createTransport: (c) => _createTransportForCandidate(c),
+        perCandidateTimeoutMs: 6000,
+        upgradeSweepMs: 0,
+      ));
+      await tempClient.ensureConnected();
+      final tempNs = NodeServiceClient(tempClient);
+      try {
+        final status = await tempNs.getConnectionStatus();
+        sessionValid = status['authenticated'] == true;
+      } catch (_) {
+        // getConnectionStatus may not exist — fall through to main connect.
+        sessionValid = true; // optimistic
+      }
+      tempClient.dispose();
+    } catch (_) {
+      // Can't even connect — let the main connect attempt handle it.
+      sessionValid = true; // optimistic, let main path surface the real error
+    }
+
+    if (!sessionValid) {
+      await _secureStorage.deleteSessionToken(node.id);
+      state = state.copyWith(
+        connectionState: NodeConnectionState.error,
+        errorMessage: 'Session expired — pair again to reconnect.',
       );
       return;
     }
@@ -438,9 +476,6 @@ class NodeNotifier extends StateNotifier<NodeState> {
       await _client!.ensureConnected();
       _nodeService = NodeServiceClient(_client!);
 
-      // Authenticate with session token.
-      // The token is sent as a query param or via an 'authenticate' RPC.
-      // For now, the token is included in candidate URLs.
       await _localDb.updateNodeLastConnected(node.id);
       await _secureStorage.saveActiveNodeId(node.id);
 
@@ -453,9 +488,18 @@ class NodeNotifier extends StateNotifier<NodeState> {
       // Trigger full data sync.
       _syncAllData();
     } catch (e) {
+      final msg = e.toString();
+      // If the error looks auth-related, clear the token so the user
+      // sees "Session token not found" on the next attempt.
+      if (msg.contains('Authentication') ||
+          msg.contains('auth') ||
+          msg.contains('Unauthorized') ||
+          msg.contains('token')) {
+        await _secureStorage.deleteSessionToken(node.id);
+      }
       state = state.copyWith(
         connectionState: NodeConnectionState.error,
-        errorMessage: e.toString(),
+        errorMessage: msg,
       );
       await disconnect();
     }
