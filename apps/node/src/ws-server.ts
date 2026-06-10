@@ -263,6 +263,7 @@ export class WsServer {
       "digest:ready",
       "homeclawCoreWs:rx",
       "homeTerminalWs:rx",
+      "terminal:rx",
       "homeTerminalWs:closed",
       "terminal:session-updated",
       "terminal:watch-ready",

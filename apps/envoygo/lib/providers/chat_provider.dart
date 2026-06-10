@@ -100,12 +100,21 @@ class ChatNotifier extends StateNotifier<ChatState> {
       },
     );
 
-    // Update thread.
+    // Update thread — use contact's display name if available.
+    var contactName = _ref.read(contactProvider.notifier).getContact(targetOwnerId)?.displayName;
+    if (contactName == null || contactName!.isEmpty) {
+      contactName = _ref.read(contactProvider).bonds
+          .where((c) => c.ownerId == targetOwnerId)
+          .firstOrNull
+          ?.displayName;
+    }
     _upsertThread(
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
       type: ChatThreadType.direct,
-      displayName: targetOwnerId,
+      displayName: (contactName != null && contactName!.isNotEmpty)
+          ? contactName!
+          : targetOwnerId,
       contactOwnerId: targetOwnerId,
       lastMessageText: text,
       lastMessageAt: DateTime.now(),
@@ -174,30 +183,53 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   /// Handle a chat:message push event.
+  ///
+  /// Accepts both the home node's nested ChatMessage format
+  /// (sender.ownerId, content.text, metadata.timestamp) and the
+  /// flat serialized format (senderOwnerId, text, createdAt).
   void onChatMessage(Map<String, dynamic> data) {
     final nodeState = _ref.read(nodeProvider);
     if (nodeState.activeNode == null) return;
 
-    final senderOwnerId = data['senderOwnerId'] as String?;
-    final text = data['text'] as String?;
+    // Normalize: the home node emits ChatMessage with nested structure.
+    final sender = data['sender'] as Map<String, dynamic>?;
+    final content = data['content'] as Map<String, dynamic>?;
+    final metadata = data['metadata'] as Map<String, dynamic>?;
+
+    final senderOwnerId = ((data['senderOwnerId'] ?? sender?['ownerId']) as String?)?.trim();
+    final text = (data['text'] ?? content?['text']) as String?;
     final messageId = data['messageId'] as String?;
-    final createdAt = data['createdAt'] as String?;
+    final createdAt = (data['createdAt'] ?? metadata?['timestamp']) as String?;
+    final senderDisplayName = (data['senderDisplayName'] ?? sender?['displayName']) as String?;
 
     if (senderOwnerId == null) return;
 
+    // Route terminal messages to terminal threads.
+    final isTerminal = senderOwnerId == 'terminal';
+    final terminalId = data['terminalId'] as String?;
+    final terminalName = data['terminalName'] as String?;
+
     // Route agent responses to the appropriate agent thread.
-    // Check for agent sender patterns: envoy_agent_*, or the home node's
-    // owner ID (agent responds on behalf of owner).
+    // ENVOY_AI_THREAD_KEY is "__envoy_ai__" — the home node uses this as
+    // the sender ownerId for EnvoyAI responses.
     final selfOwnerId = nodeState.ownerId;
-    final isAgent = senderOwnerId.startsWith('envoy_agent_') ||
-        (selfOwnerId != null && senderOwnerId == selfOwnerId);
-    final threadId = isAgent
-        ? '${nodeState.activeNode!.id}:envoyai'
-        : '${nodeState.activeNode!.id}:$senderOwnerId';
+    final externalAgent = data['agentType'] as String? ?? sender?['agentType'] as String?;
+    final isAgent = !isTerminal &&
+        (senderOwnerId == '__envoy_ai__' ||
+            senderOwnerId.startsWith('envoy_agent_') ||
+            (selfOwnerId != null && senderOwnerId == selfOwnerId));
+    // Route external agent (HomeClaw) to its own thread, not EnvoyAI.
+    final agentType = externalAgent == 'external' ? 'external' : 'envoyai';
+    final threadId = isTerminal
+        ? '${nodeState.activeNode!.id}:term:${terminalId ?? senderOwnerId}'
+        : isAgent
+            ? '${nodeState.activeNode!.id}:$agentType'
+            : '${nodeState.activeNode!.id}:$senderOwnerId';
 
     // Look up the contact's display name for non-agent messages.
     var displayName = data['senderDisplayName'] as String?;
-    if (!isAgent && (displayName == null || displayName!.isEmpty)) {
+    if (!isAgent && !isTerminal &&
+        (displayName == null || displayName!.isEmpty)) {
       final contactNotifier = _ref.read(contactProvider.notifier);
       final contact = contactNotifier.getContact(senderOwnerId);
       displayName = contact?.displayName;
@@ -233,12 +265,18 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _upsertThread(
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
-      type: isAgent ? ChatThreadType.envoyai : ChatThreadType.direct,
-      displayName: isAgent
-          ? 'EnvoyAI'
-          : (displayName ?? senderOwnerId),
+      type: isTerminal
+          ? ChatThreadType.terminal
+          : isAgent
+              ? ChatThreadType.envoyai
+              : ChatThreadType.direct,
+      displayName: isTerminal
+          ? 'Terminal: ${terminalName ?? terminalId ?? ''}'
+          : isAgent
+              ? 'EnvoyAI'
+              : (displayName ?? senderOwnerId),
       contactOwnerId: isAgent ? null : senderOwnerId,
-      agentType: isAgent ? 'envoyai' : null,
+      agentType: isAgent ? agentType : null,
       lastMessageText: text ?? '',
       lastMessageAt: createdAt != null
           ? DateTime.tryParse(createdAt)
@@ -246,16 +284,22 @@ class ChatNotifier extends StateNotifier<ChatState> {
       unreadIncrement: true,
     );
 
-    // Update messages.
-    state = state.copyWith(
-      messages: {
-        ...state.messages,
-        threadId: [
-          ...?state.messages[threadId],
-          msg,
-        ],
-      },
-    );
+    // Dedup: skip if any message in this thread has the same text.
+    final existingMessages = state.messages[threadId] ?? [];
+    final isDuplicate =
+        existingMessages.any((m) => m.text == text && m.isOutbound == false);
+    if (!isDuplicate) {
+      // Update messages.
+      state = state.copyWith(
+        messages: {
+          ...state.messages,
+          threadId: [
+            ...existingMessages,
+            msg,
+          ],
+        },
+      );
+    }
   }
 
   // -- Room operations --
@@ -446,9 +490,21 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final enabled = data['enabled'] as bool? ?? false;
     if (!enabled) return;
 
-    final agentType = data['agentType'] as String? ?? 'envoyai';
-    final agentName = data['agentName'] as String? ?? 'EnvoyAI';
+    // Detect external agent from the name. The BridgeStatus type has no
+    // agentType field, so we infer it from the agentName.
+    final rawName = data['agentName'] as String? ?? '';
+    final isExternal = rawName.toLowerCase().contains('claw') ||
+        rawName.toLowerCase().contains('open') ||
+        rawName.toLowerCase().contains('external');
+    final agentType = data['agentType'] as String? ??
+        (isExternal ? 'external' : 'envoyai');
+    final agentName = rawName.isNotEmpty ? rawName : 'EnvoyAI';
     final threadId = '${nodeState.activeNode!.id}:$agentType';
+
+    // Append bridge status to the display name for external agents.
+    final displayName = agentType == 'external'
+        ? '$agentName ${enabled ? '(Bridge Online)' : '(Bridge Offline)'}'
+        : agentName;
 
     _upsertThread(
       threadId: threadId,
@@ -456,7 +512,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       type: agentType == 'external'
           ? ChatThreadType.externalAgent
           : ChatThreadType.envoyai,
-      displayName: agentName,
+      displayName: displayName,
       agentType: agentType,
     );
   }
@@ -531,9 +587,65 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
+  /// Create a new terminal session on the home node.
+  Future<void> createTerminal(
+      {required String name, String? cwd}) async {
+    final nodeService = _ref.read(nodeServiceProvider);
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeService == null || nodeState.activeNode == null) return;
+
+    final result =
+        await nodeService.createTerminalSession(command: name, cwd: cwd);
+    final sessionId = result['sessionId'] as String?;
+    if (sessionId == null) return;
+
+    // Create a terminal thread.
+    final threadId = '${nodeState.activeNode!.id}:term:$sessionId';
+    _upsertThread(
+      threadId: threadId,
+      nodeId: nodeState.activeNode!.id,
+      type: ChatThreadType.terminal,
+      displayName: 'Terminal: $name',
+      lastMessageAt: DateTime.now(),
+    );
+  }
+
   /// Select a tab.
   void selectTab(int index) {
     state = state.copyWith(selectedTab: index);
+  }
+
+  /// Refresh thread display names from contact data.
+  /// Called after bonds sync so threads with raw owner IDs get real names.
+  void refreshThreadDisplayNames() {
+    final contacts = _ref.read(contactProvider).bonds;
+    if (contacts.isEmpty) return;
+    final contactMap = <String, String>{};
+    for (final c in contacts) {
+      if (c.displayName != null && c.displayName!.isNotEmpty) {
+        contactMap[c.ownerId] = c.displayName!;
+      }
+    }
+    if (contactMap.isEmpty) return;
+
+    var changed = false;
+    final updated = state.threads.map((t) {
+      if (t.type == ChatThreadType.direct &&
+          t.contactOwnerId != null &&
+          contactMap.containsKey(t.contactOwnerId) &&
+          t.displayName.startsWith('envoy:owner:')) {
+        changed = true;
+        return ChatThread.fromJson({
+          ...t.toJson(),
+          'display_name': contactMap[t.contactOwnerId]!,
+        });
+      }
+      return t;
+    }).toList();
+
+    if (changed) {
+      state = state.copyWith(threads: updated);
+    }
   }
 
   /// Create or update a thread in memory and local DB.

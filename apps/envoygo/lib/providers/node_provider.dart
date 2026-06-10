@@ -210,6 +210,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
       if (node != null) {
         chatNotifier.loadThreads(node.id);
       }
+      // Refresh thread display names AFTER loading cached threads,
+      // so any raw owner IDs are replaced with contact display names.
+      _ref.read(chatProvider.notifier).refreshThreadDisplayNames();
     });
 
     // Rooms and terminals sync directly using _nodeService.
@@ -217,16 +220,25 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _syncTerminalsDirect(nodeService, chatNotifier, terminalNotifier);
     _syncInboxDirect(nodeService, chatNotifier);
 
-    // Bridge status check for AI agent threads.
+    // EnvoyAI (OpenClaw) — always create, built-in.
+    chatNotifier.onBridgeStatus({
+      'enabled': true,
+      'agentName': 'EnvoyAI',
+      'agentType': 'envoyai',
+    });
+
+    // Ext Agent (HomeClaw / others) — always create the thread, then
+    // update its status from the bridge. Shows "Bridge Online" or
+    // "Bridge Offline" matching the Social app behaviour.
+    chatNotifier.onBridgeStatus({
+      'enabled': false,
+      'agentName': 'Ext Agent',
+      'agentType': 'external',
+    });
     nodeService.getBridgeStatus().then((status) {
       chatNotifier.onBridgeStatus(status);
     }).catchError((e) {
       debugPrint('getBridgeStatus failed: $e');
-      chatNotifier.onBridgeStatus({
-        'enabled': true,
-        'agentName': 'EnvoyAI',
-        'agentType': 'envoyai',
-      });
     });
   }
 
@@ -284,7 +296,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
   void _syncTerminalsDirect(NodeServiceClient nodeService,
       ChatNotifier chatNotifier, TerminalNotifier terminalNotifier) {
     nodeService.listTerminalSessions().then((sessions) {
-      for (final session in sessions) {
+      // Only sync running terminals (have an active process).
+      final running = sessions
+          .where((s) => s.runningProcess != null && s.runningProcess!.isNotEmpty);
+      for (final session in running) {
         chatNotifier.onChatMessage({
           'senderOwnerId': 'terminal',
           'text': '${session.runningProcess ?? 'shell'} — ${session.cwd ?? '~'}',

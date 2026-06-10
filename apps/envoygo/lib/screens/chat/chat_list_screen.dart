@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/chat_thread.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/contact_provider.dart';
 import '../../widgets/thread_tile.dart';
 import '../terminals/terminal_detail_screen.dart';
 import 'chat_detail_screen.dart';
@@ -77,13 +78,25 @@ class ChatListScreen extends ConsumerWidget {
             ),
           ],
         ),
-        // FAB for creating a group chat.
+        // FABs for creating group chats and terminals.
         Positioned(
           right: 16,
           bottom: 16,
-          child: FloatingActionButton(
-            onPressed: () => _showCreateRoomDialog(context, ref),
-            child: const Icon(Icons.group_add),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FloatingActionButton.small(
+                heroTag: 'terminal',
+                onPressed: () => _createTerminal(context, ref),
+                child: const Icon(Icons.terminal),
+              ),
+              const SizedBox(height: 12),
+              FloatingActionButton(
+                heroTag: 'group',
+                onPressed: () => _showCreateRoomDialog(context, ref),
+                child: const Icon(Icons.group_add),
+              ),
+            ],
           ),
         ),
       ],
@@ -133,6 +146,59 @@ class ChatListScreen extends ConsumerWidget {
           contactOwnerId: isRoom ? null : thread.contactOwnerId,
           chatRoomId: isRoom ? thread.chatRoomId : null,
         ),
+      ),
+    );
+  }
+
+  void _createTerminal(BuildContext context, WidgetRef ref) {
+    final nameController = TextEditingController(text: 'zsh');
+    final cwdController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New Terminal'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: 'Shell (e.g. zsh, bash)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: cwdController,
+              decoration: const InputDecoration(
+                hintText: 'Working directory (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final name = nameController.text.trim();
+              if (name.isNotEmpty) {
+                ref.read(chatProvider.notifier).createTerminal(
+                      name: name,
+                      cwd: cwdController.text.trim().isEmpty
+                          ? null
+                          : cwdController.text.trim(),
+                    );
+                Navigator.of(ctx).pop();
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
       ),
     );
   }
