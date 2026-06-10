@@ -208,6 +208,11 @@ class LocalDatabase {
     );
   }
 
+  Future<void> deleteThread(String threadId) async {
+    await _ensureDb.delete('chat_threads', where: 'id = ?', whereArgs: [threadId]);
+    await _ensureDb.delete('messages', where: 'thread_id = ?', whereArgs: [threadId]);
+  }
+
   // -- Message operations --
 
   Future<void> insertMessage(Map<String, dynamic> message) async {

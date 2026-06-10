@@ -52,6 +52,28 @@ class ChatListScreen extends ConsumerWidget {
       );
     }
 
+    // Group threads by type for sectioned display.
+    final ai = threads
+        .where((t) =>
+            t.type == ChatThreadType.envoyai ||
+            t.type == ChatThreadType.externalAgent)
+        .toList();
+    final contacts = threads
+        .where((t) => t.type == ChatThreadType.direct)
+        .toList();
+    final groups = threads
+        .where((t) => t.type == ChatThreadType.group)
+        .toList();
+    final terminals = threads
+        .where((t) => t.type == ChatThreadType.terminal)
+        .toList();
+
+    final sections = <_ThreadSection>[];
+    if (ai.isNotEmpty) sections.add(_ThreadSection('AI', ai));
+    if (contacts.isNotEmpty) sections.add(_ThreadSection('Contacts', contacts));
+    if (groups.isNotEmpty) sections.add(_ThreadSection('Groups', groups));
+    if (terminals.isNotEmpty) sections.add(_ThreadSection('Terminals', terminals));
+
     return Stack(
       children: [
         Column(
@@ -66,13 +88,59 @@ class ChatListScreen extends ConsumerWidget {
             ),
             Expanded(
               child: ListView.builder(
-                itemCount: threads.length,
+                itemCount: sections.fold(
+                    0, (sum, s) => sum + 1 + s.threads.length),
                 itemBuilder: (context, index) {
-                  final thread = threads[index];
-                  return ThreadTile(
-                    thread: thread,
-                    onTap: () => _openThread(context, thread),
-                  );
+                  // Find which section and position this index belongs to.
+                  var offset = 0;
+                  for (final section in sections) {
+                    if (index == offset) {
+                      // Section header.
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                        child: Text(
+                          section.title,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      );
+                    }
+                    offset++;
+                    final threadIndex = index - offset;
+                    if (threadIndex < section.threads.length) {
+                      final thread = section.threads[threadIndex];
+                      return Dismissible(
+                        key: Key(thread.id),
+                        direction: DismissDirection.endToStart,
+                        background: Container(
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.only(right: 20),
+                          color: Colors.red,
+                          child: const Icon(Icons.delete,
+                              color: Colors.white),
+                        ),
+                        confirmDismiss: (direction) async {
+                          ref
+                              .read(chatProvider.notifier)
+                              .deleteThread(thread.id);
+                          return false;
+                        },
+                        child: ThreadTile(
+                          thread: thread,
+                          onTap: () => _openThread(context, thread),
+                        ),
+                      );
+                    }
+                    offset += section.threads.length;
+                  }
+                  return const SizedBox.shrink();
                 },
               ),
             ),
@@ -242,4 +310,11 @@ class ChatListScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Helper for sectioned thread display.
+class _ThreadSection {
+  final String title;
+  final List<ChatThread> threads;
+  const _ThreadSection(this.title, this.threads);
 }

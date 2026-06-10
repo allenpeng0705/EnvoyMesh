@@ -43,10 +43,14 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       if (!_initialized) {
         _initialized = true;
         final notifier = ref.read(chatProvider.notifier);
-        notifier.loadHistory(
-          widget.threadId,
-          contactOwnerId: widget.contactOwnerId,
-        );
+        // Load from local DB first (instant), then from home node.
+        notifier.loadMessagesFromDb(widget.threadId);
+        if (!_isAgent) {
+          notifier.loadHistory(
+            widget.threadId,
+            contactOwnerId: widget.contactOwnerId,
+          );
+        }
         notifier.markRead(
           widget.threadId,
           contactOwnerId: widget.contactOwnerId,

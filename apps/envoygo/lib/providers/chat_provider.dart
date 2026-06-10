@@ -134,7 +134,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
-  /// Load chat history for a thread.
+  /// Load chat history for a thread from the home node (remote).
   Future<void> loadHistory(String threadId,
       {String? contactOwnerId}) async {
     if (contactOwnerId == null) return;
@@ -161,6 +161,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
           ...messages,
         ],
       },
+    );
+  }
+
+  /// Load messages from local DB into memory.
+  /// Called when opening a thread that has no in-memory messages yet.
+  Future<void> loadMessagesFromDb(String threadId) async {
+    final rows = await _localDb.getMessages(threadId);
+    if (rows.isEmpty) return;
+    final messages = rows.map((r) => ChatMessage.fromJson(r)).toList();
+    state = state.copyWith(
+      messages: {...state.messages, threadId: messages},
     );
   }
 
@@ -257,33 +268,33 @@ class ChatNotifier extends StateNotifier<ChatState> {
             ? '${nodeState.activeNode!.id}:$agentType'
             : '${nodeState.activeNode!.id}:$targetOwnerId';
 
-    // Look up the contact's display name for non-agent messages.
-    var displayName = data['senderDisplayName'] as String?;
-    if (!isAgent && !isTerminal &&
-        (displayName == null || displayName!.isEmpty)) {
+    // Look up the contact's display name for the thread title.
+    var threadDisplayName = senderDisplayName;
+    if (!isAgent && !isTerminal) {
       final contactNotifier = _ref.read(contactProvider.notifier);
       final contact = contactNotifier.getContact(targetOwnerId);
-      displayName = contact?.displayName;
-      // Fall back to local DB cache if not in memory yet.
-      if ((displayName == null || displayName!.isEmpty) && targetOwnerId.isNotEmpty) {
-        // Try looking up from the contact's own state (bonds list).
+      threadDisplayName = contact?.displayName ?? senderDisplayName;
+      if ((threadDisplayName == null || threadDisplayName!.isEmpty) && targetOwnerId.isNotEmpty) {
         final contacts = _ref.read(contactProvider).bonds;
-        displayName = contacts
+        threadDisplayName = contacts
             .where((c) => c.ownerId == targetOwnerId)
             .firstOrNull
             ?.displayName;
       }
     }
-    // Never use the raw owner ID as display name.
-    if (displayName == null || displayName!.isEmpty || displayName!.startsWith('envoy:owner:')) {
-      // Still unknown — keep the raw ID but the UI will try to resolve later.
-      displayName = displayName ?? targetOwnerId;
+    if (threadDisplayName == null || threadDisplayName!.isEmpty || threadDisplayName!.startsWith('envoy:owner:')) {
+      threadDisplayName = targetOwnerId;
     }
+    // Message sender display: "You" for outbound, peer's name for inbound.
+    final msgSenderDisplay = isOutbound
+        ? 'You'
+        : (senderDisplayName ?? senderOwnerId);
+
     final msg = ChatMessage(
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
       senderOwnerId: senderOwnerId,
-      senderDisplayName: displayName,
+      senderDisplayName: msgSenderDisplay,
       text: text,
       createdAt: createdAt,
       isOutbound: false,
@@ -305,8 +316,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
           ? 'Terminal: ${terminalName ?? terminalId ?? ''}'
           : isAgent
               ? 'EnvoyAI'
-              : (displayName ?? senderOwnerId),
-      contactOwnerId: isAgent ? null : senderOwnerId,
+              : threadDisplayName ?? targetOwnerId,
+      contactOwnerId: isAgent ? null : targetOwnerId,
       agentType: isAgent ? agentType : null,
       lastMessageText: text ?? '',
       lastMessageAt: createdAt != null
@@ -333,6 +344,42 @@ class ChatNotifier extends StateNotifier<ChatState> {
         messages: {
           ...state.messages,
           threadId: [msg, ...existingMessages],
+        },
+      );
+    }
+
+    // Dual-route agent messages: if the AI reply is addressed to a
+    // known contact, also show it in that contact's thread (same as
+    // the Social app behaviour).
+    if (isAgent && recipientOwnerId != null && recipientOwnerId.isNotEmpty &&
+        recipientOwnerId != selfOwnerId) {
+      final contactThreadId = '${nodeState.activeNode!.id}:$recipientOwnerId';
+      final contactMsg = ChatMessage(
+        id: '${messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}'}_contact',
+        threadId: contactThreadId,
+        senderOwnerId: senderOwnerId,
+        senderDisplayName: senderDisplayName ?? 'EnvoyAI',
+        text: text,
+        createdAt: createdAt,
+        isOutbound: false,
+      );
+      _upsertThread(
+        threadId: contactThreadId,
+        nodeId: nodeState.activeNode!.id,
+        type: ChatThreadType.direct,
+        displayName: senderDisplayName ?? 'EnvoyAI',
+        contactOwnerId: recipientOwnerId,
+        lastMessageText: text ?? '',
+        lastMessageAt: createdAt != null
+            ? DateTime.tryParse(createdAt)
+            : DateTime.now(),
+        unreadIncrement: true,
+      );
+      final contactExisting = state.messages[contactThreadId] ?? [];
+      state = state.copyWith(
+        messages: {
+          ...state.messages,
+          contactThreadId: [contactMsg, ...contactExisting],
         },
       );
     }
@@ -644,6 +691,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
       displayName: 'Terminal: $name',
       lastMessageAt: DateTime.now(),
     );
+  }
+
+  /// Delete a thread and all its messages.
+  Future<void> deleteThread(String threadId) async {
+    // Remove from local DB.
+    await _localDb.deleteThread(threadId);
+    // Remove from in-memory state.
+    final threads = state.threads.where((t) => t.id != threadId).toList();
+    final messages = Map<String, List<ChatMessage>>.from(state.messages);
+    messages.remove(threadId);
+    state = state.copyWith(threads: threads, messages: messages);
   }
 
   /// Select a tab.
