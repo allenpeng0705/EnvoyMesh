@@ -51,7 +51,8 @@ class _TerminalDetailScreenState
     _terminalService = TerminalService(nodeService);
 
     // Subscribe to terminal output from push events.
-    client.on('terminal:rx', _onTerminalOutput);
+    // The home node emits `homeTerminalWs:rx` with base64-encoded output.
+    client.on('homeTerminalWs:rx', _onTerminalOutput);
 
     try {
       await _terminalService!.attach(widget.sessionId);
@@ -66,10 +67,16 @@ class _TerminalDetailScreenState
 
   void _onTerminalOutput(dynamic data) {
     if (data is! Map<String, dynamic>) return;
-    final sessionId = data['sessionId'] as String?;
-    if (sessionId != widget.sessionId) return;
-    final text = data['text'] as String?;
-    if (text != null && text.isNotEmpty) {
+    // Home node sends `{ dataBase64: "<b64>" }` for terminal output.
+    final b64 = data['dataBase64'] as String?;
+    if (b64 != null && b64.isNotEmpty) {
+      String text;
+      try {
+        text = utf8.decode(base64Decode(b64));
+      } catch (_) {
+        text = '[binary data]';
+      }
+      if (text.isNotEmpty) {
       setState(() {
         _output.add(text);
         // Keep only last 500 lines to avoid memory issues.

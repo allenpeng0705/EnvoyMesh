@@ -29,7 +29,11 @@ class TerminalService {
 
   /// Attach to a terminal session (opens PTY channel).
   Future<void> attach(String sessionId) async {
-    await _client.homeTerminalWsOpen(sessionId);
+    final result = await _client.homeTerminalWsOpen(sessionId);
+    if (result['ok'] != true) {
+      final err = result['error'] as String? ?? 'Unknown error';
+      throw Exception('Terminal attach failed: $err');
+    }
     _activeSessionId = sessionId;
   }
 

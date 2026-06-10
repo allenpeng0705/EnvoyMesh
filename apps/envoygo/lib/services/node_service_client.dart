@@ -166,7 +166,7 @@ class NodeServiceClient {
   Future<Map<String, dynamic>> homeTerminalWsOpen(
       String sessionId) async {
     return await _client.call('homeTerminalWsOpen', {
-      'pathWithQuery': '/attach?sessionId=$sessionId',
+      'pathWithQuery': '/ws/terminal/attach?sessionId=$sessionId',
     }) as Map<String, dynamic>;
   }
 
