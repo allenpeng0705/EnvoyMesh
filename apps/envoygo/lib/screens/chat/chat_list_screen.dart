@@ -88,7 +88,7 @@ class ChatListScreen extends ConsumerWidget {
             ),
             Expanded(
               child: ListView.builder(
-                itemCount: sections.fold(
+                itemCount: sections.fold<int>(
                     0, (sum, s) => sum + 1 + s.threads.length),
                 itemBuilder: (context, index) {
                   // Find which section and position this index belongs to.

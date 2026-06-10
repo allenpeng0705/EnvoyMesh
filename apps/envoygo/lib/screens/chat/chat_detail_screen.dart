@@ -1,5 +1,9 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import '../../models/chat_message.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
 import '../../widgets/chat_bubble.dart';
@@ -73,15 +77,19 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.displayName),
-        actions: _isRoom
-            ? [
-                IconButton(
-                  icon: const Icon(Icons.person_add),
-                  tooltip: 'Invite',
-                  onPressed: () => _showInviteDialog(context),
-                ),
-              ]
-            : null,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Clear thread',
+            onPressed: _clearThread,
+          ),
+          if (_isRoom)
+            IconButton(
+              icon: const Icon(Icons.person_add),
+              tooltip: 'Invite',
+              onPressed: () => _showInviteDialog(context),
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -99,9 +107,33 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                     itemCount: messages.length,
                     itemBuilder: (context, index) {
                       final msg = messages[index];
-                      return ChatBubble(
-                        message: msg,
-                        isOutbound: msg.isOutbound,
+                      return GestureDetector(
+                        onLongPress: () {
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Delete message?'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.of(ctx).pop(),
+                                  child: const Text('Cancel'),
+                                ),
+                                FilledButton(
+                                  onPressed: () {
+                                    _deleteMessage(msg);
+                                    Navigator.of(ctx).pop();
+                                  },
+                                  child: const Text('Delete'),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        child: ChatBubble(
+                          message: msg,
+                          isOutbound: msg.isOutbound,
+                        ),
                       );
                     },
                   ),
@@ -112,6 +144,10 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                   horizontal: 12, vertical: 8),
               child: Row(
                 children: [
+                  IconButton(
+                    icon: const Icon(Icons.image),
+                    onPressed: _pickAndSendImage,
+                  ),
                   Expanded(
                     child: TextField(
                       controller: _textController,
@@ -140,8 +176,27 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     );
   }
 
+  Future<void> _pickAndSendImage() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1024,
+      maxHeight: 1024,
+      imageQuality: 80,
+    );
+    if (picked == null) return;
+    final bytes = await File(picked.path).readAsBytes();
+    final base64 = base64Encode(bytes);
+    // Send as a data URI so ChatBubble can detect and render it.
+    final text = 'data:image/jpeg;base64,$base64';
+    _sendText(text);
+  }
+
   void _sendMessage() {
-    final text = _textController.text.trim();
+    _sendText(_textController.text.trim());
+  }
+
+  void _sendText(String text) {
     if (text.isEmpty) return;
 
     if (_isAgent) {
@@ -158,6 +213,37 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           );
     }
     _textController.clear();
+  }
+
+  void _clearThread() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear thread?'),
+        content: const Text('All messages in this thread will be deleted.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              ref
+                  .read(chatProvider.notifier)
+                  .clearMessages(widget.threadId);
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _deleteMessage(ChatMessage msg) {
+    ref
+        .read(chatProvider.notifier)
+        .deleteMessage(widget.threadId, msg);
   }
 
   void _showInviteDialog(BuildContext context) {

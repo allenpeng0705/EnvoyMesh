@@ -220,75 +220,98 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     if (senderOwnerId == null) return;
 
-    // When the home node sends a message to a contact, the sender is
-    // the owner (actorRole="human"), not the contact. Use the recipient's
-    // ownerId as the thread target for outbound messages.
+    // --- Identify the parties ---
     final selfOwnerId = nodeState.ownerId;
     final recipient = data['recipient'] as Map<String, dynamic>?;
     final recipientOwnerId = recipient?['ownerId'] as String?;
     final actorRole = sender?['actorRole'] as String?;
-    final isOutbound = selfOwnerId != null &&
-        senderOwnerId == selfOwnerId &&
-        actorRole == 'human';
-    final targetOwnerId = isOutbound
-        ? (recipientOwnerId ?? senderOwnerId)
-        : senderOwnerId;
+
+    // Is this message sent by the owner, by an agent, or by someone else?
+    final sentBySelf = selfOwnerId != null && senderOwnerId == selfOwnerId;
+    final isAgent = !(senderOwnerId == 'terminal') &&
+        (senderOwnerId == '__envoy_ai__' ||
+            senderOwnerId.startsWith('envoy_agent_') ||
+            (sentBySelf && actorRole == 'agent'));
+    final isTerminal = senderOwnerId == 'terminal';
+
+    // Figure out the "other party" — which contact's thread this goes to.
+    final String peerId;
+    if (sentBySelf && actorRole == 'human') {
+      // Owner sent to a contact → thread is the recipient.
+      peerId = recipientOwnerId ?? senderOwnerId;
+    } else if (isAgent && recipientOwnerId != null && recipientOwnerId.isNotEmpty) {
+      // Agent sent to a contact → thread is the recipient.
+      peerId = recipientOwnerId;
+    } else {
+      // Inbound from a contact → thread is the sender.
+      peerId = senderOwnerId;
+    }
 
     // Dedup: skip if we've already seen this messageId (dual delivery).
     final msgId = messageId ?? '';
     if (msgId.isNotEmpty && _seenMessageIds.contains(msgId)) return;
     if (msgId.isNotEmpty) {
       _seenMessageIds.add(msgId);
-      // Cap at 200 to avoid unbounded growth.
       if (_seenMessageIds.length > 200) {
         _seenMessageIds
             .removeAll(_seenMessageIds.take(_seenMessageIds.length - 200));
       }
     }
 
-    // Route terminal messages to terminal threads.
-    final isTerminal = senderOwnerId == 'terminal';
+    // --- Determine which thread to put the message in ---
     final terminalId = data['terminalId'] as String?;
     final terminalName = data['terminalName'] as String?;
-
-    // Route agent responses to the appropriate agent thread.
-    // ENVOY_AI_THREAD_KEY is "__envoy_ai__" — the home node uses this as
-    // the sender ownerId for EnvoyAI responses.
-    // selfOwnerId and actorRole are already declared above for outbound detection.
     final externalAgent = data['agentType'] as String? ?? sender?['agentType'] as String?;
-    final isAgent = !isTerminal &&
-        (senderOwnerId == '__envoy_ai__' ||
-            senderOwnerId.startsWith('envoy_agent_') ||
-            (selfOwnerId != null && senderOwnerId == selfOwnerId && actorRole == 'agent'));
-    // Route external agent (HomeClaw) to its own thread, not EnvoyAI.
     final agentType = externalAgent == 'external' ? 'external' : 'envoyai';
-    final threadId = isTerminal
-        ? '${nodeState.activeNode!.id}:term:${terminalId ?? senderOwnerId}'
-        : isAgent
-            ? '${nodeState.activeNode!.id}:$agentType'
-            : '${nodeState.activeNode!.id}:$targetOwnerId';
 
-    // Look up the contact's display name for the thread title.
-    var threadDisplayName = senderDisplayName;
-    if (!isAgent && !isTerminal) {
+    // Agent messages: if the recipient is a known contact → contact's thread.
+    // If the recipient is the owner (chatting with EnvoyAI) → envoyai thread.
+    final agentTalkToContact = isAgent &&
+        recipientOwnerId != null &&
+        recipientOwnerId.isNotEmpty &&
+        recipientOwnerId != selfOwnerId;
+
+    final String threadId;
+    if (isTerminal) {
+      threadId = '${nodeState.activeNode!.id}:term:${terminalId ?? senderOwnerId}';
+    } else if (agentTalkToContact) {
+      // AI auto-reply for a contact → contact's thread only.
+      threadId = '${nodeState.activeNode!.id}:$recipientOwnerId';
+    } else if (isAgent) {
+      // Chatting with EnvoyAI → envoyai thread.
+      threadId = '${nodeState.activeNode!.id}:$agentType';
+    } else {
+      threadId = '${nodeState.activeNode!.id}:$peerId';
+    }
+
+    // --- Display names ---
+    // Thread name: ONLY use the contact's display name for direct threads.
+    // Never use senderDisplayName — that changes with every message.
+    String? threadDisplayName;
+    if (!isTerminal && (agentTalkToContact || !isAgent)) {
       final contactNotifier = _ref.read(contactProvider.notifier);
-      final contact = contactNotifier.getContact(targetOwnerId);
-      threadDisplayName = contact?.displayName ?? senderDisplayName;
-      if ((threadDisplayName == null || threadDisplayName!.isEmpty) && targetOwnerId.isNotEmpty) {
+      final contact = contactNotifier.getContact(peerId);
+      threadDisplayName = contact?.displayName;
+      // Fall back to bonds list.
+      if ((threadDisplayName == null || threadDisplayName!.isEmpty) && peerId.isNotEmpty) {
         final contacts = _ref.read(contactProvider).bonds;
         threadDisplayName = contacts
-            .where((c) => c.ownerId == targetOwnerId)
+            .where((c) => c.ownerId == peerId)
             .firstOrNull
             ?.displayName;
       }
     }
     if (threadDisplayName == null || threadDisplayName!.isEmpty || threadDisplayName!.startsWith('envoy:owner:')) {
-      threadDisplayName = targetOwnerId;
+      threadDisplayName = peerId;
     }
-    // Message sender display: "You" for outbound, peer's name for inbound.
-    final msgSenderDisplay = isOutbound
-        ? 'You'
-        : (senderDisplayName ?? senderOwnerId);
+
+    // Message sender display:
+    // - Sent by self (human) → "You", right side
+    // - AI reply for a contact → "You", right side (agent acts as owner)
+    // - Sent by agent (EnvoyAI chat) → agent name, left side
+    // - Sent by peer → peer's name, left side
+    final bool showAsMine = (sentBySelf && actorRole == 'human') || agentTalkToContact;
+    final msgSenderDisplay = showAsMine ? 'You' : (senderDisplayName ?? senderOwnerId);
 
     final msg = ChatMessage(
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
@@ -297,7 +320,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       senderDisplayName: msgSenderDisplay,
       text: text,
       createdAt: createdAt,
-      isOutbound: false,
+      isOutbound: showAsMine,
     );
 
     // Cache in local DB.
@@ -314,10 +337,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
               : ChatThreadType.direct,
       displayName: isTerminal
           ? 'Terminal: ${terminalName ?? terminalId ?? ''}'
-          : isAgent
-              ? 'EnvoyAI'
-              : threadDisplayName ?? targetOwnerId,
-      contactOwnerId: isAgent ? null : targetOwnerId,
+          : agentTalkToContact
+              ? (threadDisplayName ?? peerId)
+              : isAgent
+                  ? 'EnvoyAI'
+                  : threadDisplayName ?? peerId,
+      contactOwnerId: (isAgent && !agentTalkToContact) ? null : peerId,
       agentType: isAgent ? agentType : null,
       lastMessageText: text ?? '',
       lastMessageAt: createdAt != null
@@ -358,10 +383,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
         id: '${messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}'}_contact',
         threadId: contactThreadId,
         senderOwnerId: senderOwnerId,
-        senderDisplayName: senderDisplayName ?? 'EnvoyAI',
+        senderDisplayName: 'You',
         text: text,
         createdAt: createdAt,
-        isOutbound: false,
+        isOutbound: true,
       );
       _upsertThread(
         threadId: contactThreadId,
@@ -463,12 +488,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final nodeState = _ref.read(nodeProvider);
     if (nodeState.activeNode == null) return;
 
-    final roomId = data['roomId'] as String?;
-    final senderOwnerId = data['senderOwnerId'] as String?;
-    final text = data['text'] as String?;
+    // Normalize: the home node emits ChatMessage with nested structure.
+    final sender = data['sender'] as Map<String, dynamic>?;
+    final content = data['content'] as Map<String, dynamic>?;
+    final metadata = data['metadata'] as Map<String, dynamic>?;
+    final recipient = data['recipient'] as Map<String, dynamic>?;
+
+    final roomId = (data['roomId'] ?? recipient?['ownerId']) as String?;
+    final senderOwnerId = ((data['senderOwnerId'] ?? sender?['ownerId']) as String?)?.trim();
+    final text = (data['text'] ?? content?['text']) as String?;
     final messageId = data['messageId'] as String?;
-    final createdAt = data['createdAt'] as String?;
-    final roomName = data['roomName'] as String?;
+    final createdAt = (data['createdAt'] ?? metadata?['timestamp']) as String?;
+    final roomName = (data['roomName'] ?? data['roomName'] ?? recipient?['displayName']) as String?;
+    final senderDisplayName = (data['senderDisplayName'] ?? sender?['displayName']) as String?;
 
     if (roomId == null) return;
 
@@ -477,7 +509,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
       senderOwnerId: senderOwnerId,
-      senderDisplayName: data['senderDisplayName'] as String?,
+      senderDisplayName: senderDisplayName,
       text: text,
       createdAt: createdAt,
       isOutbound: false,
@@ -693,6 +725,36 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
   }
 
+  /// Delete a single message from a thread.
+  Future<void> deleteMessage(String threadId, ChatMessage msg) async {
+    await _localDb.deleteMessage(msg.id);
+    final existing = state.messages[threadId] ?? [];
+    state = state.copyWith(
+      messages: {
+        ...state.messages,
+        threadId: existing.where((m) => m.id != msg.id).toList(),
+      },
+    );
+  }
+
+  /// Clear all messages in a thread.
+  Future<void> clearMessages(String threadId) async {
+    await _localDb.deleteMessagesForThread(threadId);
+    state = state.copyWith(
+      messages: {...state.messages, threadId: []},
+      threads: state.threads.map((t) {
+        if (t.id == threadId) {
+          return ChatThread.fromJson({
+            ...t.toJson(),
+            'last_message_text': null,
+            'last_message_at': null,
+          });
+        }
+        return t;
+      }).toList(),
+    );
+  }
+
   /// Delete a thread and all its messages.
   Future<void> deleteThread(String threadId) async {
     // Remove from local DB.
@@ -766,6 +828,22 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
+  /// Resolve the display name for a thread, preventing overwrites
+  /// on direct threads (where the name should be static).
+  String _resolveThreadName(ChatThreadType type, String newName, String? existingName) {
+    if (newName.isEmpty) return existingName ?? '';
+    // For direct and group threads, keep the existing name if it's set
+    // (not a raw owner ID or generic placeholder).
+    if ((type == ChatThreadType.direct || type == ChatThreadType.group) &&
+        existingName != null &&
+        existingName.isNotEmpty &&
+        !existingName.startsWith('envoy:owner:') &&
+        existingName != 'Group') {
+      return existingName;
+    }
+    return newName;
+  }
+
   /// Create or update a thread in memory and local DB.
   void _upsertThread({
     required String threadId,
@@ -787,9 +865,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       id: threadId,
       nodeId: nodeId,
       type: type,
-      displayName: displayName.isNotEmpty
-          ? displayName
-          : (existing?.displayName ?? ''),
+      displayName: _resolveThreadName(
+          type, displayName, existing?.displayName),
       contactOwnerId: contactOwnerId ?? existing?.contactOwnerId,
       chatRoomId: chatRoomId ?? existing?.chatRoomId,
       agentType: agentType ?? existing?.agentType,

@@ -21,6 +21,7 @@ dependencies:
   path: ^1.9.1
   # QR scanning (mobile only)
   mobile_scanner: ^6.0.7
+  image_picker: ^1.1.2
   # URI parsing
   uri: ^1.0.0
   # JSON

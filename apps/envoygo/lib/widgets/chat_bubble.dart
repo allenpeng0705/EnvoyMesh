@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/chat_message.dart';
 
@@ -50,10 +51,20 @@ class ChatBubble extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 2),
-            Text(
-              message.text ?? '',
-              style: TextStyle(color: colorScheme.onSurface),
-            ),
+            if (message.text != null && message.text!.startsWith('data:image/'))
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.memory(
+                  base64Decode(message.text!.split(',').last),
+                  width: 200,
+                  fit: BoxFit.cover,
+                ),
+              )
+            else
+              Text(
+                message.text ?? '',
+                style: TextStyle(color: colorScheme.onSurface),
+              ),
           ],
         ),
       ),
