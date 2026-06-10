@@ -8,7 +8,21 @@
   },
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/api",
+    "packages/bonds",
+    "packages/identity",
+    "packages/ipfs-helia",
+    "packages/local-store",
+    "packages/mobile-identity",
+    "packages/mobile-node",
+    "packages/mobile-storage",
+    "packages/mobile-vault",
+    "packages/models",
+    "packages/network",
+    "packages/openclaw-runtime",
+    "packages/protocol",
+    "packages/rag",
+    "packages/vault"
   ],
   "bin": {
     "envoymesh": "apps/cli/src/index.ts"

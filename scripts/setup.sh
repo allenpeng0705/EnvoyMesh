@@ -13,8 +13,9 @@
 #   npm run social:dev  # Social UI (terminal 2)
 
 set -e
-ORIG_DIR="$(pwd)"
-ROOT="$ORIG_DIR"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ORIG_DIR="$ROOT"
+cd "$ROOT"
 
 echo "============================================"
 echo "  EnvoyMesh Setup"
@@ -23,10 +24,7 @@ echo ""
 
 # ---- Step 0: Clean stale artifacts ----
 echo "[0/6] Cleaning up stale artifacts..."
-if [ -d packages/openclaw/node_modules ]; then
-  echo "  Removing stale packages/openclaw/node_modules..."
-  rm -rf packages/openclaw/node_modules
-fi
+# packages/openclaw is pnpm-managed separately (not an npm workspace).
 if [ -d packages/openclaw/dist ] && [ ! -f packages/openclaw/dist/entry.js ]; then
   echo "  Removing incomplete packages/openclaw/dist..."
   rm -rf packages/openclaw/dist
@@ -63,9 +61,14 @@ if [ ! -f packages/openclaw/openclaw.mjs ] && [ ! -f packages/openclaw/package.j
   echo "  packages/openclaw missing — install-openclaw will clone from GitHub..."
 fi
 if [ -f scripts/install-openclaw.sh ]; then
-  bash scripts/install-openclaw.sh
+  bash scripts/install-openclaw.sh || { echo "  ✗ install-openclaw.sh failed"; exit 1; }
 else
   echo "  install-openclaw.sh not found — skipping"
+fi
+
+if [ ! -f packages/openclaw/package.json ]; then
+  echo "  ✗ packages/openclaw missing after bootstrap — check network and re-run setup"
+  exit 1
 fi
 
 echo "  Installing EnvoyMesh channel extension..."
@@ -191,6 +194,13 @@ EOF
   kill $GW_PID 2>/dev/null || true
   wait $GW_PID 2>/dev/null || true
   rm -rf "$GW_STATE"
+
+  if [ ! -f node_modules/tsx/dist/cli.mjs ] || [ ! -f openclaw.mjs ]; then
+    echo "  ✗ OpenClaw gateway not ready — pnpm install did not produce tsx + openclaw.mjs"
+    cd "$ORIG_DIR"
+    exit 1
+  fi
+  echo "  ✓ OpenClaw gateway ready (packages/openclaw)"
 
   cd "$ORIG_DIR"
 else

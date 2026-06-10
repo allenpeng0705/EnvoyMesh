@@ -100,11 +100,52 @@ function Invoke-Step {
     }
 }
 
+function Test-OpenClawGatewayReady {
+    param([string]$Root = ".")
+    $ocDir = Join-Path $Root "packages/openclaw"
+    if (-not (Test-Path (Join-Path $ocDir "openclaw.mjs"))) {
+        return $false
+    }
+    if (-not (Test-Path (Join-Path $ocDir "node_modules/tsx/dist/cli.mjs"))) {
+        return $false
+    }
+    return $true
+}
+
+# Git writes CRLF hints to stderr; PowerShell treats that as a terminating error.
+function Invoke-GitQuiet {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$GitArgs)
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    try {
+        & git -c core.autocrlf=false -c core.safecrlf=false @GitArgs 2>$null | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+}
+
+# pnpm/npm often log to stderr; suppress NativeCommandError noise on Windows PowerShell.
+function Invoke-ExternalQuiet {
+    param(
+        [string]$Exe,
+        [Parameter(ValueFromRemainingArguments = $true)][string[]]$ToolArgs
+    )
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    try {
+        & $Exe @ToolArgs 2>&1 | Out-Null
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+}
+
 # -----------------------------------------------------------------------------
-# Resolve repo root (script may live anywhere; jump to the caller's cwd).
+# Resolve repo root from this script (works even if cwd is packages/openclaw).
 # -----------------------------------------------------------------------------
 
-$RepoRoot = (Get-Location).Path
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $RepoRoot
 
 Write-Host "============================================"
@@ -119,10 +160,8 @@ Write-Host ""
 
 Write-Step "0/6  Cleaning up stale artifacts..."
 
-if (Test-Path "packages/openclaw/node_modules") {
-    Write-Info "Removing stale packages/openclaw/node_modules..."
-    Remove-Item -Recurse -Force "packages/openclaw/node_modules" -ErrorAction SilentlyContinue
-}
+# packages/openclaw is pnpm-managed separately (not an npm workspace). Keep node_modules
+# across setup re-runs; only drop an incomplete dist bootstrap.
 $entryExists = $false
 if (Test-Path "packages/openclaw/dist/entry.js") { $entryExists = $true }
 if ((Test-Path "packages/openclaw/dist") -and -not $entryExists) {
@@ -219,8 +258,17 @@ if (Test-Path $installPs1) {
     $installArgs = @{}
     if ($LocalOpenClawPath) { $installArgs["LocalOpenClawPath"] = $LocalOpenClawPath }
     & $installPs1 @installArgs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "install-openclaw.ps1 failed"
+        exit 1
+    }
 } else {
     Write-Info "install-openclaw.ps1 not found — skipping wrapper"
+}
+
+if (-not (Test-Path "packages/openclaw/package.json")) {
+    Write-Fail "packages/openclaw missing after bootstrap — check network and re-run setup"
+    exit 1
 }
 
 Write-Info "Installing EnvoyMesh channel extension..."
@@ -262,14 +310,14 @@ if ($SkipOpenClawBuild) {
 
     Write-Info "pnpm install..."
     $env:CI = "true"
-    $pnpmlog = pnpm install --no-frozen-lockfile 2>&1 | Select-Object -Last 5
-    if ($LASTEXITCODE -ne 0) {
+    $pnpmExit = Invoke-ExternalQuiet pnpm install --no-frozen-lockfile
+    if ($pnpmExit -ne 0) {
         Write-Warn "Retrying with clean node_modules..."
         if (Test-Path "node_modules") {
             Remove-Item -Recurse -Force "node_modules"
         }
-        pnpm install --no-frozen-lockfile 2>&1 | Select-Object -Last 5 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
+        $pnpmExit = Invoke-ExternalQuiet pnpm install --no-frozen-lockfile
+        if ($pnpmExit -ne 0) {
             Write-Fail "pnpm install failed"
             Pop-Location
             exit 1
@@ -278,7 +326,7 @@ if ($SkipOpenClawBuild) {
 
     if (-not (Test-Path "node_modules/@pierre/diffs")) {
         Write-Info "Installing @pierre/diffs (fallback)..."
-        npm install @pierre/diffs --save-dev 2>&1 | Select-Object -Last 2 | Out-Null
+        Invoke-ExternalQuiet npm install @pierre/diffs --save-dev | Out-Null
     }
 
     # Generate the bundled-channel-config metadata. We use a throwaway
@@ -290,15 +338,12 @@ if ($SkipOpenClawBuild) {
         $tmpIdx = [System.IO.Path]::GetTempFileName()
         try {
             $env:GIT_INDEX_FILE = $tmpIdx
-            $readTreeOk = $true
-            git read-tree HEAD 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) { $readTreeOk = $false }
+            $readTreeOk = Invoke-GitQuiet read-tree HEAD
             if ($readTreeOk) {
-                git add extensions/envoymesh 2>&1 | Out-Null
-                if ($LASTEXITCODE -ne 0) { $readTreeOk = $false }
+                $readTreeOk = Invoke-GitQuiet add extensions/envoymesh
             }
-            $metaLog = pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts 2>&1 | Select-Object -Last 3
-            if ($LASTEXITCODE -ne 0) {
+            $metaExit = Invoke-ExternalQuiet pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts
+            if ($metaExit -ne 0) {
                 Write-Warn "Metadata generation failed — extension may still work at runtime"
             }
         } finally {
@@ -306,15 +351,15 @@ if ($SkipOpenClawBuild) {
             Remove-Item -Force $tmpIdx -ErrorAction SilentlyContinue
         }
     } else {
-        pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts 2>&1 | Select-Object -Last 3 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
+        $metaExit = Invoke-ExternalQuiet pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts
+        if ($metaExit -ne 0) {
             Write-Warn "Metadata generation failed — extension may still work at runtime"
         }
     }
 
     Write-Info "Building..."
-    pnpm run build 2>&1 | Select-Object -Last 8 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    $buildExit = Invoke-ExternalQuiet pnpm run build
+    if ($buildExit -ne 0) {
         Write-Warn "Full build failed — creating tsx bootstrap..."
         if (-not (Test-Path "dist")) {
             New-Item -ItemType Directory -Force -Path "dist" | Out-Null
@@ -364,7 +409,30 @@ export * from "../src/cli/run-main.ts";
     $env:OPENCLAW_BUNDLED_PLUGINS_DIR = (Resolve-Path "extensions").Path
     $env:ENVOYMESH_BRIDGE_URL = "http://127.0.0.1:3031/bridge/send"
     $env:CI = "true"
-    $gwProc = Start-Process -FilePath "pnpm" -ArgumentList @("exec","tsx","openclaw.mjs","gateway","--port",$smokePort,"--bind","loopback","--auth","none","--allow-unconfigured") -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $gwState "gw.out.log") -RedirectStandardError (Join-Path $gwState "gw.err.log")
+    $gwOut = Join-Path $gwState "gw.out.log"
+    $gwErr = Join-Path $gwState "gw.err.log"
+    $gwProc = $null
+    $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+    $nodeExe = if ($nodeCmd) { $nodeCmd.Source } else { $null }
+    $tsxCli = Join-Path (Get-Location) "node_modules\tsx\dist\cli.mjs"
+    $openclawMjs = Join-Path (Get-Location) "openclaw.mjs"
+    if ($nodeExe -and (Test-Path $tsxCli) -and (Test-Path $openclawMjs)) {
+        try {
+            $gwProc = Start-Process -FilePath $nodeExe -ArgumentList @(
+                $tsxCli,
+                $openclawMjs,
+                "gateway",
+                "--port", "$smokePort",
+                "--bind", "loopback",
+                "--auth", "none",
+                "--allow-unconfigured"
+            ) -PassThru -NoNewWindow -RedirectStandardOutput $gwOut -RedirectStandardError $gwErr
+        } catch {
+            Write-Warn "Could not start gateway smoke process: $_"
+        }
+    } else {
+        Write-Warn "Skipping gateway smoke start (node or tsx/openclaw.mjs missing)"
+    }
     $gwOk = $false
     for ($i = 1; $i -le 45; $i++) {
         try {
@@ -384,11 +452,19 @@ export * from "../src/cli/run-main.ts";
         Write-Warn "Webhook smoke test timed out — check packages\openclaw build logs"
     }
     # Tear down the smoke-test gateway. Stop-Process is best-effort.
-    try { Stop-Process -Id $gwProc.Id -Force -ErrorAction SilentlyContinue } catch {}
+    if ($gwProc) {
+        try { Stop-Process -Id $gwProc.Id -Force -ErrorAction SilentlyContinue } catch {}
+    }
     Start-Sleep -Milliseconds 500
     Remove-Item -Recurse -Force $gwState -ErrorAction SilentlyContinue
 
     Pop-Location
+
+    if (-not (Test-OpenClawGatewayReady $RepoRoot)) {
+        Write-Fail "OpenClaw gateway not ready — pnpm install did not produce tsx + openclaw.mjs"
+        exit 1
+    }
+    Write-Ok "OpenClaw gateway ready (packages/openclaw)"
 }
 
 # -----------------------------------------------------------------------------
