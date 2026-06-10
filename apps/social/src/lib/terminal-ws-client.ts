@@ -18,6 +18,10 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
+function wsSendBytes(ws: WebSocket, bytes: Uint8Array): void {
+  ws.send(bytes as BufferSource);
+}
+
 export function terminalPathFromAttachWsUrl(wsUrl: string): string {
   const u = new URL(wsUrl);
   return `${u.pathname}${u.search}`;
@@ -75,7 +79,7 @@ export class TerminalWsClient implements TerminalTransport {
             : 0;
         this.options.onExit?.(code);
       } else if (frame.type === TerminalWireType.Ping) {
-        ws.send(encodeTerminalFrame(TerminalWireType.Pong));
+        wsSendBytes(ws, encodeTerminalFrame(TerminalWireType.Pong));
       }
     };
 
@@ -91,12 +95,12 @@ export class TerminalWsClient implements TerminalTransport {
   sendInput(data: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     const bytes = new TextEncoder().encode(data);
-    this.ws.send(encodeTerminalFrame(TerminalWireType.Stdin, bytes));
+    wsSendBytes(this.ws, encodeTerminalFrame(TerminalWireType.Stdin, bytes));
   }
 
   sendResize(cols: number, rows: number): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    this.ws.send(encodeTerminalResize(cols, rows));
+    wsSendBytes(this.ws, encodeTerminalResize(cols, rows));
   }
 
   close(): void {

@@ -95,7 +95,7 @@ if [ ! -d "$SOURCE_DIR" ]; then
     echo "  ✗ Could not clone $OPENCLAW_REPO"
     echo ""
     echo "  Try:"
-    echo "    git submodule update --init packages/openclaw"
+    echo "    git clone --depth 1 $OPENCLAW_REPO packages/openclaw"
     echo "    ./scripts/install-openclaw.sh --local /path/to/openclaw"
     exit 1
   fi

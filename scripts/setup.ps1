@@ -161,8 +161,15 @@ if (-not (Get-Command "pnpm" -ErrorAction SilentlyContinue)) {
         exit 1
     }
 }
-$pnpmVersion = (pnpm -v 2>$null)
-if ($LASTEXITCODE -ne 0) { $pnpmVersion = "?" }
+# pnpm warns on npm "workspaces" in root package.json — check version outside repo root.
+$pnpmVersion = "?"
+Push-Location $env:TEMP
+try {
+    $pnpmVersion = (pnpm -v 2>$null)
+    if ($LASTEXITCODE -ne 0) { $pnpmVersion = "?" }
+} finally {
+    Pop-Location
+}
 Write-Ok "node $(node -v), pnpm $pnpmVersion"
 
 # -----------------------------------------------------------------------------
@@ -184,10 +191,9 @@ Write-Ok "EnvoyMesh dependencies installed"
 
 Write-Step "3/6  OpenClaw bootstrap..."
 
-# If packages/openclaw is missing, try the submodule first, then the local path.
+# If packages/openclaw is missing, install-openclaw.ps1 clones from GitHub (no git submodule in this repo).
 if (-not (Test-Path "packages/openclaw/openclaw.mjs") -and -not (Test-Path "packages/openclaw/package.json")) {
-    Write-Info "packages/openclaw missing — initializing submodule or clone..."
-    git submodule update --init packages/openclaw 2>$null | Out-Null
+    Write-Info "packages/openclaw missing — install-openclaw will clone from GitHub..."
 }
 
 # If a local path was provided, copy it in (mirrors install-openclaw.sh --local).
@@ -241,7 +247,8 @@ if ($SkipOpenClawBuild) {
 } elseif (-not (Test-Path "packages/openclaw/package.json")) {
     Write-Step "4/6  Building OpenClaw gateway..."
     Write-Warn "packages/openclaw not found — EnvoyAI will use native LLM fallback only"
-    Write-Info "Fix: git submodule update --init packages/openclaw"
+    Write-Info "Fix: .\scripts\install-openclaw.ps1"
+    Write-Info "  or: git clone --depth 1 https://github.com/openclaw/openclaw.git packages/openclaw"
 } else {
     Write-Step "4/6  Building OpenClaw gateway..."
 

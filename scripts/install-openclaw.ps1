@@ -122,7 +122,7 @@ if (-not (Test-Path $SourceDir)) {
         Write-Host "  Could not clone $OpenClawRepo" -ForegroundColor Red
         Write-Host ""
         Write-Host "  Try:"
-        Write-Host "    git submodule update --init packages/openclaw"
+        Write-Host "    git clone --depth 1 $OpenClawRepo packages/openclaw"
         Write-Host "    .\scripts\install-openclaw.ps1 -LocalOpenClawPath C:\path\to\openclaw"
         exit 1
     }
