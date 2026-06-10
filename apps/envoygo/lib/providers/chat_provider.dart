@@ -209,6 +209,20 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     if (senderOwnerId == null) return;
 
+    // When the home node sends a message to a contact, the sender is
+    // the owner (actorRole="human"), not the contact. Use the recipient's
+    // ownerId as the thread target for outbound messages.
+    final selfOwnerId = nodeState.ownerId;
+    final recipient = data['recipient'] as Map<String, dynamic>?;
+    final recipientOwnerId = recipient?['ownerId'] as String?;
+    final actorRole = sender?['actorRole'] as String?;
+    final isOutbound = selfOwnerId != null &&
+        senderOwnerId == selfOwnerId &&
+        actorRole == 'human';
+    final targetOwnerId = isOutbound
+        ? (recipientOwnerId ?? senderOwnerId)
+        : senderOwnerId;
+
     // Dedup: skip if we've already seen this messageId (dual delivery).
     final msgId = messageId ?? '';
     if (msgId.isNotEmpty && _seenMessageIds.contains(msgId)) return;
