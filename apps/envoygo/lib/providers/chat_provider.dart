@@ -13,12 +13,14 @@ class ChatState {
   final Map<String, List<ChatMessage>> messages;
   final bool isLoading;
   final int selectedTab;
+  final String? syncError;
 
   const ChatState({
     this.threads = const [],
     this.messages = const {},
     this.isLoading = false,
     this.selectedTab = 0,
+    this.syncError,
   });
 
   ChatState copyWith({
@@ -26,12 +28,14 @@ class ChatState {
     Map<String, List<ChatMessage>>? messages,
     bool? isLoading,
     int? selectedTab,
+    String? syncError,
   }) {
     return ChatState(
       threads: threads ?? this.threads,
       messages: messages ?? this.messages,
       isLoading: isLoading ?? this.isLoading,
       selectedTab: selectedTab ?? this.selectedTab,
+      syncError: syncError,
     );
   }
 }
@@ -45,6 +49,7 @@ final chatProvider =
 class ChatNotifier extends StateNotifier<ChatState> {
   final Ref _ref;
   final LocalDatabase _localDb = LocalDatabase();
+  final _seenMessageIds = <String>{};
 
   ChatNotifier(this._ref) : super(const ChatState());
 
@@ -204,6 +209,18 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     if (senderOwnerId == null) return;
 
+    // Dedup: skip if we've already seen this messageId (dual delivery).
+    final msgId = messageId ?? '';
+    if (msgId.isNotEmpty && _seenMessageIds.contains(msgId)) return;
+    if (msgId.isNotEmpty) {
+      _seenMessageIds.add(msgId);
+      // Cap at 200 to avoid unbounded growth.
+      if (_seenMessageIds.length > 200) {
+        _seenMessageIds
+            .removeAll(_seenMessageIds.take(_seenMessageIds.length - 200));
+      }
+    }
+
     // Route terminal messages to terminal threads.
     final isTerminal = senderOwnerId == 'terminal';
     final terminalId = data['terminalId'] as String?;
@@ -212,12 +229,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // Route agent responses to the appropriate agent thread.
     // ENVOY_AI_THREAD_KEY is "__envoy_ai__" — the home node uses this as
     // the sender ownerId for EnvoyAI responses.
+    // Also check actorRole: only route to agent thread if the sender is
+    // actually an agent. Home-node outbound messages have sender.ownerId
+    // == self.ownerId but actorRole is "human", not "agent".
     final selfOwnerId = nodeState.ownerId;
+    final actorRole = sender?['actorRole'] as String?;
     final externalAgent = data['agentType'] as String? ?? sender?['agentType'] as String?;
     final isAgent = !isTerminal &&
         (senderOwnerId == '__envoy_ai__' ||
             senderOwnerId.startsWith('envoy_agent_') ||
-            (selfOwnerId != null && senderOwnerId == selfOwnerId));
+            (selfOwnerId != null && senderOwnerId == selfOwnerId && actorRole == 'agent'));
     // Route external agent (HomeClaw) to its own thread, not EnvoyAI.
     final agentType = externalAgent == 'external' ? 'external' : 'envoyai';
     final threadId = isTerminal
@@ -284,19 +305,24 @@ class ChatNotifier extends StateNotifier<ChatState> {
       unreadIncrement: true,
     );
 
-    // Dedup: skip if any message in this thread has the same text.
+    // Dedup: if a temp optimistic message with the same text exists,
+    // replace it with the server version instead of adding a duplicate.
     final existingMessages = state.messages[threadId] ?? [];
-    final isDuplicate =
-        existingMessages.any((m) => m.text == text && m.isOutbound == false);
-    if (!isDuplicate) {
-      // Update messages.
+    final optimisticIdx =
+        existingMessages.indexWhere((m) => m.text == text && m.id.startsWith('temp_'));
+    if (optimisticIdx >= 0) {
+      // Replace the optimistic message with the server version.
+      final updated = List<ChatMessage>.from(existingMessages);
+      updated[optimisticIdx] = msg;
+      state = state.copyWith(
+        messages: {...state.messages, threadId: updated},
+      );
+    } else {
+      // New message — prepend so newest is at index 0 (bottom with reverse:true).
       state = state.copyWith(
         messages: {
           ...state.messages,
-          threadId: [
-            ...existingMessages,
-            msg,
-          ],
+          threadId: [msg, ...existingMessages],
         },
       );
     }
@@ -488,7 +514,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (nodeState.activeNode == null) return;
 
     final enabled = data['enabled'] as bool? ?? false;
-    if (!enabled) return;
+    // Always create the thread — "Bridge Offline" is shown when disabled.
 
     // Detect external agent from the name. The BridgeStatus type has no
     // agentType field, so we infer it from the agentName.
@@ -613,6 +639,30 @@ class ChatNotifier extends StateNotifier<ChatState> {
   /// Select a tab.
   void selectTab(int index) {
     state = state.copyWith(selectedTab: index);
+  }
+
+  /// Create chat threads for all bonded contacts that don't have one yet.
+  /// Called after bonds sync so all contacts appear in the Chats tab.
+  void createContactThreads() {
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeState.activeNode == null) return;
+    final contacts = _ref.read(contactProvider).bonds;
+    final existingThreadIds = state.threads
+        .where((t) => t.type == ChatThreadType.direct)
+        .map((t) => t.contactOwnerId)
+        .toSet();
+
+    for (final contact in contacts) {
+      if (existingThreadIds.contains(contact.ownerId)) continue;
+      final threadId = '${nodeState.activeNode!.id}:${contact.ownerId}';
+      _upsertThread(
+        threadId: threadId,
+        nodeId: nodeState.activeNode!.id,
+        type: ChatThreadType.direct,
+        displayName: contact.displayName ?? contact.ownerId,
+        contactOwnerId: contact.ownerId,
+      );
+    }
   }
 
   /// Refresh thread display names from contact data.

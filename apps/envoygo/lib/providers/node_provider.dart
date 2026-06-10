@@ -210,8 +210,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
       if (node != null) {
         chatNotifier.loadThreads(node.id);
       }
-      // Refresh thread display names AFTER loading cached threads,
-      // so any raw owner IDs are replaced with contact display names.
+      // Create threads for all bonded contacts, then refresh display names.
+      _ref.read(chatProvider.notifier).createContactThreads();
       _ref.read(chatProvider.notifier).refreshThreadDisplayNames();
     });
 
@@ -364,31 +364,20 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// Create the appropriate transport for a candidate URL scheme.
   FutureOr<WebSocketLike> _createTransportForCandidate(
       HomeRemoteCandidate candidate) {
-    if (candidate.url.startsWith('libp2p://')) {
-      // Parse libp2p URL: libp2p://<peerId>?relay=<relayWsUrl>&token=<token>
-      final uri = Uri.parse(candidate.url);
-      final peerId = uri.host;
-      final relayWsUrl = uri.queryParameters['relay'];
-      final token = uri.queryParameters['token'];
-      if (relayWsUrl == null || token == null) {
-        throw Exception('Invalid libp2p candidate URL');
-      }
-      return ClientProxyTransport.connect(
-        relayWsUrl: relayWsUrl,
-        homePeerId: peerId,
-        sessionToken: token,
-      );
-    }
     return PlatformWebSocket.connect(candidate.url);
   }
 
-  /// Subscribe to server push events and forward to providers.
+  /// Subscribe to server push events via WebSocket (fallback) and
+  /// libp2p GossipSub (primary). Dedup is handled by ChatNotifier's
+  /// _seenMessageIds, so events arriving via both paths are only
+  /// processed once.
   void _subscribeToPushEvents(
     HomeRemoteClient client,
     ChatNotifier chatNotifier,
     ContactNotifier contactNotifier,
     TerminalNotifier terminalNotifier,
   ) {
+    // -- WebSocket push events --
     client.on('chat:message', (data) {
       if (data is Map<String, dynamic>) {
         chatNotifier.onChatMessage(data);

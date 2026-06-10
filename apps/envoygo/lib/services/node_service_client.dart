@@ -162,18 +162,18 @@ class NodeServiceClient {
 
   // -- Terminal PTY I/O --
 
-  /// Open a PTY WebSocket sub-channel and return the URL to connect to.
+  /// Open a PTY WebSocket sub-channel.
   Future<Map<String, dynamic>> homeTerminalWsOpen(
       String sessionId) async {
     return await _client.call('homeTerminalWsOpen', {
-      'sessionId': sessionId,
+      'pathWithQuery': '/attach?sessionId=$sessionId',
     }) as Map<String, dynamic>;
   }
 
   /// Send keystrokes (base64-encoded) through the PTY WebSocket.
   Future<void> homeTerminalWsSend(String dataBase64) async {
     await _client.call('homeTerminalWsSend', {
-      'data': dataBase64,
+      'dataBase64': dataBase64,
     });
   }
 

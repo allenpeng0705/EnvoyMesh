@@ -27,6 +27,10 @@ dependencies:
   json_annotation: ^4.9.0
   # Crypto
   pinenacl: ^0.6.0
+  # libp2p (P2P networking — circuit relay, noise, KAD-DHT)
+  dart_libp2p: ^1.0.1
+  dart_libp2p_pubsub: ^1.1.0
+  dart_libp2p_kad_dht: ^1.2.0
   # Push notifications (mobile only)
   firebase_core: ^3.0.1
   firebase_messaging: ^15.0.1
