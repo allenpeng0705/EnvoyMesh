@@ -243,11 +243,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // Route agent responses to the appropriate agent thread.
     // ENVOY_AI_THREAD_KEY is "__envoy_ai__" — the home node uses this as
     // the sender ownerId for EnvoyAI responses.
-    // Also check actorRole: only route to agent thread if the sender is
-    // actually an agent. Home-node outbound messages have sender.ownerId
-    // == self.ownerId but actorRole is "human", not "agent".
-    final selfOwnerId = nodeState.ownerId;
-    final actorRole = sender?['actorRole'] as String?;
+    // selfOwnerId and actorRole are already declared above for outbound detection.
     final externalAgent = data['agentType'] as String? ?? sender?['agentType'] as String?;
     final isAgent = !isTerminal &&
         (senderOwnerId == '__envoy_ai__' ||
@@ -259,21 +255,21 @@ class ChatNotifier extends StateNotifier<ChatState> {
         ? '${nodeState.activeNode!.id}:term:${terminalId ?? senderOwnerId}'
         : isAgent
             ? '${nodeState.activeNode!.id}:$agentType'
-            : '${nodeState.activeNode!.id}:$senderOwnerId';
+            : '${nodeState.activeNode!.id}:$targetOwnerId';
 
     // Look up the contact's display name for non-agent messages.
     var displayName = data['senderDisplayName'] as String?;
     if (!isAgent && !isTerminal &&
         (displayName == null || displayName!.isEmpty)) {
       final contactNotifier = _ref.read(contactProvider.notifier);
-      final contact = contactNotifier.getContact(senderOwnerId);
+      final contact = contactNotifier.getContact(targetOwnerId);
       displayName = contact?.displayName;
       // Fall back to local DB cache if not in memory yet.
-      if ((displayName == null || displayName!.isEmpty) && senderOwnerId.isNotEmpty) {
+      if ((displayName == null || displayName!.isEmpty) && targetOwnerId.isNotEmpty) {
         // Try looking up from the contact's own state (bonds list).
         final contacts = _ref.read(contactProvider).bonds;
         displayName = contacts
-            .where((c) => c.ownerId == senderOwnerId)
+            .where((c) => c.ownerId == targetOwnerId)
             .firstOrNull
             ?.displayName;
       }
@@ -281,7 +277,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // Never use the raw owner ID as display name.
     if (displayName == null || displayName!.isEmpty || displayName!.startsWith('envoy:owner:')) {
       // Still unknown — keep the raw ID but the UI will try to resolve later.
-      displayName = displayName ?? senderOwnerId;
+      displayName = displayName ?? targetOwnerId;
     }
     final msg = ChatMessage(
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
