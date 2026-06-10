@@ -488,19 +488,24 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final nodeState = _ref.read(nodeProvider);
     if (nodeState.activeNode == null) return;
 
-    // Normalize: the home node emits ChatMessage with nested structure.
-    final sender = data['sender'] as Map<String, dynamic>?;
-    final content = data['content'] as Map<String, dynamic>?;
-    final metadata = data['metadata'] as Map<String, dynamic>?;
-    final recipient = data['recipient'] as Map<String, dynamic>?;
+    // Two formats for chat:room-message:
+    //   Wrapped: { roomId, message: { sender, content, ... } }
+    //   Direct:  ChatMessage { sender, content, recipient, ... }
+    final message = data['message'] as Map<String, dynamic>?;
+    final inner = message ?? data; // Unwrap if wrapped.
+
+    final sender = inner['sender'] as Map<String, dynamic>?;
+    final content = inner['content'] as Map<String, dynamic>?;
+    final metadata = inner['metadata'] as Map<String, dynamic>?;
+    final recipient = inner['recipient'] as Map<String, dynamic>?;
 
     final roomId = (data['roomId'] ?? recipient?['ownerId']) as String?;
-    final senderOwnerId = ((data['senderOwnerId'] ?? sender?['ownerId']) as String?)?.trim();
-    final text = (data['text'] ?? content?['text']) as String?;
-    final messageId = data['messageId'] as String?;
-    final createdAt = (data['createdAt'] ?? metadata?['timestamp']) as String?;
+    final senderOwnerId = ((inner['senderOwnerId'] ?? sender?['ownerId']) as String?)?.trim();
+    final text = (inner['text'] ?? content?['text']) as String?;
+    final messageId = inner['messageId'] as String?;
+    final createdAt = (inner['createdAt'] ?? metadata?['timestamp']) as String?;
     final roomName = (data['roomName'] ?? data['roomName'] ?? recipient?['displayName']) as String?;
-    final senderDisplayName = (data['senderDisplayName'] ?? sender?['displayName']) as String?;
+    final senderDisplayName = (inner['senderDisplayName'] ?? sender?['displayName']) as String?;
 
     if (roomId == null) return;
 
