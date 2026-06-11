@@ -395,6 +395,8 @@ export async function routeRpcMethod(
       return ns.revokeAuthorizedDevice(params as any);
     case "listDeviceRevocations":
       return ns.listDeviceRevocations();
+    case "terminalExec":
+      return ns.terminalExec(params as { sessionId: string; command: string });
     case "listTerminalSessions":
       return ns.listTerminalSessions();
     case "createTerminalSession":

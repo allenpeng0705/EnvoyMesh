@@ -272,6 +272,7 @@ export type RpcMethods =
   | "terminalGetHerdrExportHint"
   | "homeTerminalWsOpen"
   | "homeTerminalWsSend"
+  | "terminalExec"
   | "homeTerminalWsClose"
   // Event subscription
   | "on"

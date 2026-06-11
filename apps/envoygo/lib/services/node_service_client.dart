@@ -162,6 +162,19 @@ class NodeServiceClient {
 
   // -- Terminal PTY I/O --
 
+  /// Execute a command in a terminal session and return output.
+  /// Uses `writeStdin` + `getScrollbackTail` — no persistent
+  /// WebSocket sub-channel needed.  For quick commands (ls, pwd, cd)
+  /// the 500 ms wait inside the node is ample; for longer commands
+  /// call this again later to poll.
+  Future<Map<String, dynamic>> terminalExec(
+      String sessionId, String command) async {
+    return await _client.call('terminalExec', {
+      'sessionId': sessionId,
+      'command': command,
+    }) as Map<String, dynamic>;
+  }
+
   /// Request a terminal attach URL from the home node.
   /// Returns `{ sessionId, token, wsUrl, cols, rows }`.
   Future<Map<String, dynamic>> terminalAttach(String sessionId,

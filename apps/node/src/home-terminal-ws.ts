@@ -79,14 +79,32 @@ export async function rpcHomeTerminalWsOpen(
 
   try {
     await new Promise<void>((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error("terminal WebSocket open timeout")), 25_000);
+      let settled = false;
+      const t = setTimeout(() => {
+        if (!settled) { settled = true; reject(new Error("terminal WebSocket open timeout")); }
+      }, 25_000);
       terminal.once("open", () => {
         clearTimeout(t);
-        resolve();
+        // Wait a short grace period to detect immediate server-side close
+        // (e.g. PTY server rejecting the attach token).  If the socket
+        // closes within 500 ms of opening, treat it as a failure.
+        let graceTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+          graceTimer = null;
+          if (!settled) { settled = true; resolve(); }
+        }, 500);
+        terminal.once("close", () => {
+          if (graceTimer) {
+            clearTimeout(graceTimer);
+            graceTimer = null;
+            if (!settled) {
+              settled = true;
+              reject(new Error("terminal WebSocket closed immediately after opening"));
+            }
+          }
+        });
       });
       terminal.once("error", (err: Error) => {
-        clearTimeout(t);
-        reject(err);
+        if (!settled) { settled = true; clearTimeout(t); reject(err); }
       });
     });
   } catch (e: unknown) {
@@ -95,6 +113,11 @@ export async function rpcHomeTerminalWsOpen(
     return msg || "failed to connect terminal WebSocket";
   }
 
+  // After successful open + grace period, ensure the terminal is still open.
+  if (terminal.readyState !== WebSocket.OPEN) {
+    closeHomeTerminalWsForCompanion(companion);
+    return "terminal WebSocket is no longer open after handshake";
+  }
   return null;
 }
 

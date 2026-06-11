@@ -50,19 +50,18 @@ class _TerminalDetailScreenState
     final nodeService = NodeServiceClient(client);
     _terminalService = TerminalService(nodeService);
 
-    // Subscribe to terminal output from push events.
-    // The home node emits `homeTerminalWs:rx` with base64-encoded output.
+    // Subscribe to terminal output from push events (real-time stream).
     client.on('homeTerminalWs:rx', _onTerminalOutput);
 
+    // Try the persistent WebSocket stream first; fall back to simple
+    // terminalExec RPC if the stream can't be established.
     try {
       await _terminalService!.attach(widget.sessionId);
-      setState(() => _attached = true);
-    } catch (e) {
-      setState(() {
-        _output.add('[Failed to attach: $e]');
-        _attached = true;
-      });
+    } catch (_) {
+      // Stream attach failed — use simple RPC mode instead.
+      _terminalService!.setActiveSession(widget.sessionId);
     }
+    setState(() => _attached = true);
   }
 
   void _onTerminalOutput(dynamic data) {
@@ -75,6 +74,8 @@ class _TerminalDetailScreenState
     } catch (_) {
       text = '[binary data]';
     }
+    if (text.isEmpty) return;
+    text = _cleanTerminalOutput(text);
     if (text.isEmpty) return;
     setState(() {
       _output.add(text);
@@ -95,13 +96,42 @@ class _TerminalDetailScreenState
 
   void _sendCommand(String text) {
     if (text.trim().isEmpty) return;
+    final command = text.trim();
     _controller.clear();
-    _output.add('\$ $text');
-    _terminalService?.sendCommand(text).catchError((e) {
-      setState(() {
-        _output.add('[Error: $e]');
-      });
+    _output.add('\$ $command');
+    _terminalService?.sendCommand(command).then((output) {
+      if (output.isNotEmpty) {
+        final cleaned = _cleanTerminalOutput(output);
+        if (cleaned.isNotEmpty) {
+          setState(() => _output.add(cleaned));
+        }
+      }
+    }).catchError((e) {
+      setState(() => _output.add('[Error: $e]'));
     });
+  }
+
+  /// Clean terminal output for display:
+  /// 1. Strip ANSI escape sequences (colors, cursor, etc.)
+  /// 2. Normalise line endings (\r\n → \n, \r → \n)
+  /// 3. Strip remaining control characters (except tab, newline)
+  static final _ansiRegex =
+      RegExp(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])');
+  static final _ctrlRegex = RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F]');
+
+  String _cleanTerminalOutput(String text) {
+    // Strip ANSI escape sequences.
+    text = text.replaceAll(_ansiRegex, '');
+    // Normalise line endings.
+    text = text.replaceAll('\r\n', '\n');
+    text = text.replaceAll('\r', '\n');
+    // Strip other control characters (keep tab and newline).
+    text = text.replaceAll(_ctrlRegex, '');
+    // Collapse repeated blank lines.
+    while (text.contains('\n\n\n')) {
+      text = text.replaceAll('\n\n\n', '\n\n');
+    }
+    return text.trim();
   }
 
   @override
