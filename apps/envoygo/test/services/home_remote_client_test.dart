@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:envoygo/services/exceptions.dart';
 import 'package:envoygo/services/home_remote_client.dart';
 import 'package:envoygo/services/web_socket_like.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -216,6 +218,87 @@ void main() {
         });
 
         await expectLater(callFuture, throwsA(isA<Exception>()));
+      });
+    });
+
+    group('auth error mapping', () {
+      // Helper: open the client, send an RPC, and reply with the
+      // supplied error. Returns `(callFuture, error)`: the RPC's
+      // future (already completed with error) and the thrown error.
+      // The callFuture is eagerly `.catchError`'d to an internal
+      // completer so the test zone never sees an unhandled error
+      // during `simulateMessage` (which is synchronous).
+      Future<(Future<dynamic>, Object)> callAndReplyWithError(
+        Map<String, dynamic> rpcError,
+      ) async {
+        candidates = [
+          const HomeRemoteCandidate(
+              name: 'relay', url: 'wss://relay.example.com'),
+        ];
+        final client = await connectClient();
+
+        final callFuture = client.call('getBonds');
+        // Attach a handler immediately so the future has a
+        // listener when its completer is completed with error.
+        final errorCompleter = Completer<Object>();
+        callFuture.catchError((Object e) {
+          if (!errorCompleter.isCompleted) errorCompleter.complete(e);
+          return null;
+        });
+        await Future.delayed(Duration.zero);
+
+        final sentJson = jsonDecode(createdSockets[0].sentMessages.last)
+            as Map<String, dynamic>;
+        final reply = {'id': sentJson['id'], 'error': rpcError};
+        createdSockets[0].simulateMessage(reply);
+
+        // The errorCompleter is filled by the catchError handler.
+        // Return both the (now-completed-with-error) callFuture
+        // and the captured error.
+        final captured = await errorCompleter.future;
+        return (callFuture, captured);
+      }
+
+      test('throws UnauthorizedException on code UNAUTHORIZED', () async {
+        final (_, error) = await callAndReplyWithError({
+          'code': 'UNAUTHORIZED',
+          'message': 'Authentication required',
+        });
+        expect(error, isA<UnauthorizedException>());
+        expect((error as UnauthorizedException).reason,
+            'Authentication required');
+      });
+
+      test('throws UnauthorizedException on legacy ERROR + Authentication required',
+          () async {
+        final (_, error) = await callAndReplyWithError({
+          'code': 'ERROR',
+          'message': 'Authentication required',
+        });
+        expect(error, isA<UnauthorizedException>());
+      });
+
+      test('throws generic Exception on non-auth errors', () async {
+        final (_, error) = await callAndReplyWithError({
+          'code': 'ERROR',
+          'message': 'Method not found',
+        });
+        // Must be a generic Exception — explicitly NOT
+        // UnauthorizedException, otherwise the notifier would
+        // delete the session token.
+        expect(error, isA<Exception>());
+        expect(error, isNot(isA<UnauthorizedException>()));
+        expect(error.toString(), contains('Method not found'));
+      });
+
+      test('falls back to generic Exception when error.code is missing',
+          () async {
+        final (_, error) = await callAndReplyWithError({
+          'message': 'something broke',
+        });
+        expect(error, isA<Exception>());
+        expect(error, isNot(isA<UnauthorizedException>()));
+        expect(error.toString(), contains('something broke'));
       });
     });
 

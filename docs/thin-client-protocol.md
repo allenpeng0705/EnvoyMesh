@@ -523,3 +523,87 @@ Key files for implementors:
 | `lib/providers/chat_provider.dart` | Thread management, message routing, display name resolution |
 
 The reference implementation is ~7000 lines of Dart across 50+ files.
+
+---
+
+## 12. Home-Tunnel Re-Claim (I4)
+
+The relay bridges thin-client WebSockets to a home node through the home
+node's persistent `/ws/home` tunnel. Before the I4 fix, if that tunnel
+dropped (e.g. home restart, network blip), the mobile's WebSocket was
+closed and any subsequent frames were silently lost.
+
+Starting with the I4 fix, the relay now keeps the mobile's WebSocket
+open across a tunnel drop and **transparently re-attaches** the channel
+when a new tunnel is registered.
+
+### State machine
+
+Per-channel state lives in the relay in a module-level map keyed by
+`<homePeerId>|<channelId>`. On every home tunnel close, entries for
+that peer are marked `orphaned = true` (the mobile ws is **not**
+closed). On every home tunnel open, the relay walks the map for
+`orphaned` entries belonging to that peer and:
+
+1. Re-issues the `open` frame on the new tunnel with the same
+   `channelId` and `token`.
+2. Sends a `tunnel-up` event to the mobile so the UI can show a
+   "reconnecting…" indicator.
+3. When the home returns `open-ack`, the relay flushes the mobile's
+   buffered frames (anything sent during the down period) through the
+   new tunnel and sends a fresh `connected` event to the mobile.
+
+### Tunnel events
+
+| Event | Direction | When | Payload |
+|-------|-----------|------|---------|
+| `tunnel-down` | relay → mobile | Home's `/ws/home` socket closed | `{ peerId }` |
+| `tunnel-up` | relay → mobile | New home tunnel opened, channels being re-claimed | `{ peerId }` |
+| `connected` | relay → mobile | First `open-ack` (and every re-claim `open-ack`) | `{ relayProxied: true }` |
+
+The mobile's `HomeRemoteClient` surfaces these via its standard
+`client.on('tunnel-down', handler)` and `client.on('tunnel-up', handler)`
+API — no special wiring needed.
+
+### Wire-level invariants
+
+- **Channel id is stable across a re-claim.** The mobile's
+  `homeTerminalWsOpen` / `homeTerminalWsSend` calls reference the same
+  `sessionId` (which is the same as the relay's `channelId` for the
+  tunnel proxy) before, during, and after a re-claim. No re-Open
+  required on the mobile.
+- **Frames are never silently lost.** During a tunnel-down window, the
+  mobile's JSON-RPC and PTY frames are buffered in the relay (capped
+  by `MAX_HOME_TUNNEL_DATA_BYTES` per outbound frame on the home side;
+  no cap on buffered inbound frames in the relay, since the relay
+  already discards anything exceeding the cap on the data-forward
+  path). On re-claim, the buffer is forwarded to the new tunnel
+  in-order.
+- **Mobile ws is never closed by a tunnel drop.** Only the home
+  explicitly closing the channel (`{ type: "close", channelId }` on the
+  tunnel) terminates the mobile side. The mobile's own `ws.on("close")`
+  also terminates the proxy.
+
+### Tests
+
+`apps/relay/test/home-tunnel-recovery.test.ts` is an end-to-end test
+that drives the production state machine (mirrored in the test
+harness) through:
+
+1. Stable tunnel: open → ack → connected → bidirectional RPC.
+2. Tunnel drop: mobile stays open, receives `tunnel-down`.
+3. Re-claim: new tunnel → mobile receives `tunnel-up` and
+   `connected` → buffered RPC frames arrive on the new home in order.
+4. Mid-drop RPCs: frames sent during the drop are flushed to the new
+   home, and the new home's response is delivered to the mobile.
+5. Mobile never closes when the home tunnel closes between RPCs.
+
+### Code locations
+
+| File | Purpose |
+|------|---------|
+| `apps/relay/src/index.ts` | `proxyChannels` map, `reclaimOrphans` closure, `tunnel-down`/`tunnel-up` emit |
+| `apps/relay/test/home-tunnel-recovery.test.ts` | End-to-end recovery test (5 cases) |
+| `apps/node/src/home-terminal-ws.ts` | Per-`(companion, sessionId)` ownership check in `terminal.on("message"/"close")` — closes a window where a replaced session's events could leak to the companion |
+| `apps/envoygo/lib/screens/terminals/terminal_detail_screen.dart` | "Reconnecting…" chip in the AppBar while `_tunnelUp == false` |
+

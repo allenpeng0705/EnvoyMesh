@@ -1,7 +1,42 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 import 'web_socket_like.dart';
+import 'exceptions.dart';
+
+// -- Wire protocol (mirrors packages/api/src/terminal-wire.ts v1) --
+
+/// Binary PTY wire protocol type tags. Must match the TypeScript
+/// `TerminalWireType` in `@envoymesh/api/terminal-wire.ts` (version 1).
+class TerminalWireType {
+  static const int stdin = 0;
+  static const int stdout = 1;
+  static const int resize = 2;
+  static const int exit = 3;
+  static const int ping = 4;
+  static const int pong = 5;
+}
+
+const int _terminalWireVersion = 1;
+
+/// Encode a PTY wire-protocol frame: `[version(1)][type(1)][payload(N)]`.
+/// Mirrors `encodeTerminalFrame` in `@envoymesh/api/terminal-wire.ts`.
+Uint8List encodeTerminalFrame(int type, Uint8List payload) {
+  final out = Uint8List(2 + payload.length);
+  out[0] = _terminalWireVersion;
+  out[1] = type;
+  out.setRange(2, 2 + payload.length, payload);
+  return out;
+}
+
+/// Encode a `resize` frame: `[version(1)][type(1)][cols u16 BE][rows u16 BE]`.
+Uint8List encodeTerminalResize(int cols, int rows) {
+  final bd = ByteData(4);
+  bd.setUint16(0, cols, Endian.big);
+  bd.setUint16(2, rows, Endian.big);
+  return encodeTerminalFrame(TerminalWireType.resize, bd.buffer.asUint8List());
+}
 
 // -- Types --
 
@@ -263,7 +298,7 @@ class HomeRemoteClient {
           final err = msg['error'] as Map<String, dynamic>?;
           if (!pending.completer.isCompleted) {
             pending.completer.completeError(
-              Exception(err?['message'] ?? 'homeRemote.rpcFailed'),
+              _decodeRpcError(err),
             );
           }
         } else {
@@ -520,6 +555,92 @@ class HomeRemoteClient {
         'the web_socket_channel package or a mock for tests.');
   }
 
+  // -- Terminal PTY wire frames --
+  //
+  // The mobile-remote path rides the JSON-RPC channel: we send a
+  // `homeTerminalWsSend` RPC carrying the base64-encoded frame bytes
+  // (i.e. `[version(1)][type(1)][payload(N)]`). The home forwards the
+  // raw bytes to the loopback `/ws/terminal/...` WS, which decodes the
+  // frame and writes stdin / resizes the pty. The TS reference lives
+  // in `packages/mobile-node/src/home-remote-client.ts`.
+
+  /// Send a framed PTY wire-protocol chunk to the active session.
+  ///
+  /// If [sessionId] is provided, the home routes the frame to the
+  /// correct per-session sub-channel (multiple terminals may be
+  /// open on a single companion).  Without [sessionId] the home
+  /// falls back to the only-open-session rule (back-compat).
+  ///
+  /// Returns `{ ok: false, error: ... }` if the transport isn't open.
+  /// Mirrors `sendTerminalFrame` in the TS HomeRemoteClient.
+  ({bool ok, String? error}) sendTerminalFrame(
+    Uint8List frame, {
+    String? sessionId,
+  }) {
+    final ws = _ws;
+    if (ws == null || ws.readyState != wsOpen) {
+      return (ok: false, error: 'homeRemote.notConnected');
+    }
+    final dataBase64 = base64Encode(frame);
+    final id = _generateId();
+    // Fire-and-forget — terminal frames are not RPCs. The home ACKs
+    // stdin writes but we don't care; if the WS is open, we trust the
+    // write succeeded. (Matches the TS implementation.)
+    ws.send(jsonEncode({
+      'id': id,
+      'method': 'homeTerminalWsSend',
+      'params': {
+        'dataBase64': dataBase64,
+        if (sessionId != null) 'sessionId': sessionId,
+      },
+    }));
+    return (ok: true, error: null);
+  }
+
+  /// Encode `text` as UTF-8 and send it as a PTY stdin frame.
+  ({bool ok, String? error}) sendTerminalInput(
+    String text, {
+    String? sessionId,
+  }) {
+    final bytes = Uint8List.fromList(utf8.encode(text));
+    return sendTerminalFrame(
+      encodeTerminalFrame(TerminalWireType.stdin, bytes),
+      sessionId: sessionId,
+    );
+  }
+
+  /// Send a PTY resize frame. `cols` and `rows` must be > 0.
+  ({bool ok, String? error}) sendTerminalResize(
+    int cols,
+    int rows, {
+    String? sessionId,
+  }) {
+    if (cols <= 0 || rows <= 0) {
+      return (ok: false, error: 'homeRemote.invalidDimensions');
+    }
+    return sendTerminalFrame(
+      encodeTerminalResize(cols, rows),
+      sessionId: sessionId,
+    );
+  }
+
+  /// Send a best-effort `homeTerminalWsClose` RPC so the home frees
+  /// the per-session state promptly. The session itself stays alive
+  /// on the home; the WS sub-channel is just torn down.  If
+  /// [sessionId] is given, only that session is closed.
+  void closeTerminalTunnel({String? sessionId}) {
+    final ws = _ws;
+    if (ws == null || ws.readyState != wsOpen) return;
+    final id = _generateId();
+    ws.send(jsonEncode({
+      'id': id,
+      'method': 'homeTerminalWsClose',
+      'params': {
+        if (sessionId != null) 'sessionId': sessionId,
+      },
+    }));
+  }
+
   // -- Helpers --
 
   static int _idCounter = 0;
@@ -528,4 +649,25 @@ class HomeRemoteClient {
     _idCounter++;
     return 'rpc_${DateTime.now().millisecondsSinceEpoch}_$_idCounter';
   }
+}
+
+/// Translate a JSON-RPC error object into a typed Dart exception.
+///
+/// Recognises the auth-required shapes sent by the home node's
+/// `ws-server.ts` and surfaces them as [UnauthorizedException] so
+/// callers can take a specific action (delete session token, stop
+/// reconnect supervisor, show re-pair UI). Any other error is
+/// preserved as a generic [Exception] for back-compat.
+Exception _decodeRpcError(Map<String, dynamic>? err) {
+  if (err == null) {
+    return Exception('homeRemote.rpcFailed');
+  }
+  final code = err['code'] as String?;
+  final message = err['message'] as String? ?? 'homeRemote.rpcFailed';
+  final isUnauthorized = code == 'UNAUTHORIZED' ||
+      (code == 'ERROR' && message == 'Authentication required');
+  if (isUnauthorized) {
+    return UnauthorizedException(message);
+  }
+  return Exception(message);
 }

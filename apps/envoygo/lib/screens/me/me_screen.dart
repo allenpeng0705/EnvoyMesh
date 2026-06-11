@@ -82,6 +82,87 @@ class MeScreen extends ConsumerWidget {
               textAlign: TextAlign.center,
             ),
           ],
+        ] else if (nodeState.pairedNodes.isNotEmpty) ...[
+          // Paired but offline. The pairing record is still in
+          // local storage — the device is NOT unpaired. Show a
+          // reconnect / re-pair CTA depending on the typed error
+          // code from the most recent attempt.
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        nodeState.homeNodeErrorCode == 'unauthorized'
+                            ? Icons.lock_outline
+                            : Icons.cloud_off_outlined,
+                        color: nodeState.homeNodeErrorCode == 'unauthorized'
+                            ? Colors.orange
+                            : Colors.grey,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          nodeState.homeNodeErrorCode == 'unauthorized'
+                              ? 'Session expired for ${nodeState.pairedNodes.first.name}'
+                              : 'Disconnected from ${nodeState.pairedNodes.first.name}',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (nodeState.lastConnectAttemptAt != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Last attempt: ${_formatRelative(nodeState.lastConnectAttemptAt!)}'
+                      '${nodeState.reconnectAttempt > 0 ? ' · attempt ${nodeState.reconnectAttempt}' : ''}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                  if (nodeState.errorMessage != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      nodeState.errorMessage!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey,
+                          ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      if (nodeState.homeNodeErrorCode == 'unauthorized') ...[
+                        FilledButton.icon(
+                          onPressed: () => _openPairing(context),
+                          icon: const Icon(Icons.qr_code),
+                          label: const Text('Re-pair'),
+                        ),
+                      ] else ...[
+                        FilledButton.icon(
+                          onPressed: () => notifier.kickReconnect(),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Reconnect now'),
+                        ),
+                      ],
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed: () => _confirmUnpair(
+                            context, ref, notifier, nodeState.pairedNodes.first),
+                        icon: const Icon(Icons.link_off, color: Colors.red),
+                        label: const Text('Unpair'),
+                        style: TextButton.styleFrom(foregroundColor: Colors.red),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
         ] else ...[
           Card(
             child: ListTile(
@@ -326,4 +407,16 @@ class _SectionHeader extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Lightweight relative-time formatter for the Me screen. Avoids
+/// pulling in `intl` for a single use — the strings we produce are
+/// short, English-only, and "good enough" for a status line.
+String _formatRelative(DateTime t) {
+  final delta = DateTime.now().difference(t);
+  if (delta.inSeconds < 5) return 'just now';
+  if (delta.inSeconds < 60) return '${delta.inSeconds}s ago';
+  if (delta.inMinutes < 60) return '${delta.inMinutes}m ago';
+  if (delta.inHours < 24) return '${delta.inHours}h ago';
+  return '${delta.inDays}d ago';
 }

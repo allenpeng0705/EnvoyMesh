@@ -328,7 +328,12 @@ export class WsServer {
     const isAuth = (ws as any).isThinClientAuthenticated === true;
     const hadToken = (ws as any).hadThinClientToken === true;
     if (hadToken && !isAuth && method !== "pairThinClient") {
-      this.sendError(ws, id ?? "unknown", "Authentication required");
+      // Use the explicit UNAUTHORIZED code so the EnvoyGo mobile client
+      // can map this to a typed `UnauthorizedException` and stop
+      // treating it as a transient transport failure. The message
+      // string is unchanged for back-compat with older EnvoyGo builds
+      // and with the Social UI / Capacitor app.
+      this.sendError(ws, id ?? "unknown", "Authentication required", "UNAUTHORIZED");
       return;
     }
 
@@ -459,8 +464,8 @@ export class WsServer {
     ws.send(JSON.stringify(response));
   }
 
-  private sendError(ws: WebSocket, id: string, message: string): void {
-    this.sendResponse(ws, id, undefined, { code: "ERROR", message });
+  private sendError(ws: WebSocket, id: string, message: string, code: string = "ERROR"): void {
+    this.sendResponse(ws, id, undefined, { code, message });
   }
 
   private sendEvent(ws: WebSocket, event: string, data: unknown): void {

@@ -20,6 +20,7 @@ import { byteStream } from "@libp2p/utils";
 import { CapabilityRegistry, CLIENT_PROXY_PROTOCOL, EnvoyMesh } from "@envoymesh/network";
 import { parseRelayArgs } from "./args.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
+import { createHomeTunnelProxy } from "./home-tunnel-proxy.js";
 import {
   createInitialStandaloneRelayHealthState,
   evaluateStandaloneRelayHealth,
@@ -65,6 +66,12 @@ const MAX_FORWARD_TARGETS = 100;
 // Maximum concurrent client-proxy connections (mobile → relay → home node)
 const MAX_PROXY_CONNECTIONS = 50;
 const MAX_PROXY_CONNS_PER_TARGET = 10;
+
+// Maximum bytes of a single `data` payload inside a home-tunnel frame.
+// The home now chunks PTY output into ~64KB pieces; base64 inflates
+// by ~33% so a 128KB cap gives ample headroom while still bounding
+// memory + WebSocket text-frame size on the relay hop.
+const MAX_HOME_TUNNEL_DATA_BYTES = 128 * 1024;
 
 // Maximum concurrent deliveries per fan-out batch
 const CONCURRENCY_LIMIT = 50;
@@ -429,20 +436,25 @@ try {
     let proxyConnTotal = 0;
 
     // ------------------------------------------------------------------------
-    // Home node WebSocket tunnel (TURN-like, for NAT-traversing pairing)
+    // Home-tunnel-proxy (TURN-like, for NAT-traversing pairing)
     // ------------------------------------------------------------------------
-    // Home nodes behind NAT cannot be reached directly by libp2p. They maintain
-    // a persistent outbound WebSocket to /ws/home?peerId=<homePeerId>. The
-    // relay stores this connection keyed by home peer ID. When a mobile client
-    // arrives at /ws?target=<homePeerId>&token=... and the target has a
-    // registered tunnel, traffic is forwarded through the tunnel instead of a
+    // Home nodes behind NAT cannot be reached directly by libp2p. They
+    // maintain a persistent outbound WebSocket to
+    // /ws/home?peerId=<homePeerId>. When a mobile client arrives at
+    // /ws?target=<homePeerId>&token=... and the target has a registered
+    // tunnel, traffic is forwarded through the tunnel instead of a
     // libp2p dial. This makes pairing work regardless of NAT.
-    const homeWss = new WebSocketServer({ noServer: true });
-    const homeTunnels = new Map<string, WebSocket>(); // peerId → ws
+    //
+    // The full state machine (channel tracking, orphan detection,
+    // re-claim on new tunnel) lives in `./home-tunnel-proxy.ts` so it
+    // can be unit-tested in isolation.
     const MAX_HOME_TUNNELS = 200;
-    // Track which home tunnel each mobile proxy is wired to so we can clean up
-    // reverse direction when the mobile side disconnects.
-    const proxyToHomeTunnel = new WeakMap<WebSocket, WebSocket>();
+    const homeTunnelProxy = createHomeTunnelProxy({
+      maxHomeTunnels: MAX_HOME_TUNNELS,
+      maxProxyConnections: MAX_PROXY_CONNECTIONS,
+      maxHomeTunnelDataBytes: MAX_HOME_TUNNEL_DATA_BYTES,
+      logPrefix: "[relay]",
+    });
 
     httpServer.on("upgrade", (req, socket, head) => {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -472,19 +484,7 @@ try {
       // ---- /ws/home — home node registers a persistent tunnel ----
       if (url.pathname === "/ws/home") {
         const peerId = (url.searchParams.get("peerId") ?? "").trim();
-        if (!peerId) {
-          socket.write("HTTP/1.1 400 Bad Request\r\n\r\nMissing peerId");
-          socket.destroy();
-          return;
-        }
-        if (homeTunnels.size >= MAX_HOME_TUNNELS && !homeTunnels.has(peerId)) {
-          socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\nToo many home tunnels");
-          socket.destroy();
-          return;
-        }
-        homeWss.handleUpgrade(req, socket, head, (ws) => {
-          handleHomeTunnel(ws, peerId);
-        });
+        void homeTunnelProxy.handleHomeUpgrade(req, socket, head, peerId);
         return;
       }
 
@@ -520,11 +520,9 @@ try {
       wss.handleUpgrade(req, socket, head, (ws) => {
         // Prefer the home tunnel if registered. Falls back to libp2p dial
         // automatically if the tunnel isn't there yet.
-        if (homeTunnels.has(targetPeerId)) {
-          handleProxyViaHomeTunnel(ws, targetPeerId, token);
-          return;
-        }
-        void handleProxyConnection(ws, targetPeerId, token);
+        homeTunnelProxy.attachMobileProxy(ws, targetPeerId, token, (fallbackWs) => {
+          void handleProxyConnection(fallbackWs, targetPeerId, token);
+        });
       });
     });
 
@@ -666,232 +664,6 @@ try {
 
       ws.on("error", () => {
         ws.close();
-      });
-    }
-
-    /**
-     * Handle an inbound home-node WebSocket tunnel. The home node dials out to
-     * /ws/home?peerId=<homePeerId> and keeps the connection open. We store it
-     * keyed by peer ID so that subsequent /ws?target=<homePeerId> mobile
-     * connections can be bridged through it without needing a libp2p dial
-     * (which would fail for NAT'd home nodes).
-     *
-     * The home node opens a NEW local WebSocket to its own ws-server (port
-     * 3030) for each mobile client. Data flows as JSON envelopes tagged with
-     * a channel id; the relay demuxes by channel id.
-     */
-    function handleHomeTunnel(ws: WebSocket, peerId: string): void {
-      // If a previous tunnel is still registered, close it (the new one wins).
-      const prev = homeTunnels.get(peerId);
-      if (prev && prev !== ws && prev.readyState === WebSocket.OPEN) {
-        try { prev.close(1000, "replaced by newer tunnel"); } catch { /* ignore */ }
-      }
-      homeTunnels.set(peerId, ws);
-      console.log(`[relay] home-tunnel: registered ${peerId.slice(0, 12)}… (total=${homeTunnels.size})`);
-
-      // Acknowledge the registration so the home node knows the tunnel is up.
-      try {
-        ws.send(JSON.stringify({ type: "home-tunnel-ack", peerId }));
-      } catch (err) {
-        console.warn(`[relay] home-tunnel: failed to send ack: ${(err as Error).message}`);
-      }
-
-      // channels: channelId → mobile WebSocket
-      // claimResolvers: channelId → resolver invoked when the home node opens
-      // the channel. The proxy-side awaits this resolver to flush its early
-      // buffer once the home is ready.
-      const channels = new Map<string, WebSocket>();
-      const claimResolvers = new Map<string, () => void>();
-
-      ws.on("message", (raw: string | Buffer | ArrayBuffer | Buffer[]) => {
-        const text = typeof raw === "string"
-          ? raw
-          : Buffer.isBuffer(raw)
-            ? raw.toString("utf-8")
-            : Array.isArray(raw)
-              ? Buffer.concat(raw).toString("utf-8")
-              : new TextDecoder().decode(new Uint8Array(raw as ArrayBuffer));
-        let env: { type?: string; channelId?: string; data?: string };
-        try {
-          env = JSON.parse(text) as typeof env;
-        } catch (err) {
-          console.warn(`[relay] home-tunnel: bad frame from ${peerId.slice(0, 12)}…: ${(err as Error).message}`);
-          return;
-        }
-
-        if (env.type === "open-ack" && typeof env.channelId === "string") {
-          // Home node has opened its end of the channel. Claim the pending
-          // mobile ws, wire it up, and resolve the proxy's claim promise.
-          const mobile = pendingMobileByChannel.get(`${peerId}|${env.channelId}`);
-          pendingMobileByChannel.delete(`${peerId}|${env.channelId}`);
-          if (mobile) {
-            channels.set(env.channelId, mobile);
-            try {
-              mobile.send(JSON.stringify({ event: "connected", data: { relayProxied: true } }));
-            } catch { /* ignore */ }
-            console.log(`[relay] home-tunnel: channel ${env.channelId.slice(0, 8)}… opened by ${peerId.slice(0, 12)}…`);
-          }
-          const resolver = claimResolvers.get(env.channelId);
-          if (resolver) {
-            claimResolvers.delete(env.channelId);
-            resolver();
-          }
-          return;
-        }
-
-        if (env.type === "close" && typeof env.channelId === "string") {
-          const mobile = channels.get(env.channelId);
-          channels.delete(env.channelId);
-          const resolver = claimResolvers.get(env.channelId);
-          if (resolver) {
-            claimResolvers.delete(env.channelId);
-            resolver();
-          }
-          if (mobile && mobile.readyState === WebSocket.OPEN) {
-            try { mobile.close(); } catch { /* ignore */ }
-          }
-          return;
-        }
-
-        if (env.type === "data" && typeof env.channelId === "string" && typeof env.data === "string") {
-          const mobile = channels.get(env.channelId);
-          if (mobile && mobile.readyState === WebSocket.OPEN) {
-            try { mobile.send(env.data); } catch { /* ignore */ }
-          }
-          return;
-        }
-      });
-
-      ws.on("close", () => {
-        if (homeTunnels.get(peerId) === ws) {
-          homeTunnels.delete(peerId);
-        }
-        // Close any mobile channels still open and reject any pending claims.
-        for (const mobile of channels.values()) {
-          if (mobile.readyState === WebSocket.OPEN) {
-            try { mobile.close(1011, "home tunnel closed"); } catch { /* ignore */ }
-          }
-        }
-        channels.clear();
-        for (const resolver of claimResolvers.values()) {
-          resolver();
-        }
-        claimResolvers.clear();
-        console.log(`[relay] home-tunnel: ${peerId.slice(0, 12)}… disconnected (total=${homeTunnels.size})`);
-      });
-
-      ws.on("error", (err) => {
-        console.warn(`[relay] home-tunnel: ${peerId.slice(0, 12)}… error: ${err.message}`);
-      });
-
-      // Expose a way for the proxy to register a claim resolver and notify
-      // the home node to open a channel. Used by handleProxyViaHomeTunnel.
-      (ws as any).__registerClaim = (channelId: string, resolver: () => void) => {
-        claimResolvers.set(channelId, resolver);
-      };
-      (ws as any).__send = (obj: unknown) => {
-        try { ws.send(JSON.stringify(obj)); } catch { /* ignore */ }
-      };
-    }
-
-    /**
-     * Pending mobile connections waiting for a home node to claim them.
-     * Keyed by `<homePeerId>|<channelId>`.
-     */
-    const pendingMobileByChannel = new Map<string, WebSocket>();
-
-    /**
-     * Bridge a mobile client to a home node via the home's persistent tunnel.
-     */
-    function handleProxyViaHomeTunnel(ws: WebSocket, targetPeerId: string, token: string): void {
-      const channelId = randomUUID();
-      const tunnel = homeTunnels.get(targetPeerId);
-      if (!tunnel || tunnel.readyState !== WebSocket.OPEN) {
-        ws.close(1011, "home tunnel not available");
-        return;
-      }
-
-      if (proxyConnTotal >= MAX_PROXY_CONNECTIONS) {
-        ws.close(1013, "relay proxy connections full");
-        return;
-      }
-      proxyConnTotal++;
-      const conns = proxyConnByTarget.get(targetPeerId) ?? new Set();
-      conns.add(ws);
-      proxyConnByTarget.set(targetPeerId, conns);
-      console.log(`[relay] home-tunnel-proxy: connecting to ${targetPeerId.slice(0, 12)}… via tunnel channel=${channelId.slice(0, 8)}… (total=${proxyConnTotal})`);
-
-      // Register the pending mobile. The home node will claim it when its
-      // local ws-server connection is established.
-      pendingMobileByChannel.set(`${targetPeerId}|${channelId}`, ws);
-
-      // Set up a claim promise so we can flush early buffer when ready.
-      let claimResolver: () => void = () => {};
-      const claimPromise = new Promise<void>((resolve) => { claimResolver = resolve; });
-      (tunnel as any).__registerClaim?.(channelId, claimResolver);
-
-      // Ask the home node to open a local ws-server connection for us.
-      (tunnel as any).__send?.({
-        type: "open",
-        channelId,
-        token,
-        targetPeerId,
-      });
-
-      // Buffer early mobile messages until the home node claims the channel.
-      const earlyBuffer: string[] = [];
-      let channelReady = false;
-
-      const claimTimer = setTimeout(() => {
-        if (channelReady) return;
-        channelReady = true;
-        pendingMobileByChannel.delete(`${targetPeerId}|${channelId}`);
-        try { ws.close(1011, "home tunnel did not claim channel"); } catch { /* ignore */ }
-        console.warn(`[relay] home-tunnel-proxy: home did not claim channel ${channelId.slice(0, 8)}… within 10s`);
-      }, 10_000);
-
-      void claimPromise.then(() => {
-        if (channelReady) return;
-        channelReady = true;
-        clearTimeout(claimTimer);
-        // Flush the early buffer through the tunnel.
-        for (const text of earlyBuffer) {
-          (tunnel as any).__send?.({ type: "data", channelId, data: text });
-        }
-        earlyBuffer.length = 0;
-      });
-
-      ws.on("message", (raw: string | Buffer | ArrayBuffer | Buffer[]) => {
-        const text = typeof raw === "string"
-          ? raw
-          : Buffer.isBuffer(raw)
-            ? raw.toString("utf-8")
-            : Array.isArray(raw)
-              ? Buffer.concat(raw).toString("utf-8")
-              : new TextDecoder().decode(new Uint8Array(raw as ArrayBuffer));
-        if (!channelReady) {
-          earlyBuffer.push(text);
-          return;
-        }
-        (tunnel as any).__send?.({ type: "data", channelId, data: text });
-      });
-
-      ws.on("close", () => {
-        channelReady = true;
-        clearTimeout(claimTimer);
-        pendingMobileByChannel.delete(`${targetPeerId}|${channelId}`);
-        const s = proxyConnByTarget.get(targetPeerId);
-        if (s) {
-          s.delete(ws);
-          if (s.size === 0) proxyConnByTarget.delete(targetPeerId);
-        }
-        proxyConnTotal--;
-        (tunnel as any).__send?.({ type: "close", channelId });
-        console.log(`[relay] home-tunnel-proxy: mobile disconnected from ${targetPeerId.slice(0, 12)}… (total=${proxyConnTotal})`);
-      });
-
-      ws.on("error", () => {
-        try { ws.close(); } catch { /* ignore */ }
       });
     }
 

@@ -35,6 +35,8 @@ dependencies:
   # Push notifications (mobile only)
   firebase_core: ^3.0.1
   firebase_messaging: ^15.0.1
+  # Network connectivity (mobile + desktop)
+  connectivity_plus: ^6.0.5
   # UI
   google_fonts: ^6.2.1
   cached_network_image: ^3.4.1

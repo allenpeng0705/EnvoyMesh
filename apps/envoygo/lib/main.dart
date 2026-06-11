@@ -41,12 +41,12 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      final notifier = ref.read(nodeProvider.notifier);
-      final nodeState = ref.read(nodeProvider);
-      if (nodeState.connectionState == NodeConnectionState.disconnected &&
-          nodeState.activeNode != null) {
-        notifier.connectToNode(nodeState.activeNode!);
-      }
+      // Delegate to the supervisor via kickReconnect(). It already
+      // short-circuits when connected, so calling it on every
+      // resume (including transient notification-bar peeks) is
+      // safe. The supervisor also picks up the new candidate
+      // list if the user moved networks while backgrounded.
+      ref.read(nodeProvider.notifier).kickReconnect();
     }
   }
 

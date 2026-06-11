@@ -12,6 +12,9 @@ import '../services/node_service_client.dart';
 import '../services/pairing_service.dart';
 import '../services/client_proxy_transport.dart';
 import '../services/platform_web_socket.dart';
+import '../services/exceptions.dart';
+import '../services/reconnect_supervisor.dart';
+import '../services/connectivity_observer.dart';
 import '../storage/local_database.dart';
 import '../storage/secure_storage.dart';
 
@@ -32,6 +35,28 @@ class NodeState {
   final String? errorMessage;
   final String? ownerId;
 
+  /// Timestamp of the most recent `connectToNode` attempt (success or
+  /// failure). The Me screen renders this as a relative "last attempt"
+  /// string while the supervisor is retrying.
+  final DateTime? lastConnectAttemptAt;
+
+  /// Monotonic count of reconnect attempts the supervisor has made
+  /// for the current target node. Reset to 0 on a fresh `connectToNode`
+  /// or on a successful connect.
+  final int reconnectAttempt;
+
+  /// Typed error code from the most recent failed connect attempt.
+  /// `null` when there is no error or when the last connect succeeded.
+  ///
+  /// Values:
+  ///   - `'unauthorized'` — home rejected the session token; supervisor
+  ///     has stopped, Me screen shows a Re-pair CTA.
+  ///   - `'offline'`      — every transport candidate failed to reach
+  ///     the home node; supervisor will keep retrying.
+  ///   - `'transport'`    — non-auth failure mid-attempt (WS error,
+  ///     timeout, malformed response). Supervisor will keep retrying.
+  final String? homeNodeErrorCode;
+
   const NodeState({
     this.activeNode,
     this.pairedNodes = const [],
@@ -39,6 +64,9 @@ class NodeState {
     this.activeTransport,
     this.errorMessage,
     this.ownerId,
+    this.lastConnectAttemptAt,
+    this.reconnectAttempt = 0,
+    this.homeNodeErrorCode,
   });
 
   NodeState copyWith({
@@ -47,15 +75,25 @@ class NodeState {
     NodeConnectionState? connectionState,
     String? activeTransport,
     String? errorMessage,
+    bool clearErrorMessage = false,
     String? ownerId,
+    DateTime? lastConnectAttemptAt,
+    int? reconnectAttempt,
+    String? homeNodeErrorCode,
+    bool clearHomeNodeErrorCode = false,
   }) {
     return NodeState(
       activeNode: activeNode ?? this.activeNode,
       pairedNodes: pairedNodes ?? this.pairedNodes,
       connectionState: connectionState ?? this.connectionState,
       activeTransport: activeTransport ?? this.activeTransport,
-      errorMessage: errorMessage,
+      errorMessage: clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
       ownerId: ownerId ?? this.ownerId,
+      lastConnectAttemptAt: lastConnectAttemptAt ?? this.lastConnectAttemptAt,
+      reconnectAttempt: reconnectAttempt ?? this.reconnectAttempt,
+      homeNodeErrorCode: clearHomeNodeErrorCode
+          ? null
+          : (homeNodeErrorCode ?? this.homeNodeErrorCode),
     );
   }
 }
@@ -79,13 +117,49 @@ class NodeNotifier extends StateNotifier<NodeState> {
   NodeServiceClient? _nodeService;
   PairingService? _pairingService;
 
+  /// `true` after [dispose] has been called. Used to short-circuit
+  /// supervisor callbacks that fire after the notifier is gone.
+  bool _disposed = false;
+
+  /// Active supervisor for retrying `connectToNode` after a failed
+  /// initial connect. Created lazily by [_startSupervisorFor] when
+  /// a paired node is known. `null` when no auto-reconnect is
+  /// in flight (either because no node is paired, or because the
+  /// last attempt succeeded and the inner client has taken over,
+  /// or because an `UnauthorizedException` halted the loop).
+  ReconnectSupervisor? _supervisor;
+
+  /// The nodeId the supervisor is currently configured to retry
+  /// against. Updated on `loadPairedNodes`, `pairWithNode`,
+  /// `switchToNode`. Cleared in `unpairNode` when the unpaired
+  /// node is the supervisor's target.
+  String? _supervisorTargetNodeId;
+
+  /// Concurrency guard for `connectToNode`. If a connect is already
+  /// in flight to the same target, additional callers receive the
+  /// same future instead of stacking up — the supervisor relies on
+  /// this to avoid double-creating `HomeRemoteClient` instances.
+  Future<void>? _connectingFuture;
+
+  /// Connectivity observer for kicking the supervisor on offline →
+  /// online edges. `null` until [loadPairedNodes] (or any other
+  /// pairing entry point) starts it.
+  ConnectivityObserver? _connectivityObserver;
+
+  /// Subscription to the connectivity observer's `onBecameOnline`
+  /// stream. Cancelled in [unpairNode] when no paired nodes remain
+  /// and in [dispose].
+  StreamSubscription<void>? _connectivitySub;
+
   NodeNotifier({
     required Ref ref,
     required SecureStorage secureStorage,
     required LocalDatabase localDb,
+    ConnectivityObserver? connectivityObserver,
   })  : _ref = ref,
         _secureStorage = secureStorage,
         _localDb = localDb,
+        _connectivityObserver = connectivityObserver,
         super(const NodeState());
 
   HomeRemoteClient? get client => _client;
@@ -97,14 +171,118 @@ class NodeNotifier extends StateNotifier<NodeState> {
     final nodes = rows.map((r) => StoredNode.fromJson(r)).toList();
     state = state.copyWith(pairedNodes: nodes);
 
+    // Start the connectivity observer (one-shot for the app's
+    // lifetime). It kicks the supervisor whenever the device
+    // transitions from offline to online.
+    await _ensureConnectivityObserver();
+
     // Auto-connect to last-used node.
     final activeNodeId = await _secureStorage.getActiveNodeId();
     if (activeNodeId != null) {
       final node = nodes.where((n) => n.id == activeNodeId).firstOrNull;
       if (node != null) {
         await connectToNode(node);
+        // Start a supervisor for this node even if the first
+        // attempt succeeded — the user may close the home node and
+        // reopen it later in the same session, and the supervisor
+        // is the path that will reconnect. (The supervisor is a
+        // no-op while the inner client is connected; see
+        // [kickReconnect].)
+        _startSupervisorFor(node.id);
       }
     }
+  }
+
+  /// Lazily create and start the connectivity observer on first
+  /// use. Idempotent. The subscription is stored on the notifier
+  /// so it can be cancelled in [unpairNode] / [dispose].
+  Future<void> _ensureConnectivityObserver() async {
+    if (_connectivitySub != null) return;
+    final observer = _connectivityObserver ??= RealConnectivityObserver();
+    await observer.start();
+    _connectivitySub = observer.onBecameOnline.listen((_) {
+      kickReconnect();
+    });
+  }
+
+  /// Construct a fresh [ReconnectSupervisor] targeting the given
+  /// nodeId. Replaces any prior supervisor. The supervisor
+  /// immediately schedules its first attempt; the inner
+  /// `connectToNode` de-duplicates concurrent calls via
+  /// [_connectingFuture] so a supervisor kick does not race the
+  /// initial connect.
+  void _startSupervisorFor(String nodeId) {
+    _supervisor?.stop();
+    _supervisorTargetNodeId = nodeId;
+    _supervisor = ReconnectSupervisor(
+      currentTargetNodeIdProvider: () => _supervisorTargetNodeId,
+      getTargetNode: () {
+        final id = _supervisorTargetNodeId;
+        if (id == null) return null;
+        return state.pairedNodes
+            .where((n) => n.id == id)
+            .firstOrNull;
+      },
+      attemptConnect: (node) => connectToNode(node),
+      onAttemptStarted: () {
+        if (_disposed) return;
+        state = state.copyWith(
+          reconnectAttempt: state.reconnectAttempt + 1,
+          lastConnectAttemptAt: DateTime.now(),
+        );
+      },
+      onConnected: () {
+        if (_disposed) return;
+        state = state.copyWith(
+          reconnectAttempt: 0,
+          clearHomeNodeErrorCode: true,
+          clearErrorMessage: true,
+        );
+      },
+      onAttemptFailed: (code, message) {
+        if (_disposed) return;
+        state = state.copyWith(
+          homeNodeErrorCode: code,
+          errorMessage: message,
+        );
+      },
+    );
+    _supervisor!.start();
+  }
+
+  /// Force an immediate reconnect attempt, resetting the
+  /// supervisor's backoff. Used by:
+  ///   - the Me screen's "Reconnect now" button;
+  ///   - the `AppLifecycleState.resumed` lifecycle hook in
+  ///     `_EnvoyGoRoot` (so resume-from-background re-checks the
+  ///     home node instead of waiting up to 30s for the next
+  ///     supervisor tick);
+  ///   - the `connectivity_plus` offline → online listener.
+  ///
+  /// No-op when already connected.
+  void kickReconnect() {
+    if (state.connectionState == NodeConnectionState.connected) return;
+    final supervisor = _supervisor;
+    if (supervisor == null) return;
+    if (supervisor.isStopped) return;
+    supervisor.kick();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _supervisor?.stop();
+    _supervisor = null;
+    _supervisorTargetNodeId = null;
+    _connectivitySub?.cancel();
+    _connectivitySub = null;
+    _connectivityObserver?.dispose();
+    _connectivityObserver = null;
+    _client?.dispose();
+    _client = null;
+    _nodeService = null;
+    _pairingService = null;
+    super.dispose();
   }
 
   /// Pair with a home node using pairing data.
@@ -196,6 +374,11 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     // Reconnect with the new session token so all RPCs are authenticated.
     await connectToNode(node);
+    // Start the reconnect supervisor for this node. If the
+    // initial connect failed, the supervisor will keep retrying
+    // (with backoff) until either the home comes back online or
+    // the user unpairs.
+    _startSupervisorFor(node.id);
 
     return result;
   }
@@ -424,27 +607,64 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
   /// Connect to a stored node.
   Future<void> connectToNode(StoredNode node) async {
+    // Concurrency guard: if a connect is already in flight to the
+    // same target, return that future instead of stacking up. The
+    // [ReconnectSupervisor] relies on this to avoid double-creating
+    // `HomeRemoteClient` instances on its own kicks.
+    final inflight = _connectingFuture;
+    if (inflight != null && _supervisorTargetNodeId == node.id) {
+      return inflight;
+    }
+    _connectingFuture = _connectToNodeImpl(node);
+    try {
+      await _connectingFuture;
+    } finally {
+      _connectingFuture = null;
+    }
+  }
+
+  Future<void> _connectToNodeImpl(StoredNode node) async {
     state = state.copyWith(
-        connectionState: NodeConnectionState.connecting);
+      connectionState: NodeConnectionState.connecting,
+      reconnectAttempt: 0,
+      lastConnectAttemptAt: DateTime.now(),
+    );
 
     final sessionToken =
         await _secureStorage.getSessionToken(node.id);
     if (sessionToken == null || sessionToken.isEmpty) {
+      // No session token in secure storage. The pairing record is
+      // still there (the device is still "paired" in the user's
+      // mental model) but the credential that authenticates future
+      // reconnects is gone. Throw `UnauthorizedException` so the
+      // supervisor sees a terminal failure and stops — otherwise
+      // a normal return would look like "success" to the
+      // supervisor and it would stop with the error state cleared.
       state = state.copyWith(
         connectionState: NodeConnectionState.error,
         errorMessage: 'Session token not found — re-pair required.',
+        homeNodeErrorCode: 'unauthorized',
       );
-      return;
+      throw const UnauthorizedException(
+        'Session token not found — re-pair required.',
+      );
     }
 
     final resolver = CandidateResolver();
     final candidates = resolver.resolve(node, sessionToken: sessionToken);
     if (candidates.isEmpty) {
+      // No transport candidates (LAN, public, libp2p, relay). The
+      // stored node has no way to reach the home. Same as above:
+      // throw so the supervisor halts and the user sees the
+      // persistent error state.
       state = state.copyWith(
         connectionState: NodeConnectionState.error,
         errorMessage: 'No transport candidates available.',
+        homeNodeErrorCode: 'unauthorized',
       );
-      return;
+      throw const UnauthorizedException(
+        'No transport candidates available — re-pair required.',
+      );
     }
 
     final opts = HomeRemoteClientOptions(
@@ -473,21 +693,33 @@ class NodeNotifier extends StateNotifier<NodeState> {
         activeNode: node.copyWith(lastConnectedAt: DateTime.now()),
         connectionState: NodeConnectionState.connected,
         ownerId: node.ownerId,
+        clearErrorMessage: true,
       );
 
       // Trigger full data sync.
       _syncAllData();
     } catch (e) {
-      final msg = e.toString();
-      if (msg.contains('Authentication') ||
-          msg.contains('auth') ||
-          msg.contains('Unauthorized') ||
-          msg.contains('token')) {
+      // Only delete the session token when the home node explicitly
+      // rejected the auth — a typed `UnauthorizedException` from the
+      // RPC layer. Any other error (network drop, timeout, transient
+      // relay failure) keeps the token intact so a later retry can
+      // succeed. This replaces the previous substring-match
+      // (`msg.contains('auth') || msg.contains('token') || ...`)
+      // which would destroy the token on benign transport errors
+      // that happened to mention those substrings.
+      if (e is UnauthorizedException) {
         await _secureStorage.deleteSessionToken(node.id);
+        state = state.copyWith(
+          connectionState: NodeConnectionState.error,
+          errorMessage: 'Session expired. Re-pair required.',
+          homeNodeErrorCode: 'unauthorized',
+        );
+        await disconnect();
+        return;
       }
       state = state.copyWith(
         connectionState: NodeConnectionState.error,
-        errorMessage: msg,
+        errorMessage: e.toString(),
       );
       await disconnect();
     }
@@ -499,6 +731,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _client = null;
     _nodeService = null;
     _pairingService = null;
+    _connectingFuture = null;
     state = state.copyWith(
       connectionState: NodeConnectionState.disconnected,
       activeTransport: null,
@@ -512,6 +745,13 @@ class NodeNotifier extends StateNotifier<NodeState> {
     if (node == null) return;
     await disconnect();
     await connectToNode(node);
+    // Retarget the supervisor to the new node. If the prior
+    // supervisor was for a different node, stop it and start
+    // fresh; if it was already for this node (rapid switch
+    // toggling), leave it alone.
+    if (_supervisorTargetNodeId != nodeId) {
+      _startSupervisorFor(nodeId);
+    }
   }
 
   /// Update the public IP/domain for a paired node.
@@ -537,20 +777,37 @@ class NodeNotifier extends StateNotifier<NodeState> {
     );
   }
 
-  /// Remove a paired node.
+  /// Remove a paired node. This is the only path that clears the
+  /// pairing record from local storage — there is no auto-unpair.
   Future<void> unpairNode(String nodeId) async {
+    // If the supervisor was targeting this node, stop it before we
+    // tear down state — otherwise it would keep firing with a
+    // deleted node id.
+    if (_supervisorTargetNodeId == nodeId) {
+      _supervisor?.stop();
+      _supervisor = null;
+      _supervisorTargetNodeId = null;
+    }
     await disconnect();
     await _secureStorage.deleteSessionToken(nodeId);
     if (await _secureStorage.getActiveNodeId() == nodeId) {
       await _secureStorage.saveActiveNodeId('');
     }
     await _localDb.deleteNode(nodeId);
+    final remaining = state.pairedNodes.where((n) => n.id != nodeId).toList();
     state = state.copyWith(
       activeNode: null,
-      pairedNodes:
-          state.pairedNodes.where((n) => n.id != nodeId).toList(),
+      pairedNodes: remaining,
       ownerId: null,
     );
+    // If this was the last paired node, tear down the connectivity
+    // subscription too. (When the user re-pairs, _ensureConnectivityObserver
+    // is a no-op because the sub already exists; loadPairedNodes
+    // doesn't reach it for an already-initialised notifier.)
+    if (remaining.isEmpty) {
+      await _connectivitySub?.cancel();
+      _connectivitySub = null;
+    }
   }
 
   String _generateNodeId() {

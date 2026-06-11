@@ -205,15 +205,25 @@ class NodeServiceClient {
   }
 
   /// Send keystrokes (base64-encoded) through the PTY WebSocket.
-  Future<Map<String, dynamic>> homeTerminalWsSend(String dataBase64) async {
+  /// [sessionId] routes the frame to the right per-session sub-channel
+  /// when multiple sessions are open on the same companion.
+  Future<Map<String, dynamic>> homeTerminalWsSend(
+    String dataBase64, {
+    String? sessionId,
+  }) async {
     return await _client.call('homeTerminalWsSend', {
       'dataBase64': dataBase64,
+      if (sessionId != null) 'sessionId': sessionId,
     }) as Map<String, dynamic>;
   }
 
-  /// Close the PTY WebSocket sub-channel.
-  Future<void> homeTerminalWsClose() async {
-    await _client.call('homeTerminalWsClose');
+  /// Close the PTY WebSocket sub-channel.  If [sessionId] is given,
+  /// only that session's sub-channel is torn down; otherwise the
+  /// home closes all sub-channels for this companion.
+  Future<void> homeTerminalWsClose({String? sessionId}) async {
+    await _client.call('homeTerminalWsClose', {
+      if (sessionId != null) 'sessionId': sessionId,
+    });
   }
 
   // -- Profile --

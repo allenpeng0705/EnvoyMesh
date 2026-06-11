@@ -1,20 +1,25 @@
-import 'dart:convert';
-import 'node_service_client.dart';
+import 'dart:typed_data';
+
 import '../models/terminal_session.dart';
+import 'home_remote_client.dart';
+import 'node_service_client.dart';
 
 /// Terminal PTY service — manages terminal lifecycle and I/O.
 ///
-/// Commands are sent through the main JSON-RPC channel via
-/// `homeTerminalWsSend` (base64-encoded keystrokes). Output is
-/// received via the `terminal:rx` push event from the home node.
+/// Keystrokes are sent through the [HomeRemoteClient] which frames
+/// them as `[version(1)][type(0=stdin)][payload(utf8)]` per the
+/// PTY wire protocol (`packages/api/src/terminal-wire.ts`). Output is
+/// received via the `homeTerminalWs:rx` push event from the home node
+/// (see `terminal_detail_screen.dart`).
 class TerminalService {
   final NodeServiceClient _client;
+  final HomeRemoteClient _remote;
   String? _activeSessionId;
 
   /// Callback for terminal output (decoded from base64 push events).
   void Function(String text)? onOutput;
 
-  TerminalService(this._client);
+  TerminalService(this._client, this._remote);
 
   /// List active terminal sessions on the home node.
   Future<List<TerminalSession>> listSessions() async {
@@ -27,9 +32,9 @@ class TerminalService {
     return _client.createTerminalSession(cwd: cwd, command: command);
   }
 
-  /// Try to open a persistent WebSocket sub-channel for real-time PTY I/O.
-  /// If this succeeds, subsequent output arrives via `terminal:rx` push
-  /// events.  Commands can still use `terminalExec` as a fallback.
+  /// Open a persistent PTY WebSocket sub-channel for real-time I/O.
+  /// After this returns, the home will forward `homeTerminalWs:rx`
+  /// push events with `dataBase64` frames.
   Future<void> attach(String sessionId) async {
     final result = await _client.homeTerminalWsOpen(sessionId);
     if (result['ok'] != true) {
@@ -45,31 +50,29 @@ class TerminalService {
     _activeSessionId = sessionId;
   }
 
-  /// Send a command and return output.
+  /// Send a command to the active session.
   ///
-  /// Tries the persistent WebSocket path first; falls back to the
-  /// simple `terminalExec` RPC if no stream is attached.
-  Future<String> sendCommand(String command) async {
+  /// In streaming mode (WS attached) this is fire-and-forget — the
+  /// output arrives as `homeTerminalWs:rx` push events. Returns `null`
+  /// in that case so the UI doesn't show a misleading "completed" state.
+  ///
+  /// Falls back to `terminalExec` (one-shot RPC) if no stream is
+  /// attached; that returns the captured output.
+  Future<String?> sendCommand(String command) async {
     final sessionId = _activeSessionId;
     if (sessionId == null) {
       throw Exception('Terminal not attached');
     }
 
-    // If we have a live WS stream, send through it for real-time output.
     if (_wsAttached) {
-      try {
-        final data = '$command\r';
-        final b64 = base64Encode(utf8.encode(data));
-        final result = await _client.homeTerminalWsSend(b64);
-        if (result['ok'] != true) {
-          // Stream dropped — mark disconnected and fall through.
-          _wsAttached = false;
-        } else {
-          return ''; // Output arrives via push events.
-        }
-      } catch (_) {
-        _wsAttached = false;
+      final sent =
+          _remote.sendTerminalInput('$command\r', sessionId: sessionId);
+      if (sent.ok) {
+        // Output arrives via push events. Don't return a fake value.
+        return null;
       }
+      // Stream write rejected — fall through to the RPC path.
+      _wsAttached = false;
     }
 
     // Fallback: simple RPC for instant output.
@@ -79,19 +82,56 @@ class TerminalService {
 
   bool _wsAttached = false;
 
-  /// Send raw keystrokes (base64-encoded) to the terminal.
-  Future<void> sendKeystrokes(String dataBase64) async {
-    if (_activeSessionId == null) return;
-    await _client.homeTerminalWsSend(dataBase64);
+  /// Whether the WS sub-channel is currently attached.
+  bool get isAttached => _wsAttached;
+
+  /// Send a single keystroke to the pty stdin. Encodes as the
+  /// wire-protocol `stdin` frame, never raw text.
+  bool sendKey(String text) {
+    final sessionId = _activeSessionId;
+    if (sessionId == null) return false;
+    final result = _remote.sendTerminalInput(text, sessionId: sessionId);
+    if (!result.ok) _wsAttached = false;
+    return result.ok;
   }
 
-  /// Detach from the PTY channel.
+  /// Send a control byte (e.g. `0x03` for Ctrl-C) as a stdin frame.
+  bool sendControlByte(int byte) {
+    final sessionId = _activeSessionId;
+    if (sessionId == null) return false;
+    final result = _remote.sendTerminalFrame(
+      encodeTerminalFrame(
+        TerminalWireType.stdin,
+        Uint8List.fromList([byte]),
+      ),
+      sessionId: sessionId,
+    );
+    if (!result.ok) _wsAttached = false;
+    return result.ok;
+  }
+
+  /// Send a pty resize event. `cols` and `rows` must be > 0; otherwise
+  /// the call is ignored.
+  void sendResize(int cols, int rows) {
+    final sessionId = _activeSessionId;
+    if (sessionId == null) return;
+    _remote.sendTerminalResize(cols, rows, sessionId: sessionId);
+  }
+
+  /// Detach from the PTY sub-channel. The session itself stays alive
+  /// on the home; this only tears down the live I/O channel.
   Future<void> detach() async {
+    final sessionId = _activeSessionId;
     _activeSessionId = null;
-    await _client.homeTerminalWsClose();
+    _wsAttached = false;
+    if (sessionId != null) {
+      _remote.closeTerminalTunnel(sessionId: sessionId);
+    } else {
+      _remote.closeTerminalTunnel();
+    }
   }
 
-  /// Close a terminal session.
+  /// Close a terminal session on the home.
   Future<void> closeSession(String sessionId) async {
     if (_activeSessionId == sessionId) {
       await detach();

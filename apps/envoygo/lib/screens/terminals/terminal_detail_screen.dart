@@ -1,10 +1,12 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../providers/node_provider.dart';
-import '../../services/terminal_service.dart';
 import '../../services/node_service_client.dart';
+import '../../services/terminal_service.dart';
 
 /// Terminal PTY view — sends commands via JSON-RPC and displays output
 /// from `terminal:rx` push events.
@@ -30,6 +32,14 @@ class _TerminalDetailScreenState
   final _scrollController = ScrollController();
   TerminalService? _terminalService;
   bool _attached = false;
+
+  /// True when the home-tunnel is reachable. The relay emits `tunnel-down`
+  /// when the home's `/ws/home` connection is lost and `tunnel-up` when a
+  /// new tunnel is re-claimed. We surface a small "reconnecting…" chip in
+  /// the AppBar while down so the user knows their input is being buffered
+  /// by the relay (I4) and not lost. The terminal session itself stays
+  /// alive on the home; the relay re-attaches the mobile ws transparently.
+  bool _tunnelUp = true;
 
   /// Streaming response buffer for long-running commands.
   /// Accumulated output is appended to the last entry in [_output].
@@ -61,10 +71,26 @@ class _TerminalDetailScreenState
     _detach();
 
     final nodeService = NodeServiceClient(client);
-    _terminalService = TerminalService(nodeService);
+    _terminalService = TerminalService(nodeService, client);
 
     // Subscribe to terminal output from push events (real-time stream).
+    // The home emits one `homeTerminalWs:rx` event per companion, so we
+    // filter by `sessionId` to make sure multi-tab/multi-screen works.
     _unsubscribeRx = client.on('homeTerminalWs:rx', _onTerminalOutput);
+
+    // Subscribe to home-tunnel state events (I4). The relay emits
+    // `tunnel-down` when the home's `/ws/home` connection is lost and
+    // `tunnel-up` when a new tunnel is re-claimed. The relay keeps the
+    // mobile's WebSocket open across the re-claim and buffers any
+    // frames the user types in the meantime, so input is not lost.
+    _unsubscribeTunnelDown = client.on('tunnel-down', (_) {
+      if (!mounted) return;
+      setState(() => _tunnelUp = false);
+    });
+    _unsubscribeTunnelUp = client.on('tunnel-up', (_) {
+      if (!mounted) return;
+      setState(() => _tunnelUp = true);
+    });
 
     // Try the persistent WebSocket stream first; fall back to simple
     // terminalExec RPC if the stream can't be established.
@@ -79,13 +105,20 @@ class _TerminalDetailScreenState
   }
 
   void Function()? _unsubscribeRx;
+  void Function()? _unsubscribeTunnelDown;
+  void Function()? _unsubscribeTunnelUp;
 
   void _detach() {
     _unsubscribeRx?.call();
     _unsubscribeRx = null;
+    _unsubscribeTunnelDown?.call();
+    _unsubscribeTunnelDown = null;
+    _unsubscribeTunnelUp?.call();
+    _unsubscribeTunnelUp = null;
     _terminalService?.detach();
     _terminalService = null;
     _attached = false;
+    _tunnelUp = true;
     _streamingIndex = -1;
     _rawBuffer.clear();
   }
@@ -94,7 +127,20 @@ class _TerminalDetailScreenState
   final _rawBuffer = <int>[];
 
   void _onTerminalOutput(dynamic data) {
+    // Drop late events that arrive after detach() to avoid mutating
+    // already-disposed state. The listener is removed synchronously
+    // in _detach() so under normal flow this guard is just belt-and-
+    // suspenders for events already in the message queue.
+    if (_terminalService == null) return;
     if (data is! Map<String, dynamic>) return;
+    // Filter to this session — one home companion can have multiple
+    // open terminal sub-channels. Older home versions (pre-C2) emit
+    // the event without a sessionId; in that case we accept it as
+    // a best-effort match.
+    final eventSessionId = data['sessionId'] as String?;
+    if (eventSessionId != null && eventSessionId != widget.sessionId) {
+      return;
+    }
     final b64 = data['dataBase64'] as String?;
     if (b64 == null || b64.isEmpty) return;
     List<int> chunk;
@@ -174,25 +220,26 @@ class _TerminalDetailScreenState
 
     _terminalService?.sendCommand(command).then((output) {
       if (!mounted) return;
-      if (output.isNotEmpty) {
-        final cleaned = _cleanTerminalOutput(output);
-        if (cleaned.isNotEmpty) {
-          setState(() {
-            // If streaming output already wrote to the last entry (the
-            // prompt), replace it; otherwise append.
-            final lastIsPrompt = _output.isNotEmpty &&
-                _output.last.startsWith('\$ $command');
-            if (lastIsPrompt) {
-              _output.last = '\$ $command\n$cleaned';
-            } else {
-              _output.add(cleaned);
-            }
-            if (_output.length > 500) {
-              _output.removeRange(0, _output.length - 500);
-            }
-          });
+      // In streaming (WS) mode `output` is null because the response
+      // arrives via `homeTerminalWs:rx` push events. Only the
+      // `terminalExec` RPC fallback produces a captured-output value.
+      if (output == null || output.isEmpty) return;
+      final cleaned = _cleanTerminalOutput(output);
+      if (cleaned.isEmpty) return;
+      setState(() {
+        // If streaming output already wrote to the last entry (the
+        // prompt), replace it; otherwise append.
+        final lastIsPrompt = _output.isNotEmpty &&
+            _output.last.startsWith('\$ $command');
+        if (lastIsPrompt) {
+          _output.last = '\$ $command\n$cleaned';
+        } else {
+          _output.add(cleaned);
         }
-      }
+        if (_output.length > 500) {
+          _output.removeRange(0, _output.length - 500);
+        }
+      });
     }).catchError((e) {
       if (!mounted) return;
       setState(() => _output.add('[Error: $e]'));
@@ -247,6 +294,19 @@ class _TerminalDetailScreenState
       appBar: AppBar(
         title: Text(widget.sessionName),
         actions: [
+          if (!_tunnelUp)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8.0),
+              child: Center(
+                child: Chip(
+                  label: Text('Reconnecting…'),
+                  backgroundColor: Colors.orange,
+                  labelStyle: TextStyle(color: Colors.white, fontSize: 12),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
           if (!_attached)
             TextButton(
               onPressed: _attach,
@@ -329,8 +389,8 @@ class _TerminalDetailScreenState
                     icon: const Icon(Icons.control_camera,
                         color: Colors.grey, size: 20),
                     onPressed: () {
-                      _terminalService
-                          ?.sendKeystrokes(base64Encode([3]));
+                      // Ctrl-C (ETX) — kills the foreground process.
+                      _terminalService?.sendControlByte(0x03);
                     },
                   ),
                 ],
