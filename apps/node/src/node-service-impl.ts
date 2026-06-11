@@ -8745,8 +8745,10 @@ class NodeServiceImpl implements NodeService {
           stableSince = elapsed;
         }
         if (elapsed >= maxWaitMs || (elapsed - stableSince >= stableMs && elapsed > 600)) {
-          const tail = currentBuf.length > 131_072
-            ? currentBuf.subarray(currentBuf.length - 131_072)
+          // Return up to 256 KiB of tail — don't truncate important content.
+          const maxTail = 262_144;
+          const tail = currentBuf.length > maxTail
+            ? currentBuf.subarray(currentBuf.length - maxTail)
             : currentBuf;
           resolve({ output: tail.toString("utf8") });
           return;

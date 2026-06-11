@@ -141,41 +141,19 @@ class _TerminalDetailScreenState
       r'\x1B[PX^_][^\x1B]*\x1B\\'); // other sequences
 
   String _cleanTerminalOutput(String text) {
-    // 1. Replace clear-screen / cursor-home with a visible separator.
-    text = text.replaceAll('\x1B[2J', '\n---\n');
-    text = text.replaceAll('\x1B[H', '');
-    text = text.replaceAll('\x1B[?1049h', ''); // enter alt screen
-    text = text.replaceAll('\x1B[?1049l', ''); // exit alt screen
-
-    // 2. Strip the rest of ANSI escape sequences.
+    // 1. Strip all ANSI / CSI escape sequences (no separators).
     text = text.replaceAll(_ansiRegex, '');
 
-    // 3. Normalise line endings.
+    // 2. Normalise line endings.
     text = text.replaceAll('\r\n', '\n');
     text = text.replaceAll('\r', '\n');
 
-    // 4. Collapse multiple blank lines.
+    // 3. Collapse 4+ blank lines to 2.
     while (text.contains('\n\n\n\n')) {
-      text = text.replaceAll('\n\n\n\n', '\n\n\n');
+      text = text.replaceAll('\n\n\n\n', '\n\n');
     }
 
-    // 5. Remove duplicate consecutive identical lines (TUI redraws).
-    final lines = text.split('\n');
-    final cleaned = <String>[];
-    String? last;
-    for (final line in lines) {
-      final trimmed = line.trimRight();
-      if (trimmed.isEmpty) {
-        if (last != null && last.isNotEmpty) cleaned.add('');
-        continue;
-      }
-      if (trimmed != last) {
-        cleaned.add(trimmed);
-        last = trimmed;
-      }
-    }
-
-    return cleaned.join('\n').trim();
+    return text.trim();
   }
 
   @override
