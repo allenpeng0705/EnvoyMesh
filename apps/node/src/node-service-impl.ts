@@ -8726,16 +8726,19 @@ class NodeServiceImpl implements NodeService {
 
   terminalExec(params: { sessionId: string; command: string }): Promise<{ output: string }> {
     const mgr = this._requireTerminalManager();
+    // Snapshot before writing the command so we can return only the delta.
+    const prev = mgr.getScrollback(params.sessionId);
+    const prevLen = prev.length;
     mgr.writeStdin(params.sessionId, Buffer.from(params.command + "\r", "utf8"));
+
     const maxWaitMs = 12_000;
     const pollIntervalMs = 250;
-    const stableMs = 300;
+    const stableMs = 400;
     const startedAt = Date.now();
-    const initialLen = mgr.getScrollback(params.sessionId).length;
+    let lastLen = prevLen;
+    let stableSince = 0;
 
     return new Promise<{ output: string }>((resolve) => {
-      let lastLen = initialLen;
-      let stableSince = 0;
       const poll = () => {
         const currentRaw = mgr.getScrollbackTail(params.sessionId, 524_288);
         const currentBuf = Buffer.from(currentRaw, "utf8");
@@ -8745,11 +8748,15 @@ class NodeServiceImpl implements NodeService {
           stableSince = elapsed;
         }
         if (elapsed >= maxWaitMs || (elapsed - stableSince >= stableMs && elapsed > 600)) {
-          // Return up to 256 KiB of tail — don't truncate important content.
-          const maxTail = 262_144;
-          const tail = currentBuf.length > maxTail
-            ? currentBuf.subarray(currentBuf.length - maxTail)
-            : currentBuf;
+          // Return only the delta: bytes produced since the command was written.
+          const full = mgr.getScrollback(params.sessionId);
+          const deltaStart = prevLen; // skip everything before the command
+          const delta = full.subarray(deltaStart);
+          // Truncate to last 128 KiB so the response is manageable.
+          const maxTail = 131_072;
+          const tail = delta.length > maxTail
+            ? delta.subarray(delta.length - maxTail)
+            : delta;
           resolve({ output: tail.toString("utf8") });
           return;
         }

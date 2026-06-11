@@ -64,7 +64,7 @@ class _TerminalDetailScreenState
     _terminalService = TerminalService(nodeService);
 
     // Subscribe to terminal output from push events (real-time stream).
-    client.on('homeTerminalWs:rx', _onTerminalOutput);
+    _unsubscribeRx = client.on('homeTerminalWs:rx', _onTerminalOutput);
 
     // Try the persistent WebSocket stream first; fall back to simple
     // terminalExec RPC if the stream can't be established.
@@ -78,11 +78,11 @@ class _TerminalDetailScreenState
     setState(() => _attached = true);
   }
 
+  void Function()? _unsubscribeRx;
+
   void _detach() {
-    final client = ref.read(nodeProvider.notifier).client;
-    if (client != null) {
-      client.off('homeTerminalWs:rx', _onTerminalOutput);
-    }
+    _unsubscribeRx?.call();
+    _unsubscribeRx = null;
     _terminalService?.detach();
     _terminalService = null;
     _attached = false;
@@ -205,22 +205,37 @@ class _TerminalDetailScreenState
   ///    last content on the line
   /// 3. Strip remaining control characters (except tab, newline)
   static final _ansiRegex = RegExp(
-      r'\x1B[@-Z\\-_]|'   // ESC + single-char sequences
+      r'\x1B[@-Z\\-_]|' // ESC + single-char sequences (other than CSI/osc)
       r'\x1B\[[\d;]*[A-Za-z]|' // CSI: ESC [ params letter
       r'\x1B\][^\x07]*\x07|' // OSC: ESC ] … BEL
-      r'\x1B[PX^_][^\x1B]*\x1B\\'); // other sequences
+      r'\x1B[PX^_][^\x1B]*\x1B\\|' // DCS / SOS / PAC / PM sequences
+      r'\x1B\[[\d;]*[A-Za-z]\x1B\\'); // terminated CSI (DCS-like)
 
   String _cleanTerminalOutput(String text) {
-    // 1. Strip all ANSI / CSI escape sequences (no separators).
+    // 1. Strip all ANSI / CSI escape sequences.
     text = text.replaceAll(_ansiRegex, '');
 
-    // 2. Normalise line endings.
+    // 2. Handle CRLF → LF.
     text = text.replaceAll('\r\n', '\n');
-    text = text.replaceAll('\r', '\n');
 
-    // 3. Collapse 4+ blank lines to 2.
-    while (text.contains('\n\n\n\n')) {
-      text = text.replaceAll('\n\n\n\n', '\n\n');
+    // 3. For lines containing standalone \r (inline updates / spinners),
+    //    keep only the content AFTER the last \r — this discards the
+    //    intermediate spinner frames and preserves the final line state.
+    final lines = text.split('\n');
+    final cleaned = <String>[];
+    for (final line in lines) {
+      final lastCr = line.lastIndexOf('\r');
+      if (lastCr >= 0) {
+        cleaned.add(line.substring(lastCr + 1));
+      } else {
+        cleaned.add(line);
+      }
+    }
+    text = cleaned.join('\n');
+
+    // 4. Collapse 3+ blank lines to 2.
+    while (text.contains('\n\n\n')) {
+      text = text.replaceAll('\n\n\n', '\n\n');
     }
 
     return text.trim();
