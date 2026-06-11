@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/node_provider.dart';
 import '../../services/terminal_service.dart';
@@ -34,6 +35,10 @@ class _TerminalDetailScreenState
   /// Accumulated output is appended to the last entry in [_output].
   final _streamBuffer = StringBuffer();
 
+  /// Index into [_output] where the current streaming response is accumulating.
+  /// -1 means no streaming accumulation is in progress.
+  int _streamingIndex = -1;
+
   @override
   void initState() {
     super.initState();
@@ -42,7 +47,7 @@ class _TerminalDetailScreenState
 
   @override
   void dispose() {
-    _terminalService?.detach();
+    _detach();
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -51,6 +56,10 @@ class _TerminalDetailScreenState
   Future<void> _attach() async {
     final client = ref.read(nodeProvider.notifier).client;
     if (client == null) return;
+
+    // Clean up any prior state before re-attaching.
+    _detach();
+
     final nodeService = NodeServiceClient(client);
     _terminalService = TerminalService(nodeService);
 
@@ -69,7 +78,19 @@ class _TerminalDetailScreenState
     setState(() => _attached = true);
   }
 
-  /// Raw byte buffer for incomplete ANSI sequences that span chunks.
+  void _detach() {
+    final client = ref.read(nodeProvider.notifier).client;
+    if (client != null) {
+      client.off('homeTerminalWs:rx', _onTerminalOutput);
+    }
+    _terminalService?.detach();
+    _terminalService = null;
+    _attached = false;
+    _streamingIndex = -1;
+    _rawBuffer.clear();
+  }
+
+  /// Raw byte buffer for incomplete UTF-8 sequences / ANSI sequences that span chunks.
   final _rawBuffer = <int>[];
 
   void _onTerminalOutput(dynamic data) {
@@ -83,7 +104,7 @@ class _TerminalDetailScreenState
       return;
     }
 
-    // Accumulate raw bytes so split ANSI sequences are reassembled
+    // Accumulate raw bytes so split UTF-8 / ANSI sequences are reassembled
     // before cleaning.  Only flush when we hit a newline or the
     // buffer grows large enough to contain a complete sequence.
     _rawBuffer.addAll(chunk);
@@ -92,7 +113,7 @@ class _TerminalDetailScreenState
     // Decode the buffer, clean it, and flush.
     String text;
     try {
-      text = utf8.decode(_rawBuffer);
+      text = utf8.decode(_rawBuffer, allowMalformed: true);
     } catch (_) {
       text = String.fromCharCodes(_rawBuffer);
     }
@@ -100,20 +121,27 @@ class _TerminalDetailScreenState
 
     text = _cleanTerminalOutput(text);
     if (text.isEmpty) return;
+
     // Accumulate streaming output into the buffer so the current
     // command's response stays together as a single entry.
     _streamBuffer.write(text);
+    final buffered = _streamBuffer.toString();
+
     setState(() {
-      // Always update the last entry in-place so streaming output
-      // reads as one contiguous block.
-      final updated = _streamBuffer.toString();
-      if (_output.isNotEmpty && !_output.last.startsWith('\$')) {
-        _output.last = updated;
+      if (_streamingIndex >= 0 && _streamingIndex < _output.length) {
+        // Replace the streaming accumulation slot with the new combined output.
+        _output[_streamingIndex] = buffered;
       } else {
-        _output.add(updated);
+        // No active streaming slot — add as a new entry.
+        _output.add(buffered);
+        _streamingIndex = _output.length - 1;
       }
       if (_output.length > 500) {
         _output.removeRange(0, _output.length - 500);
+        // After trimming, streaming index may be stale — reset so the next
+        // streaming output re-creates a slot rather than referencing a
+        // shifted (or removed) index.
+        _streamingIndex = -1;
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -131,18 +159,42 @@ class _TerminalDetailScreenState
     if (text.trim().isEmpty) return;
     final command = text.trim();
     _controller.clear();
-    // Clear the streaming buffer for the new command.
+
+    // Clear streaming state — any pending streaming output is stale now.
     _streamBuffer.clear();
-    // Start a new output entry with the prompt.
-    _output.add('\$ $command');
+    _streamingIndex = -1;
+
+    setState(() {
+      // Start a new output entry with the prompt.
+      _output.add('\$ $command');
+      if (_output.length > 500) {
+        _output.removeRange(0, _output.length - 500);
+      }
+    });
+
     _terminalService?.sendCommand(command).then((output) {
+      if (!mounted) return;
       if (output.isNotEmpty) {
         final cleaned = _cleanTerminalOutput(output);
         if (cleaned.isNotEmpty) {
-          setState(() => _output.add(cleaned));
+          setState(() {
+            // If streaming output already wrote to the last entry (the
+            // prompt), replace it; otherwise append.
+            final lastIsPrompt = _output.isNotEmpty &&
+                _output.last.startsWith('\$ $command');
+            if (lastIsPrompt) {
+              _output.last = '\$ $command\n$cleaned';
+            } else {
+              _output.add(cleaned);
+            }
+            if (_output.length > 500) {
+              _output.removeRange(0, _output.length - 500);
+            }
+          });
         }
       }
     }).catchError((e) {
+      if (!mounted) return;
       setState(() => _output.add('[Error: $e]'));
     });
   }
@@ -185,6 +237,18 @@ class _TerminalDetailScreenState
               onPressed: _attach,
               child: const Text('Reconnect'),
             ),
+          IconButton(
+            icon: const Icon(Icons.copy_all),
+            tooltip: 'Copy all output',
+            onPressed: () {
+              Clipboard.setData(
+                  ClipboardData(text: _output.join('\n')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text('Copied to clipboard')),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.close),
             onPressed: () {
