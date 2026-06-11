@@ -48,7 +48,8 @@ if ! command -v pnpm &> /dev/null; then
   echo "  Installing pnpm..."
   npm install -g pnpm || { echo "  ✗ Could not install pnpm"; exit 1; }
 fi
-echo "  ✓ node $(node -v), pnpm $(pnpm -v 2>/dev/null || echo '?')"
+# pnpm warns on npm "workspaces" in root package.json — check version outside repo root.
+echo "  ✓ node $(node -v), pnpm $(cd /tmp && pnpm -v 2>/dev/null || echo '?')"
 echo ""
 
 # ---- Step 2: EnvoyMesh dependencies ----
@@ -59,8 +60,7 @@ echo ""
 # ---- Step 3: OpenClaw bootstrap + extension ----
 echo "[3/6] OpenClaw bootstrap..."
 if [ ! -f packages/openclaw/openclaw.mjs ] && [ ! -f packages/openclaw/package.json ]; then
-  echo "  packages/openclaw missing — initializing submodule or clone..."
-  git submodule update --init packages/openclaw 2>/dev/null || true
+  echo "  packages/openclaw missing — install-openclaw will clone from GitHub..."
 fi
 if [ -f scripts/install-openclaw.sh ]; then
   bash scripts/install-openclaw.sh
@@ -195,7 +195,8 @@ EOF
   cd "$ORIG_DIR"
 else
   echo "  ✗ packages/openclaw not found — EnvoyAI will use native LLM fallback only"
-  echo "    Fix: git submodule update --init packages/openclaw"
+  echo "    Fix: ./scripts/install-openclaw.sh"
+  echo "    or: git clone --depth 1 https://github.com/openclaw/openclaw.git packages/openclaw"
 fi
 echo ""
 
