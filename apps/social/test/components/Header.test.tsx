@@ -123,11 +123,25 @@ describe("Header", () => {
     expect(profileBtn.getAttribute("title")).toContain("12D3KooWAbCdEfGhIj");
   });
 
-  it("shows node status", () => {
+  it("hides the status strip when the node is healthy", () => {
     renderHeader({ ...baseProps, nodeStatus: "running" });
-    const statuses = screen.getAllByText("running");
-    expect(statuses.length).toBeGreaterThan(0);
-    expect(statuses[0]).toBeDefined();
+    expect(screen.queryByRole("group", { name: /node connectivity/i })).toBeNull();
+  });
+
+  it("shows a Node offline chip when the node is offline", () => {
+    renderHeader({ ...baseProps, nodeStatus: "offline" });
+    expect(screen.getByRole("group", { name: /node connectivity/i })).toBeDefined();
+    expect(screen.getByText("Node offline")).toBeDefined();
+  });
+
+  it("shows a Starting chip when the node is transitional", () => {
+    renderHeader({ ...baseProps, nodeStatus: "starting" });
+    expect(screen.getByText("Starting…")).toBeDefined();
+  });
+
+  it("shows a Relay down chip on public networks when the relay is unreachable", () => {
+    renderHeader({ ...baseProps, nodeStatus: "running", isPublicNetwork: true, relayUnreachable: true });
+    expect(screen.getByText("Relay down")).toBeDefined();
   });
 
   it("opens language menu and lists locale options", () => {

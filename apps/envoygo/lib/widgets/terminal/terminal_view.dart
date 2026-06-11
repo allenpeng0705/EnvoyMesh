@@ -46,6 +46,19 @@ class TerminalView extends StatefulWidget {
   /// / 1 / 2). The screen can use this to update the AppBar.
   final void Function(String title)? onTitleChanged;
 
+  /// Optional callback fired on a single tap (not a long-press).
+  /// The screen can use this to dismiss the OS keyboard. Long
+  /// presses (which start a selection) do NOT fire this callback.
+  final VoidCallback? onTap;
+
+  /// Optional callback fired when the view's internal grid
+  /// dimensions change as a result of the available space. The
+  /// screen can use this to forward a resize to the home PTY.
+  /// This is the inverse of the legacy `resize()` API — instead
+  /// of the parent computing cols/rows and pushing them in, the
+  /// view derives them from its own layout and pushes them out.
+  final void Function(int cols, int rows)? onDimensionsChanged;
+
   const TerminalView({
     super.key,
     this.initialCols = 80,
@@ -55,6 +68,8 @@ class TerminalView extends StatefulWidget {
     this.onScrollbackOffsetChanged,
     this.onSelectionChanged,
     this.onTitleChanged,
+    this.onTap,
+    this.onDimensionsChanged,
   });
 
   @override
@@ -174,6 +189,23 @@ class _TerminalViewState extends State<TerminalView>
   /// anchor and active.
   int? _selActiveRow;
   int? _selActiveCol;
+
+  // -- Scrollback pan gesture --
+
+  /// Y-coordinate (in painted-area pixels) at the last pan-update
+  /// event. We track this so the pan can be a delta-based scroll,
+  /// not a "set scroll position to current y" — the latter is
+  /// twitchy on phones.
+  double? _panLastDy;
+
+  /// Set to `true` by [onPanStart], reset by [onTapUp]. Used to
+  /// suppress the `onTap` callback when a vertical swipe ends —
+  /// without this, a swipe-up to scroll the scrollback would
+  /// finish with `onTapUp` firing the screen's tap handler, which
+  /// calls `jumpToBottom()` and snaps the user right back. The
+  /// user would see "I scrolled, then it scrolled back" — i.e.
+  /// "the terminal can't be scrolled".
+  bool _panOccurred = false;
 
   // -- Parser --
 
@@ -398,7 +430,8 @@ class _TerminalViewState extends State<TerminalView>
   }
 
   void onTapUp(Offset localPosition, Size widgetSize) {
-    // Single tap clears the selection (no drag).
+    // Single tap clears the selection (no drag). Even after a
+    // pan, if a selection was somehow left behind, clear it.
     if (_selAnchorRow != null) {
       setState(() {
         _selAnchorRow = null;
@@ -407,6 +440,19 @@ class _TerminalViewState extends State<TerminalView>
         _selActiveCol = null;
       });
       _notifySelectionChanged();
+    }
+
+    // Fire the optional onTap callback only when this was a real
+    // tap (not the end of a pan). The screen uses this to
+    // dismiss the OS keyboard and (if scrolled up) snap to the
+    // bottom. Skipping it after a pan lets the user actually
+    // stay in the scrollback.
+    //
+    // `_panOccurred` is reset in `onPanEnd` (not here) so a
+    // tap-after-pan still works: the pan's `onPanEnd` cleared
+    // the flag, this `onTapUp` sees `false`, and the tap fires.
+    if (!_panOccurred) {
+      widget.onTap?.call();
     }
   }
 
@@ -1011,50 +1057,138 @@ class _TerminalViewState extends State<TerminalView>
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
-    // Measure cell size from the fontSize + a typical character.
     final cellSize = _measureCellSize();
-    final width = _cols * cellSize.width;
-    final height = _rows * cellSize.height;
-    return GestureDetector(
-      onLongPressStart: (d) => onLongPressStart(d.localPosition, Size(width, height)),
-      onLongPressMoveUpdate: (d) =>
-          onLongPressMoveUpdate(d.localPosition, Size(width, height)),
-      onLongPressEnd: (_) => onLongPressEnd(),
-      onTapUp: (d) => onTapUp(d.localPosition, Size(width, height)),
-      behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        width: width,
-        height: height,
-        child: MediaQuery(
-          data: mediaQuery.copyWith(textScaler: TextScaler.noScaling),
-          child: CustomPaint(
-            painter: _TerminalPainter(
-              cols: _cols,
-              rows: _rows,
-              cellSize: cellSize,
-              grid: _grid,
-              scrollback: _scrollback,
-              yDisplacement: _yDisplacement,
-              selection:
-                  _selAnchorRow != null && _selActiveRow != null
-                      ? _normalizeSelection(
-                          _selAnchorRow!,
-                          _selAnchorCol!,
-                          _selActiveRow!,
-                          _selActiveCol!,
-                        )
-                      : null,
-              cursorRow: _cursorRow,
-              cursorCol: _cursorCol,
-              cursorVisible: _cursorVisible && _cursorBlinkOn,
-              fontSize: widget.fontSize,
-              cellAt: _cellAt,
-              tick: _tick,
+    // Anchor the painted area to the top of the available space
+    // (Alignment.topCenter). A centered painted area would split
+    // any overflow above and below the visible area, which makes
+    // the visible portion look "off" — half the screen is black
+    // on top, half on the bottom. Top-anchoring means the visible
+    // portion is always the top rows of the grid, which is the
+    // intuitive mapping for any terminal.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Derive cols/rows from the available space. The cell size
+        // is fixed by the font; cols/rows are whatever fits.
+        final availW = constraints.maxWidth;
+        final availH = constraints.maxHeight;
+        if (availW <= 0 || availH <= 0) {
+          // No room to render — fall back to a minimal size so we
+          // still have a tappable widget in the tree.
+          return const SizedBox.shrink();
+        }
+        final cols = (availW / cellSize.width).floor();
+        final rows = (availH / cellSize.height).floor();
+        if (cols >= 2 && rows >= 2 && (cols != _cols || rows != _rows)) {
+          // Schedule the actual resize on the next frame so we
+          // don't call setState during build. Notify the screen
+          // of the new dimensions so it can forward the resize to
+          // the home PTY.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            // Skip if the parent already drove us to this size
+            // (e.g. via the legacy `resize()` API).
+            if (cols == _cols && rows == _rows) return;
+            resize(cols, rows);
+            widget.onDimensionsChanged?.call(cols, rows);
+          });
+        }
+        final width = (cols * cellSize.width).clamp(0.0, availW);
+        final height = (rows * cellSize.height).clamp(0.0, availH);
+        return GestureDetector(
+          onLongPressStart: (d) =>
+              onLongPressStart(d.localPosition, Size(width, height)),
+          onLongPressMoveUpdate: (d) =>
+              onLongPressMoveUpdate(d.localPosition, Size(width, height)),
+          onLongPressEnd: (_) => onLongPressEnd(),
+          onTapUp: (d) => onTapUp(d.localPosition, Size(width, height)),
+          // Vertical pan scrolls the scrollback. `PanStartBehavior.down`
+          // makes the gesture begin on the very first pointer-down
+          // event (not on the first move), so a quick flick wins the
+          // arena against long-press. Long-press (selection) still
+          // works: the user holds without moving to start a selection,
+          // and a slow drag extends it.
+          onPanStart: (d) {
+            if (_selAnchorRow != null) {
+              // Currently in a selection — let long-press drag continue.
+              return;
+            }
+            // Mark that this gesture was a pan, not a tap. The
+            // onTapUp that fires when the finger lifts must NOT
+            // trigger the screen's tap-to-dismiss-keyboard /
+            // tap-to-snap-bottom handler, because that would undo
+            // the scroll the user just performed.
+            _panOccurred = true;
+            // Reset the cumulative pan delta for this gesture.
+            _panLastDy = d.localPosition.dy;
+          },
+          onPanUpdate: (d) {
+            if (_selAnchorRow != null) return;
+            if (height <= 0) return;
+            final lastDy = _panLastDy;
+            if (lastDy == null) return;
+            // Convert pixel movement to lines. Drag DOWN (positive dy)
+            // should reveal earlier scrollback (i.e. increase
+            // _yDisplacement), so flip the sign. Cell height is
+            // ~16.8 px at fontSize 14, so a 2-cell pad makes the
+            // scroll feel "tight" without being twitchy.
+            final cellH = height / _rows;
+            final deltaLines =
+                ((d.localPosition.dy - lastDy) / (cellH * 2)).round();
+            if (deltaLines != 0) {
+              if (deltaLines > 0) {
+                scrollUp(deltaLines);
+              } else {
+                scrollDown(-deltaLines);
+              }
+              _panLastDy = lastDy + deltaLines * cellH * 2;
+            }
+          },
+          onPanEnd: (_) {
+            // The pan is over. Reset the flag so the next tap fires
+            // onTap normally. (If we reset it in onTapUp instead, a
+            // drag that doesn't reach onTapUp would leave the flag
+            // stuck on and silently suppress every future tap.)
+            _panOccurred = false;
+            // No-op for now; jumpToBottom is exposed via the AppBar
+            // "Jump to bottom" button. A future polish could snap on
+            // fling velocity.
+          },
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            width: width,
+            height: height,
+            child: MediaQuery(
+              data: mediaQuery.copyWith(textScaler: TextScaler.noScaling),
+              child: CustomPaint(
+                painter: _TerminalPainter(
+                  cols: _cols,
+                  rows: _rows,
+                  cellSize: cellSize,
+                  grid: _grid,
+                  scrollback: _scrollback,
+                  yDisplacement: _yDisplacement,
+                  selection:
+                      _selAnchorRow != null && _selActiveRow != null
+                          ? _normalizeSelection(
+                              _selAnchorRow!,
+                              _selAnchorCol!,
+                              _selActiveRow!,
+                              _selActiveCol!,
+                            )
+                          : null,
+                  cursorRow: _cursorRow,
+                  cursorCol: _cursorCol,
+                  cursorVisible: _cursorVisible && _cursorBlinkOn,
+                  fontSize: widget.fontSize,
+                  cellAt: _cellAt,
+                  tick: _tick,
+                ),
+                size: Size(width, height),
+              ),
             ),
-            size: Size(width, height),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

@@ -71,10 +71,14 @@ class _TerminalDetailScreenState
   int? _pendingCols;
   int? _pendingRows;
 
-  /// Approximate monospace cell size in logical pixels. Set on
-  /// first measurement; the same dimensions are used by both the
-  /// [TerminalView] and the resize computation.
+  /// Approximate monospace cell size in logical pixels. The
+  /// [TerminalView] now derives its own cell size from the font
+  /// and reports dimensions via [onDimensionsChanged]; these
+  /// constants are kept as a documented reference but no longer
+  /// used for the resize calculation.
+  // ignore: unused_field
   static const _cellWidth = 8.4; // fontSize 14 * 0.6
+  // ignore: unused_field
   static const _cellHeight = 16.8; // fontSize 14 * 1.2
 
   @override
@@ -117,6 +121,31 @@ class _TerminalDetailScreenState
 
     try {
       await _terminalService!.attach(widget.sessionId);
+      // Send an initial resize IMMEDIATELY (no debounce) so the
+      // home PTY is told the phone's grid size before any bytes
+      // stream in. Without this, the home sends bytes addressed
+      // to its default 80×24 grid, but the phone's
+      // TerminalView is already (or will be) a different size.
+      // The result is content landing at the wrong positions,
+      // which surfaces as "the output is truncated" or "TUI
+      // redraws overlap" — the bytes are arriving, just to
+      // the wrong cells. We use the TerminalView's own derived
+      // dimensions if it's already laid out, or fall back to a
+      // conservative 80×24 so the home at least matches the
+      // phone's initial state.
+      final state = _terminalKey.currentState;
+      if (state != null) {
+        // dynamic call: read cols/rows the view derived.
+        final c = (state as dynamic).cols as int? ?? 80;
+        final r = (state as dynamic).rows as int? ?? 24;
+        if (c >= 2 && r >= 2) {
+          _terminalService!.sendResize(c, r);
+        }
+      } else {
+        // Conservative fallback: tell the home to be 80×24,
+        // matching the phone's initial state.
+        _terminalService!.sendResize(80, 24);
+      }
     } catch (e) {
       // Stream attach failed — we still allow basic interaction
       // via the terminalExec RPC fallback (handled by the
@@ -209,11 +238,111 @@ class _TerminalDetailScreenState
     // Clear the TextField so the next input starts empty.
     _textController.clear();
     _previousText = '';
+    // The TextField is configured with `textInputAction:
+    // TextInputAction.send` so the OS keyboard does NOT auto-
+    // dismiss on submit. If the platform's EditableText still
+    // tears down focus, request it back, but only when the
+    // field already had focus (otherwise the user has somehow
+    // lost focus and is signalling they want it gone). Doing
+    // this synchronously — not on a post-frame callback —
+    // avoids the race where the OS dismisses the keyboard
+    // (200 ms animation) and our callback cancels the
+    // animation by re-claiming focus, producing a visible
+    // "flash down, then up" loop.
+    if (_focusNode.hasFocus) {
+      _focusNode.requestFocus();
+    }
+  }
+
+  /// Dismiss the OS keyboard. Called from the soft bar's
+  /// keyboard-hide button. We do NOT re-focus the hidden
+  /// TextField afterwards — doing so races with the OS's
+  /// dismiss animation (200 ms) and produces a visible flash
+  /// where the keyboard pops down and immediately back up.
+  ///
+  /// When the user wants the keyboard back, tapping the
+  /// terminal area calls [_onTapTerminalArea] which requests
+  /// focus only if the keyboard is currently hidden.
+  ///
+  /// If the user is currently scrolled up into the scrollback,
+  /// also snap to the bottom (live view). This is the standard
+  /// terminal UX — a tap is the most natural way to "return to
+  /// the present" after reviewing history.
+  void _hideKeyboard() {
+    final state = _terminalKey.currentState;
+    if (state != null && _yDisplacement > 0) {
+      (state as dynamic).jumpToBottom();
+      // jumpToBottom() does its own setState. Mirror our local
+      // state on the next frame so the AppBar's "Jump to
+      // bottom" button hides.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _yDisplacement = 0);
+      });
+    }
+    FocusScope.of(context).unfocus();
+  }
+
+  /// Called by the terminal view on a single tap. The
+  /// behaviour depends on whether the OS keyboard is currently
+  /// up:
+  ///   - keyboard up  → dismiss it (the user is signalling
+  ///     "I'm done typing, show me the terminal").
+  ///   - keyboard down → request focus so the keyboard
+  ///     re-summons. This is how the user gets the keyboard
+  ///     back after explicit dismissal.
+  ///   - user scrolled up into scrollback → also snap to
+  ///     the bottom, so the tap is the natural "return to
+  ///     live view" gesture.
+  void _onTapTerminalArea() {
+    final state = _terminalKey.currentState;
+    if (state != null && _yDisplacement > 0) {
+      (state as dynamic).jumpToBottom();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _yDisplacement = 0);
+      });
+    }
+    if (_focusNode.hasFocus) {
+      FocusScope.of(context).unfocus();
+    } else {
+      _focusNode.requestFocus();
+    }
   }
 
   /// Forward raw bytes from the soft keyboard bar.
   void _onBarKey(String bytes) {
     _terminalService?.sendKey(bytes);
+  }
+
+  /// Scroll the local view up by ~1/3 of a screen. Triggered by
+  /// the soft bar's "Scroll up" button. We use a fraction rather
+  /// than a fixed line count so the amount matches whatever
+  /// screen size the user is on.
+  void _onScrollUpBar() {
+    final state = _terminalKey.currentState;
+    if (state == null) return;
+    final jump = (state as dynamic).rows ~/ 3;
+    (state as dynamic).scrollUp(jump < 1 ? 1 : jump);
+  }
+
+  /// Scroll the local view down by ~1/3 of a screen.
+  void _onScrollDownBar() {
+    final state = _terminalKey.currentState;
+    if (state == null) return;
+    final jump = (state as dynamic).rows ~/ 3;
+    (state as dynamic).scrollDown(jump < 1 ? 1 : jump);
+  }
+
+  /// Snap the local view to the bottom (live view). The same
+  /// callback as the AppBar's "Jump to bottom" button, but
+  /// reachable from the soft bar so the user doesn't have to
+  /// reach up to the AppBar.
+  void _onJumpToBottomBar() {
+    final state = _terminalKey.currentState;
+    if (state == null) return;
+    (state as dynamic).jumpToBottom();
+    setState(() => _yDisplacement = 0);
   }
 
   Future<void> _onCopy() async {
@@ -251,25 +380,20 @@ class _TerminalDetailScreenState
       final c = _pendingCols;
       final r = _pendingRows;
       if (c == null || r == null) return;
-      // Forward to the home PTY.
+      // Forward to the home PTY. The local view already resized
+      // itself in the LayoutBuilder that produced these
+      // dimensions.
       _terminalService?.sendResize(c, r);
-      // Resize the local view.
-      final state = _terminalKey.currentState;
-      if (state != null) {
-        (state as dynamic).resize(c, r);
-      }
     });
   }
 
-  void _onLayoutChange(Size size) {
-    if (size.width <= 0 || size.height <= 0) return;
-    // Reserve a few pixels at the bottom for the soft bar — but
-    // the soft bar is part of the same column, so we use the
-    // full available height. The widget will be told to use
-    // whatever space it has.
-    final cols = (size.width / _cellWidth).floor();
-    final rows = (size.height / _cellHeight).floor();
-    if (cols < 2 || rows < 2) return;
+  /// Called by the [TerminalView] when its internal grid
+  /// dimensions change as a result of the available layout
+  /// space. We forward the change to the home PTY (debounced)
+  /// so the remote terminal can re-flow its content. The local
+  /// view already resized itself in the same LayoutBuilder
+  /// pass — this handler is for the wire side only.
+  void _onDimensionsChanged(int cols, int rows) {
     _scheduleResize(cols, rows);
   }
 
@@ -333,57 +457,70 @@ class _TerminalDetailScreenState
         child: Column(
           children: [
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  // Schedule a resize on the next frame, after
-                  // the layout settles. We don't call it inline
-                  // because LayoutBuilder is called during the
-                  // build phase.
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _onLayoutChange(constraints.biggest);
-                  });
-                  return Container(
-                    color: Colors.black,
-                    child: Stack(
-                      children: [
-                        // The terminal emulator.
-                        Center(
-                          child: TerminalView(
-                            key: _terminalKey,
-                            onSelectionChanged: _onSelectionChanged,
-                            onScrollbackOffsetChanged:
-                                _onScrollbackOffsetChanged,
-                          ),
-                        ),
-                        // Hidden TextField as the device-keyboard
-                        // focus target. Visually invisible, but
-                        // tap-to-focus still works because it
-                        // fills the parent (the Stack passes
-                        // pointer events through to the child
-                        // TerminalView's GestureDetector; the
-                        // TextField is here primarily so the
-                        // OS keyboard is summoned on tap).
-                        Positioned.fill(
-                          child: Opacity(
-                            opacity: 0.0,
-                            child: TextField(
-                              controller: _textController,
-                              focusNode: _focusNode,
-                              autofocus: true,
-                              autocorrect: false,
-                              enableSuggestions: false,
-                              enableIMEPersonalizedLearning: false,
-                              keyboardType: TextInputType.visiblePassword,
-                              maxLines: 1,
-                              onChanged: _onTextChanged,
-                              onSubmitted: _onTextSubmitted,
-                            ),
-                          ),
-                        ),
-                      ],
+              child: Container(
+                color: Colors.black,
+                child: Stack(
+                  children: [
+                    // The terminal emulator. Anchored to the top
+                    // (Alignment.topCenter) so the visible portion
+                    // of the painted grid is always the top rows.
+                    // The view derives its own grid dimensions
+                    // from the available space (via an internal
+                    // LayoutBuilder) and reports them to us via
+                    // `onDimensionsChanged`, which we forward to
+                    // the home PTY.
+                    Align(
+                      alignment: Alignment.topCenter,
+                      child: TerminalView(
+                        key: _terminalKey,
+                        onSelectionChanged: _onSelectionChanged,
+                        onScrollbackOffsetChanged:
+                            _onScrollbackOffsetChanged,
+                        onDimensionsChanged: _onDimensionsChanged,
+                        // Tap on the terminal area toggles
+                        // the OS keyboard: dismisses if it's
+                        // up, re-summons if it's down. Also
+                        // snaps to the bottom if the user was
+                        // scrolled into the scrollback. Long
+                        // press still starts a selection
+                        // (handled inside the view).
+                        onTap: _onTapTerminalArea,
+                      ),
                     ),
-                  );
-                },
+                    // Hidden TextField as the device-keyboard
+                    // focus target. Visually invisible, but
+                    // tap-to-focus still works because it
+                    // fills the parent. The TerminalView's
+                    // GestureDetector receives the touch first
+                    // (it's on top in z-order via the Align),
+                    // and the TextField is here primarily so
+                    // the OS keyboard is summoned on tap.
+                    //
+                    // `textInputAction: TextInputAction.send`
+                    // ensures the Enter key on the OS keyboard
+                    // does NOT auto-dismiss the keyboard after
+                    // submit (which is the default behaviour
+                    // for `maxLines: 1` + `done`).
+                    Positioned.fill(
+                      child: Opacity(
+                        opacity: 0.0,
+                        child: TextField(
+                          controller: _textController,
+                          focusNode: _focusNode,
+                          autofocus: true,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          enableIMEPersonalizedLearning: false,
+                          keyboardType: TextInputType.visiblePassword,
+                          maxLines: 1,
+                          textInputAction: TextInputAction.send,
+                          onChanged: _onTextChanged,
+                          onSubmitted: _onTextSubmitted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             // Soft keyboard bar above the device keyboard.
@@ -392,6 +529,18 @@ class _TerminalDetailScreenState
               hasSelection: _hasSelection,
               onCopy: _onCopy,
               onPaste: _onPaste,
+              onHideKeyboard: _hideKeyboard,
+              // Scrollback controls. Tapping scroll-up / scroll-
+              // down moves through the local view's scrollback by
+              // a third of a screen at a time. Jump-to-bottom
+              // returns to the live view (the cursor's position).
+              // canJumpToBottom mirrors the AppBar's visibility
+              // condition so the soft bar's button shows the
+              // same affordance.
+              onScrollUp: _onScrollUpBar,
+              onScrollDown: _onScrollDownBar,
+              onJumpToBottom: _onJumpToBottomBar,
+              canJumpToBottom: _yDisplacement > 0,
               enabled: _tunnelUp && _attached,
             ),
           ],

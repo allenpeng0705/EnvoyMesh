@@ -50,6 +50,26 @@ final chatProvider =
 /// multiple push events (chat:message + agent:activity).
 final _seenMessageIds = <String>{};
 
+/// Filter that decides whether a candidate thread peer (a contact
+/// owner id, or a "the other party" id from an inbound message)
+/// is the user themselves. Mirrors the rule used by
+/// `filterSelfBonds` in `contact_provider.dart`:
+///   - the owner's own `envoy:owner:<…>` id, or
+///   - a `envoy_device_<…>` device key (the multi-device shared
+///     identity).
+///
+/// A chat thread for either of these would show the user as a
+/// conversation partner with themselves, which is never what we
+/// want. Pure function so every entry point (loadThreads,
+/// onChatMessage, createContactThreads, _upsertThread) can share
+/// the same rule.
+bool isSelfThreadPeer(String? peerId, String? selfOwnerId) {
+  if (peerId == null || peerId.isEmpty) return false;
+  if (selfOwnerId != null && peerId == selfOwnerId) return true;
+  if (peerId.startsWith('envoy_device_')) return true;
+  return false;
+}
+
 class ChatNotifier extends StateNotifier<ChatState> {
   final Ref _ref;
   final LocalDatabase _localDb = LocalDatabase();
@@ -57,11 +77,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   ChatNotifier(this._ref) : super(const ChatState());
 
-  /// Load cached threads from local storage.
+  /// Load cached threads from local storage. Self-threads (the
+  /// owner's own ownerId, or any envoy_device_ key) are filtered
+  /// out on load — this cleans up any stale self-thread that was
+  /// persisted in a previous session before the filter existed.
+  /// The DB row is left in place for now (cheap to leave); the
+  /// in-memory state is what the UI renders.
   Future<void> loadThreads(String nodeId) async {
     final rows = await _localDb.getThreads(nodeId);
-    final threads =
-        rows.map((r) => ChatThread.fromJson(r)).toList();
+    final selfOwnerId = _ref.read(nodeProvider).ownerId;
+    final threads = rows
+        .map((r) => ChatThread.fromJson(r))
+        .where((t) => !isSelfThreadPeer(t.contactOwnerId, selfOwnerId))
+        .toList();
     state = state.copyWith(threads: threads);
   }
 
@@ -249,6 +277,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
     } else {
       // Inbound from a contact → thread is the sender.
       peerId = senderOwnerId;
+    }
+
+    // Filter self-threads: if the resolved "other party" is the
+    // user themselves (a self-echo with no recipient, or a
+    // self-bond / envoy_device_ entry that slipped through), drop
+    // the message entirely. This is the bug that surfaced a
+    // "chat with yourself" thread in the list — see the
+    // [isSelfThreadPeer] helper for the rule.
+    if (isSelfThreadPeer(peerId, selfOwnerId)) {
+      return;
     }
 
     // Dedup: skip if we've already seen this messageId (dual delivery).
@@ -795,9 +833,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   /// Create chat threads for all bonded contacts that don't have one yet.
   /// Called after bonds sync so all contacts appear in the Chats tab.
+  /// Self-bonds (the user's own ownerId, or any envoy_device_ key)
+  /// are skipped — see [isSelfThreadPeer].
   void createContactThreads() {
     final nodeState = _ref.read(nodeProvider);
     if (nodeState.activeNode == null) return;
+    final selfOwnerId = nodeState.ownerId;
     final contacts = _ref.read(contactProvider).bonds;
     final existingThreadIds = state.threads
         .where((t) => t.type == ChatThreadType.direct)
@@ -805,6 +846,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
         .toSet();
 
     for (final contact in contacts) {
+      // Defensive: the contact_provider bond filter already
+      // excludes self, but if a stale contact list arrives
+      // (e.g. from the local DB before the bond filter was
+      // applied) this keeps the chat list clean.
+      if (isSelfThreadPeer(contact.ownerId, selfOwnerId)) continue;
       if (existingThreadIds.contains(contact.ownerId)) continue;
       final threadId = '${nodeState.activeNode!.id}:${contact.ownerId}';
       _upsertThread(
@@ -822,6 +868,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   void refreshThreadDisplayNames() {
     final contacts = _ref.read(contactProvider).bonds;
     if (contacts.isEmpty) return;
+    final selfOwnerId = _ref.read(nodeProvider).ownerId;
     final contactMap = <String, String>{};
     for (final c in contacts) {
       if (c.displayName != null && c.displayName!.isNotEmpty) {
@@ -843,7 +890,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
         });
       }
       return t;
-    }).toList();
+    })
+        // Filter self-threads (the user themselves, in either
+        // owner-id or device-key form) so the chat list never
+        // shows a thread for the active user. Defensive: this is
+        // also enforced in [loadThreads] and [onChatMessage], but
+        // refreshing display names is another place a stale
+        // self-thread could survive.
+        .where((t) => !isSelfThreadPeer(t.contactOwnerId, selfOwnerId))
+        .toList();
 
     if (changed) {
       state = state.copyWith(threads: updated);
@@ -879,6 +934,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
     DateTime? lastMessageAt,
     bool unreadIncrement = false,
   }) {
+    // Choke-point filter: never create or update a thread for
+    // the user themselves (the owner's own ownerId, or a
+    // envoy_device_ key). This is the central place every
+    // entry point funnels through, so the chat list can never
+    // re-acquire a self-thread from any future code path.
+    final selfOwnerId = _ref.read(nodeProvider).ownerId;
+    if (isSelfThreadPeer(contactOwnerId, selfOwnerId)) return;
     final existing = state.threads
         .where((t) => t.id == threadId)
         .firstOrNull;

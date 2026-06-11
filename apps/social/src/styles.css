@@ -232,31 +232,6 @@ textarea::placeholder {
   color: var(--color-text-muted);
 }
 
-.status-dropdown-toggle {
-  display: none;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.375rem 0.625rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-elevated);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.status-dropdown-toggle:hover {
-  border-color: var(--color-primary);
-  background: var(--color-primary-subtle);
-}
-
-.status-dropdown-toggle__chevron {
-  transition: transform var(--transition-fast);
-}
-
-.status-dropdown-toggle__chevron.rotated {
-  transform: rotate(180deg);
-}
-
 .status-indicator {
   width: 8px;
   height: 8px;
@@ -276,7 +251,7 @@ textarea::placeholder {
 }
 
 .status-indicator--offline {
-  background: var(--color-error);
+  background: var(--color-danger);
 }
 
 @keyframes pulse {
@@ -512,6 +487,59 @@ textarea::placeholder {
   border-radius: 50%;
   background: var(--color-warning);
   animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* Top-bar failure-status strip (only rendered when something is wrong). */
+.header-status-strip {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+.mesh-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  white-space: nowrap;
+  cursor: default;
+}
+.mesh-status-chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.mesh-status-chip--warn {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+  cursor: pointer;
+}
+.mesh-status-chip--warn:hover {
+  background: var(--color-warning);
+  color: #fff;
+}
+.mesh-status-chip--error {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  cursor: pointer;
+}
+.mesh-status-chip--error:hover {
+  background: var(--color-danger);
+  color: #fff;
+}
+.mesh-status-chip--pending {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+  cursor: default;
 }
 
 .loading-content {
@@ -3065,15 +3093,6 @@ textarea::placeholder {
   background: var(--color-success);
 }
 
-/* Node status in header */
-.node-status {
-  text-transform: capitalize;
-  padding: 0.125rem 0.5rem;
-  background: var(--color-bg);
-  border-radius: 0.25rem;
-  font-size: var(--text-xs);
-}
-
 /* Setup View */
 .setup-view {
   display: flex;
@@ -4708,34 +4727,9 @@ button:disabled {
     gap: 0.5rem;
   }
 
-  .status-dropdown-toggle {
-    display: flex;
-  }
-
   .header-status-strip {
-    display: none;
-    position: absolute;
-    top: calc(100% + 0.5rem);
-    right: 1rem;
-    min-width: 200px;
-    padding: 0.5rem;
-    background: var(--color-surface-elevated);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
-    z-index: 100;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .header-status-strip.open {
-    display: flex;
-  }
-
-  .header-status-strip .mesh-status-chip {
-    justify-content: flex-start;
     width: 100%;
-    border-radius: var(--radius-sm);
+    order: 3;
   }
 
   .header-nav {
@@ -4997,76 +4991,6 @@ button:disabled {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   line-height: var(--leading-relaxed);
-}
-
-/* Network Status Badge */
-.network-status {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 9999px;
-  font-size: var(--text-xs);
-  font-weight: var(--font-medium);
-  transition: border-color var(--transition-fast),
-              background-color var(--transition-fast);
-}
-
-.network-status:hover {
-  background: var(--color-bg);
-}
-
-.network-status .status-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.network-status.public .status-indicator {
-  background: var(--color-success);
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
-}
-
-.network-status.private .status-indicator {
-  background: var(--color-warning);
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
-}
-
-.network-status.checking .status-indicator {
-  background: var(--color-text-muted);
-  animation: pulse 1s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-/* Node Status in Header */
-.header-right .node-status {
-  text-transform: capitalize;
-  padding: var(--space-1) var(--space-3);
-  background: var(--color-bg);
-  border-radius: 9999px;
-  font-size: var(--text-xs);
-  font-weight: var(--font-medium);
-  border: 1px solid var(--color-border);
-}
-
-/* Peer Count Badge */
-.peer-count {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.2rem 0.5rem;
-  background: rgba(7, 193, 96, 0.1);
-  color: var(--color-primary);
-  border-radius: 9999px;
-  font-size: var(--text-xs);
-  font-weight: 600;
 }
 
 /* Topic Advertisement Section */

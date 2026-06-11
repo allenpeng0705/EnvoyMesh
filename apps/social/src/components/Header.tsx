@@ -6,10 +6,9 @@ import type {
 import type { ViewName } from "../App.js";
 import { useTheme } from "../context/ThemeContext.js";
 import { useT } from "../context/I18nContext.js";
-import { DarkModeIcon, LightModeIcon, ChevronDownIcon, QRCodeIcon } from "../icons.js";
+import { DarkModeIcon, LightModeIcon, QRCodeIcon } from "../icons.js";
 import { LocaleSwitcher } from "./LocaleSwitcher.js";
 import { ProfilePhotoAvatar } from "./ProfilePhotoAvatar.js";
-import { useState } from "react";
 
 interface HeaderProps {
   currentView: ViewName;
@@ -41,7 +40,6 @@ export function Header({
 }: HeaderProps) {
   const t = useT();
   const { theme, resolved, setTheme } = useTheme();
-  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
 
   const cycleTheme = () => {
     if (theme === "system") setTheme("dark");
@@ -57,11 +55,6 @@ export function Header({
         : t("header.themeLight");
 
   const publicConnectivityReady = nodeStatus === "running" || Boolean(connectionStatus?.online);
-  const publicConnectivityLabel = publicConnectivityReady
-    ? t("header.publicNetwork")
-    : nodeStatus === "starting" || nodeStatus === "stopping"
-      ? t("header.starting")
-      : t("header.connecting");
   const publicStatusTitle =
     isPublicNetwork && !publicConnectivityReady && connectionStatus?.lastError?.trim()
       ? connectionStatus.lastError
@@ -79,6 +72,12 @@ export function Header({
       : nodeStatus === "starting" || nodeStatus === "stopping"
         ? "transitional"
         : "offline";
+  const isNodeOffline = nodeStatus === "offline";
+  const isNodeTransitional = nodeStatus === "starting" || nodeStatus === "stopping";
+  // On a public network, "running" with `connectionStatus.online === false` means
+  // the node is up but can't reach the mesh — surface that as a chip too.
+  const isNetworkError =
+    isPublicNetwork && nodeStatus === "running" && !connectionStatus?.online;
 
   const chatAriaLabel =
     inboxActivityCount > 0
@@ -134,54 +133,54 @@ export function Header({
         </button>
       </nav>
       <div className="header-right app-header__meta">
-        <button
-          type="button"
-          className="status-dropdown-toggle"
-          onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
-          aria-expanded={statusDropdownOpen}
-          aria-label={t("header.statusToggle")}
-        >
-          <span className={`status-indicator status-indicator--${nodeStatusClass}`} />
-          <ChevronDownIcon size={14} className={`status-dropdown-toggle__chevron ${statusDropdownOpen ? "rotated" : ""}`} />
-        </button>
-        <div className={`header-status-strip ${statusDropdownOpen ? "open" : ""}`} role="group" aria-label={t("header.nodeConnectivity")}>
-          {relayUnreachable && isPublicNetwork && (
-            <button
-              type="button"
-              className="relay-warning mesh-status-chip mesh-status-chip--warn"
-              onClick={onRetryConnect}
-              title={t("header.relayUnreachable")}
-            >
-              <span className="mesh-status-chip__dot" aria-hidden />
-              <span className="mesh-status-chip__label">{t("header.relayDown")}</span>
-            </button>
-          )}
-          {isPublicNetwork ? (
-            <div
-              className={`mesh-status-chip network-status ${publicConnectivityReady ? "public mesh-status-chip--ok" : "checking mesh-status-chip--pending"}`}
-              title={publicStatusTitle}
-            >
-              <span className="mesh-status-chip__dot status-indicator" aria-hidden />
-              <span className="mesh-status-chip__label">{publicConnectivityLabel}</span>
-            </div>
-          ) : (
-            <div className="mesh-status-chip network-status private mesh-status-chip--private">
-              <span className="mesh-status-chip__dot status-indicator" aria-hidden />
-              <span className="mesh-status-chip__label">{t("header.privateMesh")}</span>
-            </div>
-          )}
-          <span className={`mesh-status-chip node-status mesh-status-chip--node mesh-status-chip--${nodeStatusClass}`}>
-            <span className="mesh-status-chip__dot" aria-hidden />
-            <span className="mesh-status-chip__label">{nodeStatus}</span>
-          </span>
-          {connectionStatus && connectionStatus.bondedPeers > 0 && (
-            <span className="mesh-status-chip peer-count mesh-status-chip--peers">
-              <span className="mesh-status-chip__label">
-                {t("header.bonded", { count: connectionStatus.bondedPeers })}
+        {/* Failure-only status chips: the top bar is silent when everything is healthy.
+            Showing a green "running" / "12 bonded" / "Public Network" trio is noise. */}
+        {(isNodeOffline || isNodeTransitional || isNetworkError || (relayUnreachable && isPublicNetwork)) && (
+          <div className="header-status-strip" role="group" aria-label={t("header.nodeConnectivity")}>
+            {isNodeOffline && (
+              <button
+                type="button"
+                className="mesh-status-chip mesh-status-chip--error"
+                onClick={onRetryConnect}
+                title={t("header.nodeOfflineRetry")}
+              >
+                <span className={`mesh-status-chip__dot status-indicator status-indicator--offline`} aria-hidden />
+                <span className="mesh-status-chip__label">{t("header.nodeOffline")}</span>
+              </button>
+            )}
+            {isNodeTransitional && (
+              <span
+                className="mesh-status-chip mesh-status-chip--pending"
+                title={nodeStatus === "stopping" ? t("header.stopping") : t("header.starting")}
+              >
+                <span className={`mesh-status-chip__dot status-indicator status-indicator--${nodeStatusClass}`} aria-hidden />
+                <span className="mesh-status-chip__label">{t("header.starting")}</span>
               </span>
-            </span>
-          )}
-        </div>
+            )}
+            {isNetworkError && (
+              <button
+                type="button"
+                className="mesh-status-chip mesh-status-chip--warn"
+                onClick={onRetryConnect}
+                title={publicStatusTitle}
+              >
+                <span className="mesh-status-chip__dot" aria-hidden />
+                <span className="mesh-status-chip__label">{t("header.networkUnreachable")}</span>
+              </button>
+            )}
+            {relayUnreachable && isPublicNetwork && (
+              <button
+                type="button"
+                className="relay-warning mesh-status-chip mesh-status-chip--warn"
+                onClick={onRetryConnect}
+                title={t("header.relayUnreachable")}
+              >
+                <span className="mesh-status-chip__dot" aria-hidden />
+                <span className="mesh-status-chip__label">{t("header.relayDown")}</span>
+              </button>
+            )}
+          </div>
+        )}
         <LocaleSwitcher />
         <button
           type="button"

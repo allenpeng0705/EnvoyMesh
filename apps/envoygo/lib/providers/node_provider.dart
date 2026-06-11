@@ -441,14 +441,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
     try {
       final bonds = await nodeService.getBonds();
       // Filter out self-identity (shared-identity devices are bonds to self).
-      final selfOwnerId = nodeState.ownerId;
-      final filtered = selfOwnerId != null
-          ? bonds
-              .where((c) =>
-                  c.ownerId != selfOwnerId &&
-                  !c.ownerId.startsWith('envoy_device_'))
-              .toList()
-          : bonds;
+      // Same rule as `ContactNotifier.syncBonds`; both call sites
+      // go through the shared helper to keep the behaviour identical.
+      final filtered = filterSelfBonds(bonds, nodeState.ownerId);
       final localDb = LocalDatabase();
       await localDb.upsertContacts(
         nodeState.activeNode!.id,

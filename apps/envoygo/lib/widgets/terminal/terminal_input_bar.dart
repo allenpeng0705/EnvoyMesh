@@ -26,6 +26,30 @@ class TerminalInputBar extends StatefulWidget {
   /// because the clipboard service is owned by the screen.
   final VoidCallback? onPaste;
 
+  /// Called when the user taps the keyboard-hide button. The
+  /// screen wires this up to call `FocusScope.of(context).unfocus()`.
+  final VoidCallback? onHideKeyboard;
+
+  /// Called when the user taps the "Scroll up" button. The
+  /// screen wires this up to call `terminalView.scrollUp(n)`.
+  /// The bar is in charge of the icon and tap; the screen
+  /// decides how many lines to scroll.
+  final VoidCallback? onScrollUp;
+
+  /// Called when the user taps the "Scroll down" button. The
+  /// screen wires this up to call `terminalView.scrollDown(n)`.
+  final VoidCallback? onScrollDown;
+
+  /// Called when the user taps the "Jump to bottom" button. The
+  /// screen wires this up to call `terminalView.jumpToBottom()`.
+  /// Only shown when `canJumpToBottom` is true (i.e. the user
+  /// has scrolled into the scrollback).
+  final VoidCallback? onJumpToBottom;
+
+  /// Whether the jump-to-bottom button should be shown / enabled.
+  /// Set by the screen based on `_yDisplacement > 0`.
+  final bool canJumpToBottom;
+
   /// Whether the bar should be visually disabled (e.g. when the
   /// PTY is reconnecting). Taps are still received but the
   /// pressed state is muted.
@@ -37,6 +61,11 @@ class TerminalInputBar extends StatefulWidget {
     this.hasSelection = false,
     this.onCopy,
     this.onPaste,
+    this.onHideKeyboard,
+    this.onScrollUp,
+    this.onScrollDown,
+    this.onJumpToBottom,
+    this.canJumpToBottom = false,
     this.enabled = true,
   });
 
@@ -79,82 +108,143 @@ class _TerminalInputBarState extends State<TerminalInputBar> {
     return Container(
       color: Colors.grey[900],
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          // Arrow keys (left, right, up, down).
-          _barButton(
-            icon: Icons.keyboard_arrow_up,
-            tooltip: 'Up',
-            onPressed: () => _sendKey('\x1B[A'),
-          ),
-          _barButton(
-            icon: Icons.keyboard_arrow_down,
-            tooltip: 'Down',
-            onPressed: () => _sendKey('\x1B[B'),
-          ),
-          _barButton(
-            icon: Icons.keyboard_arrow_left,
-            tooltip: 'Left',
-            onPressed: () => _sendKey('\x1B[D'),
-          ),
-          _barButton(
-            icon: Icons.keyboard_arrow_right,
-            tooltip: 'Right',
-            onPressed: () => _sendKey('\x1B[C'),
-          ),
-          const SizedBox(width: 12),
-          // Tab / Esc.
-          _barButton(
-            icon: Icons.keyboard_tab,
-            tooltip: 'Tab',
-            onPressed: () => _sendKey('\t'),
-          ),
-          _barButton(
-            icon: Icons.close,
-            tooltip: 'Esc',
-            onPressed: () => _sendKey('\x1B'),
-          ),
-          // Enter.
-          _barButton(
-            icon: Icons.keyboard_return,
-            tooltip: 'Enter',
-            onPressed: () => _sendKey('\r'),
-          ),
-          const SizedBox(width: 12),
-          // Ctrl modifier toggle.
-          _barButton(
-            label: 'Ctrl',
-            tooltip: 'Ctrl modifier (sticky)',
-            highlight: _ctrlActive,
-            onPressed: _toggleCtrl,
-          ),
-          // Ctrl + A..Z as a quick-action grid (visible only when
-          // Ctrl is active). Tapping one sends the byte.
-          if (_ctrlActive) _CtrlLetterGrid(onLetter: _onLetter),
-          // Copy / Paste.
-          _barButton(
-            icon: Icons.copy,
-            tooltip: 'Copy selection',
-            onPressed: widget.hasSelection ? widget.onCopy : null,
-          ),
-          _barButton(
-            icon: Icons.paste,
-            tooltip: 'Paste',
-            onPressed: widget.onPaste,
-          ),
-          // / and | (shell conveniences).
-          _barButton(
-            label: '/',
-            tooltip: 'Slash',
-            onPressed: () => _sendKey('/'),
-          ),
-          _barButton(
-            label: '|',
-            tooltip: 'Pipe',
-            onPressed: () => _sendKey('|'),
-          ),
-        ],
+      // Horizontally scrollable: on narrow phones the full set of
+      // buttons (hide-keyboard, arrows, tab/esc/enter, ctrl,
+      // copy/paste, /, |) overflows the row. Wrapping the row in
+      // a SingleChildScrollView lets the user swipe the bar to
+      // reach buttons that don't fit. The hide-keyboard button
+      // is pinned to the leftmost position so it's always
+      // visible without scrolling — it's the most common
+      // "I'm done" gesture. BouncingScroll physics matches the
+      // rest of the app's iOS-style feel.
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        // Pad the trailing edge so the last button has breathing
+        // room and a swipe can fully reveal it.
+        padding: const EdgeInsets.only(right: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Hide the OS keyboard. Pinned to the LEFT so it's
+            // always visible (rightmost buttons are easy to
+            // miss on narrow phones, and an explicit dismissal
+            // is the most common "I'm done" gesture). The bar
+            // starts at scroll offset 0 by default, so the
+            // leftmost position guarantees no scrolling is
+            // required to reach this button.
+            _barButton(
+              icon: Icons.keyboard_hide_outlined,
+              tooltip: 'Hide keyboard',
+              onPressed: widget.onHideKeyboard,
+            ),
+            const SizedBox(width: 12),
+            // Arrow keys (left, right, up, down).
+            _barButton(
+              icon: Icons.keyboard_arrow_up,
+              tooltip: 'Up',
+              onPressed: () => _sendKey('\x1B[A'),
+            ),
+            _barButton(
+              icon: Icons.keyboard_arrow_down,
+              tooltip: 'Down',
+              onPressed: () => _sendKey('\x1B[B'),
+            ),
+            _barButton(
+              icon: Icons.keyboard_arrow_left,
+              tooltip: 'Left',
+              onPressed: () => _sendKey('\x1B[D'),
+            ),
+            _barButton(
+              icon: Icons.keyboard_arrow_right,
+              tooltip: 'Right',
+              onPressed: () => _sendKey('\x1B[C'),
+            ),
+            const SizedBox(width: 12),
+            // Scrollback controls. These scroll the terminal's
+            // own scrollback buffer (the local view) rather than
+            // sending escape sequences to the TUI. They're the
+            // most reliable way to reach earlier output for any
+            // terminal session — long shell output, `claude
+            // --help`, history review — and they don't depend on
+            // the pan gesture being recognised on every swipe.
+            //
+            // `Icons.expand_less` / `expand_more` show the
+            // direction; `Icons.vertical_align_bottom` is the
+            // "jump to bottom" (live view) button. The bottom
+            // button is enabled only when the user has scrolled
+            // away from the bottom (`canJumpToBottom`).
+            _barButton(
+              icon: Icons.expand_less,
+              tooltip: 'Scroll up (history)',
+              onPressed: widget.onScrollUp,
+            ),
+            _barButton(
+              icon: Icons.expand_more,
+              tooltip: 'Scroll down (history)',
+              onPressed: widget.onScrollDown,
+            ),
+            _barButton(
+              icon: Icons.vertical_align_bottom,
+              tooltip: 'Jump to bottom (live view)',
+              highlight: widget.canJumpToBottom,
+              onPressed: widget.canJumpToBottom
+                  ? widget.onJumpToBottom
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            // Tab / Esc.
+            _barButton(
+              icon: Icons.keyboard_tab,
+              tooltip: 'Tab',
+              onPressed: () => _sendKey('\t'),
+            ),
+            _barButton(
+              icon: Icons.close,
+              tooltip: 'Esc',
+              onPressed: () => _sendKey('\x1B'),
+            ),
+            // Enter.
+            _barButton(
+              icon: Icons.keyboard_return,
+              tooltip: 'Enter',
+              onPressed: () => _sendKey('\r'),
+            ),
+            const SizedBox(width: 12),
+            // Ctrl modifier toggle.
+            _barButton(
+              label: 'Ctrl',
+              tooltip: 'Ctrl modifier (sticky)',
+              highlight: _ctrlActive,
+              onPressed: _toggleCtrl,
+            ),
+            // Ctrl + A..Z as a quick-action grid (visible only when
+            // Ctrl is active). Tapping one sends the byte.
+            if (_ctrlActive) _CtrlLetterGrid(onLetter: _onLetter),
+            // Copy / Paste.
+            _barButton(
+              icon: Icons.copy,
+              tooltip: 'Copy selection',
+              onPressed: widget.hasSelection ? widget.onCopy : null,
+            ),
+            _barButton(
+              icon: Icons.paste,
+              tooltip: 'Paste',
+              onPressed: widget.onPaste,
+            ),
+            // / and | (shell conveniences).
+            _barButton(
+              label: '/',
+              tooltip: 'Slash',
+              onPressed: () => _sendKey('/'),
+            ),
+            _barButton(
+              label: '|',
+              tooltip: 'Pipe',
+              onPressed: () => _sendKey('|'),
+            ),
+          ],
+        ),
       ),
     );
   }

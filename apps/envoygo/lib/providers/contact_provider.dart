@@ -22,6 +22,24 @@ class ContactState {
   }
 }
 
+/// Filter out self-identity bonds from a list returned by the home.
+///
+/// The home node returns a self-bond for the multi-device shared
+/// identity, in two shapes:
+///   - `envoy:owner:<sha256(ownerPub)>` (the owner's own ID)
+///   - `envoy_device_<...>` (a device key tied to the same owner)
+///
+/// The mobile contacts list must never include the user themselves,
+/// so drop both. Pure function, exported so `NodeNotifier._syncBondsDirect`
+/// can share the exact same rule.
+List<Contact> filterSelfBonds(List<Contact> bonds, String? selfOwnerId) {
+  return bonds.where((c) {
+    if (selfOwnerId != null && c.ownerId == selfOwnerId) return false;
+    if (c.ownerId.startsWith('envoy_device_')) return false;
+    return true;
+  }).toList();
+}
+
 /// Provider for contacts/bonds state.
 final contactProvider =
     StateNotifierProvider<ContactNotifier, ContactState>((ref) {
@@ -55,10 +73,9 @@ class ContactNotifier extends StateNotifier<ContactState> {
       );
 
       // Filter out self-identity "Mobile" shared-identity contact.
-      final selfOwnerId = nodeState.ownerId;
-      final filtered = selfOwnerId != null
-          ? bonds.where((c) => c.ownerId != selfOwnerId).toList()
-          : bonds;
+      // See [filterSelfBonds] for the rule; this must stay in sync
+      // with the equivalent filter in `NodeNotifier._syncBondsDirect`.
+      final filtered = filterSelfBonds(bonds, nodeState.ownerId);
 
       state = state.copyWith(bonds: filtered, isLoading: false);
     } catch (e) {
