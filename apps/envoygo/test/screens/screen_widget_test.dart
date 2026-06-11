@@ -11,6 +11,11 @@ import 'package:envoygo/providers/contact_provider.dart';
 import 'package:envoygo/models/stored_node.dart';
 import 'package:envoygo/models/contact.dart';
 import 'package:envoygo/models/chat_thread.dart';
+import 'package:envoygo/services/home_remote_client.dart';
+import 'package:envoygo/services/node_service_client.dart';
+import 'package:envoygo/services/pairing_service.dart';
+import 'package:envoygo/storage/secure_storage.dart';
+import 'package:envoygo/storage/local_database.dart';
 
 void main() {
   group('HomeScreen tabs', () {
@@ -58,7 +63,9 @@ void main() {
             chatProvider
                 .overrideWith((ref) => _FakeChatNotifier(testThreads)),
           ],
-          child: const MaterialApp(home: ChatListScreen()),
+          child: const MaterialApp(
+            home: Scaffold(body: ChatListScreen()),
+          ),
         ),
       );
       await tester.pump();
@@ -74,7 +81,9 @@ void main() {
     testWidgets('shows empty state when no contacts', (tester) async {
       await tester.pumpWidget(
         const ProviderScope(
-          child: MaterialApp(home: ContactsScreen()),
+          child: MaterialApp(
+            home: Scaffold(body: ContactsScreen()),
+          ),
         ),
       );
       await tester.pump();
@@ -103,7 +112,9 @@ void main() {
             contactProvider.overrideWith(
                 (ref) => _FakeContactNotifier(testContacts)),
           ],
-          child: const MaterialApp(home: ContactsScreen()),
+          child: const MaterialApp(
+            home: Scaffold(body: ContactsScreen()),
+          ),
         ),
       );
       await tester.pump();
@@ -273,8 +284,8 @@ class _FakeNodeNotifier extends NodeNotifier {
   _FakeNodeNotifier(StoredNode node)
       : super(
           ref: _FakeRef(),
-          secureStorage: _FakeSecureStorage(),
-          localDb: _FakeLocalDatabase(),
+          secureStorage: _newTestSecureStorage(),
+          localDb: _newTestLocalDatabase(),
         ) {
     state = NodeState(
       activeNode: node,
@@ -311,70 +322,19 @@ class _FakeNodeNotifier extends NodeNotifier {
 }
 
 class _FakeRef implements Ref {
+  // Tests pass this Ref into `NodeNotifier` only to satisfy the constructor;
+  // the faked notifier methods (`loadPairedNodes`, `connectToNode`, etc.)
+  // are no-ops, so no `Ref` method is ever invoked at runtime. Forward any
+  // unexpected access to `noSuchMethod` to satisfy the riverpod 2.6.1
+  // interface without re-declaring each member.
   @override
-  BuildContext? get context => throw UnimplementedError();
-  @override
-  bool get exists => true;
-  @override
-  ProviderListenable<Object?> get from => throw UnimplementedError();
-  @override
-  bool get isDisposed => false;
-  @override
-  Never get notifier => throw UnimplementedError();
-  @override
-  Never read(covariant ProviderListenable<Never> provider) =>
-      throw UnimplementedError();
-  @override
-  Never refresh(covariant ProviderListenable<Never> provider) =>
-      throw UnimplementedError();
-  @override
-  Never watch(covariant ProviderListenable<Never> provider) =>
-      throw UnimplementedError();
-  @override
-  Never Function(void Function() callback) listen(
-          covariant ProviderListenable<Never> provider) =>
-      throw UnimplementedError();
-  @override
-  Never invalidate(covariant ProviderListenable<Never> provider) =>
-      throw UnimplementedError();
-  @override
-  Never onDispose(void Function() listener) => throw UnimplementedError();
-  @override
-  Never onCancel(void Function() listener) => throw UnimplementedError();
-  @override
-  Never onResume(void Function() listener) => throw UnimplementedError();
-  @override
-  Never dispose() => throw UnimplementedError();
-  @override
-  Never container => throw UnimplementedError();
+  dynamic noSuchMethod(Invocation invocation) => null;
 }
 
-class _FakeSecureStorage extends SecureStorage {
-  @override
-  Future<void> saveSessionToken(String nodeId, String token) async {}
-  @override
-  Future<String?> getSessionToken(String nodeId) async => 'test-token';
-  @override
-  Future<void> deleteSessionToken(String nodeId) async {}
-  @override
-  Future<void> saveActiveNodeId(String nodeId) async {}
-  @override
-  Future<String?> getActiveNodeId() async => 'node1';
-  @override
-  Future<void> clear() async {}
-}
-
-class _FakeLocalDatabase extends LocalDatabase {
-  @override
-  Future<void> initialize() async {}
-  @override
-  Future<void> upsertNode(Map<String, dynamic> node) async {}
-  @override
-  Future<List<Map<String, dynamic>>> listNodes() async => [];
-}
-
-import '../services/home_remote_client.dart';
-import '../services/node_service_client.dart';
-import '../services/pairing_service.dart';
-import '../storage/secure_storage.dart';
-import '../storage/local_database.dart';
+// `_FakeNodeNotifier` (and friends) call into these storage/db instances
+// only if a test path triggers a real supervisor (none currently do —
+// the notifier fakes short-circuit supervisor creation). Pass the
+// `@visibleForTesting` test factories so we don't collide with the
+// production singleton.
+SecureStorage _newTestSecureStorage() => SecureStorage.test();
+LocalDatabase _newTestLocalDatabase() => LocalDatabase.test();

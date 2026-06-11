@@ -1216,6 +1216,60 @@ export class MobileNode implements NodeService {
     return this._homeRemoteCall("terminalGetHerdrExportHint", params as unknown as Record<string, unknown>);
   }
 
+  terminalExec(
+    params: { sessionId: string; command: string },
+  ): Promise<{ output: string }> {
+    return this._homeRemoteCall("terminalExec", params as unknown as Record<string, unknown>);
+  }
+
+  terminalClearResumeGoal(
+    sessionId: string,
+  ): Promise<import("@envoymesh/api").TerminalAssistState> {
+    return this._homeRemoteCall("terminalClearResumeGoal", { sessionId });
+  }
+
+  pairThinClient(
+    params: import("@envoymesh/api").PairThinClientParams,
+  ): Promise<import("@envoymesh/api").PairThinClientResult> {
+    return this._homeRemoteCall("pairThinClient", params as unknown as Record<string, unknown>);
+  }
+
+  getOpenClawPlugins(): Promise<string[]> {
+    return this._homeRemoteCall<string[]>("getOpenClawPlugins", {});
+  }
+
+  searchOpenClawPlugins(query: string): Promise<string[]> {
+    return this._homeRemoteCall<string[]>("searchOpenClawPlugins", { query });
+  }
+
+  getTrendingOpenClawPlugins(): Promise<string[]> {
+    return this._homeRemoteCall<string[]>("getTrendingOpenClawPlugins", {});
+  }
+
+  installOpenClawPlugin(name: string): Promise<{ ok: boolean; message: string }> {
+    return this._homeRemoteCall("installOpenClawPlugin", { name });
+  }
+
+  uninstallOpenClawPlugin(name: string): Promise<{ ok: boolean; message: string }> {
+    return this._homeRemoteCall("uninstallOpenClawPlugin", { name });
+  }
+
+  saveClawhubToken(token: string): Promise<{ ok: boolean }> {
+    return this._homeRemoteCall("saveClawhubToken", { token });
+  }
+
+  saveSkillApiKeys(keys: Record<string, string>): Promise<{ ok: boolean }> {
+    return this._homeRemoteCall("saveSkillApiKeys", { keys });
+  }
+
+  saveWebSearchEnabled(enabled: boolean): Promise<{ ok: boolean }> {
+    return this._homeRemoteCall("saveWebSearchEnabled", { enabled });
+  }
+
+  sendToOpenClaw(text: string): Promise<void> {
+    return this._homeRemoteCall<void>("sendToOpenClaw", { text });
+  }
+
   async homeTerminalWsOpen(
     params: import("@envoymesh/api").HomeTerminalWsOpenParams,
   ): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult> {
@@ -4460,11 +4514,13 @@ You are the owner's personal AI assistant on EnvoyMesh.
         return { ok: true, result: { items }, toolName, correlationId: "", latencyMs: 0 };
       }
       if (toolName === "mesh.library_read") {
+        const docId =
+          typeof params.documentId === "string" ? params.documentId.trim() : "";
         const relativePath =
           typeof params.relativePath === "string"
             ? params.relativePath.trim()
-            : typeof params.documentId === "string"
-              ? (await self.listLibraryItems()).find((i) => i.documentId === params.documentId.trim())
+            : docId
+              ? (await self.listLibraryItems()).find((i) => i.documentId === docId)
                   ?.relativePath ?? ""
               : "";
         if (!relativePath) {
@@ -4519,11 +4575,13 @@ You are the owner's personal AI assistant on EnvoyMesh.
             latencyMs: 0,
           };
         }
+        const docId =
+          typeof params.documentId === "string" ? params.documentId.trim() : "";
         const relativePath =
           typeof params.relativePath === "string"
             ? params.relativePath.trim()
-            : typeof params.documentId === "string"
-              ? (await self.listLibraryItems()).find((i) => i.documentId === params.documentId.trim())
+            : docId
+              ? (await self.listLibraryItems()).find((i) => i.documentId === docId)
                   ?.relativePath ?? ""
               : "";
         if (!relativePath) {

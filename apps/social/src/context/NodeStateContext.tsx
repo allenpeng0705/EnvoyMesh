@@ -91,6 +91,10 @@ interface NodeStateValue {
   // Agent bridge
   bridgeStatus: BridgeStatus | null;
 
+  // Paired diagnostics snapshot from the home node (debug bar in MobileApp).
+  // `null` when the transport is closed or the call has not yet returned.
+  pairedDiag: Record<string, unknown> | null;
+
   // Per-contact AI modes (persisted)
   contactAiModes: Record<string, AssistantMode>;
 
@@ -164,6 +168,12 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
   // --- Agent bridge ---
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus | null>(null);
 
+  // --- Paired diagnostics snapshot ---
+  // Mirrors `getPairedDiagnostics()` on the node. Updated whenever transport
+  // is up and `node:status` flips, so the MobileApp debug bar reflects the
+  // current pairing state without polling.
+  const [pairedDiag, setPairedDiag] = useState<Record<string, unknown> | null>(null);
+
   useEffect(() => {
     if (!wsTransportOpen) {
       setNodeStatusHydrated(false);
@@ -223,6 +233,11 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     nodeService.getBridgeStatus().then((status) => {
       if (status.enabled) setBridgeStatus(status);
     }).catch(() => {});
+
+    // Paired diagnostics — MobileApp debug bar reads this.
+    nodeService.getPairedDiagnostics?.().then((diag) => {
+      setPairedDiag(diag ?? null);
+    }).catch(() => {});
   }, [nodeService, wsTransportOpen, refreshConnectionStatus]);
 
   // -----------------------------------------------------------------------
@@ -242,6 +257,10 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       // Bridge status may have been set after initial load
       nodeService.getBridgeStatus().then((s) => {
         if (s?.enabled) setBridgeStatus(s);
+      }).catch(() => {});
+      // Paired diagnostics may have changed alongside the status flip
+      nodeService.getPairedDiagnostics?.().then((diag) => {
+        setPairedDiag(diag ?? null);
       }).catch(() => {});
     });
     return unsub;
@@ -517,6 +536,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     pendingMessages,
     appSettings,
     bridgeStatus,
+    pairedDiag,
     contactAiModes,
     setAppSettings: wrappedSetAppSettings,
     refreshNodeConfig,

@@ -6,7 +6,7 @@ import type {
 import type { ViewName } from "../App.js";
 import { useTheme } from "../context/ThemeContext.js";
 import { useT } from "../context/I18nContext.js";
-import { DarkModeIcon, LightModeIcon, ChevronDownIcon } from "../icons.js";
+import { DarkModeIcon, LightModeIcon, ChevronDownIcon, QRCodeIcon } from "../icons.js";
 import { LocaleSwitcher } from "./LocaleSwitcher.js";
 import { ProfilePhotoAvatar } from "./ProfilePhotoAvatar.js";
 import { useState } from "react";
@@ -23,6 +23,7 @@ interface HeaderProps {
   peerId: string;
   relayUnreachable?: boolean;
   onRetryConnect?: () => void;
+  onOpenPairing?: () => void;
 }
 
 export function Header({
@@ -36,6 +37,7 @@ export function Header({
   peerId,
   relayUnreachable,
   onRetryConnect,
+  onOpenPairing,
 }: HeaderProps) {
   const t = useT();
   const { theme, resolved, setTheme } = useTheme();
@@ -190,6 +192,18 @@ export function Header({
         >
           {resolved === "dark" ? <LightModeIcon size={16} /> : <DarkModeIcon size={16} />}
         </button>
+        {onOpenPairing && (
+          <button
+            type="button"
+            className="header-pairing-btn"
+            onClick={onOpenPairing}
+            title={t("header.pairingTitle")}
+            aria-label={t("header.pairingClick")}
+          >
+            <QRCodeIcon size={16} />
+            <span className="header-pairing-btn__label">{t("header.pairingLabel")}</span>
+          </button>
+        )}
         <button
           type="button"
           className={`header-profile-btn${currentView === "profile" ? " active" : ""}`}

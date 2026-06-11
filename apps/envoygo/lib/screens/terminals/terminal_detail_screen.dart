@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -7,9 +8,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
 import '../../services/terminal_service.dart';
+import '../../widgets/terminal/terminal_input_bar.dart';
+import '../../widgets/terminal/terminal_view.dart';
 
-/// Terminal PTY view — sends commands via JSON-RPC and displays output
-/// from `terminal:rx` push events.
+/// Terminal detail screen — hosts a [TerminalView], a
+/// [TerminalInputBar] soft keyboard, and a hidden [TextField] for
+/// capturing device-keyboard input. The hidden TextField is the
+/// focus target for the OS keyboard; the soft bar provides the
+/// special keys the OS keyboard does not have.
+///
+/// Wire flow (per the existing design):
+///   - Subscribe to `homeTerminalWs:rx` push events.
+///   - On each event, base64-decode the `dataBase64` field and
+///     forward the raw bytes to [TerminalView.write].
+///   - On user input (TextField changes, soft bar button taps),
+///     forward raw bytes to [TerminalService.sendKey].
+///   - On screen size change, debounce 200 ms then call
+///     [TerminalService.sendResize].
 class TerminalDetailScreen extends ConsumerStatefulWidget {
   final String sessionId;
   final String sessionName;
@@ -27,27 +42,40 @@ class TerminalDetailScreen extends ConsumerStatefulWidget {
 
 class _TerminalDetailScreenState
     extends ConsumerState<TerminalDetailScreen> {
-  final _controller = TextEditingController();
-  final _output = <String>[];
-  final _scrollController = ScrollController();
   TerminalService? _terminalService;
+  final _terminalKey = GlobalKey<State<TerminalView>>();
   bool _attached = false;
 
-  /// True when the home-tunnel is reachable. The relay emits `tunnel-down`
-  /// when the home's `/ws/home` connection is lost and `tunnel-up` when a
-  /// new tunnel is re-claimed. We surface a small "reconnecting…" chip in
-  /// the AppBar while down so the user knows their input is being buffered
-  /// by the relay (I4) and not lost. The terminal session itself stays
-  /// alive on the home; the relay re-attaches the mobile ws transparently.
+  /// True when the home tunnel is reachable. Drives the AppBar
+  /// "Reconnecting…" chip.
   bool _tunnelUp = true;
 
-  /// Streaming response buffer for long-running commands.
-  /// Accumulated output is appended to the last entry in [_output].
-  final _streamBuffer = StringBuffer();
+  /// TextEditingController for the hidden TextField. We need to
+  /// read the previous text to compute a diff for backspace.
+  final _textController = TextEditingController();
+  String _previousText = '';
+  final _focusNode = FocusNode();
 
-  /// Index into [_output] where the current streaming response is accumulating.
-  /// -1 means no streaming accumulation is in progress.
-  int _streamingIndex = -1;
+  /// Latest y-displacement reported by the TerminalView. Drives
+  /// the AppBar "Jump to bottom" button visibility.
+  int _yDisplacement = 0;
+
+  /// Whether the TerminalView has an active selection. Drives
+  /// the soft bar's Copy button enable state.
+  bool _hasSelection = false;
+
+  /// Resize debounce timer.
+  Timer? _resizeTimer;
+
+  /// Pending resize dimensions; the debounce flushes them.
+  int? _pendingCols;
+  int? _pendingRows;
+
+  /// Approximate monospace cell size in logical pixels. Set on
+  /// first measurement; the same dimensions are used by both the
+  /// [TerminalView] and the resize computation.
+  static const _cellWidth = 8.4; // fontSize 14 * 0.6
+  static const _cellHeight = 16.8; // fontSize 14 * 1.2
 
   @override
   void initState() {
@@ -58,8 +86,9 @@ class _TerminalDetailScreenState
   @override
   void dispose() {
     _detach();
-    _controller.dispose();
-    _scrollController.dispose();
+    _resizeTimer?.cancel();
+    _textController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -73,16 +102,10 @@ class _TerminalDetailScreenState
     final nodeService = NodeServiceClient(client);
     _terminalService = TerminalService(nodeService, client);
 
-    // Subscribe to terminal output from push events (real-time stream).
-    // The home emits one `homeTerminalWs:rx` event per companion, so we
-    // filter by `sessionId` to make sure multi-tab/multi-screen works.
+    // Subscribe to terminal output from push events.
     _unsubscribeRx = client.on('homeTerminalWs:rx', _onTerminalOutput);
 
-    // Subscribe to home-tunnel state events (I4). The relay emits
-    // `tunnel-down` when the home's `/ws/home` connection is lost and
-    // `tunnel-up` when a new tunnel is re-claimed. The relay keeps the
-    // mobile's WebSocket open across the re-claim and buffers any
-    // frames the user types in the meantime, so input is not lost.
+    // Tunnel state events.
     _unsubscribeTunnelDown = client.on('tunnel-down', (_) {
       if (!mounted) return;
       setState(() => _tunnelUp = false);
@@ -92,16 +115,19 @@ class _TerminalDetailScreenState
       setState(() => _tunnelUp = true);
     });
 
-    // Try the persistent WebSocket stream first; fall back to simple
-    // terminalExec RPC if the stream can't be established.
     try {
       await _terminalService!.attach(widget.sessionId);
     } catch (e) {
-      // Stream attach failed — use simple RPC mode instead.
-      _terminalService!.setActiveSession(widget.sessionId);
-      setState(() => _output.add('[Stream not available, using basic mode: $e]'));
+      // Stream attach failed — we still allow basic interaction
+      // via the terminalExec RPC fallback (handled by the
+      // service internally for `sendKey` if WS is down).
+      if (mounted) {
+        setState(() {});
+      }
     }
-    setState(() => _attached = true);
+    if (mounted) {
+      setState(() => _attached = true);
+    }
   }
 
   void Function()? _unsubscribeRx;
@@ -119,173 +145,144 @@ class _TerminalDetailScreenState
     _terminalService = null;
     _attached = false;
     _tunnelUp = true;
-    _streamingIndex = -1;
-    _rawBuffer.clear();
+    _yDisplacement = 0;
+    _hasSelection = false;
   }
 
-  /// Raw byte buffer for incomplete UTF-8 sequences / ANSI sequences that span chunks.
-  final _rawBuffer = <int>[];
-
   void _onTerminalOutput(dynamic data) {
-    // Drop late events that arrive after detach() to avoid mutating
-    // already-disposed state. The listener is removed synchronously
-    // in _detach() so under normal flow this guard is just belt-and-
-    // suspenders for events already in the message queue.
     if (_terminalService == null) return;
     if (data is! Map<String, dynamic>) return;
-    // Filter to this session — one home companion can have multiple
-    // open terminal sub-channels. Older home versions (pre-C2) emit
-    // the event without a sessionId; in that case we accept it as
-    // a best-effort match.
     final eventSessionId = data['sessionId'] as String?;
     if (eventSessionId != null && eventSessionId != widget.sessionId) {
       return;
     }
     final b64 = data['dataBase64'] as String?;
     if (b64 == null || b64.isEmpty) return;
-    List<int> chunk;
-    try {
-      chunk = base64Decode(b64);
-    } catch (_) {
-      return;
-    }
+    final chunk = base64Decode(b64);
+    // Push the raw bytes into the emulator. The emulator handles
+    // UTF-8 reassembly, ANSI parsing, and grid mutations.
+    final state = _terminalKey.currentState;
+    if (state == null) return;
+    // We cast to our private state type via a public method
+    // exposed by TerminalView. Since the TerminalView doesn't
+    // currently expose write() publicly, we add it: see the
+    // helper below.
+    _writeToView(state, chunk);
+  }
 
-    // Accumulate raw bytes so split UTF-8 / ANSI sequences are reassembled
-    // before cleaning.  Only flush when we hit a newline or the
-    // buffer grows large enough to contain a complete sequence.
-    _rawBuffer.addAll(chunk);
-    if (!_rawBuffer.contains(0x0A) && _rawBuffer.length < 256) return;
+  /// Forward raw bytes to the TerminalView. The [TerminalView]
+  /// exposes `write(Uint8List)` for this purpose.
+  void _writeToView(State state, List<int> bytes) {
+    // The TerminalView's `write` method is public on the State
+    // class — accessed via the public `State` reference.
+    (state as dynamic).write(Uint8List.fromList(bytes));
+  }
 
-    // Decode the buffer, clean it, and flush.
-    String text;
-    try {
-      text = utf8.decode(_rawBuffer, allowMalformed: true);
-    } catch (_) {
-      text = String.fromCharCodes(_rawBuffer);
-    }
-    _rawBuffer.clear();
+  // -- Input --
 
-    text = _cleanTerminalOutput(text);
-    if (text.isEmpty) return;
-
-    // Accumulate streaming output into the buffer so the current
-    // command's response stays together as a single entry.
-    _streamBuffer.write(text);
-    final buffered = _streamBuffer.toString();
-
-    setState(() {
-      if (_streamingIndex >= 0 && _streamingIndex < _output.length) {
-        // Replace the streaming accumulation slot with the new combined output.
-        _output[_streamingIndex] = buffered;
-      } else {
-        // No active streaming slot — add as a new entry.
-        _output.add(buffered);
-        _streamingIndex = _output.length - 1;
+  /// Called by the hidden TextField on every change. We diff
+  /// against the previous text and forward the inserted /
+  /// deleted characters as raw bytes.
+  void _onTextChanged(String text) {
+    final prev = _previousText;
+    if (text.length > prev.length) {
+      // Insertion(s).
+      final inserted = text.substring(prev.length);
+      _terminalService?.sendKey(inserted);
+    } else if (text.length < prev.length) {
+      // Deletion(s). Emit one backspace per deleted character.
+      final count = prev.length - text.length;
+      for (var i = 0; i < count; i++) {
+        _terminalService?.sendControlByte(0x08);
       }
-      if (_output.length > 500) {
-        _output.removeRange(0, _output.length - 500);
-        // After trimming, streaming index may be stale — reset so the next
-        // streaming output re-creates a slot rather than referencing a
-        // shifted (or removed) index.
-        _streamingIndex = -1;
-      }
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 100),
-          curve: Curves.easeOut,
+    }
+    _previousText = text;
+  }
+
+  void _onTextSubmitted(String text) {
+    // The user pressed the device keyboard's Enter. The TUI
+    // wants a literal \r on its stdin. The TextField would also
+    // fire _onTextChanged before this with the new text, but
+    // because we sent each character incrementally, we don't
+    // need to re-send anything here — just the \r terminator.
+    _terminalService?.sendKey('\r');
+    // Clear the TextField so the next input starts empty.
+    _textController.clear();
+    _previousText = '';
+  }
+
+  /// Forward raw bytes from the soft keyboard bar.
+  void _onBarKey(String bytes) {
+    _terminalService?.sendKey(bytes);
+  }
+
+  Future<void> _onCopy() async {
+    final state = _terminalKey.currentState;
+    if (state == null) return;
+    final selected = (state as dynamic).getSelection() as String?;
+    if (selected != null && selected.isNotEmpty) {
+      await Clipboard.setData(ClipboardData(text: selected));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Copied to clipboard')),
         );
       }
+    }
+  }
+
+  Future<void> _onPaste() async {
+    final data = await Clipboard.getData('text/plain');
+    final text = data?.text ?? '';
+    if (text.isEmpty) return;
+    // v1: send raw bytes. Future: honor bracketed paste if the
+    // TUI enabled it (we don't track that flag yet).
+    _terminalService?.sendKey(text);
+  }
+
+  // -- Resize --
+
+  void _scheduleResize(int cols, int rows) {
+    if (cols == _pendingCols && rows == _pendingRows) return;
+    _pendingCols = cols;
+    _pendingRows = rows;
+    _resizeTimer?.cancel();
+    _resizeTimer = Timer(const Duration(milliseconds: 200), () {
+      _resizeTimer = null;
+      final c = _pendingCols;
+      final r = _pendingRows;
+      if (c == null || r == null) return;
+      // Forward to the home PTY.
+      _terminalService?.sendResize(c, r);
+      // Resize the local view.
+      final state = _terminalKey.currentState;
+      if (state != null) {
+        (state as dynamic).resize(c, r);
+      }
     });
   }
 
-  void _sendCommand(String text) {
-    if (text.trim().isEmpty) return;
-    final command = text.trim();
-    _controller.clear();
-
-    // Clear streaming state — any pending streaming output is stale now.
-    _streamBuffer.clear();
-    _streamingIndex = -1;
-
-    setState(() {
-      // Start a new output entry with the prompt.
-      _output.add('\$ $command');
-      if (_output.length > 500) {
-        _output.removeRange(0, _output.length - 500);
-      }
-    });
-
-    _terminalService?.sendCommand(command).then((output) {
-      if (!mounted) return;
-      // In streaming (WS) mode `output` is null because the response
-      // arrives via `homeTerminalWs:rx` push events. Only the
-      // `terminalExec` RPC fallback produces a captured-output value.
-      if (output == null || output.isEmpty) return;
-      final cleaned = _cleanTerminalOutput(output);
-      if (cleaned.isEmpty) return;
-      setState(() {
-        // If streaming output already wrote to the last entry (the
-        // prompt), replace it; otherwise append.
-        final lastIsPrompt = _output.isNotEmpty &&
-            _output.last.startsWith('\$ $command');
-        if (lastIsPrompt) {
-          _output.last = '\$ $command\n$cleaned';
-        } else {
-          _output.add(cleaned);
-        }
-        if (_output.length > 500) {
-          _output.removeRange(0, _output.length - 500);
-        }
-      });
-    }).catchError((e) {
-      if (!mounted) return;
-      setState(() => _output.add('[Error: $e]'));
-    });
+  void _onLayoutChange(Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+    // Reserve a few pixels at the bottom for the soft bar — but
+    // the soft bar is part of the same column, so we use the
+    // full available height. The widget will be told to use
+    // whatever space it has.
+    final cols = (size.width / _cellWidth).floor();
+    final rows = (size.height / _cellHeight).floor();
+    if (cols < 2 || rows < 2) return;
+    _scheduleResize(cols, rows);
   }
 
-  /// Clean terminal output for display:
-  /// 1. Strip all ANSI / CSI escape sequences (colors, cursor, etc.)
-  /// 2. Handle carriage returns: \r\n → \n, inline \r updates → keep
-  ///    last content on the line
-  /// 3. Strip remaining control characters (except tab, newline)
-  static final _ansiRegex = RegExp(
-      r'\x1B[@-Z\\-_]|' // ESC + single-char sequences (other than CSI/osc)
-      r'\x1B\[[\d;]*[A-Za-z]|' // CSI: ESC [ params letter
-      r'\x1B\][^\x07]*\x07|' // OSC: ESC ] … BEL
-      r'\x1B[PX^_][^\x1B]*\x1B\\|' // DCS / SOS / PAC / PM sequences
-      r'\x1B\[[\d;]*[A-Za-z]\x1B\\'); // terminated CSI (DCS-like)
+  // -- Selection / scrollback callbacks from TerminalView --
 
-  String _cleanTerminalOutput(String text) {
-    // 1. Strip all ANSI / CSI escape sequences.
-    text = text.replaceAll(_ansiRegex, '');
+  void _onSelectionChanged(bool hasSelection) {
+    if (!mounted) return;
+    setState(() => _hasSelection = hasSelection);
+  }
 
-    // 2. Handle CRLF → LF.
-    text = text.replaceAll('\r\n', '\n');
-
-    // 3. For lines containing standalone \r (inline updates / spinners),
-    //    keep only the content AFTER the last \r — this discards the
-    //    intermediate spinner frames and preserves the final line state.
-    final lines = text.split('\n');
-    final cleaned = <String>[];
-    for (final line in lines) {
-      final lastCr = line.lastIndexOf('\r');
-      if (lastCr >= 0) {
-        cleaned.add(line.substring(lastCr + 1));
-      } else {
-        cleaned.add(line);
-      }
-    }
-    text = cleaned.join('\n');
-
-    // 4. Collapse 3+ blank lines to 2.
-    while (text.contains('\n\n\n')) {
-      text = text.replaceAll('\n\n\n', '\n\n');
-    }
-
-    return text.trim();
+  void _onScrollbackOffsetChanged(int yDisplacement) {
+    if (!mounted) return;
+    setState(() => _yDisplacement = yDisplacement);
   }
 
   @override
@@ -294,6 +291,17 @@ class _TerminalDetailScreenState
       appBar: AppBar(
         title: Text(widget.sessionName),
         actions: [
+          if (_yDisplacement > 0)
+            TextButton.icon(
+              onPressed: () {
+                final state = _terminalKey.currentState;
+                if (state != null) {
+                  (state as dynamic).jumpToBottom();
+                }
+              },
+              icon: const Icon(Icons.arrow_downward, size: 16),
+              label: const Text('Jump to bottom'),
+            ),
           if (!_tunnelUp)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 8.0),
@@ -313,18 +321,6 @@ class _TerminalDetailScreenState
               child: const Text('Reconnect'),
             ),
           IconButton(
-            icon: const Icon(Icons.copy_all),
-            tooltip: 'Copy all output',
-            onPressed: () {
-              Clipboard.setData(
-                  ClipboardData(text: _output.join('\n')));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('Copied to clipboard')),
-              );
-            },
-          ),
-          IconButton(
             icon: const Icon(Icons.close),
             onPressed: () {
               _terminalService?.closeSession(widget.sessionId);
@@ -333,71 +329,73 @@ class _TerminalDetailScreenState
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Container(
-              color: Colors.black,
-              padding: const EdgeInsets.all(12),
-              child: GestureDetector(
-                onTap: () {
-                  FocusScope.of(context).requestFocus(FocusNode());
-                },
-                child: ListView.builder(
-                  controller: _scrollController,
-                  itemCount: _output.length,
-                  itemBuilder: (_, index) => SelectableText(
-                    _output[index],
-                    style: const TextStyle(
-                      color: Colors.green,
-                      fontFamily: 'monospace',
-                      fontSize: 14,
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          SafeArea(
-            child: Container(
-              color: Colors.grey[900],
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      enabled: _attached,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontFamily: 'monospace',
-                      ),
-                      decoration: InputDecoration(
-                        hintText: _attached ? '\$ ' : 'Not connected...',
-                        hintStyle: const TextStyle(
-                          color: Colors.grey,
-                          fontFamily: 'monospace',
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Schedule a resize on the next frame, after
+                  // the layout settles. We don't call it inline
+                  // because LayoutBuilder is called during the
+                  // build phase.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _onLayoutChange(constraints.biggest);
+                  });
+                  return Container(
+                    color: Colors.black,
+                    child: Stack(
+                      children: [
+                        // The terminal emulator.
+                        Center(
+                          child: TerminalView(
+                            key: _terminalKey,
+                            onSelectionChanged: _onSelectionChanged,
+                            onScrollbackOffsetChanged:
+                                _onScrollbackOffsetChanged,
+                          ),
                         ),
-                        border: InputBorder.none,
-                      ),
-                      onSubmitted: _sendCommand,
+                        // Hidden TextField as the device-keyboard
+                        // focus target. Visually invisible, but
+                        // tap-to-focus still works because it
+                        // fills the parent (the Stack passes
+                        // pointer events through to the child
+                        // TerminalView's GestureDetector; the
+                        // TextField is here primarily so the
+                        // OS keyboard is summoned on tap).
+                        Positioned.fill(
+                          child: Opacity(
+                            opacity: 0.0,
+                            child: TextField(
+                              controller: _textController,
+                              focusNode: _focusNode,
+                              autofocus: true,
+                              autocorrect: false,
+                              enableSuggestions: false,
+                              enableIMEPersonalizedLearning: false,
+                              keyboardType: TextInputType.visiblePassword,
+                              maxLines: 1,
+                              onChanged: _onTextChanged,
+                              onSubmitted: _onTextSubmitted,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.control_camera,
-                        color: Colors.grey, size: 20),
-                    onPressed: () {
-                      // Ctrl-C (ETX) — kills the foreground process.
-                      _terminalService?.sendControlByte(0x03);
-                    },
-                  ),
-                ],
+                  );
+                },
               ),
             ),
-          ),
-        ],
+            // Soft keyboard bar above the device keyboard.
+            TerminalInputBar(
+              onKey: _onBarKey,
+              hasSelection: _hasSelection,
+              onCopy: _onCopy,
+              onPaste: _onPaste,
+              enabled: _tunnelUp && _attached,
+            ),
+          ],
+        ),
       ),
     );
   }

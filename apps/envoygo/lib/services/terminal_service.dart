@@ -50,50 +50,31 @@ class TerminalService {
     _activeSessionId = sessionId;
   }
 
-  /// Send a command to the active session.
+  /// Send raw bytes to the active session's stdin.
   ///
   /// In streaming mode (WS attached) this is fire-and-forget — the
-  /// output arrives as `homeTerminalWs:rx` push events. Returns `null`
-  /// in that case so the UI doesn't show a misleading "completed" state.
+  /// output arrives as `homeTerminalWs:rx` push events. Returns
+  /// `true` if the bytes were queued, `false` if the stream
+  /// rejected the write (the service internally marks itself as
+  /// disconnected; the caller should treat subsequent `sendKey`
+  /// calls as best-effort).
   ///
-  /// Falls back to `terminalExec` (one-shot RPC) if no stream is
-  /// attached; that returns the captured output.
-  Future<String?> sendCommand(String command) async {
+  /// Falls back to nothing if no stream is attached — there is no
+  /// useful "sendCommand" semantics in that mode. Use the
+  /// `terminalExec` RPC at the NodeServiceClient level for
+  /// one-shot "run this command and get the result" use cases.
+  bool sendKey(String command) {
     final sessionId = _activeSessionId;
-    if (sessionId == null) {
-      throw Exception('Terminal not attached');
-    }
-
-    if (_wsAttached) {
-      final sent =
-          _remote.sendTerminalInput('$command\r', sessionId: sessionId);
-      if (sent.ok) {
-        // Output arrives via push events. Don't return a fake value.
-        return null;
-      }
-      // Stream write rejected — fall through to the RPC path.
-      _wsAttached = false;
-    }
-
-    // Fallback: simple RPC for instant output.
-    final result = await _client.terminalExec(sessionId, command);
-    return result['output'] as String? ?? '';
+    if (sessionId == null) return false;
+    final result = _remote.sendTerminalInput(command, sessionId: sessionId);
+    if (!result.ok) _wsAttached = false;
+    return result.ok;
   }
 
   bool _wsAttached = false;
 
   /// Whether the WS sub-channel is currently attached.
   bool get isAttached => _wsAttached;
-
-  /// Send a single keystroke to the pty stdin. Encodes as the
-  /// wire-protocol `stdin` frame, never raw text.
-  bool sendKey(String text) {
-    final sessionId = _activeSessionId;
-    if (sessionId == null) return false;
-    final result = _remote.sendTerminalInput(text, sessionId: sessionId);
-    if (!result.ok) _wsAttached = false;
-    return result.ok;
-  }
 
   /// Send a control byte (e.g. `0x03` for Ctrl-C) as a stdin frame.
   bool sendControlByte(int byte) {

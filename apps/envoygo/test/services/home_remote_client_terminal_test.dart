@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// decode the JSON-RPC payload and assert the underlying PTY frame.
 class _FakeWebSocket implements WebSocketLike {
   final List<String> sent = [];
-  int _readyState = wsOpen;
+  int _readyState = wsConnecting;
 
   @override
   int get readyState => _readyState;
@@ -22,6 +22,20 @@ class _FakeWebSocket implements WebSocketLike {
   @override
   void close() {
     _readyState = wsClosed;
+  }
+
+  /// Simulate the transport finishing its handshake. The
+  /// `HomeRemoteClient` is waiting for `onOpen` to fire before it
+  /// resolves `ensureConnected()`.
+  void simulateOpen() {
+    _readyState = wsOpen;
+    onOpen?.call();
+  }
+
+  /// Simulate the home node sending the `connected` push event. The
+  /// client considers the session live only after this is delivered.
+  void simulateConnected() {
+    onMessage?.call(WsMessageEvent(jsonEncode({'event': 'connected'})));
   }
 
   @override
@@ -48,12 +62,36 @@ HomeRemoteClient _newClient(_FakeWebSocket fake) {
   );
 }
 
+Future<HomeRemoteClient> _connectedClient(_FakeWebSocket fake,
+    {int perCandidateTimeoutMs = 200}) async {
+  final client = HomeRemoteClient(HomeRemoteClientOptions(
+    resolveCandidates: () async => const [
+      HomeRemoteCandidate(name: 'test', url: 'ws://test'),
+    ],
+    createTransport: (_) async => fake,
+    perCandidateTimeoutMs: perCandidateTimeoutMs,
+    upgradeSweepMs: 0,
+    initialReconnectDelayMs: 1000,
+  ));
+  final future = client.ensureConnected();
+  // Let the constructor's timers and the createTransport call run
+  // before we fire `open` on the fake.
+  await Future<void>.delayed(Duration.zero);
+  fake.simulateOpen();
+  await future;
+  // The client treats the transport as fully usable only after the
+  // home's `connected` push event arrives.
+  fake.simulateConnected();
+  await Future<void>.delayed(Duration.zero);
+  return client;
+}
+
 void main() {
   group('HomeRemoteClient — terminal wire framing', () {
     test('sendTerminalFrame produces a valid [version, type, payload] frame',
-        () {
+        () async {
       final fake = _FakeWebSocket();
-      final client = _newClient(fake);
+      final client = await _connectedClient(fake);
 
       final payload = utf8.encode('ls -la\n');
       final frame =
@@ -75,9 +113,9 @@ void main() {
       expect(utf8.decode(bytes.sublist(2)), 'ls -la\n');
     });
 
-    test('sendTerminalInput writes a stdin frame via sendTerminalFrame', () {
+    test('sendTerminalInput writes a stdin frame via sendTerminalFrame', () async {
       final fake = _FakeWebSocket();
-      final client = _newClient(fake);
+      final client = await _connectedClient(fake);
       final result = client.sendTerminalInput('ls\n');
       expect(result.ok, isTrue);
       final params = jsonDecode(fake.sent.single) as Map<String, dynamic>;
@@ -89,9 +127,9 @@ void main() {
       expect(utf8.decode(bytes.sublist(2)), 'ls\n');
     });
 
-    test('sendTerminalResize encodes cols/rows as big-endian u16', () {
+    test('sendTerminalResize encodes cols/rows as big-endian u16', () async {
       final fake = _FakeWebSocket();
-      final client = _newClient(fake);
+      final client = await _connectedClient(fake);
 
       final result = client.sendTerminalResize(120, 40);
       expect(result.ok, isTrue);
@@ -133,9 +171,9 @@ void main() {
       expect(result.error, 'homeRemote.notConnected');
     });
 
-    test('sendTerminalFrame forwards sessionId when provided', () {
+    test('sendTerminalFrame forwards sessionId when provided', () async {
       final fake = _FakeWebSocket();
-      final client = _newClient(fake);
+      final client = await _connectedClient(fake);
       client.sendTerminalFrame(
         encodeTerminalFrame(TerminalWireType.stdin, Uint8List.fromList([0x41])),
         sessionId: 'sess-123',

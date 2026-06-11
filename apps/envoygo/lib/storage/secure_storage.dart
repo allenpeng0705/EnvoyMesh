@@ -15,6 +15,12 @@ class SecureStorage {
 
   SecureStorage._();
 
+  /// Test-only factory that returns a fresh, non-singleton instance.
+  /// Use from widget/unit tests to avoid cross-test pollution of the
+  /// singleton's storage backend.
+  @visibleForTesting
+  factory SecureStorage.test() = SecureStorage._;
+
   FlutterSecureStorage? _storage;
 
   FlutterSecureStorage get _ensureStorage {

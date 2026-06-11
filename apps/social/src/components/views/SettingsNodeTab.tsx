@@ -141,10 +141,7 @@ export function SettingsNodeTab() {
   const isPublicNetwork = bootstrapPresets.length > 0;
   const relays = (nodeConfig?.configuredRelays ?? []) as RelayConfig[];
 
-  // QR pairing state
-  const [pairingQR, setPairingQR] = useState<string | null>(null); // data URL
-  const [pairingUri, setPairingUri] = useState<string>("");
-  const [pairingLoading, setPairingLoading] = useState(false);
+  // QR pairing has moved to the top-bar QR icon (PairingQRModal); no in-tab state.
   const [wanJoinQr, setWanJoinQr] = useState<string | null>(null);
   const [wanJoinUri, setWanJoinUri] = useState<string>("");
   const [wanJoinLoading, setWanJoinLoading] = useState(false);
@@ -191,33 +188,6 @@ export function SettingsNodeTab() {
       setRevokingDeviceId(null);
     }
   }, [authorizedDevices, isMobileNode, nodeService, refreshAuthorizedDevices, t]);
-
-  const handleShowPairingQR = useCallback(async () => {
-    setPairingLoading(true);
-    try {
-      const payload = await nodeService.getPairingPayload();
-      // Build envoy://pair URI
-      const params = new URLSearchParams({ wsUrl: payload.wsUrl });
-      if (payload.lanWsUrl) params.set("lanWsUrl", payload.lanWsUrl);
-      if (payload.relayPeerId) params.set("relayPeerId", payload.relayPeerId);
-      if (payload.relayWsUrl) params.set("relayWsUrl", payload.relayWsUrl);
-      if (payload.agentPeerId) params.set("agentPeerId", payload.agentPeerId);
-      if (payload.agentPubKey) params.set("agentPubKey", payload.agentPubKey);
-      if (payload.agentName) params.set("agentName", payload.agentName);
-      if (payload.token) params.set("token", payload.token);
-      if (payload.ownerPublicKey) params.set("ownerPublicKey", payload.ownerPublicKey);
-      if (payload.ownerId) params.set("ownerId", payload.ownerId);
-      if (payload.homeNodePeerId) params.set("homeNodePeerId", payload.homeNodePeerId);
-      const uri = `envoy://pair?${params.toString()}`;
-      setPairingUri(uri);
-      const dataUrl = await QRCode.toDataURL(uri, { width: 256, margin: 1 });
-      setPairingQR(dataUrl);
-    } catch (e) {
-      console.error("Failed to generate pairing QR:", e);
-    } finally {
-      setPairingLoading(false);
-    }
-  }, [nodeService]);
 
   const handleShowWanJoinInvite = useCallback(async () => {
     setWanJoinLoading(true);
@@ -1704,45 +1674,7 @@ export function SettingsNodeTab() {
           </label>
         </div>
 
-        {/* Pairing QR for mobile app */}
-        <div style={{ marginTop: "12px" }}>
-          {!pairingQR ? (
-            <button
-              className="settings-button"
-              onClick={handleShowPairingQR}
-              disabled={pairingLoading}
-            >
-              {pairingLoading ? t("settings.network.agentBridge.generating") : t("settings.network.agentBridge.showPairingQr")}
-            </button>
-          ) : (
-            <div style={{ textAlign: "center" }}>
-              <img
-                src={pairingQR}
-                alt={t("settings.network.agentBridge.pairingQrAlt")}
-                style={{ width: 256, height: 256, border: "2px solid var(--border-color)", borderRadius: 8 }}
-              />
-              <p className="settings-hint" style={{ marginTop: 8, wordBreak: "break-all", fontSize: "0.75rem" }}>
-                {t("settings.network.agentBridge.scanToPair")}
-                <br />
-                <code style={{ fontSize: "0.65rem" }}>{pairingUri}</code>
-              </p>
-              <button
-                className="settings-button"
-                onClick={() => { void navigator.clipboard.writeText(pairingUri); }}
-                style={{ marginTop: 4 }}
-              >
-                {t("settings.network.agentBridge.copyUri")}
-              </button>
-              <button
-                className="settings-button"
-                onClick={() => setPairingQR(null)}
-                style={{ marginTop: 4, marginLeft: 4 }}
-              >
-                {t("settings.network.agentBridge.hideQr")}
-              </button>
-            </div>
-          )}
-        </div>
+        {/* Pairing QR for mobile app lives in the top-bar QR icon (PairingQRModal) */}
 
         {/* WAN join invite (Phase 15B) — bootstrap cold-start across NAT */}
         {!isMobileNode ? (

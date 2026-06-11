@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
@@ -12,6 +13,12 @@ class LocalDatabase {
   }
 
   LocalDatabase._();
+
+  /// Test-only factory that returns a fresh, non-singleton instance.
+  /// Use from widget/unit tests to avoid cross-test pollution of the
+  /// singleton's database handle.
+  @visibleForTesting
+  factory LocalDatabase.test() = LocalDatabase._;
 
   Database? _db;
   bool _initialized = false;

@@ -6,6 +6,7 @@ import { useInboxActivityCount } from "./hooks/useInboxActivityCount.js";
 import { ToastProvider } from "./hooks/useToast.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { Header } from "./components/Header.js";
+import { PairingQRModal } from "./components/PairingQRModal.js";
 import { SwipeBack } from "./components/SwipeBack.js";
 import { SetupView } from "./components/views/SetupView.js";
 import { ChatView } from "./components/views/ChatView.js";
@@ -183,6 +184,7 @@ export function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>("account");
   const [chatSelectedContact, setChatSelectedContact] = useState<string | null>(null);
   const [chatPanelMode, setChatPanelMode] = useState<ChatPanelMode>("threads");
+  const [pairingOpen, setPairingOpen] = useState(false);
 
   const isPublicNetwork = (nodeConfig?.bootstrapPresets ?? []).length > 0;
 
@@ -240,6 +242,7 @@ export function App() {
             peerId={peerId}
             relayUnreachable={isRelayUnreachable}
             onRetryConnect={handleRetryConnect}
+            onOpenPairing={() => setPairingOpen(true)}
           />
         </ErrorBoundary>
 
@@ -293,6 +296,7 @@ export function App() {
             )}
           </main>
         </ErrorBoundary>
+        {pairingOpen && <PairingQRModal onClose={() => setPairingOpen(false)} />}
       </div>
     </ToastProvider>
   );

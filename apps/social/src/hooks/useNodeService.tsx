@@ -1258,11 +1258,30 @@ export function useBonds() {
   const client = useNodeService();
   const wsOpen = useTransportWsOpen();
   const [bonds, setBonds] = useState<BondRecord[]>([]);
+  // Track our own ownerId so we can drop the self-bond (a satellite paired in
+  // shared-identity mode lands in our trust store as `peerOwnerId === self`).
+  const [selfOwnerId, setSelfOwnerId] = useState<string>("");
+
+  useEffect(() => {
+    if (!wsOpen || !client.isConnected) return;
+    let cancelled = false;
+    client.getProfile()
+      .then((prof) => { if (!cancelled) setSelfOwnerId(prof?.owner?.ownerId ?? ""); })
+      .catch(console.error);
+    return () => { cancelled = true; };
+  }, [client, wsOpen]);
 
   useEffect(() => {
     if (!wsOpen || !client.isConnected) return;
 
-    const refresh = () => client.getBonds().then(setBonds).catch(console.error);
+    const refresh = () =>
+      client.getBonds()
+        .then((all) => {
+          // Filter out the self-bond created by shared-identity pairing.
+          const so = selfOwnerId.trim();
+          setBonds(so ? all.filter((b) => b.peerOwnerId !== so) : all);
+        })
+        .catch(console.error);
 
     // Initial load
     refresh();
@@ -1279,7 +1298,7 @@ export function useBonds() {
       unsubRevoked();
       unsubHomeBonds();
     };
-  }, [client, wsOpen]);
+  }, [client, wsOpen, selfOwnerId]);
 
   return bonds;
 }

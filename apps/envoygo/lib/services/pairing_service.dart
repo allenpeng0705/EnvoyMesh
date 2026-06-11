@@ -26,6 +26,8 @@ class PairingService {
   /// Parse a pairing URI from the home node.
   ///
   /// Handles the format from `parseEnvoyPairUri` in the TypeScript codebase.
+  /// Empty values for optional parameters are normalized to `null` so
+  /// downstream code can treat absent and empty identically.
   static PairingData? parsePairingUri(String uri) {
     if (!uri.startsWith('envoy://pair')) return null;
 
@@ -41,20 +43,19 @@ class PairingService {
 
     // Prefer relayWsUrl (clean URL from QR) over wsUrl (has ?target=.&token=.).
     // relayWsUrl is the relay WebSocket endpoint without routing params.
-    final relayWsUrl =
-        parsed.queryParameters['relayWsUrl']?.trim() ?? wsUrl;
+    final relayWsUrl = _nullableTrim(parsed.queryParameters['relayWsUrl']) ?? wsUrl;
 
     return PairingData(
       token: token,
       wsUrl: wsUrl,
       relayWsUrl: relayWsUrl,
-      lanWsUrl: parsed.queryParameters['lanWsUrl']?.trim(),
-      ownerId: parsed.queryParameters['ownerId']?.trim(),
-      homeNodePeerId: parsed.queryParameters['homeNodePeerId']?.trim(),
-      agentPeerId: parsed.queryParameters['agentPeerId']?.trim(),
-      agentName: parsed.queryParameters['agentName']?.trim(),
-      relayPeerId: parsed.queryParameters['relayPeerId']?.trim(),
-      ownerPublicKey: parsed.queryParameters['ownerPublicKey']?.trim(),
+      lanWsUrl: _nullableTrim(parsed.queryParameters['lanWsUrl']),
+      ownerId: _nullableTrim(parsed.queryParameters['ownerId']),
+      homeNodePeerId: _nullableTrim(parsed.queryParameters['homeNodePeerId']),
+      agentPeerId: _nullableTrim(parsed.queryParameters['agentPeerId']),
+      agentName: _nullableTrim(parsed.queryParameters['agentName']),
+      relayPeerId: _nullableTrim(parsed.queryParameters['relayPeerId']),
+      ownerPublicKey: _nullableTrim(parsed.queryParameters['ownerPublicKey']),
     );
   }
 
@@ -69,6 +70,14 @@ class PairingService {
       sessionToken: result['sessionToken'] as String,
       ownerId: result['ownerId'] as String,
     );
+  }
+
+  /// Trim a query value, returning `null` for missing or empty-after-trim
+  /// entries. Lets callers treat `?foo=` the same as `?foo` or no `foo` at all.
+  static String? _nullableTrim(String? raw) {
+    if (raw == null) return null;
+    final trimmed = raw.trim();
+    return trimmed.isEmpty ? null : trimmed;
   }
 }
 
