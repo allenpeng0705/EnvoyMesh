@@ -254,14 +254,18 @@ void main() {
       expect(scrollView.scrollDirection, Axis.horizontal);
     });
 
-    testWidgets('Hide-keyboard button is the leftmost button', (tester) async {
+    testWidgets('Show-keyboard and Hide-keyboard buttons are on the left '
+        '(before the arrow keys)', (tester) async {
       // Regression: the keyboard-hide button used to be on the
       // right, where it could be off-screen on narrow phones
       // (and required scrolling the bar to reach). The user
       // asked for it to be on the left, always visible. We
-      // assert that it appears before the arrow keys in the
-      // soft bar's row by checking that its centre x is less
-      // than the Up arrow's centre x.
+      // then also added a Show-keyboard button (because the
+      // previous "tap the terminal to summon the keyboard"
+      // behaviour was removed — the hidden TextField that
+      // captured those taps also blocked the TerminalView's
+      // pan, making the terminal unscrollable). Both
+      // keyboard buttons are now the leftmost pair.
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -273,27 +277,34 @@ void main() {
           ),
         ),
       );
+      final showRect = tester.getRect(find.byTooltip('Show keyboard'));
       final hideRect = tester.getRect(find.byTooltip('Hide keyboard'));
       final upRect = tester.getRect(find.byTooltip('Up'));
       expect(
+        showRect.center.dx,
+        lessThan(upRect.center.dx),
+        reason: 'Show-keyboard must be on the left (x=${showRect.center.dx}) '
+            'so it is always visible without scrolling. '
+            'The Up arrow is at x=${upRect.center.dx}.',
+      );
+      expect(
         hideRect.center.dx,
         lessThan(upRect.center.dx),
-        reason: 'Hide-keyboard must be the leftmost button (x=${hideRect.center.dx}) '
-            'so it is always visible without scrolling the bar. '
+        reason: 'Hide-keyboard must be on the left (x=${hideRect.center.dx}) '
+            'so it is always visible without scrolling. '
             'The Up arrow is at x=${upRect.center.dx}.',
       );
     });
 
-    testWidgets('Scroll-up / scroll-down / jump-to-bottom buttons fire '
-        'their callbacks', (tester) async {
-      // The user needs a discoverable way to scroll through
-      // terminal history (long output, claude --help, etc.).
-      // The soft bar exposes three explicit buttons that
-      // bypass the pan gesture entirely. Each fires the
-      // matching callback exactly once per tap.
-      var scrollUpCount = 0;
-      var scrollDownCount = 0;
-      var jumpCount = 0;
+    testWidgets('Show-keyboard button fires onShowKeyboard when set',
+        (tester) async {
+      // The terminal's only path to the OS keyboard is via this
+      // soft-bar button. We used to summon the keyboard by
+      // tapping the terminal area, but the hidden TextField
+      // that captured those taps also blocked the TerminalView's
+      // pan gesture, making the terminal unscrollable. The
+      // soft-bar button is the explicit, discoverable path.
+      var showCount = 0;
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -302,49 +313,38 @@ void main() {
               height: 60,
               child: TerminalInputBar(
                 onKey: (_) {},
-                onScrollUp: () => scrollUpCount++,
-                onScrollDown: () => scrollDownCount++,
-                onJumpToBottom: () => jumpCount++,
-                canJumpToBottom: true,
+                onShowKeyboard: () => showCount++,
               ),
             ),
           ),
         ),
       );
-      await tester.tap(find.byTooltip('Scroll up (history)'));
-      await tester.tap(find.byTooltip('Scroll down (history)'));
-      await tester.tap(find.byTooltip('Jump to bottom (live view)'));
-      expect(scrollUpCount, 1);
-      expect(scrollDownCount, 1);
-      expect(jumpCount, 1);
+      final showButton = find.byTooltip('Show keyboard');
+      expect(showButton, findsOneWidget);
+      await tester.tap(showButton);
+      expect(showCount, 1);
     });
 
-    testWidgets('Jump-to-bottom button is disabled when canJumpToBottom=false',
+    testWidgets('Show-keyboard button is a no-op when callback is null',
         (tester) async {
-      // When the user is at the live view (yDisplacement == 0),
-      // jump-to-bottom would be a no-op. Disable the button so
-      // the user understands they're already at the bottom.
-      var jumpCount = 0;
+      // The button must still render when the screen doesn't
+      // pass onShowKeyboard (defensive — keeps the bar usable
+      // in any context).
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: SizedBox(
               width: 800,
               height: 60,
-              child: TerminalInputBar(
-                onKey: (_) {},
-                onJumpToBottom: () => jumpCount++,
-                // canJumpToBottom defaults to false
-              ),
+              child: TerminalInputBar(onKey: (_) {}),
             ),
           ),
         ),
       );
-      final jumpButton = find.byTooltip('Jump to bottom (live view)');
-      // Tapping an InkResponse with onPressed=null is a no-op.
-      await tester.tap(jumpButton);
-      expect(jumpCount, 0,
-          reason: 'Jump-to-bottom is a no-op when already at the bottom.');
+      final showButton = find.byTooltip('Show keyboard');
+      expect(showButton, findsOneWidget);
+      // Tapping it does not throw.
+      await tester.tap(showButton);
     });
   });
 }

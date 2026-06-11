@@ -30,25 +30,34 @@ class TerminalInputBar extends StatefulWidget {
   /// screen wires this up to call `FocusScope.of(context).unfocus()`.
   final VoidCallback? onHideKeyboard;
 
-  /// Called when the user taps the "Scroll up" button. The
-  /// screen wires this up to call `terminalView.scrollUp(n)`.
-  /// The bar is in charge of the icon and tap; the screen
-  /// decides how many lines to scroll.
-  final VoidCallback? onScrollUp;
+  /// Called when the user taps the keyboard-show button. The
+  /// screen wires this up to call
+  /// `_focusNode.requestFocus()`. The terminal used to summon
+  /// the keyboard by tapping the terminal area, but the hidden
+  /// TextField that captured those taps also blocked the
+  /// TerminalView's pan gesture, making the terminal
+  /// unscrollable. The keyboard-show button is now the only
+  /// way to summon the device keyboard.
+  final VoidCallback? onShowKeyboard;
 
-  /// Called when the user taps the "Scroll down" button. The
-  /// screen wires this up to call `terminalView.scrollDown(n)`.
-  final VoidCallback? onScrollDown;
-
-  /// Called when the user taps the "Jump to bottom" button. The
-  /// screen wires this up to call `terminalView.jumpToBottom()`.
-  /// Only shown when `canJumpToBottom` is true (i.e. the user
-  /// has scrolled into the scrollback).
+  /// Note: as of the simpler-UI pass, the soft bar no longer
+  /// renders Scroll up / Scroll down / Bottom buttons. The
+  /// AppBar still has a "Jump to bottom" button (which uses
+  /// this callback) for users who scrolled into the scrollback
+  /// and want to return to the live view. The AppBar
+  /// visibility is conditional on `_yDisplacement > 0`; we
+  /// pass `canJumpToBottom` so the screen can drive the
+  /// highlight state.
   final VoidCallback? onJumpToBottom;
 
   /// Whether the jump-to-bottom button should be shown / enabled.
   /// Set by the screen based on `_yDisplacement > 0`.
   final bool canJumpToBottom;
+
+  // Removed (kept for API stability): onScrollToTop, onPageUp,
+  // onPageDown, onScrollUp, onScrollDown. The simpler UI
+  // (per the user) keeps only the AppBar "Jump to bottom"
+  // affordance plus the pan-to-scroll gesture.
 
   /// Whether the bar should be visually disabled (e.g. when the
   /// PTY is reconnecting). Taps are still received but the
@@ -62,8 +71,7 @@ class TerminalInputBar extends StatefulWidget {
     this.onCopy,
     this.onPaste,
     this.onHideKeyboard,
-    this.onScrollUp,
-    this.onScrollDown,
+    this.onShowKeyboard,
     this.onJumpToBottom,
     this.canJumpToBottom = false,
     this.enabled = true,
@@ -126,13 +134,19 @@ class _TerminalInputBarState extends State<TerminalInputBar> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Hide the OS keyboard. Pinned to the LEFT so it's
-            // always visible (rightmost buttons are easy to
-            // miss on narrow phones, and an explicit dismissal
-            // is the most common "I'm done" gesture). The bar
-            // starts at scroll offset 0 by default, so the
-            // leftmost position guarantees no scrolling is
-            // required to reach this button.
+            // Show / hide the OS keyboard. Both buttons are on
+            // the LEFT so they're always visible without
+            // scrolling the bar. We removed the previous
+            // "tap the terminal area to summon the keyboard"
+            // behaviour because the hidden TextField that
+            // captured those taps also blocked the
+            // TerminalView's pan gesture — see the Offstage
+            // TextField in the screen.
+            _barButton(
+              icon: Icons.keyboard_outlined,
+              tooltip: 'Show keyboard',
+              onPressed: widget.onShowKeyboard,
+            ),
             _barButton(
               icon: Icons.keyboard_hide_outlined,
               tooltip: 'Hide keyboard',
@@ -159,38 +173,6 @@ class _TerminalInputBarState extends State<TerminalInputBar> {
               icon: Icons.keyboard_arrow_right,
               tooltip: 'Right',
               onPressed: () => _sendKey('\x1B[C'),
-            ),
-            const SizedBox(width: 12),
-            // Scrollback controls. These scroll the terminal's
-            // own scrollback buffer (the local view) rather than
-            // sending escape sequences to the TUI. They're the
-            // most reliable way to reach earlier output for any
-            // terminal session — long shell output, `claude
-            // --help`, history review — and they don't depend on
-            // the pan gesture being recognised on every swipe.
-            //
-            // `Icons.expand_less` / `expand_more` show the
-            // direction; `Icons.vertical_align_bottom` is the
-            // "jump to bottom" (live view) button. The bottom
-            // button is enabled only when the user has scrolled
-            // away from the bottom (`canJumpToBottom`).
-            _barButton(
-              icon: Icons.expand_less,
-              tooltip: 'Scroll up (history)',
-              onPressed: widget.onScrollUp,
-            ),
-            _barButton(
-              icon: Icons.expand_more,
-              tooltip: 'Scroll down (history)',
-              onPressed: widget.onScrollDown,
-            ),
-            _barButton(
-              icon: Icons.vertical_align_bottom,
-              tooltip: 'Jump to bottom (live view)',
-              highlight: widget.canJumpToBottom,
-              onPressed: widget.canJumpToBottom
-                  ? widget.onJumpToBottom
-                  : null,
             ),
             const SizedBox(width: 12),
             // Tab / Esc.

@@ -43,7 +43,7 @@ class TerminalDetailScreen extends ConsumerStatefulWidget {
 class _TerminalDetailScreenState
     extends ConsumerState<TerminalDetailScreen> {
   TerminalService? _terminalService;
-  final _terminalKey = GlobalKey<State<TerminalView>>();
+  final _terminalKey = GlobalKey<TerminalViewState>();
   bool _attached = false;
 
   /// True when the home tunnel is reachable. Drives the AppBar
@@ -264,6 +264,19 @@ class _TerminalDetailScreenState
   /// terminal area calls [_onTapTerminalArea] which requests
   /// focus only if the keyboard is currently hidden.
   ///
+  /// Summon the OS keyboard. Called from the soft bar's
+  /// "Show keyboard" button — the only path to the keyboard,
+  /// because the previous "tap the terminal area to summon"
+  /// behaviour had to be removed (the hidden TextField that
+  /// captured those taps also blocked the TerminalView's pan
+  /// gesture, making the terminal unscrollable).
+  void _showKeyboard() {
+    // Synchronous focus request — the OS dismisses no keyboard
+    // in this path (we are SHOWING, not toggling), so there is
+    // no animation to race.
+    _focusNode.requestFocus();
+  }
+
   /// If the user is currently scrolled up into the scrollback,
   /// also snap to the bottom (live view). This is the standard
   /// terminal UX — a tap is the most natural way to "return to
@@ -285,29 +298,14 @@ class _TerminalDetailScreenState
 
   /// Called by the terminal view on a single tap. The
   /// behaviour depends on whether the OS keyboard is currently
-  /// up:
-  ///   - keyboard up  → dismiss it (the user is signalling
-  ///     "I'm done typing, show me the terminal").
-  ///   - keyboard down → request focus so the keyboard
-  ///     re-summons. This is how the user gets the keyboard
-  ///     back after explicit dismissal.
-  ///   - user scrolled up into scrollback → also snap to
-  ///     the bottom, so the tap is the natural "return to
-  ///     live view" gesture.
+  /// Up: dismissed (no longer used; the terminal handles its
+  /// own gestures via raw pointer events, and the keyboard
+  /// dismiss is on the soft bar's Hide keyboard button). Kept
+  /// here as a no-op stub so the wiring compiles if someone
+  /// later re-introduces tap-to-toggle-keyboard with a more
+  /// reliable gesture (e.g. double-tap).
   void _onTapTerminalArea() {
-    final state = _terminalKey.currentState;
-    if (state != null && _yDisplacement > 0) {
-      (state as dynamic).jumpToBottom();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        setState(() => _yDisplacement = 0);
-      });
-    }
-    if (_focusNode.hasFocus) {
-      FocusScope.of(context).unfocus();
-    } else {
-      _focusNode.requestFocus();
-    }
+    // Intentionally empty.
   }
 
   /// Forward raw bytes from the soft keyboard bar.
@@ -315,33 +313,15 @@ class _TerminalDetailScreenState
     _terminalService?.sendKey(bytes);
   }
 
-  /// Scroll the local view up by ~1/3 of a screen. Triggered by
-  /// the soft bar's "Scroll up" button. We use a fraction rather
-  /// than a fixed line count so the amount matches whatever
-  /// screen size the user is on.
-  void _onScrollUpBar() {
+  /// Snap the local view to the bottom (live view). Called by
+  /// the AppBar's "Jump to bottom" button (the only remaining
+  /// scrollback-navigation affordance besides the pan gesture
+  /// itself — the soft bar no longer has explicit scroll
+  /// buttons, per the simpler-UI pass).
+  void _onJumpToBottom() {
     final state = _terminalKey.currentState;
     if (state == null) return;
-    final jump = (state as dynamic).rows ~/ 3;
-    (state as dynamic).scrollUp(jump < 1 ? 1 : jump);
-  }
-
-  /// Scroll the local view down by ~1/3 of a screen.
-  void _onScrollDownBar() {
-    final state = _terminalKey.currentState;
-    if (state == null) return;
-    final jump = (state as dynamic).rows ~/ 3;
-    (state as dynamic).scrollDown(jump < 1 ? 1 : jump);
-  }
-
-  /// Snap the local view to the bottom (live view). The same
-  /// callback as the AppBar's "Jump to bottom" button, but
-  /// reachable from the soft bar so the user doesn't have to
-  /// reach up to the AppBar.
-  void _onJumpToBottomBar() {
-    final state = _terminalKey.currentState;
-    if (state == null) return;
-    (state as dynamic).jumpToBottom();
+    state.jumpToBottom();
     setState(() => _yDisplacement = 0);
   }
 
@@ -417,12 +397,7 @@ class _TerminalDetailScreenState
         actions: [
           if (_yDisplacement > 0)
             TextButton.icon(
-              onPressed: () {
-                final state = _terminalKey.currentState;
-                if (state != null) {
-                  (state as dynamic).jumpToBottom();
-                }
-              },
+              onPressed: _onJumpToBottom,
               icon: const Icon(Icons.arrow_downward, size: 16),
               label: const Text('Jump to bottom'),
             ),
@@ -469,6 +444,14 @@ class _TerminalDetailScreenState
                     // LayoutBuilder) and reports them to us via
                     // `onDimensionsChanged`, which we forward to
                     // the home PTY.
+                    //
+                    // The TerminalView MUST be the topmost
+                    // interactive widget in the Stack — putting
+                    // the hidden TextField on top would steal
+                    // every pointer event (the TextField's own
+                    // drag-to-select handler would win instead
+                    // of the TerminalView's pan). See the
+                    // Offstage TextField below.
                     Align(
                       alignment: Alignment.topCenter,
                       child: TerminalView(
@@ -477,50 +460,35 @@ class _TerminalDetailScreenState
                         onScrollbackOffsetChanged:
                             _onScrollbackOffsetChanged,
                         onDimensionsChanged: _onDimensionsChanged,
-                        // Tap on the terminal area toggles
-                        // the OS keyboard: dismisses if it's
-                        // up, re-summons if it's down. Also
-                        // snaps to the bottom if the user was
-                        // scrolled into the scrollback. Long
-                        // press still starts a selection
-                        // (handled inside the view).
                         onTap: _onTapTerminalArea,
-                      ),
-                    ),
-                    // Hidden TextField as the device-keyboard
-                    // focus target. Visually invisible, but
-                    // tap-to-focus still works because it
-                    // fills the parent. The TerminalView's
-                    // GestureDetector receives the touch first
-                    // (it's on top in z-order via the Align),
-                    // and the TextField is here primarily so
-                    // the OS keyboard is summoned on tap.
-                    //
-                    // `textInputAction: TextInputAction.send`
-                    // ensures the Enter key on the OS keyboard
-                    // does NOT auto-dismiss the keyboard after
-                    // submit (which is the default behaviour
-                    // for `maxLines: 1` + `done`).
-                    Positioned.fill(
-                      child: Opacity(
-                        opacity: 0.0,
-                        child: TextField(
-                          controller: _textController,
-                          focusNode: _focusNode,
-                          autofocus: true,
-                          autocorrect: false,
-                          enableSuggestions: false,
-                          enableIMEPersonalizedLearning: false,
-                          keyboardType: TextInputType.visiblePassword,
-                          maxLines: 1,
-                          textInputAction: TextInputAction.send,
-                          onChanged: _onTextChanged,
-                          onSubmitted: _onTextSubmitted,
-                        ),
                       ),
                     ),
                   ],
                 ),
+              ),
+            ),
+            // Hidden TextField as the device-keyboard focus
+            // target. It must NOT be in the visible Stack —
+            // an invisible-but-interactive TextField captures
+            // every pointer event, blocking the TerminalView's
+            // pan. We use `Offstage` (zero-size, no painting)
+            // to keep the field alive in the tree so its
+            // FocusNode still works, while not stealing any
+            // touches. The keyboard is summoned via the soft
+            // bar's "Show keyboard" button (which calls
+            // _focusNode.requestFocus()).
+            Offstage(
+              child: TextField(
+                controller: _textController,
+                focusNode: _focusNode,
+                autocorrect: false,
+                enableSuggestions: false,
+                enableIMEPersonalizedLearning: false,
+                keyboardType: TextInputType.visiblePassword,
+                maxLines: 1,
+                textInputAction: TextInputAction.send,
+                onChanged: _onTextChanged,
+                onSubmitted: _onTextSubmitted,
               ),
             ),
             // Soft keyboard bar above the device keyboard.
@@ -530,17 +498,11 @@ class _TerminalDetailScreenState
               onCopy: _onCopy,
               onPaste: _onPaste,
               onHideKeyboard: _hideKeyboard,
-              // Scrollback controls. Tapping scroll-up / scroll-
-              // down moves through the local view's scrollback by
-              // a third of a screen at a time. Jump-to-bottom
-              // returns to the live view (the cursor's position).
-              // canJumpToBottom mirrors the AppBar's visibility
-              // condition so the soft bar's button shows the
-              // same affordance.
-              onScrollUp: _onScrollUpBar,
-              onScrollDown: _onScrollDownBar,
-              onJumpToBottom: _onJumpToBottomBar,
-              canJumpToBottom: _yDisplacement > 0,
+              onShowKeyboard: _showKeyboard,
+              // The soft bar no longer has scroll controls —
+              // scrollback navigation is now the pan gesture on
+              // the terminal area plus the AppBar's "Jump to
+              // bottom" button. See the simpler-UI pass.
               enabled: _tunnelUp && _attached,
             ),
           ],

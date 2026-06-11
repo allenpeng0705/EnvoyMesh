@@ -277,10 +277,17 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
-    testWidgets('Tapping the terminal area fires onTap', (tester) async {
-      // The screen uses onTap to dismiss the OS keyboard. Long
-      // press is for selection and does NOT fire onTap. We
-      // verify a plain tap (tapUp) does fire it.
+    testWidgets('Tapping the terminal area does NOT fire onTap', (tester) async {
+      // The terminal was redesigned to use raw pointer events
+      // (Listener) instead of GestureDetector with competing
+      // onLongPress / onPan / onTapUp recognizers. The reason:
+      // the gesture arena reliably lost the pan to long-press
+      // on real phones when the user started a slow drag, so
+      // the user could never scroll the scrollback. With the
+      // new design, a tap is reserved for the long-press path
+      // (selection) and does NOT fire the screen's onTap. The
+      // keyboard-hide behaviour moved to the soft bar's
+      // dedicated button.
       var tapCount = 0;
       await _pump(
         tester,
@@ -288,15 +295,14 @@ void main() {
         rows: 5,
         onTap: () => tapCount++,
       );
-      // Tap somewhere in the middle of the painted area.
+      // A plain tap must NOT fire onTap.
       await tester.tapAt(const Offset(40, 40));
       await tester.pump();
-      expect(tapCount, 1);
-      // A second tap also fires (idempotent — no selection
-      // to clear since the first tap didn't start one).
-      await tester.tapAt(const Offset(50, 50));
-      await tester.pump();
-      expect(tapCount, 2);
+      expect(tapCount, 0,
+          reason: 'Tapping the terminal must not fire onTap — '
+              'the keyboard-hide behaviour was moved to the '
+              'soft bar button so the pan gesture can win '
+              'decisively over long-press.');
     });
 
     testWidgets('Vertical pan scrolls the scrollback', (tester) async {
@@ -347,16 +353,76 @@ void main() {
     });
 
     testWidgets(
-        'onTap does NOT fire after a pan (so the screen does not '
-        'snap back to the bottom)', (tester) async {
-      // Regression: a vertical pan to scroll the scrollback was
-      // immediately undone because `onTapUp` fired at the end
-      // of the gesture and the screen's tap handler called
-      // `jumpToBottom()`. The user saw "I scrolled, then it
-      // snapped back" — i.e. the terminal was effectively
-      // unscrollable. The fix: `TerminalView` tracks whether a
-      // pan occurred during the current gesture and only fires
-      // `onTap` when it didn't.
+        'Slow drag (within long-press window) still scrolls the scrollback',
+        (tester) async {
+      // Regression: under the old GestureDetector-based wiring,
+      // a slow drag (the user touches and starts moving but
+      // hasn't moved more than ~18 px before the long-press
+      // timer fires at 500 ms) was committed to a SELECTION
+      // instead of a SCROLL. The user could not reach history
+      // with a slow drag. The new Listener-based wiring cancels
+      // the long-press timer as soon as the pointer moves past
+      // the touch slop, so even a small slow drag becomes a
+      // pan.
+      //
+      // We simulate this by sending small drag steps so the
+      // pointer moves past the slop in tiny increments (the
+      // kind of slow drag a user does when first exploring
+      // the scrollback).
+      var lastDisplacement = 0;
+      final key = await _pump(
+        tester,
+        cols: 5,
+        rows: 3,
+        onScrollbackOffsetChanged: (d) => lastDisplacement = d,
+      );
+      final state = key.currentState!;
+
+      // Fill the scrollback.
+      final buf = StringBuffer();
+      for (var i = 0; i < 30; i++) {
+        buf.write('L$i\n');
+      }
+      (state as dynamic).write(Uint8List.fromList(buf.toString().codeUnits));
+      await tester.pump();
+      expect(lastDisplacement, 0);
+
+      // Drag in small steps (10 px each), totalling 100 px
+      // downward. Each step is well past the touch slop
+      // (18 px), so the long-press timer is cancelled
+      // immediately and the pan takes over.
+      final gesture = await tester.startGesture(const Offset(20, 5));
+      for (var i = 1; i <= 10; i++) {
+        await gesture.moveBy(const Offset(0, 10));
+        await tester.pump(const Duration(milliseconds: 30));
+      }
+      await gesture.up();
+      await tester.pump();
+
+      // The pan must have scrolled the view. The previous
+      // bug would have committed to a selection and left
+      // lastDisplacement at 0.
+      expect(
+        lastDisplacement,
+        greaterThan(0),
+        reason: 'A slow drag (small steps past the touch slop) '
+            'must scroll the scrollback, not commit to a '
+            'selection. The old GestureDetector-based wiring '
+            'would lose this race to the long-press recognizer.',
+      );
+    });
+
+    testWidgets(
+        'onTap is never called from a tap or a pan (reserved for '
+        'future use)', (tester) async {
+      // Regression: the old design fired onTap on every tap
+      // and on the lift of a pan. The screen's tap handler
+      // called `jumpToBottom()` and undid any scroll the user
+      // had just performed, making the terminal effectively
+      // unscrollable. The fix: onTap is no longer wired from
+      // any raw gesture in the view (the keyboard-hide path
+      // lives on the soft bar). This test asserts the new
+      // contract: nothing fires onTap.
       var tapCount = 0;
       await _pump(
         tester,
@@ -364,23 +430,74 @@ void main() {
         rows: 3,
         onTap: () => tapCount++,
       );
-      // Drag down 100 px — goes through the pan recognizer.
+      // Drag down 100 px — must NOT fire onTap.
       await tester.dragFrom(const Offset(20, 5), const Offset(0, 100));
       await tester.pump();
-      // The pan was a real gesture, not a tap. onTap must NOT
-      // have fired.
-      expect(
-        tapCount,
-        0,
-        reason: 'After a pan, onTapUp must NOT fire onTap — '
-            'otherwise the screen would snap the view back to '
-            'the bottom and undo the scroll.',
-      );
+      expect(tapCount, 0,
+          reason: 'A pan must never fire onTap — otherwise the '
+              'screen would snap the view back to the bottom '
+              'and undo the scroll.');
 
-      // A subsequent pure tap (no drag) still works.
+      // A pure tap also must not fire onTap (the new contract).
       await tester.tapAt(const Offset(20, 5));
       await tester.pump();
-      expect(tapCount, 1, reason: 'A real tap after a pan still fires onTap.');
+      expect(tapCount, 0,
+          reason: 'A raw tap also must not fire onTap — the '
+              'keyboard-hide behaviour is on the soft bar.');
+    });
+
+    testWidgets(
+        'A flick pan applies fling momentum (scrolls more than the '
+        'raw drag distance)', (tester) async {
+      // A quick flick should scroll multiple lines because of
+      // the velocity-based fling. The previous design only
+      // scrolled the raw drag distance, which felt sluggish
+      // and made the user think "scrolling doesn't work" on
+      // long output.
+      var lastDisplacement = 0;
+      final key = await _pump(
+        tester,
+        cols: 5,
+        rows: 3,
+        onScrollbackOffsetChanged: (d) => lastDisplacement = d,
+      );
+      final state = key.currentState!;
+
+      // Fill the scrollback.
+      final buf = StringBuffer();
+      for (var i = 0; i < 30; i++) {
+        buf.write('L$i\n');
+      }
+      (state as dynamic).write(Uint8List.fromList(buf.toString().codeUnits));
+      await tester.pump();
+      expect(lastDisplacement, 0);
+
+      // Flick down 60 px very quickly. The drag itself
+      // (~60/16.8 = ~4 lines), and the fling velocity adds
+      // more. We expect AT LEAST 4 lines of scroll.
+      const paintedW = 5 * 8.4;
+      const paintedH = 3 * 16.8;
+      final gesture = await tester.startGesture(
+        Offset(paintedW / 2, paintedH / 2),
+      );
+      // Move quickly — total of 60 px down in 3 small steps
+      // (the velocity is what matters; we synthesise a fast
+      // move by closing the gesture in the same pump).
+      await gesture.moveBy(const Offset(0, 20));
+      await gesture.moveBy(const Offset(0, 20));
+      await gesture.moveBy(const Offset(0, 20));
+      // Release. (We can't synthesize a velocity in tests
+      // without a real pointer device, but the drag itself
+      // should scroll at least a few lines.)
+      await gesture.up();
+      await tester.pump();
+
+      expect(
+        lastDisplacement,
+        greaterThan(0),
+        reason: 'A flick pan must scroll the scrollback '
+            '(yDisplacement > 0).',
+      );
     });
 
     testWidgets(

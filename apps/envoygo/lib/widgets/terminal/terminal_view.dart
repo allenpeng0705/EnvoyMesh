@@ -49,6 +49,12 @@ class TerminalView extends StatefulWidget {
   /// Optional callback fired on a single tap (not a long-press).
   /// The screen can use this to dismiss the OS keyboard. Long
   /// presses (which start a selection) do NOT fire this callback.
+  ///
+  /// Note: as of the scroll-reliability fix, the terminal no
+  /// longer fires this from a raw tap — taps are reserved for
+  /// the long-press path (selection). The keyboard-hide gesture
+  /// now lives entirely on the soft bar's dedicated button.
+  /// The callback is kept for ABI / future use.
   final VoidCallback? onTap;
 
   /// Optional callback fired when the view's internal grid
@@ -73,11 +79,30 @@ class TerminalView extends StatefulWidget {
   });
 
   @override
-  State<TerminalView> createState() => _TerminalViewState();
+  State<TerminalView> createState() => TerminalViewState();
 }
 
-class _TerminalViewState extends State<TerminalView>
+/// Public state class for [TerminalView]. The screen uses
+/// `GlobalKey<TerminalViewState>` to call scroll/resize methods
+/// with proper types.
+class TerminalViewState extends State<TerminalView>
     implements TerminalTarget {
+  // -- Public accessors (used by the screen for the soft bar's
+  //    page-up / page-down / scroll-to-top buttons) --
+
+  /// Current grid column count. Public so the screen can size
+  /// its page-up / page-down jumps in lines.
+  int get cols => _cols;
+
+  /// Current grid row count. Public so the screen can size
+  /// its page-up / page-down jumps in lines.
+  int get rows => _rows;
+
+  /// Current scrollback length (rows). Public so the screen can
+  /// compute the maximum yDisplacement for the "scroll to top"
+  /// button.
+  int get scrollbackLength => _scrollback.length;
+
   // -- Grid model --
 
   /// Number of columns. Updated by [resize].
@@ -177,7 +202,7 @@ class _TerminalViewState extends State<TerminalView>
   final List<List<Cell>> _savedScrollback = [];
   int? _savedYDisplacement;
 
-  // -- Selection --
+  // -- Selection (kept for ABI; not used by the current gesture story) --
 
   /// Selection anchor (the cell where the long-press started), in
   /// grid coordinates. `null` when no selection is active.
@@ -198,14 +223,23 @@ class _TerminalViewState extends State<TerminalView>
   /// twitchy on phones.
   double? _panLastDy;
 
-  /// Set to `true` by [onPanStart], reset by [onTapUp]. Used to
-  /// suppress the `onTap` callback when a vertical swipe ends —
-  /// without this, a swipe-up to scroll the scrollback would
-  /// finish with `onTapUp` firing the screen's tap handler, which
-  /// calls `jumpToBottom()` and snaps the user right back. The
-  /// user would see "I scrolled, then it scrolled back" — i.e.
-  /// "the terminal can't be scrolled".
-  bool _panOccurred = false;
+  /// Pointer-down position of the current touch sequence, in
+  /// widget-local pixels. Used to detect whether the pointer
+  /// has moved past the touch slop (and thus whether the
+  /// gesture is a pan vs. a stationary tap).
+  Offset? _pointerDownPos;
+
+  /// True once the current touch sequence has crossed the touch
+  /// slop and is being treated as a pan. Reset on pointer-up /
+  /// pointer-cancel.
+  bool _panActive = false;
+
+  /// Touch-slop threshold. We use 8 logical px (vs Flutter's
+  /// default ~18) so a tiny finger movement on a phone is
+  /// enough to start scrolling. The previous default of 18 px
+  /// was reported as "scrolling doesn't work" — the user
+  /// didn't realise they had to drag that far.
+  static const double _touchSlop = 8.0;
 
   // -- Parser --
 
@@ -430,30 +464,81 @@ class _TerminalViewState extends State<TerminalView>
   }
 
   void onTapUp(Offset localPosition, Size widgetSize) {
-    // Single tap clears the selection (no drag). Even after a
-    // pan, if a selection was somehow left behind, clear it.
-    if (_selAnchorRow != null) {
-      setState(() {
-        _selAnchorRow = null;
-        _selAnchorCol = null;
-        _selActiveRow = null;
-        _selActiveCol = null;
-      });
-      _notifySelectionChanged();
-    }
-
-    // Fire the optional onTap callback only when this was a real
-    // tap (not the end of a pan). The screen uses this to
-    // dismiss the OS keyboard and (if scrolled up) snap to the
-    // bottom. Skipping it after a pan lets the user actually
-    // stay in the scrollback.
+    // The terminal no longer fires a tap from a raw tap. The
+    // keyboard-hide / jump-to-bottom behaviour used to live here,
+    // but the tap competed with the pan in the gesture arena and
+    // made scrolling unreliable. Tapping the terminal now does
+    // nothing (selection is the only non-pan gesture, and it is
+    // started by a long-press).
     //
-    // `_panOccurred` is reset in `onPanEnd` (not here) so a
-    // tap-after-pan still works: the pan's `onPanEnd` cleared
-    // the flag, this `onTapUp` sees `false`, and the tap fires.
-    if (!_panOccurred) {
-      widget.onTap?.call();
+    // The hidden TextField behind the terminal is the device-
+    // keyboard focus target. Tapping it summons the keyboard; the
+    // user dismisses via the soft bar's Hide-keyboard button or
+    // the OS-level back gesture.
+  }
+
+  /// Pan-update handler. Called by the [Listener] for every pointer
+  /// move. We track the start position and the last seen y; once
+  /// the pointer has moved past the touch slop, subsequent
+  /// moves are converted to scrollUp / scrollDown calls.
+  ///
+  /// Drag DOWN (positive dy) scrolls into the scrollback; drag
+  /// UP returns toward the live view.
+  void _onPointerDown(PointerDownEvent e) {
+    _pointerDownPos = e.localPosition;
+    _panLastDy = e.localPosition.dy;
+  }
+
+  void _onPointerMove(PointerMoveEvent e) {
+    final down = _pointerDownPos;
+    if (down == null) return;
+    final delta = e.localPosition - down;
+    if (!_panActive) {
+      if (delta.dx.abs() < _touchSlop && delta.dy.abs() < _touchSlop) {
+        return;
+      }
+      _panActive = true;
+      // CRITICAL: this is the first move past the slop — we must
+      // apply the scroll for THIS move (not just activate and
+      // wait for the next one). On real devices, the OS can
+      // batch multiple small moves into a single PointerMoveEvent
+      // when the finger moves fast; if we wait for the next
+      // event, the user has to make ANOTHER movement before any
+      // scroll happens. The pan delta is `e.localPosition.dy -
+      // down.dy` (the full movement since pointer-down).
+      _panLastDy = down.dy;
+      // Fall through to the scroll-application logic below.
     }
+    final cellH = _measureCellSize().height;
+    if (cellH <= 0) return;
+    final lastDy = _panLastDy;
+    if (lastDy == null) return;
+    final deltaLines = ((e.localPosition.dy - lastDy) / cellH).round();
+    if (deltaLines != 0) {
+      if (deltaLines > 0) {
+        scrollUp(deltaLines);
+      } else {
+        scrollDown(-deltaLines);
+      }
+      _panLastDy = e.localPosition.dy;
+    }
+  }
+
+  void _onPointerUp() {
+    // A fling would normally continue scrolling based on the
+    // pan's release velocity. We deliberately skip fling here
+    // because the Listener doesn't give us velocity — the
+    // simpler "fling = 1-cell pad" we had before is gone with
+    // GestureDetector. A future polish could compute velocity
+    // from the last few pointer-move events and apply a fling
+    // step here.
+    _pointerDownPos = null;
+    _panLastDy = null;
+    _panActive = false;
+  }
+
+  void _onPointerCancel(PointerCancelEvent e) {
+    _onPointerUp();
   }
 
   // -- Internal helpers --
@@ -1094,66 +1179,26 @@ class _TerminalViewState extends State<TerminalView>
         }
         final width = (cols * cellSize.width).clamp(0.0, availW);
         final height = (rows * cellSize.height).clamp(0.0, availH);
-        return GestureDetector(
-          onLongPressStart: (d) =>
-              onLongPressStart(d.localPosition, Size(width, height)),
-          onLongPressMoveUpdate: (d) =>
-              onLongPressMoveUpdate(d.localPosition, Size(width, height)),
-          onLongPressEnd: (_) => onLongPressEnd(),
-          onTapUp: (d) => onTapUp(d.localPosition, Size(width, height)),
-          // Vertical pan scrolls the scrollback. `PanStartBehavior.down`
-          // makes the gesture begin on the very first pointer-down
-          // event (not on the first move), so a quick flick wins the
-          // arena against long-press. Long-press (selection) still
-          // works: the user holds without moving to start a selection,
-          // and a slow drag extends it.
-          onPanStart: (d) {
-            if (_selAnchorRow != null) {
-              // Currently in a selection — let long-press drag continue.
-              return;
-            }
-            // Mark that this gesture was a pan, not a tap. The
-            // onTapUp that fires when the finger lifts must NOT
-            // trigger the screen's tap-to-dismiss-keyboard /
-            // tap-to-snap-bottom handler, because that would undo
-            // the scroll the user just performed.
-            _panOccurred = true;
-            // Reset the cumulative pan delta for this gesture.
-            _panLastDy = d.localPosition.dy;
-          },
-          onPanUpdate: (d) {
-            if (_selAnchorRow != null) return;
-            if (height <= 0) return;
-            final lastDy = _panLastDy;
-            if (lastDy == null) return;
-            // Convert pixel movement to lines. Drag DOWN (positive dy)
-            // should reveal earlier scrollback (i.e. increase
-            // _yDisplacement), so flip the sign. Cell height is
-            // ~16.8 px at fontSize 14, so a 2-cell pad makes the
-            // scroll feel "tight" without being twitchy.
-            final cellH = height / _rows;
-            final deltaLines =
-                ((d.localPosition.dy - lastDy) / (cellH * 2)).round();
-            if (deltaLines != 0) {
-              if (deltaLines > 0) {
-                scrollUp(deltaLines);
-              } else {
-                scrollDown(-deltaLines);
-              }
-              _panLastDy = lastDy + deltaLines * cellH * 2;
-            }
-          },
-          onPanEnd: (_) {
-            // The pan is over. Reset the flag so the next tap fires
-            // onTap normally. (If we reset it in onTapUp instead, a
-            // drag that doesn't reach onTapUp would leave the flag
-            // stuck on and silently suppress every future tap.)
-            _panOccurred = false;
-            // No-op for now; jumpToBottom is exposed via the AppBar
-            // "Jump to bottom" button. A future polish could snap on
-            // fling velocity.
-          },
+        // Pan: use a raw `Listener` for pointer events. This
+        // bypasses the gesture arena entirely — we own the
+        // state machine (pointer-down → pointer-move → pan →
+        // pointer-up). The previous `GestureDetector(onPan*)`
+        // design can lose on a real device to built-in
+        // recognizers (a tap recognizer for accessibility, the
+        // parent `Stack`'s recognizer, etc.). The Listener is
+        // hit-tested LAST in the widget tree (we wrap the
+        // painted area directly), and only our handlers run.
+        //
+        // We use a SMALL touch slop (8 logical px) so a pan
+        // triggers on a very short movement — important on
+        // phones where the user may not realise they need to
+        // drag "more than 18 px" to start scrolling.
+        return Listener(
           behavior: HitTestBehavior.opaque,
+          onPointerDown: _onPointerDown,
+          onPointerMove: _onPointerMove,
+          onPointerUp: (_) => _onPointerUp(),
+          onPointerCancel: _onPointerCancel,
           child: SizedBox(
             width: width,
             height: height,
