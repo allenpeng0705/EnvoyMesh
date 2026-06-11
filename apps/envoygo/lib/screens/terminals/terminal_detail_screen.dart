@@ -69,17 +69,35 @@ class _TerminalDetailScreenState
     setState(() => _attached = true);
   }
 
+  /// Raw byte buffer for incomplete ANSI sequences that span chunks.
+  final _rawBuffer = <int>[];
+
   void _onTerminalOutput(dynamic data) {
     if (data is! Map<String, dynamic>) return;
     final b64 = data['dataBase64'] as String?;
     if (b64 == null || b64.isEmpty) return;
+    List<int> chunk;
+    try {
+      chunk = base64Decode(b64);
+    } catch (_) {
+      return;
+    }
+
+    // Accumulate raw bytes so split ANSI sequences are reassembled
+    // before cleaning.  Only flush when we hit a newline or the
+    // buffer grows large enough to contain a complete sequence.
+    _rawBuffer.addAll(chunk);
+    if (!_rawBuffer.contains(0x0A) && _rawBuffer.length < 256) return;
+
+    // Decode the buffer, clean it, and flush.
     String text;
     try {
-      text = utf8.decode(base64Decode(b64));
+      text = utf8.decode(_rawBuffer);
     } catch (_) {
-      text = '[binary data]';
+      text = String.fromCharCodes(_rawBuffer);
     }
-    if (text.isEmpty) return;
+    _rawBuffer.clear();
+
     text = _cleanTerminalOutput(text);
     if (text.isEmpty) return;
     // Accumulate streaming output into the buffer so the current
