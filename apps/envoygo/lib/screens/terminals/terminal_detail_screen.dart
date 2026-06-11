@@ -30,6 +30,10 @@ class _TerminalDetailScreenState
   TerminalService? _terminalService;
   bool _attached = false;
 
+  /// Streaming response buffer for long-running commands.
+  /// Accumulated output is appended to the last entry in [_output].
+  final _streamBuffer = StringBuffer();
+
   @override
   void initState() {
     super.initState();
@@ -77,8 +81,18 @@ class _TerminalDetailScreenState
     if (text.isEmpty) return;
     text = _cleanTerminalOutput(text);
     if (text.isEmpty) return;
+    // Accumulate streaming output into the buffer so the current
+    // command's response stays together as a single entry.
+    _streamBuffer.write(text);
     setState(() {
-      _output.add(text);
+      // Always update the last entry in-place so streaming output
+      // reads as one contiguous block.
+      final updated = _streamBuffer.toString();
+      if (_output.isNotEmpty && !_output.last.startsWith('\$')) {
+        _output.last = updated;
+      } else {
+        _output.add(updated);
+      }
       if (_output.length > 500) {
         _output.removeRange(0, _output.length - 500);
       }
@@ -98,6 +112,9 @@ class _TerminalDetailScreenState
     if (text.trim().isEmpty) return;
     final command = text.trim();
     _controller.clear();
+    // Clear the streaming buffer for the new command.
+    _streamBuffer.clear();
+    // Start a new output entry with the prompt.
     _output.add('\$ $command');
     _terminalService?.sendCommand(command).then((output) {
       if (output.isNotEmpty) {
