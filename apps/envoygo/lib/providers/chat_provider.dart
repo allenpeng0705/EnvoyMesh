@@ -46,6 +46,10 @@ final chatProvider =
   return ChatNotifier(ref);
 });
 
+/// Tracks seen message IDs per thread to prevent double-adds from
+/// multiple push events (chat:message + agent:activity).
+final _seenMessageIds = <String>{};
+
 class ChatNotifier extends StateNotifier<ChatState> {
   final Ref _ref;
   final LocalDatabase _localDb = LocalDatabase();
@@ -351,9 +355,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
       unreadIncrement: true,
     );
 
-    // Dedup: if a temp optimistic message with the same text exists,
-    // replace it with the server version instead of adding a duplicate.
+    // Dedup: check by messageId first, then by text content match.
+    // Covers both double-push (chat:message + agent:activity) and
+    // optimistic temp messages. A Set makes duplicate checks O(1).
     final existingMessages = state.messages[threadId] ?? [];
+    if (messageId != null) {
+      if (_seenMessageIds.add('$threadId:$messageId')) {
+        // New messageId — proceed.
+      } else {
+        return; // Duplicate messageId — skip.
+      }
+    } else if (existingMessages.any((m) => m.text == text)) {
+      return; // Duplicate content — skip.
+    }
     final optimisticIdx =
         existingMessages.indexWhere((m) => m.text == text && m.id.startsWith('temp_'));
     if (optimisticIdx >= 0) {
@@ -535,13 +549,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
       unreadIncrement: true,
     );
 
+    // Dedup room messages by messageId OR by temp optimistic match.
+    final existing = state.messages[threadId] ?? [];
+    if (messageId != null && existing.any((m) => m.id == messageId)) return;
+    if (existing.any((m) => m.text == text && m.id.startsWith('temp_'))) return;
+
+    // Prepend so newest is at index 0 (bottom with reverse:true).
     state = state.copyWith(
       messages: {
         ...state.messages,
-        threadId: [
-          ...?state.messages[threadId],
-          msg,
-        ],
+        threadId: [msg, ...existing],
       },
     );
   }

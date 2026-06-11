@@ -1700,6 +1700,7 @@ export interface NodeService {
   listTerminalSessions(): Promise<import("./terminal.js").TerminalSessionSummary[]>;
   createTerminalSession(params?: import("./terminal.js").CreateTerminalSessionParams): Promise<import("./terminal.js").TerminalSessionSummary>;
   closeTerminalSession(params: import("./terminal.js").CloseTerminalSessionParams): Promise<void>;
+  terminalExec(params: { sessionId: string; command: string }): Promise<{ output: string }>;
   renameTerminalSession(params: import("./terminal.js").RenameTerminalSessionParams): Promise<import("./terminal.js").TerminalSessionSummary>;
   terminalAttach(params: import("./terminal.js").TerminalAttachParams): Promise<import("./terminal.js").TerminalAttachResult>;
   terminalRunFromNaturalLanguage(

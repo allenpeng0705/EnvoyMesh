@@ -8724,6 +8724,20 @@ class NodeServiceImpl implements NodeService {
     return this._requireTerminalManager().renameTerminalSession(params);
   }
 
+  terminalExec(params: { sessionId: string; command: string }): Promise<{ output: string }> {
+    const mgr = this._requireTerminalManager();
+    mgr.writeStdin(params.sessionId, Buffer.from(params.command + "\r", "utf8"));
+    // Wait briefly for the command to produce output, then return the
+    // latest scrollback tail.  For quick commands (ls, pwd, cd) 500 ms
+    // is ample; longer commands will need a follow-up poll.
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const output = mgr.getScrollbackTail(params.sessionId, 8192);
+        resolve({ output });
+      }, 500);
+    });
+  }
+
   terminalAttach(params: import("@envoymesh/api").TerminalAttachParams): Promise<import("@envoymesh/api").TerminalAttachResult> {
     return Promise.resolve(this._requireTerminalManager().terminalAttach(params));
   }

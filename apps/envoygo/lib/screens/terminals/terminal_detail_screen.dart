@@ -30,6 +30,10 @@ class _TerminalDetailScreenState
   TerminalService? _terminalService;
   bool _attached = false;
 
+  /// Streaming response buffer for long-running commands.
+  /// Accumulated output is appended to the last entry in [_output].
+  final _streamBuffer = StringBuffer();
+
   @override
   void initState() {
     super.initState();
@@ -50,58 +54,101 @@ class _TerminalDetailScreenState
     final nodeService = NodeServiceClient(client);
     _terminalService = TerminalService(nodeService);
 
-    // Subscribe to terminal output from push events.
-    // The home node emits `homeTerminalWs:rx` with base64-encoded output.
+    // Subscribe to terminal output from push events (real-time stream).
     client.on('homeTerminalWs:rx', _onTerminalOutput);
 
+    // Try the persistent WebSocket stream first; fall back to simple
+    // terminalExec RPC if the stream can't be established.
     try {
       await _terminalService!.attach(widget.sessionId);
-      setState(() => _attached = true);
-    } catch (e) {
-      setState(() {
-        _output.add('[Failed to attach: $e]');
-        _attached = true; // Allow user to retry.
-      });
+    } catch (_) {
+      // Stream attach failed — use simple RPC mode instead.
+      _terminalService!.setActiveSession(widget.sessionId);
     }
+    setState(() => _attached = true);
   }
 
   void _onTerminalOutput(dynamic data) {
     if (data is! Map<String, dynamic>) return;
-    // Home node sends `{ dataBase64: "<b64>" }` for terminal output.
     final b64 = data['dataBase64'] as String?;
-    if (b64 != null && b64.isNotEmpty) {
-      String text;
-      try {
-        text = utf8.decode(base64Decode(b64));
-      } catch (_) {
-        text = '[binary data]';
-      }
-      if (text.isNotEmpty) {
-      setState(() {
-        _output.add(text);
-        // Keep only last 500 lines to avoid memory issues.
-        if (_output.length > 500) {
-          _output.removeRange(0, _output.length - 500);
-        }
-      });
-      // Auto-scroll to bottom.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 100),
-            curve: Curves.easeOut,
-          );
-        }
-      });
+    if (b64 == null || b64.isEmpty) return;
+    String text;
+    try {
+      text = utf8.decode(base64Decode(b64));
+    } catch (_) {
+      text = '[binary data]';
     }
+    if (text.isEmpty) return;
+    text = _cleanTerminalOutput(text);
+    if (text.isEmpty) return;
+    // Accumulate streaming output into the buffer so the current
+    // command's response stays together as a single entry.
+    _streamBuffer.write(text);
+    setState(() {
+      // Always update the last entry in-place so streaming output
+      // reads as one contiguous block.
+      final updated = _streamBuffer.toString();
+      if (_output.isNotEmpty && !_output.last.startsWith('\$')) {
+        _output.last = updated;
+      } else {
+        _output.add(updated);
+      }
+      if (_output.length > 500) {
+        _output.removeRange(0, _output.length - 500);
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 100),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   void _sendCommand(String text) {
     if (text.trim().isEmpty) return;
+    final command = text.trim();
     _controller.clear();
-    _output.add('\$ $text');
-    _terminalService?.sendCommand(text);
+    // Clear the streaming buffer for the new command.
+    _streamBuffer.clear();
+    // Start a new output entry with the prompt.
+    _output.add('\$ $command');
+    _terminalService?.sendCommand(command).then((output) {
+      if (output.isNotEmpty) {
+        final cleaned = _cleanTerminalOutput(output);
+        if (cleaned.isNotEmpty) {
+          setState(() => _output.add(cleaned));
+        }
+      }
+    }).catchError((e) {
+      setState(() => _output.add('[Error: $e]'));
+    });
+  }
+
+  /// Clean terminal output for display:
+  /// 1. Strip ANSI escape sequences (colors, cursor, etc.)
+  /// 2. Normalise line endings (\r\n → \n, \r → \n)
+  /// 3. Strip remaining control characters (except tab, newline)
+  static final _ansiRegex =
+      RegExp(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])');
+  static final _ctrlRegex = RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F]');
+
+  String _cleanTerminalOutput(String text) {
+    // Strip ANSI escape sequences.
+    text = text.replaceAll(_ansiRegex, '');
+    // Normalise line endings.
+    text = text.replaceAll('\r\n', '\n');
+    text = text.replaceAll('\r', '\n');
+    // Strip other control characters (keep tab and newline).
+    text = text.replaceAll(_ctrlRegex, '');
+    // Collapse repeated blank lines.
+    while (text.contains('\n\n\n')) {
+      text = text.replaceAll('\n\n\n', '\n\n');
+    }
+    return text.trim();
   }
 
   @override
@@ -126,14 +173,12 @@ class _TerminalDetailScreenState
       ),
       body: Column(
         children: [
-          // PTY output area.
           Expanded(
             child: Container(
               color: Colors.black,
               padding: const EdgeInsets.all(12),
               child: GestureDetector(
                 onTap: () {
-                  // Focus input on tap.
                   FocusScope.of(context).requestFocus(FocusNode());
                 },
                 child: ListView.builder(
@@ -152,7 +197,6 @@ class _TerminalDetailScreenState
               ),
             ),
           ),
-          // Command input bar.
           SafeArea(
             child: Container(
               color: Colors.grey[900],
@@ -183,7 +227,6 @@ class _TerminalDetailScreenState
                     icon: const Icon(Icons.control_camera,
                         color: Colors.grey, size: 20),
                     onPressed: () {
-                      // Send Ctrl+C (ASCII 3).
                       _terminalService
                           ?.sendKeystrokes(base64Encode([3]));
                     },
