@@ -97,7 +97,11 @@ class _TerminalDetailScreenState
     if (text.trim().isEmpty) return;
     _controller.clear();
     _output.add('\$ $text');
-    _terminalService?.sendCommand(text);
+    _terminalService?.sendCommand(text).catchError((e) {
+      setState(() {
+        _output.add('[Error: $e]');
+      });
+    });
   }
 
   @override

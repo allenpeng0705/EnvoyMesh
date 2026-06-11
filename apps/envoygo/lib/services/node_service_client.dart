@@ -192,10 +192,10 @@ class NodeServiceClient {
   }
 
   /// Send keystrokes (base64-encoded) through the PTY WebSocket.
-  Future<void> homeTerminalWsSend(String dataBase64) async {
-    await _client.call('homeTerminalWsSend', {
+  Future<Map<String, dynamic>> homeTerminalWsSend(String dataBase64) async {
+    return await _client.call('homeTerminalWsSend', {
       'dataBase64': dataBase64,
-    });
+    }) as Map<String, dynamic>;
   }
 
   /// Close the PTY WebSocket sub-channel.

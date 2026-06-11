@@ -37,13 +37,19 @@ class TerminalService {
     _activeSessionId = sessionId;
   }
 
-  /// Send a command to the terminal (appends newline).
+  /// Send a command to the terminal (appends carriage return — \r).
   Future<void> sendCommand(String command) async {
-    if (_activeSessionId == null) return;
-    // Append newline so the shell executes the command.
-    final data = '$command\n';
+    if (_activeSessionId == null) {
+      throw Exception('Terminal not attached');
+    }
+    // Use \r (carriage return) — most PTYs expect \r not \n for Enter.
+    final data = '$command\r';
     final base64 = base64Encode(utf8.encode(data));
-    await _client.homeTerminalWsSend(base64);
+    final result = await _client.homeTerminalWsSend(base64);
+    if (result['ok'] != true) {
+      final err = result['error'] as String? ?? 'Unknown error';
+      throw Exception('Send failed: $err');
+    }
   }
 
   /// Send raw keystrokes (base64-encoded) to the terminal.
