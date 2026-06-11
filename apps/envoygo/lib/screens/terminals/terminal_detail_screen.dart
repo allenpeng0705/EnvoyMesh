@@ -60,41 +60,37 @@ class _TerminalDetailScreenState
     } catch (e) {
       setState(() {
         _output.add('[Failed to attach: $e]');
-        _attached = true; // Allow user to retry.
+        _attached = true;
       });
     }
   }
 
   void _onTerminalOutput(dynamic data) {
     if (data is! Map<String, dynamic>) return;
-    // Home node sends `{ dataBase64: "<b64>" }` for terminal output.
     final b64 = data['dataBase64'] as String?;
-    if (b64 != null && b64.isNotEmpty) {
-      String text;
-      try {
-        text = utf8.decode(base64Decode(b64));
-      } catch (_) {
-        text = '[binary data]';
-      }
-      if (text.isNotEmpty) {
-      setState(() {
-        _output.add(text);
-        // Keep only last 500 lines to avoid memory issues.
-        if (_output.length > 500) {
-          _output.removeRange(0, _output.length - 500);
-        }
-      });
-      // Auto-scroll to bottom.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 100),
-            curve: Curves.easeOut,
-          );
-        }
-      });
+    if (b64 == null || b64.isEmpty) return;
+    String text;
+    try {
+      text = utf8.decode(base64Decode(b64));
+    } catch (_) {
+      text = '[binary data]';
     }
+    if (text.isEmpty) return;
+    setState(() {
+      _output.add(text);
+      if (_output.length > 500) {
+        _output.removeRange(0, _output.length - 500);
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 100),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   void _sendCommand(String text) {
@@ -126,14 +122,12 @@ class _TerminalDetailScreenState
       ),
       body: Column(
         children: [
-          // PTY output area.
           Expanded(
             child: Container(
               color: Colors.black,
               padding: const EdgeInsets.all(12),
               child: GestureDetector(
                 onTap: () {
-                  // Focus input on tap.
                   FocusScope.of(context).requestFocus(FocusNode());
                 },
                 child: ListView.builder(
@@ -152,7 +146,6 @@ class _TerminalDetailScreenState
               ),
             ),
           ),
-          // Command input bar.
           SafeArea(
             child: Container(
               color: Colors.grey[900],
@@ -183,7 +176,6 @@ class _TerminalDetailScreenState
                     icon: const Icon(Icons.control_camera,
                         color: Colors.grey, size: 20),
                     onPressed: () {
-                      // Send Ctrl+C (ASCII 3).
                       _terminalService
                           ?.sendKeystrokes(base64Encode([3]));
                     },

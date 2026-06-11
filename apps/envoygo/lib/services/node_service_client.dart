@@ -162,11 +162,32 @@ class NodeServiceClient {
 
   // -- Terminal PTY I/O --
 
-  /// Open a PTY WebSocket sub-channel.
+  /// Request a terminal attach URL from the home node.
+  /// Returns `{ sessionId, token, wsUrl, cols, rows }`.
+  Future<Map<String, dynamic>> terminalAttach(String sessionId,
+      {int? cols, int? rows}) async {
+    return await _client.call('terminalAttach', {
+      'sessionId': sessionId,
+      if (cols != null) 'cols': cols,
+      if (rows != null) 'rows': rows,
+    }) as Map<String, dynamic>;
+  }
+
+  /// Open a PTY WebSocket sub-channel using the path from terminalAttach.
   Future<Map<String, dynamic>> homeTerminalWsOpen(
       String sessionId) async {
+    // terminalAttach returns a full URL like:
+    // ws://127.0.0.1:3032/ws/terminal/<id>?token=<t>
+    // homeTerminalWsOpen expects just the path+query portion.
+    final attachResult = await terminalAttach(sessionId);
+    final wsUrl = attachResult['wsUrl'] as String?;
+    if (wsUrl == null || wsUrl.isEmpty) {
+      throw Exception('terminalAttach did not return wsUrl');
+    }
+    final uri = Uri.parse(wsUrl);
+    final pathWithQuery = '${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}';
     return await _client.call('homeTerminalWsOpen', {
-      'pathWithQuery': '/ws/terminal/attach?sessionId=$sessionId',
+      'pathWithQuery': pathWithQuery,
     }) as Map<String, dynamic>;
   }
 
