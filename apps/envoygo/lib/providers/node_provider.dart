@@ -148,8 +148,17 @@ class NodeNotifier extends StateNotifier<NodeState> {
         .where((n) => n.homePeerId == data.homeNodePeerId)
         .firstOrNull;
     final nodeId = existingNode?.id ?? _generateNodeId();
-    await _secureStorage.saveSessionToken(nodeId, result.sessionToken);
-    await _secureStorage.saveActiveNodeId(nodeId);
+    try {
+      await _secureStorage.saveSessionToken(nodeId, result.sessionToken);
+      await _secureStorage.saveActiveNodeId(nodeId);
+    } catch (e) {
+      debugPrint('Failed to save session token: $e');
+      state = state.copyWith(
+        connectionState: NodeConnectionState.error,
+        errorMessage: 'Pairing succeeded but failed to persist — '
+            'the node may be lost after app restart.',
+      );
+    }
 
     // Store node info in local DB.
     final node = StoredNode(
