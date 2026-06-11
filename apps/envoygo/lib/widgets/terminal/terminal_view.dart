@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -119,6 +120,27 @@ class _TerminalViewState extends State<TerminalView>
   /// TUIs expect it on (default true).
   bool _autoWrap = true;
 
+  // -- Repaint tick --
+
+  /// Monotonically incrementing counter. Bumped on every [write]
+  /// (and on every other state-mutating operation that needs a
+  /// repaint). The painter's [CustomPainter.shouldRepaint] uses
+  /// this counter — without it, since we mutate the grid in
+  /// place, the painter would never see that the contents
+  /// changed and would never repaint.
+  int _tick = 0;
+
+  // -- Cursor blink --
+
+  /// True when the cursor is in the "visible" phase of its
+  /// blink cycle. Toggled by [_blinkTimer].
+  bool _cursorBlinkOn = true;
+
+  /// Drives the cursor blink. Replaced by a fresh timer on each
+  /// toggle so we don't have to deal with a "blink disabled"
+  /// state — instead we stop the timer (see [dispose]).
+  Timer? _blinkTimer;
+
   // -- Scrollback --
 
   /// Historical lines that have scrolled off the top of the main
@@ -165,6 +187,24 @@ class _TerminalViewState extends State<TerminalView>
     _scrollBottom = _rows - 1;
     _mainGrid = _newGrid(_cols, _rows);
     _parser = TerminalParser(this);
+    _startBlinkTimer();
+  }
+
+  void _startBlinkTimer() {
+    _blinkTimer?.cancel();
+    _blinkTimer = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (_) {
+        if (!mounted) return;
+        // Bump the tick so the painter repaints with the
+        // toggled visibility. The painter only draws the cursor
+        // when [_cursorBlinkOn] is true.
+        _tick++;
+        setState(() {
+          _cursorBlinkOn = !_cursorBlinkOn;
+        });
+      },
+    );
   }
 
   /// Build a fresh grid of blank cells. The outer list is
@@ -180,13 +220,17 @@ class _TerminalViewState extends State<TerminalView>
   // -- Public API --
 
   /// Feed a chunk of PTY output bytes.
+  ///
+  /// The emulator mutates its grid in place. To get the widget to
+  /// actually repaint, we (a) bump [_tick] and (b) call
+  /// [setState] so the build method runs again. The painter
+  /// receives the new tick and returns `true` from
+  /// [shouldRepaint], triggering a real frame.
   void write(Uint8List bytes) {
     _parser.write(bytes);
+    _tick++;
     if (mounted) {
-      // Coalesce frequent repaints — schedule a single setState
-      // for the next frame. If we're already inside a frame, the
-      // next call will coalesce.
-      WidgetsBinding.instance.scheduleFrame();
+      setState(() {});
     }
   }
 
@@ -1002,15 +1046,23 @@ class _TerminalViewState extends State<TerminalView>
                       : null,
               cursorRow: _cursorRow,
               cursorCol: _cursorCol,
-              cursorVisible: _cursorVisible,
+              cursorVisible: _cursorVisible && _cursorBlinkOn,
               fontSize: widget.fontSize,
               cellAt: _cellAt,
+              tick: _tick,
             ),
             size: Size(width, height),
           ),
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _blinkTimer?.cancel();
+    _blinkTimer = null;
+    super.dispose();
   }
 
   _CellSize _measureCellSize() {
@@ -1045,6 +1097,12 @@ class _TerminalPainter extends CustomPainter {
   final double fontSize;
   final Cell? Function(int row, int col) cellAt;
 
+  /// Monotonic counter that bumps on every grid mutation. The
+  /// painter uses this in [shouldRepaint] — without it, since
+  /// the grid is mutated in place, the painter would never
+  /// notice that the contents have changed.
+  final int tick;
+
   _TerminalPainter({
     required this.cols,
     required this.rows,
@@ -1058,6 +1116,7 @@ class _TerminalPainter extends CustomPainter {
     required this.cursorVisible,
     required this.fontSize,
     required this.cellAt,
+    required this.tick,
   });
 
   @override
@@ -1166,7 +1225,13 @@ class _TerminalPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _TerminalPainter old) {
-    return old.cols != cols ||
+    // The tick is the primary repaint signal — it bumps on
+    // every grid mutation. Other fields are kept for
+    // structural changes (resize, selection, scrollback offset)
+    // that would otherwise rely on identity comparisons of
+    // mutable lists, which don't help us.
+    return old.tick != tick ||
+        old.cols != cols ||
         old.rows != rows ||
         old.yDisplacement != yDisplacement ||
         old.cursorRow != cursorRow ||
