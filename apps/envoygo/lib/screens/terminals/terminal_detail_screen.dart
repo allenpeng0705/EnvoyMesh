@@ -61,9 +61,10 @@ class _TerminalDetailScreenState
     // terminalExec RPC if the stream can't be established.
     try {
       await _terminalService!.attach(widget.sessionId);
-    } catch (_) {
+    } catch (e) {
       // Stream attach failed — use simple RPC mode instead.
       _terminalService!.setActiveSession(widget.sessionId);
+      setState(() => _output.add('[Stream not available, using basic mode: $e]'));
     }
     setState(() => _attached = true);
   }
@@ -129,26 +130,52 @@ class _TerminalDetailScreenState
   }
 
   /// Clean terminal output for display:
-  /// 1. Strip ANSI escape sequences (colors, cursor, etc.)
-  /// 2. Normalise line endings (\r\n → \n, \r → \n)
+  /// 1. Strip all ANSI / CSI escape sequences (colors, cursor, etc.)
+  /// 2. Handle carriage returns: \r\n → \n, inline \r updates → keep
+  ///    last content on the line
   /// 3. Strip remaining control characters (except tab, newline)
-  static final _ansiRegex =
-      RegExp(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])');
-  static final _ctrlRegex = RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F]');
+  static final _ansiRegex = RegExp(
+      r'\x1B[@-Z\\-_]|'   // ESC + single-char sequences
+      r'\x1B\[[\d;]*[A-Za-z]|' // CSI: ESC [ params letter
+      r'\x1B\][^\x07]*\x07|' // OSC: ESC ] … BEL
+      r'\x1B[PX^_][^\x1B]*\x1B\\'); // other sequences
 
   String _cleanTerminalOutput(String text) {
-    // Strip ANSI escape sequences.
+    // 1. Replace clear-screen / cursor-home with a visible separator.
+    text = text.replaceAll('\x1B[2J', '\n---\n');
+    text = text.replaceAll('\x1B[H', '');
+    text = text.replaceAll('\x1B[?1049h', ''); // enter alt screen
+    text = text.replaceAll('\x1B[?1049l', ''); // exit alt screen
+
+    // 2. Strip the rest of ANSI escape sequences.
     text = text.replaceAll(_ansiRegex, '');
-    // Normalise line endings.
+
+    // 3. Normalise line endings.
     text = text.replaceAll('\r\n', '\n');
     text = text.replaceAll('\r', '\n');
-    // Strip other control characters (keep tab and newline).
-    text = text.replaceAll(_ctrlRegex, '');
-    // Collapse repeated blank lines.
-    while (text.contains('\n\n\n')) {
-      text = text.replaceAll('\n\n\n', '\n\n');
+
+    // 4. Collapse multiple blank lines.
+    while (text.contains('\n\n\n\n')) {
+      text = text.replaceAll('\n\n\n\n', '\n\n\n');
     }
-    return text.trim();
+
+    // 5. Remove duplicate consecutive identical lines (TUI redraws).
+    final lines = text.split('\n');
+    final cleaned = <String>[];
+    String? last;
+    for (final line in lines) {
+      final trimmed = line.trimRight();
+      if (trimmed.isEmpty) {
+        if (last != null && last.isNotEmpty) cleaned.add('');
+        continue;
+      }
+      if (trimmed != last) {
+        cleaned.add(trimmed);
+        last = trimmed;
+      }
+    }
+
+    return cleaned.join('\n').trim();
   }
 
   @override

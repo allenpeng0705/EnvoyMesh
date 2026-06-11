@@ -8727,14 +8727,33 @@ class NodeServiceImpl implements NodeService {
   terminalExec(params: { sessionId: string; command: string }): Promise<{ output: string }> {
     const mgr = this._requireTerminalManager();
     mgr.writeStdin(params.sessionId, Buffer.from(params.command + "\r", "utf8"));
-    // Wait briefly for the command to produce output, then return the
-    // latest scrollback tail.  For quick commands (ls, pwd, cd) 500 ms
-    // is ample; longer commands will need a follow-up poll.
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const output = mgr.getScrollbackTail(params.sessionId, 8192);
-        resolve({ output });
-      }, 500);
+    const maxWaitMs = 12_000;
+    const pollIntervalMs = 250;
+    const stableMs = 300;
+    const startedAt = Date.now();
+    const initialLen = mgr.getScrollback(params.sessionId).length;
+
+    return new Promise<{ output: string }>((resolve) => {
+      let lastLen = initialLen;
+      let stableSince = 0;
+      const poll = () => {
+        const currentRaw = mgr.getScrollbackTail(params.sessionId, 524_288);
+        const currentBuf = Buffer.from(currentRaw, "utf8");
+        const elapsed = Date.now() - startedAt;
+        if (currentBuf.length !== lastLen) {
+          lastLen = currentBuf.length;
+          stableSince = elapsed;
+        }
+        if (elapsed >= maxWaitMs || (elapsed - stableSince >= stableMs && elapsed > 600)) {
+          const tail = currentBuf.length > 131_072
+            ? currentBuf.subarray(currentBuf.length - 131_072)
+            : currentBuf;
+          resolve({ output: tail.toString("utf8") });
+          return;
+        }
+        setTimeout(poll, pollIntervalMs);
+      };
+      setTimeout(poll, pollIntervalMs);
     });
   }
 
