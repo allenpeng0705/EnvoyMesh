@@ -196,9 +196,23 @@ class Libp2pNode {
 ///
 /// Incoming data: [P2PStream.read] → delivered as WsMessageEvent.
 /// Outgoing data: written via [P2PStream.write] → forwarded to peer.
+///
+/// For the client-proxy protocol (circuit relay), call [performHandshake]
+/// after construction to complete the proxy-connect authentication
+/// before normal message dispatch begins.
 class Libp2pStreamTransport implements WebSocketLike {
   final P2PStream<dynamic> _stream;
-  StreamSubscription<Uint8List>? _subscription;
+
+  /// Completes when the handshake is done and the transport is ready.
+  /// Until then, onOpen is not fired and incoming messages are buffered.
+  Completer<void>? _handshakeCompleter;
+
+  /// Buffers messages received before the handshake completes.
+  final _pendingMessages = <String>[];
+
+  /// Whether the transport has completed its setup phase (handshake or
+  /// immediate-open) and is now in normal message mode.
+  bool _messageMode = false;
 
   @override
   int readyState = wsConnecting;
@@ -215,23 +229,107 @@ class Libp2pStreamTransport implements WebSocketLike {
   @override
   void Function()? onError;
 
-  Libp2pStreamTransport(this._stream) {
-    // Mark as open immediately — the stream is already established.
-    // Fire onOpen in the next microtask so callers can install handlers first.
+  Libp2pStreamTransport(this._stream);
+
+  /// Perform the client-proxy handshake over this stream.
+  ///
+  /// Sends `{ type: "proxy-connect", token }` as the first message,
+  /// waits for `{ type: "proxy-accept" }` or `{ type: "proxy-reject" }`,
+  /// then marks the transport as open and begins normal message dispatch.
+  ///
+  /// Throws if the handshake fails or is rejected.
+  Future<void> performHandshake(String token) async {
+    if (_handshakeCompleter != null) {
+      throw StateError('Handshake already performed');
+    }
+    _handshakeCompleter = Completer<void>();
+
+    // Send proxy-connect handshake.
+    _stream.write(Uint8List.fromList(utf8.encode(
+        jsonEncode({'type': 'proxy-connect', 'token': token}))));
+
+    // Wait for proxy-accept / proxy-reject as the first message.
+    final firstBytes = await _stream.read();
+    if (firstBytes.isEmpty) {
+      // ignore: definite assignment — throw prevents further use
+      _handshakeCompleter!.completeError(
+          Exception('Connection closed during handshake'));
+      throw Exception('Connection closed during handshake');
+    }
+
+    final firstText = utf8.decode(firstBytes.toList());
+    Map<String, dynamic>? msg;
+    try {
+      msg = jsonDecode(firstText) as Map<String, dynamic>;
+    } catch (_) {
+      _handshakeCompleter!.completeError(
+          Exception('Invalid handshake response: $firstText'));
+      throw Exception('Invalid handshake response: $firstText');
+    }
+
+    if (msg['type'] == 'proxy-reject') {
+      final reason = msg['reason'] as String? ?? 'unknown';
+      _handshakeCompleter!.completeError(Exception('Proxy rejected: $reason'));
+      throw Exception('Proxy rejected: $reason');
+    }
+
+    if (msg['type'] != 'proxy-accept') {
+      // Could be a home-tunnel "connected" / "tunnel-up" event.
+      if (msg['event'] == 'connected' || msg['event'] == 'tunnel-up') {
+        // Treat as accept.
+      } else {
+        _handshakeCompleter!.completeError(
+            Exception('Unexpected handshake message: $msg'));
+        throw Exception('Unexpected handshake message: $msg');
+      }
+    }
+
+    // Handshake succeeded. Mark as open and dispatch buffered messages.
     readyState = wsOpen;
+    _messageMode = true;
+
+    // Deliver any messages that arrived before we entered message mode.
+    for (final pending in _pendingMessages) {
+      onMessage?.call(WsMessageEvent(pending));
+    }
+    _pendingMessages.clear();
+
+    _handshakeCompleter!.complete();
+    // Fire onOpen so HomeRemoteClient knows the transport is ready.
     Future.microtask(() => onOpen?.call());
 
-    // Start a background task to read from the stream and deliver messages.
+    // Start the normal message dispatch loop.
+    _readLoop();
+  }
+
+  /// Mark the transport as immediately open (no handshake required).
+  /// Used for direct libp2p connections that don't need client-proxy auth.
+  void markImmediatelyOpen() {
+    if (_handshakeCompleter != null) return; // Already in handshake mode.
+    readyState = wsOpen;
+    _messageMode = true;
+    Future.microtask(() => onOpen?.call());
     _readLoop();
   }
 
   /// Continuously read from the P2PStream and deliver data via onMessage.
+  /// Before [performHandshake] completes, messages are buffered.
   Future<void> _readLoop() async {
     try {
       while (readyState == wsOpen) {
         final data = await _stream.read();
         if (data.isEmpty) break;
         final text = utf8.decode(data.toList());
+
+        if (!_messageMode) {
+          // Still in handshake phase — buffer any messages that arrive
+          // (e.g. events before proxy-accept). The handshake response was
+          // already consumed by performHandshake(), so this handles any
+          // race-between-reads.
+          _pendingMessages.add(text);
+          continue;
+        }
+
         onMessage?.call(WsMessageEvent(text));
       }
     } catch (_) {
@@ -255,7 +353,6 @@ class Libp2pStreamTransport implements WebSocketLike {
   void close() {
     if (readyState == wsOpen) {
       readyState = wsClosing;
-      _subscription?.cancel();
       _stream.close();
       readyState = wsClosed;
     }

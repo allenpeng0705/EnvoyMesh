@@ -641,6 +641,12 @@ class NodeNotifier extends StateNotifier<NodeState> {
       peerMultiaddr: candidate.url,
       protocolId: clientProxyProtocol,
     );
+
+    // Perform the client-proxy handshake: send token, wait for accept/reject.
+    // HomeRemoteClient expects the transport to be fully open (onOpen fired)
+    // before it starts sending JSON-RPC calls, so we await here.
+    await transport.performHandshake(candidate.sessionToken ?? '');
+
     return transport;
   }
 
