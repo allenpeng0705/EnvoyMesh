@@ -159,12 +159,7 @@ class CandidateResolver {
 
     // Extract relay peer ID from the community relay multiaddr.
     // Format: /ip4/X.X.X.X/tcp/N/p2p/<peerId>
-    final match =
-        _communityRelayLibp2pMultiaddr.matchAsPrefix('/p2p/');
-    if (match == null) return result;
-
-    // The relay peer ID is everything after /p2p/ in the multiaddr.
-    // But we need to find the last /p2p/ segment.
+    // Find the last /p2p/ segment to get the relay peer ID.
     final p2pIndex = _communityRelayLibp2pMultiaddr.lastIndexOf('/p2p/');
     if (p2pIndex < 0) return result;
 
