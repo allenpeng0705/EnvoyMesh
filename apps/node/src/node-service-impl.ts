@@ -9182,9 +9182,12 @@ class NodeServiceImpl implements NodeService {
       payload.ownerId = profile.owner.ownerId;
     }
 
-    // Include ALL relay/bootstrap multiaddr URLs so EnvoyGo has the complete
+    // Include ALL relay/bootstrap addresses so EnvoyGo has the complete
     // fallback list immediately — before getPairingPayload() is called.
     // EnvoyGo will try them in order; the first reachable one succeeds.
+    //
+    // For libp2p circuit relay: include libp2p multiaddrs directly.
+    // For WebSocket relay: convert to WebSocket URLs via deriveRelayWsUrl.
     const allBootstrapPeers: string[] = [];
 
     // Add community relay libp2p multiaddr for libp2p circuit relay support.
@@ -9192,13 +9195,15 @@ class NodeServiceImpl implements NodeService {
     // the relay WebSocket is down but libp2p circuit relay is operational.
     allBootstrapPeers.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
 
-    // Convert configured bootstrap peers (libp2p multiaddrs) to WebSocket URLs
-    // for WebSocket-only EnvoyGo fallback.
-    if (this._relayBootstrapPeers.length > 0) {
-      const wsUrls = this._relayBootstrapPeers
-        .map((addr) => NodeServiceImpl._deriveRelayWsUrl(addr))
-        .filter((url): url is string => url !== undefined);
-      allBootstrapPeers.push(...wsUrls);
+    // Add all configured bootstrap peers as-is (libp2p multiaddrs).
+    // _buildLibp2pCandidates() in EnvoyGo will create circuit relay
+    // candidates from these. Also convert to WebSocket URLs as fallback
+    // for WebSocket-only EnvoyGo.
+    for (const addr of this._relayBootstrapPeers) {
+      allBootstrapPeers.push(addr);
+      // Also add WebSocket URL if derivable (for WebSocket fallback).
+      const wsUrl = NodeServiceImpl._deriveRelayWsUrl(addr);
+      if (wsUrl) allBootstrapPeers.push(wsUrl);
     }
 
     if (allBootstrapPeers.length > 0) {
