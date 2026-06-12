@@ -763,6 +763,9 @@ export interface ConnectionStatus {
   terminalsAvailable?: boolean;
   /** Paired mobile → home remote capabilities (Slice 2). */
   homeRemote?: import("./home-remote.js").HomeRemoteStatus;
+  /** All relay/bootstrap WebSocket URLs the home node is configured to use.
+   *  Mobile syncs these on every reconnect to keep fallback candidates current. */
+  bootstrapPeers?: string[];
 }
 
 /**

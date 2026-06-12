@@ -351,6 +351,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       lastConnectedAt: DateTime.now(),
       publicHost: existingNode?.publicHost,
       publicPort: existingNode?.publicPort ?? 3030,
+      bootstrapPeers: data.bootstrapPeers ?? const [],
     );
     await _localDb.upsertNode(node.toJson());
     await _localDb.updateNodeLastConnected(nodeId);
@@ -374,6 +375,26 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     // Reconnect with the new session token so all RPCs are authenticated.
     await connectToNode(node);
+
+    // Fetch bootstrap peers from the home node for multi-relay fallback.
+    // This is the last step of pairing so the StoredNode is complete.
+    try {
+      final payload = await _nodeService!.getPairingPayload();
+      final bootstrapList = (payload['bootstrapPeers'] as List<dynamic>?)
+          ?.cast<String>();
+      if (bootstrapList != null && bootstrapList.isNotEmpty) {
+        final nodeWithBootstrap = node.copyWith(bootstrapPeers: bootstrapList);
+        await _localDb.upsertNode(nodeWithBootstrap.toJson());
+        final updatedNodes = state.pairedNodes
+            .map((n) =>
+                n.homePeerId == data.homeNodePeerId ? nodeWithBootstrap : n)
+            .toList();
+        state = state.copyWith(pairedNodes: updatedNodes);
+      }
+    } catch (e) {
+      debugPrint('Failed to fetch bootstrap peers: $e');
+    }
+
     // Start the reconnect supervisor for this node. If the
     // initial connect failed, the supervisor will keep retrying
     // (with backoff) until either the home comes back online or
@@ -549,8 +570,24 @@ class NodeNotifier extends StateNotifier<NodeState> {
   }
 
   /// Create the appropriate transport for a candidate URL scheme.
+  ///
+  /// Relay candidates use `ClientProxyTransport.connect` which speaks the
+  /// proxy handshake through the relay WebSocket. All other candidates
+  /// use a plain WebSocket.
   FutureOr<WebSocketLike> _createTransportForCandidate(
       HomeRemoteCandidate candidate) {
+    // Relay proxy transport: URLs containing ?peer=<homePeerId> use the
+    // ClientProxyTransport which handles the proxy handshake protocol.
+    if (candidate.homePeerId != null &&
+        candidate.homePeerId!.isNotEmpty &&
+        candidate.url.contains('?peer=')) {
+      return ClientProxyTransport.connect(
+        relayWsUrl: candidate.url.split('?peer=').first,
+        homePeerId: candidate.homePeerId!,
+        sessionToken: candidate.sessionToken ?? '',
+      );
+    }
+    // Standard WebSocket.
     return PlatformWebSocket.connect(candidate.url);
   }
 
@@ -646,7 +683,13 @@ class NodeNotifier extends StateNotifier<NodeState> {
     }
 
     final resolver = CandidateResolver();
-    final candidates = resolver.resolve(node, sessionToken: sessionToken);
+    // Tell the resolver the home's peer ID so the community relay p2p
+    // candidate includes it (enables circuit-relay dialing through the
+    // community relay even when the user's private relay is down).
+    CandidateResolver.setCommunityHomePeerId(node.homePeerId);
+    final isOnWifi = _connectivityObserver?.isOnWifi ?? true;
+    final candidates =
+        resolver.resolve(node, sessionToken: sessionToken, isOnWifi: isOnWifi);
     if (candidates.isEmpty) {
       // No transport candidates (LAN, public, libp2p, relay). The
       // stored node has no way to reach the home. Same as above:
@@ -690,6 +733,27 @@ class NodeNotifier extends StateNotifier<NodeState> {
         ownerId: node.ownerId,
         clearErrorMessage: true,
       );
+
+      // Sync bootstrap peers from the home node so the fallback candidate
+      // list stays current with whatever relays/libp2p servers the home
+      // is currently connected to.
+      try {
+        final status = await _nodeService!.getConnectionStatus();
+        final peers = (status['bootstrapPeers'] as List<dynamic>?)
+            ?.cast<String>();
+        if (peers != null && peers.isNotEmpty) {
+          final nodeWithBootstrap = node.copyWith(bootstrapPeers: peers);
+          await _localDb.upsertNode(nodeWithBootstrap.toJson());
+          state = state.copyWith(
+            activeNode: nodeWithBootstrap,
+            pairedNodes: state.pairedNodes
+                .map((n) => n.id == node.id ? nodeWithBootstrap : n)
+                .toList(),
+          );
+        }
+      } catch (e) {
+        debugPrint('Failed to sync bootstrap peers: $e');
+      }
 
       // Trigger full data sync.
       _syncAllData();

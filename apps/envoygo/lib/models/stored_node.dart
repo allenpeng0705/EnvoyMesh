@@ -33,6 +33,10 @@ class StoredNode {
   /// Public WebSocket port (default 3030).
   final int publicPort;
 
+  /// Additional bootstrap peer addresses from the home node's relay config.
+  /// Used as fallback when the primary relay is unavailable.
+  final List<String> bootstrapPeers;
+
   const StoredNode({
     required this.id,
     required this.name,
@@ -45,6 +49,7 @@ class StoredNode {
     this.lastConnectedAt,
     this.publicHost,
     this.publicPort = 3030,
+    this.bootstrapPeers = const [],
   });
 
   StoredNode copyWith({
@@ -59,8 +64,10 @@ class StoredNode {
     DateTime? lastConnectedAt,
     String? publicHost,
     int? publicPort,
+    List<String>? bootstrapPeers,
     bool clearLanIp = false,
     bool clearRelayWsUrl = false,
+    bool clearBootstrapPeers = false,
   }) {
     return StoredNode(
       id: id ?? this.id,
@@ -75,6 +82,9 @@ class StoredNode {
       lastConnectedAt: lastConnectedAt ?? this.lastConnectedAt,
       publicHost: publicHost ?? this.publicHost,
       publicPort: publicPort ?? this.publicPort,
+      bootstrapPeers: clearBootstrapPeers
+          ? const []
+          : (bootstrapPeers ?? this.bootstrapPeers),
     );
   }
 
@@ -93,6 +103,9 @@ class StoredNode {
           : null,
       publicHost: json['public_host'] as String?,
       publicPort: (json['public_port'] as int?) ?? 3030,
+      bootstrapPeers: (json['bootstrap_peers'] as List<dynamic>?)
+              ?.cast<String>() ??
+          const [],
     );
   }
 
@@ -109,5 +122,6 @@ class StoredNode {
           'last_connected_at': lastConnectedAt!.toIso8601String(),
         if (publicHost != null) 'public_host': publicHost,
         if (publicPort != 3030) 'public_port': publicPort,
+        if (bootstrapPeers.isNotEmpty) 'bootstrap_peers': bootstrapPeers,
       };
 }

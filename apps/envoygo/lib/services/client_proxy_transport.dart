@@ -46,7 +46,15 @@ class ClientProxyTransport implements WebSocketLike {
     required String sessionToken,
   }) async {
     // Connect to the relay WebSocket with peer routing.
-    final url = '$relayWsUrl?peer=$homePeerId';
+    // Use Uri.encodeComponent for the peer ID because base64url encoding
+    // can include +/= chars that Uri.parse misinterprets as spaces
+    // without proper encoding. This fixes "http://...ws#"
+    // (URL mangled, + turned to space, treated as fragment).
+    final encodedPeerId = Uri.encodeComponent(homePeerId);
+    final baseUrl = '$relayWsUrl?peer=$encodedPeerId';
+    final url = sessionToken.isNotEmpty
+        ? '$baseUrl&token=$sessionToken'
+        : baseUrl;
     final uri = Uri.parse(url);
     final channel = WebSocketChannel.connect(uri);
     final transport = ClientProxyTransport._(channel);

@@ -393,9 +393,21 @@ class TerminalViewState extends State<TerminalView>
     _bytesReceived += bytes.length;
     _parser.write(bytes);
     _nonEmptyCells = _countNonEmptyCells();
+
+    // Auto-jump to live view when new output arrives: if the user is
+    // already at the bottom (yDisplacement == 0), snap back to the
+    // latest content after each batch. If they've scrolled up to read
+    // history, leave them there. This matches real terminal behaviour —
+    // output follows the prompt, page-by-page.
+    final wasAtBottom = _yDisplacement == 0;
+
     _tick++;
     if (mounted) {
       setState(() {});
+    }
+
+    if (wasAtBottom) {
+      jumpToBottom();
     }
   }
 
@@ -1366,6 +1378,11 @@ class TerminalViewState extends State<TerminalView>
   void lineFeed() {
     _wrapPending = false;
     if (_cursorRow == _scrollBottom) {
+      // At the bottom of the scroll region: scroll the region up
+      // by one row, pushing the top row into scrollback. The cursor
+      // stays at the scroll bottom (the new blank line).
+      _scrollUpOne();
+    } else {
       _cursorRow++;
     }
   }
@@ -1402,9 +1419,11 @@ class TerminalViewState extends State<TerminalView>
         // DA1 / DA2 response: identify as VT100 with no extensions.
         // Response: ESC [ ? 1 ; 0 c  (DEC private mode 1, value 0)
         bytes.addAll([0x3F, 0x31, 0x3B, 0x30, 0x63]); // "?1;0c"
+        break;
       case 5:
         // Operating status: "ready, no malfunctions"
         bytes.addAll([0x30, 0x6E]); // "0n"
+        break;
       case 6:
         // DSR cursor position: respond with current cursor position.
         // Response: ESC [ row ; col R
@@ -1412,6 +1431,7 @@ class TerminalViewState extends State<TerminalView>
         final col = (_cursorCol + 1).toString();
         final body = '$row;$col';
         bytes.addAll([...body.codeUnits, 0x52]); // "row;colR"
+        break;
       default:
         return;
     }
@@ -1774,7 +1794,8 @@ class _TerminalPainter extends CustomPainter {
       fontFamilyFallback: ['Menlo', 'Roboto Mono', 'Courier New'],
       fontSize: 9,
       color: Color(0xFF00FF00),
-      backgroundColor: Color(0xCC000000),
+      // No background — debug text is non-blocking and transparent.
+      // The terminal content shows through underneath.
     );
     final debugText =
         'y=$yDisplacement  pd=$pointerDownCount  pm=$pointerMoveCount  pa=$panActivatedCount  ls=$linesScrolled'

@@ -42,11 +42,29 @@ Uint8List encodeTerminalResize(int cols, int rows) {
 
 typedef EventHandler = void Function(dynamic data);
 
+/// A transport candidate for reaching the home node.
+///
+/// The [url] format determines which transport is used:
+///   - `ws://` / `wss://`  → standard WebSocket
+///   - contains `?peer=`        → relay proxy WebSocket
+///     (requires [homePeerId] and [sessionToken])
 class HomeRemoteCandidate {
   final String name;
   final String url;
 
-  const HomeRemoteCandidate({required this.name, required this.url});
+  /// Required for relay (?peer=) candidates. The home node's libp2p peer ID.
+  /// When non-null, _createTransportForCandidate routes to ClientProxyTransport.
+  final String? homePeerId;
+
+  /// Required for relay candidates. The session token for authentication.
+  final String? sessionToken;
+
+  const HomeRemoteCandidate({
+    required this.name,
+    required this.url,
+    this.homePeerId,
+    this.sessionToken,
+  });
 }
 
 class HomeRemoteClientOptions {
@@ -216,10 +234,18 @@ class HomeRemoteClient {
     final perTimeout = _options.perCandidateTimeoutMs;
     Object? lastError;
 
+    // Fast-fail threshold: if a candidate rejects the connection (TCP RST,
+    // ICMP unreachable, or immediate WS close) within this window, it is
+    // almost certainly unreachable and we should try the next candidate
+    // without waiting for the full perTimeout. 500 ms is long enough to
+    // rule out a transient ARP/DNS delay but short enough that we don't
+    // waste significant time on a truly unreachable host.
+    const fastFailMs = 500;
+
     for (var i = startIndex; i < candidates.length; i++) {
       final candidate = candidates[i];
       try {
-        await _openSocket(candidate, perTimeout);
+        await _openSocket(candidate, perTimeout, fastFailMs: fastFailMs);
         _probeCooldown.remove(candidate.name);
         _setActiveCandidate(candidate);
         return;
@@ -237,13 +263,36 @@ class HomeRemoteClient {
   }
 
   /// Open a WebSocket to a candidate with timeout.
+  ///
+  /// [perTimeoutMs] — total connect timeout. [fastFailMs] — if the socket
+  /// errors/closes within this window, abort immediately and throw instead
+  /// of waiting for [perTimeoutMs]. This avoids wasting 8 seconds on a
+  /// candidate that is unreachable (e.g. LAN IP when on mobile data).
   Future<void> _openSocket(
-      HomeRemoteCandidate candidate, int perTimeoutMs) async {
+    HomeRemoteCandidate candidate,
+    int perTimeoutMs, {
+    int fastFailMs = 0,
+  }) async {
     final ws = await _createTransportFor(candidate);
     _ws = ws;
 
     final completer = Completer<void>();
-    final timer = Timer(Duration(milliseconds: perTimeoutMs), () {
+    Timer? fastFailTimer;
+    Timer? slowTimer;
+
+    if (fastFailMs > 0) {
+      fastFailTimer = Timer(Duration(milliseconds: fastFailMs), () {
+        if (!completer.isCompleted) {
+          try {
+            ws.close();
+          } catch (_) {}
+          // Fast-fail: candidate is unreachable — abort immediately.
+          completer.completeError(Exception('homeRemote.unreachable'));
+        }
+      });
+    }
+
+    slowTimer = Timer(Duration(milliseconds: perTimeoutMs), () {
       if (!completer.isCompleted) {
         try {
           ws.close();
@@ -254,14 +303,16 @@ class HomeRemoteClient {
 
     ws.onOpen = () {
       if (!completer.isCompleted) {
-        timer.cancel();
+        fastFailTimer?.cancel();
+        slowTimer?.cancel();
         completer.complete();
       }
     };
 
     ws.onError = () {
       if (!completer.isCompleted) {
-        timer.cancel();
+        fastFailTimer?.cancel();
+        slowTimer?.cancel();
         try {
           ws.close();
         } catch (_) {}

@@ -56,6 +56,7 @@ class PairingService {
       agentName: _nullableTrim(parsed.queryParameters['agentName']),
       relayPeerId: _nullableTrim(parsed.queryParameters['relayPeerId']),
       ownerPublicKey: _nullableTrim(parsed.queryParameters['ownerPublicKey']),
+      bootstrapPeers: _parseBootstrapPeers(parsed.queryParameters['bootstrapPeers']),
     );
   }
 
@@ -78,6 +79,15 @@ class PairingService {
     if (raw == null) return null;
     final trimmed = raw.trim();
     return trimmed.isEmpty ? null : trimmed;
+  }
+
+  /// Parse the bootstrapPeers query param: comma-separated list of
+  /// WebSocket URLs or host:port strings.
+  static List<String>? _parseBootstrapPeers(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+    return trimmed.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
   }
 }
 
@@ -113,6 +123,11 @@ class PairingData {
   /// Owner's Ed25519 public key (PEM).
   final String? ownerPublicKey;
 
+  /// Bootstrap peer addresses (libp2p public servers, additional relays)
+  /// from the home node's configuration. Used as fallback when the
+  /// primary relay is unavailable.
+  final List<String>? bootstrapPeers;
+
   const PairingData({
     required this.token,
     required this.wsUrl,
@@ -124,6 +139,7 @@ class PairingData {
     this.agentName,
     this.relayPeerId,
     this.ownerPublicKey,
+    this.bootstrapPeers,
   });
 }
 

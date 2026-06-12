@@ -8595,6 +8595,7 @@ class NodeServiceImpl implements NodeService {
         connectedRelays: [],
         bondedPeers: 0,
         terminalsAvailable: Boolean(this._terminalManager),
+        bootstrapPeers: this._relayBootstrapPeers,
         ...diagnostics,
       };
     }
@@ -8605,6 +8606,7 @@ class NodeServiceImpl implements NodeService {
       connectedRelays: mesh.getConnectionStats().circuitPeerIds,
       bondedPeers: 0,
       terminalsAvailable: Boolean(this._terminalManager),
+      bootstrapPeers: this._relayBootstrapPeers,
       ...diagnostics,
     };
   }
@@ -9178,8 +9180,11 @@ class NodeServiceImpl implements NodeService {
       payload.ownerId = profile.owner.ownerId;
     }
 
-    if (reachable?.peerId) {
-      payload.homeNodePeerId = reachable.peerId;
+    // Include ALL relay/bootstrap multiaddr URLs so EnvoyGo has the complete
+    // fallback list immediately — before getPairingPayload() is called.
+    // EnvoyGo will try them in order; the first reachable one succeeds.
+    if (this._relayBootstrapPeers.length > 0) {
+      payload.bootstrapPeers = [...this._relayBootstrapPeers];
     }
 
     return payload;

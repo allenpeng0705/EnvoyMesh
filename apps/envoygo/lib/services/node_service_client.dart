@@ -28,6 +28,12 @@ class NodeServiceClient {
         as Map<String, dynamic>;
   }
 
+  /// Fetch the full pairing payload from the home node, including
+  /// bootstrap peer addresses for multi-relay fallback.
+  Future<Map<String, dynamic>> getPairingPayload() async {
+    return await _client.call('getPairingPayload') as Map<String, dynamic>;
+  }
+
   // -- Contacts & bonds --
 
   Future<List<Contact>> getBonds() async {

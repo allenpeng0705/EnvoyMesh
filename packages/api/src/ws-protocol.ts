@@ -537,6 +537,13 @@ export interface PairingPayload {
   ownerId?: string;
   /** Home node's libp2p peer ID for mobile → home routing (bridge agent transport). */
   homeNodePeerId?: string;
+  /**
+   * Bootstrap peer multiaddrs the home node uses (optional).
+   * When present, EnvoyGo tries these as last-resort fallback candidates
+   * when the relay URL is unreachable. Useful when the operator has
+   * configured additional relay or bootstrap peers that are WebSocket-accessible.
+   */
+  bootstrapPeers?: string[];
 }
 
 /** Params decoded from an `envoy://pair` URI for mobile shared-identity pairing. */

@@ -25,6 +25,12 @@ abstract class ConnectivityObserver {
   /// Cancel the underlying subscription and close the stream.
   /// Idempotent.
   Future<void> dispose();
+
+  /// True when the device is connected via WiFi.
+  /// False when on mobile data or disconnected.
+  /// Returns null if the network type is unknown (e.g. before
+  /// the first connectivity check completes).
+  bool? get isOnWifi;
 }
 
 /// Production implementation backed by `connectivity_plus`.
@@ -36,11 +42,18 @@ class RealConnectivityObserver implements ConnectivityObserver {
   bool _wasOnline = false;
   bool _started = false;
 
+  /// True when the device is connected via WiFi.
+  /// Null before the first connectivity check completes.
+  bool? _isOnWifi;
+
   RealConnectivityObserver({Connectivity? connectivity})
       : _connectivity = connectivity ?? Connectivity();
 
   @override
   Stream<void> get onBecameOnline => _controller.stream;
+
+  @override
+  bool? get isOnWifi => _isOnWifi;
 
   @override
   Future<void> start() async {
@@ -49,6 +62,7 @@ class RealConnectivityObserver implements ConnectivityObserver {
     try {
       final initial = await _connectivity.checkConnectivity();
       _wasOnline = _isOnline(initial);
+      _isOnWifi = _checkIsOnWifi(initial);
     } catch (_) {
       // If the platform channel isn't ready (rare — typically only
       // on web), assume online so we don't miss the first edge.
@@ -72,10 +86,16 @@ class RealConnectivityObserver implements ConnectivityObserver {
       if (!_controller.isClosed) _controller.add(null);
     }
     _wasOnline = online;
+    _isOnWifi = _checkIsOnWifi(results);
   }
 
   static bool _isOnline(List<ConnectivityResult> results) {
     if (results.isEmpty) return false;
     return results.any((r) => r != ConnectivityResult.none);
+  }
+
+  /// Returns true if any result indicates WiFi.
+  static bool _checkIsOnWifi(List<ConnectivityResult> results) {
+    return results.any((r) => r == ConnectivityResult.wifi);
   }
 }

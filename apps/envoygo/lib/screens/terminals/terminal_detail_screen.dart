@@ -64,13 +64,6 @@ class _TerminalDetailScreenState
   /// the soft bar's Copy button enable state.
   bool _hasSelection = false;
 
-  /// Resize debounce timer.
-  Timer? _resizeTimer;
-
-  /// Pending resize dimensions; the debounce flushes them.
-  int? _pendingCols;
-  int? _pendingRows;
-
   /// Approximate monospace cell size in logical pixels. The
   /// [TerminalView] now derives its own cell size from the font
   /// and reports dimensions via [onDimensionsChanged]; these
@@ -90,7 +83,6 @@ class _TerminalDetailScreenState
   @override
   void dispose() {
     _detach();
-    _resizeTimer?.cancel();
     _textController.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -121,31 +113,23 @@ class _TerminalDetailScreenState
 
     try {
       await _terminalService!.attach(widget.sessionId);
-      // Send an initial resize IMMEDIATELY (no debounce) so the
-      // home PTY is told the phone's grid size before any bytes
-      // stream in. Without this, the home sends bytes addressed
-      // to its default 80×24 grid, but the phone's
-      // TerminalView is already (or will be) a different size.
-      // The result is content landing at the wrong positions,
-      // which surfaces as "the output is truncated" or "TUI
-      // redraws overlap" — the bytes are arriving, just to
-      // the wrong cells. We use the TerminalView's own derived
-      // dimensions if it's already laid out, or fall back to a
-      // conservative 80×24 so the home at least matches the
-      // phone's initial state.
-      final state = _terminalKey.currentState;
-      if (state != null) {
-        // dynamic call: read cols/rows the view derived.
+      // The TerminalView hasn't been laid out yet at this point —
+      // _attach runs before the first frame. Reading state.cols/rows
+      // here returns the initial 80×24, not the derived size.
+      // Defer the initial resize to the first post-frame callback,
+      // which fires after layout is complete and TerminalView has
+      // already called onDimensionsChanged with the correct size.
+      // That callback also fires sendResize immediately (no debounce).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final state = _terminalKey.currentState;
+        if (state == null) return;
         final c = (state as dynamic).cols as int? ?? 80;
         final r = (state as dynamic).rows as int? ?? 24;
         if (c >= 2 && r >= 2) {
-          _terminalService!.sendResize(c, r);
+          _terminalService?.sendResize(c, r);
         }
-      } else {
-        // Conservative fallback: tell the home to be 80×24,
-        // matching the phone's initial state.
-        _terminalService!.sendResize(80, 24);
-      }
+      });
     } catch (e) {
       // Stream attach failed — we still allow basic interaction
       // via the terminalExec RPC fallback (handled by the
@@ -339,20 +323,12 @@ class _TerminalDetailScreenState
   // -- Resize --
 
   void _scheduleResize(int cols, int rows) {
-    if (cols == _pendingCols && rows == _pendingRows) return;
-    _pendingCols = cols;
-    _pendingRows = rows;
-    _resizeTimer?.cancel();
-    _resizeTimer = Timer(const Duration(milliseconds: 200), () {
-      _resizeTimer = null;
-      final c = _pendingCols;
-      final r = _pendingRows;
-      if (c == null || r == null) return;
-      // Forward to the home PTY. The local view already resized
-      // itself in the LayoutBuilder that produced these
-      // dimensions.
-      _terminalService?.sendResize(c, r);
-    });
+    // Always send immediately. A 200 ms debounce causes a race: HOME
+    // continues sending at its current grid dimensions while LOCAL
+    // has already resized. The bytes arrive with wrong cursor positions,
+    // causing overlapping and truncated output. Removing the debounce
+    // eliminates this desync window.
+    _terminalService?.sendResize(cols, rows);
   }
 
   /// Called by the [TerminalView] when its internal grid

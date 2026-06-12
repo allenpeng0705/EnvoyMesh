@@ -42,6 +42,12 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
         if (payload.ownerPublicKey) params.set("ownerPublicKey", payload.ownerPublicKey);
         if (payload.ownerId) params.set("ownerId", payload.ownerId);
         if (payload.homeNodePeerId) params.set("homeNodePeerId", payload.homeNodePeerId);
+        // Include bootstrap peers (libp2p public servers, additional relay
+        // addresses) so EnvoyGo has the full fallback list immediately — before
+        // getPairingPayload() is called. Comma-separated for URL encoding.
+        if (payload.bootstrapPeers && payload.bootstrapPeers.length > 0) {
+          params.set("bootstrapPeers", payload.bootstrapPeers.join(","));
+        }
         const built = `envoy://pair?${params.toString()}`;
         const dataUrl = await QRCode.toDataURL(built, { width: 256, margin: 1 });
         if (cancelled) return;
