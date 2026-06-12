@@ -313,18 +313,6 @@ class _TerminalDetailScreenState
     _terminalService?.sendKey(bytes);
   }
 
-  /// Snap the local view to the bottom (live view). Called by
-  /// the AppBar's "Jump to bottom" button (the only remaining
-  /// scrollback-navigation affordance besides the pan gesture
-  /// itself — the soft bar no longer has explicit scroll
-  /// buttons, per the simpler-UI pass).
-  void _onJumpToBottom() {
-    final state = _terminalKey.currentState;
-    if (state == null) return;
-    state.jumpToBottom();
-    setState(() => _yDisplacement = 0);
-  }
-
   Future<void> _onCopy() async {
     final state = _terminalKey.currentState;
     if (state == null) return;
@@ -395,12 +383,35 @@ class _TerminalDetailScreenState
       appBar: AppBar(
         title: Text(widget.sessionName),
         actions: [
-          if (_yDisplacement > 0)
-            TextButton.icon(
-              onPressed: _onJumpToBottom,
-              icon: const Icon(Icons.arrow_downward, size: 16),
-              label: const Text('Jump to bottom'),
-            ),
+          // Scrollback navigation. Two buttons — top and bottom
+          // — are always visible regardless of the current
+          // scroll position. The user can fine-scroll with the
+          // pan gesture, and the right-edge indicator thumb
+          // shows the current position. These two buttons give
+          // the user a direct one-tap path to the extremes of
+          // the scrollback.
+          //
+          // The icons are vertical arrows (up / down) so the
+          // meaning is unambiguous: up = "go to the start of
+          // history", down = "go to the live view".
+          IconButton(
+            tooltip: 'Top of scrollback',
+            icon: const Icon(Icons.arrow_upward),
+            onPressed: () {
+              final state = _terminalKey.currentState;
+              if (state == null) return;
+              state.scrollUp(state.scrollbackLength);
+            },
+          ),
+          IconButton(
+            tooltip: 'Jump to bottom (live view)',
+            icon: const Icon(Icons.arrow_downward),
+            onPressed: () {
+              final state = _terminalKey.currentState;
+              if (state == null) return;
+              state.jumpToBottom();
+            },
+          ),
           if (!_tunnelUp)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 8.0),
@@ -461,6 +472,9 @@ class _TerminalDetailScreenState
                             _onScrollbackOffsetChanged,
                         onDimensionsChanged: _onDimensionsChanged,
                         onTap: _onTapTerminalArea,
+                        onOutboundBytes: (bytes) {
+                          _terminalService?.sendRaw(bytes);
+                        },
                       ),
                     ),
                   ],

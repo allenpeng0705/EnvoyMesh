@@ -58,6 +58,15 @@ abstract class TerminalTarget {
   /// the row left.
   void deleteCharacters(int n);
 
+  /// Erase [n] cells starting at the cursor column, replacing them
+  /// with blanks (preserving the current SGR attributes). Used by
+  /// progress bars and partial-line overwrites.
+  void eraseCharacters(int n);
+
+  /// Repeat the last printed character [n] times. Used by progress
+  /// bars that emit `CSI 5 b` to repeat the bar character.
+  void repeatPrevChar(int n);
+
   /// Set scrolling region: rows [top]..[bottom] (1-based, inclusive).
   void setScrollRegion(int top, int bottom);
 
@@ -96,6 +105,16 @@ abstract class TerminalTarget {
   /// Bell: ignored (the TUI may want visual feedback, but for v1
   /// we just drop it).
   void bell();
+
+  /// Report device status. The parser calls this when the host
+  /// sends DSR (Device Status Report, CSI Ps n) or DA1/DA2
+  /// (CSI c). [type] is the report type:
+  /// - 0 = DA1 / DA2 response (terminal identifies itself)
+  /// - 5 = operating status (we respond "ready")
+  /// - 6 = DSR cursor position (respond with current position)
+  /// The response bytes are sent back via the PTY stdin so the
+  /// host TUI receives them as input on its end.
+  void reportStatus(int type);
 }
 
 /// State-machine parser that consumes a raw byte stream from a PTY
@@ -147,6 +166,10 @@ class TerminalParser {
   /// BEL or ST). We collect it as a list of byte values and decode
   /// it as UTF-8 at the terminator.
   final _oscBuf = <int>[];
+
+  /// DCS accumulator (everything between ESC P and the terminator
+  /// ST or BEL). We collect raw bytes to handle tmux passthrough.
+  final _dcsBuf = <int>[];
 
   /// UTF-8 pending buffer: when a multi-byte sequence spans a
   /// chunk boundary, we hold the leading bytes here until the
@@ -214,12 +237,16 @@ class TerminalParser {
     switch (_state) {
       case _State.ground:
         _target.putChar(String.fromCharCode(byte));
+        return;
       case _State.escape:
         _handleEscape(byte);
+        return;
       case _State.csiEntry:
         _handleCsi(byte);
+        return;
       case _State.oscString:
         _oscBuf.add(byte);
+        return;
       case _State.oscEsc:
         // After ESC inside OSC, we expect \ (ST) to terminate. If
         // we get any other byte, abort the OSC.
@@ -230,6 +257,38 @@ class TerminalParser {
           _state = _State.ground;
           _oscBuf.clear();
         }
+        return;
+      case _State.dcsString:
+        // 0x9C = C1 ST (8-bit ST, terminates DCS directly).
+        // BEL (0x07) also terminates directly.
+        // ESC (0x1B) transitions to dcsEsc to watch for \.
+        if (byte == 0x9C || byte == 0x07) {
+          _endDcs();
+          _state = _State.ground;
+        } else if (byte == 0x1B) {
+          _state = _State.dcsEsc;
+        } else {
+          _dcsBuf.add(byte);
+        }
+        return;
+      case _State.dcsEsc:
+        // After ESC inside DCS, we expect \ (ST) to terminate. ESC itself is
+        // literal data (tmux uses doubled ESC 0x1B 0x1B to encode a
+        // single 0x1B byte in the payload).
+        if (byte == 0x5C /* \ */) {
+          _endDcs();
+          _state = _State.ground;
+        } else if (byte == 0x1B) {
+          // Another ESC: this is the second byte of a doubled-ESC sequence.
+          // Accumulate it (it represents a literal 0x1B) and stay in dcsEsc.
+          _dcsBuf.add(byte);
+        } else {
+          // Any other byte after ESC: tmux doesn't use these, but guard
+          // against malformed data. Add to buffer and return to dcsString.
+          _dcsBuf.add(byte);
+          _state = _State.dcsString;
+        }
+        return;
     }
   }
 
@@ -316,8 +375,12 @@ class TerminalParser {
         switch (byte) {
           case 0x1B: // ESC ESC — treat the first as a no-op ST
             return;
+          case 0x5B: // [ — CSI introducer
+            _resetCsi();
+            _state = _State.csiEntry;
+            return;
           default:
-            // Most non-printable bytes in escape state are an
+            // Other non-printable bytes in escape state are an
             // error — return to ground.
             _state = _State.ground;
         }
@@ -342,18 +405,49 @@ class TerminalParser {
             _state = _State.oscEsc;
             return;
           default:
-            // Other control chars inside OSC — keep accumulating
-            // (real-world TUI output is messy).
-            _oscBuf.add(byte);
+            // Other C0 control chars inside OSC — silently ignore.
+            // Real TTYs can emit stray control bytes in OSC strings.
+            return;
         }
       case _State.oscEsc:
         if (byte == 0x5C /* \ */) {
           _endOsc();
         } else {
-          // Abort.
+          // Abort: OSC was malformed.
           _oscBuf.clear();
         }
         _state = _State.ground;
+        return;
+      case _State.dcsString:
+        // C0 bytes inside a DCS are valid payload — accumulate.
+        // Only ESC (0x1B) and BEL (0x07) are special.
+        if (byte == 0x1B) {
+          _state = _State.dcsEsc;
+        } else if (byte == 0x07) {
+          _endDcs();
+          _state = _State.ground;
+        } else {
+          _dcsBuf.add(byte);
+        }
+        return;
+      case _State.dcsEsc:
+        // After ESC inside DCS, only \ (ST) terminates. ESC itself is
+        // literal data (tmux uses doubled ESC 0x1B 0x1B to encode a
+        // single 0x1B byte in the payload).
+        if (byte == 0x5C /* \ */) {
+          _endDcs();
+          _state = _State.ground;
+        } else if (byte == 0x1B) {
+          // ESC inside dcsEsc → this is the first byte of another ESC
+          // sequence. Stay in dcsEsc and wait for the next byte to
+          // decide (it might be another ESC, or [ for CSI, etc.).
+          _dcsBuf.add(byte);
+        } else {
+          // Any other byte: tmux doesn't use these, but guard against
+          // malformed data. Add to buffer and return to dcsString.
+          _dcsBuf.add(byte);
+          _state = _State.dcsString;
+        }
     }
   }
 
@@ -363,25 +457,32 @@ class TerminalParser {
       case 0x5B: // [ — start CSI
         _resetCsi();
         _state = _State.csiEntry;
+        return;
       case 0x5D: // ] — start OSC
         _oscBuf.clear();
         _state = _State.oscString;
+        return;
       case 0x37: // 7 — save cursor
         _target.saveCursor();
         _state = _State.ground;
+        return;
       case 0x38: // 8 — restore cursor
         _target.restoreCursor();
         _state = _State.ground;
+        return;
       case 0x44: // D — IND (index / reverse line feed)
         _target.cursorDown(1);
         _state = _State.ground;
+        return;
       case 0x4D: // M — RI (reverse index)
         _target.cursorUp(1);
         _state = _State.ground;
+        return;
       case 0x45: // E — NEL (next line)
         _target.carriageReturn();
         _target.lineFeed();
         _state = _State.ground;
+        return;
       case 0x63: // c — RIS (full reset)
         // Best-effort: send a clear screen + home + reset SGR.
         // The target exposes eraseInDisplay(3) for "clear scrollback
@@ -390,9 +491,15 @@ class TerminalParser {
         _target.resetSgr();
         _target.cursorPosition(1, 1);
         _state = _State.ground;
+        return;
+      case 0x50: // P — start DCS (Device Control String)
+        _dcsBuf.clear();
+        _state = _State.dcsString;
+        return;
       default:
         // Unknown ESC sequence — return to ground.
         _state = _State.ground;
+        return;
     }
   }
 
@@ -405,10 +512,18 @@ class TerminalParser {
         _currentParam = '';
       } else if (byte == 0x3F /* ? */) {
         _privateMode = true;
+      } else if (byte == 0x3A /* : */) {
+        // Colon is a sub-param separator in modern CSI (e.g. SGR
+        // 38:2:100:150:200 for truecolor). Treat it like ; —
+        // flush the current param and start a fresh one.
+        if (_currentParam.isNotEmpty) {
+          _params.add(_currentParam);
+        }
+        _currentParam = '';
       } else if (byte >= 0x30 && byte <= 0x39) {
         _currentParam += String.fromCharCode(byte);
       }
-      // 0x3A (:), 0x3C (<), 0x3D (=), 0x3E (>), 0x40-0x46 (intermediate
+      // 0x3C (<), 0x3D (=), 0x3E (>), 0x40-0x46 (intermediate
       // bytes) — ignore for our minimal subset.
     } else if (byte >= 0x40 && byte <= 0x7E) {
       // Final byte — dispatch.
@@ -456,40 +571,63 @@ class TerminalParser {
     switch (finalByte) {
       case 0x41: // A — CUU
         _target.cursorUp(params.isEmpty ? 1 : (params[0] == 0 ? 1 : params[0]));
+        return;
       case 0x42: // B — CUD
         _target.cursorDown(params.isEmpty ? 1 : (params[0] == 0 ? 1 : params[0]));
+        return;
       case 0x43: // C — CUF
         _target.cursorForward(params.isEmpty ? 1 : (params[0] == 0 ? 1 : params[0]));
+        return;
       case 0x44: // D — CUB
         _target.cursorBack(params.isEmpty ? 1 : (params[0] == 0 ? 1 : params[0]));
+        return;
       case 0x45: // E — CNL
         _target.cursorPosition(_clampRow(params.isEmpty ? 1 : params[0]), 1);
+        return;
       case 0x46: // F — CPL
         _target.cursorPosition(_clampRow(params.isEmpty ? 1 : params[0]), 1);
+        return;
       case 0x47: // G — CHA
         _target.cursorPosition(0, params.isEmpty ? 1 : (params[0] == 0 ? 1 : params[0]));
+        return;
       case 0x48: // H / 0x66 f — CUP
         final r = params.isEmpty || params[0] == 0 ? 1 : params[0];
         final c = params.length < 2 || params[1] == 0 ? 1 : params[1];
         _target.cursorPosition(r, c);
+        return;
       case 0x4A: // J — ED
         _target.eraseInDisplay(params.isEmpty ? 0 : params[0]);
+        return;
       case 0x4B: // K — EL
         _target.eraseInLine(params.isEmpty ? 0 : params[0]);
+        return;
       case 0x4C: // L — IL
         _target.insertLines(params.isEmpty ? 1 : (params[0] == 0 ? 1 : params[0]));
+        return;
       case 0x4D: // M — DL
         _target.deleteLines(params.isEmpty ? 1 : (params[0] == 0 ? 1 : params[0]));
+        return;
       case 0x50: // P — DCH
         _target.deleteCharacters(params.isEmpty ? 1 : (params[0] == 0 ? 1 : params[0]));
+        return;
       case 0x40: // @ — ICH
         _target.insertCharacters(params.isEmpty ? 1 : (params[0] == 0 ? 1 : params[0]));
+        return;
+      case 0x58: // X — ECH (erase character)
+        _target.eraseCharacters(params.isEmpty ? 1 : (params[0] == 0 ? 1 : params[0]));
+        return;
       case 0x53: // S — SU
         _target.cursorDown(params.isEmpty ? 1 : (params[0] == 0 ? 1 : params[0]));
+        return;
       case 0x54: // T — SD
         _target.cursorUp(params.isEmpty ? 1 : (params[0] == 0 ? 1 : params[0]));
+        return;
+      case 0x62: // b — REP (repeat previous character)
+        _target.repeatPrevChar(params.isEmpty ? 1 : (params[0] == 0 ? 1 : params[0]));
+        return;
       case 0x64: // d — VPA
         _target.cursorPosition(params.isEmpty ? 1 : (params[0] == 0 ? 1 : params[0]), 0);
+        return;
       case 0x6D: // m — SGR
         if (params.isEmpty || (params.length == 1 && params[0] == 0)) {
           _target.resetSgr();
@@ -498,10 +636,18 @@ class TerminalParser {
             _target.setSgr(p);
           }
         }
+        return;
+      case 0x63: // c — DA1 / DA2 (Primary / Secondary Device Attributes)
+        _target.reportStatus(0);
+        return;
+      case 0x6E: // n — DSR (Device Status Report)
+        _target.reportStatus(params.isEmpty ? 6 : params[0]);
+        return;
       case 0x72: // r — DECSTBM (set scroll region)
         final top = params.isEmpty || params[0] == 0 ? 1 : params[0];
         final bottom = params.length < 2 || params[1] == 0 ? 0 : params[1];
         _target.setScrollRegion(top, bottom);
+        return;
       case 0x68: // h — SM (set mode)
       case 0x6C: // l — RM (reset mode)
         // Non-private mode set/reset. We don't have any of these
@@ -563,6 +709,51 @@ class TerminalParser {
     }
     _oscBuf.clear();
   }
+
+  /// End the current DCS sequence and dispatch. tmux uses DCS passthrough
+  /// (ESC P ... ESC \) to tunnel inner escape sequences through the PTY
+  /// to the terminal. The payload format is `tmux ; <escaped-data>`.
+  /// We detect this and re-parse the inner data after un-escaping
+  /// doubled 0x1B and 0x5C bytes.
+  void _endDcs() {
+    if (_dcsBuf.isEmpty) return;
+    // Transition to ground BEFORE processing the payload. This is critical
+    // when _endDcs is called from within _step (e.g., from the dcsEsc
+    // case): if we don't reset, the recursive write() call below would
+    // process the unescaped bytes starting in dcsEsc state, and the
+    // first byte (often 0x1B from the doubled-ESC encoding) would be
+    // buffered as DCS data instead of starting an escape sequence.
+    _state = _State.ground;
+    // Check for tmux passthrough signature: "tmux ; " (7 bytes)
+    const tmuxSig = [0x74, 0x6D, 0x75, 0x78, 0x3B, 0x20]; // "tmux; "
+    if (_dcsBuf.length > 6 &&
+        _dcsBuf[0] == tmuxSig[0] &&
+        _dcsBuf[1] == tmuxSig[1] &&
+        _dcsBuf[2] == tmuxSig[2] &&
+        _dcsBuf[3] == tmuxSig[3] &&
+        _dcsBuf[4] == tmuxSig[4] &&
+        _dcsBuf[5] == tmuxSig[5]) {
+      // Extract the data after "tmux; " (bytes 6 onward).
+      final data = _dcsBuf.sublist(6);
+      // Un-escape: 0x1B 0x1B → 0x1B, 0x5C 0x5C → 0x5C.
+      final unescaped = <int>[];
+      for (var i = 0; i < data.length; i++) {
+        if ((data[i] == 0x1B || data[i] == 0x5C) &&
+            i + 1 < data.length &&
+            data[i + 1] == data[i]) {
+          unescaped.add(data[i]);
+          i++; // skip the second copy
+        } else {
+          unescaped.add(data[i]);
+        }
+      }
+      // Re-parse the unescaped inner sequences as fresh bytes.
+      if (unescaped.isNotEmpty) {
+        write(Uint8List.fromList(unescaped));
+      }
+    }
+    _dcsBuf.clear();
+  }
 }
 
 /// Parser state machine states.
@@ -572,4 +763,6 @@ enum _State {
   csiEntry,
   oscString,
   oscEsc,
+  dcsString,
+  dcsEsc,
 }

@@ -91,6 +91,19 @@ class TerminalService {
     return result.ok;
   }
 
+  /// Send arbitrary raw bytes to the PTY stdin. Used for
+  /// terminal-to-host responses (e.g. DSR cursor-position report).
+  bool sendRaw(Uint8List bytes) {
+    final sessionId = _activeSessionId;
+    if (sessionId == null) return false;
+    final result = _remote.sendTerminalFrame(
+      encodeTerminalFrame(TerminalWireType.stdin, bytes),
+      sessionId: sessionId,
+    );
+    if (!result.ok) _wsAttached = false;
+    return result.ok;
+  }
+
   /// Send a pty resize event. `cols` and `rows` must be > 0; otherwise
   /// the call is ignored.
   void sendResize(int cols, int rows) {

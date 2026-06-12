@@ -76,7 +76,16 @@ class TerminalView extends StatefulWidget {
     this.onTitleChanged,
     this.onTap,
     this.onDimensionsChanged,
+    /// Optional callback for terminal-to-host bytes. The parser calls
+    /// this when it needs to send a response back to the PTY (e.g.
+    /// DSR cursor-position report). The screen wires this to
+    /// [TerminalService.sendRaw].
+    this.onOutboundBytes,
   });
+
+  /// Callback for bytes that need to be sent back to the host PTY.
+  /// Used for DSR (Device Status Report) responses.
+  final void Function(Uint8List bytes)? onOutboundBytes;
 
   @override
   State<TerminalView> createState() => TerminalViewState();
@@ -102,6 +111,36 @@ class TerminalViewState extends State<TerminalView>
   /// compute the maximum yDisplacement for the "scroll to top"
   /// button.
   int get scrollbackLength => _scrollback.length;
+
+  /// Current y-displacement of the scrollback view. 0 = the
+  /// user is at the live view; > 0 means they've scrolled up
+  /// into the scrollback. Public so tests can verify the pan
+  /// produced the expected scroll amount.
+  int get yDisplacement => _yDisplacement;
+
+  /// Number of pointer-down events the Listener has received.
+  /// Exposed for on-device debugging — paint a debug strip with
+  /// these to see if touches are reaching the terminal.
+  int get pointerDownCount => _pointerDownCount;
+  int get pointerMoveCount => _pointerMoveCount;
+  int get panActivatedCount => _panActivatedCount;
+  int get linesScrolled => _linesScrolled;
+
+  /// Total bytes received via [write].
+  int get bytesReceived => _bytesReceived;
+
+  /// Non-empty cells in the visible grid.
+  int get nonEmptyCells => _nonEmptyCells;
+
+  /// Current scrollback length.
+  int get scrollbackLines => _scrollback.length;
+
+  /// Current cursor row (1-based). Public so DSR (cursor position
+  /// report) can be implemented.
+  int get cursorRow => _cursorRow + 1;
+
+  /// Current cursor column (1-based).
+  int get cursorCol => _cursorCol + 1;
 
   // -- Grid model --
 
@@ -160,6 +199,23 @@ class TerminalViewState extends State<TerminalView>
   /// TUIs expect it on (default true).
   bool _autoWrap = true;
 
+  /// Whether a wrap is pending. When the cursor is at the right margin
+  /// (column 79) and DECAWM is on, the character is written at the
+  /// margin and a flag is set. The NEXT character triggers the actual
+  /// cursor movement to column 0 of the next row. This matches the
+  /// VT100/xterm spec precisely.
+  bool _wrapPending = false;
+
+  /// Whether insert mode (IRM) is enabled. When true, characters at
+  /// and to the right of the cursor shift right, with the cursor
+  /// advancing to overwrite. When false (the default), characters
+  /// are over-written in place.
+  bool _insertMode = false;
+
+  /// The last non-control character printed by [putChar]. Used
+  /// by the REP (repeat) escape sequence to repeat it n times.
+  String _lastPrintableChar = '';
+
   // -- Repaint tick --
 
   /// Monotonically incrementing counter. Bumped on every [write]
@@ -169,6 +225,28 @@ class TerminalViewState extends State<TerminalView>
   /// place, the painter would never see that the contents
   /// changed and would never repaint.
   int _tick = 0;
+
+  /// Number of pointer-down events the Listener has received.
+  /// Used for on-device debugging — if this counter doesn't
+  /// increase when the user drags, the pan gesture is not
+  /// reaching the terminal.
+  int _pointerDownCount = 0;
+
+  /// Number of bytes received via [write]. The screen streams
+  /// PTY output as base64; if this counter stays at 0, the
+  /// bytes from the home never reach the view (push event
+  /// subscription broken, base64 decode failed, etc.).
+  int _bytesReceived = 0;
+
+  /// Number of cells in the visible grid that are non-empty.
+  /// If the user has run `claude --help` and this is 0, the
+  /// bytes are arriving but the painter is rendering nothing
+  /// (e.g., an empty / blank cell, or a parse error eating
+  /// the bytes).
+  int _nonEmptyCells = 0;
+  int _pointerMoveCount = 0;
+  int _panActivatedCount = 0;
+  int _linesScrolled = 0;
 
   // -- Cursor blink --
 
@@ -228,6 +306,25 @@ class TerminalViewState extends State<TerminalView>
   /// has moved past the touch slop (and thus whether the
   /// gesture is a pan vs. a stationary tap).
   Offset? _pointerDownPos;
+
+  /// Last few (timestamp, y) samples from the current touch
+  /// sequence. Used at pointer-up to compute the fling's
+  /// release velocity (pixels per second). We keep a small
+  /// ring of recent samples; older ones are evicted.
+  final List<MapEntry<Duration, double>> _pointerSamples =
+      <MapEntry<Duration, double>>[];
+
+  /// When the last few pointer-move samples show the user is
+  /// moving faster than this, the lift starts a fling. Below
+  /// this threshold, the lift is treated as a stop.
+  static const double _flingMinVelocityPxPerSec = 200.0;
+
+  /// Active fling animation. Each tick scrolls the view by
+  /// the current fling velocity, then decelerates. Null when
+  /// no fling is in progress.
+  Timer? _flingTimer;
+  double _flingVelocityPxPerSec = 0;
+  int _flingDirection = 0; // +1 = scrolling into scrollback, -1 = back to live
 
   /// True once the current touch sequence has crossed the touch
   /// slop and is being treated as a pan. Reset on pointer-up /
@@ -293,11 +390,26 @@ class TerminalViewState extends State<TerminalView>
   /// receives the new tick and returns `true` from
   /// [shouldRepaint], triggering a real frame.
   void write(Uint8List bytes) {
+    _bytesReceived += bytes.length;
     _parser.write(bytes);
+    _nonEmptyCells = _countNonEmptyCells();
     _tick++;
     if (mounted) {
       setState(() {});
     }
+  }
+
+  /// Count non-empty cells in the visible grid (any buffer).
+  /// Used for the on-device debug overlay.
+  int _countNonEmptyCells() {
+    var n = 0;
+    final grid = _grid;
+    for (final row in grid) {
+      for (final cell in row) {
+        if (cell.char.isNotEmpty && cell.char != ' ') n++;
+      }
+    }
+    return n;
   }
 
   /// Inform the emulator of a new grid size. The cursor is clamped
@@ -344,6 +456,7 @@ class TerminalViewState extends State<TerminalView>
     _scrollback.clear();
     _cursorRow = 0;
     _cursorCol = 0;
+    _wrapPending = false;
     _resetSgr();
     _selAnchorRow = null;
     _selAnchorCol = null;
@@ -485,19 +598,37 @@ class TerminalViewState extends State<TerminalView>
   /// Drag DOWN (positive dy) scrolls into the scrollback; drag
   /// UP returns toward the live view.
   void _onPointerDown(PointerDownEvent e) {
+    _pointerDownCount++;
     _pointerDownPos = e.localPosition;
     _panLastDy = e.localPosition.dy;
+    // Reset the velocity sample ring at the start of each
+    // touch sequence. Any in-flight fling must be cancelled
+    // so the user can re-grab the scroll mid-fling.
+    _flingTimer?.cancel();
+    _flingTimer = null;
+    _pointerSamples.clear();
+    _pointerSamples.add(MapEntry(e.timeStamp, e.localPosition.dy));
   }
 
   void _onPointerMove(PointerMoveEvent e) {
+    _pointerMoveCount++;
     final down = _pointerDownPos;
     if (down == null) return;
+    // Record this sample for the fling-velocity calculation
+    // at pointer-up. We cap the ring at 4 samples (~64 ms of
+    // history) so the velocity reflects the last flick, not
+    // the entire drag.
+    _pointerSamples.add(MapEntry(e.timeStamp, e.localPosition.dy));
+    while (_pointerSamples.length > 4) {
+      _pointerSamples.removeAt(0);
+    }
     final delta = e.localPosition - down;
     if (!_panActive) {
       if (delta.dx.abs() < _touchSlop && delta.dy.abs() < _touchSlop) {
         return;
       }
       _panActive = true;
+      _panActivatedCount++;
       // CRITICAL: this is the first move past the slop — we must
       // apply the scroll for THIS move (not just activate and
       // wait for the next one). On real devices, the OS can
@@ -515,6 +646,7 @@ class TerminalViewState extends State<TerminalView>
     if (lastDy == null) return;
     final deltaLines = ((e.localPosition.dy - lastDy) / cellH).round();
     if (deltaLines != 0) {
+      _linesScrolled += deltaLines.abs();
       if (deltaLines > 0) {
         scrollUp(deltaLines);
       } else {
@@ -525,16 +657,94 @@ class TerminalViewState extends State<TerminalView>
   }
 
   void _onPointerUp() {
-    // A fling would normally continue scrolling based on the
-    // pan's release velocity. We deliberately skip fling here
-    // because the Listener doesn't give us velocity — the
-    // simpler "fling = 1-cell pad" we had before is gone with
-    // GestureDetector. A future polish could compute velocity
-    // from the last few pointer-move events and apply a fling
-    // step here.
+    // Compute the release velocity from the most recent
+    // pointer-move samples. If the user was moving fast enough,
+    // start a fling animation that continues scrolling with
+    // deceleration. This makes the terminal feel like a
+    // native list view — a quick flick scrolls multiple lines
+    // after the finger lifts.
+    final v = _releaseVelocity();
     _pointerDownPos = null;
     _panLastDy = null;
     _panActive = false;
+
+    if (v.abs() < _flingMinVelocityPxPerSec) return;
+    _flingVelocityPxPerSec = v;
+    _flingDirection = v > 0 ? 1 : -1;
+    _startFling();
+  }
+
+  /// Compute the release velocity (px / sec) of the most
+  /// recent pan, by linear-regressing the last few samples.
+  /// Positive y means the user was dragging down (revealing
+  /// earlier scrollback); negative y means dragging up
+  /// (returning to the live view).
+  double _releaseVelocity() {
+    if (_pointerSamples.length < 2) return 0;
+    // Use the first and last sample to compute (Δy / Δt) over
+    // the recent window. This is a simple, robust estimate of
+    // the release velocity.
+    final n = _pointerSamples.length;
+    final firstSample = _pointerSamples.first;
+    final lastSample = _pointerSamples[n - 1];
+    final dt =
+        (lastSample.key - firstSample.key).inMicroseconds / 1e6;
+    if (dt <= 0) return 0;
+    return (lastSample.value - firstSample.value) / dt;
+  }
+
+  /// Begin a fling animation. Each tick (16 ms ≈ 60 fps)
+  /// scrolls the view by the current fling velocity, then
+  /// decelerates the velocity by a fixed fraction. The fling
+  /// ends when the velocity falls below the touch slop, or
+  /// when the view reaches the extremes of the scrollback.
+  void _startFling() {
+    _flingTimer?.cancel();
+    _flingTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      if (!mounted) {
+        _flingTimer?.cancel();
+        _flingTimer = null;
+        return;
+      }
+      // Convert velocity from px/sec to px/frame (16 ms).
+      final pxPerFrame = _flingVelocityPxPerSec * 0.016;
+      // If the next frame would scroll less than 1 px, stop.
+      if (pxPerFrame.abs() < 1.0) {
+        _flingTimer?.cancel();
+        _flingTimer = null;
+        return;
+      }
+      final cellH = _measureCellSize().height;
+      if (cellH <= 0) return;
+      final deltaLines = (pxPerFrame / cellH).round();
+      if (deltaLines == 0) {
+        // Decelerate further.
+        _flingVelocityPxPerSec *= 0.85;
+        return;
+      }
+      if (_flingDirection > 0) {
+        // Flinging into scrollback. If we're already at the
+        // top, stop.
+        if (_scrollback.isEmpty || _yDisplacement == _scrollback.length) {
+          _flingTimer?.cancel();
+          _flingTimer = null;
+          return;
+        }
+        scrollUp(deltaLines);
+      } else {
+        // Flinging back toward the live view. If already
+        // there, stop.
+        if (_yDisplacement == 0) {
+          _flingTimer?.cancel();
+          _flingTimer = null;
+          return;
+        }
+        scrollDown(-deltaLines);
+      }
+      // Decelerate. 0.92 per frame at 60 fps ≈ 0.92^60 ≈ 0.007
+      // after 1 second — a smooth, exponential decay.
+      _flingVelocityPxPerSec *= 0.92;
+    });
   }
 
   void _onPointerCancel(PointerCancelEvent e) {
@@ -571,6 +781,19 @@ class TerminalViewState extends State<TerminalView>
 
   @override
   void putChar(String ch) {
+    // DECAWM wrap-pending: if the previous character was written
+    // at the right margin with auto-wrap enabled, the cursor is
+    // already on the next line. Process pending wrap first.
+    if (_wrapPending) {
+      _wrapPending = false;
+      // Cursor is already at column 0 of the next row (set when
+      // wrap was triggered). Advance the row if needed.
+      if (_cursorCol == 0 && _cursorRow > _scrollBottom) {
+        _scrollUpOne();
+        _cursorRow = _scrollBottom;
+      }
+    }
+
     // Determine display width. For v1 we treat all non-ASCII
     // characters as narrow. CJK / wide detection would use
     // character ranges; a future enhancement.
@@ -590,9 +813,12 @@ class TerminalViewState extends State<TerminalView>
                 (ch.runes.first >= 0xFF00 && ch.runes.first <= 0xFF60) || // Fullwidth
                 (ch.runes.first >= 0xFFE0 && ch.runes.first <= 0xFFE6)));
 
+    // At the right margin: trigger wrap-pending instead of immediate wrap.
     if (_cursorCol >= _cols) {
-      // Wrap to next line.
       if (_autoWrap) {
+        // Mark wrap-pending: cursor moves to column 0 of the next
+        // line. The next putChar will process the move.
+        _wrapPending = true;
         _cursorCol = 0;
         _cursorRow++;
         if (_cursorRow > _scrollBottom) {
@@ -603,16 +829,36 @@ class TerminalViewState extends State<TerminalView>
         _cursorCol = _cols - 1;
       }
     }
+
     if (isWide && _cursorCol + 1 >= _cols) {
       // No room for the second column — fall back to placing it
       // as narrow and skip the continuation. (Real terminals
       // would still wrap; v1 accepts the visual loss.)
       _grid[_cursorRow][_cursorCol] = _makeCell(ch, false);
+      _lastPrintableChar = ch;
       _cursorCol++;
       return;
     }
+
+    // IRM (Insert Mode): shift existing cells right to make room.
+    if (_insertMode) {
+      for (var c = _cols - 1; c > _cursorCol; c--) {
+        _grid[_cursorRow][c] = _grid[_cursorRow][c - 1];
+      }
+    }
+
     _grid[_cursorRow][_cursorCol] = _makeCell(ch, isWide);
+    _lastPrintableChar = ch;
     _cursorCol++;
+
+    // If auto-wrap is enabled and we just wrote to the last column,
+    // set wrap-pending so the next character triggers a newline.
+    if (_autoWrap && _cursorCol == _cols) {
+      _wrapPending = true;
+      // Note: cursorCol is already _cols here; the wrap-pending
+      // handler above will process it on the next putChar.
+    }
+
     if (isWide) {
       // Place a continuation cell.
       if (_cursorCol < _cols) {
@@ -701,7 +947,10 @@ class TerminalViewState extends State<TerminalView>
   }
 
   @override
+  @override
   void eraseInDisplay(int mode) {
+    // Erase clears any pending wrap.
+    _wrapPending = false;
     final blank = _makeCell(' ', false);
     switch (mode) {
       case 0: // Below cursor (inclusive of cursor line)
@@ -713,6 +962,7 @@ class TerminalViewState extends State<TerminalView>
             _grid[r][c] = blank;
           }
         }
+        break;
       case 1: // Above cursor
         for (var r = 0; r < _cursorRow; r++) {
           for (var c = 0; c < _cols; c++) {
@@ -722,12 +972,27 @@ class TerminalViewState extends State<TerminalView>
         for (var c = 0; c <= _cursorCol; c++) {
           _grid[_cursorRow][c] = blank;
         }
+        break;
       case 2: // Entire visible
+        // Before clearing, scroll the entire live grid into
+        // the scrollback so the user can pan up to see what
+        // was on screen before the TUI cleared it. This is
+        // important for fullscreen TUIs (vim, claude, htop)
+        // that emit CSI 2J when they start — without this
+        // preservation, the shell's previous command line
+        // disappears without a trace.
+        for (final row in _grid) {
+          _scrollback.add(row);
+        }
+        if (_scrollback.length > widget.scrollbackLimit) {
+          _scrollback.removeRange(0, _scrollback.length - widget.scrollbackLimit);
+        }
         for (var r = 0; r < _rows; r++) {
           for (var c = 0; c < _cols; c++) {
             _grid[r][c] = blank;
           }
         }
+        break;
       case 3: // Scrollback + visible
         _scrollback.clear();
         for (var r = 0; r < _rows; r++) {
@@ -735,6 +1000,7 @@ class TerminalViewState extends State<TerminalView>
             _grid[r][c] = blank;
           }
         }
+        break;
     }
   }
 
@@ -746,14 +1012,17 @@ class TerminalViewState extends State<TerminalView>
         for (var c = _cursorCol; c < _cols; c++) {
           _grid[_cursorRow][c] = blank;
         }
+        break;
       case 1: // Left of cursor (inclusive)
         for (var c = 0; c <= _cursorCol; c++) {
           _grid[_cursorRow][c] = blank;
         }
+        break;
       case 2: // Entire line
         for (var c = 0; c < _cols; c++) {
           _grid[_cursorRow][c] = blank;
         }
+        break;
     }
   }
 
@@ -808,6 +1077,31 @@ class TerminalViewState extends State<TerminalView>
   }
 
   @override
+  void eraseCharacters(int n) {
+    // Erase n cells starting at the cursor column, replacing them
+    // with blanks at the current SGR. Unlike deleteCharacters, this
+    // does NOT shift the remainder of the row left.
+    final blank = _makeCell(' ', false);
+    for (var i = 0; i < n; i++) {
+      final c = _cursorCol + i;
+      if (c >= _cols) break;
+      _grid[_cursorRow][c] = blank;
+    }
+  }
+
+  @override
+  void repeatPrevChar(int n) {
+    if (_lastPrintableChar.isEmpty) return;
+    final blank = _makeCell(' ', false);
+    for (var i = 0; i < n; i++) {
+      final c = _cursorCol + i;
+      if (c >= _cols) break;
+      _grid[_cursorRow][c] = _makeCell(_lastPrintableChar, false);
+    }
+    _cursorCol = (_cursorCol + n).clamp(0, _cols);
+  }
+
+  @override
   void setScrollRegion(int top, int bottom) {
     if (bottom == 0) {
       // Reset to full screen.
@@ -817,6 +1111,8 @@ class TerminalViewState extends State<TerminalView>
       _scrollTop = _toInternalRow(top).clamp(0, _rows - 1);
       _scrollBottom = _toInternalRow(bottom).clamp(_scrollTop, _rows - 1);
     }
+    // DECSTBM resets wrap-pending (cursor moves to home).
+    _wrapPending = false;
     // CUP semantics: cursor moves to home position when DECSTBM is set.
     _cursorRow = _scrollTop;
     _cursorCol = 0;
@@ -827,18 +1123,25 @@ class TerminalViewState extends State<TerminalView>
     switch (param) {
       case 0:
         _resetSgr();
+        break;
       case 1:
         _bold = true;
+        break;
       case 4:
         _underline = true;
+        break;
       case 7:
         _reverse = true;
+        break;
       case 22:
         _bold = false;
+        break;
       case 24:
         _underline = false;
+        break;
       case 27:
         _reverse = false;
+        break;
       case 30:
       case 31:
       case 32:
@@ -848,13 +1151,16 @@ class TerminalViewState extends State<TerminalView>
       case 36:
       case 37:
         _fg = CellPalette.resolveStandard(param - 30);
+        break;
       case 38:
         // 38;5;n or 38;2;r;g;b — handled by the next 1–5 params.
         // We buffer the "38" and consume the rest in a follow-up
         // call. For v1 we keep a small queue.
         _pendingSgr256Fg = true;
+        break;
       case 39:
         _fg = CellPalette.defaultColor;
+        break;
       case 40:
       case 41:
       case 42:
@@ -864,10 +1170,13 @@ class TerminalViewState extends State<TerminalView>
       case 46:
       case 47:
         _bg = CellPalette.resolveStandard(param - 40);
+        break;
       case 48:
         _pendingSgr256Bg = true;
+        break;
       case 49:
         _bg = CellPalette.defaultColor;
+        break;
       case 90:
       case 91:
       case 92:
@@ -877,6 +1186,7 @@ class TerminalViewState extends State<TerminalView>
       case 96:
       case 97:
         _fg = CellPalette.resolveStandard(param - 90 + 8);
+        break;
       case 100:
       case 101:
       case 102:
@@ -886,12 +1196,14 @@ class TerminalViewState extends State<TerminalView>
       case 106:
       case 107:
         _bg = CellPalette.resolveStandard(param - 100 + 8);
+        break;
       default:
         // 256-color and truecolor sequences are handled via
         // _pendingSgr256Fg / _pendingSgr256Bg.
         if (_pendingSgr256Fg || _pendingSgr256Bg) {
           _consumeExtendedColor(param);
         }
+        break;
     }
   }
 
@@ -983,10 +1295,15 @@ class TerminalViewState extends State<TerminalView>
   @override
   void setDecMode(int mode, bool enabled) {
     switch (mode) {
-      case 25:
-        _cursorVisible = enabled;
-      case 7:
+      case 4: // IRM — Insert Mode
+        _insertMode = enabled;
+        break;
+      case 7: // DECAWM — Auto-Wrap Mode
         _autoWrap = enabled;
+        break;
+      case 25: // DECCM — Cursor Visibility
+        _cursorVisible = enabled;
+        break;
       case 1049:
         if (enabled) {
           // Save main grid, switch to alternate.
@@ -1026,6 +1343,7 @@ class TerminalViewState extends State<TerminalView>
             _notifyScrollbackOffset();
           }
         }
+        break;
       case 1000:
       case 1002:
       case 1003:
@@ -1041,13 +1359,13 @@ class TerminalViewState extends State<TerminalView>
   @override
   void carriageReturn() {
     _cursorCol = 0;
+    _wrapPending = false;
   }
 
   @override
   void lineFeed() {
+    _wrapPending = false;
     if (_cursorRow == _scrollBottom) {
-      _scrollUpOne();
-    } else if (_cursorRow < _scrollBottom) {
       _cursorRow++;
     }
   }
@@ -1071,6 +1389,33 @@ class TerminalViewState extends State<TerminalView>
   void bell() {
     // Drop. v1: no visual feedback. Future: vibrate or flash the
     // screen.
+  }
+
+  @override
+  void reportStatus(int type) {
+    final bytes = <int>[
+      0x1B, // ESC
+      0x5B, // [
+    ];
+    switch (type) {
+      case 0:
+        // DA1 / DA2 response: identify as VT100 with no extensions.
+        // Response: ESC [ ? 1 ; 0 c  (DEC private mode 1, value 0)
+        bytes.addAll([0x3F, 0x31, 0x3B, 0x30, 0x63]); // "?1;0c"
+      case 5:
+        // Operating status: "ready, no malfunctions"
+        bytes.addAll([0x30, 0x6E]); // "0n"
+      case 6:
+        // DSR cursor position: respond with current cursor position.
+        // Response: ESC [ row ; col R
+        final row = (_cursorRow + 1).toString();
+        final col = (_cursorCol + 1).toString();
+        final body = '$row;$col';
+        bytes.addAll([...body.codeUnits, 0x52]); // "row;colR"
+      default:
+        return;
+    }
+    widget.onOutboundBytes?.call(Uint8List.fromList(bytes));
   }
 
   /// Scroll the visible grid up by one line, moving the top line
@@ -1116,23 +1461,43 @@ class TerminalViewState extends State<TerminalView>
 
   /// Resolve a screen (row, col) into the cell that should be
   /// rendered there. Accounts for the scrollback displacement.
+  /// Map a visible row (0..rows-1, top-to-bottom) to the
+  /// underlying cell. The painter iterates rows from top (0) to
+  /// bottom (rows-1).
+  ///
+  /// When `_yDisplacement == 0`, the visible area is the live
+  /// grid: row r → `_grid[r]`.
+  ///
+  /// When `_yDisplacement > 0`, the user has panned up by D
+  /// lines. The TOP D rows of the visible area show the LAST D
+  /// rows of the scrollback (the lines that scrolled OFF the
+  /// top of the live grid). The BOTTOM (rows - D) rows show
+  /// the TOP (rows - D) rows of the live grid.
+  ///
+  /// Example: rows=35, D=10, sbLength=100. Visible row 0 =
+  /// scrollback[89], visible row 9 = scrollback[99], visible
+  /// row 10 = grid[0], visible row 34 = grid[24].
   Cell? _cellAt(int row, int col) {
     if (col < 0 || col >= _cols) return null;
-    if (_yDisplacement == 0) {
-      if (row < 0 || row >= _rows) return null;
+    if (row < 0 || row >= _rows) return null;
+
+    final d = _yDisplacement;
+    if (d == 0) {
       return _grid[row][col];
     }
-    // yDisplacement > 0: the visible rows are indices
-    // [-(yDisplacement) .. -1] of the scrollback, plus the live
-    // grid rows [0 .. _rows - 1 - yDisplacement].
-    final startHist = -_yDisplacement;
-    if (row >= startHist && row < 0) {
-      // In the scrollback.
-      final histIdx = _scrollback.length + row;
+
+    if (row < d) {
+      // Top d rows of visible area show the LAST d rows of
+      // scrollback. scrollback[sbLength - d + row] is the
+      // (d - row)th-from-bottom row of the scrollback.
+      final histIdx = _scrollback.length - d + row;
       if (histIdx < 0 || histIdx >= _scrollback.length) return null;
       return _scrollback[histIdx][col];
     }
-    final liveRow = row;
+
+    // Bottom (rows - d) rows of visible area show the TOP
+    // (rows - d) rows of the live grid.
+    final liveRow = row - d;
     if (liveRow < 0 || liveRow >= _rows) return null;
     return _grid[liveRow][col];
   }
@@ -1212,6 +1577,13 @@ class TerminalViewState extends State<TerminalView>
                   grid: _grid,
                   scrollback: _scrollback,
                   yDisplacement: _yDisplacement,
+                  pointerDownCount: _pointerDownCount,
+                  pointerMoveCount: _pointerMoveCount,
+                  panActivatedCount: _panActivatedCount,
+                  linesScrolled: _linesScrolled,
+                  bytesReceived: _bytesReceived,
+                  nonEmptyCells: _nonEmptyCells,
+                  scrollbackLines: _scrollback.length,
                   selection:
                       _selAnchorRow != null && _selActiveRow != null
                           ? _normalizeSelection(
@@ -1241,6 +1613,8 @@ class TerminalViewState extends State<TerminalView>
   void dispose() {
     _blinkTimer?.cancel();
     _blinkTimer = null;
+    _flingTimer?.cancel();
+    _flingTimer = null;
     super.dispose();
   }
 
@@ -1282,6 +1656,17 @@ class _TerminalPainter extends CustomPainter {
   /// notice that the contents have changed.
   final int tick;
 
+  /// Diagnostic counters painted in the top-left corner. Help
+  /// the user verify on a real device that pointer events are
+  /// reaching the Listener and the pan is firing.
+  final int pointerDownCount;
+  final int pointerMoveCount;
+  final int panActivatedCount;
+  final int linesScrolled;
+  final int bytesReceived;
+  final int nonEmptyCells;
+  final int scrollbackLines;
+
   _TerminalPainter({
     required this.cols,
     required this.rows,
@@ -1296,6 +1681,13 @@ class _TerminalPainter extends CustomPainter {
     required this.fontSize,
     required this.cellAt,
     required this.tick,
+    this.pointerDownCount = 0,
+    this.pointerMoveCount = 0,
+    this.panActivatedCount = 0,
+    this.linesScrolled = 0,
+    this.bytesReceived = 0,
+    this.nonEmptyCells = 0,
+    this.scrollbackLines = 0,
   });
 
   @override
@@ -1356,6 +1748,84 @@ class _TerminalPainter extends CustomPainter {
       final cursorPaint = Paint()..color = const Color(0xFFE0E0E0);
       canvas.drawRect(cursorRect, cursorPaint);
     }
+
+    // ALWAYS draw a thin scroll indicator on the right edge
+    // when the user has scrolled away from the bottom. This
+    // is the most reliable visual feedback for "scrolling
+    // works" — the user can SEE the bar move as they pan.
+    // Without this, the only feedback is the AppBar "Jump to
+    // bottom" button appearing, which is a small UI change
+    // that the user might miss.
+    if (yDisplacement > 0 && scrollback.isNotEmpty) {
+      _paintScrollIndicator(canvas, size);
+    }
+
+    // DEBUG overlay: tiny text in the top-left corner showing
+    // the live state. The user can read this on the device to
+    // confirm whether pointer events are reaching the terminal
+    // and whether the pan is firing. If `pd=0` after a drag,
+    // pointer-down is not reaching the Listener — the touch
+    // is being intercepted by some other widget. If `pa=0` but
+    // `pd>0`, the move events fire but the pan never activates
+    // (touch slop issue). If `ls=0` but `pa>0`, the pan
+    // activates but the scroll calculation is wrong.
+    const debugStyle = TextStyle(
+      fontFamily: 'monospace',
+      fontFamilyFallback: ['Menlo', 'Roboto Mono', 'Courier New'],
+      fontSize: 9,
+      color: Color(0xFF00FF00),
+      backgroundColor: Color(0xCC000000),
+    );
+    final debugText =
+        'y=$yDisplacement  pd=$pointerDownCount  pm=$pointerMoveCount  pa=$panActivatedCount  ls=$linesScrolled'
+        '\nbytes=$bytesReceived  cells=$nonEmptyCells  sb=$scrollbackLines';
+    final tp = TextPainter(
+      text: TextSpan(text: debugText, style: debugStyle),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, const Offset(2, 2));
+  }
+
+  /// Paint a thin vertical bar on the right edge showing the
+  /// user's current position in the scrollback. The thumb's
+  /// position represents `yDisplacement` (top of bar = top of
+  /// scrollback, bottom = live view).
+  void _paintScrollIndicator(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+    if (scrollback.isEmpty) return;
+    // Track on the right edge, 4 px wide.
+    const trackWidth = 4.0;
+    final trackRect = Rect.fromLTWH(
+      size.width - trackWidth,
+      0,
+      trackWidth,
+      size.height,
+    );
+    final trackPaint = Paint()..color = const Color(0x44FFFFFF);
+    canvas.drawRect(trackRect, trackPaint);
+
+    // Thumb size = visibleRows / (visibleRows + scrollbackLength).
+    // The thumb represents the visible window, scaled to the
+    // total scrollback.
+    final total = scrollback.length + rows;
+    final thumbFrac = (rows / total).clamp(0.05, 1.0);
+    final thumbH = (size.height * thumbFrac).clamp(24.0, size.height);
+    // Thumb position: yDisplacement = 0 → thumb at bottom.
+    // yDisplacement = scrollback.length → thumb at top.
+    final scrollFrac = (yDisplacement / scrollback.length).clamp(0.0, 1.0);
+    final usableFrac = 1.0 - thumbFrac;
+    final thumbY = usableFrac * (1.0 - scrollFrac);
+    final thumbRect = Rect.fromLTWH(
+      size.width - trackWidth,
+      thumbY,
+      trackWidth,
+      thumbH,
+    );
+    final thumbPaint = Paint()..color = const Color(0xCCFFFFFF);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(thumbRect, const Radius.circular(2.0)),
+      thumbPaint,
+    );
   }
 
   void _paintCell(Canvas canvas, int row, int col, Cell cell, TextStyle base) {
