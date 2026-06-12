@@ -1,9 +1,12 @@
-# EnvoyMesh Thin-Client Protocol v0.1
+# EnvoyMesh Thin-Client Protocol v0.2
 
 A language-agnostic protocol for thin clients (mobile apps, web UIs, CLI tools) to
-connect to an EnvoyMesh home node. The thin client does **not** run a libp2p node,
-generate identity keys, or participate in the P2P mesh. It connects to one home node
-at a time via secure WebSocket and speaks JSON-RPC 2.0.
+connect to an EnvoyMesh home node. The thin client does **not** generate identity keys
+or participate in the P2P mesh as a full node. It connects to one home node
+at a time via secure WebSocket or libp2p circuit relay, and speaks JSON-RPC 2.0.
+
+**EnvoyGo** (Flutter mobile app) extends this protocol with a `dart_libp2p` transport
+layer for circuit relay connectivity when relay WebSocket is unavailable.
 
 ---
 
@@ -17,6 +20,7 @@ at a time via secure WebSocket and speaks JSON-RPC 2.0.
      │                                      │
      │  (optional)                          │  (optional)
      │  relay tunnel                        │  relay registration
+     │  OR libp2p circuit relay           │
      ▼                                      ▼
 ┌──────────┐                          ┌──────────┐
 │  Relay   │ ←──────────────────────→ │  Relay   │
@@ -24,9 +28,10 @@ at a time via secure WebSocket and speaks JSON-RPC 2.0.
 └──────────┘                          └──────────┘
 ```
 
-The thin client connects to the home node either directly (LAN / public IP) or
-through a relay server. The relay bridges the WebSocket connection to the home
-node via an internal libp2p tunnel — the thin client never speaks libp2p.
+The thin client connects to the home node either directly (LAN / public IP), through
+a relay WebSocket tunnel, or via libp2p circuit relay v2. When using circuit relay,
+the thin client speaks the `client-proxy` handshake protocol over a libp2p stream
+— it does not participate in DHT routing or mesh gossip.
 
 ---
 
@@ -46,7 +51,9 @@ envoy://pair?
   ownerPublicKey=<url_encoded>&
   token=<pairing_token>&
   agentPeerId=<agent_peer_id>&
-  agentPubKey=<url_encoded>
+  agentPubKey=<url_encoded>&
+  agentName=<name>&
+  bootstrapPeers=<comma_separated_addrs>
 ```
 
 | Parameter | Example | Purpose |
@@ -54,12 +61,14 @@ envoy://pair?
 | `wsUrl` | `ws://47.93.11.212:15432/ws?target=12D3KooW…&token=<t>` | Primary relay URL (contains `target` for routing) |
 | `lanWsUrl` | `ws://192.168.3.85:3030/ws` | Direct LAN URL (no relay needed) |
 | `relayWsUrl` | `ws://47.93.11.212:15432/ws` | Clean relay endpoint (for reconnection) |
-| `homeNodePeerId` | `12D3KooWQsD3ougr…` | Home node's libp2p peer ID |
+| `homeNodePeerId` | `12D3KooWQsD3ougr…` | Home node's libp2p peer ID — used for circuit relay routing and DHT queries |
 | `ownerId` | `envoy:owner:diBymBI4…` | Owner DID |
 | `ownerPublicKey` | PEM-encoded | Owner's Ed25519 public key |
 | `token` | `e6170fe3-…` | Short-lived pairing token (UUID) |
 | `agentPeerId` | `envoy_agent_hkHNrLl0…` | Built-in agent peer ID |
 | `agentPubKey` | PEM-encoded | Built-in agent public key |
+| `agentName` | `Envoy-17` | Agent display name |
+| `bootstrapPeers` | `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWL…,wss://relay2:15432/ws` | Fallback relay/bootstrap addresses; EnvoyGo uses community relay libp2p multiaddr as DHT bootstrap peer |
 
 All URL values are percent-encoded. Query parameter values must be decoded before use.
 

@@ -1,6 +1,7 @@
 # Flutter Thin Client Design — EnvoyGo
 
-**Status:** Design (2026-06-09)
+**Status:** Design + Implementation (2026-06-13)
+**Phase:** 31 (31A–31D shipped)
 **Phase:** 31
 **Related:** [implementation-plan.md § Phase 31](./implementation-plan.md#phase-31--flutter-thin-client-envoygo-design) · [satellite-app-adr.md](./satellite-app-adr.md)
 
@@ -8,7 +9,9 @@
 
 ## 1. Overview
 
-**EnvoyGo** is a Flutter mobile app (iOS + Android) that acts as a **thin client** to a home EnvoyMesh node. It does **not** run a libp2p node, generate identity keys, store a vault, or participate in the mesh. It connects to one home node at a time via secure WebSocket, calls JSON-RPC methods, and renders a minimal, chat-focused UI.
+**EnvoyGo** is a Flutter mobile app (iOS + Android) that acts as a **remote client** to a home EnvoyMesh node. It connects to one home node at a time via secure WebSocket or libp2p circuit relay, calls JSON-RPC methods, and renders a minimal, chat-focused UI.
+
+EnvoyGo runs a **full libp2p node** (`dart_libp2p` + `dart_libp2p_kad_dht`) as an additional transport. This enables direct P2P connections (LAN, circuit relay) when the home node is reachable, while retaining the relay WebSocket as a permanent fallback. It does not generate identity keys, store a vault, or participate in the mesh as a full node.
 
 ### 1.1 Design Principles
 
@@ -116,8 +119,12 @@ The `HomeRemoteClient` is the single connection point to the home node. It manag
 | Priority | Name | URL pattern | When available |
 |----------|------|------------|----------------|
 | 1 | LAN WebSocket | `ws://<home-lan-ip>:3030/ws` | Same WiFi/LAN |
-| 2 | Relay tunnel | `wss://<relay>/tunnel?peer=<homePeerId>&token=<relayToken>` | Home node connected to relay |
-| 3 | libp2p stream | `libp2p://<homePeerId>` | Phase 31D (future) |
+| 2 | Public IP WebSocket | `ws://<public-host>:<port>/ws` | Direct WAN access |
+| 3 | Relay WebSocket (circuit relay) | `ws://<relay>:15432/ws?target=<homePeerId>&token=<token>` | Home node reachable via relay |
+| 4 | libp2p circuit relay | `/p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>` | Circuit relay v2 via community relay |
+| 5 | Community relay (DHT bootstrap fallback) | `ws://47.93.11.212:15432/ws?target=<homePeerId>` | Community relay as last resort |
+
+**Note:** Mobile/unknown network promotes relay candidates to the front to avoid 8s LAN timeouts. EnvoyGo runs a `dart_libp2p` node that connects to the community relay (`47.93.11.212:4001`) as a DHT bootstrap peer, enabling `findPeer(homePeerId)` queries when both peers have connected to the relay.
 
 **Connection lifecycle:**
 
@@ -133,19 +140,26 @@ Select active node (last-used, or manual switch)
     ▼
 Resolve candidates (in priority order)
     │
-    ├─ Try LAN WS (timeout: 8s)
+    ├─ Try LAN WS (timeout: 8s) [mobile: skipped — unreachable]
     │   ├─ connected → set active transport
     │   └─ failed → try next
     │
-    ├─ Try relay tunnel (timeout: 8s)
+    ├─ Try relay WebSocket (timeout: 8s)
+    │   ├─ connected → perform proxy-connect handshake → set active transport
+    │   └─ failed → try next
+    │
+    ├─ Try libp2p circuit relay (via community relay)
+    │   ├─ connect to community relay (TCP 4001)
+    │   ├─ dial /p2p/<relay>/p2p-circuit/p2p/<home>
+    │   ├─ perform proxy-connect handshake
     │   ├─ connected → set active transport
-    │   └─ failed → all failed, show "Home node offline"
+    │   └─ failed → try next
     │
-    ▼
-Connected: send "authenticate" with sessionToken
+    ├─ Try community relay WebSocket fallback
+    │   ├─ connected → perform proxy-connect handshake → set active
+    │   └─ failed → try next
     │
-    ├─ accepted → start JSON-RPC, subscribe to push events
-    └─ rejected → token expired, show re-pair prompt
+    └─ All failed: show "Home node offline"
     │
     ▼
 Background upgrade sweep (every 30s):
@@ -185,45 +199,63 @@ On disconnect:
 
 ### 3.2 Candidate Resolver
 
-The candidate resolver builds transport URLs from stored pairing data:
+The candidate resolver builds transport URLs from stored pairing data. Candidates are ordered so LAN/relay are tried first; the community relay is a last-resort fallback. When `isOnWifi != true` (mobile/cellular), relay candidates are promoted to the front to avoid 8s LAN timeouts.
 
 ```dart
 class CandidateResolver {
-  final String homeNodePeerId;
-  final String? homeLanIp;       // discovered via mDNS or stored from pairing
-  final int homeWsPort;          // default 3030
-  final String? relayWsUrl;      // relay WebSocket URL
-  final String? relaySessionToken; // relay session token
+  // From stored node + pairing data:
+  // homePeerId, lanIp, publicHost, publicPort,
+  // relayWsUrl, sessionToken, bootstrapPeers[]
 
-  Future<List<HomeRemoteCandidate>> resolve() async {
-    final candidates = <HomeRemoteCandidate>[];
+  List<HomeRemoteCandidate> resolve(StoredNode node, {
+    String? sessionToken,
+    bool? isOnWifi,
+  }) {
+    var candidates = <HomeRemoteCandidate>[];
 
-    // 1. LAN (always try first)
-    if (homeLanIp != null) {
-      candidates.add(HomeRemoteCandidate(
-        name: 'lan',
-        url: 'ws://$homeLanIp:$homeWsPort/ws',
-      ));
-    }
+    // 1. LAN WebSocket
+    if (node.lanIp != null) { /* ... */ }
 
-    // 2. Relay tunnel
-    if (relayWsUrl != null) {
+    // 2. Public IP WebSocket
+    if (node.publicHost != null) { /* ... */ }
+
+    // 3. User's relay WebSocket (circuit relay via ?target=)
+    if (node.relayWsUrl != null && node.homePeerId != null) {
       candidates.add(HomeRemoteCandidate(
         name: 'relay',
-        url: '$relayWsUrl?peer=$homeNodePeerId&token=$relaySessionToken',
+        url: '$relayWsUrl?target=$homePeerId&token=$sessionToken',
       ));
     }
 
-    // 3. libp2p (Phase 31D)
-    // candidates.add(HomeRemoteCandidate(
-    //   name: 'libp2p',
-    //   url: 'libp2p://$homeNodePeerId',
-    // ));
+    // 4. Bootstrap peers from QR code (user's configured relays)
+    for (final peer in node.bootstrapPeers) {
+      if (peer.startsWith('/')) continue; // skip libp2p multiaddrs
+      candidates.add(HomeRemoteCandidate(name: 'bootstrap', url: peer));
+    }
+
+    // 5. Community relay WebSocket (last resort)
+    // ws://47.93.11.212:15432/ws?target=$homePeerId
+
+    // 6. Community relay libp2p circuit relay candidate
+    // /p2p/12D3KooWLNR4.../p2p-circuit/p2p/$homePeerId
+    // (used by Libp2pNode.dial() → connect() → newStream())
+
+    // Mobile/cellular: promote relay to front
+    if (isOnWifi != true) {
+      final relayFirst = candidates.where((c) => c.name == 'relay').toList();
+      final rest = candidates.where((c) => c.name != 'relay').toList();
+      candidates = [...relayFirst, ...rest];
+    }
 
     return candidates;
   }
 }
 ```
+
+**Libp2pNode bootstrap flow:**
+1. `start(bootstrapAddrs: ['/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4...'])` — connects to community relay as DHT bootstrap peer
+2. `dial('/p2p/<relay>/p2p-circuit/p2p/<homePeerId>')` — opens stream through circuit relay
+3. `performHandshake(token)` — sends `proxy-connect` → waits for `proxy-accept` (matches `client-proxy-handler.ts` on home node)
 
 ---
 

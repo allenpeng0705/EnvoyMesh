@@ -1618,20 +1618,15 @@ Tasks:
 
 Tasks:
 
-- `[ ]` Add `dart_libp2p` dependency to `pubspec.yaml` (Android, iOS, macOS, Linux, Windows supported; Web NOT)
-- `[ ]` Implement persistent Ed25519 key via `flutter_secure_storage` (protobuf-serialized, matching `loadOrCreateLibp2pPrivateKey`)
-- `[ ]` Implement `DirectTransport` class wrapping `dart_libp2p.Host`:
-  ```dart
-  class DirectTransport implements MeshTransport {
-    late final Host _host;
-    // Configure: TCP transport + Noise security + Yamux muxer
-    // Configure: mDNS (LAN discovery)
-    // Configure: Kademlia DHT (WAN discovery, client mode)
-    // Configure: circuit relay v2 (NAT traversal)
-    // Configure: AutoNAT + DCUtR (hole punching)
-  }
-  ```
-- `[ ]` Configure node with EnvoyMesh bootstrap peers + operator relay fleet addresses
+- `[x]` Add `dart_libp2p` dependency to `pubspec.yaml` (Android, iOS, macOS, Linux, Windows supported; Web NOT)
+- `[ ]` Implement persistent Ed25519 key via `flutter_secure_storage` (protobuf-serialized, matching `loadOrCreateLibp2pPrivateKey`) — currently generates fresh key per session
+- `[x]` Implement `Libp2pNode` class wrapping `BasicHost` with `Config.newNode()` + `applyDefaults()` (TCP + Noise + Yamux + AutoNAT)
+- `[x]` Initialize `IpfsDHT` in client mode with `MemoryProviderStore` — enables DHT peer discovery
+- `[x]` Connect to DHT bootstrap peers on startup — joins the DHT network via community relay
+- `[x]` Implement `dial()` with circuit relay support — parses `/p2p/<relay>/p2p-circuit/p2p/<home>` multiaddr, connects to relay, opens stream to home
+- `[x]` Implement `findPeer(peerId)` via `IpfsDHT.findPeer()` — enables direct peer discovery via DHT
+- `[x]` Implement `Libp2pStreamTransport.performHandshake(token)` — sends `proxy-connect`, waits `proxy-accept/reject` (matches `client-proxy-handler.ts`)
+- `[ ]` Configure node with operator relay fleet addresses (beyond community relay)
 - `[ ]` Register protocol handlers on stream router:
   - `/envoymesh/message/0.1.0` — general envelope protocol (discovery, relay, task, system)
   - `/envoymesh/chat/0.1.0` — chat-only envelopes (enforces `chat.message` intent)
@@ -1642,10 +1637,10 @@ Tasks:
 - `[ ]` Handle platform lifecycles: iOS/Android background suspension → pause libp2p; foreground → resume + reconnect
 
 **Exit criteria:**
+- `[x]` Circuit relay v2: EnvoyGo connects via community relay circuit when behind NAT (2026-06-13)
 - `[ ]` Flutter app on emulator discovers desktop EnvoyMesh node on same LAN via mDNS
-- `[ ]` Flutter app establishes direct TCP+Noise+Yamux connection to desktop node
+- `[ ]` Flutter app establishes direct TCP+Noise+Yamux connection to desktop node (direct dial)
 - `[ ]` Chat message round-trip via direct libp2p (bypassing relay) works end-to-end
-- `[ ]` Circuit relay v2: Flutter app connects via relay when behind NAT
 - `[ ]` App survives suspend/resume on iOS and Android
 
 #### 10B.3: EnvoyMesh Protocol Handlers on libp2p Streams
