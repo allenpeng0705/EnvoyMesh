@@ -511,7 +511,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
   void _syncTerminalsDirect(NodeServiceClient nodeService,
       ChatNotifier chatNotifier, TerminalNotifier terminalNotifier) {
     nodeService.listTerminalSessions().then((sessions) {
-      // Only sync running terminals (have an active process).
+      // Update terminal state with all sessions (running and stopped).
+      terminalNotifier.setSessions(sessions);
+      // Only sync running terminals to chat.
       final running = sessions
           .where((s) => s.runningProcess != null && s.runningProcess!.isNotEmpty);
       for (final session in running) {

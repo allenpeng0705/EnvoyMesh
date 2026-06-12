@@ -46,6 +46,11 @@ class TerminalNotifier extends StateNotifier<TerminalState> {
     }
   }
 
+  /// Set sessions directly (used during sync).
+  void setSessions(List<TerminalSession> sessions) {
+    state = state.copyWith(sessions: sessions, isLoading: false);
+  }
+
   /// Create a new terminal session.
   Future<void> createSession({String? cwd, String? command}) async {
     final nodeService = _ref.read(nodeServiceProvider);
