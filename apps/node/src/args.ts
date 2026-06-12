@@ -503,7 +503,10 @@ function applyDiscoveryProfileDefaults(args: NodeArgs, customPresetRegistry: Boo
     args.enableDht = false;
   } else {
     args.enableDht = true;
-    args.dhtClientMode = true;
+    // Only set default if not already set by explicit --dht-server/--dht-client flag.
+    if (args.dhtClientMode === undefined) {
+      args.dhtClientMode = true;
+    }
   }
   if ((process.env.ENVOYMESH_CONNECTIVITY_STRICT ?? "").trim() === "1") {
     args.connectivityStrict = true;

@@ -627,6 +627,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// Create a libp2p transport for circuit relay dialing.
   Future<WebSocketLike> _createLibp2pTransport(
       HomeRemoteCandidate candidate) async {
+    debugPrint('[_createLibp2pTransport] ENTERING — candidate: ${candidate.name}, url: ${candidate.url}');
     // DHT bootstrap peers — all 4 presets from the home node's wan-default
     // profile so EnvoyGo can query the same DHT network the home node
     // uses for address registration.
@@ -667,39 +668,38 @@ class NodeNotifier extends StateNotifier<NodeState> {
       );
       await transport.performHandshake(candidate.sessionToken ?? '');
       return transport;
-    } catch (_) {
-      // Circuit relay failed (community relay unreachable).
-      // Fall back to DHT: query for the home node's direct addresses
-      // and dial those directly.
+    } catch (e) {
+      // Circuit relay failed — log and fall through to DHT fallback.
+      debugPrint('[_createLibp2pTransport] circuit relay failed: $e');
     }
 
     // DHT fallback: find peer's direct addresses via DHT.
-    // findPeer() returns addresses that already include /p2p/<peerId>,
-    // so use them directly without appending.
-    final homePeerId = PeerId.fromString(candidate.homePeerId!);
-    final addrInfo = await _libp2pNode!.findPeer(homePeerId);
-    // ignore: dart SDK print, not async-safe
-    debugPrint('[DHT] findPeer($homePeerId) => ${addrInfo?.addrs.length ?? 0} addrs');
+    AddrInfo? addrInfo;
+    try {
+      final homePeerId = PeerId.fromString(candidate.homePeerId!);
+      addrInfo = await _libp2pNode!.findPeer(homePeerId);
+    } catch (e) {
+      debugPrint('[_createLibp2pTransport] findPeer threw: $e');
+      addrInfo = null;
+    }
+    debugPrint('[_createLibp2pTransport] DHT findPeer => ${addrInfo?.addrs.length ?? 0} addrs');
     if (addrInfo != null && addrInfo.addrs.isNotEmpty) {
-      // Try each direct address until one works.
       for (final addr in addrInfo.addrs) {
         try {
-          // addr.toString() is already a complete multiaddr like
-          // /ip4/192.168.x.x/tcp/54264/p2p/<peerId> — use directly.
           final transport = await _libp2pNode!.dial(
             peerMultiaddr: addr.toString(),
             protocolId: clientProxyProtocol,
           );
           await transport.performHandshake(candidate.sessionToken ?? '');
           return transport;
-        } catch (_) {
-          // This address failed, try the next one.
+        } catch (e) {
+          debugPrint('[_createLibp2pTransport] direct dial ${addr.toString()} failed: $e');
         }
       }
     }
 
     // All paths exhausted.
-    throw Exception('homeRemote.connectFailed');
+    throw Exception('homeRemote.connectFailed (DHT: ${addrInfo?.addrs.length ?? 0} addrs)');
   }
 
   /// Subscribe to server push events via WebSocket (fallback) and

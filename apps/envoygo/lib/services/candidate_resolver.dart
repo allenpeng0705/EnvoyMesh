@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../models/stored_node.dart';
 import 'home_remote_client.dart';
 
@@ -152,8 +153,10 @@ class CandidateResolver {
   /// The circuit address format is:
   ///   /p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>
   List<HomeRemoteCandidate> _buildLibp2pCandidates(String? sessionToken) {
+    debugPrint('[_buildLibp2pCandidates] ENTER, communityHomePeerId=$_communityHomePeerId');
     final result = <HomeRemoteCandidate>[];
     if (_communityHomePeerId == null || _communityHomePeerId!.isEmpty) {
+      debugPrint('[_buildLibp2pCandidates] communityHomePeerId is null/empty, returning empty');
       return result;
     }
 
