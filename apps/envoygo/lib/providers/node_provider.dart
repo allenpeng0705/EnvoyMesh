@@ -619,11 +619,18 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// Create a libp2p transport for circuit relay dialing.
   Future<WebSocketLike> _createLibp2pTransport(
       HomeRemoteCandidate candidate) async {
+    // The community relay's libp2p address: used as DHT bootstrap peer AND
+    // as circuit relay relay address.
+    const communityRelayLibp2p =
+        '/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo';
+
     // Start libp2p node if not already started.
     _libp2pNode ??= Libp2pNode();
     if (!_libp2pNode!.isStarted) {
       await _libp2pNode!.start(
-        relayMultiaddr: candidate.libp2pRelayAddr,
+        // DHT bootstrap: connect to community relay to query DHT for peer
+        // addresses. Also used as circuit relay hop when dialing /p2p-circuit/.
+        bootstrapAddrs: [communityRelayLibp2p],
       );
     }
     // Dial through the circuit relay.

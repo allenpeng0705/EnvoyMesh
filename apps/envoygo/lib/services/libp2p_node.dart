@@ -1,7 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:dart_libp2p/dart_libp2p.dart';
-import 'package:dart_libp2p_pubsub/dart_libp2p_pubsub.dart';
+import 'package:dart_libp2p_kad_dht/dart_libp2p_kad_dht.dart';
+import 'package:dart_libp2p/p2p/host/basic/basic_host.dart' as p2p_host;
+import 'package:dart_libp2p/config/config.dart';
+import 'package:dart_libp2p/config/defaults.dart';
+import 'package:dart_libp2p/core/crypto/ed25519.dart' as crypto_ed25519;
 import 'web_socket_like.dart';
 
 /// A minimal libp2p host for the EnvoyGo thin client.
@@ -9,15 +14,16 @@ import 'web_socket_like.dart';
 /// Creates a libp2p node with:
 /// - TCP transport
 /// - Noise XX handshake (X25519 key exchange + ChaChaPoly)
-/// - Stream muxing (mplex)
+/// - Stream muxing (yamux)
+/// - Kademlia DHT client for peer discovery
 /// - Circuit relay support for NAT traversal
-/// - Identify protocol (optional)
 ///
 /// The node maintains its own Ed25519 peer identity, generated on first
 /// startup. This identity is NOT the owner's identity — it's a separate
 /// peer ID used only for libp2p transport.
 class Libp2pNode {
-  Host? _host;
+  p2p_host.BasicHost? _host;
+  IpfsDHT? _dht;
   PeerId? _peerId;
   bool _started = false;
 
@@ -27,54 +33,77 @@ class Libp2pNode {
   /// Whether the node is running.
   bool get isStarted => _started;
 
-  /// Start the libp2p host.
+  /// Start the libp2p host with DHT support.
   ///
   /// [listenAddrs] are multiaddrs to listen on, e.g. `/ip4/0.0.0.0/tcp/0`.
   /// Pass an empty list for client-only mode (no listening).
-  /// [relayMultiaddr] is the relay's libp2p multiaddr for circuit relay,
-  /// e.g. `/ip4/47.93.11.212/tcp/4001/p2p/<relayPeerId>`.
+  /// [bootstrapAddrs] are DHT bootstrap peer multiaddrs to connect to.
+  /// These peers are also used as circuit relay hops when dialing through
+  /// `/p2p-circuit/` addresses.
   Future<void> start({
     List<String> listenAddrs = const [],
-    String? relayMultiaddr,
+    List<String> bootstrapAddrs = const [],
   }) async {
     if (_started) return;
 
-    // Generate or load a random Ed25519 key pair for this peer.
-    final keyPair = await _loadOrGenerateKeyPair();
+    // Generate a random Ed25519 key pair for this peer.
+    // In production, store the key in secure storage and reuse it.
+    final keyPair = await crypto_ed25519.generateEd25519KeyPair();
 
-    final gossipsub = GossipSubRouter();
-    final builder = HostBuilder()
-      ..setIdentity(keyPair)
-      ..addTransport(TcpTransport())
-      ..setSecurity(NoiseSecurity())
-      ..setStreamMuxer(MplexStreamMuxer())
-      ..addPubSubRouter(gossipsub);
+    // Use the Config API (dart_libp2p 1.0.x).
+    // applyDefaults() sets up NoiseSecurity, TCP, Yamux, AutoNAT, etc.
+    final config = Config()
+      ..peerKey = keyPair;
 
     if (listenAddrs.isNotEmpty) {
-      for (final addr in listenAddrs) {
-        builder.addListenAddr(addr);
-      }
+      config.listenAddrs = listenAddrs.map((a) => MultiAddr(a)).toList();
     }
 
-    _host = await builder.build();
+    await applyDefaults(config);
+
+    _host = await config.newNode() as p2p_host.BasicHost;
     await _host!.start();
-    _peerId = _host!.peerId;
+    _peerId = _host!.id;
     _started = true;
 
-    // Subscribe to all registered topics via GossipSub.
-    final pubsub = _host!.pubSub as GossipSubRouter?;
-    if (pubsub != null) {
-      for (final topic in _topicSubscriptions.keys) {
-        pubsub.subscribe(topic);
-        pubsub.onMessage(topic, (msg) {
-          try {
-            final data = jsonDecode(utf8.decode(msg.data)) as Map<String, dynamic>;
-            for (final handler in _topicSubscriptions[topic] ?? {}) {
-              handler(data);
-            }
-          } catch (_) {}
-        });
+    // Initialize DHT client for peer discovery.
+    // DHTMode.client means we query the DHT but don't respond to other peers' queries.
+    _dht = IpfsDHT(
+      host: _host!,
+      providerStore: MemoryProviderStore(),
+      options: DHTOptions(mode: DHTMode.client),
+    );
+    await _dht!.start();
+
+    // Connect to DHT bootstrap peers to join the DHT network.
+    for (final addrStr in bootstrapAddrs) {
+      try {
+        final addr = MultiAddr(addrStr);
+        final relayPeerIdStr = addr.valueForProtocol('p2p');
+        if (relayPeerIdStr != null) {
+          final peerId = PeerId.fromString(relayPeerIdStr);
+          await _host!.connect(
+            AddrInfo(peerId, [addr]),
+            context: Context(),
+          );
+          await _dht!.routingTable.tryAddPeer(peerId, queryPeer: false);
+        }
+      } catch (_) {
+        // Ignore individual bootstrap peer failures.
       }
+    }
+  }
+
+  /// Find a peer by their PeerId via DHT query.
+  ///
+  /// Returns the peer's address info if found, or null if not found.
+  /// This enables direct peer discovery without needing a relay server.
+  Future<AddrInfo?> findPeer(PeerId targetPeerId) async {
+    if (_dht == null || !_started) return null;
+    try {
+      return await _dht!.findPeer(targetPeerId);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -82,59 +111,94 @@ class Libp2pNode {
   ///
   /// Returns a duplex stream wrapper that can be used like a WebSocket.
   /// [peerMultiaddr] is the target peer's multiaddr, e.g.
-  /// `/p2p/<peerId>` or a relay circuit address.
+  /// - Direct: `/p2p/<peerId>`
+  /// - Circuit relay: `/p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>`
   Future<Libp2pStreamTransport> dial({
     required String peerMultiaddr,
     String protocolId = '/envoymesh/rpc/1.0.0',
   }) async {
     if (_host == null) throw StateError('Libp2pNode not started');
-    final conn = await _host!.dialProtocol(peerMultiaddr, protocolId);
-    // conn provides a bidirectional stream: conn.stream for rx, conn.sink for tx.
-    return Libp2pStreamTransport(conn.stream, (data) => conn.sink.add(data));
+
+    final addr = MultiAddr(peerMultiaddr);
+    final circuitAddr = addr.valueForProtocol('p2p-circuit');
+
+    if (circuitAddr != null) {
+      // Circuit relay dial: the multiaddr is like
+      //   /p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>
+      final relayPeerIdStr = addr.valueForProtocol('p2p');
+      if (relayPeerIdStr == null) {
+        throw ArgumentError('Invalid circuit relay address: $peerMultiaddr');
+      }
+      final relayPeerId = PeerId.fromString(relayPeerIdStr);
+
+      // The destination peer ID is encoded in the /p2p-circuit/p2p/ suffix.
+      final homePeerIdStr = _extractPeerIdAfterCircuit(peerMultiaddr);
+      if (homePeerIdStr == null) {
+        throw ArgumentError('Invalid circuit relay address (missing destination): $peerMultiaddr');
+      }
+      final homePeerId = PeerId.fromString(homePeerIdStr);
+
+      // Connect to the relay peer with the circuit address.
+      await _host!.connect(
+        AddrInfo(relayPeerId, [addr]),
+        context: Context(),
+      );
+
+      // Open a stream to the home peer through the established circuit.
+      final stream = await _host!.newStream(
+        homePeerId,
+        [protocolId], // ProtocolID is a typedef String
+        Context(),
+      );
+      return Libp2pStreamTransport(stream);
+    } else {
+      // Direct dial: multiaddr is /p2p/<peerId> or /ip4/.../tcp/.../p2p/<peerId>
+      final peerIdStr = addr.valueForProtocol('p2p');
+      if (peerIdStr == null) {
+        throw ArgumentError('Invalid peer multiaddr (no /p2p/ component): $peerMultiaddr');
+      }
+      final peerId = PeerId.fromString(peerIdStr);
+
+      final stream = await _host!.newStream(
+        peerId,
+        [protocolId],
+        Context(),
+      );
+      return Libp2pStreamTransport(stream);
+    }
   }
 
-  // -- Pub/Sub (GossipSub) --
-
-  final _topicSubscriptions = <String, Set<void Function(Map<String, dynamic> data)>>{};
-
-  /// Subscribe to a pub/sub topic. Returns an unsubscribe function.
-  /// Events arrive as Map<String, dynamic> via the callback.
-  void Function() subscribeTopic(
-    String topic,
-    void Function(Map<String, dynamic> data) handler,
-  ) {
-    _topicSubscriptions.putIfAbsent(topic, () => {});
-    _topicSubscriptions[topic]!.add(handler);
-    return () => _topicSubscriptions[topic]?.remove(handler);
+  /// Extract the peer ID after /p2p-circuit/p2p/ in a circuit relay multiaddr.
+  String? _extractPeerIdAfterCircuit(String multiaddr) {
+    final lastP2p = multiaddr.lastIndexOf('/p2p/');
+    if (lastP2p < 0) return null;
+    return multiaddr.substring(lastP2p + 5);
   }
 
   /// Stop the host and release all resources.
   Future<void> stop() async {
+    if (_dht != null) {
+      await _dht!.close();
+      _dht = null;
+    }
     if (_host != null) {
-      await _host!.stop();
+      await _host!.close();
       _host = null;
     }
     _started = false;
   }
-
-  Future<KeyPair> _loadOrGenerateKeyPair() async {
-    // For now, generate a fresh Ed25519 key pair each time.
-    // In production, store the key in secure storage and reuse it.
-    return KeyPair.generateEd25519();
-  }
 }
 
-/// A WebSocket-like wrapper around a libp2p duplex stream.
+/// A WebSocket-like wrapper around a libp2p [P2PStream].
 ///
 /// Implements [WebSocketLike] so it can be used as a drop-in replacement
 /// for WebSocket transport in [HomeRemoteClient].
 ///
-/// Incoming data: read from the stream → deliver as WsMessageEvent.
-/// Outgoing data: written to the stream via [send] → forwarded to peer.
+/// Incoming data: [P2PStream.read] → delivered as WsMessageEvent.
+/// Outgoing data: written via [P2PStream.write] → forwarded to peer.
 class Libp2pStreamTransport implements WebSocketLike {
-  final Stream<List<int>> _incoming;
-  final void Function(List<int> data) _outgoing;
-  StreamSubscription? _subscription;
+  final P2PStream<dynamic> _stream;
+  StreamSubscription<Uint8List>? _subscription;
 
   @override
   int readyState = wsConnecting;
@@ -151,41 +215,49 @@ class Libp2pStreamTransport implements WebSocketLike {
   @override
   void Function()? onError;
 
-  Libp2pStreamTransport(this._incoming, this._outgoing) {
-    // Mark as open immediately — the stream is already established by
-    // dialProtocol. Fire onOpen in the next microtask so callers can
-    // install handlers first.
+  Libp2pStreamTransport(this._stream) {
+    // Mark as open immediately — the stream is already established.
+    // Fire onOpen in the next microtask so callers can install handlers first.
     readyState = wsOpen;
     Future.microtask(() => onOpen?.call());
 
-    _subscription = _incoming.listen(
-      (data) {
-        final text = utf8.decode(data);
+    // Start a background task to read from the stream and deliver messages.
+    _readLoop();
+  }
+
+  /// Continuously read from the P2PStream and deliver data via onMessage.
+  Future<void> _readLoop() async {
+    try {
+      while (readyState == wsOpen) {
+        final data = await _stream.read();
+        if (data.isEmpty) break;
+        final text = utf8.decode(data.toList());
         onMessage?.call(WsMessageEvent(text));
-      },
-      onError: (_) {
-        readyState = wsClosed;
-        onError?.call();
-      },
-      onDone: () {
+      }
+    } catch (_) {
+      // Read error — stream closed or protocol error.
+    } finally {
+      if (readyState == wsOpen) {
         readyState = wsClosed;
         onClose?.call();
-      },
-      cancelOnError: true,
-    );
+      }
+    }
   }
 
   @override
   void send(String data) {
     if (readyState == wsOpen) {
-      _outgoing(utf8.encode(data));
+      _stream.write(Uint8List.fromList(utf8.encode(data)));
     }
   }
 
   @override
   void close() {
-    readyState = wsClosing;
-    _subscription?.cancel();
-    readyState = wsClosed;
+    if (readyState == wsOpen) {
+      readyState = wsClosing;
+      _subscription?.cancel();
+      _stream.close();
+      readyState = wsClosed;
+    }
   }
 }
