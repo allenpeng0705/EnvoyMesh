@@ -576,15 +576,15 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// use a plain WebSocket.
   FutureOr<WebSocketLike> _createTransportForCandidate(
       HomeRemoteCandidate candidate) {
-    // Relay proxy transport: URLs containing ?peer=<homePeerId> use the
+    // Relay proxy transport: URLs containing ?target=<homePeerId> use the
     // ClientProxyTransport which handles the proxy handshake protocol.
     if (candidate.homePeerId != null &&
         candidate.homePeerId!.isNotEmpty &&
-        candidate.url.contains('?peer=')) {
-      // candidate.url is already the full WebSocket URL with ?peer= and ?token=.
-      // Extract the base relay URL by taking everything before '?peer='.
-      final peerIdx = candidate.url.indexOf('?peer=');
-      final relayWsUrl = candidate.url.substring(0, peerIdx);
+        candidate.url.contains('?target=')) {
+      // candidate.url is already the full WebSocket URL with ?target= and ?token=.
+      // Extract the base relay URL by taking everything before '?target='.
+      final targetIdx = candidate.url.indexOf('?target=');
+      final relayWsUrl = candidate.url.substring(0, targetIdx);
       return ClientProxyTransport.connect(
         relayWsUrl: relayWsUrl,
         homePeerId: candidate.homePeerId!,

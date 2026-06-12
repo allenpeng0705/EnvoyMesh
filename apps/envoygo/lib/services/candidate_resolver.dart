@@ -60,7 +60,7 @@ class CandidateResolver {
     }
 
     // Relay WebSocket via user's relay with peer routing.
-    // The relay's WebSocket accepts ?peer=<homePeerId> for circuit-relay
+    // The relay's WebSocket accepts ?target=<homePeerId> for circuit-relay
     // routing, enabling the mobile to reach the home through the relay
     // using only WebSocket transport (no libp2p stack on Flutter).
     if (node.relayWsUrl != null &&
@@ -68,7 +68,7 @@ class CandidateResolver {
         node.homePeerId != null &&
         node.homePeerId!.isNotEmpty) {
       final relayBase = _stripTokenParam(node.relayWsUrl!);
-      var relayUrl = '$relayBase?peer=${node.homePeerId}';
+      var relayUrl = '$relayBase?target=${node.homePeerId}';
       if (sessionToken != null) {
         relayUrl += '&token=$sessionToken';
       }
@@ -187,10 +187,10 @@ class CandidateResolver {
     // "WRONG_VERSION_NUMBER" TLS handshake errors.
     final wsUrl = 'ws://$_communityRelayHost:$_communityRelayWsPort/ws';
     // Community relay with peer routing (requires homePeerId — from QR
-    // code pairing). The relay's WebSocket accepts ?peer=<homePeerId>
+    // code pairing). The relay's WebSocket accepts ?target=<homePeerId>
     // for circuit-relay routing.
     if (_communityHomePeerId != null && _communityHomePeerId!.isNotEmpty) {
-      var url = '$wsUrl?peer=$_communityHomePeerId';
+      var url = '$wsUrl?target=$_communityHomePeerId';
       if (sessionToken != null) {
         url += '&token=$sessionToken';
       }

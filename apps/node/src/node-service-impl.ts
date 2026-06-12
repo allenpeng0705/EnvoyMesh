@@ -8533,7 +8533,9 @@ class NodeServiceImpl implements NodeService {
         clearInterval(this._bondWarmTimer);
         this._bondWarmTimer = undefined;
       }
-      this._relayBootstrapPeers = [];
+      // Don't clear _relayBootstrapPeers — keep the last known relay list so
+      // getPairingPayload() can still return useful fallback addresses if called
+      // during a brief stop/start window (e.g. QR modal open during node restart).
       if (this._mesh) {
         await this._mesh.stop();
         this._mesh = undefined;

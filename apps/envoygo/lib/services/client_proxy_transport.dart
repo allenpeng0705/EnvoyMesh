@@ -48,13 +48,18 @@ class ClientProxyTransport implements WebSocketLike {
     // Connect to the relay WebSocket with peer routing.
     // Use Uri.encodeComponent for the peer ID because base64url encoding
     // can include +/= chars that Uri.parse misinterprets as spaces
-    // without proper encoding. This fixes "http://...ws#"
-    // (URL mangled, + turned to space, treated as fragment).
+    // without proper encoding.
+    // The relay server expects ?target= (not ?peer=) as the routing parameter.
+    //
+    // The relayWsUrl may already have ?peer=... from candidate_resolver.dart.
+    // Strip any existing query params before appending our own.
+    final baseUrl = relayWsUrl.contains('?')
+        ? relayWsUrl.substring(0, relayWsUrl.indexOf('?'))
+        : relayWsUrl;
     final encodedPeerId = Uri.encodeComponent(homePeerId);
-    final baseUrl = '$relayWsUrl?peer=$encodedPeerId';
     final url = sessionToken.isNotEmpty
-        ? '$baseUrl&token=$sessionToken'
-        : baseUrl;
+        ? '$baseUrl?target=$encodedPeerId&token=$sessionToken'
+        : '$baseUrl?target=$encodedPeerId';
     final uri = Uri.parse(url);
     final channel = WebSocketChannel.connect(uri);
     final transport = ClientProxyTransport._(channel);
@@ -78,9 +83,22 @@ class ClientProxyTransport implements WebSocketLike {
           // Still waiting for handshake response.
           try {
             final msg = jsonDecode(text) as Map<String, dynamic>;
-            if (msg['type'] == 'proxy-accept' ||
-                msg['type'] == 'proxy-reject') {
+            // Accept both handshake formats:
+            // - libp2p proxy path: { type: "proxy-accept" | "proxy-reject" }
+            // - home-tunnel path: { event: "connected" | "tunnel-up" | "tunnel-down" }
+            if (msg['type'] == 'proxy-accept') {
               handshakeCompleter.complete(msg);
+              return;
+            }
+            if (msg['type'] == 'proxy-reject') {
+              handshakeCompleter.complete(msg);
+              return;
+            }
+            // Home-tunnel path: "connected" event means tunnel is established.
+            // Treat as success equivalent to proxy-accept.
+            if (msg['event'] == 'connected' ||
+                msg['event'] == 'tunnel-up') {
+              handshakeCompleter.complete({'type': 'proxy-accept'});
               return;
             }
           } catch (_) {
