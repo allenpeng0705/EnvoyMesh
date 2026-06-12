@@ -100,6 +100,7 @@ class HomeRemoteClientOptions {
     this.createTransport,
     this.onHomeOnlineChange,
     this.onActiveTransportChange,
+    this.onReconnect,
     this.perCandidateTimeoutMs = 8000,
     this.upgradeSweepMs = 30000,
     this.initialReconnectDelayMs = 1000,

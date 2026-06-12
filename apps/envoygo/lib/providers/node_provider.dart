@@ -438,6 +438,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // Rooms and terminals sync directly using _nodeService.
     _syncRoomsDirect(nodeService, chatNotifier);
     _syncTerminalsDirect(nodeService, chatNotifier, terminalNotifier);
+    // Sync all terminal sessions (running and stopped) as chat threads.
+    chatNotifier.syncTerminals();
     _syncInboxDirect(nodeService, chatNotifier);
 
     // EnvoyAI (OpenClaw) — always create, built-in.
@@ -513,7 +515,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     nodeService.listTerminalSessions().then((sessions) {
       // Update terminal state with all sessions (running and stopped).
       terminalNotifier.setSessions(sessions);
-      // Only sync running terminals to chat.
+      // Only sync running terminals to chat as messages.
       final running = sessions
           .where((s) => s.runningProcess != null && s.runningProcess!.isNotEmpty);
       for (final session in running) {
@@ -644,8 +646,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
         chatNotifier.onChatMessage(data);
       }
     });
-    client.on('terminal:session-updated', (_) {
-      terminalNotifier.loadSessions();
+    client.on('terminal:session-updated', (_) async {
+      // Load sessions first, then sync to ensure state is populated.
+      await terminalNotifier.loadSessions();
       chatNotifier.syncTerminals();
     });
   }
