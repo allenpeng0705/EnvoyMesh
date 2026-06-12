@@ -15,6 +15,7 @@ import '../services/platform_web_socket.dart';
 import '../services/exceptions.dart';
 import '../services/reconnect_supervisor.dart';
 import '../services/connectivity_observer.dart';
+import '../services/libp2p_node.dart';
 import '../storage/local_database.dart';
 import '../storage/secure_storage.dart';
 
@@ -116,6 +117,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
   HomeRemoteClient? _client;
   NodeServiceClient? _nodeService;
   PairingService? _pairingService;
+
+  /// Libp2p node for direct P2P connectivity when relay is unavailable.
+  Libp2pNode? _libp2pNode;
 
   /// `true` after [dispose] has been called. Used to short-circuit
   /// supervisor callbacks that fire after the notifier is gone.
@@ -602,8 +606,35 @@ class NodeNotifier extends StateNotifier<NodeState> {
         sessionToken: candidate.sessionToken ?? '',
       );
     }
+    // Libp2p circuit relay transport: uses Libp2pNode to dial through
+    // the community relay's circuit relay v2.
+    if (candidate.libp2pRelayAddr != null &&
+        candidate.libp2pRelayAddr!.isNotEmpty) {
+      return _createLibp2pTransport(candidate);
+    }
     // Standard WebSocket.
     return PlatformWebSocket.connect(candidate.url);
+  }
+
+  /// Create a libp2p transport for circuit relay dialing.
+  Future<WebSocketLike> _createLibp2pTransport(
+      HomeRemoteCandidate candidate) async {
+    // Start libp2p node if not already started.
+    _libp2pNode ??= Libp2pNode();
+    if (!_libp2pNode!.isStarted) {
+      await _libp2pNode!.start(
+        relayMultiaddr: candidate.libp2pRelayAddr,
+      );
+    }
+    // Dial through the circuit relay.
+    // The URL is the circuit address: /p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>
+    // Use CLIENT_PROXY_PROTOCOL for the client-proxy handshake.
+    const clientProxyProtocol = '/envoymesh/client-proxy/0.1.0';
+    final transport = await _libp2pNode!.dial(
+      peerMultiaddr: candidate.url,
+      protocolId: clientProxyProtocol,
+    );
+    return transport;
   }
 
   /// Subscribe to server push events via WebSocket (fallback) and

@@ -9185,8 +9185,14 @@ class NodeServiceImpl implements NodeService {
     // Include ALL relay/bootstrap multiaddr URLs so EnvoyGo has the complete
     // fallback list immediately — before getPairingPayload() is called.
     // EnvoyGo will try them in order; the first reachable one succeeds.
+    // Convert libp2p multiaddrs to WebSocket URLs for EnvoyGo compatibility.
     if (this._relayBootstrapPeers.length > 0) {
-      payload.bootstrapPeers = [...this._relayBootstrapPeers];
+      const wsUrls = this._relayBootstrapPeers
+        .map((addr) => NodeServiceImpl._deriveRelayWsUrl(addr))
+        .filter((url): url is string => url !== undefined);
+      if (wsUrls.length > 0) {
+        payload.bootstrapPeers = wsUrls;
+      }
     }
 
     return payload;

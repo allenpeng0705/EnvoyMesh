@@ -59,11 +59,17 @@ class HomeRemoteCandidate {
   /// Required for relay candidates. The session token for authentication.
   final String? sessionToken;
 
+  /// For libp2p circuit relay candidates. The relay's libp2p multiaddr
+  /// to dial through, e.g. /ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR...
+  /// When non-null, _createTransportForCandidate routes to Libp2pTransport.
+  final String? libp2pRelayAddr;
+
   const HomeRemoteCandidate({
     required this.name,
     required this.url,
     this.homePeerId,
     this.sessionToken,
+    this.libp2pRelayAddr,
   });
 }
 

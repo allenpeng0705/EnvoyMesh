@@ -119,6 +119,11 @@ class CandidateResolver {
     // are both unavailable.
     candidates.addAll(_buildBootstrapPeerCandidates(node, sessionToken));
 
+    // Libp2p circuit relay candidates (via community relay's libp2p).
+    // This is a fallback when the relay WebSocket is down but libp2p
+    // circuit relay is still operational.
+    candidates.addAll(_buildLibp2pCandidates(sessionToken));
+
     return candidates;
   }
 
@@ -132,6 +137,54 @@ class CandidateResolver {
 
   /// The community relay's WebSocket port.
   static const _communityRelayWsPort = 15432;
+
+  /// The community relay's libp2p multiaddr prefix (for circuit relay dialing).
+  /// Used to build libp2p candidates when WebSocket relay is unavailable.
+  static const _communityRelayLibp2pMultiaddr =
+      '/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo';
+
+  /// Build libp2p circuit relay candidates.
+  ///
+  /// Uses the community relay's libp2p address to dial the home node
+  /// via circuit relay v2. This works when the relay WebSocket is down
+  /// but the libp2p circuit relay is still operational.
+  ///
+  /// The circuit address format is:
+  ///   /p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>
+  List<HomeRemoteCandidate> _buildLibp2pCandidates(String? sessionToken) {
+    final result = <HomeRemoteCandidate>[];
+    if (_communityHomePeerId == null || _communityHomePeerId!.isEmpty) {
+      return result;
+    }
+
+    // Extract relay peer ID from the community relay multiaddr.
+    // Format: /ip4/X.X.X.X/tcp/N/p2p/<peerId>
+    final match =
+        _communityRelayLibp2pMultiaddr.matchAsPrefix('/p2p/');
+    if (match == null) return result;
+
+    // The relay peer ID is everything after /p2p/ in the multiaddr.
+    // But we need to find the last /p2p/ segment.
+    final p2pIndex = _communityRelayLibp2pMultiaddr.lastIndexOf('/p2p/');
+    if (p2pIndex < 0) return result;
+
+    final relayPeerId = _communityRelayLibp2pMultiaddr.substring(p2pIndex + 5);
+    if (relayPeerId.isEmpty) return result;
+
+    // Build the circuit relay address: /p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>
+    final circuitAddr =
+        '/p2p/$relayPeerId/p2p-circuit/p2p/$_communityHomePeerId';
+
+    result.add(HomeRemoteCandidate(
+      name: 'p2p',
+      url: circuitAddr,
+      homePeerId: _communityHomePeerId,
+      sessionToken: sessionToken,
+      libp2pRelayAddr: _communityRelayLibp2pMultiaddr,
+    ));
+
+    return result;
+  }
 
   /// Build candidates from the bootstrap peers list in the stored node.
   /// These are relay/peer addresses provided by the home node during
