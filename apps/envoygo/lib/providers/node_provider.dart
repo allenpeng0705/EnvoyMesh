@@ -581,9 +581,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
     if (candidate.homePeerId != null &&
         candidate.homePeerId!.isNotEmpty &&
         candidate.url.contains('?peer=')) {
-      // The URL may already have query params (e.g. ?target=...&token=...)
-      // from the QR code. Split at '?peer=' to get the base URL.
-      // Result: ws://47.93.11.212:15432/ws (not ws://47.93.11.212:15432/ws?target=...)
+      // candidate.url is already the full WebSocket URL with ?peer= and ?token=.
+      // Extract the base relay URL by taking everything before '?peer='.
       final peerIdx = candidate.url.indexOf('?peer=');
       final relayWsUrl = candidate.url.substring(0, peerIdx);
       return ClientProxyTransport.connect(
