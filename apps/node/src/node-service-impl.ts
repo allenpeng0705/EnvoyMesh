@@ -531,7 +531,7 @@ class NodeServiceImpl implements NodeService {
   /** Latest QR / `getPairingPayload` token for optional companion auto-pair (short TTL). */
   private _pairingToken: string | null = null;
   private _pairingTokenIssuedAt = 0;
-  private static readonly _pairingTokenTtlMs = 10 * 60 * 1000;
+  private static readonly _pairingTokenTtlMs = 30 * 60 * 1000; // 30 minutes
 
   /** Persistent session token store for long-lived pairings (no QR re-scan). */
   private readonly _sessionTokenStore: SessionTokenStore | null;

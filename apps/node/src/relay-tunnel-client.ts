@@ -80,6 +80,7 @@ export class RelayTunnelClient {
 
   stop(): void {
     this.disposed = true;
+    this._stopKeepalive();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -108,8 +109,11 @@ export class RelayTunnelClient {
 
     ws.on("open", () => {
       this.connected = true;
+      // Reset delay on successful connect - connection is stable.
       this.reconnectDelayMs = 1000;
       this.opts.log?.(`[relay-tunnel] connected to ${url.toString()}`);
+      // Start keepalive ping to detect dead connections.
+      this._startKeepalive();
     });
 
     ws.on("message", (raw) => {
@@ -119,6 +123,7 @@ export class RelayTunnelClient {
     ws.on("close", (code, reason) => {
       this.connected = false;
       this.tunnelWs = null;
+      this._stopKeepalive();
       this.opts.log?.(`[relay-tunnel] disconnected code=${code} reason=${reason?.toString() ?? ""}`);
       // Close all channels.
       for (const ch of this.channels.values()) {
@@ -131,18 +136,48 @@ export class RelayTunnelClient {
     ws.on("error", (err) => {
       this.opts.log?.(`[relay-tunnel] error: ${err.message}`);
     });
+
+    ws.on("pong", () => {
+      // Pong received - connection is alive.
+      this.opts.log?.(`[relay-tunnel] pong received`);
+    });
+  }
+
+  private _keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+
+  private _startKeepalive(): void {
+    this._stopKeepalive();
+    // Send ping every 15 seconds to keep connection alive and detect dead connections.
+    this._keepaliveTimer = setInterval(() => {
+      if (this.tunnelWs && this.tunnelWs.readyState === WebSocket.OPEN) {
+        this.tunnelWs.ping();
+        this.opts.log?.(`[relay-tunnel] ping sent`);
+      }
+    }, 15_000);
+  }
+
+  private _stopKeepalive(): void {
+    if (this._keepaliveTimer) {
+      clearInterval(this._keepaliveTimer);
+      this._keepaliveTimer = null;
+    }
   }
 
   private scheduleReconnect(): void {
     if (this.disposed) return;
     if (this.reconnectTimer) return;
     const delay = this.reconnectDelayMs;
+    // Exponential backoff, but cap at 30 seconds.
+    // Don't increase delay too much - we want to reconnect quickly.
     this.reconnectDelayMs = Math.min(this.reconnectDelayMs * 2, 30_000);
+    this.opts.log?.(`[relay-tunnel] scheduling reconnect in ${delay}ms (attempt ${++this._reconnectAttempts})`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
     }, delay);
   }
+
+  private _reconnectAttempts = 0;
 
   private handleTunnelMessage(raw: unknown): void {
     const text = typeof raw === "string"

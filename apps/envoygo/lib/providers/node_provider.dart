@@ -263,8 +263,15 @@ class NodeNotifier extends StateNotifier<NodeState> {
   void kickReconnect() {
     if (state.connectionState == NodeConnectionState.connected) return;
     final supervisor = _supervisor;
-    if (supervisor == null) return;
-    if (supervisor.isStopped) return;
+    if (supervisor == null || supervisor.isStopped) {
+      // Supervisor was stopped after initial connect, or never started.
+      // Restart it to attempt reconnection.
+      final targetNodeId = _supervisorTargetNodeId;
+      if (targetNodeId != null) {
+        _startSupervisorFor(targetNodeId);
+      }
+      return;
+    }
     supervisor.kick();
   }
 

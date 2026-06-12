@@ -157,8 +157,13 @@ class _PairingConfirmScreenState
         relayWsUrl: widget.data.relayWsUrl,
         pairedAt: DateTime.now(),
       );
+      // Set community relay peer ID before resolving so the community-relay
+      // candidate includes ?target= for proper relay routing.
+      CandidateResolver.setCommunityHomePeerId(widget.data.homeNodePeerId);
       final resolver = CandidateResolver();
-      final candidates = resolver.resolve(tempNode);
+      // Pass the pairing token from the QR so relay candidates include it
+      // for the proxy-connect handshake.
+      final candidates = resolver.resolve(tempNode, sessionToken: widget.data.token);
 
       final notifier = ref.read(nodeProvider.notifier);
       await notifier.pairWithNode(

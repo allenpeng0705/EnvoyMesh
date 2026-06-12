@@ -154,7 +154,7 @@ class CandidateResolver {
         url = '$url/ws';
       }
       // Append session token if present and not already in URL.
-      // peer= is a routing param (circuit-relay target); token= is auth.
+      // target= is the routing param (circuit-relay destination peer ID); token= is auth.
       // They are independent — only skip if token= is already present.
       if (sessionToken != null && !url.contains('token=')) {
         url += '${url.contains('?') ? '&' : '?'}token=$sessionToken';
@@ -173,7 +173,7 @@ class CandidateResolver {
   ///
   /// The community relay has two purposes:
   /// 1. As a circuit-relay v2 hop: mobile dials
-  ///    `ws://47.93.11.212:15432/ws?peer=<homePeerId>`
+  ///    `ws://47.93.11.212:15432/ws?target=<homePeerId>`
   ///    — requires knowing the home's peer ID (from pairing). Used when
   ///    `homePeerId` is available.
   /// 2. As a DHT bootstrap peer: mobile connects to the relay's WebSocket

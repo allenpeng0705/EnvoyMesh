@@ -198,6 +198,20 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
     // Acknowledge the registration so the home node knows the tunnel is up.
     sendToMobile(ws, JSON.stringify({ type: "home-tunnel-ack", peerId }));
 
+    // Keepalive: respond to ping with pong, and send periodic pings.
+    ws.on("ping", () => {
+      ws.pong();
+    });
+    const pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.ping();
+      } else {
+        clearInterval(pingInterval);
+      }
+    }, 25_000);
+    ws.on("close", () => clearInterval(pingInterval));
+    ws.on("error", () => clearInterval(pingInterval));
+
     // On every (re)open of the tunnel, walk the module-level
     // `proxyChannels` for entries belonging to this peerId that are
     // orphaned, and re-issue the `open` frame on the new tunnel. The
