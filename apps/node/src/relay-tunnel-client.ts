@@ -138,8 +138,7 @@ export class RelayTunnelClient {
     });
 
     ws.on("pong", () => {
-      // Pong received - connection is alive.
-      this.opts.log?.(`[relay-tunnel] pong received`);
+      // Pong received - connection is alive. No logging needed.
     });
   }
 
@@ -151,7 +150,7 @@ export class RelayTunnelClient {
     this._keepaliveTimer = setInterval(() => {
       if (this.tunnelWs && this.tunnelWs.readyState === WebSocket.OPEN) {
         this.tunnelWs.ping();
-        this.opts.log?.(`[relay-tunnel] ping sent`);
+        // Only log on error, not every ping.
       }
     }, 15_000);
   }

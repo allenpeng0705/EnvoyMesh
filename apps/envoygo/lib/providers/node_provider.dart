@@ -730,6 +730,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
       onActiveTransportChange: (candidate) {
         state = state.copyWith(activeTransport: candidate?.name);
       },
+      onReconnect: () {
+        // Resync data after reconnection.
+        _syncAllData();
+      },
     );
     _client = HomeRemoteClient(opts);
 

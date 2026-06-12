@@ -82,6 +82,10 @@ class HomeRemoteClientOptions {
   final void Function(HomeRemoteCandidate? candidate)?
       onActiveTransportChange;
 
+  /// Called whenever a reconnection succeeds (after initial connect).
+  /// Use this to resync data after network recovery.
+  final void Function()? onReconnect;
+
   /// Per-candidate connect timeout in ms. Default: 8000.
   final int perCandidateTimeoutMs;
 
@@ -468,6 +472,8 @@ class HomeRemoteClient {
       _reconnectTimer = null;
       ensureConnected().then((_) {
         // Connected — backoff resets in _openSocket on 'connected' event.
+        // Notify listener so it can resync data after reconnection.
+        _options.onReconnect?.call();
       }).catchError((_) {
         _reconnectDelayMs = min(_reconnectDelayMs * 2, 30000);
         _scheduleReconnect();
