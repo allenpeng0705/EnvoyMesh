@@ -7,6 +7,9 @@ import 'package:dart_libp2p/p2p/host/basic/basic_host.dart' as p2p_host;
 import 'package:dart_libp2p/config/config.dart';
 import 'package:dart_libp2p/config/defaults.dart';
 import 'package:dart_libp2p/core/crypto/ed25519.dart' as crypto_ed25519;
+import 'package:dart_libp2p/p2p/transport/tcp_transport.dart';
+import 'package:dart_libp2p/p2p/host/resource_manager/resource_manager_impl.dart';
+import 'package:dart_libp2p/p2p/host/resource_manager/limiter.dart';
 import 'web_socket_like.dart';
 
 /// A minimal libp2p host for the EnvoyGo thin client.
@@ -51,9 +54,13 @@ class Libp2pNode {
     final keyPair = await crypto_ed25519.generateEd25519KeyPair();
 
     // Use the Config API (dart_libp2p 1.0.x).
-    // applyDefaults() sets up NoiseSecurity, TCP, Yamux, AutoNAT, etc.
+    // applyDefaults() sets up NoiseSecurity, Yamux, AutoNAT, etc.
+    // We must explicitly add TcpTransport with a ResourceManager —
+    // applyDefaults() does NOT add transports.
+    final resourceManager = ResourceManagerImpl(limiter: FixedLimiter());
     final config = Config()
-      ..peerKey = keyPair;
+      ..peerKey = keyPair
+      ..transports.add(TCPTransport(resourceManager: resourceManager));
 
     if (listenAddrs.isNotEmpty) {
       config.listenAddrs = listenAddrs.map((a) => MultiAddr(a)).toList();
