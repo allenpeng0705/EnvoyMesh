@@ -193,6 +193,11 @@ class CandidateResolver {
       StoredNode node, String? sessionToken) {
     final result = <HomeRemoteCandidate>[];
     for (final peer in node.bootstrapPeers) {
+      // Skip libp2p multiaddrs (start with /ip4/, /ip6/, /dnsaddr/, etc.)
+      // These are handled by _buildLibp2pCandidates() which creates proper
+      // circuit relay candidates.
+      if (peer.startsWith('/')) continue;
+
       // Bootstrap peers may be:
       //   - full URLs:     wss://relay.example.com/ws?peer=...
       //   - URLs no path:  wss://relay.example.com
