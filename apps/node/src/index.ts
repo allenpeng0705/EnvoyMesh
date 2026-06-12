@@ -3725,7 +3725,7 @@ async function shutdown(): Promise<void> {
     try { await nodeService.stopOpenClaw?.(); } catch { /* ok */ }
     nodeService.setBridgeStatus({ enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0, agentName: "" });
   }
-  wsServer.stop();
+  await wsServer.stop();
   if (bootstrapReprobeTimer) {
     clearTimeout(bootstrapReprobeTimer);
     bootstrapReprobeTimer = undefined;
@@ -4954,11 +4954,13 @@ async function appendRelayInboundAudit(
 }
 
 process.on("SIGINT", () => {
-  void shutdown();
+  console.log('[node] SIGINT received — shutting down...');
+  shutdown().then(() => process.exit(0));
 });
 
 process.on("SIGTERM", () => {
-  void shutdown();
+  console.log('[node] SIGTERM received — shutting down...');
+  shutdown().then(() => process.exit(0));
 });
 
 // ============================================================================

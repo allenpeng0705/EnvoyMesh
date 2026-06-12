@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:dart_libp2p/dart_libp2p.dart';
 import 'package:dart_libp2p_kad_dht/dart_libp2p_kad_dht.dart';
 import 'package:dart_libp2p/p2p/host/basic/basic_host.dart' as p2p_host;
@@ -99,6 +100,16 @@ class Libp2pNode {
         // Ignore individual bootstrap peer failures.
       }
     }
+
+    // Give the DHT a moment to establish connections with bootstrap peers
+    // before we try to query. Without this, findPeer() immediately after start()
+    // may return null because the routing table hasn't converged yet.
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    // ignore: dart SDK print — debug only
+    try {
+      final rtSize = await _dht!.routingTable.size();
+      debugPrint('[Libp2pNode] DHT started, routing table size: $rtSize');
+    } catch (_) {}
   }
 
   /// Find a peer by their PeerId via DHT query.

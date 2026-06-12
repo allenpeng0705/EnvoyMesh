@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:dart_libp2p/dart_libp2p.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/stored_node.dart';
@@ -589,8 +590,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// Relay candidates use `ClientProxyTransport.connect` which speaks the
   /// proxy handshake through the relay WebSocket. All other candidates
   /// use a plain WebSocket.
-  FutureOr<WebSocketLike> _createTransportForCandidate(
-      HomeRemoteCandidate candidate) {
+  Future<WebSocketLike> _createTransportForCandidate(
+      HomeRemoteCandidate candidate) async {
     // Relay proxy transport: URLs containing ?target=<homePeerId> use the
     // ClientProxyTransport which handles the proxy handshake protocol.
     if (candidate.homePeerId != null &&
@@ -610,7 +611,14 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // the community relay's circuit relay v2.
     if (candidate.libp2pRelayAddr != null &&
         candidate.libp2pRelayAddr!.isNotEmpty) {
-      return _createLibp2pTransport(candidate);
+      try {
+        return await _createLibp2pTransport(candidate);
+      } catch (e) {
+        // Circuit relay failed (sync error from connect(), or DHT fallback
+        // exhausted). Return a failed Future so the caller records this
+        // failure and moves to the next candidate.
+        return Future.error(e);
+      }
     }
     // Standard WebSocket.
     return PlatformWebSocket.connect(candidate.url);
@@ -648,21 +656,50 @@ class NodeNotifier extends StateNotifier<NodeState> {
         bootstrapAddrs: dhtBootstrapPeers,
       );
     }
-    // Dial through the circuit relay.
-    // The URL is the circuit address: /p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>
-    // Use CLIENT_PROXY_PROTOCOL for the client-proxy handshake.
+
     const clientProxyProtocol = '/envoymesh/client-proxy/0.1.0';
-    final transport = await _libp2pNode!.dial(
-      peerMultiaddr: candidate.url,
-      protocolId: clientProxyProtocol,
-    );
 
-    // Perform the client-proxy handshake: send token, wait for accept/reject.
-    // HomeRemoteClient expects the transport to be fully open (onOpen fired)
-    // before it starts sending JSON-RPC calls, so we await here.
-    await transport.performHandshake(candidate.sessionToken ?? '');
+    // Try circuit relay dial first: /p2p/<relay>/p2p-circuit/p2p/<home>
+    try {
+      final transport = await _libp2pNode!.dial(
+        peerMultiaddr: candidate.url,
+        protocolId: clientProxyProtocol,
+      );
+      await transport.performHandshake(candidate.sessionToken ?? '');
+      return transport;
+    } catch (_) {
+      // Circuit relay failed (community relay unreachable).
+      // Fall back to DHT: query for the home node's direct addresses
+      // and dial those directly.
+    }
 
-    return transport;
+    // DHT fallback: find peer's direct addresses via DHT.
+    // findPeer() returns addresses that already include /p2p/<peerId>,
+    // so use them directly without appending.
+    final homePeerId = PeerId.fromString(candidate.homePeerId!);
+    final addrInfo = await _libp2pNode!.findPeer(homePeerId);
+    // ignore: dart SDK print, not async-safe
+    debugPrint('[DHT] findPeer($homePeerId) => ${addrInfo?.addrs.length ?? 0} addrs');
+    if (addrInfo != null && addrInfo.addrs.isNotEmpty) {
+      // Try each direct address until one works.
+      for (final addr in addrInfo.addrs) {
+        try {
+          // addr.toString() is already a complete multiaddr like
+          // /ip4/192.168.x.x/tcp/54264/p2p/<peerId> — use directly.
+          final transport = await _libp2pNode!.dial(
+            peerMultiaddr: addr.toString(),
+            protocolId: clientProxyProtocol,
+          );
+          await transport.performHandshake(candidate.sessionToken ?? '');
+          return transport;
+        } catch (_) {
+          // This address failed, try the next one.
+        }
+      }
+    }
+
+    // All paths exhausted.
+    throw Exception('homeRemote.connectFailed');
   }
 
   /// Subscribe to server push events via WebSocket (fallback) and
