@@ -664,6 +664,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     AddrInfo? addrInfo;
     try {
       final homePeerId = PeerId.fromString(candidate.homePeerId!);
+      debugPrint('[_createLibp2pTransport] DHT findPeer looking up homePeerId: ${homePeerId.toString()}');
       addrInfo = await _libp2pNode!.findPeer(homePeerId);
     } catch (e) {
       debugPrint('[_createLibp2pTransport] findPeer threw: $e');
@@ -671,7 +672,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
     }
     debugPrint('[_createLibp2pTransport] DHT findPeer => ${addrInfo?.addrs.length ?? 0} addrs');
     if (addrInfo != null && addrInfo.addrs.isNotEmpty) {
+      debugPrint('[_createLibp2pTransport] DHT addresses discovered: ${addrInfo.addrs.map((a) => a.toString()).join(', ')}');
       for (final addr in addrInfo.addrs) {
+        debugPrint('[_createLibp2pTransport] attempting direct dial to: ${addr.toString()}');
         try {
           final transport = await _libp2pNode!.dial(
             peerMultiaddr: addr.toString(),
