@@ -7891,6 +7891,7 @@ class NodeServiceImpl implements NodeService {
 
       // Resolve bootstrap presets to actual multiaddresses
       const resolvedPresetAddrs: string[] = [];
+      console.log(`[node-service] config.bootstrapPresets: ${JSON.stringify(config.bootstrapPresets)}`);
       if (config.bootstrapPresets && config.bootstrapPresets.length > 0) {
         console.log(`[node-service] Resolving ${config.bootstrapPresets.length} bootstrap presets: ${config.bootstrapPresets.join(", ")}`);
         const resolvedResults = await resolveBootstrapAddresses(config.bootstrapPresets);
@@ -7907,7 +7908,11 @@ class NodeServiceImpl implements NodeService {
         (addr): addr is string =>
           typeof addr === "string" && addr.trim().length > 0 && addr.startsWith("/"),
       );
+      console.log(`[node-service] rawBootstrapAddrs (${rawBootstrapAddrs.length}): ${rawBootstrapAddrs.join(", ")}`);
+      console.log(`[node-service] config.bootstrapPeers: ${config.bootstrapPeers?.join(", ") ?? "undefined/empty"}`);
+      console.log(`[node-service] resolvedPresetAddrs: ${resolvedPresetAddrs.join(", ")}`);
       const bootstrapPeers = filterBootstrapMultiaddrs([...new Set(rawBootstrapAddrs)]);
+      console.log(`[node-service] bootstrapPeers after filterBootstrapMultiaddrs: ${bootstrapPeers.length} - ${bootstrapPeers.join(", ")}`);
       if (rawBootstrapAddrs.length !== bootstrapPeers.length || peerDirAddrCount > 0) {
         console.log(
           `[node-service] bootstrap addrs: kept=${bootstrapPeers.length} filtered=${rawBootstrapAddrs.length - bootstrapPeers.length} peer-dir-skipped=${peerDirAddrCount} (contact listen addrs use dial hints only)`,
@@ -7978,7 +7983,7 @@ class NodeServiceImpl implements NodeService {
       void this._resyncBondedContactReachabilityTags();
 
       this._relayBootstrapPeers = bootstrapPeers;
-      console.log(`[node-service] _relayBootstrapPeers set to ${bootstrapPeers.length} addresses: ${bootstrapPeers.join(", ")}`);
+      console.log(`[node-service] _relayBootstrapPeers assigned: ${bootstrapPeers.length} addresses: ${bootstrapPeers.join(", ")}`);
       if (config.relayEnabled && this._inboundGuard && this._discoverySeedStore) {
         this._stopRelayClientScheduler?.();
         const relayDeps = {
@@ -9218,6 +9223,14 @@ class NodeServiceImpl implements NodeService {
     // the relay WebSocket is down but libp2p circuit relay is operational.
     allBootstrapPeers.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
 
+    // Also add known-working public DHT bootstrap peers directly.
+    // These are hardcoded because DNS resolution for bootstrap.libp2p.io
+    // and its subdomains fails intermittently. Including them here ensures
+    // EnvoyGo can try circuit relay via am6 even if DNS fails.
+    allBootstrapPeers.push("/dnsaddr/am6.bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq");
+    allBootstrapPeers.push("/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf");
+    allBootstrapPeers.push("/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN");
+
     // Add all configured bootstrap peers as-is (libp2p multiaddrs).
     // _buildLibp2pCandidates() in EnvoyGo will create circuit relay
     // candidates from these. Also convert to WebSocket URLs as fallback
@@ -9234,21 +9247,18 @@ class NodeServiceImpl implements NodeService {
     }
 
     // Include bootstrap preset names for compact QR encoding.
-    // EnvoyGo resolves these to full multiaddrs using the same preset registry.
-    // Only include standard public-libp2p presets (cn-relay is already in bootstrapPeers).
+    // EnvoyGo resolves these to full multiaddr strings using the same preset registry.
+    // Since we hardcoded am6/am7/bootstrap in allBootstrapPeers (above), detect presets from allBootstrapPeers.
     const presetNames: string[] = [];
-    console.log(`[getPairingPayload] _relayBootstrapPeers (${this._relayBootstrapPeers.length} entries): ${this._relayBootstrapPeers.join(", ")}`);
-    // Match by hostname in the multiaddr (e.g. "am6.bootstrap.libp2p.io" contains "am6.bootstrap")
-    if (this._relayBootstrapPeers.some((a) => a.includes("am6.bootstrap.libp2p.io"))) {
+    if (allBootstrapPeers.some((a) => a.includes("am6.bootstrap.libp2p.io"))) {
       presetNames.push("public-libp2p-am6");
     }
-    if (this._relayBootstrapPeers.some((a) => a.includes("am7.bootstrap.libp2p.io"))) {
+    if (allBootstrapPeers.some((a) => a.includes("am7.bootstrap.libp2p.io"))) {
       presetNames.push("public-libp2p-am7");
     }
-    if (this._relayBootstrapPeers.some((a) => a.includes("bootstrap.libp2p.io"))) {
+    if (allBootstrapPeers.some((a) => a.includes("bootstrap.libp2p.io"))) {
       presetNames.push("public-libp2p");
     }
-    console.log(`[getPairingPayload] bootstrapPresetNames: ${presetNames.join(", ")}`);
     if (presetNames.length > 0) {
       payload.bootstrapPresetNames = presetNames;
     }
