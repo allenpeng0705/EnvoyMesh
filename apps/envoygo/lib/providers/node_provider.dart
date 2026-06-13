@@ -351,6 +351,19 @@ class NodeNotifier extends StateNotifier<NodeState> {
     }
 
     // Store node info in local DB.
+    // For the compressed QR token (v1), bootstrapPeers is null but
+    // bootstrapPresetNames is set. Resolve presets to multiaddr strings so
+    // Libp2pNode can use them as DHT bootstrap peers for direct dialing.
+    final List<String> bootstrapPeers;
+    if (data.bootstrapPeers != null && data.bootstrapPeers!.isNotEmpty) {
+      bootstrapPeers = data.bootstrapPeers!;
+    } else if (data.bootstrapPresetNames != null && data.bootstrapPresetNames!.isNotEmpty) {
+      // Resolve preset names (e.g. "public-libp2p-am6") to full multiaddr strings.
+      bootstrapPeers = CandidateResolver.resolveBootstrapPresets(data.bootstrapPresetNames!);
+    } else {
+      bootstrapPeers = [];
+    }
+
     final node = StoredNode(
       id: nodeId,
       name: existingNode?.name ?? data.agentName ?? 'Home Node',
@@ -363,7 +376,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       lastConnectedAt: DateTime.now(),
       publicHost: existingNode?.publicHost,
       publicPort: existingNode?.publicPort ?? 3030,
-      bootstrapPeers: data.bootstrapPeers ?? const [],
+      bootstrapPeers: bootstrapPeers,
     );
     await _localDb.upsertNode(node.toJson());
     await _localDb.updateNodeLastConnected(nodeId);
