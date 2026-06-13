@@ -42,6 +42,7 @@
     "yaml": "^2.8.1"
   },
   "devDependencies": {
+    "@types/nat-upnp": "^1.1.5",
     "@types/ws": "^8.18.1",
     "tsx": "^4.21.0"
   }

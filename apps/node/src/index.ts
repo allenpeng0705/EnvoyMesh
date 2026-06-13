@@ -2676,10 +2676,9 @@ async function discoverAndSetPublicAddr(mesh: EnvoyMesh, args: NodeArgs): Promis
   // so external peers can dial us directly.
   if (args.enableUpnp) {
     // Get our actual libp2p listen port from getMultiaddrs.
-    const listenAddrs = mesh.getMultiaddrs();
+    const listenAddrs = mesh.multiaddrs;
     let internalPort: number | null = null;
-    for (const ma of listenAddrs ?? []) {
-      const maStr = ma.toString();
+    for (const maStr of listenAddrs ?? []) {
       const tcpMatch = maStr.match(/\/tcp\/(\d+)/);
       if (tcpMatch) {
         internalPort = parseInt(tcpMatch[1], 10);

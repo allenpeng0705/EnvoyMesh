@@ -34,6 +34,7 @@ export interface NodeArgs {
   enableRelayServer: boolean;
   enableAutoNat: boolean;
   enableDcutr: boolean;
+  enableUpnp: boolean;
   enableQuic: boolean;
   p2pDebug: boolean;
   relayDebugSummary: boolean;

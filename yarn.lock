@@ -599,6 +599,7 @@
     "@envoymesh/rag" "0.1.0"
     "@envoymesh/vault" "0.1.0"
     "@libp2p/utils" "^7.0.0"
+    nat-upnp "^1.1.1"
     node-pty "^1.1.0"
     ws "^8.20.0"
     yaml "^2.8.1"
@@ -2053,6 +2054,13 @@
   integrity sha512-ib5K4cIDR4Ro5SR3Sx/LROkMDa0BHz0OPaCBL/OSPDsAXEGZ3/KQeS6poBKYVN7BfjXDL9lWNwzyHVgt/wkyCw==
   dependencies:
     "@types/dns-packet" "*"
+    "@types/node" "*"
+
+"@types/nat-upnp@^1.1.5":
+  version "1.1.5"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@types/nat-upnp/-/nat-upnp-1.1.5.tgz"
+  integrity sha512-qV59NonoDwwadrhD3T18PGNbbQIt2t/lfgAzXZHrFPOVGN+xyEJMUuuMYg7oIB+JebsUIjPmqmKN7txvFTCJkA==
+  dependencies:
     "@types/node" "*"
 
 "@types/node@*", "@types/node@^18.0.0 || ^20.0.0 || >=22.0.0", "@types/node@^20.0.0 || ^22.0.0 || >=24.0.0", "@types/node@^20.19.0 || >=22.12.0", "@types/node@^25.6.0":

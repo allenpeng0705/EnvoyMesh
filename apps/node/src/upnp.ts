@@ -10,7 +10,7 @@
  * This enables direct P2P connections without manual router configuration.
  */
 
-import { Client as NatUpnpClient } from "nat-upnp";
+import { createClient } from "nat-upnp";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -19,19 +19,6 @@ export interface UpnpResult {
   ip: string;
   /** Mapped external port (may differ from requested port if it was already in use) */
   port: number;
-}
-
-export interface UpnpMappingOptions {
-  /** Internal port to forward (the node's listen port, e.g. 4001 for libp2p) */
-  internalPort: number;
-  /** External port to request (pass internalPort for static port) */
-  externalPort: number;
-  /** Protocol for the mapping */
-  protocol?: "TCP" | "UDP";
-  /** Human-readable description for the port mapping entry */
-  description?: string;
-  /** Lease duration in seconds (0 = permanent) */
-  leaseDuration?: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -70,10 +57,10 @@ export async function upnpDiscoverAndMap(
     }, timeoutMs);
 
     try {
-      const client = NatUpnpClient.create();
+      const client = createClient();
 
       // Step 1: Get external IP address
-      client.externalIp((err: Error | null, ip: string) => {
+      client.externalIp((err: Error | null, ip?: string) => {
         if (err || !ip) {
           clearTimeout(timer);
           console.log(`[upnp] failed to get external IP: ${err?.message ?? "unknown error"}`);
@@ -84,43 +71,52 @@ export async function upnpDiscoverAndMap(
         console.log(`[upnp] gateway external IP: ${ip}`);
 
         // Step 2: Port mapping (try preferred port first, fallback to any port)
-        const mapOptions: UpnpMappingOptions = {
-          publicPort: externalPort,
-          privatePort: internalPort,
-          protocol: "TCP",
-          description: "EnvoyMesh libp2p",
-          ttl: DEFAULT_LEASE_SECONDS,
-        };
+        client.portMapping(
+          {
+            public: externalPort,
+            private: internalPort,
+            protocol: "TCP",
+            description: "EnvoyMesh libp2p",
+            ttl: DEFAULT_LEASE_SECONDS,
+          },
+          (mapErr: Error | null) => {
+            if (mapErr) {
+              console.log(`[upnp] port mapping failed for port ${externalPort}: ${mapErr.message}`);
+              // Try without specifying external port (let UPnP choose)
+              client.portMapping(
+                {
+                  public: 0, // Let UPnP assign any available port
+                  private: internalPort,
+                  protocol: "TCP",
+                  description: "EnvoyMesh libp2p",
+                  ttl: DEFAULT_LEASE_SECONDS,
+                },
+                (mapErr2: Error | null, result?: Record<string, unknown>) => {
+                  clearTimeout(timer);
+                  if (mapErr2) {
+                    console.log(`[upnp] port mapping failed (any port): ${mapErr2.message}`);
+                    resolve(null);
+                    return;
+                  }
+                  // Result contains { public: { host, port }, ... }
+                  const publicEntry = result?.["public"] as { port: number } | undefined;
+                  const publicPort = publicEntry?.port ?? 0;
+                  if (publicPort === 0) {
+                    resolve(null);
+                    return;
+                  }
+                  console.log(`[upnp] port mapped: external ${publicPort} -> internal ${internalPort}`);
+                  resolve({ ip, port: publicPort });
+                },
+              );
+              return;
+            }
 
-        client.portMapping(mapOptions, (mapErr: Error | null) => {
-          clearTimeout(timer);
-          if (mapErr) {
-            console.log(`[upnp] port mapping failed for port ${externalPort}: ${mapErr.message}`);
-            // Try without specifying external port (let UPnP choose)
-            client.portMapping(
-              {
-                publicPort: 0, // Let UPnP assign any available port
-                privatePort: internalPort,
-                protocol: "TCP",
-                description: "EnvoyMesh libp2p",
-                ttl: DEFAULT_LEASE_SECONDS,
-              },
-              (mapErr2: Error | null, publicPort: number) => {
-                if (mapErr2 || !publicPort) {
-                  console.log(`[upnp] port mapping failed (any port): ${mapErr2?.message ?? "unknown error"}`);
-                  resolve(null);
-                  return;
-                }
-                console.log(`[upnp] port mapped: external ${publicPort} -> internal ${internalPort}`);
-                resolve({ ip, port: publicPort });
-              },
-            );
-            return;
-          }
-
-          console.log(`[upnp] port ${externalPort} mapped successfully`);
-          resolve({ ip, port: externalPort });
-        });
+            clearTimeout(timer);
+            console.log(`[upnp] port ${externalPort} mapped successfully`);
+            resolve({ ip, port: externalPort });
+          },
+        );
       });
     } catch (err) {
       clearTimeout(timer);
@@ -139,10 +135,10 @@ export async function upnpDiscoverAndMap(
 export async function upnpUnmapPort(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     try {
-      const client = NatUpnpClient.create();
+      const client = createClient();
       client.portUnmapping(
         {
-          publicPort: port,
+          public: port,
           protocol: "TCP",
         },
         (err: Error | null) => {
