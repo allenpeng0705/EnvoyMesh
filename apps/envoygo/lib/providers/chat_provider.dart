@@ -636,6 +636,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
       isOutbound: true,
     );
 
+    // Persist to local DB immediately so the message survives app restarts
+    // and re-entry to the chat screen (which loads from DB, not memory).
+    _localDb.insertMessage(tempMsg.toJson());
+
     state = state.copyWith(
       messages: {
         ...state.messages,
