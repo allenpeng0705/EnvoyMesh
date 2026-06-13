@@ -152,7 +152,14 @@ export async function receiveFromAgent(
     }
   }
 
-  await deps.sendChat(recipientPeerId, envelope, dialHints ? { dialHints } : undefined);
+  console.log(`[bridge] receiveFromAgent: sending chat.message to recipientPeerId=${recipientPeerId} dialHints=${dialHints?.length ?? 0}`);
+  try {
+    await deps.sendChat(recipientPeerId, envelope, dialHints ? { dialHints } : undefined);
+    console.log(`[bridge] receiveFromAgent: sendChat succeeded`);
+  } catch (err) {
+    console.error(`[bridge] receiveFromAgent: sendChat FAILED: ${err instanceof Error ? err.message : err}`);
+    throw err;
+  }
 
   if (deps.gateway && deps.agentId) {
     deps.gateway.logAction({

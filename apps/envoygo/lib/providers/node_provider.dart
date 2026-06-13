@@ -597,6 +597,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     if (candidate.homePeerId != null &&
         candidate.homePeerId!.isNotEmpty &&
         candidate.url.contains('?target=')) {
+      debugPrint('[_createTransportForCandidate] relay (client-proxy): ${candidate.name} — ${candidate.url}');
       // candidate.url is already the full WebSocket URL with ?target= and ?token=.
       // Extract the base relay URL by taking everything before '?target='.
       final targetIdx = candidate.url.indexOf('?target=');
@@ -611,6 +612,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // the community relay's circuit relay v2.
     if (candidate.libp2pRelayAddr != null &&
         candidate.libp2pRelayAddr!.isNotEmpty) {
+      debugPrint('[_createTransportForCandidate] libp2p-circuit-relay: ${candidate.name} — ${candidate.url}');
       try {
         return await _createLibp2pTransport(candidate);
       } catch (e) {
@@ -621,6 +623,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       }
     }
     // Standard WebSocket.
+    debugPrint('[_createTransportForCandidate] websocket: ${candidate.name} — ${candidate.url}');
     return PlatformWebSocket.connect(candidate.url);
   }
 
@@ -704,6 +707,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
   ) {
     // -- WebSocket push events --
     client.on('chat:message', (data) {
+      debugPrint('[push] chat:message received: $data');
       if (data is Map<String, dynamic>) {
         chatNotifier.onChatMessage(data);
       }
@@ -728,6 +732,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       }
     });
     client.on('agent:activity', (data) {
+      debugPrint('[push] agent:activity received: $data');
       if (data is Map<String, dynamic>) {
         chatNotifier.onChatMessage(data);
       }

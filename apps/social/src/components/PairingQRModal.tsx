@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
+import { encodePairingToken } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
 import { ModalPortal } from "./ModalPortal.js";
@@ -9,10 +10,13 @@ interface PairingQRModalProps {
 }
 
 /**
- * Mobile-pairing QR + URI modal. Builds the `envoy://pair?...` URI from
- * the home node's pairing payload and renders a scannable QR alongside
- * the copy-able URL. Triggered from the top-bar QR icon so a user can
- * pair HomeClaw / EnvoyGo without leaving whatever view they're in.
+ * Mobile-pairing QR + URI modal. Uses a gzip-compressed token in the QR code
+ * (via {@link encodePairingToken}) so the URI stays short enough to scan reliably.
+ * The token format is: `envoy://pair?pairing=<base64url-gzip-json>`.
+ *
+ * EnvoyGo decodes the `pairing` param with its own pure-Dart gzip decoder.
+ * Bootstrap preset names are resolved locally by EnvoyGo using the shared preset
+ * registry — no need to encode full multiaddr lists in the QR.
  */
 export function PairingQRModal({ onClose }: PairingQRModalProps) {
   const t = useT();
@@ -31,29 +35,12 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
       try {
         const payload = await nodeService.getPairingPayload();
         if (cancelled) return;
-        const params = new URLSearchParams({ wsUrl: payload.wsUrl });
-        if (payload.lanWsUrl) params.set("lanWsUrl", payload.lanWsUrl);
-        if (payload.relayPeerId) params.set("relayPeerId", payload.relayPeerId);
-        if (payload.relayWsUrl) params.set("relayWsUrl", payload.relayWsUrl);
-        if (payload.agentPeerId) params.set("agentPeerId", payload.agentPeerId);
-        if (payload.agentPubKey) params.set("agentPubKey", payload.agentPubKey);
-        if (payload.agentName) params.set("agentName", payload.agentName);
-        if (payload.token) params.set("token", payload.token);
-        if (payload.ownerPublicKey) params.set("ownerPublicKey", payload.ownerPublicKey);
-        if (payload.ownerId) params.set("ownerId", payload.ownerId);
-        if (payload.homeNodePeerId) params.set("homeNodePeerId", payload.homeNodePeerId);
-        // Include bootstrap preset names for compact QR encoding.
-        // EnvoyGo resolves these to full multiaddr strings using the same
-        // preset registry as the home node.
-        if (payload.bootstrapPresetNames && payload.bootstrapPresetNames.length > 0) {
-          params.set("bootstrapPresetNames", payload.bootstrapPresetNames.join(","));
-        }
-        // Also include full bootstrap peer multiaddrs for compatibility.
-        if (payload.bootstrapPeers && payload.bootstrapPeers.length > 0) {
-          params.set("bootstrapPeers", payload.bootstrapPeers.join(","));
-        }
-        const built = `envoy://pair?${params.toString()}`;
-        const dataUrl = await QRCode.toDataURL(built, { width: 256, margin: 1 });
+
+        // Encode all fields into a gzip-compressed token — keeps the QR short
+        // enough to scan reliably despite the dense encoding.
+        const token = await encodePairingToken(payload);
+        const built = `envoy://pair?pairing=${token}`;
+        const dataUrl = await QRCode.toDataURL(built, { width: 512, margin: 2 });
         if (cancelled) return;
         setUri(built);
         setQrDataUrl(dataUrl);
@@ -92,7 +79,9 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
           <div className="pairing-modal__header">
             <div>
               <h2 className="pairing-modal__title">{t("pairing.title")}</h2>
-              <p className="pairing-modal__subtitle">{t("pairing.subtitle")}</p>
+              {qrDataUrl && !loading && !error && (
+                <p className="pairing-modal__subtitle">{t("pairing.subtitle")}</p>
+              )}
             </div>
             <button
               type="button"
@@ -116,7 +105,13 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
           </div>
 
           <div className="pairing-modal__body">
-            {loading && <p className="pairing-modal__status">{t("pairing.generating")}</p>}
+            {loading && (
+              <div className="pairing-modal__loading">
+                <svg className="pairing-modal__spinner" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="31.4 31.4" />
+                </svg>
+              </div>
+            )}
             {error && <p className="pairing-modal__error">{error}</p>}
             {qrDataUrl && !loading && !error && (
               <>

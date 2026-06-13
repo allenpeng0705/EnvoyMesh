@@ -10,6 +10,7 @@ export * from "./autonomous-policy.js";
 export * from "./auto-reply-limits.js";
 export * from "./agent-circle.js";
 export * from "./envoy-pair-uri.js";
+export * from "./pairing-token.js";
 export * from "./envoy-contact-link.js";
 export * from "./chat-device-auth.js";
 export * from "./chat-actor.js";

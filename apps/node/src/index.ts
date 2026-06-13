@@ -1824,6 +1824,9 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId)
           : [],
       })
+      .then(() => {
+        console.log(`[peer-directory] ensurePeerFromInboundChat ownerId=${payload.senderOwnerId} peerId=${remotePeerId?.slice(0,12)??'null'} called`);
+      })
       .catch((err) => console.warn(`[peer-directory] ensurePeerFromInboundChat failed:`, err));
     if (payload.ownerPublicKeyPem?.trim()) {
       void contactOwnerKeyStore
@@ -3163,14 +3166,23 @@ nodeService.on("config:updated", (data) => {
 function getRecipientPeerId(ownerOrPeerId: string): Promise<string | null> {
   // If it looks like a peer ID, use it directly
   if (ownerOrPeerId.startsWith("12D3") || ownerOrPeerId.startsWith("envoy_")) {
+    console.log(`[bridge] getRecipientPeerId(${ownerOrPeerId.slice(0,12)}…) → peer ID, returning directly`);
     return Promise.resolve(ownerOrPeerId);
   }
   // Self-send: owner's own ID resolves to the mesh peer ID
   if (profile?.owner?.ownerId && ownerOrPeerId === profile.owner.ownerId) {
+    console.log(`[bridge] getRecipientPeerId(${ownerOrPeerId}) → self-send (matches home node owner), returning mesh.peerId=${mesh.peerId.slice(0,12)}…`);
     return Promise.resolve(mesh.peerId);
   }
   // Otherwise look up by ownerId in the peer directory
-  return peerDirectoryStore.getPeerByOwnerId(ownerOrPeerId).then((record) => record?.peerId ?? null);
+  return peerDirectoryStore.getPeerByOwnerId(ownerOrPeerId).then((record) => {
+    if (record) {
+      console.log(`[bridge] getRecipientPeerId(${ownerOrPeerId}) → peer record found: peerId=${record.peerId.slice(0,12)}…`);
+    } else {
+      console.warn(`[bridge] getRecipientPeerId(${ownerOrPeerId}) → NOT FOUND in peer directory, returning null (will self-send)`);
+    }
+    return record?.peerId ?? null;
+  });
 }
 
 /**

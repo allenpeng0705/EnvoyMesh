@@ -105,7 +105,13 @@ export function createBridge(options: CreateBridgeOptions): {
       console.log(
         `[bridge] P2P send to=${peerId.slice(0, 20)}… intent=${envelope.intent} dialHints=${dialHints?.length ?? 0}`,
       );
-      await options.mesh.sendChat(peerId, envelope, { ...(dialHints ? { dialHints } : {}) });
+      try {
+        await options.mesh.sendChat(peerId, envelope, { ...(dialHints ? { dialHints } : {}) });
+        console.log(`[bridge] P2P send succeeded`);
+      } catch (err) {
+        console.error(`[bridge] P2P send FAILED: ${err instanceof Error ? err.message : err}`);
+        throw err;
+      }
     },
     getRecipientPeerId: options.getRecipientPeerId,
     getRecipientDialHints: options.getRecipientDialHints,

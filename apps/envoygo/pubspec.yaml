@@ -32,6 +32,8 @@ dependencies:
   dart_libp2p: ^1.0.1
   dart_libp2p_pubsub: ^1.1.0
   dart_libp2p_kad_dht: ^1.2.0
+  # Compression (gzip decoding for pairing token)
+  archive: ^3.6.1
   # Push notifications (mobile only)
   firebase_core: ^3.0.1
   firebase_messaging: ^15.0.1

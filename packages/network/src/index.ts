@@ -610,16 +610,32 @@ export class EnvoyMesh {
     }
 
     try {
+      // Only advertise addresses that are actually dialable by remote peers.
+      // Filter out loopback (127.x), LAN (192.168.x, 10.x, 172.16-31.x), and Docker
+      // bridge gateways. Always keep circuit-relay addresses (/p2p-circuit/) — they
+      // work through relays regardless of NAT.
+      const advertiseAddrs = addrs.filter((ma) => {
+        const s = ma.toString();
+        if (!isPrivateOrUnroutableDialHint(s)) return true;
+        console.log(`[p2p] provideSelf: filtered out private/unroutable addr: ${s}`);
+        return false;
+      });
+
+      if (advertiseAddrs.length === 0) {
+        console.warn(`[p2p] provideSelf: no publicly dialable addresses to advertise`);
+        return;
+      }
+
       const key = fromString(selfPeerId);
       const info = {
         id: selfPeerId,
-        addrs: addrs.map((ma) => ma.toString()),
+        addrs: advertiseAddrs.map((ma) => ma.toString()),
       };
       const value = new TextEncoder().encode(JSON.stringify(info));
       console.log(`[p2p] provideSelf: calling contentRouting.put with key len=${key.length}, value len=${value.length}`);
-      console.log(`[p2p] provideSelf: advertised addrs: ${addrs.map((ma) => ma.toString()).join(", ")}`);
+      console.log(`[p2p] provideSelf: advertised addrs: ${advertiseAddrs.map((ma) => ma.toString()).join(", ")}`);
       await node.contentRouting.put(key, value);
-      console.log(`[p2p] provideSelf: SUCCESS - advertised ${addrs.length} addresses for peer ${selfPeerId.slice(0, 12)}…`);
+      console.log(`[p2p] provideSelf: SUCCESS - advertised ${advertiseAddrs.length} addresses for peer ${selfPeerId.slice(0, 12)}…`);
     } catch (err) {
       console.error(`[p2p] provideSelf: FAILED - ${err}`);
     }
@@ -1938,6 +1954,26 @@ export function isDockerBridgeGatewayDialHint(addr: string): boolean {
 
 /** Stable libp2p listen ports — not ephemeral TCP source ports from inbound connections. */
 const STABLE_LIBP2P_TCP_PORTS = new Set([4001, 4002, 4011, 41641]);
+
+/**
+ * Returns true if the given multiaddr is a private / non-routable address that
+ * should NOT be advertised to the DHT. Remote peers can never dial these.
+ *
+ * Note: addresses that contain `/p2p-circuit/` (circuit relay) are always kept —
+ * they are universally dialable regardless of NAT.
+ */
+export function isPrivateOrUnroutableDialHint(addr: string): boolean {
+  // Always keep circuit relay addresses — they work through relays regardless of NAT.
+  if (addr.includes("/p2p-circuit/")) return false;
+  // Filter private/reserved IP ranges.
+  if (isLoopbackOrUnspecifiedDialHint(addr)) return true;
+  if (isDockerBridgeGatewayDialHint(addr)) return true;
+  // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+  if (/\/ip4\/10\.\d+\.\d+\.\d+\//.test(addr)) return true;
+  if (/\/ip4\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+\//.test(addr)) return true;
+  if (/\/ip4\/192\.168\.\d+\.\d+\//.test(addr)) return true;
+  return false;
+}
 
 /**
  * Inbound chat stores `connection.remoteAddr`, which is the remote side's ephemeral

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'web_socket_like.dart';
 import 'exceptions.dart';
 
@@ -202,11 +203,16 @@ class HomeRemoteClient {
 
   /// Ensure the client is connected. Reuses an in-flight connection attempt.
   Future<void> ensureConnected() {
-    if (_disposed) return Future.error(Exception('homeRemote.disposed'));
+    if (_disposed) {
+      final stack = StackTrace.current;
+      debugPrint('[HomeRemoteClient] ensureConnected: ALREADY DISPOSED!\n$stack');
+      return Future.error(Exception('homeRemote.disposed'));
+    }
     if (_ws?.readyState == wsOpen) return Future.value();
     if (_connectCompleter != null) return _connectCompleter!.future;
     final completer = Completer<void>();
     _connectCompleter = completer;
+    debugPrint('[HomeRemoteClient] ensureConnected: starting connection');
     _connectInternal().then((_) {
       completer.complete();
       _connectCompleter = null;
@@ -220,6 +226,7 @@ class HomeRemoteClient {
   /// Connect to the home node, trying candidates in priority order.
   Future<void> _connectInternal() async {
     final candidates = await _options.resolveCandidates();
+    debugPrint('[HomeRemoteClient] _connectInternal: ${candidates.length} candidates: ${candidates.map((c) => '${c.name}=${c.url}').join(', ')}');
     if (_disposed) throw Exception('homeRemote.disposed');
     if (candidates.isEmpty) throw Exception('homeRemote.notConfigured');
 
@@ -427,6 +434,9 @@ class HomeRemoteClient {
   /// Disconnect and release all resources. After calling this, the
   /// client must not be reused.
   void dispose() {
+    final stack = StackTrace.current;
+    debugPrint('[HomeRemoteClient] dispose() called, current _disposed=$_disposed\n$stack');
+    _disposed = true;
     _disposed = true;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;

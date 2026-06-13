@@ -6752,7 +6752,25 @@ button.activity-row:hover,
   overflow-y: auto;
 }
 
-.pairing-modal__status,
+.pairing-modal__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.pairing-modal__spinner {
+  width: 48px;
+  height: 48px;
+  color: var(--color-text-muted);
+  animation: pairing-modal__spin 1s linear infinite;
+}
+
+@keyframes pairing-modal__spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .pairing-modal__error {
   margin: 0;
   color: var(--color-text-muted);
@@ -6765,8 +6783,8 @@ button.activity-row:hover,
 }
 
 .pairing-modal__qr {
-  width: 256px;
-  height: 256px;
+  width: 320px;
+  height: 320px;
   max-width: 100%;
   border: 2px solid var(--color-border);
   border-radius: var(--radius-md);
