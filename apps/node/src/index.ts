@@ -184,6 +184,7 @@ import {
 } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses } from "./bootstrap-resolver.js";
 import { raceStunServers } from "./stun.js";
+import { upnpDiscoverAndMap, DEFAULT_LIBP2P_PORT } from "./upnp.js";
 import {
   addRelayCandidates,
   createRelayClientState,
@@ -2663,14 +2664,46 @@ if (nodeService instanceof NodeServiceImpl) {
 }
 
 // ── Public IP discovery ────────────────────────────────────────────────────────
-// Race STUN, relay observed addr, and autoNAT to find our public IP.
+// Priority: UPnP → STUN → autoNAT → relay-observed
 // First valid result wins; we inject it into mesh so provideSelf() advertises
 // it to DHT and the node becomes discoverable by mobile clients on the go.
 async function discoverAndSetPublicAddr(mesh: EnvoyMesh, args: NodeArgs): Promise<void> {
   let discovered = false;
 
-  // Method 1: STUN (parallel to all configured servers).
-  if (args.stunServers.length > 0) {
+  // Method 1: UPnP (automatic port forwarding, if enabled and available).
+  // UPnP runs first because it can give us a directly reachable address
+  // without relying on STUN or relay. It also configures port forwarding
+  // so external peers can dial us directly.
+  if (args.enableUpnp) {
+    // Get our actual libp2p listen port from getMultiaddrs.
+    const listenAddrs = mesh.getMultiaddrs();
+    let internalPort: number | null = null;
+    for (const ma of listenAddrs ?? []) {
+      const maStr = ma.toString();
+      const tcpMatch = maStr.match(/\/tcp\/(\d+)/);
+      if (tcpMatch) {
+        internalPort = parseInt(tcpMatch[1], 10);
+        break;
+      }
+    }
+    if (internalPort != null) {
+      console.log(`[node] UPnP: attempting to map external port ${DEFAULT_LIBP2P_PORT} -> internal ${internalPort}...`);
+      const upnpResult = await upnpDiscoverAndMap(internalPort, DEFAULT_LIBP2P_PORT, 5000);
+      if (upnpResult) {
+        const multiaddr = `/ip4/${upnpResult.ip}/tcp/${upnpResult.port}`;
+        mesh.setAdvertisedAddress(multiaddr);
+        console.log(`[node] public addr discovered via UPnP: ${multiaddr}`);
+        discovered = true;
+      } else {
+        console.log(`[node] UPnP: no gateway available or mapping failed`);
+      }
+    } else {
+      console.log(`[node] UPnP: could not determine internal listen port`);
+    }
+  }
+
+  // Method 2: STUN (parallel to all configured servers).
+  if (args.stunServers.length > 0 && !discovered) {
     console.log(`[node] STUN: querying ${args.stunServers.length} server(s)...`);
     const result = await raceStunServers(args.stunServers, 3000);
     if (result) {
@@ -2683,7 +2716,7 @@ async function discoverAndSetPublicAddr(mesh: EnvoyMesh, args: NodeArgs): Promis
     }
   }
 
-  // Method 2: autoNAT (passive — subscribe to self:reachable events).
+  // Method 3: autoNAT (passive — subscribe to self:reachable events).
   // This fires when libp2p's autonat service determines our external address.
   if (args.enableAutoNat && !discovered) {
     console.log(`[node] autoNAT: subscribing to self:reachable events`);
@@ -2698,7 +2731,7 @@ async function discoverAndSetPublicAddr(mesh: EnvoyMesh, args: NodeArgs): Promis
     unsub = mesh.onAutoNATReachable(wrapper);
   }
 
-  // Method 3: relay-observed addr — wired via relay-tunnel-client.ts callback.
+  // Method 4: relay-observed addr — wired via relay-tunnel-client.ts callback.
   // The callback calls mesh.setAdvertisedAddress() directly when it receives the
   // observed-addr frame from the relay.
   console.log(`[node] relay-observed addr: wired via relay-tunnel-client callback`);
@@ -2729,16 +2762,17 @@ await mesh.start();
 meshStarted = true;
 lastKnownLibp2pPeerId = mesh.peerId;
 
-// ── Public IP discovery (race STUN + relay observed addr + autoNAT) ─────────
+// ── Public IP discovery (UPnP → STUN → autoNAT → relay-observed) ─────────────
 // Goal: populate mesh's _appendAnnounce so provideSelf() advertises a
 // direct-dial address to DHT, enabling mobile clients to find this node
 // without relying on the relay WebSocket tunnel.
 //
-// We race all three methods; the first valid result wins and is injected into
-// mesh via setAdvertisedAddress(). Subsequent results are ignored.
+// Priority order: UPnP (automatic port forwarding) → STUN → autoNAT → relay-observed
+// The first valid result wins and is injected into mesh via setAdvertisedAddress().
+// Subsequent results are ignored. We re-run periodically to catch dynamic IP changes.
 void discoverAndSetPublicAddr(mesh, args);
 
-// Also re-run STUN periodically (every 10 min) to catch dynamic IP changes.
+// Also re-run discovery periodically (every 10 min) to catch dynamic IP changes.
 setInterval(() => {
   void discoverAndSetPublicAddr(mesh, args);
 }, 10 * 60 * 1000);
@@ -2960,9 +2994,24 @@ if (nodeService instanceof NodeServiceImpl) {
         localWsServerUrl: `ws://127.0.0.1:3030/ws`,
         log: (msg) => console.log(msg),
         // Method 2: capture relay-observed address so we can advertise it to DHT.
+        // The relay reports the ephemeral source port of our TCP connection (e.g. 28746),
+        // not our actual listen port. Fix the port to the conventional libp2p port (4001)
+        // so other peers can dial us directly when port forwarding is configured.
+        // The user should forward router external port 4001 -> internal libp2p port.
         onObservedAddr: (addr) => {
-          mesh.setAdvertisedAddress(addr);
-          console.log(`[node] public addr discovered via relay observed addr: ${addr}`);
+          // addr format: /ip4/1.2.3.4/tcp/EPHEMERAL_PORT
+          const ipMatch = addr.match(/^\/ip4\/([^\/]+)/);
+          if (ipMatch) {
+            const publicIp = ipMatch[1];
+            // Use conventional libp2p port 4001. User must forward router port 4001
+            // to this node's internal libp2p listen port.
+            const fixedAddr = `/ip4/${publicIp}/tcp/4001`;
+            mesh.setAdvertisedAddress(fixedAddr);
+            console.log(`[node] public addr discovered via relay: ${addr} -> advertising ${fixedAddr} (configure port forwarding: external 4001 -> internal libp2p port)`);
+          } else {
+            mesh.setAdvertisedAddress(addr);
+            console.log(`[node] public addr discovered via relay observed addr: ${addr}`);
+          }
         },
       });
       relayTunnelClient.start();

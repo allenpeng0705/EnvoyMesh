@@ -108,6 +108,7 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     enableRelayServer: false,
     enableAutoNat: false,
     enableDcutr: false,
+    enableUpnp: false,
     enableQuic: false,
     p2pDebug: false,
     relayDebugSummary: false,
@@ -169,6 +170,10 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.enableAutoNat = true;
     } else if (arg === "--dcutr") {
       args.enableDcutr = true;
+    } else if (arg === "--upnp") {
+      args.enableUpnp = true;
+    } else if (arg === "--no-upnp") {
+      args.enableUpnp = false;
     } else if (arg === "--stun-server") {
       const value = readValue(argv, ++index, arg);
       const colonIdx = value.lastIndexOf(":");
@@ -514,6 +519,7 @@ function applyDiscoveryProfileDefaults(args: NodeArgs, customPresetRegistry: Boo
   args.enableRelay = true;
   args.enableAutoNat = true;
   args.enableDcutr = true;
+  args.enableUpnp = true;
   if (args.discoveryProfile === "relay-only") {
     args.enableDht = false;
   } else {

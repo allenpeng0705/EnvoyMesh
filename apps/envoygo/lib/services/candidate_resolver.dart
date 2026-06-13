@@ -61,10 +61,23 @@ class CandidateResolver {
   ///
   /// Called on every (re)connect so the resolver can return up-to-date URLs.
   ///
-  /// [isOnWifi] — true when on WiFi, false when on mobile data, null when
-  /// unknown. When null or false, relay candidates are promoted to the front
-  /// so mobile users connect in ~1-2 seconds instead of waiting 16-24 seconds
-  /// for unreachable LAN candidates to time out.
+  /// Candidate order (WiFi):
+  ///   1. LAN WebSocket
+  ///   2. Public IP WebSocket
+  ///   3. Libp2p DHT lookup + circuit relay (via bootstrap peers)
+  ///   4. Relay WebSocket (user relay + community relay)
+  ///   5. Bootstrap peer WebSocket URLs
+  ///
+  /// Candidate order (mobile data / unknown):
+  ///   1. Libp2p DHT lookup + circuit relay — tries P2P first
+  ///   2. LAN WebSocket (will fail fast on mobile)
+  ///   3. Public IP WebSocket
+  ///   4. Relay WebSocket (user relay + community relay)
+  ///   5. Bootstrap peer WebSocket URLs
+  ///
+  /// This ordering minimizes relay server workload by prioritizing DHT-based
+  /// peer discovery. The relay WebSocket is used as a fallback when DHT
+  /// lookup fails to return a usable address.
   List<HomeRemoteCandidate> resolve(StoredNode node,
       {String? sessionToken, bool? isOnWifi}) {
     var candidates = <HomeRemoteCandidate>[];
@@ -99,6 +112,12 @@ class CandidateResolver {
           name: 'public', url: url, homePeerId: null, sessionToken: null));
     }
 
+    // Libp2p circuit relay candidates (via bootstrap peers / DHT).
+    // This tries DHT lookup first, then falls back to circuit relay.
+    // Put this BEFORE relay WebSocket so we try P2P discovery first,
+    // reducing relay server workload.
+    candidates.addAll(_buildLibp2pCandidates(node, sessionToken));
+
     // Relay WebSocket via user's relay with peer routing.
     // The relay's WebSocket accepts ?target=<homePeerId> for circuit-relay
     // routing, enabling the mobile to reach the home through the relay
@@ -132,25 +151,10 @@ class CandidateResolver {
       candidates.add(HomeRemoteCandidate(name: 'relay', url: url));
     }
 
-    // When not on WiFi (mobile data or unknown), promote relay candidates
-    // to the front so the phone connects immediately via the relay instead
-    // of waiting 8+ seconds for unreachable LAN to time out.
-    if (isOnWifi != true && candidates.isNotEmpty) {
-      final relayFirst =
-          candidates.where((c) => c.name == 'relay').toList();
-      final rest = candidates.where((c) => c.name != 'relay').toList();
-      candidates = [...relayFirst, ...rest];
-    }
-
-    // Option B: Append the community relay as a final fallback candidate.
-    // The community relay is a well-known public relay that:
-    // 1. Provides circuit-relay v2 services (same as any relay)
-    // 2. Runs a DHT server — once the home node connected to it,
-    //    its address is in the DHT. The mobile can use the community
-    //    relay as a libp2p bootstrap peer to query DHT for the home
-    //    node's address even when the user's private relay is down.
-    // This is appended LAST so it only activates when all other
-    // candidates (including the user's relay) have been exhausted.
+    // Community relay WebSocket (final WebSocket fallback).
+    // The community relay provides circuit-relay v2 services and runs a DHT
+    // server — once the home node connected to it, its address is in the DHT.
+    // This is appended after the user's relay WebSocket.
     candidates.addAll(_buildCommunityRelayCandidates(sessionToken));
 
     // Bootstrap peers from the home node's relay config (last fallback).
@@ -158,11 +162,6 @@ class CandidateResolver {
     // node, used when the user's primary relay AND the community relay
     // are both unavailable.
     candidates.addAll(_buildBootstrapPeerCandidates(node, sessionToken));
-
-    // Libp2p circuit relay candidates (via community relay's libp2p).
-    // This is a fallback when the relay WebSocket is down but libp2p
-    // circuit relay is still operational.
-    candidates.addAll(_buildLibp2pCandidates(node, sessionToken));
 
     return candidates;
   }

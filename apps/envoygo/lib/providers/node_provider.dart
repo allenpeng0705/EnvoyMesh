@@ -690,17 +690,37 @@ class NodeNotifier extends StateNotifier<NodeState> {
     debugPrint('[_createLibp2pTransport] DHT findPeer => ${addrInfo?.addrs.length ?? 0} addrs');
     if (addrInfo != null && addrInfo.addrs.isNotEmpty) {
       debugPrint('[_createLibp2pTransport] DHT addresses discovered: ${addrInfo.addrs.map((a) => a.toString()).join(', ')}');
+      // Replace the ephemeral port from relay-observed addr with the conventional
+      // libp2p port (4001). The relay reports the ephemeral source port of the TCP
+      // connection (e.g. 28746), not the actual listen port. For direct libp2p
+      // dial to work, port forwarding must map external 4001 -> internal libp2p port.
+      const libp2pPort = 4001;
       for (final addr in addrInfo.addrs) {
-        debugPrint('[_createLibp2pTransport] attempting direct dial to: ${addr.toString()}');
+        String dialAddr = addr.toString();
+        // Skip circuit-relay addresses — those go through the relay, not direct.
+        // For direct addresses (/ip4/X/tcp/PORT/p2p/PEERID), replace the port
+        // with the conventional libp2p port so the dial reaches the right listener.
+        if (!dialAddr.contains('/p2p-circuit/')) {
+          // Direct address: replace ephemeral port with conventional libp2p port.
+          // Format: /ip4/1.2.3.4/tcp/5678/p2p/PEERID
+          dialAddr = dialAddr.replaceFirstMapped(
+            RegExp(r'/tcp/\d+'),
+            (m) => '/tcp/$libp2pPort',
+          );
+          debugPrint('[_createLibp2pTransport] DHT direct addr (port replaced to $libp2pPort): $dialAddr');
+        } else {
+          debugPrint('[_createLibp2pTransport] DHT circuit-relay addr (skipping): $dialAddr');
+          continue;
+        }
         try {
           final transport = await _libp2pNode!.dial(
-            peerMultiaddr: addr.toString(),
+            peerMultiaddr: dialAddr,
             protocolId: clientProxyProtocol,
           );
           await transport.performHandshake(candidate.sessionToken ?? '');
           return transport;
         } catch (e) {
-          debugPrint('[_createLibp2pTransport] direct dial ${addr.toString()} failed: $e');
+          debugPrint('[_createLibp2pTransport] direct dial $dialAddr failed: $e');
         }
       }
     }
