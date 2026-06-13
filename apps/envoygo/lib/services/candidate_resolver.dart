@@ -29,9 +29,11 @@ class CandidateResolver {
         case 'public-libp2p-am6':
           result.add(
               '/dnsaddr/am6.bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq');
+          break;
         case 'public-libp2p-am7':
           result.add(
               '/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf');
+          break;
         case 'public-libp2p':
           // bootstrap.libp2p.io has 4 peer IDs
           result.add(
@@ -42,9 +44,11 @@ class CandidateResolver {
               '/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq');
           result.add(
               '/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf');
+          break;
         case 'cn-relay':
           result.add(
               '/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo');
+          break;
         default:
           debugPrint(
               '[CandidateResolver] Unknown bootstrap preset: $preset');
@@ -211,9 +215,13 @@ class CandidateResolver {
     // node.bootstrapPeers may contain either:
     // 1. Full libp2p multiaddrs (e.g., /dnsaddr/am6.bootstrap.libp2p.io/p2p/...)
     // 2. Preset names (e.g., "public-libp2p-am6") — resolve to multiaddrs
+    debugPrint(
+        '[_buildLibp2pCandidates] node.bootstrapPeers: ${node.bootstrapPeers}');
     for (final peer in node.bootstrapPeers) {
       if (peer.startsWith('/')) {
         // Full multiaddr — use directly
+        debugPrint(
+            '[_buildLibp2pCandidates] full multiaddr: $peer');
         if (!relayMultiaddrs.containsValue(peer)) {
           final name = _extractRelayName(peer);
           relayMultiaddrs[name] = peer;
@@ -221,6 +229,8 @@ class CandidateResolver {
       } else {
         // Preset name — resolve to multiaddrs
         final resolved = resolveBootstrapPresets([peer]);
+        debugPrint(
+            '[_buildLibp2pCandidates] preset "$peer" resolved to: $resolved');
         for (final addr in resolved) {
           if (!relayMultiaddrs.containsValue(addr)) {
             relayMultiaddrs[peer] = addr;

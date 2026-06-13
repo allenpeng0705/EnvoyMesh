@@ -9246,22 +9246,24 @@ class NodeServiceImpl implements NodeService {
       payload.bootstrapPeers = allBootstrapPeers;
     }
 
-    // Include bootstrap preset names for compact QR encoding.
-    // EnvoyGo resolves these to full multiaddr strings using the same preset registry.
-    // Since we hardcoded am6/am7/bootstrap in allBootstrapPeers (above), detect presets from allBootstrapPeers.
-    const presetNames: string[] = [];
-    if (allBootstrapPeers.some((a) => a.includes("am6.bootstrap.libp2p.io"))) {
-      presetNames.push("public-libp2p-am6");
-    }
-    if (allBootstrapPeers.some((a) => a.includes("am7.bootstrap.libp2p.io"))) {
-      presetNames.push("public-libp2p-am7");
-    }
-    if (allBootstrapPeers.some((a) => a.includes("bootstrap.libp2p.io"))) {
-      presetNames.push("public-libp2p");
-    }
-    if (presetNames.length > 0) {
-      payload.bootstrapPresetNames = presetNames;
-    }
+    // Always include all known bootstrap preset names so EnvoyGo can build
+    // p2p-am6/p2p-am7 candidates from the QR alone — without needing
+    // getBootstrapPeers() to succeed first. The preset names are not
+    // sensitive (public bootstrap server names only).
+    const allKnownPresets = [
+      "cn-relay",
+      "public-libp2p-am6",
+      "public-libp2p-am7",
+      "public-libp2p",
+    ];
+    // Deduplicate: include each preset only once, preferring whatever the
+    // home node is actually configured with (so EnvoyGo knows which relays
+    // the home node definitely connects to).
+    const homeConfiguredPresets = new Set(
+      this._relayBootstrapPeers.filter((p) => allKnownPresets.includes(p)),
+    );
+    const extraPresets = allKnownPresets.filter((p) => !homeConfiguredPresets.has(p));
+    payload.bootstrapPresetNames = [...homeConfiguredPresets, ...extraPresets];
 
     return payload;
   }
