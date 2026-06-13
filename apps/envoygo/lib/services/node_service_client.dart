@@ -34,6 +34,17 @@ class NodeServiceClient {
     return await _client.call('getPairingPayload') as Map<String, dynamic>;
   }
 
+  /// Share the mobile's reachable listen addresses (from UPnP) with the home node.
+  /// This allows home to dial the mobile directly instead of requiring relay.
+  Future<bool> updateMyListenAddrs(
+      String peerId, List<String> listenAddrs) async {
+    final result = await _client.call('updateMyListenAddrs', {
+      'peerId': peerId,
+      'listenAddrs': listenAddrs,
+    }) as Map<String, dynamic>;
+    return result['ok'] == true;
+  }
+
   // -- Contacts & bonds --
 
   Future<List<Contact>> getBonds() async {

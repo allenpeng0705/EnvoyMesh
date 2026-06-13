@@ -10,7 +10,7 @@
  * This enables direct P2P connections without manual router configuration.
  */
 
-import { createClient } from "nat-upnp";
+import natUpnp from "nat-upnp";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +28,26 @@ export const DEFAULT_LIBP2P_PORT = 4001;
 
 /** Default lease duration: 3600 seconds (1 hour) — refreshes on node restart */
 export const DEFAULT_LEASE_SECONDS = 3600;
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Check if an IP address is a private/local address.
+ * If UPnP returns a private IP, it means the router is behind CGNAT
+ * and we can't use it for direct P2P.
+ */
+function isPrivateIp(ip: string): boolean {
+  // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, ::1
+  if (ip === "127.0.0.1" || ip === "::1") return true;
+  if (ip.startsWith("10.")) return true;
+  if (ip.startsWith("192.168.")) return true;
+  if (ip.startsWith("172.")) {
+    const second = parseInt(ip.split(".")[1], 10);
+    if (second >= 16 && second <= 31) return true;
+  }
+  if (ip.startsWith("fc00:") || ip.startsWith("fd") || ip.startsWith("fe80:")) return true;
+  return false;
+}
 
 // ─── UPnP Discovery ────────────────────────────────────────────────────────
 
@@ -57,7 +77,7 @@ export async function upnpDiscoverAndMap(
     }, timeoutMs);
 
     try {
-      const client = createClient();
+      const client = natUpnp.createClient();
 
       // Step 1: Get external IP address
       client.externalIp((err: Error | null, ip?: string) => {
@@ -69,6 +89,15 @@ export async function upnpDiscoverAndMap(
         }
 
         console.log(`[upnp] gateway external IP: ${ip}`);
+
+	        // Reject private IPs — UPnP sometimes returns the LAN IP instead of
+	        // the public IP, especially on CGNAT or double-NAT networks.
+	        if (isPrivateIp(ip)) {
+	          clearTimeout(timer);
+	          console.log(`[upnp] UPnP returned private IP ${ip} — likely behind CGNAT, skipping`);
+	          resolve(null);
+	          return;
+	        }
 
         // Step 2: Port mapping (try preferred port first, fallback to any port)
         client.portMapping(
@@ -135,7 +164,7 @@ export async function upnpDiscoverAndMap(
 export async function upnpUnmapPort(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     try {
-      const client = createClient();
+      const client = natUpnp.createClient();
       client.portUnmapping(
         {
           public: port,

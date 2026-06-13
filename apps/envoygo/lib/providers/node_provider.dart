@@ -17,6 +17,7 @@ import '../services/exceptions.dart';
 import '../services/reconnect_supervisor.dart';
 import '../services/connectivity_observer.dart';
 import '../services/libp2p_node.dart';
+import '../services/upnp.dart';
 import '../storage/local_database.dart';
 import '../storage/secure_storage.dart';
 
@@ -59,6 +60,11 @@ class NodeState {
   ///     timeout, malformed response). Supervisor will keep retrying.
   final String? homeNodeErrorCode;
 
+  /// UPnP discovered reachable address. If not null, the mobile
+  /// can receive direct connections on this address.
+  /// Format: /ip4/X.X.X.X/tcp/PORT
+  final String? upnpAdvertisedAddr;
+
   const NodeState({
     this.activeNode,
     this.pairedNodes = const [],
@@ -69,6 +75,7 @@ class NodeState {
     this.lastConnectAttemptAt,
     this.reconnectAttempt = 0,
     this.homeNodeErrorCode,
+    this.upnpAdvertisedAddr,
   });
 
   NodeState copyWith({
@@ -83,6 +90,8 @@ class NodeState {
     int? reconnectAttempt,
     String? homeNodeErrorCode,
     bool clearHomeNodeErrorCode = false,
+    String? upnpAdvertisedAddr,
+    bool clearUpnpAddr = false,
   }) {
     return NodeState(
       activeNode: activeNode ?? this.activeNode,
@@ -96,6 +105,7 @@ class NodeState {
       homeNodeErrorCode: clearHomeNodeErrorCode
           ? null
           : (homeNodeErrorCode ?? this.homeNodeErrorCode),
+      upnpAdvertisedAddr: clearUpnpAddr ? null : (upnpAdvertisedAddr ?? this.upnpAdvertisedAddr),
     );
   }
 }
@@ -156,6 +166,15 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// and in [dispose].
   StreamSubscription<void>? _connectivitySub;
 
+  /// Periodic timer that refreshes the UPnP port mapping before the
+  /// lease expires. Started after a successful UPnP discovery; cancelled
+  /// in [dispose].
+  Timer? _upnpRefreshTimer;
+
+  /// Duration between UPnP lease refreshes. 30 minutes — well within the
+  /// 60-minute lease window, giving ample margin before expiry.
+  static const _upnpRefreshInterval = Duration(minutes: 30);
+
   NodeNotifier({
     required Ref ref,
     required SecureStorage secureStorage,
@@ -181,6 +200,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // transitions from offline to online.
     await _ensureConnectivityObserver();
 
+    // Try UPnP to get a reachable address for direct P2P.
+    // If successful, home node can dial us directly.
+    _discoverUpnp();
+
     // Auto-connect to last-used node.
     final activeNodeId = await _secureStorage.getActiveNodeId();
     if (activeNodeId != null) {
@@ -195,6 +218,65 @@ class NodeNotifier extends StateNotifier<NodeState> {
         // [kickReconnect].)
         _startSupervisorFor(node.id);
       }
+    }
+  }
+
+  /// Discover UPnP address for direct P2P connectivity.
+  ///
+  /// UPnP allows the mobile to map a port on the router so
+  /// the home node can dial us directly (reverse connection).
+  Future<void> _discoverUpnp() async {
+    // Get the mobile's libp2p listen port (or use default 4001)
+    // The libp2p node's actual port is determined at runtime.
+    // For UPnP, we map the libp2p port so home can dial us.
+    final upnpResult = await UpnpClient.mapPort(
+      internalPort: 4001,
+      externalPort: 4001,
+    );
+
+    if (upnpResult != null) {
+      final addr = '/ip4/${upnpResult.ip}/tcp/${upnpResult.port}';
+      state = state.copyWith(upnpAdvertisedAddr: addr);
+
+      // Share with home node.
+      await _shareUpnpAddrWithHome();
+
+      // Refresh the UPnP mapping before the 60-minute lease expires.
+      _startUpnpRefreshTimer();
+    }
+  }
+
+  /// Schedule periodic UPnP lease refreshes. Idempotent — calling while a
+  /// timer is already running resets it.
+  void _startUpnpRefreshTimer() {
+    _upnpRefreshTimer?.cancel();
+    _upnpRefreshTimer = Timer.periodic(_upnpRefreshInterval, (_) {
+      if (_disposed) return;
+      _refreshUpnpMapping();
+    });
+  }
+
+  /// Re-run UPnP discovery and re-share the address with the home node.
+  /// Called by the periodic refresh timer.
+  Future<void> _refreshUpnpMapping() async {
+    if (_disposed) return;
+    debugPrint('[NodeNotifier] refreshing UPnP mapping…');
+    await _discoverUpnp();
+  }
+
+  /// Share the UPnP-discovered address with the home node.
+  Future<void> _shareUpnpAddrWithHome() async {
+    final upnpAddr = state.upnpAdvertisedAddr;
+    if (upnpAddr == null || _nodeService == null || _libp2pNode == null) return;
+
+    try {
+      final peerId = _libp2pNode!.peerId?.toString();
+      if (peerId != null) {
+        await _nodeService!.updateMyListenAddrs(peerId, [upnpAddr]);
+        debugPrint('[NodeNotifier] shared UPnP address $upnpAddr with home node');
+      }
+    } catch (e) {
+      debugPrint('[NodeNotifier] failed to share UPnP address: $e');
     }
   }
 
@@ -286,6 +368,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _supervisor?.stop();
     _supervisor = null;
     _supervisorTargetNodeId = null;
+    _upnpRefreshTimer?.cancel();
+    _upnpRefreshTimer = null;
     _connectivitySub?.cancel();
     _connectivitySub = null;
     _connectivityObserver?.dispose();
@@ -868,6 +952,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
     try {
       await _client!.ensureConnected();
       _nodeService = NodeServiceClient(_client!);
+
+      // Share UPnP address with home node if we have one.
+      await _shareUpnpAddrWithHome();
 
       await _localDb.updateNodeLastConnected(node.id);
       await _secureStorage.saveActiveNodeId(node.id);

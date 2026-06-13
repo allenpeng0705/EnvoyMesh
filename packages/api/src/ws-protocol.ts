@@ -215,6 +215,7 @@ export type RpcMethods =
   | "pairSharedIdentity"
   | "pairWithHomeNode"
   | "pairThinClient"
+  | "updateMyListenAddrs"
   | "listAuthorizedDevices"
   | "revokeAuthorizedDevice"
   | "listDeviceRevocations"
@@ -1024,6 +1025,18 @@ export interface PairSharedIdentityResult {
   agentPeerId?: string;
   agentPubKey?: string;
   agentName?: string;
+}
+
+/** Mobile → Home: Share the mobile's reachable listen addresses (from UPnP). */
+export interface UpdateMyListenAddrsParams {
+  /** Mobile's libp2p peer ID */
+  peerId: string;
+  /** Reachable listen addresses (e.g. /ip4/X.X.X.X/tcp/4001 from UPnP) */
+  listenAddrs: string[];
+}
+
+export interface UpdateMyListenAddrsResult {
+  ok: boolean;
 }
 
 export interface AuthorizedDeviceSummary {

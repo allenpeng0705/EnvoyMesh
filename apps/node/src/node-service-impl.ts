@@ -9463,6 +9463,36 @@ class NodeServiceImpl implements NodeService {
     return result;
   }
 
+  /** Mobile → Home: Update the mobile's reachable listen addresses (from UPnP).
+   *
+   * When the mobile gets a UPnP-mapped port, it calls this to tell the home node
+   * "you can reach me at /ip4/X.X.X.X/tcp/4001". The home node stores this in the
+   * peer directory so it can dial the mobile directly instead of requiring relay.
+   */
+  async updateMyListenAddrs(params: import("@envoymesh/api").UpdateMyListenAddrsParams): Promise<import("@envoymesh/api").UpdateMyListenAddrsResult> {
+    const { peerId, listenAddrs } = params;
+    if (!peerId || !listenAddrs?.length) {
+      return { ok: false };
+    }
+    try {
+      // First check if a record already exists for this peerId.
+      const existing = await this._peerDirectoryStore.getPeerByPeerId(peerId);
+      if (existing) {
+        // Merge the new addresses into the existing record.
+        await this._peerDirectoryStore.mergeListenAddrsForPeerId(peerId, listenAddrs);
+      } else {
+        // No record exists yet — the mobile may be calling before any inbound
+        // message has created its peer-directory entry. Create a stub so the
+        // UPnP address is stored and the home node can attempt direct dialing.
+        await this._peerDirectoryStore.ensurePeerByPeerId({ peerId, listenAddrs });
+      }
+      return { ok: true };
+    } catch (err) {
+      console.warn(`[node-service] updateMyListenAddrs failed for ${peerId?.slice(0, 12)}:`, err);
+      return { ok: false };
+    }
+  }
+
   async pairWithHomeNode(_params: import("@envoymesh/api").PairWithHomeNodeParams): Promise<import("@envoymesh/api").PairWithHomeNodeResult> {
     throw new Error("pairWithHomeNode is only supported on the mobile app");
   }

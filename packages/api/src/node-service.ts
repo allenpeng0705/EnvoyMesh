@@ -49,6 +49,8 @@ import type {
   PairWithHomeNodeResult,
   PairThinClientParams,
   PairThinClientResult,
+  UpdateMyListenAddrsParams,
+  UpdateMyListenAddrsResult,
   ListAuthorizedDevicesResult,
   RevokeAuthorizedDeviceParams,
   RevokeAuthorizedDeviceResult,
@@ -1694,6 +1696,12 @@ export interface NodeService {
    * Returns a persistent session token for subsequent WS connections.
    */
   pairThinClient(params: PairThinClientParams): Promise<PairThinClientResult>;
+
+  /**
+   * Mobile → Home: Share the mobile's reachable listen addresses (from UPnP).
+   * Allows home to dial the mobile directly instead of requiring relay.
+   */
+  updateMyListenAddrs(params: UpdateMyListenAddrsParams): Promise<UpdateMyListenAddrsResult>;
 
   /** List owner-authorized satellite devices (shared-identity pairing). */
   listAuthorizedDevices(): Promise<ListAuthorizedDevicesResult>;

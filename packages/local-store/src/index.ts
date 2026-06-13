@@ -1213,6 +1213,7 @@ export interface PeerDirectoryRecord {
 export interface LocalPeerDirectoryStore {
   listPeerRecords(): Promise<PeerDirectoryRecord[]>;
   getPeerByOwnerId(ownerId: string): Promise<PeerDirectoryRecord | undefined>;
+  getPeerByPeerId(peerId: string): Promise<PeerDirectoryRecord | undefined>;
   /** Append dialable multiaddrs learned from inbound libp2p connections (e.g. relay circuit path). */
   mergeListenAddrsForPeerId(peerId: string, addrs: string[]): Promise<void>;
   /**
@@ -1235,6 +1236,15 @@ export interface LocalPeerDirectoryStore {
    */
   ensurePeerFromInboundChat(input: {
     ownerId: string;
+    peerId: string;
+    listenAddrs?: string[];
+  }): Promise<void>;
+  /**
+   * Ensure a peer record exists for a given libp2p peerId, creating a stub if absent.
+   * Used by `updateMyListenAddrs` when a mobile shares its UPnP address before any
+   * inbound message has created the peer's directory entry.
+   */
+  ensurePeerByPeerId(input: {
     peerId: string;
     listenAddrs?: string[];
   }): Promise<void>;
@@ -1592,6 +1602,11 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
       return matches.reduce((a, b) => (a.lastSeenAt >= b.lastSeenAt ? a : b));
     },
 
+    async getPeerByPeerId(peerId) {
+      const file = await readPeerDirectoryFile(directoryPath);
+      return file.records.find((record) => record.peerId === peerId) ?? undefined;
+    },
+
     async upsertPeerFromSignal(input) {
       return upsertPeerFromSignalSerialized(input);
     },
@@ -1675,6 +1690,36 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
           ownerId,
           peerId,
           deviceId: "chat-inbound",
+          lastSeenAt: seenAt,
+          listenAddrs: extra.slice(-8),
+        });
+        await writePeerDirectoryFileAtomic(directoryPath, file);
+      });
+    },
+
+    async ensurePeerByPeerId(input) {
+      const peerId = input.peerId.trim();
+      if (!peerId) return;
+      const extra = filterDialableListenAddrs((input.listenAddrs ?? []).map((a) => a.trim()).filter(Boolean));
+      await withDirectory(async (file) => {
+        const seenAt = new Date().toISOString();
+        const existing = file.records.find((r) => r.peerId === peerId);
+        if (existing) {
+          existing.lastSeenAt = seenAt;
+          if (extra.length > 0) {
+            existing.listenAddrs = filterDialableListenAddrs([...existing.listenAddrs, ...extra]).slice(-8);
+          }
+          await writePeerDirectoryFileAtomic(directoryPath, file);
+          return;
+        }
+        // Create a stub record. ownerId will be filled in by ensurePeerFromInboundChat
+        // when the first inbound message arrives with a verified senderPublicKey.
+        // Use peerId as a placeholder ownerId (consistent with mergeInboundDeviceBinding).
+        file.records.push({
+          version: "0.1",
+          ownerId: peerId,
+          peerId,
+          deviceId: "mobile-upnp",
           lastSeenAt: seenAt,
           listenAddrs: extra.slice(-8),
         });

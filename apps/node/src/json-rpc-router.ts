@@ -387,6 +387,8 @@ export async function routeRpcMethod(
       return ns.pairDevice(params as any);
     case "pairSharedIdentity":
       return ns.pairSharedIdentity(params as any);
+    case "updateMyListenAddrs":
+      return ns.updateMyListenAddrs(params as any);
     case "pairWithHomeNode":
       return ns.pairWithHomeNode(params as any);
     case "pairThinClient":

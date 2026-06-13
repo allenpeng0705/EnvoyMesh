@@ -1234,6 +1234,12 @@ export class MobileNode implements NodeService {
     return this._homeRemoteCall("pairThinClient", params as unknown as Record<string, unknown>);
   }
 
+  updateMyListenAddrs(
+    params: import("@envoymesh/api").UpdateMyListenAddrsParams,
+  ): Promise<import("@envoymesh/api").UpdateMyListenAddrsResult> {
+    return this._homeRemoteCall("updateMyListenAddrs", params as unknown as Record<string, unknown>);
+  }
+
   getOpenClawPlugins(): Promise<string[]> {
     return this._homeRemoteCall<string[]>("getOpenClawPlugins", {});
   }
