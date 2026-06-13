@@ -16,7 +16,7 @@ import { KEEP_ALIVE, type RoutingOptions } from "@libp2p/interface";
 import { peerIdFromString } from "@libp2p/peer-id";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
-import { multiaddr } from "@multiformats/multiaddr";
+import { multiaddr as ma, type Multiaddr } from "@multiformats/multiaddr";
 import type { CID } from "multiformats/cid";
 import { createLibp2p, type Libp2p } from "libp2p";
 import type { Uint8ArrayList } from "uint8arraylist";
@@ -248,6 +248,8 @@ export class EnvoyMesh {
   private readonly peerDiscoveryHandlers = new Set<MeshPeerDiscoveryHandler>();
   private relayDebugTimer?: ReturnType<typeof setInterval>;
   private node?: Libp2p;
+  /** Additional announce addresses discovered at runtime (e.g. via STUN or relay observed addr). */
+  private readonly _appendAnnounce: string[] = [];
   private reachabilityLogHandlers?: {
     disconnect: (event: unknown) => void;
     reconnectFailure?: (event: unknown) => void;
@@ -278,19 +280,18 @@ export class EnvoyMesh {
       listenAddrs = [...listenAddrs, "/p2p-circuit"];
     }
 
-    const appendAnnounce: string[] = [];
     for (const raw of this.options.advertiseAddrs ?? []) {
       const s = typeof raw === "string" ? raw.trim() : "";
       if (!s) continue;
       try {
-        multiaddr(s);
-        appendAnnounce.push(s);
+        ma(s);
+        this._appendAnnounce.push(s);
       } catch {
         console.warn(`[p2p] skipping invalid advertise multiaddr: ${raw}`);
       }
     }
-    if (appendAnnounce.length > 0) {
-      console.log(`[p2p] appendAnnounce: ${appendAnnounce.join(", ")}`);
+    if (this._appendAnnounce.length > 0) {
+      console.log(`[p2p] appendAnnounce: ${this._appendAnnounce.join(", ")}`);
     }
 
     const quicTransportFactory = this.options.enableQuic ? await this.loadQuicTransport() : undefined;
@@ -324,7 +325,7 @@ export class EnvoyMesh {
       },
       addresses: {
         listen: listenAddrs,
-        ...(appendAnnounce.length > 0 ? { appendAnnounce } : {}),
+        ...(this._appendAnnounce.length > 0 ? { appendAnnounce: this._appendAnnounce } : {}),
       },
       transports: [
         ...(browserMode ? [] : [tcp()]),
@@ -593,6 +594,44 @@ export class EnvoyMesh {
    *
    * Requires DHT to be enabled (enableDht: true).
    */
+  /**
+   * Inject a publicly dialable address discovered at runtime (e.g. via STUN or relay
+   * observed addr). The address is added to `_appendAnnounce` so it is included in
+   * circuit relay bases and is advertised to the DHT on the next `provideSelf()` call.
+   *
+   * @param multiaddr  A multiaddr string, e.g. `/ip4/1.2.3.4/tcp/4001`
+   */
+  setAdvertisedAddress(multiaddr: string): void {
+    const s = multiaddr.trim();
+    if (!s) return;
+    try {
+      ma(s); // validate
+      if (!this._appendAnnounce.includes(s)) {
+        this._appendAnnounce.push(s);
+        console.log(`[p2p] setAdvertisedAddress: added ${s}`);
+      }
+    } catch (err) {
+      console.warn(`[p2p] setAdvertisedAddress: invalid multiaddr: ${multiaddr}`);
+    }
+  }
+
+  /** Subscribe to autoNAT reachability events. Calls `onReachable` when the node
+   *  becomes reachable from the public internet, with the observed address. */
+  onAutoNATReachable(handler: (addr: string) => void): () => void {
+    const node = this.node;
+    if (!node) return () => {};
+    // self:reachable is not in libp2p's typed events — use untyped handler.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handlerFn = (evt: any) => {
+      const addr = evt?.detail?.addr?.toString?.();
+      if (addr) handler(addr);
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (node as any).addEventListener("self:reachable", handlerFn);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return () => (node as any).removeEventListener("self:reachable", handlerFn);
+  }
+
   async provideSelf(): Promise<void> {
     console.log("[p2p] provideSelf: starting...");
     if (!this.options.enableDht) {
@@ -604,38 +643,41 @@ export class EnvoyMesh {
     const addrs = node.getMultiaddrs();
     console.log(`[p2p] provideSelf: peerId=${selfPeerId.slice(0, 12)}…, addrs count=${addrs?.length ?? 0}`);
 
-    if (!addrs || addrs.length === 0) {
-      console.warn("[p2p] provideSelf: no listen addresses to advertise");
-      return;
-    }
-
     try {
-      // Only advertise addresses that are actually dialable by remote peers.
-      // Filter out loopback (127.x), LAN (192.168.x, 10.x, 172.16-31.x), and Docker
-      // bridge gateways. Always keep circuit-relay addresses (/p2p-circuit/) — they
-      // work through relays regardless of NAT.
-      const advertiseAddrs = addrs.filter((ma) => {
-        const s = ma.toString();
-        if (!isPrivateOrUnroutableDialHint(s)) return true;
-        console.log(`[p2p] provideSelf: filtered out private/unroutable addr: ${s}`);
-        return false;
-      });
+      // Collect publicly dialable addresses:
+      // 1. Non-private listen addrs (direct interfaces)
+      // 2. _appendAnnounce (addresses discovered at runtime via STUN/relay)
+      const allPublicAddrs: string[] = [];
 
-      if (advertiseAddrs.length === 0) {
+      // Filter listen addrs — keep non-private, keep circuit-relay
+      if (addrs && addrs.length > 0) {
+        const publicListenAddrs = addrs.filter((ma) => {
+          const s = ma.toString();
+          if (!isPrivateOrUnroutableDialHint(s)) return true;
+          console.log(`[p2p] provideSelf: filtered out private/unroutable addr: ${s}`);
+          return false;
+        });
+        allPublicAddrs.push(...publicListenAddrs.map((ma) => ma.toString()));
+      }
+
+      // Add runtime-discovered addresses (STUN / relay observed / autoNAT)
+      allPublicAddrs.push(...this._appendAnnounce);
+
+      // Deduplicate
+      const uniqueAddrs = [...new Set(allPublicAddrs)];
+
+      if (uniqueAddrs.length === 0) {
         console.warn(`[p2p] provideSelf: no publicly dialable addresses to advertise`);
         return;
       }
 
       const key = fromString(selfPeerId);
-      const info = {
-        id: selfPeerId,
-        addrs: advertiseAddrs.map((ma) => ma.toString()),
-      };
+      const info = { id: selfPeerId, addrs: uniqueAddrs };
       const value = new TextEncoder().encode(JSON.stringify(info));
-      console.log(`[p2p] provideSelf: calling contentRouting.put with key len=${key.length}, value len=${value.length}`);
-      console.log(`[p2p] provideSelf: advertised addrs: ${advertiseAddrs.map((ma) => ma.toString()).join(", ")}`);
+      console.log(`[p2p] provideSelf: calling contentRouting.put`);
+      console.log(`[p2p] provideSelf: advertised addrs: ${uniqueAddrs.join(", ")}`);
       await node.contentRouting.put(key, value);
-      console.log(`[p2p] provideSelf: SUCCESS - advertised ${advertiseAddrs.length} addresses for peer ${selfPeerId.slice(0, 12)}…`);
+      console.log(`[p2p] provideSelf: SUCCESS - advertised ${uniqueAddrs.length} addresses for peer ${selfPeerId.slice(0, 12)}…`);
     } catch (err) {
       console.error(`[p2p] provideSelf: FAILED - ${err}`);
     }
@@ -839,9 +881,9 @@ export class EnvoyMesh {
    * .getComponents() on the input — passing a bare string crashes with
    * "multiaddrs[0].getComponents is not a function".
    */
-  private _normalizeDialTarget(target: string): ReturnType<typeof multiaddr> {
-    if (target.startsWith("/")) return multiaddr(target);
-    return multiaddr(`/p2p/${target}`);
+  private _normalizeDialTarget(target: string): Multiaddr {
+    if (target.startsWith("/")) return ma(target);
+    return ma(`/p2p/${target}`);
   }
 
   /**
@@ -1227,7 +1269,7 @@ export class EnvoyMesh {
       return this.openStreamOnConnection(limitedExisting, protocol, true);
     };
 
-    const dialOnce = async (addr: ReturnType<typeof multiaddr> | string): Promise<{ stream: any; remotePeerId?: string }> => {
+    const dialOnce = async (addr: Multiaddr | string): Promise<{ stream: any; remotePeerId?: string }> => {
       try {
         const stream = await promiseWithTimeout(
           node.dialProtocol(addr as any, protocol),
@@ -2165,16 +2207,16 @@ function sortDialHints(hints: string[]): string[] {
 function dialHintsToMultiaddrs(
   hints: string[],
   peerIdStr: string,
-): Array<ReturnType<typeof multiaddr>> {
-  const out: Array<ReturnType<typeof multiaddr>> = [];
+): Multiaddr[] {
+  const out: Multiaddr[] = [];
   for (const h of hints) {
     const a = h.trim();
     if (!a.startsWith("/")) continue;
     try {
       if (a.includes("/p2p/")) {
-        out.push(multiaddr(a));
+        out.push(ma(a));
       } else {
-        out.push(multiaddr(`${a}/p2p/${peerIdStr}`));
+        out.push(ma(`${a}/p2p/${peerIdStr}`));
       }
     } catch {
       /* skip unusable addr string */

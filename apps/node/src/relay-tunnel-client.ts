@@ -45,6 +45,8 @@ export interface RelayTunnelClientOptions {
   authToken?: string;
   /** Diagnostic log sink. */
   log?: (msg: string) => void;
+  /** Called when the relay reports our observed public address (via the observed-addr frame). */
+  onObservedAddr?: (addr: string) => void;
 }
 
 interface OpenChannel {
@@ -64,6 +66,8 @@ export class RelayTunnelClient {
   private reconnectDelayMs = 1000;
   private disposed = false;
   private connected = false;
+  /** The public address observed by the relay (e.g. `/ip4/1.2.3.4/tcp/55432`). */
+  private _observedAddr?: string;
 
   constructor(opts: RelayTunnelClientOptions) {
     this.opts = opts;
@@ -71,6 +75,11 @@ export class RelayTunnelClient {
 
   get isConnected(): boolean {
     return this.connected;
+  }
+
+  /** Returns the relay-observed public address, if known. */
+  getObservedAddr(): string | undefined {
+    return this._observedAddr;
   }
 
   start(): void {
@@ -196,6 +205,14 @@ export class RelayTunnelClient {
 
     if (env.type === "home-tunnel-ack") {
       this.opts.log?.(`[relay-tunnel] ack received`);
+      return;
+    }
+
+    if (env.type === "observed-addr" && typeof (env as any).addr === "string") {
+      const addr = (env as any).addr as string;
+      this._observedAddr = addr;
+      this.opts.log?.(`[relay-tunnel] observed-addr from relay: ${addr}`);
+      this.opts.onObservedAddr?.(addr);
       return;
     }
 

@@ -23,6 +23,8 @@ export interface NodeYamlConfig {
     bootstrapPresetsFiles?: string[];
     /** Reachable relay bases for relay.lookup /p2p-circuit/ paths (public IP or DNS). Same as --advertise-addr. */
     advertiseAddrs?: string[];
+    /** STUN servers for public IP discovery. Each entry is `host:port` string. */
+    stunServers?: string[];
   };
 }
 
@@ -98,6 +100,10 @@ function parseDiscoveryConfig(parsed: Record<string, unknown>, configPath: strin
 
   if (parsed.advertiseAddrs !== undefined) {
     output.advertiseAddrs = parseStringArray(parsed.advertiseAddrs, configPath, "discovery.advertiseAddrs");
+  }
+
+  if (parsed.stunServers !== undefined) {
+    output.stunServers = parseStringArray(parsed.stunServers, configPath, "discovery.stunServers");
   }
 
   if (parsed.bootstrapPresetsFiles !== undefined) {

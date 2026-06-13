@@ -186,7 +186,7 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
   // ==========================================================================
   // handleHomeTunnel — registered on every /ws/home upgrade.
   // ==========================================================================
-  function handleHomeTunnel(ws: WebSocket, peerId: string): void {
+  function handleHomeTunnel(ws: WebSocket, peerId: string, remoteAddr?: string, remotePort?: number): void {
     // Replace any previous tunnel.
     const prev = homeTunnels.get(peerId);
     if (prev && prev !== ws && prev.readyState === WebSocket.OPEN) {
@@ -197,6 +197,16 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
 
     // Acknowledge the registration so the home node knows the tunnel is up.
     sendToMobile(ws, JSON.stringify({ type: "home-tunnel-ack", peerId }));
+
+    // Send the relay-observed public address so the home node can advertise it.
+    // This lets the home node be reachable via DHT even when behind NAT.
+    if (remoteAddr && remotePort) {
+      // Skip loopback / link-local — these are not useful for external callers.
+      if (remoteAddr !== "127.0.0.1" && remoteAddr !== "::1" && !remoteAddr.startsWith("fe80:")) {
+        const observedMultiaddr = `/ip4/${remoteAddr}/tcp/${remotePort}`;
+        sendToMobile(ws, JSON.stringify({ type: "observed-addr", addr: observedMultiaddr }));
+      }
+    }
 
     // Keepalive: respond to ping with pong, and send periodic pings.
     ws.on("ping", () => {
@@ -555,9 +565,12 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
         socket.destroy();
         return null;
       }
+      // Capture the relay-observed source address of this connection.
+      const remoteAddr = req.socket.remoteAddress;
+      const remotePort = req.socket.remotePort;
       return new Promise<WebSocket | null>((resolve) => {
         homeWss.handleUpgrade(req, socket, head, (ws) => {
-          handleHomeTunnel(ws, peerId);
+          handleHomeTunnel(ws, peerId, remoteAddr, remotePort);
           resolve(ws);
         });
       });

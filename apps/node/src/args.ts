@@ -9,6 +9,7 @@ import { mergeBootstrapPresetYamlFiles, type BootstrapPresetRegistry } from "./b
 import { loadNodeYamlConfig } from "./node-config.js";
 import { applyJoinInviteToNodeArgs } from "./wan-invite.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
+import { DEFAULT_STUN_SERVERS, type StunServer } from "./stun.js";
 
 export interface NodeArgs {
   configPath?: string;
@@ -26,6 +27,8 @@ export interface NodeArgs {
   enableMdns: boolean;
   enableDht: boolean;
   dhtClientMode?: boolean;
+  /** STUN servers for public IP discovery. Each entry is {host, port}. */
+  stunServers: StunServer[];
   bootstrapPeers: string[];
   enableRelay: boolean;
   enableRelayServer: boolean;
@@ -99,6 +102,7 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     advertiseAddrs: [],
     enableMdns: true,
     enableDht: false,
+    stunServers: [...DEFAULT_STUN_SERVERS],
     bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
     enableRelay: false,
     enableRelayServer: false,
@@ -165,6 +169,16 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.enableAutoNat = true;
     } else if (arg === "--dcutr") {
       args.enableDcutr = true;
+    } else if (arg === "--stun-server") {
+      const value = readValue(argv, ++index, arg);
+      const colonIdx = value.lastIndexOf(":");
+      if (colonIdx > 0) {
+        const host = value.slice(0, colonIdx);
+        const port = parseInt(value.slice(colonIdx + 1)) || 19302;
+        args.stunServers.push({ host, port });
+      } else {
+        args.stunServers.push({ host: value, port: 19302 });
+      }
     } else if (arg === "--quic") {
       args.enableQuic = true;
     } else if (arg === "--no-quic") {
@@ -317,6 +331,7 @@ Options:
   --relay               Enable circuit relay transport.
   --relay-server        Enable this node as a circuit relay server.
   --autonat             Enable AutoNAT service.
+  --stun-server <h:p>  STUN server host:port for public IP discovery (default: stun.l.google.com:19302). Repeatable.
   --dcutr               Enable DCUtR hole punching service.
   --quic                Enable QUIC transport alongside TCP (adds matching /udp/.../quic-v1 listeners). Env: ENVOYMESH_QUIC (1/true/yes or 0/false/no).
   --no-quic             Disable QUIC when set from config or env.
@@ -592,6 +607,16 @@ function applyConfigFileArgs(args: NodeArgs, argv: string[]): void {
   }
   if (config.discovery.advertiseAddrs) {
     args.advertiseAddrs.push(...config.discovery.advertiseAddrs);
+  }
+  if (config.discovery.stunServers) {
+    for (const entry of config.discovery.stunServers) {
+      const colonIdx = entry.lastIndexOf(":");
+      if (colonIdx > 0) {
+        args.stunServers.push({ host: entry.slice(0, colonIdx), port: parseInt(entry.slice(colonIdx + 1)) || 19302 });
+      } else {
+        args.stunServers.push({ host: entry, port: 19302 });
+      }
+    }
   }
   if (typeof config.discovery.relay === "boolean") {
     args.enableRelay = config.discovery.relay;

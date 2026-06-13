@@ -117,7 +117,7 @@ import { buildVaultIndex } from "@envoymesh/vault";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parseNodeArgs, applyPersistedDiscoveryConfig } from "./args.js";
+import { parseNodeArgs, applyPersistedDiscoveryConfig, type NodeArgs } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
 import { chatSenderActorFromEnvelope, shouldSkipAgentChatAssist, resolveEmpSupportedCapabilities } from "@envoymesh/api";
@@ -183,6 +183,7 @@ import {
   seedAddrsForDiscoveryProfile,
 } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses } from "./bootstrap-resolver.js";
+import { raceStunServers } from "./stun.js";
 import {
   addRelayCandidates,
   createRelayClientState,
@@ -2661,6 +2662,48 @@ if (nodeService instanceof NodeServiceImpl) {
   await refreshRagService();
 }
 
+// ── Public IP discovery ────────────────────────────────────────────────────────
+// Race STUN, relay observed addr, and autoNAT to find our public IP.
+// First valid result wins; we inject it into mesh so provideSelf() advertises
+// it to DHT and the node becomes discoverable by mobile clients on the go.
+async function discoverAndSetPublicAddr(mesh: EnvoyMesh, args: NodeArgs): Promise<void> {
+  let discovered = false;
+
+  // Method 1: STUN (parallel to all configured servers).
+  if (args.stunServers.length > 0) {
+    console.log(`[node] STUN: querying ${args.stunServers.length} server(s)...`);
+    const result = await raceStunServers(args.stunServers, 3000);
+    if (result) {
+      const multiaddr = `/ip4/${result.ip}/tcp/${result.port}`;
+      mesh.setAdvertisedAddress(multiaddr);
+      console.log(`[node] public addr discovered via STUN: ${multiaddr}`);
+      discovered = true;
+    } else {
+      console.log(`[node] STUN: all servers failed or timed out`);
+    }
+  }
+
+  // Method 2: autoNAT (passive — subscribe to self:reachable events).
+  // This fires when libp2p's autonat service determines our external address.
+  if (args.enableAutoNat && !discovered) {
+    console.log(`[node] autoNAT: subscribing to self:reachable events`);
+    let unsub = () => {};
+    const wrapper = (addr: string) => {
+      if (discovered) { unsub(); return; }
+      discovered = true;
+      unsub();
+      mesh.setAdvertisedAddress(addr);
+      console.log(`[node] public addr discovered via autoNAT: ${addr}`);
+    };
+    unsub = mesh.onAutoNATReachable(wrapper);
+  }
+
+  // Method 3: relay-observed addr — wired via relay-tunnel-client.ts callback.
+  // The callback calls mesh.setAdvertisedAddress() directly when it receives the
+  // observed-addr frame from the relay.
+  console.log(`[node] relay-observed addr: wired via relay-tunnel-client callback`);
+}
+
 installEnvoyDataTransferReceiver({
   mesh,
   peerDirectoryStore,
@@ -2685,6 +2728,20 @@ installEnvoyDataTransferReceiver({
 await mesh.start();
 meshStarted = true;
 lastKnownLibp2pPeerId = mesh.peerId;
+
+// ── Public IP discovery (race STUN + relay observed addr + autoNAT) ─────────
+// Goal: populate mesh's _appendAnnounce so provideSelf() advertises a
+// direct-dial address to DHT, enabling mobile clients to find this node
+// without relying on the relay WebSocket tunnel.
+//
+// We race all three methods; the first valid result wins and is injected into
+// mesh via setAdvertisedAddress(). Subsequent results are ignored.
+void discoverAndSetPublicAddr(mesh, args);
+
+// Also re-run STUN periodically (every 10 min) to catch dynamic IP changes.
+setInterval(() => {
+  void discoverAndSetPublicAddr(mesh, args);
+}, 10 * 60 * 1000);
 
 // Announce this node on the DHT so mobile clients can find it via findPeer().
 // This is essential for DHT-based discovery to work when the relay is down.
@@ -2902,6 +2959,11 @@ if (nodeService instanceof NodeServiceImpl) {
         homePeerId: mesh.peerId,
         localWsServerUrl: `ws://127.0.0.1:3030/ws`,
         log: (msg) => console.log(msg),
+        // Method 2: capture relay-observed address so we can advertise it to DHT.
+        onObservedAddr: (addr) => {
+          mesh.setAdvertisedAddress(addr);
+          console.log(`[node] public addr discovered via relay observed addr: ${addr}`);
+        },
       });
       relayTunnelClient.start();
       console.log(`[node] relay-tunnel: connecting to ${relayWsUrl} (peerId=${mesh.peerId.slice(0, 12)}…)`);

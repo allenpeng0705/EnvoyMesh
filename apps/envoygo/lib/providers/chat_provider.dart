@@ -285,7 +285,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // the message entirely. This is the bug that surfaced a
     // "chat with yourself" thread in the list — see the
     // [isSelfThreadPeer] helper for the rule.
-    if (isSelfThreadPeer(peerId, selfOwnerId)) {
+    // Do NOT filter agent messages — the AI replies to the owner,
+    // so recipientOwnerId == selfOwnerId is expected and correct.
+    if (!isAgent && isSelfThreadPeer(peerId, selfOwnerId)) {
       return;
     }
 
