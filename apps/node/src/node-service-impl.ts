@@ -7978,6 +7978,7 @@ class NodeServiceImpl implements NodeService {
       void this._resyncBondedContactReachabilityTags();
 
       this._relayBootstrapPeers = bootstrapPeers;
+      console.log(`[node-service] _relayBootstrapPeers set to ${bootstrapPeers.length} addresses: ${bootstrapPeers.join(", ")}`);
       if (config.relayEnabled && this._inboundGuard && this._discoverySeedStore) {
         this._stopRelayClientScheduler?.();
         const relayDeps = {
@@ -9236,15 +9237,18 @@ class NodeServiceImpl implements NodeService {
     // EnvoyGo resolves these to full multiaddrs using the same preset registry.
     // Only include standard public-libp2p presets (cn-relay is already in bootstrapPeers).
     const presetNames: string[] = [];
-    if (this._relayBootstrapPeers.some((a) => a.includes("am6.bootstrap"))) {
+    console.log(`[getPairingPayload] _relayBootstrapPeers (${this._relayBootstrapPeers.length} entries): ${this._relayBootstrapPeers.join(", ")}`);
+    // Match by hostname in the multiaddr (e.g. "am6.bootstrap.libp2p.io" contains "am6.bootstrap")
+    if (this._relayBootstrapPeers.some((a) => a.includes("am6.bootstrap.libp2p.io"))) {
       presetNames.push("public-libp2p-am6");
     }
-    if (this._relayBootstrapPeers.some((a) => a.includes("am7.bootstrap"))) {
+    if (this._relayBootstrapPeers.some((a) => a.includes("am7.bootstrap.libp2p.io"))) {
       presetNames.push("public-libp2p-am7");
     }
     if (this._relayBootstrapPeers.some((a) => a.includes("bootstrap.libp2p.io"))) {
       presetNames.push("public-libp2p");
     }
+    console.log(`[getPairingPayload] bootstrapPresetNames: ${presetNames.join(", ")}`);
     if (presetNames.length > 0) {
       payload.bootstrapPresetNames = presetNames;
     }
