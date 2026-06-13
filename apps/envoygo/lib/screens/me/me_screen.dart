@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/stored_node.dart';
 import '../../providers/node_provider.dart';
+import '../../widgets/connection_indicator.dart';
 import '../pairing/pairing_scan_screen.dart';
 import 'node_switcher_sheet.dart';
 
@@ -59,10 +60,40 @@ class MeScreen extends ConsumerWidget {
                 size: 12,
               ),
               title: Text(nodeState.activeNode!.name),
-              subtitle: Text(
-                nodeState.activeTransport != null
-                    ? '${nodeState.activeTransport} · ${nodeState.connectionState.name}'
-                    : nodeState.connectionState.name,
+              subtitle: Row(
+                children: [
+                  if (nodeState.connectionState == NodeConnectionState.connected) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: isDirectTransport(nodeState.activeTransport)
+                            ? Colors.green.shade100
+                            : Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        isDirectTransport(nodeState.activeTransport) ? 'P2P' : 'Relay',
+                        style: TextStyle(
+                          color: isDirectTransport(nodeState.activeTransport)
+                              ? Colors.green.shade700
+                              : Colors.orange.shade700,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Expanded(
+                    child: Text(
+                      nodeState.activeTransport != null
+                          ? transportTypeLabel(nodeState.activeTransport)
+                          : nodeState.connectionState.name,
+                      style: Theme.of(context).textTheme.bodySmall,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
               trailing: TextButton(
                 onPressed: nodeState.pairedNodes.length > 1
