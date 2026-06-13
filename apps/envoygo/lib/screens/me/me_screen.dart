@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/stored_node.dart';
@@ -238,6 +240,13 @@ class MeScreen extends ConsumerWidget {
             ),
           ),
         ],
+
+        // Network Debug Test
+        const SizedBox(height: 16),
+        const _SectionHeader(title: 'Network Debug'),
+        Card(
+          child: _NetworkTestCard(),
+        ),
       ],
     );
   }
@@ -419,4 +428,164 @@ String _formatRelative(DateTime t) {
   if (delta.inMinutes < 60) return '${delta.inMinutes}m ago';
   if (delta.inHours < 24) return '${delta.inHours}h ago';
   return '${delta.inDays}d ago';
+}
+
+/// Network debug test card — tests all connectivity paths that EnvoyGo uses
+/// for pairing and connecting to a home node.
+class _NetworkTestCard extends StatefulWidget {
+  @override
+  State<_NetworkTestCard> createState() => _NetworkTestCardState();
+}
+
+class _NetworkTestCardState extends State<_NetworkTestCard> {
+  bool _running = false;
+  final _results = <_TestResult>[];
+
+  // All paths EnvoyGo uses to connect to home node
+  static const _targets = [
+    // DHT bootstrap peers (port 4001) — needed for libp2p DHT discovery
+    _TestTarget(name: 'DHT am6:4001', host: 'am6.bootstrap.libp2p.io', port: 4001, protocol: 'tcp'),
+    _TestTarget(name: 'DHT am7:4001', host: 'am7.bootstrap.libp2p.io', port: 4001, protocol: 'tcp'),
+    _TestTarget(name: 'DHT bootstrap:4001', host: 'bootstrap.libp2p.io', port: 4001, protocol: 'tcp'),
+    _TestTarget(name: 'DHT cn-relay:4001', host: '47.93.11.212', port: 4001, protocol: 'tcp'),
+    // Relay WebSocket (port 15432) — needed for circuit relay via community relay
+    _TestTarget(name: 'Relay ws:15432', host: '47.93.11.212', port: 15432, protocol: 'tcp'),
+    // HTTP connectivity check (to see if bootstrap.libp2p.io DNS resolves)
+    _TestTarget(name: 'HTTP bootstrap.libp2p.io', host: 'bootstrap.libp2p.io', port: 443, protocol: 'http'),
+    _TestTarget(name: 'HTTP am6.bootstrap.libp2p.io', host: 'am6.bootstrap.libp2p.io', port: 443, protocol: 'http'),
+  ];
+
+  Future<void> _runTests() async {
+    setState(() {
+      _running = true;
+      _results.clear();
+    });
+
+    for (final target in _targets) {
+      final result = target.protocol == 'http'
+          ? await _testHttp(target)
+          : await _testTcp(target);
+      if (!mounted) return;
+      setState(() => _results.add(result));
+    }
+
+    if (!mounted) return;
+    setState(() => _running = false);
+  }
+
+  Future<_TestResult> _testTcp(_TestTarget target) async {
+    final stopwatch = Stopwatch()..start();
+    try {
+      final socket = await Socket.connect(
+        target.host,
+        target.port,
+        timeout: const Duration(seconds: 5),
+      );
+      stopwatch.stop();
+      socket.destroy();
+      return _TestResult(target: target, ok: true, latencyMs: stopwatch.elapsedMilliseconds);
+    } catch (e) {
+      stopwatch.stop();
+      return _TestResult(target: target, ok: false, error: e.toString());
+    }
+  }
+
+  Future<_TestResult> _testHttp(_TestTarget target) async {
+    final stopwatch = Stopwatch()..start();
+    try {
+      final socket = await Socket.connect(
+        target.host,
+        target.port,
+        timeout: const Duration(seconds: 5),
+      );
+      stopwatch.stop();
+      socket.destroy();
+      return _TestResult(target: target, ok: true, latencyMs: stopwatch.elapsedMilliseconds);
+    } catch (e) {
+      stopwatch.stop();
+      return _TestResult(target: target, ok: false, error: e.toString());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Tests all paths EnvoyGo uses for pairing. '
+            'If any DHT + relay path works, pairing should succeed.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.icon(
+                onPressed: _running ? null : _runTests,
+                icon: _running
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.network_check),
+                label: Text(_running ? 'Testing…' : 'Run Network Tests'),
+              ),
+            ],
+          ),
+          if (_results.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ..._results.map((r) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    r.ok ? Icons.check_circle : Icons.cancel,
+                    size: 16,
+                    color: r.ok ? Colors.green : Colors.red,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${r.target.name} — ${r.ok ? '${r.latencyMs}ms' : _shortError(r.error!)}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: r.ok ? Colors.green : Colors.red,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _shortError(String error) {
+    if (error.contains('SocketException')) return 'connection refused / blocked';
+    if (error.contains('TimeoutException')) return 'timeout (5s)';
+    if (error.contains('dart:io')) return error.split(':').last.trim();
+    return error.length > 50 ? '${error.substring(0, 50)}…' : error;
+  }
+}
+
+class _TestTarget {
+  final String name;
+  final String host;
+  final int port;
+  final String protocol; // 'tcp' or 'http'
+  const _TestTarget({required this.name, required this.host, required this.port, required this.protocol});
+}
+
+class _TestResult {
+  final _TestTarget target;
+  final bool ok;
+  final int? latencyMs;
+  final String? error;
+  const _TestResult({required this.target, required this.ok, this.latencyMs, this.error});
 }

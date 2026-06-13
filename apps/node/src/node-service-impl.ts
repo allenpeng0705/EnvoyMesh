@@ -6526,6 +6526,28 @@ class NodeServiceImpl implements NodeService {
     return getConnectivityDiagnosticsViaRuntime(this._wanRuntimeDeps());
   }
 
+  /**
+   * Returns the full list of bootstrap peer addresses for DHT discovery and circuit relay.
+   * Called by EnvoyGo after pairing to sync bootstrap peers for future reconnections.
+   */
+  async getBootstrapPeers(): Promise<{ bootstrapPeers: string[]; bootstrapPresetNames: string[] }> {
+    // Resolve all bootstrap presets so EnvoyGo gets the complete list
+    const presetsToResolve = [
+      "public-libp2p",
+      "public-libp2p-am6",
+      "public-libp2p-am7",
+      "cn-relay",
+    ];
+    const resolvedResults = await resolveBootstrapAddresses(presetsToResolve);
+    const allPeers: string[] = [];
+    for (const result of resolvedResults) {
+      for (const addr of result.resolved) {
+        allPeers.push(addr);
+      }
+    }
+    return { bootstrapPeers: allPeers, bootstrapPresetNames: presetsToResolve };
+  }
+
   private _wanRuntimeDeps(): NodeWanRuntimeDeps {
     return {
       recordOwnerActivity: () => this.recordOwnerActivity(),
@@ -9208,6 +9230,23 @@ class NodeServiceImpl implements NodeService {
 
     if (allBootstrapPeers.length > 0) {
       payload.bootstrapPeers = allBootstrapPeers;
+    }
+
+    // Include bootstrap preset names for compact QR encoding.
+    // EnvoyGo resolves these to full multiaddrs using the same preset registry.
+    // Only include standard public-libp2p presets (cn-relay is already in bootstrapPeers).
+    const presetNames: string[] = [];
+    if (this._relayBootstrapPeers.some((a) => a.includes("am6.bootstrap"))) {
+      presetNames.push("public-libp2p-am6");
+    }
+    if (this._relayBootstrapPeers.some((a) => a.includes("am7.bootstrap"))) {
+      presetNames.push("public-libp2p-am7");
+    }
+    if (this._relayBootstrapPeers.some((a) => a.includes("bootstrap.libp2p.io"))) {
+      presetNames.push("public-libp2p");
+    }
+    if (presetNames.length > 0) {
+      payload.bootstrapPresetNames = presetNames;
     }
 
     return payload;

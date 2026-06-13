@@ -628,33 +628,20 @@ class NodeNotifier extends StateNotifier<NodeState> {
   Future<WebSocketLike> _createLibp2pTransport(
       HomeRemoteCandidate candidate) async {
     debugPrint('[_createLibp2pTransport] ENTERING — candidate: ${candidate.name}, url: ${candidate.url}');
-    // DHT bootstrap peers — all 4 presets from the home node's wan-default
-    // profile so EnvoyGo can query the same DHT network the home node
-    // uses for address registration.
-    //
-    // - cn-relay (47.93.11.212): EnvoyMesh community relay — circuit relay
-    //   transport hop AND DHT bootstrap. Also the only relay EnvoyGo can use
-    //   for circuit relay when the home node's user relay is down.
-    // - public-libp2p, public-libp2p-am6, public-libp2p-am7: IPFS public DHT
-    //   bootstrap servers. The home node registers its address here via DHT
-    //   provide. EnvoyGo queries these to find the home node's direct
-    //   addresses when circuit relay is unavailable.
-    const dhtBootstrapPeers = <String>[
-      // EnvoyMesh community relay (circuit relay hop + DHT bootstrap)
-      '/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo',
-      // IPFS public DHT bootstrap servers (same network the home node uses)
-      '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
-      '/dnsaddr/am6.bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq',
-      '/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf',
-    ];
+
+    // Get DHT bootstrap peers from the stored node (synced from home node via QR code).
+    // Use these instead of hardcoded peers so mobile uses the same DHT network as home node.
+    final nodeState = state;
+    final bootstrapPeers = nodeState.activeNode?.bootstrapPeers ?? <String>[];
+    debugPrint('[_createLibp2pTransport] DHT bootstrap peers from stored node: $bootstrapPeers');
 
     // Start libp2p node if not already started.
     _libp2pNode ??= Libp2pNode();
     if (!_libp2pNode!.isStarted) {
       await _libp2pNode!.start(
-        // DHT bootstrap: connect to all 4 peers to join the DHT network.
+        // DHT bootstrap: use the same bootstrap peers as the home node.
         // Also used as circuit relay hop when dialing /p2p-circuit/.
-        bootstrapAddrs: dhtBootstrapPeers,
+        bootstrapAddrs: bootstrapPeers,
       );
     }
 

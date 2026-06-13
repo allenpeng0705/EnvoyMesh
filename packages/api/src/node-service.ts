@@ -1401,6 +1401,12 @@ export interface NodeService {
   getConnectivityDiagnostics(): Promise<ConnectivityDiagnostics>;
 
   /**
+   * Returns the full list of bootstrap peer addresses for DHT discovery and circuit relay.
+   * Called by EnvoyGo after pairing to sync bootstrap peers for future reconnections.
+   */
+  getBootstrapPeers(): Promise<{ bootstrapPeers: string[] }>;
+
+  /**
    * Advertise a topic on the DHT so other peers can discover you
    * @param topic The topic string to advertise (e.g., "music", "tech")
    */

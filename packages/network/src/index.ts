@@ -1,4 +1,5 @@
 import { noise } from "@chainsafe/libp2p-noise";
+import { fromString } from "uint8arrays";
 import { yamux } from "@chainsafe/libp2p-yamux";
 import { autoNAT } from "@libp2p/autonat";
 import { bootstrap } from "@libp2p/bootstrap";
@@ -577,6 +578,51 @@ export class EnvoyMesh {
    */
   async capabilityTopicCid(topic: string): Promise<CID> {
     return cidForCapabilityTopic(topic);
+  }
+
+  /**
+   * Announce this node's own peer ID and addresses on the DHT so other peers
+   * can discover it via findPeer(). This is essential for DHT server mode to work
+   * for peer discovery.
+   *
+   * Without this, peers connecting to the same DHT bootstrap peers cannot find
+   * this node via findPeer() even if both are connected to the same network.
+   *
+   * This announces the node's own peer ID as a "provider" of itself, allowing
+   * other peers to look it up by peer ID.
+   *
+   * Requires DHT to be enabled (enableDht: true).
+   */
+  async provideSelf(): Promise<void> {
+    console.log("[p2p] provideSelf: starting...");
+    if (!this.options.enableDht) {
+      console.warn("[p2p] provideSelf: DHT not enabled, skipping self-advertisement");
+      return;
+    }
+    const node = this.requireNode();
+    const selfPeerId = node.peerId.toString();
+    const addrs = node.getMultiaddrs();
+    console.log(`[p2p] provideSelf: peerId=${selfPeerId.slice(0, 12)}…, addrs count=${addrs?.length ?? 0}`);
+
+    if (!addrs || addrs.length === 0) {
+      console.warn("[p2p] provideSelf: no listen addresses to advertise");
+      return;
+    }
+
+    try {
+      const key = fromString(selfPeerId);
+      const info = {
+        id: selfPeerId,
+        addrs: addrs.map((ma) => ma.toString()),
+      };
+      const value = new TextEncoder().encode(JSON.stringify(info));
+      console.log(`[p2p] provideSelf: calling contentRouting.put with key len=${key.length}, value len=${value.length}`);
+      console.log(`[p2p] provideSelf: advertised addrs: ${addrs.map((ma) => ma.toString()).join(", ")}`);
+      await node.contentRouting.put(key, value);
+      console.log(`[p2p] provideSelf: SUCCESS - advertised ${addrs.length} addresses for peer ${selfPeerId.slice(0, 12)}…`);
+    } catch (err) {
+      console.error(`[p2p] provideSelf: FAILED - ${err}`);
+    }
   }
 
   /**
@@ -1587,7 +1633,7 @@ export class EnvoyMesh {
         ? [
             bootstrap({
               list: this.options.bootstrapPeers,
-              timeout: this.options.bootstrapTimeoutMs ?? 1000,
+              timeout: this.options.bootstrapTimeoutMs ?? 15_000,
             }),
           ]
         : []),

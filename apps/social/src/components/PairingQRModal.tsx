@@ -42,9 +42,13 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
         if (payload.ownerPublicKey) params.set("ownerPublicKey", payload.ownerPublicKey);
         if (payload.ownerId) params.set("ownerId", payload.ownerId);
         if (payload.homeNodePeerId) params.set("homeNodePeerId", payload.homeNodePeerId);
-        // Include bootstrap peers (libp2p public servers, additional relay
-        // addresses) so EnvoyGo has the full fallback list immediately — before
-        // getPairingPayload() is called. Comma-separated for URL encoding.
+        // Include bootstrap preset names for compact QR encoding.
+        // EnvoyGo resolves these to full multiaddr strings using the same
+        // preset registry as the home node.
+        if (payload.bootstrapPresetNames && payload.bootstrapPresetNames.length > 0) {
+          params.set("bootstrapPresetNames", payload.bootstrapPresetNames.join(","));
+        }
+        // Also include full bootstrap peer multiaddrs for compatibility.
         if (payload.bootstrapPeers && payload.bootstrapPeers.length > 0) {
           params.set("bootstrapPeers", payload.bootstrapPeers.join(","));
         }

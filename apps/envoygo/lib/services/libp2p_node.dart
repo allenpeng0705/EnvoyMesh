@@ -84,27 +84,33 @@ class Libp2pNode {
     await _dht!.start();
 
     // Connect to DHT bootstrap peers to join the DHT network.
+    int connectedCount = 0;
     for (final addrStr in bootstrapAddrs) {
       try {
         final addr = MultiAddr(addrStr);
         final relayPeerIdStr = addr.valueForProtocol('p2p');
         if (relayPeerIdStr != null) {
           final peerId = PeerId.fromString(relayPeerIdStr);
+          debugPrint('[Libp2pNode] Connecting to bootstrap peer: $addrStr');
           await _host!.connect(
             AddrInfo(peerId, [addr]),
             context: Context(),
           );
           await _dht!.routingTable.tryAddPeer(peerId, queryPeer: false);
+          connectedCount++;
+          debugPrint('[Libp2pNode] Bootstrap peer connected: $addrStr');
         }
-      } catch (_) {
+      } catch (e) {
+        debugPrint('[Libp2pNode] Bootstrap peer FAILED: $addrStr — $e');
         // Ignore individual bootstrap peer failures.
       }
     }
+    debugPrint('[Libp2pNode] Bootstrap: $connectedCount/${bootstrapAddrs.length} peers connected');
 
     // Give the DHT a moment to establish connections with bootstrap peers
     // before we try to query. Without this, findPeer() immediately after start()
     // may return null because the routing table hasn't converged yet.
-    await Future<void>.delayed(const Duration(milliseconds: 500));
+    await Future<void>.delayed(const Duration(milliseconds: 10_000));
     // ignore: dart SDK print — debug only
     try {
       final rtSize = await _dht!.routingTable.size();
@@ -119,8 +125,18 @@ class Libp2pNode {
   Future<AddrInfo?> findPeer(PeerId targetPeerId) async {
     if (_dht == null || !_started) return null;
     try {
-      return await _dht!.findPeer(targetPeerId);
-    } catch (_) {
+      final rtSize = await _dht!.routingTable.size();
+      debugPrint('[Libp2pNode.findPeer] peerId=${targetPeerId.toString()}, routingTableSize=$rtSize');
+      final result = await _dht!.findPeer(targetPeerId);
+      debugPrint('[Libp2pNode.findPeer] result addrs=${result?.addrs.length ?? 0}');
+      if (result != null) {
+        for (final addr in result.addrs) {
+          debugPrint('[Libp2pNode.findPeer] addr: ${addr.toString()}');
+        }
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[Libp2pNode.findPeer] ERROR: $e');
       return null;
     }
   }

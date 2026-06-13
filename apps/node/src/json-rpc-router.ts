@@ -275,6 +275,8 @@ export async function routeRpcMethod(
       return ns.getChatDiagnostics(params.peerOwnerId as string | undefined);
     case "getConnectivityDiagnostics":
       return ns.getConnectivityDiagnostics();
+    case "getBootstrapPeers":
+      return ns.getBootstrapPeers();
     case "runCapabilityDiscovery":
       return ns.runCapabilityDiscovery({
         find: params.find as boolean | undefined,

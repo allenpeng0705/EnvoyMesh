@@ -524,6 +524,7 @@ const mesh = new EnvoyMesh({
     void appendP2pTrace(event);
   },
 });
+console.log(`[node] DHT mode: ${args.dhtClientMode === false ? "SERVER" : "CLIENT"} (dhtClientMode=${args.dhtClientMode})`);
 let rendezvousRegistry: CapabilityRegistry | undefined;
 if (args.p2pDebug) {
   console.log(
@@ -2682,6 +2683,24 @@ await mesh.start();
 meshStarted = true;
 lastKnownLibp2pPeerId = mesh.peerId;
 
+// Announce this node on the DHT so mobile clients can find it via findPeer().
+// This is essential for DHT-based discovery to work when the relay is down.
+// Wait 30s for DHT bootstrap + circuit relay connections to establish first.
+if (args.enableDht) {
+  let advertiseAttempt = 0;
+  const advertise = () => {
+    advertiseAttempt++;
+    console.log(`[node] DHT self-advertisement attempt ${advertiseAttempt}...`);
+    mesh.provideSelf().catch((err) =>
+      console.warn("[node] provideSelf failed:", err),
+    );
+  };
+  // Wait for DHT connections to stabilize before first attempt
+  setTimeout(() => advertise(), 30000); // First attempt at 30s
+  setTimeout(() => advertise(), 60000); // Retry at 60s
+  setTimeout(() => advertise(), 90000); // Retry at 90s
+}
+
 if (nodeService instanceof NodeServiceImpl) {
   nodeService.bindExternalMesh(mesh);
   void nodeService.resyncBondedContactReachabilityTags();
@@ -3412,6 +3431,7 @@ if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length > 
     }),
   );
   const succeeded = bootstrapProbeResults.some((item) => item.ok);
+  console.log(`[connectivity] bootstrap probe results: ${bootstrapProbeResults.map((r) => `${r.peer.split("/").pop()?.slice(0, 8)}…(${r.ok ? "ok" : "fail"})`).join(", ")}`);
   if (!succeeded && args.connectivityStrict) {
     throw new Error(
       "connectivity-strict enabled: all bootstrap probes failed in wan-default profile.",

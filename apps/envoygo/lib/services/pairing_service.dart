@@ -57,6 +57,7 @@ class PairingService {
       relayPeerId: _nullableTrim(parsed.queryParameters['relayPeerId']),
       ownerPublicKey: _nullableTrim(parsed.queryParameters['ownerPublicKey']),
       bootstrapPeers: _parseBootstrapPeers(parsed.queryParameters['bootstrapPeers']),
+      bootstrapPresetNames: _parseBootstrapPresetNames(parsed.queryParameters['bootstrapPresetNames']),
     );
   }
 
@@ -84,6 +85,17 @@ class PairingService {
   /// Parse the bootstrapPeers query param: comma-separated list of
   /// WebSocket URLs or host:port strings.
   static List<String>? _parseBootstrapPeers(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+    return trimmed.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+  }
+
+  /// Parse the bootstrapPresetNames query param: comma-separated preset names
+  /// like "public-libp2p,public-libp2p-am6,cn-relay".
+  /// EnvoyGo resolves these to full multiaddr strings using the same
+  /// preset registry as the home node.
+  static List<String>? _parseBootstrapPresetNames(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     final trimmed = raw.trim();
     if (trimmed.isEmpty) return null;
@@ -128,6 +140,11 @@ class PairingData {
   /// primary relay is unavailable.
   final List<String>? bootstrapPeers;
 
+  /// Bootstrap preset names (short codes like "public-libp2p-am6").
+  /// EnvoyGo resolves these to full multiaddr strings using the same
+  /// preset registry as the home node.
+  final List<String>? bootstrapPresetNames;
+
   const PairingData({
     required this.token,
     required this.wsUrl,
@@ -140,6 +157,7 @@ class PairingData {
     this.relayPeerId,
     this.ownerPublicKey,
     this.bootstrapPeers,
+    this.bootstrapPresetNames,
   });
 }
 

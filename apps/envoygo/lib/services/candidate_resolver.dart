@@ -18,6 +18,41 @@ import 'home_remote_client.dart';
 /// as a libp2p bootstrap peer to query DHT for the home node's
 /// address even when the user's private relay is down.
 class CandidateResolver {
+  /// Resolve bootstrap preset names to full libp2p multiaddr strings.
+  ///
+  /// Maps preset names like "public-libp2p-am6" to their full multiaddr
+  /// like "/dnsaddr/am6.bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq".
+  static List<String> resolveBootstrapPresets(List<String> presets) {
+    final result = <String>[];
+    for (final preset in presets) {
+      switch (preset) {
+        case 'public-libp2p-am6':
+          result.add(
+              '/dnsaddr/am6.bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq');
+        case 'public-libp2p-am7':
+          result.add(
+              '/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf');
+        case 'public-libp2p':
+          // bootstrap.libp2p.io has 4 peer IDs
+          result.add(
+              '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN');
+          result.add(
+              '/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa');
+          result.add(
+              '/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq');
+          result.add(
+              '/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf');
+        case 'cn-relay':
+          result.add(
+              '/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo');
+        default:
+          debugPrint(
+              '[CandidateResolver] Unknown bootstrap preset: $preset');
+      }
+    }
+    return result;
+  }
+
   /// Resolve transport candidates for a stored node.
   ///
   /// Called on every (re)connect so the resolver can return up-to-date URLs.
@@ -123,7 +158,7 @@ class CandidateResolver {
     // Libp2p circuit relay candidates (via community relay's libp2p).
     // This is a fallback when the relay WebSocket is down but libp2p
     // circuit relay is still operational.
-    candidates.addAll(_buildLibp2pCandidates(sessionToken));
+    candidates.addAll(_buildLibp2pCandidates(node, sessionToken));
 
     return candidates;
   }
@@ -152,36 +187,92 @@ class CandidateResolver {
   ///
   /// The circuit address format is:
   ///   /p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>
-  List<HomeRemoteCandidate> _buildLibp2pCandidates(String? sessionToken) {
-    debugPrint('[_buildLibp2pCandidates] ENTER, communityHomePeerId=$_communityHomePeerId');
+  /// Build libp2p circuit relay candidates from all bootstrap relays.
+  ///
+  /// Tries circuit relay via each bootstrap relay (cn-relay, am6, am7, etc.)
+  /// so mobile can fall back to any relay that works.
+  List<HomeRemoteCandidate> _buildLibp2pCandidates(
+      StoredNode node, String? sessionToken) {
     final result = <HomeRemoteCandidate>[];
     if (_communityHomePeerId == null || _communityHomePeerId!.isEmpty) {
-      debugPrint('[_buildLibp2pCandidates] communityHomePeerId is null/empty, returning empty');
+      debugPrint(
+          '[_buildLibp2pCandidates] communityHomePeerId is null/empty, returning empty');
       return result;
     }
 
-    // Extract relay peer ID from the community relay multiaddr.
-    // Format: /ip4/X.X.X.X/tcp/N/p2p/<peerId>
-    // Find the last /p2p/ segment to get the relay peer ID.
-    final p2pIndex = _communityRelayLibp2pMultiaddr.lastIndexOf('/p2p/');
-    if (p2pIndex < 0) return result;
+    // Build circuit relay candidates for ALL bootstrap relays (not just cn-relay).
+    // Each candidate tries a different relay hop.
+    final relayMultiaddrs = <String, String>{
+      // cn-relay (community relay)
+      'cn-relay': _communityRelayLibp2pMultiaddr,
+    };
 
-    final relayPeerId = _communityRelayLibp2pMultiaddr.substring(p2pIndex + 5);
-    if (relayPeerId.isEmpty) return result;
+    // Add all bootstrap relays from the stored node (synced from home node via QR).
+    // node.bootstrapPeers may contain either:
+    // 1. Full libp2p multiaddrs (e.g., /dnsaddr/am6.bootstrap.libp2p.io/p2p/...)
+    // 2. Preset names (e.g., "public-libp2p-am6") — resolve to multiaddrs
+    for (final peer in node.bootstrapPeers) {
+      if (peer.startsWith('/')) {
+        // Full multiaddr — use directly
+        if (!relayMultiaddrs.containsValue(peer)) {
+          final name = _extractRelayName(peer);
+          relayMultiaddrs[name] = peer;
+        }
+      } else {
+        // Preset name — resolve to multiaddrs
+        final resolved = resolveBootstrapPresets([peer]);
+        for (final addr in resolved) {
+          if (!relayMultiaddrs.containsValue(addr)) {
+            relayMultiaddrs[peer] = addr;
+          }
+        }
+      }
+    }
 
-    // Build the circuit relay address: /p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>
-    final circuitAddr =
-        '/p2p/$relayPeerId/p2p-circuit/p2p/$_communityHomePeerId';
+    for (final entry in relayMultiaddrs.entries) {
+      final relayName = entry.key;
+      final relayMultiaddr = entry.value;
 
-    result.add(HomeRemoteCandidate(
-      name: 'p2p',
-      url: circuitAddr,
-      homePeerId: _communityHomePeerId,
-      sessionToken: sessionToken,
-      libp2pRelayAddr: _communityRelayLibp2pMultiaddr,
-    ));
+      // Extract relay peer ID from the multiaddr.
+      // Format: /ip4/X.X.X.X/tcp/N/p2p/<peerId> or /dnsaddr/.../p2p/<peerId>
+      final p2pIndex = relayMultiaddr.lastIndexOf('/p2p/');
+      if (p2pIndex < 0) continue;
+
+      final relayPeerId = relayMultiaddr.substring(p2pIndex + 5);
+      if (relayPeerId.isEmpty) continue;
+
+      // Build the circuit relay address: /p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>
+      final circuitAddr =
+          '/p2p/$relayPeerId/p2p-circuit/p2p/$_communityHomePeerId';
+
+      debugPrint(
+          '[_buildLibp2pCandidates] adding relay candidate: name=$relayName, addr=$circuitAddr');
+
+      result.add(HomeRemoteCandidate(
+        name: 'p2p-$relayName',
+        url: circuitAddr,
+        homePeerId: _communityHomePeerId,
+        sessionToken: sessionToken,
+        libp2pRelayAddr: relayMultiaddr,
+      ));
+    }
 
     return result;
+  }
+
+  /// Extract a readable name from a libp2p multiaddr.
+  String _extractRelayName(String multiaddr) {
+    if (multiaddr.contains('am6.bootstrap')) return 'am6';
+    if (multiaddr.contains('am7.bootstrap')) return 'am7';
+    if (multiaddr.contains('bootstrap.libp2p.io')) return 'bootstrap-libp2p';
+    if (multiaddr.contains('47.93.11.212')) return 'cn-relay';
+    // Extract from peer ID suffix
+    final p2pIdx = multiaddr.lastIndexOf('/p2p/');
+    if (p2pIdx >= 0) {
+      final peerId = multiaddr.substring(p2pIdx + 5);
+      return peerId.length > 8 ? peerId.substring(0, 8) : peerId;
+    }
+    return 'relay';
   }
 
   /// Build candidates from the bootstrap peers list in the stored node.

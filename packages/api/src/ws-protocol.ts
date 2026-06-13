@@ -167,6 +167,7 @@ export type RpcMethods =
   | "warmContactConnection"
   | "getChatDiagnostics"
   | "getConnectivityDiagnostics"
+  | "getBootstrapPeers"
   | "runCapabilityDiscovery"
   | "discoverCapabilityTopic"
   | "getMorningReport"
@@ -544,6 +545,12 @@ export interface PairingPayload {
    * configured additional relay or bootstrap peers that are WebSocket-accessible.
    */
   bootstrapPeers?: string[];
+  /**
+   * Bootstrap preset names for compact QR encoding (optional).
+   * EnvoyGo resolves these to full multiaddr strings using the same
+   * preset registry as the home node. E.g. "public-libp2p-am6".
+   */
+  bootstrapPresetNames?: string[];
 }
 
 /** Params decoded from an `envoy://pair` URI for mobile shared-identity pairing. */
@@ -957,6 +964,15 @@ export interface DeclineShareParams {
 }
 
 export interface GetConnectionStatusParams {}
+
+export interface GetBootstrapPeersResult {
+  bootstrapPeers: string[];
+  /**
+   * Short bootstrap preset names that can be encoded compactly in QR codes.
+   * EnvoyGo resolves these to full multiaddr strings.
+   */
+  bootstrapPresetNames: string[];
+}
 
 export interface GetBridgeStatusParams {}
 

@@ -3932,6 +3932,11 @@ You are the owner's personal AI assistant on EnvoyMesh.
     };
   }
 
+  // Mobile doesn't support bootstrap peers — return empty
+  async getBootstrapPeers() {
+    return { bootstrapPeers: [], bootstrapPresetNames: [] };
+  }
+
   async discoverCapabilityTopic(params: { topic: string; maxResults?: number; followUpDiscovery?: boolean }) {
     const topic = params.topic.trim();
     if (!topic) throw new Error("discoverCapabilityTopic: topic is required");
