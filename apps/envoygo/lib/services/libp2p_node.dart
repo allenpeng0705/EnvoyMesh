@@ -96,7 +96,7 @@ class Libp2pNode {
             AddrInfo(peerId, [addr]),
             context: Context(),
           );
-          await _dht!.routingTable.tryAddPeer(peerId, queryPeer: false);
+          await _dht!.routingTable.tryAddPeer(peerId, queryPeer: true);
           connectedCount++;
           debugPrint('[Libp2pNode] Bootstrap peer connected: $addrStr');
         }
@@ -127,6 +127,11 @@ class Libp2pNode {
     try {
       final rtSize = await _dht!.routingTable.size();
       debugPrint('[Libp2pNode.findPeer] peerId=${targetPeerId.toString()}, routingTableSize=$rtSize');
+      if (rtSize == 0) {
+        debugPrint('[Libp2pNode.findPeer] WARNING: routing table is EMPTY — DHT has no peers. '
+            'findPeer will definitely return 0 addresses. '
+            'Check if bootstrap connections succeeded.');
+      }
       final result = await _dht!.findPeer(targetPeerId);
       debugPrint('[Libp2pNode.findPeer] result addrs=${result?.addrs.length ?? 0}');
       if (result != null) {

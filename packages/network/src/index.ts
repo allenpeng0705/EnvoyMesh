@@ -674,9 +674,43 @@ export class EnvoyMesh {
       const key = fromString(selfPeerId);
       const info = { id: selfPeerId, addrs: uniqueAddrs };
       const value = new TextEncoder().encode(JSON.stringify(info));
-      console.log(`[p2p] provideSelf: calling contentRouting.put`);
+
+      // Advertise via contentRouting.put — this broadcasts to k-closest peers.
+      console.log(`[p2p] provideSelf: calling contentRouting.put (broadcast)`);
       console.log(`[p2p] provideSelf: advertised addrs: ${uniqueAddrs.join(", ")}`);
       await node.contentRouting.put(key, value);
+
+      // Also PUT directly to each configured bootstrap peer so the record
+      // propagates to that specific DHT network. libp2p's put() accepts
+      // a `peers` array to target specific peers directly.
+      const bootstrapPeers = this.options.bootstrapPeers ?? [];
+      if (bootstrapPeers.length > 0) {
+        // Extract peer IDs from bootstrap multiaddr strings (format: /ip4/x.x.x.x/tcp/N/p2p/<peerId>)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const targetPeers: any[] = [];
+        for (const bp of bootstrapPeers) {
+          const p2pIdx = bp.lastIndexOf("/p2p/");
+          if (p2pIdx < 0) continue;
+          const peerIdStr = bp.substring(p2pIdx + 5);
+          if (!peerIdStr) continue;
+          try {
+            targetPeers.push(peerIdFromString(peerIdStr));
+          } catch {
+            // skip invalid peer ID
+          }
+        }
+        if (targetPeers.length > 0) {
+          console.log(`[p2p] provideSelf: also direct-putting to ${targetPeers.length} bootstrap peer(s)`);
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (node.contentRouting as any).put(key, value, { peers: targetPeers });
+            console.log(`[p2p] provideSelf: direct-put to bootstrap peers OK`);
+          } catch (err) {
+            console.warn(`[p2p] provideSelf: direct-put to bootstrap peers FAILED: ${err}`);
+          }
+        }
+      }
+
       console.log(`[p2p] provideSelf: SUCCESS - advertised ${uniqueAddrs.length} addresses for peer ${selfPeerId.slice(0, 12)}…`);
     } catch (err) {
       console.error(`[p2p] provideSelf: FAILED - ${err}`);

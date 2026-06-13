@@ -198,16 +198,23 @@ class CandidateResolver {
   List<HomeRemoteCandidate> _buildLibp2pCandidates(
       StoredNode node, String? sessionToken) {
     final result = <HomeRemoteCandidate>[];
-    if (_communityHomePeerId == null || _communityHomePeerId!.isEmpty) {
+
+    // Use node.homePeerId as the circuit relay destination. This is the
+    // home node's libp2p peer ID — required for building /p2p-circuit/p2p/<home>
+    // addresses. If unavailable, we cannot build circuit relay candidates.
+    debugPrint(
+        '[_buildLibp2pCandidates] ENTERING — _communityHomePeerId=$_communityHomePeerId, node.homePeerId=${node.homePeerId}, node.bootstrapPeers=${node.bootstrapPeers}');
+    final homePeerId = node.homePeerId?.trim();
+    if (homePeerId == null || homePeerId.isEmpty) {
       debugPrint(
-          '[_buildLibp2pCandidates] communityHomePeerId is null/empty, returning empty');
+          '[_buildLibp2pCandidates] node.homePeerId is null/empty, cannot build circuit relay candidates');
       return result;
     }
 
     // Build circuit relay candidates for ALL bootstrap relays (not just cn-relay).
     // Each candidate tries a different relay hop.
     final relayMultiaddrs = <String, String>{
-      // cn-relay (community relay)
+      // cn-relay (community relay) — always available as fallback
       'cn-relay': _communityRelayLibp2pMultiaddr,
     };
 
@@ -253,7 +260,7 @@ class CandidateResolver {
 
       // Build the circuit relay address: /p2p/<relayPeerId>/p2p-circuit/p2p/<homePeerId>
       final circuitAddr =
-          '/p2p/$relayPeerId/p2p-circuit/p2p/$_communityHomePeerId';
+          '/p2p/$relayPeerId/p2p-circuit/p2p/$homePeerId';
 
       debugPrint(
           '[_buildLibp2pCandidates] adding relay candidate: name=$relayName, addr=$circuitAddr');
@@ -261,7 +268,7 @@ class CandidateResolver {
       result.add(HomeRemoteCandidate(
         name: 'p2p-$relayName',
         url: circuitAddr,
-        homePeerId: _communityHomePeerId,
+        homePeerId: homePeerId,
         sessionToken: sessionToken,
         libp2pRelayAddr: relayMultiaddr,
       ));
