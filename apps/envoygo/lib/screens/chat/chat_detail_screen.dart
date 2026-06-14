@@ -49,7 +49,10 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         final notifier = ref.read(chatProvider.notifier);
         // Load from local DB first (instant), then from home node.
         notifier.loadMessagesFromDb(widget.threadId);
-        if (!_isAgent) {
+        if (_isAgent) {
+          // EnvoyAI thread — load history using the agent's owner ID.
+          notifier.loadAgentHistory(widget.threadId);
+        } else {
           notifier.loadHistory(
             widget.threadId,
             contactOwnerId: widget.contactOwnerId,

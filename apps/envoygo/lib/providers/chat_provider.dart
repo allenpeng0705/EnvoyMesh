@@ -174,19 +174,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final nodeService = _ref.read(nodeServiceProvider);
     if (nodeService == null) return;
 
-    // Use firstOrNull (oldest) as the anchor for the 'before' query.
-    // lastOrNull would be the newest, which would ask for messages older than
-    // the newest — semantically wrong and returning duplicates.
     final oldestCached = state.messages[threadId]?.firstOrNull;
     final messages = await nodeService.listChatHistory(
       contactOwnerId,
       before: oldestCached?.createdAt,
     );
 
-    // The server currently ignores 'before' and returns the full thread.
-    // Server messages are oldest-first (chronological). Prepend to the
-    // existing list so the combined list is also oldest-first.
-    // Deduplicate by messageId before prepending.
+    if (messages.isEmpty) return;
+
+    // Deduplicate by messageId before appending.
     final existingIds = state.messages[threadId]
             ?.map((m) => m.messageId)
             .toSet() ??
@@ -213,6 +209,56 @@ class ChatNotifier extends StateNotifier<ChatState> {
         ],
       },
     );
+
+    // Sort by createdAt ascending (oldest first) so the display is always chronological.
+    _sortThreadMessages(threadId);
+  }
+
+  /// Load chat history for the EnvoyAI thread (owner chatting with AI).
+  /// Uses agentType as the contactOwnerId equivalent.
+  Future<void> loadAgentHistory(String threadId) async {
+    final nodeService = _ref.read(nodeServiceProvider);
+    if (nodeService == null) return;
+
+    // EnvoyAI thread: extract agentType from threadId (format: nodeId:agentType).
+    final parts = threadId.split(':');
+    final agentType = parts.length >= 3 ? parts[2] : 'envoyai';
+
+    final oldestCached = state.messages[threadId]?.firstOrNull;
+    final messages = await nodeService.listChatHistory(
+      agentType,
+      before: oldestCached?.createdAt,
+    );
+
+    if (messages.isEmpty) return;
+
+    // Deduplicate by messageId.
+    final existingIds = state.messages[threadId]
+            ?.map((m) => m.messageId)
+            .toSet() ??
+        {};
+    final newMessages = messages
+        .where((m) => !existingIds.contains(m.messageId))
+        .toList();
+
+    for (final msg in newMessages) {
+      await _localDb.insertMessage(msg.toJson());
+    }
+
+    if (newMessages.isEmpty) return;
+
+    state = state.copyWith(
+      messages: {
+        ...state.messages,
+        threadId: [
+          ...?state.messages[threadId],
+          ...newMessages,
+        ],
+      },
+    );
+
+    // Sort by createdAt ascending so display is always chronological.
+    _sortThreadMessages(threadId);
   }
 
   /// Load messages from local DB into memory.
@@ -220,11 +266,24 @@ class ChatNotifier extends StateNotifier<ChatState> {
   Future<void> loadMessagesFromDb(String threadId) async {
     final rows = await _localDb.getMessages(threadId);
     if (rows.isEmpty) return;
-    // getMessages returns newest-first (DESC) — keep that order.
+    // getMessages returns newest-first (DESC).
     // Display uses reverse:true so newest is at the bottom.
+    // Keep newest-first so reverse:true display shows oldest-first (correct order).
     final messages = rows.map((r) => ChatMessage.fromJson(r)).toList();
     state = state.copyWith(
       messages: {...state.messages, threadId: messages},
+    );
+  }
+
+  /// Sort a thread's message list by createdAt ascending (oldest first).
+  /// Call this after any bulk load to guarantee chronological display.
+  void _sortThreadMessages(String threadId) {
+    final msgs = state.messages[threadId];
+    if (msgs == null || msgs.length <= 1) return;
+    final sorted = List<ChatMessage>.from(msgs)
+      ..sort((a, b) => (a.createdAt ?? '').compareTo(b.createdAt ?? ''));
+    state = state.copyWith(
+      messages: {...state.messages, threadId: sorted},
     );
   }
 
@@ -437,7 +496,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (optimisticIdx >= 0) {
       // Replace the optimistic message with the server version.
       final updated = List<ChatMessage>.from(existingMessages);
+      final oldMsg = updated[optimisticIdx];
       updated[optimisticIdx] = msg;
+      // Also update the DB so re-loads use the correct (server) timestamp.
+      if (oldMsg.id.startsWith('temp_')) {
+        _localDb.replaceMessage(oldMsg.id, msg.toJson());
+      }
       state = state.copyWith(
         messages: {...state.messages, threadId: updated},
       );
