@@ -446,7 +446,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       senderOwnerId: senderOwnerId,
       senderDisplayName: msgSenderDisplay,
       text: text,
-      createdAt: createdAt,
+      createdAt: DateTime.now().toIso8601String(),
       isOutbound: showAsMine,
     );
 
@@ -500,7 +500,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
       updated[optimisticIdx] = msg;
       // Also update the DB so re-loads use the correct (server) timestamp.
       if (oldMsg.id.startsWith('temp_')) {
-        _localDb.replaceMessage(oldMsg.id, msg.toJson());
+        // Preserve the client-side timestamp so ordering stays
+        // consistent with other client-side optimistic messages.
+        final serverJson = msg.toJson();
+        serverJson['created_at'] = oldMsg.createdAt;
+        _localDb.replaceMessage(oldMsg.id, serverJson);
       }
       state = state.copyWith(
         messages: {...state.messages, threadId: updated},
@@ -527,7 +531,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
         senderOwnerId: senderOwnerId,
         senderDisplayName: 'You',
         text: text,
-        createdAt: createdAt,
+        createdAt: DateTime.now().toIso8601String(),
         isOutbound: true,
       );
       _upsertThread(
@@ -661,7 +665,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       senderOwnerId: senderOwnerId,
       senderDisplayName: senderDisplayName,
       text: text,
-      createdAt: createdAt,
+      createdAt: DateTime.now().toIso8601String(),
       isOutbound: false,
     );
 
@@ -804,7 +808,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
       text: text,
-      createdAt: createdAt,
+      createdAt: DateTime.now().toIso8601String(),
       isOutbound: false,
     );
 
