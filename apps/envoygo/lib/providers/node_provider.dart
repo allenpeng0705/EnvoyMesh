@@ -192,7 +192,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
   Future<void> loadPairedNodes() async {
     await _localDb.initialize();
     final rows = await _localDb.listNodes();
+    debugPrint('[loadPairedNodes] rows from DB: ${rows.length}');
     final nodes = rows.map((r) => StoredNode.fromJson(r)).toList();
+    debugPrint('[loadPairedNodes] parsed nodes: ${nodes.map((n) => n.id).toList()}');
     state = state.copyWith(pairedNodes: nodes);
 
     // Start the connectivity observer (one-shot for the app's
@@ -206,10 +208,14 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     // Auto-connect to last-used node.
     final activeNodeId = await _secureStorage.getActiveNodeId();
+    debugPrint('[loadPairedNodes] activeNodeId from SecureStorage: $activeNodeId');
     if (activeNodeId != null) {
       final node = nodes.where((n) => n.id == activeNodeId).firstOrNull;
+      debugPrint('[loadPairedNodes] node found for activeNodeId: ${node?.id}');
       if (node != null) {
+        debugPrint('[loadPairedNodes] calling connectToNode...');
         await connectToNode(node);
+        debugPrint('[loadPairedNodes] connectToNode returned');
         // Start a supervisor for this node even if the first
         // attempt succeeded — the user may close the home node and
         // reopen it later in the same session, and the supervisor
@@ -315,6 +321,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// [_connectingFuture] so a supervisor kick does not race the
   /// initial connect.
   void _startSupervisorFor(String nodeId) {
+    debugPrint('[_startSupervisorFor] nodeId=$nodeId, current supervisorTargetNodeId=$_supervisorTargetNodeId');
     _supervisor?.stop();
     _supervisorTargetNodeId = nodeId;
     _supervisor = ReconnectSupervisor(
@@ -364,6 +371,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
   ///
   /// No-op when already connected.
   void kickReconnect() {
+    debugPrint('[kickReconnect] called, connectionState=${state.connectionState}, supervisor=$_supervisor, supervisor.isStopped=${_supervisor?.isStopped}, supervisorTargetNodeId=$_supervisorTargetNodeId');
     if (state.connectionState == NodeConnectionState.connected) return;
     final supervisor = _supervisor;
     if (supervisor == null || supervisor.isStopped) {
@@ -910,6 +918,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     final sessionToken =
         await _secureStorage.getSessionToken(node.id);
+    debugPrint('[_connectToNodeImpl] nodeId=${node.id}, sessionToken=${sessionToken != null ? "present (${sessionToken.length} chars)" : "NULL"}');
     if (sessionToken == null || sessionToken.isEmpty) {
       // No session token in secure storage. The pairing record is
       // still there (the device is still "paired" in the user's
@@ -936,6 +945,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     final isOnWifi = _connectivityObserver?.isOnWifi ?? true;
     final candidates =
         resolver.resolve(node, sessionToken: sessionToken, isOnWifi: isOnWifi);
+    debugPrint('[_connectToNodeImpl] candidates: ${candidates.map((c) => "${c.name}(${c.url})").toList()}');
     if (candidates.isEmpty) {
       // No transport candidates (LAN, public, libp2p, relay). The
       // stored node has no way to reach the home. Do NOT throw
