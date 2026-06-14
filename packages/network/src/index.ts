@@ -311,13 +311,13 @@ export class EnvoyMesh {
     this.node = await createLibp2p({
       ...(libp2pPrivateKey != null ? { privateKey: libp2pPrivateKey } : {}),
       connectionMonitor: {
-        pingInterval: 6000,
-        abortConnectionOnPingFailure: true,
+        pingInterval: 30_000,
+        abortConnectionOnPingFailure: false,
       },
       connectionManager: {
         ...(maxConnections != null ? { maxConnections } : {}),
         reconnectRetries: 10,
-        reconnectRetryInterval: 2000,
+        reconnectRetryInterval: 5000,
         reconnectBackoffFactor: 1.5,
         maxParallelReconnects: 10,
         dialTimeout: 15_000,
