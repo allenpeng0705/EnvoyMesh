@@ -6320,26 +6320,63 @@ You are the owner's personal AI assistant on EnvoyMesh.
   // Libp2p mesh (browser-mode: WebSocket transport + DHT + circuit relay)
   // -------------------------------------------------------------------
 
-  /** Load or create a stable libp2p Ed25519 private key (persisted in localStorage). */
+  /** Load or create a stable libp2p Ed25519 private key.
+   *
+   * On native builds the key is stored via the injected SecureStorage (iOS Keychain /
+   * Android EncryptedSharedPreferences).  On browser-dev only does it fall back to
+   * localStorage so that the Vite dev server can run without extra setup.
+   */
   private async _loadOrCreateLibp2pKey(): Promise<PrivateKey> {
     const KEY = "envoymesh_libp2p_private_key";
-    try {
-      const stored = localStorage.getItem(KEY);
-      if (stored) {
-        const binary = atob(stored);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        return privateKeyFromProtobuf(bytes);
-      }
-    } catch { /* corrupted key — regenerate */ }
-    const pk = await generateKeyPair("Ed25519");
-    try {
+
+    // Try injected SecureStorage first (native builds).
+    if (this._secureStorage) {
+      try {
+        const stored = await this._secureStorage.get(KEY);
+        if (stored) {
+          const binary = atob(stored);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          return privateKeyFromProtobuf(bytes);
+        }
+      } catch { /* corrupted — regenerate below */ }
+
+      const pk = await generateKeyPair("Ed25519");
       const protoBytes = privateKeyToProtobuf(pk);
       let binary = "";
       for (let i = 0; i < protoBytes.length; i++) binary += String.fromCharCode(protoBytes[i]);
-      localStorage.setItem(KEY, btoa(binary));
-    } catch { /* localStorage unavailable */ }
-    return pk;
+      await this._secureStorage.set(KEY, btoa(binary));
+      return pk;
+    }
+
+    // Browser-dev fallback (never used in production native builds).
+    if (isBrowserDevMode()) {
+      try {
+        const stored = localStorage.getItem(KEY);
+        if (stored) {
+          const binary = atob(stored);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          return privateKeyFromProtobuf(bytes);
+        }
+      } catch { /* corrupted — regenerate */ }
+      const pk = await generateKeyPair("Ed25519");
+      try {
+        const protoBytes = privateKeyToProtobuf(pk);
+        let binary = "";
+        for (let i = 0; i < protoBytes.length; i++) binary += String.fromCharCode(protoBytes[i]);
+        localStorage.setItem(KEY, btoa(binary));
+      } catch { /* localStorage unavailable */ }
+      return pk;
+    }
+
+    // Native build with no SecureStorage — refuse to proceed without a place
+    // to store the key, otherwise the peerId changes on every restart.
+    throw new Error(
+      "MobileNode: no secure storage adapter provided for a native build. " +
+        "Pass a `secureStorage` option implementing set/get to MobileNode " +
+        "(e.g. the iOS Keychain adapter from apps/mobile/src/capacitor-secure-storage.ts).",
+    );
   }
 
   /** Start the browser-mode libp2p mesh with WebSocket transport + DHT client + circuit relay. */

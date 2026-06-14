@@ -764,20 +764,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     const clientProxyProtocol = '/envoymesh/client-proxy/0.1.0';
 
-    // Try circuit relay dial first: /p2p/<relay>/p2p-circuit/p2p/<home>
-    try {
-      final transport = await _libp2pNode!.dial(
-        peerMultiaddr: candidate.url,
-        protocolId: clientProxyProtocol,
-      );
-      await transport.performHandshake(candidate.sessionToken ?? '');
-      return transport;
-    } catch (e) {
-      // Circuit relay failed — log and fall through to DHT fallback.
-      debugPrint('[_createLibp2pTransport] circuit relay failed: $e');
-    }
-
-    // DHT fallback: find peer's direct addresses via DHT.
+    // Step 1: Try DHT first — find the peer's direct addresses via Kademlia.
+    // DHT succeeds when the peer has advertised itself in the DHT (e.g., via the
+    // community relay or a public bootstrap server). This gives us a direct IP
+    // address that bypasses the relay entirely.
     AddrInfo? addrInfo;
     try {
       final homePeerId = PeerId.fromString(candidate.homePeerId!);
@@ -823,6 +813,21 @@ class NodeNotifier extends StateNotifier<NodeState> {
           debugPrint('[_createLibp2pTransport] direct dial $dialAddr failed: $e');
         }
       }
+    }
+
+    // Step 2: Circuit relay fallback — dial through a relay hop.
+    // This works when DHT lookup failed (peer not advertising in DHT) but the
+    // relay server is reachable. Format: /p2p/<relay>/p2p-circuit/p2p/<home>
+    try {
+      debugPrint('[_createLibp2pTransport] trying circuit relay: ${candidate.url}');
+      final transport = await _libp2pNode!.dial(
+        peerMultiaddr: candidate.url,
+        protocolId: clientProxyProtocol,
+      );
+      await transport.performHandshake(candidate.sessionToken ?? '');
+      return transport;
+    } catch (e) {
+      debugPrint('[_createLibp2pTransport] circuit relay failed: $e');
     }
 
     // All paths exhausted.

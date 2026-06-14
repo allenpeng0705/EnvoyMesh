@@ -32,6 +32,7 @@ import type {
   A2aChatNotificationMode,
   AgentActivityDomain,
   AgentInteractionMode,
+  PeerConnectionInfo,
 } from "@envoymesh/api";
 
 const WAN_TWO_NAT_CHECKLIST_STORAGE = "envoymesh:wan-two-nat-checklist:v1";
@@ -82,6 +83,33 @@ export function SettingsNodeTab() {
   const [twoNatChatVerified, setTwoNatChatVerified] = useState(false);
   const [twoNatAutomatedOk, setTwoNatAutomatedOk] = useState(false);
 
+  // Bond connection info for network status display
+  const [bondConnectionInfo, setBondConnectionInfo] = useState<Map<string, PeerConnectionInfo>>(new Map());
+  const [bondConnectionLoading, setBondConnectionLoading] = useState(false);
+
+  const refreshBondConnectionInfo = useCallback(async () => {
+    if (bonds.length === 0) {
+      setBondConnectionInfo(new Map());
+      return;
+    }
+    setBondConnectionLoading(true);
+    try {
+      const entries = await Promise.all(
+        bonds.map(async (bond) => {
+          try {
+            const info = await nodeService.getPeerConnectionInfo(bond.peerOwnerId);
+            return [bond.peerOwnerId, info] as const;
+          } catch {
+            return [bond.peerOwnerId, { connected: false, direct: false }] as const;
+          }
+        }),
+      );
+      setBondConnectionInfo(new Map(entries));
+    } finally {
+      setBondConnectionLoading(false);
+    }
+  }, [bonds, nodeService]);
+
   const toggleTwoNatStep = useCallback((stepId: string, checked: boolean) => {
     setTwoNatChecklistDone((prev) => {
       const next = { ...prev, [stepId]: checked };
@@ -130,6 +158,11 @@ export function SettingsNodeTab() {
   useEffect(() => {
     void refreshConnectionStatus();
   }, [refreshConnectionStatus]);
+
+  // Refresh bond connection info whenever bonds change (new bond / unpair).
+  useEffect(() => {
+    void refreshBondConnectionInfo();
+  }, [refreshBondConnectionInfo]);
 
   useEffect(() => {
     if (chatDiagContact || bonds.length === 0) return;
@@ -467,6 +500,67 @@ export function SettingsNodeTab() {
             <button type="button" className="settings-button" onClick={handleStartNode}>{t("settings.network.nodeControl.startNode")}</button>
           )}
         </div>
+      </section>
+
+      <section className="settings-section">
+        <h3>{t("settings.network.networkStatus.title")}</h3>
+        <dl className="settings-list">
+          <dt>{t("settings.network.networkStatus.connectedRelays")}</dt>
+          <dd>
+            {connectionStatus?.connectedRelays?.length
+              ? connectionStatus.connectedRelays.map((r) => (
+                  <span key={r} className="settings-hint" style={{ display: "block" }}>
+                    {r}
+                  </span>
+                ))
+              : t("settings.network.networkStatus.offline")}
+          </dd>
+          <dt>{t("settings.network.networkStatus.bondedPeers")}</dt>
+          <dd>
+            {bondConnectionLoading ? (
+              <span className="settings-hint">{t("settings.network.nodeControl.loading")}</span>
+            ) : bonds.length === 0 ? (
+              <span className="settings-hint">{t("settings.network.networkStatus.noBonds")}</span>
+            ) : (
+              <ul className="settings-list" style={{ margin: 0, padding: 0, listStyle: "none" }}>
+                {bonds.map((bond) => {
+                  const connInfo = bondConnectionInfo.get(bond.peerOwnerId);
+                  const isConnected = connInfo?.connected ?? false;
+                  const isDirect = connInfo?.direct ?? false;
+                  const relayLabel = connInfo?.relayPeerId
+                    ? `${t("settings.network.networkStatus.via")} ${connInfo.relayPeerId!.slice(0, 12)}…`
+                    : null;
+                  return (
+                    <li key={bond.peerOwnerId} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <span
+                        className={`status-dot ${isConnected ? (isDirect ? "online" : "starting") : "offline"}`}
+                      />
+                      <span style={{ flex: 1 }}>
+                        {bond.displayName ?? bond.peerOwnerId.slice(0, 12)}…
+                      </span>
+                      <span className="settings-hint">
+                        {isConnected
+                          ? isDirect
+                            ? t("settings.network.networkStatus.direct")
+                            : relayLabel ?? t("settings.network.networkStatus.p2p")
+                          : t("settings.network.networkStatus.offline")}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </dd>
+        </dl>
+        <button
+          type="button"
+          className="settings-button"
+          style={{ marginTop: 8 }}
+          disabled={bondConnectionLoading}
+          onClick={() => { void refreshBondConnectionInfo(); }}
+        >
+          {t("settings.devices.refresh")}
+        </button>
       </section>
 
       <section className="settings-section">

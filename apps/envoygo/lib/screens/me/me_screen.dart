@@ -63,24 +63,27 @@ class MeScreen extends ConsumerWidget {
               subtitle: Row(
                 children: [
                   if (nodeState.connectionState == NodeConnectionState.connected) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: isDirectTransport(nodeState.activeTransport)
-                            ? Colors.green.shade100
-                            : Colors.orange.shade100,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        isDirectTransport(nodeState.activeTransport) ? 'P2P' : 'Relay',
-                        style: TextStyle(
-                          color: isDirectTransport(nodeState.activeTransport)
-                              ? Colors.green.shade700
-                              : Colors.orange.shade700,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                    Builder(
+                      builder: (context) {
+                        final hasUpnp = nodeState.upnpAdvertisedAddr != null;
+                        final (label, color) = connectionBadge(
+                            nodeState.activeTransport, hasUpnp);
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(width: 6),
                   ],

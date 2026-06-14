@@ -11,6 +11,7 @@ import 'package:dart_libp2p/core/crypto/ed25519.dart' as crypto_ed25519;
 import 'package:dart_libp2p/p2p/transport/tcp_transport.dart';
 import 'package:dart_libp2p/p2p/host/resource_manager/resource_manager_impl.dart';
 import 'package:dart_libp2p/p2p/host/resource_manager/limiter.dart';
+import 'package:envoy_go/storage/secure_storage.dart';
 import 'web_socket_like.dart';
 
 /// A minimal libp2p host for the EnvoyGo thin client.
@@ -22,14 +23,20 @@ import 'web_socket_like.dart';
 /// - Kademlia DHT client for peer discovery
 /// - Circuit relay support for NAT traversal
 ///
-/// The node maintains its own Ed25519 peer identity, generated on first
-/// startup. This identity is NOT the owner's identity — it's a separate
-/// peer ID used only for libp2p transport.
+/// The node maintains its own Ed25519 peer identity. On first startup it
+/// generates a key pair and persists the seed to [secureStorage]. On
+/// subsequent runs it loads the seed and recreates the same peer ID, so the
+/// home node can find this mobile via DHT and dial it back directly.
 class Libp2pNode {
   p2p_host.BasicHost? _host;
   IpfsDHT? _dht;
   PeerId? _peerId;
   bool _started = false;
+  final SecureStorage _secureStorage;
+  static const _seedKey = 'libp2p_identity_seed';
+
+  Libp2pNode({required SecureStorage secureStorage})
+      : _secureStorage = secureStorage;
 
   /// The local libp2p peer ID (once started).
   PeerId? get peerId => _peerId;
@@ -50,9 +57,45 @@ class Libp2pNode {
   }) async {
     if (_started) return;
 
-    // Generate a random Ed25519 key pair for this peer.
-    // In production, store the key in secure storage and reuse it.
-    final keyPair = await crypto_ed25519.generateEd25519KeyPair();
+    // Load persisted seed or generate a new one.
+    // The seed is stored rather than the full keypair so it can be
+    // reconstructed without needing the KeyPair type to be serializable.
+    Uint8List? seed;
+    try {
+      final stored = await _secureStorage.read(_seedKey);
+      if (stored != null && stored.length == 32) {
+        seed = Uint8List.fromList(stored.codeUnits);
+      }
+    } catch (_) {
+      // Corrupt or missing seed — generate fresh below.
+    }
+
+    final crypto.KeyPair keyPair;
+    if (seed != null) {
+      try {
+        final privKey = await crypto_ed25519.Ed25519PrivateKey.fromRawBytes(seed);
+        keyPair = await privKey.extract();
+      } catch (_) {
+        // Seed valid but key extraction failed — generate fresh.
+        keyPair = await crypto_ed25519.generateEd25519KeyPair();
+        seed = null;
+      }
+    } else {
+      keyPair = await crypto_ed25519.generateEd25519KeyPair();
+    }
+
+    // Persist the seed for next restart.
+    if (seed == null) {
+      // Persist the raw 32-byte private key seed so the same identity
+      // is restored on the next app start.
+      try {
+        final privKey = await keyPair.extractPrivateKey();
+        final rawSeed = privKey.raw;
+        await _secureStorage.write(_seedKey, String.fromCharCodes(rawSeed));
+      } catch (_) {}
+    }
+
+    await _applyConfig(keyPair, listenAddrs, bootstrapAddrs);
 
     // Use the Config API (dart_libp2p 1.0.x).
     // applyDefaults() sets up NoiseSecurity, Yamux, AutoNAT, etc.

@@ -23,6 +23,18 @@ export const networkSettingsMessages = {
     statusStopping: "Stopping",
     statusError: "Error",
   },
+  networkStatus: {
+    title: "Network Status",
+    nodeConnectionType: "Node connection",
+    bondedPeers: "Bonded peers",
+    connectedRelays: "Connected relays",
+    direct: "Direct",
+    p2p: "P2P",
+    relay: "Relay",
+    via: "via",
+    offline: "Offline",
+    noBonds: "No bonded peers yet.",
+  },
   chatDiagnostics: {
     title: "Chat connectivity diagnostics",
     desc: "Check relay registration, circuit dial hints, and likely causes when cross-NAT chat fails.",

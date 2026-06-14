@@ -62,17 +62,17 @@ class CandidateResolver {
   /// Called on every (re)connect so the resolver can return up-to-date URLs.
   ///
   /// Candidate order (WiFi):
-  ///   1. LAN WebSocket
-  ///   2. Public IP WebSocket
-  ///   3. Libp2p DHT lookup + circuit relay (via bootstrap peers)
-  ///   4. Relay WebSocket (user relay + community relay)
-  ///   5. Bootstrap peer WebSocket URLs
+  ///   1. Libp2p P2P candidates (DHT + direct) — try direct P2P first
+  ///   2. LAN WebSocket — fast local access when on same network
+  ///   3. Public IP WebSocket — direct WAN access
+  ///   4. Relay WebSocket (user relay + community relay) — fallback
+  ///   5. Bootstrap peer WebSocket URLs — last resort
   ///
   /// Candidate order (mobile data / unknown):
-  ///   1. Libp2p DHT lookup + circuit relay — tries P2P first
-  ///   2. LAN WebSocket (will fail fast on mobile)
-  ///   3. Public IP WebSocket
-  ///   4. Relay WebSocket (user relay + community relay)
+  ///   1. Libp2p P2P candidates (DHT + circuit relay) — P2P first
+  ///   2. Relay WebSocket (user relay + community relay) — fallback
+  ///   3. LAN WebSocket (will fail fast on mobile)
+  ///   4. Public IP WebSocket
   ///   5. Bootstrap peer WebSocket URLs
   ///
   /// This ordering minimizes relay server workload by prioritizing DHT-based
@@ -80,48 +80,78 @@ class CandidateResolver {
   /// lookup fails to return a usable address.
   List<HomeRemoteCandidate> resolve(StoredNode node,
       {String? sessionToken, bool? isOnWifi}) {
-    var candidates = <HomeRemoteCandidate>[];
+    // Build each category in separate lists so we can reorder.
+    final p2pCandidates = _buildLibp2pCandidates(node, sessionToken);
+    final relayWsCandidates = _buildRelayWsCandidates(node, sessionToken);
+    final lanCandidates = _buildLanCandidates(node, sessionToken);
+    final publicCandidates = _buildPublicCandidates(node, sessionToken);
+    final bootstrapCandidates = _buildBootstrapPeerCandidates(node, sessionToken);
 
-    // LAN WebSocket — lowest latency when reachable, but times out
-    // (8s) on mobile networks where the phone can't reach the LAN IP.
-    // lanIp may be a full URL (ws://192.168.1.5:3030/ws) or just host:port.
-    // Normalize to a full WebSocket URL.
-    if (node.lanIp != null && node.lanIp!.isNotEmpty) {
-      var url = node.lanIp!;
-      final hasScheme = url.startsWith('ws://') || url.startsWith('wss://');
-      final hasPath = hasScheme ? url.contains('/', url.indexOf('://') + 3) : url.contains('/');
-      if (!hasScheme) {
-        url = hasPath ? 'ws://$url' : 'ws://$url/ws';
-      } else if (!hasPath) {
-        url = '$url/ws';
-      }
-      if (sessionToken != null) {
-        url += '${url.contains('?') ? '&' : '?'}token=$sessionToken';
-      }
-      candidates.add(HomeRemoteCandidate(
-          name: 'lan', url: url, homePeerId: null, sessionToken: null));
+    final onWifi = isOnWifi ?? true;
+    if (onWifi) {
+      // WiFi: P2P first, then LAN, then public, then relay, then bootstrap.
+      return [
+        ...p2pCandidates,
+        ...lanCandidates,
+        ...publicCandidates,
+        ...relayWsCandidates,
+        ...bootstrapCandidates,
+      ];
+    } else {
+      // Mobile data: P2P first, then relay WebSocket (works everywhere),
+      // then LAN (fails fast), then public, then bootstrap.
+      return [
+        ...p2pCandidates,
+        ...relayWsCandidates,
+        ...lanCandidates,
+        ...publicCandidates,
+        ...bootstrapCandidates,
+      ];
     }
+  }
 
-    // Public IP/domain — direct WAN access, no relay needed.
-    if (node.publicHost != null && node.publicHost!.isNotEmpty) {
-      var url = 'ws://${node.publicHost}:${node.publicPort}/ws';
-      if (sessionToken != null) {
-        url += '?token=$sessionToken';
-      }
-      candidates.add(HomeRemoteCandidate(
-          name: 'public', url: url, homePeerId: null, sessionToken: null));
+  /// Build LAN WebSocket candidates.
+  List<HomeRemoteCandidate> _buildLanCandidates(
+      StoredNode node, String? sessionToken) {
+    if (node.lanIp == null || node.lanIp!.isEmpty) return [];
+    var url = node.lanIp!;
+    final hasScheme = url.startsWith('ws://') || url.startsWith('wss://');
+    final hasPath =
+        hasScheme ? url.contains('/', url.indexOf('://') + 3) : url.contains('/');
+    if (!hasScheme) {
+      url = hasPath ? 'ws://$url' : 'ws://$url/ws';
+    } else if (!hasPath) {
+      url = '$url/ws';
     }
+    if (sessionToken != null) {
+      url += '${url.contains('?') ? '&' : '?'}token=$sessionToken';
+    }
+    return [
+      HomeRemoteCandidate(
+          name: 'lan', url: url, homePeerId: null, sessionToken: null)
+    ];
+  }
 
-    // Libp2p circuit relay candidates (via bootstrap peers / DHT).
-    // This tries DHT lookup first, then falls back to circuit relay.
-    // Put this BEFORE relay WebSocket so we try P2P discovery first,
-    // reducing relay server workload.
-    candidates.addAll(_buildLibp2pCandidates(node, sessionToken));
+  /// Build public IP WebSocket candidates.
+  List<HomeRemoteCandidate> _buildPublicCandidates(
+      StoredNode node, String? sessionToken) {
+    if (node.publicHost == null || node.publicHost!.isEmpty) return [];
+    var url = 'ws://${node.publicHost}:${node.publicPort}/ws';
+    if (sessionToken != null) {
+      url += '?token=$sessionToken';
+    }
+    return [
+      HomeRemoteCandidate(
+          name: 'public', url: url, homePeerId: null, sessionToken: null)
+    ];
+  }
 
-    // Relay WebSocket via user's relay with peer routing.
-    // The relay's WebSocket accepts ?target=<homePeerId> for circuit-relay
-    // routing, enabling the mobile to reach the home through the relay
-    // using only WebSocket transport (no libp2p stack on Flutter).
+  /// Build relay WebSocket candidates (user relay + community relay).
+  List<HomeRemoteCandidate> _buildRelayWsCandidates(
+      StoredNode node, String? sessionToken) {
+    final result = <HomeRemoteCandidate>[];
+
+    // User's relay WebSocket with peer routing.
     if (node.relayWsUrl != null &&
         node.relayWsUrl!.isNotEmpty &&
         node.homePeerId != null &&
@@ -131,16 +161,14 @@ class CandidateResolver {
       if (sessionToken != null) {
         relayUrl += '&token=$sessionToken';
       }
-      candidates.add(HomeRemoteCandidate(
+      result.add(HomeRemoteCandidate(
           name: 'relay',
           url: relayUrl,
           homePeerId: node.homePeerId,
           sessionToken: sessionToken));
     }
 
-    // Fallback: relay WebSocket without peer ID (for relay servers
-    // that route by other means). Only used when homePeerId is not
-    // available.
+    // User's relay without peer ID (fallback routing).
     if (node.relayWsUrl != null &&
         node.relayWsUrl!.isNotEmpty &&
         (node.homePeerId == null || node.homePeerId!.isEmpty)) {
@@ -148,22 +176,13 @@ class CandidateResolver {
       if (sessionToken != null) {
         url += '${url.contains('?') ? '&' : '?'}token=$sessionToken';
       }
-      candidates.add(HomeRemoteCandidate(name: 'relay', url: url));
+      result.add(HomeRemoteCandidate(name: 'relay', url: url));
     }
 
     // Community relay WebSocket (final WebSocket fallback).
-    // The community relay provides circuit-relay v2 services and runs a DHT
-    // server — once the home node connected to it, its address is in the DHT.
-    // This is appended after the user's relay WebSocket.
-    candidates.addAll(_buildCommunityRelayCandidates(sessionToken));
+    result.addAll(_buildCommunityRelayCandidates(sessionToken));
 
-    // Bootstrap peers from the home node's relay config (last fallback).
-    // These are additional relay/peer addresses advertised by the home
-    // node, used when the user's primary relay AND the community relay
-    // are both unavailable.
-    candidates.addAll(_buildBootstrapPeerCandidates(node, sessionToken));
-
-    return candidates;
+    return result;
   }
 
   /// The relay's well-known libp2p peer ID. This must match what the relay

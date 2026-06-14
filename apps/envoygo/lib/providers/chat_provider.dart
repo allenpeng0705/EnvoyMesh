@@ -174,23 +174,38 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final nodeService = _ref.read(nodeServiceProvider);
     if (nodeService == null) return;
 
-    final oldestCached = state.messages[threadId]?.lastOrNull;
+    // Use firstOrNull (oldest) as the anchor for the 'before' query.
+    // lastOrNull would be the newest, which would ask for messages older than
+    // the newest — semantically wrong and returning duplicates.
+    final oldestCached = state.messages[threadId]?.firstOrNull;
     final messages = await nodeService.listChatHistory(
       contactOwnerId,
       before: oldestCached?.createdAt,
     );
 
-    // Cache in local DB.
-    for (final msg in messages) {
+    // The server currently ignores 'before' and returns the full thread.
+    // Deduplicate by messageId before appending to avoid unbounded growth.
+    final existingIds = state.messages[threadId]
+            ?.map((m) => m.messageId)
+            .toSet() ??
+        {};
+    final newMessages = messages
+        .where((m) => !existingIds.contains(m.messageId))
+        .toList();
+
+    // Cache new messages in local DB.
+    for (final msg in newMessages) {
       await _localDb.insertMessage(msg.toJson());
     }
+
+    if (newMessages.isEmpty) return;
 
     state = state.copyWith(
       messages: {
         ...state.messages,
         threadId: [
           ...?state.messages[threadId],
-          ...messages,
+          ...newMessages,
         ],
       },
     );
