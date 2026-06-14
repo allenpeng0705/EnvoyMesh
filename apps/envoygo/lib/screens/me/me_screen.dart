@@ -119,30 +119,6 @@ class MeScreen extends ConsumerWidget {
             ),
           ],
         ] else if (nodeState.pairedNodes.isNotEmpty) ...[
-          // DEBUG: visible reconnect state
-          Card(
-            color: Colors.amber.shade100,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('DEBUG reconnect state',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black, fontSize: 14)),
-                  const SizedBox(height: 6),
-                  Text('pairedNodes: ${nodeState.pairedNodes.length}', style: const TextStyle(color: Colors.black, fontSize: 13)),
-                  Text('activeNode: ${nodeState.activeNode?.id ?? 'null'}', style: const TextStyle(color: Colors.black, fontSize: 13)),
-                  Text('connectionState: ${nodeState.connectionState}', style: const TextStyle(color: Colors.black, fontSize: 13)),
-                  Text('homeNodeErrorCode: ${nodeState.homeNodeErrorCode ?? 'null'}', style: const TextStyle(color: Colors.black, fontSize: 13)),
-                  Text('reconnectAttempt: ${nodeState.reconnectAttempt}', style: const TextStyle(color: Colors.black, fontSize: 13)),
-                  Text('lastConnectAttemptAt: ${nodeState.lastConnectAttemptAt}', style: const TextStyle(color: Colors.black, fontSize: 13)),
-                  Text('errorMessage: ${nodeState.errorMessage ?? 'null'}', style: const TextStyle(color: Colors.black, fontSize: 13)),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          // END DEBUG
           // Paired but offline. The pairing record is still in
           // local storage — the device is NOT unpaired. Show a
           // reconnect / re-pair CTA depending on the typed error

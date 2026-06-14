@@ -223,17 +223,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // Start the connectivity observer (one-shot for the app's
     // lifetime). It kicks the supervisor whenever the device
     // transitions from offline to online.
-    await _ensureConnectivityObserver();
-
-    // Try UPnP to get a reachable address for direct P2P.
-    // If successful, home node can dial us directly.
-    // Note: wrapped in try/catch here because if _discoverUpnp throws,
-    // the exception must NOT escape loadPairedNodes, otherwise the
-    // auto-connect supervisor never starts.
     try {
-      await _discoverUpnp();
+      await _ensureConnectivityObserver();
     } catch (e) {
-      _log('[loadPairedNodes] _discoverUpnp failed (non-fatal): $e');
+      _log('[loadPairedNodes] _ensureConnectivityObserver failed (non-fatal): $e');
     }
 
     // Auto-connect to last-used node.
@@ -1102,6 +1095,34 @@ class NodeNotifier extends StateNotifier<NodeState> {
     state = state.copyWith(
       connectionState: NodeConnectionState.disconnected,
       activeTransport: null,
+    );
+  }
+
+  /// Reset node state and force a fresh reconnect.
+  /// Clears activeNode so loadPairedNodes will re-run auto-connect.
+  /// Use this when the stored state is corrupted and you need to
+  /// force the supervisor to retry without any cached state.
+  Future<void> resetNodeState() async {
+    _log('[resetNodeState] clearing state and restarting supervisor');
+    await disconnect();
+    _supervisor?.stop();
+    _supervisor = null;
+    _supervisorTargetNodeId = null;
+    // If there is an active node, restart the supervisor so
+    // kickReconnect / auto-reconnect will work.
+    final activeNodeId = await _secureStorage.getActiveNodeId();
+    if (activeNodeId != null) {
+      final node =
+          state.pairedNodes.where((n) => n.id == activeNodeId).firstOrNull;
+      if (node != null) {
+        _startSupervisorFor(node.id);
+        _log('[resetNodeState] supervisor restarted for $activeNodeId');
+      }
+    }
+    state = state.copyWith(
+      homeNodeErrorCode: null,
+      errorMessage: null,
+      reconnectAttempt: 0,
     );
   }
 
