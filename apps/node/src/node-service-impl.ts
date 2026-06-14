@@ -8798,8 +8798,9 @@ class NodeServiceImpl implements NodeService {
         }
         // Stabilised for 400 ms, or hit the 12 s ceiling.
         if (elapsed >= maxWaitMs || (elapsed - stableSince >= stableMs && elapsed > 800)) {
-          // Return the last 128 KiB of the scrollback.
-          const maxTail = 131_072;
+          // Return the last 2 MiB of the scrollback — large enough for
+          // full LLM responses and interactive options.
+          const maxTail = 2_097_152;
           const tail = currentBuf.length > maxTail
             ? currentBuf.subarray(currentBuf.length - maxTail)
             : currentBuf;
