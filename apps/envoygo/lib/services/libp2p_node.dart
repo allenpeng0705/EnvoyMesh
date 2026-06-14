@@ -44,6 +44,19 @@ class Libp2pNode {
   /// Whether the node is running.
   bool get isStarted => _started;
 
+  /// Load a key pair from [seed], or generate a fresh one.
+  Future<KeyPair> _loadOrCreateKeyPair(Uint8List? seed) async {
+    if (seed != null) {
+      try {
+        final privKey = await crypto_ed25519.Ed25519PrivateKey.fromRawBytes(seed);
+        return KeyPair(privKey.publicKey, privKey);
+      } catch (_) {
+        // Seed corrupted — fall through to generate fresh.
+      }
+    }
+    return crypto_ed25519.generateEd25519KeyPair();
+  }
+
   /// Start the libp2p host with DHT support.
   ///
   /// [listenAddrs] are multiaddrs to listen on, e.g. `/ip4/0.0.0.0/tcp/0`.
@@ -70,30 +83,17 @@ class Libp2pNode {
       // Corrupt or missing seed — generate fresh below.
     }
 
-    final keyPair;
-    if (seed != null) {
-      try {
-        final privKey = await crypto_ed25519.Ed25519PrivateKey.fromRawBytes(seed);
-        keyPair = await privKey.extract();
-      } catch (_) {
-        // Seed valid but key extraction failed — generate fresh.
-        keyPair = await crypto_ed25519.generateEd25519KeyPair();
-        seed = null;
-      }
-    } else {
-      keyPair = await crypto_ed25519.generateEd25519KeyPair();
-    }
+    // Load or generate the Ed25519 key pair.
+    // On first boot no seed exists so we generate a fresh pair and persist
+    // the seed. On subsequent boots the seed is restored to yield the same
+    // libp2p peer ID.
+    final KeyPair keyPair = await _loadOrCreateKeyPair(seed);
 
-    // Persist the seed for next restart.
-    if (seed == null) {
-      // Persist the raw 32-byte private key seed so the same identity
-      // is restored on the next app start.
-      try {
-        final privKey = keyPair.privateKey as dynamic;
-        final rawSeed = (privKey as dynamic).raw as Uint8List;
-        await _secureStorage.write(_seedKey, String.fromCharCodes(rawSeed));
-      } catch (_) {}
-    }
+    // Persist the raw seed so the same peer ID is restored on the next start.
+    try {
+      final rawSeed = (keyPair.privateKey as dynamic).raw as Uint8List;
+      await _secureStorage.write(_seedKey, String.fromCharCodes(rawSeed));
+    } catch (_) {}
 
     // Use the Config API (dart_libp2p 1.0.x).
     // applyDefaults() sets up NoiseSecurity, Yamux, AutoNAT, etc.

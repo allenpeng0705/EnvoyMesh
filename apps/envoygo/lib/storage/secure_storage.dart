@@ -77,4 +77,18 @@ class SecureStorage {
   Future<void> clear() async {
     await _ensureStorage.deleteAll();
   }
+
+  /// Read a raw string value by key.
+  Future<String?> read(String key) async {
+    try {
+      return await _ensureStorage.read(key: key);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Write a raw string value under a key.
+  Future<void> write(String key, String value) async {
+    await _ensureStorage.write(key: key, value: value);
+  }
 }

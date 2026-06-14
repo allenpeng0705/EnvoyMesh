@@ -938,16 +938,17 @@ class NodeNotifier extends StateNotifier<NodeState> {
         resolver.resolve(node, sessionToken: sessionToken, isOnWifi: isOnWifi);
     if (candidates.isEmpty) {
       // No transport candidates (LAN, public, libp2p, relay). The
-      // stored node has no way to reach the home. Same as above:
-      // throw so the supervisor halts and the user sees the
-      // persistent error state.
+      // stored node has no way to reach the home. Do NOT throw
+      // UnauthorizedException — that would stop the supervisor
+      // permanently. Instead throw a plain Exception so the
+      // supervisor retries with backoff.
       state = state.copyWith(
         connectionState: NodeConnectionState.error,
         errorMessage: 'No transport candidates available.',
-        homeNodeErrorCode: 'unauthorized',
+        homeNodeErrorCode: 'no_candidates',
       );
-      throw const UnauthorizedException(
-        'No transport candidates available — re-pair required.',
+      throw Exception(
+        'No transport candidates available.',
       );
     }
 
