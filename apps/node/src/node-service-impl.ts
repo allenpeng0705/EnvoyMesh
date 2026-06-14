@@ -2641,9 +2641,16 @@ class NodeServiceImpl implements NodeService {
         25_000,
         "listPeerRecords",
       );
-      const dirRow =
-        records.find((r) => r.ownerId === targetOwnerId && r.peerId === cachedTransport.peerId) ??
-        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected });
+      // First try strict ownerId+peerId match. This works for records created by
+      // ensurePeerFromInboundChat (real ownerId). Stub records from ensurePeerByPeerId
+      // have ownerId=peerId, so they fail this check — fall back to peerId-only match.
+      let dirRow = records.find((r) => r.ownerId === targetOwnerId && r.peerId === cachedTransport.peerId);
+      if (!dirRow) {
+        dirRow = records.find((r) => r.peerId === cachedTransport.peerId);
+      }
+      if (!dirRow) {
+        dirRow = pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected });
+      }
       const recipientEnvelopePeerId = dirRow?.devicePublicKeyPem
         ? derivePeerId(dirRow.devicePublicKeyPem)
         : targetOwnerId.startsWith("envoy_")
