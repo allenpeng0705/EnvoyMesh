@@ -46,6 +46,8 @@ dependencies:
   # Platform detection
   flutter_web_plugins:
     sdk: flutter
+  # WebView for xterm.js terminal
+  flutter_inappwebview: ^6.1.5
 
 dev_dependencies:
   flutter_test:
@@ -60,4 +62,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets: []
+  assets:
+    - assets/terminal.html

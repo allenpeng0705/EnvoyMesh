@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/css/xterm.css" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+  #terminal { width: 100%; height: 100%; }
+  .xterm .xterm-viewport { scrollbar-width: none; }
+</style>
+</head>
+<body>
+<div id="terminal"></div>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.9/lib/addon-fit.js"></script>
+<script>
+  const term = new Terminal({
+    cursorBlink: true,
+    fontSize: 13,
+    fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+    theme: {
+      background: '#000000',
+      foreground: '#00ff00',
+      cursor: '#00ff00',
+      selectionBackground: '#00ff0044',
+    },
+    allowProposedApi: true,
+    scrollback: 10000,
+  });
+
+  const fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+  term.open(document.getElementById('terminal'));
+
+  // Disable default font zoom on mobile.
+  term.textarea.style.fontSize = '16px';
+  term.textarea.style.lineHeight = '1.2';
+
+  // Fit on load and on window resize.
+  fitAddon.fit();
+  window.addEventListener('resize', () => fitAddon.fit());
+
+  // --- Bridge: Xterm → Flutter ---
+  term.onData((data) => {
+    // Send raw keystrokes back to Flutter.
+    try {
+      if (window.flutter_inappwebview) {
+        window.flutter_inappwebview.callHandler('termKey', data);
+      } else if (window.TermKey) {
+        window.TermKey.postMessage(data);
+      }
+    } catch (e) {}
+  });
+
+  term.onResize(({ cols, rows }) => {
+    try {
+      if (window.flutter_inappwebview) {
+        window.flutter_inappwebview.callHandler('termResize', JSON.stringify({ cols, rows }));
+      }
+    } catch (e) {}
+  });
+
+  // --- Bridge: Flutter → Xterm ---
+  // Called by Flutter to push raw PTY bytes.
+  window.writeToTerminal = function(base64) {
+    try {
+      const bytes = atob(base64);
+      const arr = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+      term.write(arr);
+    } catch (e) {}
+  };
+
+  // Flutter can request a resize.
+  window.resizeTerminal = function(cols, rows) {
+    try {
+      term.resize(cols, rows);
+      fitAddon.fit();
+    } catch (e) {}
+  };
+
+  // Copy-all: Flutter calls this, we return the selection or full buffer.
+  window.getTerminalText = function() {
+    try {
+      // xterm.js doesn't have a built-in "get all text" — we return
+      // the current selection if any, otherwise request full select.
+      const sel = term.getSelection();
+      if (sel) return sel;
+      term.selectAll();
+      const all = term.getSelection();
+      term.clearSelection();
+      return all || '';
+    } catch (e) { return ''; }
+  };
+
+  // Focus the terminal so it's ready for input.
+  setTimeout(() => {
+    term.focus();
+    fitAddon.fit();
+  }, 200);
+</script>
+</body>
+</html>

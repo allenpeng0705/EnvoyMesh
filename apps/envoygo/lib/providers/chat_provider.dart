@@ -174,10 +174,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final nodeService = _ref.read(nodeServiceProvider);
     if (nodeService == null) return;
 
-    final oldestCached = state.messages[threadId]?.firstOrNull;
+    // lastOrNull on a newest-first list = the chronologically oldest message.
+    final earliestCached = state.messages[threadId]?.lastOrNull;
     final messages = await nodeService.listChatHistory(
       contactOwnerId,
-      before: oldestCached?.createdAt,
+      before: earliestCached?.createdAt,
     );
 
     if (messages.isEmpty) return;
@@ -224,7 +225,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final parts = threadId.split(':');
     final agentType = parts.length >= 3 ? parts[2] : 'envoyai';
 
-    final oldestCached = state.messages[threadId]?.firstOrNull;
+    final oldestCached = state.messages[threadId]?.lastOrNull;
     final messages = await nodeService.listChatHistory(
       agentType,
       before: oldestCached?.createdAt,
@@ -446,7 +447,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       senderOwnerId: senderOwnerId,
       senderDisplayName: msgSenderDisplay,
       text: text,
-      createdAt: DateTime.now().toIso8601String(),
+      createdAt: createdAt,
       isOutbound: showAsMine,
     );
 
@@ -500,11 +501,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
       updated[optimisticIdx] = msg;
       // Also update the DB so re-loads use the correct (server) timestamp.
       if (oldMsg.id.startsWith('temp_')) {
-        // Preserve the client-side timestamp so ordering stays
-        // consistent with other client-side optimistic messages.
-        final serverJson = msg.toJson();
-        serverJson['created_at'] = oldMsg.createdAt;
-        _localDb.replaceMessage(oldMsg.id, serverJson);
+        // Replace with server version (canonical server timestamp).
+        // Fire-and-forget: the method isn't async but the DB write
+        // is serialised on sqflite's queue so the row is safe.
+        _localDb.replaceMessage(oldMsg.id, msg.toJson());
       }
       state = state.copyWith(
         messages: {...state.messages, threadId: updated},
@@ -531,7 +531,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
         senderOwnerId: senderOwnerId,
         senderDisplayName: 'You',
         text: text,
-        createdAt: DateTime.now().toIso8601String(),
+        createdAt: createdAt,
         isOutbound: true,
       );
       _upsertThread(
@@ -665,7 +665,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       senderOwnerId: senderOwnerId,
       senderDisplayName: senderDisplayName,
       text: text,
-      createdAt: DateTime.now().toIso8601String(),
+      createdAt: createdAt,
       isOutbound: false,
     );
 
@@ -808,7 +808,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
       text: text,
-      createdAt: DateTime.now().toIso8601String(),
+      createdAt: createdAt,
       isOutbound: false,
     );
 

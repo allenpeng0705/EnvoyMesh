@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/contact.dart';
 
@@ -22,11 +24,7 @@ class ContactTile extends StatelessWidget {
     return ListTile(
       leading: Stack(
         children: [
-          CircleAvatar(
-            child: Text(
-              (contact.displayName ?? '?')[0].toUpperCase(),
-            ),
-          ),
+          _buildAvatar(contact),
           if (isOnline)
             Positioned(
               right: 0,
@@ -51,4 +49,38 @@ class ContactTile extends StatelessWidget {
       onTap: onTap,
     );
   }
+
+  /// Build avatar from URL or fallback to letter.
+  static Widget _buildAvatar(Contact contact) {
+    final radius = 20.0;
+    final avatarUrl = contact.avatarUrl;
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      if (avatarUrl.startsWith('data:image')) {
+        return CircleAvatar(
+          radius: radius,
+          backgroundImage: MemoryImage(
+            // Strip data URI prefix.
+            _dataUriToBytes(avatarUrl),
+          ),
+        );
+      }
+      return CircleAvatar(
+        radius: radius,
+        backgroundImage: NetworkImage(avatarUrl),
+      );
+    }
+    return CircleAvatar(
+      radius: radius,
+      child: Text(
+        (contact.displayName ?? contact.ownerId)[0].toUpperCase(),
+      ),
+    );
+  }
+
+  static Uint8List _dataUriToBytes(String uri) {
+    final commaIdx = uri.indexOf(',');
+    if (commaIdx < 0) return Uint8List(0);
+    return base64Decode(uri.substring(commaIdx + 1));
+  }
 }
+

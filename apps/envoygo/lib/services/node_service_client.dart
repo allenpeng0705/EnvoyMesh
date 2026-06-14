@@ -109,7 +109,7 @@ class NodeServiceClient {
   }
 
   Future<Map<String, dynamic>> createChatRoom(String name) async {
-    return await _client.call('createChatRoom', {'name': name})
+    return await _client.call('createChatRoom', {'title': name})
         as Map<String, dynamic>;
   }
 
@@ -159,7 +159,7 @@ class NodeServiceClient {
       {String? cwd, String? command}) async {
     return await _client.call('createTerminalSession', {
       if (cwd != null) 'cwd': cwd,
-      if (command != null) 'command': command,
+      if (command != null) 'title': command,
     }) as Map<String, dynamic>;
   }
 

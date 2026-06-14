@@ -523,12 +523,13 @@ class TerminalViewState extends State<TerminalView>
     }
     // Visible grid.
     final grid = _grid;
+    final hasScrollback = _scrollback.isNotEmpty;
     for (var r = 0; r < grid.length; r++) {
       final row = grid[r];
+      if (hasScrollback || r > 0) buf.write('\n');
       for (final cell in row) {
         buf.write(cell.char.isEmpty ? ' ' : cell.char);
       }
-      if (r < grid.length - 1) buf.write('\n');
     }
     return buf.toString();
   }

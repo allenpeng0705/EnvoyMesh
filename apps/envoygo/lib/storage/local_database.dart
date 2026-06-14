@@ -245,9 +245,7 @@ class LocalDatabase {
   /// Replace a temp (optimistic) message with the server version.
   Future<void> replaceMessage(String tempId, Map<String, dynamic> msg) async {
     final db = await _ensureDb;
-    await db.delete('messages', where: 'id = ?', whereArgs: [tempId]);
-    await db.insert('messages', msg,
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.update('messages', msg, where: 'id = ?', whereArgs: [tempId]);
   }
 
   Future<void> insertMessage(Map<String, dynamic> message) async {
