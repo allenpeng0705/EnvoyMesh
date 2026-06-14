@@ -184,7 +184,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
 
     // The server currently ignores 'before' and returns the full thread.
-    // Deduplicate by messageId before appending to avoid unbounded growth.
+    // Server messages are oldest-first (chronological). Prepend to the
+    // existing list so the combined list is also oldest-first.
+    // Deduplicate by messageId before prepending.
     final existingIds = state.messages[threadId]
             ?.map((m) => m.messageId)
             .toSet() ??
@@ -204,8 +206,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       messages: {
         ...state.messages,
         threadId: [
-          ...?state.messages[threadId],
           ...newMessages,
+          ...?state.messages[threadId],
         ],
       },
     );
@@ -269,6 +271,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final senderDisplayName = (data['senderDisplayName'] ?? sender?['displayName']) as String?;
 
     if (senderOwnerId == null) return;
+
+    // Skip messages with no text — they render as empty bubbles.
+    if (text == null || text.isEmpty) return;
 
     // --- Identify the parties ---
     final selfOwnerId = nodeState.ownerId;
@@ -580,6 +585,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final senderDisplayName = (inner['senderDisplayName'] ?? sender?['displayName']) as String?;
 
     if (roomId == null) return;
+
+    // Skip messages with no text — they would render as empty bubbles.
+    if (text == null || text.isEmpty) return;
 
     final threadId = '${nodeState.activeNode!.id}:room:$roomId';
     final msg = ChatMessage(
