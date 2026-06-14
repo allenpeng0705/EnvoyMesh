@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// A paired home node stored locally.
 class StoredNode {
   /// UUID v4, generated locally.
@@ -89,23 +91,50 @@ class StoredNode {
   }
 
   factory StoredNode.fromJson(Map<String, dynamic> json) {
+    // bootstrap_peers may be stored as a JSON-encoded string (new format)
+    // or a raw List (old format, from manual testing).
+    List<String> bootstrapPeers = [];
+    final raw = json['bootstrap_peers'];
+    if (raw is List) {
+      bootstrapPeers = raw.cast<String>();
+    } else if (raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw) as List<dynamic>;
+        bootstrapPeers = decoded.cast<String>();
+      } catch (_) {
+        bootstrapPeers = [];
+      }
+    }
+
+    // Defensive: some fields may have been stored as wrong types
+    // (e.g., lan_ip as int). Use coercion rather than direct cast.
+    String? toString(dynamic v) {
+      if (v == null) return null;
+      return v.toString();
+    }
+
+    int? toInt(dynamic v) {
+      if (v == null) return null;
+      if (v is int) return v;
+      if (v is String) return int.tryParse(v);
+      return null;
+    }
+
     return StoredNode(
       id: json['id'] as String,
       name: json['name'] as String,
       ownerId: json['owner_id'] as String,
       homePeerId: json['home_peer_id'] as String,
-      lanIp: json['lan_ip'] as String?,
-      wsPort: (json['ws_port'] as int?) ?? 3030,
-      relayWsUrl: json['relay_ws_url'] as String?,
+      lanIp: toString(json['lan_ip']),
+      wsPort: toInt(json['ws_port']) ?? 3030,
+      relayWsUrl: toString(json['relay_ws_url']),
       pairedAt: DateTime.parse(json['paired_at'] as String),
       lastConnectedAt: json['last_connected_at'] != null
           ? DateTime.parse(json['last_connected_at'] as String)
           : null,
-      publicHost: json['public_host'] as String?,
-      publicPort: (json['public_port'] as int?) ?? 3030,
-      bootstrapPeers: (json['bootstrap_peers'] as List<dynamic>?)
-              ?.cast<String>() ??
-          const [],
+      publicHost: toString(json['public_host']),
+      publicPort: toInt(json['public_port']) ?? 3030,
+      bootstrapPeers: bootstrapPeers,
     );
   }
 

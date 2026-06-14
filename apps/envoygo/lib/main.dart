@@ -27,8 +27,12 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     // Load paired nodes on app start.
-    Future.microtask(() {
-      ref.read(nodeProvider.notifier).loadPairedNodes();
+    Future.microtask(() async {
+      try {
+        await ref.read(nodeProvider.notifier).loadPairedNodes();
+      } catch (e) {
+        developer.log('[main] loadPairedNodes threw: $e', name: 'EnvoyGo');
+      }
     });
   }
 

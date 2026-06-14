@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
@@ -115,9 +117,15 @@ class LocalDatabase {
   // -- Node operations --
 
   Future<void> upsertNode(Map<String, dynamic> node) async {
+    // Serialize bootstrap_peers to JSON so sqflite can store it as TEXT.
+    final row = Map<String, dynamic>.from(node);
+    final peers = row['bootstrap_peers'];
+    if (peers is List) {
+      row['bootstrap_peers'] = jsonEncode(peers);
+    }
     await _ensureDb.insert(
       'nodes',
-      node,
+      row,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }

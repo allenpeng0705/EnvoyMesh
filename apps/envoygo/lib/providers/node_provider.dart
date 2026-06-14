@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'package:dart_libp2p/dart_libp2p.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,7 +22,11 @@ import '../services/upnp.dart';
 import '../storage/local_database.dart';
 import '../storage/secure_storage.dart';
 
-/// Connection state for the active home node.
+/// Log a message that is always visible, even in release builds.
+void _log(String msg) {
+  developer.log(msg, name: 'NodeNotifier');
+}
+
 enum NodeConnectionState {
   disconnected,
   connecting,
@@ -190,11 +195,29 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
   /// Load all paired nodes from local storage on app start.
   Future<void> loadPairedNodes() async {
-    await _localDb.initialize();
-    final rows = await _localDb.listNodes();
-    debugPrint('[loadPairedNodes] rows from DB: ${rows.length}');
-    final nodes = rows.map((r) => StoredNode.fromJson(r)).toList();
-    debugPrint('[loadPairedNodes] parsed nodes: ${nodes.map((n) => n.id).toList()}');
+    try {
+      await _localDb.initialize();
+    } catch (e) {
+      _log('[loadPairedNodes] FAILED to initialize DB: $e');
+      return;
+    }
+    List<Map<String, dynamic>> rows;
+    try {
+      rows = await _localDb.listNodes();
+      _log('[loadPairedNodes] rows from DB: ${rows.length}');
+    } catch (e) {
+      _log('[loadPairedNodes] FAILED to listNodes: $e');
+      return;
+    }
+    final nodes = <StoredNode>[];
+    for (final r in rows) {
+      try {
+        nodes.add(StoredNode.fromJson(r));
+      } catch (e) {
+        _log('[loadPairedNodes] FAILED to parse node ${r['id']}: $e');
+      }
+    }
+    _log('[loadPairedNodes] parsed nodes: ${nodes.map((n) => n.id).toList()}');
     state = state.copyWith(pairedNodes: nodes);
 
     // Start the connectivity observer (one-shot for the app's
@@ -204,25 +227,39 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     // Try UPnP to get a reachable address for direct P2P.
     // If successful, home node can dial us directly.
-    _discoverUpnp();
+    // Note: wrapped in try/catch here because if _discoverUpnp throws,
+    // the exception must NOT escape loadPairedNodes, otherwise the
+    // auto-connect supervisor never starts.
+    try {
+      await _discoverUpnp();
+    } catch (e) {
+      _log('[loadPairedNodes] _discoverUpnp failed (non-fatal): $e');
+    }
 
     // Auto-connect to last-used node.
     final activeNodeId = await _secureStorage.getActiveNodeId();
-    debugPrint('[loadPairedNodes] activeNodeId from SecureStorage: $activeNodeId');
-    if (activeNodeId != null) {
+    _log('[loadPairedNodes] activeNodeId from SecureStorage: $activeNodeId');
+    if (activeNodeId == null) {
+      _log('[loadPairedNodes] no activeNodeId — skipping auto-connect');
+    } else {
       final node = nodes.where((n) => n.id == activeNodeId).firstOrNull;
-      debugPrint('[loadPairedNodes] node found for activeNodeId: ${node?.id}');
-      if (node != null) {
-        debugPrint('[loadPairedNodes] calling connectToNode...');
-        await connectToNode(node);
-        debugPrint('[loadPairedNodes] connectToNode returned');
-        // Start a supervisor for this node even if the first
-        // attempt succeeded — the user may close the home node and
-        // reopen it later in the same session, and the supervisor
-        // is the path that will reconnect. (The supervisor is a
-        // no-op while the inner client is connected; see
-        // [kickReconnect].)
+      _log('[loadPairedNodes] node found for activeNodeId: ${node?.id}');
+      if (node == null) {
+        _log('[loadPairedNodes] node is NULL — no matching StoredNode in DB');
+      } else {
+        // Start the supervisor FIRST so that if connectToNode fails
+        // (home offline), the supervisor is already running and
+        // "Reconnect now" / kickReconnect will work.
         _startSupervisorFor(node.id);
+        _log('[loadPairedNodes] _startSupervisorFor called');
+        _log('[loadPairedNodes] calling connectToNode...');
+        try {
+          await connectToNode(node);
+          _log('[loadPairedNodes] connectToNode succeeded');
+        } catch (e, st) {
+          _log('[loadPairedNodes] connectToNode failed: $e\n$st');
+          _log('[loadPairedNodes] supervisor should now be running for retry');
+        }
       }
     }
   }
@@ -235,20 +272,26 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // Get the mobile's libp2p listen port (or use default 4001)
     // The libp2p node's actual port is determined at runtime.
     // For UPnP, we map the libp2p port so home can dial us.
-    final upnpResult = await UpnpClient.mapPort(
-      internalPort: 4001,
-      externalPort: 4001,
-    );
+    try {
+      final upnpResult = await UpnpClient.mapPort(
+        internalPort: 4001,
+        externalPort: 4001,
+      );
 
-    if (upnpResult != null) {
-      final addr = '/ip4/${upnpResult.ip}/tcp/${upnpResult.port}';
-      state = state.copyWith(upnpAdvertisedAddr: addr);
+      if (upnpResult != null) {
+        final addr = '/ip4/${upnpResult.ip}/tcp/${upnpResult.port}';
+        state = state.copyWith(upnpAdvertisedAddr: addr);
 
-      // Share with home node.
-      await _shareUpnpAddrWithHome();
+        // Share with home node.
+        await _shareUpnpAddrWithHome();
 
-      // Refresh the UPnP mapping before the 60-minute lease expires.
-      _startUpnpRefreshTimer();
+        // Refresh the UPnP mapping before the 60-minute lease expires.
+        _startUpnpRefreshTimer();
+      }
+    } catch (e) {
+      // UPnP is best-effort — if the router doesn't support it or we're
+      // on a network that blocks multicast, the app should still work.
+      _log('[_discoverUpnp] UPnP failed (non-fatal): $e');
     }
   }
 
@@ -266,7 +309,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// Called by the periodic refresh timer.
   Future<void> _refreshUpnpMapping() async {
     if (_disposed) return;
-    debugPrint('[NodeNotifier] refreshing UPnP mapping…');
+    _log('[NodeNotifier] refreshing UPnP mapping…');
     await _discoverUpnp();
   }
 
@@ -295,10 +338,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
           [upnpAddr],
           ownerId: state.ownerId,
         );
-        debugPrint('[NodeNotifier] shared UPnP address $upnpAddr with home node');
+        _log('[NodeNotifier] shared UPnP address $upnpAddr with home node');
       }
     } catch (e) {
-      debugPrint('[NodeNotifier] failed to share UPnP address: $e');
+      _log('[NodeNotifier] failed to share UPnP address: $e');
     }
   }
 
@@ -321,7 +364,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// [_connectingFuture] so a supervisor kick does not race the
   /// initial connect.
   void _startSupervisorFor(String nodeId) {
-    debugPrint('[_startSupervisorFor] nodeId=$nodeId, current supervisorTargetNodeId=$_supervisorTargetNodeId');
+    _log('[_startSupervisorFor] nodeId=$nodeId, current supervisorTargetNodeId=$_supervisorTargetNodeId');
     _supervisor?.stop();
     _supervisorTargetNodeId = nodeId;
     _supervisor = ReconnectSupervisor(
@@ -371,7 +414,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
   ///
   /// No-op when already connected.
   void kickReconnect() {
-    debugPrint('[kickReconnect] called, connectionState=${state.connectionState}, supervisor=$_supervisor, supervisor.isStopped=${_supervisor?.isStopped}, supervisorTargetNodeId=$_supervisorTargetNodeId');
+    _log('[kickReconnect] called, connectionState=${state.connectionState}, supervisor=$_supervisor, supervisor.isStopped=${_supervisor?.isStopped}, supervisorTargetNodeId=$_supervisorTargetNodeId');
     if (state.connectionState == NodeConnectionState.connected) return;
     final supervisor = _supervisor;
     if (supervisor == null || supervisor.isStopped) {
@@ -450,7 +493,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       await _secureStorage.saveSessionToken(nodeId, result.sessionToken);
       await _secureStorage.saveActiveNodeId(nodeId);
     } catch (e) {
-      debugPrint('Failed to save session token: $e');
+      _log('Failed to save session token: $e');
       state = state.copyWith(
         connectionState: NodeConnectionState.error,
         errorMessage: 'Pairing succeeded but failed to persist — '
@@ -526,7 +569,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
         state = state.copyWith(pairedNodes: updatedNodes);
       }
     } catch (e) {
-      debugPrint('Failed to fetch bootstrap peers: $e');
+      _log('Failed to fetch bootstrap peers: $e');
     }
 
     // Start the reconnect supervisor for this node. If the
@@ -587,7 +630,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     nodeService.getBridgeStatus().then((status) {
       chatNotifier.onBridgeStatus(status);
     }).catchError((e) {
-      debugPrint('getBridgeStatus failed: $e');
+      _log('getBridgeStatus failed: $e');
     });
   }
 
@@ -609,7 +652,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       // Update contact state directly (avoid nodeServiceProvider null cache).
       contactNotifier.setBonds(filtered);
     } catch (e) {
-      debugPrint('_syncBondsDirect failed: $e');
+      _log('_syncBondsDirect failed: $e');
     }
   }
 
@@ -633,7 +676,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
         });
       }
     }).catchError((e) {
-      debugPrint('_syncRoomsDirect failed: $e');
+      _log('_syncRoomsDirect failed: $e');
     });
   }
 
@@ -656,7 +699,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
         });
       }
     }).catchError((e) {
-      debugPrint('_syncTerminalsDirect failed: $e');
+      _log('_syncTerminalsDirect failed: $e');
     });
   }
 
@@ -677,7 +720,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
         }
       }
     }).catchError((e) {
-      debugPrint('_syncInboxDirect failed: $e');
+      _log('_syncInboxDirect failed: $e');
     });
   }
 
@@ -719,7 +762,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     if (candidate.homePeerId != null &&
         candidate.homePeerId!.isNotEmpty &&
         candidate.url.contains('?target=')) {
-      debugPrint('[_createTransportForCandidate] relay (client-proxy): ${candidate.name} — ${candidate.url}');
+      _log('[_createTransportForCandidate] relay (client-proxy): ${candidate.name} — ${candidate.url}');
       // candidate.url is already the full WebSocket URL with ?target= and ?token=.
       // Extract the base relay URL by taking everything before '?target='.
       final targetIdx = candidate.url.indexOf('?target=');
@@ -734,7 +777,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // the community relay's circuit relay v2.
     if (candidate.libp2pRelayAddr != null &&
         candidate.libp2pRelayAddr!.isNotEmpty) {
-      debugPrint('[_createTransportForCandidate] libp2p-circuit-relay: ${candidate.name} — ${candidate.url}');
+      _log('[_createTransportForCandidate] libp2p-circuit-relay: ${candidate.name} — ${candidate.url}');
       try {
         return await _createLibp2pTransport(candidate);
       } catch (e) {
@@ -745,20 +788,20 @@ class NodeNotifier extends StateNotifier<NodeState> {
       }
     }
     // Standard WebSocket.
-    debugPrint('[_createTransportForCandidate] websocket: ${candidate.name} — ${candidate.url}');
+    _log('[_createTransportForCandidate] websocket: ${candidate.name} — ${candidate.url}');
     return PlatformWebSocket.connect(candidate.url);
   }
 
   /// Create a libp2p transport for circuit relay dialing.
   Future<WebSocketLike> _createLibp2pTransport(
       HomeRemoteCandidate candidate) async {
-    debugPrint('[_createLibp2pTransport] ENTERING — candidate: ${candidate.name}, url: ${candidate.url}');
+    _log('[_createLibp2pTransport] ENTERING — candidate: ${candidate.name}, url: ${candidate.url}');
 
     // Get DHT bootstrap peers from the stored node (synced from home node via QR code).
     // Use these instead of hardcoded peers so mobile uses the same DHT network as home node.
     final nodeState = state;
     final bootstrapPeers = nodeState.activeNode?.bootstrapPeers ?? <String>[];
-    debugPrint('[_createLibp2pTransport] DHT bootstrap peers from stored node: $bootstrapPeers');
+    _log('[_createLibp2pTransport] DHT bootstrap peers from stored node: $bootstrapPeers');
 
     // Start libp2p node if not already started.
     _libp2pNode ??= Libp2pNode(secureStorage: SecureStorage());
@@ -779,15 +822,15 @@ class NodeNotifier extends StateNotifier<NodeState> {
     AddrInfo? addrInfo;
     try {
       final homePeerId = PeerId.fromString(candidate.homePeerId!);
-      debugPrint('[_createLibp2pTransport] DHT findPeer looking up homePeerId: ${homePeerId.toString()}');
+      _log('[_createLibp2pTransport] DHT findPeer looking up homePeerId: ${homePeerId.toString()}');
       addrInfo = await _libp2pNode!.findPeer(homePeerId);
     } catch (e) {
-      debugPrint('[_createLibp2pTransport] findPeer threw: $e');
+      _log('[_createLibp2pTransport] findPeer threw: $e');
       addrInfo = null;
     }
-    debugPrint('[_createLibp2pTransport] DHT findPeer => ${addrInfo?.addrs.length ?? 0} addrs');
+    _log('[_createLibp2pTransport] DHT findPeer => ${addrInfo?.addrs.length ?? 0} addrs');
     if (addrInfo != null && addrInfo.addrs.isNotEmpty) {
-      debugPrint('[_createLibp2pTransport] DHT addresses discovered: ${addrInfo.addrs.map((a) => a.toString()).join(', ')}');
+      _log('[_createLibp2pTransport] DHT addresses discovered: ${addrInfo.addrs.map((a) => a.toString()).join(', ')}');
       // Replace the ephemeral port from relay-observed addr with the conventional
       // libp2p port (4001). The relay reports the ephemeral source port of the TCP
       // connection (e.g. 28746), not the actual listen port. For direct libp2p
@@ -805,9 +848,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
             RegExp(r'/tcp/\d+'),
             (m) => '/tcp/$libp2pPort',
           );
-          debugPrint('[_createLibp2pTransport] DHT direct addr (port replaced to $libp2pPort): $dialAddr');
+          _log('[_createLibp2pTransport] DHT direct addr (port replaced to $libp2pPort): $dialAddr');
         } else {
-          debugPrint('[_createLibp2pTransport] DHT circuit-relay addr (skipping): $dialAddr');
+          _log('[_createLibp2pTransport] DHT circuit-relay addr (skipping): $dialAddr');
           continue;
         }
         try {
@@ -818,7 +861,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
           await transport.performHandshake(candidate.sessionToken ?? '');
           return transport;
         } catch (e) {
-          debugPrint('[_createLibp2pTransport] direct dial $dialAddr failed: $e');
+          _log('[_createLibp2pTransport] direct dial $dialAddr failed: $e');
         }
       }
     }
@@ -827,7 +870,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // This works when DHT lookup failed (peer not advertising in DHT) but the
     // relay server is reachable. Format: /p2p/<relay>/p2p-circuit/p2p/<home>
     try {
-      debugPrint('[_createLibp2pTransport] trying circuit relay: ${candidate.url}');
+      _log('[_createLibp2pTransport] trying circuit relay: ${candidate.url}');
       final transport = await _libp2pNode!.dial(
         peerMultiaddr: candidate.url,
         protocolId: clientProxyProtocol,
@@ -835,7 +878,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       await transport.performHandshake(candidate.sessionToken ?? '');
       return transport;
     } catch (e) {
-      debugPrint('[_createLibp2pTransport] circuit relay failed: $e');
+      _log('[_createLibp2pTransport] circuit relay failed: $e');
     }
 
     // All paths exhausted.
@@ -854,7 +897,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
   ) {
     // -- WebSocket push events --
     client.on('chat:message', (data) {
-      debugPrint('[push] chat:message received: $data');
+      _log('[push] chat:message received: $data');
       if (data is Map<String, dynamic>) {
         chatNotifier.onChatMessage(data);
       }
@@ -879,7 +922,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       }
     });
     client.on('agent:activity', (data) {
-      debugPrint('[push] agent:activity received: $data');
+      _log('[push] agent:activity received: $data');
       if (data is Map<String, dynamic>) {
         chatNotifier.onChatMessage(data);
       }
@@ -918,7 +961,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     final sessionToken =
         await _secureStorage.getSessionToken(node.id);
-    debugPrint('[_connectToNodeImpl] nodeId=${node.id}, sessionToken=${sessionToken != null ? "present (${sessionToken.length} chars)" : "NULL"}');
+    _log('[_connectToNodeImpl] nodeId=${node.id}, sessionToken=${sessionToken != null ? "present (${sessionToken.length} chars)" : "NULL"}');
     if (sessionToken == null || sessionToken.isEmpty) {
       // No session token in secure storage. The pairing record is
       // still there (the device is still "paired" in the user's
@@ -945,7 +988,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     final isOnWifi = _connectivityObserver?.isOnWifi ?? true;
     final candidates =
         resolver.resolve(node, sessionToken: sessionToken, isOnWifi: isOnWifi);
-    debugPrint('[_connectToNodeImpl] candidates: ${candidates.map((c) => "${c.name}(${c.url})").toList()}');
+    _log('[_connectToNodeImpl] candidates: ${candidates.map((c) => "${c.name}(${c.url})").toList()}');
     if (candidates.isEmpty) {
       // No transport candidates (LAN, public, libp2p, relay). The
       // stored node has no way to reach the home. Do NOT throw
@@ -1016,7 +1059,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
           );
         }
       } catch (e) {
-        debugPrint('Failed to sync bootstrap peers: $e');
+        _log('Failed to sync bootstrap peers: $e');
       }
 
       // Trigger full data sync.
@@ -1044,6 +1087,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
         connectionState: NodeConnectionState.error,
         errorMessage: e.toString(),
       );
+      _log('[_connectToNodeImpl] connection FAILED: $e');
       await disconnect();
     }
   }

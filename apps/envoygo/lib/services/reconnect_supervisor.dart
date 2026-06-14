@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:math';
 
 import '../models/stored_node.dart';
@@ -111,6 +112,7 @@ class ReconnectSupervisor {
   /// [_initialDelay]. Safe to call more than once — the second
   /// call is a no-op.
   void start() {
+    developer.log('[ReconnectSupervisor.start] called, _stopped=$_stopped, _timer=${_timer != null}');
     if (_stopped) return;
     if (_timer != null) return;
     _scheduleNext(initial: true);
@@ -126,12 +128,14 @@ class ReconnectSupervisor {
     _nextDelay = _initialDelay;
     _attempt += 1;
     _onAttemptStarted?.call();
+    developer.log('[ReconnectSupervisor.kick] attempt=$_attempt');
     _runAttempt();
   }
 
   /// Stop the supervisor. No further attempts will be made.
   /// Idempotent.
   void stop() {
+    developer.log('[ReconnectSupervisor.stop] called, _stopped=$_stopped');
     if (_stopped) return;
     _stopped = true;
     _timer?.cancel();
@@ -161,6 +165,7 @@ class ReconnectSupervisor {
         ),
       );
     }
+    developer.log('[_scheduleNext] scheduling next attempt in ${delay.inMilliseconds}ms (initial=$initial)');
     _timer = Timer(delay, () {
       _timer = null;
       if (_stopped) return;
@@ -176,8 +181,10 @@ class ReconnectSupervisor {
     _inFlight = true;
     final targetNodeId = _currentTargetNodeIdProvider();
     final node = targetNodeId == null ? null : _getTargetNode();
+    developer.log('[_runAttempt] targetNodeId=$targetNodeId, node=${node?.id}, _inFlight=$_inFlight, _stopped=$_stopped');
     if (targetNodeId == null || node == null) {
       _inFlight = false;
+      developer.log('[_runAttempt] null node or targetNodeId — stopping supervisor');
       stop();
       return;
     }
