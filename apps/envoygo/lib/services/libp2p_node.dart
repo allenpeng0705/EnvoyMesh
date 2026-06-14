@@ -11,7 +11,7 @@ import 'package:dart_libp2p/core/crypto/ed25519.dart' as crypto_ed25519;
 import 'package:dart_libp2p/p2p/transport/tcp_transport.dart';
 import 'package:dart_libp2p/p2p/host/resource_manager/resource_manager_impl.dart';
 import 'package:dart_libp2p/p2p/host/resource_manager/limiter.dart';
-import 'package:envoy_go/storage/secure_storage.dart';
+import 'package:envoygo/storage/secure_storage.dart';
 import 'web_socket_like.dart';
 
 /// A minimal libp2p host for the EnvoyGo thin client.
@@ -70,7 +70,7 @@ class Libp2pNode {
       // Corrupt or missing seed — generate fresh below.
     }
 
-    final crypto.KeyPair keyPair;
+    final keyPair;
     if (seed != null) {
       try {
         final privKey = await crypto_ed25519.Ed25519PrivateKey.fromRawBytes(seed);
@@ -89,13 +89,11 @@ class Libp2pNode {
       // Persist the raw 32-byte private key seed so the same identity
       // is restored on the next app start.
       try {
-        final privKey = await keyPair.extractPrivateKey();
-        final rawSeed = privKey.raw;
+        final privKey = keyPair.privateKey as dynamic;
+        final rawSeed = (privKey as dynamic).raw as Uint8List;
         await _secureStorage.write(_seedKey, String.fromCharCodes(rawSeed));
       } catch (_) {}
     }
-
-    await _applyConfig(keyPair, listenAddrs, bootstrapAddrs);
 
     // Use the Config API (dart_libp2p 1.0.x).
     // applyDefaults() sets up NoiseSecurity, Yamux, AutoNAT, etc.

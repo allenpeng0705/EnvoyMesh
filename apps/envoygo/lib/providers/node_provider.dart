@@ -753,7 +753,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     debugPrint('[_createLibp2pTransport] DHT bootstrap peers from stored node: $bootstrapPeers');
 
     // Start libp2p node if not already started.
-    _libp2pNode ??= Libp2pNode();
+    _libp2pNode ??= Libp2pNode(secureStorage: SecureStorage());
     if (!_libp2pNode!.isStarted) {
       await _libp2pNode!.start(
         // DHT bootstrap: use the same bootstrap peers as the home node.

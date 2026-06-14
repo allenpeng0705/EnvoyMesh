@@ -3,6 +3,9 @@ class ChatMessage {
   /// Message ID from the server.
   final String id;
 
+  /// Alias for [id] — used by callers that expect the RPC field name.
+  String get messageId => id;
+
   /// Thread this message belongs to.
   final String threadId;
 
