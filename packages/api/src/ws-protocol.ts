@@ -1033,6 +1033,14 @@ export interface UpdateMyListenAddrsParams {
   peerId: string;
   /** Reachable listen addresses (e.g. /ip4/X.X.X.X/tcp/4001 from UPnP) */
   listenAddrs: string[];
+  /**
+   * The mobile's owner identity (from pairing). When provided, the home node
+   * stores the address on a record keyed by the real ownerId — not the placeholder
+   * `ownerId = peerId` used by ensurePeerByPeerId stubs. This ensures
+   * _resolvePeerTransportForOwner can find the address when the mobile first
+   * connected via relay (which creates a separate record with the relay's peerId).
+   */
+  ownerId?: string;
 }
 
 export interface UpdateMyListenAddrsResult {

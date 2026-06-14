@@ -1674,6 +1674,19 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
           existing = file.records.find((r) => r.peerId === peerId);
         }
         if (existing) {
+          // If we found an existing record by peerId (stub from ensurePeerByPeerId) but
+          // ownerId didn't match, update ownerId on the existing record WITHOUT changing
+          // peerId or wiping listenAddrs — the stub has the real peerId and the UPnP
+          // address that must be preserved.
+          const isPeerIdMatch = existing.peerId === peerId;
+          if (isPeerIdMatch && existing.ownerId !== ownerId) {
+            // Reuse existing record: update ownerId, keep peerId and listenAddrs intact.
+            existing.ownerId = ownerId;
+            existing.lastSeenAt = seenAt;
+            await writePeerDirectoryFileAtomic(directoryPath, file);
+            return;
+          }
+          // Normal case: update both ownerId and peerId.
           existing.ownerId = ownerId;
           existing.peerId = peerId;
           existing.lastSeenAt = seenAt;

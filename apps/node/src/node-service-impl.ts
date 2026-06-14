@@ -2715,10 +2715,24 @@ class NodeServiceImpl implements NodeService {
       : targetOwnerId.startsWith("envoy_")
         ? targetOwnerId
         : undefined;
+    // If the found record has no listenAddrs, search all records for one with the
+    // same ownerId that has listenAddrs. This catches the stub record created by
+    // ensurePeerByPeerId (which holds the real UPnP address) when getPeerByOwnerId
+    // returned a newer record with a relay peerId and no addresses.
+    let listenAddrs = targetPeer.listenAddrs;
+    if (!listenAddrs?.length) {
+      const allRecords = await this._peerDirectoryStore.listPeerRecords();
+      const altRecord = allRecords.find(
+        (r) => r.ownerId === targetOwnerId && r.listenAddrs?.length,
+      );
+      if (altRecord) {
+        listenAddrs = altRecord.listenAddrs;
+      }
+    }
     return {
       transportPeerId,
       recipientEnvelopePeerId,
-      listenAddrs: targetPeer.listenAddrs,
+      listenAddrs,
     };
   }
 
@@ -9477,20 +9491,29 @@ class NodeServiceImpl implements NodeService {
    * peer directory so it can dial the mobile directly instead of requiring relay.
    */
   async updateMyListenAddrs(params: import("@envoymesh/api").UpdateMyListenAddrsParams): Promise<import("@envoymesh/api").UpdateMyListenAddrsResult> {
-    const { peerId, listenAddrs } = params;
+    const { peerId, listenAddrs, ownerId } = params;
     if (!peerId || !listenAddrs?.length) {
       return { ok: false };
     }
     try {
-      // First check if a record already exists for this peerId.
+      // If the mobile provides its ownerId, use ensurePeerFromInboundChat to create
+      // a record keyed by the real ownerId — not the placeholder ownerId=peerId.
+      // This ensures _resolvePeerTransportForOwner can find the address even when
+      // the mobile first connected via relay (which creates a separate record with
+      // the relay's peerId and empty addresses).
+      if (ownerId?.trim()) {
+        await this._peerDirectoryStore.ensurePeerFromInboundChat({
+          ownerId: ownerId.trim(),
+          peerId,
+          listenAddrs,
+        });
+        return { ok: true };
+      }
+      // No ownerId provided — fall back to peerId-keyed stub.
       const existing = await this._peerDirectoryStore.getPeerByPeerId(peerId);
       if (existing) {
-        // Merge the new addresses into the existing record.
         await this._peerDirectoryStore.mergeListenAddrsForPeerId(peerId, listenAddrs);
       } else {
-        // No record exists yet — the mobile may be calling before any inbound
-        // message has created its peer-directory entry. Create a stub so the
-        // UPnP address is stored and the home node can attempt direct dialing.
         await this._peerDirectoryStore.ensurePeerByPeerId({ peerId, listenAddrs });
       }
       return { ok: true };

@@ -265,14 +265,30 @@ class NodeNotifier extends StateNotifier<NodeState> {
   }
 
   /// Share the UPnP-discovered address with the home node.
+  ///
+  /// If the UPnP address is not yet available (still discovering or failed on
+  /// startup), triggers a fresh discovery so the share happens as soon as
+  /// possible without blocking the connect path.
   Future<void> _shareUpnpAddrWithHome() async {
-    final upnpAddr = state.upnpAdvertisedAddr;
-    if (upnpAddr == null || _nodeService == null || _libp2pNode == null) return;
+    var upnpAddr = state.upnpAdvertisedAddr;
+
+    // If we don't have a UPnP address yet, kick off discovery immediately.
+    // _discoverUpnp() will call us again when it has the result.
+    if (upnpAddr == null) {
+      _discoverUpnp();
+      return;
+    }
+
+    if (_nodeService == null || _libp2pNode == null) return;
 
     try {
       final peerId = _libp2pNode!.peerId?.toString();
       if (peerId != null) {
-        await _nodeService!.updateMyListenAddrs(peerId, [upnpAddr]);
+        await _nodeService!.updateMyListenAddrs(
+          peerId,
+          [upnpAddr],
+          ownerId: state.ownerId,
+        );
         debugPrint('[NodeNotifier] shared UPnP address $upnpAddr with home node');
       }
     } catch (e) {
