@@ -201,7 +201,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
   Future<void> loadMessagesFromDb(String threadId) async {
     final rows = await _localDb.getMessages(threadId);
     if (rows.isEmpty) return;
-    final messages = rows.map((r) => ChatMessage.fromJson(r)).toList();
+    // getMessages returns newest-first (DESC) for efficient infinite scroll.
+    // Reverse to oldest-first to match listChatHistory ordering, so the
+    // combined list [cached + history] is in correct chronological order.
+    final messages = rows.map((r) => ChatMessage.fromJson(r)).toList().reversed.toList();
     state = state.copyWith(
       messages: {...state.messages, threadId: messages},
     );
