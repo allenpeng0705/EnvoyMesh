@@ -510,6 +510,29 @@ class TerminalViewState extends State<TerminalView>
     return buf.toString();
   }
 
+  /// Return ALL text in the terminal — scrollback rows + visible
+  /// grid — as a single plain-text string. Useful for "Copy All".
+  String getAllText() {
+    final buf = StringBuffer();
+    // Scrollback rows (oldest first).
+    for (final row in _scrollback) {
+      for (final cell in row) {
+        buf.write(cell.char.isEmpty ? ' ' : cell.char);
+      }
+      buf.write('\n');
+    }
+    // Visible grid.
+    final grid = _grid;
+    for (var r = 0; r < grid.length; r++) {
+      final row = grid[r];
+      for (final cell in row) {
+        buf.write(cell.char.isEmpty ? ' ' : cell.char);
+      }
+      if (r < grid.length - 1) buf.write('\n');
+    }
+    return buf.toString();
+  }
+
   /// True if there's an active selection. Used by the input bar
   /// to enable / disable the Copy button.
   bool get hasSelection =>

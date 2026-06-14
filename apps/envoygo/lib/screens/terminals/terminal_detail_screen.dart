@@ -311,6 +311,20 @@ class _TerminalDetailScreenState
     }
   }
 
+  Future<void> _copyAll() async {
+    final state = _terminalKey.currentState;
+    if (state == null) return;
+    final allText = (state as dynamic).getAllText() as String;
+    if (allText.isNotEmpty) {
+      await Clipboard.setData(ClipboardData(text: allText));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('All terminal output copied')),
+        );
+      }
+    }
+  }
+
   Future<void> _onPaste() async {
     final data = await Clipboard.getData('text/plain');
     final text = data?.text ?? '';
@@ -370,6 +384,11 @@ class _TerminalDetailScreenState
           // The icons are vertical arrows (up / down) so the
           // meaning is unambiguous: up = "go to the start of
           // history", down = "go to the live view".
+          IconButton(
+            tooltip: 'Copy all output',
+            icon: const Icon(Icons.copy_all),
+            onPressed: _copyAll,
+          ),
           IconButton(
             tooltip: 'Top of scrollback',
             icon: const Icon(Icons.arrow_upward),
