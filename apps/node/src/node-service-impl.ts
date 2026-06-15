@@ -2809,7 +2809,10 @@ class NodeServiceImpl implements NodeService {
 
     const ownerId = profile.owner.ownerId;
     const displayName = selfHuman?.displayName ?? ownerId;
-    const timestamp = new Date().toISOString();
+    // Use distinct timestamps so human+AI message pairs sort correctly.
+    // AI reply timestamp is 1ms after the human message so it always appears after.
+    const humanTimestamp = new Date().toISOString();
+    const aiTimestamp = new Date(Date.now() + 1).toISOString();
     const bridgeAgentPeerId = this._bridgeStatus?.agentPeerId?.trim() || ENVOY_AI_THREAD_KEY;
     const bridgeAgentId = this._bridgeStatus?.agentName?.trim();
     const assistantTurn: NonNullable<ChatMessage["metadata"]["assistantTurn"]> = {
@@ -2840,7 +2843,7 @@ class NodeServiceImpl implements NodeService {
         },
         content: { text: trimmed },
         metadata: {
-          timestamp,
+          timestamp: humanTimestamp,
           deliveryReceipt: "delivered",
           deliveryChannel: "ai",
         },
@@ -2865,7 +2868,7 @@ class NodeServiceImpl implements NodeService {
         },
         content: { text: answer },
         metadata: {
-          timestamp,
+          timestamp: aiTimestamp,
           deliveryReceipt: "delivered",
           deliveryChannel: "ai",
           assistantTurn,
