@@ -3377,7 +3377,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
     file: {
       path: string;
       sensitivity: "public" | "friends" | "private";
-      deliveryChannel?: "inbox" | "chat";
+      deliveryChannel?: "inbox" | "chat" | "agent";
     },
   ): Promise<void> {
     await this._shareFileInternal(targetOwnerId, file);
@@ -3401,7 +3401,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
     file: {
       path: string;
       sensitivity: "public" | "friends" | "private";
-      deliveryChannel?: "inbox" | "chat";
+      deliveryChannel?: "inbox" | "chat" | "agent";
       chatRoomId?: string;
       chatMessageId?: string;
       chatAttachmentId?: string;
@@ -5554,7 +5554,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
     previewText: string;
     sensitivity: "public" | "friends" | "private";
     relativePath: string;
-    deliveryChannel?: "inbox" | "chat";
+    deliveryChannel?: "inbox" | "chat" | "agent";
     chatRoomId?: string;
     chatMessageId?: string;
     chatAttachmentId?: string;

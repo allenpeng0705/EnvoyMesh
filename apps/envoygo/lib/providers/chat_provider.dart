@@ -784,14 +784,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final enabled = data['enabled'] as bool? ?? false;
     // Always create the thread — "Bridge Offline" is shown when disabled.
 
-    // Detect external agent from the name. The BridgeStatus type has no
-    // agentType field, so we infer it from the agentName.
+    // Use explicit agentType from BridgeStatus if present.
+    // Fall back to name-based heuristic only when the node hasn't yet
+    // sent agentType (backward compat with older nodes).
+    final explicitType = data['agentType'] as String?;
     final rawName = data['agentName'] as String? ?? '';
-    final isExternal = rawName.toLowerCase().contains('claw') ||
+    final nameIsExternal = rawName.toLowerCase().contains('claw') ||
         rawName.toLowerCase().contains('open') ||
         rawName.toLowerCase().contains('external');
-    final agentType = data['agentType'] as String? ??
-        (isExternal ? 'external' : 'envoyai');
+    final agentType = explicitType ??
+        (nameIsExternal ? 'external' : 'envoyai');
     final agentName = rawName.isNotEmpty ? rawName : 'EnvoyAI';
     final threadId = '${nodeState.activeNode!.id}:$agentType';
 
@@ -808,53 +810,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
           : ChatThreadType.envoyai,
       displayName: displayName,
       agentType: agentType,
-    );
-  }
-
-  /// Handle an agent response push event.
-  void onAgentMessage(Map<String, dynamic> data) {
-    final nodeState = _ref.read(nodeProvider);
-    if (nodeState.activeNode == null) return;
-
-    final agentType = data['agentType'] as String? ?? 'envoyai';
-    final text = data['text'] as String?;
-    final messageId = data['messageId'] as String?;
-    final createdAt = data['createdAt'] as String?;
-
-    final threadId = '${nodeState.activeNode!.id}:$agentType';
-    final msg = ChatMessage(
-      id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
-      threadId: threadId,
-      text: text,
-      createdAt: createdAt,
-      isOutbound: false,
-    );
-
-    _localDb.insertMessage(msg.toJson());
-
-    _upsertThread(
-      threadId: threadId,
-      nodeId: nodeState.activeNode!.id,
-      type: agentType == 'external'
-          ? ChatThreadType.externalAgent
-          : ChatThreadType.envoyai,
-      displayName: data['agentName'] as String? ?? 'Agent',
-      agentType: agentType,
-      lastMessageText: text ?? '',
-      lastMessageAt: createdAt != null
-          ? DateTime.tryParse(createdAt)
-          : DateTime.now(),
-      unreadIncrement: true,
-    );
-
-    state = state.copyWith(
-      messages: {
-        ...state.messages,
-        threadId: [
-          ...?state.messages[threadId],
-          msg,
-        ],
-      },
     );
   }
 

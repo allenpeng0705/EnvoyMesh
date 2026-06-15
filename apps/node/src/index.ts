@@ -169,7 +169,7 @@ import { createBridge } from "./bridge/index.js";
 import { executeTool as runRegistryTool, listAgentTools } from "./tool-registry.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
 import type { BridgeConfig } from "./bridge/config.js";
-import { BridgeConfigSchema } from "./bridge/config.js";
+import { BridgeConfigSchema, resolveAssistantAgentUrl } from "./bridge/config.js";
 import {
   ExternalAgentGateway,
   createExternalAgentSession,
@@ -3418,6 +3418,12 @@ if (nodeService instanceof NodeServiceImpl) {
 // Emit bridge status for Social UI and register bridge agent in peer directory.
 // Requires enabled + non-empty secret so UI matches an actually listening HTTP bridge.
 if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
+  // Determine agent type: built-in EnvoyAI vs external HTTP agent.
+  // resolveAssistantAgentUrl uses assistantAgentUrl if set, or agentUrl if it
+  // routes to /webhook/envoymesh, else defaults to the built-in webhook.
+  const assistantUrl = resolveAssistantAgentUrl(bridgeConfig);
+  const agentType: "envoyai" | "external" =
+    assistantUrl.includes("/webhook/envoymesh") ? "envoyai" : "external";
   nodeService.setBridgeStatus({
     enabled: true,
     agentPeerId: bridge.agentPeerId,
@@ -3425,6 +3431,7 @@ if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
     listenPort: bridgeConfig.listenPort,
     agentName: bridgeConfig.agentName ?? "",
     agentPublicKeyPem: bridgeIdentity.agentPublicKeyPem,
+    agentType,
   });
   // Register bridge agent as a virtual peer so sendChat can resolve it.
   // ownerId = bridge agent peer ID (lookup key for sendChat)

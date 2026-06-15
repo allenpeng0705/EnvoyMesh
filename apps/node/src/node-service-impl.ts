@@ -2770,9 +2770,13 @@ class NodeServiceImpl implements NodeService {
     // Only merge legacy bridge messages (deliveryChannel "ai" or unset) into
     // EnvoyAI history. Messages with deliveryChannel "agent" belong to the
     // Ext Agent thread and should not appear in the EnvoyAI panel.
+    // Additionally verify sender.ownerId matches the bridge agent — rows
+    // written by other senders to this thread should not be merged.
     for (const row of legacy) {
       const meta = (row as ChatMessage).metadata;
       if (meta?.deliveryChannel === "agent") continue;
+      const senderOwnerId = (row as ChatMessage).sender?.ownerId?.trim();
+      if (senderOwnerId && senderOwnerId !== legacyPeerId) continue;
       byId.set(row.messageId, row as ChatMessage);
     }
     for (const row of primary) {
@@ -9142,7 +9146,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async getBridgeStatus(): Promise<BridgeStatus> {
-    return this._bridgeStatus ?? { enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0, agentName: "" };
+    return this._bridgeStatus ?? { enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0, agentName: "", agentType: undefined };
   }
 
   /**

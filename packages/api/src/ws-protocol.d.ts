@@ -231,6 +231,8 @@ export interface BridgeStatus {
     agentName: string;
     /** PEM public key of the bridge agent (`chat.message` signer), when bridge is enabled. */
     agentPublicKeyPem?: string;
+    /** "envoyai" for the built-in OpenClaw assistant, "external" for a third-party HTTP agent. */
+    agentType?: "envoyai" | "external";
 }
 /**
  * Pairing payload for QR-code mobile pairing (Phase 10A).
