@@ -479,14 +479,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
       type: isTerminal
           ? ChatThreadType.terminal
           : isAgent
-              ? ChatThreadType.envoyai
+              ? (agentType == 'external'
+                  ? ChatThreadType.externalAgent
+                  : ChatThreadType.envoyai)
               : ChatThreadType.direct,
       displayName: isTerminal
           ? 'Terminal: ${terminalName ?? terminalId ?? ''}'
           : agentTalkToContact
               ? (threadDisplayName ?? peerId)
               : isAgent
-                  ? 'EnvoyAI'
+                  ? (agentType == 'external' ? 'Ext Agent' : 'EnvoyAI')
                   : threadDisplayName ?? peerId,
       contactOwnerId: (isAgent && !agentTalkToContact) ? null : peerId,
       agentType: isAgent ? agentType : null,
