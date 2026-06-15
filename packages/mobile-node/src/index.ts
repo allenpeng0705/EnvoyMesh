@@ -1276,6 +1276,10 @@ export class MobileNode implements NodeService {
     return this._homeRemoteCall<void>("sendToOpenClaw", { text });
   }
 
+  sendToBridge(text: string): Promise<void> {
+    return this._homeRemoteCall<void>("sendToBridge", { text });
+  }
+
   async homeTerminalWsOpen(
     params: import("@envoymesh/api").HomeTerminalWsOpenParams,
   ): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult> {

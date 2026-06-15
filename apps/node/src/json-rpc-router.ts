@@ -567,6 +567,8 @@ export async function routeRpcMethod(
       return ns.saveWebSearchEnabled(Boolean(params.enabled));
     case "sendToOpenClaw":
       return ns.sendToOpenClaw(String(params.text ?? ""));
+    case "sendToBridge":
+      return ns.sendToBridge(String(params.text ?? ""));
     case "getPairedDiagnostics":
       return ns.getPairedDiagnostics();
     case "saveSkillApiKeys":

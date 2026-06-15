@@ -203,7 +203,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     if (text.isEmpty) return;
 
     if (_isAgent) {
-      ref.read(chatProvider.notifier).sendAgentMessage(text);
+      ref.read(chatProvider.notifier).sendAgentMessage(text, agentType: widget.agentType ?? 'envoyai');
     } else if (_isRoom) {
       ref.read(chatProvider.notifier).sendRoomMessage(
             widget.chatRoomId!,

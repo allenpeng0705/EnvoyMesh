@@ -139,6 +139,11 @@ class NodeServiceClient {
         as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> sendToBridge(String text) async {
+    return await _client.call('sendToBridge', {'text': text})
+        as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> getBridgeStatus() async {
     return await _client.call('getBridgeStatus')
         as Map<String, dynamic>;

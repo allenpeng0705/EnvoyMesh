@@ -733,13 +733,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   // -- AI Chat --
 
-  /// Send a message to the built-in EnvoyAI agent.
-  Future<void> sendAgentMessage(String text) async {
+  /// Send a message to an AI agent.
+  /// [agentType] is "envoyai" for the built-in OpenClaw assistant,
+  /// or "external" for the bridge HTTP agent.
+  Future<void> sendAgentMessage(String text, {String agentType = 'envoyai'}) async {
     final nodeService = _ref.read(nodeServiceProvider);
     final nodeState = _ref.read(nodeProvider);
     if (nodeService == null || nodeState.activeNode == null) return;
 
-    final threadId = '${nodeState.activeNode!.id}:envoyai';
+    final threadId = '${nodeState.activeNode!.id}:$agentType';
     final now = DateTime.now().toIso8601String();
     final tempMsg = ChatMessage(
       id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
@@ -763,17 +765,23 @@ class ChatNotifier extends StateNotifier<ChatState> {
       },
     );
 
+    final isEnvoyAi = agentType == 'envoyai';
     _upsertThread(
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
-      type: ChatThreadType.envoyai,
-      displayName: 'EnvoyAI',
-      agentType: 'envoyai',
+      type: isEnvoyAi ? ChatThreadType.envoyai : ChatThreadType.externalAgent,
+      displayName: isEnvoyAi ? 'EnvoyAI' : 'Ext Agent',
+      agentType: agentType,
       lastMessageText: text,
       lastMessageAt: DateTime.now(),
     );
 
-    await nodeService.sendToOpenClaw(text);
+    // Branch: built-in EnvoyAI uses sendToOpenClaw; external bridge uses sendToBridge.
+    if (agentType == 'external') {
+      await nodeService.sendToBridge(text);
+    } else {
+      await nodeService.sendToOpenClaw(text);
+    }
   }
 
   /// Handle a bridge:status push event.

@@ -206,6 +206,7 @@ export type RpcMethods =
     | "saveClawhubToken"
     | "saveWebSearchEnabled"
     | "sendToOpenClaw"
+    | "sendToBridge"
     | "getPairedDiagnostics"
     | "saveSkillApiKeys"
    | "getPairingPayload"

@@ -1636,6 +1636,8 @@ export interface NodeService {
   saveSkillApiKeys(keys: Record<string, string>): Promise<{ ok: boolean }>;
   saveWebSearchEnabled(enabled: boolean): Promise<{ ok: boolean }>;
   sendToOpenClaw(text: string): Promise<void>;
+  /** Send a message to the external HTTP bridge agent. */
+  sendToBridge(text: string): Promise<void>;
   getPairedDiagnostics(): Promise<Record<string, unknown>>;
 
   /**

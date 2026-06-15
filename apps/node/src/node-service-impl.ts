@@ -348,6 +348,7 @@ import { normalizeGatewayBaseUrl } from "./ipfs-gateway.js";
 import { createAgentShareProposalStore } from "./agent-share-proposal-store.js";
 import { PUBLISHED_LIB_CAPABILITY } from "./discovery-inbound.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
+import { forwardToAgent, receiveFromAgent } from "./bridge/index.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 
 import { executeTool, type MeshToolContext } from "./tool-registry.js";
@@ -5002,6 +5003,75 @@ class NodeServiceImpl implements NodeService {
       body,
       signal: AbortSignal.timeout(300_000),
     });
+  }
+
+  /**
+   * Send a message to the external HTTP agent via the bridge.
+   * Persists the outbound message under the bridge agent's peer ID with
+   * deliveryChannel="agent" so it appears in the Ext Agent thread.
+   * The agent's reply arrives via receiveFromAgent → chat:message to the mobile.
+   */
+  async sendToBridge(text: string): Promise<void> {
+    const ownerId = this._profile?.owner?.ownerId ?? "";
+    const bridgeAgentPeerId = this._bridgeStatus?.agentPeerId?.trim();
+    if (!bridgeAgentPeerId) {
+      console.warn("[bridge] sendToBridge: no bridge agent configured");
+      return;
+    }
+
+    // Persist the outbound message so it appears in the Ext Agent thread on the home node.
+    const messageId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const outboundMsg: ChatMessage = {
+      messageId,
+      sender: {
+        nodeId: this._mesh?.peerId ?? "",
+        ownerId,
+        displayName: ownerId,
+        actorRole: "human",
+      },
+      recipient: {
+        nodeId: bridgeAgentPeerId,
+        ownerId: bridgeAgentPeerId,
+        displayName: this._bridgeStatus?.agentName ?? "Ext Agent",
+      },
+      content: { text },
+      metadata: {
+        timestamp: now,
+        deliveryReceipt: "sent",
+        deliveryChannel: "agent",
+        deliverySource: "bridge",
+      },
+      signature: "",
+    };
+    // Store under agentPeerId thread (Ext Agent thread)
+    this._persistChatMessage(bridgeAgentPeerId, outboundMsg);
+    // Emit for WebSocket-connected clients (Social desktop/mobile)
+    this.emit("chat:message", outboundMsg);
+
+    // Forward to the external agent via HTTP. forwardToAgent calls receiveFromAgent
+    // internally which delivers the reply back to the mobile via libp2p.
+    const bridgeConfig = this._bridgeStatus;
+    if (!bridgeConfig) return;
+
+    try {
+      await forwardToAgent(
+        {
+          enabled: true,
+          agentUrl: bridgeConfig.agentUrl,
+          listenPort: 0,
+          agentName: bridgeConfig.agentName,
+        } as any,
+        {
+          senderPeerId: this._mesh?.peerId ?? "",
+          senderOwnerId: ownerId,
+          senderDisplayName: ownerId,
+          text,
+        },
+      );
+    } catch (err) {
+      console.error("[bridge] sendToBridge: forwardToAgent failed:", err instanceof Error ? err.message : String(err));
+    }
   }
 
   async reloadOpenClawConfig(): Promise<void> {
