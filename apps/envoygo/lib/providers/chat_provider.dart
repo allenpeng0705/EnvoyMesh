@@ -420,12 +420,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final String threadId;
     if (isTerminal) {
       threadId = '${nodeState.activeNode!.id}:term:${terminalId ?? senderOwnerId}';
+    } else if (deliveryChannel == 'ai') {
+      // Built-in EnvoyAI assistant reply — goes to EnvoyAI thread regardless
+      // of senderOwnerId (which is the owner's own ID for the built-in AI).
+      threadId = '${nodeState.activeNode!.id}:envoyai';
+    } else if (isBridgeAgent) {
+      // Ext Agent reply via bridge — goes to Ext Agent thread.
+      threadId = '${nodeState.activeNode!.id}:external';
     } else if (agentTalkToContact) {
       // AI auto-reply for a contact → contact's thread only.
       threadId = '${nodeState.activeNode!.id}:$recipientOwnerId';
-    } else if (isAgent) {
-      // Chatting with EnvoyAI → envoyai thread.
-      threadId = '${nodeState.activeNode!.id}:$agentType';
     } else {
       threadId = '${nodeState.activeNode!.id}:$peerId';
     }
