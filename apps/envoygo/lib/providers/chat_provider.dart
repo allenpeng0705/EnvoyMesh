@@ -399,7 +399,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final terminalId = data['terminalId'] as String?;
     final terminalName = data['terminalName'] as String?;
     final externalAgent = data['agentType'] as String? ?? sender?['agentType'] as String?;
-    final agentType = externalAgent == 'external' ? 'external' : 'envoyai';
+    // deliveryChannel: "agent" + deliverySource: "bridge" = Ext Agent reply.
+    // Use this to correctly route bridge Ext Agent replies to the "external"
+    // thread even when senderOwnerId starts with "envoy_agent_" (which
+    // would otherwise match the EnvoyAI isAgent branch).
+    final deliveryChannel = metadata?['deliveryChannel'] as String?;
+    final deliverySource = metadata?['deliverySource'] as String?;
+    final isBridgeAgent = deliveryChannel == 'agent' && deliverySource == 'bridge';
+    final agentType = isBridgeAgent
+        ? 'external'
+        : (externalAgent == 'external' ? 'external' : 'envoyai');
 
     // Agent messages: if the recipient is a known contact → contact's thread.
     // If the recipient is the owner (chatting with EnvoyAI) → envoyai thread.
