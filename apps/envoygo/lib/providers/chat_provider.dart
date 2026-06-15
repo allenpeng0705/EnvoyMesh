@@ -336,6 +336,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // Skip messages with no text — they render as empty bubbles.
     if (text == null || text.isEmpty) return;
 
+    // Skip intro messages for contacts that are already bonded — they
+    // have no pending intro request so showing "Wants to connect" is wrong.
+    if (messageId != null && messageId!.startsWith('intro_')) {
+      final bonds = _ref.read(contactProvider).bonds;
+      if (bonds.any((c) => c.ownerId == senderOwnerId)) {
+        return; // Already bonded — skip intro message.
+      }
+    }
+
     // --- Identify the parties ---
     final selfOwnerId = nodeState.ownerId;
     final recipient = data['recipient'] as Map<String, dynamic>?;

@@ -2767,7 +2767,15 @@ class NodeServiceImpl implements NodeService {
       return primary as ChatMessage[];
     }
     const byId = new Map<string, ChatMessage>();
-    for (const row of [...legacy, ...primary]) {
+    // Only merge legacy bridge messages (deliveryChannel "ai" or unset) into
+    // EnvoyAI history. Messages with deliveryChannel "agent" belong to the
+    // Ext Agent thread and should not appear in the EnvoyAI panel.
+    for (const row of legacy) {
+      const meta = (row as ChatMessage).metadata;
+      if (meta?.deliveryChannel === "agent") continue;
+      byId.set(row.messageId, row as ChatMessage);
+    }
+    for (const row of primary) {
       byId.set(row.messageId, row as ChatMessage);
     }
     return [...byId.values()].sort(
@@ -9772,8 +9780,18 @@ class NodeServiceImpl implements NodeService {
       return { connected: false, direct: false };
     }
 
+    // Bridge agent is always local — short-circuit before peer directory lookup.
+    if (this._bridgeStatus?.agentPeerId && peerOwnerId === this._bridgeStatus.agentPeerId) {
+      return { connected: true, direct: true };
+    }
+
     try {
       const { transportPeerId } = await this._resolvePeerTransportForOwner(peerOwnerId);
+      // Self: the bridge agent or own owner resolves to the home node's peer ID.
+      // libp2p has no connection to self, so return connected for local peers.
+      if (transportPeerId === mesh.peerId) {
+        return { connected: true, direct: true };
+      }
       return mesh.getPeerConnectionInfo(transportPeerId);
     } catch {
       return { connected: false, direct: false };

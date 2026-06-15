@@ -24,7 +24,14 @@ export function isEnvoyAiChatMessage(msg: ChatMessage, selfOwnerId: string): boo
   if (msg.metadata?.deliveryChannel === "ai") {
     return true;
   }
-  if (msg.metadata?.deliverySource === "bridge" && rcvO === selfOwnerId.trim()) {
+  // Bridge messages with deliveryChannel "agent" belong to the Ext Agent thread,
+  // not the EnvoyAI panel. Only route legacy bridge messages (deliveryChannel "ai"
+  // or unset) to EnvoyAI.
+  if (
+    msg.metadata?.deliverySource === "bridge" &&
+    msg.metadata?.deliveryChannel !== "agent" &&
+    rcvO === selfOwnerId.trim()
+  ) {
     return true;
   }
   return false;

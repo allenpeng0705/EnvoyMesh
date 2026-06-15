@@ -124,6 +124,7 @@ export function createBridge(options: CreateBridgeOptions): {
   // --- HTTP server: agent → P2P / tools ---
   const server = http.createServer(async (req, res) => {
     const path = (req.url ?? "").split("?")[0] ?? "";
+    console.log(`[bridge] HTTP ${req.method} ${path} from=${req.socket?.remoteAddress ?? "?"}`);
 
     if (req.method === "GET" && path === "/bridge/list-tools") {
       if (secretTrimmed) {
@@ -143,6 +144,7 @@ export function createBridge(options: CreateBridgeOptions): {
     }
 
     if (req.method !== "POST") {
+      console.log(`[bridge] HTTP rejecting: method=${req.method} (not POST)`);
       res.writeHead(404).end();
       return;
     }
@@ -152,6 +154,7 @@ export function createBridge(options: CreateBridgeOptions): {
       path !== "/bridge/agent-share-proposal" &&
       path !== "/bridge/execute-tool"
     ) {
+      console.log(`[bridge] HTTP rejecting: unknown path="${path}"`);
       res.writeHead(404).end();
       return;
     }
@@ -159,6 +162,7 @@ export function createBridge(options: CreateBridgeOptions): {
     if (secretTrimmed) {
       const auth = req.headers["authorization"];
       if (auth !== `Bearer ${secretTrimmed}`) {
+        console.log(`[bridge] HTTP rejecting: auth mismatch (got="${auth?.slice(0, 30) ?? "none"}")`);
         res.writeHead(401).end(JSON.stringify({ ok: false, reason: "unauthorized" }));
         return;
       }
@@ -166,6 +170,7 @@ export function createBridge(options: CreateBridgeOptions): {
 
     // Gateway authorization: reject if agent session is revoked or missing
     if (options.gateway && agentId && !options.gateway.isAuthorized(agentId)) {
+      console.log(`[bridge] HTTP rejecting: agent not authorized (agentId=${agentId})`);
       res.writeHead(403).end(JSON.stringify({ ok: false, reason: "agent revoked" }));
       return;
     }
@@ -247,6 +252,7 @@ export function createBridge(options: CreateBridgeOptions): {
       const text = body.text;
       const correlationId = body.correlationId;
       if (typeof to !== "string" || typeof text !== "string" || !to.trim() || !text.trim()) {
+        console.log(`[bridge] HTTP rejecting: missing to/text (to=${JSON.stringify(to)}, text_len=${typeof text === "string" ? text.length : typeof text})`);
         res.writeHead(400).end(JSON.stringify({ ok: false, reason: "to and text are required" }));
         return;
       }

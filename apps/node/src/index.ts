@@ -3366,7 +3366,7 @@ const bridge = createBridge({
       messageId: envelope.messageId,
       sender: {
         nodeId: bridgeIdentity.agentPeerId,
-        ownerId: ENVOY_AI_THREAD_KEY,
+        ownerId: bridgeIdentity.agentPeerId,
         displayName: bridgeConfig.agentName ?? "EnvoyAI",
         actorRole: "agent" as const,
         agentId: bridgeIdentity.agentCredential.agentId,
@@ -3381,17 +3381,17 @@ const bridge = createBridge({
       metadata: {
         timestamp: envelope.createdAt,
         deliveryReceipt: "delivered" as const,
-        deliveryChannel: "ai" as const,
+        deliveryChannel: "agent" as const,
         deliverySource: "bridge" as const,
       },
       signature: envelope.signature,
     };
+    void chatLogStore.append(bridgeIdentity.agentPeerId, chatMsg).catch((err) =>
+      console.warn(`[bridge] chat log append failed:`, err),
+    );
     if (nodeService instanceof NodeServiceImpl) {
-      nodeService.recordEnvoyAiChatMessage(chatMsg);
+      nodeService.emit("chat:message", chatMsg);
     } else {
-      void chatLogStore.append(ENVOY_AI_THREAD_KEY, chatMsg).catch((err) =>
-        console.warn(`[bridge] chat log append failed:`, err),
-      );
       wsServerForEvents.emitEvent("chat:message", chatMsg);
     }
   },

@@ -7172,7 +7172,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
     const relayOpen = this._relaySockets.some((ws) => ws.readyState === WebSocket.OPEN);
     const isHomeBridge = peerOwnerId === this._state?.homeAgentPeerId;
     if (relayOpen && isHomeBridge && this._state?.homeNodePeerId) {
-      return { connected: false, direct: false, relayPeerId: this._relayUrls[0] };
+      return { connected: true, direct: false, relayPeerId: this._relayUrls[0] };
     }
     return { connected: false, direct: false };
   }
