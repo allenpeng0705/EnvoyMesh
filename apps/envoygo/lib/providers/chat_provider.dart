@@ -993,14 +993,20 @@ class ChatNotifier extends StateNotifier<ChatState> {
   /// on direct threads (where the name should be static).
   String _resolveThreadName(ChatThreadType type, String newName, String? existingName) {
     if (newName.isEmpty) return existingName ?? '';
-    // For direct and group threads, keep the existing name if it's set
-    // (not a raw owner ID or generic placeholder).
-    if ((type == ChatThreadType.direct || type == ChatThreadType.group) &&
-        existingName != null &&
-        existingName.isNotEmpty &&
-        !existingName.startsWith('envoy:owner:') &&
-        existingName != 'Group') {
-      return existingName;
+    // For all threads except unknown, keep the existing name once set.
+    // This prevents incoming messages from renaming threads.
+    // Direct/group threads already preserved raw owner IDs here.
+    // Agent threads (envoyai, externalAgent) also preserve — their name
+    // is set at creation time and must not change with each message.
+    if (existingName != null && existingName.isNotEmpty) {
+      if (type == ChatThreadType.direct || type == ChatThreadType.group) {
+        if (!existingName.startsWith('envoy:owner:') && existingName != 'Group') {
+          return existingName;
+        }
+      } else {
+        // envoyai and externalAgent: name is set at creation, never changes
+        return existingName;
+      }
     }
     return newName;
   }
@@ -1032,7 +1038,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final newThread = ChatThread(
       id: threadId,
       nodeId: nodeId,
-      type: type,
+      // For agent threads (envoyai, externalAgent), preserve the existing type
+      // once set — it is determined at creation time and must not be
+      // overwritten by a misclassified incoming message.
+      type: existing != null &&
+             (existing.type == ChatThreadType.envoyai ||
+              existing.type == ChatThreadType.externalAgent)
+          ? existing.type
+          : type,
       displayName: _resolveThreadName(
           type, displayName, existing?.displayName),
       contactOwnerId: contactOwnerId ?? existing?.contactOwnerId,
