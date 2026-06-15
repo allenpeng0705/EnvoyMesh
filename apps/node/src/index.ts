@@ -3329,6 +3329,11 @@ async function getRecipientDialHints(recipientPeerId: string): Promise<string[] 
   }
 }
 
+// Determine agent type before bridge creation so the closure can use it
+const assistantUrl = resolveAssistantAgentUrl(bridgeConfig);
+const agentType: "envoyai" | "external" =
+  assistantUrl.includes("/webhook/envoymesh") ? "envoyai" : "external";
+
 const bridge = createBridge({
   config: bridgeConfig,
   identity: bridgeIdentity,
@@ -3356,7 +3361,14 @@ const bridge = createBridge({
     }
   },
   onSelfSendEnvelope: async (envelope, _remotePeerId) => {
-    // Deliver bridge agent reply locally — emit chat:message + persist to log
+    // Built-in EnvoyAI: skip — runOwnerAgentTurn already persisted the AI reply
+    // via _persistEnvoyAiChatExchange and emitted chat:message. Emitting again
+    // here would create a duplicate in the Ext Agent thread and cause a race
+    // that corrupts the sort order on re-entry.
+    if (agentType === "envoyai") return;
+
+    // External HTTP agent: this is the only place that persists the AI reply
+    // and emits chat:message for the Ext Agent thread.
     const payload = parseChatMessagePayload(envelope.payload);
     if (!payload) { console.warn(`[bridge] onSelfSendEnvelope: failed to parse payload`); return; }
     if (!wsServerForEvents) { console.warn(`[bridge] onSelfSendEnvelope: wsServerForEvents not ready`); return; }
@@ -3416,14 +3428,7 @@ if (nodeService instanceof NodeServiceImpl) {
 }
 
 // Emit bridge status for Social UI and register bridge agent in peer directory.
-// Requires enabled + non-empty secret so UI matches an actually listening HTTP bridge.
 if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
-  // Determine agent type: built-in EnvoyAI vs external HTTP agent.
-  // resolveAssistantAgentUrl uses assistantAgentUrl if set, or agentUrl if it
-  // routes to /webhook/envoymesh, else defaults to the built-in webhook.
-  const assistantUrl = resolveAssistantAgentUrl(bridgeConfig);
-  const agentType: "envoyai" | "external" =
-    assistantUrl.includes("/webhook/envoymesh") ? "envoyai" : "external";
   nodeService.setBridgeStatus({
     enabled: true,
     agentPeerId: bridge.agentPeerId,
