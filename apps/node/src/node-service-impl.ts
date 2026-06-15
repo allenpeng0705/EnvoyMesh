@@ -2792,6 +2792,7 @@ class NodeServiceImpl implements NodeService {
   private async _persistEnvoyAiChatExchange(
     userText: string,
     turn: OwnerAgentTurnResult,
+    humanMessageId?: string,
   ): Promise<void> {
     const profile = this._profile;
     const mesh = this._reachableMesh();
@@ -2832,7 +2833,12 @@ class NodeServiceImpl implements NodeService {
       ...(turn.blocks?.length ? { blocks: turn.blocks } : {}),
     };
 
-    if (trimmed) {
+    // Only persist and emit the human message if the caller hasn't already
+    // done so (indicated by humanMessageId being undefined). When humanMessageId
+    // is provided (sendToOpenClaw passes its existing messageId), the caller has
+    // already emitted and stored the human message — emitting again would create
+    // a duplicate WS event and a second storage row with the same messageId.
+    if (trimmed && !humanMessageId) {
       this.recordEnvoyAiChatMessage({
         messageId: randomUUID(),
         sender: {
@@ -10145,7 +10151,8 @@ class NodeServiceImpl implements NodeService {
           approvalItems: [],
           modelUsed: "openclaw",
         };
-        await this._persistEnvoyAiChatExchange(message, result);
+        const humanMsgId = randomUUID();
+        await this._persistEnvoyAiChatExchange(message, result, humanMsgId);
         this._maybeIngestTerminalAssistantReply(terminalSessionId, answer);
         return result;
       } catch (err) {
