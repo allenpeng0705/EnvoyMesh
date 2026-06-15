@@ -5066,10 +5066,11 @@ class NodeServiceImpl implements NodeService {
           signal: AbortSignal.timeout(300_000),
         });
         if (!resp.ok) {
+          // If OpenClaw returns an error (e.g. 400, 404, 500), cancel the
+          // reply promise and fall through to the native LLM fallback below.
           const detail = await resp.text().catch(() => "");
-          throw new Error(
-            `OpenClaw webhook returned ${resp.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
-          );
+          console.warn(`[openclaw] webhook returned ${resp.status}: ${detail.slice(0, 200)}`);
+          this._cancelOpenClawReply(correlationId, new Error(`OpenClaw webhook ${resp.status}`));
         }
       })(),
     ]);
@@ -5092,7 +5093,13 @@ class NodeServiceImpl implements NodeService {
    * The agent's reply arrives via receiveFromAgent → chat:message to the mobile.
    */
   async sendToBridge(text: string): Promise<void> {
+    const mesh = this._reachableMesh();
     const ownerId = this._profile?.owner?.ownerId ?? "";
+    const meshPeerId = mesh?.peerId;
+    if (!meshPeerId) {
+      console.warn("[bridge] sendToBridge: mesh not ready (no peerId)");
+      return;
+    }
     const bridgeAgentPeerId = this._bridgeStatus?.agentPeerId?.trim();
     if (!bridgeAgentPeerId) {
       console.warn("[bridge] sendToBridge: no bridge agent configured");
@@ -5105,7 +5112,7 @@ class NodeServiceImpl implements NodeService {
     const outboundMsg: ChatMessage = {
       messageId,
       sender: {
-        nodeId: this._mesh?.peerId ?? "",
+        nodeId: meshPeerId,
         ownerId,
         displayName: ownerId,
         actorRole: "human",
@@ -5143,7 +5150,7 @@ class NodeServiceImpl implements NodeService {
           agentName: bridgeConfig.agentName,
         } as any,
         {
-          senderPeerId: this._mesh?.peerId ?? "",
+          senderPeerId: meshPeerId,
           senderOwnerId: ownerId,
           senderDisplayName: ownerId,
           text,
