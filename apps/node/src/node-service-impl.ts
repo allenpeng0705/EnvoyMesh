@@ -4035,17 +4035,55 @@ class NodeServiceImpl implements NodeService {
   >();
   private static readonly _openClawReplyTimeoutMs = 180_000;
   private static readonly _openClawRetrievedContextTimeoutMs = 25_000;
-  private static readonly _openClawStartupProbeAttempts = 90;
+  private static readonly _openClawStartupProbeAttempts = 300; // 300 × 1s = 5 minutes for cold start
+  private static readonly _openClawWatchdogIntervalMs = 60_000; // 1 minute between watchdog checks
   private _openclawActiveTurnTools: string[] | null = null;
   private _openClawAskInFlight = 0;
   private _openClawGatewayRouteRegistered = false;
   private _openClawLastProbeWarnAt = 0;
   private _openClawAskChain: Promise<unknown> = Promise.resolve();
+  private _openclawWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+  private _openclawWatchdogRunning = false;
 
   private _setOpenClawGatewayReady(ready: boolean): void {
     this._openclawGatewayReady = ready;
     if (!ready) {
       this._openClawGatewayRouteRegistered = false;
+    }
+  }
+
+  /**
+   * Watchdog: if the gateway has been ready but the route stops responding,
+   * restart it automatically. Runs every _openClawWatchdogIntervalMs once started.
+   */
+  private _startOpenClawWatchdog(): void {
+    if (this._openclawWatchdogRunning) return;
+    this._openclawWatchdogRunning = true;
+    const tick = async () => {
+      if (!this._openclawWatchdogRunning) return;
+      // Only act if the gateway child is alive but the route is gone
+      if (
+        this._openclawGatewayChild &&
+        !this._openclawGatewayChild.killed &&
+        !this._openClawGatewayRouteRegistered
+      ) {
+        console.warn("[openclaw] Watchdog: gateway process alive but route unregistered — restarting");
+        this._openclawWatchdogRunning = false;
+        this._stopOpenClawWatchdog();
+        await this.startOpenClaw();
+        return;
+      }
+      if (!this._openclawWatchdogRunning) return;
+      this._openclawWatchdogTimer = setTimeout(tick, NodeServiceImpl._openClawWatchdogIntervalMs);
+    };
+    this._openclawWatchdogTimer = setTimeout(tick, NodeServiceImpl._openClawWatchdogIntervalMs);
+  }
+
+  private _stopOpenClawWatchdog(): void {
+    this._openclawWatchdogRunning = false;
+    if (this._openclawWatchdogTimer) {
+      clearTimeout(this._openclawWatchdogTimer);
+      this._openclawWatchdogTimer = null;
     }
   }
 
@@ -4154,6 +4192,7 @@ class NodeServiceImpl implements NodeService {
     if (this._openclawGatewayChild && !this._openclawGatewayChild.killed) {
       if (await this._waitForOpenClawGatewayReady()) {
         this._setOpenClawGatewayReady(true);
+        this._startOpenClawWatchdog();
         return true;
       }
       console.warn("[openclaw] Gateway process alive but webhook not responding");
@@ -4624,6 +4663,7 @@ class NodeServiceImpl implements NodeService {
       if (code) console.warn(`[openclaw] gateway exited code ${code}`);
       this._openclawGatewayChild = null;
       this._setOpenClawGatewayReady(false);
+      this._stopOpenClawWatchdog();
       this._rejectAllPendingOpenClawReplies("OpenClaw gateway stopped");
     });
     this._openclawGatewayChild = child;
@@ -4649,7 +4689,12 @@ class NodeServiceImpl implements NodeService {
 
     this._setOpenClawGatewayReady(gatewayReady);
 
-    // 7. HTTP runtime: POST to built-in OpenClaw webhook, await sync reply via bridge correlationId.
+    // 7. Start watchdog so a crashed gateway is auto-restarted.
+    if (gatewayReady) {
+      this._startOpenClawWatchdog();
+    }
+
+    // 8. HTTP runtime: POST to built-in OpenClaw webhook, await sync reply via bridge correlationId.
     this._openclawRuntime = {
       isReady: () => this.isOpenClawReady(),
       ask: async (prompt: string, envoyContext?: { policyPrompt?: string; retrievedContext?: string }) => {
@@ -4897,6 +4942,7 @@ class NodeServiceImpl implements NodeService {
   async stopOpenClaw(): Promise<void> {
     this._rejectAllPendingOpenClawReplies("OpenClaw stopped");
     this._setOpenClawGatewayReady(false);
+    this._stopOpenClawWatchdog();
     const proc = this._openclawGatewayChild;
     this._openclawGatewayChild = null;
     if (proc && !proc.killed) {
@@ -4983,13 +5029,26 @@ class NodeServiceImpl implements NodeService {
       /* best-effort context */
     }
 
+    // Use correlationId so the AI reply goes through resolveOpenClawReply →
+    // _persistEnvoyAiChatExchange (single, correct path) instead of
+    // receiveFromAgent → onSelfSendEnvelope (duplicate emission).
+    const correlationId = `oc-openclaw-${randomUUID()}`;
+    const replyPromise = this._waitForOpenClawReply(correlationId);
+
+    let fromName = ownerId;
+    try {
+      const profile = await this._humanProfileStore?.loadHumanProfile();
+      if (profile?.displayName?.trim()) fromName = profile.displayName.trim();
+    } catch { /* use ownerId */ }
+
     const body = JSON.stringify({
       from: this._mesh?.peerId ?? "",
       fromOwnerId: ownerId,
-      fromName: ownerId,
+      fromName,
       text,
       ...(policyPrompt?.trim() ? { policyPrompt: policyPrompt.trim() } : {}),
       ...(retrievedContext?.trim() ? { retrievedContext: retrievedContext.trim() } : {}),
+      correlationId,
     });
 
     const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -4997,11 +5056,32 @@ class NodeServiceImpl implements NodeService {
       headers.Authorization = `Bearer ${this._assistantAgentSecret}`;
     }
 
-    await fetch(this._assistantAgentUrl, {
-      method: "POST",
-      headers,
-      body,
-      signal: AbortSignal.timeout(300_000),
+    const [answer] = await Promise.all([
+      replyPromise,
+      (async () => {
+        const resp = await fetch(this._assistantAgentUrl, {
+          method: "POST",
+          headers,
+          body,
+          signal: AbortSignal.timeout(300_000),
+        });
+        if (!resp.ok) {
+          const detail = await resp.text().catch(() => "");
+          throw new Error(
+            `OpenClaw webhook returned ${resp.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
+          );
+        }
+      })(),
+    ]);
+
+    // Persist the AI response — same pattern as runOwnerAgentTurn.
+    await this._persistEnvoyAiChatExchange(text, {
+      answer,
+      domain: "knowledge",
+      intent: "knowledge",
+      toolsUsed: [],
+      approvalItems: [],
+      modelUsed: "openclaw",
     });
   }
 
