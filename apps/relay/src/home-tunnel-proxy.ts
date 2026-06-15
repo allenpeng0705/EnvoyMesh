@@ -56,6 +56,8 @@ export interface ProxyChannelState {
   /** Frames from the mobile received before the first `open-ack` or
    *  while orphaned; flushed on the next `open-ack`. */
   earlyBuffer: string[];
+  /** Timestamp (Date.now()) when the channel was last marked orphaned. */
+  orphanedAt?: number;
 }
 
 export interface HomeTunnelProxyOptions {
@@ -134,6 +136,20 @@ export interface HomeTunnelProxy {
  */
 const HOME_CLAIM_TIMEOUT_MS = 10_000;
 
+/**
+ * Maximum milliseconds an orphaned channel can survive before the
+ * mobile is disconnected and state is cleaned up. Prevents unbounded
+ * accumulation of stale channels when home nodes crash-repeat.
+ */
+const ORPHAN_CHANNEL_TIMEOUT_MS = 60_000;
+
+/**
+ * Maximum frames to buffer per channel while waiting for tunnel or
+ * open-ack. Prevents unbounded memory growth if tunnel is down for
+ * an extended period.
+ */
+const MAX_EARLY_BUFFER_FRAMES = 100;
+
 export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelProxy {
   const {
     maxHomeTunnels,
@@ -151,6 +167,7 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
   const proxyConnByTarget = new Map<string, Set<WebSocket>>();
   let proxyConnTotal = 0;
   let stopped = false;
+  let orphanSweeper: ReturnType<typeof setInterval> | undefined;
 
   // ---- Helpers ----
   const log = (msg: string): void => {
@@ -182,6 +199,31 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
     if (mobile.readyState !== WebSocket.OPEN) return;
     try { mobile.send(text); } catch { /* ignore */ }
   };
+
+  // ==========================================================================
+  // Orphan sweeper — closes channels that have been orphaned too long.
+  // ==========================================================================
+  const startOrphanSweeper = (): void => {
+    orphanSweeper = setInterval(() => {
+      if (stopped) return;
+      const cutoff = Date.now() - ORPHAN_CHANNEL_TIMEOUT_MS;
+      let cleaned = 0;
+      for (const [key, state] of proxyChannels.entries()) {
+        if (state.orphaned && state.orphanedAt && state.orphanedAt < cutoff) {
+          proxyChannels.delete(key);
+          proxyClaimResolvers.delete(state.channelId);
+          if (state.mobile.readyState === WebSocket.OPEN) {
+            try { state.mobile.close(1011, "orphan timeout"); } catch { /* ignore */ }
+          }
+          cleaned++;
+        }
+      }
+      if (cleaned > 0) {
+        warn(`home-tunnel-proxy: orphan sweeper cleaned ${cleaned} stale channel(s)`);
+      }
+    }, 30_000);
+  };
+  startOrphanSweeper();
 
   // ==========================================================================
   // handleHomeTunnel — registered on every /ws/home upgrade.
@@ -244,6 +286,7 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
           continue;
         }
         state.orphaned = false;
+        state.orphanedAt = undefined;
         state.active = false; // waiting for new open-ack
         // Set up a fresh claim promise for the new tunnel.
         let resolver: () => void = () => {};
@@ -395,6 +438,7 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
           continue;
         }
         state.orphaned = true;
+        state.orphanedAt = Date.now();
         state.active = false;
         // Notify the mobile of the drop (best-effort UX).
         sendToMobile(state.mobile, JSON.stringify({
@@ -510,6 +554,10 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
       // forwarded to the new tunnel when the re-claim's open-ack
       // arrives (see `handleHomeTunnel`'s `open-ack` branch).
       if (!state.active || state.orphaned) {
+        if (state.earlyBuffer.length >= MAX_EARLY_BUFFER_FRAMES) {
+          // Drop oldest frame to prevent unbounded growth
+          state.earlyBuffer.shift();
+        }
         state.earlyBuffer.push(text);
         return;
       }
@@ -517,6 +565,9 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
       if (!t || t.readyState !== WebSocket.OPEN) {
         // Tunnel died between open-ack and now; buffer and let the
         // re-claim flush.
+        if (state.earlyBuffer.length >= MAX_EARLY_BUFFER_FRAMES) {
+          state.earlyBuffer.shift();
+        }
         state.earlyBuffer.push(text);
         return;
       }
@@ -606,6 +657,10 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
     async shutdown() {
       if (stopped) return;
       stopped = true;
+      if (orphanSweeper) {
+        clearInterval(orphanSweeper);
+        orphanSweeper = undefined;
+      }
       // Close all mobile clients.
       for (const state of proxyChannels.values()) {
         if (state.mobile.readyState === WebSocket.OPEN) {

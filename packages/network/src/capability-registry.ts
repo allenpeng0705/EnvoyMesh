@@ -19,6 +19,13 @@ export interface CapabilityRegistryOptions {
    * `minimal` — register only (full node as `--relay-server`).
    */
   verbosity?: CapabilityRegistryVerbosity;
+  /** Maximum entries in the registry. Default: 10,000. 0 = no limit. */
+  maxEntries?: number;
+  /**
+   * How many entries to evict when at capacity (fraction of maxEntries).
+   * Default: 0.1 (10%). Set to 0 to disable LRU eviction.
+   */
+  evictFraction?: number;
 }
 
 interface RegistryEntry {
@@ -30,6 +37,8 @@ interface RegistryEntry {
     | { descriptor: string }
   >;
   expiresAt: Date;
+  /** Monotonic insertion order used for LRU eviction. */
+  insertOrder: number;
 }
 
 export class CapabilityRegistry {
@@ -38,11 +47,16 @@ export class CapabilityRegistry {
   private readonly typeIndex = new Map<string, Set<string>>();
   private readonly logPrefix: string;
   private readonly fullLogs: boolean;
+  private readonly maxEntries: number;
+  private readonly evictFraction: number;
+  private _insertOrderCounter = 0;
 
   constructor(opts: CapabilityRegistryOptions = {}) {
     this.logPrefix = opts.logPrefix ?? "[rendezvous-registry]";
     const v = opts.verbosity ?? "minimal";
     this.fullLogs = v === "full";
+    this.maxEntries = opts.maxEntries ?? 10_000;
+    this.evictFraction = opts.evictFraction ?? 0.1;
   }
 
   private p(msg: string): string {
@@ -50,6 +64,20 @@ export class CapabilityRegistry {
   }
 
   register(payload: RendezvousRegisterPayload): void {
+    // Evict oldest entries if at capacity (LRU)
+    if (this.maxEntries > 0 && this.fullIndex.size >= this.maxEntries) {
+      const evictCount = Math.max(1, Math.floor(this.maxEntries * this.evictFraction));
+      // Sort entries by insertOrder ascending and evict the oldest
+      const entries = Array.from(this.fullIndex.values())
+        .sort((a, b) => a.insertOrder - b.insertOrder);
+      for (let i = 0; i < evictCount && i < entries.length; i++) {
+        this.unregister(entries[i].peerId);
+      }
+      if (this.fullLogs) {
+        console.log(this.p(`Evicted ${Math.min(evictCount, entries.length)} entries to make room`));
+      }
+    }
+
     this.unregister(payload.peerId);
 
     const expiresAt = new Date(Date.now() + payload.ttlSeconds * 1000);
@@ -59,6 +87,7 @@ export class CapabilityRegistry {
       multiaddr: payload.multiaddr,
       capabilities: payload.capabilities,
       expiresAt,
+      insertOrder: this._insertOrderCounter++,
     };
 
     this.fullIndex.set(payload.peerId, entry);

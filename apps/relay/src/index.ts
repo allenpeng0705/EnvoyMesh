@@ -202,15 +202,22 @@ function checkRegistrationRateLimit(peerId: string): boolean {
 // ============================================================================
 // MESSAGE DEDUPLICATION: Prevent processing the same message ID twice
 // ============================================================================
-const seenMessageIds = new Set<string>();
+const seenMessageIds = new Map<string, number>(); // messageId → timestamp
 const MAX_SEEN_MESSAGE_IDS = 100_000;
+const SEEN_MESSAGE_ID_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 function isMessageSeen(messageId: string): boolean {
   // Guard against invalid input
   if (!messageId || typeof messageId !== "string") {
     return true; // Treat invalid IDs as "seen" to reject them
   }
-  return seenMessageIds.has(messageId);
+  const ts = seenMessageIds.get(messageId);
+  if (!ts) return false;
+  if (Date.now() - ts > SEEN_MESSAGE_ID_TTL_MS) {
+    seenMessageIds.delete(messageId);
+    return false;
+  }
+  return true;
 }
 
 function markMessageSeen(messageId: string): void {
@@ -219,22 +226,27 @@ function markMessageSeen(messageId: string): void {
     return;
   }
 
-  // Evict oldest entries if we're at capacity
+  // Evict oldest and expired entries if we're at capacity
   if (seenMessageIds.size >= MAX_SEEN_MESSAGE_IDS) {
-    // Remove oldest 10% to avoid frequent eviction
     const targetSize = Math.floor(MAX_SEEN_MESSAGE_IDS * 0.1);
+    const now = Date.now();
     let removed = 0;
-    for (const id of seenMessageIds) {
+    // Sort by timestamp ascending and evict the oldest expired ones first
+    const entries = Array.from(seenMessageIds.entries())
+      .sort(([, a], [, b]) => a - b);
+    for (const [id, ts] of entries) {
       if (removed >= targetSize) break;
-      seenMessageIds.delete(id);
-      removed++;
+      if (now - ts > SEEN_MESSAGE_ID_TTL_MS || removed < targetSize) {
+        seenMessageIds.delete(id);
+        removed++;
+      }
     }
   }
-  seenMessageIds.add(messageId);
+  seenMessageIds.set(messageId, Date.now());
 }
 
 // ============================================================================
-// PERIODIC CLEANUP: Rate limit map
+// PERIODIC CLEANUP: Rate limit map and seen message IDs
 // ============================================================================
 rateLimitCleanupInterval = setInterval(() => {
   try {
@@ -251,6 +263,23 @@ rateLimitCleanupInterval = setInterval(() => {
     }
   } catch (err) {
     console.error("[relay] Rate limit cleanup error:", err);
+  }
+
+  // Clean up expired seenMessageIds entries (TTL-based)
+  try {
+    const cutoff = Date.now() - SEEN_MESSAGE_ID_TTL_MS;
+    let cleaned = 0;
+    for (const [id, ts] of seenMessageIds) {
+      if (ts < cutoff) {
+        seenMessageIds.delete(id);
+        cleaned++;
+      }
+    }
+    if (cleaned > 0) {
+      console.log(`[relay] Seen message IDs cleanup: removed ${cleaned} expired entries`);
+    }
+  } catch (err) {
+    console.error("[relay] Seen message IDs cleanup error:", err);
   }
 }, 60_000);
 

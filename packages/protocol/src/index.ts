@@ -700,7 +700,7 @@ export const ShareRequestPayloadSchema = z.object({
    */
   fileOrigin: z.enum(["responder", "sender"]).default("responder"),
   /** `chat`: deliver inline in a chat thread (direct bonds may auto-accept). Default: inbox offer. */
-  deliveryChannel: z.enum(["inbox", "chat"]).default("inbox"),
+  deliveryChannel: z.enum(["inbox", "chat", "agent"]).default("inbox"),
   /** When set, completed file transfer updates this group message attachment. */
   chatRoomId: z.string().uuid().optional(),
   chatMessageId: z.string().uuid().optional(),
@@ -2245,7 +2245,7 @@ export interface CreateShareRequestPayloadInput {
   requestedSensitivity?: Sensitivity;
   correlationId?: string;
   fileOrigin?: "responder" | "sender";
-  deliveryChannel?: "inbox" | "chat";
+  deliveryChannel?: "inbox" | "chat" | "agent";
   chatRoomId?: string;
   chatMessageId?: string;
   chatAttachmentId?: string;

@@ -143,7 +143,7 @@ export interface ChatMessage {
     metadata: {
         timestamp: string;
         deliveryReceipt?: "pending" | "sent" | "delivered" | "read" | "failed";
-        deliveryChannel?: "ai" | "inbox" | "chat";
+        deliveryChannel?: "ai" | "inbox" | "chat" | "agent";
         deliverySource?: "bridge";
     };
     signature: string;
@@ -1104,7 +1104,7 @@ export interface NodeService {
     shareFile(targetOwnerId: string, file: {
         path: string;
         sensitivity: ChatAttachment["sensitivity"];
-        deliveryChannel?: "inbox" | "chat";
+        deliveryChannel?: "inbox" | "chat" | "agent";
     }): Promise<void>;
     /**
      * Accept incoming file share

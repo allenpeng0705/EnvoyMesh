@@ -571,7 +571,7 @@ class NodeServiceImpl implements NodeService {
   /** Outbound push: our `share.request` message id → until we receive `share.preview`. */
   private readonly _pendingPushShareByRequestMsgId = new Map<
     string,
-    { relativePath: string; toPeerId: string; deliveryChannel?: "inbox" | "chat" }
+    { relativePath: string; toPeerId: string; deliveryChannel?: "inbox" | "chat" | "agent" }
   >();
   /** Outbound pull: peer vault path requested via fileOrigin=responder until preview arrives. */
   private readonly _pendingPullShareByRequestMsgId = new Map<
@@ -586,7 +586,7 @@ class NodeServiceImpl implements NodeService {
   /** After inbound `share.preview`: preview message id → send file to peer (we are holder). */
   private readonly _pendingFileSendByPreviewMsgId = new Map<
     string,
-    { relativePath: string; toPeerId: string; deliveryChannel?: "inbox" | "chat" }
+    { relativePath: string; toPeerId: string; deliveryChannel?: "inbox" | "chat" | "agent" }
   >();
   /** `share.accept` arrived before inbound `share.preview` linked the pending send. */
   private readonly _deferredShareAcceptByPreviewId = new Map<
@@ -1006,7 +1006,7 @@ class NodeServiceImpl implements NodeService {
     previewText: string;
     sensitivity: "public" | "friends" | "private";
     relativePath: string;
-    deliveryChannel?: "inbox" | "chat";
+    deliveryChannel?: "inbox" | "chat" | "agent";
     chatRoomId?: string;
     chatMessageId?: string;
     chatAttachmentId?: string;
@@ -6951,7 +6951,7 @@ class NodeServiceImpl implements NodeService {
     file: {
       path: string;
       sensitivity: "public" | "friends" | "private";
-      deliveryChannel?: "inbox" | "chat";
+      deliveryChannel?: "inbox" | "chat" | "agent";
     },
   ): Promise<void> {
     await this._shareFileInternal(targetOwnerId, file);
@@ -7039,7 +7039,7 @@ class NodeServiceImpl implements NodeService {
     file: {
       path: string;
       sensitivity: "public" | "friends" | "private";
-      deliveryChannel?: "inbox" | "chat";
+      deliveryChannel?: "inbox" | "chat" | "agent";
       chatRoomId?: string;
       chatMessageId?: string;
       chatAttachmentId?: string;

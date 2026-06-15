@@ -230,7 +230,7 @@ export interface ChatMessage {
     timestamp: string;
     deliveryReceipt?: "pending" | "sent" | "delivered" | "read" | "failed";
     /** UI routing: bridge reminders and proactive OpenClaw replies → EnvoyAI chat. */
-    deliveryChannel?: "ai" | "inbox" | "chat";
+    deliveryChannel?: "ai" | "inbox" | "chat" | "agent";
     /** Origin of a locally delivered bridge message (diagnostics only). */
     deliverySource?: "bridge";
     /** EnvoyAI turn metadata for job chips / approvals after reload. */
@@ -1449,7 +1449,7 @@ export interface NodeService {
     file: {
       path: string;
       sensitivity: ChatAttachment["sensitivity"];
-      deliveryChannel?: "inbox" | "chat";
+      deliveryChannel?: "inbox" | "chat" | "agent";
     },
   ): Promise<void>;
 
