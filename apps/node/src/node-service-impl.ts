@@ -2868,7 +2868,7 @@ class NodeServiceImpl implements NodeService {
         sender: {
           nodeId: bridgeAgentPeerId,
           ownerId: ENVOY_AI_THREAD_KEY,
-          displayName: bridgeAgentId ?? "EnvoyAI",
+          displayName: "EnvoyAI",
           actorRole: "agent",
           agentVerified: true,
         },
@@ -5081,7 +5081,8 @@ class NodeServiceImpl implements NodeService {
       })(),
     ]);
 
-    // Persist the AI response — same pattern as runOwnerAgentTurn.
+    // Persist the AI response — reuse the existing human messageId so we don't
+    // create a duplicate storage row and duplicate WS event.
     await this._persistEnvoyAiChatExchange(text, {
       answer,
       domain: "knowledge",
@@ -5089,7 +5090,7 @@ class NodeServiceImpl implements NodeService {
       toolsUsed: [],
       approvalItems: [],
       modelUsed: "openclaw",
-    });
+    }, messageId);
   }
 
   /**
