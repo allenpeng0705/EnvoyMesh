@@ -53,6 +53,7 @@ import type {
   ImportToLibraryResult,
   IpfsEngineStatus,
   RagIndexStatus,
+  SendChatParams,
 } from "@envoymesh/api";
 import { isChatRoomThreadKey, ENVOY_AI_THREAD_KEY, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
@@ -126,7 +127,7 @@ export interface NodeServiceClient {
   declineSocialIntroProposal(messageId: string): Promise<void>;
 
   // Messaging
-  sendChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
+  sendChat(targetOwnerId: string, text: string, attachments?: SendChatParams["attachments"]): Promise<SendChatResult>;
   sendAgentChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
   sendChatAttachment(params: SendChatAttachmentParams): Promise<SendChatAttachmentResult>;
   readLibraryItemContent(params: ReadLibraryItemContentParams): Promise<ReadLibraryItemContentResult>;

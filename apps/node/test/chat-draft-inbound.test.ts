@@ -1392,4 +1392,26 @@ describe("Vault Sensitivity", () => {
     // Should succeed but personal vault data should not be included due to maxSensitivity=friends
     expect(result.ok).toBe(true);
   });
+
+  // Phase 37 — audio message fallback text
+  it("accepts audio-message fallback text as valid chatText", async () => {
+    const result = await generateChatDraft({
+      envelope: chatEnvelope("peer-b", "envoy:owner:bob", "[Audio message — no transcription available]"),
+      senderOwnerId: "envoy:owner:bob",
+      senderDisplayName: "Bob",
+      chatText: "[Audio message — no transcription available]",
+      remotePeerId: "remote-libp2p",
+      receivedAt: Date.now(),
+      correlationId: "corr-audio-1",
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      profile: makeTestProfile(),
+      draftStore,
+      modelProviders: { mode: "mock" },
+      chatAssistEnabled: true,
+    });
+    // Should succeed — the fallback text is valid input for the AI
+    expect(result.ok).toBe(true);
+  });
 });

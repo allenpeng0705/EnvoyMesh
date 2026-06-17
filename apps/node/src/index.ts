@@ -2013,12 +2013,18 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         !skipAgentChatAssist
       ) {
         const senderDisplayName = senderTrust?.displayName ?? payload.senderOwnerId;
-        console.log(`[chat] generating draft for message from ${senderDisplayName}: ${payload.text}`);
+        // Phase 37 — if message has audio attachments but no text, set fallback for AI
+        let chatText = payload.text;
+        const hasAudioAttachment = payload.attachments?.some((a) => a.mimeType?.startsWith("audio/"));
+        if (!chatText.trim() && hasAudioAttachment) {
+          chatText = "[Audio message — no transcription available]";
+        }
+        console.log(`[chat] generating draft for message from ${senderDisplayName}: ${chatText}`);
         void generateChatDraft({
           envelope,
           senderOwnerId: payload.senderOwnerId,
           senderDisplayName,
-          chatText: payload.text,
+          chatText,
           remotePeerId,
           receivedAt,
           correlationId,

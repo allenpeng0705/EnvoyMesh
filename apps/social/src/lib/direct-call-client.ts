@@ -188,8 +188,8 @@ export class DirectCallClient implements NodeServiceClient {
   // Messaging
   // -----------------------------------------------------------------------
 
-  async sendChat(targetOwnerId: string, text: string) {
-    return this._ns.sendChat(targetOwnerId, text);
+  async sendChat(targetOwnerId: string, text: string, attachments?: Parameters<typeof this._ns.sendChat>[2]) {
+    return this._ns.sendChat(targetOwnerId, text, attachments as any);
   }
 
   async sendAgentChat(targetOwnerId: string, text: string) {

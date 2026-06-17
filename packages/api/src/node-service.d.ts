@@ -957,7 +957,7 @@ export interface NodeService {
     /**
      * Send a chat message to a bonded peer
      */
-    sendChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
+    sendChat(targetOwnerId: string, text: string, attachments?: SendChatParams["attachments"]): Promise<SendChatResult>;
     /**
      * Send AI/agent chat with honest wire role (`senderRole=agent` + `agentCredential`).
      */

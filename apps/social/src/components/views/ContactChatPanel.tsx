@@ -29,6 +29,7 @@ import {
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatFileAttachment } from "../ChatFileAttachment.js";
+import { ChatAudioAttachment } from "../ChatAudioAttachment.js";
 import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
 import { EditIcon, ChatIcon, BridgeIcon, P2PIcon, AttachIcon, RemoveIcon } from "../../icons.js";
 import { ChatComposer } from "../ChatComposer.js";
@@ -84,6 +85,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     connectionStatus,
     refreshNodeConfig,
     humanProfile,
+    peerId,
   } = useNodeState();
 
   const { messages, isOutgoing, removeMessage, clearThread } = useChatMessages(selectedContact);
@@ -178,6 +180,29 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   const [sendError, setSendError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastChatSendRef = useRef<{ at: number; contact: string; text: string } | null>(null);
+
+  // Phase 37 — audio recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const speechRef = useRef<any>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const transcriptionRef = useRef("");
+  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const MAX_RECORD_SECONDS = 120;
+
+  // Phase 37 — cleanup recording on unmount
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      if (speechRef.current) {
+        try { speechRef.current.stop(); } catch { /* ignore */ }
+      }
+      if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+    };
+  }, []);
 
   const nodeMeshOnline = connectionStatus?.online === true;
   const contactReachable = peerReachability?.connected === true;
@@ -362,6 +387,148 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
     return btoa(binary);
   };
+
+  // Phase 37 — record audio with MediaRecorder + SpeechRecognition
+  const handleRecordAudio = useCallback(async () => {
+    if (isRecording) {
+      // Stop recording
+      mediaRecorderRef.current?.stop();
+      speechRef.current?.stop();
+      if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+      setIsRecording(false);
+
+      // Wait for the recorder to finalize the blob
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          if (audioChunksRef.current.length > 0) resolve();
+          else setTimeout(check, 50);
+        };
+        check();
+      });
+
+      const mimeType = mediaRecorderRef.current?.mimeType ?? "audio/webm";
+      const blob = new Blob(audioChunksRef.current, { type: mimeType });
+      const transcription = transcriptionRef.current.trim();
+      audioChunksRef.current = [];
+      transcriptionRef.current = "";
+
+      if (blob.size === 0) return;
+
+      try {
+        const contentBase64 = await fileToBase64(new File([blob], `voice-${Date.now()}.${mimeType.includes("mp4") ? "m4a" : "webm"}`, { type: mimeType }));
+        const result = await nodeService.sendChatAttachment({
+          targetOwnerId: selectedContact,
+          filename: `voice-note.${mimeType.includes("mp4") ? "m4a" : "webm"}`,
+          contentBase64,
+          mimeType,
+          caption: transcription || undefined,
+        });
+        // Send as chat message with audio attachment metadata + transcription as text
+        const tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        setPendingOutbound((prev) => [
+          ...prev,
+          {
+            messageId: tempId,
+            sender: { nodeId: peerId, ownerId: humanProfile?.ownerId ?? "", displayName: humanProfile?.displayName ?? "", actorRole: "human", agentId: "", agentVerified: false },
+            recipient: { nodeId: selectedContact, ownerId: selectedContact, displayName: "" },
+            content: {
+              text: transcription || "",
+              attachments: [{ id: result.attachmentId, filename: `voice-note.${mimeType.includes("mp4") ? "m4a" : "webm"}`, mimeType, sizeBytes: blob.size, sensitivity: "friends", vaultRelativePath: result.vaultRelativePath }],
+            },
+            metadata: { timestamp: new Date().toISOString(), deliveryReceipt: "pending" as const },
+            signature: "",
+          } as ChatMessage,
+        ]);
+        // Actually send via P2P with attachment metadata
+        try {
+          const envelopeResult = await nodeService.sendChat(selectedContact, transcription || "", [{
+            id: result.attachmentId,
+            filename: `voice-note.${mimeType.includes("mp4") ? "m4a" : "webm"}`,
+            mimeType,
+            sizeBytes: blob.size,
+            sensitivity: "friends" as const,
+            vaultRelativePath: result.vaultRelativePath,
+          }]);
+          setPendingOutbound((prev) =>
+            prev.map((m) =>
+              m.messageId === tempId
+                ? { ...m, messageId: envelopeResult.messageId, metadata: { ...m.metadata, deliveryReceipt: envelopeResult.deliveryReceipt === "delivered" ? ("delivered" as const) : ("sent" as const) } }
+                : m,
+            ),
+          );
+        } catch {
+          setPendingOutbound((prev) =>
+            prev.map((m) => (m.messageId === tempId ? { ...m, metadata: { ...m.metadata, deliveryReceipt: "failed" as const } } : m)),
+          );
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : t("contactChat.sendFailed");
+        setSendError(msg);
+        setTimeout(() => setSendError(null), 8000);
+      }
+      return;
+    }
+
+    // Start recording
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setSendError(t("audioMessage.unsupported", "Audio recording not supported in this browser"));
+      setTimeout(() => setSendError(null), 5000);
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+      };
+      recorder.start(100); // collect chunks every 100ms
+
+      // Speech recognition (transcription)
+      const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognitionCtor) {
+        const recognition: any = new SpeechRecognitionCtor();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = navigator.language || "en-US";
+        speechRef.current = recognition;
+        recognition.onresult = (event: any) => {
+          let final = "";
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) final += event.results[i][0].transcript;
+          }
+          if (final) transcriptionRef.current = final;
+        };
+        recognition.start();
+      }
+
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      recordTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => {
+          if (prev >= MAX_RECORD_SECONDS - 1) {
+            // Auto-stop at max duration
+            mediaRecorderRef.current?.stop();
+            speechRef.current?.stop();
+            if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+            setIsRecording(false);
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch {
+      setSendError(t("audioMessage.micDenied", "Microphone access denied"));
+      setTimeout(() => setSendError(null), 5000);
+    }
+  }, [isRecording, selectedContact, nodeService, peerId, humanProfile, t, fileToBase64]);
 
   const handleAttachFile = async (file: File) => {
     if (!nodeMeshOnline) {
@@ -632,9 +799,14 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                           onDelete={() => void handleDeleteMessage(msg.messageId)}
                         >
                           <ChatMessageText text={msg.content.text} identity={aiIdentity} />
-                          {msg.content.attachments?.map((attachment) => (
-                            <ChatFileAttachment key={attachment.id} attachment={attachment} />
-                          ))}
+                          {msg.content.attachments?.map((attachment) => {
+                            const isAudio = attachment.mimeType?.startsWith("audio/");
+                            return isAudio ? (
+                              <ChatAudioAttachment key={attachment.id} attachment={attachment} transcription={msg.content.text?.trim() || undefined} />
+                            ) : (
+                              <ChatFileAttachment key={attachment.id} attachment={attachment} />
+                            );
+                          })}
                         </ChatMessageBubble>
                       ))}
                     </div>
@@ -760,6 +932,21 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
           disabled={!nodeMeshOnline}
           leading={
             <>
+              {/* Phase 37 — mic button for audio recording */}
+              <button
+                type="button"
+                className={`secondary chat-mic-btn${isRecording ? " recording" : ""}`}
+                title={isRecording ? t("audioMessage.recording", "Recording… tap to stop") : t("audioMessage.record", "Record voice note")}
+                aria-label={isRecording ? t("audioMessage.recording", "Recording… tap to stop") : t("audioMessage.record", "Record voice note")}
+                disabled={!nodeMeshOnline}
+                onClick={() => void handleRecordAudio()}
+              >
+                {isRecording ? (
+                  <span className="chat-mic-recording-indicator">{recordingSeconds}s</span>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                )}
+              </button>
               <button
                 type="button"
                 className="secondary chat-attach-file-btn"

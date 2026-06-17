@@ -1,6 +1,7 @@
 import type {
   NodeService,
   RpcMethods,
+  SendChatParams,
   HomeClawCoreProxyParams,
   ListLibraryItemsParams,
   DiscoverPublishedLibraryParams,
@@ -97,7 +98,7 @@ export async function routeRpcMethod(
     case "declineSocialIntroProposal":
       return ns.declineSocialIntroProposal(params.messageId as string);
     case "sendChat":
-      return ns.sendChat(params.targetOwnerId as string, params.text as string);
+      return ns.sendChat(params.targetOwnerId as string, params.text as string, params.attachments as SendChatParams["attachments"]);
     case "sendAgentChat":
       return ns.sendAgentChat(params.targetOwnerId as string, params.text as string);
     case "sendChatAttachment":

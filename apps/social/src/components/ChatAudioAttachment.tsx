@@ -1,0 +1,68 @@
+/**
+ * ChatAudioAttachment — audio message player (Phase 37).
+ *
+ * Renders an HTML5 <audio> element with playback controls for voice notes
+ * sent via chat. Fetches the raw audio bytes from the vault and renders
+ * them as a data: URI. If a transcription is available (passed via the
+ * optional `transcription` prop), it is shown as captions below the player.
+ */
+
+import { useEffect, useState, useCallback } from "react";
+import { useT } from "../context/I18nContext.js";
+import { useNodeService } from "../hooks/useNodeService.js";
+import type { ChatAttachment } from "@envoymesh/api";
+
+export interface ChatAudioAttachmentProps {
+  attachment: ChatAttachment;
+  /** Transcription text, if available (e.g. from Web Speech API). */
+  transcription?: string;
+}
+
+export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAttachmentProps) {
+  const t = useT();
+  const nodeService = useNodeService();
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const vaultPath = attachment.vaultRelativePath?.replace(/^[\\/]+/, "");
+
+  const loadAudio = useCallback(async () => {
+    if (!vaultPath) return;
+    setLoading(true);
+    setError(false);
+    try {
+      const result = await nodeService.readLibraryItemContent({ relativePath: vaultPath });
+      setAudioUrl(`data:${result.mimeType};base64,${result.contentBase64}`);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [nodeService, vaultPath]);
+
+  useEffect(() => {
+    void loadAudio();
+  }, [loadAudio]);
+
+  return (
+    <div className="chat-audio-attachment">
+      {loading ? (
+        <span className="chat-audio-loading">{t("audioMessage.loading", "Loading audio…")}</span>
+      ) : error || !audioUrl ? (
+        <span className="chat-audio-error">{t("audioMessage.error", "Audio unavailable")}</span>
+      ) : (
+        <audio className="chat-audio-player" controls preload="metadata" src={audioUrl}>
+          {t("audioMessage.unsupported", "Your browser does not support audio playback.")}
+        </audio>
+      )}
+      {transcription ? (
+        <p className="chat-audio-transcription">{transcription}</p>
+      ) : null}
+      {attachment.sizeBytes != null ? (
+        <span className="chat-audio-duration">
+          {t("audioMessage.duration", { seconds: Math.round(attachment.sizeBytes / 4000) })}
+        </span>
+      ) : null}
+    </div>
+  );
+}

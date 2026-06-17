@@ -362,4 +362,15 @@ export const inboxMessages = {
   messagesBeforeBonding: "Messages before bonding ({count})",
   defaultUserName: "Envoy User",
   defaultHello: "Hello!",
+  // Phase 37 — Audio Messages
+  audioMessage: {
+    record: "Record voice note",
+    recording: "Recording… tap to stop",
+    loading: "Loading audio…",
+    error: "Audio unavailable",
+    unsupported: "Your browser does not support audio playback.",
+    duration: "{seconds}s",
+    micDenied: "Microphone access denied",
+    noTranscription: "[Audio message — no transcription available]",
+  },
 } as const;

@@ -471,6 +471,63 @@ describe("protocol", () => {
     expect(parseChatMessagePayload(payload)).toEqual(payload);
   });
 
+  // Phase 37 — audio attachments on chat.message
+  it("roundtrips chat.message payload with audio attachment", () => {
+    const attachment = {
+      id: "00000000-0000-4000-a000-000000000001",
+      filename: "voice-note.webm",
+      mimeType: "audio/webm;codecs=opus",
+      sizeBytes: 48000,
+      sensitivity: "friends" as const,
+    };
+    const payload = createChatMessagePayload({
+      senderOwnerId: "envoy:owner:alice",
+      text: "check this out",
+      attachments: [attachment],
+    });
+    const parsed = parseChatMessagePayload(payload);
+    expect(parsed.text).toBe("check this out");
+    expect(parsed.attachments).toHaveLength(1);
+    expect(parsed.attachments?.[0]?.mimeType).toBe("audio/webm;codecs=opus");
+  });
+
+  it("allows empty text when audio attachment is present (Phase 37)", () => {
+    const attachment = {
+      id: "00000000-0000-4000-a000-000000000002",
+      filename: "voice-note.webm",
+      mimeType: "audio/webm",
+      sizeBytes: 24000,
+      sensitivity: "friends" as const,
+    };
+    const payload = createChatMessagePayload({
+      senderOwnerId: "envoy:owner:alice",
+      text: "",
+      attachments: [attachment],
+    });
+    const parsed = parseChatMessagePayload(payload);
+    expect(parsed.text).toBe("");
+    expect(parsed.attachments).toHaveLength(1);
+  });
+
+  it("rejects payload with empty text and no attachments (Phase 37)", () => {
+    expect(() =>
+      createChatMessagePayload({
+        senderOwnerId: "envoy:owner:alice",
+        text: "",
+      }),
+    ).toThrow(/attachment is required/);
+  });
+
+  it("backward-compatible: old payloads without attachments still parse", () => {
+    const payload = createChatMessagePayload({
+      senderOwnerId: "envoy:owner:alice",
+      text: "hello",
+    });
+    const parsed = parseChatMessagePayload(payload);
+    expect(parsed.text).toBe("hello");
+    expect(parsed.attachments).toBeUndefined();
+  });
+
   it("roundtrips chat.message payload with optional device certificate", () => {
     const payload = createChatMessagePayload({
       senderOwnerId: "envoy:owner:alice",

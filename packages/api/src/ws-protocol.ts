@@ -918,6 +918,15 @@ export interface GetBondsParams {}
 export interface SendChatParams {
   targetOwnerId: string;
   text: string;
+  /** Phase 37 — optional attachments (audio, files) to include in the chat.message payload. */
+  attachments?: Array<{
+    id: string;
+    filename: string;
+    mimeType: string;
+    sizeBytes: number;
+    sensitivity: "public" | "friends" | "private";
+    vaultRelativePath?: string;
+  }>;
 }
 
 export interface MarkReadParams {

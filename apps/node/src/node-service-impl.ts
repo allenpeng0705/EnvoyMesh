@@ -82,6 +82,7 @@ import type {
   ImportToLibraryResult,
   RagIndexStatus,
   TransferStatus,
+  SendChatParams,
   SendChatAttachmentParams,
   SendChatAttachmentResult,
   SendChatRoomAttachmentParams,
@@ -3398,7 +3399,7 @@ class NodeServiceImpl implements NodeService {
     }
   }
 
-  async sendChat(targetOwnerId: string, text: string): Promise<SendChatResult> {
+  async sendChat(targetOwnerId: string, text: string, attachments?: SendChatParams["attachments"]): Promise<SendChatResult> {
     this._assertOnline();
     // Record owner activity when they send a message (keeps them "online" in automatic mode)
     this.recordOwnerActivity();
@@ -3441,6 +3442,14 @@ class NodeServiceImpl implements NodeService {
         payload: createChatMessagePayload({
           senderOwnerId: selfProfile.owner.ownerId,
           text: wireText,
+          attachments: attachments?.map((a: NonNullable<SendChatParams["attachments"]>[number]) => ({
+            id: a.id,
+            filename: a.filename,
+            mimeType: a.mimeType,
+            sizeBytes: a.sizeBytes,
+            sensitivity: a.sensitivity,
+            ...(a.vaultRelativePath ? { vaultRelativePath: a.vaultRelativePath } : {}),
+          })),
           ...chatMessagePayloadDeviceFields({
             deviceCertificate: selfProfile.deviceCertificate,
             ownerPublicKeyPem: selfProfile.owner.publicKeyPem,
@@ -3475,6 +3484,7 @@ class NodeServiceImpl implements NodeService {
       },
       content: {
         text: wireText,
+        ...(attachments?.length ? { attachments: attachments.map((a: NonNullable<SendChatParams["attachments"]>[number]) => ({ id: a.id, filename: a.filename, mimeType: a.mimeType, sizeBytes: a.sizeBytes, sensitivity: a.sensitivity, ...(a.vaultRelativePath ? { vaultRelativePath: a.vaultRelativePath } : {}) })) } : {}),
       },
       metadata: {
         timestamp: envelope.createdAt,

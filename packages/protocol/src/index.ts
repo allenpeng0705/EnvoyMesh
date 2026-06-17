@@ -1322,7 +1322,10 @@ function refineChatSenderDeviceFields(
 export const ChatMessagePayloadSchema = z
   .object({
     senderOwnerId: z.string().min(1),
-    text: z.string().min(1).max(128000),
+    /** Text body of the message. May be empty when an audio attachment is present (Phase 37). */
+    text: z.string().max(128000).default(""),
+    /** File / audio attachments (Phase 37). Reuses the same schema as group chat attachments. */
+    attachments: z.array(z.lazy(() => ChatRoomAttachmentSchema)).max(8).optional(),
     /** Owner-signed device certificate when sender is an authorized satellite/primary device. */
     deviceCertificate: DeviceCertificateSchema.optional(),
     /** Owner public key PEM — required when deviceCertificate is present (for cert verification). */
@@ -1330,6 +1333,16 @@ export const ChatMessagePayloadSchema = z
   })
   .superRefine((value, ctx) => {
     refineChatSenderDeviceFields(value, ctx);
+    // Phase 37: at least one of text or attachment must be present
+    const hasText = value.text.trim().length > 0;
+    const hasAttachment = value.attachments && value.attachments.length > 0;
+    if (!hasText && !hasAttachment) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Either text or an attachment is required",
+        path: ["text"],
+      });
+    }
   });
 
 function refineChatRoomSyncDeviceFields(
@@ -2893,7 +2906,8 @@ export function createRendezvousResponsePayload(
 
 export interface CreateChatMessagePayloadInput {
   senderOwnerId: string;
-  text: string;
+  text?: string;
+  attachments?: ChatRoomAttachment[];
   deviceCertificate?: DeviceCertificate;
   ownerPublicKeyPem?: string;
 }
@@ -2901,7 +2915,8 @@ export interface CreateChatMessagePayloadInput {
 export function createChatMessagePayload(input: CreateChatMessagePayloadInput): ChatMessagePayload {
   return ChatMessagePayloadSchema.parse({
     senderOwnerId: input.senderOwnerId,
-    text: input.text,
+    text: input.text ?? "",
+    attachments: input.attachments,
     deviceCertificate: input.deviceCertificate,
     ownerPublicKeyPem: input.ownerPublicKeyPem,
   });
