@@ -299,4 +299,12 @@ export const networkSettingsMessages = {
     revokeConfirm:
       'Revoke device "{label}"? It will no longer be able to send chat as your owner identity.',
   },
+  iceServers: {
+    title: "WebRTC ICE servers (STUN/TURN)",
+    desc: "Configure STUN and TURN servers for voice/video calls. Leave empty to use Google's public STUN servers (works for most home networks). Add a TURN server if you're behind a symmetric NAT (corporate firewall, some mobile carriers).",
+    placeholder: '[\n  { "urls": "stun:stun.l.google.com:19302" },\n  { "urls": "turn:turn.example.com:3478", "username": "envoymesh", "credential": "secret" }\n]',
+    hint: "Valid JSON array of RTCIceServer objects. Empty array = LAN only (no STUN/TURN).",
+    save: "Save",
+    saved: "Saved ✓",
+  },
 } as const;

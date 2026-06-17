@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/stored_node.dart';
 import '../services/web_socket_like.dart';
+import 'call_provider.dart';
 import 'chat_provider.dart';
 import 'contact_provider.dart';
 import 'terminal_provider.dart';
@@ -1202,3 +1203,19 @@ class NodeNotifier extends StateNotifier<NodeState> {
     return DateTime.now().microsecondsSinceEpoch.toRadixString(36);
   }
 }
+
+// --------------------------------------------------------------------------
+// Phase 38 — Voice/Video Call Provider
+// --------------------------------------------------------------------------
+
+final callProvider = ChangeNotifierProvider<CallProvider>((ref) {
+  final nodeState = ref.watch(nodeProvider);
+  final client = nodeState.client;
+  if (client == null) {
+    // Return a no-op provider when disconnected
+    return CallProvider.noop();
+  }
+  final provider = CallProvider(client);
+  ref.onDispose(() => provider.dispose());
+  return provider;
+});

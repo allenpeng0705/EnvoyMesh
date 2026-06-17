@@ -99,6 +99,28 @@ export async function routeRpcMethod(
       return ns.declineSocialIntroProposal(params.messageId as string);
     case "sendChat":
       return ns.sendChat(params.targetOwnerId as string, params.text as string, params.attachments as SendChatParams["attachments"]);
+    // Phase 38 — Voice/Video Calls
+    case "sendCallInvite":
+      return ns.sendCallInvite(params.targetOwnerId as string);
+    case "acceptCallInvite":
+      return ns.acceptCallInvite(params.callId as string);
+    case "declineCallInvite":
+      return ns.declineCallInvite(params.callId as string, (params.reason as string) ?? "declined");
+    case "endCall":
+      return ns.endCall(params.callId as string);
+    case "setCallMuted":
+      return ns.setCallMuted(params.callId as string, Boolean(params.muted));
+    // Phase 31I — Push Notifications
+    case "registerPushToken":
+      ns.registerPushToken({
+        platform: String(params.platform ?? "android"),
+        token: String(params.token ?? ""),
+        ownerId: String(params.ownerId ?? ""),
+        deviceId: params.deviceId !== undefined ? String(params.deviceId) : undefined,
+      });
+      return undefined;
+    case "unregisterPushToken":
+      return ns.unregisterPushToken(String(params.deviceId ?? ""));
     case "sendAgentChat":
       return ns.sendAgentChat(params.targetOwnerId as string, params.text as string);
     case "sendChatAttachment":

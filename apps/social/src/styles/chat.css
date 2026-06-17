@@ -2441,3 +2441,200 @@
   font-size: var(--text-xs);
   color: var(--color-muted, #64748b);
 }
+
+/* ==========================================================================
+   Phase 38 — Voice/Video Call UI
+   ========================================================================== */
+
+/* --- Calling-state banner (outbound ringing) --- */
+.calling-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  padding: 10px var(--space-3, 12px);
+  background: var(--color-surface-container, #f0f4ff);
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  font-size: var(--text-sm, 13px);
+}
+
+.calling-banner-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-primary, #2563eb);
+  animation: calling-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes calling-pulse {
+  0%  { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1.0; transform: scale(1.1); }
+  100%{ opacity: 0.3; transform: scale(0.8); }
+}
+
+.calling-banner-text {
+  flex: 1;
+  color: var(--color-on-surface, #1e293b);
+  font-weight: 500;
+}
+
+.calling-banner-cancel {
+  padding: 4px 12px;
+  border: 1px solid var(--color-error, #ef4444);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-error, #ef4444);
+  font-size: var(--text-xs, 12px);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.calling-banner-cancel:hover {
+  background: var(--color-error, #ef4444);
+  color: #fff;
+}
+
+/* --- Active call panel --- */
+.active-call-panel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 12px);
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  background: var(--color-surface-container, #f0f4ff);
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+}
+
+.active-call-panel .call-peer-name {
+  flex: 1;
+  font-size: var(--text-base, 14px);
+  font-weight: 600;
+  color: var(--color-on-surface, #1e293b);
+}
+
+.active-call-panel .call-duration {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-muted, #64748b);
+  font-variant-numeric: tabular-nums;
+}
+
+.active-call-panel .call-connection-state {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-muted, #64748b);
+}
+
+.active-call-panel button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.active-call-panel .btn-mute {
+  background: var(--color-surface-variant, #e2e8f0);
+  color: var(--color-on-surface-variant, #475569);
+}
+
+.active-call-panel .btn-mute.active {
+  background: var(--color-error, #ef4444);
+  color: #fff;
+}
+
+.active-call-panel .btn-end-call {
+  background: var(--color-error, #ef4444);
+  color: #fff;
+}
+
+.active-call-panel .btn-end-call:hover {
+  filter: brightness(0.9);
+}
+
+/* --- Incoming call modal --- */
+.incoming-call-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.incoming-call-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3, 12px);
+  padding: var(--space-6, 24px) var(--space-8, 32px);
+  background: var(--color-surface, #fff);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  max-width: 360px;
+  width: 90%;
+}
+
+.incoming-call-card .call-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--color-primary, #2563eb);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: calling-pulse 1.2s ease-in-out infinite;
+}
+
+.incoming-call-card .caller-name {
+  font-size: var(--text-xl, 20px);
+  font-weight: 700;
+  color: var(--color-on-surface, #1e293b);
+  text-align: center;
+}
+
+.incoming-call-card .caller-subtitle {
+  font-size: var(--text-sm, 13px);
+  color: var(--color-muted, #64748b);
+}
+
+.incoming-call-card .call-actions {
+  display: flex;
+  gap: var(--space-4, 16px);
+  margin-top: var(--space-2, 8px);
+}
+
+.incoming-call-card .call-actions button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-3, 12px) var(--space-5, 20px);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: var(--text-xs, 12px);
+  font-weight: 600;
+  transition: filter 0.15s;
+}
+
+.incoming-call-card .call-actions button:hover {
+  filter: brightness(0.9);
+}
+
+.incoming-call-card .btn-accept {
+  width: 72px;
+  height: 72px;
+  background: #22c55e;
+  color: #fff;
+}
+
+.incoming-call-card .btn-decline {
+  width: 72px;
+  height: 72px;
+  background: var(--color-error, #ef4444);
+  color: #fff;
+}

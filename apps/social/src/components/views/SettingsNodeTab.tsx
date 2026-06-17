@@ -65,6 +65,14 @@ export function SettingsNodeTab() {
   const [bootstrapPresetSyncNonce, setBootstrapPresetSyncNonce] = useState(0);
 
   const [friendMatchingDraft, setFriendMatchingDraft] = useState("");
+  // Phase 38 — WebRTC ICE servers
+  const [iceServersText, setIceServersText] = useState(
+    JSON.stringify(nodeConfig?.iceServers ?? [], null, 2),
+  );
+  const [iceServersSaved, setIceServersSaved] = useState(false);
+  useEffect(() => {
+    setIceServersText(JSON.stringify(nodeConfig?.iceServers ?? [], null, 2));
+  }, [nodeConfig?.iceServers]);
   const [gatewayAllowlistDraft, setGatewayAllowlistDraft] = useState("");
   const [ipfsEngineStatus, setIpfsEngineStatus] = useState<IpfsEngineStatus | null>(null);
   const [chatDiagContact, setChatDiagContact] = useState("");
@@ -1962,6 +1970,45 @@ export function SettingsNodeTab() {
           }}
         >
           {t("settings.network.twoNatSignOff.copyLedgerRow")}
+        </button>
+      </section>
+
+      {/* Phase 38 — WebRTC ICE servers (STUN/TURN) */}
+      <section className="settings-section">
+        <h3>{t("settings.network.iceServers.title")}</h3>
+        <p className="section-desc">
+          {t("settings.network.iceServers.desc")}
+        </p>
+        <textarea
+          className="settings-textarea"
+          rows={4}
+          placeholder={t("settings.network.iceServers.placeholder")}
+          value={iceServersText}
+          onChange={(e) => setIceServersText(e.target.value)}
+        />
+        <p className="section-desc muted">
+          {t("settings.network.iceServers.hint")}
+        </p>
+        <button
+          type="button"
+          className="settings-button"
+          style={{ marginTop: "8px" }}
+          onClick={async () => {
+            try {
+              const trimmed = iceServersText.trim();
+              const parsed = trimmed ? JSON.parse(trimmed) : [];
+              await nodeService.updateNodeConfig({ iceServers: parsed });
+              setIceServersSaved(true);
+              await refreshNodeConfig();
+              setTimeout(() => setIceServersSaved(false), 3000);
+            } catch {
+              // Invalid JSON — user is still editing
+            }
+          }}
+        >
+          {iceServersSaved
+            ? t("settings.network.iceServers.saved")
+            : t("settings.network.iceServers.save")}
         </button>
       </section>
     </>

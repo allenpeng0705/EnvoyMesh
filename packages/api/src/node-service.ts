@@ -2039,4 +2039,55 @@ export interface NodeService {
    * before invoking — this is destructive and cannot be undone.
    */
   clearAllUserData(): Promise<void>;
+
+  // ----- Phase 38 — Voice/Video Calls -----
+
+  /** Get the active call session, if any. */
+  getActiveCall(): CallSession | null;
+
+  /** Subscribe to call events. Returns unsubscribe function. */
+  onCallEvent(handler: (event: CallEvent) => void): () => void;
+
+  /** Initiate a voice call to a bonded peer. Returns callId or null if busy. */
+  sendCallInvite(targetOwnerId: string): Promise<string | null>;
+
+  /** Accept an incoming call. Returns true if the call was accepted. */
+  acceptCallInvite(callId: string): Promise<boolean>;
+
+  /** Decline/reject an incoming call. */
+  declineCallInvite(callId: string, reason: string): Promise<boolean>;
+
+  /** End a call (hangup). */
+  endCall(callId: string): Promise<boolean>;
+
+  /** Mute/unmute the local audio track for a call. */
+  setCallMuted(callId: string, muted: boolean): Promise<boolean>;
+
+  // ----- Phase 31I — Push Notifications -----
+
+  registerPushToken(params: { platform: string; token: string; ownerId: string; deviceId?: string }): void;
+  unregisterPushToken(deviceId: string): boolean;
 }
+
+// --------------------------------------------------------------------------
+// Phase 38 — Call types
+// --------------------------------------------------------------------------
+
+export type CallSessionStatus = "ringing" | "active" | "ended";
+
+export interface CallSession {
+  callId: string;
+  peerOwnerId: string;
+  callType: "audio";
+  status: CallSessionStatus;
+  startedAt?: string;
+  muted: boolean;
+}
+
+export type CallEvent =
+  | { type: "call:incoming"; callId: string; peerOwnerId: string; peerDisplayName: string; callType: "audio"; sdpOffer?: string }
+  | { type: "call:answered"; callId: string }
+  | { type: "call:rejected"; callId: string; reason: "busy" | "declined" | "offline" | "error" | "no_answer" }
+  | { type: "call:remote-mute"; callId: string; muted: boolean }
+  | { type: "call:ended"; callId: string; reason: "normal" | "error" | "no_answer" }
+  | { type: "call:error"; callId: string; error: string };

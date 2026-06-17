@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>EnvoyMesh</title>
+    <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1e293b" media="(prefers-color-scheme: dark)" />
+    <script>
+      (function(){
+        var t = "system";
+        try { var s = localStorage.getItem("envoy-theme"); if (s === "light" || s === "dark" || s === "system") t = s; } catch(e) {}
+        if (t === "system") t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-BVrYLqZc.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/loro_wasm_bg-DPs7bIR9.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-CWEqodqM.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

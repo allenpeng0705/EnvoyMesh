@@ -401,6 +401,15 @@ export interface NodeServiceClient {
 
   // Events
   on<K extends keyof NodeServiceEvents>(event: K, handler: (data: NodeServiceEvents[K]) => void): () => void;
+
+  // Phase 38 — Voice/Video Calls
+  getActiveCall(): import("@envoymesh/api").CallSession | null;
+  onCallEvent(handler: (event: import("@envoymesh/api").CallEvent) => void): () => void;
+  sendCallInvite(targetOwnerId: string): Promise<string | null>;
+  acceptCallInvite(callId: string): Promise<boolean>;
+  declineCallInvite(callId: string, reason: string): Promise<boolean>;
+  endCall(callId: string): Promise<boolean>;
+  setCallMuted(callId: string, muted: boolean): Promise<boolean>;
 }
 
 const NodeServiceContext = createContext<NodeServiceClient | null>(null);
@@ -703,6 +712,27 @@ function createWsNodeServiceClient(
         import("@envoymesh/api").SendSyncStateUpdateResult
       >;
     },
+    // Phase 38 — Voice/Video Calls
+    getActiveCall() { return null; }, // call state flows via onCallEvent push events
+    onCallEvent(handler: (event: import("@envoymesh/api").CallEvent) => void) {
+      return wsClient.on("call:event", handler as any);
+    },
+    async sendCallInvite(targetOwnerId: string) {
+      return wsClient.rpc("sendCallInvite", { targetOwnerId }) as Promise<string | null>;
+    },
+    async acceptCallInvite(callId: string) {
+      return wsClient.rpc("acceptCallInvite", { callId }) as Promise<boolean>;
+    },
+    async declineCallInvite(callId: string, reason: string) {
+      return wsClient.rpc("declineCallInvite", { callId, reason }) as Promise<boolean>;
+    },
+    async endCall(callId: string) {
+      return wsClient.rpc("endCall", { callId }) as Promise<boolean>;
+    },
+    async setCallMuted(callId: string, muted: boolean) {
+      return wsClient.rpc("setCallMuted", { callId, muted }) as Promise<boolean>;
+    },
+
     async getBridgeStatus() { return wsClient.rpc("getBridgeStatus"); },
     async getOpenClawStatus() {
       return wsClient.rpc("getOpenClawStatus") as Promise<import("@envoymesh/api").OpenClawStatus>;

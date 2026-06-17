@@ -4,6 +4,9 @@ import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
 import { useChatDrafts } from "../../hooks/useChatDrafts.js";
 import { usePeerReachability, peerReachabilityLabel } from "../../hooks/usePeerReachability.js";
+import { useCallSession } from "../../hooks/useCallSession.js";
+import { IncomingCallModal } from "../../components/IncomingCallModal.js";
+import { ActiveCallPanel } from "../../components/ActiveCallPanel.js";
 import type { ChatMessage, ContactAiPreferences } from "@envoymesh/api";
 import {
   contactAiAccessLevelForAssistantMode,
@@ -601,6 +604,33 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     }
   };
 
+  // Phase 38 — voice call state
+  const {
+    incomingCall,
+    activeCall,
+    acceptCall,
+    declineCall,
+    endCall,
+    toggleMute,
+    isMuted,
+    connectionState,
+    dismissIncoming,
+    callingState,
+    startCall,
+    cancelCall,
+  } = useCallSession();
+
+  const threadKind = resolveChatThreadKind(selectedContact, bridgeStatus?.agentPeerId);
+  const isBondedHumanContact =
+    threadKind === "human" &&
+    !selectedContact.startsWith("room:") &&
+    Boolean(bonds.find((c) => c.peerOwnerId === selectedContact));
+
+  const handleStartCall = useCallback(async () => {
+    if (!selectedContact || !isBondedHumanContact) return;
+    await startCall(selectedContact);
+  }, [selectedContact, isBondedHumanContact, startCall]);
+
   const handleClearChat = async () => {
     if (displayMessages.length === 0) return;
     if (!window.confirm(t("contactChat.clearConfirm"))) {
@@ -621,12 +651,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   };
 
   const messageGroups = useMemo(() => groupMessagesByDate(displayMessages), [displayMessages]);
-
-  const threadKind = resolveChatThreadKind(selectedContact, bridgeStatus?.agentPeerId);
-  const isBondedHumanContact =
-    threadKind === "human" &&
-    !selectedContact.startsWith("room:") &&
-    Boolean(bonds.find((c) => c.peerOwnerId === selectedContact));
   const isHomeBridgeThread =
     Boolean(bridgeStatus?.enabled) && selectedContact === bridgeStatus?.agentPeerId;
   const displayName =
@@ -672,6 +696,25 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
 
   return (
     <>
+      {/* Phase 38 — incoming call modal (shown over chat when a call arrives) */}
+      {incomingCall ? (
+        <IncomingCallModal
+          callerName={incomingCall.peerDisplayName}
+          callerOwnerId={incomingCall.peerOwnerId}
+          onAccept={acceptCall}
+          onDecline={declineCall}
+        />
+      ) : null}
+      {/* Phase 38 — active call panel (replaces chat composer when on a call) */}
+      {activeCall ? (
+        <ActiveCallPanel
+          peerDisplayName={displayName}
+          isMuted={isMuted}
+          connectionState={connectionState}
+          onToggleMute={toggleMute}
+          onEndCall={endCall}
+        />
+      ) : null}
       <header className="chat-header has-assistant-switch">
         <div className="chat-header-left">
           {threadKind === "agent" ? (
@@ -697,6 +740,19 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
           </div>
         </div>
         <div className="chat-header-right">
+          {/* Phase 38 — voice call button (human contacts only) */}
+          {isBondedHumanContact ? (
+            <button
+              type="button"
+              className="chat-header-call-btn"
+              title={t("call:start", "Voice call")}
+              aria-label={t("call:startAria", { name: displayName })}
+              disabled={!contactReachable}
+              onClick={() => void handleStartCall()}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            </button>
+          ) : null}
           {isBondedHumanContact ? (
             <button
               type="button"
@@ -750,6 +806,19 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       {threadKind !== "agent" && (
         <PeerProfileGalleryStrip ownerId={selectedContact} bondLevel={contactBondLevel} />
       )}
+      {/* Phase 38D — Calling state banner */}
+      {callingState ? (
+        <div className="calling-banner">
+          <span className="calling-banner-pulse" aria-hidden />
+          <span className="calling-banner-text">{t("contactChat.calling", { name: displayName })}</span>
+          <button
+            className="calling-banner-cancel"
+            onClick={() => cancelCall()}
+          >
+            {t("contactChat.cancelCall", "Cancel")}
+          </button>
+        </div>
+      ) : null}
       <div className="messages">
         {displayMessages.length === 0 ? (
           <div className="empty-state">

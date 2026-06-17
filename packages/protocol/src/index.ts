@@ -64,6 +64,13 @@ export const EnvoyIntentSchema = z.enum([
   "profile.sync",
   "profile.request",
   "profile.response",
+  // Phase 38 — Real-time voice/video calls
+  "call.invite",
+  "call.accept",
+  "call.reject",
+  "call.hangup",
+  "call.ice-candidate",
+  "call.mute",
 ]);
 
 export const SensitivitySchema = z.enum(["public", "friends", "trusted", "private"]);
@@ -1984,13 +1991,217 @@ export interface CreateEnvelopeInput<TPayload> {
   postureRef?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Phase 38 — Real-time voice/video call payloads
+// ---------------------------------------------------------------------------
+
+/** Maximum inbound ring duration before auto-reject (60 s). */
+export const CALL_RING_TIMEOUT_MS = 60_000;
+
+// --- call.invite ---
+export const CallInvitePayloadSchema = z.object({
+  callId: z.string().uuid(),
+  callerOwnerId: z.string().min(1),
+  callerPeerId: z.string().min(1),
+  callType: z.enum(["audio"]).default("audio"),
+  timestamp: z.string().datetime(),
+  sdpOffer: z.string().min(1),
+  iceServers: z.array(z.object({
+    urls: z.string(),
+    username: z.string().optional(),
+    credential: z.string().optional(),
+  })).optional(),
+  sdpMid: z.string().optional(),
+  sdpMLineIndex: z.number().int().optional(),
+});
+export type CallInvitePayload = z.infer<typeof CallInvitePayloadSchema>;
+
+export interface CreateCallInvitePayloadInput {
+  callId: string;
+  callerOwnerId: string;
+  callerPeerId: string;
+  callType?: "audio";
+  timestamp?: string;
+  sdpOffer: string;
+  iceServers?: Array<{ urls: string; username?: string; credential?: string }>;
+  sdpMid?: string;
+  sdpMLineIndex?: number;
+}
+export function createCallInvitePayload(input: CreateCallInvitePayloadInput): CallInvitePayload {
+  return CallInvitePayloadSchema.parse({
+    callId: input.callId,
+    callerOwnerId: input.callerOwnerId,
+    callerPeerId: input.callerPeerId,
+    callType: input.callType ?? "audio",
+    timestamp: input.timestamp ?? new Date().toISOString(),
+    sdpOffer: input.sdpOffer,
+    iceServers: input.iceServers,
+    sdpMid: input.sdpMid,
+    sdpMLineIndex: input.sdpMLineIndex,
+  });
+}
+export function parseCallInvitePayload(input: unknown): CallInvitePayload {
+  return CallInvitePayloadSchema.parse(input);
+}
+
+// --- call.accept ---
+export const CallAcceptPayloadSchema = z.object({
+  callId: z.string().uuid(),
+  calleeOwnerId: z.string().min(1),
+  calleePeerId: z.string().min(1),
+  timestamp: z.string().datetime(),
+  sdpAnswer: z.string().min(1),
+  iceServers: z.array(z.object({
+    urls: z.string(),
+    username: z.string().optional(),
+    credential: z.string().optional(),
+  })).optional(),
+  sdpMid: z.string().optional(),
+  sdpMLineIndex: z.number().int().optional(),
+});
+export type CallAcceptPayload = z.infer<typeof CallAcceptPayloadSchema>;
+
+export interface CreateCallAcceptPayloadInput {
+  callId: string;
+  calleeOwnerId: string;
+  calleePeerId: string;
+  timestamp?: string;
+  sdpAnswer: string;
+  iceServers?: Array<{ urls: string; username?: string; credential?: string }>;
+  sdpMid?: string;
+  sdpMLineIndex?: number;
+}
+export function createCallAcceptPayload(input: CreateCallAcceptPayloadInput): CallAcceptPayload {
+  return CallAcceptPayloadSchema.parse({
+    callId: input.callId,
+    calleeOwnerId: input.calleeOwnerId,
+    calleePeerId: input.calleePeerId,
+    timestamp: input.timestamp ?? new Date().toISOString(),
+    sdpAnswer: input.sdpAnswer,
+    iceServers: input.iceServers,
+    sdpMid: input.sdpMid,
+    sdpMLineIndex: input.sdpMLineIndex,
+  });
+}
+export function parseCallAcceptPayload(input: unknown): CallAcceptPayload {
+  return CallAcceptPayloadSchema.parse(input);
+}
+
+// --- call.reject ---
+export const CallRejectPayloadSchema = z.object({
+  callId: z.string().uuid(),
+  calleeOwnerId: z.string().min(1),
+  calleePeerId: z.string().min(1),
+  reason: z.enum(["busy", "declined", "no_answer", "offline", "error"]).default("declined"),
+  timestamp: z.string().datetime(),
+});
+export type CallRejectPayload = z.infer<typeof CallRejectPayloadSchema>;
+
+export interface CreateCallRejectPayloadInput {
+  callId: string;
+  calleeOwnerId: string;
+  calleePeerId: string;
+  reason?: "busy" | "declined" | "no_answer" | "offline" | "error";
+  timestamp?: string;
+}
+export function createCallRejectPayload(input: CreateCallRejectPayloadInput): CallRejectPayload {
+  return CallRejectPayloadSchema.parse({
+    callId: input.callId,
+    calleeOwnerId: input.calleeOwnerId,
+    calleePeerId: input.calleePeerId,
+    reason: input.reason ?? "declined",
+    timestamp: input.timestamp ?? new Date().toISOString(),
+  });
+}
+export function parseCallRejectPayload(input: unknown): CallRejectPayload {
+  return CallRejectPayloadSchema.parse(input);
+}
+
+// --- call.ice-candidate ---
+export const CallIceCandidatePayloadSchema = z.object({
+  callId: z.string().uuid(),
+  candidate: z.object({
+    candidate: z.string(),
+    sdpMid: z.string().nullable(),
+    sdpMLineIndex: z.number().int().nullable(),
+    usernameFragment: z.string().nullable().optional(),
+  }),
+  timestamp: z.string().datetime(),
+});
+export type CallIceCandidatePayload = z.infer<typeof CallIceCandidatePayloadSchema>;
+
+export interface CreateCallIceCandidatePayloadInput {
+  callId: string;
+  candidate: { candidate: string; sdpMid: string | null; sdpMLineIndex: number | null; usernameFragment?: string | null };
+  timestamp?: string;
+}
+export function createCallIceCandidatePayload(input: CreateCallIceCandidatePayloadInput): CallIceCandidatePayload {
+  return CallIceCandidatePayloadSchema.parse({
+    callId: input.callId,
+    candidate: input.candidate,
+    timestamp: input.timestamp ?? new Date().toISOString(),
+  });
+}
+export function parseCallIceCandidatePayload(input: unknown): CallIceCandidatePayload {
+  return CallIceCandidatePayloadSchema.parse(input);
+}
+
+// --- call.hangup ---
+export const CallHangupPayloadSchema = z.object({
+  callId: z.string().uuid(),
+  reason: z.enum(["normal", "error", "no_answer"]).default("normal"),
+  timestamp: z.string().datetime(),
+});
+export type CallHangupPayload = z.infer<typeof CallHangupPayloadSchema>;
+
+export interface CreateCallHangupPayloadInput {
+  callId: string;
+  reason?: "normal" | "error" | "no_answer";
+  timestamp?: string;
+}
+export function createCallHangupPayload(input: CreateCallHangupPayloadInput): CallHangupPayload {
+  return CallHangupPayloadSchema.parse({
+    callId: input.callId,
+    reason: input.reason ?? "normal",
+    timestamp: input.timestamp ?? new Date().toISOString(),
+  });
+}
+export function parseCallHangupPayload(input: unknown): CallHangupPayload {
+  return CallHangupPayloadSchema.parse(input);
+}
+
+// --- call.mute ---
+export const CallMutePayloadSchema = z.object({
+  callId: z.string().uuid(),
+  muted: z.boolean(),
+  timestamp: z.string().datetime(),
+});
+export type CallMutePayload = z.infer<typeof CallMutePayloadSchema>;
+
+export interface CreateCallMutePayloadInput {
+  callId: string;
+  muted: boolean;
+  timestamp?: string;
+}
+export function createCallMutePayload(input: CreateCallMutePayloadInput): CallMutePayload {
+  return CallMutePayloadSchema.parse({
+    callId: input.callId,
+    muted: input.muted,
+    timestamp: input.timestamp ?? new Date().toISOString(),
+  });
+}
+export function parseCallMutePayload(input: unknown): CallMutePayload {
+  return CallMutePayloadSchema.parse(input);
+}
+
 export function createUnsignedEnvelope<TPayload>(
   input: CreateEnvelopeInput<TPayload>,
 ): UnsignedEnvoyEnvelope<TPayload> {
   const defaultRoles =
     input.intent === "chat.message" ||
     input.intent === "chat.room.sync" ||
-    input.intent === "chat.room.message"
+    input.intent === "chat.room.message" ||
+    input.intent.startsWith("call.")
       ? { senderRole: "human" as const, recipientRole: "human" as const }
       : input.intent.startsWith("system.")
         ? { senderRole: "system" as const, recipientRole: "agent" as const }
@@ -3500,7 +3711,7 @@ function sortForCanonicalJson(input: unknown): unknown {
   );
 }
 
-function evaluateEnvelopeRolePolicy(
+export function evaluateEnvelopeRolePolicy(
   intent: EnvoyIntent,
   senderRole: EnvoyActorRole,
   recipientRole: EnvoyActorRole,

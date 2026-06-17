@@ -184,6 +184,36 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getBonds();
   }
 
+  // Phase 38 — Voice/Video Calls
+  async sendCallInvite(targetOwnerId: string): Promise<string | null> {
+    return this._ns.sendCallInvite(targetOwnerId);
+  }
+
+  async acceptCallInvite(callId: string): Promise<boolean> {
+    return this._ns.acceptCallInvite(callId);
+  }
+
+  async declineCallInvite(callId: string, reason: string): Promise<boolean> {
+    return this._ns.declineCallInvite(callId, reason);
+  }
+
+  async endCall(callId: string): Promise<boolean> {
+    return this._ns.endCall(callId);
+  }
+
+  async setCallMuted(callId: string, muted: boolean): Promise<boolean> {
+    return this._ns.setCallMuted(callId, muted);
+  }
+
+  // Phase 31I — Push Notifications
+  registerPushToken(params: { platform: string; token: string; ownerId: string; deviceId?: string }): void {
+    return this._ns.registerPushToken(params);
+  }
+
+  unregisterPushToken(deviceId: string): boolean {
+    return this._ns.unregisterPushToken(deviceId);
+  }
+
   // -----------------------------------------------------------------------
   // Messaging
   // -----------------------------------------------------------------------
@@ -378,6 +408,15 @@ export class DirectCallClient implements NodeServiceClient {
 
   async getBridgeStatus() {
     return this._ns.getBridgeStatus();
+  }
+
+  // Phase 38 — Voice/Video Calls
+  getActiveCall() {
+    return this._ns.getActiveCall();
+  }
+
+  onCallEvent(handler: (event: import("@envoymesh/api").CallEvent) => void): () => void {
+    return this._ns.onCallEvent(handler);
   }
 
   async getOpenClawStatus() {

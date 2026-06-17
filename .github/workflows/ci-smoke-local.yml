@@ -34,6 +34,11 @@ jobs:
       - name: Phase 13 two-node smoke (PR signal)
         run: npm run smoke:phase13
 
+      - name: WebRTC call E2E smoke (Playwright)
+        run: |
+          npx playwright install chromium
+          bash scripts/smoke-webrtc-call.sh
+
       - name: Generate smoke artifacts
         run: |
           mkdir -p ci-artifacts

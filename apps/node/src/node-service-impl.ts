@@ -104,6 +104,8 @@ import type {
   MultiHopDiscoveryMatch,
   MultiHopDiscoverySessionView,
   PeerProfileView,
+  CallSession,
+  CallEvent,
 } from "@envoymesh/api";
 import type { DocumentAgentTurnResult, OwnerAgentTurnResult, CapabilityProviderJob, DocumentAcquisitionCandidate, DocumentAcquisitionJob, SocialProxySession } from "@envoymesh/api";
 import {
@@ -305,6 +307,8 @@ import {
   type ChatRoomServiceDeps,
 } from "./chat-room-service.js";
 import { createTaskDispatcher } from "./task-dispatcher.js";
+import { CallManager } from "./call-manager.js";
+import { pushNotificationService } from "./push-notification.js";
 import {
   parseTerminalAssistantCorrelationId,
   stripTerminalAssistantCorrelationPrefix,
@@ -596,6 +600,8 @@ class NodeServiceImpl implements NodeService {
   private _terminalAgentAssist: import("./terminal-agent-assist.js").TerminalAgentAssist | null = null;
   /** Phase 35D — handle to the pairing-kiosk HTTP server (when enabled). */
   private _pairingKiosk: PairingKioskServerHandle | null = null;
+  /** Phase 38 — per-node call session manager (voice/video calls). */
+  readonly callManager = new CallManager();
 
   /** Latest QR / `getPairingPayload` token for optional companion auto-pair (short TTL). */
   private _pairingToken: string | null = null;
@@ -7760,6 +7766,7 @@ class NodeServiceImpl implements NodeService {
         documentAcquisitionMandateId: config.documentAcquisitionMandateId,
         capabilityProviderEnabled: config.capabilityProviderEnabled ?? false,
         capabilityProviderMandateId: config.capabilityProviderMandateId,
+        iceServers: config.iceServers,
       };
     }
     return {
@@ -8239,6 +8246,11 @@ class NodeServiceImpl implements NodeService {
 
     await this._configStore.save(config);
     this._profile = profile;
+
+    // Phase 31I — initialize push notification service
+    void pushNotificationService.init(profileDir).catch(
+      (err) => console.warn("[node-service] push notification service init failed:", err),
+    );
 
     return {
       profileDir,
@@ -11319,6 +11331,80 @@ class NodeServiceImpl implements NodeService {
    * **Destructive** — cannot be undone. The caller is expected to
    * confirm with the user before invoking.
    */
+  // ------------------------------------------------------------------
+  // Phase 31I — Push Notifications
+  // ------------------------------------------------------------------
+
+  registerPushToken(params: { platform: string; token: string; ownerId: string; deviceId?: string }): void {
+    pushNotificationService.registerPushToken(params);
+  }
+
+  unregisterPushToken(deviceId: string): boolean {
+    return pushNotificationService.unregisterPushToken(deviceId);
+  }
+
+  // ------------------------------------------------------------------
+  // Phase 38 — Voice/Video Calls
+  // ------------------------------------------------------------------
+
+  getActiveCall(): CallSession | null {
+    return this.callManager.getActiveCall();
+  }
+
+  onCallEvent(handler: (event: CallEvent) => void): () => void {
+    return this.callManager.onCallEvent(handler);
+  }
+
+  async sendCallInvite(targetOwnerId: string): Promise<string | null> {
+    const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const result = this.callManager.outboundCallInitiated(callId, targetOwnerId, targetOwnerId);
+    if (!result) return null;
+
+    const profile = this._profile;
+    if (!profile) return null;
+
+    // Send call.invite envelope
+    const { createCallInvitePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+    const invitePayload = createCallInvitePayload({
+      callId,
+      callerOwnerId: profile.owner.ownerId,
+      callerPeerId: (profile.device as any).peerId ?? profile.device.deviceId,
+      sdpOffer: "", // filled by WebRTC transport after connection setup
+    });
+    const unsigned = createUnsignedEnvelope({
+      intent: "call.invite",
+      senderPeerId: (profile.device as any).peerId ?? profile.device.deviceId,
+      senderPublicKey: profile.device.publicKeyPem,
+      recipientPeerId: targetOwnerId,
+      senderRole: "human",
+      recipientRole: "human",
+      payload: invitePayload,
+    });
+    // Sign and send via mesh
+    if (this._mesh) {
+      const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
+      await this._mesh.send(targetOwnerId, envelope);
+    }
+    return callId;
+  }
+
+  async acceptCallInvite(callId: string): Promise<boolean> {
+    return this.callManager.acceptInboundCall(callId, this._profile?.owner?.ownerId ?? "");
+  }
+
+  async declineCallInvite(callId: string, reason: string): Promise<boolean> {
+    return this.callManager.rejectCall(callId, reason as "busy" | "declined" | "offline" | "error" | "no_answer");
+  }
+
+  async endCall(callId: string): Promise<boolean> {
+    return this.callManager.hangupCall(callId, "normal");
+  }
+
+  async setCallMuted(callId: string, muted: boolean): Promise<boolean> {
+    return this.callManager.setMute(callId, muted);
+  }
+
   async clearAllUserData(): Promise<void> {
     // Best-effort: each step is independent. A failure on one store does
     // not block the others.

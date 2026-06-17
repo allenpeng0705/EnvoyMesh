@@ -51,7 +51,16 @@ export declare const WS_PORT = 3030;
 export declare const WS_PATH = "/ws";
 export type RpcMethods = "getProfile" | "getOwnerDidPresentation" | "resolveDidImport" | "cacheDidContactKey" | "getPeerReputationSummary" | "getHumanProfile" | "updateHumanProfile" | "setPublicProfileThumbnail" | "upsertProfileGalleryPhoto" | "removeProfileGalleryPhoto" | "updateProfileGalleryPhotoVisibility" | "getPeerProfile" | "listPeerProfiles" | "requestPeerProfile" | "syncProfileToBonds" | "refreshBondPeerProfiles" | "getAgentIdentity" | "updateAgentIdentity" | "sendHello" | "acceptHello" | "declineHello" | "blockPeer" | "unblockPeer" | "revokeBond" | "getBonds" | "listPendingSocialIntroProposals" | "approveSocialIntroCommitment" | "declineSocialIntroProposal" | "sendChat" | "sendAgentChat" | "sendChatAttachment" | "readLibraryItemContent" | "listChatHistory" | "listAgentActivity" | "listCommerceReceipts" | "recordCommerceReceipt" | "listAuditEvents" | "listTaskJournalEntries" | "listAgentCards" | "getAgentCard" | "requestAgentCard" | "listPendingApprovals" | "approvePendingApproval" | "rejectPendingApproval" | "deleteChatMessage" | "clearChatHistory" | "markRead" | "getChatDrafts" | "deleteChatDraft" | "searchPeers" | "advertiseTopic" | "stopAdvertiseTopic" | "getCapabilityManifest" | "updateCapabilityManifest" | "shareFile" | "acceptShare" | "declineShare" | "listPendingShareOffers" | "listLibraryItems" | "listAllLocalFiles" | "readLocalFileContent" | "openLocalFile" | "setLibraryItemPublished" | "exportLibraryItemToIpfs" | "pinLibraryItemExternal" | "getIpfsEngineStatus" | "getRagIndexStatus" | "verifyLibraryItemIpfsGateway" | "importToLibrary" | "resolveLibraryItemPath" | "openLibraryItem" | "revealLibraryItemInFileManager" | "discoverPublishedLibrary" | "listAgentShareProposals" | "dismissAgentShareProposal" | "submitAgentShareProposal" | "getConnectionStatus" | "getPeerConnectionInfo" | "warmContactConnection" | "getChatDiagnostics" | "getConnectivityDiagnostics" | "runCapabilityDiscovery" | "discoverCapabilityTopic" | "getMorningReport" | "requestMultiHopDiscovery" | "getMultiHopDiscoverySession" | "sendSyncStateUpdate" | "knowledgeQuery" | "runDocumentAgentTurn" | "listSocialProxySessions" | "runSocialProxyPass" | "cancelSocialProxySession" | "startDocumentAcquisitionJob" | "getDocumentAcquisitionJob" | "listDocumentAcquisitionJobs" | "cancelDocumentAcquisitionJob" | "listActiveTransfers" | "getTransferStatus" | "getBridgeStatus" | "getPairingPayload" | "createWanJoinInvite" | "applyWanJoinInvite" | "pairDevice" | "pairSharedIdentity" | "pairWithHomeNode" | "listAuthorizedDevices" | "revokeAuthorizedDevice" | "mergeAuthorizedDevices" | "pruneRevokedDevices" | "listDeviceRevocations" | "getNodeConfig" | "updateNodeConfig" | "listRelays" | "addRelay" | "removeRelay" | "initNode" | "getNodeStatus" | "startNode" | "stopNode" | "forwardEnvelope"
 /** HTTP proxy from mobile Companion to HomeClaw Core on the home LAN (SSR-safe paths only). */
- | "homeclawCoreProxy" | "homeClawCoreWsOpen" | "homeClawCoreWsSend" | "homeClawCoreWsClose" | "on" | "off" | "home_claw_core_ws_open" | "home_claw_core_ws_send" | "home_claw_core_ws_close";
+ | "homeclawCoreProxy" | "homeClawCoreWsOpen" | "homeClawCoreWsSend" | "homeClawCoreWsClose" | "on" | "off" | "home_claw_core_ws_open" | "home_claw_core_ws_send"   | "home_claw_core_ws_close"
+  // Phase 38 — Voice/Video Calls
+  | "sendCallInvite"
+  | "acceptCallInvite"
+  | "declineCallInvite"
+  | "endCall"
+  | "setCallMuted"
+  // Phase 31I — Push Notifications
+  | "registerPushToken"
+  | "unregisterPushToken";
 export interface RelayConfig {
     relayId: string;
     addr: string;
@@ -217,6 +226,8 @@ export interface NodeConfig {
     /** Phase 16C — document acquisition orchestrator. */
     documentAcquisitionEnabled?: boolean;
     documentAcquisitionMandateId?: string;
+    /** Phase 38 — WebRTC ICE servers (STUN/TURN) for voice/video calls. */
+    iceServers?: { urls: string; username?: string; credential?: string }[];
 }
 /**
  * Domain in which the node operates autonomously on behalf of the owner.

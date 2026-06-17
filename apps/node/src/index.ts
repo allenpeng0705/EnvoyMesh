@@ -131,6 +131,7 @@ import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
 import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates, processDiscoveryQueue } from "./discovery-inbound.js";
 import { handleInboundSyncStateIntent } from "./sync-state-inbound.js";
 import { handleInboundBroadcastRequest, handleInboundBroadcastResponse } from "./broadcast-inbound.js";
+import { pushNotificationService } from "./push-notification.js";
 import { applyLanAutoBondAccept, evaluateLanAutoBondReceipt } from "./node-service-lan-auto-bond.js";
 import { handleInboundTaskFeedback, handleInboundOfficialCredential } from "./reputation-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
@@ -1753,6 +1754,20 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     return;
   }
 
+  // Phase 38 — call.* intents (voice/video call signaling)
+  if (envelope.intent.startsWith("call.")) {
+    const { handleCallIntent } = await import("./call-inbound.js");
+    const handled = await handleCallIntent(envelope, {
+      callManager: (nodeService as NodeServiceImpl).callManager,
+      trustStore,
+      peerDirectoryStore,
+      sendResponseEnvelope: async (responseEnvelope) => {
+        await mesh.send(envelope.senderPeerId, responseEnvelope as EnvoyEnvelope);
+      },
+    });
+    if (handled) return;
+  }
+
   if (envelope.intent === "chat.room.sync" && nodeService instanceof NodeServiceImpl) {
     try {
       const payload = parseChatRoomSyncPayload(envelope.payload);
@@ -1977,6 +1992,15 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         });
       }
       wsServerForEvents.emitEvent("chat:message", chatMsg);
+
+      // Phase 31I — push notification for offline thin-client devices
+      void pushNotificationService.dispatchChatPush({
+        senderName: chatMsg.sender.displayName ?? payload.senderOwnerId,
+        messagePreview: payload.text.slice(0, 120),
+        targetOwnerId: chatMsg.recipient.ownerId,
+        messageId: envelope.messageId,
+        senderOwnerId: payload.senderOwnerId,
+      }).catch(() => {});
 
       // Generate a chat draft if chat assist is enabled (async, fire-and-forget)
       const contactPrefs = currentContactAiPrefs.get(payload.senderOwnerId);

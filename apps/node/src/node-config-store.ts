@@ -184,6 +184,12 @@ export interface PersistedNodeConfig {
    * endpoint starts returning HTTP 410 instead of serving the page.
    */
   pairingKioskExpiresAt?: string;
+  /**
+   * Phase 38 — WebRTC ICE servers (STUN/TURN) for voice/video calls.
+   * When unset, the default set of public STUN servers is used.
+   * Set to an empty array to use no ICE servers (Path 1 / LAN only).
+   */
+  iceServers?: { urls: string; username?: string; credential?: string }[];
 }
 
 export interface NodeConfigStore {

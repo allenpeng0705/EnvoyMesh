@@ -108,6 +108,10 @@ export class WsServer {
       );
       // Phase 25C — Digest ready notification
       // digest:ready not in NodeServiceEvents type — emit directly
+      // Phase 38 — Voice/Video Call events
+      nodeServiceImpl.callManager.onCallEvent((event) => {
+        this.emitEvent(event.type, event);
+      });
     } else {
       console.log(`[ws-server] ERROR: nodeServiceImpl.on is not a function!`);
     }
@@ -268,6 +272,13 @@ export class WsServer {
       "terminal:session-updated",
       "terminal:watch-ready",
       "terminal:assistant-proposal",
+      // Phase 38 — voice/video call events
+      "call:incoming",
+      "call:answered",
+      "call:rejected",
+      "call:ended",
+      "call:remote-mute",
+      "call:error",
     ];
     for (const event of allEvents) {
       this.subscribe(ws, event);

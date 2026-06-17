@@ -64,6 +64,13 @@ const INTENT_ROLE_POLICIES: Record<string, readonly RolePair[]> = {
   "task.cancel": AGENT_AGENT_ONLY,
   "task.heartbeat": AGENT_AGENT_ONLY,
   "report.create": AGENT_AGENT_ONLY,
+  // Phase 38 — voice/video calls (human-to-human only)
+  "call.invite": HUMAN_HUMAN_ONLY,
+  "call.accept": HUMAN_HUMAN_ONLY,
+  "call.reject": HUMAN_HUMAN_ONLY,
+  "call.hangup": HUMAN_HUMAN_ONLY,
+  "call.ice-candidate": HUMAN_HUMAN_ONLY,
+  "call.mute": HUMAN_HUMAN_ONLY,
 };
 
 /**

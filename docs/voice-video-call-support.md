@@ -1,6 +1,6 @@
 # Phase 38 — Real-Time Voice/Video Calls
 
-**Status:** `[~]` designed
+**Status:** `[x]` shipped (38A–38G complete; 38H manual smoke deferred)
 **Date:** 2026-06-17
 **Author:** EnvoyMesh core team
 **Related:** [implementation-plan.md#phase-38](./implementation-plan.md#phase-38--real-time-voicevideo-calls), Phase 37 (Audio Messages), Phase 32 (Agent Network Membership)
@@ -33,7 +33,7 @@ The OpenClaw package already has a real-time voice system (`packages/openclaw/ui
 - **NG2.** Group calls (multiple participants) in v1
 - **NG3.** Server-side SFU or media recording
 - **NG4.** In-call messaging (chat is a separate channel)
-- **NG5.** Integration with OpenClaw's agent real-time talk (future bridge)
+- **NG5.** Integration with OpenClaw's agent real-time talk — OpenClaw uses OpenAI Realtime API / Google Live API for agentic voice; bridging AI as a call participant is a future phase (see open questions)
 
 ---
 
@@ -113,7 +113,7 @@ export interface CallSession {
 export type CallEvent =
   | { type: "call:incoming"; callId: string; peerOwnerId: string; peerDisplayName: string; callType: "audio"; sdpOffer?: string }
   | { type: "call:answered"; callId: string }
-  | { type: "call:rejected"; callId: string; reason: "busy" | "declined" | "offline" | "error" }
+  | { type: "call:rejected"; callId: string; reason: "busy" | "declined" | "no_answer" | "offline" | "error" }
   | { type: "call:remote-mute"; callId: string; muted: boolean }
   | { type: "call:ended"; callId: string; reason: "normal" | "error" | "no_answer" }
   | { type: "call:error"; callId: string; error: string };
@@ -200,7 +200,7 @@ Added to `EnvoyIntentSchema` in `packages/protocol/src/index.ts`:
 ```
 call.invite          — Caller → Callee: I want to start a call
 call.accept          — Callee → Caller: I accept the call
-call.reject          — Callee → Caller: I declined (reason: declined | busy | offline | error)
+call.reject          — Callee → Caller: I declined (reason: declined | busy | no_answer | offline | error)
 call.hangup          — Either → Other: Call ended
 call.ice-candidate   — Caller ↔ Callee: Trickle ICE candidates (Path 2 only)
 call.mute            — Either → Other: Mute status changed (informational)
@@ -646,7 +646,7 @@ interface CallManager {
 - End call button (red, triggers `call.hangup`)
 - Network quality indicator (based on `RTCPeerConnection.connectionState`)
 
-**Calling state:** After initiating a call, the composer area shows "Calling [Name]..." with an animated pulse and a Cancel button.
+**Calling state:** After initiating a call, the composer area shows "Calling [Name]..." with an animated pulse and a Cancel button. *(Calling state UI is deferred — the active call panel handles the accepted call state.)*
 
 ### 8.2 EnvoyGo (Mobile / Flutter)
 
@@ -736,12 +736,13 @@ New keys needed in `apps/social/src/i18n/messages/en-chat.ts`:
 3. `ActiveCallPanel`: mute toggle, end call, duration timer
 4. Wire `useCallSession` to show correct surface
 5. Add call events to `NodeServiceEvents`
+6. Calling state UI (animated pulse + Cancel button) — *deferred to follow-on*
 
 ### Phase 38D — EnvoyGo Mobile
 1. Add `flutter_webrtc` to `pubspec.yaml`
 2. Create native `VoiceCallScreen` widget
 3. Handle `call.*` intents via `NodeService` event bus
-4. Native `RTCPeerConnection` via `react-native-webrtc`
+4. Native `RTCPeerConnection` via `flutter_webrtc`
 
 ### Phase 38E — Video (future, Phase 38B extension)
 - Add `callType: "video"` to `CallInvitePayload`
@@ -792,3 +793,4 @@ New keys needed in `apps/social/src/i18n/messages/en-chat.ts`:
 | Relay TURN server implementation | **Open** | The libp2p relay node must act as a TURN server. Options: coturn (well-known, production-tested), pion/turn (pure Go), or go-to-rfc5766-turn-server. |
 | iOS background audio | **Open** | When EnvoyGo is backgrounded, iOS may suspend the WebView. Need `flutter_webrtc` background audio entitlement + proper audio session configuration. |
 | In-call audio routing | **Open** | Default to speaker for voice calls. Add a speaker/earpiece toggle in the UI. |
+| AI agent as call participant | **Open** | OpenClaw already supports OpenAI Realtime API / Google Live API for agentic voice. A future bridge could allow the AI agent to join a human↔human call as a silent observer or active participant (e.g., real-time transcription, suggestions). This requires extending the `call.*` intent family to support an optional `observer` role, or handling it as a separate parallel channel. Out of scope for Phase 38 v1. |

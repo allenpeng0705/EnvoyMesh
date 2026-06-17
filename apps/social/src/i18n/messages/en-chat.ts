@@ -373,4 +373,16 @@ export const inboxMessages = {
     micDenied: "Microphone access denied",
     noTranscription: "[Audio message — no transcription available]",
   },
+  // Phase 38 — Voice/Video Calls
+  "call:start": "Voice call",
+  "call:startAria": "Start a voice call with {name}",
+  "call:incoming": "Incoming call",
+  "call:incomingSubtitle": "is calling you…",
+  "call:accept": "Accept",
+  "call:decline": "Decline",
+  "call:activeCall": "Active call",
+  "call:mute": "Mute",
+  "call:unmute": "Unmute",
+  "call:end": "End call",
+  "call:calling": "Calling…",
 } as const;

@@ -53,9 +53,11 @@
     "smoke:local": "npm run smoke:local-two-node -w @envoymesh/node",
     "smoke:phase13": "npm run smoke:phase13-two-node -w @envoymesh/node",
     "smoke:openclaw-bridge": "npm run smoke:openclaw-bridge -w @envoymesh/node",
-    "smoke:openclaw-bridge:live": "npm run smoke:openclaw-bridge:live -w @envoymesh/node"
+    "smoke:openclaw-bridge:live": "npm run smoke:openclaw-bridge:live -w @envoymesh/node",
+    "smoke:webrtc-call": "bash scripts/smoke-webrtc-call.sh"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@types/node": "^25.6.0",
     "@types/qrcode": "^1.5.6",
     "@vitest/coverage-v8": "^4.1.5",

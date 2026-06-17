@@ -296,7 +296,16 @@ export type RpcMethods =
   // Legacy snake_case variants (mobile app compat)
   | "home_claw_core_ws_open"
   | "home_claw_core_ws_send"
-  | "home_claw_core_ws_close";
+   | "home_claw_core_ws_close"
+   // Phase 38 — Voice/Video Calls
+   | "sendCallInvite"
+   | "acceptCallInvite"
+   | "declineCallInvite"
+   | "endCall"
+   | "setCallMuted"
+   // Phase 31I — Push Notifications
+   | "registerPushToken"
+   | "unregisterPushToken";
 
 // ============================================
 // Node Configuration Types
@@ -529,6 +538,12 @@ export interface NodeConfig {
   documentAcquisitionMandateId?: string;
   capabilityProviderEnabled?: boolean;
   capabilityProviderMandateId?: string;
+  /**
+   * Phase 38 — WebRTC ICE servers (STUN/TURN) for voice/video calls.
+   * When unset, the default set of public STUN servers is used.
+   * Set to an empty array to use no ICE servers (Path 1 / LAN only).
+   */
+  iceServers?: { urls: string; username?: string; credential?: string }[];
 }
 
 /**
@@ -1251,6 +1266,8 @@ export interface UpdateNodeConfigParams {
   terminalAutoRunPolicy?: import("./terminal-agent.js").TerminalAutoRunPolicy;
   terminalInlineSuggestEnabled?: boolean;
   terminalXtermSlashIntercept?: boolean;
+  /** Phase 38 — WebRTC ICE servers (STUN/TURN) for voice/video calls. */
+  iceServers?: { urls: string; username?: string; credential?: string }[];
   mdnsIntervalMs?: number;
   capabilityDiscoveryIntervalMs?: number;
   lazyCapabilityDiscovery?: boolean;
