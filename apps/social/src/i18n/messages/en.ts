@@ -24,9 +24,10 @@ import {
   libraryViewMessages,
   fileShareMessages,
   setupMessages,
-  privacySettingsMessages,
-  deviceSettingsMessages,
+  artifactRendererMessages,
+  agentCardMessages,
 } from "./en-misc.js";
+import { agentNetworkSettingsMessages } from "./en-agent-network.js";
 
 export const en = {
   nav: {
@@ -115,11 +116,9 @@ export const en = {
     title: "Settings",
     tabs: {
       account: "Account",
-      network: "Network",
       ai: "AI",
-      activity: "Activity",
-      privacy: "Privacy",
-      devices: "Devices",
+      agentNetwork: "Agent Network",
+      network: "Network",
       app: "App",
     },
     language: {
@@ -157,8 +156,11 @@ export const en = {
     network: networkSettingsMessages,
     ai: aiSettingsMessages,
     account: accountSettingsMessages,
-    privacy: privacySettingsMessages,
-    devices: deviceSettingsMessages,
+    agentNetwork: agentNetworkSettingsMessages,
+    app: {
+      activityTitle: "Activity",
+      activityDesc: "Recent agent, task, and audit activity on this node.",
+    },
   },
   chat: chatMessages,
   inbox: inboxMessages,
@@ -179,6 +181,8 @@ export const en = {
   setup: setupMessages,
   activity: activityMessages,
   fileShare: fileShareMessages,
+  artifactRenderer: artifactRendererMessages,
+  agentCard: agentCardMessages,
   contacts: {
     tabsLabel: "Contacts or discover",
     myContacts: "My contacts ({count})",

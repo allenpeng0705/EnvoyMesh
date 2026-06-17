@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/stored_node.dart';
 import '../../providers/node_provider.dart';
+import '../../widgets/ai_engine_section.dart';
 import '../../widgets/connection_indicator.dart';
 import '../pairing/pairing_scan_screen.dart';
 import 'node_switcher_sheet.dart';
@@ -214,6 +215,16 @@ class MeScreen extends ConsumerWidget {
           ),
         ],
         const SizedBox(height: 16),
+
+        // AI Engine (Phase 32 — read-only mirror of home node state).
+        // (Note: the "Agent Network" tab on the home node is for onboarding
+        // other nodes — pairing, fleet manifest, company invites — not the
+        // AI engine. This is the AI engine.)
+        if (nodeState.activeNode != null) ...[
+          const _SectionHeader(title: 'AI Engine'),
+          const AiEngineSection(),
+          const SizedBox(height: 16),
+        ],
 
         // Public IP/domain (only show when connected)
         if (nodeState.activeNode != null) ...[

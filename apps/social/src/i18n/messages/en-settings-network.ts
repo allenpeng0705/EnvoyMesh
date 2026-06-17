@@ -34,6 +34,7 @@ export const networkSettingsMessages = {
     via: "via",
     offline: "Offline",
     noBonds: "No bonded peers yet.",
+    refresh: "Refresh",
   },
   chatDiagnostics: {
     title: "Chat connectivity diagnostics",

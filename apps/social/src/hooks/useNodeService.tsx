@@ -154,6 +154,7 @@ export interface NodeServiceClient {
   listAgentCards(): Promise<import("@envoymesh/api").CachedAgentCardSummary[]>;
   getAgentCard(ownerId: string): Promise<import("@envoymesh/api").CachedAgentCardSummary | undefined>;
   requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }>;
+  getTaskResult(taskId: string): Promise<import("@envoymesh/api").TaskResultPayload | undefined>;
   listPendingApprovals(): Promise<import("@envoymesh/api").PendingApprovalSummary[]>;
   approvePendingApproval(itemId: string, notes?: string): Promise<import("@envoymesh/api").ApprovePendingApprovalResult>;
   rejectPendingApproval(itemId: string, notes?: string): Promise<{ ok: boolean; error?: string }>;
@@ -192,16 +193,38 @@ export interface NodeServiceClient {
 
   // Agent Bridge
   getBridgeStatus(): Promise<BridgeStatus>;
+  getOpenClawStatus(): Promise<import("@envoymesh/api").OpenClawStatus>;
   getPairingPayload(): Promise<PairingPayload>;
   createWanJoinInvite(
     params?: import("@envoymesh/api").CreateWanJoinInviteParams,
   ): Promise<import("@envoymesh/api").CreateWanJoinInviteResult>;
   applyWanJoinInvite(token: string): Promise<import("@envoymesh/api").ApplyWanJoinInviteResult>;
+  createCompanyInvite(
+    params?: import("@envoymesh/api").CreateCompanyInviteParams,
+  ): Promise<import("@envoymesh/api").CreateCompanyInviteResult>;
+  listCompanyInvites(): Promise<import("@envoymesh/api").ListCompanyInvitesResult>;
+  revokeCompanyInvite(inviteId: string): Promise<import("@envoymesh/api").RevokeCompanyInviteResult>;
+  syncPairingKioskFromConfig(): Promise<void>;
+  getPairingKioskStatus(): Promise<import("@envoymesh/api").PairingKioskStatus>;
+  importFleetManifest(
+    params: import("@envoymesh/api").ImportFleetManifestParams,
+  ): Promise<import("@envoymesh/api").ImportFleetManifestOutcome>;
+  listFleetManifests(): Promise<import("@envoymesh/api").ListFleetManifestsResult>;
+  revokeFleetManifest(
+    manifestId: string,
+  ): Promise<import("@envoymesh/api").RevokeFleetManifestResult>;
+  createFleetManifest(
+    input: import("@envoymesh/api").CreateFleetManifestInput,
+  ): Promise<import("@envoymesh/api").CreateFleetManifestResult>;
   pairWithHomeNode(params: import("@envoymesh/api").PairWithHomeNodeParams): Promise<import("@envoymesh/api").PairWithHomeNodeResult>;
   listAuthorizedDevices(): Promise<import("@envoymesh/api").ListAuthorizedDevicesResult>;
   revokeAuthorizedDevice(
     params: import("@envoymesh/api").RevokeAuthorizedDeviceParams,
   ): Promise<import("@envoymesh/api").RevokeAuthorizedDeviceResult>;
+  mergeAuthorizedDevices(
+    params: import("@envoymesh/api").MergeAuthorizedDevicesParams,
+  ): Promise<import("@envoymesh/api").MergeAuthorizedDevicesResult>;
+  pruneRevokedDevices(): Promise<import("@envoymesh/api").PruneRevokedDevicesResult>;
   listDeviceRevocations(): Promise<import("@envoymesh/api").ListDeviceRevocationsResult>;
 
   listTerminalSessions(): Promise<import("@envoymesh/api").TerminalSessionSummary[]>;
@@ -616,6 +639,11 @@ function createWsNodeServiceClient(
     async requestAgentCard(targetOwnerId: string) {
       return wsClient.rpc("requestAgentCard", { targetOwnerId }) as Promise<{ ok: boolean; error?: string }>;
     },
+    async getTaskResult(taskId: string) {
+      return wsClient.rpc("getTaskResult", { taskId }) as Promise<
+        import("@envoymesh/api").TaskResultPayload | undefined
+      >;
+    },
     async listPendingApprovals() {
       return wsClient.rpc("listPendingApprovals") as Promise<import("@envoymesh/api").PendingApprovalSummary[]>;
     },
@@ -675,6 +703,9 @@ function createWsNodeServiceClient(
       >;
     },
     async getBridgeStatus() { return wsClient.rpc("getBridgeStatus"); },
+    async getOpenClawStatus() {
+      return wsClient.rpc("getOpenClawStatus") as Promise<import("@envoymesh/api").OpenClawStatus>;
+    },
     async getPairingPayload() { return wsClient.rpc("getPairingPayload"); },
     async createWanJoinInvite(params?: import("@envoymesh/api").CreateWanJoinInviteParams) {
       return wsClient.rpc("createWanJoinInvite", (params ?? {}) as Record<string, unknown>) as Promise<
@@ -684,6 +715,49 @@ function createWsNodeServiceClient(
     async applyWanJoinInvite(token: string) {
       return wsClient.rpc("applyWanJoinInvite", { token }) as Promise<
         import("@envoymesh/api").ApplyWanJoinInviteResult
+      >;
+    },
+    async createCompanyInvite(params?: import("@envoymesh/api").CreateCompanyInviteParams) {
+      return wsClient.rpc("createCompanyInvite", (params ?? {}) as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").CreateCompanyInviteResult
+      >;
+    },
+    async listCompanyInvites() {
+      return wsClient.rpc("listCompanyInvites") as Promise<
+        import("@envoymesh/api").ListCompanyInvitesResult
+      >;
+    },
+    async revokeCompanyInvite(inviteId: string) {
+      return wsClient.rpc("revokeCompanyInvite", { inviteId }) as Promise<
+        import("@envoymesh/api").RevokeCompanyInviteResult
+      >;
+    },
+    async syncPairingKioskFromConfig() {
+      return wsClient.rpc("syncPairingKioskFromConfig") as Promise<void>;
+    },
+    async getPairingKioskStatus() {
+      return wsClient.rpc("getPairingKioskStatus") as Promise<
+        import("@envoymesh/api").PairingKioskStatus
+      >;
+    },
+    async importFleetManifest(params: import("@envoymesh/api").ImportFleetManifestParams) {
+      return wsClient.rpc("importFleetManifest", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").ImportFleetManifestOutcome
+      >;
+    },
+    async listFleetManifests() {
+      return wsClient.rpc("listFleetManifests") as Promise<
+        import("@envoymesh/api").ListFleetManifestsResult
+      >;
+    },
+    async revokeFleetManifest(manifestId: string) {
+      return wsClient.rpc("revokeFleetManifest", { manifestId }) as Promise<
+        import("@envoymesh/api").RevokeFleetManifestResult
+      >;
+    },
+    async createFleetManifest(input: import("@envoymesh/api").CreateFleetManifestInput) {
+      return wsClient.rpc("createFleetManifest", input as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").CreateFleetManifestResult
       >;
     },
     async pairWithHomeNode(params: import("@envoymesh/api").PairWithHomeNodeParams) {
@@ -699,6 +773,16 @@ function createWsNodeServiceClient(
     async revokeAuthorizedDevice(params: import("@envoymesh/api").RevokeAuthorizedDeviceParams) {
       return wsClient.rpc("revokeAuthorizedDevice", params as unknown as Record<string, unknown>) as Promise<
         import("@envoymesh/api").RevokeAuthorizedDeviceResult
+      >;
+    },
+    async mergeAuthorizedDevices(params: import("@envoymesh/api").MergeAuthorizedDevicesParams) {
+      return wsClient.rpc("mergeAuthorizedDevices", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").MergeAuthorizedDevicesResult
+      >;
+    },
+    async pruneRevokedDevices() {
+      return wsClient.rpc("pruneRevokedDevices", {}) as Promise<
+        import("@envoymesh/api").PruneRevokedDevicesResult
       >;
     },
     async listDeviceRevocations() {
@@ -1252,6 +1336,39 @@ export function useConnectionStatus() {
   }, [client]);
 
   return status;
+}
+
+/**
+ * Phase 34: track the latest snapshot of cached peer AgentCards. The store is
+ * updated by the home node (or by the mobile node's paired bootstrap) and
+ * re-emitted as `home:agent-cards-updated` so this hook just keeps the latest
+ * list in state.
+ */
+export function useAgentCards() {
+  const client = useNodeService();
+  const wsOpen = useTransportWsOpen();
+  const [cards, setCards] = useState<import("@envoymesh/api").CachedAgentCardSummary[]>([]);
+
+  useEffect(() => {
+    if (!wsOpen || !client.isConnected) return;
+
+    const refresh = () =>
+      client.listAgentCards()
+        .then((list) => setCards(Array.isArray(list) ? list : []))
+        .catch(console.error);
+
+    // Initial load
+    refresh();
+
+    // Listen for paired-mode pushes from the home node.
+    const unsubHomeCards = client.on("home:agent-cards-updated", refresh);
+
+    return () => {
+      unsubHomeCards();
+    };
+  }, [client, wsOpen]);
+
+  return cards;
 }
 
 export function useBonds() {

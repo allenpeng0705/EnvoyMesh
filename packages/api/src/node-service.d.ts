@@ -1,4 +1,4 @@
-import type { DeviceCertificate, HumanProfilePayload, CapabilityUnion } from "@envoymesh/protocol";
+import type { DeviceCertificate, HumanProfilePayload, CapabilityUnion, TaskResultPayload } from "@envoymesh/protocol";
 import type { DeviceIdentity, OwnerIdentity } from "@envoymesh/identity";
 import type { DocumentAgentTurnResult } from "./document-agent-loop.js";
 import type { DocumentAcquisitionJob } from "./document-acquisition.js";
@@ -10,7 +10,7 @@ export type { ResolveDidImportResult, ResolvedDidImport };
 export type { CommerceReceiptRecord, ListCommerceReceiptsParams, RecordCommerceReceiptParams };
 import type { RagIndexProgress, RagIndexStatus } from "./rag-index-status.js";
 import type { TransferStatus } from "./transfer-status.js";
-import type { BridgeStatus, NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult, ChatDraft, CapabilityManifest, UpdateCapabilityManifestParams, AutonomousPolicy, ModelProviderConfig, AiSettings, ContactAiPreferences, PairingPayload, HomeClawCoreProxyParams, HomeClawCoreProxyResult, PairDeviceParams, PairDeviceResult, PairSharedIdentityParams, PairSharedIdentityResult, PairWithHomeNodeParams, PairWithHomeNodeResult, ListAuthorizedDevicesResult, RevokeAuthorizedDeviceParams, RevokeAuthorizedDeviceResult, ListDeviceRevocationsResult } from "./ws-protocol.js";
+import type { BridgeStatus, NodeConfig, RelayConfig, NodeStatus, InitNodeOptions, NodeInitResult, ChatDraft, CapabilityManifest, UpdateCapabilityManifestParams, AutonomousPolicy, ModelProviderConfig, AiSettings, ContactAiPreferences, PairingPayload, HomeClawCoreProxyParams, HomeClawCoreProxyResult, PairDeviceParams, PairDeviceResult, PairSharedIdentityParams, PairSharedIdentityResult, PairWithHomeNodeParams, PairWithHomeNodeResult, ListAuthorizedDevicesResult, RevokeAuthorizedDeviceParams, RevokeAuthorizedDeviceResult, MergeAuthorizedDevicesParams, MergeAuthorizedDevicesResult, PruneRevokedDevicesResult, ListDeviceRevocationsResult } from "./ws-protocol.js";
 export interface NodeProfile {
     owner: OwnerIdentity;
     device: DeviceIdentity;
@@ -206,6 +206,14 @@ export interface CachedAgentCardSummary {
     capabilities: string[];
     cachedAt: string;
     sourceAgentPeerId?: string;
+    nodeProfile?: import("@envoymesh/protocol").DeviceProfile;
+    publicTopics?: string[];
+    trustPolicySummary?: {
+        acceptsDirectBondRequests?: boolean;
+        acceptsReferralRequests?: boolean;
+        requiresHumanApprovalForRawFiles?: boolean;
+    };
+    supportedProtocolVersions?: string[];
 }
 export interface AuditEventSummary {
     eventId: string;
@@ -1006,6 +1014,8 @@ export interface NodeService {
         ok: boolean;
         error?: string;
     }>;
+    /** Phase 34: latest cached `task.result` (typed Artifacts) for the taskId. */
+    getTaskResult(taskId: string): Promise<TaskResultPayload | undefined>;
     /** Pending AI actions awaiting owner approval. */
     listPendingApprovals(): Promise<PendingApprovalSummary[]>;
     /** Approve and execute a pending action (e.g. send_chat → sendAgentChat). */
@@ -1273,6 +1283,18 @@ export interface NodeService {
     listAuthorizedDevices(): Promise<ListAuthorizedDevicesResult>;
     /** Revoke a previously authorized device certificate. */
     revokeAuthorizedDevice(params: RevokeAuthorizedDeviceParams): Promise<RevokeAuthorizedDeviceResult>;
+    /**
+     * Merge duplicate authorized-device records: keep one as canonical and
+     * revoke the rest. Used to clean up historical duplicates created
+     * before the mobile app reused a stable device keypair.
+     */
+    mergeAuthorizedDevices(params: MergeAuthorizedDevicesParams): Promise<MergeAuthorizedDevicesResult>;
+    /**
+     * Drop every authorized-device entry that has a matching revocation
+     * record. The revocation records are kept for audit history; only
+     * the entries in the authorized list are removed.
+     */
+    pruneRevokedDevices(): Promise<PruneRevokedDevicesResult>;
     /** List signed device revocation records for this owner. */
     listDeviceRevocations(): Promise<ListDeviceRevocationsResult>;
     /**

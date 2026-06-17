@@ -17,12 +17,21 @@ export * from "./chat-actor.js";
 export * from "./agent-visibility.js";
 export * from "./agent-activity-map.js";
 export * from "./agent-interaction.js";
+export * from "./agent-network-mode.js";
 export * from "./approval-queue.js";
 export * from "./approval-executor.js";
 export * from "./task-dispatcher.js";
 export * from "./default-bootstrap.js";
 export * from "./group-chat-delivery.js";
 export * from "./node-service.js";
+/** Phase 34: re-export the typed `Artifact` discriminated union so the Social UI can render task.results. */
+export type {
+  Artifact,
+  FileArtifact,
+  StructuredArtifact,
+  TextArtifact,
+  TaskResultPayload,
+} from "@envoymesh/protocol";
 export * from "./bond-target.js";
 export * from "./document-autonomy.js";
 export * from "./profile-media.js";
@@ -46,6 +55,9 @@ export * from "./document-acquisition.js";
 export * from "./friend-autopilot.js";
 export * from "./ipfs-pinning.js";
 export * from "./wan-join-invite.js";
+export * from "./company-invite.js";
+export * from "./kiosk-status.js";
+export * from "./fleet-manifest.js";
 export * from "./h2a-wire-semantics.js";
 export * from "./owner-did-presentation.js";
 /** Types only — runtime lives in `@envoymesh/api/did-import` (Node identity / crypto). */

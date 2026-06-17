@@ -1,6 +1,7 @@
 import "./ensure-node-version.js";
 import "./dom-event-polyfill.js";
 import { evaluateCapability } from "@envoymesh/bonds";
+import { createAgentCardAutoFetcher } from "./agent-card-auto-fetcher.js";
 import {
   auditEventForDispatcherDecision,
   buildRelayManagerSnapshot,
@@ -130,6 +131,7 @@ import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
 import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates, processDiscoveryQueue } from "./discovery-inbound.js";
 import { handleInboundSyncStateIntent } from "./sync-state-inbound.js";
 import { handleInboundBroadcastRequest, handleInboundBroadcastResponse } from "./broadcast-inbound.js";
+import { applyLanAutoBondAccept, evaluateLanAutoBondReceipt } from "./node-service-lan-auto-bond.js";
 import { handleInboundTaskFeedback, handleInboundOfficialCredential } from "./reputation-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { handleDaemonAgentCardInbound } from "./daemon-agent-card-inbound.js";
@@ -311,11 +313,12 @@ try {
   // use defaults; disabled by default
 }
 // Merge UI toggle from persisted config — bridgeEnabled: true overrides bridge-config.json.
-// Default to true when no persisted config exists (matches the UI default in getNodeConfig).
+// Default to false when no persisted config exists (D1C: built-in OpenClaw is the default agent;
+// the Ext Agent bridge is opt-in).
 {
   try {
     const persistedCfg = await nodeConfigStore.load();
-    const uiEnabled = persistedCfg?.bridgeEnabled ?? true;
+    const uiEnabled = persistedCfg?.bridgeEnabled ?? false;
     if (uiEnabled && !bridgeConfig.enabled) {
       bridgeConfig = { ...bridgeConfig, enabled: true };
       console.log(`[bridge] UI toggle overrides: enabled=true (persisted=${persistedCfg?.bridgeEnabled ?? "none"})`);
@@ -533,6 +536,28 @@ if (args.p2pDebug) {
     `[p2p-debug] relay periodic SUMMARY logs: ${args.relayDebugSummary ? "on" : "off"} (enable with --relay-debug-summary or ENVOYMESH_RELAY_DEBUG_SUMMARY=1)`,
   );
 }
+
+// Phase 33 — agent card auto-fetch on bond establishment. Constructed once after the mesh
+// is built; called from the bond:established handler with the new peer's ownerId.
+const agentCardAutoFetcher = createAgentCardAutoFetcher({
+  mesh,
+  bridgeIdentity,
+  agentCardStore,
+  trustStore,
+  taskStore,
+  resolvePeerTransport: async (targetOwnerId) => {
+    const record = await peerDirectoryStore.getPeerByOwnerId(targetOwnerId);
+    if (!record) {
+      return { transportPeerId: undefined, recipientEnvelopePeerId: undefined };
+    }
+    const transportPeerId = record.peerId;
+    const recipientEnvelopePeerId = record.devicePublicKeyPem
+      ? derivePeerId(record.devicePublicKeyPem)
+      : transportPeerId;
+    return { transportPeerId, recipientEnvelopePeerId };
+  },
+  maxAgeMs: persistedNodeConfig?.agentCardAutoFetchMaxAgeMs,
+});
 const connectivityWarnings: string[] = [];
 const bootstrapProbeResults: Array<{ peer: string; ok: boolean; latencyMs?: number; error?: string }> = [];
 const MAX_BOOTSTRAP_PROBE_RESULTS = 512;
@@ -2185,6 +2210,75 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     }
 
     const persistedCfg = await nodeConfigStore.load();
+
+    // Phase 35C — LAN auto-bond: when the envelope carries a `lanFleetToken`
+    // matching our own configured token, accept the bond silently. This runs
+    // *before* the existing `companionPairingAutoAcceptWithToken` path so a
+    // fleet-onboarded pair-request can land even when the operator hasn't
+    // enabled the QR-pair auto-accept lever.
+    if (nodeService instanceof NodeServiceImpl) {
+      const decision = await evaluateLanAutoBondReceipt(
+        {
+          taskStore,
+          loadConfig: () => nodeConfigStore.load(),
+          // `sendPairRequest` is only used by `sendLanAutoBondRequest` (the
+          // outbound path); the receive path never calls it. The dummy
+          // implementation keeps the helper testable on both sides.
+          sendPairRequest: async () => ({ ok: true }),
+          getLocalIdentity: () => ({
+            ownerId: profile?.owner.ownerId ?? "",
+            deviceId: profile?.device.deviceId ?? "",
+            devicePublicKeyPem: profile?.device.publicKeyPem ?? "",
+          }),
+          getOwnOwnerId: () => profile?.owner.ownerId ?? "",
+        },
+        envelope,
+      );
+      if (decision.accept) {
+        await applyLanAutoBondAccept(
+          {
+            taskStore,
+            loadConfig: () => nodeConfigStore.load(),
+            sendPairRequest: async () => ({ ok: true }),
+            getLocalIdentity: () => ({
+              ownerId: profile?.owner.ownerId ?? "",
+              deviceId: profile?.device.deviceId ?? "",
+              devicePublicKeyPem: profile?.device.publicKeyPem ?? "",
+            }),
+            getOwnOwnerId: () => profile?.owner.ownerId ?? "",
+          },
+          {
+            requesterOwnerId: payload.requesterOwnerId,
+            requesterDeviceId: payload.requesterDeviceId,
+            requesterPeerId: remotePeerId,
+            remoteAddr,
+            fingerprint: decision.fingerprint ?? "",
+            correlationId,
+            messageId: envelope.messageId,
+            trustStore,
+            peerDirectory: peerDirectoryStore,
+          },
+        );
+        return;
+      }
+      // If the envelope *did* carry a fleet token but we declined (disabled,
+      // token-mismatch, …) emit a `message.rejected` audit so the operator
+      // can see why nothing happened.
+      if (decision.reason === "token-mismatch" || decision.reason === "disabled") {
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "message.rejected",
+            intent: "device.pair.request",
+            outcome: "deny",
+            summary: `lan-auto-bond rejected: ${decision.reason}${decision.fingerprint ? ` (fp=${decision.fingerprint})` : ""}`,
+            correlationId,
+            remotePeerId,
+            direction: "inbound",
+          }),
+        );
+      }
+    }
+
     const allowAuto =
       persistedCfg?.companionPairingAutoAcceptWithToken === true &&
       Boolean(payload.pairingToken) &&
@@ -2474,6 +2568,14 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
             console.error(`[bond:established] failed to store peer from bond.accept:`, err);
           }
         }
+        // Phase 33 — auto-fetch the peer's agent card on bond establishment. Fire-and-forget
+        // so the bond handler doesn't block on slow peers; the inbound agent-card-inbound
+        // handler caches the response on arrival.
+        void agentCardAutoFetcher
+          .onBondEstablished({ peerOwnerId: bondData.peerOwnerId, remotePeerId })
+          .catch((err) =>
+            console.warn(`[bond:established] auto-fetch agent card failed:`, err),
+          );
         void mesh.tagContactForPersistentReachability(remotePeerId).catch((err) =>
           console.warn(`[reachability] bond tag failed:`, err),
         );
@@ -3408,7 +3510,7 @@ if (nodeService instanceof NodeServiceImpl) {
     } else if (started) {
       console.warn("[openclaw] Gateway spawned but webhook not reachable yet — EnvoyAI will retry on first message");
     } else {
-      console.log("[openclaw] Gateway not started — EnvoyAI will use native LLM fallback");
+      console.log("[openclaw] Gateway not started — EnvoyAI will use native LLM fallback (or disabled by config)");
     }
   }).catch((err) => {
     console.warn("[openclaw] Init failed:", err instanceof Error ? err.message : String(err));

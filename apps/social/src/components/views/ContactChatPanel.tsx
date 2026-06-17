@@ -36,6 +36,7 @@ import { useToast } from "../../hooks/useToast.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import { PeerProfileGalleryStrip } from "../PeerProfileGalleryStrip.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
+import { AgentCardPanel } from "../AgentCardPanel.js";
 import type { TFunction } from "../../context/I18nContext.js";
 
 interface ContactChatPanelProps {
@@ -645,6 +646,12 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         )}
         <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
       </div>
+      {!selectedContact.startsWith("room:") && (
+        <details className="contact-agent-card-panel" open={false}>
+          <summary>{t("contactChat.agentCardSummary", "Agent capabilities")}</summary>
+          <AgentCardPanel ownerId={selectedContact} />
+        </details>
+      )}
       <details
         className="contact-notes-panel"
         open={notesOpen}

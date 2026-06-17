@@ -487,36 +487,6 @@ export const fileShareMessages = {
   pathUnavailable: "File path unavailable for this attachment",
 } as const;
 
-export const accountSettingsMessages = {
-  yourProfile: "Your profile",
-  profileDesc: "How you appear to contacts. For photos, topics, and bio, use the Profile tab.",
-  displayName: "Display name",
-  displayNamePlaceholder: "Your name",
-  username: "Username",
-  usernamePlaceholder: "alice",
-  whoCanFind: "Who can find you?",
-  discoverable: "Discoverable",
-  friendsOnly: "Friends only",
-  visibilitySaving: "Saving…",
-  visibilityHint:
-    "Changes apply immediately. Discoverable means you can appear in wider search when that network mode is on.",
-  connection: "Connection",
-  online: "Online — ready to chat and find people",
-  offline: "Offline — open Settings → Network to connect",
-  technicalDetails: "Technical details",
-  saveNameUsername: "Save name & username",
-  saving: "Saving…",
-  displayNameRequired: "Display name is required.",
-  usernameInvalid: "Username must be 3–30 characters (letters, numbers, underscore).",
-  saved: "Saved.",
-  addDisplayNameFirst: "Add a display name first, then choose who can find you.",
-  addUsernameFirst: "Add a username first, then choose who can find you.",
-  nowDiscoverable: "You are now discoverable in wider search.",
-  friendsOnlyNow: "Only friends can find you now.",
-  shareWithFriend: "Share with a friend",
-  shareDesc: "Send this link or code so they can add you under Find people → Paste a code.",
-} as const;
-
 export const privacySettingsMessages = {
   autonomy: {
     title: "Autonomy Controls",
@@ -548,15 +518,125 @@ export const privacySettingsMessages = {
   clearDataConfirm: "Are you sure you want to clear all personal data? This cannot be undone.",
 } as const;
 
-export const deviceSettingsMessages = {
-  title: "Authorized Devices",
-  desc: "Manage devices authorized to access your EnvoyMesh account.",
-  loading: "Loading devices…",
-  noDevices: "No authorized devices yet.",
-  revoke: "Revoke",
-  revoking: "Revoking…",
-  revoked: "revoked",
-  revokeConfirm: "Are you sure you want to revoke access for {label}? This device will no longer be able to access your account.",
+export const accountSettingsMessages = {
+  yourProfile: "Your profile",
+  profileDesc: "How you appear to contacts. For photos, topics, and bio, use the Profile tab.",
+  displayName: "Display name",
+  displayNamePlaceholder: "Your name",
+  username: "Username",
+  usernamePlaceholder: "alice",
+  whoCanFind: "Who can find you?",
+  discoverable: "Discoverable",
+  friendsOnly: "Friends only",
+  visibilitySaving: "Saving…",
+  visibilityHint:
+    "Changes apply immediately. Discoverable means you can appear in wider search when that network mode is on.",
+  connection: "Connection",
+  online: "Online — ready to chat and find people",
+  offline: "Offline — open Settings → Network to connect",
+  technicalDetails: "Technical details",
+  saveNameUsername: "Save name & username",
+  saving: "Saving…",
+  displayNameRequired: "Display name is required.",
+  usernameInvalid: "Username must be 3–30 characters (letters, numbers, underscore).",
+  saved: "Saved.",
+  addDisplayNameFirst: "Add a display name first, then choose who can find you.",
+  addUsernameFirst: "Add a username first, then choose who can find you.",
+  nowDiscoverable: "You are now discoverable in wider search.",
+  friendsOnlyNow: "Only friends can find you now.",
+  shareWithFriend: "Share with a friend",
+  shareDesc: "Send this link or code so they can add you under Find people → Paste a code.",
+  devices: {
+    title: "Authorized Devices",
+    desc: "Devices currently authorized to use this account. Re-pairing the same physical device updates the existing record instead of adding a new one.",
+    loading: "Loading devices…",
+    noDevices: "No authorized devices yet.",
+    revoke: "Revoke",
+    revoking: "Revoking…",
+    revoked: "revoked",
+    lastSeen: "last seen {when}",
+    revokeConfirm:
+      "Are you sure you want to revoke access for {label}? This device will no longer be able to access your account.",
+    refresh: "Refresh",
+    mobileNotAvailable: "Device management is not available on mobile devices.",
+    // One-time cleanup of historical duplicate records created before
+    // the mobile app started reusing a stable device keypair. Within each
+    // group of devices sharing a display name, the most recently paired
+    // entry is kept and the rest are revoked. Any entries that have
+    // already been revoked (orphaned) are also removed from the list.
+    cleanup: "Clean up",
+    cleaning: "Cleaning up…",
+    cleanupUnavailable: "Nothing to clean up.",
+    cleanupConfirm:
+      "Clean up: {duplicateCount} duplicate record(s) will be merged into the most-recently paired device, and {revokedCount} already-revoked record(s) will be removed from the list. Continue?",
+    cleanupSuccess:
+      "Cleaned up {duplicateCount} duplicate record(s) and removed {revokedCount} revoked record(s).",
+    cleanupFailed: "Cleanup failed: {message}",
+  },
+  identity: {
+    heading: "Identity",
+    sectionDesc: "Register a human-readable name that others can use to find you on the mesh.",
+    ownerId: "Owner ID",
+    ownerIdDesc: "Your cryptographic identity — always works, even without a DID name.",
+    didNameLabel: "DID Name",
+    didPlaceholder: "your-name",
+    didNameHint: "3-32 characters. Lowercase letters, numbers, and hyphens only. First to register wins.",
+    nameTooShort: "Name must be at least 3 characters",
+    nameInvalid: "Only lowercase letters, numbers, and hyphens",
+    register: "Register",
+    registering: "Registering...",
+    registered: "Registered ✓",
+    registeredDesc: "Your DID is now did:envoy:{name}. Others can find you by typing this name in search.",
+  },
+  // Privacy controls — moved from the standalone Privacy tab so all
+  // account-shape settings live under the Account tab.
+  privacy: privacySettingsMessages,
+} as const;
+
+export const artifactRendererMessages = {
+  openFile: "Open",
+  openFileToast: "File open is coming in the next release",
+  openFileTitle: "File open is coming in the next release",
+  unsupported: "Unsupported artifact",
+} as const;
+
+export const agentCardMessages = {
+  title: "Agent card",
+  empty: "Agent card not cached yet — bonded peers auto-fetch on bond.",
+  capabilities: "Capabilities",
+  publicTopics: "Public topics",
+  trustPolicy: "Trust policy",
+  protocolVersions: "Protocol versions",
+  protocols: "Protocols",
+  cachedAt: "Cached at",
   refresh: "Refresh",
-  mobileNotAvailable: "Device management is not available on mobile devices.",
+  refreshing: "Refreshing…",
+  refreshFailed: "Could not refresh agent card",
+  nodeProfile: "Node profile",
+  acceptBonds: "Accepts direct bond requests",
+  acceptReferrals: "Accepts referral requests",
+  approvalForFiles: "Requires human approval for raw files",
+  acceptsDirectBondRequests: "Accepts direct bond requests",
+  acceptsReferralRequests: "Accepts referral requests",
+  requiresHumanApprovalForRawFiles: "Requires human approval for raw files",
+  yes: "Yes",
+  no: "No",
+  nodeProfileByName: {
+    primary: "Primary",
+    satellite: "Satellite",
+    full: "Full node",
+    relay: "Relay",
+  },
+  ago: {
+    seconds: "{n}s ago",
+    minutes: "{n}m ago",
+    hours: "{n}h ago",
+    days: "{n}d ago",
+  },
+  unknown: "Unknown",
+} as const;
+
+export const commonYesNoMessages = {
+  yes: "Yes",
+  no: "No",
 } as const;

@@ -25,7 +25,15 @@ export type { CommerceReceiptRecord, ListCommerceReceiptsParams, RecordCommerceR
 import type { RagIndexProgress, RagIndexStatus } from "./rag-index-status.js";
 import type { TransferStatus } from "./transfer-status.js";
 import type {
+  CompanyInviteRecord,
+  CreateCompanyInviteParams,
+  CreateCompanyInviteResult,
+  ListCompanyInvitesResult,
+  RevokeCompanyInviteResult,
+} from "./company-invite.js";
+import type {
   BridgeStatus,
+  OpenClawStatus,
   NodeConfig,
   RelayConfig,
   NodeStatus,
@@ -54,6 +62,9 @@ import type {
   ListAuthorizedDevicesResult,
   RevokeAuthorizedDeviceParams,
   RevokeAuthorizedDeviceResult,
+  MergeAuthorizedDevicesParams,
+  MergeAuthorizedDevicesResult,
+  PruneRevokedDevicesResult,
   ListDeviceRevocationsResult,
 } from "./ws-protocol.js";
 
@@ -361,6 +372,15 @@ export interface CachedAgentCardSummary {
   capabilities: string[];
   cachedAt: string;
   sourceAgentPeerId?: string;
+  /** Phase 34: rich card fields forwarded from the peer AgentCard. */
+  nodeProfile?: import("@envoymesh/protocol").DeviceProfile;
+  publicTopics?: string[];
+  trustPolicySummary?: {
+    acceptsDirectBondRequests?: boolean;
+    acceptsReferralRequests?: boolean;
+    requiresHumanApprovalForRawFiles?: boolean;
+  };
+  supportedProtocolVersions?: string[];
 }
 
 export interface AuditEventSummary {
@@ -1326,6 +1346,14 @@ export interface NodeService {
   /** Send agent.card.request to a bonded peer (response cached on reply). */
   requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }>;
 
+  /**
+   * Latest cached `task.result` payload (with typed Artifacts) for a taskId.
+   * Returns `undefined` if the home node has not received a `task.result` for
+   * that taskId. Phase 34 — used by the Activity drill-down to render typed
+   * Artifacts without re-parsing the wire envelope.
+   */
+  getTaskResult(taskId: string): Promise<import("@envoymesh/protocol").TaskResultPayload | undefined>;
+
   /** Pending AI actions awaiting owner approval. */
   listPendingApprovals(): Promise<PendingApprovalSummary[]>;
 
@@ -1626,6 +1654,14 @@ export interface NodeService {
    */
   getBridgeStatus(): Promise<BridgeStatus>;
 
+  /**
+   * Get the live status of the built-in OpenClaw agent (EnvoyAI).
+   * `status.enabled` reflects the persisted `openclawEnabled` flag;
+   * `status.running` reflects the child process + webhook reachability.
+   * Phase 32 — mirrors `getBridgeStatus` for the in-process agent.
+   */
+  getOpenClawStatus(): Promise<OpenClawStatus>;
+
   // ClawHub skill marketplace
   getOpenClawPlugins(): Promise<string[]>;
   searchOpenClawPlugins(query: string): Promise<string[]>;
@@ -1661,6 +1697,83 @@ export interface NodeService {
    * Apply a WAN join-invite on a running node — merges bootstrap config and discovery seeds.
    */
   applyWanJoinInvite(token: string): Promise<ApplyWanJoinInviteResult>;
+
+  /**
+   * Mint a long-lived company invite (Phase 35A: Fleet Onboarding A).
+   *
+   * The returned `uri` is `envoy://invite?token=…`; the joiner pastes that
+   * into their Social UI to complete a `pairDevice` handshake. Tokens are
+   * persisted in `LocalCompanyInviteStore` with their `expiresAt` and are
+   * auto-rejected once expired or revoked.
+   */
+  createCompanyInvite(
+    params?: CreateCompanyInviteParams,
+  ): Promise<CreateCompanyInviteResult>;
+
+  /** List all company invites (active + consumed + revoked + expired). */
+  listCompanyInvites(): Promise<ListCompanyInvitesResult>;
+
+  /**
+   * Revoke a company invite. Idempotent — revoking a consumed or already-revoked
+   * invite returns the latest record unchanged.
+   */
+  revokeCompanyInvite(inviteId: string): Promise<RevokeCompanyInviteResult>;
+
+  /**
+   * Phase 35D — re-sync the pairing-kiosk HTTP server with the latest
+   * persisted config. Idempotent: off when `pairingKioskEnabled === false`,
+   * otherwise restarts the server with the current token/bind/port.
+   */
+  syncPairingKioskFromConfig(): Promise<void>;
+
+  /**
+   * Phase 35D — return the kiosk's current running state. Useful for the
+   * Settings → Devices tab to show a "Kiosk running at http://…" hint.
+   */
+  getPairingKioskStatus(): Promise<import("./kiosk-status.js").PairingKioskStatus>;
+
+  /**
+   * Phase 35B — Fleet Manifest Import. The operator uploads a signed manifest
+   * and the runtime walks the roster, pre-staging a `TrustRecord` (and a
+   * `PeerDirectory` entry) for every member.
+   *
+   * Re-importing the same `manifestId` is idempotent: previously applied
+   * members are reported as `skipped: [{ reason: "already-imported" }]`.
+   *
+   * Verifies:
+   * - signature is over `fleetManifestForSigning(manifest)` using
+   *   `manifest.issuerOwnerPublicKeyPem`
+   * - `deriveOwnerId(issuerOwnerPublicKeyPem) === manifest.issuerOwnerId`
+   * - `manifest.expiresAt` (if set) is in the future
+   */
+  importFleetManifest(
+    params: import("./fleet-manifest.js").ImportFleetManifestParams,
+  ): Promise<import("./fleet-manifest.js").ImportFleetManifestOutcome>;
+
+  /**
+   * Phase 35B — list every imported manifest (active + revoked). The output
+   * never includes the issuer's PEM or the manifest's signature — only the
+   * fingerprints.
+   */
+  listFleetManifests(): Promise<import("./fleet-manifest.js").ListFleetManifestsResult>;
+
+  /**
+   * Phase 35B — drop the trust records this manifest pre-staged. The manifest
+   * itself is kept (marked revoked) so the audit log still has a record of who
+   * was on the roster. Idempotent: revoking an already-revoked manifest is a
+   * no-op.
+   */
+  revokeFleetManifest(manifestId: string): Promise<import("./fleet-manifest.js").RevokeFleetManifestResult>;
+
+  /**
+   * Phase 35B — sign a `FleetManifest` with the local owner's key. Convenience
+   * helper so the operator doesn't have to maintain a separate signing tool.
+   * Returns a `FleetManifest` ready to be passed to `importFleetManifest` on
+   * each member's node.
+   */
+  createFleetManifest(
+    input: import("./fleet-manifest.js").CreateFleetManifestInput,
+  ): Promise<import("./fleet-manifest.js").CreateFleetManifestResult>;
 
   /**
    * Validate a QR pairing token and create a persistent session token.
@@ -1710,6 +1823,20 @@ export interface NodeService {
 
   /** Revoke a previously authorized device certificate. */
   revokeAuthorizedDevice(params: RevokeAuthorizedDeviceParams): Promise<RevokeAuthorizedDeviceResult>;
+
+  /**
+   * Merge duplicate authorized-device records: keep one as canonical and
+   * revoke the rest. Used to clean up historical duplicates created
+   * before the mobile app reused a stable device keypair.
+   */
+  mergeAuthorizedDevices(params: MergeAuthorizedDevicesParams): Promise<MergeAuthorizedDevicesResult>;
+
+  /**
+   * Drop every authorized-device entry that has a matching revocation
+   * record. The revocation records are kept for audit history; only
+   * the entries in the authorized list are removed.
+   */
+  pruneRevokedDevices(): Promise<PruneRevokedDevicesResult>;
 
   /** List signed device revocation records for this owner. */
   listDeviceRevocations(): Promise<ListDeviceRevocationsResult>;

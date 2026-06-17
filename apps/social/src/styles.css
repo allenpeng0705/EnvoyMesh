@@ -13,6 +13,18 @@ body {
 .swipe-back-container {
   position: relative;
   overflow-x: hidden;
+  /* The container is the parent of every mobile-only view (e.g. the AI
+     panel, terminals, discover). Those views declare `height: 100%` and
+     contain their own flex/scroll layouts. Without an explicit height
+     here, those child views collapse to content height and the inner
+     scroll containers (sidebar / messages / composer) all fall back to
+     <main> scrolling the whole page. `min-height: 0` lets `height: 100%`
+     resolve to a bounded value even if a flex ancestor forgets the
+     rule. */
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
 }
 
 .swipe-back-indicator {
@@ -759,6 +771,11 @@ textarea::placeholder {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(220px, 280px) 1fr;
+  /* Bounded row so the rail's `overflow-y: auto` and the chat-area's
+     `flex: 1` messages pane can own their scroll. Without this, the row
+     stretches with content and <main> ends up scrolling the whole grid
+     (rail + messages + composer) as one block. */
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .h2a-channel-rail {
@@ -817,6 +834,15 @@ textarea::placeholder {
 
 .h2a-channel-main {
   min-width: 0;
+}
+
+/* The AI messages pane inherits `.messages`'s `flex: 1; overflow-y: auto`
+   rule, which only works if the flex item itself can shrink below its
+   content. Without `min-height: 0` a tall approval card or a multi-block
+   answer would push the messages pane past the available column height
+   and re-introduce outer scroll. */
+.ai-messages-pane {
+  min-height: 0;
 }
 
 .ai-message-stack-item {
@@ -3201,11 +3227,23 @@ textarea::placeholder {
   margin: 0 auto;
 }
 
+/* Pin the Settings heading + tab row to the top of the scrolling <main>.
+   Without these, scrolling a long tab (Activity / Network / Devices) drags
+   the heading out of view. */
+.settings-view > h2,
+.settings-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-bg);
+}
+
 .settings-view > h2 {
   margin-bottom: 1.5rem;
   font-size: var(--text-2xl);
   font-weight: var(--font-bold);
   color: var(--color-text);
+  padding-top: 0.5rem;
 }
 
 .settings-tabs {
@@ -3217,7 +3255,6 @@ textarea::placeholder {
   border-radius: var(--radius-xl);
   overflow-x: auto;
   scrollbar-width: none;
-  position: relative;
 }
 
 .settings-tabs::before,
@@ -3389,6 +3426,50 @@ textarea::placeholder {
   padding: var(--space-5);
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--color-border-subtle);
+}
+
+/* Phase 32 — Agent Network mode chip + section (Settings → AI) */
+.settings-agent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.settings-agent-mode {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-elevated, var(--color-surface));
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg, 0.75rem);
+}
+.settings-agent-mode .status-badge {
+  align-self: flex-start;
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-semibold, 600);
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+}
+.settings-agent-mode .status-badge.status-on {
+  background: var(--color-accent-subtle, rgba(99, 102, 241, 0.12));
+  color: var(--color-accent, #6366f1);
+}
+.settings-agent-mode .status-badge.status-off {
+  background: var(--color-danger-subtle, rgba(239, 68, 68, 0.12));
+  color: var(--color-danger, #ef4444);
+}
+.status-badge.status-warn {
+  background: var(--color-warning-subtle, rgba(245, 158, 11, 0.12));
+  color: var(--color-warning, #f59e0b);
+}
+.settings-agent-mode .settings-hint {
+  margin: 0;
+  color: var(--color-text-muted, #6b7280);
+  font-size: var(--text-xs, 0.75rem);
+}
+.settings-section-subtitle.dim {
+  color: var(--color-text-muted, #6b7280);
+  font-weight: var(--font-normal, 400);
 }
 
 .settings-section h3 {
@@ -6184,6 +6265,277 @@ button.activity-row:hover,
 
 .answer-block-card--interactive {
   border: 1px solid color-mix(in srgb, var(--color-primary) 25%, var(--color-border-subtle));
+}
+
+/* ============================================
+ * Artifact renderer (Phase 34)
+ * Reuses the .answer-block-* design vocabulary but is its own
+ * tree so the artifact shapes (text / file / structured) can be
+ * extended without touching chat-renderer CSS.
+ * ============================================ */
+
+.artifact-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.artifact-list-item {
+  /* Per-artifact slot; visual treatment comes from .artifact-* below. */
+}
+
+.artifact {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.artifact-plain-text,
+.artifact-plain-json {
+  margin: 0;
+  padding: var(--space-2);
+  background: var(--color-surface-muted, #f6f7f9);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 480px;
+  overflow: auto;
+}
+
+.artifact-file-title {
+  font-weight: var(--font-weight-semibold, 600);
+  font-size: var(--text-sm);
+  word-break: break-word;
+}
+
+.artifact-file-meta {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.artifact-file-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px var(--space-1);
+  background: var(--color-surface-muted, #f6f7f9);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+}
+
+.artifact-file-meta-hash {
+  letter-spacing: 0.02em;
+}
+
+.artifact-file-cta {
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast, #fff);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.artifact-file-cta:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.artifact-file-cta:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.artifact-structured-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.artifact-structured-schema {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  word-break: break-all;
+}
+
+.artifact-structured-toggle {
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-muted);
+}
+
+.artifact-structured-pre {
+  margin: 0;
+  padding: var(--space-2);
+  background: var(--color-surface-muted, #f6f7f9);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 480px;
+  overflow: auto;
+}
+
+.artifact-structured-pre[data-truncated="true"] {
+  border-left: 3px solid var(--color-warning, #d97706);
+}
+
+.artifact-unknown {
+  border-style: dashed;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+/* Agent card (Phase 34) — peer details panel. Reuses the answer-block
+   surface treatment to feel like part of the same family as ArtifactRenderer. */
+.agent-card-panel {
+  border: 1px solid var(--color-border, #d4d4d8);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #ffffff);
+  padding: var(--space-3, 12px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+}
+
+.agent-card-panel--empty {
+  border-style: dashed;
+  color: var(--color-text-muted, #6b7280);
+  background: transparent;
+}
+
+.agent-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.agent-card-name {
+  font-size: var(--text-base, 14px);
+  font-weight: 600;
+  margin: 0;
+}
+
+.agent-card-profile {
+  font-size: var(--text-xs, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-surface-2, #f4f4f5);
+  color: var(--color-text, #18181b);
+}
+
+.agent-card-profile--primary {
+  background: var(--color-info-soft, #dbeafe);
+  color: var(--color-info, #1d4ed8);
+}
+
+.agent-card-profile--full {
+  background: var(--color-success-soft, #dcfce7);
+  color: var(--color-success, #166534);
+}
+
+.agent-card-profile--satellite,
+.agent-card-profile--relay {
+  background: var(--color-warning-soft, #fef3c7);
+  color: var(--color-warning, #92400e);
+}
+
+.agent-card-section-title {
+  font-size: var(--text-xs, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted, #6b7280);
+  margin: 0 0 var(--space-1, 4px);
+}
+
+.agent-card-capability-list,
+.agent-card-topic-list,
+.agent-card-protocol-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1, 4px);
+}
+
+.agent-card-capability code,
+.agent-card-protocol code {
+  font-size: var(--text-xs, 11px);
+  background: var(--color-surface-2, #f4f4f5);
+  border-radius: var(--radius-sm, 4px);
+  padding: 2px 6px;
+}
+
+.agent-card-topic {
+  font-size: var(--text-xs, 11px);
+  background: var(--color-surface-2, #f4f4f5);
+  border-radius: var(--radius-sm, 4px);
+  padding: 2px 8px;
+}
+
+.agent-card-trust-policy {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 4px);
+  font-size: var(--text-xs, 11px);
+  color: var(--color-text, #18181b);
+}
+
+.agent-card-cached-at {
+  margin: 0;
+  font-size: var(--text-xs, 11px);
+}
+
+/* Mount point for the AgentCardPanel in ContactChatPanel. */
+.contact-agent-card-panel {
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  background: var(--color-surface, #ffffff);
+}
+
+.contact-agent-card-panel > summary {
+  cursor: pointer;
+  font-size: var(--text-sm, 13px);
+  color: var(--color-text, #18181b);
+  padding: var(--space-1, 4px) 0;
+}
+
+.contact-agent-card-panel > .agent-card-panel {
+  margin-top: var(--space-2, 8px);
 }
 
 .answer-block-status {

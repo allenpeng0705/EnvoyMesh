@@ -45,6 +45,8 @@ export const EnvoyIntentSchema = z.enum([
   "device.pair.request",
   "device.pair.approve",
   "device.pair.deferred",
+  "device.revoke",
+  "device.merge",
   "rendezvous.register",
   "rendezvous.query",
   "rendezvous.response",
@@ -207,6 +209,10 @@ export const DeviceRevocationReasonSchema = z.enum([
   "rotated",
   "retired",
   "policy_violation",
+  // The device record was a duplicate of another record; revoked as
+  // part of an authorized-devices merge. Not a real compromise —
+  // just a historical bookkeeping cleanup.
+  "deduplicated",
 ]);
 
 export const UnsignedDeviceRevocationRecordSchema = z.object({
@@ -246,6 +252,79 @@ export const UnsignedAgentCredentialSchema = z.object({
 export const AgentCredentialSchema = UnsignedAgentCredentialSchema.extend({
   signature: z.string().min(1),
 });
+
+// ============================================
+// Fleet Manifest (Fleet Onboarding B)
+// ============================================
+
+/**
+ * A `FleetManifest` is an owner-signed roster of every device in a fleet.
+ * An operator who already knows all member public keys (e.g. provisioned out of
+ * band) can upload one manifest; the receiving node walks the roster and
+ * pre-stages trust + peer-directory entries so the joiners can be auto-accepted
+ * on first contact.
+ *
+ * The manifest is single-use: importing it once and re-importing the same
+ * `manifestId` is a no-op. Revocation happens by trusting the joiner with a
+ * lower level, not by changing the manifest.
+ */
+export const FleetMemberTrustLevelSchema = z.enum([
+  "direct",
+  "referred",
+  "public",
+  "blocked",
+]);
+
+export const FleetMemberSchema = z.object({
+  /** env-owner id of the member. */
+  ownerId: z.string().min(1).max(256),
+  /** Stable device id. */
+  deviceId: z.string().min(1).max(256),
+  /** PEM-encoded Ed25519 public key of the device. Used to derive the libp2p peer id. */
+  devicePublicKeyPem: z.string().min(1),
+  /** Free-form role label (e.g. "operator", "agent", "satellite", "router"). */
+  role: z.string().min(1).max(64),
+  /** Trust level the manifest asks the issuer to apply on the joiner's behalf. */
+  trustLevel: FleetMemberTrustLevelSchema,
+  /** Optional human-readable display name. */
+  displayName: z.string().max(128).optional(),
+  /** Optional pre-shared note stored on the trust record. */
+  note: z.string().max(256).optional(),
+});
+
+export const UnsignedFleetManifestSchema = z.object({
+  version: z.literal("0.1"),
+  manifestId: z.string().min(1).max(128),
+  /** Owner id of the issuer. Must match `deriveOwnerId(issuerOwnerPublicKeyPem)`. */
+  issuerOwnerId: z.string().min(1).max(256),
+  /** PEM-encoded public key of the issuer's owner key (so verifiers can check the signature). */
+  issuerOwnerPublicKeyPem: z.string().min(1),
+  /** Free-form label (e.g. "Acme Corp — Q3 onboarding"). */
+  label: z.string().max(128).optional(),
+  issuedAt: z.string().datetime(),
+  /**
+   * Manifest expiry. Use `null` (not omitted) to mean "never expires".
+   * Optional so the wire format is forgiving when a sender omits the field,
+   * but `null` is the canonical "no expiry" value and is what the runtime
+   * always produces.
+   */
+  expiresAt: z.string().datetime().nullable().optional(),
+  members: z.array(FleetMemberSchema).min(1).max(1024),
+});
+
+export const FleetManifestSchema = UnsignedFleetManifestSchema.extend({
+  signature: z.string().min(1),
+});
+
+export type FleetMember = z.infer<typeof FleetMemberSchema>;
+export type FleetMemberTrustLevel = z.infer<typeof FleetMemberTrustLevelSchema>;
+export type UnsignedFleetManifest = z.infer<typeof UnsignedFleetManifestSchema>;
+export type FleetManifest = z.infer<typeof FleetManifestSchema>;
+
+export function fleetManifestForSigning(manifest: FleetManifest): UnsignedFleetManifest {
+  const { signature: _signature, ...unsigned } = manifest;
+  return unsigned;
+}
 
 // ============================================
 // DHT Capability Topic Record
@@ -332,6 +411,12 @@ export const DevicePairRequestPayloadSchema = z.object({
   createdAt: z.string().datetime(),
   /** When set, home node may auto-accept if this matches the latest token from `getPairingPayload`. */
   pairingToken: z.string().min(1).optional(),
+  /**
+   * Phase 35C — shared fleet secret for LAN auto-bond. Carried in the pair-request
+   * envelope so the recipient can decide whether to auto-bond without scanning
+   * a QR. The token is treated as an opaque bearer; the home node never logs it.
+   */
+  lanFleetToken: z.string().min(1).max(256).optional(),
 });
 
 export const DevicePairApprovePayloadSchema = z.object({
@@ -1608,12 +1693,54 @@ export const TaskHeartbeatPayloadSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
+/**
+ * Phase 33 — Typed Artifact payload. A `task.result` envelope's `artifacts` field is now a
+ * discriminated union of three variants:
+ *  - `text`       — plain text reply (e.g. assistant prose)
+ *  - `file`       — vault document reference with content hash + optional mime type
+ *  - `structured` — JSON blob with a schema ref (e.g. task report, tool result)
+ *
+ * **Breaking change from Phase 32.** Old payloads with `artifacts: string[]` are now rejected
+ * at parse time. EnvoyMesh owns all senders, so this is internal-only.
+ */
+export const TextArtifactSchema = z.object({
+  kind: z.literal("text"),
+  content: z.string().min(1).max(64_000),
+  mimeType: z.string().min(1).optional(),
+});
+
+export const FileArtifactSchema = z.object({
+  kind: z.literal("file"),
+  vaultPath: z.string().min(1),
+  contentHash: z.string().min(1).max(128),
+  mimeType: z.string().min(1).optional(),
+  sizeBytes: z.number().int().nonnegative().optional(),
+  displayName: z.string().min(1).optional(),
+});
+
+export const StructuredArtifactSchema = z.object({
+  kind: z.literal("structured"),
+  schemaRef: z.string().min(1).max(256),
+  data: z.record(z.string(), z.unknown()),
+});
+
+export const ArtifactSchema = z.discriminatedUnion("kind", [
+  TextArtifactSchema,
+  FileArtifactSchema,
+  StructuredArtifactSchema,
+]);
+
+export type TextArtifact = z.infer<typeof TextArtifactSchema>;
+export type FileArtifact = z.infer<typeof FileArtifactSchema>;
+export type StructuredArtifact = z.infer<typeof StructuredArtifactSchema>;
+export type Artifact = z.infer<typeof ArtifactSchema>;
+
 export const TaskResultPayloadSchema = z.object({
   taskId: z.string().min(1),
   mandateId: z.string().min(1).optional(),
   status: TaskLifecycleStateSchema,
   summary: z.string().min(1).max(4000),
-  artifacts: z.array(z.string().min(1)).default([]),
+  artifacts: z.array(ArtifactSchema).default([]),
   /** Story E receipt-only: vault document attestation (no payment fields). */
   deliveryAttestation: z
     .object({
@@ -2117,6 +2244,61 @@ export function parseTaskHeartbeatPayload(input: unknown): TaskHeartbeatPayload 
 
 export function parseTaskResultPayload(input: unknown): TaskResultPayload {
   return TaskResultPayloadSchema.parse(input);
+}
+
+export function parseArtifact(input: unknown): Artifact {
+  return ArtifactSchema.parse(input);
+}
+
+export function parseTextArtifact(input: unknown): TextArtifact {
+  return TextArtifactSchema.parse(input);
+}
+
+export function parseFileArtifact(input: unknown): FileArtifact {
+  return FileArtifactSchema.parse(input);
+}
+
+export function parseStructuredArtifact(input: unknown): StructuredArtifact {
+  return StructuredArtifactSchema.parse(input);
+}
+
+export function createTextArtifact(input: {
+  content: string;
+  mimeType?: string;
+}): TextArtifact {
+  return TextArtifactSchema.parse({
+    kind: "text",
+    content: input.content,
+    mimeType: input.mimeType,
+  });
+}
+
+export function createFileArtifact(input: {
+  vaultPath: string;
+  contentHash: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  displayName?: string;
+}): FileArtifact {
+  return FileArtifactSchema.parse({
+    kind: "file",
+    vaultPath: input.vaultPath,
+    contentHash: input.contentHash,
+    mimeType: input.mimeType,
+    sizeBytes: input.sizeBytes,
+    displayName: input.displayName,
+  });
+}
+
+export function createStructuredArtifact(input: {
+  schemaRef: string;
+  data: Record<string, unknown>;
+}): StructuredArtifact {
+  return StructuredArtifactSchema.parse({
+    kind: "structured",
+    schemaRef: input.schemaRef,
+    data: input.data,
+  });
 }
 
 export function parseTaskFeedbackPayload(input: unknown): TaskFeedbackPayload {
@@ -3018,6 +3200,8 @@ export interface CreateDevicePairRequestPayloadInput {
   createdAt?: string;
   /** Same value as `PairingPayload.token` from the QR / `getPairingPayload` RPC. */
   pairingToken?: string;
+  /** Phase 35C — shared fleet secret for LAN auto-bond (when enabled). */
+  lanFleetToken?: string;
 }
 
 export function createDevicePairRequestPayload(
@@ -3033,6 +3217,7 @@ export function createDevicePairRequestPayload(
     note: input.note,
     createdAt: input.createdAt ?? new Date().toISOString(),
     pairingToken: input.pairingToken,
+    lanFleetToken: input.lanFleetToken,
   });
 }
 

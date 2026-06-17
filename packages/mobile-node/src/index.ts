@@ -258,6 +258,7 @@ import type {
   ShareOffer,
   SocialIntroProposal,
   BridgeStatus,
+  OpenClawStatus,
   PeerConnectionInfo,
   ListAgentActivityParams,
   AgentActivityRecord,
@@ -456,6 +457,35 @@ class EventBus {
 // ---------------------------------------------------------------------------
 // MobileNode
 // ---------------------------------------------------------------------------
+
+/**
+ * Phase 34: project a stored agent card row (the JSON payload is the protocol
+ * `AgentCard`; the row is what `_agentCardStore` returns) into the minimal
+ * `CachedAgentCardSummary` the UI consumes. Rich optional fields are only
+ * forwarded when present on the source card.
+ */
+function summarizeCachedAgentCard(row: {
+  ownerId: string;
+  cardJson: string;
+  cachedAt: string;
+  sourceAgentPeerId?: string;
+}): import("@envoymesh/api").CachedAgentCardSummary {
+  const card = JSON.parse(row.cardJson) as import("@envoymesh/protocol").AgentCard;
+  const summary: import("@envoymesh/api").CachedAgentCardSummary = {
+    ownerId: row.ownerId,
+    displayName: card.displayName,
+    capabilities: card.capabilities,
+    cachedAt: row.cachedAt,
+    sourceAgentPeerId: row.sourceAgentPeerId,
+  };
+  if (card.nodeProfile !== undefined) summary.nodeProfile = card.nodeProfile;
+  if (card.publicTopics) summary.publicTopics = card.publicTopics;
+  if (card.trustPolicySummary) summary.trustPolicySummary = card.trustPolicySummary;
+  if (card.supportedProtocolVersions) {
+    summary.supportedProtocolVersions = card.supportedProtocolVersions;
+  }
+  return summary;
+}
 
 export class MobileNode implements NodeService {
   private readonly _db: MobileDatabase;
@@ -839,8 +869,16 @@ export class MobileNode implements NodeService {
    * @returns The complete pairing result including session token
    */
   async pairWithHomeNode(qrPayload: import("@envoymesh/api").PairWithHomeNodeParams): Promise<import("@envoymesh/api").PairWithHomeNodeResult> {
-    // 1. Generate device keypair + ECDH key-exchange keypair
-    const device = generateDeviceIdentity();
+    // 1. Reuse a persisted device keypair for this home node, or generate
+    //    a fresh one. The home node's `deviceAuthorizationStore` dedups by
+    //    `deviceId` (derived from the device's public key), so reusing the
+    //    same key across re-pairs of the same mobile with the same home
+    //    node keeps a single record on the home node and just refreshes
+    //    `lastSeenAt` (the original `pairedAt` is preserved by the store).
+    //    The key is namespaced by the home node's ownerId so a single
+    //    mobile can be a satellite to multiple home nodes, each with its
+    //    own stable device identity.
+    const device = await this._loadOrCreateDeviceForHomeNode(qrPayload.ownerId);
     const ecdhKeyPair = await generateEcdhKeyPair();
 
     // 2. Connect to relay and exchange pairSharedIdentity RPC
@@ -1020,6 +1058,53 @@ export class MobileNode implements NodeService {
     }
   }
 
+  /**
+   * Reuse the persisted device keypair for a given home node, or mint a
+   * new one. The key is namespaced by the home node's `ownerId` so a
+   * single mobile can be a satellite to multiple home nodes, each with
+   * its own stable device identity.
+   *
+   * Falls back to a fresh `generateDeviceIdentity()` (and persists it)
+   * when:
+   *  - `secureStorage` is not configured (e.g. browser dev mode without
+   *    injected keychain);
+   *  - no key is stored yet for this home node;
+   *  - the stored value cannot be parsed (corrupt / from older version).
+   */
+  private async _loadOrCreateDeviceForHomeNode(homeNodeOwnerId: string): Promise<DeviceIdentity> {
+    if (!this._secureStorage || !homeNodeOwnerId) {
+      return generateDeviceIdentity();
+    }
+    const key = `deviceIdentity:${homeNodeOwnerId}`;
+    try {
+      const stored = await this._secureStorage.get(key);
+      if (stored) {
+        const parsed = JSON.parse(stored) as Partial<DeviceIdentity>;
+        if (
+          typeof parsed.deviceId === "string" &&
+          typeof parsed.publicKeyPem === "string" &&
+          typeof parsed.privateKeyPem === "string" &&
+          // Recompute deviceId from the persisted public key. If the
+          // stored deviceId does not match, the persisted blob is from
+          // a different identity (corruption / migration) — fall through
+          // and mint fresh.
+          deriveDeviceId(parsed.publicKeyPem) === parsed.deviceId
+        ) {
+          return parsed as DeviceIdentity;
+        }
+      }
+    } catch {
+      /* fall through to mint fresh */
+    }
+    const fresh = generateDeviceIdentity();
+    try {
+      await this._secureStorage.set(key, JSON.stringify(fresh));
+    } catch {
+      /* best effort — non-secureStorage builds can't persist anyway */
+    }
+    return fresh;
+  }
+
   async listAuthorizedDevices(): Promise<import("@envoymesh/api").ListAuthorizedDevicesResult> {
     return { devices: [] };
   }
@@ -1028,6 +1113,71 @@ export class MobileNode implements NodeService {
     _params: import("@envoymesh/api").RevokeAuthorizedDeviceParams,
   ): Promise<import("@envoymesh/api").RevokeAuthorizedDeviceResult> {
     throw new Error("revokeAuthorizedDevice is only supported on the home node");
+  }
+
+  async mergeAuthorizedDevices(
+    _params: import("@envoymesh/api").MergeAuthorizedDevicesParams,
+  ): Promise<import("@envoymesh/api").MergeAuthorizedDevicesResult> {
+    throw new Error("mergeAuthorizedDevices is only supported on the home node");
+  }
+
+  async pruneRevokedDevices(): Promise<import("@envoymesh/api").PruneRevokedDevicesResult> {
+    throw new Error("pruneRevokedDevices is only supported on the home node");
+  }
+
+  // -----------------------------------------------------------
+  // Phase 35A — Company Invites
+  // -----------------------------------------------------------
+  async createCompanyInvite(
+    params?: import("@envoymesh/api").CreateCompanyInviteParams,
+  ): Promise<import("@envoymesh/api").CreateCompanyInviteResult> {
+    return this._homeRemoteCall("createCompanyInvite", (params ?? {}) as Record<string, unknown>);
+  }
+
+  async listCompanyInvites(): Promise<import("@envoymesh/api").ListCompanyInvitesResult> {
+    return this._homeRemoteCall("listCompanyInvites", {});
+  }
+
+  async revokeCompanyInvite(
+    inviteId: string,
+  ): Promise<import("@envoymesh/api").RevokeCompanyInviteResult> {
+    return this._homeRemoteCall("revokeCompanyInvite", { inviteId });
+  }
+
+  // -----------------------------------------------------------
+  // Phase 35D — Pairing Kiosk
+  // -----------------------------------------------------------
+  async syncPairingKioskFromConfig(): Promise<void> {
+    await this._homeRemoteCall("syncPairingKioskFromConfig", {});
+  }
+
+  async getPairingKioskStatus(): Promise<import("@envoymesh/api").PairingKioskStatus> {
+    return this._homeRemoteCall("getPairingKioskStatus", {});
+  }
+
+  // -----------------------------------------------------------
+  // Phase 35B — Fleet Manifest
+  // -----------------------------------------------------------
+  async importFleetManifest(
+    params: import("@envoymesh/api").ImportFleetManifestParams,
+  ): Promise<import("@envoymesh/api").ImportFleetManifestOutcome> {
+    return this._homeRemoteCall("importFleetManifest", params as unknown as Record<string, unknown>);
+  }
+
+  async listFleetManifests(): Promise<import("@envoymesh/api").ListFleetManifestsResult> {
+    return this._homeRemoteCall("listFleetManifests", {});
+  }
+
+  async revokeFleetManifest(
+    manifestId: string,
+  ): Promise<import("@envoymesh/api").RevokeFleetManifestResult> {
+    return this._homeRemoteCall("revokeFleetManifest", { manifestId });
+  }
+
+  async createFleetManifest(
+    input: import("@envoymesh/api").CreateFleetManifestInput,
+  ): Promise<import("@envoymesh/api").CreateFleetManifestResult> {
+    return this._homeRemoteCall("createFleetManifest", input as unknown as Record<string, unknown>);
   }
 
   async listDeviceRevocations(): Promise<import("@envoymesh/api").ListDeviceRevocationsResult> {
@@ -2491,29 +2641,35 @@ You are the owner's personal AI assistant on EnvoyMesh.
 
   async listAgentCards(): Promise<import("@envoymesh/api").CachedAgentCardSummary[]> {
     const rows = await this._agentCardStore.list();
-    return rows.map((row) => {
-      const card = JSON.parse(row.cardJson) as import("@envoymesh/protocol").AgentCard;
-      return {
-        ownerId: row.ownerId,
-        displayName: card.displayName,
-        capabilities: card.capabilities,
-        cachedAt: row.cachedAt,
-        sourceAgentPeerId: row.sourceAgentPeerId,
-      };
-    });
+    return rows.map((row) => summarizeCachedAgentCard(row));
   }
 
   async getAgentCard(ownerId: string): Promise<import("@envoymesh/api").CachedAgentCardSummary | undefined> {
     const row = await this._agentCardStore.get(ownerId.trim());
     if (!row) return undefined;
-    const card = JSON.parse(row.cardJson) as import("@envoymesh/protocol").AgentCard;
-    return {
-      ownerId: row.ownerId,
-      displayName: card.displayName,
-      capabilities: card.capabilities,
-      cachedAt: row.cachedAt,
-      sourceAgentPeerId: row.sourceAgentPeerId,
-    };
+    return summarizeCachedAgentCard(row);
+  }
+
+  async getTaskResult(
+    taskId: string,
+  ): Promise<import("@envoymesh/protocol").TaskResultPayload | undefined> {
+    // Phase 34: paired home is the source of truth for `task.result` payloads.
+    // Mobile is a thin client — forward the RPC. Falls through to undefined
+    // when the home is offline so the UI stays silent instead of erroring.
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<import("@envoymesh/protocol").TaskResultPayload | undefined>(
+          "getTaskResult",
+          { taskId },
+        );
+      } catch (err) {
+        if (err instanceof Error && err.message === "homeRemote.offline") {
+          return undefined;
+        }
+        throw err;
+      }
+    }
+    return undefined;
   }
 
   async requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }> {
@@ -4242,6 +4398,22 @@ You are the owner's personal AI assistant on EnvoyMesh.
       agentName,
       agentPublicKeyPem: this._state?.homeAgentPubKey,
     };
+  }
+
+  /**
+   * Built-in OpenClaw status — mobile is a thin client, so we delegate to the
+   * home node via HomeRemoteClient. The home node owns the actual gateway
+   * process; mobile just reflects what the home reports.
+   */
+  async getOpenClawStatus(): Promise<OpenClawStatus> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<OpenClawStatus>("getOpenClawStatus", {});
+      } catch {
+        // fall through to offline default
+      }
+    }
+    return { enabled: false, running: false, url: "" };
   }
 
   async getPairingPayload() {

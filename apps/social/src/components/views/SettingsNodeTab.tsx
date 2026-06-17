@@ -9,6 +9,7 @@ import {
 } from "../../hooks/useNodeService.js";
 import QRCode from "qrcode";
 import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
+import { DEFAULT_APP_SETTINGS } from "../../lib/storage.js";
 import {
   DEFAULT_CLIENT_MAX_CONNECTIONS,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
@@ -27,7 +28,6 @@ import type {
   ExternalPublishConfig,
   ChatDiagnostics,
   ConnectivityDiagnostics,
-  AuthorizedDeviceSummary,
   AgentNotifyMode,
   A2aChatNotificationMode,
   AgentActivityDomain,
@@ -53,7 +53,7 @@ export function SettingsNodeTab() {
   const t = useT();
   const isMobileNode = useIsInProcessMobileNode();
   const nodeService = useNodeService();
-  const { nodeConfig, nodeStatus, peerId, bridgeStatus, refreshNodeConfig, connectionStatus, refreshConnectionStatus, bonds } =
+  const { nodeConfig, nodeStatus, peerId, bridgeStatus, refreshNodeConfig, connectionStatus, refreshConnectionStatus, bonds, appSettings, setAppSettings } =
     useNodeState();
 
   // Local state mirrors nodeConfig fields for debounced editing
@@ -169,6 +169,38 @@ export function SettingsNodeTab() {
     setChatDiagContact(bonds[0]!.peerOwnerId);
   }, [bonds, chatDiagContact]);
 
+  // Connection (WS URL) — moved here from the App tab so all
+  // network-shape settings live in one place.
+  const [wsUrlDraft, setWsUrlDraft] = useState(appSettings.wsUrl);
+  useEffect(() => {
+    setWsUrlDraft(appSettings.wsUrl);
+  }, [appSettings.wsUrl]);
+
+  // Behavior (notifications + connection-status visibility) — moved
+  // here from the App tab because both behaviors affect how the
+  // network status is surfaced in the UI.
+  const [notificationHint, setNotificationHint] = useState<string | null>(() => {
+    if (!appSettings.notificationsEnabled) return null;
+    if (typeof Notification === "undefined") return t("settings.behavior.notifyUnavailable");
+    if (Notification.permission === "denied") return t("settings.behavior.notifyBlocked");
+    return null;
+  });
+  useEffect(() => {
+    if (!appSettings.notificationsEnabled) {
+      setNotificationHint(null);
+      return;
+    }
+    if (typeof Notification === "undefined") {
+      setNotificationHint(t("settings.behavior.notifyUnavailable"));
+      return;
+    }
+    if (Notification.permission === "denied") {
+      setNotificationHint(t("settings.behavior.notifyBlocked"));
+      return;
+    }
+    setNotificationHint(null);
+  }, [appSettings.notificationsEnabled, t]);
+
   const discoveryProfile: DiscoveryProfile = nodeConfig?.discoveryProfile ?? "wan-default";
   const isPublicLibp2pDiscovery = discoveryProfile === "wan-default";
   const isPublicNetwork = bootstrapPresets.length > 0;
@@ -181,46 +213,6 @@ export function SettingsNodeTab() {
   const [wanInvitePaste, setWanInvitePaste] = useState("");
   const [wanInviteApplyBusy, setWanInviteApplyBusy] = useState(false);
   const [wanInviteApplyMsg, setWanInviteApplyMsg] = useState<string | null>(null);
-  const [authorizedDevices, setAuthorizedDevices] = useState<AuthorizedDeviceSummary[]>([]);
-  const [authorizedDevicesLoading, setAuthorizedDevicesLoading] = useState(false);
-  const [authorizedDevicesError, setAuthorizedDevicesError] = useState<string | null>(null);
-  const [revokingDeviceId, setRevokingDeviceId] = useState<string | null>(null);
-
-  const refreshAuthorizedDevices = useCallback(async () => {
-    if (isMobileNode) return;
-    setAuthorizedDevicesLoading(true);
-    setAuthorizedDevicesError(null);
-    try {
-      const result = await nodeService.listAuthorizedDevices();
-      setAuthorizedDevices(result.devices);
-    } catch (e) {
-      setAuthorizedDevicesError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setAuthorizedDevicesLoading(false);
-    }
-  }, [isMobileNode, nodeService]);
-
-  useEffect(() => {
-    if (isMobileNode) return;
-    void refreshAuthorizedDevices();
-  }, [isMobileNode, refreshAuthorizedDevices]);
-
-  const handleRevokeDevice = useCallback(async (deviceId: string) => {
-    if (isMobileNode) return;
-    const label = authorizedDevices.find((d) => d.deviceId === deviceId)?.displayName ?? deviceId;
-    if (!window.confirm(t("settings.network.agentBridge.revokeConfirm", { label }))) {
-      return;
-    }
-    setRevokingDeviceId(deviceId);
-    try {
-      await nodeService.revokeAuthorizedDevice({ deviceId, reason: "retired" });
-      await refreshAuthorizedDevices();
-    } catch (e) {
-      setAuthorizedDevicesError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setRevokingDeviceId(null);
-    }
-  }, [authorizedDevices, isMobileNode, nodeService, refreshAuthorizedDevices, t]);
 
   const handleShowWanJoinInvite = useCallback(async () => {
     setWanJoinLoading(true);
@@ -442,6 +434,31 @@ export function SettingsNodeTab() {
 
   return (
     <>
+      {/* ============================================================
+       * Section order is "frequent first, defaults last, diagnostics
+       * at the very back":
+       *  1. File sharing inbox banner    — frequent, only when present
+       *  2. Node control (start/stop)    — daily driver
+       *  3. Network status (relays/bonds)— daily driver
+       *  4. Connection (WS URL)          — daily driver
+       *  5. Behavior (auto-connect, …)   — daily driver
+       *  6. Discovery profile            — set once
+       *  7. Discovery (mDNS)             — default true
+       *  8. Public discovery (toggle)    — default on
+       *  9. Bootstrap presets            — set once, advanced
+       * 10. Configured relays            — set once, advanced
+       * 11. Trust mode & matching        — set once, advanced
+       * 12. IPFS (mobile / desktop)      — advanced, set once
+       * 13. Agent bridge                 — set once, advanced
+       * 14. Relay public WS URL          — set once, advanced
+       * 15. Resource tuning              — defaults, advanced
+       * 16. AI chat behavior             — set once, network-shaped
+       * --------- Diagnostics (troubleshooting) ----------
+       * 17. Chat connectivity diagnostics
+       * 18. WAN connectivity diagnostics
+       * 19. Physical two-NAT sign-off
+       * ============================================================ */}
+
       {(pendingShareOffers.length > 0 || agentShareProposals.length > 0) && (
         <section className="settings-section">
           <h3>{t("settings.network.fileSharing.title")}</h3>
@@ -559,8 +576,1042 @@ export function SettingsNodeTab() {
           disabled={bondConnectionLoading}
           onClick={() => { void refreshBondConnectionInfo(); }}
         >
-          {t("settings.devices.refresh")}
+          {t("settings.network.networkStatus.refresh")}
         </button>
+      </section>
+
+      {/* Connection — moved from the App tab so all network-shape
+          settings (WebSocket URL, auto-connect, etc.) live together. */}
+      <section className="settings-section">
+        <h3>{t("settings.connection.title")}</h3>
+        <div className="settings-row">
+          <div>
+            <div className="settings-row-label">{t("settings.connection.wsUrl")}</div>
+            <div className="settings-row-hint">{t("settings.connection.wsHint")}</div>
+          </div>
+        </div>
+        <input
+          type="text"
+          className="settings-input"
+          value={wsUrlDraft}
+          onChange={(e) => setWsUrlDraft(e.target.value)}
+        />
+        <div className="settings-buttons" style={{ marginTop: "8px" }}>
+          <button
+            type="button"
+            className="settings-save-btn"
+            onClick={() => {
+              setAppSettings({
+                ...appSettings,
+                wsUrl: wsUrlDraft.trim() || DEFAULT_APP_SETTINGS.wsUrl,
+              });
+            }}
+          >
+            {t("settings.connection.applyUrl")}
+          </button>
+          <button type="button" className="settings-cancel-btn" onClick={() => setWsUrlDraft(appSettings.wsUrl)}>
+            {t("common.reset")}
+          </button>
+        </div>
+        <p className="settings-hint" style={{ marginTop: "6px" }}>
+          {t("settings.connection.applyNote")}
+        </p>
+      </section>
+
+      {/* Behavior — moved from the App tab. Auto-connect, notifications,
+          and the in-chat P2P/Relay indicator all shape how the network
+          status is surfaced. */}
+      <section className="settings-section">
+        <h3>{t("settings.behavior.title")}</h3>
+        <div className="settings-row">
+          <div>
+            <div className="settings-row-label">{t("settings.behavior.autoConnect")}</div>
+            <div className="settings-row-hint">{t("settings.behavior.autoConnectHint")}</div>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={appSettings.autoConnect}
+              onChange={(e) => setAppSettings({ ...appSettings, autoConnect: e.target.checked })}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+        <div className="settings-row">
+          <div>
+            <div className="settings-row-label">{t("settings.behavior.notifications")}</div>
+            <div className="settings-row-hint">{t("settings.behavior.notificationsHint")}</div>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={appSettings.notificationsEnabled}
+              onChange={(e) => {
+                void (async () => {
+                  const enabled = e.target.checked;
+                  if (
+                    enabled &&
+                    typeof Notification !== "undefined" &&
+                    Notification.permission === "default"
+                  ) {
+                    await Notification.requestPermission();
+                  }
+                  setAppSettings({ ...appSettings, notificationsEnabled: enabled });
+                })();
+              }}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+        {notificationHint ? (
+          <p className="settings-hint" role="alert" style={{ marginTop: "6px" }}>
+            {notificationHint}
+          </p>
+        ) : null}
+        <div className="settings-row">
+          <div>
+            <div className="settings-row-label">{t("settings.behavior.connectionStatus")}</div>
+            <div className="settings-row-hint">{t("settings.behavior.connectionStatusHint")}</div>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={appSettings.showConnectionStatus}
+              onChange={(e) => setAppSettings({ ...appSettings, showConnectionStatus: e.target.checked })}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h3>{t("settings.network.discoveryProfile.title")}</h3>
+        <p className="section-desc">
+          {t("settings.network.discoveryProfile.desc")}
+        </p>
+        <label className="settings-field">
+          <span className="settings-field-label">{t("settings.network.discoveryProfile.label")}</span>
+          <select
+            className="settings-select"
+            value={discoveryProfile}
+            onChange={(e) => void setDiscoveryProfile(e.target.value as DiscoveryProfile)}
+          >
+            <option value="wan-default">{t("settings.network.discoveryProfile.wanDefault")}</option>
+            <option value="relay-only">{t("settings.network.discoveryProfile.relayOnly")}</option>
+            <option value="contacts-only">{t("settings.network.discoveryProfile.contactsOnly")}</option>
+          </select>
+        </label>
+        <p className="section-desc muted">
+          {discoveryProfile === "wan-default"
+            ? t("settings.network.discoveryProfile.wanDefaultHint")
+            : discoveryProfile === "relay-only"
+              ? t("settings.network.discoveryProfile.relayOnlyHint")
+              : t("settings.network.discoveryProfile.contactsOnlyHint")}
+        </p>
+      </section>
+
+      <section className="settings-section">
+        <h3>{t("settings.network.discovery.title")}</h3>
+        <p className="section-desc">
+          {t("settings.network.discovery.desc")}
+        </p>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.network.discovery.mdns")}</strong>
+            <span className="toggle-desc">{t("settings.network.discovery.mdnsDesc")}</span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={mdnsToggle.checked}
+              onChange={mdnsToggle.onCheckboxChange}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h3>{t("settings.network.publicDiscovery.title")}</h3>
+        <p className="section-desc">
+          {t("settings.network.publicDiscovery.desc")}
+        </p>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.network.publicDiscovery.toggle")}</strong>
+            <span className="toggle-desc">
+              {isPublicLibp2pDiscovery
+                ? t("settings.network.publicDiscovery.profileWanDefault", { count: bootstrapPresets.length })
+                : t("settings.network.publicDiscovery.profileContactsOnly")}
+            </span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={publicLibp2pToggle.checked}
+              onChange={publicLibp2pToggle.onCheckboxChange}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+        {!isPublicLibp2pDiscovery ? (
+          <p className="section-desc muted">
+            {t("settings.network.publicDiscovery.contactsOnlyHint")}
+          </p>
+        ) : null}
+      </section>
+
+      <section className="settings-section">
+        <h3>{t("settings.network.bootstrapPresets.title")}</h3>
+        <p className="section-desc">
+          {isPublicLibp2pDiscovery
+            ? t("settings.network.bootstrapPresets.descPublic")
+            : t("settings.network.bootstrapPresets.descPrivate")}
+        </p>
+        <div className="bootstrap-presets">
+          {[
+            { id: "public-libp2p", label: t("settings.network.bootstrapPresets.publicLibp2p"), desc: t("settings.network.bootstrapPresets.publicLibp2pDesc") },
+            { id: "public-libp2p-am6", label: t("settings.network.bootstrapPresets.publicLibp2pAm6"), desc: t("settings.network.bootstrapPresets.publicLibp2pAm6Desc") },
+            { id: "public-libp2p-am7", label: t("settings.network.bootstrapPresets.publicLibp2pAm7"), desc: t("settings.network.bootstrapPresets.publicLibp2pAm7Desc") },
+            { id: "cn-relay", label: t("settings.network.bootstrapPresets.cnRelay"), desc: t("settings.network.bootstrapPresets.cnRelayDesc") },
+          ].map((preset) => (
+            <label key={preset.id} className="preset-checkbox">
+              <input
+                type="checkbox"
+                disabled={!isPublicLibp2pDiscovery}
+                checked={bootstrapPresets.includes(preset.id)}
+                onChange={async (e) => {
+                  if (!isPublicLibp2pDiscovery) return;
+                  bootstrapPresetsSavingRef.current += 1;
+                  setBootstrapPresetSyncNonce((n) => n + 1);
+                  try {
+                    const checked = e.target.checked;
+                    const updated = checked
+                      ? [...new Set([...bootstrapPresets, preset.id])]
+                      : bootstrapPresets.filter((p) => p !== preset.id);
+                    setBootstrapPresets(updated);
+                    await nodeService.updateNodeConfig({
+                      discoveryProfile: "wan-default",
+                      bootstrapPresets: updated,
+                    });
+                    await restartNodeAfterConnectivityChange();
+                  } finally {
+                    bootstrapPresetsSavingRef.current -= 1;
+                    setBootstrapPresetSyncNonce((n) => n + 1);
+                  }
+                }}
+              />
+              <span className="preset-info">
+                <strong>{preset.label}</strong>
+                <span className="preset-desc">{preset.desc}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h3>{t("settings.network.relays.title")}</h3>
+        {relays.length === 0 ? (
+          <p className="empty">{t("settings.network.relays.empty")}</p>
+        ) : (
+          <ul className="relay-list">
+            {relays.map((relay) => (
+              <li key={relay.relayId} className="relay-item">
+                <label className="relay-toggle">
+                  <input
+                    type="checkbox"
+                    checked={relay.enabled}
+                    onChange={async () => {
+                      const updatedRelays = relays.map(r =>
+                        r.relayId === relay.relayId ? { ...r, enabled: !r.enabled } : r
+                      );
+                      await nodeService.updateNodeConfig({ configuredRelays: updatedRelays });
+                      await refreshNodeConfig();
+                    }}
+                  />
+                  <span className="relay-info">
+                    <strong>{relay.addr}</strong>
+                    {relay.level !== undefined && <span className="relay-level">{t("settings.network.relays.level", { level: relay.level })}</span>}
+                    {relay.region && <span className="relay-region">{relay.region}</span>}
+                  </span>
+                </label>
+                <button
+                  className="remove-relay"
+                  onClick={async () => {
+                    await nodeService.removeRelay(relay.relayId);
+                    await refreshNodeConfig();
+                  }}
+                >
+                  {t("settings.network.relays.remove")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="add-relay-form">
+          <h4>{t("settings.network.relays.addTitle")}</h4>
+          <input
+            type="text"
+            className="settings-input"
+            placeholder={t("settings.network.relays.addPlaceholder")}
+            value={newRelayAddr}
+            onChange={(e) => setNewRelayAddr(e.target.value)}
+          />
+          <button
+            type="button"
+            className="settings-button"
+            onClick={async () => {
+              if (!newRelayAddr.trim()) return;
+              try {
+                await nodeService.addRelay(newRelayAddr);
+                setNewRelayAddr("");
+                await refreshNodeConfig();
+              } catch (error) {
+                console.error("Failed to add relay:", error);
+              }
+            }}
+          >
+            {t("settings.network.relays.add")}
+          </button>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h3>{t("settings.network.trustMatching.title")}</h3>
+        <p className="section-desc">
+          {t("settings.network.trustMatching.desc")}
+        </p>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.network.trustMatching.trustMode")}</strong>
+            <span className="toggle-desc">{t("settings.network.trustMatching.trustModeDesc")}</span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={trustModeToggle.checked}
+              onChange={trustModeToggle.onCheckboxChange}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.network.trustMatching.friendAutopilot")}</strong>
+            <span className="toggle-desc">
+              {nodeConfig?.socialProxyEnabled
+                ? t("settings.network.trustMatching.friendAutopilotSuperseded")
+                : t("settings.network.trustMatching.friendAutopilotDesc")}
+            </span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={friendAutopilotToggle.checked}
+              onChange={friendAutopilotToggle.onCheckboxChange}
+              disabled={!trustModeToggle.checked || nodeConfig?.socialProxyEnabled === true}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+        {friendAutopilotToggle.checked ? (
+          <dl className="settings-list">
+            <dt>{t("settings.network.trustMatching.autopilotSchedule")}</dt>
+            <dd>
+              <select
+                className="settings-input"
+                value={String(nodeConfig?.friendAutopilotIntervalHours ?? 0)}
+                onChange={async (e) => {
+                  await updateNodeConfig({
+                    friendAutopilotIntervalHours: Number(e.target.value) as 0 | 24 | 168,
+                  });
+                }}
+                disabled={!trustModeToggle.checked}
+              >
+                <option value="0">{t("settings.network.trustMatching.scheduleManual")}</option>
+                <option value="24">{t("settings.network.trustMatching.scheduleDaily")}</option>
+                <option value="168">{t("settings.network.trustMatching.scheduleWeekly")}</option>
+              </select>
+              <p className="settings-hint" style={{ marginTop: "6px" }}>
+                {t("settings.network.trustMatching.autopilotScheduleHint")}
+              </p>
+            </dd>
+          </dl>
+        ) : null}
+        <dl className="settings-list">
+          <dt>{t("settings.network.trustMatching.syndicationCeiling")}</dt>
+          <dd>
+            <select
+              className="settings-input"
+              value={nodeConfig?.knowledgeSyndicationMaxSensitivity ?? ""}
+              onChange={async (e) => {
+                const value = e.target.value;
+                await nodeService.updateNodeConfig({
+                  knowledgeSyndicationMaxSensitivity:
+                    value === "" ? null : (value as "public" | "friends" | "private"),
+                } as Parameters<typeof nodeService.updateNodeConfig>[0]);
+              }}
+            >
+              <option value="">{t("settings.network.trustMatching.syndicationBondOnly")}</option>
+              <option value="public">{t("settings.network.trustMatching.syndicationPublic")}</option>
+              <option value="friends">{t("settings.network.trustMatching.syndicationFriends")}</option>
+              <option value="private">{t("settings.network.trustMatching.syndicationPrivate")}</option>
+            </select>
+            <p className="settings-hint" style={{ marginTop: "6px" }}>
+              {t("settings.network.trustMatching.syndicationHint")}
+            </p>
+          </dd>
+          {bonds.length > 0 ? (
+            <>
+              <dt>{t("settings.network.trustMatching.perContactCaps")}</dt>
+              <dd>
+                <ul className="settings-contact-syndication-list">
+                  {bonds.map((bond) => {
+                    const pref = nodeConfig?.contactAiPreferences?.find(
+                      (p) => p.peerOwnerId === bond.peerOwnerId,
+                    );
+                    return (
+                      <li key={bond.peerOwnerId} className="settings-contact-syndication-row">
+                        <span>{bond.displayName || bond.peerOwnerId.slice(0, 20)}</span>
+                        <select
+                          className="settings-input"
+                          value={pref?.syndicationMaxSensitivity ?? ""}
+                          onChange={async (e) => {
+                            const value = e.target.value;
+                            const currentPrefs = nodeConfig?.contactAiPreferences ?? [];
+                            const other = currentPrefs.filter((p) => p.peerOwnerId !== bond.peerOwnerId);
+                            const existing = currentPrefs.find((p) => p.peerOwnerId === bond.peerOwnerId);
+                            await updateNodeConfig({
+                              contactAiPreferences: [
+                                ...other,
+                                {
+                                  peerOwnerId: bond.peerOwnerId,
+                                  aiAccessLevel: existing?.aiAccessLevel ?? "none",
+                                  knowledgeAccess: existing?.knowledgeAccess ?? "public",
+                                  priority: existing?.priority ?? "high",
+                                  ...(value !== ""
+                                    ? {
+                                        syndicationMaxSensitivity: value as
+                                          | "public"
+                                          | "friends"
+                                          | "private",
+                                      }
+                                    : {}),
+                                },
+                              ],
+                            });
+                          }}
+                        >
+                          <option value="">{t("settings.network.trustMatching.useGlobalCeiling")}</option>
+                          <option value="public">{t("settings.network.trustMatching.publicOnly")}</option>
+                          <option value="friends">{t("settings.network.trustMatching.syndicationFriends")}</option>
+                          <option value="private">{t("settings.network.trustMatching.privateTier")}</option>
+                        </select>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </dd>
+            </>
+          ) : null}
+          <dt>{t("settings.network.trustMatching.friendMatchingPreferences")}</dt>
+          <dd>
+            <textarea
+              className="settings-input"
+              rows={5}
+              placeholder={t("settings.network.trustMatching.friendMatchingPlaceholder")}
+              value={friendMatchingDraft}
+              onChange={(e) => setFriendMatchingDraft(e.target.value)}
+            />
+            <p className="settings-hint" style={{ marginTop: "6px" }}>
+              {t("settings.network.trustMatching.friendMatchingHint")}
+            </p>
+          </dd>
+        </dl>
+        <div className="settings-buttons">
+          <button
+            type="button"
+            className="settings-save-btn"
+            onClick={async () => {
+              await updateNodeConfig({ friendMatchingPreferencesText: friendMatchingDraft });
+            }}
+          >
+            {t("settings.network.trustMatching.savePreferences")}
+          </button>
+          <button
+            type="button"
+            className="settings-cancel-btn"
+            onClick={() =>
+              setFriendMatchingDraft(nodeConfig?.friendMatchingPreferencesText ?? "")}
+          >
+            {t("settings.network.trustMatching.reset")}
+          </button>
+        </div>
+      </section>
+
+      {isMobileNode ? (
+        <section className="settings-section">
+          <h3>{t("settings.network.ipfs.title")}</h3>
+          <p className="section-desc">
+            {t("settings.network.ipfs.descMobile")}
+          </p>
+          <dl className="settings-list">
+            <dt>{t("settings.network.ipfs.engine")}</dt>
+            <dd>
+              {ipfsEngineStatus == null ? (
+                <span className="settings-hint">{t("settings.network.ipfs.checking")}</span>
+              ) : ipfsEngineStatus.helia?.available ? (
+                <span className="settings-hint">
+                  {t("settings.network.ipfs.heliaInProcess")}
+                  {ipfsEngineStatus.helia.heliaVersion ? ` (${ipfsEngineStatus.helia.heliaVersion})` : ""}
+                </span>
+              ) : (
+                <span className="settings-hint" role="alert">
+                  {ipfsEngineStatus.helia?.errorHint ?? t("settings.network.ipfs.heliaUnavailable")}
+                </span>
+              )}
+            </dd>
+            <dt>{t("settings.network.ipfs.exportEngine")}</dt>
+            <dd>
+              <span className="settings-hint">{t("settings.network.ipfs.heliaMobileOnly")}</span>
+            </dd>
+          </dl>
+          <div className="settings-toggle-row">
+            <div className="toggle-info">
+              <strong>{t("settings.network.ipfs.allowExport")}</strong>
+              <span className="toggle-desc">{t("settings.network.ipfs.allowExportDescMobile")}</span>
+            </div>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={ipfsExportToggle.checked}
+                onChange={ipfsExportToggle.onCheckboxChange}
+              />
+              <span className="slider" />
+            </label>
+          </div>
+        </section>
+      ) : (
+        <section className="settings-section">
+          <h3>{t("settings.network.ipfs.title")}</h3>
+          <p className="section-desc">
+            {t("settings.network.ipfs.descDesktop")}
+          </p>
+          <dl className="settings-list">
+            <dt>{t("settings.network.ipfs.engine")}</dt>
+            <dd>
+              {currentExternalPublish.ipfsExportEngine === "helia" ? (
+                <>
+                  {ipfsEngineStatus == null ? (
+                    <span className="settings-hint">{t("settings.network.ipfs.checking")}</span>
+                  ) : ipfsEngineStatus.helia?.available ? (
+                    <span className="settings-hint">
+                      {t("settings.network.ipfs.heliaInProcessPrimary")}
+                      {ipfsEngineStatus.helia.heliaVersion ? ` (${ipfsEngineStatus.helia.heliaVersion})` : ""}
+                    </span>
+                  ) : (
+                    <span className="settings-hint" role="alert">
+                      {ipfsEngineStatus.helia?.errorHint ?? t("settings.network.ipfs.heliaUnavailable")}
+                    </span>
+                  )}
+                  <span className="settings-hint" style={{ display: "block", marginTop: "4px" }}>
+                    {ipfsEngineStatus?.kubo?.available
+                      ? t("settings.network.ipfs.kuboAlsoAvailable", {
+                          version: ipfsEngineStatus.kubo.kuboVersion ? ` (${ipfsEngineStatus.kubo.kuboVersion})` : "",
+                        })
+                      : ipfsEngineStatus?.kubo?.errorHint ?? t("settings.network.ipfs.kuboNotRequired")}
+                  </span>
+                </>
+              ) : (
+                <>
+                  {ipfsEngineStatus == null ? (
+                    <span className="settings-hint">{t("settings.network.ipfs.checking")}</span>
+                  ) : ipfsEngineStatus.available ? (
+                    <span className="settings-hint">
+                      {ipfsEngineStatus.running
+                        ? `${t("settings.network.ipfs.kuboReady", {
+                            version: ipfsEngineStatus.kuboVersion ? ` (${ipfsEngineStatus.kuboVersion})` : "",
+                            managed: ipfsEngineStatus.managed ? t("settings.network.ipfs.kuboManaged") : "",
+                          })}`
+                        : t("settings.network.ipfs.kuboAvailableStarts")}
+                    </span>
+                  ) : (
+                    <span className="settings-hint" role="alert">
+                      {ipfsEngineStatus.errorHint ?? t("settings.network.ipfs.kuboUnavailable")}
+                    </span>
+                  )}
+                  {ipfsEngineStatus?.helia != null && (
+                    <span className="settings-hint" style={{ display: "block", marginTop: "4px" }}>
+                      {ipfsEngineStatus.helia.available
+                        ? `${t("settings.network.ipfs.heliaInProcess")}${ipfsEngineStatus.helia.heliaVersion ? ` (${ipfsEngineStatus.helia.heliaVersion})` : ""}`
+                        : ipfsEngineStatus.helia.errorHint ?? t("settings.network.ipfs.heliaUnavailableShort")}
+                    </span>
+                  )}
+                </>
+              )}
+            </dd>
+            <dt>{t("settings.network.ipfs.exportEngine")}</dt>
+            <dd>
+              <select
+                className="settings-input"
+                value={currentExternalPublish.ipfsExportEngine}
+                onChange={(e) => {
+                  const ipfsExportEngine = e.target.value as NonNullable<
+                    ExternalPublishConfig["ipfsExportEngine"]
+                  >;
+                  void updateNodeConfig({
+                    externalPublish: {
+                      ...currentExternalPublish,
+                      ipfsExportEngine,
+                    },
+                  });
+                }}
+              >
+                <option value="kubo">{t("settings.network.ipfs.engineKubo")}</option>
+                <option value="kubo-with-helia-shadow">{t("settings.network.ipfs.engineKuboHeliaShadow")}</option>
+                <option value="helia">{t("settings.network.ipfs.engineHelia")}</option>
+              </select>
+              <p className="settings-hint" style={{ marginTop: "6px" }}>
+                {currentExternalPublish.ipfsExportEngine === "helia"
+                  ? t("settings.network.ipfs.hintHelia")
+                  : currentExternalPublish.ipfsExportEngine === "kubo-with-helia-shadow"
+                    ? t("settings.network.ipfs.hintKuboHeliaShadow")
+                    : t("settings.network.ipfs.hintKubo")}
+              </p>
+            </dd>
+          </dl>
+          <div className="settings-toggle-row">
+            <div className="toggle-info">
+              <strong>{t("settings.network.ipfs.allowExport")}</strong>
+              <span className="toggle-desc">{t("settings.network.ipfs.allowExportDescDesktop")}</span>
+            </div>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={ipfsExportToggle.checked}
+                onChange={ipfsExportToggle.onCheckboxChange}
+              />
+              <span className="slider" />
+            </label>
+          </div>
+          {ipfsExportToggle.checked ? (
+            <div className="settings-toggle-row">
+              <div className="toggle-info">
+                <strong>{t("settings.network.ipfs.allowPinning")}</strong>
+                <span className="toggle-desc">
+                  {t("settings.network.ipfs.allowPinningDesc")}
+                </span>
+              </div>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={currentExternalPublish.pinningEnabled}
+                  onChange={async (e) => {
+                    await updateNodeConfig({
+                      externalPublish: {
+                        ...currentExternalPublish,
+                        pinningEnabled: e.target.checked,
+                      },
+                    });
+                  }}
+                />
+                <span className="slider" />
+              </label>
+            </div>
+          ) : null}
+          {ipfsExportToggle.checked && currentExternalPublish.pinningEnabled ? (
+            <dl className="settings-list">
+              <dt>{t("settings.network.ipfs.pinningProvider")}</dt>
+              <dd>
+                <select
+                  className="settings-input"
+                  value={currentExternalPublish.pinningProvider ?? "pinata"}
+                  onChange={async (e) => {
+                    await updateNodeConfig({
+                      externalPublish: {
+                        ...currentExternalPublish,
+                        pinningProvider: e.target.value as "pinata" | "web3storage",
+                      },
+                    });
+                  }}
+                >
+                  <option value="pinata">{t("settings.network.ipfs.pinata")}</option>
+                  <option value="web3storage">{t("settings.network.ipfs.web3storage")}</option>
+                </select>
+              </dd>
+            </dl>
+          ) : null}
+          <dl className="settings-list">
+            <dt>{t("settings.network.ipfs.gatewayAllowlist")}</dt>
+            <dd>
+              <textarea
+                className="settings-input"
+                rows={3}
+                placeholder={t("settings.network.ipfs.gatewayPlaceholder")}
+                value={gatewayAllowlistDraft}
+                onChange={(e) => setGatewayAllowlistDraft(e.target.value)}
+              />
+              <p className="settings-hint" style={{ marginTop: "6px" }}>
+                {t("settings.network.ipfs.gatewayHint")}
+              </p>
+              <button
+                type="button"
+                className="settings-button"
+                style={{ marginTop: "8px" }}
+                onClick={() => {
+                  void (async () => {
+                    const gatewayAllowlist = gatewayAllowlistDraft
+                      .split(/\r?\n/)
+                      .map((line) => line.trim())
+                      .filter(Boolean);
+                    await updateNodeConfig({
+                      externalPublish: {
+                        ...currentExternalPublish,
+                        gatewayAllowlist,
+                      },
+                    });
+                  })();
+                }}
+              >
+                {t("settings.network.ipfs.saveGatewayAllowlist")}
+              </button>
+            </dd>
+          </dl>
+        </section>
+      )}
+
+      <section className="settings-section">
+        <h3>{t("settings.network.agentBridge.title")}</h3>
+        <dl className="settings-list">
+          <dt>{t("settings.network.agentBridge.status")}</dt>
+          <dd>
+            <span className={`status-dot ${bridgeStatus?.enabled ? "online" : "offline"}`} />
+            {bridgeStatus?.enabled ? t("settings.network.agentBridge.running") : nodeConfig?.bridgeEnabled ? t("settings.network.agentBridge.stoppedNeedsRestart") : t("settings.network.agentBridge.disabled")}
+          </dd>
+          {bridgeStatus?.enabled && (
+            <>
+              <dt>{t("settings.network.agentBridge.agentName")}</dt>
+              <dd>{bridgeStatus.agentName ?? t("settings.network.agentBridge.defaultAgentName")}</dd>
+              <dt>{t("settings.network.agentBridge.agentPeerId")}</dt>
+              <dd><code>{bridgeStatus.agentPeerId}</code></dd>
+              <dt>{t("settings.network.agentBridge.agentUrl")}</dt>
+              <dd><code>{bridgeStatus.agentUrl}</code></dd>
+              <dt>{t("settings.network.agentBridge.listenPort")}</dt>
+              <dd>{bridgeStatus.listenPort}</dd>
+            </>
+          )}
+        </dl>
+        {(!bridgeStatus?.enabled) && (
+          nodeConfig?.bridgeEnabled ? (
+            <p className="settings-hint">{t("settings.network.agentBridge.enabledOnRestart")}</p>
+          ) : (
+            <p className="settings-hint">{t("settings.network.agentBridge.enableHint")}</p>
+          )
+        )}
+
+        {/* Bridge enable/disable toggle — takes effect on next node restart */}
+        <div className="settings-toggle-row" style={{ marginTop: "12px" }}>
+          <div className="toggle-info">
+            <strong>{t("settings.network.agentBridge.enableBridge")}</strong>
+            <span className="toggle-desc">{t("settings.network.agentBridge.enableBridgeDesc")}</span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={bridgeEnabledToggle.checked}
+              onChange={bridgeEnabledToggle.onCheckboxChange}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+
+        {/* Pairing QR for mobile app lives in the top-bar QR icon (PairingQRModal) */}
+
+        {/* WAN join invite (Phase 15B) — bootstrap cold-start across NAT */}
+        {!isMobileNode ? (
+          <div style={{ marginTop: "16px" }}>
+            <strong>{t("settings.network.agentBridge.wanInviteTitle")}</strong>
+            <p className="settings-hint" style={{ marginTop: 4 }}>
+              {t("settings.network.agentBridge.wanInviteDesc")}
+            </p>
+            {!wanJoinQr ? (
+              <button
+                type="button"
+                className="settings-button"
+                onClick={() => { void handleShowWanJoinInvite(); }}
+                disabled={wanJoinLoading}
+              >
+                {wanJoinLoading ? t("settings.network.agentBridge.generating") : t("settings.network.agentBridge.showWanInviteQr")}
+              </button>
+            ) : (
+              <div style={{ textAlign: "center" }}>
+                <img
+                  src={wanJoinQr}
+                  alt={t("settings.network.agentBridge.wanInviteQrAlt")}
+                  style={{ width: 256, height: 256, border: "2px solid var(--border-color)", borderRadius: 8 }}
+                />
+                <p className="settings-hint" style={{ marginTop: 8, wordBreak: "break-all", fontSize: "0.75rem" }}>
+                  <code style={{ fontSize: "0.65rem" }}>{wanJoinUri}</code>
+                </p>
+                <button
+                  type="button"
+                  className="settings-button"
+                  onClick={() => { void navigator.clipboard.writeText(wanJoinUri); }}
+                  style={{ marginTop: 4 }}
+                >
+                  {t("settings.network.agentBridge.copyLink")}
+                </button>
+                <button
+                  type="button"
+                  className="settings-button"
+                  onClick={() => setWanJoinQr(null)}
+                  style={{ marginTop: 4, marginLeft: 4 }}
+                >
+                  {t("settings.network.agentBridge.hideQr")}
+                </button>
+              </div>
+            )}
+            <dl className="settings-list" style={{ marginTop: 12 }}>
+              <dt>{t("settings.network.agentBridge.acceptWanInvite")}</dt>
+              <dd>
+                <textarea
+                  className="settings-input"
+                  rows={3}
+                  placeholder={t("settings.network.agentBridge.wanInvitePlaceholder")}
+                  value={wanInvitePaste}
+                  onChange={(e) => setWanInvitePaste(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="settings-button"
+                  disabled={wanInviteApplyBusy || !wanInvitePaste.trim()}
+                  onClick={() => { void handleApplyWanJoinInvite(); }}
+                  style={{ marginTop: 8 }}
+                >
+                  {wanInviteApplyBusy ? t("settings.network.agentBridge.applying") : t("settings.network.agentBridge.applyInvite")}
+                </button>
+                {wanInviteApplyMsg ? (
+                  <p className="settings-hint" style={{ marginTop: 8 }} role="status">
+                    {wanInviteApplyMsg}
+                  </p>
+                ) : null}
+              </dd>
+            </dl>
+          </div>
+        ) : null}
+        {/* Authorized devices live in the Account tab now (single source of truth). */}
+      </section>
+
+      {/* Relay Public WS URL */}
+      <section className="settings-section">
+        <h3>{t("settings.network.relayWs.title")}</h3>
+        <p className="section-desc">
+          {t("settings.network.relayWs.desc")}
+        </p>
+        <dl className="settings-list">
+          <dt>{t("settings.network.relayWs.label")}</dt>
+          <dd>
+            <input
+              type="text"
+              className="settings-input"
+              placeholder={t("settings.network.relayWs.placeholder")}
+              value={nodeConfig?.relayPublicWsUrl ?? ""}
+              onChange={async (e) => {
+                const value = e.target.value.trim();
+                await nodeService.updateNodeConfig({ relayPublicWsUrl: value || "" });
+                await refreshNodeConfig();
+              }}
+            />
+          </dd>
+        </dl>
+      </section>
+
+      <section className="settings-section">
+        <h3>{t("settings.network.resourceTuning.title")}</h3>
+        <p className="section-desc">
+          {t("settings.network.resourceTuning.desc")}
+        </p>
+        <label className="settings-field">
+          <span className="settings-field-label">{t("settings.network.resourceTuning.maxConnections")}</span>
+          <input
+            type="number"
+            min={10}
+            max={500}
+            className="settings-input-narrow"
+            defaultValue={nodeConfig?.maxConnections ?? DEFAULT_CLIENT_MAX_CONNECTIONS}
+            key={`maxConn-${nodeConfig?.maxConnections ?? DEFAULT_CLIENT_MAX_CONNECTIONS}`}
+            onBlur={async (e) => {
+              const v = Number(e.target.value);
+              if (!Number.isFinite(v)) return;
+              await nodeService.updateNodeConfig({ maxConnections: v });
+              await refreshNodeConfig();
+            }}
+          />
+        </label>
+        <label className="settings-field">
+          <span className="settings-field-label">{t("settings.network.resourceTuning.capabilityCycle")}</span>
+          <input
+            type="number"
+            min={30}
+            max={600}
+            className="settings-input-narrow"
+            defaultValue={Math.round((nodeConfig?.capabilityDiscoveryIntervalMs ?? 90_000) / 1000)}
+            key={`capInt-${nodeConfig?.capabilityDiscoveryIntervalMs ?? 90_000}`}
+            onBlur={async (e) => {
+              const sec = Number(e.target.value);
+              if (!Number.isFinite(sec)) return;
+              await nodeService.updateNodeConfig({ capabilityDiscoveryIntervalMs: sec * 1000 });
+              await refreshNodeConfig();
+            }}
+          />
+        </label>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.network.resourceTuning.lazyDhtFind")}</strong>
+            <span className="toggle-desc">{t("settings.network.resourceTuning.lazyDhtFindDesc")}</span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={nodeConfig?.lazyCapabilityDiscovery ?? discoveryProfile === "wan-default"}
+              onChange={async (e) => {
+                await nodeService.updateNodeConfig({ lazyCapabilityDiscovery: e.target.checked });
+                await refreshNodeConfig();
+              }}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.network.resourceTuning.idleTimerStretch")}</strong>
+            <span className="toggle-desc">{t("settings.network.resourceTuning.idleTimerStretchDesc")}</span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={nodeConfig?.idleTimerStretch ?? true}
+              onChange={async (e) => {
+                await nodeService.updateNodeConfig({ idleTimerStretch: e.target.checked });
+                await refreshNodeConfig();
+              }}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h3>{t("settings.network.aiChatBehavior.title")}</h3>
+        <p className="section-desc">{t("settings.network.aiChatBehavior.desc")}</p>
+
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.network.aiChatBehavior.chatAssist")}</strong>
+            <span className="toggle-desc">{t("settings.network.aiChatBehavior.chatAssistDesc")}</span>
+          </div>
+          <label className="toggle-switch">
+            <input type="checkbox" checked={chatAssistToggle.checked}
+              onChange={chatAssistToggle.onCheckboxChange} />
+            <span className="slider" />
+          </label>
+        </div>
+
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.network.aiChatBehavior.autoAiResponse")}</strong>
+            <span className="toggle-desc">{t("settings.network.aiChatBehavior.autoAiResponseDesc")}</span>
+          </div>
+          <label className="toggle-switch">
+            <input type="checkbox"
+              checked={autoSendChatToggle.checked}
+              onChange={autoSendChatToggle.onCheckboxChange} />
+            <span className="slider" />
+          </label>
+        </div>
+
+        <div className="settings-toggle-row">
+          <div className="toggle-info">
+            <strong>{t("settings.network.aiChatBehavior.killSwitch")}</strong>
+            <span className="toggle-desc">{t("settings.network.aiChatBehavior.killSwitchDesc")}</span>
+          </div>
+          <label className="toggle-switch">
+            <input type="checkbox" checked={killSwitchToggle.checked}
+              onChange={killSwitchToggle.onCheckboxChange} />
+            <span className="slider" />
+          </label>
+        </div>
+
+        <div className="form-group">
+          <label>{t("settings.network.aiChatBehavior.chatNotifications")}</label>
+          <select
+            className="settings-input"
+            value={nodeConfig?.a2aChatNotifications ?? "off"}
+            onChange={(e) => {
+              void updateNodeConfig({
+                a2aChatNotifications: e.target.value as A2aChatNotificationMode,
+              });
+            }}
+          >
+            <option value="off">{t("settings.network.aiChatBehavior.chatNotificationsOff")}</option>
+            <option value="milestones_only">{t("settings.network.aiChatBehavior.chatNotificationsMilestones")}</option>
+            <option value="all_reports">{t("settings.network.aiChatBehavior.chatNotificationsAll")}</option>
+          </select>
+          <p className="field-desc">
+            {t("settings.network.aiChatBehavior.chatNotificationsHint")}
+          </p>
+        </div>
+
+        <div className="form-group">
+          <label>{t("settings.network.aiChatBehavior.agentInteractionMode")}</label>
+          <select
+            className="settings-input"
+            value={nodeConfig?.agentInteractionMode ?? "structured_preferred"}
+            onChange={(e) => {
+              void updateNodeConfig({
+                agentInteractionMode: e.target.value as AgentInteractionMode,
+              });
+            }}
+          >
+            <option value="structured_preferred">{t("settings.network.aiChatBehavior.agentInteractionStructured")}</option>
+            <option value="chat_ok">{t("settings.network.aiChatBehavior.agentInteractionChatOk")}</option>
+          </select>
+          <p className="field-desc">
+            {t("settings.network.aiChatBehavior.agentInteractionHint")}
+          </p>
+        </div>
+
+        <div className="form-group">
+          <label>{t("settings.network.aiChatBehavior.agentVisibility")}</label>
+          <p className="field-desc">
+            {t("settings.network.aiChatBehavior.agentVisibilityHint")}
+          </p>
+          {(["social", "knowledge", "home", "research"] as AgentActivityDomain[]).map((domain) => (
+            <div className="form-row" key={domain}>
+              <div className="form-group">
+                <label>{domain}</label>
+                <select
+                  className="settings-input"
+                  value={nodeConfig?.agentVisibility?.[domain] ?? "instant"}
+                  onChange={(e) => {
+                    void updateNodeConfig({
+                      agentVisibility: {
+                        ...(nodeConfig?.agentVisibility ?? {}),
+                        [domain]: e.target.value as AgentNotifyMode,
+                      },
+                    });
+                  }}
+                >
+                  <option value="instant">{t("settings.network.aiChatBehavior.visibilityInstant")}</option>
+                  <option value="brief">{t("settings.network.aiChatBehavior.visibilityBrief")}</option>
+                  <option value="silent">{t("settings.network.aiChatBehavior.visibilitySilent")}</option>
+                  <option value="approval">{t("settings.network.aiChatBehavior.visibilityApproval")}</option>
+                </select>
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="settings-section">
@@ -912,993 +1963,6 @@ export function SettingsNodeTab() {
         >
           {t("settings.network.twoNatSignOff.copyLedgerRow")}
         </button>
-      </section>
-
-      <section className="settings-section">
-        <h3>{t("settings.network.discovery.title")}</h3>
-        <p className="section-desc">
-          {t("settings.network.discovery.desc")}
-        </p>
-        <div className="settings-toggle-row">
-          <div className="toggle-info">
-            <strong>{t("settings.network.discovery.mdns")}</strong>
-            <span className="toggle-desc">{t("settings.network.discovery.mdnsDesc")}</span>
-          </div>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={mdnsToggle.checked}
-              onChange={mdnsToggle.onCheckboxChange}
-            />
-            <span className="slider" />
-          </label>
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <h3>{t("settings.network.discoveryProfile.title")}</h3>
-        <p className="section-desc">
-          {t("settings.network.discoveryProfile.desc")}
-        </p>
-        <label className="settings-field">
-          <span className="settings-field-label">{t("settings.network.discoveryProfile.label")}</span>
-          <select
-            className="settings-select"
-            value={discoveryProfile}
-            onChange={(e) => void setDiscoveryProfile(e.target.value as DiscoveryProfile)}
-          >
-            <option value="wan-default">{t("settings.network.discoveryProfile.wanDefault")}</option>
-            <option value="relay-only">{t("settings.network.discoveryProfile.relayOnly")}</option>
-            <option value="contacts-only">{t("settings.network.discoveryProfile.contactsOnly")}</option>
-          </select>
-        </label>
-        <p className="section-desc muted">
-          {discoveryProfile === "wan-default"
-            ? t("settings.network.discoveryProfile.wanDefaultHint")
-            : discoveryProfile === "relay-only"
-              ? t("settings.network.discoveryProfile.relayOnlyHint")
-              : t("settings.network.discoveryProfile.contactsOnlyHint")}
-        </p>
-      </section>
-
-      <section className="settings-section">
-        <h3>{t("settings.network.resourceTuning.title")}</h3>
-        <p className="section-desc">
-          {t("settings.network.resourceTuning.desc")}
-        </p>
-        <label className="settings-field">
-          <span className="settings-field-label">{t("settings.network.resourceTuning.maxConnections")}</span>
-          <input
-            type="number"
-            min={10}
-            max={500}
-            className="settings-input-narrow"
-            defaultValue={nodeConfig?.maxConnections ?? DEFAULT_CLIENT_MAX_CONNECTIONS}
-            key={`maxConn-${nodeConfig?.maxConnections ?? DEFAULT_CLIENT_MAX_CONNECTIONS}`}
-            onBlur={async (e) => {
-              const v = Number(e.target.value);
-              if (!Number.isFinite(v)) return;
-              await nodeService.updateNodeConfig({ maxConnections: v });
-              await refreshNodeConfig();
-            }}
-          />
-        </label>
-        <label className="settings-field">
-          <span className="settings-field-label">{t("settings.network.resourceTuning.capabilityCycle")}</span>
-          <input
-            type="number"
-            min={30}
-            max={600}
-            className="settings-input-narrow"
-            defaultValue={Math.round((nodeConfig?.capabilityDiscoveryIntervalMs ?? 90_000) / 1000)}
-            key={`capInt-${nodeConfig?.capabilityDiscoveryIntervalMs ?? 90_000}`}
-            onBlur={async (e) => {
-              const sec = Number(e.target.value);
-              if (!Number.isFinite(sec)) return;
-              await nodeService.updateNodeConfig({ capabilityDiscoveryIntervalMs: sec * 1000 });
-              await refreshNodeConfig();
-            }}
-          />
-        </label>
-        <div className="settings-toggle-row">
-          <div className="toggle-info">
-            <strong>{t("settings.network.resourceTuning.lazyDhtFind")}</strong>
-            <span className="toggle-desc">{t("settings.network.resourceTuning.lazyDhtFindDesc")}</span>
-          </div>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={nodeConfig?.lazyCapabilityDiscovery ?? discoveryProfile === "wan-default"}
-              onChange={async (e) => {
-                await nodeService.updateNodeConfig({ lazyCapabilityDiscovery: e.target.checked });
-                await refreshNodeConfig();
-              }}
-            />
-            <span className="slider" />
-          </label>
-        </div>
-        <div className="settings-toggle-row">
-          <div className="toggle-info">
-            <strong>{t("settings.network.resourceTuning.idleTimerStretch")}</strong>
-            <span className="toggle-desc">{t("settings.network.resourceTuning.idleTimerStretchDesc")}</span>
-          </div>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={nodeConfig?.idleTimerStretch ?? true}
-              onChange={async (e) => {
-                await nodeService.updateNodeConfig({ idleTimerStretch: e.target.checked });
-                await refreshNodeConfig();
-              }}
-            />
-            <span className="slider" />
-          </label>
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <h3>{t("settings.network.publicDiscovery.title")}</h3>
-        <p className="section-desc">
-          {t("settings.network.publicDiscovery.desc")}
-        </p>
-        <div className="settings-toggle-row">
-          <div className="toggle-info">
-            <strong>{t("settings.network.publicDiscovery.toggle")}</strong>
-            <span className="toggle-desc">
-              {isPublicLibp2pDiscovery
-                ? t("settings.network.publicDiscovery.profileWanDefault", { count: bootstrapPresets.length })
-                : t("settings.network.publicDiscovery.profileContactsOnly")}
-            </span>
-          </div>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={publicLibp2pToggle.checked}
-              onChange={publicLibp2pToggle.onCheckboxChange}
-            />
-            <span className="slider" />
-          </label>
-        </div>
-        {!isPublicLibp2pDiscovery ? (
-          <p className="section-desc muted">
-            {t("settings.network.publicDiscovery.contactsOnlyHint")}
-          </p>
-        ) : null}
-      </section>
-
-      <section className="settings-section">
-        <h3>{t("settings.network.bootstrapPresets.title")}</h3>
-        <p className="section-desc">
-          {isPublicLibp2pDiscovery
-            ? t("settings.network.bootstrapPresets.descPublic")
-            : t("settings.network.bootstrapPresets.descPrivate")}
-        </p>
-        <div className="bootstrap-presets">
-          {[
-            { id: "public-libp2p", label: t("settings.network.bootstrapPresets.publicLibp2p"), desc: t("settings.network.bootstrapPresets.publicLibp2pDesc") },
-            { id: "public-libp2p-am6", label: t("settings.network.bootstrapPresets.publicLibp2pAm6"), desc: t("settings.network.bootstrapPresets.publicLibp2pAm6Desc") },
-            { id: "public-libp2p-am7", label: t("settings.network.bootstrapPresets.publicLibp2pAm7"), desc: t("settings.network.bootstrapPresets.publicLibp2pAm7Desc") },
-            { id: "cn-relay", label: t("settings.network.bootstrapPresets.cnRelay"), desc: t("settings.network.bootstrapPresets.cnRelayDesc") },
-          ].map((preset) => (
-            <label key={preset.id} className="preset-checkbox">
-              <input
-                type="checkbox"
-                disabled={!isPublicLibp2pDiscovery}
-                checked={bootstrapPresets.includes(preset.id)}
-                onChange={async (e) => {
-                  if (!isPublicLibp2pDiscovery) return;
-                  bootstrapPresetsSavingRef.current += 1;
-                  setBootstrapPresetSyncNonce((n) => n + 1);
-                  try {
-                    const checked = e.target.checked;
-                    const updated = checked
-                      ? [...new Set([...bootstrapPresets, preset.id])]
-                      : bootstrapPresets.filter((p) => p !== preset.id);
-                    setBootstrapPresets(updated);
-                    await nodeService.updateNodeConfig({
-                      discoveryProfile: "wan-default",
-                      bootstrapPresets: updated,
-                    });
-                    await restartNodeAfterConnectivityChange();
-                  } finally {
-                    bootstrapPresetsSavingRef.current -= 1;
-                    setBootstrapPresetSyncNonce((n) => n + 1);
-                  }
-                }}
-              />
-              <span className="preset-info">
-                <strong>{preset.label}</strong>
-                <span className="preset-desc">{preset.desc}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <h3>{t("settings.network.relays.title")}</h3>
-        {relays.length === 0 ? (
-          <p className="empty">{t("settings.network.relays.empty")}</p>
-        ) : (
-          <ul className="relay-list">
-            {relays.map((relay) => (
-              <li key={relay.relayId} className="relay-item">
-                <label className="relay-toggle">
-                  <input
-                    type="checkbox"
-                    checked={relay.enabled}
-                    onChange={async () => {
-                      const updatedRelays = relays.map(r =>
-                        r.relayId === relay.relayId ? { ...r, enabled: !r.enabled } : r
-                      );
-                      await nodeService.updateNodeConfig({ configuredRelays: updatedRelays });
-                      await refreshNodeConfig();
-                    }}
-                  />
-                  <span className="relay-info">
-                    <strong>{relay.addr}</strong>
-                    {relay.level !== undefined && <span className="relay-level">{t("settings.network.relays.level", { level: relay.level })}</span>}
-                    {relay.region && <span className="relay-region">{relay.region}</span>}
-                  </span>
-                </label>
-                <button
-                  className="remove-relay"
-                  onClick={async () => {
-                    await nodeService.removeRelay(relay.relayId);
-                    await refreshNodeConfig();
-                  }}
-                >
-                  {t("settings.network.relays.remove")}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="add-relay-form">
-          <h4>{t("settings.network.relays.addTitle")}</h4>
-          <input
-            type="text"
-            className="settings-input"
-            placeholder={t("settings.network.relays.addPlaceholder")}
-            value={newRelayAddr}
-            onChange={(e) => setNewRelayAddr(e.target.value)}
-          />
-          <button
-            type="button"
-            className="settings-button"
-            onClick={async () => {
-              if (!newRelayAddr.trim()) return;
-              try {
-                await nodeService.addRelay(newRelayAddr);
-                setNewRelayAddr("");
-                await refreshNodeConfig();
-              } catch (error) {
-                console.error("Failed to add relay:", error);
-              }
-            }}
-          >
-            {t("settings.network.relays.add")}
-          </button>
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <h3>{t("settings.network.aiChatBehavior.title")}</h3>
-        <p className="section-desc">{t("settings.network.aiChatBehavior.desc")}</p>
-
-        <div className="settings-toggle-row">
-          <div className="toggle-info">
-            <strong>{t("settings.network.aiChatBehavior.chatAssist")}</strong>
-            <span className="toggle-desc">{t("settings.network.aiChatBehavior.chatAssistDesc")}</span>
-          </div>
-          <label className="toggle-switch">
-            <input type="checkbox" checked={chatAssistToggle.checked}
-              onChange={chatAssistToggle.onCheckboxChange} />
-            <span className="slider" />
-          </label>
-        </div>
-
-        <div className="settings-toggle-row">
-          <div className="toggle-info">
-            <strong>{t("settings.network.aiChatBehavior.autoAiResponse")}</strong>
-            <span className="toggle-desc">{t("settings.network.aiChatBehavior.autoAiResponseDesc")}</span>
-          </div>
-          <label className="toggle-switch">
-            <input type="checkbox"
-              checked={autoSendChatToggle.checked}
-              onChange={autoSendChatToggle.onCheckboxChange} />
-            <span className="slider" />
-          </label>
-        </div>
-
-        <div className="settings-toggle-row">
-          <div className="toggle-info">
-            <strong>{t("settings.network.aiChatBehavior.killSwitch")}</strong>
-            <span className="toggle-desc">{t("settings.network.aiChatBehavior.killSwitchDesc")}</span>
-          </div>
-          <label className="toggle-switch">
-            <input type="checkbox" checked={killSwitchToggle.checked}
-              onChange={killSwitchToggle.onCheckboxChange} />
-            <span className="slider" />
-          </label>
-        </div>
-
-        <div className="form-group">
-          <label>{t("settings.network.aiChatBehavior.chatNotifications")}</label>
-          <select
-            className="settings-input"
-            value={nodeConfig?.a2aChatNotifications ?? "off"}
-            onChange={(e) => {
-              void updateNodeConfig({
-                a2aChatNotifications: e.target.value as A2aChatNotificationMode,
-              });
-            }}
-          >
-            <option value="off">{t("settings.network.aiChatBehavior.chatNotificationsOff")}</option>
-            <option value="milestones_only">{t("settings.network.aiChatBehavior.chatNotificationsMilestones")}</option>
-            <option value="all_reports">{t("settings.network.aiChatBehavior.chatNotificationsAll")}</option>
-          </select>
-          <p className="field-desc">
-            {t("settings.network.aiChatBehavior.chatNotificationsHint")}
-          </p>
-        </div>
-
-        <div className="form-group">
-          <label>{t("settings.network.aiChatBehavior.agentInteractionMode")}</label>
-          <select
-            className="settings-input"
-            value={nodeConfig?.agentInteractionMode ?? "structured_preferred"}
-            onChange={(e) => {
-              void updateNodeConfig({
-                agentInteractionMode: e.target.value as AgentInteractionMode,
-              });
-            }}
-          >
-            <option value="structured_preferred">{t("settings.network.aiChatBehavior.agentInteractionStructured")}</option>
-            <option value="chat_ok">{t("settings.network.aiChatBehavior.agentInteractionChatOk")}</option>
-          </select>
-          <p className="field-desc">
-            {t("settings.network.aiChatBehavior.agentInteractionHint")}
-          </p>
-        </div>
-
-        <div className="form-group">
-          <label>{t("settings.network.aiChatBehavior.agentVisibility")}</label>
-          <p className="field-desc">
-            {t("settings.network.aiChatBehavior.agentVisibilityHint")}
-          </p>
-          {(["social", "knowledge", "home", "research"] as AgentActivityDomain[]).map((domain) => (
-            <div className="form-row" key={domain}>
-              <div className="form-group">
-                <label>{domain}</label>
-                <select
-                  className="settings-input"
-                  value={nodeConfig?.agentVisibility?.[domain] ?? "instant"}
-                  onChange={(e) => {
-                    void updateNodeConfig({
-                      agentVisibility: {
-                        ...(nodeConfig?.agentVisibility ?? {}),
-                        [domain]: e.target.value as AgentNotifyMode,
-                      },
-                    });
-                  }}
-                >
-                  <option value="instant">{t("settings.network.aiChatBehavior.visibilityInstant")}</option>
-                  <option value="brief">{t("settings.network.aiChatBehavior.visibilityBrief")}</option>
-                  <option value="silent">{t("settings.network.aiChatBehavior.visibilitySilent")}</option>
-                  <option value="approval">{t("settings.network.aiChatBehavior.visibilityApproval")}</option>
-                </select>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {isMobileNode ? (
-        <section className="settings-section">
-          <h3>{t("settings.network.ipfs.title")}</h3>
-          <p className="section-desc">
-            {t("settings.network.ipfs.descMobile")}
-          </p>
-          <dl className="settings-list">
-            <dt>{t("settings.network.ipfs.engine")}</dt>
-            <dd>
-              {ipfsEngineStatus == null ? (
-                <span className="settings-hint">{t("settings.network.ipfs.checking")}</span>
-              ) : ipfsEngineStatus.helia?.available ? (
-                <span className="settings-hint">
-                  {t("settings.network.ipfs.heliaInProcess")}
-                  {ipfsEngineStatus.helia.heliaVersion ? ` (${ipfsEngineStatus.helia.heliaVersion})` : ""}
-                </span>
-              ) : (
-                <span className="settings-hint" role="alert">
-                  {ipfsEngineStatus.helia?.errorHint ?? t("settings.network.ipfs.heliaUnavailable")}
-                </span>
-              )}
-            </dd>
-            <dt>{t("settings.network.ipfs.exportEngine")}</dt>
-            <dd>
-              <span className="settings-hint">{t("settings.network.ipfs.heliaMobileOnly")}</span>
-            </dd>
-          </dl>
-          <div className="settings-toggle-row">
-            <div className="toggle-info">
-              <strong>{t("settings.network.ipfs.allowExport")}</strong>
-              <span className="toggle-desc">{t("settings.network.ipfs.allowExportDescMobile")}</span>
-            </div>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={ipfsExportToggle.checked}
-                onChange={ipfsExportToggle.onCheckboxChange}
-              />
-              <span className="slider" />
-            </label>
-          </div>
-        </section>
-      ) : (
-        <section className="settings-section">
-          <h3>{t("settings.network.ipfs.title")}</h3>
-          <p className="section-desc">
-            {t("settings.network.ipfs.descDesktop")}
-          </p>
-          <dl className="settings-list">
-            <dt>{t("settings.network.ipfs.engine")}</dt>
-            <dd>
-              {currentExternalPublish.ipfsExportEngine === "helia" ? (
-                <>
-                  {ipfsEngineStatus == null ? (
-                    <span className="settings-hint">{t("settings.network.ipfs.checking")}</span>
-                  ) : ipfsEngineStatus.helia?.available ? (
-                    <span className="settings-hint">
-                      {t("settings.network.ipfs.heliaInProcessPrimary")}
-                      {ipfsEngineStatus.helia.heliaVersion ? ` (${ipfsEngineStatus.helia.heliaVersion})` : ""}
-                    </span>
-                  ) : (
-                    <span className="settings-hint" role="alert">
-                      {ipfsEngineStatus.helia?.errorHint ?? t("settings.network.ipfs.heliaUnavailable")}
-                    </span>
-                  )}
-                  <span className="settings-hint" style={{ display: "block", marginTop: "4px" }}>
-                    {ipfsEngineStatus?.kubo?.available
-                      ? t("settings.network.ipfs.kuboAlsoAvailable", {
-                          version: ipfsEngineStatus.kubo.kuboVersion ? ` (${ipfsEngineStatus.kubo.kuboVersion})` : "",
-                        })
-                      : ipfsEngineStatus?.kubo?.errorHint ?? t("settings.network.ipfs.kuboNotRequired")}
-                  </span>
-                </>
-              ) : (
-                <>
-                  {ipfsEngineStatus == null ? (
-                    <span className="settings-hint">{t("settings.network.ipfs.checking")}</span>
-                  ) : ipfsEngineStatus.available ? (
-                    <span className="settings-hint">
-                      {ipfsEngineStatus.running
-                        ? `${t("settings.network.ipfs.kuboReady", {
-                            version: ipfsEngineStatus.kuboVersion ? ` (${ipfsEngineStatus.kuboVersion})` : "",
-                            managed: ipfsEngineStatus.managed ? t("settings.network.ipfs.kuboManaged") : "",
-                          })}`
-                        : t("settings.network.ipfs.kuboAvailableStarts")}
-                    </span>
-                  ) : (
-                    <span className="settings-hint" role="alert">
-                      {ipfsEngineStatus.errorHint ?? t("settings.network.ipfs.kuboUnavailable")}
-                    </span>
-                  )}
-                  {ipfsEngineStatus?.helia != null && (
-                    <span className="settings-hint" style={{ display: "block", marginTop: "4px" }}>
-                      {ipfsEngineStatus.helia.available
-                        ? `${t("settings.network.ipfs.heliaInProcess")}${ipfsEngineStatus.helia.heliaVersion ? ` (${ipfsEngineStatus.helia.heliaVersion})` : ""}`
-                        : ipfsEngineStatus.helia.errorHint ?? t("settings.network.ipfs.heliaUnavailableShort")}
-                    </span>
-                  )}
-                </>
-              )}
-            </dd>
-            <dt>{t("settings.network.ipfs.exportEngine")}</dt>
-            <dd>
-              <select
-                className="settings-input"
-                value={currentExternalPublish.ipfsExportEngine}
-                onChange={(e) => {
-                  const ipfsExportEngine = e.target.value as NonNullable<
-                    ExternalPublishConfig["ipfsExportEngine"]
-                  >;
-                  void updateNodeConfig({
-                    externalPublish: {
-                      ...currentExternalPublish,
-                      ipfsExportEngine,
-                    },
-                  });
-                }}
-              >
-                <option value="kubo">{t("settings.network.ipfs.engineKubo")}</option>
-                <option value="kubo-with-helia-shadow">{t("settings.network.ipfs.engineKuboHeliaShadow")}</option>
-                <option value="helia">{t("settings.network.ipfs.engineHelia")}</option>
-              </select>
-              <p className="settings-hint" style={{ marginTop: "6px" }}>
-                {currentExternalPublish.ipfsExportEngine === "helia"
-                  ? t("settings.network.ipfs.hintHelia")
-                  : currentExternalPublish.ipfsExportEngine === "kubo-with-helia-shadow"
-                    ? t("settings.network.ipfs.hintKuboHeliaShadow")
-                    : t("settings.network.ipfs.hintKubo")}
-              </p>
-            </dd>
-          </dl>
-          <div className="settings-toggle-row">
-            <div className="toggle-info">
-              <strong>{t("settings.network.ipfs.allowExport")}</strong>
-              <span className="toggle-desc">{t("settings.network.ipfs.allowExportDescDesktop")}</span>
-            </div>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={ipfsExportToggle.checked}
-                onChange={ipfsExportToggle.onCheckboxChange}
-              />
-              <span className="slider" />
-            </label>
-          </div>
-          {ipfsExportToggle.checked ? (
-            <div className="settings-toggle-row">
-              <div className="toggle-info">
-                <strong>{t("settings.network.ipfs.allowPinning")}</strong>
-                <span className="toggle-desc">
-                  {t("settings.network.ipfs.allowPinningDesc")}
-                </span>
-              </div>
-              <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={currentExternalPublish.pinningEnabled}
-                  onChange={async (e) => {
-                    await updateNodeConfig({
-                      externalPublish: {
-                        ...currentExternalPublish,
-                        pinningEnabled: e.target.checked,
-                      },
-                    });
-                  }}
-                />
-                <span className="slider" />
-              </label>
-            </div>
-          ) : null}
-          {ipfsExportToggle.checked && currentExternalPublish.pinningEnabled ? (
-            <dl className="settings-list">
-              <dt>{t("settings.network.ipfs.pinningProvider")}</dt>
-              <dd>
-                <select
-                  className="settings-input"
-                  value={currentExternalPublish.pinningProvider ?? "pinata"}
-                  onChange={async (e) => {
-                    await updateNodeConfig({
-                      externalPublish: {
-                        ...currentExternalPublish,
-                        pinningProvider: e.target.value as "pinata" | "web3storage",
-                      },
-                    });
-                  }}
-                >
-                  <option value="pinata">{t("settings.network.ipfs.pinata")}</option>
-                  <option value="web3storage">{t("settings.network.ipfs.web3storage")}</option>
-                </select>
-              </dd>
-            </dl>
-          ) : null}
-          <dl className="settings-list">
-            <dt>{t("settings.network.ipfs.gatewayAllowlist")}</dt>
-            <dd>
-              <textarea
-                className="settings-input"
-                rows={3}
-                placeholder={t("settings.network.ipfs.gatewayPlaceholder")}
-                value={gatewayAllowlistDraft}
-                onChange={(e) => setGatewayAllowlistDraft(e.target.value)}
-              />
-              <p className="settings-hint" style={{ marginTop: "6px" }}>
-                {t("settings.network.ipfs.gatewayHint")}
-              </p>
-              <button
-                type="button"
-                className="settings-button"
-                style={{ marginTop: "8px" }}
-                onClick={() => {
-                  void (async () => {
-                    const gatewayAllowlist = gatewayAllowlistDraft
-                      .split(/\r?\n/)
-                      .map((line) => line.trim())
-                      .filter(Boolean);
-                    await updateNodeConfig({
-                      externalPublish: {
-                        ...currentExternalPublish,
-                        gatewayAllowlist,
-                      },
-                    });
-                  })();
-                }}
-              >
-                {t("settings.network.ipfs.saveGatewayAllowlist")}
-              </button>
-            </dd>
-          </dl>
-        </section>
-      )}
-
-      <section className="settings-section">
-        <h3>{t("settings.network.trustMatching.title")}</h3>
-        <p className="section-desc">
-          {t("settings.network.trustMatching.desc")}
-        </p>
-        <div className="settings-toggle-row">
-          <div className="toggle-info">
-            <strong>{t("settings.network.trustMatching.trustMode")}</strong>
-            <span className="toggle-desc">{t("settings.network.trustMatching.trustModeDesc")}</span>
-          </div>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={trustModeToggle.checked}
-              onChange={trustModeToggle.onCheckboxChange}
-            />
-            <span className="slider" />
-          </label>
-        </div>
-        <div className="settings-toggle-row">
-          <div className="toggle-info">
-            <strong>{t("settings.network.trustMatching.friendAutopilot")}</strong>
-            <span className="toggle-desc">
-              {nodeConfig?.socialProxyEnabled
-                ? t("settings.network.trustMatching.friendAutopilotSuperseded")
-                : t("settings.network.trustMatching.friendAutopilotDesc")}
-            </span>
-          </div>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={friendAutopilotToggle.checked}
-              onChange={friendAutopilotToggle.onCheckboxChange}
-              disabled={!trustModeToggle.checked || nodeConfig?.socialProxyEnabled === true}
-            />
-            <span className="slider" />
-          </label>
-        </div>
-        {friendAutopilotToggle.checked ? (
-          <dl className="settings-list">
-            <dt>{t("settings.network.trustMatching.autopilotSchedule")}</dt>
-            <dd>
-              <select
-                className="settings-input"
-                value={String(nodeConfig?.friendAutopilotIntervalHours ?? 0)}
-                onChange={async (e) => {
-                  await updateNodeConfig({
-                    friendAutopilotIntervalHours: Number(e.target.value) as 0 | 24 | 168,
-                  });
-                }}
-                disabled={!trustModeToggle.checked}
-              >
-                <option value="0">{t("settings.network.trustMatching.scheduleManual")}</option>
-                <option value="24">{t("settings.network.trustMatching.scheduleDaily")}</option>
-                <option value="168">{t("settings.network.trustMatching.scheduleWeekly")}</option>
-              </select>
-              <p className="settings-hint" style={{ marginTop: "6px" }}>
-                {t("settings.network.trustMatching.autopilotScheduleHint")}
-              </p>
-            </dd>
-          </dl>
-        ) : null}
-        <dl className="settings-list">
-          <dt>{t("settings.network.trustMatching.syndicationCeiling")}</dt>
-          <dd>
-            <select
-              className="settings-input"
-              value={nodeConfig?.knowledgeSyndicationMaxSensitivity ?? ""}
-              onChange={async (e) => {
-                const value = e.target.value;
-                await nodeService.updateNodeConfig({
-                  knowledgeSyndicationMaxSensitivity:
-                    value === "" ? null : (value as "public" | "friends" | "private"),
-                } as Parameters<typeof nodeService.updateNodeConfig>[0]);
-              }}
-            >
-              <option value="">{t("settings.network.trustMatching.syndicationBondOnly")}</option>
-              <option value="public">{t("settings.network.trustMatching.syndicationPublic")}</option>
-              <option value="friends">{t("settings.network.trustMatching.syndicationFriends")}</option>
-              <option value="private">{t("settings.network.trustMatching.syndicationPrivate")}</option>
-            </select>
-            <p className="settings-hint" style={{ marginTop: "6px" }}>
-              {t("settings.network.trustMatching.syndicationHint")}
-            </p>
-          </dd>
-          {bonds.length > 0 ? (
-            <>
-              <dt>{t("settings.network.trustMatching.perContactCaps")}</dt>
-              <dd>
-                <ul className="settings-contact-syndication-list">
-                  {bonds.map((bond) => {
-                    const pref = nodeConfig?.contactAiPreferences?.find(
-                      (p) => p.peerOwnerId === bond.peerOwnerId,
-                    );
-                    return (
-                      <li key={bond.peerOwnerId} className="settings-contact-syndication-row">
-                        <span>{bond.displayName || bond.peerOwnerId.slice(0, 20)}</span>
-                        <select
-                          className="settings-input"
-                          value={pref?.syndicationMaxSensitivity ?? ""}
-                          onChange={async (e) => {
-                            const value = e.target.value;
-                            const currentPrefs = nodeConfig?.contactAiPreferences ?? [];
-                            const other = currentPrefs.filter((p) => p.peerOwnerId !== bond.peerOwnerId);
-                            const existing = currentPrefs.find((p) => p.peerOwnerId === bond.peerOwnerId);
-                            await updateNodeConfig({
-                              contactAiPreferences: [
-                                ...other,
-                                {
-                                  peerOwnerId: bond.peerOwnerId,
-                                  aiAccessLevel: existing?.aiAccessLevel ?? "none",
-                                  knowledgeAccess: existing?.knowledgeAccess ?? "public",
-                                  priority: existing?.priority ?? "high",
-                                  ...(value !== ""
-                                    ? {
-                                        syndicationMaxSensitivity: value as
-                                          | "public"
-                                          | "friends"
-                                          | "private",
-                                      }
-                                    : {}),
-                                },
-                              ],
-                            });
-                          }}
-                        >
-                          <option value="">{t("settings.network.trustMatching.useGlobalCeiling")}</option>
-                          <option value="public">{t("settings.network.trustMatching.publicOnly")}</option>
-                          <option value="friends">{t("settings.network.trustMatching.syndicationFriends")}</option>
-                          <option value="private">{t("settings.network.trustMatching.privateTier")}</option>
-                        </select>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </dd>
-            </>
-          ) : null}
-          <dt>{t("settings.network.trustMatching.friendMatchingPreferences")}</dt>
-          <dd>
-            <textarea
-              className="settings-input"
-              rows={5}
-              placeholder={t("settings.network.trustMatching.friendMatchingPlaceholder")}
-              value={friendMatchingDraft}
-              onChange={(e) => setFriendMatchingDraft(e.target.value)}
-            />
-            <p className="settings-hint" style={{ marginTop: "6px" }}>
-              {t("settings.network.trustMatching.friendMatchingHint")}
-            </p>
-          </dd>
-        </dl>
-        <div className="settings-buttons">
-          <button
-            type="button"
-            className="settings-save-btn"
-            onClick={async () => {
-              await updateNodeConfig({ friendMatchingPreferencesText: friendMatchingDraft });
-            }}
-          >
-            {t("settings.network.trustMatching.savePreferences")}
-          </button>
-          <button
-            type="button"
-            className="settings-cancel-btn"
-            onClick={() =>
-              setFriendMatchingDraft(nodeConfig?.friendMatchingPreferencesText ?? "")}
-          >
-            {t("settings.network.trustMatching.reset")}
-          </button>
-        </div>
-      </section>
-
-      {/* Relay Public WS URL */}
-      <section className="settings-section">
-        <h3>{t("settings.network.relayWs.title")}</h3>
-        <p className="section-desc">
-          {t("settings.network.relayWs.desc")}
-        </p>
-        <dl className="settings-list">
-          <dt>{t("settings.network.relayWs.label")}</dt>
-          <dd>
-            <input
-              type="text"
-              className="settings-input"
-              placeholder={t("settings.network.relayWs.placeholder")}
-              value={nodeConfig?.relayPublicWsUrl ?? ""}
-              onChange={async (e) => {
-                const value = e.target.value.trim();
-                await nodeService.updateNodeConfig({ relayPublicWsUrl: value || "" });
-                await refreshNodeConfig();
-              }}
-            />
-          </dd>
-        </dl>
-      </section>
-
-      {/* Agent Bridge */}
-      <section className="settings-section">
-        <h3>{t("settings.network.agentBridge.title")}</h3>
-        <dl className="settings-list">
-          <dt>{t("settings.network.agentBridge.status")}</dt>
-          <dd>
-            <span className={`status-dot ${bridgeStatus?.enabled ? "online" : "offline"}`} />
-            {bridgeStatus?.enabled ? t("settings.network.agentBridge.running") : nodeConfig?.bridgeEnabled ? t("settings.network.agentBridge.stoppedNeedsRestart") : t("settings.network.agentBridge.disabled")}
-          </dd>
-          {bridgeStatus?.enabled && (
-            <>
-              <dt>{t("settings.network.agentBridge.agentName")}</dt>
-              <dd>{bridgeStatus.agentName ?? t("settings.network.agentBridge.defaultAgentName")}</dd>
-              <dt>{t("settings.network.agentBridge.agentPeerId")}</dt>
-              <dd><code>{bridgeStatus.agentPeerId}</code></dd>
-              <dt>{t("settings.network.agentBridge.agentUrl")}</dt>
-              <dd><code>{bridgeStatus.agentUrl}</code></dd>
-              <dt>{t("settings.network.agentBridge.listenPort")}</dt>
-              <dd>{bridgeStatus.listenPort}</dd>
-            </>
-          )}
-        </dl>
-        {(!bridgeStatus?.enabled) && (
-          nodeConfig?.bridgeEnabled ? (
-            <p className="settings-hint">{t("settings.network.agentBridge.enabledOnRestart")}</p>
-          ) : (
-            <p className="settings-hint">{t("settings.network.agentBridge.enableHint")}</p>
-          )
-        )}
-
-        {/* Bridge enable/disable toggle — takes effect on next node restart */}
-        <div className="settings-toggle-row" style={{ marginTop: "12px" }}>
-          <div className="toggle-info">
-            <strong>{t("settings.network.agentBridge.enableBridge")}</strong>
-            <span className="toggle-desc">{t("settings.network.agentBridge.enableBridgeDesc")}</span>
-          </div>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={bridgeEnabledToggle.checked}
-              onChange={bridgeEnabledToggle.onCheckboxChange}
-            />
-            <span className="slider" />
-          </label>
-        </div>
-
-        {/* Pairing QR for mobile app lives in the top-bar QR icon (PairingQRModal) */}
-
-        {/* WAN join invite (Phase 15B) — bootstrap cold-start across NAT */}
-        {!isMobileNode ? (
-          <div style={{ marginTop: "16px" }}>
-            <strong>{t("settings.network.agentBridge.wanInviteTitle")}</strong>
-            <p className="settings-hint" style={{ marginTop: 4 }}>
-              {t("settings.network.agentBridge.wanInviteDesc")}
-            </p>
-            {!wanJoinQr ? (
-              <button
-                type="button"
-                className="settings-button"
-                onClick={() => { void handleShowWanJoinInvite(); }}
-                disabled={wanJoinLoading}
-              >
-                {wanJoinLoading ? t("settings.network.agentBridge.generating") : t("settings.network.agentBridge.showWanInviteQr")}
-              </button>
-            ) : (
-              <div style={{ textAlign: "center" }}>
-                <img
-                  src={wanJoinQr}
-                  alt={t("settings.network.agentBridge.wanInviteQrAlt")}
-                  style={{ width: 256, height: 256, border: "2px solid var(--border-color)", borderRadius: 8 }}
-                />
-                <p className="settings-hint" style={{ marginTop: 8, wordBreak: "break-all", fontSize: "0.75rem" }}>
-                  <code style={{ fontSize: "0.65rem" }}>{wanJoinUri}</code>
-                </p>
-                <button
-                  type="button"
-                  className="settings-button"
-                  onClick={() => { void navigator.clipboard.writeText(wanJoinUri); }}
-                  style={{ marginTop: 4 }}
-                >
-                  {t("settings.network.agentBridge.copyLink")}
-                </button>
-                <button
-                  type="button"
-                  className="settings-button"
-                  onClick={() => setWanJoinQr(null)}
-                  style={{ marginTop: 4, marginLeft: 4 }}
-                >
-                  {t("settings.network.agentBridge.hideQr")}
-                </button>
-              </div>
-            )}
-            <dl className="settings-list" style={{ marginTop: 12 }}>
-              <dt>{t("settings.network.agentBridge.acceptWanInvite")}</dt>
-              <dd>
-                <textarea
-                  className="settings-input"
-                  rows={3}
-                  placeholder={t("settings.network.agentBridge.wanInvitePlaceholder")}
-                  value={wanInvitePaste}
-                  onChange={(e) => setWanInvitePaste(e.target.value)}
-                />
-                <button
-                  type="button"
-                  className="settings-button"
-                  disabled={wanInviteApplyBusy || !wanInvitePaste.trim()}
-                  onClick={() => { void handleApplyWanJoinInvite(); }}
-                  style={{ marginTop: 8 }}
-                >
-                  {wanInviteApplyBusy ? t("settings.network.agentBridge.applying") : t("settings.network.agentBridge.applyInvite")}
-                </button>
-                {wanInviteApplyMsg ? (
-                  <p className="settings-hint" style={{ marginTop: 8 }} role="status">
-                    {wanInviteApplyMsg}
-                  </p>
-                ) : null}
-              </dd>
-            </dl>
-          </div>
-        ) : null}
-
-        {!isMobileNode && (
-          <div style={{ marginTop: "16px" }}>
-            <strong>{t("settings.network.agentBridge.authorizedDevices")}</strong>
-            <p className="settings-hint" style={{ marginTop: 4 }}>
-              {t("settings.network.agentBridge.authorizedDevicesDesc")}
-            </p>
-            {authorizedDevicesLoading ? (
-              <p className="settings-hint">{t("settings.network.agentBridge.loadingDevices")}</p>
-            ) : authorizedDevicesError ? (
-              <p className="settings-hint" style={{ color: "var(--danger-color, #c0392b)" }}>
-                {authorizedDevicesError}
-              </p>
-            ) : authorizedDevices.length === 0 ? (
-              <p className="settings-hint">{t("settings.network.agentBridge.noDevices")}</p>
-            ) : (
-              <ul className="settings-list" style={{ marginTop: 8 }}>
-                {authorizedDevices.map((device) => (
-                  <li
-                    key={device.deviceId}
-                    className="settings-list-item"
-                    style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}
-                  >
-                    <div>
-                      <div>{device.displayName ?? device.deviceProfile}</div>
-                      <div className="settings-hint" style={{ fontSize: "0.75rem" }}>
-                        {device.deviceProfile}
-                        {device.revoked ? t("settings.network.agentBridge.revoked") : ""}
-                        <br />
-                        <code style={{ fontSize: "0.65rem" }}>{device.deviceId}</code>
-                      </div>
-                    </div>
-                    {!device.revoked && (
-                      <button
-                        type="button"
-                        className="settings-button"
-                        disabled={revokingDeviceId === device.deviceId}
-                        onClick={() => { void handleRevokeDevice(device.deviceId); }}
-                      >
-                        {revokingDeviceId === device.deviceId ? t("settings.network.agentBridge.revoking") : t("settings.network.agentBridge.revoke")}
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <button
-              type="button"
-              className="settings-button"
-              style={{ marginTop: 8 }}
-              disabled={authorizedDevicesLoading}
-              onClick={() => { void refreshAuthorizedDevices(); }}
-            >
-              {t("settings.network.agentBridge.refreshDevices")}
-            </button>
-          </div>
-        )}
       </section>
     </>
   );

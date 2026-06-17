@@ -1728,4 +1728,77 @@ describe("MobileNode", () => {
       ).rejects.toThrow(/disabled/i);
     });
   });
+
+  // -----------------------------------------------------------------------
+  // Device dedup (re-pairing the same mobile with the same home node
+  // must reuse the persisted device keypair, so the home node's
+  // `deviceAuthorizationStore` dedups by `deviceId` and the device list
+  // stays a single record per physical device).
+  // -----------------------------------------------------------------------
+
+  describe("device dedup across re-pairs", () => {
+    it("reuses the persisted device keypair for the same home node", async () => {
+      const store = new Map<string, string>();
+      const secureStorage: SecureStorage = {
+        set: vi.fn(async (key, value) => { store.set(key, value); }),
+        get: vi.fn(async (key) => store.get(key)),
+        remove: vi.fn(async (key) => { store.delete(key); }),
+      };
+      node = new MobileNode(makeConfig({ secureStorage }));
+
+      const homeNodeOwnerId = "envoy:owner:home-node";
+      const first = await (node as any)._loadOrCreateDeviceForHomeNode(homeNodeOwnerId);
+      const second = await (node as any)._loadOrCreateDeviceForHomeNode(homeNodeOwnerId);
+
+      expect(first.deviceId).toBe(second.deviceId);
+      expect(first.publicKeyPem).toBe(second.publicKeyPem);
+      expect(first.privateKeyPem).toBe(second.privateKeyPem);
+      // The key was persisted exactly once (the first call).
+      expect(secureStorage.set).toHaveBeenCalledTimes(1);
+    });
+
+    it("mints distinct device keys for distinct home nodes", async () => {
+      const store = new Map<string, string>();
+      const secureStorage: SecureStorage = {
+        set: vi.fn(async (key, value) => { store.set(key, value); }),
+        get: vi.fn(async (key) => store.get(key)),
+        remove: vi.fn(async (key) => { store.delete(key); }),
+      };
+      node = new MobileNode(makeConfig({ secureStorage }));
+
+      const a = await (node as any)._loadOrCreateDeviceForHomeNode("envoy:owner:home-a");
+      const b = await (node as any)._loadOrCreateDeviceForHomeNode("envoy:owner:home-b");
+
+      expect(a.deviceId).not.toBe(b.deviceId);
+      expect(a.publicKeyPem).not.toBe(b.publicKeyPem);
+    });
+
+    it("falls back to a fresh device when the persisted blob is corrupt", async () => {
+      const store = new Map<string, string>();
+      store.set("deviceIdentity:envoy:owner:home-x", "not-json");
+      const secureStorage: SecureStorage = {
+        set: vi.fn(async (key, value) => { store.set(key, value); }),
+        get: vi.fn(async (key) => store.get(key)),
+        remove: vi.fn(async (key) => { store.delete(key); }),
+      };
+      node = new MobileNode(makeConfig({ secureStorage }));
+
+      const a = await (node as any)._loadOrCreateDeviceForHomeNode("envoy:owner:home-x");
+      const b = await (node as any)._loadOrCreateDeviceForHomeNode("envoy:owner:home-x");
+
+      // The first call overwrote the corrupt blob with a fresh device;
+      // the second call should reuse that fresh device.
+      expect(a.deviceId).toBe(b.deviceId);
+      expect(secureStorage.set).toHaveBeenCalled();
+    });
+
+    it("falls back to a fresh device when secureStorage is not configured", async () => {
+      node = new MobileNode(makeConfig()); // no secureStorage
+      const a = await (node as any)._loadOrCreateDeviceForHomeNode("envoy:owner:any");
+      const b = await (node as any)._loadOrCreateDeviceForHomeNode("envoy:owner:any");
+      // Without storage, every call mints a new device — this is the
+      // legacy behaviour and matches the documented fallback.
+      expect(a.deviceId).not.toBe(b.deviceId);
+    });
+  });
 });

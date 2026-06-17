@@ -81,8 +81,8 @@ describe("ToolRegistry", () => {
       });
 
       const tools = registry.listTools();
-      // 55 default tools + 2 additional = 57
-      expect(tools).toHaveLength(57);
+      // 57 default tools + 2 additional = 59
+      expect(tools).toHaveLength(59);
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "bond.send_hello", "chat.send", "discovery.search", "knowledge.query",
@@ -101,7 +101,8 @@ describe("ToolRegistry", () => {
           "mesh.revoke-external-agent", "mesh.session-summary", "mesh.set-contact-disclosure",
           "mesh.set-contact-mode", "mesh.set-digest-schedule", "mesh.set-mode",
           "mesh.set-style", "mesh.share_list_pending", "mesh.share_list_proposals",
-          "mesh.share_profile_gallery_photo", "mesh.share_propose", "mesh.task.propose",
+          "mesh.share_profile_gallery_photo", "mesh.share_propose", "mesh.task.await_result",
+          "mesh.task.cancel", "mesh.task.propose",
           "mesh.transfer_status", "mesh.update-trigger", "share.send", "tool.1", "tool.2",
           "vault.search",
         ].sort(),
@@ -111,8 +112,8 @@ describe("ToolRegistry", () => {
     it("default tools are pre-registered", () => {
       const registry = new ToolRegistry();
       const tools = registry.listTools();
-      // Default tools: 55
-      expect(tools.length).toBe(55);
+      // Default tools: 57 (Phase 33 added mesh.task.cancel + mesh.task.await_result)
+      expect(tools.length).toBe(57);
     });
   });
 

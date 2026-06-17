@@ -40,6 +40,7 @@ const sampleJournal: TaskJournalSummary = {
 const listAgentActivity = vi.fn();
 const listAuditEvents = vi.fn();
 const listTaskJournalEntries = vi.fn();
+const getTaskResult = vi.fn();
 const getBonds = vi.fn();
 const on = vi.fn();
 
@@ -48,6 +49,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     listAgentActivity,
     listAuditEvents,
     listTaskJournalEntries,
+    getTaskResult,
     getBonds,
     on,
   }),
@@ -57,6 +59,7 @@ beforeEach(() => {
   listAgentActivity.mockResolvedValue([]);
   listAuditEvents.mockResolvedValue([]);
   listTaskJournalEntries.mockResolvedValue([]);
+  getTaskResult.mockResolvedValue(undefined);
   getBonds.mockResolvedValue([
     {
       peerOwnerId: "envoy:owner:bob",
@@ -108,6 +111,9 @@ describe("ActivityView — Phase 13D", () => {
         taskId: sampleRow.taskId,
         limit: 50,
       });
+      // Phase 34: drill-down also fetches the full TaskResultPayload so the
+      // ArtifactList can render any typed artifacts.
+      expect(getTaskResult).toHaveBeenCalledWith(sampleRow.taskId);
     });
 
     expect(await screen.findByText(/Task journal/i)).toBeDefined();
@@ -145,5 +151,26 @@ describe("ActivityView — Phase 13D", () => {
         }),
       );
     });
+  });
+
+  it("renders audit + journal even when getTaskResult fails (Phase 34 review)", async () => {
+    listAgentActivity.mockResolvedValue([sampleRow]);
+    listAuditEvents.mockResolvedValue([sampleAudit]);
+    listTaskJournalEntries.mockResolvedValue([sampleJournal]);
+    // Simulate a transient failure on the artifact-fetch RPC (e.g. mobile is
+    // offline). The drill-down MUST still render the audit + journal lists.
+    getTaskResult.mockRejectedValue(new Error("rpc disconnected"));
+
+    renderWithI18n(<ActivityView />);
+
+    fireEvent.click(await screen.findByRole("button", { name: new RegExp(sampleRow.summary.slice(0, 20)) }));
+
+    // Audit + journal render even though getTaskResult rejected.
+    expect(await screen.findByText(/Task journal/i)).toBeDefined();
+    expect(screen.getByText(/Audit events/i)).toBeDefined();
+    expect(screen.getByText(/Task proposed on mesh/i)).toBeDefined();
+    expect(screen.getByText(/Verified task\.propose/i)).toBeDefined();
+    // No "Artifacts" subtitle should be shown.
+    expect(screen.queryByText(/Artifacts/i)).toBeNull();
   });
 });

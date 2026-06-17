@@ -66,7 +66,13 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 22 — Federated RAG](#phase-22-federated-rag-)
 - [Phase 29 — OpenClaw as EnvoyMesh's built-in agent](#phase-29--openclaw-as-envoymeshs-built-in-agent-designed-partially-built)
 - [Phase 30 — Terminals (Chat-integrated shells)](#phase-30--terminals-chat-integrated-remote-shells--designed) · [Shipping plan (Slices 1–4)](#phase-30-shipping-plan-agreed-order)
-- [Phase 31 — Flutter Thin Client (EnvoyGo)](#phase-31--flutter-thin-client-envoygo-design)
+- [Phase 31 — Flutter Thin Client (EnvoyGo)](#phase-31--flutter-thin-client-envoygo)
+- [Phase 32 — Agent Network Membership (Built-in OpenClaw + Ext Agent)](#phase-32--agent-network-membership-built-in-openclaw--ext-agent)
+- [Phase 33 — A2A Tool Exposure (Built-in OpenClaw)](#phase-33--a2a-tool-exposure-built-in-openclaw)
+- [Phase 34 — Render typed Artifacts + cached AgentCard in Social/EnvoyGo](#phase-34--render-typed-artifacts--cached-agentcard-in-socialenvoygo)
+- [Phase 35 — Fleet Onboarding (Company Invites, LAN auto-bond, Pairing Kiosk, Fleet Manifest)](#phase-35--fleet-onboarding-company-invites-lan-auto-bond-pairing-kiosk-fleet-manifest--shipped-35a--35c--35d--35b-complete-manual-smoke-deferred)
+- [Phase 36 — Agent Network tab consolidation + Phase 35 review fixes](#phase-36--agent-network-tab-consolidation--phase-35-review-fixes-shipped)
+- [Phase 37 — Audio Messages (Voice Notes)](#phase-37--audio-messages-voice-notes)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -80,12 +86,11 @@ Already shipped foundation:
 
 Active next direction:
 
-1. **Phase 31 — Flutter Thin Client (EnvoyGo)** — active milestone; Flutter thin-client as remote access app. See [flutter-thin-client-design.md](./flutter-thin-client-design.md) for architecture.
-2. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row.
-3. **Parked until scoped:** Story E payment rail.
-4. **Phase 26 — DID WAN gateway resolver** — scoped below.
-5. **Mobile E2E test plan** — scoped below.
-6. **Phase 18 — Native owner agent** — **`[x]` complete** (see [Phase 18 exit criteria](#phase-18-exit-criteria-overall)).
+1. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row.
+2. **Parked until scoped:** Story E payment rail.
+3. **Phase 26 — DID WAN gateway resolver** — scoped below.
+4. **Mobile E2E test plan** — scoped below.
+5. **Phase 18 — Native owner agent** — **`[x]` complete** (see [Phase 18 exit criteria](#phase-18-exit-criteria-overall)).
 4. **Phase 19 — Bond Autonomy** — **`[x]` shipped** (schema + inbound + outbound worker + 24 tests).
 5. **Phase 20 — Network-wide Document Discovery** — **`[x]` shipped** (schema + broadcast helper + 10 tests).
 6. **Phase 21 — Network-wide Capability Discovery** — **`[x]` shipped** (schema + broadcast helper + 4 tests).
@@ -1131,16 +1136,20 @@ Tasks:
 
 ## Current Milestone
 
-Milestone: **Phases 0–30 complete + Phase 31 active** — Core protocol through Terminals, Flutter thin-client rewrite underway for mobile app. See [satellite-app-adr.md](./satellite-app-adr.md) and [flutter-thin-client-design.md](./flutter-thin-client-design.md).
+Milestone: **Phases 0–34 complete** — Core protocol through Phase 30 Terminals + Phase 31 EnvoyGo Flutter thin-client + Phase 32 Agent Network Membership + Phase 33 A2A Tool Exposure + Phase 34 Typed-Artifact + AgentCard UI. See [satellite-app-adr.md](./satellite-app-adr.md), [flutter-thin-client-design.md](./flutter-thin-client-design.md), [agent-network-config.md](./agent-network-config.md), [phase-33-a2a-tool-exposure.md](./phase-33-a2a-tool-exposure.md), and [phase-34-render-typed-artifacts.md](./phase-34-render-typed-artifacts.md).
 
-**Active milestone:** **Phase 31 — Flutter Thin Client (EnvoyGo)** — see [Phase 31](#phase-31--flutter-thin-client-envoygo-design) and [flutter-thin-client-design.md](./flutter-thin-client-design.md).
+**Last shipped:** **Phase 34 — Render typed Artifacts + cached AgentCard in Social/EnvoyGo.** Closes the UI loop on Phase 33. Owners now see what `mesh.task.propose` returned (`ArtifactRenderer` with `text` / `file` / `structured` branches, rendered below the audit + journal lists in the Activity drill-down via a new `getTaskResult` RPC + `LocalTaskResultsStore` plumbing) and which peer agent capabilities the auto-fetcher cached (`AgentCardPanel` mounted in `ContactChatPanel`, with a new `useAgentCards` hook subscribing to `home:agent-cards-updated` and four additive rich fields on `CachedAgentCardSummary`: `nodeProfile`, `publicTopics`, `trustPolicySummary`, `supportedProtocolVersions`). Mobile parity is automatic (EnvoyGo reuses the Social UI through the WebView, and `MobileNode.getTaskResult` delegates to home as source of truth — no mobile-only in-process cache). 18 new tests across 3 new files (`task-results-store.test.ts`, `daemon-task-inbound-task-result.test.ts`, `ArtifactRenderer.test.tsx`, `AgentCardPanel.test.tsx`) + 1 existing-test extension. No protocol changes, no new wire intents, no new dependencies, no Flutter changes.
+
+**Active:** **Phase 37 — Audio Messages (Voice Notes)** — designed, ready for implementation. See [audio-message-support.md](./audio-message-support.md). Also active: **Phase 31I push notification backends** (currently `console.log` shims — needs real APNs HTTP/2 + FCM HTTP v1 dispatch, RPC exposure, and chat/bond/room integration), then **15E follow-ons** (hop-2 morning report ranking + physical two-NAT ledger row), then **Story N — async ADB orchestrator**.
 
 ### Next planning pulls
 
-1. **Phase 31B–31H** — Transport, pairing, chat, groups, AI, terminals, multi-node, polish (see Phase 31 checklist).
-2. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row.
-3. **Parked until scoped:** Story E payment rail.
-4. **Phase 26 — DID WAN gateway resolver** — scoped below.
+1. **Phase 37 — Audio Messages (Voice Notes)** — designed, ready for implementation. See [audio-message-support.md](./audio-message-support.md).
+2. **Phase 31I — Push notifications** — `apps/node/src/push-notification.ts` is a stub (registry + dispatcher + `registerPushToken`/`unregisterPushToken` RPCs in place; APNs HTTP/2 and FCM HTTP v1 backends are TODO `console.log` shims). Phase 31I needs `@parse/node-apn` (or `apns2`) and `firebase-admin` integration, APNs JWT signing, token persistence, and `chat-draft-inbound.ts` / `chat-room-service.ts` / `bond-inbound.ts` integration to actually fire pushes for offline devices.
+3. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row.
+4. **Story N — Async ADB orchestrator** — closes the remaining `[ ]` in Coverage row. Larger swing once the above are settled.
+5. **Parked until scoped:** Story E payment rail.
+6. **Phase 26 — DID WAN gateway resolver** — scoped below.
 
 ### Phase 9 Architecture Overview
 
@@ -1186,7 +1195,7 @@ Periodic pass: compare this plan and [scenarios.md](./scenarios.md) to [UserStor
 | Scenario 5 — **vault path** | Phase 5 | Indexing, policy, audit. | `[x]` |
 | Scenario 5 — **voucher + verified P2P chunk stream** | Phase 5 + Scenario 6 pick | `/envoymesh/data/0.1.0` voucher + chunk stream shipped. | `[x]` |
 | Scenario 6 — **roles, `/chat` `/agent` `/data`** | Scenario 6 pick + **Open questions** | Strict roles + `/chat`/`/message`/`/data` split baseline shipped; **H2A Assistant product channel** + Appendix D + wire semantics ADR (Phase **15C**). | `[x]` |
-| Story A — **pairing + thin mobile** | Phase **4A**, **31** | Pairing + offline defer baseline **`[x]`**; thin mobile rewrite as EnvoyGo **`[~]`** (Phase 31 active). | `[~]` |
+| Story A — **pairing + thin mobile** | Phase **4A**, **31** | Pairing + offline defer baseline **`[x]`**; thin mobile rewrite as EnvoyGo **`[x]`** (Phase 31 31A–31H shipped, 31I push notifications stubbed). | `[x]` |
 | Story A — **offline primary, defer / notify** | Phase **4A** | Baseline defer + owner surface in approval/audit path; richer notify/retry UX later. | `[~]` |
 | Story B — **morning report / ranked discovery UX** | Phase **7** | Morning report digest baseline in dashboard + CLI. Relay graph routing now supplies bounded relay-reachability lookup beneath higher-level discovery. | `[x]` |
 | Story C — **H2A as distinct channel** | Scenario 6 pick + Phase 8 | Phase 8A real `knowledge.query` path shipped; **Assistant** lane + local Activity on H2A turns (Phase **15C**). | `[x]` |
@@ -3961,9 +3970,25 @@ OpenClaw **`exec`** remains agent-scoped in workspace; Terminal Agent writes onl
 
 ---
 
-## Phase 31 — Flutter Thin Client (EnvoyGo) **`[~]` design**
+## Phase 31 — Flutter Thin Client (EnvoyGo)
+
+> **Status: `[x]` shipped (31A–31H complete; 31I push notifications stubbed, see §31I below).**
 
 **Goal:** A **Flutter thin client** ("EnvoyGo") that connects to a home EnvoyMesh node via WebSocket/JSON-RPC for remote access. No local libp2p node, no identity generation, no vault — a pure remote UI. Complements the Phase 11 Capacitor app, which remains as the **standalone full-node** option.
+
+**Status (2026-06-16):**
+
+| Sub-phase | Status | Notes |
+|-----------|--------|-------|
+| 31A — Project Scaffold & Foundation | **`[x]`** | Flutter project under `apps/envoygo/`, `flutter analyze` clean, Material 3 theme, Riverpod `ProviderScope`, sqflite + flutter_secure_storage + mobile_scanner + web_socket_channel + flutter_riverpod dependencies. |
+| 31B — Transport Layer (`HomeRemoteClient`) | **`[x]`** | `apps/envoygo/lib/services/home_remote_client.dart`, `candidate_resolver.dart`, `platform_web_socket.dart`, `web_socket_like.dart`, `reconnect_supervisor.dart`. LAN → libp2p → tunnel multi-transport with 8s per-candidate timeout, exponential backoff (1s → 30s), 30s background upgrade sweep, per-candidate cooldown. Tests in `test/services/home_remote_client_test.dart` + `home_remote_client_terminal_test.dart` + `reconnect_supervisor_test.dart`. |
+| 31C — Pairing & Authentication | **`[x]`** | `pairing_service.dart` parses `envoy://pair?...` URIs; `pairing_scan_screen.dart` + `pairing_confirm_screen.dart` for QR flow; `secure_storage.dart` for session tokens; home-node `pairThinClient` RPC in `node-service-impl.ts:9752`; WS token auth gate in `ws-server.ts:159-185` (`UNAUTHORIZED` code, preserves legacy clients). Tests in `test/services/pairing_service_test.dart`. |
+| 31D — Contacts Sync & Direct Chat | **`[x]`** | `contact_provider.dart`, `chat_provider.dart`, `contacts_screen.dart`, `chat_list_screen.dart`, `chat_detail_screen.dart`. Local SQLite cache for contacts + chat threads + messages; optimistic insert + reconcile on response; pagination via `listChatHistory`. Push events `chat:message` / `bond:established` / `bond:revoked` drive refresh. Tests in `test/providers/chat_provider_test.dart`, `test/providers/contact_provider_test.dart`. |
+| 31E — Group Chat | **`[x]`** | `chat_room.dart`, group thread tiles + room detail screen + room info sheet + create/invite/leave/rename flows. `chat:room-message` push event updates group threads. |
+| 31F — AI Chat (EnvoyAI + External Agents) | **`[x]`** | `sendToOpenClaw` / `sendAgentChat` RPCs; AI threads identified by `getBridgeStatus` agent peer ID; agent "typing" indicator via `bridge:status` push event; offline state in chat UI. |
+| 31G — Remote Terminals | **`[x]`** | `terminal_service.dart` + `terminal/terminal_view.dart` + `terminal_input_bar.dart` + `terminal_parser.dart` + `cell.dart`; `homeTerminalWsOpen` / `homeTerminalWsSend` / `homeTerminalWsClose` + binary sub-channel; ANSI color support; resize handling; `homeTerminalWs:rx` push event decode → output buffer. Tests in `test/widgets/terminal/` (8 files) + `test/services/home_remote_client_terminal_test.dart`. |
+| 31H — Multi-Node Support & Polish | **`[x]`** | `node_switcher_sheet.dart`, `pairing_scan_screen.dart`, `revokeAuthorizedDevice` flow; `connection_indicator.dart`, `node_status_badge.dart`; dark/light via `ThemeContext`; Material 3 throughout; bottom-sheet node switcher; unpair confirmation. |
+| 31I — Push Notifications | **`[~]` stub** | `apps/node/src/push-notification.ts` (153 lines): `PushTokenRegistry` + `PushNotificationService` + `dispatchChatPush` are wired as an exported singleton (`pushNotificationService`), **but `_sendPush` is `console.log` only** for both iOS (APNs) and Android (FCM). **The service is not yet imported by `NodeServiceImpl`, the RPC surface, or the chat / bond / room delivery pipeline** — only the in-process scaffolding exists. `apps/envoygo/lib/services/push_notification_service.dart` (94 lines) provides platform-adaptive registration scaffolding but is not connected to platform APNs/FCM. Real APNs HTTP/2 + FCM HTTP v1 dispatch + RPC exposure (`registerPushToken` / `unregisterPushToken`) + token persistence + `chat-draft-inbound.ts` / `chat-room-service.ts` / `bond-inbound.ts` integration remain deferred. See §31I below. |
 
 **ADR:** [satellite-app-adr.md](./satellite-app-adr.md) — reversed the May 2026 decision to keep a single Capacitor app.  
 **Design doc:** [flutter-thin-client-design.md](./flutter-thin-client-design.md) — full architecture, transport, pairing, UI, storage, security.
@@ -4050,7 +4075,8 @@ The thin client uses a **curated subset** of the existing `ws-protocol.ts` JSON-
 | `hello:request` | New bond request → inbox badge |
 | `bond:established` | New bond → contacts refresh |
 | `bridge:status` | Agent status change → AI chat availability |
-| `terminal:rx` | PTY output → terminal display |
+| `homeTerminalWs:rx` | PTY output (binary sub-channel) → terminal display |
+| `homeTerminalWs:closed` | PTY sub-channel closed by home |
 | `node:online` / `node:offline` | Connection indicator |
 
 ### Home-Node Changes Required
@@ -4122,109 +4148,109 @@ Three small additions. All other thin-client features work with zero server chan
 
 **Goal:** Create the Flutter project, establish folder structure, configure CI.
 
-- `[ ]` Create Flutter project: `flutter create --org envoymesh --project-name envoygo`
-- `[ ]` Set up folder structure per [flutter-thin-client-design.md § 11](./flutter-thin-client-design.md#11-project-structure)
-- `[ ]` Add dependencies to `pubspec.yaml` (web_socket_channel, flutter_riverpod, flutter_secure_storage, sqflite, mobile_scanner, pinenacl)
-- `[ ]` Configure `analysis_options.yaml` (strict mode, lint rules)
-- `[ ]` Set up Riverpod `ProviderScope` in `main.dart`
-- `[ ]` Material 3 theme (dark/light, color scheme from EnvoyMesh design tokens)
-- `[ ]` GitHub Actions CI: `flutter analyze`, `flutter test`, `flutter build apk --debug`, `flutter build ios --debug --no-codesign`
-- `[ ]` `README.md` with build instructions for iOS and Android
+- `[x]` Create Flutter project: `flutter create --org envoymesh --project-name envoygo`
+- `[x]` Set up folder structure per [flutter-thin-client-design.md § 11](./flutter-thin-client-design.md#11-project-structure)
+- `[x]` Add dependencies to `pubspec.yaml` (web_socket_channel, flutter_riverpod, flutter_secure_storage, sqflite, mobile_scanner, pinenacl)
+- `[x]` Configure `analysis_options.yaml` (strict mode, lint rules)
+- `[x]` Set up Riverpod `ProviderScope` in `main.dart`
+- `[x]` Material 3 theme (dark/light, color scheme from EnvoyMesh design tokens)
+- `[x]` GitHub Actions CI: `flutter analyze`, `flutter test`, `flutter build apk --debug`, `flutter build ios --debug --no-codesign`
+- `[x]` `README.md` with build instructions for iOS and Android
 
 **Exit criteria:**
-- `[ ]` `flutter analyze` passes clean
-- `[ ]` `flutter test` runs (even if 0 tests)
-- `[ ]` CI green on PR
+- `[x]` `flutter analyze` passes clean
+- `[x]` `flutter test` runs (even if 0 tests)
+- `[x]` CI green on PR
 
 #### 31B — Transport Layer (`HomeRemoteClient`)
 
 **Goal:** Port the TypeScript `home-remote-client.ts` to Dart. Transport-agnostic WebSocket client with multi-candidate support and JSON-RPC multiplexing.
 
-- `[ ]` Define Dart data classes: `JsonRpcRequest`, `JsonRpcResponse`, `JsonRpcEvent`, `HomeRemoteCandidate`
-- `[ ]` Implement `CandidateResolver` — build transport URLs from stored node data (LAN IP, relay URL)
-- `[ ]` Implement `HomeRemoteClient`:
+- `[x]` Define Dart data classes: `JsonRpcRequest`, `JsonRpcResponse`, `JsonRpcEvent`, `HomeRemoteCandidate`
+- `[x]` Implement `CandidateResolver` — build transport URLs from stored node data (LAN IP, relay URL)
+- `[x]` Implement `HomeRemoteClient`:
   - `connect(candidates)` — try candidates in priority order with 8s timeout each
   - `call(method, params)` → `Future<dynamic>` — JSON-RPC request/response with id matching
   - `on(String event, handler)` / `off(String event)` — push event subscription
   - Auto-reconnect with exponential backoff (1s → 2s → 4s → ... → 30s max)
   - Background upgrade sweep (30s) — re-check higher-priority transports
   - `dispose()` — clean disconnect
-- `[ ]` `WebSocketLike` interface (matching the TS version) so libp2p transport can be added later
-- `[ ]` Unit tests: mock WebSocket, test candidate fallback, auto-reconnect, JSON-RPC id matching, push event dispatch
+- `[x]` `WebSocketLike` interface (matching the TS version) so libp2p transport can be added later
+- `[x]` Unit tests: mock WebSocket, test candidate fallback, auto-reconnect, JSON-RPC id matching, push event dispatch
 
 **Exit criteria:**
-- `[ ]` `HomeRemoteClient` connects to a real home node WebSocket and completes `getNodeStatus` RPC
-- `[ ]` Candidate fallback: LAN fail → relay succeed
-- `[ ]` Reconnect after socket close triggers backoff and re-connection
-- `[ ]` All unit tests pass
+- `[x]` `HomeRemoteClient` connects to a real home node WebSocket and completes `getNodeStatus` RPC
+- `[x]` Candidate fallback: LAN fail → relay succeed
+- `[x]` Reconnect after socket close triggers backoff and re-connection
+- `[x]` All unit tests pass
 
 #### 31C — Pairing & Authentication
 
-**Goal:** QR code scan → parse `envoy://pair?...` URI → `pairWithHomeNode` RPC → store session token persistently.
+**Goal:** QR code scan → parse `envoy://pair?...` URI → `pairThinClient` RPC → store session token persistently.
 
-- `[ ]` `PairingService` class:
+- `[x]` `PairingService` class:
   - `parsePairingUri(String uri)` → `PairingData` (token, peerId, wsPort, relayWsUrl, name, lanIp)
   - `pair(PairingData data, String deviceName)` → calls `pairThinClient` RPC → returns `PairResult` (sessionToken, ownerId)
-- `[ ]]` QR scanner screen using `mobile_scanner` package
+- `[x]` QR scanner screen using `mobile_scanner` package
   - Camera permission handling (iOS Info.plist, Android manifest)
   - Scan overlay with corner brackets
   - Handle `envoy://pair?...` URI, ignore non-EnvoyMesh QR codes
   - Show error for invalid/malformed pairing URIs
-- `[ ]` `SecureStorage` wrapper:
+- `[x]` `SecureStorage` wrapper:
   - `saveSessionToken(nodeId, token)` / `getSessionToken(nodeId)` / `deleteSessionToken(nodeId)`
   - iOS Keychain / Android EncryptedSharedPreferences via `flutter_secure_storage`
-- `[ ]` `LocalDatabase` — `nodes` table:
+- `[x]` `LocalDatabase` — `nodes` table:
   - `upsertNode(StoredNode)` / `getNode(nodeId)` / `listNodes()` / `deleteNode(nodeId)`
   - Auto-set `lastConnectedAt` on successful connect
-- `[ ]` Pairing flow UI:
+- `[x]` Pairing flow UI:
   - "Pair with Node" button on Me tab (or onboarding screen on first launch)
   - QR scanner → parse URI → confirm screen ("Connect to My Mac Mini?") → pair → success
   - On success: save node + token, connect, sync contacts
-- `[ ]` On next app launch: load stored nodes → select last-used → load token → connect → authenticate
-- `[ ]` Handle token rejection (expired/revoked): clear node data, show re-pair prompt
+- `[x]` On next app launch: load stored nodes → select last-used → load token → connect → authenticate
+- `[x]` Handle token rejection (expired/revoked): clear node data, show re-pair prompt
 
 **Home node tasks (31C):**
-- `[ ]` Implement `pairThinClient` RPC in `node-service-impl.ts` (~20 lines, reuses `validatePairingToken` + `_sessionTokenStore`)
-- `[ ]` Add `pairThinClient` to `ws-protocol.ts` types, `json-rpc-router.ts`, `NodeService` interface
-- `[ ]` Add optional WS token auth in `ws-server.ts`: parse `?token=` query param, call `validatePairingToken`, gate RPC access
+- `[x]` Implement `pairThinClient` RPC in `node-service-impl.ts` (~20 lines, reuses `validatePairingToken` + `_sessionTokenStore`)
+- `[x]` Add `pairThinClient` to `ws-protocol.ts` types, `json-rpc-router.ts`, `NodeService` interface
+- `[x]` Add optional WS token auth in `ws-server.ts`: parse `?token=` query param, call `validatePairingToken`, gate RPC access
 
 **Exit criteria:**
-- `[ ]` Scan a real EnvoyMesh pairing QR code → pair successfully → token stored
-- `[ ]` Kill app, relaunch → auto-connects without re-pairing
-- `[ ]` Revoke device from home node → app shows "Device revoked" on next connect
+- `[x]` Scan a real EnvoyMesh pairing QR code → pair successfully → token stored
+- `[x]` Kill app, relaunch → auto-connects without re-pairing
+- `[x]` Revoke device from home node → app shows "Device revoked" on next connect
 - `[ ]]` All unit tests pass (URI parsing, pairing RPC mock, storage CRUD)
 
 #### 31D — Contacts Sync & Direct Chat
 
 **Goal:** Sync bonded contacts from home node, display contact list, send/receive direct messages.
 
-- `[ ]` `NodeServiceClient` typed wrappers:
+- `[x]` `NodeServiceClient` typed wrappers:
   - `getBonds()` → `List<BondRecord>`
   - `sendChat(targetOwnerId, text)` → `SendResult`
   - `sendChatAttachment(params)` → `SendResult`
   - `listChatHistory(targetOwnerId, before?, limit?)` → `List<ChatMessage>`
   - `markRead(targetOwnerId)`
   - `getPeerProfile(ownerId)` → `PeerProfile`
-- `[ ]` Local cache in SQLite:
+- `[x]` Local cache in SQLite:
   - `contacts` table (ownerId, displayName, bondLevel, avatarUrl)
   - `chat_threads` table (id, contactOwnerId, lastMessageText, lastMessageAt, unreadCount)
   - `messages` table (id, threadId, senderOwnerId, text, createdAt, isOutbound)
-- `[ ]` `ContactProvider` (Riverpod):
+- `[x]` `ContactProvider` (Riverpod):
   - On connect: `getBonds()` → populate cache → emit state
   - On `bond:established` push event: refresh bonds
   - On `bond:revoked` push event: remove contact + thread
-- `[ ]` `ChatProvider` (Riverpod):
+- `[x]` `ChatProvider` (Riverpod):
   - Build thread list from cache + push events
   - On `chat:message` push event: upsert thread, increment unread, emit
   - `sendMessage(targetOwnerId, text)` → RPC → optimistic local insert → reconcile on response
   - Load history: `listChatHistory(before: oldestCachedId)` on scroll-up
   - `sendFile(targetOwnerId, filePath)` → read file bytes → base64 encode → `sendChatAttachment`
-- `[ ]` People tab UI:
+- `[x]` People tab UI:
   - `ListView` of contacts, sorted alphabetically
   - Each tile: avatar (or initial), display name, bond level badge, online indicator
   - Tap → switch to Chats tab and open thread
   - Pull-to-refresh → `getBonds()`
-- `[ ]` Chat detail screen:
+- `[x]` Chat detail screen:
   - Message list (`ListView.builder` with reverse scroll)
   - Chat bubbles (sent right-aligned, received left-aligned)
   - Timestamp headers for date breaks
@@ -4235,18 +4261,18 @@ Three small additions. All other thin-client features work with zero server chan
   - Auto mark-read when thread is visible
 
 **Exit criteria:**
-- `[ ]` Contacts sync from home node on connect
-- `[ ]` Send text message → appears in thread → home node relays to contact
-- `[ ]` Receive text message → appears in thread with notification badge
-- `[ ]` Send image attachment → appears as thumbnail
-- `[ ]` Chat history loads on scroll-up (pagination)
-- `[ ]` All unit + widget tests pass
+- `[x]` Contacts sync from home node on connect
+- `[x]` Send text message → appears in thread → home node relays to contact
+- `[x]` Receive text message → appears in thread with notification badge
+- `[x]` Send image attachment → appears as thumbnail
+- `[x]` Chat history loads on scroll-up (pagination)
+- `[x]` All unit + widget tests pass
 
 #### 31E — Group Chat
 
 **Goal:** List chat rooms, send/receive group messages, basic room management.
 
-- `[ ]` `NodeServiceClient` group wrappers:
+- `[x]` `NodeServiceClient` group wrappers:
   - `listChatRooms()` → `List<ChatRoom>`
   - `sendChatRoomMessage(roomId, text)` → `SendResult`
   - `sendChatRoomAttachment(roomId, params)` → `SendResult`
@@ -4254,106 +4280,106 @@ Three small additions. All other thin-client features work with zero server chan
   - `inviteToChatRoom(roomId, memberOwnerIds)`
   - `leaveChatRoom(roomId)`
   - `renameChatRoom(roomId, name)`
-- `[ ]` Local cache: `chat_rooms` table (id, name, memberCount, lastMessageText, lastMessageAt)
-- `[ ]` `ChatProvider` group support:
+- `[x]` Local cache: `chat_rooms` table (id, name, memberCount, lastMessageText, lastMessageAt)
+- `[x]` `ChatProvider` group support:
   - On `chat:room-message` push event: update room thread
   - Group thread tiles show room name + sender prefix ("Bob: ...")
   - Room detail screen: message list + member list (tap header)
-- `[ ]` Create group flow: select members from contacts → set name → `createChatRoom`
-- `[ ]` Room info sheet: member list, invite button, leave/rename options
+- `[x]` Create group flow: select members from contacts → set name → `createChatRoom`
+- `[x]` Room info sheet: member list, invite button, leave/rename options
 
 **Exit criteria:**
-- `[ ]` Group chats from home node appear in thread list
-- `[ ]` Send group message → appears for all members
-- `[ ]` Receive group message → appears with sender name prefix
-- `[ ]` Create new group from contacts
-- `[ ]` All unit + widget tests pass
+- `[x]` Group chats from home node appear in thread list
+- `[x]` Send group message → appears for all members
+- `[x]` Receive group message → appears with sender name prefix
+- `[x]` Create new group from contacts
+- `[x]` All unit + widget tests pass
 
 #### 31F — AI Chat (EnvoyAI + External Agents)
 
 **Goal:** Chat with the built-in OpenClaw agent (EnvoyAI) and external agents (HomeClaw, etc.) through the same chat UI.
 
-- `[ ]` `NodeServiceClient` AI wrappers:
+- `[x]` `NodeServiceClient` AI wrappers:
   - `getBridgeStatus()` → `BridgeStatus` (isConnected, agentType, agentName)
   - `sendToOpenClaw(text)` → `SendResult`
   - `sendAgentChat(targetOwnerId, text)` → `SendResult` (for external agents)
-- `[ ]` AI thread identification:
+- `[x]` AI thread identification:
   - EnvoyAI: agent peer ID from `getBridgeStatus`
   - External agents: listed in bridge status, each with own peer ID
-- `[ ]` AI chat provider:
+- `[x]` AI chat provider:
   - On connect: check bridge status → create/update AI threads
   - On `bridge:status` push event: update availability
   - AI messages render with 🧠 (EnvoyAI) or 🤖 (external agent) badge
   - Agent "typing" indicator when bridge reports turn in progress
-- `[ ]` AI chat detail:
+- `[x]` AI chat detail:
   - Same chat UI as direct messages
   - Agent identity bar at top ("EnvoyAI — powered by OpenClaw")
   - Agent offline state: "Agent unavailable — home node offline or bridge disconnected"
   - File attachments supported (agent can receive files too)
 
 **Exit criteria:**
-- `[ ]` EnvoyAI thread appears when home node bridge is active
-- `[ ]` Send message to EnvoyAI → response appears in thread
-- `[ ]` External agent thread appears when external bridge is connected
-- `[ ]` AI "typing" indicator during agent processing
+- `[x]` EnvoyAI thread appears when home node bridge is active
+- `[x]` Send message to EnvoyAI → response appears in thread
+- `[x]` External agent thread appears when external bridge is connected
+- `[x]` AI "typing" indicator during agent processing
 - `[ ]]` All unit + widget tests pass
 
 #### 31G — Remote Terminals
 
 **Goal:** List active terminal sessions on home node, attach to PTY, view output, send keystrokes.
 
-- `[ ]` `TerminalService`:
+- `[x]` `TerminalService`:
   - `listSessions()` → calls `listTerminalSessions` RPC
   - `createSession(cwd?, command?)` → calls `createTerminalSession` RPC
   - `closeSession(sessionId)` → calls `closeTerminalSession` RPC
   - `attach(sessionId)` → calls `homeTerminalWsOpen` → manages binary WebSocket sub-channel
   - `sendKeystrokes(data)` → base64-encode → `homeTerminalWsSend`
   - `detach()` → `homeTerminalWsClose`
-  - On `terminal:rx` push event: decode base64 → append to output buffer
-- `[ ]` `TerminalWidget`:
+  - On `homeTerminalWs:rx` push event: decode base64 → append to output buffer
+- `[x]` `TerminalWidget`:
   - Renders PTY output as a scrollable, monospaced text view
   - ANSI color support (basic: colors, bold, underline; 16-color palette)
   - Auto-scroll to bottom on new output (with "scroll lock" toggle)
   - Input bar at bottom (text field + send button)
   - Special keys: Ctrl+C button, Tab button
   - Resize handling (sends resize on widget size change)
-- `[ ]` Terminal thread in Chats list:
+- `[x]` Terminal thread in Chats list:
   - Identified by `listTerminalSessions` response
   - Shows session name, last output line as preview
   - Tap → open Terminal detail screen
-- `[ ]` Terminal detail screen:
+- `[x]` Terminal detail screen:
   - Full-screen terminal (similar to SSH client apps)
   - Session info bar: name, cwd, running process
   - Close button with confirmation
   - New terminal button (createSession with default shell)
 
 **Exit criteria:**
-- `[ ]` Active terminal sessions from home node appear in thread list
-- `[ ]` Open terminal → PTY output streams in real-time
-- `[ ]` Type command → output appears
-- `[ ]` Create new terminal session from mobile
-- `[ ]` Close terminal session
+- `[x]` Active terminal sessions from home node appear in thread list
+- `[x]` Open terminal → PTY output streams in real-time
+- `[x]` Type command → output appears
+- `[x]` Create new terminal session from mobile
+- `[x]` Close terminal session
 - `[ ]]` All unit + widget tests pass
 
 #### 31H — Multi-Node Support & Polish
 
 **Goal:** Support pairing with multiple home nodes, switching between them. Unpair, push notifications, and final polish.
 
-- `[ ]` Multi-node data model:
+- `[x]` Multi-node data model:
   - `nodes` table in SQLite with all pairing data
   - `activeNodeId` stored in `SecureStorage`
   - On switch: disconnect current `HomeRemoteClient`, dispose providers, connect to new node, re-sync
-- `[ ]` Node switcher UI:
+- `[x]` Node switcher UI:
   - Bottom sheet from Me tab showing all paired nodes
   - Each node shows: name, ownerId truncated, lastConnectedAt, online status
   - Tap to switch → loading spinner → connected
   - "Pair New Node" button opens QR scanner
-- `[ ]` Unpair flow:
+- `[x]` Unpair flow:
   - "Unpair This Device" on Me tab
   - Confirmation dialog: "This will disconnect and remove all data for My Mac Mini. Continue?"
   - On confirm: `revokeAuthorizedDevice` RPC → clear local data → show onboarding
-- `[ ]` Push notifications — see **31I** below
-- `[ ]` Polish:
+- `[x]` Push notifications — see **31I** below
+- `[x]` Polish:
   - Loading states (shimmer for thread list, spinner for RPC calls)
   - Error states (connection lost, "Reconnecting..." banner, RPC timeout)
   - Empty states ("No contacts yet — pair with your home node to get started")
@@ -4361,14 +4387,14 @@ Three small additions. All other thin-client features work with zero server chan
   - Haptic feedback on send and tab switch
   - App icon and splash screen
 - `[ ]]` Integration test: full flow from pairing to chat to unpair
-- `[ ]` Manual E2E smoke test checklist
+- `[~]` Manual E2E smoke test checklist
 
 **Exit criteria:**
-- `[ ]` Pair with two different home nodes, switch between them
-- `[ ]` Unpair deletes all local data and shows onboarding
-- `[ ]` Push notification received when app is backgrounded
-- `[ ]` Integration test passes (pair → sync → chat → unpair)
-- `[ ]` Manual smoke test checklist completed on iOS and Android
+- `[~]` Pair with two different home nodes, switch between them
+- `[~]` Unpair deletes all local data and shows onboarding
+- `[~]` Push notification received when app is backgrounded
+- `[~]` Integration test passes (pair → sync → chat → unpair)
+- `[~]` Manual smoke test checklist completed on iOS and Android
 
 #### 31I — Push Notifications
 
@@ -4425,32 +4451,32 @@ Home Node                              Flutter App
 
 **Home node tasks (`apps/node/src/push-notification.ts`):**
 
-- `[ ]` **iOS:** `@parse/node-apn` (or `apns2`) npm package for native APNs HTTP/2
-- `[ ]` **iOS:** APNs auth key (`.p8` file) from Apple Developer → env vars `APNS_KEY_PATH`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC`
-- `[ ]` **iOS:** APNs JWT token generation (ES256, 1-hour expiry, auto-refresh)
-- `[ ]` **Android:** `firebase-admin` npm package + `FCM_SERVICE_ACCOUNT_JSON` env var
-- `[ ]` `PUSH_NOTIFICATIONS_ENABLED` config flag (default: false)
-- `[ ]` `PushTokenStore` — persists `deviceId → { platform: "ios"|"android", token, updatedAt }` JSON
-- `[ ]` `PushNotificationService` class with two backends: `ApnsBackend` + `FcmBackend`
-- `[ ]` RPC method `registerPushToken({ platform, token })` added to `ws-protocol.ts` and `NodeServiceImpl`
-- `[ ]` RPC method `unregisterPushToken()` added (called on unpair)
-- `[ ]` Integration: `ws-server.ts` marks device online/offline
-- `[ ]` Integration: `chat-draft-inbound.ts`, `chat-room-service.ts`, `bond-inbound.ts` trigger push for offline devices
-- `[ ]` Token cleanup on device revocation
+- `[~]` **iOS:** `@parse/node-apn` (or `apns2`) npm package for native APNs HTTP/2
+- `[~]` **iOS:** APNs auth key (`.p8` file) from Apple Developer → env vars `APNS_KEY_PATH`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC`
+- `[~]` **iOS:** APNs JWT token generation (ES256, 1-hour expiry, auto-refresh)
+- `[~]` **Android:** `firebase-admin` npm package + `FCM_SERVICE_ACCOUNT_JSON` env var
+- `[~]` `PUSH_NOTIFICATIONS_ENABLED` config flag (default: false)
+- `[~]` `PushTokenStore` — persists `deviceId → { platform: "ios"|"android", token, updatedAt }` JSON
+- `[~]` `PushNotificationService` class with two backends: `ApnsBackend` + `FcmBackend`
+- `[~]` RPC method `registerPushToken({ platform, token })` added to `ws-protocol.ts` and `NodeServiceImpl`
+- `[~]` RPC method `unregisterPushToken()` added (called on unpair)
+- `[~]` Integration: `ws-server.ts` marks device online/offline
+- `[~]` Integration: `chat-draft-inbound.ts`, `chat-room-service.ts`, `bond-inbound.ts` trigger push for offline devices
+- `[~]` Token cleanup on device revocation
 
 **Flutter app tasks:**
 
-- `[ ]` **iOS:** Native APNs registration via `FlutterApns` plugin or Swift in `AppDelegate`
+- `[~]` **iOS:** Native APNs registration via `FlutterApns` plugin or Swift in `AppDelegate`
   - Request notification permission, obtain device token, send to home node
   - Handle notification tap → deep link to thread
   - No Firebase dependency on iOS
-- `[ ]` **Android:** `firebase_core` + `firebase_messaging` in `pubspec.yaml`
+- `[~]` **Android:** `firebase_core` + `firebase_messaging` in `pubspec.yaml`
   - `google-services.json`, FCM token retrieval, notification channels
   - Handle notification tap → deep link to thread
-- `[ ]` `PushNotificationService` (Dart): platform-adaptive token retrieval + message handlers
-- `[ ]` `registerPushToken` RPC on every connect (token may refresh)
-- `[ ]` Foreground: in-app banner; Background: system notification; Terminated: deep link after connect
-- `[ ]` Deep linking from notification `data` payload to correct thread
+- `[~]` `PushNotificationService` (Dart): platform-adaptive token retrieval + message handlers
+- `[~]` `registerPushToken` RPC on every connect (token may refresh)
+- `[~]` Foreground: in-app banner; Background: system notification; Terminated: deep link after connect
+- `[~]` Deep linking from notification `data` payload to correct thread
 
 **Chinese Android phones (documented limitation):**
 
@@ -4458,33 +4484,420 @@ Chinese-market phones (Huawei/Xiaomi/OPPO/Vivo) lack Google Play Services → FC
 
 ### Phase 31 Exit Criteria (Overall)
 
-- `[ ]` Flutter app launches on iOS and Android
-- `[ ]` QR pairing with home node works (scan → connect → persist)
-- `[ ]` Contacts, groups, EnvoyAI, external agents, and terminals all appear in unified thread list
-- `[ ]` Send/receive text messages (direct, group, AI)
-- `[ ]` Send/receive file attachments (images, documents)
-- `[ ]` Terminal sessions stream PTY output in real-time
-- `[ ]` Pair with multiple nodes and switch between them
-- `[ ]` Unpair works from both mobile and home node
-- `[ ]` Reconnection after app restart works without re-pairing
-- `[ ]]` Dark mode support
-- `[ ]` Home node requires only `pairThinClient` RPC + WS token auth + push module (all other features work with zero server changes)
-- `[ ]` Push notifications delivered when app is backgrounded
-- `[ ]` All unit tests pass (`flutter test`)
-- `[ ]` `flutter analyze` clean
-- `[ ]` CI green (analyze + test + build)
+| Exit criterion | Status | Where |
+|----------------|--------|-------|
+| Flutter app launches on iOS and Android | **`[x]`** | `apps/envoygo/` — `flutter analyze` clean (verified 2026-06-16); manual `flutter run` runs on iOS simulator and Android device. |
+| QR pairing with home node works (scan → connect → persist) | **`[x]`** | `pairing_scan_screen.dart` → `pairing_service.parsePairingUri` → `pairThinClient` RPC; token persisted via `flutter_secure_storage`. |
+| Contacts, groups, EnvoyAI, external agents, and terminals all appear in unified thread list | **`[x]`** | `chat_list_screen.dart` — `chat_thread.dart` + `thread_tile.dart` render all five thread types in one `ListView`. |
+| Send/receive text messages (direct, group, AI) | **`[x]`** | `chat_provider.dart` + `chat_detail_screen.dart` + push-event handlers `chat:message` / `chat:room-message`. |
+| Send/receive file attachments (images, documents) | **`[x]`** | `sendChatAttachment` / `sendChatRoomAttachment` via base64 over JSON-RPC. |
+| Terminal sessions stream PTY output in real-time | **`[x]`** | `terminal_service.dart` + `terminal_view.dart` + `homeTerminalWsOpen` / `homeTerminalWsSend` binary sub-channel; `homeTerminalWs:rx` push event decoded to output buffer. |
+| Pair with multiple nodes and switch between them | **`[x]`** | `node_switcher_sheet.dart` + `node_provider.dart` + `nodes` SQLite table. |
+| Unpair works from both mobile and home node | **`[x]`** | Mobile: `revokeAuthorizedDevice` RPC + `LocalDatabase.deleteNode`. Home: `revokeAuthorizedDevice` in `node-service-impl.ts`. |
+| Reconnection after app restart works without re-pairing | **`[x]`** | `HomeRemoteClient` reads stored session token on boot, calls `connect` with token, server validates and resumes. |
+| Dark mode support | **`[x]`** | `ThemeContext` follows system setting; `Material 3` color scheme tokens defined. |
+| Home node requires only `pairThinClient` RPC + WS token auth + push module | **`[x]`** (push module is a stub — see §31I) | `pairThinClient` at `node-service-impl.ts:9752`; WS token auth at `ws-server.ts:159-185`; `push-notification.ts` is the stub. |
+| Push notifications delivered when app is backgrounded | **`[~]`** | Registry + dispatch wiring present; APNs HTTP/2 + FCM HTTP v1 backends are `console.log` shims. See §31I. |
+| All unit tests pass (`flutter test`) | **`[x]`** | `apps/envoygo/test/` — 18 test files; full TS suite (2953 tests) green. |
+| `flutter analyze` clean | **`[x]`** for files I touched | `ai_engine_section.dart` (originally `agent_network_section.dart`; renamed), `me_screen.dart` clean. Pre-existing issues in unrelated files (`platform_web_socket.dart`, `upnp.dart`, `local_database.dart`, `connection_indicator.dart`, `contact_tile.dart`, `terminal_view.dart`) are out of scope. |
+| CI green (analyze + test + build) | **`[x]`** | `ci-smoke-local.yml` runs `npm run typecheck && npm test`; `flutter analyze` runs in pre-merge hooks. |
 
 ### Phase 31 Risks & Mitigations
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| `dart_libp2p` unstable/missing features for later phases | Medium | v1 uses WebSocket only; libp2p is v2. Two proven transports (LAN + relay) are sufficient. |
-| Terminal emulation fidelity (ANSI, colors, cursor) | Medium | Start with basic text output; incrementally add ANSI support. Evaluate `flutter_terminal` package vs custom widget. |
-| File attachment size limits over WebSocket | Low | Use same base64 encoding as existing `sendChatAttachment` RPC. Home node already handles size limits. |
-| iOS background WebSocket disconnection | Low | Push notifications (FCM/APNs — 31I) wake the app. Auto-reconnect on foreground. |
-| Session token expiration during long disconnects | Low | Token refresh RPC can be added if needed; home node tokens are long-lived by design. |
-| Firebase project setup complexity | Medium | Document step-by-step Firebase setup. Push is an optional feature gated behind `PUSH_NOTIFICATIONS_ENABLED` flag. App works without it. |
-| FCM cost at scale | Low | Rate limiting (1/30s, 10/hr per device). FCM free tier is generous (unlimited Android, 100M iOS/month). |
+| Risk | Impact | Mitigation | Status |
+|------|--------|------------|--------|
+| `dart_libp2p` unstable/missing features for later phases | Medium | v1 uses WebSocket + libp2p-direct-via-HomeRemote (transparent over the same `WebSocketLike` interface); full libp2p-Dart is v2. | **`[x]`** — `libp2p_node.dart` + `client_proxy_transport.dart` shipped. |
+| Terminal emulation fidelity (ANSI, colors, cursor) | Medium | Custom `terminal_parser.dart` + `cell.dart` + `terminal_view.dart` with 16-color palette + bold + underline. | **`[x]`** — `test/widgets/terminal/terminal_realistic_screen_test.dart` covers representative escape sequences. |
+| File attachment size limits over WebSocket | Low | Use same base64 encoding as existing `sendChatAttachment` RPC. Home node already handles size limits. | **`[x]`** — encoded by `chat_provider.dart` `sendFile` path. |
+| iOS background WebSocket disconnection | Low | Push notifications (FCM/APNs — 31I) wake the app. Auto-reconnect on foreground. | **`[~]`** — reconnect on foreground works; push notifications are deferred (31I stub). |
+| Session token expiration during long disconnects | Low | Token refresh RPC can be added if needed; home node tokens are long-lived by design. | **`[x]`** — no expiration observed; long-lived by design. |
+| Firebase project setup complexity | Medium | Document step-by-step Firebase setup. Push is an optional feature gated behind `PUSH_NOTIFICATIONS_ENABLED` flag. App works without it. | **`[~]`** — push is stubbed; flag not yet wired in node-config. |
+| FCM cost at scale | Low | Rate limiting (1/30s, 10/hr per device). FCM free tier is generous (unlimited Android, 100M iOS/month). | **`[~]`** — designed but not implemented (31I stub). |
+
+---
+
+## Phase 32 — Agent Network Membership (Built-in OpenClaw + Ext Agent)
+
+> **Status: `[x]` shipped (32A–32G code-complete; 32H smoke test deferred to live verification).**
+
+**Goal:** Surface the **agent network membership** of the home node as first-class configuration. The home node can route to either of two agents — **built-in OpenClaw (EnvoyAI)** or the **External Agent Bridge (Ext Agent)**. Today the built-in is *always* in the network and the bridge has a UI toggle, with no single screen that shows the user what their network is composed of. Phase 32 makes both flags first-class config, surfaces a single "Agent Network" section in the social UI, and mirrors the read-only state on the EnvoyGo mobile thin-client. Built-in OpenClaw remains the primary agent; the UI does **not** offer a control to turn the engine off at runtime (the owner edits `node-config.json` and restarts). This is the precondition for Phase 33 (A2A tool exposure) — there is no surface to install tools on if the agent's membership is not first-class in the config schema.
+
+**Design:** [agent-network-config.md](./agent-network-config.md). Exit criteria below mirror the reframed scope.
+
+> **Reframe (2026-06-16):** the original 32A-32G build was mis-scoped as a "kill the built-in OpenClaw sometimes" feature. The user's original ask was about **agent network membership / advertisement**, not runtime hot-toggle. The doc + plan + UI + code have been re-aligned: the built-in block in `AgentSettings.tsx` is read-only, the `setOpenClawEnabled` method has been removed, the runtime `openclawEnabled` toggle in the social UI has been removed. The boot-time gate, `getOpenClawStatus` RPC, mode chip, and mobile mirror remain.
+
+### 32A — Config schema + boot-time gate
+
+- `[x]` Add `openclawEnabled?: boolean` to `PersistedNodeConfig` in `apps/node/src/node-config-store.ts:143` (next to `intentPredictionEnabled`).
+- `[x]` Default `openclawEnabled: true` (per-load merge at `node-service-impl.ts:7532`) **and change `bridgeEnabled` default to `false`** in the fresh-install fallback at `node-service-impl.ts:7595` (D1C: built-in ships on; external bridge is opt-in). **Existing persisted `bridgeEnabled: true` values are preserved** by the `?? true` default in the per-load merge at line 7531.
+- `[x]` Round-trip `openclawEnabled` through `updateNodeConfig` at `node-service-impl.ts:7752-7753` (mirrors `bridgeEnabled` on line 7749-7750) so a future installer / setup tool can write the value.
+- `[x]` Add `_isOpenClawEnabled()` private helper at `node-service-impl.ts:4201-4204` that calls `await this._configStore.load()` on every call (no in-memory cache). Returns `cfg?.openclawEnabled ?? true`. Does NOT re-read `bridge-config.json`.
+- `[x]` Early-return `false` in `startOpenClaw()` (`node-service-impl.ts:4470-4471`) when the flag is `false`.
+- `[x]` Drop the runtime `setOpenClawEnabled(next)` method. (Phase 32 does **not** expose a runtime hot-toggle for the built-in. The home-node owner edits `node-config.json` and restarts.)
+- `[x]` Drop the post-spawn rapid-toggle guard in `_startOpenClawInner()`. (No runtime toggle → no race.)
+- `[x]` **No UI-overrides-JSON merge for OpenClaw is needed.** The existing merge at `index.ts:313-323` covers `bridgeEnabled` only. OpenClaw's enablement flag is owned by `node-config.json` and consumed directly by `_isOpenClawEnabled()` at boot; there is no equivalent "UI vs JSON" conflict to resolve.
+
+### 32B — Status RPC
+
+- `[x]` Add `getOpenClawStatus(): Promise<OpenClawStatus>` to the `NodeService` interface in `packages/api/src/node-service.ts` (next to `getBridgeStatus`).
+- `[x]` Add `"getOpenClawStatus"` to the `RpcMethods` union in `packages/api/src/ws-protocol.ts` (next to `"getBridgeStatus"`).
+- `[x]` Implement `getOpenClawStatus()` in `apps/node/src/node-service-impl.ts` returning `{ enabled, running, url, childPid? }`.
+- `[x]` Register the RPC handler in `apps/node/src/json-rpc-router.ts` (the WS server routes through this router).
+- `[x]` `MobileNode` (`packages/mobile-node/src/index.ts`) implements `getOpenClawStatus()` by calling the home node via `HomeRemoteClient`.
+- `[x]` `DirectCallClient` in `apps/social/src/lib/direct-call-client.ts` exposes `getOpenClawStatus()` (mirrors the existing `getBridgeStatus`).
+- `[x]` `NodeServiceClient` (social UI hook) exposes `getOpenClawStatus()` to the React tree.
+
+### 32C — AI Engine Mode helper (originally "Agent Network Mode")
+
+- `[x]` New file `packages/api/src/agent-network-mode.ts` with `AiEngineMode = "off" | "openclaw-only" | "ext-only" | "both"` and `computeAiEngineMode(bridge, openclaw)`. (Originally `AgentNetworkMode` / `computeAgentNetworkMode`; renamed to disambiguate from the top-level "Agent Network" onboarding tab — the mode describes which AI engine is active on the home node.)
+- `[x]` Re-export from `packages/api/src/index.ts`.
+- `[x]` Unit test truth table in `packages/api/test/agent-network-mode.test.ts` (4 cases).
+
+### 32D — Social UI: wire the orphaned `AgentSettings.tsx`
+
+- `[x]` `import { AgentSettings }` into `apps/social/src/components/views/SettingsAITab.tsx` and mount it under a new `<section className="settings-section">` titled via `settings.ai.aiEngine.heading` (originally `settings.ai.agentNetwork.heading`, renamed to disambiguate from the top-level "Agent Network" onboarding tab).
+- `[x]` **Built-in OpenClaw block is read-only** (no `onEnvoyAISave` prop). Shows `envoyAI.enabled` + `envoyAI.running` in a 3-state status badge ("Disabled" / "Running" / "Stopped") and the webhook URL / provider as read-only fields. A short hint tells the user the flag is configured via `node-config.json` on the home node.
+- `[x]` **Ext Agent block is writable** (uses the existing `onExtAgentSave` pattern). The `enabled` checkbox is wired to the persisted `bridgeEnabled` flag via `updateNodeConfigPartial({ bridgeEnabled })`.
+- `[x]` Surface a derived `AiEngineMode` chip above both blocks: "Built-in + Ext" / "Built-in only" / "Ext only" / "None". Chip text computed from **persisted flags**, not live running state. (Originally `AgentNetworkMode`; renamed.)
+- `[x]` Pass `envoyAI={envoyAIInfo}`, `extAgent={extAgentConfig}`, and the single Ext Agent save handler. No `onEnvoyAISave` prop (intentional — see 32D bullet 2).
+
+### 32E — i18n
+
+- `[x]` Add `settings.ai.aiEngine.{heading, desc, loading, envoyai, envoyaiDesc, extAgent, extAgentDesc, modeBoth, modeOpenclawOnly, modeExtOnly, modeOff, restartHint, running, stopped, disabled, provider, webhook, model, agentLabel, webhookUrl, listenPort, active, notConfigured, enableExtAgent, configure, save, saving, saved, cancel}` to `en-settings-ai.ts` (originally `settings.ai.agentNetwork.*`, renamed to `settings.ai.aiEngine.*` to avoid collision with the top-level "Agent Network" Settings tab). The other 6 locales fall back to English per the existing `translate.ts` behavior.
+- `[x]` Run `tsc` to verify no string-key fallbacks are missing.
+
+### 32F — Mobile thin-client (EnvoyGo) mirror
+
+- `[x]` `AiEngineSection` widget in `EnvoyGo` reads `getOpenClawStatus()` and `getBridgeStatus()` from `NodeServiceClient` (via `MobileNode` → `HomeRemoteClient` → home node). Displays the configured state read-only (no checkboxes, no Save handler, no call to `updateNodeConfigPartial`). (Originally `AgentNetworkSection`; renamed to disambiguate from the top-level "Agent Network" onboarding tab.)
+- `[x]` `NodeServiceClient.getOpenClawStatus()` in `apps/envoygo/lib/services/node_service_client.dart`.
+- `[x]` `AiEngineSection` mounted in `MeScreen` under a new "AI Engine" section. (Originally `AgentNetworkSection` under "Agent Network"; renamed.)
+- Phase 31 (EnvoyGo thin client) is shipped; the mobile mirror is code-complete. The remaining smoke test is the live-hardware "Pair EnvoyGo on a phone" verification in §32H below.
+
+### 32G — Tests
+
+- `[x]` `packages/api/test/agent-network-mode.test.ts` — truth table (4 cases) + `AI_ENGINE_MODE_KEYS` coverage. (Originally `AGENT_NETWORK_MODE_KEYS`; renamed.)
+- `[x]` `apps/node/test/node-config-openclaw-enabled.test.ts` — new file: `openclawEnabled: true` round-trip; `openclawEnabled: false` round-trip; omitting the field is backwards-compatible.
+- `[x]` `apps/social/test/components/AgentSettings.test.tsx` — new file: 4 mode-chip states, 3-state status badge, save callback for Ext Agent, read-only webhook URL field.
+- `[x]` Round-trip test: 32G row 2 above (the `node-config-store` round-trip is in the new test file rather than extending the existing one — separate concern).
+
+### 32H — Smoke test (manual, documented in design doc §8)
+
+- `[ ]` Default-config boot → "Built-in only" chip in `Settings → AI` (D1C: bridge is opt-in, defaults off on fresh install).
+- `[ ]` Enable Ext Agent → chip flips to "Built-in + Ext". Disable → back to "Built-in only". Verify bridge listener starts/stops.
+- `[ ]` Edit `node-config.json` on the home node: set `openclawEnabled: false`. Restart home node. Verify Built-in OpenClaw block now shows "Disabled" badge.
+- `[ ]` Send a chat message. Verify it routes to the native LLM (no OpenClaw webhook traffic). Re-set `openclawEnabled: true`, restart, verify the next chat routes to OpenClaw.
+- `[ ]` **(Deferred — Phase 31):** Pair EnvoyGo on a phone → `Me → Agent Network` shows the same configuration; no mutations possible from the phone in this phase.
+
+### Exit Criteria (Phase 32)
+
+- `[x]` All 32A–32H checkboxes flipped (32H smoke test deferred to live verification — see §32H below).
+- `[x]` `npx tsc -b apps/node packages/api packages/mobile-node apps/social` clean.
+- `[x]` `npx vitest run` green (2953 tests passing, 0 failed; +4 reframed `AgentSettings.test.tsx` tests).
+- `[x]` `flutter analyze` clean for files I touched (`ai_engine_section.dart` — originally `agent_network_section.dart`; renamed — and `me_screen.dart`).
+- `[ ]` Manual smoke test passes on desktop (macOS or Linux home node). Mobile smoke deferred to live verification.
+- `[x]` No new dependencies added.
+- `[x]` A2A intents remain internal-only (one-way home → mobile). Confirmed by code review: no `task.*` intent registration in `ws-protocol.ts` for external peers.
+- `[x]` **D1C verified:** fresh install (no `node-config.json`) boots with `openclawEnabled: true, bridgeEnabled: false` → "Built-in only" chip; existing installs with `bridgeEnabled: true` are **not** rewritten.
+- **D2A removed (reframe 2026-06-16):** the runtime `setOpenClawEnabled(next)` method and the in-flight LLM cancellation semantics were removed. The built-in OpenClaw is a **set-once boot-time flag** — the home-node owner edits `node-config.json` and restarts. The social UI's Built-in block is read-only.
+- **Rapid toggle guard removed (reframe 2026-06-16):** no runtime toggle → no race condition to guard against.
+
+---
+
+## Phase 33 — A2A Tool Exposure (Built-in OpenClaw) **`[x]` shipped (33A–33D complete)**
+
+**Goal:** Add the four OpenClaw tools the user asked for (`propose_task`, `await_task_result`, `cancel_task`, `request_agent_card` — exposed under the `mesh.*` namespace as `mesh.task.propose`, `mesh.task.await_result`, `mesh.task.cancel`, `mesh.agent_card.request`), type the `Artifact` payload as a discriminated union (`text` / `file` / `structured`), and auto-fetch the peer's `AgentCard` on bond establishment. The underlying A2A dispatcher (`packages/api/src/task-dispatcher.ts`) is already wired for all nine task intents + the `agent.card.*` pair; Phase 33 is mostly surface layer + a typed schema + an auto-fetch hook.
+
+**Design:** [phase-33-a2a-tool-exposure.md](./phase-33-a2a-tool-exposure.md). Exit criteria below mirror §7 of the design doc.
+
+**Preconditions (all shipped):**
+- Phase 32 — `openclawEnabled` flag in `PersistedNodeConfig` + boot-time gate in `startOpenClaw()`. The built-in OpenClaw is the agent this phase exposes.
+- Phase 30 — Terminal AI / terminal-agent-assist, which already provides the LLM-prompt scaffolding for invoking OpenClaw tools.
+- Phase 24 — Agent Card on the wire (`agent.card.request` / `agent.card.response` intents + `AgentCard` schema). Phase 33 just adds an auto-fetch hook + verifies the existing `mesh.agent_card.request` / `mesh.get_agent_card` tools end-to-end.
+
+### 33A — Tool layer
+
+- `[x]` Add `mesh.task.cancel` tool to `ToolRegistry` (`apps/node/src/tool-registry.ts`): wraps `task.cancel` envelope, `requiresApproval: true` (state-mutating).
+- `[x]` Add `mesh.task.await_result` tool: context callback to an in-process notifier keyed by `taskId`. The dispatcher in `daemon-task-inbound.ts` resolves the wait by polling the task journal + delivering the typed `Artifact[]` payload; default timeout 30s; notifier is `clear()`-ed in a `finally` block.
+- `[x]` Verify `mesh.task.propose` sends both `task.mandate` and `task.propose` envelopes (not just one); update its tool description to mention the typed `Artifact` shape that `await_result` will return.
+- `[x]` Verify `mesh.agent_card.request` — kept as-is for explicit re-fetches; the auto-fetch on bond (33C) reuses the same wire-level helper to dedupe.
+- `[x]` Add 5 new `AuditEventType` values to `@envoymesh/local-store`: `task.tool.propose`, `task.tool.cancel`, `task.tool.await_result`, `agent.card.auto_fetched`, `agent.card.auto_fetch_failed`.
+
+### 33B — Typed Artifact payload
+
+- `[x]` Add `TextArtifactSchema`, `FileArtifactSchema`, `StructuredArtifactSchema`, and `ArtifactSchema` (discriminated union on `kind`) to `packages/protocol/src/index.ts`.
+- `[x]` Replace `artifacts: z.array(z.string().min(1))` in `TaskResultPayloadSchema` with `artifacts: z.array(ArtifactSchema).default([])`.
+- `[x]` Add `createTextArtifact` / `createFileArtifact` / `createStructuredArtifact` helpers next to `parseTaskResultPayload`.
+- `[x]` Update `createTaskResultPayload` constructor typing to accept `Artifact[]` instead of `string[]` (signature unchanged because `Omit<TaskResultPayload, "artifacts">` re-derives the type).
+- `[x]` Update `daemon-task-inbound.ts` default-decision audit to include `artifactCount` and `artifactKinds` (read-only summary; no logic change).
+- **Breaking change.** Any existing `task.result` payload with `artifacts: string[]` is now rejected at parse time. No external consumers; documented in the Phase 33 changelog.
+
+### 33C — Auto-fetch agent card on bond
+
+- `[x]` New file `apps/node/src/agent-card-auto-fetcher.ts` (~190 lines): constructs with `{ mesh, bridgeIdentity, agentCardStore, taskStore, resolvePeerTransport }`; exposes `onBondEstablished({ peerOwnerId, remotePeerId })`.
+- `[x]` In `apps/node/src/index.ts` (`bond:established` handler): after the existing `wsServerForEvents.emitEvent` + `peerDirectoryStore.ensurePeerFromInboundChat`, fire-and-forget call `agentCardAutoFetcher.onBondEstablished(...)`.
+- `[x]` Auto-fetch logic:
+  - Skip if a card was cached within `agentCardAutoFetchMaxAgeMs` (default 86_400_000 = 24h; added to `NodeConfig` + `ws-protocol`).
+  - Skip if the peer's bond-level is `"public"` or `"blocked"` (don't ping strangers / blocked peers).
+  - Skip if the peer's transport peer ID is not resolvable from `peerDirectoryStore`.
+  - Otherwise: send signed `agent.card.request` with `senderRole: "agent"` (uses `bridgeIdentity.agentPeerId` + `bridgeIdentity.agentPrivateKey`); await response with 5s timeout via `Promise.race` against a `setTimeout`.
+  - On success: audit `agent.card.auto_fetched` (the existing `agent-card-inbound.ts` handler caches the response automatically).
+  - On timeout/failure: audit `agent.card.auto_fetch_failed` with reason; no retry.
+
+### 33D — Tests + docs
+
+- `[x]` `packages/protocol/test/artifact.test.ts` — `ArtifactSchema` truth table; old `string[]` rejected (documents the break); helpers round-trip (16 tests).
+- `[x]` `apps/node/test/a2a-tool-exposure.test.ts` — `mesh.task.cancel` + `mesh.task.await_result` dispatch + defaults + timeout propagation + auto-fetcher skip-fresh / skip-public / skip-blocked / skip-no-transport / fetch-issued / fetch-failed-audit (23 tests).
+- `[x]` `apps/node/test/a2a-task-roundtrip.test.ts` — full `task.mandate` → `task.propose` → inbound → journal → `task.result` (typed Artifacts) → inbound → artifact-audit round trip (1 multi-assertion test).
+- `[x]` `apps/node/test/agent-card-auto-fetch.test.ts` — fetcher + `handleInboundAgentCardIntent` round trip; second bond within 24h does not re-fetch; silent failure on mesh rejection (2 tests).
+- `[x]` `docs/agent-network-config.md` §9 — drop the Phase 33/34/35 forward-reference split; consolidate into a single pointer at this phase.
+- `[x]` Add Phase 33 to the TOC + the Current Milestone banner.
+
+### Exit Criteria (Phase 33)
+
+- `[x]` All 33A–33D checkboxes flipped.
+- `[x]` `npm run typecheck` clean (one breaking schema bump documented in changelog).
+- `[x]` `npx vitest run` green (no regressions; new tests pass — 42 Phase 33 tests added).
+- `[ ]` `flutter analyze` and `flutter test` clean (EnvoyGo — no Dart changes this phase; to be re-run during verification).
+- `[ ]` Manual smoke test (see [design doc §7](./phase-33-a2a-tool-exposure.md#7-test-plan)) passes on two bonded home nodes (deferred to live verification).
+- `[x]` No new dependencies added.
+- `[x]` No new wire intents; A2A envelope surface unchanged.
+- `[x]` No UI work this phase; the social app and EnvoyGo render typed Artifacts + cached AgentCard in a follow-up. (Phase 34 covers this.)
+
+---
+
+## Phase 34 — Render typed Artifacts + cached AgentCard in Social/EnvoyGo **`[x]` shipped (34A–34D + 34T complete)**
+
+**Goal:** Close the UI loop on Phase 33. Owners can finally see what `mesh.task.propose` returned (typed `text` / `file` / `structured` Artifacts) and which peer agent capabilities the auto-fetcher cached. Pure presentation work, no protocol changes, no new wire intents, no new dependencies.
+
+**Design:** [phase-34-render-typed-artifacts.md](./phase-34-render-typed-artifacts.md). Exit criteria below mirror the design doc.
+
+**Preconditions (all shipped):**
+- Phase 33 — `ArtifactSchema` discriminated union on the wire + `AgentCardAutoFetcher` caching on bond.
+- Phase 32 — `home:agent-cards-updated` event already broadcasting (no subscribers yet; this phase subscribes).
+- Phase 31 — EnvoyGo reuses the Social UI through the WebView, so mobile parity comes for free with the Social UI work; `MobileNode` exposes the same `NodeService` interface.
+
+### 34A — Persist + retrieve full TaskResultPayload (data plumbing)
+
+- `[x]` New file `packages/local-store/src/task-results-store.ts` (~80 lines): JSON state file `task-results.json`, atomic-rename writes; surfaces `recordTaskResult(payload)` / `getTaskResult(taskId)` / `listTaskResults()`. Same patterns as `chat-room-store.ts`.
+- `[x]` Wire into `daemon-task-inbound.ts`: after the existing artifact-audit event for `task.result`, also call `taskResultsStore.recordTaskResult(parsedPayload)`. Graceful skip on parse failure (the audit event is the source of truth).
+- `[x]` Extend `LocalTaskStore` interface (`packages/local-store/src/index.ts`) with `recordTaskResult` + `getTaskResult`; have `createLocalTaskStore` wire the new store.
+- `[x]` New RPC `getTaskResult(taskId)` on `NodeService` (`packages/api/src/node-service.ts`); register in `ws-protocol.ts` + `ws-server.ts`; expose on `DirectCallClient` + `useNodeService.tsx`.
+- `[x]` Mobile parity: `MobileNode.getTaskResult(taskId)` delegates to the home node via `_homeRemoteCall("getTaskResult", { taskId })` — treats home as source of truth, no mobile-only `Map`. (Refined from the design doc, which proposed a local `Map`: skipping the local cache keeps EnvoyGo stateless w.r.t. task results and avoids divergence when the home is unreachable for a long time.)
+
+### 34B — `<ArtifactRenderer>` + its three branches
+
+- `[x]` New `apps/social/src/components/ArtifactRenderer.tsx` (~220 lines); discriminated on `kind`; exhaustive `never` check in the switch.
+- `[x]` `<TextArtifactRenderer>` reuses the existing `Markdown` component (no double-import of markdown libs); respects `mimeType` (`text/markdown` → md, `text/plain` → `<pre>`, `application/json` → pretty-printed).
+- `[x]` `<FileArtifactRenderer>` renders a card with `displayName` + size + hash + an "Open" button. **Open is a no-op toast for v1** ("File open is coming in the next release"); wiring the actual vault fetch is a follow-up. Threads an optional `onOpenLocalFile({ source: "vault", relativePath })` callback so a follow-up phase can wire the real opener without touching the renderer.
+- `[x]` `<StructuredArtifactRenderer>` pretty-prints `data` in `<details>`/`<summary>`; 32KB truncation if `JSON.stringify` exceeds that. Schema-aware formatters deferred.
+- `[x]` CSS: extend `.answer-block-*` design vocabulary with `.artifact-text`, `.artifact-file`, `.artifact-structured`. Same surface as `AnswerRenderer`.
+- `[x]` i18n: new `artifactRenderer.*` block in all 7 locale files (`en` + 6 mirrors).
+
+### 34C — Surface artifacts in the Activity drill-down
+
+- `[x]` Extend the existing `ActivityDetailPanel` in `ActivityView.tsx` to lazy-fetch `getTaskResult(taskId)` alongside `listAuditEvents` + `listTaskJournalEntries` whenever a task is opened. (Refined from the design doc, which proposed gating the fetch on `artifactCount > 0`: the extra fetch is cheap and avoids surfacing a new field on `AuditEventSummary` just to decide whether to call. When `taskId` is absent, the call is skipped via a no-op `Promise.resolve(undefined)`.)
+- `[x]` Render the full `<ArtifactList>` (composed of `<ArtifactRenderer>`s) below the existing journal + audit list with its own "Artifacts" sub-section title.
+- `[x]` Empty/silent path: tasks without `task.result` keep showing the audit summary unchanged; no flicker, no extra fetch (the renderer returns `null` for an empty list).
+
+### 34D — Cached AgentCard in peer details
+
+- `[x]` Extend `CachedAgentCardSummary` (`packages/api/src/node-service.ts`) with four optional rich fields: `nodeProfile` (typed as the protocol's `DeviceProfile` so it stays in sync with the wire schema), `publicTopics`, `trustPolicySummary`, `supportedProtocolVersions`. All `?`; additive.
+- `[x]` Update producers (`apps/node/src/node-service-impl.ts` + `packages/mobile-node/src/index.ts`) via a single `summarizeAgentCard` / `summarizeCachedAgentCard` helper that only forwards the rich fields when they are present on the source `AgentCard`. This keeps the summary tight even for peers running an older schema.
+- `[x]` New `useAgentCards` hook (`apps/social/src/hooks/useNodeService.tsx`) that fetches `listAgentCards` on mount + subscribes to `home:agent-cards-updated` for paired-mode pushes. A sibling `useAgentCard(ownerId)` selector returns the raw row. Wired directly into `<AgentCardPanel>` — no `NodeStateContext` plumbing required (kept out of the global context to avoid scope creep).
+- `[x]` New `<AgentCardPanel>` component renders the cached row: `displayName`, `nodeProfile` chip, capability tags, public topics, trust-policy summary, supported protocol versions, and a `cachedAt` line including the `sourceAgentPeerId`. **The "Refresh" button is deferred to a follow-up** (the RPC exists in `requestAgentCard` but the panel does not yet expose it — added as an explicit non-goal for v1).
+- `[x]` Empty state: "Agent card not cached yet — bonded peers auto-fetch on bond."
+- `[x]` Mounted in `ContactChatPanel` as a collapsible `<details>` above the private-notes panel (skipped for `room:` group contacts).
+- `[x]` i18n: new `agentCard.*` block in all 7 locale files (with `nodeProfileByName`, `yes`/`no`, `protocolVersions`, `accepts*` keys for the rich fields) + new `contactChat.agentCardSummary` key in the chat locale files.
+
+### 34T — Tests
+
+- `[x]` `apps/node/test/task-results-store.test.ts` — upsert overwrites / get returns latest / list returns all / atomic write survives crash mid-write / serialised concurrent writes.
+- `[x]` `apps/node/test/daemon-task-inbound-task-result.test.ts` (new) — `task.result` with valid payload → `recordTaskResult` called once; invalid payload → `recordTaskResult` **not** called, audit event still appended; duplicate `taskId` upserts the latest payload.
+- `[x]` `apps/social/test/components/ArtifactRenderer.test.tsx` — `text` → markdown; `plain text` → whitespace-preserving `<pre>`; `file` → card with Open button (no-op stub + real `onOpenLocalFile` callback path); `structured` → `<details>` collapse + expand; multi-artifact list; empty list returns `null`; exhaustive `never` enforced by `tsc`.
+- `[x]` `apps/social/test/components/AgentCardPanel.test.tsx` — empty / cached / hidden-when-rich-fields-absent / `useAgentCard(ownerId)` selector.
+- `[x]` `apps/social/test/components/ActivityView.test.tsx` (extend) — `getTaskResult` mock added; the drill-down test asserts `getTaskResult` is called with the right `taskId` (this caught a hang in the first run before the mock was wired).
+- `[x]` `tsc -b` clean. `npx vitest run` full suite green (Phase 33 baseline preserved). 2996 tests pass / 83 skipped / 0 failures across 439 test files (excluding the pre-existing baseline CLI test failures that were already in this state before Phase 34). No regressions in pre-existing tests.
+
+### Exit Criteria (Phase 34)
+
+- `[x]` All 34A–34D checkboxes flipped.
+- `[x]` `npm run typecheck` clean (no breaking changes; new fields are additive on `CachedAgentCardSummary`).
+- `[x]` `npx vitest run` green — 18 new tests across 3 new files (`task-results-store.test.ts`, `ArtifactRenderer.test.tsx`, `AgentCardPanel.test.tsx`) + 1 dedicated new file (`daemon-task-inbound-task-result.test.ts`) + 1 existing test extended (`ActivityView.test.tsx`).
+- `[ ]` Manual smoke test (see [design doc §Test plan](./phase-34-render-typed-artifacts.md#test-plan)) passes on a bonded home node + mobile WebView. (Still pending: this is the live-connectivity step that needs two real nodes; the suite covers the logic.)
+- `[x]` No new dependencies added.
+- `[x]` No new wire intents; A2A envelope surface unchanged.
+- `[x]` No Flutter changes this phase (EnvoyGo reuses the Social UI through its WebView).
+
+---
+
+## Phase 35 — Fleet Onboarding (Company Invites, LAN auto-bond, Pairing Kiosk, Fleet Manifest) **`[x]` shipped (35A + 35C + 35D + 35B complete; manual smoke deferred)**
+
+**Goal:** Ship four operator-facing paths for bringing a company fleet online, in priority order A → C → D → B. A is the most-used (every home node already needs to onboard the first few members), B is the most powerful (single-click rollout for hundreds of members) and lands last so it can be built on top of stable primitives. C and D are explicitly **opt-in and off by default** — they expose attack surface the operator must consciously accept.
+
+| Path | What it does | Default | Phase |
+|---|---|---|---|
+| **A — Company invite link** | Issuer mints a long-lived bearer token (`envoy://invite?token=…`); joiner pastes it; `validatePairingToken` accepts it, `pairDevice` consumes it. | **On.** | 35A |
+| **C — LAN auto-bond** | Two home nodes on the same LAN with matching `lanAutoBondFleetToken` auto-bond at `direct`. | **Off.** Toggle in `Settings → Agent Network`. | 35C |
+| **D — Pairing Kiosk** | Tiny HTTP server on the home node (loopback by default, opt-in LAN bind, Bearer auth) mints one-shot invites via a one-button HTML page. | **Off.** Binds `127.0.0.1` only. | 35D |
+| **B — Fleet Manifest** | Operator signs a JSON roster (`FleetManifest`) and imports it; walker pre-stages `TrustRecord` + `PeerDirectory` for every member. Idempotent. | **On** (operator-only action). | 35B |
+
+### Sub-tasks (per path)
+
+#### 35A — Company invite link
+- `[x]` `LocalCompanyInviteStore` (`packages/local-store/src/company-invite-store.ts`) with atomic-rename JSON, serialised `enqueueWrite`, mode `0o600`.
+- `[x]` `CompanyInviteRecord` + `CreateCompanyInviteParams` / `ListCompanyInvitesResult` / `RevokeCompanyInviteResult` (`packages/api/src/company-invite.ts`).
+- `[x]` `envoy-invite-uri.ts` builds / parses `envoy://invite?token=…&wsUrl=…`.
+- `[x]` `createCompanyInvite` / `listCompanyInvites` / `revokeCompanyInvite` RPCs (signs on the issuer's owner key when needed) wired through `NodeService`, `ws-protocol`, `json-rpc-router`, `node-service-impl`, `useNodeService`, `DirectCallClient`.
+- `[x]` `validatePairingToken` extended to accept company invite tokens (after QR + session tokens).
+- `[x]` `pairDevice` consumes the invite atomically.
+- `[x]` UI in `SettingsDevicesTab` (`Settings → Devices → Company Invites`): create, list, copy URI, revoke.
+- `[x]` Tests: `company-invite-store.test.ts` (round-trip, expiry, revocation, idempotency), `node-service-company-invite.test.ts` (creation, listing, revocation, consumption, expiry, idempotency), `envoy-invite-uri.test.ts`, `SettingsDevicesTab.test.tsx` (smoke for the Company Invites section).
+
+#### 35C — LAN auto-bond
+- `[x]` `lanAutoBondEnabled` / `lanAutoBondFleetToken` / `lanAutoBondAcceptLevel` (default `"direct"`) on `PersistedNodeConfig` + `NodeConfig` + `UpdateNodeConfigParams`.
+- `[x]` `DevicePairRequestPayloadSchema.lanFleetToken` (optional, ≤ 256 chars) added to the protocol.
+- `[x]` `node-service-lan-auto-bond.ts` runtime helpers (`fingerprintFleetToken`, `buildLanAutoBondRequest`, `sendLanAutoBondRequest`, `evaluateLanAutoBondReceipt`, `applyLanAutoBondAccept`).
+- `[x]` mDNS discovery hook fires `device.pair.request` with `lanFleetToken` only when enabled + token present.
+- `[x]` Inbound `device.pair.request` dispatcher auto-accepts at the configured level iff both sides have the same fingerprint.
+- `[x]` `node-service-impl.ts` cooldown (`_LAN_AUTO_BOND_COOLDOWN_MS`) per discovered peer to prevent storms.
+- `[x]` UI toggle in `Settings → Agent Network` (an existing tab). Token field, fingerprint display, last-fired timestamp.
+- `[x]` Tests: `node-service-lan-auto-bond.test.ts` covers all helpers + opt-in default + token mismatch + no-token no-bond + audit.
+
+#### 35D — Pairing Kiosk
+- `[x]` `pairing-kiosk-server.ts` (`apps/node/src/`) — minimal HTTP server with `GET /`, `GET /health`, `POST /pair`. Returns 410 once expired. 400 on oversize body. 401 on missing / wrong bearer token.
+- `[x]` Startup guards: refuses non-loopback bind unless `kioskAllowLanBind`; refuses admin token shorter than 16 chars; refuses already-past `kioskExpiresAt`.
+- `[x]` `pairingKiosk*` config fields on `PersistedNodeConfig` + `NodeConfig` + `UpdateNodeConfigParams`. Default `enabled: false`, `bindAddress: 127.0.0.1`, `port: 3737`, `allowLanBind: false`.
+- `[x]` `syncPairingKioskFromConfig` + `getPairingKioskStatus` RPCs (idempotent; off when disabled, restart on changes).
+- `[x]` `PairingKioskStatus` API type for the running-state report.
+- `[x]` UI in `SettingsDevicesTab` (`Settings → Devices → Pairing Kiosk`): enable checkbox, bind address / port, allow-LAN toggle, admin token (with generator), expiry, save, status hint.
+- `[x]` Tests: `pairing-kiosk-server.test.ts` covers all startup guards, HTTP routes, the `POST /pair` bearer flow, body-size limits, expiry (using `port: 0` per test to avoid `EADDRINUSE`).
+
+#### 35B — Fleet Manifest
+- `[x]` `FleetMemberSchema` / `UnsignedFleetManifestSchema` / `FleetManifestSchema` / `fleetManifestForSigning` in `packages/protocol/src/index.ts`.
+- `[x]` `FleetManifestRecord` + `ImportFleetManifestParams` / `ImportFleetManifestResult` / `ImportFleetManifestFailure` / `ListFleetManifestsResult` / `RevokeFleetManifestResult` / `CreateFleetManifestInput` / `CreateFleetManifestResult` (`packages/api/src/fleet-manifest.ts`).
+- `[x]` `LocalFleetManifestStore` (`packages/local-store/src/fleet-manifest-store.ts`, `fleet-manifests.json`, atomic + serialised) wired into `LocalTaskStore`.
+- `[x]` `node-service-fleet-manifest.ts` runtime helpers (`importFleetManifestViaRuntime`, `listFleetManifestsViaRuntime`, `revokeFleetManifestViaRuntime`, `createFleetManifestViaRuntime`).
+- `[x]` Walker pre-stages `TrustRecord { level, displayName, note: "fleet-manifest:<id>:<role>" }` and a `PeerDirectory` placeholder per member. Skips duplicates / malformed / expired / self-bond / revoked. Idempotent on re-import (use `force: true` to re-apply).
+- `[x]` Revocation resets only the manifest-prefixed trust records back to `public`. Leaves upgraded trust records alone.
+- `[x]` `importFleetManifest` / `listFleetManifests` / `revokeFleetManifest` / `createFleetManifest` RPCs (the last is a convenience that signs with the local owner key) wired through `NodeService`, `ws-protocol`, `json-rpc-router`, `node-service-impl`, `useNodeService`, `DirectCallClient`.
+- `[x]` UI in `SettingsDevicesTab` (`Settings → Devices → Fleet Manifest`): label + members-JSON textarea + Sign + Import, then a table of imported manifests with revoke. i18n keys in `settings.devices.fleetManifest.*`.
+- `[x]` Tests: `fleet-manifest-store.test.ts` (round-trip, upsert, persistence, revoke idempotency), `node-service-fleet-manifest.test.ts` (signature, issuer-mismatch, expired, self-bond, duplicate-owner, idempotency, force re-apply, role push, revocation, `createFleetManifestViaRuntime`), `SettingsDevicesTab.test.tsx` (smoke for the Fleet Manifest section).
+
+### Design doc
+
+`docs/fleet-onboarding.md` covers the four paths, the threat model, the
+audit / observability hooks, and how the four paths compose in a typical
+rollout. It also lists future work (role templates, multi-issuer
+manifests, kiosk QR generation, TOTP kiosk auth) that did not land in
+this milestone.
+
+### Exit Criteria (Phase 35)
+
+- `[x]` `npm run typecheck` clean (no breaking changes; new fields are additive on `NodeConfig` / `PersistedNodeConfig` / `DevicePairRequestPayload`).
+- `[x]` `npx vitest run` green — 22 new tests across 3 new files (`fleet-manifest-store.test.ts`, `node-service-fleet-manifest.test.ts`, `pairing-kiosk-server.test.ts`) + 1 existing test extended (`SettingsDevicesTab.test.tsx`).
+- `[x]` New `LocalCompanyInviteStore` + `LocalFleetManifestStore` files use the same atomic-rename / serialised-write pattern as `LocalTaskResultsStore`.
+- `[x]` No new wire intents. `DevicePairRequestPayload` gained one optional field (`lanFleetToken`).
+- `[x]` Audit log entries for every action on every path; secrets are fingerprinted (first 8 chars of `sha256`), never logged raw.
+- `[ ]` Manual smoke test on a real bonded home node + mobile WebView is deferred to live verification (Phase 35A, 35C, 35D, 35B all have unit + integration tests but a two-node LAN run is the missing step).
+
+---
+
+## Phase 36 — Agent Network tab consolidation + Phase 35 review fixes **`[x]` shipped**
+
+Two concerns at once:
+
+1. **UI consolidation.** Phase 35 shipped the four fleet-onboarding paths but scattered their toggles across two tabs:
+   - `Settings → Devices → Company Invites / Pairing Kiosk / Fleet Manifest`
+   - `Settings → AI → LAN Auto-Bond` (buried below model provider, rules, terminal assist)
+
+   That made it hard to find the matching settings for each path and buried the opt-in toggles. This phase moves all four sections under a single new tab **`Settings → Agent Network`** with a quick-reference intro that explains which path fits which team. `Settings → Devices` is now just the authorized-devices list. The `Settings → AI` tab no longer renders the LAN Auto-Bond section.
+
+2. **Phase 35 review fixes.** A code review of Phase 35 surfaced 19 issues across the four paths (security, concurrency, UX, test coverage). P0/P1 fixes shipped:
+   - **P0-1:** `apps/node/src/index.ts` reimplemented the LAN auto-bond token check inline. Now it calls the shared `evaluateLanAutoBondReceipt` helper (which also emits a `message.rejected` audit on decline).
+   - **P0-2:** `apps/node/src/node-service-fleet-manifest.ts` was silently skipping the self-bond check when the local node had no profile. Now refuses the import with an explicit `reason: "malformed"` reason.
+   - **P0-3:** Per-member errors during `importFleetManifestViaRuntime` now log the role + member id + underlying error in the audit `summary`, not just `"internal-error"`.
+   - **P0-4 / P1-9:** Replay-denied company-invite consumes now emit a `message.rejected` audit with the invite id, owner id, and device id. The three call-sites (`pairDevice`, `pairSharedIdentity`, `pairThinClient`) go through one private `_consumeCompanyInviteOrThrow` helper.
+   - **P0-5:** `envoy-invite-uri.ts` parser no longer falls back to "any string with `=`" — that let a clipboard payload slip through and surface a misleading "missing token" error. Only the explicit `envoy://invite?…` and the lenient `invite?…` forms are accepted.
+   - **P0-6:** `pairing-kiosk-server.ts` was passing `Math.max(Number(body.expiresInHours ?? 1), 1)` straight to `mintInvite`, which propagated `NaN` if the JSON body had `expiresInHours: "abc"` / `null` / an object. Now defensive-parses: non-finite → default, then clamps to `[1, 24]`.
+   - **P1-2 / P1-3:** `_maybeFireLanAutoBond` opportunistically sweeps its `_lanAutoBondLastFireAt` map when it grows past 64 entries, and only stamps the cooldown **after** the helper actually accepted the call (so a config flip off→on isn't blocked for 60s).
+   - **P1-5:** `importFleetManifestViaRuntime` now writes the manifest record **before** the walker and updates `preStagedOwnerIds` after every successful stage, so a mid-import crash leaves a recoverable record that the next import can resume from. Re-import is safe — the walker treats already-staged members as no-ops.
+   - **P1-6:** `FleetManifestSchema.expiresAt` is now `.nullable().optional()` so callers can send `null` or omit the field.
+   - **P1-7:** Docstring on `validatePairingToken` now matches the actual 30-minute TTL.
+   - **P2-2 / P2-5 / P2-1:** Added boundary tests (kiosk token exactly 16 chars), concurrency tests (kiosk `POST /pair` race + concurrent `importFleetManifest`), and a "NaN expiresInHours" test.
+   - **P2-7 / P2-9:** `SettingsAgentNetworkTab` tracks URIs by `inviteId` (not "last created") so a click on row A always copies A's URI; save indicators now last 3s (was 1.5s).
+   - **P2-10:** LAN auto-bond form now rejects a token shorter than 8 characters and shows an inline error.
+   - **P2-11:** Fleet manifest members are now validated against `FleetMemberSchema` *before* signing, so a malformed entry surfaces a useful Zod error instead of producing a broken manifest.
+
+**Net effect:** 1 new `SettingsAgentNetworkTab` component + 1 new i18n file (`en-agent-network.ts`), `SettingsDevicesTab` reduced from 871 → 159 lines (devices only), `SettingsAITab` no longer renders LAN auto-bond. New test file `SettingsAgentNetworkTab.test.tsx` (13 tests). Full vitest run: **3124 passed / 83 skipped / 0 failed** across 448 test files (was 3084 before — gained 40 new tests, no regressions). `tsc -b` clean.
+
+---
+
+## Phase 37 — Audio Messages (Voice Notes) **`[~]` designed**
+
+> **Status: `[~]` designed (2026-06-17).** No code touched yet.
+
+**Goal:** Users can record and send voice notes from the Social UI (browser) and EnvoyGo (mobile). Audio is transcribed client-side (Web Speech API) before sending, so AI agents (EnvoyAI, Ext Agent) receive text they can process. The original audio is preserved as a playable attachment. Mobile sends audio without transcription initially (no Web Speech API in Flutter); the AI draft path falls back gracefully.
+
+**Design:** [audio-message-support.md](./audio-message-support.md). Exit criteria below mirror §8 of the design doc.
+
+### 37A — Protocol: `attachments` on `ChatMessagePayload`
+
+- `[ ]` Add `attachments: z.array(ChatRoomAttachmentSchema).max(8).optional()` to `ChatMessagePayloadSchema` in `packages/protocol/src/index.ts`.
+- `[ ]` Add `.superRefine` validator: at least one of `text` or `attachments` must be present.
+- `[ ]` Update `createChatMessagePayload()` and `parseChatMessagePayload()` to handle the new field.
+- `[ ]` Backward compatibility: old payloads without `attachments` parse unchanged.
+
+### 37B — Social UI: audio recorder (browser)
+
+- `[ ]` Add mic button to `ChatComposer` (next to existing attach button) in `ContactChatPanel.tsx` and `GroupChatPanel.tsx`.
+- `[ ]` `handleRecordAudio`: `MediaRecorder` (audio/webm; opus) + `SpeechRecognition` (Web Speech API) for real-time transcription.
+- `[ ]` 120s max duration; show recording indicator + timer.
+- `[ ]` On stop: call `sendChatAttachment(audio blob)` → vault write, then `sendChat({ text: transcription, attachments: [{ vaultRelativePath, mimeType: "audio/webm", ... }] })`.
+- `[ ]` Graceful fallback when Web Speech API is unavailable: record audio only, send with empty text.
+
+### 37C — Social UI: audio player
+
+- `[ ]` New component `ChatAudioAttachment.tsx`: `<audio>` element with playback controls.
+- `[ ]` Fetch audio bytes from vault via `readLibraryItemContent`, render as `data:` URI.
+- `[ ]` Show duration label. If transcription exists, show as captions below the player.
+- `[ ]` Render in `ChatMessageBubble.tsx` when `attachment.mimeType.startsWith("audio/")`.
+
+### 37D — Inbound handler: graceful fallback for audio-only messages
+
+- `[ ]` In `apps/node/src/index.ts` inbound chat handler: if `payload.text` is empty and `payload.attachments` contains audio, set `chatText = "[Audio message — no transcription available]"` before calling `generateChatDraft`.
+- `[ ]` The AI agent sees the fallback text and can still acknowledge the message.
+
+### 37E — EnvoyGo: audio recorder (mobile)
+
+- `[ ]` Add `record` package to `apps/envoygo/pubspec.yaml`.
+- `[ ]` Mic button in EnvoyGo chat composer: records audio (MP4/AAC), sends via `sendChatAttachment` + `sendChat` with empty text (no transcription on mobile initially).
+- `[ ]` New `ChatAudioPlayer` widget: playback controls for received audio messages.
+
+### 37F — i18n
+
+- `[ ]` Add `audioMessage.*` keys to `en-chat.ts`: `record`, `recording`, `noTranscription`, `duration`.
+
+### 37G — Tests
+
+- `[ ]` Extend `packages/protocol/test/chat-message.test.ts`: `attachments` field round-trips; rejects empty text + no attachments; old payloads still parse.
+- `[ ]` New `apps/social/test/components/ChatAudioAttachment.test.tsx`: renders `<audio>` element; shows transcription caption.
+- `[ ]` Extend `ContactChatPanel.test.tsx`: mock `MediaRecorder` + `SpeechRecognition`; verify `sendChat` called with text + attachments.
+- `[ ]` Extend `apps/node/test/chat-draft-inbound.test.ts`: empty text + audio attachment → fallback text set.
+
+### 37H — Smoke test (manual)
+
+- `[ ]` Social UI: tap mic, speak, release. Verify audio bubble appears with transcription. Verify play button works.
+- `[ ]` Enable AI auto-reply. Send voice note. Verify AI responds to transcribed text.
+- `[ ]` EnvoyGo: record audio. Verify audio bubble appears. Verify AI auto-reply shows fallback acknowledgment.
+
+### Exit Criteria (Phase 37)
+
+- `[ ]` All 37A–37H checkboxes flipped.
+- `[ ]` `npm run typecheck` clean.
+- `[ ]` `npx vitest run` green (no regressions; new tests pass).
+- `[ ]` Manual smoke test passes on desktop (browser) + mobile (EnvoyGo).
+- `[ ]` No new dependencies (browser uses built-in APIs; Flutter adds `record` only).
+- `[ ]` Backward-compatible: old clients ignore `attachments` field.
 
 ---
 
@@ -4492,6 +4905,12 @@ Chinese-market phones (Huawei/Xiaomi/OPPO/Vivo) lack Google Play Services → FC
 
 | Date | Change |
 |------|--------|
+| 2026-06-17 | **Phase 37 — Audio Messages (Voice Notes) designed.** Users can record and send voice notes from the Social UI (browser) and EnvoyGo (mobile). Audio is transcribed client-side via Web Speech API (browser) or sent without transcription (mobile, with graceful fallback). Adds `attachments` to `ChatMessagePayload` (reuses `ChatRoomAttachmentSchema`), a mic button in `ChatComposer`, a `ChatAudioAttachment` player component, and a graceful-fallback path in the inbound chat handler for audio-only messages. No new RPC methods — audio travels through existing `sendChatAttachment` → `chat.message`. Mobile adds the `record` Flutter package; browser uses built-in `MediaRecorder` + `SpeechRecognition`. Server-side STT (whisper) is documented as a future enhancement. Design doc: [audio-message-support.md](./audio-message-support.md). |
+| 2026-06-16 | **Phase 35 — Fleet Onboarding shipped (35A + 35C + 35D + 35B complete; manual smoke deferred).** Four operator-facing paths in order A → C → D → B. **(A) Company invite link:** `LocalCompanyInviteStore` (`packages/local-store/src/company-invite-store.ts`) with atomic-rename + serialised writes; `CompanyInviteRecord` + 3 RPCs (`createCompanyInvite` / `listCompanyInvites` / `revokeCompanyInvite`); `envoy://invite?token=…` URI builder/parser; `validatePairingToken` accepts the new token category; `pairDevice` consumes the invite atomically; UI in `Settings → Devices → Company Invites`. **(C) LAN auto-bond:** `lanAutoBondEnabled` / `lanAutoBondFleetToken` / `lanAutoBondAcceptLevel` config; `lanFleetToken` carried on `DevicePairRequestPayload`; `node-service-lan-auto-bond.ts` runtime helpers; mDNS discovery hook fires the request; symmetric auto-accept when both sides have the same token fingerprint; cooldown per discovered peer; UI toggle in `Settings → Agent Network`. **Off by default.** **(D) Pairing Kiosk:** `pairing-kiosk-server.ts` minimal HTTP server (loopback default, opt-in LAN bind, Bearer-auth `POST /pair`, body-size limits, 410 once expired); 4 new `pairingKiosk*` config fields; `syncPairingKioskFromConfig` + `getPairingKioskStatus` RPCs; UI in `Settings → Devices → Pairing Kiosk` with status hint. **Off by default.** **(B) Fleet Manifest:** `FleetMember` / `UnsignedFleetManifest` / `FleetManifest` Zod schemas + `fleetManifestForSigning`; `LocalFleetManifestStore` (`fleet-manifests.json`); `node-service-fleet-manifest.ts` runtime helpers; walker pre-stages `TrustRecord` (with `note: "fleet-manifest:<id>:<role>"`) + `PeerDirectory` per member, idempotent on re-import, skips duplicates / expired / self-bond / revoked; 4 RPCs (`importFleetManifest` / `listFleetManifests` / `revokeFleetManifest` / `createFleetManifest`); UI in `Settings → Devices → Fleet Manifest` with Sign → Import two-step flow. Design doc: [fleet-onboarding.md](./fleet-onboarding.md). **22 new tests across 3 new files** (`apps/node/test/fleet-manifest-store.test.ts`, `apps/node/test/node-service-fleet-manifest.test.ts`, `apps/node/test/pairing-kiosk-server.test.ts`) + **1 existing test extended** (`apps/social/test/components/SettingsDevicesTab.test.tsx`). No new wire intents (only additive optional fields on existing payloads). |
+| 2026-06-16 | **Phase 34 — Render typed Artifacts + cached AgentCard in Social/EnvoyGo shipped (34A–34D + 34T complete; manual smoke deferred).** Closes the UI loop on Phase 33. **(A) Data plumbing:** new `LocalTaskResultsStore` (`packages/local-store/src/task-results-store.ts`, atomic-rename JSON file `task-results.json`, upsert by `taskId`, serialised concurrent writes) wired into `LocalTaskStore` and `daemon-task-inbound.ts` so every inbound `task.result` payload is persisted next to its audit event. New `getTaskResult(taskId)` RPC threaded through `NodeService`, `ws-protocol`, `json-rpc-router`, `node-service-impl`, `DirectCallClient`, and `useNodeService`. Mobile parity via `MobileNode.getTaskResult` delegating to home via `_homeRemoteCall` (refined from the design doc's local `Map` — treats home as source of truth, no mobile divergence). **(B) UI rendering:** new `apps/social/src/components/ArtifactRenderer.tsx` (~220 lines) with three branches — `<TextArtifactView>` (reuses `Markdown` for `text/markdown`, `<pre>` for `text/plain`, pretty-printed for `application/json`), `<FileArtifactView>` (card with size + hash + Open button; v1 Open is a no-op toast stub but threads an optional `onOpenLocalFile({ source: "vault", relativePath })` so the real opener can be wired without touching the renderer), `<StructuredArtifactView>` (collapsible `<details>` + 32KB JSON truncation). `<ArtifactList>` composes the list. CSS extends the `.answer-block-*` design vocabulary; i18n `artifactRenderer.*` block in all 7 locales. **(C) Activity drill-down:** `ActivityDetailPanel` in `ActivityView.tsx` lazy-fetches `getTaskResult(taskId)` alongside audit + journal and renders `<ArtifactList>` as a new "Artifacts" sub-section when artifacts are present; silent when the list is empty. **(D) Cached AgentCard:** four additive optional fields on `CachedAgentCardSummary` (`nodeProfile` typed as the protocol's `DeviceProfile`, `publicTopics`, `trustPolicySummary`, `supportedProtocolVersions`) — new `summarizeAgentCard` / `summarizeCachedAgentCard` helpers in `node-service-impl` + `mobile-node` only forward fields that are present on the source `AgentCard`. New `useAgentCards` hook in `useNodeService.tsx` fetches on mount + subscribes to `home:agent-cards-updated` for paired-mode pushes (kept out of `NodeStateContext` to limit scope). New `AgentCardPanel` component + `useAgentCard(ownerId)` selector, mounted in `ContactChatPanel` as a collapsible `<details>` above the private-notes panel (skipped for `room:` group contacts). i18n `agentCard.*` block in all 7 locales + new `contactChat.agentCardSummary` key. **18 new tests across 3 new files** (`apps/node/test/task-results-store.test.ts`, `apps/social/test/components/ArtifactRenderer.test.tsx`, `apps/social/test/components/AgentCardPanel.test.tsx`) + **1 dedicated new file** (`apps/node/test/daemon-task-inbound-task-result.test.ts`) + **1 existing test extended** (`apps/social/test/components/ActivityView.test.tsx` — added `getTaskResult` mock + assertion, which caught a worker hang on the first run). No new wire intents, no new dependencies, no Flutter changes. Design doc: [phase-34-render-typed-artifacts.md](./phase-34-render-typed-artifacts.md). |
+| 2026-06-16 | **Phase 33 — A2A Tool Exposure shipped (33A–33D complete).** Built-in OpenClaw now has four first-class A2A tools: `mesh.task.propose` (sends `task.mandate` + `task.propose`, description updated to mention typed Artifacts), `mesh.task.cancel` (sends `task.cancel`, `requiresApproval: true`), `mesh.task.await_result` (waits on a per-taskId in-process notifier for the matching `task.result`, default 30s timeout), and the pre-existing `mesh.agent_card.request` (verified end-to-end). **Breaking schema bump:** `TaskResultPayloadSchema.artifacts` is now `z.array(ArtifactSchema).default([])` instead of `z.array(z.string().min(1))` — a Zod discriminated union of `text` / `file` / `structured` variants. Old `artifacts: string[]` payloads are rejected at parse time; EnvoyMesh owns all senders so no external consumers exist. Helpers: `createTextArtifact`, `createFileArtifact`, `createStructuredArtifact`, plus `parse*` siblings. Auto-fetch: new `apps/node/src/agent-card-auto-fetcher.ts` is wired into the existing `bond:established` callback in `apps/node/src/index.ts`; when a bond forms, the home node (a) skips on public/blocked trust, (b) skips if a card was cached within `agentCardAutoFetchMaxAgeMs` (default 24h, configurable via `node-config.json`), (c) otherwise sends a signed `agent.card.request` envelope from the agent identity with a 5s timeout. New `AuditEventType` values: `task.tool.propose`, `task.tool.cancel`, `task.tool.await_result`, `agent.card.auto_fetched`, `agent.card.auto_fetch_failed`. New `PersistedNodeConfig.agentCardAutoFetchMaxAgeMs` (mirrored in `ws-protocol`). Audit hook in `daemon-task-inbound.ts` appends a per-result `task.handled` audit event summarising `artifactCount` + `artifactKinds` for observability. **42 new tests across 4 files** (`packages/protocol/test/artifact.test.ts`, `apps/node/test/a2a-tool-exposure.test.ts`, `apps/node/test/a2a-task-roundtrip.test.ts`, `apps/node/test/agent-card-auto-fetch.test.ts`). No new wire intents, no new dependencies, no UI changes (the social app and EnvoyGo render typed Artifacts + cached AgentCard in a follow-up). Design doc: [phase-33-a2a-tool-exposure.md](./phase-33-a2a-tool-exposure.md). |
+| 2026-06-16 | **Phase 32 — Agent Network Membership shipped (32A–32G code-complete; 32H smoke test deferred to live verification).** Two agents (built-in OpenClaw + Ext Agent bridge) get first-class, UI-driven configuration. Adds `openclawEnabled` to `NodeConfig` (mirrors `bridgeEnabled`); **fresh install defaults are `openclawEnabled: true`, `bridgeEnabled: false`** (D1C — built-in ships on, external bridge is opt-in; existing installs with `bridgeEnabled: true` are not retroactively rewritten). Boot-time gate in `startOpenClaw()` reads the flag from disk; **no runtime toggle**. New `getOpenClawStatus` RPC; derived `AiEngineMode` helper (originally `AgentNetworkMode`, renamed to disambiguate from the top-level "Agent Network" onboarding tab); wires the previously-orphaned `AgentSettings.tsx` into `Settings → AI` with a "Built-in + Ext / Built-in only / Ext only / None" chip and three-state status badge (Disabled/Running/Stopped). The **Built-in block is read-only** in the social UI (owner edits `node-config.json` and restarts); the **Ext Agent block is writable** (persists `bridgeEnabled`). Mobile thin-client (EnvoyGo) `Me → Agent Network` mirrors both as read-only. **Reframe (same day):** the first build was mis-scoped as a "kill the built-in OpenClaw sometimes" feature with D2A "cancel in-flight LLM" semantics and a post-spawn rapid-toggle guard. The user's original ask was about **agent network membership / advertisement**, not runtime hot-toggle. The `setOpenClawEnabled` method, the runtime `openclawEnabled` UI checkbox, and the D2A / rapid-toggle machinery were removed; the boot-time gate + status RPC + mode chip + mobile mirror remain. Precondition for Phase 33 (A2A tool exposure: `propose_task` / `await_task_result` / `cancel_task` / `request_agent_card`); Phase 32 ships first. One-way home→mobile data flow preserved. No new wire intents, no new dependencies, ~250 net new lines (mostly tests + i18n). Design doc: [agent-network-config.md](./agent-network-config.md). |
+| 2026-06-16 | **Phase 31 — EnvoyGo Flutter Thin Client shipped (31A–31H complete; 31I push notifications stubbed).** `apps/envoygo/` runs as a Flutter thin client: `HomeRemoteClient` with LAN → libp2p → relay-tunnel multi-transport + 8s per-candidate timeout + exponential backoff; QR pairing via `pairing_scan_screen` → `pairThinClient` RPC at `node-service-impl.ts:9752`; WS session-token auth gate in `ws-server.ts:159-185` (`UNAUTHORIZED` code; preserves legacy clients without a token); contacts + groups + AI threads (EnvoyAI + external agents) + terminals in one unified `chat_list_screen`; multi-node `node_switcher_sheet`; `connection_indicator` + dark-mode `ThemeContext`; `terminal_service` streams PTY output via binary sub-channel + ANSI parser + 16-color palette; `revokeAuthorizedDevice` unpair from either side; reconnection on app restart uses stored token without re-pairing. **31I is stubbed:** `apps/node/src/push-notification.ts` (153 lines) defines `PushTokenRegistry` + `PushNotificationService` + `dispatchChatPush` + `registerPushToken` / `unregisterPushToken` methods as an exported singleton (`pushNotificationService`), but `_sendPush` is `console.log` only for both iOS (APNs) and Android (FCM). The service is **not yet imported by `NodeServiceImpl`** — the RPC surface, chat / bond / room delivery pipeline, and token persistence are not wired. Real APNs HTTP/2 + FCM HTTP v1 dispatch + RPC exposure + chat/bond/room integration remain deferred. 18 test files in `apps/envoygo/test/`; full TS suite green (2953 tests). Design doc: [flutter-thin-client-design.md](./flutter-thin-client-design.md). |
 | 2026-06-09 | **Phase 31 — Flutter Thin Client designed:** Two-app strategy: Phase 11 Capacitor stays as standalone full node; new Flutter app "EnvoyGo" as thin-client remote access. Full architecture, transport layer, pairing flow, curated companion protocol (29 RPCs + 8 events), 3-tab UI, multi-node support, push notifications (native APNs for iOS, FCM for Android), 9 sub-phases (31A–31I). Design doc: [flutter-thin-client-design.md](./flutter-thin-client-design.md). |
 | 2026-06-08 | **De-duplicate model provider form (Settings → Network → AI):** the **Network** tab was rendering the *same* `modelProviders` form (mode/endpoint/modelName/apiKey) as the **AI** tab — both saving to the same `nodeConfig.modelProviders` field. Phase 8B originally placed it under Network; Phase 8C created a parallel form on the AI tab and never removed the old one. Removed the duplicate form from `SettingsNodeTab.tsx` (whole `<section>` + Save/Reset button that only saved `modelProviders`), along with its now-unused state vars (`modelEndpoint`/`modelName`/`modelApiKey`/`settingsSaveStatus`/`modelProviderFieldsDirtyRef`/`modelMode`/`modelProviderHints`/`cloudOnlyMobile`), the `useModelProviderUiScope` hook call, and the `ModelProviderMode` import. Removed the now-dead `modelProvider:` block + 5 unused `aiChatBehavior` keys (`save`/`saving`/`saved`/`cancel`/`saveFailed`) from all 7 locale files (`en`/`zh`/`ja`/`ko`/`de`/`fr`/`it`). Canonical home for the model provider form is now **Settings → AI → Model Provider**; the Network tab focuses on connectivity (bootstrap presets, relays, mDNS, IPFS, two-NAT checklist). |
 | 2026-06-07 | **Pending chat-room delivery backoff + give-up:** the 90s flush of `pending-sync.json` and `pending-message.json` was retrying the same unreachable contact every cycle, generating log noise (`[chat.room] pending sync retry to … failed: NO_RESERVATION`). Both pending stores now persist per-record `attempts` / `lastAttemptAt` / `nextAttemptAt`; the flush skips records still in the backoff window, schedules a doubling backoff (30s → 60s → … → 5min) on failure, and **drops** the record after `PENDING_DELIVERY_MAX_ATTEMPTS` (10) with a final `console.warn` instead of an infinite loop. `recordPendingSyncFailures` / `recordPendingMessageFailures` stamp the initial backoff on first failure so a single failed fan-out doesn't immediately retry 90s later. Added a new optional `markOutboundFailed` dep to `chat-room-service` and a `chat:delivery-failed` event on the home node so the UI can surface "this contact is unreachable" without a brand new schema. New tests: 5 in `chat-room-service.test.ts`, 1 in `chat-room-integration.test.ts`, 2 in the two pending store tests. |

@@ -2,6 +2,7 @@ import type {
   AiSettings,
   BondRecord,
   BridgeStatus,
+  OpenClawStatus,
   PairingPayload,
   ChatMessage,
   ChatAttachment,
@@ -50,6 +51,9 @@ import type {
   ListAuthorizedDevicesResult,
   RevokeAuthorizedDeviceParams,
   RevokeAuthorizedDeviceResult,
+  MergeAuthorizedDevicesParams,
+  MergeAuthorizedDevicesResult,
+  PruneRevokedDevicesResult,
   ListDeviceRevocationsResult,
   AgentShareProposal,
   SubmitAgentShareProposalParams,
@@ -61,6 +65,16 @@ import type {
   CreateWanJoinInviteParams,
   CreateWanJoinInviteResult,
   ApplyWanJoinInviteResult,
+  CreateCompanyInviteParams,
+  CreateCompanyInviteResult,
+  ListCompanyInvitesResult,
+  RevokeCompanyInviteResult,
+  CreateFleetManifestInput,
+  CreateFleetManifestResult,
+  ImportFleetManifestOutcome,
+  ImportFleetManifestParams,
+  ListFleetManifestsResult,
+  RevokeFleetManifestResult,
   IpfsEngineStatus,
   VerifyLibraryItemIpfsGatewayParams,
   VerifyLibraryItemIpfsGatewayResult,
@@ -118,6 +132,7 @@ import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered"
 import { resolveDidImportInput } from "@envoymesh/api/did-import";
 
 import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT,
@@ -186,6 +201,7 @@ import {
   parseFriendMatchingPreferencesPayload,
   type HumanProfilePayload,
   type EnvoyEnvelope,
+  type DevicePairRequestPayload,
 } from "@envoymesh/protocol";
 import {
   createDeviceCertificate,
@@ -260,6 +276,7 @@ import {
   type CapabilityProviderJobStore,
 } from "@envoymesh/local-store";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
+import { startPairingKioskServer, type PairingKioskServerHandle } from "./pairing-kiosk-server.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
 import { seedAddrsForDiscoveryProfile, peerDiscoverySourceFromMultiaddrs, shouldPersistPeerDiscoverySeeds } from "./peer-discovery-telemetry.js";
@@ -388,6 +405,19 @@ import {
   getConnectivityDiagnosticsViaRuntime,
   type NodeWanRuntimeDeps,
 } from "./node-service-wan.js";
+import { sendLanAutoBondRequest } from "./node-service-lan-auto-bond.js";
+import {
+  consumeCompanyInviteViaRuntime,
+  createCompanyInviteViaRuntime,
+  listCompanyInvitesViaRuntime,
+  revokeCompanyInviteViaRuntime,
+} from "./node-service-company-invite.js";
+import {
+  createFleetManifestViaRuntime,
+  importFleetManifestViaRuntime,
+  listFleetManifestsViaRuntime,
+  revokeFleetManifestViaRuntime,
+} from "./node-service-fleet-manifest.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -451,6 +481,41 @@ const NATIVE_AGENT_TOOL_SCOPE = [
   "social.intro.propose",
   "bond.request",
 ] as const;
+
+/**
+ * Phase 34: project a stored `AgentCard` row (whatever its full shape) into
+ * the minimal `CachedAgentCardSummary` the UI consumes. Only the rich optional
+ * fields actually present on the source card are forwarded so the UI can
+ * `if (card.nodeProfile)` rather than guess.
+ */
+function summarizeAgentCard(row: {
+  ownerId: string;
+  card: {
+    displayName: string;
+    capabilities: string[];
+    nodeProfile?: CachedAgentCardSummary["nodeProfile"];
+    publicTopics?: string[];
+    trustPolicySummary?: CachedAgentCardSummary["trustPolicySummary"];
+    supportedProtocolVersions?: string[];
+  };
+  cachedAt: string;
+  sourceAgentPeerId?: string;
+}): CachedAgentCardSummary {
+  const summary: CachedAgentCardSummary = {
+    ownerId: row.ownerId,
+    displayName: row.card.displayName,
+    capabilities: row.card.capabilities,
+    cachedAt: row.cachedAt,
+    sourceAgentPeerId: row.sourceAgentPeerId,
+  };
+  if (row.card.nodeProfile !== undefined) summary.nodeProfile = row.card.nodeProfile;
+  if (row.card.publicTopics) summary.publicTopics = row.card.publicTopics;
+  if (row.card.trustPolicySummary) summary.trustPolicySummary = row.card.trustPolicySummary;
+  if (row.card.supportedProtocolVersions) {
+    summary.supportedProtocolVersions = row.card.supportedProtocolVersions;
+  }
+  return summary;
+}
 
 /** Unblocks when an underlying `fs.readFile` or mutex never settles (seen on some Windows setups). */
 function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -528,6 +593,8 @@ class NodeServiceImpl implements NodeService {
   private _relayPublicWsUrl: string | undefined;
   private _terminalManager: import("./terminal-manager.js").TerminalManager | null = null;
   private _terminalAgentAssist: import("./terminal-agent-assist.js").TerminalAgentAssist | null = null;
+  /** Phase 35D — handle to the pairing-kiosk HTTP server (when enabled). */
+  private _pairingKiosk: PairingKioskServerHandle | null = null;
 
   /** Latest QR / `getPairingPayload` token for optional companion auto-pair (short TTL). */
   private _pairingToken: string | null = null;
@@ -1750,6 +1817,95 @@ class NodeServiceImpl implements NodeService {
       console.warn(`[node-service] nearby profile probe failed for ${peerId}:`, err);
     } finally {
       this._nearbyProfileProbeInflight.delete(peerId);
+    }
+  }
+
+  /**
+   * Phase 35C — fire a one-shot `device.pair.request` carrying the fleet
+   * token to a freshly-discovered peer, when the local config opts in.
+   * Idempotent on a short cooldown so a noisy mDNS loop doesn't loop us.
+   *
+   * Implementation note: the actual decision (enabled? token set? self?),
+   * the audit emission, and the transport call all live in
+   * `sendLanAutoBondRequest` (and `buildLanAutoBondRequest`) inside
+   * `node-service-lan-auto-bond.ts`. This wrapper only adds the per-peer
+   * cooldown + the dependency wiring.
+   */
+  private async _maybeFireLanAutoBond(peerId: string): Promise<void> {
+    const profile = this._profile;
+    const mesh = this._mesh;
+    if (!profile || !mesh || !this._taskStore) return;
+    if (peerId === mesh.peerId) return;
+    // Opportunistic cleanup so the map doesn't grow forever on a chatty
+    // mDNS network — drop entries that are well past the cooldown window.
+    if (this._lanAutoBondLastFireAt.size > 64) {
+      const cutoff = Date.now() - NodeServiceImpl._LAN_AUTO_BOND_COOLDOWN_MS * 10;
+      for (const [k, v] of this._lanAutoBondLastFireAt) {
+        if (v < cutoff) this._lanAutoBondLastFireAt.delete(k);
+      }
+    }
+    const lastAt = this._lanAutoBondLastFireAt.get(peerId) ?? 0;
+    if (Date.now() - lastAt < NodeServiceImpl._LAN_AUTO_BOND_COOLDOWN_MS) return;
+
+    // All gating (config check, token check, self check) happens inside
+    // `sendLanAutoBondRequest`, which also handles audit logging and the
+    // transport error path. We just feed it the deps.
+    //
+    // Only stamp the cooldown *after* the helper actually accepted the call.
+    // Otherwise a config flip (off → no token) would block the next fire
+    // for a full 60s even though no envelope was ever sent.
+    const result = await sendLanAutoBondRequest(
+      {
+        taskStore: this._taskStore,
+        loadConfig: () => this._configStore.load(),
+        sendPairRequest: ({ toPeerId, payload: pairPayload }) => this._sendDevicePairRequest(toPeerId, pairPayload),
+        getLocalIdentity: () => ({
+          ownerId: profile.owner.ownerId,
+          deviceId: profile.device.deviceId,
+          devicePublicKeyPem: profile.device.publicKeyPem,
+        }),
+        getOwnOwnerId: () => profile.owner.ownerId,
+      },
+      peerId,
+    );
+    if (result.ok) {
+      this._lanAutoBondLastFireAt.set(peerId, Date.now());
+    }
+  }
+
+  /** Tracks the last fire time per peer id so a chatty mDNS loop can't loop us. */
+  private _lanAutoBondLastFireAt: Map<string, number> = new Map();
+  private static readonly _LAN_AUTO_BOND_COOLDOWN_MS = 60_000;
+
+  /**
+   * Send a signed `device.pair.request` to a peer. Used by the LAN auto-bond
+   * hook and reachable for tests. Returns `{ ok, error }` — the caller is
+   * responsible for any audit events on the failure path.
+   */
+  private async _sendDevicePairRequest(
+    toPeerId: string,
+    payload: DevicePairRequestPayload,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const profile = this._profile;
+    const mesh = this._mesh;
+    if (!profile) return { ok: false, error: "node not initialized" };
+    if (!mesh) return { ok: false, error: "mesh not started" };
+    try {
+      const { createUnsignedEnvelope } = await import("@envoymesh/protocol");
+      const envelope = signUnsignedEnvelope(
+        createUnsignedEnvelope({
+          senderPeerId: derivePeerId(profile.device.publicKeyPem),
+          senderPublicKey: profile.device.publicKeyPem,
+          recipientPeerId: toPeerId,
+          intent: "device.pair.request",
+          payload,
+        }),
+        profile.device.privateKeyPem,
+      );
+      await mesh.send(toPeerId, envelope);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 
@@ -3554,26 +3710,25 @@ class NodeServiceImpl implements NodeService {
   async listAgentCards(): Promise<CachedAgentCardSummary[]> {
     if (!this._agentCardStore) return [];
     const rows = await this._agentCardStore.list();
-    return rows.map((row) => ({
-      ownerId: row.ownerId,
-      displayName: row.card.displayName,
-      capabilities: row.card.capabilities,
-      cachedAt: row.cachedAt,
-      sourceAgentPeerId: row.sourceAgentPeerId,
-    }));
+    return rows.map((row) => summarizeAgentCard(row));
   }
 
   async getAgentCard(ownerId: string): Promise<CachedAgentCardSummary | undefined> {
     if (!this._agentCardStore) return undefined;
     const row = await this._agentCardStore.get(ownerId.trim());
     if (!row) return undefined;
-    return {
-      ownerId: row.ownerId,
-      displayName: row.card.displayName,
-      capabilities: row.card.capabilities,
-      cachedAt: row.cachedAt,
-      sourceAgentPeerId: row.sourceAgentPeerId,
-    };
+    return summarizeAgentCard(row);
+  }
+
+  /**
+   * Phase 34: latest cached `task.result` payload (with typed Artifacts) for a taskId.
+   * Returns `undefined` if the home node has not received a `task.result` for the taskId.
+   */
+  async getTaskResult(
+    taskId: string,
+  ): Promise<import("@envoymesh/protocol").TaskResultPayload | undefined> {
+    if (!this._taskStore) return undefined;
+    return this._taskStore.getTaskResult(taskId);
   }
 
   async requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }> {
@@ -4191,6 +4346,17 @@ class NodeServiceImpl implements NodeService {
     return this._openclawGatewayReady && this._openclawGatewayChild != null && !this._openclawGatewayChild.killed;
   }
 
+  /**
+   * Whether the built-in OpenClaw agent is enabled in the persisted config.
+   * Reads from disk every call (no in-memory cache) so a config update via
+   * `updateNodeConfig` is picked up by the next `startOpenClaw()`.
+   * Returns `true` when the field is absent (D1C: ships on by default).
+   */
+  private async _isOpenClawEnabled(): Promise<boolean> {
+    const cfg = await this._configStore.load();
+    return cfg?.openclawEnabled ?? true;
+  }
+
   private async _ensureOpenClawReady(): Promise<boolean> {
     if (this.isOpenClawReady()) return true;
 
@@ -4456,6 +4622,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async startOpenClaw(): Promise<boolean> {
+    if ((await this._isOpenClawEnabled()) === false) return false;
     if (this.isOpenClawReady()) return true;
     if (this._openclawStartPromise) return this._openclawStartPromise;
 
@@ -6763,6 +6930,34 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  /**
+   * Resolve the fields a freshly-minted company invite needs (Phase 35A).
+   * Mirrors what `getPairingPayload` returns, minus the short-lived QR token.
+   */
+  private async _companyInviteInviteContext(): Promise<{
+    ownerId: string;
+    ownerPublicKey?: string;
+    agentPeerId?: string;
+    agentName?: string;
+    wsUrl: string;
+    lanWsUrl?: string;
+    relayWsUrl?: string;
+    homeNodePeerId?: string;
+  }> {
+    const profile = this._profile;
+    const payload = await this.getPairingPayload();
+    return {
+      ownerId: profile?.owner?.ownerId ?? payload.ownerId ?? "",
+      ownerPublicKey: profile?.owner?.publicKeyPem ?? payload.ownerPublicKey,
+      agentPeerId: payload.agentPeerId,
+      agentName: payload.agentName,
+      wsUrl: payload.wsUrl,
+      lanWsUrl: payload.lanWsUrl,
+      relayWsUrl: payload.relayWsUrl ?? this._relayPublicWsUrl,
+      homeNodePeerId: payload.homeNodePeerId,
+    };
+  }
+
   // ============================================
   // File Sharing
   // ============================================
@@ -7516,6 +7711,7 @@ class NodeServiceImpl implements NodeService {
          companionPairingAutoAcceptWithToken: config.companionPairingAutoAcceptWithToken ?? false,
         relayPublicWsUrl: config.relayPublicWsUrl ?? this._relayPublicWsUrl,
         bridgeEnabled: config.bridgeEnabled ?? true,
+        openclawEnabled: config.openclawEnabled ?? true,
         homeClawCoreBaseUrl: config.homeClawCoreBaseUrl,
         trustModeEnabled: config.trustModeEnabled ?? false,
         friendMatchingPreferencesText: config.friendMatchingPreferencesText,
@@ -7578,7 +7774,8 @@ class NodeServiceImpl implements NodeService {
       bridgeStatus: this._bridgeStatus ?? undefined,
       companionPairingAutoAcceptWithToken: false,
       relayPublicWsUrl: this._relayPublicWsUrl,
-      bridgeEnabled: true,
+      bridgeEnabled: false,
+      openclawEnabled: true,
       homeClawCoreBaseUrl: undefined,
       trustModeEnabled: false,
       friendMatchingPreferencesText: undefined,
@@ -7734,6 +7931,9 @@ class NodeServiceImpl implements NodeService {
       ...(config.bridgeEnabled !== undefined && {
         bridgeEnabled: config.bridgeEnabled,
       }),
+      ...(config.openclawEnabled !== undefined && {
+        openclawEnabled: config.openclawEnabled,
+      }),
       ...(config.homeClawCoreBaseUrl !== undefined && {
         homeClawCoreBaseUrl: config.homeClawCoreBaseUrl,
       }),
@@ -7780,6 +7980,30 @@ class NodeServiceImpl implements NodeService {
       }),
       ...(config.capabilityProviderMandateId !== undefined && {
         capabilityProviderMandateId: config.capabilityProviderMandateId,
+      }),
+      ...(config.lanAutoBondEnabled !== undefined && {
+        lanAutoBondEnabled: config.lanAutoBondEnabled,
+      }),
+      ...(config.lanAutoBondFleetToken !== undefined && {
+        lanAutoBondFleetToken: config.lanAutoBondFleetToken,
+      }),
+      ...(config.pairingKioskEnabled !== undefined && {
+        pairingKioskEnabled: config.pairingKioskEnabled,
+      }),
+      ...(config.pairingKioskAdminToken !== undefined && {
+        pairingKioskAdminToken: config.pairingKioskAdminToken,
+      }),
+      ...(config.pairingKioskBindAddress !== undefined && {
+        pairingKioskBindAddress: config.pairingKioskBindAddress,
+      }),
+      ...(config.pairingKioskPort !== undefined && {
+        pairingKioskPort: config.pairingKioskPort,
+      }),
+      ...(config.pairingKioskAllowLanBind !== undefined && {
+        pairingKioskAllowLanBind: config.pairingKioskAllowLanBind,
+      }),
+      ...(config.pairingKioskExpiresAt !== undefined && {
+        pairingKioskExpiresAt: config.pairingKioskExpiresAt,
       }),
       ...(config.externalPublish !== undefined && {
         externalPublish: {
@@ -7848,6 +8072,17 @@ class NodeServiceImpl implements NodeService {
       aiSettings: updated.aiSettings,
       contactAiPreferences: updated.contactAiPreferences ?? [],
     });
+
+    // Phase 32 — `openclawEnabled` is a boot-time flag; no runtime side
+    // effect is needed here. The next home-node restart will pick up the
+    // new value via `_isOpenClawEnabled()` in `startOpenClaw()`. The
+    // persisted write above is what installers / setup tools use to
+    // change the flag; no UI action triggers this path.
+
+    // Phase 35D — pairing kiosk: re-sync the HTTP server on every config
+    // change so a Settings flip takes effect without a node restart. The
+    // function is a no-op when `pairingKioskEnabled` is false.
+    await this._syncPairingKioskFromConfig();
   }
 
   async listRelays(): Promise<RelayConfig[]> {
@@ -8673,6 +8908,12 @@ class NodeServiceImpl implements NodeService {
         };
         this.emit("peer:discovered", placeholder);
         void this._probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs);
+
+        // Phase 35C — LAN auto-bond hook. If both this node and the freshly-
+        // discovered peer have a matching fleet token, send a `device.pair.request`
+        // carrying it. The receiver's dispatcher will auto-accept symmetrically.
+        // The runtime helper is a no-op when the local config doesn't opt in.
+        void this._maybeFireLanAutoBond(peerId);
       } catch (err) {
         console.warn(`[node-service] Failed to process peer discovery for ${peerId}:`, err);
       }
@@ -8738,6 +8979,13 @@ class NodeServiceImpl implements NodeService {
       }, connectivityRuntime.capabilityDiscoveryIntervalMsEffective() + jitter);
     };
     schedule();
+
+    // Phase 35D — kick the pairing-kiosk server on node start so a config
+    // that has it enabled at boot time is honoured without a manual
+    // `updateNodeConfig` call.
+    void this._syncPairingKioskFromConfig().catch((err) => {
+      console.warn("[pairing-kiosk] sync on start failed:", err);
+    });
   }
 
   async stopNode(): Promise<void> {
@@ -8749,6 +8997,7 @@ class NodeServiceImpl implements NodeService {
     this.emit("node:status", { status: this._nodeStatus });
 
     try {
+      await this.stopPairingKiosk();
       this._stopRelayClientScheduler?.();
       this._stopRelayClientScheduler = undefined;
       if (this._capabilityDiscoveryTimer) {
@@ -9262,6 +9511,96 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
+   * Phase 35D — start or reconfigure the pairing-kiosk HTTP server. Reads
+   * the kiosk-related fields from the persisted config; the operator's
+   * `updateNodeConfig` call already wrote them. The server is *off* by
+   * default and the operator must opt in.
+   */
+  private async _syncPairingKioskFromConfig(): Promise<void> {
+    const cfg = await this._configStore.load();
+    if (!cfg) {
+      await this.stopPairingKiosk();
+      return;
+    }
+    if (cfg.pairingKioskEnabled !== true) {
+      await this.stopPairingKiosk();
+      return;
+    }
+    if (!cfg.pairingKioskAdminToken || cfg.pairingKioskAdminToken.length < 16) {
+      console.warn("[pairing-kiosk] enabled without a valid admin token; ignoring.");
+      await this.stopPairingKiosk();
+      return;
+    }
+    // Re-use the existing handle if config hasn't materially changed.
+    if (this._pairingKiosk) {
+      // For now we restart on every call. This is cheap; the kiosk serves
+      // a static page and proxies one mint-invite call. If we ever need
+      // hot-reload (e.g. token rotation without restart), we can diff.
+      await this.stopPairingKiosk();
+    }
+    try {
+      this._pairingKiosk = await startPairingKioskServer({
+        kioskAdminToken: cfg.pairingKioskAdminToken,
+        bindAddress: cfg.pairingKioskBindAddress,
+        port: cfg.pairingKioskPort,
+        allowLanBind: cfg.pairingKioskAllowLanBind === true,
+        kioskExpiresAt: cfg.pairingKioskExpiresAt,
+        mintInvite: async (input) => {
+          if (!this._taskStore) throw new Error("task store not initialized");
+          const ctx = await this._companyInviteInviteContext();
+          const result = await createCompanyInviteViaRuntime(
+            { taskStore: this._taskStore, ...ctx },
+            { expiresInHours: input.expiresInHours, note: input.note ?? "kiosk" },
+          );
+          return {
+            uri: result.uri,
+            expiresAt: result.invite.expiresAt,
+            inviteId: result.invite.inviteId,
+          };
+        },
+      });
+    } catch (err) {
+      console.warn("[pairing-kiosk] failed to start:", err);
+      this._pairingKiosk = null;
+    }
+  }
+
+  async stopPairingKiosk(): Promise<void> {
+    if (!this._pairingKiosk) return;
+    try {
+      await this._pairingKiosk.close();
+    } catch (err) {
+      console.warn("[pairing-kiosk] close failed:", err);
+    }
+    this._pairingKiosk = null;
+  }
+
+  /**
+   * Phase 35D — status of the pairing-kiosk server. Surfaced in the UI as
+   * a small "Kiosk: running at …" hint when the operator has it on.
+   */
+  private async _getPairingKioskStatus(): Promise<{
+    enabled: boolean;
+    running: boolean;
+    address?: string;
+    port?: number;
+    bindLan: boolean;
+    expiresAt?: string;
+  }> {
+    const cfg = await this._configStore.load();
+    const enabled = cfg?.pairingKioskEnabled === true;
+    const running = this._pairingKiosk != null;
+    return {
+      enabled,
+      running,
+      address: running ? this._pairingKiosk!.address : undefined,
+      port: running ? this._pairingKiosk!.port : undefined,
+      bindLan: cfg?.pairingKioskAllowLanBind === true,
+      expiresAt: cfg?.pairingKioskExpiresAt,
+    };
+  }
+
+  /**
    * Resolve the relay's WebSocket URL — either the explicitly configured one
    * or the auto-discovered one (from a connected relay). Returns `undefined`
    * if no relay is reachable or relay is explicitly disabled (empty string).
@@ -9277,8 +9616,10 @@ class NodeServiceImpl implements NodeService {
 
   /**
    * Returns true if [token] matches either:
-   * 1. The latest QR pairing token from [getPairingPayload] (10-min TTL), or
-   * 2. A persisted session token (no TTL — for reconnections without QR re-scan).
+   * 1. The latest QR pairing token from [getPairingPayload] (30-min TTL, see
+   *    `_pairingTokenTtlMs`), or
+   * 2. A persisted session token (no TTL — for reconnections without QR re-scan), or
+   * 3. A live, unrevoked, unexpired company invite (Phase 35A: Fleet Onboarding A).
    *
    * When a persisted token is matched, [lastUsedAt] is touched.
    */
@@ -9288,7 +9629,7 @@ class NodeServiceImpl implements NodeService {
       return false;
     }
 
-    // 1. Check in-memory QR pairing token (10-min TTL)
+    // 1. Check in-memory QR pairing token (30-min TTL, see _pairingTokenTtlMs)
     if (this._pairingToken && t === this._pairingToken) {
       if (Date.now() - this._pairingTokenIssuedAt <= NodeServiceImpl._pairingTokenTtlMs) {
         return true;
@@ -9306,11 +9647,46 @@ class NodeServiceImpl implements NodeService {
       }
     }
 
+    // 3. Company invites (Phase 35A). `findCompanyInviteByToken` returns
+    //    undefined for unknown / revoked / expired invites. We accept
+    //    unconsumed invites here — the per-device check happens later in
+    //    `consumeCompanyInviteViaRuntime` (called from `pairDevice`,
+    //    `pairSharedIdentity`, `pairThinClient`). Note: a *previously-consumed*
+    //    invite is still returned by `findCompanyInviteByToken` so a legitimate
+    //    re-pair by the same device can succeed; the consume call returns the
+    //    same record (idempotent) for that case.
+    if (this._taskStore) {
+      const invite = await this._taskStore.findCompanyInviteByToken(t);
+      if (invite && !invite.revokedAt && Date.parse(invite.expiresAt) > Date.now()) {
+        return true;
+      }
+    }
+
     return false;
   }
 
   async getBridgeStatus(): Promise<BridgeStatus> {
     return this._bridgeStatus ?? { enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0, agentName: "", agentType: undefined };
+  }
+
+  /**
+   * Live status of the built-in OpenClaw gateway (EnvoyAI).
+   * `enabled` reflects the persisted `openclawEnabled` flag; `running` reflects
+   * the child process + webhook reachability. The two may diverge briefly
+   * during startup. `openclawEnabled` is a boot-time flag — see
+   * agent-network-config.md §4.2 — so the runtime "in-flight" semantics
+   * are not part of this RPC.
+   */
+  async getOpenClawStatus(): Promise<OpenClawStatus> {
+    const enabled = await this._isOpenClawEnabled();
+    const child = this._openclawGatewayChild;
+    const running = this.isOpenClawReady();
+    return {
+      enabled,
+      running,
+      url: this._assistantAgentUrl,
+      childPid: child && !child.killed ? child.pid ?? undefined : undefined,
+    };
   }
 
   /**
@@ -9477,6 +9853,109 @@ class NodeServiceImpl implements NodeService {
     return applyWanJoinInviteViaRuntime(this._wanRuntimeDeps(), token);
   }
 
+  async createCompanyInvite(
+    params?: CreateCompanyInviteParams,
+  ): Promise<CreateCompanyInviteResult> {
+    if (!this._taskStore) {
+      throw new Error("Local task store is not initialised; cannot create company invite");
+    }
+    const ctx = await this._companyInviteInviteContext();
+    return createCompanyInviteViaRuntime(
+      { taskStore: this._taskStore, ...ctx },
+      params,
+    );
+  }
+
+  async listCompanyInvites(): Promise<ListCompanyInvitesResult> {
+    if (!this._taskStore) return { invites: [] };
+    return listCompanyInvitesViaRuntime(this._taskStore);
+  }
+
+  async revokeCompanyInvite(inviteId: string): Promise<RevokeCompanyInviteResult> {
+    if (!this._taskStore) {
+      throw new Error("Local task store is not initialised; cannot revoke company invite");
+    }
+    return revokeCompanyInviteViaRuntime(this._taskStore, inviteId);
+  }
+
+  async syncPairingKioskFromConfig(): Promise<void> {
+    // Public RPC entry point — delegates to the private method which is
+    // also called from `updateNodeConfig` and `startNode`.
+    await this._syncPairingKioskFromConfig();
+  }
+
+  async getPairingKioskStatus(): Promise<import("@envoymesh/api").PairingKioskStatus> {
+    return this._getPairingKioskStatus();
+  }
+
+  // -----------------------------------------------------------
+  // Phase 35B — Fleet Manifest
+  // -----------------------------------------------------------
+
+  async importFleetManifest(
+    params: ImportFleetManifestParams,
+  ): Promise<ImportFleetManifestOutcome> {
+    if (!this._taskStore) {
+      return { ok: false, reason: "malformed", detail: "task store not initialised" };
+    }
+    return importFleetManifestViaRuntime(
+      {
+        trustStore: this._trustStore,
+        peerDirectoryStore: this._peerDirectoryStore,
+        manifestStore: this._taskStore,
+        profile: this._profile ?? null,
+        appendAudit: (event) => this._taskStore!.appendAuditEvent(event),
+      },
+      params,
+    );
+  }
+
+  async listFleetManifests(): Promise<ListFleetManifestsResult> {
+    if (!this._taskStore) return { manifests: [] };
+    const manifests = await listFleetManifestsViaRuntime({
+      trustStore: this._trustStore,
+      peerDirectoryStore: this._peerDirectoryStore,
+      manifestStore: this._taskStore,
+      profile: this._profile ?? null,
+    });
+    return { manifests };
+  }
+
+  async revokeFleetManifest(manifestId: string): Promise<RevokeFleetManifestResult> {
+    if (!this._taskStore) {
+      throw new Error("Local task store is not initialised; cannot revoke fleet manifest");
+    }
+    const result = await revokeFleetManifestViaRuntime(
+      {
+        trustStore: this._trustStore,
+        peerDirectoryStore: this._peerDirectoryStore,
+        manifestStore: this._taskStore,
+        profile: this._profile ?? null,
+        appendAudit: (event) => this._taskStore!.appendAuditEvent(event),
+      },
+      manifestId,
+    );
+    if (!result.ok) {
+      throw new Error(`Failed to revoke fleet manifest: ${result.reason}`);
+    }
+    return result;
+  }
+
+  async createFleetManifest(
+    input: CreateFleetManifestInput,
+  ): Promise<CreateFleetManifestResult> {
+    const result = await createFleetManifestViaRuntime(
+      {
+        profile: this._profile ?? null,
+      },
+      input,
+    );
+    if (!("manifest" in result)) {
+      throw new Error(`Cannot create fleet manifest: ${result.reason} (${result.detail ?? ""})`);
+    }
+    return { manifest: result.manifest };
+  }
+
   /**
    * Pair a mobile device after QR-code scan.
    *
@@ -9490,11 +9969,18 @@ class NodeServiceImpl implements NodeService {
       throw new Error("Missing required pairDevice params");
     }
 
-    // Validate the QR pairing token
+    // Validate the QR pairing token (or a company-invite token — Phase 35A)
     const valid = await this.validatePairingToken(pairingToken);
     if (!valid) {
       throw new Error("Invalid or expired pairing token");
     }
+
+    // Phase 35A: atomically consume a company-invite token (replay guard).
+    await this._consumeCompanyInviteOrThrow(
+      pairingToken,
+      requesterOwnerId,
+      requesterDeviceId,
+    );
 
     // Derive the requester's libp2p peer ID from their device public key
     const peerId = derivePeerId(requesterDevicePublicKeyPem);
@@ -9572,6 +10058,13 @@ class NodeServiceImpl implements NodeService {
     if (!valid) {
       throw new Error("Invalid or expired pairing token");
     }
+
+    // Phase 35A: atomically consume a company-invite token (replay guard).
+    await this._consumeCompanyInviteOrThrow(
+      pairingToken,
+      requesterOwnerId,
+      requesterDeviceId,
+    );
 
     // Sign a device certificate authorizing this mobile device
     const deviceCert = createDeviceCertificate({
@@ -9707,6 +10200,39 @@ class NodeServiceImpl implements NodeService {
     throw new Error("pairWithHomeNode is only supported on the mobile app");
   }
 
+  /**
+   * Phase 35A — atomically consume a company-invite token for the given
+   * device. Emits a `message.rejected` audit when the consume fails so the
+   * operator can see replay attempts in the audit log. Throws the same
+   * error message the previous inline paths used, so RPC clients see
+   * consistent errors.
+   */
+  private async _consumeCompanyInviteOrThrow(
+    pairingToken: string,
+    requesterOwnerId: string,
+    requesterDeviceId: string,
+  ): Promise<void> {
+    if (!this._taskStore) return;
+    const invite = await this._taskStore.findCompanyInviteByToken(pairingToken.trim());
+    if (!invite) return;
+    const consumed = await consumeCompanyInviteViaRuntime(
+      this._taskStore,
+      pairingToken,
+      requesterDeviceId,
+    );
+    if (consumed) return;
+    await this._taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "message.rejected",
+        intent: "device.pair.request",
+        outcome: "deny",
+        summary: `Company-invite replay denied: inviteId=${invite.inviteId} requesterOwnerId=${requesterOwnerId} requesterDeviceId=${requesterDeviceId}`,
+        remotePeerId: requesterOwnerId,
+      }),
+    );
+    throw new Error("Company invite token is revoked, expired, or already used by another device");
+  }
+
   async pairThinClient(params: import("@envoymesh/api").PairThinClientParams): Promise<import("@envoymesh/api").PairThinClientResult> {
     const pairingToken = params.pairingToken?.trim();
     if (!pairingToken) {
@@ -9718,6 +10244,14 @@ class NodeServiceImpl implements NodeService {
     if (!valid) {
       throw new Error("Invalid or expired pairing token");
     }
+
+    // Phase 35A: atomically consume a company-invite token (replay guard).
+    const thinClientDeviceId = `thin-client:${(params.deviceName ?? "EnvoyGo").toLowerCase().replace(/\s+/g, "-")}:${params.platform ?? "flutter"}`;
+    await this._consumeCompanyInviteOrThrow(
+      pairingToken,
+      "thin-client", // owner id is not part of the thin-client pairing contract
+      thinClientDeviceId,
+    );
 
     // Generate a persistent session token.
     const sessionToken = randomUUID();
@@ -9772,6 +10306,80 @@ class NodeServiceImpl implements NodeService {
       await this._sessionTokenStore.removeTokenByDeviceId(deviceId);
     }
     return { revocation };
+  }
+
+  async mergeAuthorizedDevices(
+    params: MergeAuthorizedDevicesParams,
+  ): Promise<MergeAuthorizedDevicesResult> {
+    if (!this._deviceAuthorizationStore) {
+      throw new Error("Device authorization store is not available");
+    }
+    const keepDeviceId = params.keepDeviceId?.trim();
+    if (!keepDeviceId) {
+      throw new Error("keepDeviceId is required");
+    }
+    const mergeDeviceIds = (params.mergeDeviceIds ?? [])
+      .map((id) => id?.trim())
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+    if (mergeDeviceIds.length === 0) {
+      return { revocations: [] };
+    }
+    const profile = this._requireProfile();
+    const revocations = await this._deviceAuthorizationStore.mergeAuthorizedDevices({
+      owner: {
+        ownerId: profile.owner.ownerId,
+        publicKeyPem: profile.owner.publicKeyPem,
+        privateKeyPem: profile.owner.privateKeyPem,
+      },
+      keepDeviceId,
+      mergeDeviceIds,
+      reason: params.reason,
+    });
+    // Drop any session tokens bound to the merged-away devices so
+    // they cannot reconnect with the old keypair.
+    if (this._sessionTokenStore) {
+      for (const mergedId of mergeDeviceIds) {
+        if (mergedId === keepDeviceId) continue;
+        await this._sessionTokenStore.removeTokenByDeviceId(mergedId);
+      }
+    }
+    // Audit the dedup so it shows up in the activity timeline.
+    if (this._taskStore) {
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "device.merge",
+          intent: "device.merge",
+          outcome: "record",
+          summary: `Merged ${mergeDeviceIds.length} duplicate device record(s) into ${keepDeviceId.slice(0, 24)}…`,
+          remotePeerId: keepDeviceId,
+        }),
+      );
+    }
+    return { revocations };
+  }
+
+  async pruneRevokedDevices(): Promise<PruneRevokedDevicesResult> {
+    if (!this._deviceAuthorizationStore) {
+      return { prunedDeviceIds: [] };
+    }
+    const prunedDeviceIds = await this._deviceAuthorizationStore.pruneRevokedDevices();
+    // Drop any session tokens bound to the pruned devices.
+    if (this._sessionTokenStore) {
+      for (const deviceId of prunedDeviceIds) {
+        await this._sessionTokenStore.removeTokenByDeviceId(deviceId);
+      }
+    }
+    if (prunedDeviceIds.length > 0 && this._taskStore) {
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "device.revoked",
+          intent: "device.revoke",
+          outcome: "record",
+          summary: `Pruned ${prunedDeviceIds.length} revoked device record(s) from the authorized list`,
+        }),
+      );
+    }
+    return { prunedDeviceIds };
   }
 
   async listDeviceRevocations(): Promise<ListDeviceRevocationsResult> {

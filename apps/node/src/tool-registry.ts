@@ -840,7 +840,8 @@ export class ToolRegistry {
 
     this.register({
       name: "mesh.task.propose",
-      description: "Send task.mandate + task.propose to a bonded peer agent (capability route executor)",
+      description:
+        "Send task.mandate + task.propose to a bonded peer agent. The peer will return a task.result envelope with typed Artifacts (text / file / structured) which can be retrieved with mesh.task.await_result.",
       paramSchema: {
         type: "object",
         properties: {
@@ -851,6 +852,43 @@ export class ToolRegistry {
         required: ["targetOwnerId", "objective"],
       },
       sensitivityCeiling: "friends",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.task.cancel",
+      description:
+        "Send task.cancel to a bonded peer agent to terminate a running task. Requires owner approval (state-mutating). Idempotent: re-cancelling a cancelled task is a no-op.",
+      paramSchema: {
+        type: "object",
+        properties: {
+          targetOwnerId: { type: "string", description: "Bonded peer owner id" },
+          taskId: { type: "string", description: "Task id returned from mesh.task.propose" },
+          reason: { type: "string", description: "Optional human-readable reason" },
+          correlationId: { type: "string" },
+        },
+        required: ["targetOwnerId", "taskId"],
+      },
+      sensitivityCeiling: "friends",
+      requiresApproval: true,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.task.await_result",
+      description:
+        "Block until a task.result envelope arrives for the given taskId, then return the typed Artifacts (text / file / structured). Polls an in-process notifier keyed by taskId. Default timeout 30s.",
+      paramSchema: {
+        type: "object",
+        properties: {
+          taskId: { type: "string", description: "Task id to wait on" },
+          timeoutMs: { type: "number", description: "Timeout in ms (default 30000)" },
+          pollIntervalMs: { type: "number", description: "Poll interval in ms (default 1000)" },
+        },
+        required: ["taskId"],
+      },
+      sensitivityCeiling: "public",
       requiresApproval: false,
       isMeshTool: false,
     });
@@ -1253,6 +1291,21 @@ export interface MeshToolContext {
     objective: string;
     correlationId?: string;
   }) => Promise<{ ok: boolean; result?: unknown; error?: string }>;
+  sendTaskCancel?: (params: {
+    targetOwnerId: string;
+    taskId: string;
+    reason?: string;
+    correlationId?: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
+  awaitTaskResult?: (params: {
+    taskId: string;
+    timeoutMs?: number;
+    pollIntervalMs?: number;
+  }) => Promise<{
+    ok: boolean;
+    result?: import("@envoymesh/protocol").TaskResultPayload;
+    reason?: "timeout" | "missing-task" | "no-task-context";
+  }>;
   shareFile?: (params: {
     targetOwnerId: string;
     vaultRelativePath: string;
@@ -2027,6 +2080,76 @@ export async function executeTool(
         ok: result.ok,
         result: result.result,
         error: result.error,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.task.cancel") {
+      if (!context.sendTaskCancel) {
+        return {
+          ok: false,
+          error: "sendTaskCancel is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const targetOwnerId = typeof params.targetOwnerId === "string" ? params.targetOwnerId.trim() : "";
+      const taskId = typeof params.taskId === "string" ? params.taskId.trim() : "";
+      if (!targetOwnerId || !taskId) {
+        return {
+          ok: false,
+          error: "targetOwnerId and taskId are required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const reason = typeof params.reason === "string" ? params.reason.trim() : undefined;
+      const result = await context.sendTaskCancel({
+        targetOwnerId,
+        taskId,
+        reason,
+        correlationId: typeof params.correlationId === "string" ? params.correlationId : correlationId,
+      });
+      return {
+        ok: result.ok,
+        error: result.error,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.task.await_result") {
+      if (!context.awaitTaskResult) {
+        return {
+          ok: false,
+          error: "awaitTaskResult is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const taskId = typeof params.taskId === "string" ? params.taskId.trim() : "";
+      if (!taskId) {
+        return {
+          ok: false,
+          error: "taskId is required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const timeoutMs =
+        typeof params.timeoutMs === "number" && params.timeoutMs > 0 ? params.timeoutMs : 30_000;
+      const pollIntervalMs =
+        typeof params.pollIntervalMs === "number" && params.pollIntervalMs > 0
+          ? params.pollIntervalMs
+          : 1_000;
+      const result = await context.awaitTaskResult({ taskId, timeoutMs, pollIntervalMs });
+      return {
+        ok: result.ok,
+        result: result.result,
+        error: result.reason,
         toolName,
         correlationId,
         latencyMs: Date.now() - startTime,

@@ -5,10 +5,13 @@ import { contactLabel } from "../../lib/display.js";
 import type {
   AgentActivityRecord,
   AgentActivityDomain,
+  Artifact,
   AuditEventSummary,
   BondRecord,
   TaskJournalSummary,
+  TaskResultPayload,
 } from "@envoymesh/api";
+import { ArtifactList } from "../ArtifactRenderer.js";
 
 type DateRangePreset = "all" | "today" | "7d" | "custom";
 
@@ -68,37 +71,62 @@ function ActivityDetailPanel(props: {
   const nodeService = useNodeService();
   const [audits, setAudits] = useState<AuditEventSummary[]>([]);
   const [journal, setJournal] = useState<TaskJournalSummary[]>([]);
+  const [artifacts, setArtifacts] = useState<Artifact[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       setLoading(true);
-      try {
-        const [auditRows, journalRows] = await Promise.all([
-          nodeService.listAuditEvents({
-            correlationId: props.row.correlationId,
-            taskId: props.row.taskId,
-            limit: 50,
-          }),
-          nodeService.listTaskJournalEntries({
-            taskId: props.row.taskId,
-            limit: 50,
-          }),
-        ]);
-        if (!cancelled) {
-          setAudits(auditRows);
-          setJournal(journalRows);
-        }
-      } catch (err) {
-        console.warn("[ActivityView] drill-down failed:", err);
-        if (!cancelled) {
-          setAudits([]);
-          setJournal([]);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+      setArtifacts(null);
+      const taskId = props.row.taskId;
+      // Phase 34 review fix: use allSettled so a single failing branch
+      // (e.g. transient `getTaskResult` network blip) does NOT wipe the
+      // audit + journal lists the user was already looking at. Each branch
+      // is independent: a failure logs and degrades silently to its empty
+      // state.
+      const [auditResult, journalResult, taskResultResult] = await Promise.allSettled([
+        nodeService.listAuditEvents({
+          correlationId: props.row.correlationId,
+          taskId,
+          limit: 50,
+        }),
+        nodeService.listTaskJournalEntries({
+          taskId,
+          limit: 50,
+        }),
+        // Phase 34: lazy-fetch the full task.result so the drill-down can
+        // render typed Artifacts below the audit/journal lists. Returns
+        // `undefined` for tasks that never received a result; we stay silent
+        // in that case.
+        taskId ? nodeService.getTaskResult(taskId) : Promise.resolve(undefined),
+      ]);
+      if (cancelled) return;
+      if (auditResult.status === "fulfilled") {
+        setAudits(auditResult.value);
+      } else {
+        console.warn("[ActivityView] listAuditEvents failed:", auditResult.reason);
+        setAudits([]);
       }
+      if (journalResult.status === "fulfilled") {
+        setJournal(journalResult.value);
+      } else {
+        console.warn("[ActivityView] listTaskJournalEntries failed:", journalResult.reason);
+        setJournal([]);
+      }
+      if (taskResultResult.status === "fulfilled") {
+        const list = taskResultResult.value
+          ? extractArtifacts(taskResultResult.value)
+          : [];
+        setArtifacts(list.length > 0 ? list : null);
+      } else {
+        // Don't surface to the user — drill-down stays silent when the
+        // artifact fetch fails (e.g. mobile is offline). The audit list
+        // is still rendered.
+        console.warn("[ActivityView] getTaskResult failed:", taskResultResult.reason);
+        setArtifacts(null);
+      }
+      setLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -158,13 +186,23 @@ function ActivityDetailPanel(props: {
               </ul>
             </>
           )}
-          {journal.length === 0 && audits.length === 0 && (
+          {artifacts && artifacts.length > 0 && (
+            <>
+              <h4 className="activity-detail-subtitle">{t("artifactRenderer.title", "Artifacts")}</h4>
+              <ArtifactList artifacts={artifacts} />
+            </>
+          )}
+          {journal.length === 0 && audits.length === 0 && !artifacts && (
             <p className="field-desc">{t("activity.noCorrelated")}</p>
           )}
         </>
       )}
     </div>
   );
+}
+
+function extractArtifacts(payload: TaskResultPayload): Artifact[] {
+  return Array.isArray(payload.artifacts) ? payload.artifacts : [];
 }
 
 /** Owner Activity timeline (Phase 13D / US-AV8 filters). */

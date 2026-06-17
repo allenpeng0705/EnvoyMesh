@@ -183,6 +183,8 @@ export async function routeRpcMethod(
       return ns.getAgentCard(params.ownerId as string);
     case "requestAgentCard":
       return ns.requestAgentCard(params.targetOwnerId as string);
+    case "getTaskResult":
+      return ns.getTaskResult(params.taskId as string);
     case "listPendingApprovals":
       return ns.listPendingApprovals();
     case "approvePendingApproval":
@@ -374,6 +376,8 @@ export async function routeRpcMethod(
       return ns.getTransferStatus(params.correlationId as string);
     case "getBridgeStatus":
       return ns.getBridgeStatus();
+    case "getOpenClawStatus":
+      return ns.getOpenClawStatus();
     case "getPairingPayload":
       return ns.getPairingPayload();
     case "createWanJoinInvite":
@@ -383,6 +387,27 @@ export async function routeRpcMethod(
       });
     case "applyWanJoinInvite":
       return ns.applyWanJoinInvite(String(params.token ?? ""));
+    case "createCompanyInvite":
+      return ns.createCompanyInvite({
+        expiresInHours: params.expiresInHours as number | undefined,
+        note: params.note as string | undefined,
+      });
+    case "listCompanyInvites":
+      return ns.listCompanyInvites();
+    case "revokeCompanyInvite":
+      return ns.revokeCompanyInvite(String(params.inviteId ?? ""));
+    case "syncPairingKioskFromConfig":
+      return ns.syncPairingKioskFromConfig();
+    case "getPairingKioskStatus":
+      return ns.getPairingKioskStatus();
+    case "importFleetManifest":
+      return ns.importFleetManifest(params as any);
+    case "listFleetManifests":
+      return ns.listFleetManifests();
+    case "revokeFleetManifest":
+      return ns.revokeFleetManifest(String(params.manifestId ?? ""));
+    case "createFleetManifest":
+      return ns.createFleetManifest(params as any);
     case "pairDevice":
       return ns.pairDevice(params as any);
     case "pairSharedIdentity":
@@ -397,6 +422,10 @@ export async function routeRpcMethod(
       return ns.listAuthorizedDevices();
     case "revokeAuthorizedDevice":
       return ns.revokeAuthorizedDevice(params as any);
+    case "mergeAuthorizedDevices":
+      return ns.mergeAuthorizedDevices(params as any);
+    case "pruneRevokedDevices":
+      return ns.pruneRevokedDevices();
     case "listDeviceRevocations":
       return ns.listDeviceRevocations();
     case "terminalExec":

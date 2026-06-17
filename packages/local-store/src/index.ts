@@ -45,6 +45,17 @@ import {
   type JsonlIndexQueryParams,
 } from "./jsonl-query-index.js";
 import { AUDIT_QUERY_INDEX_FILE } from "./storage-gate.js";
+import { createLocalTaskResultsStore } from "./task-results-store.js";
+import {
+  createLocalCompanyInviteStore,
+  type CompanyInviteRecord,
+  type LocalCompanyInviteStore,
+} from "./company-invite-store.js";
+import {
+  createLocalFleetManifestStore,
+  type FleetManifestRecord,
+  type LocalFleetManifestStore,
+} from "./fleet-manifest-store.js";
 
 const PEER_DIRECTORY_READ_BUDGET_MS = 20_000;
 
@@ -205,7 +216,17 @@ export type AuditEventType =
   | "terminal.agent.proposed"
   | "terminal.agent.executed"
   | "terminal.agent.denied"
-  | "terminal.agent.modelChanged";
+  | "terminal.agent.modelChanged"
+  | "task.tool.propose"
+  | "task.tool.cancel"
+  | "task.tool.await_result"
+  | "agent.card.auto_fetched"
+  | "agent.card.auto_fetch_failed"
+  | "bond.pre_staged"
+  | "bond.pre_staged_failed"
+  | "bond.revoked"
+  | "device.merge"
+  | "device.revoked";
 
 export type AuditDirection = "inbound" | "outbound" | "local";
 
@@ -619,6 +640,19 @@ export interface LocalTaskStore {
   appendApprovalRequest(request: ApprovalRequest): Promise<void>;
   readApprovalRequests(): Promise<ApprovalRequest[]>;
   updateApprovalRequestStatus(approvalId: string, status: ApprovalRequestStatus): Promise<ApprovalRequest>;
+  recordTaskResult(payload: import("@envoymesh/protocol").TaskResultPayload): Promise<void>;
+  getTaskResult(taskId: string): Promise<import("@envoymesh/protocol").TaskResultPayload | undefined>;
+  saveCompanyInvite(record: CompanyInviteRecord): Promise<void>;
+  getCompanyInvite(inviteId: string): Promise<CompanyInviteRecord | undefined>;
+  findCompanyInviteByToken(token: string): Promise<CompanyInviteRecord | undefined>;
+  listCompanyInvites(): Promise<CompanyInviteRecord[]>;
+  saveFleetManifest(record: FleetManifestRecord): Promise<FleetManifestRecord>;
+  getFleetManifest(manifestId: string): Promise<FleetManifestRecord | null>;
+  listFleetManifests(): Promise<FleetManifestRecord[]>;
+  revokeFleetManifest(
+    manifestId: string,
+    at: string,
+  ): Promise<FleetManifestRecord | null>;
 }
 
 export type AbuseFlag = "none" | "slow_response" | "no_answer" | "malicious" | "offensive";
@@ -777,6 +811,9 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
   const appendAuditIndexQueued = createJsonlIndexAppender(auditIndexPath);
   const appendDiscoveryQueued = createSerialJsonlAppender(discoveryEventsPath);
   const appendShareQueued = createSerialJsonlAppender(shareEventsPath);
+  const taskResultsStore = createLocalTaskResultsStore(profileDir);
+  const companyInviteStore = createLocalCompanyInviteStore(profileDir);
+  const fleetManifestStore = createLocalFleetManifestStore(profileDir);
 
   const auditEventToIndexEntry = (event: AuditEvent): JsonlIndexEntry => ({
     id: event.eventId,
@@ -893,6 +930,46 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
         await writeJsonLines(approvalQueuePath, requests);
         return request;
       });
+    },
+
+    async recordTaskResult(payload) {
+      await taskResultsStore.recordTaskResult(payload);
+    },
+
+    async getTaskResult(taskId) {
+      return taskResultsStore.getTaskResult(taskId);
+    },
+
+    async saveCompanyInvite(record) {
+      await companyInviteStore.saveInvite(record);
+    },
+
+    async getCompanyInvite(inviteId) {
+      return companyInviteStore.getInvite(inviteId);
+    },
+
+    async findCompanyInviteByToken(token) {
+      return companyInviteStore.findByToken(token);
+    },
+
+    async listCompanyInvites() {
+      return companyInviteStore.listInvites();
+    },
+
+    async saveFleetManifest(record) {
+      return fleetManifestStore.saveManifest(record);
+    },
+
+    async getFleetManifest(manifestId) {
+      return fleetManifestStore.getManifest(manifestId);
+    },
+
+    async listFleetManifests() {
+      return fleetManifestStore.listManifests();
+    },
+
+    async revokeFleetManifest(manifestId, at) {
+      return fleetManifestStore.revokeManifest(manifestId, at);
     },
   };
 }
@@ -2224,3 +2301,6 @@ export * from "./peer-profile-cache.js";
 export * from "./social-proxy-store.js";
 export * from "./document-acquisition-store.js";
 export * from "./capability-provider-job-store.js";
+export * from "./task-results-store.js";
+export * from "./company-invite-store.js";
+export * from "./fleet-manifest-store.js";

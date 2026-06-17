@@ -149,6 +149,13 @@ class NodeServiceClient {
         as Map<String, dynamic>;
   }
 
+  /// Phase 32 — live status of the built-in OpenClaw agent (EnvoyAI) on the
+  /// home node. Returns a map with `enabled`, `running`, and `url` keys.
+  Future<Map<String, dynamic>> getOpenClawStatus() async {
+    return await _client.call('getOpenClawStatus')
+        as Map<String, dynamic>;
+  }
+
   // -- Terminals --
 
   Future<List<TerminalSession>> listTerminalSessions() async {

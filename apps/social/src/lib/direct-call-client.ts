@@ -276,6 +276,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.requestAgentCard(targetOwnerId);
   }
 
+  async getTaskResult(taskId: string) {
+    return this._ns.getTaskResult(taskId);
+  }
+
   async listPendingApprovals() {
     return this._ns.listPendingApprovals();
   }
@@ -376,6 +380,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getBridgeStatus();
   }
 
+  async getOpenClawStatus() {
+    return this._ns.getOpenClawStatus();
+  }
+
   async getOpenClawPlugins() { return this._ns.getOpenClawPlugins(); }
   async searchOpenClawPlugins(query: string) { return this._ns.searchOpenClawPlugins(query); }
   async getTrendingOpenClawPlugins() { return this._ns.getTrendingOpenClawPlugins(); }
@@ -399,6 +407,48 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.applyWanJoinInvite(token);
   }
 
+  async createCompanyInvite(
+    params?: Parameters<NodeService["createCompanyInvite"]>[0],
+  ) {
+    return this._ns.createCompanyInvite(params);
+  }
+
+  async listCompanyInvites() {
+    return this._ns.listCompanyInvites();
+  }
+
+  async revokeCompanyInvite(inviteId: string) {
+    return this._ns.revokeCompanyInvite(inviteId);
+  }
+
+  async syncPairingKioskFromConfig() {
+    return this._ns.syncPairingKioskFromConfig();
+  }
+
+  async getPairingKioskStatus() {
+    return this._ns.getPairingKioskStatus();
+  }
+
+  async importFleetManifest(
+    params: Parameters<NodeService["importFleetManifest"]>[0],
+  ) {
+    return this._ns.importFleetManifest(params);
+  }
+
+  async listFleetManifests() {
+    return this._ns.listFleetManifests();
+  }
+
+  async revokeFleetManifest(manifestId: string) {
+    return this._ns.revokeFleetManifest(manifestId);
+  }
+
+  async createFleetManifest(
+    input: Parameters<NodeService["createFleetManifest"]>[0],
+  ) {
+    return this._ns.createFleetManifest(input);
+  }
+
   async pairWithHomeNode(params: Parameters<NodeService["pairWithHomeNode"]>[0]) {
     return this._ns.pairWithHomeNode(params);
   }
@@ -409,6 +459,14 @@ export class DirectCallClient implements NodeServiceClient {
 
   async revokeAuthorizedDevice(params: Parameters<NodeService["revokeAuthorizedDevice"]>[0]) {
     return this._ns.revokeAuthorizedDevice(params);
+  }
+
+  async mergeAuthorizedDevices(params: Parameters<NodeService["mergeAuthorizedDevices"]>[0]) {
+    return this._ns.mergeAuthorizedDevices(params);
+  }
+
+  async pruneRevokedDevices() {
+    return this._ns.pruneRevokedDevices();
   }
 
   async listDeviceRevocations() {

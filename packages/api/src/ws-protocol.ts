@@ -123,6 +123,7 @@ export type RpcMethods =
   | "listAgentCards"
   | "getAgentCard"
   | "requestAgentCard"
+  | "getTaskResult"
   | "listPendingApprovals"
   | "approvePendingApproval"
   | "rejectPendingApproval"
@@ -197,6 +198,7 @@ export type RpcMethods =
   | "getTransferStatus"
    // Agent Bridge
    | "getBridgeStatus"
+   | "getOpenClawStatus"
    // ClawHub skills
    | "getOpenClawPlugins"
     | "searchOpenClawPlugins"
@@ -212,6 +214,15 @@ export type RpcMethods =
    | "getPairingPayload"
   | "createWanJoinInvite"
   | "applyWanJoinInvite"
+  | "createCompanyInvite"
+  | "listCompanyInvites"
+  | "revokeCompanyInvite"
+  | "syncPairingKioskFromConfig"
+  | "getPairingKioskStatus"
+  | "importFleetManifest"
+  | "listFleetManifests"
+  | "revokeFleetManifest"
+  | "createFleetManifest"
   | "pairDevice"
   | "pairSharedIdentity"
   | "pairWithHomeNode"
@@ -219,6 +230,8 @@ export type RpcMethods =
   | "updateMyListenAddrs"
   | "listAuthorizedDevices"
   | "revokeAuthorizedDevice"
+  | "mergeAuthorizedDevices"
+  | "pruneRevokedDevices"
   | "listDeviceRevocations"
   // Node Configuration
   | "getNodeConfig"
@@ -404,9 +417,46 @@ export interface NodeConfig {
   webSearchEnabled?: boolean;
   /**
    * Whether the agent bridge is enabled (toggle in Settings UI).
-   * When true, the bridge is active on next node start. Default: false.
+   * When true, the bridge is active on next node start. Default: false (Phase 32, D1C).
+   * Note: pre-Phase-32 installs may have this set to `true` by default; the persisted
+   * value is the source of truth — this comment describes the *new* default.
    */
   bridgeEnabled?: boolean;
+  /**
+   * Whether the built-in OpenClaw agent (EnvoyAI) is enabled (toggle in Settings UI).
+   * When false, the gateway child process is not spawned on next start and any running
+   * gateway is stopped at config-changed time. Default: true (Phase 32, D1C).
+   */
+  openclawEnabled?: boolean;
+  /**
+   * Phase 33 — max age (in ms) of a cached agent card before the auto-fetcher re-issues a
+   * request. Default 24h.
+   */
+  agentCardAutoFetchMaxAgeMs?: number;
+  /**
+   * Phase 35C — opt-in LAN auto-bond. Default: false.
+   */
+  lanAutoBondEnabled?: boolean;
+  /**
+   * Phase 35C — shared fleet secret. When `lanAutoBondEnabled` is true and this
+   * is set, nodes on the same LAN that carry the same value will auto-bond
+   * without an approval prompt.
+   */
+  lanAutoBondFleetToken?: string;
+  /**
+   * Phase 35D — opt-in pairing-kiosk HTTP server. Default: false.
+   */
+  pairingKioskEnabled?: boolean;
+  /** Phase 35D — bearer token for the kiosk's POST /pair. */
+  pairingKioskAdminToken?: string;
+  /** Phase 35D — bind address. Default 127.0.0.1 (loopback). */
+  pairingKioskBindAddress?: string;
+  /** Phase 35D — bind port. Default 3737. */
+  pairingKioskPort?: number;
+  /** Phase 35D — when true, the kiosk can bind to a non-loopback address. Default false. */
+  pairingKioskAllowLanBind?: boolean;
+  /** Phase 35D — optional ISO 8601 expiry for the kiosk endpoint. */
+  pairingKioskExpiresAt?: string;
   /**
    * When true, an inbound `device.pair.request` whose `pairingToken` matches the latest
    * token from `getPairingPayload` may be auto-accepted (direct trust + peer directory).
@@ -501,6 +551,23 @@ export interface BridgeStatus {
   agentPublicKeyPem?: string;
   /** "envoyai" for the built-in OpenClaw assistant, "external" for a third-party HTTP agent. */
   agentType?: "envoyai" | "external";
+}
+
+/**
+ * Live status of the built-in OpenClaw gateway (EnvoyAI).
+ * `enabled` reflects the persisted config flag; `running` reflects the
+ * child process + webhook reachability. The two diverge briefly during
+ * startup and when the flag is flipped (D2A: in-flight calls are rejected).
+ */
+export interface OpenClawStatus {
+  enabled: boolean;
+  running: boolean;
+  /** Resolved webhook URL (e.g. http://127.0.0.1:18789/webhook/envoymesh). */
+  url: string;
+  /** Gateway child process PID, when running. */
+  childPid?: number;
+  /** ISO timestamp when the current child process was spawned. */
+  startedAt?: string;
 }
 
 /**
@@ -980,6 +1047,12 @@ export interface GetBootstrapPeersResult {
 
 export interface GetBridgeStatusParams {}
 
+export interface GetOpenClawStatusParams {}
+
+export interface GetOpenClawStatusResult {
+  status: OpenClawStatus;
+}
+
 export interface GetPairingPayloadParams {}
 
 export interface PairDeviceParams {
@@ -1073,6 +1146,34 @@ export interface RevokeAuthorizedDeviceResult {
   revocation: DeviceRevocationRecord;
 }
 
+export interface MergeAuthorizedDevicesParams {
+  /**
+   * `deviceId` of the canonical record to keep.
+   * The other entries are revoked and removed from the authorized list.
+   */
+  keepDeviceId: string;
+  /**
+   * `deviceId`s of the duplicate entries to revoke as part of the merge.
+   * Each one is treated as a "retired" revocation.
+   */
+  mergeDeviceIds: string[];
+  /**
+   * Optional reason recorded on each revocation record.
+   * Defaults to "deduplicated".
+   */
+  reason?: DeviceRevocationReason;
+}
+
+export interface MergeAuthorizedDevicesResult {
+  /** Revocation records produced for the merged-away duplicates. */
+  revocations: DeviceRevocationRecord[];
+}
+
+export interface PruneRevokedDevicesResult {
+  /** deviceIds that were removed from the authorized list. */
+  prunedDeviceIds: string[];
+}
+
 export interface ListDeviceRevocationsResult {
   revocations: DeviceRevocationRecord[];
 }
@@ -1112,8 +1213,12 @@ export interface UpdateNodeConfigParams {
   companionPairingAutoAcceptWithToken?: boolean;
   /** Public WebSocket URL of the relay node for mobile pairing through relay proxy. */
   relayPublicWsUrl?: string;
-  /** Enable/disable the agent bridge (takes effect on next node start). */
+  /** Enable/disable the agent bridge (takes effect on next node start). Default: false (Phase 32, D1C). */
   bridgeEnabled?: boolean;
+  /** Enable/disable the built-in OpenClaw agent (EnvoyAI). Default: true (Phase 32, D1C). */
+  openclawEnabled?: boolean;
+  /** Phase 33 — max age (in ms) of a cached agent card before the auto-fetcher re-issues a request. Default 24h. */
+  agentCardAutoFetchMaxAgeMs?: number;
   /** Enable Trust-mode intros (`social.intro.*` gate). Default false. */
   trustModeEnabled?: boolean;
   /** Owner criteria text for friend matching (bounded length). */

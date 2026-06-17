@@ -1639,6 +1639,13 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* Own scroll container so the sticky header (and the list itself) don't
+     depend on the outer <main> scroll. The parent grid row has a bounded
+     height (`.chat-view-threads-shell` is `minmax(0, 1fr)`), so this
+     `height: 100%` lands inside that box. */
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: var(--space-2);
   background: var(--color-surface);
   border-right: 1px solid var(--color-border-subtle);

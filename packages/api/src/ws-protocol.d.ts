@@ -49,7 +49,7 @@ export type JsonRpcEvent = {
 export declare const WS_PROTOCOL_VERSION = "envoy/ws-api/0.1.0";
 export declare const WS_PORT = 3030;
 export declare const WS_PATH = "/ws";
-export type RpcMethods = "getProfile" | "getOwnerDidPresentation" | "resolveDidImport" | "cacheDidContactKey" | "getPeerReputationSummary" | "getHumanProfile" | "updateHumanProfile" | "setPublicProfileThumbnail" | "upsertProfileGalleryPhoto" | "removeProfileGalleryPhoto" | "updateProfileGalleryPhotoVisibility" | "getPeerProfile" | "listPeerProfiles" | "requestPeerProfile" | "syncProfileToBonds" | "refreshBondPeerProfiles" | "getAgentIdentity" | "updateAgentIdentity" | "sendHello" | "acceptHello" | "declineHello" | "blockPeer" | "unblockPeer" | "revokeBond" | "getBonds" | "listPendingSocialIntroProposals" | "approveSocialIntroCommitment" | "declineSocialIntroProposal" | "sendChat" | "sendAgentChat" | "sendChatAttachment" | "readLibraryItemContent" | "listChatHistory" | "listAgentActivity" | "listCommerceReceipts" | "recordCommerceReceipt" | "listAuditEvents" | "listTaskJournalEntries" | "listAgentCards" | "getAgentCard" | "requestAgentCard" | "listPendingApprovals" | "approvePendingApproval" | "rejectPendingApproval" | "deleteChatMessage" | "clearChatHistory" | "markRead" | "getChatDrafts" | "deleteChatDraft" | "searchPeers" | "advertiseTopic" | "stopAdvertiseTopic" | "getCapabilityManifest" | "updateCapabilityManifest" | "shareFile" | "acceptShare" | "declineShare" | "listPendingShareOffers" | "listLibraryItems" | "listAllLocalFiles" | "readLocalFileContent" | "openLocalFile" | "setLibraryItemPublished" | "exportLibraryItemToIpfs" | "pinLibraryItemExternal" | "getIpfsEngineStatus" | "getRagIndexStatus" | "verifyLibraryItemIpfsGateway" | "importToLibrary" | "resolveLibraryItemPath" | "openLibraryItem" | "revealLibraryItemInFileManager" | "discoverPublishedLibrary" | "listAgentShareProposals" | "dismissAgentShareProposal" | "submitAgentShareProposal" | "getConnectionStatus" | "getPeerConnectionInfo" | "warmContactConnection" | "getChatDiagnostics" | "getConnectivityDiagnostics" | "runCapabilityDiscovery" | "discoverCapabilityTopic" | "getMorningReport" | "requestMultiHopDiscovery" | "getMultiHopDiscoverySession" | "sendSyncStateUpdate" | "knowledgeQuery" | "runDocumentAgentTurn" | "listSocialProxySessions" | "runSocialProxyPass" | "cancelSocialProxySession" | "startDocumentAcquisitionJob" | "getDocumentAcquisitionJob" | "listDocumentAcquisitionJobs" | "cancelDocumentAcquisitionJob" | "listActiveTransfers" | "getTransferStatus" | "getBridgeStatus" | "getPairingPayload" | "createWanJoinInvite" | "applyWanJoinInvite" | "pairDevice" | "pairSharedIdentity" | "pairWithHomeNode" | "listAuthorizedDevices" | "revokeAuthorizedDevice" | "listDeviceRevocations" | "getNodeConfig" | "updateNodeConfig" | "listRelays" | "addRelay" | "removeRelay" | "initNode" | "getNodeStatus" | "startNode" | "stopNode" | "forwardEnvelope"
+export type RpcMethods = "getProfile" | "getOwnerDidPresentation" | "resolveDidImport" | "cacheDidContactKey" | "getPeerReputationSummary" | "getHumanProfile" | "updateHumanProfile" | "setPublicProfileThumbnail" | "upsertProfileGalleryPhoto" | "removeProfileGalleryPhoto" | "updateProfileGalleryPhotoVisibility" | "getPeerProfile" | "listPeerProfiles" | "requestPeerProfile" | "syncProfileToBonds" | "refreshBondPeerProfiles" | "getAgentIdentity" | "updateAgentIdentity" | "sendHello" | "acceptHello" | "declineHello" | "blockPeer" | "unblockPeer" | "revokeBond" | "getBonds" | "listPendingSocialIntroProposals" | "approveSocialIntroCommitment" | "declineSocialIntroProposal" | "sendChat" | "sendAgentChat" | "sendChatAttachment" | "readLibraryItemContent" | "listChatHistory" | "listAgentActivity" | "listCommerceReceipts" | "recordCommerceReceipt" | "listAuditEvents" | "listTaskJournalEntries" | "listAgentCards" | "getAgentCard" | "requestAgentCard" | "listPendingApprovals" | "approvePendingApproval" | "rejectPendingApproval" | "deleteChatMessage" | "clearChatHistory" | "markRead" | "getChatDrafts" | "deleteChatDraft" | "searchPeers" | "advertiseTopic" | "stopAdvertiseTopic" | "getCapabilityManifest" | "updateCapabilityManifest" | "shareFile" | "acceptShare" | "declineShare" | "listPendingShareOffers" | "listLibraryItems" | "listAllLocalFiles" | "readLocalFileContent" | "openLocalFile" | "setLibraryItemPublished" | "exportLibraryItemToIpfs" | "pinLibraryItemExternal" | "getIpfsEngineStatus" | "getRagIndexStatus" | "verifyLibraryItemIpfsGateway" | "importToLibrary" | "resolveLibraryItemPath" | "openLibraryItem" | "revealLibraryItemInFileManager" | "discoverPublishedLibrary" | "listAgentShareProposals" | "dismissAgentShareProposal" | "submitAgentShareProposal" | "getConnectionStatus" | "getPeerConnectionInfo" | "warmContactConnection" | "getChatDiagnostics" | "getConnectivityDiagnostics" | "runCapabilityDiscovery" | "discoverCapabilityTopic" | "getMorningReport" | "requestMultiHopDiscovery" | "getMultiHopDiscoverySession" | "sendSyncStateUpdate" | "knowledgeQuery" | "runDocumentAgentTurn" | "listSocialProxySessions" | "runSocialProxyPass" | "cancelSocialProxySession" | "startDocumentAcquisitionJob" | "getDocumentAcquisitionJob" | "listDocumentAcquisitionJobs" | "cancelDocumentAcquisitionJob" | "listActiveTransfers" | "getTransferStatus" | "getBridgeStatus" | "getPairingPayload" | "createWanJoinInvite" | "applyWanJoinInvite" | "pairDevice" | "pairSharedIdentity" | "pairWithHomeNode" | "listAuthorizedDevices" | "revokeAuthorizedDevice" | "mergeAuthorizedDevices" | "pruneRevokedDevices" | "listDeviceRevocations" | "getNodeConfig" | "updateNodeConfig" | "listRelays" | "addRelay" | "removeRelay" | "initNode" | "getNodeStatus" | "startNode" | "stopNode" | "forwardEnvelope"
 /** HTTP proxy from mobile Companion to HomeClaw Core on the home LAN (SSR-safe paths only). */
  | "homeclawCoreProxy" | "homeClawCoreWsOpen" | "homeClawCoreWsSend" | "homeClawCoreWsClose" | "on" | "off" | "home_claw_core_ws_open" | "home_claw_core_ws_send" | "home_claw_core_ws_close";
 export interface RelayConfig {
@@ -668,6 +668,31 @@ export interface RevokeAuthorizedDeviceParams {
 }
 export interface RevokeAuthorizedDeviceResult {
     revocation: Record<string, unknown>;
+}
+export interface MergeAuthorizedDevicesParams {
+    /**
+     * `deviceId` of the canonical record to keep.
+     * The other entries are revoked and removed from the authorized list.
+     */
+    keepDeviceId: string;
+    /**
+     * `deviceId`s of the duplicate entries to revoke as part of the merge.
+     * Each one is treated as a "retired" revocation.
+     */
+    mergeDeviceIds: string[];
+    /**
+     * Optional reason recorded on each revocation record.
+     * Defaults to "deduplicated".
+     */
+    reason?: Record<string, unknown>;
+}
+export interface MergeAuthorizedDevicesResult {
+    /** Revocation records produced for the merged-away duplicates. */
+    revocations: Record<string, unknown>[];
+}
+export interface PruneRevokedDevicesResult {
+    /** deviceIds that were removed from the authorized list. */
+    prunedDeviceIds: string[];
 }
 export interface ListDeviceRevocationsResult {
     revocations: Record<string, unknown>[];

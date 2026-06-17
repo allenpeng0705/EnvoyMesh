@@ -139,6 +139,51 @@ export interface PersistedNodeConfig {
   intentPredictionEnabled?: boolean;
   /** Phase 25D — max prefetch results for intent prediction. */
   prefetchMaxResults?: number;
+  /** Phase 32 — whether the built-in OpenClaw agent (EnvoyAI) is enabled. */
+  openclawEnabled?: boolean;
+  /** Phase 33 — max age of a cached agent card before the auto-fetcher re-issues a request. Default 24h. */
+  agentCardAutoFetchMaxAgeMs?: number;
+  /**
+   * Phase 35C — opt-in LAN auto-bond. When true, two home nodes on the same
+   * network with matching `lanAutoBondFleetToken` automatically bond as
+   * "direct" trust on first mDNS contact. **Default: false.** This is a fleet
+   * onboarding lever for company LANs; it must never be enabled by default.
+   */
+  lanAutoBondEnabled?: boolean;
+  /**
+   * Phase 35C — shared fleet secret used to gate LAN auto-bond. A node will
+   * only auto-bond with another node whose envelope carries the same value.
+   * Empty/undefined = never auto-bond, even when `lanAutoBondEnabled` is true.
+   */
+  lanAutoBondFleetToken?: string;
+  /**
+   * Phase 35C — last time the LAN auto-bond loop ran (ISO 8601). Used for
+   * backoff and audit dedup; the field is informational and not part of any
+   * user-facing UI.
+   */
+  lanAutoBondLastRunAt?: string;
+  /**
+   * Phase 35D — opt-in pairing-kiosk HTTP server. Default: false (off).
+   * When false, the home node does not start the kiosk endpoint regardless
+   * of any other kiosk* setting.
+   */
+  pairingKioskEnabled?: boolean;
+  /** Phase 35D — bearer token the kiosk's `POST /pair` checks. Required when enabled. */
+  pairingKioskAdminToken?: string;
+  /** Phase 35D — bind address. Default 127.0.0.1 (loopback). */
+  pairingKioskBindAddress?: string;
+  /** Phase 35D — bind port. Default 3737. */
+  pairingKioskPort?: number;
+  /**
+   * Phase 35D — when true, the kiosk is allowed to bind to a non-loopback
+   * address. The `kioskEnabled` flag must still be on. Default: false.
+   */
+  pairingKioskAllowLanBind?: boolean;
+  /**
+   * Phase 35D — optional ISO 8601 expiry for the kiosk. After this point the
+   * endpoint starts returning HTTP 410 instead of serving the page.
+   */
+  pairingKioskExpiresAt?: string;
 }
 
 export interface NodeConfigStore {

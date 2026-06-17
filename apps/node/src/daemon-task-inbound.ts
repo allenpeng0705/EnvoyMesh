@@ -4,7 +4,7 @@ import {
   type LocalTaskStore,
   type TaskRuntimeStateStore,
 } from "@envoymesh/local-store";
-import { parseReportCreatePayload, type EnvoyEnvelope } from "@envoymesh/protocol";
+import { parseReportCreatePayload, parseTaskResultPayload, type EnvoyEnvelope } from "@envoymesh/protocol";
 import { createTaskDispatcher, isA2ATaskIntent, type TaskDispatcher } from "@envoymesh/api";
 import { applyTaskRuntimeAfterHandled, guardInboundTaskRuntime } from "./task-runtime-guard.js";
 import type { NodeServiceImpl } from "./node-service-impl.js";
@@ -91,6 +91,39 @@ export async function handleDaemonTaskInbound(input: {
         } catch {
           // malformed report.create payload
         }
+      }
+    }
+
+    // Phase 33: emit an extra audit event summarising the typed Artifacts of a task.result
+    // envelope so observers can read artifact shape without re-parsing the wire payload.
+    if (taskDecision.intent === "task.result") {
+      try {
+        const resultPayload = parseTaskResultPayload(input.envelope.payload);
+        const artifactKinds = resultPayload.artifacts.map((a) => a.kind);
+        await input.taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "task.handled",
+            intent: input.envelope.intent,
+            taskId: taskDecision.taskId,
+            mandateId: taskDecision.mandateId,
+            messageId: input.envelope.messageId,
+            correlationId: input.correlationId ?? taskDecision.taskId,
+            remotePeerId: input.remotePeerId,
+            direction: "inbound",
+            verificationStatus: "verified",
+            latencyMs: Date.now() - input.receivedAt,
+            outcome: "record",
+            summary: `task.result artifacts=${resultPayload.artifacts.length} kinds=[${artifactKinds.join(",")}]`,
+            createdAt: input.envelope.createdAt,
+          }),
+        );
+        // Phase 34: cache the full payload so the Activity drill-down can render the
+        // typed Artifacts via getTaskResult(taskId). Best-effort: a parse failure or
+        // write failure here must not abort the inbound — the audit event above is
+        // the source of truth, and the journal entry already succeeded.
+        await input.taskStore.recordTaskResult(resultPayload);
+      } catch {
+        // artifact audit / recordTaskResult is best-effort; the primary journal entry already succeeded
       }
     }
 

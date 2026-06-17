@@ -264,7 +264,7 @@ export function App() {
                 <H2AChannelView
                   onBackToChats={() => setCurrentView("chat")}
                   onOpenActivity={() => {
-                    setSettingsTab("activity");
+                    setSettingsTab("app");
                     setCurrentView("settings");
                   }}
                   onOpenInbox={() => {

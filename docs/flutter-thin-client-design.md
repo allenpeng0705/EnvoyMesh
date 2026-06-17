@@ -102,7 +102,7 @@ EnvoyGo runs a **full libp2p node** (`dart_libp2p` + `dart_libp2p_kad_dht`) as a
 │  ├─ client-proxy-handler — validates token, routes RPC     │
 │  ├─ homeTerminalWs — PTY tunnel for terminal               │
 │  └─ Push events: chat:message, hello:request,              │
-│                  terminal:rx, bond:established, ...         │
+│                  homeTerminalWs:rx, bond:established, ...   │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -437,8 +437,11 @@ The thin client uses a **subset** of the 281 JSON-RPC methods. Grouped by featur
 | `hello:request` | New bond request | Inbox badge |
 | `bond:established` | New bond confirmed | Contacts refresh |
 | `bridge:status` | Agent bridge status change | AI chat availability |
-| `terminal:rx` | PTY output | Terminal display |
+| `homeTerminalWs:rx` | PTY output (binary sub-channel) | Terminal display |
+| `homeTerminalWs:closed` | PTY sub-channel closed by home | Terminal display |
 | `node:online` / `node:offline` | Home node up/down | Connection indicator |
+
+**Note:** the older `terminal:rx` event from the Phase 30A shared channel is no longer used by the Flutter client; PTY frames flow exclusively over the binary sub-channel opened via `homeTerminalWsOpen`. The dead auto-subscribe to `terminal:rx` in `apps/node/src/ws-server.ts:266` is harmless and will be cleaned up in a follow-up.
 
 ---
 

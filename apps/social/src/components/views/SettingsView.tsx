@@ -2,13 +2,15 @@ import { SettingsAccountTab } from "./SettingsAccountTab.js";
 import { SettingsNodeTab } from "./SettingsNodeTab.js";
 import { SettingsAITab } from "./SettingsAITab.js";
 import { SettingsAppTab } from "./SettingsAppTab.js";
-import { SettingsPrivacyTab } from "./SettingsPrivacyTab.js";
-import { SettingsDevicesTab } from "./SettingsDevicesTab.js";
-import { SettingsIdentityTab } from "./SettingsIdentityTab.js";
-import { ActivityView } from "./ActivityView.js";
+import { SettingsAgentNetworkTab } from "./SettingsAgentNetworkTab.js";
 import { useT } from "../../context/I18nContext.js";
 
-export type SettingsTabId = "account" | "network" | "ai" | "activity" | "privacy" | "devices" | "identity" | "app";
+export type SettingsTabId =
+  | "account"
+  | "ai"
+  | "agentNetwork"
+  | "network"
+  | "app";
 
 export function SettingsView({
   tab,
@@ -33,13 +35,6 @@ export function SettingsView({
         </button>
         <button
           type="button"
-          className={tab === "network" ? "active" : ""}
-          onClick={() => onTabChange("network")}
-        >
-          {t("settings.tabs.network")}
-        </button>
-        <button
-          type="button"
           className={tab === "ai" ? "active" : ""}
           onClick={() => onTabChange("ai")}
         >
@@ -47,31 +42,17 @@ export function SettingsView({
         </button>
         <button
           type="button"
-          className={tab === "activity" ? "active" : ""}
-          onClick={() => onTabChange("activity")}
+          className={tab === "agentNetwork" ? "active" : ""}
+          onClick={() => onTabChange("agentNetwork")}
         >
-          {t("settings.tabs.activity")}
+          {t("settings.tabs.agentNetwork")}
         </button>
         <button
           type="button"
-          className={tab === "privacy" ? "active" : ""}
-          onClick={() => onTabChange("privacy")}
+          className={tab === "network" ? "active" : ""}
+          onClick={() => onTabChange("network")}
         >
-          {t("settings.tabs.privacy")}
-        </button>
-        <button
-          type="button"
-          className={tab === "devices" ? "active" : ""}
-          onClick={() => onTabChange("devices")}
-        >
-          {t("settings.tabs.devices")}
-        </button>
-        <button
-          type="button"
-          className={tab === "identity" ? "active" : ""}
-          onClick={() => onTabChange("identity")}
-        >
-          {t("settings.tabs.identity", "Identity")}
+          {t("settings.tabs.network")}
         </button>
         <button
           type="button"
@@ -83,12 +64,9 @@ export function SettingsView({
       </div>
 
       {tab === "account" && <SettingsAccountTab />}
-      {tab === "network" && <SettingsNodeTab />}
       {tab === "ai" && <SettingsAITab />}
-      {tab === "activity" && <ActivityView embedded />}
-      {tab === "privacy" && <SettingsPrivacyTab />}
-      {tab === "devices" && <SettingsDevicesTab />}
-      {tab === "identity" && <SettingsIdentityTab />}
+      {tab === "agentNetwork" && <SettingsAgentNetworkTab />}
+      {tab === "network" && <SettingsNodeTab />}
       {tab === "app" && <SettingsAppTab />}
     </div>
   );
