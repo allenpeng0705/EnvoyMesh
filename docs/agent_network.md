@@ -131,6 +131,11 @@ export const ChainMandateSchema = z.object({
   authorizedCapabilities: z.array(z.string().min(1)).max(64),
   // Depth and parallelism limits. Enforced by the orchestrator.
   allowDepth3: z.boolean().default(false),
+  // maxWorkers = active concurrent worker peer sessions, NOT total historical
+  // allocations. A worker counts toward this limit from award until the
+  // subtask reaches a terminal state (`completed | failed | cancelled`).
+  // See §7.4: when a worker is unresponsive, the orchestrator MUST emit
+  // `chain.subtask_cancelled` to release the slot BEFORE awarding the backup.
   maxWorkers: z.number().int().min(1).max(64).default(8),
   // The orchestrator may mint sub-mandates within these bounds. Sub-mandate
   // budget = min(parent cost limit, sub-share).
@@ -197,6 +202,12 @@ export const ChainSubtaskBidSchema = z.object({
   mergeWithSubtaskIds: z.array(z.string()).optional(),
   // Free-form justification, capped to keep audit logs small.
   justification: z.string().max(1000).optional(),
+  // Hard expiry for this bid. The worker MUST reject any `task.chain.accept`
+  // that arrives after `bidExpiresAt`. Default: proposal deadline + 30s grace.
+  // Rationale: state-machine replay after an orchestrator crash must not award
+  // a stale bid whose worker conditions (VRAM, third-party API cost) have
+  // shifted since the bid was emitted. Recommended ceiling: 5 minutes.
+  bidExpiresAt: z.string().datetime(),
 });
 
 /** Orchestrator's reply to a bid. */
@@ -204,6 +215,9 @@ export const ChainSubtaskAwardSchema = z.object({
   subtaskId: z.string().regex(/^sub_/),
   chainId: ChainIdSchema,
   workerPeerId: z.string().min(1),
+  // Negotiation round counter. Enforces the 3-round cap from §5.2 at the
+  // schema layer: a 4th round is a parse-time reject.
+  negotiationRound: z.number().int().min(1).max(3).default(1),
   awardKind: z.enum(["accepted", "rejected", "split_accepted", "merge_accepted", "re_bidding"]),
   finalCostUsd: z.number().nonnegative(),
   finalEtaAt: z.string().datetime(),
@@ -247,6 +261,12 @@ export const ChainReportSchema = z.object({
       completedSubtasks: z.number().int().min(0),
       failedSubtasks: z.number().int().min(0),
       totalCostUsd: z.number().nonnegative(),
+      // Cost of the orchestrator's own synthesis pass (LLM token spend when
+      // aggregating partials into the composite + sections). Tracked separately
+      // from worker cost so the audit story can show "synthesis stayed within
+      // its budget" independently of "workers stayed within their ceilings."
+      // Must satisfy: workerCostUsd + synthesisCostUsd == totalCostUsd.
+      synthesisCostUsd: z.number().nonnegative(),
       durationMs: z.number().int().nonnegative(),
       workerPeerIds: z.array(z.string()).min(1),
     }),
@@ -548,10 +568,17 @@ Two new `Capability` values are added to `CapabilitySchema`:
 
 ### 7.2 Trust gating
 
-- A worker may only receive `task.chain.propose` if the orchestrator's bond level is **at least `referred`** (existing policy: `task.*` is `referred`-minimum).
-- A worker may only bid (`task.chain.bid`) if the orchestrator's bond level is **at least `direct`**. Rationale: bidding reveals the worker's cost structure, which is private to closer relationships.
-- The orchestrator may only award to a worker with bond level **at least `referred`**.
-- A `task.chain.report` reaches the owner over the existing chat / knowledge channels; no new channel required.
+Each rule is stated in the direction **the receiving node requires the sending node to have**. The asymmetry is intentional and is **not** a relaxed/proposed inconsistency — each rule protects the *receiver* from a different class of leakage:
+
+| Direction | Intent | Required bond of sender | What the receiver is protecting |
+|---|---|---|---|
+| Orchestrator → Worker | `task.chain.propose` | **`referred`** (existing `task.*` policy) | The worker will execute real work for the orchestrator; trust must exceed "stranger." |
+| Worker → Orchestrator | `task.chain.bid` | **`direct`** | The worker is sharing its **pricing structure** — a competitive secret. Only share with orchestrators the worker has a closer-than-referred relationship with. |
+| Orchestrator → Worker | `task.chain.accept` (award) | **`referred`** | The worker commits compute on the orchestrator's word; existing `task.*` policy already requires this. |
+
+**Why asymmetric?** Cost structures are competitive data. A worker who reveals pricing to a thinly-connected orchestrator gives that orchestrator leverage in future negotiations. Bond level is the worker's market-leverage knob — `referred` says "I'll do the work for you," `direct` says "I'll tell you what it'd cost me first." These are different promises with different prerequisites. The asymmetry is the protection, not the bug.
+
+`task.chain.report` reaches the owner over the existing chat / knowledge channels; no new channel required. (Report delivery inherits the channel-posture policy that already gates `report.create`, which requires `direct`-minimum in the current bonds table; no chain-specific tightening.)
 
 ### 7.3 Audit events
 
@@ -567,9 +594,55 @@ Each audit event carries the full lineage (`chainId`, `parentTaskId`, `subtaskId
 ### 7.4 Failure containment
 
 - **Budget exceeded:** orchestrator marks chain `failed` with `reason: budget_exceeded`. All in-flight subtasks receive `task.chain.cancel`. Already-completed subtasks' results are still merged into a partial chain report — the owner is informed that the chain is incomplete.
-- **Worker unresponsive:** orchestrator's `task.chain.heartbeat` cadence is 30s; after 3 missed heartbeats the orchestrator may re-award the subtask to a backup bidder (one of the original bid list) or cancel.
-- **Orchestrator crash:** the chain `taskId` (root) is in the audit journal. On orchestrator restart, the journal replays the chain — any subtasks that completed before the crash are re-merged; any in-flight subtasks are re-bid. This is **state-machine replay**, not full crash recovery.
+- **Worker unresponsive:** orchestrator's `task.chain.heartbeat` cadence is 30s; after 3 missed heartbeats the orchestrator may re-award the subtask to a backup bidder (one of the original bid list) or cancel. **Ordering rule (mandatory):** the orchestrator MUST emit a `chain.subtask_cancelled` audit event AND send the `task.chain.cancel` envelope to the unresponsive worker BEFORE sending the new `task.chain.accept` to the backup. This releases the slot in `maxWorkers` so the new award does not exceed the parallelism cap. Skipping this step is a parsing-layer security violation against the `ChainMandate.maxWorkers` ceiling.
+- **Orchestrator crash:** the chain `taskId` (root) is in the audit journal. On orchestrator restart, the journal replays the chain — any subtasks that completed before the crash are re-merged; any in-flight subtasks are re-bid. **Replay must honor `bidExpiresAt`** (§3.2): any bid whose `bidExpiresAt` is in the past at replay time is discarded, and the orchestrator solicits fresh bids for that subtask.
 - **Cost ceiling violated by sub-mandate:** the bonds engine rejects the sub-mandate at parse time. The orchestrator logs `chain.budget_exceeded` and fails the chain.
+
+### 7.5 Orchestrator-side `ChainBudgetLedger`
+
+The orchestrator maintains an **in-memory budget ledger** keyed by `chainId`. Because workers cannot see each other and there is no shared ledger across the P2P mesh, the orchestrator is the sole authority on whether a new award would over-commit the chain's signed `maxChainCostUsd`. The ledger is the only thing standing between "three workers finish a $20 task for $30" and an honest budget.
+
+```typescript
+// apps/node/src/chain-budget-ledger.ts (new file, runtime state, not wire)
+
+interface ChainBudgetLedgerEntry {
+  chainId: ChainId;
+  maxChainCostUsd: number;        // from ChainMandate
+  maxSynthesisCostUsd: number;    // reserve for the orchestrator's own pass
+  workerAllocations: Map<subtaskId, {
+    peerId: string;
+    committedUsd: number;
+    status: "negotiating" | "awarded" | "partial_received" | "completed" | "cancelled";
+  }>;
+  synthesisSpendUsd: number;
+}
+
+interface ChainBudgetLedger {
+  // Reserve the orchestrator's synthesis budget up-front, so worker awards
+  // never spend into the LLM aggregation reserve.
+  reserve(chainId: ChainId, maxChainCostUsd: number): { ok: true; workerBudgetUsd: number }
+    | { ok: false; reason: "below_reserve_floor" };
+
+  // Called BEFORE sending task.chain.accept. Returns false if the new award
+  // would push workerAllocations sum above workerBudgetUsd. The caller MUST
+  // NOT send the accept envelope on a `false` return.
+  tryCommit(chainId: ChainId, subtaskId: string, peerId: string, committedUsd: number):
+    { ok: true } | { ok: false; reason: "would_overcommit" };
+
+  // Roll back a reservation when a worker declines or the bid is rejected.
+  release(chainId: ChainId, subtaskId: string): void;
+
+  // When the chain terminates, every residual allocation is rolled back so the
+  // totals reconcile to `chainSummary.totalCostUsd` in the published report.
+  finalize(chainId: ChainId): { workerCostUsd: number; synthesisCostUsd: number };
+}
+```
+
+**Invariant:** at any moment, `Σ workerAllocations.committedUsd + synthesisSpendUsd ≤ maxChainCostUsd`. The ledger is the only thing that enforces this — workers cannot enforce it (they don't know about peers), and the wire does not enforce it (the budget is owner-signed, not peer-known).
+
+**Crash recovery:** the ledger is rebuilt from the audit journal on orchestrator restart. The journal entries carry enough info (`chain.subtask_awarded` with `committedUsd`, `chain.synthesis_pass_completed` with `synthesisCostUsd`) to reconstitute the running totals before any new awards are issued.
+
+**Wire visibility:** workers do NOT need to see other workers' allocations on the wire. The proposal carries only `costCeilingUsd` for the individual subtask — the orchestrator's job is to keep its own internal ledger honest and never issue an award that violates the global cap.
 
 ---
 
@@ -687,11 +760,13 @@ Every chain action appends to the existing JSONL audit log. The audit log suppor
 
 ## 11. Open questions for owner review
 
-1. **Depth = 2 vs. 3 default.** This doc proposes depth = 2 default with depth = 3 opt-in. If you want depth = 3 always-on, the budget math gets more complex (orchestrator must track per-subtree budget), and the audit tree is one level deeper.
-2. **Bidding cost ceiling enforcement.** Today the bid says `proposedCostUsd` and the orchestrator decides. Should the bonds engine **reject** a bid that exceeds `costCeilingUsd` at parse time, or just warn? (This doc proposes **reject** — keeps audit clean.)
-3. **`task.chain.report` to owner.** Should the chain report be a chat message (uses existing `chat.message`), a knowledge entry (`knowledge.query`-shaped), or its own channel? (This doc proposes **its own channel** — `task.chain.report` with `recipientRole: "human"`, since it carries lineage metadata that `chat.message` doesn't support.)
-4. **Composite artifact aggregation.** The `aggregation: "weighted_concat"` default is a stub. Should the orchestrator run an LLM pass over the weighted parts to produce a synthesized text? That's an explicit cost. (This doc proposes **yes, by default, with `owner_review` as an opt-out for "I want to read the parts and decide myself".**)
-5. **Phase 40E (cross-home chains) timing.** Should it land before Phase 41 (TBD), or be deferred until after Phase 41 ships?
+> **Status after Gemini review (2026-06-17):** all 5 questions below were confirmed in the design-review pass. The doc reflects the confirmed answers. The owner should still review the wording in §3, §4, §5, §7.5 before approving implementation.
+
+1. **Depth = 2 vs. 3 default.** ✅ **Confirmed: depth = 2 default with `allowDepth3: true` opt-in** on the chain mandate. Keeps the budget tree one level shallower and the audit story simpler; depth-3 chains pay the cost of writing + verifying a sub-mandate.
+2. **Bidding cost ceiling enforcement.** ✅ **Confirmed: hard-reject at parse time.** The orchestrator's runtime rejects an incoming award whose `finalCostUsd` exceeds `costCeilingUsd`, and the bid that exceeded is also rejected (via the wire schema's nonnegativity constraint + a runtime cap). Audit gets a `chain.budget_exceeded` event with the offending peer-id.
+3. **`task.chain.report` channel.** ✅ **Confirmed: dedicated channel.** `task.chain.report` is its own intent with `recipientRole: "human"`. The Social + EnvoyGo renderers get a specialized citation-aware view that `chat.message` cannot express.
+4. **Composite artifact aggregation.** ✅ **Confirmed: LLM-driven synthesis by default**, **with a pre-flight budget check.** Before invoking the synthesis model, the orchestrator must verify `maxChainCostUsd − (Σ workerAllocations.committedUsd + synthesisSpendUsd) ≥ estimatedSynthesisCostUsd`. If not, the chain publishes a `best_effort` report (raw parts only, marked `aggregation: "owner_review"`) and the owner is told synthesis was skipped for budget reasons.
+5. **Phase 40E (cross-home chains) timing.** ✅ **Confirmed: deferred** until Phase 11 mobile parity ships. Cross-home routing requires stable mobile relay endpoints, and layering cross-home multi-orchestrator consensus on top of an unstable mobile layer is too much surface area.
 
 ---
 

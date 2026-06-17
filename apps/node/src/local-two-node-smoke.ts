@@ -49,6 +49,8 @@ const relativeTests = [
   join("apps", "node", "test", "approval-executor.test.ts"),
   join("packages", "api", "test", "agent-interaction.test.ts"),
   join("packages", "mobile-node", "test", "document-agent-mobile-e2e.test.ts"),
+  join("apps", "node", "test", "webrtc-call-e2e.test.ts"),
+  join("apps", "node", "test", "social-ui-e2e.test.ts"),
 ];
 
 console.log("[smoke:local-two-node] Running integration tests via vitest…\n");

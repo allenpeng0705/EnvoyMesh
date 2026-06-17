@@ -34,10 +34,13 @@ jobs:
       - name: Phase 13 two-node smoke (PR signal)
         run: npm run smoke:phase13
 
-      - name: WebRTC call E2E smoke (Playwright)
+      - name: Build Social UI for E2E tests
+        run: npm run build -w @envoymesh/social -- --mode development
+
+      - name: Playwright E2E smoke (WebRTC + Social UI)
         run: |
           npx playwright install chromium
-          bash scripts/smoke-webrtc-call.sh
+          npx vitest run apps/node/test/webrtc-call-e2e.test.ts apps/node/test/social-ui-e2e.test.ts
 
       - name: Generate smoke artifacts
         run: |

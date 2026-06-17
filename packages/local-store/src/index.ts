@@ -1884,24 +1884,29 @@ async function appendJsonLineWithRetention(
 ): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
 
-  // Check current file size
-  let fileSize = 0;
+  // Check current file size in bytes
+  let fileSizeBytes = 0;
   try {
     const stats = await (await import("node:fs/promises")).stat(path);
-    fileSize = stats.size;
+    fileSizeBytes = stats.size;
   } catch {
     // File doesn't exist yet, skip size check
   }
 
   const line = `${JSON.stringify(value)}\n`;
-  if (line.length > MAX_JSONL_LINE_CHARS) {
+  const lineBytes = Buffer.byteLength(line, "utf8");
+  if (lineBytes > MAX_JSONL_LINE_CHARS) {
     throw new Error(
-      `JSONL record exceeds MAX_JSONL_LINE_CHARS (${MAX_JSONL_LINE_CHARS}): ${basename(path)} (${line.length} chars)`,
+      `JSONL record exceeds MAX_JSONL_LINE_CHARS (${MAX_JSONL_LINE_CHARS}): ${basename(path)} (${lineBytes} bytes)`,
     );
   }
 
-  // If appending would exceed size limit, prune old entries first
-  if (fileSize + line.length > maxSizeBytes) {
+  // Prune if appending would exceed the size limit.
+  // Use a hysteresis threshold (95 % of maxSizeBytes) to avoid a chatty one-entry-per-append
+  // cycle when the file is only slightly over the limit. Below the hysteresis threshold we skip
+  // pruning even if fileSizeBytes + lineBytes > maxSizeBytes — the next write will re-check.
+  const pruneThreshold = Math.floor(maxSizeBytes * 0.95);
+  if (fileSizeBytes > pruneThreshold && fileSizeBytes + lineBytes > maxSizeBytes) {
     await pruneJsonlByRetention(path, maxSizeBytes, maxAgeMs);
   }
 
@@ -1914,7 +1919,6 @@ async function appendJsonLineWithRetention(
  */
 async function pruneJsonlByRetention(path: string, maxSizeBytes: number, maxAgeMs: number): Promise<void> {
   const now = Date.now();
-  const cutoff = now - maxAgeMs;
 
   let entries: Array<{ line: string; ageMs: number }> = [];
 
@@ -1947,15 +1951,17 @@ async function pruneJsonlByRetention(path: string, maxSizeBytes: number, maxAgeM
     entries.sort((a, b) => b.ageMs - a.ageMs);
   }
 
-  // Build new content, keeping newest entries until under size limit
+  // Build new content, keeping newest entries until under size limit.
+  // All size comparisons use bytes (Buffer.byteLength) to match stat.size and maxSizeBytes.
   let newContent = "";
   const kept: string[] = [];
   for (const entry of entries) {
-    const trial = newContent + entry.line + "\n";
-    if (trial.length > maxSizeBytes && kept.length > 0) {
+    const trialLine = entry.line + "\n";
+    const trialBytes = Buffer.byteLength(newContent, "utf8") + Buffer.byteLength(trialLine, "utf8");
+    if (trialBytes > maxSizeBytes && kept.length > 0) {
       break;
     }
-    newContent = trial;
+    newContent += trialLine;
     kept.push(entry.line);
   }
 

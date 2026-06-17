@@ -71,6 +71,18 @@ export const EnvoyIntentSchema = z.enum([
   "call.hangup",
   "call.ice-candidate",
   "call.mute",
+  // Phase 40 — Agent Network Collaboration Layer
+  // Wire namespace for multi-agent chains. All agent↔agent except task.chain.report
+  // (orchestrator → owner, recipientRole: "human").
+  "task.chain.mandate",
+  "task.chain.propose",
+  "task.chain.bid",
+  "task.chain.accept",
+  "task.chain.partial",
+  "task.chain.merge",
+  "task.chain.cancel",
+  "task.chain.heartbeat",
+  "task.chain.report",
 ]);
 
 export const SensitivitySchema = z.enum(["public", "friends", "trusted", "private"]);
@@ -92,6 +104,10 @@ export const CapabilitySchema = z.enum([
   "model.cloud.request",
   "task.execute",
   "device.sync",
+  // Phase 40 — Agent Network Collaboration Layer.
+  // Required for any node that mints sub-mandates or publishes chain reports.
+  // Workers do not need this capability.
+  "chain.orchestrate",
 ]);
 
 /** Standing delegation postures (EnvoyAI — part of emp/0.1). */

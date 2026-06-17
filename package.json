@@ -54,7 +54,7 @@
     "smoke:phase13": "npm run smoke:phase13-two-node -w @envoymesh/node",
     "smoke:openclaw-bridge": "npm run smoke:openclaw-bridge -w @envoymesh/node",
     "smoke:openclaw-bridge:live": "npm run smoke:openclaw-bridge:live -w @envoymesh/node",
-    "smoke:webrtc-call": "bash scripts/smoke-webrtc-call.sh"
+    "smoke:webrtc-call": "npx vitest run apps/node/test/webrtc-call-e2e.test.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.0",
