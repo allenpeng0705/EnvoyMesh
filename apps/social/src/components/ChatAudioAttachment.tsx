@@ -7,7 +7,7 @@
  * optional `transcription` prop), it is shown as captions below the player.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useT } from "../context/I18nContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
 import type { ChatAttachment } from "@envoymesh/api";
@@ -24,6 +24,8 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [durationSec, setDurationSec] = useState<number | null>(null); // I3: actual duration from loadedmetadata
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const vaultPath = attachment.vaultRelativePath?.replace(/^[\\/]+/, "");
 
   const loadAudio = useCallback(async () => {
@@ -51,16 +53,26 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
       ) : error || !audioUrl ? (
         <span className="chat-audio-error">{t("audioMessage.error", "Audio unavailable")}</span>
       ) : (
-        <audio className="chat-audio-player" controls preload="metadata" src={audioUrl}>
+        <audio
+          ref={audioRef}
+          className="chat-audio-player"
+          controls
+          preload="metadata"
+          src={audioUrl}
+          onLoadedMetadata={() => {
+            const el = audioRef.current;
+            if (el && isFinite(el.duration)) setDurationSec(Math.round(el.duration));
+          }}
+        >
           {t("audioMessage.unsupported", "Your browser does not support audio playback.")}
         </audio>
       )}
       {transcription ? (
         <p className="chat-audio-transcription">{transcription}</p>
       ) : null}
-      {attachment.sizeBytes != null ? (
+      {(durationSec != null || attachment.sizeBytes != null) ? (
         <span className="chat-audio-duration">
-          {t("audioMessage.duration", { seconds: Math.round(attachment.sizeBytes / 4000) })}
+          {t("audioMessage.duration", { seconds: durationSec ?? Math.round(attachment.sizeBytes! / 4000) })}
         </span>
       ) : null}
     </div>

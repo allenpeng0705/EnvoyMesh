@@ -1,21 +1,31 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/chat_message.dart';
+import 'chat_audio_player.dart';
 
 /// Chat bubble widget for a single message.
 class ChatBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isOutbound;
+  final Future<String?> Function(String vaultRelativePath)? onLoadAudio;
 
   const ChatBubble({
     super.key,
     required this.message,
     required this.isOutbound,
+    this.onLoadAudio,
   });
+
+  /// Whether this message has an audio attachment.
+  bool get _hasAudio =>
+      message.attachments?.any((a) => a.isAudio) ?? false;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final audioAtt = _hasAudio
+        ? message.attachments!.firstWhere((a) => a.isAudio)
+        : null;
 
     return Align(
       alignment: isOutbound ? Alignment.centerRight : Alignment.centerLeft,
@@ -50,21 +60,29 @@ class ChatBubble extends StatelessWidget {
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),
-            const SizedBox(height: 2),
-            if (message.text != null && message.text!.startsWith('data:image/'))
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.memory(
-                  base64Decode(message.text!.split(',').last),
-                  width: 200,
-                  fit: BoxFit.cover,
-                ),
-              )
-            else
-              Text(
-                message.text ?? '',
-                style: TextStyle(color: colorScheme.onSurface),
+            if (audioAtt != null && onLoadAudio != null) ...[
+              ChatAudioPlayer(
+                attachment: audioAtt,
+                transcription: message.text,
+                onLoadAudio: onLoadAudio!,
               ),
+            ] else ...[
+              const SizedBox(height: 2),
+              if (message.text != null && message.text!.startsWith('data:image/'))
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.memory(
+                    base64Decode(message.text!.split(',').last),
+                    width: 200,
+                    fit: BoxFit.cover,
+                  ),
+                )
+              else
+                Text(
+                  message.text ?? '',
+                  style: TextStyle(color: colorScheme.onSurface),
+                ),
+            ],
           ],
         ),
       ),

@@ -65,11 +65,44 @@ class NodeServiceClient {
   // -- Chat — direct messages --
 
   Future<Map<String, dynamic>> sendChat(
-      String targetOwnerId, String text) async {
-    return await _client.call('sendChat', {
+      String targetOwnerId, String text,
+      {List<Map<String, dynamic>>? attachments}) async {
+    final params = <String, dynamic>{
       'targetOwnerId': targetOwnerId,
       'text': text,
+      if (attachments != null && attachments.isNotEmpty)
+        'attachments': attachments,
+    };
+    return await _client.call('sendChat', params)
+        as Map<String, dynamic>;
+  }
+
+  /// Read vault file bytes for inline previews (images/audio in chat). (Phase 37)
+  Future<Map<String, dynamic>> readLibraryItemContent({
+    required String relativePath,
+  }) async {
+    return await _client.call('readLibraryItemContent', {
+      'relativePath': relativePath,
     }) as Map<String, dynamic>;
+  }
+
+  /// Upload a file attachment to the vault and return its metadata (Phase 37).
+  Future<Map<String, dynamic>> sendChatAttachment({
+    required String targetOwnerId,
+    required String filename,
+    required String contentBase64,
+    required String mimeType,
+    String? caption,
+  }) async {
+    final params = <String, dynamic>{
+      'targetOwnerId': targetOwnerId,
+      'filename': filename,
+      'contentBase64': contentBase64,
+      'mimeType': mimeType,
+      if (caption != null) 'caption': caption,
+    };
+    return await _client.call('sendChatAttachment', params)
+        as Map<String, dynamic>;
   }
 
   Future<List<ChatMessage>> listChatHistory(String targetOwnerId,

@@ -73,6 +73,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 35 — Fleet Onboarding (Company Invites, LAN auto-bond, Pairing Kiosk, Fleet Manifest)](#phase-35--fleet-onboarding-company-invites-lan-auto-bond-pairing-kiosk-fleet-manifest--shipped-35a--35c--35d--35b-complete-manual-smoke-deferred)
 - [Phase 36 — Agent Network tab consolidation + Phase 35 review fixes](#phase-36--agent-network-tab-consolidation--phase-35-review-fixes-shipped)
 - [Phase 37 — Audio Messages (Voice Notes)](#phase-37--audio-messages-voice-notes)
+- [Phase 38 — Real-Time Voice/Video Calls](#phase-38--real-time-voicevideo-calls)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1140,11 +1141,12 @@ Milestone: **Phases 0–34 complete** — Core protocol through Phase 30 Termina
 
 **Last shipped:** **Phase 34 — Render typed Artifacts + cached AgentCard in Social/EnvoyGo.** Closes the UI loop on Phase 33. Owners now see what `mesh.task.propose` returned (`ArtifactRenderer` with `text` / `file` / `structured` branches, rendered below the audit + journal lists in the Activity drill-down via a new `getTaskResult` RPC + `LocalTaskResultsStore` plumbing) and which peer agent capabilities the auto-fetcher cached (`AgentCardPanel` mounted in `ContactChatPanel`, with a new `useAgentCards` hook subscribing to `home:agent-cards-updated` and four additive rich fields on `CachedAgentCardSummary`: `nodeProfile`, `publicTopics`, `trustPolicySummary`, `supportedProtocolVersions`). Mobile parity is automatic (EnvoyGo reuses the Social UI through the WebView, and `MobileNode.getTaskResult` delegates to home as source of truth — no mobile-only in-process cache). 18 new tests across 3 new files (`task-results-store.test.ts`, `daemon-task-inbound-task-result.test.ts`, `ArtifactRenderer.test.tsx`, `AgentCardPanel.test.tsx`) + 1 existing-test extension. No protocol changes, no new wire intents, no new dependencies, no Flutter changes.
 
-**Active:** **Phase 37 — Audio Messages (Voice Notes)** — designed, ready for implementation. See [audio-message-support.md](./audio-message-support.md). Also active: **Phase 31I push notification backends** (currently `console.log` shims — needs real APNs HTTP/2 + FCM HTTP v1 dispatch, RPC exposure, and chat/bond/room integration), then **15E follow-ons** (hop-2 morning report ranking + physical two-NAT ledger row), then **Story N — async ADB orchestrator**.
+**Active:** **Phase 37 — Audio Messages (Voice Notes)** — designed, ready for implementation. See [audio-message-support.md](./audio-message-support.md). Also active: **Phase 38 — Real-Time Voice/Video Calls** — designed, ready for implementation. See [voice-video-call-support.md](./voice-video-call-support.md). Also active: **Phase 31I push notification backends** (currently `console.log` shims — needs real APNs HTTP/2 + FCM HTTP v1 dispatch, RPC exposure, and chat/bond/room integration), then **15E follow-ons** (hop-2 morning report ranking + physical two-NAT ledger row), then **Story N — async ADB orchestrator**.
 
 ### Next planning pulls
 
 1. **Phase 37 — Audio Messages (Voice Notes)** — designed, ready for implementation. See [audio-message-support.md](./audio-message-support.md).
+2. **Phase 38 — Real-Time Voice/Video Calls** — designed, ready for implementation. See [voice-video-call-support.md](./voice-video-call-support.md).
 2. **Phase 31I — Push notifications** — `apps/node/src/push-notification.ts` is a stub (registry + dispatcher + `registerPushToken`/`unregisterPushToken` RPCs in place; APNs HTTP/2 and FCM HTTP v1 backends are TODO `console.log` shims). Phase 31I needs `@parse/node-apn` (or `apns2`) and `firebase-admin` integration, APNs JWT signing, token persistence, and `chat-draft-inbound.ts` / `chat-room-service.ts` / `bond-inbound.ts` integration to actually fire pushes for offline devices.
 3. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row.
 4. **Story N — Async ADB orchestrator** — closes the remaining `[ ]` in Coverage row. Larger swing once the above are settled.
@@ -4901,10 +4903,106 @@ Two concerns at once:
 
 ---
 
+## Phase 38 — Real-Time Voice/Video Calls **`[~]` designed**
+
+> **Status: `[~]` designed (2026-06-17).** No code touched yet. Design: [voice-video-call-support.md](./voice-video-call-support.md).
+
+**Goal:** Two bonded peers can initiate a real-time voice call from the Social UI (browser) or EnvoyGo (mobile). Call signaling (invite → accept → SDP/ICE exchange → hangup) flows over the existing P2P envelope layer — no new ports, no new servers. Audio runs over WebRTC in two modes: (1) **LAN / direct P2P**: WebRTC data channel on top of the existing libp2p connection (no STUN/TURN needed); (2) **Cross-network**: standard WebRTC ICE with STUN/TURN via the libp2p circuit relay. Video is deferred to a follow-on phase (Phase 38E).
+
+**Design:** [voice-video-call-support.md](./voice-video-call-support.md). Exit criteria below mirror the design doc.
+
+### 38A — Protocol: `call.*` intent family
+
+- `[ ]` Add `call.*` intent strings to `EnvoyIntentSchema` in `packages/protocol/src/index.ts`: `call.invite`, `call.accept`, `call.reject`, `call.hangup`, `call.ice-candidate`, `call.mute`. (No `call.sdp` — SDP is embedded in invite/accept. No `call.busybusy` — use `call.reject { reason: "busy" }`.)
+- `[ ]` Add payload schemas: `CallInvitePayloadSchema` (`sdpOffer` REQUIRED, `.min(1)`), `CallAcceptPayloadSchema` (`sdpAnswer` REQUIRED, `.min(1)`), `CallRejectPayloadSchema` (includes `calleeOwnerId` + `calleePeerId` fields for identity binding; `reason: "busy" | "declined" | "no_answer" | "offline" | "error"`), `CallIceCandidatePayloadSchema`, `CallHangupPayloadSchema`, `CallMutePayloadSchema`.
+- `[ ]` Add `createCallInvitePayload()`, `parseCallInvitePayload()`, etc. helpers.
+- `[ ]` Add `call.*` role policy entries in `role-policy-table.ts` (or a new `call-role-policies.ts`): `senderRole: ["human"]`, `recipientRole: ["human"]`, `sensitivity: "friends"` (≥ referred trust).
+- `[ ]` Update `createUnsignedEnvelope` defaults for `call.*` intents.
+- `[ ]` Add `callId` validation: every inbound `call.*` envelope with a `callId` must be validated against active call state (see protocol rules §4.0). Invalid `callId` → reject envelope, log audit event, no state change.
+- `[ ]` Add identity binding: `call.invite` must satisfy `envelope.senderOwnerId === payload.callerOwnerId`; `call.accept`/`call.reject` must satisfy `envelope.senderOwnerId === payload.calleeOwnerId`; `call.hangup`/`call.ice-candidate`/`call.mute` require sender to be a participant in `payload.callId`.
+- `[ ]` Add `CALL_RING_TIMEOUT_MS = 60_000` constant. `RINGING_INBOUND` auto-rejects with `call.reject(reason: "no_answer")` on expiry.
+- `[ ]` Backward compatibility: envelope parsing ignores unknown intent strings.
+
+### 38B — Call Manager (node service)
+
+- `[ ]` New `apps/node/src/call-manager.ts`: `CallManager` class with per-call state machine (`idle → ringing_inbound / ringing_outbound → active → ended`).
+- `[ ]` Manages `callId ↔ { peerOwnerId, transport, status, startedAt }` map; enforces one active call per node.
+- `[ ]` Emits `CallEvent`: `call:incoming`, `call:answered`, `call:rejected`, `call:remote-mute`, `call:ended`, `call:error`.
+- `[ ]` Handles inbound `call.*` envelopes: correlates `callId`, updates state machine, triggers `CallEvent`.
+- `[ ]` New `apps/node/src/call-inbound.ts`: routes `call.*` intents from `mesh.onMessage` switch.
+
+### 38C — WebRTC Transport (Path 1: libp2p data channel + Path 2: standard ICE)
+
+- `[ ]` New `apps/social/src/lib/webrtc-call-transport.ts`: `WebRtcCallTransport` class.
+- `[ ]` `startOffer()`: creates `RTCPeerConnection`, adds local audio tracks via `getUserMedia({ audio: true })`, creates SDP offer via `pc.createOffer()` + `pc.setLocalDescription()`. Path 1 (libp2p stream data channel) tried first; Path 2 (standard ICE) fallback after 5s.
+- `[ ]` Path 1: when a live libp2p connection exists (same LAN via mDNS, or established relayed connection), wrap the libp2p `Connection` as a WebRTC data channel via `@libp2p/webrtc`. No trickle ICE needed — ICE resolves against known libp2p addresses in milliseconds.
+- `[ ]` Path 2: use standard ICE with `iceServers` from the node's relay config (TURN URLs from libp2p circuit relay). `iceServers` included in `call.invite` and `call.accept` payloads. Trickle ICE via `call.ice-candidate`.
+- `[ ]` `acceptAndCreateAnswer(sdpOffer)`: sets remote offer, calls `pc.createAnswer()` + `pc.setLocalDescription()`, returns SDP answer string for `call.accept`.
+- `[ ]` `setRemoteAnswer(sdpAnswer)`: called by caller after receiving `call.accept`.
+- `[ ]` `addIceCandidate(candidate)`: handles trickle ICE from remote peer (Path 2 only).
+- `[ ]` `onRemoteTrack(handler)`: receives remote `MediaStream`, pipes to `<audio>` element.
+- `[ ]` `setMute(muted: boolean)`: enables/disables local audio track.
+- `[ ]` `close()`: tears down `RTCPeerConnection`, stops all tracks.
+
+### 38D — Social UI: call surfaces
+
+- `[ ]` Phone icon button in `ContactChatPanel` header (only visible for `referred` or `direct` trust contacts; hidden when already in a call).
+- `[ ]` New `IncomingCallModal.tsx`: slides up on `call:incoming` event. Shows caller name + avatar, call type. Accept (green) + Decline (red) buttons. Ringtone sound.
+- `[ ]` New `ActiveCallPanel.tsx`: replaces chat composer while call is active. Shows: remote peer name + avatar, call duration timer (MM:SS), mute toggle, end call button, connection quality indicator.
+- `[ ]` Calling state: after initiating, show "Calling [Name]..." with animated pulse + Cancel button.
+- `[ ]` Wire `useCallSession` hook to manage which surface is shown at each call state.
+- `[ ]` `ContactChatPanel.tsx` subscribes to `nodeService.onCallEvent(...)` to receive `call:incoming`, `call:ended`, etc.
+
+### 38E — Social UI: call events on NodeService
+
+- `[ ]` Add `CallSession`, `CallEvent` types to `packages/api/src/node-service.ts`.
+- `[ ]` Add `getActiveCall()` and `onCallEvent(handler)` to `NodeService` interface.
+- `[ ]` Implement in `NodeServiceImpl` using `CallManager` singleton.
+- `[ ]` Wire events to `WsServer` fan-out so desktop Social UI receives them over WebSocket.
+- `[ ]` Wire to `DirectCallClient` for mobile (same event bus, no new RPC).
+
+### 38F — EnvoyGo: native Flutter call UI
+
+- `[ ]` Add `flutter_webrtc` to `apps/envoygo/pubspec.yaml`.
+- `[ ]` New `VoiceCallScreen` widget: incoming call modal, active call screen (mute/end/timer), native look-and-feel.
+- `[ ]` `CallManager` (Flutter): mirrors `CallManager` on the node — subscribes to `NodeService.onCallEvent(...)`, drives the native `RTCPeerConnection` via `flutter_webrtc`.
+- `[ ]` Handles incoming `call.*` intents via the existing event bus from `MobileNode`.
+- `[ ]` `RECORD_AUDIO` permission (already handled by `permission_handler` per Phase 37).
+
+### 38G — Tests
+
+- `[ ]` New `packages/protocol/test/call-schemas.test.ts`: all `call.*` payloads parse valid/invalid inputs; `callId` is UUID; role policy rejects stranger callers.
+- `[ ]` New `apps/node/test/call-manager.test.ts`: state machine transitions (idle → ringing_inbound → active → ended, etc.); `call.reject(reason=busy)` when already in a call; `call.hangup` from either party; simultaneous inbound/outbound race handling.
+- `[ ]` New `apps/social/test/lib/webrtc-call-transport.test.ts`: mock `RTCPeerConnection`; Path 1 vs Path 2 selection; `setMute`; `addIceCandidate` (Path 2 only); `close`.
+- `[ ]` New `apps/social/test/components/IncomingCallModal.test.tsx`: renders caller info; accept/decline buttons fire correct handlers.
+- `[ ]` New `apps/social/test/components/ActiveCallPanel.test.tsx`: mute toggle; end call; timer increments.
+
+### 38H — Smoke test (manual)
+
+- `[ ]` **LAN test (Path 1):** Two desktop browsers on same LAN. Tab A initiates call to Tab B. Verify audio plays both ways without any STUN/TURN server involvement.
+- `[ ]` **Cross-network test (Path 2):** Two desktop browsers on separate networks (e.g. one on home WiFi, one on mobile hotspot). Verify audio connects via TURN relay.
+- `[ ]` **Incoming call:** Callee receives incoming call modal. Tap Accept. Verify active call panel. Tap Mute. Verify mute indicator shown. Tap End. Verify call ends.
+- `[ ]` **Reject / busy:** Initiate call while callee is on another call. Verify `call.reject(reason=busy)` received and "busy" UI shown.
+- `[ ]` **EnvoyGo:** Mobile receives incoming call. Native screen appears. Can accept and talk.
+- `[ ]` **Trust enforcement:** Attempt to call a stranger (public trust). Verify call is rejected at role policy level.
+
+### Exit Criteria (Phase 38)
+
+- `[ ]` All 38A–38H checkboxes flipped.
+- `[ ]` `npm run typecheck` clean.
+- `[ ]` `npx vitest run` green (no regressions; new tests pass).
+- `[ ]` Manual smoke test passes: LAN call (Path 1), cross-network call (Path 2), incoming UI, mute, hangup.
+- `[ ]` Manual smoke test passes on EnvoyGo (mobile native call screen).
+- `[ ]` New dependencies: `flutter_webrtc` (Flutter). Browser uses built-in `RTCPeerConnection`.
+- `[ ]` Trust policy enforced: strangers cannot place or receive calls.
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-06-17 | **Phase 38 — Real-Time Voice/Video Calls designed (revised).** Two bonded peers can make real-time voice calls over WebRTC. Signaling (invite → accept → SDP/ICE → hangup) uses the existing P2P envelope layer with new `call.*` intents — no new ports or servers. Audio has two transport paths: (1) **LAN / direct P2P**: WebRTC data channel on top of the existing libp2p connection via `@libp2p/webrtc` (no STUN/TURN, no trickle ICE — ICE resolves against known libp2p addresses in milliseconds); (2) **Cross-network**: standard WebRTC ICE with STUN/TURN via the libp2p circuit relay (falls back after 5s if Path 1 unavailable), trickle ICE via `call.ice-candidate`. New intent family: `call.invite`, `call.accept`, `call.reject` (reason: busy/declined/no_answer/offline/error; includes `calleeOwnerId` + `calleePeerId` for identity binding), `call.hangup`, `call.ice-candidate`, `call.mute`. No `call.sdp` (SDP embedded in invite/accept); no `call.busybuse` (busy handled by `call.reject`). `CallManager` handles per-node call state with simultaneous-call race handling. Role policy requires `friends` sensitivity (≥ referred trust — bonded contacts only, not strangers). Social UI adds phone icon, incoming call modal, active call panel with mute/end. EnvoyGo adds native Flutter `VoiceCallScreen` via `flutter_webrtc`. Video deferred to Phase 38E. Design doc: [voice-video-call-support.md](./voice-video-call-support.md). |
 | 2026-06-17 | **Phase 37 — Audio Messages (Voice Notes) designed.** Users can record and send voice notes from the Social UI (browser) and EnvoyGo (mobile). Audio is transcribed client-side via Web Speech API (browser) or sent without transcription (mobile, with graceful fallback). Adds `attachments` to `ChatMessagePayload` (reuses `ChatRoomAttachmentSchema`), a mic button in `ChatComposer`, a `ChatAudioAttachment` player component, and a graceful-fallback path in the inbound chat handler for audio-only messages. No new RPC methods — audio travels through existing `sendChatAttachment` → `chat.message`. Mobile adds the `record` Flutter package; browser uses built-in `MediaRecorder` + `SpeechRecognition`. Server-side STT (whisper) is documented as a future enhancement. Design doc: [audio-message-support.md](./audio-message-support.md). |
 | 2026-06-16 | **Phase 35 — Fleet Onboarding shipped (35A + 35C + 35D + 35B complete; manual smoke deferred).** Four operator-facing paths in order A → C → D → B. **(A) Company invite link:** `LocalCompanyInviteStore` (`packages/local-store/src/company-invite-store.ts`) with atomic-rename + serialised writes; `CompanyInviteRecord` + 3 RPCs (`createCompanyInvite` / `listCompanyInvites` / `revokeCompanyInvite`); `envoy://invite?token=…` URI builder/parser; `validatePairingToken` accepts the new token category; `pairDevice` consumes the invite atomically; UI in `Settings → Devices → Company Invites`. **(C) LAN auto-bond:** `lanAutoBondEnabled` / `lanAutoBondFleetToken` / `lanAutoBondAcceptLevel` config; `lanFleetToken` carried on `DevicePairRequestPayload`; `node-service-lan-auto-bond.ts` runtime helpers; mDNS discovery hook fires the request; symmetric auto-accept when both sides have the same token fingerprint; cooldown per discovered peer; UI toggle in `Settings → Agent Network`. **Off by default.** **(D) Pairing Kiosk:** `pairing-kiosk-server.ts` minimal HTTP server (loopback default, opt-in LAN bind, Bearer-auth `POST /pair`, body-size limits, 410 once expired); 4 new `pairingKiosk*` config fields; `syncPairingKioskFromConfig` + `getPairingKioskStatus` RPCs; UI in `Settings → Devices → Pairing Kiosk` with status hint. **Off by default.** **(B) Fleet Manifest:** `FleetMember` / `UnsignedFleetManifest` / `FleetManifest` Zod schemas + `fleetManifestForSigning`; `LocalFleetManifestStore` (`fleet-manifests.json`); `node-service-fleet-manifest.ts` runtime helpers; walker pre-stages `TrustRecord` (with `note: "fleet-manifest:<id>:<role>"`) + `PeerDirectory` per member, idempotent on re-import, skips duplicates / expired / self-bond / revoked; 4 RPCs (`importFleetManifest` / `listFleetManifests` / `revokeFleetManifest` / `createFleetManifest`); UI in `Settings → Devices → Fleet Manifest` with Sign → Import two-step flow. Design doc: [fleet-onboarding.md](./fleet-onboarding.md). **22 new tests across 3 new files** (`apps/node/test/fleet-manifest-store.test.ts`, `apps/node/test/node-service-fleet-manifest.test.ts`, `apps/node/test/pairing-kiosk-server.test.ts`) + **1 existing test extended** (`apps/social/test/components/SettingsDevicesTab.test.tsx`). No new wire intents (only additive optional fields on existing payloads). |
 | 2026-06-16 | **Phase 34 — Render typed Artifacts + cached AgentCard in Social/EnvoyGo shipped (34A–34D + 34T complete; manual smoke deferred).** Closes the UI loop on Phase 33. **(A) Data plumbing:** new `LocalTaskResultsStore` (`packages/local-store/src/task-results-store.ts`, atomic-rename JSON file `task-results.json`, upsert by `taskId`, serialised concurrent writes) wired into `LocalTaskStore` and `daemon-task-inbound.ts` so every inbound `task.result` payload is persisted next to its audit event. New `getTaskResult(taskId)` RPC threaded through `NodeService`, `ws-protocol`, `json-rpc-router`, `node-service-impl`, `DirectCallClient`, and `useNodeService`. Mobile parity via `MobileNode.getTaskResult` delegating to home via `_homeRemoteCall` (refined from the design doc's local `Map` — treats home as source of truth, no mobile divergence). **(B) UI rendering:** new `apps/social/src/components/ArtifactRenderer.tsx` (~220 lines) with three branches — `<TextArtifactView>` (reuses `Markdown` for `text/markdown`, `<pre>` for `text/plain`, pretty-printed for `application/json`), `<FileArtifactView>` (card with size + hash + Open button; v1 Open is a no-op toast stub but threads an optional `onOpenLocalFile({ source: "vault", relativePath })` so the real opener can be wired without touching the renderer), `<StructuredArtifactView>` (collapsible `<details>` + 32KB JSON truncation). `<ArtifactList>` composes the list. CSS extends the `.answer-block-*` design vocabulary; i18n `artifactRenderer.*` block in all 7 locales. **(C) Activity drill-down:** `ActivityDetailPanel` in `ActivityView.tsx` lazy-fetches `getTaskResult(taskId)` alongside audit + journal and renders `<ArtifactList>` as a new "Artifacts" sub-section when artifacts are present; silent when the list is empty. **(D) Cached AgentCard:** four additive optional fields on `CachedAgentCardSummary` (`nodeProfile` typed as the protocol's `DeviceProfile`, `publicTopics`, `trustPolicySummary`, `supportedProtocolVersions`) — new `summarizeAgentCard` / `summarizeCachedAgentCard` helpers in `node-service-impl` + `mobile-node` only forward fields that are present on the source `AgentCard`. New `useAgentCards` hook in `useNodeService.tsx` fetches on mount + subscribes to `home:agent-cards-updated` for paired-mode pushes (kept out of `NodeStateContext` to limit scope). New `AgentCardPanel` component + `useAgentCard(ownerId)` selector, mounted in `ContactChatPanel` as a collapsible `<details>` above the private-notes panel (skipped for `room:` group contacts). i18n `agentCard.*` block in all 7 locales + new `contactChat.agentCardSummary` key. **18 new tests across 3 new files** (`apps/node/test/task-results-store.test.ts`, `apps/social/test/components/ArtifactRenderer.test.tsx`, `apps/social/test/components/AgentCardPanel.test.tsx`) + **1 dedicated new file** (`apps/node/test/daemon-task-inbound-task-result.test.ts`) + **1 existing test extended** (`apps/social/test/components/ActivityView.test.tsx` — added `getTaskResult` mock + assertion, which caught a worker hang on the first run). No new wire intents, no new dependencies, no Flutter changes. Design doc: [phase-34-render-typed-artifacts.md](./phase-34-render-typed-artifacts.md). |

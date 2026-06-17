@@ -107,8 +107,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     state = state.copyWith(isLoading: false);
   }
 
-  /// Send a direct message.
-  Future<void> sendMessage(String targetOwnerId, String text) async {
+  /// Send a direct message. Optional [attachments] for audio/files (Phase 37).
+  Future<void> sendMessage(String targetOwnerId, String text,
+      {List<Map<String, dynamic>>? attachments}) async {
     final nodeService = _ref.read(nodeServiceProvider);
     if (nodeService == null) return;
 
@@ -118,12 +119,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // Optimistic insert.
     final now = DateTime.now().toIso8601String();
     final threadId = '${nodeState.activeNode!.id}:$targetOwnerId';
+    final attModels = attachments
+        ?.map((a) => ChatAttachment.fromJson(a))
+        .toList();
     final tempMsg = ChatMessage(
       id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
       text: text,
       createdAt: now,
       isOutbound: true,
+      attachments: attModels,
     );
 
     // Update in-memory state.
@@ -159,7 +164,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     try {
       // Send via RPC.
-      await nodeService.sendChat(targetOwnerId, text);
+      await nodeService.sendChat(targetOwnerId, text,
+          attachments: attachments);
       // TODO(31D): Reconcile temp message with server response.
     } catch (e) {
       // Mark message as failed?
@@ -330,11 +336,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final messageId = data['messageId'] as String?;
     final createdAt = (data['createdAt'] ?? metadata?['timestamp']) as String?;
     final senderDisplayName = (data['senderDisplayName'] ?? sender?['displayName']) as String?;
+    final attachmentsRaw = data['attachments'] as List<dynamic>? ??
+        content?['attachments'] as List<dynamic>?;
 
     if (senderOwnerId == null) return;
 
-    // Skip messages with no text — they render as empty bubbles.
-    if (text == null || text.isEmpty) return;
+    // Skip messages with no text AND no audio attachments — empty bubbles.
+    final hasAudio = attachmentsRaw?.any((a) {
+      final mime = (a is Map) ? (a['mimeType'] ?? a['mime_type']) as String? : null;
+      return mime != null && mime.startsWith('audio/');
+    }) ?? false;
+    if ((text == null || text.isEmpty) && !hasAudio) return;
 
     // Skip intro messages for contacts that are already bonded — they
     // have no pending intro request so showing "Wants to connect" is wrong.
@@ -463,6 +475,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final bool showAsMine = (sentBySelf && actorRole == 'human') || agentTalkToContact;
     final msgSenderDisplay = showAsMine ? 'You' : (senderDisplayName ?? senderOwnerId);
 
+    final attachments = attachmentsRaw
+        ?.map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>))
+        .toList();
     final msg = ChatMessage(
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
@@ -471,6 +486,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       text: text,
       createdAt: createdAt,
       isOutbound: showAsMine,
+      attachments: attachments,
     );
 
     // Cache in local DB.

@@ -1,12 +1,17 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:record/record.dart';
 import '../../models/chat_message.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
+import '../../providers/node_provider.dart';
+import '../../services/node_service_client.dart';
 import '../../widgets/chat_bubble.dart';
+import '../../widgets/chat_audio_player.dart';
 
 /// Chat detail view — message list with compose bar.
 ///
@@ -37,6 +42,14 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   final _textController = TextEditingController();
   bool _initialized = false;
 
+  // Phase 37 — audio recording state
+  final _audioRecorder = AudioRecorder();
+  bool _isRecording = false;
+  bool _recordingGuard = false; // I1: prevents re-entry during async stop
+  Timer? _recordTimer;
+  int _recordingSeconds = 0;
+  static const _maxRecordSeconds = 120;
+
   bool get _isRoom => widget.chatRoomId != null;
   bool get _isAgent => widget.agentType != null;
 
@@ -66,10 +79,134 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     });
   }
 
+  void _cancelRecordTimer() {
+    _recordTimer?.cancel();
+    _recordTimer = null;
+  }
+
   @override
   void dispose() {
     _textController.dispose();
+    _cancelRecordTimer();
+    _audioRecorder.dispose();
     super.dispose();
+  }
+
+  Future<void> _toggleRecording() async {
+    if (_recordingGuard) return; // I1: prevent re-entry
+    if (_isRecording) {
+      // Stop recording — set guard immediately
+      _recordingGuard = false;
+      _cancelRecordTimer();
+      final recordedSec = _recordingSeconds;
+      _recordingSeconds = 0;
+      final path = await _audioRecorder.stop();
+      if (path == null || !mounted) {
+        setState(() => _isRecording = false);
+        return;
+      }
+      setState(() => _isRecording = false);
+
+      final file = File(path);
+      final bytes = await file.readAsBytes();
+      final base64 = base64Encode(bytes);
+      final mimeType = 'audio/mp4'; // record package outputs MP4/AAC on both platforms
+
+      final nodeService = ref.read(nodeServiceProvider);
+      if (nodeService == null || widget.contactOwnerId == null) return;
+
+      try {
+        // 1. Upload to vault
+        final uploadResult = await nodeService.sendChatAttachment(
+          targetOwnerId: widget.contactOwnerId!,
+          filename: 'voice-note.m4a',
+          contentBase64: base64,
+          mimeType: mimeType,
+        );
+        final attachmentId = uploadResult['attachmentId'] as String? ??
+            (uploadResult['id'] as String?) ??
+            'att_${DateTime.now().microsecondsSinceEpoch}';
+        final vaultRelativePath = uploadResult['vaultRelativePath'] as String? ?? '';
+
+        // 2. Send chat message with attachment metadata
+        ref.read(chatProvider.notifier).sendMessage(
+              widget.contactOwnerId!,
+              '', // mobile has no transcription
+               attachments: [
+                {
+                  'id': attachmentId,
+                  'filename': 'voice-note.m4a',
+                  'mimeType': mimeType,
+                  'sizeBytes': bytes.length,
+                  'sensitivity': 'friends',
+                  'vaultRelativePath': vaultRelativePath,
+                  if (recordedSec > 0) 'durationSec': recordedSec,
+                },
+              ],
+            );
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to send voice note')),
+          );
+        }
+      }
+    } else {
+      // Start recording — set guard immediately
+      _recordingGuard = true;
+
+      if (!await _audioRecorder.hasPermission()) {
+        _recordingGuard = false;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Microphone permission denied')),
+          );
+        }
+        return;
+      }
+      try {
+        await _audioRecorder.start(
+          const RecordConfig(encoder: AudioEncoder.aacLc),
+          path: '${Directory.systemTemp.path}/voice_${DateTime.now().microsecondsSinceEpoch}.m4a',
+        );
+        _recordingSeconds = 0;
+        _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (!mounted) {
+            _cancelRecordTimer();
+            return;
+          }
+          _recordingSeconds++;
+          if (_recordingSeconds >= _maxRecordSeconds) {
+            // Auto-stop at max duration — delegate to toggle which handles full send
+            _recordingGuard = false; // unblock toggle's re-entry check
+            _cancelRecordTimer();
+            _toggleRecording(); // fire-and-forget: enters stop branch, uploads & sends
+          }
+        });
+        setState(() => _isRecording = true);
+      } catch (e) {
+        _cancelRecordTimer();
+        _recordingGuard = false;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to start recording')),
+          );
+        }
+      }
+    }
+  }
+
+  Future<String?> _loadAudioForAttachment(String vaultRelativePath) async {
+    final nodeService = ref.read(nodeServiceProvider);
+    if (nodeService == null) return null;
+    try {
+      final result = await nodeService.readLibraryItemContent(
+        relativePath: vaultRelativePath,
+      );
+      return result['contentBase64'] as String?;
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
@@ -136,6 +273,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                         child: ChatBubble(
                           message: msg,
                           isOutbound: msg.isOutbound,
+                          onLoadAudio: _loadAudioForAttachment,
                         ),
                       );
                     },
@@ -151,6 +289,15 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                     icon: const Icon(Icons.image),
                     onPressed: _pickAndSendImage,
                   ),
+                  if (!_isAgent && !_isRoom)
+                    IconButton(
+                      icon: Icon(
+                        _isRecording ? Icons.stop : Icons.mic,
+                        color: _isRecording ? Colors.red : null,
+                      ),
+                      onPressed: _toggleRecording,
+                      tooltip: _isRecording ? 'Stop recording' : 'Record voice note',
+                    ),
                   Expanded(
                     child: TextField(
                       controller: _textController,

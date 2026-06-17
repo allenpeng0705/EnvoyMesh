@@ -183,6 +183,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
 
   // Phase 37 — audio recording state
   const [isRecording, setIsRecording] = useState(false);
+  const recordingRef = useRef(false); // guards against re-entry during async stop (I1)
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const speechRef = useRef<any>(null);
@@ -390,12 +391,23 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
 
   // Phase 37 — record audio with MediaRecorder + SpeechRecognition
   const handleRecordAudio = useCallback(async () => {
-    if (isRecording) {
-      // Stop recording
+    if (recordingRef.current) {
+      // Stop recording — set ref guard immediately to prevent re-entry (I1)
+      recordingRef.current = false;
       mediaRecorderRef.current?.stop();
       speechRef.current?.stop();
       if (recordTimerRef.current) clearInterval(recordTimerRef.current);
       setIsRecording(false);
+
+      // Wait for speech recognition to deliver final results (I2)
+      if (speechRef.current) {
+        await new Promise<void>((resolve) => {
+          const onEnd = () => { resolve(); };
+          speechRef.current.onend = onEnd;
+          // fallback: resolve after 500ms even if onend doesn't fire
+          setTimeout(resolve, 500);
+        });
+      }
 
       // Wait for the recorder to finalize the blob
       await new Promise<void>((resolve) => {
@@ -469,8 +481,11 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       return;
     }
 
-    // Start recording
+    // Start recording — set ref guard immediately to prevent re-entry (I1)
+    recordingRef.current = true;
+
     if (!navigator.mediaDevices?.getUserMedia) {
+      recordingRef.current = false;
       setSendError(t("audioMessage.unsupported", "Audio recording not supported in this browser"));
       setTimeout(() => setSendError(null), 5000);
       return;
@@ -515,6 +530,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         setRecordingSeconds((prev) => {
           if (prev >= MAX_RECORD_SECONDS - 1) {
             // Auto-stop at max duration
+            recordingRef.current = false;
             mediaRecorderRef.current?.stop();
             speechRef.current?.stop();
             if (recordTimerRef.current) clearInterval(recordTimerRef.current);
@@ -525,10 +541,11 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         });
       }, 1000);
     } catch {
+      recordingRef.current = false;
       setSendError(t("audioMessage.micDenied", "Microphone access denied"));
       setTimeout(() => setSendError(null), 5000);
     }
-  }, [isRecording, selectedContact, nodeService, peerId, humanProfile, t, fileToBase64]);
+  }, [selectedContact, nodeService, peerId, humanProfile, t, fileToBase64]);
 
   const handleAttachFile = async (file: File) => {
     if (!nodeMeshOnline) {
