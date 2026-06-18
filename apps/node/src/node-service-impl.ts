@@ -517,6 +517,17 @@ import { createRagService, type RagService } from "./rag-service.js";
 
 const MAX_FRIEND_MATCHING_PREFS_CHARS = 4096;
 
+/**
+ * Phase 42 — default `iceServers` injected into `call.invite` when the
+ * caller did not provide a list and the home's `node-config.json` has none.
+ * Three public STUN endpoints; TURN is user-configured (Phase 42H).
+ */
+const DEFAULT_ICE_SERVERS: { urls: string; username?: string; credential?: string }[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun.cloudflare.com:3478" },
+  { urls: "stun:global.stun.twilio.com:3478" },
+];
+
 /** Intents allowed on the native / bridge agent credential for document + mesh tools. */
 const NATIVE_AGENT_TOOL_SCOPE = [
   "chat.message",
@@ -3395,6 +3406,34 @@ class NodeServiceImpl implements NodeService {
         dialHints,
         chatProtocol: ENVOY_CHAT_PROTOCOL,
         rebuildDialHints: () => this._dialHintsForChat(transportPeerId, listenAddrs),
+      });
+    });
+  }
+
+  /**
+   * Phase 42A — `call.*` envelope delivery. Same retry/connection logic
+   * as `_deliverChatEnvelope`, but skips the `sendChatExpectReply` ack
+   * wait. Call envelopes are fire-and-forget: the callee emits
+   * `call:incoming` via the inbound handler, not a `chat.delivered`
+   * ack back. Forcing an ack wait would add 30s of latency to every
+   * `call.invite` on top of an envelope that has no ack path.
+   */
+  private async _deliverCallEnvelope(
+    transportPeerId: string,
+    envelope: EnvoyEnvelope,
+    dialHints: string[],
+    listenAddrs?: string[],
+  ): Promise<ChatDeliverResult> {
+    return this._withChatSendLock(transportPeerId, async () => {
+      const mesh = this._requireMesh();
+      return deliverChatEnvelopeWithRetry({
+        mesh,
+        transportPeerId,
+        envelope,
+        dialHints,
+        chatProtocol: ENVOY_CHAT_PROTOCOL,
+        rebuildDialHints: () => this._dialHintsForChat(transportPeerId, listenAddrs),
+        expectDeliveryAck: false,
       });
     });
   }
@@ -11910,38 +11949,116 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     return this.callManager.onCallEvent(handler);
   }
 
-  async sendCallInvite(targetOwnerId: string): Promise<string | null> {
-    const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-    const result = this.callManager.outboundCallInitiated(callId, targetOwnerId, targetOwnerId);
-    if (!result) return null;
-
+  async sendCallInvite(
+    targetOwnerId: string,
+    sdpOffer: string,
+    iceServers?: { urls: string; username?: string; credential?: string }[],
+  ): Promise<string | null> {
     const profile = this._profile;
     if (!profile) return null;
+    if (!this._mesh) return null;
 
-    // Send call.invite envelope
+    // The schema requires a real UUID — the stub used a non-UUID string
+    // that would fail `parseCallInvitePayload` on the receiving side.
+    const callId = randomUUID();
+    const senderPeerId = derivePeerId(profile.device.publicKeyPem);
+
+    const initiated = this.callManager.outboundCallInitiated(callId, targetOwnerId, senderPeerId);
+    if (!initiated) return null;
+
+    let transport;
+    try {
+      transport = await this._resolvePeerTransportForOwner(targetOwnerId);
+    } catch (err) {
+      console.warn(`[sendCallInvite] peer transport resolve failed for ${targetOwnerId}:`, err);
+      this._recordCallRejected(callId, "peer_unreachable");
+      return null;
+    }
+    const { transportPeerId, recipientEnvelopePeerId, listenAddrs } = transport;
+
+    const effectiveIceServers = await this._effectiveCallIceServers(iceServers);
+
+    const dialHints = await raceWithTimeout(
+      this._dialHintsForChat(transportPeerId, listenAddrs),
+      30_000,
+      "_dialHintsForChat",
+    );
+
     const { createCallInvitePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
     const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+
     const invitePayload = createCallInvitePayload({
       callId,
       callerOwnerId: profile.owner.ownerId,
-      callerPeerId: (profile.device as any).peerId ?? profile.device.deviceId,
-      sdpOffer: "", // filled by WebRTC transport after connection setup
+      callerPeerId: senderPeerId,
+      sdpOffer,
+      iceServers: effectiveIceServers,
     });
+
     const unsigned = createUnsignedEnvelope({
       intent: "call.invite",
-      senderPeerId: (profile.device as any).peerId ?? profile.device.deviceId,
+      senderPeerId,
       senderPublicKey: profile.device.publicKeyPem,
-      recipientPeerId: targetOwnerId,
+      recipientPeerId: recipientEnvelopePeerId,
       senderRole: "human",
       recipientRole: "human",
       payload: invitePayload,
     });
-    // Sign and send via mesh
-    if (this._mesh) {
-      const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
-      await this._mesh.send(targetOwnerId, envelope);
+    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
+
+    const deliverResult = await this._deliverCallEnvelope(
+      transportPeerId,
+      envelope,
+      dialHints,
+      listenAddrs,
+    );
+
+    if (this._taskStore) {
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: deliverResult.delivered ? "message.sent" : "message.rejected",
+          intent: "call.invite",
+          outcome: deliverResult.delivered ? "allow" : "deny",
+          summary: deliverResult.delivered
+            ? `call.invite sent to ${targetOwnerId} callId=${callId}`
+            : `call.invite delivery failed callId=${callId}`,
+          remotePeerId: targetOwnerId,
+        }),
+      ).catch(() => undefined);
     }
+
     return callId;
+  }
+
+  /**
+   * Resolve the iceServers that ship in the `call.invite` payload.
+   *
+   * Order:
+   * 1. Caller-supplied argument (phone-provided list).
+   * 2. `node-config.iceServers` from disk.
+   * 3. Hard-coded 3-server STUN default (Google / Cloudflare / Twilio).
+   */
+  private async _effectiveCallIceServers(
+    callerSupplied?: { urls: string; username?: string; credential?: string }[],
+  ): Promise<{ urls: string; username?: string; credential?: string }[]> {
+    if (callerSupplied && callerSupplied.length > 0) return callerSupplied;
+    const config = await this._configStore.load();
+    if (config?.iceServers && config.iceServers.length > 0) return config.iceServers;
+    return DEFAULT_ICE_SERVERS;
+  }
+
+  private _recordCallRejected(callId: string, _reason: string): void {
+    // Let CallManager emit the canonical `call:rejected` event so the UI
+    // sees a single source of truth. Swallow any state-machine rejection
+    // (e.g. the call already ended) — this is best-effort cleanup.
+    try {
+      this.callManager.rejectCall(
+        callId,
+        "error" as "busy" | "declined" | "offline" | "error" | "no_answer",
+      );
+    } catch {
+      // best-effort
+    }
   }
 
   async acceptCallInvite(callId: string): Promise<boolean> {

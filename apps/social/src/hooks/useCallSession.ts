@@ -3,10 +3,17 @@
  *
  * Subscribes to CallEvent from the NodeService and exposes the
  * current CallSession for UI rendering.
+ *
+ * Phase 42A — outbound `startCall` now builds an `RTCPeerConnection`
+ * via `createWebRtcCallTransport`, generates an offer SDP, and passes
+ * it (plus the home's `iceServers` from `getNodeConfig`) to
+ * `nodeService.sendCallInvite`. The home embeds the offer in the
+ * `call.invite` envelope (see design §3.2).
  */
 
 import { useState, useEffect, useCallback } from "react";
 import { useNodeService } from "./useNodeService.js";
+import { createWebRtcCallTransport } from "../lib/webrtc-call-transport.js";
 import type { CallSession, CallEvent } from "@envoymesh/api";
 
 export interface UseCallSessionResult {
@@ -15,7 +22,7 @@ export interface UseCallSessionResult {
   /** The most recent incoming call event (for showing the incoming modal). */
   incomingCall: { callId: string; peerOwnerId: string; peerDisplayName: string; sdpOffer?: string } | null;
   /** Accept the current incoming call. */
-  acceptCall: () => void;
+  acceptCall: () => Promise<void>;
   /** Decline the current incoming call. */
   declineCall: () => void;
   /** End the active call. */
@@ -97,14 +104,39 @@ export function useCallSession(): UseCallSessionResult {
     return () => unsub();
   }, [nodeService]);
 
-  const acceptCall = useCallback(() => {
-    if (!incomingCall) return;
-    // The accept flow is triggered by the UI via RPC (outboundCallAccepted + send call.accept)
-    // The CallManager handles the state transition; UI just dismisses the modal
+  const acceptCall = useCallback(async () => {
+    if (!incomingCall || !nodeService) return;
+    const remoteSdp = pendingSdpOffer ?? incomingCall.sdpOffer;
+    if (!remoteSdp) {
+      console.warn("[useCallSession] cannot accept call: missing remote SDP");
+      return;
+    }
     setIncomingCall(null);
     setConnectionState("connecting");
-    // The actual call.accept envelope is sent by the caller's node service impl
-  }, [incomingCall]);
+
+    // Phase 42A — build the RTCPeerConnection and produce a SDP answer
+    // (mirrors the startCall flow but in answerer mode).
+    const nodeConfig = await nodeService.getNodeConfig();
+    const iceServers = nodeConfig?.iceServers ?? [];
+    let sdpAnswer: string;
+    try {
+      const transport = createWebRtcCallTransport({
+        path: "path2",
+        iceServers: iceServers as RTCIceServer[],
+        onRemoteStream: () => undefined,
+        onConnectionStateChange: () => undefined,
+        onSdpGenerated: () => undefined,
+        onIceCandidate: () => undefined,
+        onMutePayload: () => undefined,
+      });
+      sdpAnswer = await transport.startAnswer(remoteSdp);
+    } catch (err) {
+      console.warn("[useCallSession] failed to build WebRTC answer:", err);
+      return;
+    }
+
+    await nodeService.acceptCallInvite(incomingCall.callId, sdpAnswer, iceServers);
+  }, [incomingCall, pendingSdpOffer, nodeService]);
 
   const declineCall = useCallback(() => {
     if (!incomingCall) return;
@@ -129,7 +161,33 @@ export function useCallSession(): UseCallSessionResult {
 
   const startCall = useCallback(async (targetOwnerId: string) => {
     if (!nodeService) return;
-    const callId = await nodeService.sendCallInvite(targetOwnerId);
+
+    // Phase 42A — pull the home's iceServers from node config. The home
+    // falls back to a 3-server STUN default when none are configured.
+    const nodeConfig = await nodeService.getNodeConfig();
+    const iceServers = nodeConfig?.iceServers ?? [];
+
+    // Build the RTCPeerConnection and generate an offer SDP. The actual
+    // local stream / ICE wiring happens asynchronously after the call is
+    // accepted by the peer; here we just need the offer string.
+    let sdpOffer: string;
+    try {
+      const transport = createWebRtcCallTransport({
+        path: "path2",
+        iceServers: iceServers as RTCIceServer[],
+        onRemoteStream: () => undefined,
+        onConnectionStateChange: () => undefined,
+        onSdpGenerated: () => undefined,
+        onIceCandidate: () => undefined,
+        onMutePayload: () => undefined,
+      });
+      sdpOffer = await transport.startOffer();
+    } catch (err) {
+      console.warn("[useCallSession] failed to build WebRTC offer:", err);
+      return;
+    }
+
+    const callId = await nodeService.sendCallInvite(targetOwnerId, sdpOffer, iceServers);
     if (callId) {
       setCallingState(callId);
     }

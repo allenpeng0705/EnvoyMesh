@@ -452,8 +452,16 @@ export interface NodeServiceClient {
   // Phase 38 — Voice/Video Calls
   getActiveCall(): import("@envoymesh/api").CallSession | null;
   onCallEvent(handler: (event: import("@envoymesh/api").CallEvent) => void): () => void;
-  sendCallInvite(targetOwnerId: string): Promise<string | null>;
-  acceptCallInvite(callId: string): Promise<boolean>;
+  sendCallInvite(
+    targetOwnerId: string,
+    sdpOffer: string,
+    iceServers?: { urls: string; username?: string; credential?: string }[],
+  ): Promise<string | null>;
+  acceptCallInvite(
+    callId: string,
+    sdpAnswer: string,
+    iceServers?: { urls: string; username?: string; credential?: string }[],
+  ): Promise<boolean>;
   declineCallInvite(callId: string, reason: string): Promise<boolean>;
   endCall(callId: string): Promise<boolean>;
   setCallMuted(callId: string, muted: boolean): Promise<boolean>;
@@ -810,11 +818,27 @@ function createWsNodeServiceClient(
     onCallEvent(handler: (event: import("@envoymesh/api").CallEvent) => void) {
       return wsClient.on("call:event", handler as any);
     },
-    async sendCallInvite(targetOwnerId: string) {
-      return wsClient.rpc("sendCallInvite", { targetOwnerId }) as Promise<string | null>;
+    async sendCallInvite(
+      targetOwnerId: string,
+      sdpOffer: string,
+      iceServers?: { urls: string; username?: string; credential?: string }[],
+    ) {
+      return wsClient.rpc("sendCallInvite", {
+        targetOwnerId,
+        sdpOffer,
+        iceServers,
+      }) as Promise<string | null>;
     },
-    async acceptCallInvite(callId: string) {
-      return wsClient.rpc("acceptCallInvite", { callId }) as Promise<boolean>;
+    async acceptCallInvite(
+      callId: string,
+      sdpAnswer: string,
+      iceServers?: { urls: string; username?: string; credential?: string }[],
+    ) {
+      return wsClient.rpc("acceptCallInvite", {
+        callId,
+        sdpAnswer,
+        iceServers,
+      }) as Promise<boolean>;
     },
     async declineCallInvite(callId: string, reason: string) {
       return wsClient.rpc("declineCallInvite", { callId, reason }) as Promise<boolean>;

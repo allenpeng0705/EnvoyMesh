@@ -2080,11 +2080,32 @@ export interface NodeService {
   /** Subscribe to call events. Returns unsubscribe function. */
   onCallEvent(handler: (event: CallEvent) => void): () => void;
 
-  /** Initiate a voice call to a bonded peer. Returns callId or null if busy. */
-  sendCallInvite(targetOwnerId: string): Promise<string | null>;
+  /**
+   * Initiate a voice call to a bonded peer. Returns callId or null if busy.
+   *
+   * Phase 42A — `sdpOffer` is the SDP offer produced by the caller's
+   * `RTCPeerConnection.createOffer()`. The home embeds it into the
+   * `call.invite` payload. `iceServers` is optional; when omitted the
+   * home injects a 3-server STUN default (Google / Cloudflare / Twilio).
+   */
+  sendCallInvite(
+    targetOwnerId: string,
+    sdpOffer: string,
+    iceServers?: { urls: string; username?: string; credential?: string }[],
+  ): Promise<string | null>;
 
-  /** Accept an incoming call. Returns true if the call was accepted. */
-  acceptCallInvite(callId: string): Promise<boolean>;
+  /**
+   * Accept an incoming call. Returns true if the call was accepted.
+   *
+   * Phase 42A — `sdpAnswer` is the SDP answer produced by the callee's
+   * `RTCPeerConnection.createAnswer()`. The home embeds it into the
+   * `call.accept` payload. `iceServers` is optional.
+   */
+  acceptCallInvite(
+    callId: string,
+    sdpAnswer: string,
+    iceServers?: { urls: string; username?: string; credential?: string }[],
+  ): Promise<boolean>;
 
   /** Decline/reject an incoming call. */
   declineCallInvite(callId: string, reason: string): Promise<boolean>;

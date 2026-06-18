@@ -110,11 +110,23 @@ export async function routeRpcMethod(
       return ns.declineSocialIntroProposal(params.messageId as string);
     case "sendChat":
       return ns.sendChat(params.targetOwnerId as string, params.text as string, params.attachments as SendChatParams["attachments"]);
-    // Phase 38 — Voice/Video Calls
+    // Phase 38/42 — Voice/Video Calls
     case "sendCallInvite":
-      return ns.sendCallInvite(params.targetOwnerId as string);
+      return ns.sendCallInvite(
+        params.targetOwnerId as string,
+        params.sdpOffer as string,
+        params.iceServers as
+          | { urls: string; username?: string; credential?: string }[]
+          | undefined,
+      );
     case "acceptCallInvite":
-      return ns.acceptCallInvite(params.callId as string);
+      return ns.acceptCallInvite(
+        params.callId as string,
+        params.sdpAnswer as string,
+        params.iceServers as
+          | { urls: string; username?: string; credential?: string }[]
+          | undefined,
+      );
     case "declineCallInvite":
       return ns.declineCallInvite(params.callId as string, (params.reason as string) ?? "declined");
     case "endCall":

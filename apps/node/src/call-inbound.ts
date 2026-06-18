@@ -5,6 +5,11 @@
  * `call.hangup`, `call.ice-candidate`, and `call.mute` envelopes
  * through the `CallManager` state machine with identity binding
  * and callId validation per the design doc §4.0.
+ *
+ * Phase 42A added defensive SDP / ICE-candidate validation
+ * (validateSdpString / validateIceCandidate) so a malformed
+ * payload from a bonded-but-compromised peer cannot crash the
+ * callee's setRemoteDescription or flood addIceCandidate.
  */
 
 import {
@@ -33,6 +38,38 @@ const LOG = "[call-inbound]";
 /** Resolve sender's ownerId from envelope context. */
 function senderOwnerId(envelope: EnvoyEnvelope): string {
   return envelope.agentCredential?.ownerId ?? envelope.senderPeerId ?? "";
+}
+
+// --------------------------------------------------------------------------
+// Phase 42A — defensive SDP / ICE-candidate validation
+// --------------------------------------------------------------------------
+
+/** Max bytes accepted in an SDP offer/answer (Phase 42 design §6). */
+export const MAX_SDP_BYTES = 64 * 1024;
+
+/**
+ * SDP ICE candidate grammar (subset of RFC 5245 §15.1).
+ *
+ * Format: `candidate:<foundation> <component-id> <protocol> <priority> <address> <port> typ <type> [raddr <address>] [rport <port>] [generation <num>] [network-cost <num>]`
+ *
+ * The first 6 tokens after `candidate:` are mandatory; `typ <type>` is
+ * mandatory; `raddr` / `rport` / `generation` / `network-cost` are optional
+ * keywords each followed by their own value. The regex below matches the
+ * whole line. `foundation` is a 1-32 char string of alphanumerics and `+/`.
+ */
+const ICE_CANDIDATE_REGEX =
+  /^candidate:[A-Za-z0-9+/_-]{1,32} [0-9]+ (udp|UDP|tcp|TCP) [0-9]+ (\d+\.\d+\.\d+\.\d+|[0-9a-fA-F:]+) [0-9]+ typ (host|srflx|relay|prflx|HOST|SRFLX|RELAY|PRFLX)( raddr (\d+\.\d+\.\d+\.\d+|[0-9a-fA-F:]+))?( rport [0-9]+)?( generation [0-9]+)?( network-cost [0-9]+)?$/;
+
+/** Returns true when [sdp] is a non-empty string within the size cap. */
+export function validateSdpString(sdp: unknown): sdp is string {
+  return typeof sdp === "string" && sdp.length > 0 && sdp.length <= MAX_SDP_BYTES;
+}
+
+/** Returns true when [candidate.candidate] matches the SDP candidate grammar. */
+export function validateIceCandidate(candidate: unknown): boolean {
+  if (typeof candidate !== "string") return false;
+  if (candidate.length === 0 || candidate.length > 1024) return false;
+  return ICE_CANDIDATE_REGEX.test(candidate);
 }
 
 export async function handleCallIntent(
@@ -72,6 +109,16 @@ async function handleCallInvite(
     payload = parseCallInvitePayload(envelope.payload);
   } catch {
     console.warn(`${LOG} invalid call.invite payload`);
+    return true;
+  }
+
+  // Phase 42A — defensive SDP validation. A malicious bonded peer could
+  // send a 10 MB SDP that OOMs the callee's setRemoteDescription. The
+  // schema's z.string().min(1) is the first line of defense; the size
+  // cap is the second.
+  const sdpOfferLength = typeof payload.sdpOffer === "string" ? payload.sdpOffer.length : 0;
+  if (!validateSdpString(payload.sdpOffer)) {
+    console.warn(`${LOG} call.invite sdpOffer failed validation (length=${sdpOfferLength})`);
     return true;
   }
 
@@ -117,6 +164,13 @@ async function handleCallAccept(
     payload = parseCallAcceptPayload(envelope.payload);
   } catch {
     console.warn(`${LOG} invalid call.accept payload`);
+    return true;
+  }
+
+  // Phase 42A — same SDP defensive check on the answer path.
+  const sdpAnswerLength = typeof payload.sdpAnswer === "string" ? payload.sdpAnswer.length : 0;
+  if (!validateSdpString(payload.sdpAnswer)) {
+    console.warn(`${LOG} call.accept sdpAnswer failed validation (length=${sdpAnswerLength})`);
     return true;
   }
 
@@ -204,6 +258,14 @@ async function handleCallIceCandidate(
     payload = parseCallIceCandidatePayload(envelope.payload);
   } catch {
     console.warn(`${LOG} invalid call.ice-candidate payload`);
+    return true;
+  }
+
+  // Phase 42A — defensive ICE candidate grammar check. A bonded peer
+  // that floods junk candidates could OOM the local addIceCandidate
+  // queue. The regex matches the standard SDP candidate attribute.
+  if (!validateIceCandidate(payload.candidate?.candidate)) {
+    console.warn(`${LOG} call.ice-candidate failed grammar validation`);
     return true;
   }
 

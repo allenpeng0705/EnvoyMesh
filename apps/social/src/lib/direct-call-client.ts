@@ -184,13 +184,21 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getBonds();
   }
 
-  // Phase 38 — Voice/Video Calls
-  async sendCallInvite(targetOwnerId: string): Promise<string | null> {
-    return this._ns.sendCallInvite(targetOwnerId);
+  // Phase 38/42 — Voice/Video Calls
+  async sendCallInvite(
+    targetOwnerId: string,
+    sdpOffer: string,
+    iceServers?: { urls: string; username?: string; credential?: string }[],
+  ): Promise<string | null> {
+    return this._ns.sendCallInvite(targetOwnerId, sdpOffer, iceServers);
   }
 
-  async acceptCallInvite(callId: string): Promise<boolean> {
-    return this._ns.acceptCallInvite(callId);
+  async acceptCallInvite(
+    callId: string,
+    sdpAnswer: string,
+    iceServers?: { urls: string; username?: string; credential?: string }[],
+  ): Promise<boolean> {
+    return this._ns.acceptCallInvite(callId, sdpAnswer, iceServers);
   }
 
   async declineCallInvite(callId: string, reason: string): Promise<boolean> {
