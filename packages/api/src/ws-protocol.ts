@@ -565,6 +565,7 @@ export interface NodeConfig {
    * When unset, the default set of public STUN servers is used.
    * Set to an empty array to use no ICE servers (Path 1 / LAN only).
    */
+  /** Phase 38 — WebRTC ICE servers (STUN/TURN) for voice/video calls. */
   iceServers?: { urls: string; username?: string; credential?: string }[];
 }
 
@@ -1318,6 +1319,8 @@ export interface UpdateNodeConfigParams {
   capabilityDiscoveryIntervalMs?: number;
   lazyCapabilityDiscovery?: boolean;
   idleTimerStretch?: boolean;
+  /** Phase 42 — Cost estimation */
+  chainCostEstimationEnabled?: boolean;
 }
 
 export interface RunCapabilityDiscoveryParams {
@@ -1453,11 +1456,15 @@ export interface ChainPlanParams {
 
 export interface ChainPlanResult {
   chainId: string;
+  /** Estimated total cost across all subtasks (Phase 42). */
+  estimatedTotalCostUsd?: number;
   subtasks: Array<{
     subtaskId: string;
     depth: number;
     requiredCapability: string;
     objective: string;
+    /** Per-subtask cost ceiling from the mandate or LLM estimate. */
+    costCeilingUsd?: number;
   }>;
 }
 

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
+import { useToast } from "../../hooks/useToast.js";
+import { ConfirmDialog } from "../ConfirmDialog.js";
 import type { AuthorizedDeviceSummary } from "@envoymesh/api";
 
 /**
@@ -15,6 +17,7 @@ import type { AuthorizedDeviceSummary } from "@envoymesh/api";
 export function AuthorizedDevicesSection() {
   const t = useT();
   const nodeService = useNodeService();
+  const { showToast } = useToast();
   const isMobileNode = useIsInProcessMobileNode();
   const { refreshNodeConfig } = useNodeState();
 
@@ -22,6 +25,7 @@ export function AuthorizedDevicesSection() {
   const [authorizedDevicesLoading, setAuthorizedDevicesLoading] = useState(false);
   const [authorizedDevicesError, setAuthorizedDevicesError] = useState<string | null>(null);
   const [revokingDeviceId, setRevokingDeviceId] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ title: string; message?: string; variant?: "default" | "destructive"; onConfirm: () => void } | null>(null);
 
   const refreshAuthorizedDevices = useCallback(async () => {
     if (isMobileNode) return;
@@ -42,26 +46,39 @@ export function AuthorizedDevicesSection() {
     void refreshAuthorizedDevices();
   }, [isMobileNode, refreshAuthorizedDevices]);
 
+  // Clear cleanupMessage whenever the confirm dialog closes
+  useEffect(() => {
+    if (confirm !== null) return;
+    setCleanupMessage(null);
+  }, [confirm]);
+
   const handleRevokeDevice = useCallback(
     async (deviceId: string) => {
       if (isMobileNode) return;
       const label =
         authorizedDevices.find((d) => d.deviceId === deviceId)?.displayName ?? deviceId;
-      if (!window.confirm(t("settings.account.devices.revokeConfirm", { label }))) {
-        return;
-      }
-      setRevokingDeviceId(deviceId);
-      try {
-        await nodeService.revokeAuthorizedDevice({ deviceId, reason: "retired" });
-        await refreshAuthorizedDevices();
-        await refreshNodeConfig();
-      } catch (e) {
-        setAuthorizedDevicesError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setRevokingDeviceId(null);
-      }
+      setConfirm({
+        title: t("settings.account.devices.revokeConfirm", { label }),
+        message: t("settings.account.devices.revokeConfirmMessage"),
+        variant: "destructive",
+        onConfirm: async () => {
+          setConfirm(null);
+          setRevokingDeviceId(deviceId);
+          try {
+            await nodeService.revokeAuthorizedDevice({ deviceId, reason: "retired" });
+            await refreshAuthorizedDevices();
+            await refreshNodeConfig();
+            showToast(t("settings.account.devices.revoked"), "success");
+          } catch (e) {
+            setAuthorizedDevicesError(e instanceof Error ? e.message : String(e));
+            showToast(t("settings.account.devices.revokeFailed"), "error");
+          } finally {
+            setRevokingDeviceId(null);
+          }
+        },
+      });
     },
-    [authorizedDevices, isMobileNode, nodeService, refreshAuthorizedDevices, refreshNodeConfig, t],
+    [authorizedDevices, isMobileNode, nodeService, refreshAuthorizedDevices, refreshNodeConfig, t, showToast],
   );
 
   // -- Clean up historical duplicates ------------------------------------
@@ -114,49 +131,52 @@ export function AuthorizedDevicesSection() {
 
   const handleCleanupDuplicates = useCallback(async () => {
     if (isMobileNode) return;
+    // Build groups at open time so the dialog title reflects current state
     const groups = buildDuplicateGroups();
     const duplicateCount = groups.reduce((n, g) => n + g.mergeIds.length, 0);
     if (duplicateCount === 0 && revokedCount === 0) {
       setCleanupMessage(t("settings.account.devices.cleanupUnavailable", "Nothing to clean up."));
       return;
     }
-    const confirmed = window.confirm(
-      t("settings.account.devices.cleanupConfirm", {
-        duplicateCount,
-        revokedCount,
-      }),
-    );
-    if (!confirmed) return;
-
-    setCleaningUp(true);
-    setCleanupMessage(null);
-    try {
-      for (const { keepId, mergeIds } of groups) {
-        if (mergeIds.length === 0) continue;
-        await nodeService.mergeAuthorizedDevices({
-          keepDeviceId: keepId,
-          mergeDeviceIds: mergeIds,
-          reason: "deduplicated",
-        });
-      }
-      const pruned = await nodeService.pruneRevokedDevices();
-      await refreshAuthorizedDevices();
-      await refreshNodeConfig();
-      setCleanupMessage(
-        t("settings.account.devices.cleanupSuccess", {
-          duplicateCount,
-          revokedCount: pruned.prunedDeviceIds.length,
-        }),
-      );
-    } catch (e) {
-      setCleanupMessage(
-        t("settings.account.devices.cleanupFailed", {
-          message: e instanceof Error ? e.message : String(e),
-        }),
-      );
-    } finally {
-      setCleaningUp(false);
-    }
+    setConfirm({
+      title: t("settings.account.devices.cleanupConfirm", { duplicateCount, revokedCount }),
+      message: t("settings.account.devices.cleanupConfirmMessage"),
+      variant: "destructive",
+      onConfirm: async () => {
+        setConfirm(null);
+        setCleaningUp(true);
+        setCleanupMessage(null);
+        try {
+          // Re-build groups at confirm time to use the latest device list
+          const latestGroups = buildDuplicateGroups();
+          for (const { keepId, mergeIds } of latestGroups) {
+            if (mergeIds.length === 0) continue;
+            await nodeService.mergeAuthorizedDevices({
+              keepDeviceId: keepId,
+              mergeDeviceIds: mergeIds,
+              reason: "deduplicated",
+            });
+          }
+          const pruned = await nodeService.pruneRevokedDevices();
+          await refreshAuthorizedDevices();
+          await refreshNodeConfig();
+          setCleanupMessage(
+            t("settings.account.devices.cleanupSuccess", {
+              duplicateCount,
+              revokedCount: pruned.prunedDeviceIds.length,
+            }),
+          );
+        } catch (e) {
+          setCleanupMessage(
+            t("settings.account.devices.cleanupFailed", {
+              message: e instanceof Error ? e.message : String(e),
+            }),
+          );
+        } finally {
+          setCleaningUp(false);
+        }
+      },
+    });
   }, [
     buildDuplicateGroups,
     isMobileNode,
@@ -281,6 +301,15 @@ export function AuthorizedDevicesSection() {
           </button>
         </div>
       )}
+      {confirm ? (
+        <ConfirmDialog
+          title={confirm.title}
+          message={confirm.message}
+          variant={confirm.variant}
+          onConfirm={confirm.onConfirm}
+          onCancel={() => setConfirm(null)}
+        />
+      ) : null}
     </div>
   );
 }

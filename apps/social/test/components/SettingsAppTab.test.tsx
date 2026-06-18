@@ -133,20 +133,21 @@ describe("SettingsAppTab (Language / Appearance / Authorized Devices / Activity)
         },
       ],
     });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderAppTab();
     await waitFor(() => {
       expect(screen.getByText("Phone")).toBeDefined();
     });
     const revokeBtn = screen.getByRole("button", { name: "Revoke" });
     fireEvent.click(revokeBtn);
+    // ConfirmDialog appears — click the confirm button
+    const confirmBtn = screen.getByRole("button", { name: "Confirm" });
+    fireEvent.click(confirmBtn);
     await waitFor(() => {
       expect(revokeAuthorizedDevice).toHaveBeenCalledWith({
         deviceId: "d-1",
         reason: "retired",
       });
     });
-    confirmSpy.mockRestore();
   });
 
   it("hides the devices list and shows the mobile message on mobile nodes", async () => {
@@ -213,7 +214,6 @@ describe("SettingsAppTab (Language / Appearance / Authorized Devices / Activity)
         },
       ],
     });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderAppTab();
     await waitFor(() => {
       expect(screen.getAllByText("Phone").length).toBeGreaterThan(0);
@@ -224,6 +224,9 @@ describe("SettingsAppTab (Language / Appearance / Authorized Devices / Activity)
     expect((cleanupBtn as HTMLButtonElement).disabled).toBe(false);
 
     fireEvent.click(cleanupBtn);
+    // ConfirmDialog appears — click the confirm button
+    const confirmBtn = screen.getByRole("button", { name: "Confirm" });
+    fireEvent.click(confirmBtn);
     await waitFor(() => {
       expect(mergeAuthorizedDevices).toHaveBeenCalledTimes(1);
     });
@@ -245,7 +248,6 @@ describe("SettingsAppTab (Language / Appearance / Authorized Devices / Activity)
         ),
       ).toBeDefined();
     });
-    confirmSpy.mockRestore();
   });
 
   it("also prunes already-revoked entries from the list", async () => {
@@ -270,7 +272,6 @@ describe("SettingsAppTab (Language / Appearance / Authorized Devices / Activity)
       ],
     });
     pruneRevokedDevices.mockResolvedValue({ prunedDeviceIds: ["d-2"] });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderAppTab();
     await waitFor(() => {
       expect(screen.getByText("Phone-A")).toBeDefined();
@@ -281,6 +282,9 @@ describe("SettingsAppTab (Language / Appearance / Authorized Devices / Activity)
     expect((cleanupBtn as HTMLButtonElement).disabled).toBe(false);
 
     fireEvent.click(cleanupBtn);
+    // ConfirmDialog appears — click the confirm button
+    const confirmBtn = screen.getByRole("button", { name: "Confirm" });
+    fireEvent.click(confirmBtn);
     await waitFor(() => {
       expect(pruneRevokedDevices).toHaveBeenCalledTimes(1);
     });
@@ -294,7 +298,6 @@ describe("SettingsAppTab (Language / Appearance / Authorized Devices / Activity)
         ),
       ).toBeDefined();
     });
-    confirmSpy.mockRestore();
   });
 
   it("does not call the RPC when the user cancels the confirm dialog", async () => {
@@ -318,18 +321,19 @@ describe("SettingsAppTab (Language / Appearance / Authorized Devices / Activity)
         },
       ],
     });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderAppTab();
     await waitFor(() => {
       expect(screen.getAllByText("Phone").length).toBeGreaterThan(0);
     });
     const cleanupBtn = screen.getByRole("button", { name: "Clean up" });
     fireEvent.click(cleanupBtn);
+    // ConfirmDialog appears — click the cancel button
+    const cancelBtn = screen.getByRole("button", { name: "Cancel" });
+    fireEvent.click(cancelBtn);
     // give the click handler a chance to run
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(mergeAuthorizedDevices).not.toHaveBeenCalled();
     expect(pruneRevokedDevices).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
   });
 
   it("shows an error message if the merge RPC fails", async () => {
@@ -353,7 +357,6 @@ describe("SettingsAppTab (Language / Appearance / Authorized Devices / Activity)
         },
       ],
     });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     mergeAuthorizedDevices.mockRejectedValue(new Error("disk is on fire"));
     renderAppTab();
     await waitFor(() => {
@@ -361,9 +364,11 @@ describe("SettingsAppTab (Language / Appearance / Authorized Devices / Activity)
     });
     const cleanupBtn = screen.getByRole("button", { name: "Clean up" });
     fireEvent.click(cleanupBtn);
+    // ConfirmDialog appears — click the confirm button
+    const confirmBtn = screen.getByRole("button", { name: "Confirm" });
+    fireEvent.click(confirmBtn);
     await waitFor(() => {
       expect(screen.getByText("Cleanup failed: disk is on fire")).toBeDefined();
     });
-    confirmSpy.mockRestore();
   });
 });

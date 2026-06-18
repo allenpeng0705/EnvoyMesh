@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
+import { useToast } from "../../hooks/useToast.js";
+import { ConfirmDialog } from "../ConfirmDialog.js";
 import {
   galleryPhotoShareSensitivity,
   type ProfileGalleryPhotoVisibility,
@@ -10,7 +12,6 @@ import {
 import { ProfilePhotoAvatar } from "../ProfilePhotoAvatar.js";
 import { PhotoPickerSheet } from "../PhotoPickerSheet.js";
 import { fileToBase64, mimeFromFile } from "../../lib/profile-photo-upload.js";
-import { useToast } from "../../hooks/useToast.js";
 import type { TFunction } from "../../context/I18nContext.js";
 
 function visibilityLabel(t: TFunction, visibility: ProfileGalleryPhotoVisibility): string {
@@ -36,6 +37,7 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
   const [busy, setBusy] = useState(false);
   const [picker, setPicker] = useState<"thumbnail" | "gallery" | null>(null);
   const [shareTarget, setShareTarget] = useState<{ vaultRelativePath: string; label: string } | null>(null);
+  const [confirm, setConfirm] = useState<{ title: string; message?: string; variant?: "default" | "destructive"; onConfirm: () => void } | null>(null);
 
   const uploadThumbnail = async (_file: File, blob: Blob, mime: ProfilePhotoMime) => {
     setBusy(true);
@@ -181,13 +183,20 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
                   className="btn-secondary btn-small"
                   disabled={busy}
                   onClick={() => {
-                    if (!window.confirm(t("profilePhotos.removeConfirm"))) return;
-                    void nodeService
-                      .removeProfileGalleryPhoto({ vaultRelativePath: photo.vaultRelativePath })
-                      .then(() => refreshHumanProfile())
-                      .catch((err) =>
-                        showToast(err instanceof Error ? err.message : t("profilePhotos.removeFailed"), "error"),
-                      );
+                    setConfirm({
+                      title: t("profilePhotos.removeConfirm"),
+                      message: t("profilePhotos.removeConfirmMessage"),
+                      variant: "destructive",
+                      onConfirm: () => {
+                        setConfirm(null);
+                        void nodeService
+                          .removeProfileGalleryPhoto({ vaultRelativePath: photo.vaultRelativePath })
+                          .then(() => refreshHumanProfile())
+                          .catch((err) =>
+                            showToast(err instanceof Error ? err.message : t("profilePhotos.removeFailed"), "error"),
+                          );
+                      },
+                    });
                   }}
                 >
                   {t("profilePhotos.removeBtn")}
@@ -233,6 +242,15 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
         onConfirmThumbnail={(file, blob, mime) => void uploadThumbnail(file, blob, mime)}
         onConfirmGallery={(file) => void uploadGallery(file)}
       />
+      {confirm ? (
+        <ConfirmDialog
+          title={confirm.title}
+          message={confirm.message}
+          variant={confirm.variant}
+          onConfirm={confirm.onConfirm}
+          onCancel={() => setConfirm(null)}
+        />
+      ) : null}
     </div>
   );
 }

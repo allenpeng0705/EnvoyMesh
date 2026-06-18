@@ -3,6 +3,8 @@ import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
+import { useToast } from "../../hooks/useToast.js";
+import { ConfirmDialog } from "../ConfirmDialog.js";
 import { ShareContactCard } from "../discover/ShareContactCard.js";
 import { PublicIcon, PrivateIcon } from "../../icons.js";
 import type { CreateHumanProfileInput } from "@envoymesh/api";
@@ -24,6 +26,7 @@ import type { CreateHumanProfileInput } from "@envoymesh/api";
 export function SettingsAccountTab() {
   const t = useT();
   const nodeService = useNodeService();
+  const { showToast } = useToast();
   const { humanProfile, peerId, nodeStatus, refreshHumanProfile, nodeConfig, refreshNodeConfig } =
     useNodeState();
 
@@ -36,6 +39,7 @@ export function SettingsAccountTab() {
   const [saving, setSaving] = useState(false);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ title: string; message?: string; variant?: "default" | "destructive"; onConfirm: () => void } | null>(null);
 
   useEffect(() => {
     setDisplayName(humanProfile?.displayName ?? "");
@@ -171,16 +175,23 @@ export function SettingsAccountTab() {
   );
 
   const handleClearAllData = useCallback(async () => {
-    if (!window.confirm(t("settings.account.privacy.clearDataConfirm"))) {
-      return;
-    }
-    try {
-      await nodeService.clearAllUserData();
-      await refreshNodeConfig();
-    } catch (e) {
-      console.error("Failed to clear data:", e);
-    }
-  }, [nodeService, refreshNodeConfig, t]);
+    setConfirm({
+      title: t("settings.account.privacy.clearDataConfirm"),
+      message: t("settings.account.privacy.clearDataConfirmMessage"),
+      variant: "destructive",
+      onConfirm: async () => {
+        setConfirm(null);
+        try {
+          await nodeService.clearAllUserData();
+          await refreshNodeConfig();
+          showToast(t("settings.account.privacy.dataCleared"), "success");
+        } catch (e) {
+          console.error("Failed to clear data:", e);
+          showToast(t("settings.account.privacy.clearFailed"), "error");
+        }
+      },
+    });
+  }, [nodeService, refreshNodeConfig, t, showToast]);
 
   return (
     <>
@@ -430,6 +441,15 @@ export function SettingsAccountTab() {
           </dd>
         </dl>
       </section>
+      {confirm ? (
+        <ConfirmDialog
+          title={confirm.title}
+          message={confirm.message}
+          variant={confirm.variant}
+          onConfirm={confirm.onConfirm}
+          onCancel={() => setConfirm(null)}
+        />
+      ) : null}
     </>
   );
 }

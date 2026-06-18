@@ -389,6 +389,7 @@ export const profilePhotosMessages = {
   shareBtn: "Share…",
   removeBtn: "Remove",
   removeConfirm: "Remove this gallery photo?",
+  removeConfirmMessage: "This cannot be undone.",
   shareTitle: "Share {label}",
   sharePickContact: "Pick a bonded contact",
   addContactFirst: "Add a contact first.",
@@ -515,7 +516,10 @@ export const privacySettingsMessages = {
     private: "Private",
     syndicationHint: "Who can receive knowledge summaries from your vault",
   },
-  clearDataConfirm: "Are you sure you want to clear all personal data? This cannot be undone.",
+  clearDataConfirm: "Clear all personal data?",
+  clearDataConfirmMessage: "This removes all your data from this device. This cannot be undone.",
+  dataCleared: "All personal data cleared",
+  clearFailed: "Failed to clear data",
 } as const;
 
 export const accountSettingsMessages = {
@@ -553,10 +557,11 @@ export const accountSettingsMessages = {
     noDevices: "No authorized devices yet.",
     revoke: "Revoke",
     revoking: "Revoking…",
-    revoked: "revoked",
-    lastSeen: "last seen {when}",
-    revokeConfirm:
-      "Are you sure you want to revoke access for {label}? This device will no longer be able to access your account.",
+    revoked: "Device access revoked",
+    revokeConfirm: "Revoke access for {label}?",
+    revokeConfirmMessage:
+      "This device will no longer be able to access your account.",
+    revokeFailed: "Failed to revoke device access",
     refresh: "Refresh",
     mobileNotAvailable: "Device management is not available on mobile devices.",
     // One-time cleanup of historical duplicate records created before
@@ -567,10 +572,9 @@ export const accountSettingsMessages = {
     cleanup: "Clean up",
     cleaning: "Cleaning up…",
     cleanupUnavailable: "Nothing to clean up.",
-    cleanupConfirm:
-      "Clean up: {duplicateCount} duplicate record(s) will be merged into the most-recently paired device, and {revokedCount} already-revoked record(s) will be removed from the list. Continue?",
-    cleanupSuccess:
-      "Cleaned up {duplicateCount} duplicate record(s) and removed {revokedCount} revoked record(s).",
+    cleanupConfirm: "Clean up {duplicateCount} duplicate and {revokedCount} revoked record(s)?",
+    cleanupConfirmMessage: "{duplicateCount} duplicate record(s) will be merged into the most-recently paired device, and {revokedCount} already-revoked record(s) will be removed from the list.",
+    cleanupSuccess: "Cleaned up {duplicateCount} duplicate record(s) and removed {revokedCount} revoked record(s).",
     cleanupFailed: "Cleanup failed: {message}",
   },
   identity: {

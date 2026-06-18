@@ -96,6 +96,9 @@ export const en = {
     helloSentWaiting: "Hello sent — waiting",
     refresh: "Refresh",
     copy: "Copy",
+    confirm: "Confirm",
+    delete: "Delete",
+    clear: "Clear",
   },
   splash: {
     connectingTitle: "Connecting to EnvoyMesh",
@@ -426,6 +429,47 @@ export const en = {
   },
   library: libraryViewMessages,
   chains: chainsMessages,
+  workerCapability: {
+    title: "Agent Workers",
+    description:
+      "Bonded contacts with direct or referred trust who may participate in agent chains as workers.",
+    searchPlaceholder: "Search workers…",
+    level: {
+      all: "All levels",
+      direct: "Direct",
+      referred: "Referred",
+    },
+    loading: "Loading workers…",
+    empty: {
+      noWorkers:
+        "No bonded contacts with agent cards. Bond with peers who share their capabilities.",
+      filtered: "No workers match the current filter.",
+    },
+    reputationTooltip: "Reputation score: {score}/100",
+    reputationNA: "No reputation data",
+    lastSeen: "Last seen: {date}",
+  },
+  chainDefaults: {
+    title: "Chain Defaults",
+    description:
+      "Default settings for new agent chains. These apply when no template-specific overrides are set.",
+    stallPolicy: "When a worker stalls (no response)",
+    stallPolicyManual: "Manual — owner decides",
+    stallPolicyAuto: "Auto re-bid (find new worker)",
+    stallPolicyNever: "Never re-bid",
+    bidWeights: "Bid Ranking Weights",
+    bidWeightsHint: "Weights determine how bids are ranked. They must sum to 100%.",
+    bidWeightCost: "Cost (%)",
+    bidWeightReputation: "Reputation (%)",
+    bidWeightFreshness: "Freshness (%)",
+    bidWeightPrecision: "Precision (%)",
+    weightsError: "Weights must sum to 100%. Current sum: {sum}%.",
+    save: "Save Chain Defaults",
+    saveStallPolicy: "Save Rebalance Policy",
+    saving: "Saving…",
+    saved: "Saved",
+    saveFailed: "Save failed",
+  },
 } as const;
 
 export type Messages = typeof en;

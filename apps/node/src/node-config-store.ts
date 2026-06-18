@@ -190,6 +190,8 @@ export interface PersistedNodeConfig {
    * Set to an empty array to use no ICE servers (Path 1 / LAN only).
    */
   iceServers?: { urls: string; username?: string; credential?: string }[];
+  /** Phase 42 — enable LLM cost estimation in chainPlan. Default false (no LLM cost). */
+  chainCostEstimationEnabled?: boolean;
 }
 
 export interface NodeConfigStore {

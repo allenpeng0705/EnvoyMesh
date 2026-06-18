@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
+import { useToast } from "../../hooks/useToast.js";
 import { PRESET_CAPABILITY_GROUPS, type Capability } from "../../lib/profile.js";
 import { PublicIcon, PrivateIcon } from "../../icons.js";
 import type { CreateHumanProfileInput, OwnerDidPresentation } from "@envoymesh/api";
@@ -35,6 +36,7 @@ export interface ProfileAboutTabProps {
 export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
   const t = useT();
   const nodeService = useNodeService();
+  const { showToast } = useToast();
   const { humanProfile, nodeStatus, peerId, bonds, connectionStatus, refreshNodeConfig, refreshHumanProfile } =
     useNodeState();
 
@@ -77,11 +79,11 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
 
   const handleSaveProfile = async () => {
     if (!profileEditForm.displayName.trim()) {
-      alert(t("profileAbout.displayNameRequired"));
+      showToast(t("profileAbout.displayNameRequired"), "error");
       return;
     }
     if (!profileEditForm.username.trim() || !/^[a-zA-Z0-9_]{3,30}$/.test(profileEditForm.username.trim())) {
-      alert(t("profileAbout.usernameInvalid"));
+      showToast(t("profileAbout.usernameInvalid"), "error");
       return;
     }
     setIsSavingProfile(true);
@@ -126,7 +128,7 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
       await refreshNodeConfig();
       setIsEditingProfile(false);
     } catch (error) {
-      alert(error instanceof Error ? error.message : t("profileAbout.updateFailed"));
+      showToast(error instanceof Error ? error.message : t("profileAbout.updateFailed"), "error");
     } finally {
       setIsSavingProfile(false);
     }
@@ -295,7 +297,7 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
                 className="btn-secondary btn-small profile-location-gps-btn"
                 onClick={() => {
                   if (!navigator.geolocation) {
-                    alert(t("profileAbout.geolocationUnavailable"));
+                    showToast(t("profileAbout.geolocationUnavailable"), "error");
                     return;
                   }
                   navigator.geolocation.getCurrentPosition(
@@ -311,7 +313,7 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
                         locationPrecision: "nearby",
                       }));
                     },
-                    () => alert(t("profileAbout.geolocationDenied")),
+                    () => showToast(t("profileAbout.geolocationDenied"), "error"),
                     { timeout: 12_000 },
                   );
                 }}

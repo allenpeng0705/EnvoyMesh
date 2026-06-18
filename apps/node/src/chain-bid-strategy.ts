@@ -142,5 +142,123 @@ export function isChainBidExpired(bidExpiresAt: string, nowMs: number): boolean 
   return nowMs >= expiresMs;
 }
 
+// ---------------------------------------------------------------------------
+// Phase 41C — Composite bid scoring (reputation + freshness + precision)
+// ---------------------------------------------------------------------------
+
+export interface BidScoreInput {
+  bid: ChainSubtaskBid;
+  /** Peer reputation score (0–100), from Phase 8K. Default 50 if unknown. */
+  reputationScore?: number;
+  /** Reference time for freshness calculation. Defaults to now. */
+  now?: Date;
+  /** The required capability tag for the subtask. */
+  requiredCapability?: string;
+}
+
+export interface BidRankingWeights {
+  cost: number;
+  reputation: number;
+  freshness: number;
+  precision: number;
+}
+
+/** Default weights from the design doc: cost 35%, reputation 30%, freshness 20%, precision 15%. */
+export const DEFAULT_BID_WEIGHTS: BidRankingWeights = {
+  cost: 0.35,
+  reputation: 0.30,
+  freshness: 0.20,
+  precision: 0.15,
+};
+
+/**
+ * Freshness decay function. Bids closer to expiration score lower.
+ * Returns 0 if expired, up to 1 if just created.
+ */
+export function freshnessDecay(bidExpiresAt: string, now: Date): number {
+  const remaining = new Date(bidExpiresAt).getTime() - now.getTime();
+  if (remaining <= 0) return 0;
+  const maxWindow = 300_000; // 5 minutes
+  return Math.min(1, remaining / maxWindow);
+}
+
+/**
+ * Capability-match precision score. Exact match = 1, pre/postfix match = 0.5, no match = 0.
+ */
+export function capabilityMatchPrecision(
+  workerCapability: string,
+  requiredCapability: string,
+): number {
+  if (!workerCapability || !requiredCapability) return 0.5;
+  if (workerCapability === requiredCapability) return 1;
+  if (workerCapability.includes(requiredCapability) || requiredCapability.includes(workerCapability)) return 0.5;
+  return 0;
+}
+
+/**
+ * Composite bid score (0–1). Combines cost, reputation, freshness, and precision.
+ * Higher is better. Expired bids score 0 regardless of other factors.
+ */
+export function bidScore(
+  input: BidScoreInput,
+  weights: BidRankingWeights = DEFAULT_BID_WEIGHTS,
+  costCeiling?: number,
+): number {
+  const { bid } = input;
+  const now = input.now ?? new Date();
+  const repScore = input.reputationScore ?? 50;
+  const ceiling = costCeiling ?? 50;
+
+  // Expired bids score 0 regardless of other factors
+  const fresh = freshnessDecay(bid.bidExpiresAt, now);
+  if (fresh <= 0) return 0;
+
+  // Cost: lower cost = higher score (1 − cost/ceiling)
+  const costNorm = Math.max(0, Math.min(1, 1 - bid.proposedCostUsd / Math.max(ceiling, 0.01)));
+
+  // Reputation: 0–100 → 0–1
+  const repNorm = Math.max(0, Math.min(1, repScore / 100));
+
+  // Freshness
+  // Precision: check if the worker's bid matches the required capability
+  // If no requiredCapability is provided, default to 1 (no penalty)
+  const precision = input.requiredCapability
+    ? capabilityMatchPrecision(bid.workerPeerId, input.requiredCapability) // Note: we use workerPeerId as a proxy for capability here since bids don't carry capability
+    : 1;
+
+  const score =
+    weights.cost * costNorm +
+    weights.reputation * repNorm +
+    weights.freshness * fresh +
+    weights.precision * precision;
+
+  return Math.max(0, Math.min(1, score));
+}
+
+/**
+ * Rank an array of bids by composite score (descending). Expired bids are excluded.
+ */
+export function rankBids(
+  bids: Array<{ bid: ChainSubtaskBid; reputationScore?: number }>,
+  options: { weights?: BidRankingWeights; costCeiling?: number; requiredCapability?: string; now?: Date } = {},
+): Array<{ bid: ChainSubtaskBid; score: number }> {
+  const now = options.now ?? new Date();
+  const weights = options.weights ?? DEFAULT_BID_WEIGHTS;
+
+  const scored = bids
+    .map((b) => ({
+      bid: b.bid,
+      score: bidScore(
+        { bid: b.bid, reputationScore: b.reputationScore, now, requiredCapability: options.requiredCapability },
+        weights,
+        options.costCeiling,
+      ),
+    }))
+    .filter((s) => s.score > 0) // exclude expired (score 0)
+    .sort((a, b) => b.score - a.score); // descending
+
+  return scored;
+}
+
 // Re-export so consumers can construct placeholder subtasks in tests.
 export { createChainSubtaskId };

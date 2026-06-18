@@ -1941,6 +1941,11 @@
 
 .chat-composer {
   flex-shrink: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  /* Anchors the input row to the bottom; overlays float above it without pushing it down. */
   background: var(--color-surface);
   border-top: 1px solid var(--color-border-subtle);
   box-shadow: var(--shadow-composer);
@@ -1951,6 +1956,54 @@
   box-shadow: none;
 }
 
+/* Floating toast container — renders above the input row, over the messages.
+   Positioned absolutely inside .chat-composer so it doesn't push the input down. */
+.chat-composer-overlays {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  z-index: calc(var(--z-header, 100) + 1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  padding-bottom: calc(var(--space-2) + var(--safe-bottom));
+  background: transparent;
+  pointer-events: none;
+}
+
+.chat-composer-overlays > * {
+  pointer-events: auto;
+}
+
+/* Reachability hint and send error float as toasts above the input */
+.chat-reachability-hint {
+  align-self: flex-start;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-elevated, var(--color-surface));
+  border: 1px solid var(--color-border-subtle);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-send-error {
+  align-self: flex-start;
+  color: var(--color-danger);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-elevated, var(--color-surface));
+  border: 1px solid var(--color-danger);
+  box-shadow: var(--shadow-sm);
+  animation: toastSlideUp 0.3s ease-out;
+}
+
+/* Draft suggestion — sticky to the input row, stays in the flex column
+   so it naturally pushes up when the input row is near the bottom of the view.
+   The float overlay takes precedence when both appear. */
 .chat-draft-suggestion {
   display: flex;
   align-items: flex-start;
@@ -2175,6 +2228,44 @@
     padding-right: calc(var(--space-3) + var(--safe-right));
   }
 
+  /* Hide emoji button on mobile — keyboards have emoji pickers built-in */
+  .chat-emoji-btn {
+    display: none;
+  }
+
+  /* Reduce leading button padding on mobile so more width is available for the textarea */
+  .chat-input > button[type="button"]:not(:last-child) {
+    padding: var(--space-2);
+    min-height: 36px;
+    min-width: 36px;
+  }
+
+  /* Send button: icon-only on mobile to maximize textarea width */
+  .chat-input > button[type="button"]:last-child {
+    padding: var(--space-2);
+    min-height: 36px;
+    min-width: 36px;
+    font-size: 0;
+  }
+
+  /* Show send icon (text is hidden via font-size:0 above) */
+  .chat-input > button[type="button"]:last-child::before {
+    content: "";
+    display: block;
+    width: 18px;
+    height: 18px;
+    background: currentColor;
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='22' y1='2' x2='11' y2='13'/%3E%3Cpolygon points='22 2 15 22 11 13 2 9 22 2'/%3E%3C/svg%3E");
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='22' y1='2' x2='11' y2='13'/%3E%3Cpolygon points='22 2 15 22 11 13 2 9 22 2'/%3E%3C/svg%3E");
+    -webkit-mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    margin: auto;
+  }
+
   .chat-view-inbox-panel {
     padding-bottom: var(--safe-bottom);
   }
@@ -2380,6 +2471,35 @@
 
 .create-group-modal {
   max-width: 28rem;
+}
+
+.confirm-dialog {
+  max-width: 22rem;
+}
+
+.confirm-dialog-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+}
+
+.confirm-dialog-message {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  line-height: var(--leading-relaxed);
+}
+
+/* Destructive confirm button — red to signal danger */
+.confirm-dialog-actions .primary.danger {
+  border: none;
+  background: var(--color-danger, #dc2626);
+  color: #fff;
+}
+
+.confirm-dialog-actions .primary.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger, #dc2626) 85%, #000);
 }
 
 .create-group-member-list {

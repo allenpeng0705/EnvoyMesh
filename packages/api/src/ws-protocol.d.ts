@@ -228,7 +228,8 @@ export interface NodeConfig {
     documentAcquisitionMandateId?: string;
     /** Phase 38 — WebRTC ICE servers (STUN/TURN) for voice/video calls. */
     iceServers?: { urls: string; username?: string; credential?: string }[];
-}
+    chainCostEstimationEnabled?: boolean;
+  }
 /**
  * Domain in which the node operates autonomously on behalf of the owner.
  */

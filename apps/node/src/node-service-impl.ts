@@ -317,7 +317,7 @@ import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-s
 import { seedAddrsForDiscoveryProfile, peerDiscoverySourceFromMultiaddrs, shouldPersistPeerDiscoverySeeds } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
-import { buildModelProviders } from "@envoymesh/models";
+import { buildModelProviders, routeModelRequest } from "@envoymesh/models";
 import {
   verifyInboundChatDevice,
   formatChatSenderDisplayName,
@@ -11796,6 +11796,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       audit: { record: () => undefined },
       storeChainReport: async () => undefined,
       llmDecompose,
+      llmMerge: await this.buildLlmMergeAsync(),
     };
   }
 
@@ -11833,6 +11834,59 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       timeoutMs: 30_000,
     });
     return async (goal: string) => decomposer(goal);
+  }
+
+  /**
+   * Phase 41A — wire the LLM merge adapter into chain-orchestrator deps.
+   *
+   * Uses the same model provider pool as the decomposer; falls back to
+   * undefined when no providers are available so synthesis falls through
+   * to the deterministic concatenate/owner_review path.
+   */
+  private async buildLlmMergeAsync(): Promise<ChainOrchestratorHandlerDeps["llmMerge"] | undefined> {
+    let nodeConfig: Awaited<ReturnType<typeof this.getNodeConfig>> | null = null;
+    try {
+      nodeConfig = await this.getNodeConfig();
+    } catch {
+      return undefined;
+    }
+    if (!nodeConfig) return undefined;
+    const modelCfg = nodeConfig.modelProviders;
+    if (!modelCfg || modelCfg.mode === "disabled") return undefined;
+    let providers: ReturnType<typeof buildModelProviders> = [];
+    try {
+      providers = buildModelProviders(modelCfg, false, { trustedLocalAssist: true });
+    } catch {
+      return undefined;
+    }
+    if (providers.length === 0) return undefined;
+
+    // Build a LlmProvider from the first available model provider
+    const { createLlmMergeAdapter } = await import("./chain-llm.js");
+    const llmProvider = {
+      complete: async (params: { systemPrompt: string; userPrompt: string; maxTokens?: number }) => {
+        const result = await routeModelRequest(
+          {
+            taskType: "chain.merge",
+            prompt: `${params.systemPrompt}\n\n${params.userPrompt}`,
+            sensitivity: "public",
+            ownerApproved: true,
+          },
+          providers,
+        );
+        if (result.decision.action === "deny" || !result.response) {
+          throw new Error("LLM merge denied");
+        }
+        return {
+          text: result.response.text,
+          usage: {
+            promptTokens: result.response.usage?.inputTokens ?? 0,
+            completionTokens: result.response.usage?.outputTokens ?? 0,
+          },
+        };
+      },
+    };
+    return createLlmMergeAdapter(llmProvider);
   }
 
   /** Discover local capability providers (placeholder; real impl in 40E). */

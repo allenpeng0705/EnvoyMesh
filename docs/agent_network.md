@@ -802,7 +802,369 @@ When this proposal is approved, the implementation will touch:
 
 ---
 
-## 13. References
+## 13. Phase 41 — Making Agent Network Usable & Powerful
+
+> **Status:** `[~]` designed (2026-06-18). Builds on Phase 40's shipped protocol, orchestrator, worker, handoff, and relay infrastructure. Turns the keyword-based planner into an LLM-driven AI orchestrator and makes the agent network observable, billable, and resilient.
+
+### 13.1 How we use it today
+
+After Phase 40, the agent network is a **framework** — the schemas, state machines, and routing are correct and well-tested (77 tests), but it's not yet usable by a non-developer:
+
+| Component | What exists | What's missing |
+|-----------|------------|----------------|
+| **Plan chain** | `planChain()` decomposes simple goals by keyword-matching verbs → capability tags | No LLM-driven decomposition. "Translate → Review → Summarize" works; "Find the best restaurant in Paris that my contacts have reviewed" doesn't. |
+| **Discover workers** | `findWorkers(capability)` is an injectable callback — currently returns an empty array in production | No auto-population. Owner must manually configure which peers can do what. |
+| **Award work** | Evaluates bids by cost; 3 negotiation rounds; budget enforcement at every step | Bid ranking is cost-only. No reputation weighting, no freshness decay, no capability-match precision score. |
+| **Synthesize results** | `synthesizeChainReport()` concatenates partials; supports merge types but doesn't execute them | LLM-driven merge (`merge_structured`, `merge_summarize`) is stubbed. Composite reports are raw concatenation. |
+| **Observe chains** | `chainStateSnapshot()` provides a clean read-only view | No Social UI renders it. No WebSocket push. Owner has no way to see active chains. |
+| **Pay for work** | `ChainBudgetLedger` tracks committed/reserved/synthesis spend per chain | No export, no invoice, no payment rail. Budget caps are enforced but cost is invisible to the owner. |
+| **Recover from stalls** | `trackChain()` detects stale subtasks via heartbeat timeout | No auto-action. Stalled subtasks remain stalled indefinitely. |
+
+### 13.2 Phase 41 sub-phases
+
+#### 41A — LLM decomposition & merge (🥇 highest impact)
+
+**Goal:** Wire `llmDecompose` and `llmMerge` callbacks to EnvoyAI/OpenClaw so the orchestrator becomes an AI planner, not a keyword matcher.
+
+**Design:**
+
+```
+Owner: "Find the best restaurant in Paris that my contacts have reviewed"
+    │
+    ▼
+planChain(deps, state, goal, { allowLlm: true })
+    │
+    ├── llmDecompose(goal)
+    │     │
+    │     ├── Prompt: "Decompose '{goal}' into subtasks. Each subtask needs
+    │     │   a capability tag from: [translation, review, search, summarize,
+    │     │   analyze, extract, compare, rank]. Return JSON array."
+    │     │
+    │     └── Response: [
+    │           { requiredCapability: "search",    objective: "Search bonded contacts' vaults for Paris restaurant reviews" },
+    │           { requiredCapability: "extract",   objective: "Extract restaurant names, ratings, and review snippets" },
+    │           { requiredCapability: "rank",      objective: "Rank restaurants by rating, recency, and reviewer trust tier" },
+    │           { requiredCapability: "summarize", objective: "Produce a ranked list with evidence citations" }
+    │         ]
+    │
+    ▼
+launchChain() → propose to workers → evaluate bids → track progress
+    │
+    ▼
+synthesizeChain(deps, state)
+    │
+    ├── llmMerge({ contributions: [...partials], kind: "merge_structured" })
+    │     │
+    │     ├── Prompt: "Synthesize these research results into a coherent
+    │     │   report. Resolve contradictions, prioritize by recency, cite
+    │     │   sources. Return JSON with { summary, rankings, sources }."
+    │     │
+    │     └── Response → ChainReport with aggregation: "llm_merged"
+    │
+    ▼
+publishChainReport() → task.chain.report → owner sees final result
+```
+
+**Safety:** The LLM runs on the owner's hardware (EnvoyAI/OpenClaw), not on a worker's node. No worker sees the full goal — workers only see their assigned `objective`. The synthesis prompt includes a pre-flight budget check: `maxChainCostUsd − committedUsd − synthesisSpendUsd ≥ estimatedSynthesisCostUsd`.
+
+**Schema changes (minimal):**
+- `ChainMandate.maxSynthesisCostUsd` — optional, defaults to 10% of `maxChainCostUsd`
+- `llmDecompose` callback signature already defined in `ChainOrchestratorHandlerDeps`
+- `llmMerge` callback signature already defined in `ChainOrchestratorHandlerDeps`
+
+**Implementation:**
+- `apps/node/src/chain-llm.ts` (new, ~200 lines) — EnvoyAI/OpenClaw adapter
+  - `createLlmDecompose(envoyAI)` → returns `llmDecompose` callback
+  - `createLlmMerge(envoyAI)` → returns `llmMerge` callback
+  - `estimateSynthesisCost(promptTokens)` → returns USD estimate
+- `apps/node/src/node-service-impl.ts` — pass EnvoyAI client to `ChainOrchestratorHandlerDeps`
+- No protocol changes — callbacks are injectable deps, not schema types
+
+**Tests:**
+- `apps/node/test/chain-llm.test.ts` — mock LLM responses, verify prompt construction, cost estimation, error handling
+- Extend `chain-orchestrator.test.ts` — `planChain` with LLM decompose, `synthesizeChain` with LLM merge
+
+**Exit criteria:**
+- `[ ]` Owner can say "Find the best restaurant in Paris my contacts reviewed" and the orchestrator decomposes it into 4 subtasks
+- `[ ]` Synthesis produces a coherent merged report, not raw concatenation
+- `[ ]` Pre-flight budget check prevents synthesis if cost exceeds remaining budget
+- `[ ]` LLM callbacks are injectable (tests can mock without real API keys)
+
+---
+
+#### 41B — Agent Card auto-discovery (🥇 highest impact)
+
+**Goal:** When a bond is established, auto-fetch the peer's agent card and index their `capabilities[]`. This makes the worker pool dynamic — no manual configuration needed.
+
+**Design:**
+
+```
+Bond established (bond.request → bond.accept)
+    │
+    ├── Phase 33 already registers request_agent_card as an OpenClaw tool
+    │
+    ├── Auto-fetch on bond: the local node sends agent.card.request
+    │     to the newly bonded peer, receives agent.card.response, and
+    │     indexes capabilities[] in an in-memory map.
+    │
+    └── CapabilityIndex (in-memory, persisted to disk on shutdown)
+          capability: "translation" → [peerId_a, peerId_b]
+          capability: "review"     → [peerId_b, peerId_c]
+          capability: "search"     → [peerId_a]
+```
+
+**New file:**
+- `apps/node/src/capability-index.ts` (~120 lines)
+  - `CapabilityIndex` class: `Map<capability, workerPeerId[]>`
+  - `indexWorker(peerId, capabilities[])` — add/update
+  - `removeWorker(peerId)` — on bond revoked
+  - `findWorkers(capability)` — returns peerIds
+  - `snapshot()` → persisted as JSON to `<profileDir>/capability-index.json`
+  - Load on startup, save on change (debounced)
+
+**Integration points:**
+- `apps/node/src/index.ts` — after bond establishment, call `capabilityIndex.indexWorker(peerId, agentCard.capabilities)`
+- `apps/node/src/chain-orchestrator.ts` — `findWorkers` callback now reads from `CapabilityIndex` instead of returning empty
+- `apps/node/src/node-service-impl.ts` — instantiate `CapabilityIndex`, pass to orchestrator deps
+
+**Tests:**
+- `apps/node/test/capability-index.test.ts` — index, update, remove, snapshot persistence, load from disk
+
+**Exit criteria:**
+- `[ ]` After bonding with a peer who advertises `capabilities: ["translation", "review"]`, those appear in the capability index
+- `[ ]` `findWorkers("translation")` returns the peer's ID within 5 seconds of bond establishment
+- `[ ]` Index survives node restart (loads from `capability-index.json`)
+- `[ ]` Revoking a bond removes the peer from the index
+
+---
+
+#### 41C — Bid ranking with reputation + freshness (🥈)
+
+**Goal:** Rank bids by a composite score that considers cost, reputation, freshness, and capability-match precision — not just cost alone.
+
+**Design:**
+
+Replace `chain-bid-strategy.ts`'s cost-only ranking with a weighted composite:
+
+```
+bidScore(bid, peerReputation, timeNow) =
+    w_cost      × (1 − bid.proposedCostUsd / maxCostCeiling)     // lower cost = higher score
+  + w_reputation × (peerReputation.score / 100)                   // reputation from Phase 8K
+  + w_freshness  × freshnessDecay(bid.bidExpiresAt, timeNow)     // fresher bids = higher score
+  + w_precision  × capabilityMatchPrecision(bid, subtask)        // exact match > fuzzy match
+
+Default weights: w_cost=0.35, w_reputation=0.30, w_freshness=0.20, w_precision=0.15
+Configurable via chain mandate: `bidRankingWeights?: { cost, reputation, freshness, precision }`
+```
+
+**Implementation:**
+- `apps/node/src/chain-bid-strategy.ts` — add `bidScore()` function, update `rankBids()` to use composite scoring
+- `apps/node/src/chain-orchestrator.ts` — pass `PeerReputationRecord` to bid evaluation
+- `@envoymesh/local-store` — `getPeerReputation(peerId)` already exists (Phase 8K)
+
+**Freshness decay function:**
+```typescript
+function freshnessDecay(bidExpiresAt: string, now: Date): number {
+  const remaining = new Date(bidExpiresAt).getTime() - now.getTime();
+  if (remaining <= 0) return 0; // expired
+  const maxWindow = 300_000; // 5 minutes
+  return Math.min(1, remaining / maxWindow);
+}
+```
+
+**Tests:**
+- Extend `chain-bid-strategy.test.ts` — composite scoring, weight configuration, edge cases (zero reputation, expired bid)
+
+**Exit criteria:**
+- `[ ]` A bid with lower cost but zero reputation scores lower than a reasonable-cost bid from a trusted peer
+- `[ ]` Expired bids score 0
+- `[ ]` Owner can configure bid ranking weights per chain mandate
+
+---
+
+#### 41D — Chain UI in Social (🥉)
+
+**Goal:** A dashboard panel in the Social UI that shows active chains, subtask progress, budget burn-down, and bid notifications.
+
+**Design:**
+
+```
+Settings / Activity → Chains tab
+
+┌─────────────────────────────────────────────────────────┐
+│  Active Chains                                          │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ 🔄 "Find best Paris restaurant"                 │   │
+│  │    Chain #c_abc123 · 3/4 subtasks awarded       │   │
+│  │    Budget: $2.50 / $10.00 · ETA: 4 min          │   │
+│  │    [View Tree] [Cancel Chain]                    │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ ✅ "Translate → Review → Summarize handbook"     │   │
+│  │    Completed · $3.75 spent · 2 min ago           │   │
+│  │    [View Report]                                 │   │
+│  └─────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────┘
+```
+
+**New components:**
+- `apps/social/src/components/views/ChainsView.tsx` — dashboard panel
+- `apps/social/src/components/ChainTreeView.tsx` — expandable subtask tree with status badges
+- `apps/social/src/components/ChainReportView.tsx` — rendered composite report
+
+**Data flow:**
+- `NodeServiceImpl` calls `chainStateSnapshot()` on every state change
+- Pushes `chain:state` events via WebSocket
+- `useNodeState` / `useNodeService` subscribes and updates React state
+- `ChainsView` renders from local state
+
+**RPC surface (already defined, needs implementation):**
+- `chainList()` — returns all active chain snapshots
+- `chainGet(chainId)` — returns detailed chain state
+- `chainCancel(chainId)` — cancels a chain
+- `chainPlan(params)` — creates a new chain
+- `chainLaunch(params)` — launches a planned chain
+
+**Implementation touches:**
+- `apps/social/src/components/views/ChainsView.tsx` (new)
+- `apps/node/src/node-service-impl.ts` — implement chain RPCs
+- `apps/social/src/hooks/useNodeService.tsx` — add hook methods
+- `apps/social/src/components/views/SettingsView.tsx` — wire Chains tab
+- `apps/social/src/i18n/messages/en.ts` — chain-related keys
+
+**Exit criteria:**
+- `[ ]` Owner sees all active chains with subtask progress and budget status
+- `[ ]` Clicking "View Tree" shows an expandable subtask tree
+- `[ ]` Completed chains show a rendered composite report
+- `[ ]` Cancelling a chain from the UI sends cancel to all workers
+
+---
+
+#### 41E — Heartbeat enforcement + chain resilience (🥉)
+
+**Goal:** Auto-detect stalled subtasks and take action — re-bid, cancel, or escalate to owner.
+
+**Design:**
+
+```
+trackChain(deps, state) — runs every heartbeatIntervalMs (default 30s)
+    │
+    ├── For each active subtask:
+    │     │
+    │     ├── If lastHeartbeatAt > heartbeatTimeoutMs (default 120s):
+    │     │     │
+    │     │     ├── Log: "Subtask {id} stalled — no heartbeat for {n}ms"
+    │     │     │
+    │     │     └── Handle by policy:
+    │     │           ├── "auto_rebid": Cancel current worker, re-launch subtask
+    │     │           ├── "auto_cancel_subtask": Cancel subtask, mark chain partial
+    │     │           ├── "auto_cancel_chain": Cancel entire chain
+    │     │           └── "escalate": Push notification to owner
+    │     │
+    │     └── If lastConfidence < minConfidence (default 0.3):
+    │           └── Auto-rebalance (if rebalancePolicy === "auto")
+    │                 Bring in a second worker, keep best result
+    │
+    └── Emit chain:state push event after any state change
+```
+
+**New field on `ChainMandate`:**
+- `stallPolicy`: `"auto_rebid" | "auto_cancel_subtask" | "auto_cancel_chain" | "escalate"` — default `"auto_rebid"`
+- `heartbeatTimeoutMs`: number — default 120_000
+- `minConfidence`: number — default 0.3
+
+**Implementation:**
+- `apps/node/src/chain-orchestrator.ts` — extend `trackChain()`
+- `apps/node/src/chain-worker.ts` — ensure heartbeat is sent on schedule
+- No new files — changes are localized to existing modules
+
+**Tests:**
+- Extend `chain-orchestrator.test.ts` — stalled subtask detection, auto-rebid, auto-cancel, escalate
+
+**Exit criteria:**
+- `[ ]` Sub-task stalled for 120s triggers auto-rebid (new worker selected)
+- `[ ]` Stalled subtask with `stallPolicy: "escalate"` pushes notification to owner
+- `[ ]` Low-confidence partial triggers auto-rebalance with a second worker
+
+---
+
+#### 41F — Chain audit trail (🥉)
+
+**Goal:** Feed chain events into the existing JSONL audit pipeline so every chain operation is traceable with `correlationId`.
+
+**Design:**
+
+```
+Chain event → ChainAuditSink.record({ type: "chain.*", outcome, summary, ... })
+    │
+    └── → LocalTaskStore.appendAuditEvent()
+          │
+          └── → <profileDir>/audit.jsonl (same file as all other audits)
+```
+
+**New audit event types:**
+- `chain.planned` — goal, subtask count
+- `chain.launched` — workers targeted
+- `chain.bid_received` — worker, cost, bid kind
+- `chain.awarded` — subtask, worker, final cost
+- `chain.partial_received` — subtask, seq, progress %
+- `chain.synthesized` — aggregation kind, synthesis cost
+- `chain.completed` — total cost, total duration
+- `chain.cancelled` — reason
+- `chain.stalled` — subtask, last heartbeat
+
+**Implementation:**
+- `apps/node/src/chain-inbound.ts` — already calls `deps.audit.record()`. Ensure the audit sink writes to the main JSONL.
+- `apps/node/src/chain-orchestrator.ts` — add `deps.audit.record()` calls at key state transitions
+- `packages/local-store/src/index.ts` — extend `AuditEventType` union with chain types
+
+**Exit criteria:**
+- `[ ]` Every chain state transition produces a JSONL audit line with `correlationId`
+- `[ ]` `npm run cli -- audit --filter chain:*` shows chain events
+- `[ ]` Audits survive node restart (same JSONL file)
+
+---
+
+#### 41G — Quick wins (low-effort, high-polish)
+
+**41G.1 — chainStateSnapshot WebSocket push.** On every state change, push a `chain:state` event so the UI auto-updates. One-line change in `chain-orchestrator.ts` + one event subscription in the Social UI.
+
+**41G.2 — In-memory capability index cache.** Before 41B ships, seed `findWorkers()` with an in-memory map populated from bonded contacts' agent cards. Simple: one `Map<string, string[]>` loaded on startup from `capability-index.json`.
+
+**41G.3 — Bid justification in UI.** The `justification` field already exists on `ChainSubtaskBidSchema`. Expose it in the Chains UI so owners understand why a worker countered at a higher price.
+
+**41G.4 — Chain cost summary CSV export.** `npm run cli -- chain export-costs <chainId>` writes a CSV with subtask, worker, cost, duration columns. Simple file write — no billing rail needed.
+
+---
+
+### 13.3 Phase 41 implementation plan
+
+| Sub-phase | File(s) | Tests | ~Lines | Depends on |
+|-----------|---------|-------|--------|------------|
+| 41A — LLM decompose/merge | `chain-llm.ts` (new), `node-service-impl.ts` | 2 test files | ~300 | Phase 29 (OpenClaw runtime) |
+| 41B — Agent Card auto-discovery | `capability-index.ts` (new), `index.ts`, `chain-orchestrator.ts` | 1 test file | ~200 | Phase 33 (A2A tool exposure) |
+| 41C — Bid ranking | `chain-bid-strategy.ts` | extend existing | ~80 | Phase 8K (reputation) |
+| 41D — Chain UI | `ChainsView.tsx`, `ChainTreeView.tsx`, `ChainReportView.tsx` (new) | 2 test files | ~500 | Phase 38 (WebRTC UI pattern) |
+| 41E — Heartbeat enforcement | `chain-orchestrator.ts` | extend existing | ~100 | — |
+| 41F — Chain audit trail | `chain-orchestrator.ts`, `chain-inbound.ts`, `local-store` | extend existing | ~80 | — |
+| 41G — Quick wins | various | extend existing | ~150 | — |
+| **Total** | | | **~1,410** | |
+
+### 13.4 Phase 41 exit criteria
+
+- `[ ]` Owner describes a goal in natural language and the orchestrator decomposes it into subtasks via LLM (41A)
+- `[ ]` Workers are auto-discovered from bonded contacts' agent cards (41B)
+- `[ ]` Bids are ranked by composite score (cost + reputation + freshness + precision), not cost alone (41C)
+- `[ ]` Owner sees active chains, subtask progress, and budget burn-down in the Social UI (41D)
+- `[ ]` Stalled subtasks are auto-detected and re-bid within 120s (41E)
+- `[ ]` Every chain operation is audited with correlationId (41F)
+- `[ ]` Quick wins: WebSocket push for chain state, in-memory capability cache, bid justification in UI, chain cost CSV export (41G)
+
+---
+
+## 14. References
 
 - `docs/protocol-standard.md` — base EMP wire protocol
 - `docs/envoyai-protocol.md` — EnvoyAI (OpenClaw) integration

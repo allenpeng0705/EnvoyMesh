@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
+import { useToast } from "../../hooks/useToast.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import {
   useIsInProcessMobileNode,
@@ -1159,6 +1160,7 @@ function TerminalAssistSettings({
 export function SettingsAITab() {
   const t = useT();
   const nodeService = useNodeService();
+  const { showToast } = useToast();
   const isMobileNode = useIsInProcessMobileNode();
   const { nodeConfig, refreshNodeConfig } = useNodeState();
   const aiSettings = nodeConfig?.aiSettings ?? defaultAiSettings();
@@ -1179,7 +1181,7 @@ export function SettingsAITab() {
 
   const handleAddRule = async () => {
     if (!ruleForm.name.trim()) {
-      alert(t("settings.ai.rules.nameRequiredAlert"));
+      showToast(t("settings.ai.rules.nameRequiredAlert"), "error");
       return;
     }
 

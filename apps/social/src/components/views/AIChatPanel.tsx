@@ -3,6 +3,7 @@ import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useIsInProcessMobileNode } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
+import { ConfirmDialog } from "../ConfirmDialog.js";
 import { openLocalFile } from "../../lib/library-file-actions.js";
 import { stripModelThinking } from "@envoymesh/api";
 import type { AgentActivityRecord, AnswerFormat, ChatMessage, OwnerAgentApprovalSummary, OwnerAgentDomain, OwnerAgentTurnResult, StructuredBlock } from "@envoymesh/api";
@@ -209,6 +210,7 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
     loadAssistantLinkedTerminalSessionId(),
   );
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ title: string; message?: string; variant?: "default" | "destructive"; onConfirm: () => void } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const draftRef = useRef<ReturnType<typeof createAssistantDraftCrdt> | null>(null);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -430,9 +432,16 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
 
   const handleClearAiChat = () => {
     if (aiMessages.length === 0) return;
-    if (!window.confirm(t("aiChat.clearConfirm"))) return;
-    void nodeService.clearChatHistory(ENVOY_AI_THREAD_KEY).then(() => {
-      setAiMessages([]);
+    setConfirm({
+      title: t("aiChat.clearConfirm"),
+      message: t("aiChat.clearConfirmMessage"),
+      variant: "destructive",
+      onConfirm: () => {
+        setConfirm(null);
+        void nodeService.clearChatHistory(ENVOY_AI_THREAD_KEY).then(() => {
+          setAiMessages([]);
+        });
+      },
     });
   };
 
@@ -660,6 +669,15 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
           sendDisabled={isAiLoading || !assistantReady}
         />
       </footer>
+      {confirm ? (
+        <ConfirmDialog
+          title={confirm.title}
+          message={confirm.message}
+          variant={confirm.variant}
+          onConfirm={confirm.onConfirm}
+          onCancel={() => setConfirm(null)}
+        />
+      ) : null}
     </>
   );
 }

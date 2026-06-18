@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
@@ -41,6 +41,7 @@ import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import { PeerProfileGalleryStrip } from "../PeerProfileGalleryStrip.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { AgentCardPanel } from "../AgentCardPanel.js";
+import { ConfirmDialog } from "../ConfirmDialog.js";
 import type { TFunction } from "../../context/I18nContext.js";
 
 interface ContactChatPanelProps {
@@ -104,10 +105,33 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   const [contactTags, setContactTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [notesOpen, setNotesOpen] = useState(false);
+  const [confirm, setConfirm] = useState<{ title: string; message?: ReactNode; variant?: "default" | "destructive"; confirmLabel?: string; cancelLabel?: string; onConfirm: () => void } | null>(null);
   const draftRef = useRef<ReturnType<typeof createContactComposeDraftCrdt> | null>(null);
   const notesRef = useRef<ReturnType<typeof createContactNotesCrdt> | null>(null);
   const draftSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const notesSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks any pending "auto-clear sendError" timer so we can cancel it on
+  // unmount and on subsequent errors. Fire-and-forget setTimeouts are a
+  // common source of "setState on unmounted component" warnings — keep this
+  // ref in sync with the latest scheduled timer.
+  const sendErrorClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleClearSendError = useCallback((ms: number) => {
+    if (sendErrorClearTimerRef.current !== null) {
+      clearTimeout(sendErrorClearTimerRef.current);
+    }
+    sendErrorClearTimerRef.current = setTimeout(() => {
+      sendErrorClearTimerRef.current = null;
+      setSendError(null);
+    }, ms);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (sendErrorClearTimerRef.current !== null) {
+        clearTimeout(sendErrorClearTimerRef.current);
+        sendErrorClearTimerRef.current = null;
+      }
+    };
+  }, []);
   const ownerId = humanProfile?.ownerId ?? nodeConfig?.profileDir ?? "anonymous";
 
   const pushDraftSync = useCallback(
@@ -283,7 +307,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
 
     if (!nodeMeshOnline) {
       setSendError(t("contactChat.nodeOffline"));
-      setTimeout(() => setSendError(null), 5000);
+      scheduleClearSendError(5000);
       return;
     }
 
@@ -355,7 +379,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
           ),
         );
         setSendError(msg);
-        setTimeout(() => setSendError(null), 8000);
+        scheduleClearSendError(8000);
       }
     })();
   };
@@ -479,7 +503,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       } catch (err) {
         const msg = err instanceof Error ? err.message : t("contactChat.sendFailed");
         setSendError(msg);
-        setTimeout(() => setSendError(null), 8000);
+        scheduleClearSendError(8000);
       }
       return;
     }
@@ -490,7 +514,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     if (!navigator.mediaDevices?.getUserMedia) {
       recordingRef.current = false;
       setSendError(t("audioMessage.unsupported", "Audio recording not supported in this browser"));
-      setTimeout(() => setSendError(null), 5000);
+      scheduleClearSendError(5000);
       return;
     }
 
@@ -546,14 +570,14 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     } catch {
       recordingRef.current = false;
       setSendError(t("audioMessage.micDenied", "Microphone access denied"));
-      setTimeout(() => setSendError(null), 5000);
+      scheduleClearSendError(5000);
     }
-  }, [selectedContact, nodeService, peerId, humanProfile, t, fileToBase64]);
+  }, [selectedContact, nodeService, peerId, humanProfile, t, fileToBase64, scheduleClearSendError]);
 
   const handleAttachFile = async (file: File) => {
     if (!nodeMeshOnline) {
       setSendError(t("contactChat.nodeOffline"));
-      setTimeout(() => setSendError(null), 5000);
+      scheduleClearSendError(5000);
       return;
     }
     if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
@@ -595,13 +619,21 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       setPendingOutbound((prev) => prev.filter((m) => m.messageId !== messageId));
       return;
     }
-    if (!window.confirm(t("contactChat.deleteConfirm"))) return;
-    const ok = await removeMessage(messageId);
-    if (ok) {
-      showToast(t("contactChat.messageDeleted"), "success");
-    } else {
-      showToast(t("contactChat.deleteFailed"), "error");
-    }
+    setConfirm({
+      title: t("contactChat.deleteConfirm"),
+      message: t("contactChat.deleteConfirmMessage"),
+      variant: "destructive",
+      confirmLabel: t("common.delete"),
+      onConfirm: async () => {
+        setConfirm(null);
+        const ok = await removeMessage(messageId);
+        if (ok) {
+          showToast(t("contactChat.messageDeleted"), "success");
+        } else {
+          showToast(t("contactChat.deleteFailed"), "error");
+        }
+      },
+    });
   };
 
   // Phase 38 — voice call state
@@ -633,21 +665,27 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
 
   const handleClearChat = async () => {
     if (displayMessages.length === 0) return;
-    if (!window.confirm(t("contactChat.clearConfirm"))) {
-      return;
-    }
-    const deletedCount = await clearThread();
-    setPendingOutbound([]);
-    if (deletedCount > 0) {
-      showToast(
-        deletedCount === 1
-          ? t("contactChat.clearedOne", { count: deletedCount })
-          : t("contactChat.clearedMany", { count: deletedCount }),
-        "success",
-      );
-    } else {
-      showToast(t("contactChat.chatCleared"), "success");
-    }
+    setConfirm({
+      title: t("contactChat.clearConfirm"),
+      message: t("contactChat.clearConfirmMessage"),
+      variant: "destructive",
+      confirmLabel: t("common.clear"),
+      onConfirm: async () => {
+        setConfirm(null);
+        const deletedCount = await clearThread();
+        setPendingOutbound([]);
+        if (deletedCount > 0) {
+          showToast(
+            deletedCount === 1
+              ? t("contactChat.clearedOne", { count: deletedCount })
+              : t("contactChat.clearedMany", { count: deletedCount }),
+            "success",
+          );
+        } else {
+          showToast(t("contactChat.chatCleared"), "success");
+        }
+      },
+    });
   };
 
   const messageGroups = useMemo(() => groupMessagesByDate(displayMessages), [displayMessages]);
@@ -967,6 +1005,23 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         </div>
       </details>
       <div className="chat-composer">
+        {/* Floating overlays — render above the input row without pushing it down */}
+        <div className="chat-composer-overlays">
+          {sendError && <div className="chat-send-error">{sendError}</div>}
+          {!contactReachable && nodeMeshOnline && !reachabilityChecking && (
+            <div className="chat-reachability-hint">
+              {isHomeBridgeThread
+                ? t("contactChat.homeOfflineHint")
+                : t("contactChat.contactOfflineHint")}
+            </div>
+          )}
+          {pendingOutbound.some((m) => m.metadata.deliveryReceipt === "pending") && (
+            <div className="typing-indicator">
+              <span /><span /><span />
+            </div>
+          )}
+        </div>
+
         {latestDraft && (
           <div className="chat-draft-suggestion" role="region" aria-label={t("contactChat.suggestedReplyAria")}>
             <div className="chat-draft-suggestion-body">
@@ -990,24 +1045,11 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
           </div>
         )}
       <footer className="chat-input">
-        {sendError && <div className="chat-send-error">{sendError}</div>}
-        {!contactReachable && nodeMeshOnline && !reachabilityChecking && (
-          <div className="chat-reachability-hint">
-            {isHomeBridgeThread
-              ? t("contactChat.homeOfflineHint")
-              : t("contactChat.contactOfflineHint")}
-          </div>
-        )}
         {shareOpen && (
           <ShareFileDialog
             targetOwnerId={selectedContact}
             onClose={() => setShareOpen(false)}
           />
-        )}
-        {pendingOutbound.some((m) => m.metadata.deliveryReceipt === "pending") && (
-          <div className="typing-indicator">
-            <span /><span /><span />
-          </div>
         )}
         <ChatComposer
           value={chatInput}
@@ -1078,6 +1120,17 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
             showToast(t("contactChat.removeContactSuccess"), "success");
             onSelectContact(null);
           }}
+        />
+      ) : null}
+      {confirm ? (
+        <ConfirmDialog
+          title={confirm.title}
+          message={confirm.message}
+          variant={confirm.variant}
+          confirmLabel={confirm.confirmLabel}
+          cancelLabel={confirm.cancelLabel}
+          onConfirm={confirm.onConfirm}
+          onCancel={() => setConfirm(null)}
         />
       ) : null}
     </>

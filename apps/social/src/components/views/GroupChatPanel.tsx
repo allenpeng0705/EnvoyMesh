@@ -522,6 +522,18 @@ export function GroupChatPanel({
       </div>
 
       <div className="chat-composer">
+        {/* Floating overlays — render above the input row without pushing it down */}
+        <div className="chat-composer-overlays">
+          {sendError ? <div className="chat-send-error">{sendError}</div> : null}
+          {pendingOutbound.some((m) => m.metadata.deliveryReceipt === "pending") ? (
+            <div className="typing-indicator">
+              <span />
+              <span />
+              <span />
+            </div>
+          ) : null}
+        </div>
+
         {latestDraft ? (
           <div className="chat-draft-suggestion" role="region" aria-label={t("contactChat.suggestedReplyAria")}>
             <div className="chat-draft-suggestion-body">
@@ -545,14 +557,6 @@ export function GroupChatPanel({
           </div>
         ) : null}
         <footer className="chat-input">
-          {sendError ? <div className="chat-send-error">{sendError}</div> : null}
-          {pendingOutbound.some((m) => m.metadata.deliveryReceipt === "pending") ? (
-            <div className="typing-indicator">
-              <span />
-              <span />
-              <span />
-            </div>
-          ) : null}
           <ChatComposer
             value={chatInput}
             onChange={setChatInput}

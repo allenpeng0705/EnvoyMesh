@@ -157,31 +157,32 @@ describe("SettingsAccountTab (Profile / Identity / Privacy)", () => {
   });
 
   it("calls clearAllUserData when the user confirms the Clear All Data dialog", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderWithI18n(<SettingsAccountTab />);
     await waitFor(() => {
       expect(screen.getByText("Data Management")).toBeDefined();
     });
     const clearBtn = screen.getByRole("button", { name: "Clear All Data" });
     fireEvent.click(clearBtn);
+    // ConfirmDialog appears — click the confirm (danger) button
+    const confirmBtn = screen.getByRole("button", { name: "Confirm" });
+    fireEvent.click(confirmBtn);
     await waitFor(() => {
       expect(clearAllUserData).toHaveBeenCalled();
     });
-    confirmSpy.mockRestore();
   });
 
   it("does NOT call clearAllUserData when the user cancels the confirmation", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderWithI18n(<SettingsAccountTab />);
     await waitFor(() => {
       expect(screen.getByText("Data Management")).toBeDefined();
     });
     const clearBtn = screen.getByRole("button", { name: "Clear All Data" });
     fireEvent.click(clearBtn);
-    // Give the promise a tick to resolve, then verify it was never called.
+    // ConfirmDialog appears — click the cancel (secondary) button
+    const cancelBtn = screen.getByRole("button", { name: "Cancel" });
+    fireEvent.click(cancelBtn);
     await new Promise((r) => setTimeout(r, 10));
     expect(clearAllUserData).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
   });
 
   it("changes the knowledge syndication level and persists it", async () => {

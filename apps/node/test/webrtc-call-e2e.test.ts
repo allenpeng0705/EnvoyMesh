@@ -15,7 +15,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
-import { readFile, mkdtemp, rm } from "node:fs/promises";
+import { readFile, stat, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, extname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -79,11 +79,13 @@ describe("WebRTC voice call E2E", () => {
 
   beforeAll(async () => {
     // Build Social UI if not already built
-    const { spawnSync } = await import("node:child_process");
-    const build = spawnSync("npm", ["run", "build", "-w", "@envoymesh/social", "--", "--mode", "development"], {
-      cwd: WORKSPACE_ROOT, stdio: "pipe", timeout: 120_000,
-    });
-    console.log("[e2e] Build:", build.status === 0 ? "ok" : build.stderr.toString().slice(0, 200));
+    try { await stat(join(SOCIAL_DIST, "index.html")); }
+    catch {
+      const { spawnSync } = await import("node:child_process");
+      spawnSync("npm", ["run", "build", "-w", "@envoymesh/social", "--", "--mode", "development"], {
+        cwd: WORKSPACE_ROOT, stdio: "pipe", timeout: 120_000,
+      });
+    }
 
     // Start static HTTP server
     webServer = createServer(serveStatic);
