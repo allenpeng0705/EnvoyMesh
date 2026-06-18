@@ -7,8 +7,15 @@
 // editing affordance. Mutations (pin/unpin, launch, cancel, etc.) live on
 // the home node's Social UI.
 //
-// Field naming uses snake_case for JSON keys (matches the wire format);
-// the Dart accessors use camelCase.
+// Field naming uses camelCase for JSON keys (matches the wire format);
+// the Dart accessors use camelCase too.
+//
+// Each model exposes both `fromJson` (parsing wire input) and `toJson`
+// (round-tripping). The mobile client only uses `fromJson` today, but
+// the round-trip pattern is consistent with the rest of the project
+// (`chat_thread.dart`, `terminal_session.dart`) and catches drift
+// between the field set the schema requires and the field set the
+// client knows about.
 
 /// Summary of one chain report as returned by `chainListReports`.
 ///
@@ -60,6 +67,16 @@ class ChainReportSummary {
       ),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'chainId': chainId,
+        'chainMandateId': chainMandateId,
+        'orchestratorOwnerId': orchestratorOwnerId,
+        'orchestratorPeerId': orchestratorPeerId,
+        'pinned': pinned,
+        'createdAt': createdAt.toIso8601String(),
+        'chainSummary': chainSummary.toJson(),
+      };
 }
 
 /// Subset of the report's `chainSummary` returned by `chainListReports`.
@@ -84,15 +101,26 @@ class ChainReportSummaryStats {
       synthesisCostUsd: (json['synthesisCostUsd'] as num).toDouble(),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'subtaskCount': subtaskCount,
+        'workerCount': workerCount,
+        'synthesisCostUsd': synthesisCostUsd,
+      };
 }
 
 /// Full chain report as returned by `chainGetReport`.
 ///
-/// This is the detail screen's data model. Only the fields the mobile
-/// surfaces are modeled — `compositeArtifact`, the per-section artifact,
-/// and the deep task lineage are intentionally omitted (mobile is
-/// read-only and shows the report at a glance).
+/// The [version] field is a wire-schema version tag. The current
+/// `ChainReportSchema` requires `version: "0.1"`; we model it as a
+/// nullable String so older clients can still parse reports that omit
+/// the field. The mobile v1 surface doesn't gate any behavior on the
+/// version, but the field is kept so a future v0.2 / v0.3 schema can
+/// drive conditional rendering.
 class ChainReport {
+  /// Wire-schema version (e.g. `"0.1"`). Null when the server omits it.
+  final String? version;
+
   final String chainId;
   final String chainMandateId;
   final String orchestratorOwnerId;
@@ -103,7 +131,12 @@ class ChainReport {
   final String executiveSummary;
   final List<ChainReportSection> sections;
 
+  /// Roles the report is intended for. Defaults to `["human"]` on the
+  /// server; modeled as a read-only list since mobile doesn't re-publish.
+  final List<String> recipientRoles;
+
   const ChainReport({
+    this.version,
     required this.chainId,
     required this.chainMandateId,
     required this.orchestratorOwnerId,
@@ -113,10 +146,12 @@ class ChainReport {
     required this.chainSummary,
     required this.executiveSummary,
     required this.sections,
+    this.recipientRoles = const ['human'],
   });
 
   factory ChainReport.fromJson(Map<String, dynamic> json) {
     return ChainReport(
+      version: json['version'] as String?,
       chainId: json['chainId'] as String,
       chainMandateId: json['chainMandateId'] as String,
       orchestratorOwnerId: json['orchestratorOwnerId'] as String,
@@ -130,8 +165,25 @@ class ChainReport {
       sections: ((json['sections'] as List<dynamic>?) ?? const [])
           .map((e) => ChainReportSection.fromJson(e as Map<String, dynamic>))
           .toList(),
+      recipientRoles: ((json['recipientRoles'] as List<dynamic>?) ?? const ['human'])
+          .map((e) => e as String)
+          .toList(),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        if (version != null) 'version': version,
+        'chainId': chainId,
+        'chainMandateId': chainMandateId,
+        'orchestratorOwnerId': orchestratorOwnerId,
+        'orchestratorPeerId': orchestratorPeerId,
+        'pinned': pinned,
+        'createdAt': createdAt.toIso8601String(),
+        'chainSummary': chainSummary.toJson(),
+        'executiveSummary': executiveSummary,
+        'sections': sections.map((s) => s.toJson()).toList(),
+        'recipientRoles': recipientRoles,
+      };
 }
 
 /// Full `chainSummary` block on a `ChainReport`.
@@ -165,6 +217,15 @@ class ChainReportChainSummary {
       synthesisCostUsd: (json['synthesisCostUsd'] as num).toDouble(),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'durationMs': durationMs,
+        'subtaskCount': subtaskCount,
+        'workerCount': workerCount,
+        'workerAllocations':
+            workerAllocations.map((a) => a.toJson()).toList(),
+        'synthesisCostUsd': synthesisCostUsd,
+      };
 }
 
 /// One worker's per-subtask cost line on a chain report.
@@ -186,6 +247,12 @@ class ChainReportWorkerAllocation {
       committedUsd: (json['committedUsd'] as num).toDouble(),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'subtaskId': subtaskId,
+        'workerPeerId': workerPeerId,
+        'committedUsd': committedUsd,
+      };
 }
 
 /// One section in the report's body.
@@ -193,15 +260,57 @@ class ChainReportSection {
   final String heading;
   final String bodyMarkdown;
 
+  /// Citation tuples that the desktop renderer can link back to the
+  /// chain tree. Mobile v1 doesn't render citations (no chain tree to
+  /// highlight), but the field is modeled so a future "tap citation"
+  /// feature has the data.
+  final List<ChainReportCitation> citations;
+
   const ChainReportSection({
     required this.heading,
     required this.bodyMarkdown,
+    this.citations = const [],
   });
 
   factory ChainReportSection.fromJson(Map<String, dynamic> json) {
     return ChainReportSection(
       heading: json['heading'] as String,
       bodyMarkdown: (json['bodyMarkdown'] as String?) ?? '',
+      citations: ((json['citations'] as List<dynamic>?) ?? const [])
+          .map((e) => ChainReportCitation.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'heading': heading,
+        'bodyMarkdown': bodyMarkdown,
+        'citations': citations.map((c) => c.toJson()).toList(),
+      };
+}
+
+/// A `[subtaskId, snippet]` citation tuple that the desktop renderer
+/// can link back to the chain tree.
+class ChainReportCitation {
+  final String subtaskId;
+
+  /// Snippet of the worker's output the citation refers to.
+  final String snippet;
+
+  const ChainReportCitation({
+    required this.subtaskId,
+    required this.snippet,
+  });
+
+  factory ChainReportCitation.fromJson(Map<String, dynamic> json) {
+    return ChainReportCitation(
+      subtaskId: json['subtaskId'] as String,
+      snippet: (json['snippet'] as String?) ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'subtaskId': subtaskId,
+        'snippet': snippet,
+      };
 }
