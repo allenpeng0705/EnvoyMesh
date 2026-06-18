@@ -22,6 +22,8 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 ### 核心通讯
 - **直接与朋友聊天** — 点对点消息传递，签名信封，无平台，无广告
 - **群聊** — 创建和管理与绑定联系人的聊天室
+- **语音与视频通话** — 绑定联系人之间的点对点 WebRTC 通话，信令在 mesh 上传输（无需新端口，无中央服务器）
+- **语音消息** — 录制并发送语音便笺，在聊天线程内联播放
 - **文件共享** — 安全的、基于策略的 P2P 文件传输，支持内容寻址
 - **基于信任的关系** — 定义信任层级（阻止、公开、推荐、直接），控制每个联系人的访问权限
 
@@ -32,7 +34,10 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 - **全网发现** — 在整个网络中搜索文档、能力和节点
 - **联邦 RAG** — 将知识查询分发到绑定节点的库中并综合答案
 - **代理市场** — 寻找能力提供者，协商任务，建立信誉评分
-- **多代理任务链** — 将复杂任务（如"翻译 → 审核 → 总结"）分解到多个代理协作完成
+- **多代理任务链** — 将复杂任务（如"翻译 → 审核 → 总结"）分解到多个代理协作完成；工作者竞标、反提案，协调代理根据成本、信誉、ETA 授予任务
+- **可配置的成本再平衡** — 三种策略（`manual` / `auto` / `never`），既可保持完全控制，也可在工作者停滞时选择自动重新竞标
+- **跨协调代理与跨家庭节点委托** — 将子链移交给其他协调代理，或通过任意家庭节点路由，使用与中继无关的链信封
+- **在移动端查看链报告** — EnvoyGo 的"最近链"页面镜像您的家庭节点已发布的内容（只读）
 
 ### 团队与企业入职
 - **公司邀请链接** — 发布一键邀请，适合小型团队
@@ -182,10 +187,15 @@ EnvoyMesh 支持多代理任务链，您的代理可以分解复杂工作并在�
 
 **主要特性：**
 - **任务树** — 复杂工作流的显式父子关系
-- **多轮协商** — 反提案、拆分、合并
-- **预算执行** — 硬成本上限，支持每子任务追踪
-- **深度限制** — 可配置最多 3 层深度
-- **端到端可观测性** — 审计事件追踪每个链动作
+- **多轮协商** — 工作者竞标、反提案、拆分、合并（3 轮硬上限）
+- **预算执行** — 硬成本上限，通过 `ChainBudgetLedger` 支持每子任务追踪
+- **可配置的成本再平衡** — 三种策略（`manual` / `auto` / `never`），既可保持完全控制，也可在工作者停滞时选择自动重新竞标
+- **复合交付物** — 打包加权的工作者贡献，使用结构化合并（`weighted_concat` / `concatenate` / `merge_structured` / `owner_review`）
+- **跨协调代理移交** — 将子链委托给其他协调代理，使用重新签名的子委托书，并配备用于仲裁的收敛账本
+- **跨家庭节点中继** — 通过任意家庭节点路由链信封；中继节点对内容不可见
+- **LLM 驱动的任务分解** — 用真正的 LLM 驱动的任务分解器取代关键词回退
+- **链报告** — 丰富的多节报告，附带引用、按工作者分解的成本，以及可下载的复合产物
+- **端到端审计** — 每个链动作都发出一个类型化的 `chain.*` 审计事件
 
 完整设计详见 [`docs/agent_network.md`](docs/agent_network.md)。
 
@@ -206,7 +216,7 @@ Capacitor 应用是运行在您手机中的**完整 EnvoyMesh 节点**：
 ### EnvoyGo（Flutter 轻客户端）
 轻量级 Flutter 应用，作为您家庭节点的**远程客户端**：
 - 通过 WebSocket 或 libp2p 电路中继连接
-- 三个标签页：聊天、联系人、我的
+- 三个标签页：聊天、联系人、我的 — "我的"标签页还会展示一个"最近链"视图，展示您的家庭节点已发布的内容（只读）
 - 远程终端访问家庭节点
 - 自动重连，多传输方式回退
 - 安全会话令牌存储（iOS Keychain / Android EncryptedSharedPreferences）
@@ -222,6 +232,7 @@ EnvoyMesh/
 ├── apps/
 │   ├── cli/         # 命令行工具
 │   ├── node/        # 本地 Envoy 运行时（CLI、网络、WebSocket API）
+│   ├── relay/       # 中继节点二进制（轻量：连通性 + 查找，无 LLM）
 │   ├── tauri/       # 原生桌面窗口（社交应用 + 节点）
 │   ├── social/      # 社交/聊天 UI（Vite + React）
 │   ├── mobile/      # Capacitor iOS/Android（完整节点）
@@ -237,7 +248,7 @@ EnvoyMesh/
 
 ## 当前状态
 
-**最新发布：Phase 36 — Agent Network 标签页整合 + Phase 35 审查修复**
+**最新发布：Phase 40 — Agent Network 协作层（40A–40E 已落地）**，同时 Phase 38 语音/视频通话已上线。
 
 主要已发布里程碑包括：
 
@@ -253,6 +264,9 @@ EnvoyMesh/
 - **Phase 31** — Flutter 轻客户端（EnvoyGo）
 - **Phase 35** — 团队入职（公司邀请、LAN 自动绑定、配对服务亭、Fleet Manifest）
 - **Phase 36** — Agent Network 标签页整合
+- **Phase 37** — 语音消息（聊天中录制并发送语音便笺）
+- **Phase 38** — 实时语音/视频通话（WebRTC，信令在 mesh 上传输，无需新端口）
+- **Phase 40** — Agent Network 协作层（多代理任务链，支持多轮协商、可配置成本再平衡、跨协调代理移交、跨家庭节点中继、LLM 驱动的任务分解，以及 EnvoyGo "最近链" 移动端镜像）
 
 完整路线图详见 [`docs/implementation-plan.md`](docs/implementation-plan.md)。
 
@@ -262,7 +276,7 @@ EnvoyMesh/
 
 - **入门：** [**`QuickStart.md`**](QuickStart.md) — 安装、运行、移动、多机、桥接
 - **核心概念：** [架构参考](AGENTS.md) · [高级设计](docs/high-level-design.md) · [安全模型](docs/security.md)
-- **新功能：** [团队入职](docs/fleet-onboarding.md) · [代理网络](docs/agent_network.md) · [EnvoyGo 设计](docs/flutter-thin-client-design.md)
+- **新功能：** [团队入职](docs/fleet-onboarding.md) · [代理网络](docs/agent_network.md) · [语音消息](docs/audio-message-support.md) · [语音与视频通话](docs/voice-video-call-support.md) · [EnvoyGo 设计](docs/flutter-thin-client-design.md)
 - **开发者：** [协议参考](docs/protocol-standard.md) · [路线图](docs/implementation-plan.md)
 - **代理开发者：** [桥接指南](docs/agent_bridge_guide.md) · [OpenClaw 设置](docs/openclaw-extension.md)
 

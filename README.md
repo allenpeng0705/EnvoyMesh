@@ -22,6 +22,8 @@ Install an **Envoy** on your computer and phone, chat with friends directly, and
 ### Core Communication
 - **Chat with friends directly** — peer-to-peer messaging with signed envelopes, no platform, no ads
 - **Group conversations** — create and manage chat rooms with bonded contacts
+- **Voice & video calls** — peer-to-peer WebRTC calls between bonded contacts, with signaling over the mesh (no new ports, no central server)
+- **Audio messages** — record-and-send voice notes that play inline in the chat thread
 - **File sharing** — secure, policy-gated P2P file transfer with content-addressing
 - **Trust-based relationships** — define trust tiers (blocked, public, referred, direct) and control what each contact can access
 
@@ -32,7 +34,10 @@ Install an **Envoy** on your computer and phone, chat with friends directly, and
 - **Network-wide discovery** — search for documents, capabilities, and peers across the mesh
 - **Federated RAG** — fan out knowledge queries to bonded peers' libraries and synthesize answers
 - **Agent marketplace** — find capability providers, negotiate tasks, build reputation scores
-- **Multi-agent task chains** — decompose complex tasks like "translate → review → summarize" across multiple agents
+- **Multi-agent task chains** — decompose complex tasks like "translate → review → summarize" across multiple agents; workers bid, counter-propose, and the orchestrator awards based on cost, reputation, and ETA
+- **Configurable cost rebalance** — three policies (`manual` / `auto` / `never`) so you can stay in full control or opt into auto-rebidding when a worker stalls
+- **Cross-orchestrator & cross-home delegation** — hand sub-chains off to peer orchestrators or route them through any home node, with relay-agnostic chain envelopes
+- **View chain reports on mobile** — the EnvoyGo "Recent chains" screen mirrors what your home node published (read-only)
 
 ### Fleet & Enterprise Onboarding
 - **Company invite links** — issue one-click invites for small teams
@@ -182,10 +187,15 @@ Final chain report with citations, audit trail, and cost breakdown
 
 **Key features:**
 - **Task trees** — explicit parent/child lineage for complex workflows
-- **Multi-round negotiation** — counter-proposals, splits, merges
-- **Budget enforcement** — hard cost ceilings with per-subtask tracking
-- **Depth limits** — configurable up to 3 levels deep
-- **End-to-end observability** — audit events track every chain action
+- **Multi-round negotiation** — workers bid, counter-propose, split, and merge (3-round hard cap)
+- **Budget enforcement** — hard cost ceilings with per-subtask tracking via `ChainBudgetLedger`
+- **Configurable cost rebalance** — three policies (`manual` / `auto` / `never`) so you can stay in full control or opt into auto-rebidding when a worker stalls
+- **Composite deliverables** — bundled weighted worker contributions with structured merge (`weighted_concat` / `concatenate` / `merge_structured` / `owner_review`)
+- **Cross-orchestrator handoff** — delegate sub-chains to peer orchestrators, with re-signed sub-mandates and a convergence ledger for arbitration
+- **Cross-home relay** — route chain envelopes through any home node; relay nodes are content-agnostic
+- **LLM-powered decomposition** — replaces keyword fallback with a real LLM-driven task decomposer
+- **Chain reports** — rich multi-section reports with citations, cost breakdown per worker, and a downloadable composite artifact
+- **End-to-end audit** — every chain action emits a typed `chain.*` audit event
 
 See [`docs/agent_network.md`](docs/agent_network.md) for the full design.
 
@@ -206,7 +216,7 @@ The Capacitor app is a **complete EnvoyMesh node** running inside your phone:
 ### EnvoyGo (Flutter Thin Client)
 A lightweight Flutter app that acts as a **remote client** to your home node:
 - Connects via WebSocket or libp2p circuit relay
-- Three tabs: Chats, Contacts, Me
+- Three tabs: Chats, Contacts, Me — the Me tab also surfaces a Recent chains view of what your home node has published (read-only)
 - Terminal access to home node
 - Automatic reconnection with multi-transport fallback
 - Secure session token storage (iOS Keychain / Android EncryptedSharedPreferences)
@@ -222,6 +232,7 @@ EnvoyMesh/
 ├── apps/
 │   ├── cli/         # Command-line interface tools
 │   ├── node/        # The local Envoy runtime (CLI, mesh, WebSocket API)
+│   ├── relay/       # Relay node binary (lean: connectivity + lookup, no LLMs)
 │   ├── tauri/       # Native desktop window (Social + node)
 │   ├── social/      # Social/chat UI (Vite + React)
 │   ├── mobile/      # Capacitor iOS/Android (full node)
@@ -237,7 +248,7 @@ EnvoyMesh/
 
 ## Current Status
 
-**Latest shipped: Phase 36 — Agent Network tab consolidation + Phase 35 review fixes**
+**Latest shipped: Phase 40 — Agent Network Collaboration Layer (40A–40E green)** with Phase 38 Voice/Video Calls in production.
 
 Major shipped milestones include:
 
@@ -253,6 +264,9 @@ Major shipped milestones include:
 - **Phase 31** — Flutter Thin Client (EnvoyGo)
 - **Phase 35** — Fleet Onboarding (Company Invites, LAN auto-bond, Pairing Kiosk, Fleet Manifest)
 - **Phase 36** — Agent Network tab consolidation
+- **Phase 37** — Audio Messages (record-and-send voice notes inline in chat)
+- **Phase 38** — Real-Time Voice/Video Calls (WebRTC, signaling over the mesh, no new ports)
+- **Phase 40** — Agent Network Collaboration Layer (multi-agent task chains with multi-round negotiation, configurable cost rebalance, cross-orchestrator handoff, cross-home relay, LLM-powered decomposition, and the EnvoyGo Recent chains mobile mirror)
 
 See [`docs/implementation-plan.md`](docs/implementation-plan.md) for the full roadmap.
 
@@ -262,7 +276,7 @@ See [`docs/implementation-plan.md`](docs/implementation-plan.md) for the full ro
 
 - **Start here:** [**`QuickStart.md`**](QuickStart.md) — install, run, mobile, multi-machine, bridge
 - **Core concepts:** [Architecture reference](AGENTS.md) · [High-level design](docs/high-level-design.md) · [Security model](docs/security.md)
-- **New features:** [Fleet onboarding](docs/fleet-onboarding.md) · [Agent Network](docs/agent_network.md) · [EnvoyGo design](docs/flutter-thin-client-design.md)
+- **New features:** [Fleet onboarding](docs/fleet-onboarding.md) · [Agent Network](docs/agent_network.md) · [Audio messages](docs/audio-message-support.md) · [Voice & video calls](docs/voice-video-call-support.md) · [EnvoyGo design](docs/flutter-thin-client-design.md)
 - **For developers:** [Protocol reference](docs/protocol-standard.md) · [Roadmap](docs/implementation-plan.md)
 - **For agent authors:** [Bridge guide](docs/agent_bridge_guide.md) · [OpenClaw setup](docs/openclaw-extension.md)
 
