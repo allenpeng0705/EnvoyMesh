@@ -31,6 +31,11 @@ class _RecentChainDetailScreenState
   bool _loading = true;
   String? _error;
 
+  /// True when the home node confirmed the report is gone (returned
+  /// `null` for `chainGetReport`). This is distinct from a transient
+  /// error (`_error`) — it means the report was GC'd or never existed.
+  bool _notFound = false;
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +47,7 @@ class _RecentChainDetailScreenState
     setState(() {
       _loading = true;
       _error = null;
+      _notFound = false;
     });
     final nodeNotifier = ref.read(nodeProvider.notifier);
     final homeClient = nodeNotifier.client;
@@ -57,9 +63,12 @@ class _RecentChainDetailScreenState
       final report = await client.getChainReport(widget.chainId);
       if (!mounted) return;
       if (report == null) {
+        // The home node returned a null report — the report was GC'd
+        // (90-day policy unless pinned) or never existed. Show a softer
+        // "not available" state rather than a hard error.
         setState(() {
           _loading = false;
-          _error = 'Report not found (it may have been removed)';
+          _notFound = true;
         });
         return;
       }
@@ -96,6 +105,42 @@ class _RecentChainDetailScreenState
   Widget _buildBody() {
     if (_loading && _report == null) {
       return const Center(child: CircularProgressIndicator());
+    }
+    if (_notFound) {
+      return ListView(
+        children: [
+          const SizedBox(height: 80),
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                Icon(Icons.analytics_outlined,
+                    size: 48,
+                    color: Theme.of(context).colorScheme.outline),
+                const SizedBox(height: 12),
+                Text(
+                  'This report is no longer available',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'It may have been removed by the 90-day GC policy\n'
+                  'or it was never published on this home node.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Back to Recent chains'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
     }
     if (_error != null) {
       return ListView(
