@@ -86,6 +86,16 @@ const INTENT_ROLE_POLICIES: Record<string, readonly RolePair[]> = {
   "task.chain.cancel": AGENT_AGENT_ONLY,
   "task.chain.heartbeat": AGENT_AGENT_ONLY,
   "task.chain.report": AGENT_TO_HUMAN,
+  // Phase 40E — Cross-orchestrator + cross-home chains.
+  // All four are agent↔agent. The owner (acting as the owner's agent
+  // identity via the OpenClaw bridge) signs task.chain.handoff; both
+  // sides are agent→agent at the wire level. task.chain.relay is a
+  // transport wrapper, not a logical intent — it's gated by the same
+  // role policy as the inner envelope (validated by the receiver).
+  "task.chain.handoff": AGENT_AGENT_ONLY,
+  "task.chain.delegate": AGENT_AGENT_ONLY,
+  "task.chain.relay": AGENT_AGENT_ONLY,
+  "task.chain.arbitration": AGENT_AGENT_ONLY,
 };
 
 /**

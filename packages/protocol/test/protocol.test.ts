@@ -699,6 +699,68 @@ describe("protocol", () => {
     ).toThrow(/social\.intro\.propose.*senderRole=agent|recipientRole/);
   });
 
+  it("rejects human→human for Phase 40E cross-orchestrator intents (agent↔agent only)", () => {
+    // task.chain.handoff, .delegate, .relay, .arbitration are all
+    // agent↔agent. Humans must not appear in their role pair. This is
+    // important because the role-policy table is the only "first line"
+    // guard — a misrouted intent can otherwise travel wire.
+    expect(() =>
+      createUnsignedEnvelope({
+        senderPeerId: "peer-human",
+        senderPublicKey: "pk",
+        senderRole: "human",
+        recipientPeerId: "peer-agent",
+        recipientRole: "agent",
+        intent: "task.chain.handoff",
+        payload: {
+          chainId: "chain_x",
+          subtaskIds: ["subtask_a"],
+          newOrchestratorPeerId: "peer-b",
+          newOrchestratorOwnerId: "envoy:owner:b",
+          expiresAt: "2027-01-01T00:00:00.000Z",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      createUnsignedEnvelope({
+        senderPeerId: "peer-a",
+        senderPublicKey: "pk",
+        senderRole: "agent",
+        recipientPeerId: "peer-human-b",
+        recipientRole: "human",
+        intent: "task.chain.delegate",
+        payload: {
+          chainId: "chain_x",
+          subtaskIds: ["subtask_a"],
+          handoffRequestId: "handoff_x_1",
+          subChainId: "chain_x_sub_1",
+          subChainMandate: {
+            version: "0.1",
+            chainMandateId: "m1",
+            chainId: "chain_x_sub_1",
+            issuerOwnerId: "envoy:owner:b",
+            orchestratorOwnerId: "envoy:owner:b",
+            maxChainCostUsd: 1,
+            costCeilingUsd: 1,
+            maxWorkers: 1,
+            allowDepth3: false,
+            maxSensitivity: "public",
+            deadlineAt: "2027-01-01T00:00:00.000Z",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            rebalancePolicy: "manual",
+            maxAutoRebalances: 0,
+            autoRebalanceIncrementUsd: 0,
+            signature: "stub",
+          },
+          reportBackByAt: "2027-01-01T00:00:00.000Z",
+          estimatedCostUsd: 1,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      }),
+    ).toThrow();
+  });
+
   it("defaults mandate closeOnFirstCompletedResult to false", () => {
     const mandate = createUnsignedMandate({
       ownerId: "envoy:owner:alice",
