@@ -1209,13 +1209,18 @@ class NodeNotifier extends StateNotifier<NodeState> {
 // --------------------------------------------------------------------------
 
 final callProvider = ChangeNotifierProvider<CallProvider>((ref) {
-  final nodeState = ref.watch(nodeProvider);
-  final client = nodeState.client;
+  // `client` lives on the NodeNotifier, not the NodeState. (Pre-existing
+  // bug introduced by commit 1e266c0 — fixed here so the file compiles
+  // and the call provider can subscribe to events from the home client.)
+  final client = ref.read(nodeProvider.notifier).client;
   if (client == null) {
     // Return a no-op provider when disconnected
     return CallProvider.noop();
   }
-  final provider = CallProvider(client);
+  // The CallProvider subscribes to NodeServiceClient events, so wrap
+  // the HomeRemoteClient first. (Pre-existing bug introduced by
+  // commit 1e266c0 — fixed here so the file compiles.)
+  final provider = CallProvider(NodeServiceClient(client));
   ref.onDispose(() => provider.dispose());
   return provider;
 });

@@ -337,4 +337,73 @@ class NodeServiceClient {
     if (report == null) return null;
     return ChainReport.fromJson(report as Map<String, dynamic>);
   }
+
+  // -- Voice / video calls (Phase 38 stubs) --
+  //
+  // The call_provider.dart layer (added in commit 1e266c0) references
+  // these methods, but the actual call feature is unimplemented on the
+  // home node. The stubs below exist so the codebase compiles and the
+  // call_provider can be constructed:
+  //
+  // - `eventStream` returns an empty stream so `CallProvider` can
+  //   subscribe without throwing. The real implementation would route
+  //   through the HomeRemoteClient's push-event channel.
+  // - `noop()` returns a sentinel NodeServiceClient with no functional
+  //   backing client. It's only used by `CallProvider.noop()` (when the
+  //   device is disconnected), which never calls RPC methods.
+  // - The other call RPCs (`sendCallInvite`, `acceptCallInvite`, ...)
+  //   throw `UnimplementedError` at access time. Calling them is a real
+  //   user action and the error is caught at the provider boundary so
+  //   it surfaces to the UI.
+
+  /// Stream of unsolicited push events from the home node. Returns an
+  /// empty stream until the call feature is implemented on the home node.
+  Stream<Map<String, dynamic>> get eventStream => const Stream.empty();
+
+  /// A no-op client used by [CallProvider.noop] when the device is
+  /// disconnected from the home node.
+  factory NodeServiceClient.noop() => NodeServiceClient(
+        HomeRemoteClient(
+          HomeRemoteClientOptions(
+            resolveCandidates: () async => const [],
+            createTransport: (_) => throw UnimplementedError(),
+          ),
+        ),
+      );
+
+  /// Send a call invite to [targetOwnerId]. Returns the call id on
+  /// success, or null if the home node refused.
+  Future<String?> sendCallInvite(String targetOwnerId) async {
+    throw UnimplementedError(
+      'NodeServiceClient.sendCallInvite is not yet implemented on the home node',
+    );
+  }
+
+  /// Accept an incoming call invite. Returns true if accepted cleanly.
+  Future<bool> acceptCallInvite(String callId) async {
+    throw UnimplementedError(
+      'NodeServiceClient.acceptCallInvite is not yet implemented on the home node',
+    );
+  }
+
+  /// Decline an incoming call invite.
+  Future<bool> declineCallInvite(String callId, String reason) async {
+    throw UnimplementedError(
+      'NodeServiceClient.declineCallInvite is not yet implemented on the home node',
+    );
+  }
+
+  /// End the active call.
+  Future<bool> endCall(String callId) async {
+    throw UnimplementedError(
+      'NodeServiceClient.endCall is not yet implemented on the home node',
+    );
+  }
+
+  /// Toggle the local mic muted state.
+  Future<void> setCallMuted(String callId, bool muted) async {
+    throw UnimplementedError(
+      'NodeServiceClient.setCallMuted is not yet implemented on the home node',
+    );
+  }
 }

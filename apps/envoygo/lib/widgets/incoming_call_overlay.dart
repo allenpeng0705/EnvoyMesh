@@ -120,7 +120,7 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
                 children: [
                   // Decline button
                   _CircularButton(
-                    icon: Icons.phone_hangup,
+                    icon: Icons.call_end,
                     color: colorScheme.error,
                     onPressed: () => widget.callProvider.declineCall(),
                     label: 'Decline',

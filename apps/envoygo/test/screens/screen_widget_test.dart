@@ -235,9 +235,10 @@ class _FakeChatNotifier extends ChatNotifier {
   @override
   void onBridgeStatus(Map<String, dynamic> data) {}
   @override
-  Future<void> sendMessage(String targetOwnerId, String text) async {}
+  Future<void> sendMessage(String targetOwnerId, String text,
+      {List<Map<String, dynamic>>? attachments}) async {}
   @override
-  Future<void> sendAgentMessage(String text) async {}
+  Future<void> sendAgentMessage(String text, {String agentType = 'envoyai'}) async {}
   @override
   Future<void> sendRoomMessage(String roomId, String text) async {}
   @override
