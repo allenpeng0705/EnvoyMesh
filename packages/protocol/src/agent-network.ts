@@ -391,8 +391,15 @@ export const ChainReportSchema = z.object({
   executiveArtifact: ArtifactSchema.optional(),
   /** Structured sections, each with citations back to the chain tree. */
   sections: z.array(ChainReportSectionSchema).max(32).default([]),
-  /** Roles that the report is intended for (always `["human"]` for owner-facing reports). */
-  recipientRoles: z.array(EnvoyActorRoleLocalSchema).default(["human"]),
+  /**
+   * Roles that the report is intended for. The default `["human"]` is
+   * enforced as non-empty so a chain report can never be published to
+   * zero recipients (which would be silently dropped by the chat layer).
+   * For owner-facing reports this is always `["human"]`; we keep the
+   * array shape so a future multi-role report (e.g. orchestrator-to-owner
+   * + a copy to a fleet manifest) can extend it without a wire bump.
+   */
+  recipientRoles: z.array(EnvoyActorRoleLocalSchema).min(1).default(["human"]),
   createdAt: z.string().datetime(),
 });
 

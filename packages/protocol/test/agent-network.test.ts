@@ -543,6 +543,27 @@ describe("ChainReport", () => {
     expect(report().recipientRoles).toEqual(["human"]);
   });
 
+  it("rejects empty recipientRoles array (must be non-empty)", () => {
+    expect(() =>
+      report({
+        recipientRoles: [] as unknown as ["human"],
+      }),
+    ).toThrow();
+  });
+
+  it("accepts recipientRoles with multiple roles (extensible)", () => {
+    const r = report({ recipientRoles: ["human", "agent"] });
+    expect(r.recipientRoles).toEqual(["human", "agent"]);
+  });
+
+  it("rejects recipientRoles with unknown role values", () => {
+    expect(() =>
+      report({
+        recipientRoles: ["robot"] as unknown as ["human"],
+      }),
+    ).toThrow();
+  });
+
   it("pinned flag is mutable post-parse", () => {
     expect(report().pinned).toBe(false);
     expect(report({ pinned: true }).pinned).toBe(true);
