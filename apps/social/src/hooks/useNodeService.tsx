@@ -54,6 +54,36 @@ import type {
   IpfsEngineStatus,
   RagIndexStatus,
   SendChatParams,
+  ChainPlanParams,
+  ChainPlanResult,
+  ChainLaunchParams,
+  ChainLaunchResult,
+  ChainGetStateParams,
+  ChainGetStateResult,
+  ChainListActiveParams,
+  ChainListActiveResult,
+  ChainCancelParams,
+  ChainCancelResult,
+  ChainListReportsParams,
+  ChainListReportsResult,
+  ChainGetReportParams,
+  ChainGetReportResult,
+  ChainPinReportParams,
+  ChainPinReportResult,
+  ChainSetBidStrategyParams,
+  ChainSetBidStrategyResult,
+  ChainGetBidStrategyParams,
+  ChainGetBidStrategyResult,
+  ChainEvaluateBidsParams,
+  ChainEvaluateBidsResult,
+  ChainCounterBidParams,
+  ChainCounterBidResult,
+  ChainRebalanceParams,
+  ChainRebalanceResult,
+  ChainGetDefaultsParams,
+  ChainGetDefaultsResult,
+  ChainSetDefaultsParams,
+  ChainSetDefaultsResult,
 } from "@envoymesh/api";
 import { isChatRoomThreadKey, ENVOY_AI_THREAD_KEY, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
@@ -175,6 +205,23 @@ export interface NodeServiceClient {
   warmContactConnection(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
   getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics>;
   getConnectivityDiagnostics(): Promise<ConnectivityDiagnostics>;
+
+  // Phase 40 — Agent Network Collaboration Layer
+  chainPlan(params: ChainPlanParams): Promise<ChainPlanResult>;
+  chainLaunch(params: ChainLaunchParams): Promise<ChainLaunchResult>;
+  chainGetState(params: ChainGetStateParams): Promise<ChainGetStateResult>;
+  chainListActive(params?: ChainListActiveParams): Promise<ChainListActiveResult>;
+  chainCancel(params: ChainCancelParams): Promise<ChainCancelResult>;
+  chainListReports(params?: ChainListReportsParams): Promise<ChainListReportsResult>;
+  chainGetReport(params: ChainGetReportParams): Promise<ChainGetReportResult>;
+  chainPinReport(params: ChainPinReportParams): Promise<ChainPinReportResult>;
+  chainSetBidStrategy(params: ChainSetBidStrategyParams): Promise<ChainSetBidStrategyResult>;
+  chainGetBidStrategy(params: ChainGetBidStrategyParams): Promise<ChainGetBidStrategyResult>;
+  chainEvaluateBids(params: ChainEvaluateBidsParams): Promise<ChainEvaluateBidsResult>;
+  chainCounterBid(params: ChainCounterBidParams): Promise<ChainCounterBidResult>;
+  chainRebalance(params: ChainRebalanceParams): Promise<ChainRebalanceResult>;
+  chainGetDefaults(params: ChainGetDefaultsParams): Promise<ChainGetDefaultsResult>;
+  chainSetDefaults(params: ChainSetDefaultsParams): Promise<ChainSetDefaultsResult>;
   runCapabilityDiscovery(params?: { find?: boolean }): Promise<void>;
   discoverCapabilityTopic(params: {
     topic: string;
@@ -684,6 +731,52 @@ function createWsNodeServiceClient(
     },
     async getConnectivityDiagnostics() {
       return wsClient.rpc("getConnectivityDiagnostics", {}) as Promise<ConnectivityDiagnostics>;
+    },
+    // Phase 40 — chain RPCs
+    async chainPlan(params: ChainPlanParams) {
+      return wsClient.rpc("chainPlan", (params ?? {}) as unknown as Record<string, unknown>) as unknown as Promise<ChainPlanResult>;
+    },
+    async chainLaunch(params: ChainLaunchParams) {
+      return wsClient.rpc("chainLaunch", params as unknown as Record<string, unknown>) as unknown as Promise<ChainLaunchResult>;
+    },
+    async chainGetState(params: ChainGetStateParams) {
+      return wsClient.rpc("chainGetState", params as unknown as Record<string, unknown>) as unknown as Promise<ChainGetStateResult>;
+    },
+    async chainListActive(params?: ChainListActiveParams) {
+      return wsClient.rpc("chainListActive", (params ?? {}) as unknown as Record<string, unknown>) as unknown as Promise<ChainListActiveResult>;
+    },
+    async chainCancel(params: ChainCancelParams) {
+      return wsClient.rpc("chainCancel", params as unknown as Record<string, unknown>) as unknown as Promise<ChainCancelResult>;
+    },
+    async chainListReports(params?: ChainListReportsParams) {
+      return wsClient.rpc("chainListReports", (params ?? {}) as unknown as Record<string, unknown>) as unknown as Promise<ChainListReportsResult>;
+    },
+    async chainGetReport(params: ChainGetReportParams) {
+      return wsClient.rpc("chainGetReport", params as unknown as Record<string, unknown>) as unknown as Promise<ChainGetReportResult>;
+    },
+    async chainPinReport(params: ChainPinReportParams) {
+      return wsClient.rpc("chainPinReport", params as unknown as Record<string, unknown>) as unknown as Promise<ChainPinReportResult>;
+    },
+    async chainSetBidStrategy(params: ChainSetBidStrategyParams) {
+      return wsClient.rpc("chainSetBidStrategy", params as unknown as Record<string, unknown>) as unknown as Promise<ChainSetBidStrategyResult>;
+    },
+    async chainGetBidStrategy(params: ChainGetBidStrategyParams) {
+      return wsClient.rpc("chainGetBidStrategy", params as unknown as Record<string, unknown>) as unknown as Promise<ChainGetBidStrategyResult>;
+    },
+    async chainEvaluateBids(params: ChainEvaluateBidsParams) {
+      return wsClient.rpc("chainEvaluateBids", params as unknown as Record<string, unknown>) as unknown as Promise<ChainEvaluateBidsResult>;
+    },
+    async chainCounterBid(params: ChainCounterBidParams) {
+      return wsClient.rpc("chainCounterBid", params as unknown as Record<string, unknown>) as unknown as Promise<ChainCounterBidResult>;
+    },
+    async chainRebalance(params: ChainRebalanceParams) {
+      return wsClient.rpc("chainRebalance", params as unknown as Record<string, unknown>) as unknown as Promise<ChainRebalanceResult>;
+    },
+    async chainGetDefaults(params: ChainGetDefaultsParams) {
+      return wsClient.rpc("chainGetDefaults", params as unknown as Record<string, unknown>) as unknown as Promise<ChainGetDefaultsResult>;
+    },
+    async chainSetDefaults(params: ChainSetDefaultsParams) {
+      return wsClient.rpc("chainSetDefaults", params as unknown as Record<string, unknown>) as unknown as Promise<ChainSetDefaultsResult>;
     },
     async discoverCapabilityTopic(params: {
       topic: string;

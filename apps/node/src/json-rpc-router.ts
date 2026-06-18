@@ -5,6 +5,17 @@ import type {
   HomeClawCoreProxyParams,
   ListLibraryItemsParams,
   DiscoverPublishedLibraryParams,
+  ChainPlanParams,
+  ChainLaunchParams,
+  ChainGetStateParams,
+  ChainListActiveParams,
+  ChainCancelParams,
+  ChainListReportsParams,
+  ChainGetReportParams,
+  ChainPinReportParams,
+  ChainSetBidStrategyParams,
+  ChainGetBidStrategyParams,
+  ChainEvaluateBidsParams,
 } from "@envoymesh/api";
 
 /**
@@ -121,6 +132,28 @@ export async function routeRpcMethod(
       return undefined;
     case "unregisterPushToken":
       return ns.unregisterPushToken(String(params.deviceId ?? ""));
+    case "chainPlan":
+      return ns.chainPlan(params as unknown as ChainPlanParams);
+    case "chainLaunch":
+      return ns.chainLaunch(params as unknown as ChainLaunchParams);
+    case "chainGetState":
+      return ns.chainGetState(params as unknown as ChainGetStateParams);
+    case "chainListActive":
+      return ns.chainListActive((params as unknown as ChainListActiveParams | undefined) ?? {});
+    case "chainCancel":
+      return ns.chainCancel(params as unknown as ChainCancelParams);
+    case "chainListReports":
+      return ns.chainListReports((params as unknown as ChainListReportsParams | undefined) ?? {});
+    case "chainGetReport":
+      return ns.chainGetReport(params as unknown as ChainGetReportParams);
+    case "chainPinReport":
+      return ns.chainPinReport(params as unknown as ChainPinReportParams);
+    case "chainSetBidStrategy":
+      return ns.chainSetBidStrategy(params as unknown as ChainSetBidStrategyParams);
+    case "chainGetBidStrategy":
+      return ns.chainGetBidStrategy(params as unknown as ChainGetBidStrategyParams);
+    case "chainEvaluateBids":
+      return ns.chainEvaluateBids(params as unknown as ChainEvaluateBidsParams);
     case "sendAgentChat":
       return ns.sendAgentChat(params.targetOwnerId as string, params.text as string);
     case "sendChatAttachment":

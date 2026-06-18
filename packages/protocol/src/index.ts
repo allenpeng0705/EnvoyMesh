@@ -83,6 +83,11 @@ export const EnvoyIntentSchema = z.enum([
   "task.chain.cancel",
   "task.chain.heartbeat",
   "task.chain.report",
+  // Phase 40E — Cross-orchestrator + cross-home chains
+  "task.chain.handoff",
+  "task.chain.delegate",
+  "task.chain.relay",
+  "task.chain.arbitration",
 ]);
 
 export const SensitivitySchema = z.enum(["public", "friends", "trusted", "private"]);
@@ -1624,6 +1629,9 @@ export const TaskLifecycleStateSchema = z.enum([
   "waiting_for_owner",
   "running",
   "partial",
+  // Phase 40 — Agent Network Collaboration Layer.
+  // Orchestrator is merging partial results into a final ChainReport.
+  "synthesizing",
   "completed",
   "failed",
   "cancelled",
@@ -1641,6 +1649,9 @@ export const TaskJournalEventTypeSchema = z.enum([
   "report_created",
   "cancelled",
   "failed",
+  // Phase 40 — emitted when a single subtask within a chain completes
+  // (distinct from the whole-chain completion recorded via report_created).
+  "chain_subtask_completed",
 ]);
 
 export const TaskJournalEntrySchema = z.object({
@@ -1655,6 +1666,12 @@ export const TaskJournalEntrySchema = z.object({
   peerDeviceId: z.string().min(1).optional(),
   relatedMessageId: z.string().min(1).optional(),
   createdAt: z.string().datetime(),
+  // Phase 40 — additive chain lineage. Absent on solo A2A entries.
+  // The journal reader treats entries without these fields as solo A2A.
+  chainId: z.string().min(1).optional(),
+  parentTaskId: z.string().min(1).optional(),
+  subtaskId: z.string().min(1).optional(),
+  depth: z.number().int().min(1).max(3).optional(),
 });
 
 export const TaskProposePayloadSchema = z.object({
@@ -1760,10 +1777,22 @@ export const StructuredArtifactSchema = z.object({
   data: z.record(z.string(), z.unknown()),
 });
 
+// Phase 40 — Composite artifact (defined in agent-network.ts). Imported here
+// so ArtifactSchema can include it in its discriminated union. The reverse
+// import (agent-network → index) uses `import type` to avoid a runtime cycle.
+import { CompositeArtifactSchema } from "./agent-network.js";
+
 export const ArtifactSchema = z.discriminatedUnion("kind", [
   TextArtifactSchema,
   FileArtifactSchema,
   StructuredArtifactSchema,
+  // Phase 40 — Agent Network Collaboration Layer.
+  // A composite artifact bundles N weighted worker contributions into a
+  // single deliverable. CompositeArtifactSchema is defined in
+  // ./agent-network.js and imported near the bottom of this file (after the
+  // chain payload schemas) to avoid pulling a heavy chain payload surface
+  // into the top-of-file schema block. Both files compile in the same cycle.
+  CompositeArtifactSchema,
 ]);
 
 export type TextArtifact = z.infer<typeof TextArtifactSchema>;
@@ -1788,6 +1817,11 @@ export const TaskResultPayloadSchema = z.object({
     })
     .optional(),
   createdAt: z.string().datetime(),
+  // Phase 40 — additive chain lineage. Absent on solo A2A results.
+  chainId: z.string().min(1).optional(),
+  parentTaskId: z.string().min(1).optional(),
+  subtaskId: z.string().min(1).optional(),
+  depth: z.number().int().min(1).max(3).optional(),
 });
 
 export type CommerceDeliveryAttestation = NonNullable<
@@ -3742,3 +3776,87 @@ import {
 } from "./role-policy-table.js";
 
 import { envelopeRoleRefinement } from "./envelope-role-refinement.js";
+
+// Phase 40 — Agent Network Collaboration Layer.
+// Re-export the chain schemas, constructors, and parsers from the dedicated
+// agent-network module so consumers can import them from "@envoymesh/protocol".
+export {
+  ChainIdSchema,
+  ChainMandateIdSchema,
+  ChainSubtaskIdSchema,
+  ChainRoleSchema,
+  CHAIN_MAX_DEPTH,
+  UnsignedChainMandateSchema,
+  ChainMandateSignedSchema,
+  ChainSubtaskSchema,
+  ChainSubtaskBidSchema,
+  ChainSubtaskAwardSchema,
+  ChainSubtaskPartialSchema,
+  CompositeArtifactPartSchema,
+  CompositeArtifactSchema,
+  ChainReportSectionSchema,
+  ChainReportSchema,
+  TaskChainMandatePayloadSchema,
+  TaskChainProposePayloadSchema,
+  TaskChainBidPayloadSchema,
+  TaskChainAcceptPayloadSchema,
+  TaskChainPartialPayloadSchema,
+  TaskChainMergePayloadSchema,
+  TaskChainCancelPayloadSchema,
+  TaskChainHeartbeatPayloadSchema,
+  TaskChainReportPayloadSchema,
+  parseChainMandate,
+  parseChainSubtask,
+  parseChainSubtaskBid,
+  parseChainSubtaskAward,
+  parseChainSubtaskPartial,
+  parseChainReport,
+  parseCompositeArtifact,
+  createChainMandateId,
+  createChainId,
+  createChainSubtaskId,
+} from "./agent-network.js";
+export type {
+  UnsignedChainMandate,
+  ChainMandate,
+  ChainSubtask,
+  ChainSubtaskBid,
+  ChainSubtaskAward,
+  ChainSubtaskPartial,
+  CompositeArtifactPart,
+  CompositeArtifact,
+  ChainReportSection,
+  ChainReport,
+  TaskChainMandatePayload,
+  TaskChainProposePayload,
+  TaskChainBidPayload,
+  TaskChainAcceptPayload,
+  TaskChainPartialPayload,
+  TaskChainMergePayload,
+  TaskChainCancelPayload,
+  TaskChainHeartbeatPayload,
+  TaskChainReportPayload,
+} from "./agent-network.js";
+
+export {
+  ChainHandoffRequestPayloadSchema,
+  ChainHandoffDelegatePayloadSchema,
+  ChainHandoffStatusSchema,
+  ChainRelayRouteSchema,
+  ChainArbitrationEntrySchema,
+  ChainArbitrationPayloadSchema,
+  getSubChainRootSubtasks,
+  isHandoffOpen,
+  isHandoffTerminal,
+  isHandoffLive,
+} from "./agent-network-handoff.js";
+export type {
+  ChainHandoffRequest,
+  ChainHandoffDelegate,
+  ChainHandoffRequestPayload,
+  ChainHandoffDelegatePayload,
+  ChainHandoffStatus,
+  ChainRelayRoute,
+  ChainArbitrationEntry,
+  ChainArbitrationPayload,
+} from "./agent-network-handoff.js";

@@ -44,6 +44,20 @@ export interface OwnerAgentPlannerDeps {
   executeTool: (toolName: string, params: Record<string, unknown>) => Promise<DocumentAgentToolResult>;
   startDocumentAcquisitionJob?: (query: string) => Promise<{ jobId: string; correlationId: string }>;
   runSocialProxyPass?: () => Promise<{ ok: boolean; error?: string; correlationId?: string }>;
+  /** Phase 40 — multi-agent chain collaboration. */
+  runChain?: (input: {
+    goal: string;
+    chainId?: string;
+    maxChainCostUsd?: number;
+    costCeilingUsd?: number;
+    allowLlm?: boolean;
+  }) => Promise<{
+    ok: boolean;
+    chainId: string;
+    chainMandateId: string;
+    subtasks: Array<{ subtaskId: string; depth: number; requiredCapability: string; objective: string }>;
+    error?: string;
+  }>;
   scanOutbound?: (text: string) => boolean;
   /** Phase 18B — audit each planner round (including job tools not routed via executeTool). */
   auditPlannerRound?: (record: OwnerAgentPlannerTurnRecord) => Promise<void>;
@@ -404,6 +418,51 @@ async function executeOwnerAgentTool(
         },
         correlationId: pass.correlationId,
       };
+    }
+    if (toolName === "mesh.chain.run") {
+      if (!deps.runChain) {
+        return {
+          record: { round: 0, toolName, ok: false, summary: "Chain orchestrator not configured" },
+        };
+      }
+      const goal =
+        typeof params.goal === "string" && params.goal.trim().length > 0
+          ? params.goal.trim()
+          : deps.message;
+      const maxChainCostUsd =
+        typeof params.maxChainCostUsd === "number" ? params.maxChainCostUsd : undefined;
+      const costCeilingUsd =
+        typeof params.costCeilingUsd === "number" ? params.costCeilingUsd : undefined;
+      try {
+        const started = await deps.runChain({
+          goal,
+          maxChainCostUsd,
+          costCeilingUsd,
+          allowLlm: false,
+        });
+        toolsUsed.push(toolName);
+        return {
+          record: {
+            round: 0,
+            toolName,
+            ok: started.ok,
+            summary: started.ok
+              ? `Chain ${started.chainId} started with ${started.subtasks.length} subtask(s)`
+              : `Chain start failed: ${started.error ?? "unknown error"}`,
+          },
+          jobId: started.ok ? started.chainId : undefined,
+          correlationId: started.ok ? started.chainId : undefined,
+        };
+      } catch (err) {
+        return {
+          record: {
+            round: 0,
+            toolName,
+            ok: false,
+            summary: err instanceof Error ? err.message : String(err),
+          },
+        };
+      }
     }
   }
 

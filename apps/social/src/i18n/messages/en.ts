@@ -28,6 +28,7 @@ import {
   agentCardMessages,
 } from "./en-misc.js";
 import { agentNetworkSettingsMessages } from "./en-agent-network.js";
+import { chainsMessages } from "./en-chains.js";
 
 export const en = {
   nav: {
@@ -37,6 +38,7 @@ export const en = {
     contacts: "Contacts ({count})",
     discover: "Discover",
     library: "Library",
+    chains: "Chains",
     activity: "Activity",
     settings: "Settings",
     profile: "Profile",
@@ -423,6 +425,7 @@ export const en = {
     },
   },
   library: libraryViewMessages,
+  chains: chainsMessages,
 } as const;
 
 export type Messages = typeof en;

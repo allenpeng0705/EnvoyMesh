@@ -20,6 +20,7 @@ import type {
   TextArtifact,
 } from "@envoymesh/api";
 import { Markdown } from "./Markdown.js";
+import { CompositeArtifactRenderer } from "./CompositeArtifactRenderer.js";
 import { useToastOptional } from "../hooks/useToast.js";
 import { useT } from "../context/I18nContext.js";
 
@@ -185,6 +186,12 @@ export function ArtifactRenderer({ artifact, className, onOpenLocalFile }: Artif
       return (
         <div className={className}>
           <StructuredArtifactView artifact={artifact} />
+        </div>
+      );
+    case "composite":
+      return (
+        <div className={className}>
+          <CompositeArtifactRenderer artifact={artifact} />
         </div>
       );
     default: {

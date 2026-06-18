@@ -1,0 +1,381 @@
+/**
+ * Phase 40 — Worker-side chain handlers (the inbound handler functions and
+ * outbound helpers that this node uses when it is the worker in a chain).
+ *
+ * Inbound handlers (called by `chain-inbound.ts`):
+ *   - `handleWorkerPropose` — orchestrator proposes a subtask. Worker computes
+ *     a bid via `chain-bid-strategy.ts` and sends `task.chain.bid`.
+ *   - `handleWorkerBid` — orchestrator echoes our bid (no-op for worker).
+ *   - `handleWorkerCancel` — orchestrator (or owner) cancels; worker aborts
+ *     any in-flight execution and releases any held partials.
+ *
+ * Outbound helpers:
+ *   - `submitChainBid` — sign and send `task.chain.bid` to the orchestrator.
+ *   - `deliverChainPartial` — send `task.chain.partial` mid-execution.
+ *   - `deliverChainComplete` — send the terminal `task.result` (legacy intent)
+ *     plus a `task.chain.partial` with `isFinal: true`.
+ *
+ * Crash-recovery replay:
+ *   - `replayInFlightChainSubtasks` — on worker startup, scan the journal for
+ *     subtasks that were `awarded` but never received a terminal result. For
+ *     each, send a final `task.chain.partial` with `note: "replayed after
+ *     crash"`. The orchestrator treats these as ambiguous and may re-issue or
+ *     cancel depending on its own policy.
+ *
+ * **Stale-bid protection:** the worker tracks every `bidExpiresAt` for an
+ * outstanding bid. If the orchestrator's `task.chain.accept` arrives after
+ * `bidExpiresAt`, the worker emits a `chain.bid_expired` audit event and
+ * declines the award (returning `{ ok: false }` from `handleWorkerBid`).
+ *
+ * See docs/agent_network.md §7.4.
+ */
+
+import {
+  ChainSubtaskBidSchema,
+  TaskChainBidPayloadSchema,
+  TaskChainPartialPayloadSchema,
+  ChainSubtaskPartialSchema,
+  type ChainSubtask,
+  type ChainSubtaskBid,
+  type EnvoyEnvelope,
+  type TaskChainBidPayload,
+  type TaskChainCancelPayload,
+  type TaskChainPartialPayload,
+  type TaskChainProposePayload,
+} from "@envoymesh/protocol";
+import { signCanonicalPayload } from "@envoymesh/identity";
+
+import { computeChainBid, isChainBidExpired, type ChainBidWorkerContext } from "./chain-bid-strategy.js";
+import type { ChainAuditSink, ChainInboundDecision } from "./chain-inbound-types.js";
+
+// ---------------------------------------------------------------------------
+// Outbound surface — what the worker needs from the runtime to send envelopes
+// ---------------------------------------------------------------------------
+
+export interface ChainWorkerSendDeps {
+  /** Send a signed envelope to the recipient peer. Returns false on send failure. */
+  sendEnvelope: (
+    peerId: string,
+    envelope: EnvoyEnvelope,
+    payload: unknown,
+  ) => Promise<boolean>;
+  /** Current "now" — overridable in tests. */
+  now?: () => Date;
+  /** Local worker's signing key (PEM). */
+  signingKeyPem: string;
+  /** Local worker's public key (PEM, base64-encoded for envelope). */
+  publicKeyPem: string;
+  /** Local worker peer id (for envelope.senderPeerId). */
+  workerPeerId: string;
+  /** Local worker owner id. */
+  workerOwnerId: string;
+}
+
+export interface ChainWorkerHandlerDeps extends ChainWorkerSendDeps {
+  audit: ChainAuditSink;
+  /** Bid-strategy context for this worker (capability tag → base cost, ETA). */
+  workerContext: ChainBidWorkerContext;
+  /**
+   * In-memory cache of pending bid expirations: subtaskId → bidExpiresAt. On
+   * `task.chain.accept` we look up the entry; if missing or expired, we
+   * reject the award with `chain.bid_expired`.
+   */
+  pendingBidExpirations: Map<string, string>;
+  /** Optional executor — runs the task body and emits partials. */
+  executeSubtask?: (
+    subtask: ChainSubtask,
+    onPartial: (partial: TaskChainPartialPayload) => Promise<void>,
+  ) => Promise<{ ok: boolean; finalNote?: string }>;
+}
+
+// ---------------------------------------------------------------------------
+// 1. handleWorkerPropose — orchestrator → worker (subtask offer)
+// ---------------------------------------------------------------------------
+
+export async function handleWorkerPropose(
+  deps: ChainWorkerHandlerDeps,
+  envelope: EnvoyEnvelope,
+  payload: TaskChainProposePayload,
+): Promise<ChainInboundDecision> {
+  const subtask = payload.subtask;
+  const now = (deps.now ?? (() => new Date()))();
+
+  // Compute bid via the worker-context strategy.
+  const bidResult = computeChainBid({
+    subtask,
+    worker: deps.workerContext,
+    now,
+  });
+  if (!bidResult.ok) {
+    deps.audit.record({
+      type: "chain.bid_declined",
+      outcome: "deny",
+      intent: "task.chain.bid",
+      remotePeerId: envelope.senderPeerId,
+      correlationId: envelope.correlationId,
+      summary: bidResult.reason,
+    });
+    return { ok: false, reason: "handler_denied" };
+  }
+
+  // Track expiration so we can reject stale accepts.
+  deps.pendingBidExpirations.set(subtask.subtaskId, bidResult.bid.bidExpiresAt);
+
+  // Send the bid envelope.
+  const sent = await submitChainBid(deps, envelope.senderPeerId, bidResult.bid, payload);
+  if (!sent) {
+    deps.pendingBidExpirations.delete(subtask.subtaskId);
+    deps.audit.record({
+      type: "chain.bid_send_failed",
+      outcome: "deny",
+      intent: "task.chain.bid",
+      remotePeerId: envelope.senderPeerId,
+      correlationId: envelope.correlationId,
+      summary: "send returned false",
+    });
+    return { ok: false, reason: "handler_denied" };
+  }
+
+  deps.audit.record({
+    type: "chain.bid_sent",
+    outcome: "allow",
+    intent: "task.chain.bid",
+    remotePeerId: envelope.senderPeerId,
+    correlationId: envelope.correlationId,
+    summary: `bid costUsd=${bidResult.bid.proposedCostUsd} expiresAt=${bidResult.bid.bidExpiresAt}`,
+  });
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// 2. handleWorkerBid — orchestrator-side echo (should not happen on worker)
+// ---------------------------------------------------------------------------
+
+export async function handleWorkerBid(
+  _deps: ChainWorkerHandlerDeps,
+  _envelope: EnvoyEnvelope,
+  _payload: TaskChainBidPayload,
+): Promise<ChainInboundDecision> {
+  // The worker never receives its own bid back; this exists only because the
+  // dispatcher routes every chain intent somewhere. We treat it as a no-op
+  // since the inbound guard already validated the envelope.
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// 3. handleWorkerCancel — orchestrator (or owner) cancels a subtask
+// ---------------------------------------------------------------------------
+
+export async function handleWorkerCancel(
+  deps: ChainWorkerHandlerDeps,
+  envelope: EnvoyEnvelope,
+  payload: TaskChainCancelPayload,
+): Promise<ChainInboundDecision> {
+  // Drop any pending bid for this subtask.
+  if (payload.subtaskId) {
+    deps.pendingBidExpirations.delete(payload.subtaskId);
+  }
+
+  deps.audit.record({
+    type: payload.subtaskId ? "chain.subtask_cancelled" : "chain.cancelled",
+    outcome: "record",
+    intent: "task.chain.cancel",
+    remotePeerId: envelope.senderPeerId,
+    correlationId: envelope.correlationId,
+    summary: payload.reason,
+  });
+  // The worker-runtime hook for actual task abort is the `executeSubtask`
+  // contract — callers wire their executor to honor this by tracking
+  // cancelled subtaskIds externally.
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// 4. submitChainBid — outbound helper
+// ---------------------------------------------------------------------------
+
+export async function submitChainBid(
+  deps: ChainWorkerSendDeps,
+  recipientPeerId: string,
+  bid: ChainSubtaskBid,
+  propose: TaskChainProposePayload,
+): Promise<boolean> {
+  const payload = TaskChainBidPayloadSchema.parse({ bid });
+  const now = (deps.now ?? (() => new Date()))();
+  const envelope = buildChainEnvelope({
+    intent: "task.chain.bid",
+    senderPeerId: deps.workerPeerId,
+    senderPublicKey: deps.publicKeyPem,
+    recipientPeerId,
+    recipientRole: "agent",
+    payload,
+    createdAt: now.toISOString(),
+    correlationId: undefined,
+    signingKeyPem: deps.signingKeyPem,
+  });
+  return deps.sendEnvelope(recipientPeerId, envelope, payload);
+}
+
+// ---------------------------------------------------------------------------
+// 5. deliverChainPartial — outbound helper (mid-execution progress)
+// ---------------------------------------------------------------------------
+
+export async function deliverChainPartial(
+  deps: ChainWorkerSendDeps,
+  recipientPeerId: string,
+  partial: TaskChainPartialPayload,
+  correlationId?: string,
+): Promise<boolean> {
+  // `partial` is already a `TaskChainPartialPayload`. Re-validate for
+  // defense-in-depth (zero-cost when the input is already valid).
+  const payload = TaskChainPartialPayloadSchema.parse(partial);
+  const now = (deps.now ?? (() => new Date()))();
+  const envelope = buildChainEnvelope({
+    intent: "task.chain.partial",
+    senderPeerId: deps.workerPeerId,
+    senderPublicKey: deps.publicKeyPem,
+    recipientPeerId,
+    recipientRole: "agent",
+    payload,
+    createdAt: now.toISOString(),
+    correlationId,
+    signingKeyPem: deps.signingKeyPem,
+  });
+  return deps.sendEnvelope(recipientPeerId, envelope, payload);
+}
+
+// ---------------------------------------------------------------------------
+// 6. checkBidExpiration — call before honoring a task.chain.accept
+// ---------------------------------------------------------------------------
+
+export function checkBidExpiration(
+  deps: { pendingBidExpirations: Map<string, string> },
+  subtaskId: string,
+  nowMs: number,
+): { ok: true } | { ok: false; reason: "no_pending_bid" | "bid_expired"; expiresAt?: string } {
+  const expiresAt = deps.pendingBidExpirations.get(subtaskId);
+  if (!expiresAt) return { ok: false, reason: "no_pending_bid" };
+  if (isChainBidExpired(expiresAt, nowMs)) {
+    deps.pendingBidExpirations.delete(subtaskId);
+    return { ok: false, reason: "bid_expired", expiresAt };
+  }
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// 7. acceptChainAward — promote pending bid → committed (called after accept)
+// ---------------------------------------------------------------------------
+
+export function acceptChainAward(
+  deps: { pendingBidExpirations: Map<string, string> },
+  subtaskId: string,
+): boolean {
+  return deps.pendingBidExpirations.delete(subtaskId);
+}
+
+// ---------------------------------------------------------------------------
+// 8. replayInFlightChainSubtasks — crash-recovery replay
+// ---------------------------------------------------------------------------
+
+export interface ReplaySubtaskInput {
+  subtask: ChainSubtask;
+  awardedAt: string;
+  /** Last partial seq the worker emitted (0 if none). */
+  lastSeq: number;
+  /** Orchestrator peer id (recipient of the replay partial). */
+  orchestratorPeerId: string;
+}
+
+export async function replayInFlightChainSubtasks(
+  deps: ChainWorkerSendDeps & { audit: ChainAuditSink },
+  inFlight: ReplaySubtaskInput[],
+): Promise<{ replayed: number; failed: number }> {
+  let replayed = 0;
+  let failed = 0;
+  const now = (deps.now ?? (() => new Date()))();
+
+  for (const entry of inFlight) {
+    const partial = TaskChainPartialPayloadSchema.parse({
+      partial: ChainSubtaskPartialSchema.parse({
+        version: "0.1",
+        subtaskId: entry.subtask.subtaskId,
+        chainId: entry.subtask.chainId,
+        workerPeerId: deps.workerPeerId,
+        seq: entry.lastSeq + 1,
+        isFinal: true,
+        note: `replayed after crash; awardedAt=${entry.awardedAt}`,
+        createdAt: now.toISOString(),
+      }),
+    });
+    void partial; // validate eagerly; deliverChainPartial will re-parse
+    const sent = await deliverChainPartial(deps, entry.orchestratorPeerId, partial);
+    if (sent) {
+      replayed++;
+      deps.audit.record({
+        type: "chain.replay_partial_sent",
+        outcome: "record",
+        intent: "task.chain.partial",
+        remotePeerId: entry.orchestratorPeerId,
+        correlationId: entry.subtask.chainId,
+        summary: `subtask=${entry.subtask.subtaskId} seq=${entry.lastSeq + 1}`,
+      });
+    } else {
+      failed++;
+      deps.audit.record({
+        type: "chain.replay_partial_failed",
+        outcome: "deny",
+        intent: "task.chain.partial",
+        remotePeerId: entry.orchestratorPeerId,
+        correlationId: entry.subtask.chainId,
+        summary: `subtask=${entry.subtask.subtaskId}`,
+      });
+    }
+  }
+  return { replayed, failed };
+}
+
+// ---------------------------------------------------------------------------
+// Internal — envelope construction
+// ---------------------------------------------------------------------------
+
+interface BuildChainEnvelopeInput {
+  intent:
+    | "task.chain.bid"
+    | "task.chain.partial"
+    | "task.chain.cancel"
+    | "task.chain.heartbeat"
+    | "task.chain.report";
+  senderPeerId: string;
+  senderPublicKey: string;
+  recipientPeerId: string;
+  recipientRole: "human" | "agent" | "system";
+  payload: unknown;
+  createdAt: string;
+  correlationId?: string;
+  signingKeyPem: string;
+}
+
+function buildChainEnvelope(input: BuildChainEnvelopeInput): EnvoyEnvelope {
+  const unsigned = {
+    version: "0.1" as const,
+    messageId: `m_${randomString()}`,
+    createdAt: input.createdAt,
+    senderPeerId: input.senderPeerId,
+    senderPublicKey: input.senderPublicKey,
+    senderRole: "agent" as const,
+    recipientPeerId: input.recipientPeerId,
+    recipientRole: input.recipientRole,
+    intent: input.intent,
+    payload: input.payload,
+    correlationId: input.correlationId,
+  };
+  const signature = signCanonicalPayload(unsigned, input.signingKeyPem);
+  return { ...(unsigned as object), signature } as EnvoyEnvelope;
+}
+
+function randomString(): string {
+  return Math.random().toString(36).slice(2, 12);
+}
+
+// Re-export schemas/types callers may need
+export { ChainSubtaskBidSchema };

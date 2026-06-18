@@ -23,6 +23,38 @@ import type {
 export type { ResolveDidImportResult, ResolvedDidImport };
 export type { CommerceReceiptRecord, ListCommerceReceiptsParams, RecordCommerceReceiptParams };
 import type { RagIndexProgress, RagIndexStatus } from "./rag-index-status.js";
+import type {
+  ChainPlanParams,
+  ChainPlanResult,
+  ChainLaunchParams,
+  ChainLaunchResult,
+  ChainGetStateParams,
+  ChainGetStateResult,
+  ChainListActiveParams,
+  ChainListActiveResult,
+  ChainCancelParams,
+  ChainCancelResult,
+  ChainListReportsParams,
+  ChainListReportsResult,
+  ChainGetReportParams,
+  ChainGetReportResult,
+  ChainPinReportParams,
+  ChainPinReportResult,
+  ChainSetBidStrategyParams,
+  ChainSetBidStrategyResult,
+  ChainGetBidStrategyParams,
+  ChainGetBidStrategyResult,
+  ChainEvaluateBidsParams,
+  ChainEvaluateBidsResult,
+  ChainCounterBidParams,
+  ChainCounterBidResult,
+  ChainRebalanceParams,
+  ChainRebalanceResult,
+  ChainGetDefaultsParams,
+  ChainGetDefaultsResult,
+  ChainSetDefaultsParams,
+  ChainSetDefaultsResult,
+} from "./ws-protocol.js";
 import type { TransferStatus } from "./transfer-status.js";
 import type {
   CompanyInviteRecord,
@@ -2067,6 +2099,73 @@ export interface NodeService {
 
   registerPushToken(params: { platform: string; token: string; ownerId: string; deviceId?: string }): void;
   unregisterPushToken(deviceId: string): boolean;
+
+  // ----- Phase 40: Agent Network Collaboration Layer (chains) -----
+
+  /**
+   * Decompose a goal into subtasks and register them with the orchestrator
+   * state. Returns the resulting subtasks without launching proposals yet.
+   */
+  chainPlan(params: ChainPlanParams): Promise<ChainPlanResult>;
+
+  /**
+   * Broadcast the chain mandate + propose each subtask to the matching workers.
+   */
+  chainLaunch(params: ChainLaunchParams): Promise<ChainLaunchResult>;
+
+  /** Snapshot the orchestrator's view of a chain (subtask counts, budget, etc.). */
+  chainGetState(params: ChainGetStateParams): Promise<ChainGetStateResult>;
+
+  /** List in-flight chains (newest first). */
+  chainListActive(params?: ChainListActiveParams): Promise<ChainListActiveResult>;
+
+  /** Cancel a chain or a single subtask within a chain. */
+  chainCancel(params: ChainCancelParams): Promise<ChainCancelResult>;
+
+  /** List published chain reports (newest first). */
+  chainListReports(params?: ChainListReportsParams): Promise<ChainListReportsResult>;
+
+  /** Fetch a single chain report by chainId. */
+  chainGetReport(params: ChainGetReportParams): Promise<ChainGetReportResult>;
+
+  /** Pin or unpin a chain report (pinned reports are exempt from 90-day GC). */
+  chainPinReport(params: ChainPinReportParams): Promise<ChainPinReportResult>;
+
+  /** Set the worker's bid strategy for a capability tag. */
+  chainSetBidStrategy(params: ChainSetBidStrategyParams): Promise<ChainSetBidStrategyResult>;
+
+  /** Read the worker's bid strategy for a capability tag. */
+  chainGetBidStrategy(params: ChainGetBidStrategyParams): Promise<ChainGetBidStrategyResult>;
+
+  /** Run a single round of bid evaluation for a subtask. */
+  chainEvaluateBids(params: ChainEvaluateBidsParams): Promise<ChainEvaluateBidsResult>;
+
+  /**
+   * Phase 40D — counter-bid: reject all current bids on a subtask and
+   * rebroadcast the proposal with a new cost ceiling.
+   */
+  chainCounterBid(params: ChainCounterBidParams): Promise<ChainCounterBidResult>;
+
+  /**
+   * Phase 40D — rebalance: add budget to a chain's `maxChainCostUsd` and
+   * re-run evaluation for every not-yet-awarded subtask. Allows the owner
+   * to recover from an under-budget initial estimate without cancelling.
+   */
+  chainRebalance(params: ChainRebalanceParams): Promise<ChainRebalanceResult>;
+
+  /**
+   * Phase 40D — read the node's default chain policy (auto / manual / never,
+   * thresholds, etc.). Used by the Settings UI to surface the current
+   * toggle state.
+   */
+  chainGetDefaults(params: ChainGetDefaultsParams): Promise<ChainGetDefaultsResult>;
+
+  /**
+   * Phase 40D — overwrite the node's default chain policy. The new value
+   * becomes the default for every chain launched from this node going
+   * forward (per-chain `ChainMandate` fields still take precedence).
+   */
+  chainSetDefaults(params: ChainSetDefaultsParams): Promise<ChainSetDefaultsResult>;
 }
 
 // --------------------------------------------------------------------------

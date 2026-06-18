@@ -103,9 +103,103 @@ export interface OwnerAgentTurnDeps {
   updateAgentCircle?: (circleId: string, update: unknown) => Promise<unknown>;
   deleteAgentCircle?: (circleId: string) => Promise<unknown>;
   proposeAgentCircles?: () => Promise<unknown>;
+  /**
+   * Phase 40 — Multi-agent chain collaboration. Decomposes a multi-step goal
+   * into subtasks, broadcasts the chain mandate, collects bids, awards
+   * workers, and (in the background) synthesizes a final report.
+   *
+   * Returns the chainId + initial subtask summary. The synthesis report is
+   * published asynchronously; callers can poll `chainGetState` for status.
+   */
+  runChain?: (input: {
+    goal: string;
+    chainId?: string;
+    maxChainCostUsd?: number;
+    costCeilingUsd?: number;
+    allowLlm?: boolean;
+  }) => Promise<{
+    ok: boolean;
+    chainId: string;
+    chainMandateId: string;
+    subtasks: Array<{ subtaskId: string; depth: number; requiredCapability: string; objective: string }>;
+    error?: string;
+  }>;
 }
 
 const ROUTE_SCORE_THRESHOLD = 5;
+
+// ---------------------------------------------------------------------------
+// Phase 40 — Multi-step goal detection (chain heuristic)
+// ---------------------------------------------------------------------------
+
+/**
+ * Verbs that suggest a sub-action in a multi-step request. We keep this list
+ * intentionally tight: "do X and Y" should trigger; "find a contact" should not.
+ */
+const MULTI_STEP_VERBS = [
+  "summarize",
+  "compile",
+  "draft",
+  "research",
+  "analyze",
+  "compare",
+  "synthesize",
+  "review",
+  "outline",
+  "investigate",
+  "plan",
+  "audit",
+];
+
+/** Prepositions / conjunctions that often separate sub-tasks in one request. */
+const MULTI_STEP_SEPARATORS = /\b(?:,\s*and\s+|,\s*then\s+|\s+and\s+(?:also\s+)?|\s+then\s+|\s+;\s+|\s+\/\s+|\s+\|\s+)/i;
+
+const COMPOUND_SUMMARIZE = /^(?:summarize|compile|draft|research|analyze|compare|review|outline|investigate|plan|audit)\b/i;
+
+/**
+ * Detect whether a natural-language message describes a multi-step goal that
+ * would benefit from the chain orchestrator. Three signals trigger a match:
+ *
+ *   1. ≥2 multi-step verbs (e.g. "analyze and summarize").
+ *   2. A compound-summarize prefix ("summarize X, Y, and Z") with ≥2
+ *      comma/and-separated items.
+ *   3. ≥2 of the same verb in the message (rare; e.g. "review X, review Y").
+ *
+ * Returns the inferred list of sub-tasks, or null when the message is
+ * a single-step request and should fall through to the route handlers.
+ */
+export function detectMultiStepGoal(message: string): {
+  subGoals: string[];
+  reason: "two_verbs" | "compound_summarize" | "repeated_verb";
+} | null {
+  const text = message.trim();
+  if (text.length === 0) return null;
+
+  // 1. ≥2 multi-step verbs
+  const lower = text.toLowerCase();
+  const verbsFound = MULTI_STEP_VERBS.filter((v) => lower.includes(v));
+  if (verbsFound.length >= 2) {
+    return { subGoals: splitIntoSubGoals(text), reason: "two_verbs" };
+  }
+
+  // 2. Compound-summarize prefix with ≥2 items
+  if (COMPOUND_SUMMARIZE.test(text) && MULTI_STEP_SEPARATORS.test(text)) {
+    return { subGoals: splitIntoSubGoals(text), reason: "compound_summarize" };
+  }
+
+  return null;
+}
+
+function splitIntoSubGoals(message: string): string[] {
+  // Strip a leading verb so each sub-goal reads naturally.
+  const stripped = message.replace(COMPOUND_SUMMARIZE, "").trim();
+  if (stripped.length === 0) return [message];
+  return stripped
+    .split(MULTI_STEP_SEPARATORS)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .map((s) => `${COMPOUND_SUMMARIZE.exec(message)?.[0] ?? "do"} ${s}`);
+}
 
 const DOCUMENT_HUNT =
   /\b(find|get|acquire|hunt|search for|look for|locate|need|want)\b.+\b(document|file|paper|pdf|report|library|vault)\b/i;
@@ -511,6 +605,37 @@ export async function runOwnerAgentTurn(deps: OwnerAgentTurnDeps): Promise<Owner
   }
 
   const routes = deps.matchRoutes(message);
+
+  // Phase 40 — multi-step goal detection. If the message clearly describes
+  // a multi-step workflow (≥2 verbs, "summarize X, Y, and Z"), route straight
+  // to the chain orchestrator. We only do this when the chain runtime is
+  // configured (runChain dep) and Trust mode is on (chains publish
+  // network-wide).
+  const multiStep = detectMultiStepGoal(message);
+  if (multiStep && deps.runChain && deps.postureEnabled.trustMode && !deps.postureEnabled.autonomousKillSwitch) {
+    const started = await deps.runChain({ goal: message, allowLlm: false });
+    if (started.ok) {
+      toolsUsed.push("mesh.chain.run");
+      const subTaskLines = started.subtasks
+        .map((s) => `- \`${s.subtaskId}\` (${s.requiredCapability}, depth ${s.depth}): ${s.objective}`)
+        .join("\n");
+      return {
+        answer:
+          `Started a **multi-agent chain** to handle this multi-step request.\n\n` +
+          `**Chain ID:** \`${started.chainId}\`\n` +
+          `**Mandate ID:** \`${started.chainMandateId}\`\n` +
+          `**Sub-tasks (${started.subtasks.length}):**\n${subTaskLines}\n\n` +
+          `Workers are bidding now. I'll synthesize a final report once they finish. ` +
+          `Track progress with \`chainGetState({ chainId: "${started.chainId}" })\` or open the **Chains** view.`,
+        domain: "service",
+        intent: "task.chain.run",
+        toolsUsed,
+        jobId: started.chainId,
+        correlationId: started.chainId,
+      };
+    }
+    // Fall through to the LLM planner / route handlers if chain start failed.
+  }
 
   // LLM is the primary decision maker when available. The matched routes are
   // passed as context so the LLM can pick the right tool without ever showing

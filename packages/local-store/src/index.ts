@@ -56,6 +56,12 @@ import {
   type FleetManifestRecord,
   type LocalFleetManifestStore,
 } from "./fleet-manifest-store.js";
+import {
+  createLocalChainReportsStore,
+  type ChainReportRecord,
+  type ListChainReportsParams,
+  type LocalChainReportsStore,
+} from "./chain-reports-store.js";
 
 const PEER_DIRECTORY_READ_BUDGET_MS = 20_000;
 
@@ -226,7 +232,35 @@ export type AuditEventType =
   | "bond.pre_staged_failed"
   | "bond.revoked"
   | "device.merge"
-  | "device.revoked";
+  | "device.revoked"
+  // Phase 40 — Agent Network Collaboration Layer.
+  // Chain events flow through createAuditEvent using:
+  //   - taskId     → the orchestrator's chain-level taskId (also stored in
+  //                  the chain-reports-store as chainId)
+  //   - mandateId  → the chain mandate id
+  //   - correlationId → thread key stitching chain.* events for a single chain
+  // The subtaskId / depth fields are encoded into the summary string by the
+  // orchestrator (e.g. "subtask=sub-A depth=2"). Subtask-specific journal
+  // entries (with structured subtaskId / parentTaskId / depth fields) go via
+  // appendTaskJournalEntry, not createAuditEvent.
+  | "chain.created"
+  | "chain.planned"
+  | "chain.launched"
+  | "chain.completed"
+  | "chain.failed"
+  | "chain.cancelled"
+  | "chain.subtask_proposed"
+  | "chain.bid_received"
+  | "chain.awarded"
+  | "chain.partial_received"
+  | "chain.subtask_completed"
+  | "chain.subtask_split"
+  | "chain.merged"
+  | "chain.re_bid"
+  | "chain.report_published"
+  | "chain.depth_exceeded"
+  | "chain.budget_exceeded"
+  | "chain.bid_expired";
 
 export type AuditDirection = "inbound" | "outbound" | "local";
 
@@ -653,6 +687,29 @@ export interface LocalTaskStore {
     manifestId: string,
     at: string,
   ): Promise<FleetManifestRecord | null>;
+  // Phase 40 — Agent Network Collaboration Layer.
+  /**
+   * Return all journal entries whose `chainId` matches the given chainId.
+   * Entries without a `chainId` are solo A2A and are excluded. Useful for
+   * reconstructing the chain tree (audit + lineage) after a crash.
+   */
+  listChainEntries(chainId: string): Promise<TaskJournalEntry[]>;
+  /**
+   * Return the persisted chain report for the given chainId, or null.
+   * `record` includes both the protocol-level `ChainReport` and the local
+   * store metadata (`storedAt`, `updatedAt`).
+   */
+  getChainReport(chainId: string): Promise<ChainReportRecord | null>;
+  /** List persisted chain reports with optional filters. Newest first. */
+  listChainReports(params?: ListChainReportsParams): Promise<ChainReportRecord[]>;
+  /**
+   * Toggle the pinned flag on a chain report. Pinned reports are exempt
+   * from the 90-day GC and surface in the UI's "Pinned" tab.
+   */
+  pinChainReport(
+    chainId: string,
+    pinned: boolean,
+  ): Promise<ChainReportRecord | null>;
 }
 
 export type AbuseFlag = "none" | "slow_response" | "no_answer" | "malicious" | "offensive";
@@ -814,6 +871,7 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
   const taskResultsStore = createLocalTaskResultsStore(profileDir);
   const companyInviteStore = createLocalCompanyInviteStore(profileDir);
   const fleetManifestStore = createLocalFleetManifestStore(profileDir);
+  const chainReportsStore = createLocalChainReportsStore(profileDir);
 
   const auditEventToIndexEntry = (event: AuditEvent): JsonlIndexEntry => ({
     id: event.eventId,
@@ -871,6 +929,14 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
 
     async readTaskJournalEntries() {
       return readJsonLines<TaskJournalEntry>(taskJournalPath);
+    },
+
+    // Phase 40 — filtered journal read for chain reconstruction. Returns
+    // entries with matching chainId only; entries without a chainId (solo
+    // A2A) are excluded.
+    async listChainEntries(chainId) {
+      const all = await readJsonLines<TaskJournalEntry>(taskJournalPath);
+      return all.filter((e) => e.chainId === chainId);
     },
 
     async appendAuditEvent(event) {
@@ -970,6 +1036,19 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
 
     async revokeFleetManifest(manifestId, at) {
       return fleetManifestStore.revokeManifest(manifestId, at);
+    },
+
+    // Phase 40 — chain reports store pass-throughs.
+    async getChainReport(chainId) {
+      return chainReportsStore.getChainReport(chainId);
+    },
+
+    async listChainReports(params) {
+      return chainReportsStore.listChainReports(params);
+    },
+
+    async pinChainReport(chainId, pinned) {
+      return chainReportsStore.pinChainReport(chainId, pinned);
     },
   };
 }
@@ -2310,3 +2389,4 @@ export * from "./capability-provider-job-store.js";
 export * from "./task-results-store.js";
 export * from "./company-invite-store.js";
 export * from "./fleet-manifest-store.js";
+export * from "./chain-reports-store.js";

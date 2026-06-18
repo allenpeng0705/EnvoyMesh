@@ -27,7 +27,11 @@ export * from "./node-service.js";
 /** Phase 34: re-export the typed `Artifact` discriminated union so the Social UI can render task.results. */
 export type {
   Artifact,
+  CompositeArtifact,
+  CompositeArtifactPart,
   FileArtifact,
+  ChainReport,
+  ChainReportSection,
   StructuredArtifact,
   TextArtifact,
   TaskResultPayload,

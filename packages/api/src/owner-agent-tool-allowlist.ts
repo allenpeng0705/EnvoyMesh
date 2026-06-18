@@ -119,6 +119,17 @@ export const OWNER_AGENT_TOOL_ALLOWLIST: OwnerAgentToolSpec[] = [
     requiresPosture: "socialProxy",
     requiresTrustMode: true,
   },
+  // Phase 40 — multi-agent chain orchestrator. The LLM planner calls this
+  // when the owner asks for a multi-step workflow (e.g. "analyze X, Y, and Z").
+  {
+    name: "mesh.chain.run",
+    kind: "job",
+    domain: "service",
+    description:
+      "Decompose a multi-step goal into subtasks, broadcast a chain mandate, and collect worker bids. Use when the owner requests a multi-step workflow that needs multiple agents.",
+    paramHint: '{ "goal": "string", "maxChainCostUsd"?: number, "costCeilingUsd"?: number }',
+    requiresTrustMode: true,
+  },
 ];
 
 export function filterOwnerAgentTools(

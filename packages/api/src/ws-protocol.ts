@@ -305,7 +305,23 @@ export type RpcMethods =
    | "setCallMuted"
    // Phase 31I — Push Notifications
    | "registerPushToken"
-   | "unregisterPushToken";
+   | "unregisterPushToken"
+  // Phase 40 — Agent Network Collaboration Layer
+  | "chainPlan"
+  | "chainLaunch"
+  | "chainGetState"
+  | "chainListActive"
+  | "chainCancel"
+  | "chainListReports"
+  | "chainGetReport"
+  | "chainPinReport"
+  | "chainSetBidStrategy"
+  | "chainGetBidStrategy"
+  | "chainEvaluateBids"
+  | "chainCounterBid"
+  | "chainRebalance"
+  | "chainGetDefaults"
+  | "chainSetDefaults";
 
 // ============================================
 // Node Configuration Types
@@ -458,6 +474,12 @@ export interface NodeConfig {
   pairingKioskEnabled?: boolean;
   /** Phase 35D — bearer token for the kiosk's POST /pair. */
   pairingKioskAdminToken?: string;
+  /**
+   * Phase 40D — defaults applied to every new chain this node launches.
+   * Per-chain mandates override these (so an owner can still set a single
+   * chain to "never" even if their default is "auto").
+   */
+  chainDefaults?: ChainDefaultsConfig;
   /** Phase 35D — bind address. Default 127.0.0.1 (loopback). */
   pairingKioskBindAddress?: string;
   /** Phase 35D — bind port. Default 3737. */
@@ -840,6 +862,30 @@ export interface ModelProviderConfig {
   apiKey?: string;
   /** If true, cloud providers require explicit owner approval per request. Default: true. */
   requireApprovalForCloud?: boolean;
+}
+
+/**
+ * Phase 40D — defaults applied to every new chain this node launches.
+ * Per-chain `ChainMandate.rebalancePolicy` etc. override these so the
+ * owner can still set a single chain to "never" while their default is
+ * "auto".
+ */
+export interface ChainDefaultsConfig {
+  /**
+   * Default rebalance policy. `"manual"` (current behavior), `"auto"`
+   * (rebalance on stall / low confidence), or `"never"` (bar hidden).
+   */
+  rebalancePolicy?: "manual" | "auto" | "never";
+  /** Default heartbeat gap (ms) before an in-flight subtask stalls. */
+  stallTimeoutMs?: number;
+  /** Default partial-confidence threshold for "low quality". */
+  lowConfidenceThreshold?: number;
+  /** Default cap on auto-rebalances per chain. */
+  maxAutoRebalances?: number;
+  /** Default USD added to the budget per auto-rebalance. */
+  autoRebalanceIncrementUsd?: number;
+  /** Allow LLM-driven decomposition by default for plans > 12 words. */
+  allowLlmDecompose?: boolean;
 }
 
 export type DiscoveryProfile = "lan-fast" | "wan-default" | "relay-only" | "contacts-only";
@@ -1390,3 +1436,270 @@ Server -> Client:
   ]
 }
 */
+
+// ============================================
+// Phase 40 — Chain RPC types
+// ============================================
+
+export interface ChainPlanParams {
+  chainId: string;
+  chainMandateId: string;
+  goal: string;
+  /** When true, use the LLM decomposer for multi-step goals. */
+  allowLlm?: boolean;
+  /** Optional caller peerId for ownership auditing. */
+  ownerPeerId?: string;
+}
+
+export interface ChainPlanResult {
+  chainId: string;
+  subtasks: Array<{
+    subtaskId: string;
+    depth: number;
+    requiredCapability: string;
+    objective: string;
+  }>;
+}
+
+export interface ChainLaunchParams {
+  chainId: string;
+  /** Mapping subtaskId → worker peer ids to propose to. */
+  workersBySubtask: Record<string, string[]>;
+}
+
+export interface ChainLaunchResult {
+  chainId: string;
+  proposed: number;
+  mandateBroadcastOk: boolean;
+}
+
+export interface ChainGetStateParams {
+  chainId: string;
+}
+
+export interface ChainGetStateResult {
+  chainId: string;
+  chainMandateId: string;
+  subtaskCount: number;
+  bidCount: number;
+  awardedCount: number;
+  partialCount: number;
+  cancelledCount: number;
+  chainCancelled: boolean;
+  published: boolean;
+  budgetSpentUsd: number;
+  budgetMaxUsd: number;
+  budgetReservedUsd: number;
+  budgetSynthesisUsd: number;
+  /**
+   * Phase 40D — rebalance policy for this chain. Surfaced so the UI can
+   * render the rebalance bar in "manual" / "auto" / "never" modes
+   * without re-fetching the mandate.
+   */
+  rebalancePolicy?: "manual" | "auto" | "never";
+  /**
+   * Phase 40D — how many auto-rebalances have fired for this chain so far.
+   * Only meaningful when `rebalancePolicy === "auto"`.
+   */
+  autoRebalanceCount?: number;
+  /**
+   * Phase 40D — hard cap on auto-rebalances per chain (from
+   * `ChainMandate.maxAutoRebalances`).
+   */
+  maxAutoRebalances?: number;
+  /**
+   * Phase 40D — most-recent-first history of auto-rebalances. Surfaced so
+   * the owner can see *why* the chain kept raising its own budget.
+   */
+  autoRebalanceHistory?: Array<{ at: string; reason: string; additionalBudgetUsd: number }>;
+  /**
+   * Phase 40D — live bids grouped by subtask. Surfaced to the ChainBidInbox
+   * UI so the owner can pick a worker or counter-bid before evaluation.
+   * Only includes bids whose `bidExpiresAt` is in the future.
+   */
+  bidsBySubtask?: Array<{
+    subtaskId: string;
+    bids: Array<{
+      bidKey: string;
+      workerPeerId: string;
+      workerOwnerId: string;
+      proposedCostUsd: number;
+      proposedEtaAt: string;
+      bidExpiresAt: string;
+    }>;
+  }>;
+}
+
+export interface ChainListActiveParams {
+  /** When set, only return chains whose `createdAt` is >= this ISO timestamp. */
+  sinceMs?: number;
+}
+
+export interface ChainListActiveResult {
+  chains: ChainGetStateResult[];
+}
+
+export interface ChainCancelParams {
+  chainId: string;
+  reason: string;
+  cancelledBy: "owner" | "orchestrator" | "policy";
+  /** Optional: cancel only a single subtask rather than the entire chain. */
+  subtaskId?: string;
+}
+
+export interface ChainCancelResult {
+  chainId: string;
+  cancelled: string[]; // subtaskIds that were cancelled
+}
+
+export interface ChainListReportsParams {
+  sinceMs?: number;
+  limit?: number;
+  pinnedOnly?: boolean;
+}
+
+export interface ChainListReportsResult {
+  reports: Array<{
+    chainId: string;
+    chainMandateId: string;
+    orchestratorOwnerId: string;
+    orchestratorPeerId: string;
+    pinned: boolean;
+    createdAt: string;
+    chainSummary: {
+      subtaskCount: number;
+      workerCount: number;
+      synthesisCostUsd: number;
+    };
+  }>;
+}
+
+export interface ChainGetReportParams {
+  chainId: string;
+}
+
+export interface ChainGetReportResult {
+  report: unknown | null;
+}
+
+export interface ChainPinReportParams {
+  chainId: string;
+  pinned: boolean;
+}
+
+export interface ChainPinReportResult {
+  chainId: string;
+  pinned: boolean;
+}
+
+export interface ChainSetBidStrategyParams {
+  /** Capability tag this policy applies to. "*" matches all capabilities. */
+  capability: string;
+  /** Base cost in USD per subtask of depth 1. */
+  baseCostUsd: number;
+  /** Capability-local ETA in ms. */
+  capabilityLocalEtaMs: number;
+  /** Optional reputation-derived discount (1.0 = no discount). */
+  reputationDiscount?: number;
+  /** Optional ETA slack in ms (default 60_000). */
+  etaSlackMs?: number;
+}
+
+export interface ChainSetBidStrategyResult {
+  capability: string;
+  baseCostUsd: number;
+}
+
+export interface ChainGetBidStrategyParams {
+  capability: string;
+}
+
+export interface ChainGetBidStrategyResult {
+  capability: string;
+  baseCostUsd: number;
+  capabilityLocalEtaMs: number;
+  reputationDiscount: number;
+  etaSlackMs: number;
+}
+
+export interface ChainEvaluateBidsParams {
+  chainId: string;
+  subtaskId: string;
+  policy?: "cheapest" | "fastest" | "highest_confidence";
+  maxRounds?: number;
+  /** Phase 40D — owner-picked worker. Skips the policy sort. */
+  pickWorkerPeerId?: string;
+}
+
+export interface ChainEvaluateBidsResult {
+  chainId: string;
+  subtaskId: string;
+  awarded: boolean;
+  workerPeerId?: string;
+  round?: number;
+  acceptedCostUsd?: number;
+  reason?:
+    | "no_bids"
+    | "all_bids_expired"
+    | "budget_exceeded"
+    | "cancelled"
+    | "max_rounds_exceeded";
+}
+
+/** Phase 40D — counter-bid. Reject all current bids and rebroadcast with a new cost ceiling. */
+export interface ChainCounterBidParams {
+  chainId: string;
+  subtaskId: string;
+  newCostCeilingUsd: number;
+  newDeadlineAt?: string;
+}
+
+export interface ChainCounterBidResult {
+  chainId: string;
+  subtaskId: string;
+  ok: boolean;
+  reason?: "no_such_subtask" | "max_rounds_exceeded" | "cancelled" | "ceiling_too_low";
+  rebroadcastAt?: string;
+  clearedBids?: number;
+  newRound?: number;
+}
+
+/** Phase 40D — rebalance: add budget to a chain and re-evaluate un-awarded subtasks. */
+export interface ChainRebalanceParams {
+  chainId: string;
+  additionalBudgetUsd: number;
+}
+
+export interface ChainRebalanceResult {
+  chainId: string;
+  ok: boolean;
+  reason?: "cancelled" | "invalid_amount" | "already_finalized" | "policy_disabled" | "cap_exceeded";
+  previousMaxUsd?: number;
+  newMaxUsd?: number;
+  reEvaluated?: Array<{
+    subtaskId: string;
+    awarded: boolean;
+    workerPeerId?: string;
+    reason?: string;
+  }>;
+  /** True when the rebalance was triggered automatically (trackChain). */
+  autoTriggered?: boolean;
+}
+
+/** Phase 40D — read the node's chain defaults. */
+export interface ChainGetDefaultsParams {
+  /** No args — defaults are read from the local NodeConfig. */
+}
+export interface ChainGetDefaultsResult {
+  defaults: ChainDefaultsConfig;
+}
+
+/** Phase 40D — overwrite the node's chain defaults. */
+export interface ChainSetDefaultsParams {
+  defaults: ChainDefaultsConfig;
+}
+export interface ChainSetDefaultsResult {
+  ok: boolean;
+  defaults: ChainDefaultsConfig;
+  reason?: "validation_failed";
+}

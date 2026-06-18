@@ -71,6 +71,21 @@ const INTENT_ROLE_POLICIES: Record<string, readonly RolePair[]> = {
   "call.hangup": HUMAN_HUMAN_ONLY,
   "call.ice-candidate": HUMAN_HUMAN_ONLY,
   "call.mute": HUMAN_HUMAN_ONLY,
+  // Phase 40 — Agent Network Collaboration Layer.
+  // All chain intents are agent↔agent except `task.chain.report`, which is
+  // agent → human (orchestrator publishing the final ChainReport to the owner).
+  // Trust gating (worker→orchestrator bid requires `direct`, orchestrator→worker
+  // propose/accept requires `referred`) is enforced separately in
+  // chain-inbound.ts (40B.3) — not in this table.
+  "task.chain.mandate": AGENT_AGENT_ONLY,
+  "task.chain.propose": AGENT_AGENT_ONLY,
+  "task.chain.bid": AGENT_AGENT_ONLY,
+  "task.chain.accept": AGENT_AGENT_ONLY,
+  "task.chain.partial": AGENT_AGENT_ONLY,
+  "task.chain.merge": AGENT_AGENT_ONLY,
+  "task.chain.cancel": AGENT_AGENT_ONLY,
+  "task.chain.heartbeat": AGENT_AGENT_ONLY,
+  "task.chain.report": AGENT_TO_HUMAN,
 };
 
 /**

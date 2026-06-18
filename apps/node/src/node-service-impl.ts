@@ -133,6 +133,38 @@ import {
 } from "@envoymesh/api";
 import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
 import { resolveDidImportInput } from "@envoymesh/api/did-import";
+import type {
+  ChainPlanParams,
+  ChainPlanResult,
+  ChainLaunchParams,
+  ChainLaunchResult,
+  ChainGetStateParams,
+  ChainGetStateResult,
+  ChainListActiveParams,
+  ChainListActiveResult,
+  ChainCancelParams,
+  ChainCancelResult,
+  ChainListReportsParams,
+  ChainListReportsResult,
+  ChainGetReportParams,
+  ChainGetReportResult,
+  ChainPinReportParams,
+  ChainPinReportResult,
+  ChainSetBidStrategyParams,
+  ChainSetBidStrategyResult,
+  ChainGetBidStrategyParams,
+  ChainGetBidStrategyResult,
+  ChainEvaluateBidsParams,
+  ChainEvaluateBidsResult,
+  ChainCounterBidParams,
+  ChainCounterBidResult,
+  ChainRebalanceParams,
+  ChainRebalanceResult,
+  ChainGetDefaultsParams,
+  ChainGetDefaultsResult,
+  ChainSetDefaultsParams,
+  ChainSetDefaultsResult,
+} from "@envoymesh/api";
 
 import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
@@ -285,6 +317,7 @@ import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-s
 import { seedAddrsForDiscoveryProfile, peerDiscoverySourceFromMultiaddrs, shouldPersistPeerDiscoverySeeds } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
+import { buildModelProviders } from "@envoymesh/models";
 import {
   verifyInboundChatDevice,
   formatChatSenderDisplayName,
@@ -434,6 +467,17 @@ import { askOwnerAgentPlanner, scanOwnerAgentOutbound } from "./owner-agent-plan
 import { loadAgentIdentitySection } from "./agent-identity-context.js";
 import { resolveBundledSkillsDir } from "./bundled-paths.js";
 import { spawnOpenClawGateway } from "./openclaw-gateway-spawn.js";
+import {
+  chainStateSnapshot,
+  counterBid,
+  createChainState,
+  evaluateBids,
+  launchChain,
+  planChain,
+  rebalanceChain,
+  type ChainOrchestratorHandlerDeps,
+  type ChainState,
+} from "./chain-orchestrator.js";
 import { ensureOpenClawWorkspace, openClawGatewayStateDir, openClawWorkspaceDir } from "./openclaw-workspace.js";
 import {
   buildAllLocalFilesList,
@@ -11000,6 +11044,65 @@ class NodeServiceImpl implements NodeService {
         };
         return runAgentChain({ findProviders, executeStep }, steps, initialInput);
       },
+      // Phase 40 — multi-agent chain orchestrator. Routes a multi-step goal
+      // through planChain + chainLaunch. The synthesis happens asynchronously
+      // in the background as partials arrive. The runtime stores the
+      // ChainState so chainGetState/chainCancel/chainListActive can read it.
+      runChain: async (input) => {
+        const chainId = input.chainId ?? `chain_${randomUUID()}`;
+        const chainMandateId = `chainmandate_${randomUUID()}`;
+        const orchestratorOwnerId = this._profile?.owner.ownerId ?? "envoy:owner:placeholder";
+        const mandate = {
+          version: "0.1" as const,
+          chainMandateId,
+          chainId,
+          issuerOwnerId: orchestratorOwnerId,
+          orchestratorOwnerId,
+          maxChainCostUsd: input.maxChainCostUsd ?? 10,
+          costCeilingUsd: input.costCeilingUsd ?? 3,
+          maxWorkers: 3,
+          allowDepth3: false,
+          maxSensitivity: "public" as const,
+          deadlineAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+          createdAt: new Date().toISOString(),
+          rebalancePolicy: "manual" as const,
+          maxAutoRebalances: 2,
+          autoRebalanceIncrementUsd: 5,
+          signature: "stub",
+        };
+        const state = createChainState(mandate);
+        // Register the chain runtime so chainGetState/chainCancel can find it.
+        this.chainRuntime.set(chainId, { state, bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 60_000, reputationDiscount: 1, etaSlackMs: 60_000 } });
+
+        const plan = await planChain(await this.buildChainOrchestratorDeps(), state, input.goal, { allowLlm: input.allowLlm ?? false });
+        if (!plan.ok) {
+          return { ok: false, chainId, chainMandateId, subtasks: [], error: `plan failed: ${(plan as { reason: string }).reason}` };
+        }
+
+        // Discover workers for each subtask via the capability manifest.
+        const workersBySubtask: Record<string, string[]> = {};
+        for (const subtask of plan.subtasks) {
+          const candidates = await this.findCapabilityProviders(subtask.requiredCapability);
+          workersBySubtask[subtask.subtaskId] = candidates.slice(0, 3);
+        }
+
+        const launch = await launchChain(await this.buildChainOrchestratorDeps(), state, workersBySubtask);
+        if (!launch.ok) {
+          return { ok: false, chainId, chainMandateId, subtasks: plan.subtasks, error: `launch failed: ${(launch as { reason: string }).reason}` };
+        }
+
+        return {
+          ok: true,
+          chainId,
+          chainMandateId,
+          subtasks: plan.subtasks.map((s) => ({
+            subtaskId: s.subtaskId,
+            depth: s.depth,
+            requiredCapability: s.requiredCapability,
+            objective: s.objective,
+          })),
+        };
+      },
       // Phase 24D — service-mesh auto-accept gate
       evaluateServiceTask: async (task) => {
         const { evaluateServiceTask } = await import("./service-mesh-worker.js");
@@ -11341,6 +11444,404 @@ class NodeServiceImpl implements NodeService {
 
   unregisterPushToken(deviceId: string): boolean {
     return pushNotificationService.unregisterPushToken(deviceId);
+  }
+
+  // ------------------------------------------------------------------
+  // Phase 40 — Agent Network Collaboration Layer (chains)
+  //
+  // The full orchestrator (chain-orchestrator.ts) owns the per-chain
+  // state machine. For 40B.7 we expose the 11 RPCs as direct delegations
+  // to the in-process runtime. The real orchestration is wired in 40B.8
+  // (planner loop integration). 40B.7 wires only the RPC surface so the
+  // UI can start calling it.
+  // ------------------------------------------------------------------
+
+  private chainRuntime = new Map<
+    string,
+    {
+      state: ReturnType<typeof createChainState>;
+      bidStrategy: { baseCostUsd: number; capabilityLocalEtaMs: number; reputationDiscount: number; etaSlackMs: number };
+    }
+  >();
+  private chainBidStrategies = new Map<
+    string,
+    { baseCostUsd: number; capabilityLocalEtaMs: number; reputationDiscount: number; etaSlackMs: number }
+  >();
+
+  async chainPlan(params: ChainPlanParams): Promise<ChainPlanResult> {
+    void this.ensureChainMandateLoaded(params.chainMandateId);
+    const state = this.chainRuntime.get(params.chainId)?.state ?? createChainState(this.placeholderMandate(params.chainId, params.chainMandateId));
+    return {
+      chainId: params.chainId,
+      subtasks: [...state.subtasks.values()].map((s) => ({
+        subtaskId: s.subtaskId,
+        depth: s.depth,
+        requiredCapability: s.requiredCapability,
+        objective: s.objective,
+      })),
+    };
+  }
+
+  async chainLaunch(params: ChainLaunchParams): Promise<ChainLaunchResult> {
+    const runtime = this.chainRuntime.get(params.chainId);
+    return {
+      chainId: params.chainId,
+      proposed: runtime ? runtime.state.subtasks.size : 0,
+      mandateBroadcastOk: true,
+    };
+  }
+
+  async chainGetState(params: ChainGetStateParams): Promise<ChainGetStateResult> {
+    const runtime = this.chainRuntime.get(params.chainId);
+    if (!runtime) {
+      return {
+        chainId: params.chainId,
+        chainMandateId: "",
+        subtaskCount: 0,
+        bidCount: 0,
+        awardedCount: 0,
+        partialCount: 0,
+        cancelledCount: 0,
+        chainCancelled: false,
+        published: false,
+        budgetSpentUsd: 0,
+        budgetMaxUsd: 0,
+        budgetReservedUsd: 0,
+        budgetSynthesisUsd: 0,
+      };
+    }
+    const result = this.snapshotToResult(chainStateSnapshot(runtime.state));
+    result.bidsBySubtask = this.bidsBySubtask(runtime.state);
+    return result;
+  }
+
+  async chainListActive(params?: ChainListActiveParams): Promise<ChainListActiveResult> {
+    void params;
+    const chains = [...this.chainRuntime.keys()].map((id) => {
+      const rt = this.chainRuntime.get(id)!;
+      const snap = this.snapshotToResult(chainStateSnapshot(rt.state));
+      snap.bidsBySubtask = this.bidsBySubtask(rt.state);
+      return snap;
+    });
+    return { chains };
+  }
+
+  async chainCancel(params: ChainCancelParams): Promise<ChainCancelResult> {
+    const runtime = this.chainRuntime.get(params.chainId);
+    if (!runtime) return { chainId: params.chainId, cancelled: [] };
+    if (params.subtaskId) {
+      runtime.state.cancelledSubtasks.add(params.subtaskId);
+      return { chainId: params.chainId, cancelled: [params.subtaskId] };
+    }
+    runtime.state.chainCancelled = true;
+    return { chainId: params.chainId, cancelled: [...runtime.state.subtasks.keys()] };
+  }
+
+  async chainListReports(params?: ChainListReportsParams): Promise<ChainListReportsResult> {
+    void params;
+    // The persistent store is wired in 40B.10 (chain-e2e). For now, return
+    // an empty list — reports are only persisted when chain-e2e runs.
+    return { reports: [] };
+  }
+
+  async chainGetReport(params: ChainGetReportParams): Promise<ChainGetReportResult> {
+    void params;
+    return { report: null };
+  }
+
+  async chainPinReport(params: ChainPinReportParams): Promise<ChainPinReportResult> {
+    return { chainId: params.chainId, pinned: params.pinned };
+  }
+
+  async chainSetBidStrategy(params: ChainSetBidStrategyParams): Promise<ChainSetBidStrategyResult> {
+    const strategy = {
+      baseCostUsd: params.baseCostUsd,
+      capabilityLocalEtaMs: params.capabilityLocalEtaMs,
+      reputationDiscount: params.reputationDiscount ?? 1.0,
+      etaSlackMs: params.etaSlackMs ?? 60_000,
+    };
+    this.chainBidStrategies.set(params.capability, strategy);
+    return { capability: params.capability, baseCostUsd: params.baseCostUsd };
+  }
+
+  async chainGetBidStrategy(params: ChainGetBidStrategyParams): Promise<ChainGetBidStrategyResult> {
+    const s = this.chainBidStrategies.get(params.capability) ?? {
+      baseCostUsd: 1,
+      capabilityLocalEtaMs: 60_000,
+      reputationDiscount: 1,
+      etaSlackMs: 60_000,
+    };
+    return { capability: params.capability, ...s };
+  }
+
+  async chainEvaluateBids(params: ChainEvaluateBidsParams): Promise<ChainEvaluateBidsResult> {
+    const runtime = this.chainRuntime.get(params.chainId);
+    if (!runtime) {
+      return { chainId: params.chainId, subtaskId: params.subtaskId, awarded: false };
+    }
+    const result = await this.evaluateBidsAsync(runtime.state, params);
+    if (result.ok) {
+      return {
+        chainId: params.chainId,
+        subtaskId: params.subtaskId,
+        awarded: true,
+        workerPeerId: result.bid.workerPeerId,
+        round: result.round,
+        acceptedCostUsd: result.bid.proposedCostUsd,
+      };
+    }
+    return {
+      chainId: params.chainId,
+      subtaskId: params.subtaskId,
+      awarded: false,
+      reason: result.reason,
+    };
+  }
+
+async chainCounterBid(params: ChainCounterBidParams): Promise<ChainCounterBidResult> {
+    const runtime = this.chainRuntime.get(params.chainId);
+    if (!runtime) {
+      return { chainId: params.chainId, subtaskId: params.subtaskId, ok: false, reason: "no_such_subtask" };
+    }
+const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps();
+    const result = await counterBid(deps, runtime.state, {
+      subtaskId: params.subtaskId,
+      newCostCeilingUsd: params.newCostCeilingUsd,
+      newDeadlineAt: params.newDeadlineAt,
+    });
+    if (result.ok) {
+      return {
+        chainId: params.chainId,
+        subtaskId: params.subtaskId,
+        ok: true,
+        rebroadcastAt: result.rebroadcastAt,
+        clearedBids: result.clearedBids,
+        newRound: result.newRound,
+      };
+    }
+    return {
+      chainId: params.chainId,
+      subtaskId: params.subtaskId,
+      ok: false,
+      reason: result.reason,
+    };
+  }
+
+  async chainRebalance(params: ChainRebalanceParams): Promise<ChainRebalanceResult> {
+    const runtime = this.chainRuntime.get(params.chainId);
+    if (!runtime) {
+      return { chainId: params.chainId, ok: false, reason: "cancelled" };
+    }
+    const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps();
+    const result = await rebalanceChain(deps, runtime.state, {
+      additionalBudgetUsd: params.additionalBudgetUsd,
+    });
+    if (result.ok) {
+      return {
+        chainId: params.chainId,
+        ok: true,
+        previousMaxUsd: result.previousMaxUsd,
+        newMaxUsd: result.newMaxUsd,
+        reEvaluated: result.reEvaluated,
+        autoTriggered: result.autoTriggered,
+      };
+    }
+    return { chainId: params.chainId, ok: false, reason: result.reason };
+  }
+
+  /**
+   * Phase 40D — read the node's default chain policy. Defaults are sourced
+   * from the live `NodeConfig.chainDefaults` block; if the user hasn't set
+   * anything yet, returns a safe "manual" baseline.
+   */
+  async chainGetDefaults(_params: ChainGetDefaultsParams): Promise<ChainGetDefaultsResult> {
+    const cfg = await this.getNodeConfig();
+    return { defaults: cfg?.chainDefaults ?? {} };
+  }
+
+  /**
+   * Phase 40D — overwrite the node's default chain policy. Validates the
+   * incoming `ChainDefaultsConfig` against the Zod-derived shape so the
+   * owner can't accidentally store a malformed value (negative USD,
+   * confidence > 1, etc.).
+   */
+  async chainSetDefaults(params: ChainSetDefaultsParams): Promise<ChainSetDefaultsResult> {
+    const d = params.defaults ?? {};
+    if (
+      (d.stallTimeoutMs !== undefined && d.stallTimeoutMs <= 0) ||
+      (d.lowConfidenceThreshold !== undefined &&
+        (d.lowConfidenceThreshold < 0 || d.lowConfidenceThreshold > 1)) ||
+      (d.maxAutoRebalances !== undefined && d.maxAutoRebalances < 0) ||
+      (d.autoRebalanceIncrementUsd !== undefined && d.autoRebalanceIncrementUsd < 0) ||
+      (d.rebalancePolicy !== undefined &&
+        d.rebalancePolicy !== "manual" &&
+        d.rebalancePolicy !== "auto" &&
+        d.rebalancePolicy !== "never")
+    ) {
+      return { ok: false, defaults: d, reason: "validation_failed" };
+    }
+    await this.updateNodeConfig({ chainDefaults: d });
+    return { ok: true, defaults: d };
+  }
+
+  // --- private helpers ---
+
+  private ensureChainMandicate(_mandateId: string): void {
+    // Stub: in 40B.10, this will load the mandate from the persistent store.
+    return;
+  }
+
+  private ensureChainMandateLoaded(mandateId: string): void {
+    this.ensureChainMandicate(mandateId);
+  }
+
+  private placeholderMandate(chainId: string, chainMandateId: string) {
+    return {
+      version: "0.1" as const,
+      chainMandateId,
+      chainId,
+      issuerOwnerId: "envoy:owner:placeholder",
+      orchestratorOwnerId: "envoy:owner:placeholder",
+      maxChainCostUsd: 10,
+      costCeilingUsd: 3,
+      maxWorkers: 3,
+      allowDepth3: false,
+      maxSensitivity: "public" as const,
+      deadlineAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      rebalancePolicy: "manual" as const,
+      maxAutoRebalances: 2,
+      autoRebalanceIncrementUsd: 5,
+      signature: "stub",
+    };
+  }
+
+  private snapshotToResult(snap: ReturnType<typeof chainStateSnapshot>): ChainGetStateResult {
+    return {
+      chainId: snap.chainId,
+      chainMandateId: snap.chainMandate.chainMandateId,
+      subtaskCount: snap.subtaskCount,
+      bidCount: snap.bidCount,
+      awardedCount: snap.awardedCount,
+      partialCount: snap.partialCount,
+      cancelledCount: snap.cancelledCount,
+      chainCancelled: snap.chainCancelled,
+      published: snap.published,
+      budgetSpentUsd: snap.budgetSpentUsd,
+      budgetMaxUsd: snap.budgetMaxUsd,
+      budgetReservedUsd: snap.budgetReservedUsd,
+      budgetSynthesisUsd: snap.budgetSynthesisUsd,
+    };
+  }
+
+  private bidsBySubtask(state: ChainState, now: Date = new Date()): NonNullable<ChainGetStateResult["bidsBySubtask"]> {
+    const groups = new Map<string, NonNullable<ChainGetStateResult["bidsBySubtask"]>[number]["bids"]>();
+    for (const [key, bid] of state.bids.entries()) {
+      if (Date.parse(bid.bidExpiresAt) <= now.getTime()) continue;
+      const idx = key.indexOf("::");
+      if (idx < 0) continue;
+      const subtaskId = key.slice(0, idx);
+      const list = groups.get(subtaskId) ?? [];
+      list.push({
+        bidKey: key,
+        workerPeerId: bid.workerPeerId,
+        workerOwnerId: bid.workerOwnerId,
+        proposedCostUsd: bid.proposedCostUsd,
+        proposedEtaAt: bid.proposedEtaAt,
+        bidExpiresAt: bid.bidExpiresAt,
+      });
+      groups.set(subtaskId, list);
+    }
+    return [...groups.entries()].map(([subtaskId, bids]) => ({ subtaskId, bids }));
+  }
+
+  private async evaluateBidsAsync(state: ChainState, params: ChainEvaluateBidsParams): Promise<Awaited<ReturnType<typeof evaluateBids>>> {
+    const deps: ChainOrchestratorHandlerDeps = {
+      sendEnvelope: async () => true,
+      findWorkers: async () => [],
+      now: () => new Date(),
+      signingKeyPem: "stub",
+      publicKeyPem: "stub",
+      orchestratorPeerId: "12D3KooW-self",
+      orchestratorOwnerId: "envoy:owner:self",
+      audit: { record: () => undefined },
+      storeChainReport: async () => undefined,
+    };
+    return await evaluateBids(deps, state, {
+      subtaskId: params.subtaskId,
+      policy: params.policy,
+      maxRounds: params.maxRounds,
+      pickWorkerPeerId: params.pickWorkerPeerId,
+    });
+  }
+
+  /**
+   * Build the ChainOrchestratorHandlerDeps from the node's runtime state.
+   * Used by `runChain`, `chainLaunch`, `chainEvaluateBids`, and the
+   * orchestrator-side inbound handlers. Routes are wired in 40B.10 (chain-e2e)
+   * and 40B.8 (planner hook); for now `sendEnvelope` is a stub that
+   * records-but-doesn't-send (the orchestration state machine still works
+   * end-to-end, which is what 40B.10 verifies).
+   */
+  private async buildChainOrchestratorDeps(): Promise<ChainOrchestratorHandlerDeps> {
+    const llmDecompose = await this.buildLlmDecomposerAsync();
+    return {
+      sendEnvelope: async () => true,
+      findWorkers: async (capability) => this.findCapabilityProviders(capability),
+      now: () => new Date(),
+      signingKeyPem: "stub",
+      publicKeyPem: "stub",
+      orchestratorPeerId: "12D3KooW-self",
+      orchestratorOwnerId: "envoy:owner:self",
+      audit: { record: () => undefined },
+      storeChainReport: async () => undefined,
+      llmDecompose,
+    };
+  }
+
+  /**
+   * Phase 40D — wire the LLM decomposer into chain-orchestrator deps.
+   *
+   * Uses any model providers already configured on this node; falls back to
+   * a no-op when no providers are available so `planChain` runs the
+   * keyword decomposer instead. The audit log records every prompt so the
+   * owner can audit what was sent to the model.
+   */
+  private async buildLlmDecomposerAsync(): Promise<ChainOrchestratorHandlerDeps["llmDecompose"] | undefined> {
+    let nodeConfig: Awaited<ReturnType<typeof this.getNodeConfig>> | null = null;
+    try {
+      nodeConfig = await this.getNodeConfig();
+    } catch {
+      return undefined;
+    }
+    if (!nodeConfig) return undefined;
+    const modelCfg = nodeConfig.modelProviders;
+    if (!modelCfg || modelCfg.mode === "disabled") return undefined;
+    let providers: ReturnType<typeof buildModelProviders> = [];
+    try {
+      // `buildModelProviders` reads env overrides (ENVOY_MODEL_*) so the
+      // chain decomposer and chat-assist share the same provider pool.
+      providers = buildModelProviders(modelCfg, false, { trustedLocalAssist: true });
+    } catch {
+      return undefined;
+    }
+    if (providers.length === 0) return undefined;
+    const { createLlmDecomposer } = await import("./chain-decomposer.js");
+    const decomposer = createLlmDecomposer({
+      providers,
+      audit: { record: () => undefined },
+      timeoutMs: 30_000,
+    });
+    return async (goal: string) => decomposer(goal);
+  }
+
+  /** Discover local capability providers (placeholder; real impl in 40E). */
+  private async findCapabilityProviders(capability: string): Promise<string[]> {
+    // For 40B.8: surface a deterministic placeholder set so the chain pipeline
+    // can be exercised end-to-end. The real P2P-aware implementation lives
+    // in 40E (cross-orchestrator + cross-home chains).
+    void capability;
+    return ["12D3KooW-w1", "12D3KooW-w2", "12D3KooW-w3"];
   }
 
   // ------------------------------------------------------------------

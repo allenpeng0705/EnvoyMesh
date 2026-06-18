@@ -214,6 +214,53 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.unregisterPushToken(deviceId);
   }
 
+  // ----- Phase 40: Agent Network Collaboration Layer (chains) -----
+  chainPlan(params: Parameters<NodeService["chainPlan"]>[0]): ReturnType<NodeService["chainPlan"]> {
+    return this._ns.chainPlan(params);
+  }
+  chainLaunch(params: Parameters<NodeService["chainLaunch"]>[0]): ReturnType<NodeService["chainLaunch"]> {
+    return this._ns.chainLaunch(params);
+  }
+  chainGetState(params: Parameters<NodeService["chainGetState"]>[0]): ReturnType<NodeService["chainGetState"]> {
+    return this._ns.chainGetState(params);
+  }
+  chainListActive(params?: Parameters<NodeService["chainListActive"]>[0]): ReturnType<NodeService["chainListActive"]> {
+    return this._ns.chainListActive(params ?? {});
+  }
+  chainCancel(params: Parameters<NodeService["chainCancel"]>[0]): ReturnType<NodeService["chainCancel"]> {
+    return this._ns.chainCancel(params);
+  }
+  chainListReports(params?: Parameters<NodeService["chainListReports"]>[0]): ReturnType<NodeService["chainListReports"]> {
+    return this._ns.chainListReports(params ?? {});
+  }
+  chainGetReport(params: Parameters<NodeService["chainGetReport"]>[0]): ReturnType<NodeService["chainGetReport"]> {
+    return this._ns.chainGetReport(params);
+  }
+  chainPinReport(params: Parameters<NodeService["chainPinReport"]>[0]): ReturnType<NodeService["chainPinReport"]> {
+    return this._ns.chainPinReport(params);
+  }
+  chainSetBidStrategy(params: Parameters<NodeService["chainSetBidStrategy"]>[0]): ReturnType<NodeService["chainSetBidStrategy"]> {
+    return this._ns.chainSetBidStrategy(params);
+  }
+  chainGetBidStrategy(params: Parameters<NodeService["chainGetBidStrategy"]>[0]): ReturnType<NodeService["chainGetBidStrategy"]> {
+    return this._ns.chainGetBidStrategy(params);
+  }
+  chainEvaluateBids(params: Parameters<NodeService["chainEvaluateBids"]>[0]): ReturnType<NodeService["chainEvaluateBids"]> {
+    return this._ns.chainEvaluateBids(params);
+  }
+  chainCounterBid(params: Parameters<NodeService["chainCounterBid"]>[0]): ReturnType<NodeService["chainCounterBid"]> {
+    return this._ns.chainCounterBid(params);
+  }
+  chainRebalance(params: Parameters<NodeService["chainRebalance"]>[0]): ReturnType<NodeService["chainRebalance"]> {
+    return this._ns.chainRebalance(params);
+  }
+  chainGetDefaults(params: Parameters<NodeService["chainGetDefaults"]>[0]): ReturnType<NodeService["chainGetDefaults"]> {
+    return this._ns.chainGetDefaults(params);
+  }
+  chainSetDefaults(params: Parameters<NodeService["chainSetDefaults"]>[0]): ReturnType<NodeService["chainSetDefaults"]> {
+    return this._ns.chainSetDefaults(params);
+  }
+
   // -----------------------------------------------------------------------
   // Messaging
   // -----------------------------------------------------------------------

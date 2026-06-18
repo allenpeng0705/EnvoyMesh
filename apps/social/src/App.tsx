@@ -15,10 +15,11 @@ import { ProfileView } from "./components/views/ProfileView.js";
 import { SettingsView, type SettingsTabId } from "./components/views/SettingsView.js";
 import { LibraryView } from "./components/views/LibraryView.js";
 import { H2AChannelView } from "./components/views/H2AChannelView.js";
+import { ChainsView } from "./components/views/ChainsView.js";
 import { AutoReplyPausedNotifier } from "./components/AutoReplyPausedNotifier.js";
 import { isTauriShell, restartTauriNodeProcess } from "./lib/tauri-shell.js";
 
-export type ViewName = "chat" | "assistant" | "discover" | "library" | "profile" | "settings";
+export type ViewName = "chat" | "assistant" | "discover" | "library" | "chains" | "profile" | "settings";
 
 export type ChatPanelMode = "threads" | "inbox" | "terminals";
 
@@ -282,6 +283,11 @@ export function App() {
             {currentView === "library" && (
               <SwipeBack onSwipeBack={() => setCurrentView("chat")}>
                 <LibraryView />
+              </SwipeBack>
+            )}
+            {currentView === "chains" && (
+              <SwipeBack onSwipeBack={() => setCurrentView("chat")}>
+                <ChainsView onBack={() => setCurrentView("chat")} />
               </SwipeBack>
             )}
             {currentView === "profile" && (
