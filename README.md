@@ -55,6 +55,8 @@ Install an **Envoy** on your computer and phone, chat with friends directly, and
 
 ## Getting Started
 
+**macOS / Linux:**
+
 ```bash
 git clone https://github.com/envoymesh/envoymesh.git
 cd envoymesh
@@ -64,6 +66,20 @@ cd envoymesh
 npm run node:dev      # Start the P2P node
 npm run social:dev    # Open http://localhost:5173
 ```
+
+**Windows (PowerShell 5.1+):**
+
+```powershell
+git clone https://github.com/envoymesh/envoymesh.git
+cd envoymesh
+.\scripts\setup.ps1
+
+# Run
+npm run node:dev      # Start the P2P node
+npm run social:dev    # Open http://localhost:5173
+```
+
+`setup.sh` and `setup.ps1` are kept in sync step-for-step — if you change one, change the other in the same commit. The plain `npm install` from a fresh clone also works; the setup scripts additionally bootstrap OpenClaw, copy the envoymesh channel extension, build the OpenClaw gateway, and smoke-test the webhook.
 
 For detailed setup, configuration, Docker, mobile, and packaging: **[QuickStart.md](QuickStart.md)** · **[packaging.md](packaging.md)**
 
