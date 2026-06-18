@@ -244,4 +244,230 @@ void main() {
       await expectLater(callFuture, throwsA(isA<Exception>()));
     });
   });
+
+  // ----------------------------------------------------------------------
+  // Phase 42C — Voice / video call RPCs.
+  //
+  // These tests replace the Phase 38 stubs. The home node expects
+  // (targetOwnerId, sdpOffer, iceServers?) for sendCallInvite and
+  // (callId, sdpAnswer, iceServers?) for acceptCallInvite. The five
+  // methods here exercise both happy paths and edge cases (null callId,
+  // omitted iceServers, JSON-RPC error propagation).
+  // ----------------------------------------------------------------------
+
+  group('NodeServiceClient call RPCs (Phase 42C)', () {
+    test('sendCallInvite sends targetOwnerId, sdpOffer, and iceServers', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final iceServers = [
+        {'urls': 'stun:stun.example.com:3478'},
+        {'urls': 'turn:turn.example.com:3478', 'username': 'u', 'credential': 'c'},
+      ];
+      final callFuture = client.sendCallInvite(
+        'envoy:owner:bob',
+        'v=0\r\no=- 1 1 IN IP4 0.0.0.0\r\n',
+        iceServers: iceServers,
+      );
+
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'sendCallInvite');
+      expect(sent['params']['targetOwnerId'], 'envoy:owner:bob');
+      expect(sent['params']['sdpOffer'], startsWith('v=0'));
+      expect(sent['params']['iceServers'], iceServers);
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': '11111111-1111-4111-8111-111111111111',
+      });
+
+      final callId = await callFuture;
+      expect(callId, '11111111-1111-4111-8111-111111111111');
+    });
+
+    test('sendCallInvite omits iceServers when not provided', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.sendCallInvite(
+        'envoy:owner:bob',
+        'v=0\r\n',
+      );
+
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['params'].containsKey('iceServers'), isFalse,
+          reason: 'iceServers must be omitted from the wire when not given — '
+              'the home injects its 3-server STUN default (Phase 42 §5.1).');
+      expect(sent['params'], {'targetOwnerId': 'envoy:owner:bob', 'sdpOffer': 'v=0\r\n'});
+
+      mock.simulateMessage({'id': sent['id'], 'result': 'call-id'});
+      expect(await callFuture, 'call-id');
+    });
+
+    test('sendCallInvite returns null when the home refuses', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.sendCallInvite('envoy:owner:bob', 'v=0\r\n');
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      mock.simulateMessage({'id': sent['id'], 'result': null});
+
+      expect(await callFuture, isNull);
+    });
+
+    test('acceptCallInvite sends callId, sdpAnswer, and iceServers', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final iceServers = [
+        {'urls': 'stun:stun.example.com:3478'},
+      ];
+      final callFuture = client.acceptCallInvite(
+        '22222222-2222-4222-8222-222222222222',
+        'v=0\r\no=- 2 2 IN IP4 0.0.0.0\r\n',
+        iceServers: iceServers,
+      );
+
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'acceptCallInvite');
+      expect(sent['params']['callId'], '22222222-2222-4222-8222-222222222222');
+      expect(sent['params']['sdpAnswer'], startsWith('v=0'));
+      expect(sent['params']['iceServers'], iceServers);
+
+      mock.simulateMessage({'id': sent['id'], 'result': true});
+      expect(await callFuture, isTrue);
+    });
+
+    test('acceptCallInvite returns false when the home refuses', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.acceptCallInvite('call-id', 'v=0\r\n');
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      mock.simulateMessage({'id': sent['id'], 'result': false});
+
+      expect(await callFuture, isFalse);
+    });
+
+    test('declineCallInvite sends callId and reason', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.declineCallInvite(
+        '33333333-3333-4333-8333-333333333333',
+        'busy',
+      );
+
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'declineCallInvite');
+      expect(sent['params'], {
+        'callId': '33333333-3333-4333-8333-333333333333',
+        'reason': 'busy',
+      });
+
+      mock.simulateMessage({'id': sent['id'], 'result': true});
+      expect(await callFuture, isTrue);
+    });
+
+    test('endCall sends callId only', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.endCall('44444444-4444-4444-8444-444444444444');
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'endCall');
+      expect(sent['params'], {'callId': '44444444-4444-4444-8444-444444444444'});
+
+      mock.simulateMessage({'id': sent['id'], 'result': true});
+      expect(await callFuture, isTrue);
+    });
+
+    test('setCallMuted sends callId and muted', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.setCallMuted(
+        '55555555-5555-4555-8555-555555555555',
+        true,
+      );
+
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'setCallMuted');
+      expect(sent['params'], {
+        'callId': '55555555-5555-4555-8555-555555555555',
+        'muted': true,
+      });
+
+      mock.simulateMessage({'id': sent['id'], 'result': true});
+      await callFuture; // void return
+    });
+
+    test('setCallMuted sends muted=false to unmute', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.setCallMuted('call-id', false);
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['params']['muted'], isFalse);
+
+      mock.simulateMessage({'id': sent['id'], 'result': true});
+      await callFuture;
+    });
+
+    test('call RPCs propagate JSON-RPC errors', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.sendCallInvite('envoy:owner:bob', 'v=0\r\n');
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      mock.simulateMessage({
+        'id': sent['id'],
+        'error': {'message': 'peer not bonded'},
+      });
+
+      await expectLater(callFuture, throwsA(isA<Exception>()));
+    });
+
+    test('sendCallInvite sends sdpOffer verbatim (no client-side SDP mutation)',
+        () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      const rawSdp = 'v=0\r\n'
+          'o=- 1234567890 1234567890 IN IP4 192.168.1.42\r\n'
+          's=-\r\n'
+          't=0 0\r\n'
+          'm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n'
+          'c=IN IP4 192.168.1.42\r\n'
+          'a=rtpmap:111 opus/48000/2\r\n';
+      final callFuture = client.sendCallInvite('envoy:owner:bob', rawSdp);
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['params']['sdpOffer'], rawSdp);
+
+      mock.simulateMessage({'id': sent['id'], 'result': 'call-id'});
+      await callFuture;
+    });
+  });
 }

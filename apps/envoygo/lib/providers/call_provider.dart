@@ -46,6 +46,16 @@ class CallState {
 }
 
 /// Provider for voice call state — listens to CallEvent from NodeService.
+///
+/// Phase 42C — the call RPC wrappers on [NodeServiceClient] are now real
+/// (send/accept/decline/end/mute all hit JSON-RPC), but this provider does
+/// not yet build an `RTCPeerConnection` to produce the SDP offer/answer
+/// strings that the new signatures require. That integration is **Phase
+/// 42E** (`WebRtcCallTransport` + `CallProvider` rewire). For now,
+/// `startCall` / `acceptCall` throw `UnimplementedError` to surface the
+/// missing dependency rather than silently sending empty SDP. `endCall`,
+/// `declineCall`, `toggleMute` work as-is because their RPC signatures
+/// did not change.
 class CallProvider extends ChangeNotifier {
   final NodeServiceClient _nodeService;
   StreamSubscription<Map<String, dynamic>>? _sub;
@@ -97,35 +107,27 @@ class CallProvider extends ChangeNotifier {
   }
 
   /// Start an outbound call.
+  ///
+  /// Phase 42E will replace this body with `WebRtcCallTransport.startOffer`
+  /// + the generated SDP. Until then, the call cannot actually start on
+  /// the wire because the home requires a real SDP offer.
   Future<String?> startCall(String targetOwnerId) async {
-    final callId = await _nodeService.sendCallInvite(targetOwnerId);
-    if (callId != null) {
-      _state = _state.copyWith(
-        callId: callId,
-        peerOwnerId: targetOwnerId,
-        peerDisplayName: targetOwnerId, // Will be resolved from contacts
-        isIncoming: false,
-        isActive: false,
-        connectionState: 'connecting',
-      );
-      notifyListeners();
-    }
-    return callId;
+    throw UnimplementedError(
+      'CallProvider.startCall is waiting on Phase 42E '
+      '(WebRtcCallTransport.startOffer integration).',
+    );
   }
 
   /// Accept an incoming call.
+  ///
+  /// Phase 42E will replace this body with `WebRtcCallTransport.startAnswer`
+  /// + the generated SDP answer.
   Future<bool> acceptCall() async {
     if (_state.callId == null) return false;
-    final ok = await _nodeService.acceptCallInvite(_state.callId!);
-    if (ok) {
-      _state = _state.copyWith(
-        isIncoming: false,
-        isActive: true,
-        connectionState: 'connecting',
-      );
-      notifyListeners();
-    }
-    return ok;
+    throw UnimplementedError(
+      'CallProvider.acceptCall is waiting on Phase 42E '
+      '(WebRtcCallTransport.startAnswer integration).',
+    );
   }
 
   /// Decline an incoming call.

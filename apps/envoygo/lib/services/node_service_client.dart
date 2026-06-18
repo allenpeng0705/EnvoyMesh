@@ -338,23 +338,15 @@ class NodeServiceClient {
     return ChainReport.fromJson(report as Map<String, dynamic>);
   }
 
-  // -- Voice / video calls (Phase 38 stubs) --
+  // -- Voice / video calls (Phase 42C) --
   //
-  // The call_provider.dart layer (added in commit 1e266c0) references
-  // these methods, but the actual call feature is unimplemented on the
-  // home node. The stubs below exist so the codebase compiles and the
-  // call_provider can be constructed:
+  // Real JSON-RPC implementations for the five call.* RPCs. The home
+  // node (apps/node) accepts the call.* schemas defined in
+  // packages/protocol. The SDP/ICE fields are opaque to this layer —
+  // they are produced by WebRtcCallTransport (Phase 42D) and passed
+  // through unchanged.
   //
-  // - `eventStream` returns an empty stream so `CallProvider` can
-  //   subscribe without throwing. The real implementation would route
-  //   through the HomeRemoteClient's push-event channel.
-  // - `noop()` returns a sentinel NodeServiceClient with no functional
-  //   backing client. It's only used by `CallProvider.noop()` (when the
-  //   device is disconnected), which never calls RPC methods.
-  // - The other call RPCs (`sendCallInvite`, `acceptCallInvite`, ...)
-  //   throw `UnimplementedError` at access time. Calling them is a real
-  //   user action and the error is caught at the provider boundary so
-  //   it surfaces to the UI.
+  // `eventStream` and `noop()` are unchanged from the Phase 38 stubs.
 
   /// Stream of unsolicited push events from the home node. Returns an
   /// empty stream until the call feature is implemented on the home node.
@@ -373,37 +365,52 @@ class NodeServiceClient {
 
   /// Send a call invite to [targetOwnerId]. Returns the call id on
   /// success, or null if the home node refused.
-  Future<String?> sendCallInvite(String targetOwnerId) async {
-    throw UnimplementedError(
-      'NodeServiceClient.sendCallInvite is not yet implemented on the home node',
-    );
+  Future<String?> sendCallInvite(
+    String targetOwnerId,
+    String sdpOffer, {
+    List<Map<String, dynamic>>? iceServers,
+  }) async {
+    final result = await _client.call('sendCallInvite', {
+      'targetOwnerId': targetOwnerId,
+      'sdpOffer': sdpOffer,
+      if (iceServers != null && iceServers.isNotEmpty) 'iceServers': iceServers,
+    });
+    // The home returns the callId as a JSON string (or null on refusal).
+    if (result == null) return null;
+    return result as String?;
   }
 
   /// Accept an incoming call invite. Returns true if accepted cleanly.
-  Future<bool> acceptCallInvite(String callId) async {
-    throw UnimplementedError(
-      'NodeServiceClient.acceptCallInvite is not yet implemented on the home node',
-    );
+  Future<bool> acceptCallInvite(
+    String callId,
+    String sdpAnswer, {
+    List<Map<String, dynamic>>? iceServers,
+  }) async {
+    final result = await _client.call('acceptCallInvite', {
+      'callId': callId,
+      'sdpAnswer': sdpAnswer,
+      if (iceServers != null && iceServers.isNotEmpty) 'iceServers': iceServers,
+    });
+    return result == true;
   }
 
   /// Decline an incoming call invite.
   Future<bool> declineCallInvite(String callId, String reason) async {
-    throw UnimplementedError(
-      'NodeServiceClient.declineCallInvite is not yet implemented on the home node',
-    );
+    final result = await _client.call('declineCallInvite', {
+      'callId': callId,
+      'reason': reason,
+    });
+    return result == true;
   }
 
   /// End the active call.
   Future<bool> endCall(String callId) async {
-    throw UnimplementedError(
-      'NodeServiceClient.endCall is not yet implemented on the home node',
-    );
+    final result = await _client.call('endCall', {'callId': callId});
+    return result == true;
   }
 
   /// Toggle the local mic muted state.
   Future<void> setCallMuted(String callId, bool muted) async {
-    throw UnimplementedError(
-      'NodeServiceClient.setCallMuted is not yet implemented on the home node',
-    );
+    await _client.call('setCallMuted', {'callId': callId, 'muted': muted});
   }
 }
