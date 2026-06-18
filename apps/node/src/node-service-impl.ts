@@ -12061,20 +12061,179 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     }
   }
 
-  async acceptCallInvite(callId: string): Promise<boolean> {
-    return this.callManager.acceptInboundCall(callId, this._profile?.owner?.ownerId ?? "");
+  async acceptCallInvite(
+    callId: string,
+    sdpAnswer: string,
+    iceServers?: { urls: string; username?: string; credential?: string }[],
+  ): Promise<boolean> {
+    const profile = this._profile;
+    if (!profile) return false;
+
+    const calleeOwnerId = profile.owner.ownerId;
+    const calleePeerId = derivePeerId(profile.device.publicKeyPem);
+    const accepted = this.callManager.acceptInboundCall(callId, calleeOwnerId);
+    if (!accepted) return false;
+
+    // Resolve the caller's device peer ID — `getSessionPeerOwnerId(callId)`
+    // returns the owner ID of the OTHER side of the session.
+    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
+    if (!peerOwnerId) return false;
+
+    const { createCallAcceptPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+
+    const payload = createCallAcceptPayload({
+      callId,
+      calleeOwnerId,
+      calleePeerId,
+      sdpAnswer,
+      iceServers,
+    });
+
+    const unsigned = createUnsignedEnvelope({
+      intent: "call.accept",
+      senderPeerId: calleePeerId,
+      senderPublicKey: profile.device.publicKeyPem,
+      recipientRole: "human",
+      payload,
+    });
+    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
+    await this._sendCallResponseEnvelope(peerOwnerId, envelope, "call.accept");
+    return true;
   }
 
   async declineCallInvite(callId: string, reason: string): Promise<boolean> {
-    return this.callManager.rejectCall(callId, reason as "busy" | "declined" | "offline" | "error" | "no_answer");
+    const profile = this._profile;
+    if (!profile) return false;
+
+    const rejected = this.callManager.rejectCall(
+      callId,
+      reason as "busy" | "declined" | "offline" | "error" | "no_answer",
+    );
+    if (!rejected) return false;
+
+    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
+    if (!peerOwnerId) return false;
+
+    const { createCallRejectPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+
+    const calleeOwnerId = profile.owner.ownerId;
+    const calleePeerId = derivePeerId(profile.device.publicKeyPem);
+    const payload = createCallRejectPayload({
+      callId,
+      calleeOwnerId,
+      calleePeerId,
+      reason: reason as "busy" | "declined" | "no_answer" | "offline" | "error",
+    });
+
+    const unsigned = createUnsignedEnvelope({
+      intent: "call.reject",
+      senderPeerId: calleePeerId,
+      senderPublicKey: profile.device.publicKeyPem,
+      recipientRole: "human",
+      payload,
+    });
+    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
+    await this._sendCallResponseEnvelope(peerOwnerId, envelope, "call.reject");
+    return true;
   }
 
   async endCall(callId: string): Promise<boolean> {
-    return this.callManager.hangupCall(callId, "normal");
+    const profile = this._profile;
+    if (!profile) return false;
+
+    const ended = this.callManager.hangupCall(callId, "normal");
+    if (!ended) return false;
+
+    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
+    if (!peerOwnerId) {
+      // Local-only session — no peer to notify.
+      return true;
+    }
+
+    const { createCallHangupPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+
+    const senderPeerId = derivePeerId(profile.device.publicKeyPem);
+    const payload = createCallHangupPayload({ callId, reason: "normal" });
+
+    const unsigned = createUnsignedEnvelope({
+      intent: "call.hangup",
+      senderPeerId,
+      senderPublicKey: profile.device.publicKeyPem,
+      recipientRole: "human",
+      payload,
+    });
+    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
+    await this._sendCallResponseEnvelope(peerOwnerId, envelope, "call.hangup");
+    return true;
   }
 
   async setCallMuted(callId: string, muted: boolean): Promise<boolean> {
-    return this.callManager.setMute(callId, muted);
+    const profile = this._profile;
+    if (!profile) return false;
+
+    const updated = this.callManager.setMute(callId, muted);
+    if (!updated) return false;
+
+    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
+    if (!peerOwnerId) return false;
+
+    const { createCallMutePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+
+    const senderPeerId = derivePeerId(profile.device.publicKeyPem);
+    const payload = createCallMutePayload({ callId, muted });
+
+    const unsigned = createUnsignedEnvelope({
+      intent: "call.mute",
+      senderPeerId,
+      senderPublicKey: profile.device.publicKeyPem,
+      recipientRole: "human",
+      payload,
+    });
+    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
+    await this._sendCallResponseEnvelope(peerOwnerId, envelope, "call.mute");
+    return true;
+  }
+
+  /**
+   * Phase 42B — common helper that signs and sends a `call.*` response
+   * envelope back to the peer. Resolves the peer's owner ID → device
+   * peer ID via the same path used by chat, then sends through
+   * `_deliverCallEnvelope` so retries + ack-skip match the call path.
+   *
+   * No-ops (silently) when the peer cannot be resolved — the call
+   * may already have ended and the peer is gone. CallManager state
+   * has already been updated before this helper runs.
+   */
+  private async _sendCallResponseEnvelope(
+    peerOwnerId: string,
+    envelope: EnvoyEnvelope,
+    _intent: string,
+  ): Promise<void> {
+    try {
+      const transport = await this._resolvePeerTransportForOwner(peerOwnerId);
+      const dialHints = await raceWithTimeout(
+        this._dialHintsForChat(transport.transportPeerId, transport.listenAddrs),
+        30_000,
+        "_dialHintsForChat",
+      );
+      // Re-stamp the envelope's `recipientPeerId` once we know the device peer ID.
+      envelope.recipientPeerId = transport.recipientEnvelopePeerId;
+      await this._deliverCallEnvelope(
+        transport.transportPeerId,
+        envelope,
+        dialHints,
+        transport.listenAddrs,
+      );
+    } catch (err) {
+      console.warn(
+        `[call-response] could not deliver ${_intent} to ${peerOwnerId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 
   async clearAllUserData(): Promise<void> {
