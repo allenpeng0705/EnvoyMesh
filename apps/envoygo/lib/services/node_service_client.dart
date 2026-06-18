@@ -1,3 +1,4 @@
+import '../models/chain_report.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../models/contact.dart';
@@ -295,5 +296,45 @@ class NodeServiceClient {
   Future<Map<String, dynamic>> getHumanProfile() async {
     return await _client.call('getHumanProfile')
         as Map<String, dynamic>;
+  }
+
+  // -- Chains (Phase 40 — read-only mobile mirror) --
+  //
+  // The mobile client is a thin status mirror: it lists published chain
+  // reports and shows their detail. Mutations (pin/unpin, launch, cancel,
+  // rebalance) live on the home node's Social UI. The home node already
+  // serves all 15 chain RPCs through its JSON-RPC router; we only add the
+  // two read-only ones the mobile surface needs.
+
+  /// List published chain reports from the home node's chain-reports store.
+  ///
+  /// [limit] caps the response (default home-node cap is 50). [pinnedOnly]
+  /// filters to reports the owner flagged as exempt from 90-day GC. The
+  /// returned summaries carry just enough to render a list row; tap a row
+  /// to fetch the full report via [getChainReport].
+  Future<List<ChainReportSummary>> listChainReports({
+    int? limit,
+    bool? pinnedOnly,
+  }) async {
+    final result = await _client.call('chainListReports', {
+      if (limit != null) 'limit': limit,
+      if (pinnedOnly != null) 'pinnedOnly': pinnedOnly,
+    }) as Map<String, dynamic>;
+    final list = (result['reports'] as List<dynamic>?) ?? const [];
+    return list
+        .map((e) => ChainReportSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Fetch a single chain report by id. Returns null when the home node
+  /// has no record of [chainId] (e.g. the report was GC'd after 90 days
+  /// and the owner hadn't pinned it).
+  Future<ChainReport?> getChainReport(String chainId) async {
+    final result = await _client.call('chainGetReport', {
+      'chainId': chainId,
+    }) as Map<String, dynamic>;
+    final report = result['report'];
+    if (report == null) return null;
+    return ChainReport.fromJson(report as Map<String, dynamic>);
   }
 }

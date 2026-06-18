@@ -6,6 +6,7 @@ import '../../models/stored_node.dart';
 import '../../providers/node_provider.dart';
 import '../../widgets/ai_engine_section.dart';
 import '../../widgets/connection_indicator.dart';
+import '../chains/recent_chains_screen.dart';
 import '../pairing/pairing_scan_screen.dart';
 import 'node_switcher_sheet.dart';
 
@@ -223,6 +224,32 @@ class MeScreen extends ConsumerWidget {
         if (nodeState.activeNode != null) ...[
           const _SectionHeader(title: 'AI Engine'),
           const AiEngineSection(),
+          const SizedBox(height: 16),
+        ],
+
+        // Chains (Phase 40 — read-only mirror of the home node's
+        // chain-reports store). Tap a row to see the executive summary,
+        // sections, and per-worker cost. Authoring happens on the home
+        // node's Social UI; mobile shows what was published.
+        if (nodeState.activeNode != null) ...[
+          const _SectionHeader(title: 'Chains'),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.analytics_outlined),
+              title: const Text('Recent chains'),
+              subtitle: const Text(
+                'View chain reports published on the home node',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const RecentChainsScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
           const SizedBox(height: 16),
         ],
 
