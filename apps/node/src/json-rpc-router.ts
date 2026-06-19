@@ -140,6 +140,7 @@ export async function routeRpcMethod(
         token: String(params.token ?? ""),
         ownerId: String(params.ownerId ?? ""),
         deviceId: params.deviceId !== undefined ? String(params.deviceId) : undefined,
+        tokenType: params.tokenType === "voip" ? "voip" : "alert",
       });
       return undefined;
     case "unregisterPushToken":

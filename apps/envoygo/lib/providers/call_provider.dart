@@ -221,6 +221,44 @@ class CallProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Phase 42I — surface an incoming call that was delivered via a
+  /// VoIP push (iOS PushKit) when the app was backgrounded.
+  ///
+  /// The push payload only carries `callId` and `callerOwnerId` (no
+  /// SDP yet — the call envelope arrives over the WebSocket after the
+  /// app wakes). We update local state so the CallKit screen can show
+  /// a "ringing" entry; the WebSocket `call:incoming` event then
+  /// re-fills the state with the SDP and full peer info.
+  ///
+  /// `callerName` is optional — the eventual `call:incoming` event
+  /// typically replaces it with a contact-resolved display name.
+  void onIncomingCallFromVoipPush({
+    required String callId,
+    required String callerOwnerId,
+    String? callerName,
+  }) {
+    if (!_hasMeaningfulCallUpdate(callId, callerOwnerId)) return;
+    _state = _state.copyWith(
+      callId: callId,
+      peerOwnerId: callerOwnerId,
+      peerDisplayName: callerName ?? callerOwnerId,
+      isIncoming: true,
+      isActive: false,
+      connectionState: 'connecting',
+    );
+    notifyListeners();
+  }
+
+  /// Avoid re-stomping the state if a `call:incoming` from the
+  /// WebSocket has already arrived for the same call (the typical
+  /// race when the app is foregrounded at push time).
+  bool _hasMeaningfulCallUpdate(String callId, String callerOwnerId) {
+    final s = _state;
+    if (s.callId == callId) return false;
+    if (s.callId != null && s.callId != callId) return true;
+    return s.peerOwnerId != callerOwnerId;
+  }
+
   /// Look up the home's `iceServers` config (best-effort — falls back
   /// to empty list if the RPC fails, in which case the home injects the
   /// 3-server STUN default).

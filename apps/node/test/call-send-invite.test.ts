@@ -188,6 +188,33 @@ describe("NodeServiceImpl.sendCallInvite (Phase 42A)", () => {
     expect(parsed.iceServers).toEqual(callerIce);
   });
 
+  // Phase 42H — the structured TURN editor writes a mixed STUN+TURN list
+  // into node-config.iceServers. Verify the home ships the full list
+  // (preserving credentials for symmetric-NAT relay candidates) rather
+  // than collapsing it back to the STUN-only default.
+  it("6b. node-config STUN+TURN entries are shipped verbatim (Phase 42H)", async () => {
+    const configIce = [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun.cloudflare.com:3478" },
+      { urls: "turn:turn.example.com:3478?transport=udp", username: "envoymesh", credential: "secret" },
+      { urls: "turns:turn.example.com:5349?transport=tcp", username: "envoymesh", credential: "secret2" },
+    ];
+    await (node as any)._configStore.save({
+      version: "0.1",
+      profileDir,
+      iceServers: configIce,
+    });
+    await node.sendCallInvite(FAKE_OWNER_ID, "v=0\r\n...");
+    const parsed = parseCallInvitePayload(sends[0]!.envelope.payload);
+    expect(parsed.iceServers).toEqual(configIce);
+    // Sanity: the TURN credentials survived the round-trip — callee
+    // must be able to authenticate to the relay.
+    const turn = parsed.iceServers!.find((s) => s.urls.startsWith("turn:"));
+    expect(turn).toBeDefined();
+    expect(turn!.username).toBe("envoymesh");
+    expect(turn!.credential).toBe("secret");
+  });
+
   it("7. signs the envelope so the callee can verify the caller", async () => {
     await node.sendCallInvite(FAKE_OWNER_ID, "v=0\r\n...");
     const captured = sends[0]!;

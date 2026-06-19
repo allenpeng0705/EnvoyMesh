@@ -301,10 +301,31 @@ export const networkSettingsMessages = {
   },
   iceServers: {
     title: "WebRTC ICE servers (STUN/TURN)",
-    desc: "Configure STUN and TURN servers for voice/video calls. Leave empty to use Google's public STUN servers (works for most home networks). Add a TURN server if you're behind a symmetric NAT (corporate firewall, some mobile carriers).",
+    desc: "Configure STUN and TURN servers for voice/video calls. Leave empty to use the default 3-server STUN list (Google / Cloudflare / Twilio), which works for most home networks. Add a TURN server only if you're behind a symmetric NAT (corporate firewall, some mobile carriers).",
     placeholder: '[\n  { "urls": "stun:stun.l.google.com:19302" },\n  { "urls": "turn:turn.example.com:3478", "username": "envoymesh", "credential": "secret" }\n]',
     hint: "Valid JSON array of RTCIceServer objects. Empty array = LAN only (no STUN/TURN).",
     save: "Save",
     saved: "Saved ✓",
+  },
+  // Phase 42H — structured TURN credential editor for symmetric-NAT networks.
+  // The list below complements the JSON editor above; users can mix and match.
+  turnServers: {
+    title: "TURN servers (symmetric NAT)",
+    desc: "Most calls work over STUN alone. If both peers are behind a symmetric NAT (corporate firewall, some mobile carriers), you also need a TURN relay. Add TURN entries below — they ship inside call.invite alongside the STUN defaults.",
+    addRow: "Add TURN server",
+    empty: "No TURN servers configured. Calls will fall back to STUN-only.",
+    urlLabel: "TURN URL",
+    urlPlaceholder: "turn:turn.example.com:3478?transport=udp",
+    usernameLabel: "Username",
+    credentialLabel: "Credential",
+    ttlLabel: "Credential TTL (s)",
+    ttlHint: "How long these credentials stay valid. Home rotates them every call when set to 0.",
+    remove: "Remove",
+    save: "Save TURN servers",
+    saved: "Saved ✓",
+    invalidUrl: "TURN URL must start with `turn:` or `turns:`",
+    invalidTtl: "TTL must be a non-negative integer (0 = rotate on every call)",
+    rotationNote:
+      "Tip: keep TTL short (≤ 1 hour) and rotate via your TURN provider's REST API. EnvoyGo ships them on every call.invite.",
   },
 } as const;

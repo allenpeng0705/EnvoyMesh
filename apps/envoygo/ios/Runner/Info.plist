@@ -49,5 +49,15 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- Phase 42I — keep WebRTC audio and the VoIP push handler alive
+	     when the app is backgrounded. `voip` lets the
+	     PKPushRegistry wake the app for CallKit-style incoming call
+	     pushes; `audio` keeps the RTCPeerConnection audio session
+	     running during an in-progress call. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>voip</string>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>

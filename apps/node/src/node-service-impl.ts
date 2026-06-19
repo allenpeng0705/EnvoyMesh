@@ -11477,7 +11477,7 @@ class NodeServiceImpl implements NodeService {
   // Phase 31I — Push Notifications
   // ------------------------------------------------------------------
 
-  registerPushToken(params: { platform: string; token: string; ownerId: string; deviceId?: string }): void {
+  registerPushToken(params: { platform: string; token: string; ownerId: string; deviceId?: string; tokenType?: "alert" | "voip" }): void {
     pushNotificationService.registerPushToken(params);
   }
 
@@ -12026,6 +12026,27 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
         }),
       ).catch(() => undefined);
     }
+
+    // Phase 42I — fire a VoIP push so the callee's iOS EnvoyGo app can
+    // wake from background and surface a CallKit screen. The push
+    // dispatcher itself short-circuits when no token is registered for
+    // the target owner, so it's always safe to call.
+    let callerDisplayName: string | undefined;
+    try {
+      const humanProfile = await this._humanProfileStore?.loadHumanProfile();
+      const trimmed = humanProfile?.displayName?.trim();
+      if (trimmed) callerDisplayName = trimmed;
+    } catch {
+      // No human profile yet — fall back to the owner ID.
+    }
+    void pushNotificationService
+      .dispatchCallPush({
+        callerName: callerDisplayName ?? profile.owner.ownerId,
+        targetOwnerId,
+        callId,
+        callerOwnerId: profile.owner.ownerId,
+      })
+      .catch(() => undefined);
 
     return callId;
   }

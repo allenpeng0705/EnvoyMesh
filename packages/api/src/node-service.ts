@@ -2118,7 +2118,14 @@ export interface NodeService {
 
   // ----- Phase 31I — Push Notifications -----
 
-  registerPushToken(params: { platform: string; token: string; ownerId: string; deviceId?: string }): void;
+  registerPushToken(params: {
+    platform: string;
+    token: string;
+    ownerId: string;
+    deviceId?: string;
+    /** Phase 42I — defaults to "alert" for back-compat with older EnvoyGo builds. */
+    tokenType?: "alert" | "voip";
+  }): void;
   unregisterPushToken(deviceId: string): boolean;
 
   // ----- Phase 40: Agent Network Collaboration Layer (chains) -----

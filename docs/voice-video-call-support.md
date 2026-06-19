@@ -477,6 +477,44 @@ If the caller has no TURN credentials (not connected to a relay, or relay doesn'
 
 **Relay as TURN server — open question:** The existing libp2p relay infrastructure must be extended to act as a TURN server. This requires: (a) a TURN server implementation (e.g., using `coturn` or a pure-Go TURN library like `gortr`/`pion/turn`), (b) short-lived credential generation, and (c) exposing TURN credentials in the relay check-in or registration response. This is an open implementation question — the protocol specifies that TURN credentials are included in `iceServers`, but the mechanism for obtaining them from the relay is deferred to the relay implementation.
 
+### 6.3.1 Phase 42H — 3-Server STUN Default and TURN Editor
+
+The home node ships a **3-server STUN default** when neither the caller nor `node-config.iceServers` provides a list. The default is sourced from well-known public providers and covers the majority of home networks (cone NATs and most carrier-grade NATs):
+
+| Provider  | URL                                  | Reason                          |
+| --------- | ------------------------------------ | ------------------------------- |
+| Google    | `stun:stun.l.google.com:19302`       | Most reliable, widely deployed  |
+| Cloudflare| `stun:stun.cloudflare.com:3478`      | Privacy-friendly, no Google dep |
+| Twilio    | `stun:global.stun.twilio.com:3478`   | Independent third fallback      |
+
+The home injects this default inside `_effectiveCallIceServers()` in `apps/node/src/node-service-impl.ts` (Phase 42A). The precedence order is: **caller-supplied > node-config > 3-server STUN default**. An empty `node-config.iceServers` (set explicitly by the operator) disables the default and forces a LAN-only call — that is the documented escape hatch for hostile networks.
+
+#### Structured TURN editor (Settings → Network → TURN servers)
+
+Operators behind a symmetric NAT (corporate firewall, some mobile carriers) need a TURN relay. The structured editor in `SettingsNodeTab` (`apps/social/src/components/views/SettingsNodeTab.tsx`) lets an operator add TURN entries with explicit fields — **URL, username, credential, credential TTL** — instead of editing raw JSON. The editor is backed by the pure helper module `apps/social/src/lib/turn-credentials.ts`, which:
+
+- extracts only the TURN entries from `node-config.iceServers` (STUN entries are owned by the existing JSON editor and stay untouched),
+- validates each row (URL must start with `turn:` or `turns:`, TTL must be ≥ 0),
+- replaces stale TURN entries on save so the file never accumulates orphans.
+
+The TURN entries are stored on disk as part of `node-config.iceServers` alongside any STUN entries. The home then ships the merged list verbatim inside `call.invite` (see test `6b. node-config STUN+TURN entries are shipped verbatim` in `apps/node/test/call-send-invite.test.ts`).
+
+#### Credential TTL
+
+The TTL field is a **client-only** annotation — the wire format (`{ urls, username?, credential? }`) does not carry it yet, so the editor strips it before persistence. The displayed value is a hint to the operator: "rotate these credentials within N seconds." Setting TTL to `0` means "rotate on every call." Operators are expected to wire their TURN provider's REST API to a cron job that updates the credentials and re-saves `node-config.iceServers`.
+
+#### When to add TURN
+
+| Network shape                                  | STUN-only works? | Add TURN? |
+| ---------------------------------------------- | ---------------- | --------- |
+| Same LAN (mDNS)                                | n/a (libp2p)     | No        |
+| Both peers on cone NAT                         | Yes              | No        |
+| One peer on symmetric NAT, other cone          | Usually          | Optional  |
+| **Both peers on symmetric NAT**                | **No**           | **Yes**   |
+| Corporate firewall blocking UDP                | No               | Yes (TCP) |
+
+The pre-flight rule: try the 3-server STUN default first. If calls fail with `IceConnectionState: failed` after 10s and `getStats()` shows no `srflx` candidates, add a TURN entry.
+
 ### 6.4 WebRTC Transport Class
 
 ```typescript

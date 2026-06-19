@@ -650,6 +650,95 @@ void main() {
       failingProvider.dispose();
     });
   });
+
+  // -----------------------------------------------------------------
+  // Phase 42I — VoIP push → CallProvider handoff.
+  //
+  // When a VoIP push wakes the app from background, the iOS AppDelegate
+  // forwards the call metadata to Dart via the `envoygo/voip_push`
+  // MethodChannel. The CallProvider exposes
+  // `onIncomingCallFromVoipPush` for the VoipPushService to call, so
+  // the CallKit screen can render a "ringing" state until the
+  // WebSocket delivers the full `call:incoming` event with the SDP.
+  // -----------------------------------------------------------------
+  group('onIncomingCallFromVoipPush (Phase 42I)', () {
+    late CallProvider voipProvider;
+
+    setUp(() async {
+      // No audio-session mock needed — these tests only exercise
+      // the provider's state transitions, not its audio plumbing.
+      voipProvider = CallProvider(
+        NodeServiceClient(await connectWithTrackedMock(MockWebSocket())),
+      );
+    });
+
+    tearDown(() => voipProvider.dispose());
+
+    test('first push puts the provider in ringing state', () {
+      voipProvider.onIncomingCallFromVoipPush(
+        callId: 'call-voip-1',
+        callerOwnerId: 'envoy:owner:bob',
+        callerName: 'Bob',
+      );
+      final s = voipProvider.state;
+      expect(s.callId, 'call-voip-1');
+      expect(s.peerOwnerId, 'envoy:owner:bob');
+      expect(s.peerDisplayName, 'Bob');
+      expect(s.isIncoming, isTrue);
+      expect(s.isActive, isFalse);
+      expect(s.connectionState, 'connecting');
+    });
+
+    test('callerName falls back to callerOwnerId when not provided', () {
+      voipProvider.onIncomingCallFromVoipPush(
+        callId: 'call-voip-2',
+        callerOwnerId: 'envoy:owner:carol',
+      );
+      expect(voipProvider.state.peerDisplayName, 'envoy:owner:carol');
+    });
+
+    test('a second push for a different call overwrites the first', () {
+      voipProvider.onIncomingCallFromVoipPush(
+        callId: 'call-voip-1',
+        callerOwnerId: 'envoy:owner:bob',
+      );
+      voipProvider.onIncomingCallFromVoipPush(
+        callId: 'call-voip-2',
+        callerOwnerId: 'envoy:owner:carol',
+      );
+      final s = voipProvider.state;
+      expect(s.callId, 'call-voip-2');
+      expect(s.peerOwnerId, 'envoy:owner:carol');
+    });
+
+    test('a duplicate push for the same call does not stomp WebSocket state',
+        () async {
+      // Simulate the WebSocket delivering the canonical `call:incoming`
+      // event after the push has already set the ringing state. The
+      // push handler must not overwrite the SDP that the WebSocket is
+      // about to attach.
+      voipProvider.onIncomingCallFromVoipPush(
+        callId: 'call-voip-3',
+        callerOwnerId: 'envoy:owner:bob',
+        callerName: 'Bob (from push)',
+      );
+      voipProvider.handleTestEvent({
+        'type': 'call:incoming',
+        'callId': 'call-voip-3',
+        'peerOwnerId': 'envoy:owner:bob',
+        'peerDisplayName': 'Bob (from ws)',
+        'sdpOffer': 'v=0\r\n...',
+      });
+      // Then a duplicate push arrives (e.g. APNs delivered it twice).
+      voipProvider.onIncomingCallFromVoipPush(
+        callId: 'call-voip-3',
+        callerOwnerId: 'envoy:owner:bob',
+        callerName: 'Bob (duplicate)',
+      );
+      // The WebSocket-resolved name wins.
+      expect(voipProvider.state.peerDisplayName, 'Bob (from ws)');
+    });
+  });
 }
 
 void _replyToLast(MockWebSocket mock, dynamic result) {

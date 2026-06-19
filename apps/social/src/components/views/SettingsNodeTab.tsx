@@ -18,6 +18,14 @@ import {
   formatWanTwoNatOperatorChecklist,
   WAN_TWO_NAT_CHECKLIST_STEPS,
 } from "@envoymesh/api";
+import {
+  extractTurnServers,
+  isTurnUrl,
+  makeTurnId,
+  mergeTurnServers,
+  validateTurnDraft,
+  type TurnDraft,
+} from "../../lib/turn-credentials.js";
 import type {
   DiscoveryProfile,
   NodeConfig,
@@ -2011,6 +2019,198 @@ export function SettingsNodeTab() {
             : t("settings.network.iceServers.save")}
         </button>
       </section>
+
+      {/* Phase 42H — structured TURN credential editor. Most calls work
+          with the STUN defaults above; this section is for operators
+          behind symmetric NAT who need a relay. */}
+      <TurnServersSection
+        nodeConfig={nodeConfig}
+        nodeService={nodeService}
+        refreshNodeConfig={refreshNodeConfig}
+      />
     </>
   );
 }
+
+/**
+ * Phase 42H — structured TURN credential editor.
+ *
+ * Renders one editable row per TURN entry (URL / username / credential /
+ * TTL) and persists the array as the home's `node-config.iceServers`
+ * list — keeping the existing JSON editor above as the source of truth
+ * for raw STUN-only entries.
+ */
+function TurnServersSection({
+  nodeConfig,
+  nodeService,
+  refreshNodeConfig,
+}: {
+  nodeConfig: NodeConfig | null;
+  nodeService: ReturnType<typeof useNodeService>;
+  refreshNodeConfig: () => Promise<void>;
+}) {
+  const t = useT();
+  const initialTurn = useMemo(
+    () => extractTurnServers(nodeConfig?.iceServers),
+    [nodeConfig?.iceServers],
+  );
+  const [draft, setDraft] = useState<TurnDraft[]>(initialTurn);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // Re-sync when nodeConfig changes from outside (load, restart, etc).
+  useEffect(() => {
+    setDraft(extractTurnServers(nodeConfig?.iceServers));
+  }, [nodeConfig?.iceServers]);
+
+  const addRow = () => {
+    setDraft((prev) => [
+      ...prev,
+      { id: makeTurnId(), urls: "", username: "", credential: "", ttlSeconds: 3600 },
+    ]);
+  };
+
+  const removeRow = (id: string) => {
+    setDraft((prev) => prev.filter((row) => row.id !== id));
+  };
+
+  const updateRow = (id: string, patch: Partial<TurnDraft>) => {
+    setDraft((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  };
+
+  const save = async () => {
+    setError(null);
+    const validation = validateTurnDraft(draft, {
+      invalidUrl: t("settings.network.turnServers.invalidUrl"),
+      invalidTtl: t("settings.network.turnServers.invalidTtl"),
+    });
+    if (validation) {
+      setError(validation.message);
+      return;
+    }
+    setBusy(true);
+    try {
+      const merged = mergeTurnServers(nodeConfig?.iceServers, draft);
+      await nodeService.updateNodeConfig({ iceServers: merged });
+      await refreshNodeConfig();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="settings-section" data-testid="turn-servers-section">
+      <h3>{t("settings.network.turnServers.title")}</h3>
+      <p className="section-desc">{t("settings.network.turnServers.desc")}</p>
+
+      {draft.length === 0 ? (
+        <p className="settings-hint" style={{ marginTop: "6px" }}>
+          {t("settings.network.turnServers.empty")}
+        </p>
+      ) : (
+        <div className="turn-rows">
+          {draft.map((row) => (
+            <div key={row.id} className="turn-row" data-testid={`turn-row-${row.id}`}>
+              <label className="turn-field turn-field-wide">
+                <span className="settings-field-label">
+                  {t("settings.network.turnServers.urlLabel")}
+                </span>
+                <input
+                  type="text"
+                  className="settings-input"
+                  placeholder={t("settings.network.turnServers.urlPlaceholder")}
+                  value={row.urls}
+                  onChange={(e) => updateRow(row.id, { urls: e.target.value })}
+                />
+              </label>
+              <label className="turn-field">
+                <span className="settings-field-label">
+                  {t("settings.network.turnServers.usernameLabel")}
+                </span>
+                <input
+                  type="text"
+                  className="settings-input"
+                  value={row.username}
+                  onChange={(e) => updateRow(row.id, { username: e.target.value })}
+                />
+              </label>
+              <label className="turn-field">
+                <span className="settings-field-label">
+                  {t("settings.network.turnServers.credentialLabel")}
+                </span>
+                <input
+                  type="password"
+                  className="settings-input"
+                  value={row.credential}
+                  onChange={(e) => updateRow(row.id, { credential: e.target.value })}
+                />
+              </label>
+              <label className="turn-field turn-field-narrow">
+                <span className="settings-field-label">
+                  {t("settings.network.turnServers.ttlLabel")}
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  max={86400}
+                  className="settings-input"
+                  value={row.ttlSeconds}
+                  onChange={(e) =>
+                    updateRow(row.id, { ttlSeconds: Number(e.target.value) })
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                className="settings-button turn-remove"
+                onClick={() => removeRow(row.id)}
+                aria-label={t("settings.network.turnServers.remove")}
+              >
+                {t("settings.network.turnServers.remove")}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p className="settings-hint" style={{ marginTop: "6px" }}>
+        {t("settings.network.turnServers.ttlHint")}
+      </p>
+      <p className="settings-hint" style={{ marginTop: "4px" }}>
+        {t("settings.network.turnServers.rotationNote")}
+      </p>
+
+      {error ? (
+        <p className="settings-diagnostics-error" style={{ marginTop: "8px" }} role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      <div className="settings-buttons" style={{ marginTop: "10px" }}>
+        <button
+          type="button"
+          className="settings-button"
+          onClick={addRow}
+          data-testid="turn-add-row"
+        >
+          {t("settings.network.turnServers.addRow")}
+        </button>
+        <button
+          type="button"
+          className="settings-save-btn"
+          disabled={busy}
+          onClick={save}
+          data-testid="turn-save"
+        >
+          {saved
+            ? t("settings.network.turnServers.saved")
+            : t("settings.network.turnServers.save")}
+        </button>
+      </div>
+    </section>
+  );
+}
+

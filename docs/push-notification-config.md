@@ -76,6 +76,90 @@ await nodeService.registerPushToken({
 });
 ```
 
+### 7. Phase 42I — VoIP Push for Backgrounded Calls
+
+Regular APNs alert pushes **cannot wake a terminated iOS app** to show an incoming-call screen. Apple reserves that capability for **VoIP pushes** delivered through `PushKit` (`PKPushRegistry`). Phase 42I adds the second channel so EnvoyGo can ring the user even when the app is force-killed.
+
+#### 7.1 Provision the VoIP certificate
+
+1. Open Apple Developer → Certificates, Identifiers & Profiles.
+2. Create a new **VoIP Services Certificate** (Apple Push Notification service SSL). The CSR is the same .p8 key from §2 — no separate cert needed when using the token-based `.p8` flow.
+3. Create a **second App ID** with the `voip` capability enabled, suffixed `.voip`. The convention is `<bundle>.voip` (e.g. `com.envoymesh.EnvoyGo.voip`). The home node reads the suffix from `APNS_VOIP_TOPIC`.
+
+#### 7.2 Set the VoIP env var
+
+In addition to the regular `APNS_TOPIC`, add:
+
+```bash
+export APNS_VOIP_TOPIC="com.envoymesh.EnvoyGo.voip"
+# Or, if you prefer the convention `${APNS_TOPIC}.voip`:
+unset APNS_VOIP_TOPIC  # the home falls back to ${APNS_TOPIC}.voip
+```
+
+The home uses `APNS_VOIP_TOPIC` (or the fallback) as the APNs `topic` header and sets `apns-push-type: voip` (not `alert`). The push payload is the stripped-down `aps: { voip: 1 }` shape Apple requires.
+
+#### 7.3 EnvoyGo client-side
+
+The EnvoyGo app already calls `PKPushRegistry` from `AppDelegate.swift`. The native side forwards the VoIP token and incoming-call payload to Dart over the `envoygo/voip_push` MethodChannel. The Dart-side `VoipPushService`:
+
+1. Subscribes to the channel and caches the VoIP device token.
+2. Registers it with the home node (note the `tokenType: "voip"` discriminator):
+
+   ```dart
+   await voipPushService.registerWithHomeNode(
+     (method, [params]) async {
+       return nodeService.call(method, params);
+     },
+   );
+   // Internally calls registerPushToken({ platform: "ios", token, tokenType: "voip" })
+   ```
+
+3. Listens to `voipPushService.onIncomingCall` and forwards the payload to `CallProvider.onIncomingCallFromVoipPush`, which puts the provider in a `ringing` state so the CallKit screen (rendered by `flutter_callkit_incoming`) can show the call.
+
+   The full call envelope (with the SDP) is then delivered over the WebSocket as a regular `call.incoming` event; that drives the WebRTC handshake.
+
+#### 7.4 iOS Info.plist requirements
+
+`apps/envoygo/ios/Runner/Info.plist` must declare the `voip` and `audio` background modes so iOS will keep the audio session alive during a call and let the `PKPushRegistry` wake the app for incoming pushes:
+
+```xml
+<key>UIBackgroundModes</key>
+<array>
+    <string>voip</string>
+    <string>audio</string>
+</array>
+```
+
+#### 7.5 Token storage on the home node
+
+Push tokens are stored on disk at `<profileDir>/push-tokens.json` with the new `tokenType` field:
+
+```json
+[
+  {
+    "deviceId": "ios-voip-<hex-token>",
+    "platform": "ios",
+    "token": "<hex-token>",
+    "ownerId": "envoy:owner:alice",
+    "createdAt": "2026-06-19T11:00:00.000Z",
+    "lastUsedAt": "2026-06-19T11:00:00.000Z",
+    "tokenType": "voip"
+  }
+]
+```
+
+Pre-42I records that lack `tokenType` are migrated to `"alert"` on load; no manual migration is needed. The same physical device may register **both** an alert and a VoIP token — they live as separate rows in the store, namespaced by `tokenType` so an unregister on one does not affect the other.
+
+#### 7.6 Dispatching rules (home side)
+
+The home's `PushNotificationService.dispatchCallPush()` selects the channel by platform + token type:
+
+| Platform | Token type | Channel                       | Notes                                          |
+| -------- | ---------- | ----------------------------- | ---------------------------------------------- |
+| iOS      | `voip`     | `apns-push-type: voip`        | Wakes a terminated app; triggers CallKit.      |
+| iOS      | `alert`    | (skipped)                     | Cannot wake CallKit — better to do nothing.    |
+| Android  | `alert`    | FCM with `type: call` marker  | High-priority hint surfaces full-screen intent. |
+
 ---
 
 ## Android — FCM

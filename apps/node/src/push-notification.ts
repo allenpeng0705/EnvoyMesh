@@ -1,5 +1,6 @@
 /**
- * Push notification dispatch for thin-client (EnvoyGo) devices — Phase 31I.
+ * Push notification dispatch for thin-client (EnvoyGo) devices — Phase 31I,
+ * extended in Phase 42I for VoIP call pushes.
  *
  * When a chat message arrives and the target thin-client device is not
  * connected via WebSocket, the home node dispatches a push notification
@@ -12,6 +13,11 @@
  *
  * Token persistence: push tokens are saved to `<profileDir>/push-tokens.json`
  * so they survive node restarts.
+ *
+ * Phase 42I — VoIP pushes (`tokenType: "voip"`) use a separate APNs topic
+ * (typically `<bundle>.voip`) and the `apns-push-type: voip` header so iOS
+ * can wake the app and surface a CallKit screen even when backgrounded.
+ * The `apns-push-type: alert` path remains in use for chat / bond pushes.
  */
 
 import * as crypto from "node:crypto";
@@ -32,6 +38,13 @@ interface PushTokenRecord {
   ownerId: string;
   createdAt: string;
   lastUsedAt: string;
+  /**
+   * Phase 42I — discriminator between alert (chat / bond) and VoIP
+   * (backgrounded call) tokens. iOS issues a separate VoIP token via
+   * `PKPushRegistry`; storing it on the same row lets the home pick
+   * the right channel for the right event.
+   */
+  tokenType: "alert" | "voip";
 }
 
 interface PushNotificationPayload {
@@ -55,7 +68,14 @@ class PushTokenStore {
       const raw = await fsPromises.readFile(this.filePath, "utf-8");
       const entries: PushTokenRecord[] = JSON.parse(raw);
       for (const e of entries) {
-        this.tokens.set(e.deviceId, e);
+        // Phase 42I — backfill `tokenType` for records written by
+        // older node builds (pre-42I). All alert tokens are equivalent
+        // for dispatch purposes; missing field means "alert".
+        const migrated: PushTokenRecord = {
+          ...e,
+          tokenType: e.tokenType === "voip" ? "voip" : "alert",
+        };
+        this.tokens.set(migrated.deviceId, migrated);
       }
     } catch {
       // File doesn't exist yet — normal on first boot
@@ -143,11 +163,6 @@ async function sendApns(
     return;
   }
 
-  const isProd = !process.env.APNS_SANDBOX;
-  const host = isProd
-    ? "api.push.apple.com"
-    : "api.sandbox.push.apple.com";
-
   const body = JSON.stringify({
     aps: {
       alert: { title: payload.title, body: payload.body },
@@ -157,40 +172,113 @@ async function sendApns(
     ...(payload.data ? { data: payload.data } : {}),
   });
 
-  return new Promise((resolve, reject) => {
+  await dispatchApnsHttp2({
+    token,
+    topic,
+    pushType: "alert",
+    jwt,
+    body,
+    logTag: "APNs",
+  });
+}
+
+/**
+ * Phase 42I — VoIP push for backgrounded call invites.
+ *
+ * Differences from `sendApns`:
+ *   - The APNs `topic` is the VoIP-specific bundle suffix (`.voip`),
+ *     configured via `APNS_VOIP_TOPIC`. Apple requires a separate topic
+ *     for VoIP pushes and rejects regular alert pushes to it.
+ *   - The `apns-push-type` header is `voip` (not `alert`), which lets
+ *     iOS deliver the push even when the app is terminated and wake
+ *     the `PKPushRegistry` delegate so the app can show a CallKit
+ *     screen via `flutter_callkit_incoming`.
+ *   - The payload omits `aps.alert`; VoIP pushes use a `aps` dict with
+ *     only a marker key and the call metadata in the top-level `data`.
+ */
+async function sendVoipPush(
+  token: string,
+  payload: PushNotificationPayload,
+): Promise<void> {
+  const jwt = signApnsJwt();
+  // Prefer the explicit VoIP topic; fall back to the alert topic with
+  // `.voip` appended (a common convention) so operators don't have to
+  // set two env vars for a single bundle.
+  const alertTopic = process.env.APNS_TOPIC;
+  const explicitVoipTopic = process.env.APNS_VOIP_TOPIC;
+  const topic = explicitVoipTopic ?? (alertTopic ? `${alertTopic}.voip` : undefined);
+  if (!jwt || !topic) {
+    console.warn("[push] APNs VoIP topic not configured — skipping iOS VoIP push");
+    return;
+  }
+
+  // VoIP pushes use a stripped-down APS payload. The iOS app reads
+  // `data.callId` and `data.callerOwnerId` from the userInfo to start
+  // the in-app call flow.
+  const body = JSON.stringify({
+    aps: { voip: 1 },
+    data: payload.data ?? {},
+  });
+
+  await dispatchApnsHttp2({
+    token,
+    topic,
+    pushType: "voip",
+    jwt,
+    body,
+    logTag: "APNs-VoIP",
+  });
+}
+
+/**
+ * Shared HTTP/2 transport for both `sendApns` and `sendVoipPush`.
+ * Split out so the two functions stay focused on payload shape and
+ * header differences — every other concern (host, JWT, error
+ * swallowing) is identical.
+ */
+async function dispatchApnsHttp2(args: {
+  token: string;
+  topic: string;
+  pushType: "alert" | "voip";
+  jwt: string;
+  body: string;
+  logTag: string;
+}): Promise<void> {
+  const isProd = !process.env.APNS_SANDBOX;
+  const host = isProd ? "api.push.apple.com" : "api.sandbox.push.apple.com";
+
+  return new Promise((resolve) => {
     const client: ClientHttp2Session = http2Connect(`https://${host}`);
     client.on("error", (err: Error) => {
-      console.warn(`[push] APNs error: ${err.message}`);
-      reject(err);
+      console.warn(`[push] ${args.logTag} error: ${err.message}`);
+      resolve();
     });
 
     const req = client.request({
       ":method": "POST",
-      ":path": `/3/device/${token}`,
-      "authorization": `bearer ${jwt}`,
-      "apns-topic": topic,
-      "apns-push-type": "alert",
+      ":path": `/3/device/${args.token}`,
+      "authorization": `bearer ${args.jwt}`,
+      "apns-topic": args.topic,
+      "apns-push-type": args.pushType,
       "apns-expiration": "0",
       "content-type": "application/json",
-      "content-length": Buffer.byteLength(body),
+      "content-length": Buffer.byteLength(args.body),
     });
 
     req.on("response", (headers: Record<string, string | string[] | undefined>) => {
       const status = headers[":status"];
-      if (status === "200") {
-        resolve();
-      } else {
-        console.warn(`[push] APNs rejected: status=${String(status)}`);
-        resolve();
+      if (status !== "200") {
+        console.warn(`[push] ${args.logTag} rejected: status=${String(status)}`);
       }
+      resolve();
     });
 
     req.on("error", (err: Error) => {
-      console.warn(`[push] APNs request error: ${err.message}`);
-      resolve(); // Don't reject — network error shouldn't crash node
+      console.warn(`[push] ${args.logTag} request error: ${err.message}`);
+      resolve();
     });
 
-    req.end(body);
+    req.end(args.body);
     // Node http2 client auto-closes after response
     const _cleanup: ReturnType<typeof setTimeout> = setTimeout(() => client.close(), 10_000);
   });
@@ -348,14 +436,30 @@ export class PushNotificationService {
     token: string;
     ownerId: string;
     deviceId?: string;
+    /**
+     * Phase 42I — discriminator between alert (chat / bond) and VoIP
+     * (backgrounded call) tokens. Defaults to "alert" so older
+     * EnvoyGo builds (pre-42I) keep working without a code change.
+     * The `deviceId` is namespaced by tokenType so the same physical
+     * device can register both an alert and a VoIP token without
+     * one overwriting the other.
+     */
+    tokenType?: "alert" | "voip";
   }): void {
     const platform = params.platform === "ios" ? "ios" : "android";
-    const deviceId = params.deviceId ?? `${params.platform}-${params.token.slice(0, 12)}`;
+    const tokenType: "alert" | "voip" = params.tokenType === "voip" ? "voip" : "alert";
+    // Use the full token in the synthetic deviceId so two devices
+    // whose tokens share a prefix don't collide on the map key. Real
+    // APNs/FCM tokens are 64+ hex chars; the synthetic id is internal
+    // to the node and never leaves it.
+    const deviceId =
+      params.deviceId ?? `${params.platform}-${tokenType}-${params.token}`;
     this.store.register({
       deviceId,
       platform,
       token: params.token,
       ownerId: params.ownerId,
+      tokenType,
       createdAt: new Date().toISOString(),
       lastUsedAt: new Date().toISOString(),
     });
@@ -364,6 +468,16 @@ export class PushNotificationService {
   /** Unregister a push token. */
   unregisterPushToken(deviceId: string): boolean {
     return this.store.unregister(deviceId);
+  }
+
+  /**
+   * Phase 42I — list every push token registered for an owner.
+   * Exposed for diagnostics + tests; production code should use
+   * `dispatchChatPush` / `dispatchCallPush` rather than reading
+   * the store directly.
+   */
+  listForOwner(ownerId: string): PushTokenRecord[] {
+    return this.store.listForOwner(ownerId);
   }
 
   /**
@@ -434,6 +548,65 @@ export class PushNotificationService {
           data: { type: "bond_request" },
         });
       }
+    }
+  }
+
+  /**
+   * Phase 42I — Dispatch a VoIP push for an incoming call invite.
+   *
+   * Called by the call path when the callee's thin-client device is
+   * not connected via WebSocket. The push wakes the iOS app via
+   * `PKPushRegistry` and surfaces a CallKit screen via
+   * `flutter_callkit_incoming`. Android uses FCM with a high-priority
+   * message (no separate "VoIP" channel exists on FCM).
+   *
+   * - iOS: dispatches to `tokenType: "voip"` records only, using the
+   *   `APNS_VOIP_TOPIC` (or `${APNS_TOPIC}.voip` fallback) and
+   *   `apns-push-type: voip`. The payload uses the `{ aps: { voip: 1 } }`
+   *   shape that iOS expects for VoIP pushes.
+   * - Android: dispatches via the regular FCM path with a `type: call`
+   *   marker in `data`. FCM's high-priority tier is what triggers the
+   *   full-screen incoming-call intent.
+   *
+   * Records with `tokenType: "alert"` (older EnvoyGo builds, or devices
+   * where VoIP is disabled) are intentionally skipped — a regular alert
+   * push cannot wake a CallKit screen, so it's better to do nothing
+   * than to confuse the user with a chat-style notification.
+   */
+  async dispatchCallPush(params: {
+    callerName: string;
+    targetOwnerId: string;
+    callId: string;
+    callerOwnerId: string;
+  }): Promise<void> {
+    if (!this.initialized) return;
+
+    const tokens = this.store.listForOwner(params.targetOwnerId);
+    if (tokens.length === 0) return;
+
+    const data: Record<string, string> = {
+      type: "call",
+      callId: params.callId,
+      callerOwnerId: params.callerOwnerId,
+    };
+    const title = "Incoming call";
+    const body = params.callerName || "EnvoyMesh call";
+
+    for (const record of tokens) {
+      if (record.platform === "ios" && record.tokenType === "voip") {
+        await sendVoipPush(record.token, { title, body, data });
+      } else if (record.platform === "android") {
+        // Android has no separate VoIP channel — use FCM with a
+        // high-priority hint so the system surfaces a full-screen
+        // intent. The `type: call` marker lets EnvoyGo start the
+        // in-app call flow when the user taps through.
+        await sendFcm(record.token, {
+          title,
+          body,
+          data: { ...data, priority: "high" },
+        });
+      }
+      // iOS + alert tokens: skipped (see method doc).
     }
   }
 }

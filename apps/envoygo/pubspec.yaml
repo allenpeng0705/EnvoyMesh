@@ -26,6 +26,11 @@ dependencies:
   record: ^5.1.2
   # WebRTC (voice/video calls, Phase 38)
   flutter_webrtc: ^0.12.0
+  # Phase 42I — iOS CallKit integration for backgrounded VoIP calls.
+  # flutter_callkit_incoming surfaces the native iOS incoming-call UI
+  # when a VoIP push wakes the app from background, and bridges the
+  # call answer/decline back into Dart.
+  flutter_callkit_incoming: ^2.0.0
   # URI parsing
   uri: ^1.0.0
   # JSON
