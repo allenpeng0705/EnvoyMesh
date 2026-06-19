@@ -23,6 +23,8 @@ import {
   isTurnUrl,
   makeTurnId,
   mergeTurnServers,
+  presetById,
+  TURN_PRESETS,
   validateTurnDraft,
   type TurnDraft,
 } from "../../lib/turn-credentials.js";
@@ -2040,7 +2042,9 @@ export function SettingsNodeTab() {
  * list — keeping the existing JSON editor above as the source of truth
  * for raw STUN-only entries.
  */
-function TurnServersSection({
+/** Phase 42H — exported for direct unit-testing without going through
+ *  the full `SettingsNodeTab` + `NodeStateProvider` context. */
+export function TurnServersSection({
   nodeConfig,
   nodeService,
   refreshNodeConfig,
@@ -2058,6 +2062,7 @@ function TurnServersSection({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState<string>("");
 
   // Re-sync when nodeConfig changes from outside (load, restart, etc).
   useEffect(() => {
@@ -2065,10 +2070,29 @@ function TurnServersSection({
   }, [nodeConfig?.iceServers]);
 
   const addRow = () => {
-    setDraft((prev) => [
-      ...prev,
-      { id: makeTurnId(), urls: "", username: "", credential: "", ttlSeconds: 3600 },
-    ]);
+    const preset = TURN_PRESETS[0];
+    const blank: TurnDraft = {
+      id: makeTurnId(),
+      urls: preset?.urls ?? "",
+      username: "",
+      credential: "",
+    };
+    setDraft((prev) => [...prev, blank]);
+    // Auto-select the preset so the selector matches the pre-filled URL.
+    setSelectedPreset(preset?.id ?? "");
+  };
+
+  const applyPresetToLastRow = (presetId: string) => {
+    setSelectedPreset(presetId);
+    const preset = presetById(presetId);
+    if (!preset) return;
+    setDraft((prev) => {
+      if (prev.length === 0) return prev;
+      const next = [...prev];
+      const last = { ...next[next.length - 1]!, urls: preset.urls };
+      next[next.length - 1] = last;
+      return next;
+    });
   };
 
   const removeRow = (id: string) => {
@@ -2079,11 +2103,20 @@ function TurnServersSection({
     setDraft((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)));
   };
 
+  const resetToDefaults = () => {
+    // Clear the TURN draft — the home's 3-STUN default takes over for
+    // non-symmetric-NAT. Users can re-add TURN rows if they still
+    // need relay.
+    setDraft([]);
+    setSelectedPreset("");
+    setError(null);
+  };
+
   const save = async () => {
     setError(null);
     const validation = validateTurnDraft(draft, {
       invalidUrl: t("settings.network.turnServers.invalidUrl"),
-      invalidTtl: t("settings.network.turnServers.invalidTtl"),
+      missingCredentials: t("settings.network.turnServers.missingCredentials"),
     });
     if (validation) {
       setError(validation.message);
@@ -2105,6 +2138,29 @@ function TurnServersSection({
     <section className="settings-section" data-testid="turn-servers-section">
       <h3>{t("settings.network.turnServers.title")}</h3>
       <p className="section-desc">{t("settings.network.turnServers.desc")}</p>
+
+      {/* Preset selector — pre-fills the last row's URL with a known
+          provider template so the user only has to paste credentials. */}
+      <div className="turn-preset-row">
+        <label className="settings-field-label" htmlFor="turn-preset">
+          {t("settings.network.turnServers.presetLabel")}
+        </label>
+        <select
+          id="turn-preset"
+          className="settings-input"
+          value={selectedPreset}
+          onChange={(e) => applyPresetToLastRow(e.target.value)}
+          disabled={draft.length === 0}
+          data-testid="turn-preset"
+        >
+          <option value="">{t("settings.network.turnServers.presetCustom")}</option>
+          {TURN_PRESETS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {draft.length === 0 ? (
         <p className="settings-hint" style={{ marginTop: "6px" }}>
@@ -2148,21 +2204,6 @@ function TurnServersSection({
                   onChange={(e) => updateRow(row.id, { credential: e.target.value })}
                 />
               </label>
-              <label className="turn-field turn-field-narrow">
-                <span className="settings-field-label">
-                  {t("settings.network.turnServers.ttlLabel")}
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  max={86400}
-                  className="settings-input"
-                  value={row.ttlSeconds}
-                  onChange={(e) =>
-                    updateRow(row.id, { ttlSeconds: Number(e.target.value) })
-                  }
-                />
-              </label>
               <button
                 type="button"
                 className="settings-button turn-remove"
@@ -2176,9 +2217,6 @@ function TurnServersSection({
         </div>
       )}
 
-      <p className="settings-hint" style={{ marginTop: "6px" }}>
-        {t("settings.network.turnServers.ttlHint")}
-      </p>
       <p className="settings-hint" style={{ marginTop: "4px" }}>
         {t("settings.network.turnServers.rotationNote")}
       </p>
@@ -2197,6 +2235,15 @@ function TurnServersSection({
           data-testid="turn-add-row"
         >
           {t("settings.network.turnServers.addRow")}
+        </button>
+        <button
+          type="button"
+          className="settings-button"
+          onClick={resetToDefaults}
+          disabled={draft.length === 0}
+          data-testid="turn-reset"
+        >
+          {t("settings.network.turnServers.reset")}
         </button>
         <button
           type="button"

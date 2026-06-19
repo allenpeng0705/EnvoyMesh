@@ -64,7 +64,10 @@ void main() {
       expect(subB, isNotNull);
       await subA.cancel();
       await subB.cancel();
-      await service.dispose();
+      // NOTE: do NOT call service.dispose() here — it closes the
+      // broadcast controllers, and because VoipPushService is a
+      // singleton (`_instance`) subsequent tests in this file would
+      // see closed streams and fail.
     });
 
     test('clearToken drops any cached VoIP token', () async {
@@ -73,6 +76,64 @@ void main() {
       // is mostly a smoke test that clearToken doesn't throw.
       await service.clearToken();
       expect(service.voipToken, isNull);
+    });
+  });
+
+  group('VoipPushService — native→Dart events (Phase 42I bridge)', () {
+    // Drive the dispatch logic directly via `debugDispatch` (which calls
+    // the same handler `AppDelegate.swift` reaches via the MethodChannel).
+    // This avoids the binary-messenger delivery timing that makes
+    // `handlePlatformMessage` unreliable in unit tests.
+
+    test('onVoipToken stores the token', () async {
+      final service = VoipPushService();
+      await service.initialize();
+      await service.debugDispatch('onVoipToken', {'token': 'abc123'});
+      expect(service.voipToken, 'abc123');
+    });
+
+    test('onIncomingCall fans out onto the stream', () async {
+      final service = VoipPushService();
+      await service.initialize();
+      // Resolve on the first event from the broadcast stream. `first`
+      // is the canonical Dart idiom for "await one event" and avoids
+      // race conditions where a manual `add` + `await delay` resolves
+      // before the listener is registered.
+      final future = service.onIncomingCall.first;
+      await service.debugDispatch('onIncomingCall', {
+        'callId': '11111111-1111-4111-8111-111111111111',
+        'callerOwnerId': 'envoy:owner:alice',
+        'callerName': 'Alice',
+      });
+      final received = await future;
+      expect(received['callId'], '11111111-1111-4111-8111-111111111111');
+      expect(received['callerName'], 'Alice');
+    });
+
+    test('onCallAccepted emits the callId', () async {
+      final service = VoipPushService();
+      await service.initialize();
+      final future = service.onCallAccepted.first;
+      await service.debugDispatch('onCallAccepted', {'callId': 'call-accept-1'});
+      expect(await future, 'call-accept-1');
+    });
+
+    test('onCallDeclined emits the callId', () async {
+      final service = VoipPushService();
+      await service.initialize();
+      final future = service.onCallDeclined.first;
+      await service.debugDispatch('onCallDeclined', {'callId': 'call-decline-1'});
+      expect(await future, 'call-decline-1');
+    });
+
+    test('reportEndCall invokes the native endCall method (no-op on host)',
+        () async {
+      final service = VoipPushService();
+      await service.initialize();
+      // On the non-iOS host, reportEndCall returns early (isSupported is
+      // false) without invoking the channel, so this is a smoke test
+      // that it doesn't throw.
+      await service.reportEndCall('any-call');
     });
   });
 

@@ -61,13 +61,26 @@ class VoipPushService {
   final _incomingCallController =
       StreamController<Map<String, dynamic>>.broadcast();
 
+  /// Phase 42I — CallKit "Accept" action (user tapped Accept on the
+  /// native incoming-call screen). Emits the callId so the app can drive
+  /// `CallProvider.acceptCall()`.
+  Stream<String> get onCallAccepted => _acceptedController.stream;
+  final _acceptedController = StreamController<String>.broadcast();
+
+  /// Phase 42I — CallKit "Decline"/End action. Emits the callId so the
+  /// app can drive `CallProvider.declineCall()` / `endCall()`.
+  Stream<String> get onCallDeclined => _declinedController.stream;
+  final _declinedController = StreamController<String>.broadcast();
+
   /// Initialize the channel listener. Safe to call multiple times.
+  ///
+  /// The MethodChannel handler is installed on every platform (it's a
+  /// no-op on non-iOS — the channel simply never receives native calls).
+  /// This keeps the payload-parsing logic unit-testable on the host VM
+  /// while behaving identically on a real iOS device. Platform-gated
+  /// work (token registration) lives in [registerWithHomeNode].
   Future<void> initialize() async {
     if (_initialized) return;
-    if (!isSupported) {
-      _initialized = true;
-      return;
-    }
     _initialized = true;
     _channel.setMethodCallHandler(_handleNativeCall);
   }
@@ -118,8 +131,45 @@ class VoipPushService {
           _incomingCallController.add(args);
         }
         return null;
+      case 'onCallAccepted':
+        final args = (call.arguments as Map?)?.cast<String, dynamic>();
+        final callId = args?['callId'] as String?;
+        if (callId != null) _acceptedController.add(callId);
+        return null;
+      case 'onCallDeclined':
+        final args = (call.arguments as Map?)?.cast<String, dynamic>();
+        final callId = args?['callId'] as String?;
+        if (callId != null) _declinedController.add(callId);
+        return null;
       default:
         return null;
+    }
+  }
+
+  /// Test seam — invokes the same dispatch logic the MethodChannel
+  /// handler runs when `AppDelegate.swift` calls into Dart. Lets unit
+  /// tests exercise the parsing/dispatch without depending on the
+  /// binary-messenger delivery timing.
+  @visibleForTesting
+  Future<void> debugDispatch(String method, Map<String, dynamic> args) async {
+    await _handleNativeCall(MethodCall(method, args));
+    // StreamControllers deliver asynchronously; pump two microtasks
+    // so listeners observe the just-added events before assertions.
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+  }
+
+  /// Phase 42I — tell the native side to dismiss the CallKit screen for
+  /// [callId]. Call this when the call ends locally (hangup/decline) so
+  /// the native UI tears down in sync with the Dart-side state. No-op on
+  /// non-iOS or if CallKit isn't tracking this callId.
+  Future<void> reportEndCall(String callId) async {
+    if (!isSupported) return;
+    try {
+      await _channel.invokeMethod('endCall', {'callId': callId});
+    } catch (_) {
+      // Best-effort — CallKit teardown is cosmetic; a missed dismiss
+      // resolves itself on the next providerDidReset.
     }
   }
 
@@ -127,5 +177,7 @@ class VoipPushService {
   /// dispose (e.g. app teardown) if you want strict lifecycle hygiene.
   Future<void> dispose() async {
     await _incomingCallController.close();
+    await _acceptedController.close();
+    await _declinedController.close();
   }
 }

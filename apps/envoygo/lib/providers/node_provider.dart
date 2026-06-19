@@ -18,6 +18,7 @@ import '../services/platform_web_socket.dart';
 import '../services/exceptions.dart';
 import '../services/reconnect_supervisor.dart';
 import '../services/connectivity_observer.dart';
+import '../services/voip_push_service.dart';
 import '../services/libp2p_node.dart';
 import '../services/upnp.dart';
 import '../storage/local_database.dart';
@@ -1222,5 +1223,44 @@ final callProvider = ChangeNotifierProvider<CallProvider>((ref) {
   // commit 1e266c0 — fixed here so the file compiles.)
   final provider = CallProvider(NodeServiceClient(client));
   ref.onDispose(() => provider.dispose());
+
+  // Phase 42I — bridge the iOS VoIP push path to this CallProvider.
+  // VoipPushService is a singleton (must outlive route changes); we
+  // initialize it here and subscribe its three streams:
+  //   onIncomingCall → CallProvider.onIncomingCallFromVoipPush
+  //                    (surfaces the call:incoming the push woke)
+  //   onCallAccepted → CallProvider.acceptCall  (CallKit Accept)
+  //   onCallDeclined → CallProvider.declineCall (CallKit Decline/End)
+  // We also forward the VoIP device token to the home node so the home
+  // can dispatch a VoIP push (tokenType: "voip") on future call.invite.
+  // Previously VoipPushService was never instantiated — the entire
+  // 42I phone-side path was dead code on a real device.
+  final voip = VoipPushService();
+  voip.initialize();
+  final incomingSub = voip.onIncomingCall.listen((payload) {
+    provider.onIncomingCallFromVoipPush(
+      callId: payload['callId'] as String? ?? '',
+      callerOwnerId: payload['callerOwnerId'] as String? ?? '',
+      callerName: payload['callerName'] as String?,
+    );
+  });
+  final acceptedSub = voip.onCallAccepted.listen((callId) {
+    if (provider.state.callId == callId) {
+      provider.acceptCall();
+    }
+  });
+  final declinedSub = voip.onCallDeclined.listen((callId) {
+    if (provider.state.callId == callId) {
+      provider.declineCall();
+    }
+  });
+  // Register the VoIP token with the home (best-effort). The home needs
+  // it to dispatch a VoIP push when the phone is offline.
+  voip.registerWithHomeNode((method, [params]) => client.call(method, params));
+  ref.onDispose(() {
+    incomingSub.cancel();
+    acceptedSub.cancel();
+    declinedSub.cancel();
+  });
   return provider;
 });

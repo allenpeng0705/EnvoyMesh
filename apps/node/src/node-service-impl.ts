@@ -236,6 +236,7 @@ import {
   parseFriendMatchingPreferencesPayload,
   type HumanProfilePayload,
   type EnvoyEnvelope,
+  type UnsignedEnvoyEnvelope,
   type DevicePairRequestPayload,
 } from "@envoymesh/protocol";
 import {
@@ -12027,26 +12028,11 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       ).catch(() => undefined);
     }
 
-    // Phase 42I — fire a VoIP push so the callee's iOS EnvoyGo app can
-    // wake from background and surface a CallKit screen. The push
-    // dispatcher itself short-circuits when no token is registered for
-    // the target owner, so it's always safe to call.
-    let callerDisplayName: string | undefined;
-    try {
-      const humanProfile = await this._humanProfileStore?.loadHumanProfile();
-      const trimmed = humanProfile?.displayName?.trim();
-      if (trimmed) callerDisplayName = trimmed;
-    } catch {
-      // No human profile yet — fall back to the owner ID.
-    }
-    void pushNotificationService
-      .dispatchCallPush({
-        callerName: callerDisplayName ?? profile.owner.ownerId,
-        targetOwnerId,
-        callId,
-        callerOwnerId: profile.owner.ownerId,
-      })
-      .catch(() => undefined);
+    // NOTE (Phase 42I): the VoIP push is NOT dispatched from the caller's
+    // home here. The callee's phone registers its VoIP token with ITS OWN
+    // owner's home, so the caller's home has no token for the callee.
+    // The dispatch lives on the callee's side, in call-inbound.ts
+    // handleCallInvite (gated on the phone having no authenticated WS).
 
     return callId;
   }
@@ -12101,7 +12087,6 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     if (!peerOwnerId) return false;
 
     const { createCallAcceptPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
 
     const payload = createCallAcceptPayload({
       callId,
@@ -12118,8 +12103,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       recipientRole: "human",
       payload,
     });
-    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
-    await this._sendCallResponseEnvelope(peerOwnerId, envelope, "call.accept");
+    await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.accept");
     return true;
   }
 
@@ -12137,7 +12121,6 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     if (!peerOwnerId) return false;
 
     const { createCallRejectPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
 
     const calleeOwnerId = profile.owner.ownerId;
     const calleePeerId = derivePeerId(profile.device.publicKeyPem);
@@ -12155,8 +12138,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       recipientRole: "human",
       payload,
     });
-    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
-    await this._sendCallResponseEnvelope(peerOwnerId, envelope, "call.reject");
+    await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.reject");
     return true;
   }
 
@@ -12174,7 +12156,6 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     }
 
     const { createCallHangupPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
 
     const senderPeerId = derivePeerId(profile.device.publicKeyPem);
     const payload = createCallHangupPayload({ callId, reason: "normal" });
@@ -12186,8 +12167,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       recipientRole: "human",
       payload,
     });
-    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
-    await this._sendCallResponseEnvelope(peerOwnerId, envelope, "call.hangup");
+    await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.hangup");
     return true;
   }
 
@@ -12202,7 +12182,6 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     if (!peerOwnerId) return false;
 
     const { createCallMutePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
 
     const senderPeerId = derivePeerId(profile.device.publicKeyPem);
     const payload = createCallMutePayload({ callId, muted });
@@ -12214,26 +12193,37 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       recipientRole: "human",
       payload,
     });
-    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
-    await this._sendCallResponseEnvelope(peerOwnerId, envelope, "call.mute");
+    await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.mute");
     return true;
   }
 
   /**
-   * Phase 42B — common helper that signs and sends a `call.*` response
-   * envelope back to the peer. Resolves the peer's owner ID → device
-   * peer ID via the same path used by chat, then sends through
-   * `_deliverCallEnvelope` so retries + ack-skip match the call path.
+   * Phase 42B — common helper that resolves the peer's owner ID → device
+   * peer ID, stamps `recipientPeerId` on the **unsigned** envelope, then
+   * signs and sends through `_deliverCallEnvelope` so retries + ack-skip
+   * match the call path.
    *
-   * No-ops (silently) when the peer cannot be resolved — the call
-   * may already have ended and the peer is gone. CallManager state
-   * has already been updated before this helper runs.
+   * CRITICAL: `recipientPeerId` must be set *before* signing. The
+   * signature covers the canonical JSON of the unsigned envelope
+   * (`envelopeForSigning` strips only `signature`; `canonicalJson` drops
+   * `undefined`). If the field is stamped after signing — as it once was
+   * here — the verifier recomputes canonical JSON *with* the field
+   * present and the signature no longer matches, so the peer's
+   * `InboundMessageGuard` silently drops every response envelope. This
+   * mirrors `sendCallInvite`, which resolves the transport up front and
+   * passes `recipientPeerId` into `createUnsignedEnvelope`.
+   *
+   * No-ops (silently) when the peer cannot be resolved — the call may
+   * already have ended and the peer is gone. CallManager state has
+   * already been updated before this helper runs.
    */
   private async _sendCallResponseEnvelope(
     peerOwnerId: string,
-    envelope: EnvoyEnvelope,
+    unsigned: UnsignedEnvoyEnvelope,
     _intent: string,
   ): Promise<void> {
+    const profile = this._profile;
+    if (!profile) return;
     try {
       const transport = await this._resolvePeerTransportForOwner(peerOwnerId);
       const dialHints = await raceWithTimeout(
@@ -12241,8 +12231,10 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
         30_000,
         "_dialHintsForChat",
       );
-      // Re-stamp the envelope's `recipientPeerId` once we know the device peer ID.
-      envelope.recipientPeerId = transport.recipientEnvelopePeerId;
+      // Stamp the recipient device peer id BEFORE signing — the signature
+      // covers canonical JSON of the unsigned envelope.
+      unsigned.recipientPeerId = transport.recipientEnvelopePeerId;
+      const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
       await this._deliverCallEnvelope(
         transport.transportPeerId,
         envelope,

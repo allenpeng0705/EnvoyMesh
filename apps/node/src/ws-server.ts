@@ -154,6 +154,23 @@ export class WsServer {
     this.wss.close();
   }
 
+  /**
+   * Phase 42I — returns true if at least one authenticated thin-client
+   * WebSocket is currently connected for `ownerId`.
+   *
+   * Used to gate VoIP push dispatch: if the phone already has an active
+   * WS session, the `call:incoming` event reaches it directly and a VoIP
+   * push would only produce a confusing double prompt (in-app overlay +
+   * native CallKit). The push fires only when no authenticated client is
+   * connected for the owner.
+   */
+  hasClientForOwner(ownerId: string): boolean {
+    for (const id of this.authenticatedClients.values()) {
+      if (id === ownerId) return true;
+    }
+    return false;
+  }
+
   private async handleConnection(ws: WebSocket, req?: any): Promise<void> {
     const clientId = randomUUID();
 

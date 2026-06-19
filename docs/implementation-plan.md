@@ -77,7 +77,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 39 — Voice/Video Call for EnvoyAI](#phase-39--voicevideo-call-for-envoyai)
 - [Phase 40 — Agent Network Collaboration Layer](#phase-40--agent-network-collaboration-layer-design--implementation)
 - [Phase 41 — Making Agent Network Usable & Powerful](#phase-41--making-agent-network-usable--powerful-designed)
-- [Phase 42 — Native WebRTC Voice Calls on EnvoyGo](#phase-42--native-webrtc-voice-calls-on-envoygo-designed)
+- [Phase 42 — Native WebRTC Voice Calls on EnvoyGo (shipped)](#phase-42--native-webrtc-voice-calls-on-envoygo-shipped)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1141,9 +1141,9 @@ Tasks:
 
 ## Current Milestone
 
-Milestone: **Phases 0–42 (partial) shipped** — Core protocol through Phase 30 Terminals + Phase 31 EnvoyGo Flutter thin-client + Phase 32 Agent Network Membership + Phase 33 A2A Tool Exposure + Phase 34 Typed-Artifact + AgentCard UI + Phase 37 Audio Messages + Phase 38 Real-Time Voice/Video Calls + Phase 40 Agent Network Collaboration Layer + Phase 41 Agent Network Usability + Phase 42A–42F Native WebRTC Voice Calls on EnvoyGo (mobile call path end-to-end). 42G (tests + E2E), 42H (TURN credentials), 42I (iOS VoIP push), 42J (manual device smoke) deferred. See [satellite-app-adr.md](./satellite-app-adr.md), [flutter-thin-client-design.md](./flutter-thin-client-design.md), [agent-network-config.md](./agent-network-config.md), [audio-message-support.md](./audio-message-support.md), [voice-video-call-support.md](./voice-video-call-support.md), and [agent_network.md](./agent_network.md).
+Milestone: **Phases 0–42 (42J deferred) shipped** — Core protocol through Phase 30 Terminals + Phase 31 EnvoyGo Flutter thin-client + Phase 32 Agent Network Membership + Phase 33 A2A Tool Exposure + Phase 34 Typed-Artifact + AgentCard UI + Phase 37 Audio Messages + Phase 38 Real-Time Voice/Video Calls + Phase 40 Agent Network Collaboration Layer + Phase 41 Agent Network Usability + Phase 42 Native WebRTC Voice Calls on EnvoyGo (mobile call path end-to-end; 42A–42I shipped, 42J two-iOS-device manual smoke deferred like Phase 38H). See [satellite-app-adr.md](./satellite-app-adr.md), [flutter-thin-client-design.md](./flutter-thin-client-design.md), [agent-network-config.md](./agent-network-config.md), [audio-message-support.md](./audio-message-support.md), [voice-video-call-support.md](./voice-video-call-support.md), and [agent_network.md](./agent_network.md).
 
-**Last shipped:** **Phase 42A–42F — Native WebRTC Voice Calls on EnvoyGo (mobile call path end-to-end).** 42A rewrote the home's `sendCallInvite` to resolve owner→device peer ID, embed the SDP offer, and inject `iceServers` from node-config (with defensive 64 KB SDP cap + ICE-candidate grammar validators). 42B wired the four response envelopes (`call.accept` / `call.reject` / `call.hangup` / `call.mute`) so the home actually sends them back to the peer. 42C replaced the five `UnimplementedError` stubs in `NodeServiceClient` with real JSON-RPC. 42D shipped `WebRtcCallTransport` for Flutter (`flutter_webrtc`) mirroring the desktop reference. 42E rewired `CallProvider` to drive the transport end-to-end. 42F wired `VoiceCallScreen` to `callProvider`, mounted `IncomingCallOverlay` into `home_screen.dart`, added a Call action button to `chat_detail_screen.dart`, declared iOS `NSMicrophoneUsageDescription` + Android `RECORD_AUDIO` permissions, and added an `AudioSessionHelper` + `envoygo/audio_session` method channel that configures iOS `AVAudioSession` (`playAndRecord` + `voiceChat` mode + `allowBluetooth`) on `startCall` / `acceptCall` and resets on `endCall` / `declineCall`. **~25 new tests across 8 files; `flutter analyze` + `tsc -b apps/node` + `tsc -b apps/social` clean.** 42G / 42H / 42I / 42J deferred. **Phase 42 — Chain creation from AI chat.** **Phase 40 — Agent Network Collaboration Layer (40A–40E).** 13 `task.chain.*` intents, orchestrator/worker runtime, chain UI, LLM decomposer, cross-orchestrator handoff + relay transport. 455 tests across 21 files. Design: [agent_network.md](./agent_network.md). Two bonded peers can now initiate real-time voice calls over WebRTC. Signaling (invite → accept → SDP/ICE → hangup) uses the existing P2P envelope layer with 6 new `call.*` intents. Audio runs over WebRTC in two modes: Path 1 (LAN/direct P2P with empty `iceServers`) and Path 2 (standard ICE with STUN/TURN fallback). `CallManager` state machine enforces one-call-per-node with identity binding and 60s ring timeout. Social UI adds phone icon, `IncomingCallModal`, `ActiveCallPanel`, and `useCallSession` hook wired through `NodeServiceClient.getActiveCall()`/`onCallEvent()`. EnvoyGo adds `VoiceCallScreen` skeleton and `flutter_webrtc` dependency. 59 new tests across 2 files (`call-schemas.test.ts` 38 tests, `call-manager.test.ts` 21 tests). 6 new files (`call-manager.ts`, `call-inbound.ts`, `webrtc-call-transport.ts`, `useCallSession.ts`, `IncomingCallModal.tsx`, `ActiveCallPanel.tsx`, `VoiceCallScreen.dart`). 1 new dependency (`flutter_webrtc`). Design: [voice-video-call-support.md](./voice-video-call-support.md). Video deferred to Phase 38E. Manual smoke (38H) deferred — requires live browser hardware.
+**Last shipped:** **Phase 42 — Native WebRTC Voice Calls on EnvoyGo (42A–42I).** A bonded user on an EnvoyGo phone can place and receive a real-time WebRTC voice call to a Social/desktop browser user or to another EnvoyGo phone, with the home in the signaling path (trust check, identity binding, CallManager state machine) and the media path peer-to-peer (Path 2 ICE; Path 1 libp2p data channel is documented as not-available on `flutter_webrtc`). **9 sub-phases shipped (`8c9c464` → `78df804`).** 42A rewrote the home's `sendCallInvite` to resolve owner→device peer ID via `_resolvePeerTransportForOwner`, embed the SDP offer, and inject `iceServers` from `node-config` (with defensive 64 KB SDP cap + ICE-candidate grammar regex including `tcptype` / IPv6 / `stun:`/`turn:`). 42B wired the four response envelopes (`call.accept` / `call.reject` / `call.hangup` / `call.mute`) so the home actually sends them back to the peer — **and, in `78df804`, fixed a signature-mutation bug** that was making every response envelope signature-invalid (regression-tested). 42C replaced the five `UnimplementedError` call RPCs in `NodeServiceClient` with real JSON-RPC. 42D shipped `WebRtcCallTransport` for Flutter using `flutter_webrtc ^0.14.0` (resolved to 0.14.2) mirroring the desktop reference. 42E rewired `CallProvider` to drive the transport end-to-end. 42F wired `VoiceCallScreen` to `callProvider`, mounted `IncomingCallOverlay` into `home_screen.dart`, declared iOS `NSMicrophoneUsageDescription` + Android `RECORD_AUDIO` permissions, and added an `AudioSessionHelper` that configures iOS `AVAudioSession` (`playAndRecord` + `voiceChat` mode + `allowBluetooth`) on `startCall` / `acceptCall` and resets on `endCall` / `declineCall`. 42G added the test pyramid and **wired the previously-dead-code Social-UI caller for `createWebRtcCallTransport`** (`apps/social/src/hooks/useCallSession.ts`). 42H added TURN credentials support: 3-STUN default list (Google + Cloudflare + Twilio) injected when `node-config.iceServers` is empty, plus a Social UI TURN editor in `SettingsNodeTab.tsx` with Twilio / Cloudflare / coturn presets, "Reset to defaults", `missingCredentials` validation. 42I added iOS backgrounded calling: home dispatches APNs VoIP push on `call.invite` (extending the existing `push-notification.ts` module with a `tokenType: "alert" | "voip"` discriminator and a `sendVoipPush` helper) — **dispatch lives on the callee's home (where the phone registered its token), gated on the phone's WebSocket not being connected**; phone uses `flutter_callkit_incoming` + `CXProvider.reportNewIncomingCall` (reported synchronously in the PushKit delegate before `completion()`, per Apple's contract). **Bridges `HomeRemoteClient.on('call:*')` into a real `StreamController`** so the entire callee flow (`call:incoming` → ring → accept) actually fires in production (previously dead stub). **~101 new node tests + 49 new EnvoyGo tests + 5 new Social TURN-editor tests.** `flutter analyze` + `tsc -b` clean across all packages. **No new wire intents, no new schemas.** Allowed pubspec changes: `flutter_webrtc` bumped to `^0.14.0`; `flutter_callkit_incoming` added. `permission_handler` **not** added (we use `flutter_webrtc`'s built-in permission prompts). 42J two-iOS-device manual smoke deferred like Phase 38H. Design: [voice-video-call-envoygo.md](./voice-video-call-envoygo.md).
 
 **Active:** **ICE server transport wiring deferred** — Config plumbing complete (types, store, RPC, UI editor in `SettingsNodeTab.tsx`). The `WebRtcCallTransport` accepts `iceServers` as an option but no code creates one yet (Phase 38 call flow is entirely P2P envelope-based; the media transport is created when a call UI triggers transport creation — future work). See [voice-video-call-support.md](./voice-video-call-support.md) for ICE server settings documentation. Seven sub-phases (41A–41G) designed in [agent_network.md §13](./agent_network.md#13-phase-41--making-agent-network-usable--powerful). See Phase 41 section below for implementation checklist. Phase 40 (Agent Network Collaboration Layer) is fully shipped (40A–40E green, 455 tests, 13 wire intents).
 
@@ -5050,6 +5050,48 @@ This means the AI participates in the call session (receives human audio, its re
 - `[ ]` Bridge: `RealtimeTalkPcmOutputQueue` (AI response audio) → play locally to owner via `AudioContext` / speaker output.
 - `[ ]` **Deferred (future — D1):** AI audio mixed into the shared WebRTC connection so all participants hear the AI (B1 variant). See §Deferred Items.
 
+**PCM bridging specification (implementation detail):**
+
+The audio bridge uses PCM16 mono at 16kHz sample rate (native for most STT/WSS APIs):
+
+```
+WebRTC remote audio (48kHz stereo)
+         │
+         ▼
+   AudioContext.decodeAudioData()
+         │
+         ▼
+  AudioWorklet (for efficient resampling)
+         │
+         ▼ (downsample 48kHz → 16kHz, stereo → mono)
+         │
+         ▼
+  PCM16 buffer (ArrayBuffer, 160ms frames = 3200 bytes)
+         │
+         ▼
+  RealtimeTalkTransportContext.input.write(pcmBuffer)
+         │
+         │  (OpenClaw processes, generates response)
+         │
+         ▼
+  RealtimeTalkPcmOutputQueue.read()
+         │
+         ▼
+  PCM16 buffer (16kHz mono, 160ms frames)
+         │
+         ▼
+  AudioContext.createBuffer() + createBufferSource()
+         │
+         ▼
+  AudioContext.destination (local speaker)
+```
+
+**Implementation notes:**
+- Use `AudioWorklet` (not deprecated `ScriptProcessorNode`) for efficient resampling
+- Buffer size: 160ms (3200 samples at 16kHz) — balances latency and throughput
+- If `RealtimeTalkTransport` drops, emit `ai:disconnected` event and pause bridge
+- Do **not** mix AI output into the shared `RTCPeerConnection` (this is B2, not B1)
+
 ### 39C — Call Manager: AI participant support
 
 - `[ ]` Extend `CallManager` to track AI participant state alongside the human call session.
@@ -5059,10 +5101,10 @@ This means the AI participates in the call session (receives human audio, its re
 
 ### 39D — UI: AI call participant
 
-- `[ ]` "Invite AI" button in `ActiveCallPanel` — visible during an active human↔human call. Clicking it starts the AI join flow.
+- `[ ]` "Invite AI" button in `ActiveCallPanel` — visible **only during an active call** (`status === "active"`). Not available during ringing or when AI is already joined. Clicking it starts the AI join flow.
 - `[ ]` AI status indicator: "AI joined" / "AI listening" when active.
 - `[ ]` AI transcription panel — OpenClaw already produces transcription via `callbacks.onTranscript`. Display this in a collapsible panel alongside the call UI.
-- `[ ]` "Dismiss AI" button — ends AI participation (`call.leave`) without ending the call.
+- `[ ]` "Dismiss AI" button — ends AI participation (`call.leave`) without ending the call. Only visible when AI is joined.
 - `[ ]` **Deferred (future — D1):** AI shown as a named call participant (avatar, name) visible to the callee when AI audio is in the shared connection. See §Deferred Items.
 
 ### 39E — EnvoyAI: AI-initiated calls (owner agency)
@@ -5091,6 +5133,7 @@ These are out of scope for Phase 39 v1 but documented for future planning:
 - `[ ]` The callee has no indication an AI is present (normal 2-person call from callee's perspective).
 - `[ ]` Owner can dismiss AI via "Dismiss AI" button without ending the call.
 - `[ ]` AI-initiated call (39E1: per-call approval) works end-to-end.
+- `[ ]` PCM bridging uses AudioWorklet for 48kHz→16kHz resampling with 160ms buffers; AI audio plays locally only, not mixed into shared WebRTC connection.
 
 ---
 
@@ -5281,9 +5324,9 @@ Phase 41 addresses all seven gaps with a coordinated design:
 
 ---
 
-## Phase 42 — Native WebRTC Voice Calls on EnvoyGo **`[ ]` designed**
+## Phase 42 — Native WebRTC Voice Calls on EnvoyGo **`[x]` shipped**
 
-> **Status: `[ ]` designed (2026-06-19, 4 design decisions resolved 2026-06-19).** Phase 38 shipped the desktop call path; EnvoyGo (Flutter thin client, Phase 31) can listen to `call:*` events but cannot place or receive WebRTC calls end-to-end. Every concrete piece of the call pipeline on the phone side is stubbed or broken today: `NodeServiceClient.sendCallInvite / acceptCallInvite / declineCallInvite / endCall / setCallMuted` all throw `UnimplementedError` (`apps/envoygo/lib/services/node_service_client.dart:376-408`); the home's `sendCallInvite` passes an owner ID (not a device peer ID) to `mesh.send` and embeds an empty `sdpOffer: ""` (`apps/node/src/node-service-impl.ts:11928, 11940, 11942`); `iceServers` configured on the home is never read into the call envelope; the home's `acceptCallInvite / declineCallInvite / endCall / setCallMuted` only mutate local `CallManager` state and never send response envelopes back. `flutter_webrtc` is declared in `pubspec.yaml:28` at `^0.12.0` (bumping to `^0.14.0` in 42D) but referenced zero times in `lib/`. The desktop `createWebRtcCallTransport` is also dead code (42G §3 will wire its caller). Phase 42 fixes all of this without changing the wire surface — every existing `call.*` envelope from Phase 38 is reused. **Four design decisions resolved (2026-06-19):** (1) `flutter_webrtc ^0.14.0`; (2) default `iceServers` = 3-STUN list (Google + Cloudflare + Twilio); (3) TURN user-configured (no EnvoyMesh-hosted TURN server); (4) iOS backgrounded calling via VoIP + PushKit + CallKit (42I). Design doc: [voice-video-call-envoygo.md](./voice-video-call-envoygo.md). No code touched yet.
+> **Status: `[x]` shipped (2026-06-19).** Phase 38 shipped the desktop call path; EnvoyGo (Flutter thin client, Phase 31) can now place and receive WebRTC calls end-to-end. **Four design decisions resolved (2026-06-19):** (1) `flutter_webrtc ^0.14.0`; (2) default `iceServers` = 3-STUN list (Google + Cloudflare + Twilio); (3) TURN user-configured (no EnvoyMesh-hosted TURN server); (4) iOS backgrounded calling via VoIP + PushKit + CallKit (42I). Phase 42 fixes the broken-stub surface (signature-mutation bug in response envelopes, dead `eventStream`, empty `iceServers`, unwired VoipPushService/CallKit, dead-desktop-caller) without changing the wire surface — every existing `call.*` envelope from Phase 38 is reused. **API-level breaking changes (coordinated across home + EnvoyGo + Social UI):** the `NodeService` interface (`packages/api/src/node-service.ts:2091-2128`) gains `sdpOffer`/`sdpAnswer`/`iceServers` params on `sendCallInvite`/`acceptCallInvite`, plus `tokenType: "alert" | "voip"` on `registerPushToken`. The current `sendCallInvite` was already a runtime schema violation (`sdpOffer: ""` violates `z.string().min(1)`), so we're replacing a broken contract, not breaking a working one. **Implementation log:** `8c9c464` (42A) → `d593da5` (42B) → `58157fc` (42C) → `40c44a6` (42D) → `39f78f2` (42E) → `5543afc` (42F+42G) → `78df804` (42H+42I). Design doc: [voice-video-call-envoygo.md](./voice-video-call-envoygo.md).
 
 **Goal:** A bonded user on an EnvoyGo phone (iOS or Android) can place and receive a real-time WebRTC voice call to a Social/desktop browser user or to another EnvoyGo phone, with the home in the signaling path (trust check, identity binding, CallManager state machine) and the media path peer-to-peer (Path 2 ICE; Path 1 libp2p data channel is documented as not-available on `flutter_webrtc`).
 
@@ -5305,7 +5348,7 @@ Phase 41 addresses all seven gaps with a coordinated design:
 **API-level breaking changes (separate from wire — see [voice-video-call-envoygo.md §4](./voice-video-call-envoygo.md#4-protocol-no-new-wire-changes)):** Phase 42 changes 3 `NodeService` interface signatures in `packages/api/src/node-service.ts` (no version-skew support; coordinated across home + EnvoyGo + Social UI in the same release):
 - `sendCallInvite(targetOwnerId)` → `sendCallInvite(targetOwnerId, sdpOffer, iceServers?)` (42A / 42C)
 - `acceptCallInvite(callId)` → `acceptCallInvite(callId, sdpAnswer, iceServers?)` (42B / 42C)
-- `registerPushToken` gains a `tokenType: "standard" | "voip"` discriminator (42I)
+- `registerPushToken` gains a `tokenType: "alert" | "voip"` discriminator (42I; default `"alert"` for back-compat; the implementation actually uses `"alert"` rather than the originally-designed `"standard"` because it matches Apple's `apns-push-type: alert` vocabulary exactly)
 
 The current `sendCallInvite` interface is already a runtime schema violation (`sdpOffer: ""` fails `z.string().min(1)`), so we're not breaking a working contract — we're replacing a broken one. `declineCallInvite`, `endCall`, `setCallMuted`, `getActiveCall`, `onCallEvent` are unchanged.
 
@@ -5346,62 +5389,72 @@ The current `sendCallInvite` interface is already a runtime schema violation (`s
 
 ### 42G — Tests + E2E
 
-- `[ ]` **Unit tests** (consolidated from 42A–42F above): ~5 new test files, ~600 LoC of tests.
-- `[ ]` **Integration test (vitest, jsdom, two CallManager instances):** one home is the caller, one is the callee. Send `call.invite` between them, assert the SDP offer round-trips in the envelope, assert the home's `sendCallInvite` sets the right `recipientPeerId`, assert `acceptCallInvite` produces a `call.accept` envelope with the SDP answer. Reuses the existing `chain-e2e.test.ts` two-process harness pattern.
-- `[ ]` **Playwright E2E (browser-Social ↔ browser-Social):** two browser contexts, place a call, assert `RTCPeerConnection.connectionState === "connected"`. Re-validates the desktop side after the home-side changes. **Wires the missing Social-UI caller for `createWebRtcCallTransport`** (currently dead code — see §1 of the design doc). Automates the Phase 38 38H manual smoke.
+- `[x]` **Unit tests** (consolidated from 42A–42F above): ~5 new test files, ~600 LoC of tests.
+- `[x]` **Integration test (vitest, jsdom, two CallManager instances):** one home is the caller, one is the callee. Send `call.invite` between them, assert the SDP offer round-trips in the envelope, assert the home's `sendCallInvite` sets the right `recipientPeerId`, assert `acceptCallInvite` produces a `call.accept` envelope with the SDP answer. Reuses the existing `chain-e2e.test.ts` two-process harness pattern.
+- `[x]` **Playwright E2E (browser-Social ↔ browser-Social):** two browser contexts, place a call, assert `RTCPeerConnection.connectionState === "connected"`. Re-validates the desktop side after the home-side changes. **Wired the previously-dead-code Social-UI caller for `createWebRtcCallTransport`** in `apps/social/src/hooks/useCallSession.ts` (driven by `ContactChatPanel`).
 - `[ ]` **Real-device manual smoke (42J, deferred):** two iOS devices on the same LAN, place a call via EnvoyGo, verify audio. Same pattern as Phase 38H.
 
 ### 42H — TURN credentials for symmetric NAT
 
-- `[ ]` **3-server default `iceServers`** in `apps/node/src/node-service-impl.ts:7813`: Google STUN + Cloudflare STUN + Twilio STUN. STUN-only (TURN is user-added). All three are public servers; no credentials needed.
-- `[ ]` **Social UI TURN editor** in `apps/social/src/components/views/SettingsNodeTab.tsx`: list editor for ICE entries (URL + optional username + optional credential); preset selector (Twilio / Cloudflare / self-hosted coturn) that pre-fills the URL; "Reset to defaults" button; inline validation (URL must start with `stun:` or `turn:`; TURN entries need both `username` and `credential`).
-- `[ ]` **No schema change** — `iceServers` schema at `node-config-store.ts:192` already supports `{ urls, username?, credential? }` entries (TURN-compatible).
-- `[ ]` **TURN provider docs** in `docs/voice-video-call-support.md` §6.3 (or design doc §5.2): Twilio Network Traversal Service / Cloudflare TURN / self-hosted coturn — setup steps, security notes (TURN credentials are sensitive, file mode `0o600`, never logged).
-- `[ ]` **Tests:** `apps/social/test/components/SettingsNodeTab.test.tsx` (TURN editor); extend `apps/node/test/call-send-invite.test.ts` with a TURN-injection case that asserts a TURN entry round-trips into the `call.invite` payload.
+- `[x]` **3-server default `iceServers`** in `apps/node/src/node-service-impl.ts:525` (`DEFAULT_ICE_SERVERS`): Google STUN + Cloudflare STUN + Twilio STUN. STUN-only (TURN is user-added). All three are public servers; no credentials needed.
+- `[x]` **Social UI TURN editor** in `apps/social/src/components/views/SettingsNodeTab.tsx` (`TurnServersSection`, exported for direct testing): list editor for ICE entries (URL + optional username + optional credential); preset selector (Twilio / Cloudflare / self-hosted coturn) that pre-fills the URL when adding a row; "Reset to defaults" button; inline validation (URL must start with `stun:` or `turn:`; TURN entries need both `username` and `credential`).
+- `[x]` **No schema change** — `iceServers` schema at `node-config-store.ts:192` already supports `{ urls, username?, credential? }` entries (TURN-compatible).
+- `[x]` **TURN provider docs** in `docs/voice-video-call-support.md` §6.3 and design doc §5.2: Twilio Network Traversal Service / Cloudflare TURN / self-hosted coturn — setup steps, security notes (TURN credentials are sensitive, file mode `0o600`, never logged).
+- `[x]` **Tests:** `apps/social/test/components/SettingsNodeTab.test.tsx` (TURN editor — 5 tests: empty state, pre-fill, add+preset+save, validation, reset); `apps/social/test/lib/turn-credentials.test.ts` (21 tests covering presets, extract/merge, validation including `missingCredentials`).
 
 ### 42I — iOS backgrounded calling (VoIP + PushKit + CallKit)
 
-- `[ ]` **Home: extend `push-notification.ts`.** Add `tokenType: "standard" | "voip"` to `PushTokenRecord` (`apps/node/src/push-notification.ts:28`). Add `sendVoipPush(deviceId, callId, callerName)` mirroring `sendApns` (`push-notification.ts:135`) but using the APNs VoIP endpoint (`/3/device/{voip-token}`), `apns-topic: {BUNDLE_ID}.voip`, `apns-push-type: voip`, and a minimal `{"aps": {"content-available": 1}, "callId": "...", "callerName": "..."}` payload. Reuses the existing `.p8` key and JWT auth.
-- `[ ]` **Home: extend `registerPushToken` RPC** at `node-service-impl.ts:11441` to accept `tokenType: "standard" | "voip"`; persist the discriminator to `push-tokens.json` (existing `0o600` convention).
-- `[ ]` **Home: dispatch hook in `call-inbound.ts:handleCallInvite`.** After `inboundCallReceived`, look up the callee's `tokenType === "voip"` token via `pushNotificationService.listForOwner(calleeOwnerId)`; if the WebSocket to the phone is **not** connected, send a VoIP push carrying the `callId` and `callerName`.
-- `[ ]` **iOS `Info.plist`:** add `UIBackgroundModes` array with `voip` (for wake) and `audio` (for in-call survival). Keep existing `NSMicrophoneUsageDescription` (42F).
-- `[ ]` **iOS `AppDelegate.swift`:** register for `PKPushRegistry` (PushKit), forward the VoIP token to the home via `registerPushToken({tokenType: "voip", ...})` on `didRegisterForPushToken`, and hand off `didReceiveIncomingPushWithPayload` to `flutter_callkit_incoming`.
-- `[ ]` **Pubspec:** add `flutter_callkit_incoming` (new dep — flagged in the exit criteria). Bump `flutter_webrtc` to `^0.14.0` (resolved Q1).
-- `[ ]` **Dart `lib/services/push_service.dart` (new):** wire PushKit + CallKit events to `CallProvider`:
-  - Incoming CallKit event → `CallProvider.handleIncomingCall(callId, callerName, sdpOffer)` (new method on `CallProvider`).
+- `[x]` **Home: extend `push-notification.ts`.** Add `tokenType: "alert" | "voip"` to `PushTokenRecord` (`apps/node/src/push-notification.ts:47`). Add `sendVoipPush(deviceId, callId, callerName)` mirroring `sendApns` (`push-notification.ts:199`) but using the APNs VoIP endpoint (`/3/device/{voip-token}`), `apns-topic: {BUNDLE_ID}.voip`, `apns-push-type: voip`, and a minimal `{"aps": {"content-available": 1}, "callId": "...", "callerName": "..."}` payload. Reuses the existing `.p8` key and JWT auth.
+- `[x]` **Home: extend `registerPushToken` RPC** at `node-service-impl.ts:11482` to accept `tokenType: "alert" | "voip"`; persist the discriminator to `push-tokens.json` (existing `0o600` convention). The implementation uses `"alert"` (matches Apple's `apns-push-type` vocabulary) rather than the originally-planned `"standard"`.
+- `[x]` **Home: dispatch hook in `call-inbound.ts:handleCallInvite`** (added in commit `78df804`): after `inboundCallReceived`, look up the callee's `tokenType === "voip"` token via `pushNotificationService.listForOwner(calleeOwnerId)`; if the WebSocket to the phone is **not** connected (`isDeviceOnline(calleeOwnerId) === false`), send a VoIP push carrying the `callId` and `callerName`. The hook lives on the **callee's** home (where the phone registered its token), not the caller's home.
+- `[x]` **iOS `Info.plist`:** added `UIBackgroundModes` array with `voip` (for wake) and `audio` (for in-call survival). `NSMicrophoneUsageDescription` present from 42F.
+- `[x]` **iOS `AppDelegate.swift`:** registers for `PKPushRegistry` (PushKit), forwards the VoIP token to the home via `registerPushToken({tokenType: "voip", ...})`, and **synchronously reports a new call to CallKit via `CXProvider.reportNewIncomingCall`** in `didReceiveIncomingPushWithPayload` BEFORE `completion()` (Apple requires this within seconds, or the OS terminates the app and may revoke VoIP push delivery). CXProviderDelegate bridges CallKit Accept/Decline back to Dart.
+- `[x]` **Pubspec:** added `flutter_callkit_incoming` (new dep — the only allowed new pubspec dep). Bumped `flutter_webrtc` to `^0.14.0` (resolved Q1; resolved to 0.14.2 by the lock).
+- `[x]` **Dart `lib/services/voip_push_service.dart` (new):** wires PushKit + CallKit events to `CallProvider`:
+  - Incoming CallKit event → `CallProvider.onIncomingCallFromVoipPush({callId, callerOwnerId, callerName})` (SDP arrives later via WS `call:incoming`, not in the push).
   - CallKit "Accept" → `CallProvider.acceptCall()`.
   - CallKit "Decline" → `CallProvider.declineCall()`.
-- `[ ]` **`CallProvider.handleIncomingCall` (new):** construct a `WebRtcCallTransport`, call `startAnswer(remoteSdp)`, then call `_nodeService.acceptCallInvite(callId, sdpAnswer, iceServers)`.
-- `[ ]` **Android best-effort (NG8):** extend `pushNotificationService` to send FCM `data` messages for `call.invite` when the callee is offline (no equivalent of CallKit on Android). Phone's `firebase_messaging` plugin handles backgrounded `data` messages.
-- `[ ]` **Docs:** extend `docs/push-notification-config.md` with an APNs **VoIP** subsection; add a "Backgrounded calling on iOS" subsection to `docs/voice-video-call-support.md`.
-- `[ ]` **Tests:** `apps/node/test/voip-push-dispatch.test.ts` (home dispatches VoIP push on `call.invite` when offline, with correct `apns-push-type: voip` and topic suffix); Dart unit tests with a fake `PushService`; **real-device smoke deferred to 42J.**
+  - Instantiated at app startup in `node_provider.dart` (`callProvider` provider); also bridges `HomeRemoteClient.on('call:*')` events into `eventStream`.
+- `[x]` **`CallProvider.onIncomingCallFromVoipPush` (new):** updates the provider state with the call metadata so the CallKit ringing screen has a target; the subsequent WebSocket `call:incoming` event fills in the SDP and triggers the full `acceptCall()` flow.
+- `[x]` **Android best-effort (NG8):** FCM `data` messages on the home side; the phone uses `firebase_messaging` for backgrounded `data` handling. No CallKit-equivalent on Android.
+- `[x]` **Docs:** extended `docs/push-notification-config.md` with an APNs **VoIP** subsection; added a "Backgrounded calling on iOS" subsection to `docs/voice-video-call-support.md`.
+- `[x]` **Tests:** `apps/node/test/push-notification.test.ts` (voip-push dispatch + APNs header shape for `apns-push-type: voip`); `apps/envoygo/test/services/voip_push_service_test.dart` (Dart native→Dart events: onVoipToken, onIncomingCall, onCallAccepted, onCallDeclined via `debugDispatch` test seam); `apps/node/test/call-sdp-validation.test.ts` VoIP dispatch tests (5 cases: dispatch when offline, suppress when online, default to online when un-wired, no dispatch for untrusted, swallow push errors). **Real-device smoke deferred to 42J.**
 
 ### Exit Criteria (Phase 42)
 
-- `[ ]` All 42A–42I sub-phase checkboxes flipped (42J manual device smoke tracked separately, like Phase 38H)
-- `[ ]` `npm run typecheck` clean
-- `[ ]` `npx vitest run` green (all Phase 38 call tests still pass; new 42A/42B/42G/42H/42I tests pass)
-- `[ ]` `flutter analyze` clean on every new/modified `.dart` file
-- `[ ]` `flutter test` green for `node_service_client_test.dart`, `call_provider_test.dart`, `webrtc_call_transport_test.dart`, `voice_call_screen_test.dart`, `push_service_test.dart`
-- `[ ]` `sdpOffer: ""` no longer appears anywhere in `apps/node/src/node-service-impl.ts`; all five `UnimplementedError` call RPCs in `apps/envoygo/lib/services/node_service_client.dart` are gone
-- `[ ]` Two-node integration test asserts: caller→callee `call.invite` carries the SDP offer; callee→caller `call.accept` carries the SDP answer; `recipientPeerId` on the invite is the callee's device peer ID (not owner ID)
-- `[ ]` `iceServers` configured on the home reaches the phone via the call envelope (verified by a test that injects a custom `iceServers` into node config and asserts it shows up in the `call.invite` payload); TURN entries (with username/credential) round-trip identically
-- `[ ]` Trust gate + identity binding + role policy still enforced on the home (regression-tested from the existing Phase 38 suite)
-- `[ ]` iOS `AVAudioSession` config applied on call start, reset on call end; `voip` and `audio` UIBackgroundModes in `Info.plist`; Android `RECORD_AUDIO` permission request fires on first call
-- `[ ]` Home dispatches APNs VoIP push on `call.invite` when phone is offline (regression-tested in `voip-push-dispatch.test.ts`); `registerPushToken` accepts `tokenType: "voip"` and persists the discriminator
-- `[ ]` Social UI has a Social UI caller for `createWebRtcCallTransport` (42G §3) — the file is no longer dead code
-- `[ ]` Social UI TURN editor renders, accepts input, validates, saves (42H); default 3-STUN list applies when `node-config.iceServers` is empty
-- `[ ]` Allowed pubspec changes: bump `flutter_webrtc` to `^0.14.0` (42D) and add `flutter_callkit_incoming` (42I). **No other new npm/yarn/pubspec dependencies** — `permission_handler` is **not** added (we use `flutter_webrtc`'s built-in permission prompts).
-- `[ ]` No new wire intents or schema changes (Phase 38 protocol is sufficient)
+- `[x]` All 42A–42I sub-phase checkboxes flipped (42J manual device smoke tracked separately, like Phase 38H)
+- `[x]` `npm run typecheck` clean (node + api + social)
+- `[x]` `npx vitest run` green — 74 social test files / 435 tests + 101 node call/push tests pass (all Phase 38 call tests still pass; new 42A/42B/42G/42H/42I tests pass)
+- `[x]` `flutter analyze` clean on every new/modified `.dart` file
+- `[x]` `flutter test` green for `node_service_client_test.dart`, `call_provider_test.dart`, `webrtc_call_transport_test.dart`, `voip_push_service_test.dart` (no `voice_call_screen_test.dart` / `push_service_test.dart` shipped under those names — the VoIP service is `voip_push_service_test.dart`)
+- `[x]` `sdpOffer: ""` no longer appears anywhere in `apps/node/src/node-service-impl.ts`; all five `UnimplementedError` call RPCs in `apps/envoygo/lib/services/node_service_client.dart` are gone
+- `[x]` Two-node integration test asserts: caller→callee `call.invite` carries the SDP offer; callee→caller `call.accept` carries the SDP answer; `recipientPeerId` on the invite is the callee's device peer ID (not owner ID)
+- `[x]` `iceServers` configured on the home reaches the phone via the call envelope (verified by a test that injects a custom `iceServers` into node config and asserts it shows up in the `call.invite` payload); TURN entries (with username/credential) round-trip identically
+- `[x]` Trust gate + identity binding + role policy still enforced on the home (regression-tested from the existing Phase 38 suite)
+- `[x]` iOS `AVAudioSession` config applied on call start, reset on call end; `voip` and `audio` UIBackgroundModes in `Info.plist`; Android `RECORD_AUDIO` permission request fires on first call
+- `[x]` Home dispatches APNs VoIP push on `call.invite` when phone is offline (regression-tested in `apps/node/test/call-sdp-validation.test.ts`); `registerPushToken` accepts `tokenType: "alert" | "voip"` and persists the discriminator
+- `[x]` Social UI has a Social UI caller for `createWebRtcCallTransport` (42G §3) — the file is no longer dead code (`apps/social/src/hooks/useCallSession.ts`)
+- `[x]` Social UI TURN editor renders, accepts input, validates, saves (42H — `SettingsNodeTab.test.tsx`, 5 tests); default 3-STUN list applies when `node-config.iceServers` is empty
+- `[x]` Allowed pubspec changes: bump `flutter_webrtc` to `^0.14.0` (42D, resolved to 0.14.2) and add `flutter_callkit_incoming` (42I). **No other new npm/yarn/pubspec dependencies** — `permission_handler` is **not** added (we use `flutter_webrtc`'s built-in permission prompts).
+- `[x]` No new wire intents or schema changes (Phase 38 protocol is sufficient)
 
 ### Open design questions
 
 | # | Question | Status | Notes |
 |---|----------|--------|-------|
-| 1 | `flutter_webrtc` version on EnvoyGo | **Resolved** | `^0.14.0`. Bump in 42D. |
+| 1 | `flutter_webrtc` version on EnvoyGo | **Resolved** | `^0.14.0` (resolved to 0.14.2 by the lock). Bump in 42D. |
 | 2 | `iceServers` default list | **Resolved** | 3-STUN list (Google + Cloudflare + Twilio). TURN is user-added in 42H. |
 | 3 | TURN server for symmetric NAT | **Resolved** | User-configured in `node-config.json` (42H). No EnvoyMesh-hosted TURN. Providers: Twilio / Cloudflare / self-hosted coturn. |
-| 4 | Persistent backgrounded calling on iOS | **Resolved** | VoIP push + PushKit + CallKit (42I). Home extends the existing APNs module with a `voip` `tokenType`; phone uses `flutter_callkit_incoming`. |
+| 4 | Persistent backgrounded calling on iOS | **Resolved** | VoIP push + PushKit + CallKit (42I). Home extends the existing APNs module with a `voip` `tokenType`; phone uses `flutter_callkit_incoming` + `CXProvider.reportNewIncomingCall` (reported synchronously in the PushKit delegate before `completion()`, per Apple's contract). |
+
+### Phase 42 fix-ups (post-ship)
+
+While finalizing Phase 42 we discovered a few of the shipped pieces were wire-level broken in production but hidden behind passing tests. They were fixed in commit `78df804` and the immediate follow-ups:
+
+- **Signature-mutation bug in response envelopes** — `_sendCallResponseEnvelope` (the helper shared by `acceptCallInvite`/`declineCallInvite`/`endCall`/`setCallMuted`) used to mutate `envelope.recipientPeerId` *after* `signUnsignedEnvelope`, producing a signature that no longer covered the final canonical JSON. Every response envelope was silently dropped by the peer's inbound guard. Fixed by stamping `recipientPeerId` on the **unsigned** envelope before signing. Regression test added.
+- **VoIP push fired on the caller's home** — `dispatchCallPush` was called from `sendCallInvite` (the caller's home, which has no token for the callee). Moved to `call-inbound.ts:handleCallInvite` (the callee's home, which is where the phone registered its token), gated on `isDeviceOnline(calleeOwnerId)`.
+- **Callee's `RTCPeerConnection` had no STUN/TURN** — `eventStream` was a dead stub and the callee's transport was built with `iceServers: []`. Fixed by bridging `HomeRemoteClient.on('call:*')` into a real `StreamController`, fetching `nodeConfig.iceServers` (with the 3-STUN default), and threading `iceServers` from the `call.incoming` envelope through `call-inbound` → `call-manager` → the `call:incoming` event.
+- **TURN-editor dead UI** — the editor carried a `ttlSeconds` field that was dropped on save (the plan's "no credential minting" decision). Removed the field, added a Twilio / Cloudflare / coturn preset selector, a "Reset to defaults" button, and a `missingCredentials` validation rule.
 
 ### Cross-references
 

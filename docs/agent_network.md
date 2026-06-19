@@ -867,6 +867,8 @@ publishChainReport() → task.chain.report → owner sees final result
 
 **Safety:** The LLM runs on the owner's hardware (EnvoyAI/OpenClaw), not on a worker's node. No worker sees the full goal — workers only see their assigned `objective`. The synthesis prompt includes a pre-flight budget check: `maxChainCostUsd − committedUsd − synthesisSpendUsd ≥ estimatedSynthesisCostUsd`.
 
+**LLM fallback:** If `llmDecompose` returns `{ ok: false, reason }`, the orchestrator MUST fall back to the existing keyword-based `decomposeTask` function (Phase 40's fallback). Similarly, if `llmMerge` fails, synthesis falls back to `concatenate` aggregation with `aggregation: "concatenate"` (not `llm_merged`). The orchestrator MUST emit `chain.decompose_fallback` / `chain.merge_fallback` audit events so the owner knows the LLM path was not used. This ensures air-gapped or offline nodes can still run chains.
+
 **Schema changes (minimal):**
 - `ChainMandate.maxSynthesisCostUsd` — optional, defaults to 10% of `maxChainCostUsd`
 - `llmDecompose` callback signature already defined in `ChainOrchestratorHandlerDeps`
@@ -881,7 +883,7 @@ publishChainReport() → task.chain.report → owner sees final result
 - No protocol changes — callbacks are injectable deps, not schema types
 
 **Tests:**
-- `apps/node/test/chain-llm.test.ts` — mock LLM responses, verify prompt construction, cost estimation, error handling
+- `apps/node/test/chain-llm.test.ts` — mock LLM responses, verify prompt construction, cost estimation, error handling, fallback to keyword decompose on LLM failure, fallback to concatenation on merge failure
 - Extend `chain-orchestrator.test.ts` — `planChain` with LLM decompose, `synthesizeChain` with LLM merge
 
 **Exit criteria:**
@@ -889,6 +891,8 @@ publishChainReport() → task.chain.report → owner sees final result
 - `[ ]` Synthesis produces a coherent merged report, not raw concatenation
 - `[ ]` Pre-flight budget check prevents synthesis if cost exceeds remaining budget
 - `[ ]` LLM callbacks are injectable (tests can mock without real API keys)
+- `[ ]` If LLM decompose fails, orchestrator falls back to keyword-based decomposition and emits `chain.decompose_fallback` audit event
+- `[ ]` If LLM merge fails, synthesis falls back to concatenation and emits `chain.merge_fallback` audit event
 
 ---
 
@@ -953,9 +957,10 @@ bidScore(bid, peerReputation, timeNow) =
   + w_freshness  × freshnessDecay(bid.bidExpiresAt, timeNow)     // fresher bids = higher score
   + w_precision  × capabilityMatchPrecision(bid, subtask)        // exact match > fuzzy match
 
-Default weights: w_cost=0.35, w_reputation=0.30, w_freshness=0.20, w_precision=0.15
-Configurable via chain mandate: `bidRankingWeights?: { cost, reputation, freshness, precision }`
-```
+**Default weights: w_cost=0.35, w_reputation=0.30, w_freshness=0.20, w_precision=0.15**
+**Configurable via chain mandate: `bidRankingWeights?: { cost, reputation, freshness, precision }`**
+
+**Weight normalization:** The orchestrator MUST validate that configured weights sum to 1.0 before use. If the sum deviates by more than 0.001, normalize by dividing each weight by the sum (e.g., `{ cost: 0.5, reputation: 0.5 }` is normalized to `{ cost: 0.5, reputation: 0.5 }` exactly; `{ cost: 1, reputation: 1 }` normalizes to `{ cost: 0.5, reputation: 0.5 }`). If any weight is negative or exceeds 1.0, reject the mandate with `{ ok: false, reason: "invalid_bid_ranking_weights" }` at mandate parse time.
 
 **Implementation:**
 - `apps/node/src/chain-bid-strategy.ts` — add `bidScore()` function, update `rankBids()` to use composite scoring
@@ -973,12 +978,13 @@ function freshnessDecay(bidExpiresAt: string, now: Date): number {
 ```
 
 **Tests:**
-- Extend `chain-bid-strategy.test.ts` — composite scoring, weight configuration, edge cases (zero reputation, expired bid)
+- Extend `chain-bid-strategy.test.ts` — composite scoring, weight normalization, weight validation (reject negative/over-1 weights), edge cases (zero reputation, expired bid)
 
 **Exit criteria:**
 - `[ ]` A bid with lower cost but zero reputation scores lower than a reasonable-cost bid from a trusted peer
 - `[ ]` Expired bids score 0
 - `[ ]` Owner can configure bid ranking weights per chain mandate
+- `[ ]` Invalid weights (negative, >1, or non-summing-to-1 without normalization) are rejected at mandate parse time
 
 ---
 
@@ -1075,6 +1081,16 @@ trackChain(deps, state) — runs every heartbeatIntervalMs (default 30s)
 - `heartbeatTimeoutMs`: number — default 120_000
 - `minConfidence`: number — default 0.3
 
+**Auto-rebalance exhaustion (critical):** When `autoRebalanceCount >= maxAutoRebalances`, the orchestrator MUST NOT issue another award. Instead:
+1. Emit `chain.auto_rebalance_exhausted` audit event with `{ chainId, subtaskId, totalRebalances, reason }`.
+2. Apply `stallPolicy` as if the subtask is permanently stalled:
+   - `"auto_rebid"`: After exhausting rebalances, fall back to `"auto_cancel_subtask"` (mark chain partial).
+   - `"auto_cancel_subtask"`: Cancel the subtask, emit `chain.subtask_cancelled`, keep other subtasks running.
+   - `"auto_cancel_chain"`: Cancel all in-flight subtasks, emit `chain.cancelled` with `reason: "auto_rebalance_exhausted"`.
+   - `"escalate"`: Push `chain:escalation` event to owner with details; do not auto-act.
+3. If the mandate's `terminationPolicy` is `"owner_decides"`, always escalate after exhaustion regardless of `stallPolicy`.
+4. **Invariant:** `autoRebalanceCount` is checked BEFORE attempting any award. The budget ledger is NOT affected by exhausted rebalances — only actual awards consume budget.
+
 **Implementation:**
 - `apps/node/src/chain-orchestrator.ts` — extend `trackChain()`
 - `apps/node/src/chain-worker.ts` — ensure heartbeat is sent on schedule
@@ -1082,11 +1098,14 @@ trackChain(deps, state) — runs every heartbeatIntervalMs (default 30s)
 
 **Tests:**
 - Extend `chain-orchestrator.test.ts` — stalled subtask detection, auto-rebid, auto-cancel, escalate
+- Add `chain-rebalance-exhaustion.test.ts` — verify `maxAutoRebalances` is checked before award, fallback policy applied on exhaustion, audit event emitted
 
 **Exit criteria:**
 - `[ ]` Sub-task stalled for 120s triggers auto-rebid (new worker selected)
 - `[ ]` Stalled subtask with `stallPolicy: "escalate"` pushes notification to owner
 - `[ ]` Low-confidence partial triggers auto-rebalance with a second worker
+- `[ ]` After `maxAutoRebalances` exhausted, chain follows `stallPolicy` fallback; never issues another award
+- `[ ]` `chain.auto_rebalance_exhausted` audit event is emitted with subtask and chain context
 
 ---
 
@@ -1114,6 +1133,9 @@ Chain event → ChainAuditSink.record({ type: "chain.*", outcome, summary, ... }
 - `chain.completed` — total cost, total duration
 - `chain.cancelled` — reason
 - `chain.stalled` — subtask, last heartbeat
+- `chain.auto_rebalance_exhausted` — subtask, total rebalances attempted, fallback policy applied (41E)
+- `chain.decompose_fallback` — reason LLM decompose failed, keyword-based decomposition used (41A)
+- `chain.merge_fallback` — reason LLM merge failed, concatenation used instead (41A)
 
 **Implementation:**
 - `apps/node/src/chain-inbound.ts` — already calls `deps.audit.record()`. Ensure the audit sink writes to the main JSONL.

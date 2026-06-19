@@ -35,6 +35,15 @@ export interface WebRtcCallTransportOptions {
   onMutePayload: (payload: ReturnType<typeof createCallMutePayload>) => void;
   /** Max time to wait for Path 1 connection before falling back (ms). */
   path1TimeoutMs?: number;
+  /**
+   * Called when Path 1 (direct/LAN) times out. The caller should:
+   * 1. Generate a new SDP offer with iceServers included (Path 2)
+   * 2. Send it to the peer via a new call.invite
+   *
+   * If not provided, the transport logs the timeout but does not
+   * automatically restart — the call may fail silently.
+   */
+  onPath1Timeout?: () => void;
 }
 
 export interface WebRtcCallTransport {
@@ -45,7 +54,7 @@ export interface WebRtcCallTransport {
   /** Apply a remote ICE candidate (Path 2 trickle). */
   addIceCandidate(candidate: CallIceCandidatePayload["candidate"]): Promise<void>;
   /** Mute/unmute local audio track. */
-  setMute(muted: boolean): void;
+  setMute(muted: boolean, callId?: string): void;
   /** End the call and clean up. */
   close(): void;
 }
@@ -108,11 +117,11 @@ export function createWebRtcCallTransport(
     const config = await getIceConfig();
     pc = new RTCPeerConnection(config);
 
-    // Path 1 timeout: if no connection within path1TimeoutMs, treat as Path 2
+    // Path 1 timeout: if no connection within path1TimeoutMs, notify caller
     if (opts.path === "path1") {
       path1Timer = setTimeout(() => {
-        console.log("[webrtc-call-transport] Path 1 timed out — falling back to Path 2");
-        // Path 2 fallback is handled by the caller re-initiating with iceServers
+        console.log("[webrtc-call-transport] Path 1 timed out — notifying caller to retry with Path 2");
+        opts.onPath1Timeout?.();
       }, path1Timeout);
     }
 
@@ -228,7 +237,7 @@ export function createWebRtcCallTransport(
     }
   }
 
-  function setMute(muted: boolean): void {
+  function setMute(muted: boolean, callId?: string): void {
     isMuted = muted;
     if (localStream) {
       localStream.getAudioTracks().forEach((track) => {
@@ -236,7 +245,7 @@ export function createWebRtcCallTransport(
       });
     }
     opts.onMutePayload(createCallMutePayload({
-      callId: "", // filled by caller
+      callId: callId ?? "00000000-0000-0000-0000-000000000000",
       muted,
     }));
   }

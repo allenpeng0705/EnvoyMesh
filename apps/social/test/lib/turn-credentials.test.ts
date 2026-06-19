@@ -10,13 +10,19 @@ import { describe, expect, it } from "vitest";
 import {
   extractTurnServers,
   isTurnUrl,
+  makeTurnId,
   mergeTurnServers,
+  presetById,
+  TURN_PRESETS,
   validateTurnDraft,
   type IceServerEntry,
   type TurnDraft,
 } from "../../src/lib/turn-credentials.js";
 
-const MESSAGES = { invalidUrl: "TURN URL must start with `turn:` or `turns:`", invalidTtl: "TTL must be a non-negative integer" };
+const MESSAGES = {
+  invalidUrl: "TURN URL must start with `turn:` or `turns:`",
+  missingCredentials: "TURN entries need both username and credential",
+};
 
 function row(partial: Partial<TurnDraft>): TurnDraft {
   return {
@@ -24,7 +30,6 @@ function row(partial: Partial<TurnDraft>): TurnDraft {
     urls: "",
     username: "",
     credential: "",
-    ttlSeconds: 3600,
     ...partial,
   };
 }
@@ -45,6 +50,23 @@ describe("isTurnUrl", () => {
   });
 });
 
+describe("TURN_PRESETS", () => {
+  it("exposes Twilio, Cloudflare, and self-hosted coturn presets", () => {
+    expect(TURN_PRESETS.map((p) => p.id)).toEqual(["twilio", "cloudflare", "coturn"]);
+    for (const preset of TURN_PRESETS) {
+      expect(preset.urls.startsWith("turn:")).toBe(true);
+      expect(preset.label.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("presets are retrievable by id", () => {
+    expect(presetById("twilio")?.urls).toContain("twilio.com");
+    expect(presetById("cloudflare")?.urls).toContain("cloudflare.com");
+    expect(presetById("coturn")?.urls).toContain("{your-server}");
+    expect(presetById("unknown")).toBeUndefined();
+  });
+});
+
 describe("extractTurnServers", () => {
   it("returns an empty list when iceServers is missing", () => {
     expect(extractTurnServers(undefined)).toEqual([]);
@@ -61,7 +83,6 @@ describe("extractTurnServers", () => {
     expect(draft[0]?.urls).toBe("turn:turn.example.com:3478");
     expect(draft[0]?.username).toBe("u");
     expect(draft[0]?.credential).toBe("c");
-    expect(draft[0]?.ttlSeconds).toBe(3600);
     expect(draft[0]?.id).toMatch(/^turn-/);
     // Original STUN entries untouched
     expect(iceServers).toHaveLength(3);
@@ -76,21 +97,18 @@ describe("extractTurnServers", () => {
     const ids = new Set(draft.map((r) => r.id));
     expect(ids.size).toBe(draft.length);
   });
-
-  it("falls back to default ttlSeconds when missing", () => {
-    const draft = extractTurnServers([{ urls: "turn:a.example.com:3478" }]);
-    expect(draft[0]?.ttlSeconds).toBe(3600);
-  });
 });
 
 describe("mergeTurnServers", () => {
   it("drops empty draft rows but preserves valid ones", () => {
     const draft = [
       row({ id: "a", urls: "" }),
-      row({ id: "b", urls: "turn:b.example.com:3478" }),
+      row({ id: "b", urls: "turn:b.example.com:3478", username: "u", credential: "c" }),
     ];
     const out = mergeTurnServers(undefined, draft);
-    expect(out).toEqual([{ urls: "turn:b.example.com:3478" }]);
+    expect(out).toEqual([
+      { urls: "turn:b.example.com:3478", username: "u", credential: "c" },
+    ]);
   });
 
   it("preserves existing STUN entries", () => {
@@ -120,18 +138,24 @@ describe("mergeTurnServers", () => {
     ]);
   });
 
-  it("strips empty username/credential from output", () => {
+  it("drops rows that have a turn: URL but no credentials (broken TURN)", () => {
+    // The previous version stripped empty credentials silently, which
+    // saved a TURN entry that every WebRTC stack rejects. Now such
+    // rows are dropped entirely (validateTurnDraft should have caught
+    // this before save).
     const draft = [row({ urls: "turn:turn.example.com:3478", username: "", credential: "" })];
     const out = mergeTurnServers(undefined, draft);
-    expect(out).toEqual([{ urls: "turn:turn.example.com:3478" }]);
-    expect(out[0]).not.toHaveProperty("username");
-    expect(out[0]).not.toHaveProperty("credential");
+    expect(out).toEqual([]);
   });
 
   it("trims whitespace", () => {
-    const draft = [row({ urls: "  turn:turn.example.com:3478  ", username: "  u  " })];
+    const draft = [
+      row({ urls: "  turn:turn.example.com:3478  ", username: "  u  ", credential: "  c  " }),
+    ];
     const out = mergeTurnServers(undefined, draft);
-    expect(out).toEqual([{ urls: "turn:turn.example.com:3478", username: "u" }]);
+    expect(out).toEqual([
+      { urls: "turn:turn.example.com:3478", username: "u", credential: "c" },
+    ]);
   });
 
   it("returns STUN-only list when draft is empty", () => {
@@ -161,28 +185,24 @@ describe("validateTurnDraft", () => {
     expect(err?.rowId).toBe("row-1");
   });
 
-  it("flags negative ttlSeconds", () => {
-    const draft = [row({ urls: "turn:turn.example.com:3478", ttlSeconds: -5 })];
+  it("flags missing credentials on a turn: row (was silently allowed)", () => {
+    const draft = [row({ urls: "turn:turn.example.com:3478", username: "u", credential: "" })];
     const err = validateTurnDraft(draft, MESSAGES);
-    expect(err?.code).toBe("invalidTtl");
+    expect(err?.code).toBe("missingCredentials");
+    expect(err?.message).toMatch(/both username and credential/);
     expect(err?.rowId).toBe("row-1");
   });
 
-  it("flags non-finite ttlSeconds", () => {
-    const draft = [row({ urls: "turn:turn.example.com:3478", ttlSeconds: Number.NaN })];
+  it("flags missing username when credential is set", () => {
+    const draft = [row({ urls: "turn:turn.example.com:3478", username: "", credential: "c" })];
     const err = validateTurnDraft(draft, MESSAGES);
-    expect(err?.code).toBe("invalidTtl");
-  });
-
-  it("accepts ttlSeconds = 0 (rotate on every call)", () => {
-    const draft = [row({ urls: "turn:turn.example.com:3478", ttlSeconds: 0 })];
-    expect(validateTurnDraft(draft, MESSAGES)).toBeNull();
+    expect(err?.code).toBe("missingCredentials");
   });
 
   it("accepts valid TURN rows", () => {
     const draft = [
-      row({ id: "r1", urls: "turn:turn.example.com:3478", username: "u", credential: "c", ttlSeconds: 600 }),
-      row({ id: "r2", urls: "turns:turn.example.com:5349" }),
+      row({ id: "r1", urls: "turn:turn.example.com:3478", username: "u", credential: "c" }),
+      row({ id: "r2", urls: "turns:turn.example.com:5349", username: "u2", credential: "c2" }),
     ];
     expect(validateTurnDraft(draft, MESSAGES)).toBeNull();
   });
@@ -198,8 +218,7 @@ describe("validateTurnDraft", () => {
 });
 
 describe("makeTurnId", () => {
-  it("returns unique ids with a turn- prefix", async () => {
-    const { makeTurnId } = await import("../../src/lib/turn-credentials.js");
+  it("returns unique ids with a turn- prefix", () => {
     const ids = new Set(Array.from({ length: 50 }, () => makeTurnId()));
     expect(ids.size).toBe(50);
     for (const id of ids) expect(id).toMatch(/^turn-/);

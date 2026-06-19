@@ -2212,7 +2212,16 @@ export interface CallSession {
 }
 
 export type CallEvent =
-  | { type: "call:incoming"; callId: string; peerOwnerId: string; peerDisplayName: string; callType: "audio"; sdpOffer?: string }
+  | {
+      type: "call:incoming";
+      callId: string;
+      peerOwnerId: string;
+      peerDisplayName: string;
+      callType: "audio";
+      sdpOffer?: string;
+      /** Phase 42 — ICE servers the callee should use for the RTCPeerConnection. */
+      iceServers?: { urls: string; username?: string; credential?: string }[];
+    }
   | { type: "call:answered"; callId: string }
   | { type: "call:rejected"; callId: string; reason: "busy" | "declined" | "offline" | "error" | "no_answer" }
   | { type: "call:remote-mute"; callId: string; muted: boolean }

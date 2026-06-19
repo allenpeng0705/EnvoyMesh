@@ -30,7 +30,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NodeServiceImpl } from "../src/node-service-impl.js";
-import { derivePeerId, generateEd25519KeyPair } from "@envoymesh/identity";
+import { derivePeerId, generateEd25519KeyPair, verifyEnvelope } from "@envoymesh/identity";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 
 const CALLEE_OWNER_ID = "envoy:owner:callee-self"; // overwritten per test
@@ -390,6 +390,100 @@ describe("NodeServiceImpl call response envelopes (Phase 42B)", () => {
       const ok = await node.acceptCallInvite(callId, "v=0\r\n...");
       expect(ok).toBe(true);
       expect(sends).toHaveLength(0);
+    });
+
+    // Regression guard: recipientPeerId must be stamped BEFORE signing so the
+    // signature covers the same canonical JSON the verifier recomputes.
+    // A previous version stamped it after signing → every response envelope was
+    // signature-invalid and silently dropped by the peer's InboundMessageGuard.
+    it("produces a verifiable signature on every response intent (accept/reject/hangup/mute)", async () => {
+      // Each intent needs its own node — CallManager is one-call-per-node, so a
+      // second staged inbound auto-rejects the first as "busy".
+      async function freshNode(sendsRef: CapturedSend[]) {
+        const dir = await mkdtemp(join(tmpdir(), "call-resp-sig-"));
+        const n = (await bootstrapNode(dir)).node;
+        (n as any)._mesh = buildHarness(sendsRef).mockMesh;
+        (n as any)._resolvePeerTransportForOwner = async (ownerId: string) => {
+          if (ownerId !== PEER_TARGET_OWNER_ID) throw new Error("not found");
+          return {
+            transportPeerId: PEER_TRANSPORT_PEER_ID,
+            recipientEnvelopePeerId: PEER_ENVELOPE_PEER_ID,
+            listenAddrs: ["/ip4/192.168.1.50/tcp/4001"],
+          };
+        };
+        (n as any)._dialHintsForChat = async () => [];
+        return { n, dir };
+      }
+
+      // accept
+      {
+        const s: CapturedSend[] = [];
+        const { n, dir } = await freshNode(s);
+        const id = n.callManager.inboundCallReceived(
+          "a1a1a1a1-1111-4111-8111-a1a1a1a1a1a1",
+          PEER_TARGET_OWNER_ID,
+          PEER_ENVELOPE_PEER_ID,
+          "Remote",
+          "v=0\r\n...",
+        )!;
+        await n.acceptCallInvite(id, "v=0\r\n...");
+        expect(s[0]!.envelope.intent).toBe("call.accept");
+        expect(s[0]!.envelope.recipientPeerId).toBe(PEER_ENVELOPE_PEER_ID);
+        expect(verifyEnvelope(s[0]!.envelope)).toBe(true);
+        await rm(dir, { recursive: true, force: true });
+      }
+      // reject
+      {
+        const s: CapturedSend[] = [];
+        const { n, dir } = await freshNode(s);
+        const id = n.callManager.inboundCallReceived(
+          "b2b2b2b2-2222-4222-8222-b2b2b2b2b2b2",
+          PEER_TARGET_OWNER_ID,
+          PEER_ENVELOPE_PEER_ID,
+          "Remote",
+          "v=0\r\n...",
+        )!;
+        await n.declineCallInvite(id, "busy");
+        expect(s[0]!.envelope.intent).toBe("call.reject");
+        expect(verifyEnvelope(s[0]!.envelope)).toBe(true);
+        await rm(dir, { recursive: true, force: true });
+      }
+      // hangup
+      {
+        const s: CapturedSend[] = [];
+        const { n, dir } = await freshNode(s);
+        const id = n.callManager.inboundCallReceived(
+          "c3c3c3c3-3333-4333-8333-c3c3c3c3c3c3",
+          PEER_TARGET_OWNER_ID,
+          PEER_ENVELOPE_PEER_ID,
+          "Remote",
+          "v=0\r\n...",
+        )!;
+        await n.acceptCallInvite(id, "v=0\r\n...");
+        await n.endCall(id);
+        const hangupEnv = s.find((x) => x.envelope.intent === "call.hangup")!;
+        expect(hangupEnv).toBeTruthy();
+        expect(verifyEnvelope(hangupEnv.envelope)).toBe(true);
+        await rm(dir, { recursive: true, force: true });
+      }
+      // mute
+      {
+        const s: CapturedSend[] = [];
+        const { n, dir } = await freshNode(s);
+        const id = n.callManager.inboundCallReceived(
+          "d4d4d4d4-4444-4444-8444-d4d4d4d4d4d4",
+          PEER_TARGET_OWNER_ID,
+          PEER_ENVELOPE_PEER_ID,
+          "Remote",
+          "v=0\r\n...",
+        )!;
+        await n.acceptCallInvite(id, "v=0\r\n...");
+        await n.setCallMuted(id, true);
+        const muteEnv = s.find((x) => x.envelope.intent === "call.mute")!;
+        expect(muteEnv).toBeTruthy();
+        expect(verifyEnvelope(muteEnv.envelope)).toBe(true);
+        await rm(dir, { recursive: true, force: true });
+      }
     });
   });
 });

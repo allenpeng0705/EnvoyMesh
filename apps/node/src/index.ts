@@ -1764,6 +1764,22 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       sendResponseEnvelope: async (responseEnvelope) => {
         await mesh.send(envelope.senderPeerId, responseEnvelope as EnvoyEnvelope);
       },
+      // Phase 42I — VoIP push fires on the callee's home (this node) when the
+      // phone has no authenticated WS session. See call-inbound.ts.
+      calleeOwnerId: profile?.owner.ownerId,
+      isDeviceOnline: (ownerId) => wsServerForEvents?.hasClientForOwner(ownerId) ?? false,
+      dispatchIncomingCallPush: async ({ callId, callerOwnerId, callerName, calleeOwnerId }) => {
+        try {
+          await pushNotificationService.dispatchCallPush({
+            callerName,
+            targetOwnerId: calleeOwnerId,
+            callId,
+            callerOwnerId,
+          });
+        } catch {
+          // Best-effort — push delivery must never break call signaling.
+        }
+      },
     });
     if (handled) return;
   }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../models/chain_report.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
@@ -11,7 +13,64 @@ import 'home_remote_client.dart';
 class NodeServiceClient {
   final HomeRemoteClient _client;
 
-  NodeServiceClient(this._client);
+  /// Phase 42 — real event stream. The home emits `call:*` events over the
+  /// WebSocket; HomeRemoteClient fans them out via `.on(event, handler)`.
+  /// This controller bridges every `call:*` event into a single broadcast
+  /// stream that `CallProvider` subscribes to. The event payload (already
+  /// the flat `{type, callId, ...}` shape) is forwarded unchanged.
+  ///
+  /// Previously this returned `const Stream.empty()` (a Phase 38 stub),
+  /// which meant the entire callee flow (`call:incoming` → ring → accept)
+  /// and every remote-end event (`call:ended`/`call:rejected`/`call:error`)
+  /// silently never fired in production — the provider's `handleTestEvent`
+  /// seam hid the gap in tests.
+  final StreamController<Map<String, dynamic>> _eventController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
+  final List<void Function()> _unsubs = [];
+
+  static const _callEvents = [
+    'call:incoming',
+    'call:answered',
+    'call:rejected',
+    'call:remote-mute',
+    'call:ended',
+    'call:error',
+  ];
+
+  NodeServiceClient(this._client) {
+    for (final event in _callEvents) {
+      _unsubs.add(
+        _client.on(event, (data) {
+          // Normalize: the home emits `{event, data}`; the provider expects
+          // a flat map with a `type` field. Re-stamp `type` defensively.
+          final payload = data is Map<String, dynamic>
+              ? Map<String, dynamic>.from(data)
+              : <String, dynamic>{};
+          payload['type'] ??= event;
+          _eventController.add(payload);
+        }),
+      );
+    }
+  }
+
+  /// Release the HomeRemoteClient event subscriptions. Safe to call once
+  /// on disposal; the stream closes with it.
+  void dispose() {
+    for (final unsub in _unsubs) {
+      try {
+        unsub();
+      } catch (_) {
+        // Swallow — best-effort cleanup.
+      }
+    }
+    _unsubs.clear();
+    _eventController.close();
+  }
+
+  /// Stream of unsolicited push events from the home node (`call:*` today;
+  /// easily extended). Consumed by [CallProvider].
+  Stream<Map<String, dynamic>> get eventStream => _eventController.stream;
 
   // -- Connection & pairing --
 
@@ -27,6 +86,15 @@ class NodeServiceClient {
   Future<Map<String, dynamic>> getConnectionStatus() async {
     return await _client.call('getConnectionStatus')
         as Map<String, dynamic>;
+  }
+
+  /// Phase 42 — fetch the home's node config. Used to read the
+  /// user-configured `iceServers` (STUN/TURN) so the phone can build its
+  /// `RTCPeerConnection` with the right ICE config. The home injects the
+  /// same list into the `call.invite` envelope for the callee, but the
+  /// caller needs it locally before generating its offer.
+  Future<Map<String, dynamic>> getNodeConfig() async {
+    return await _client.call('getNodeConfig') as Map<String, dynamic>;
   }
 
   /// Fetch the full pairing payload from the home node, including
@@ -346,11 +414,8 @@ class NodeServiceClient {
   // they are produced by WebRtcCallTransport (Phase 42D) and passed
   // through unchanged.
   //
-  // `eventStream` and `noop()` are unchanged from the Phase 38 stubs.
-
-  /// Stream of unsolicited push events from the home node. Returns an
-  /// empty stream until the call feature is implemented on the home node.
-  Stream<Map<String, dynamic>> get eventStream => const Stream.empty();
+  // Push events (`call:*`) are bridged into [eventStream] by the
+  // constructor above; `noop()` is unchanged from Phase 38.
 
   /// A no-op client used by [CallProvider.noop] when the device is
   /// disconnected from the home node.
@@ -409,8 +474,14 @@ class NodeServiceClient {
     return result == true;
   }
 
-  /// Toggle the local mic muted state.
-  Future<void> setCallMuted(String callId, bool muted) async {
-    await _client.call('setCallMuted', {'callId': callId, 'muted': muted});
+  /// Toggle the local mic muted state. Returns true if the home accepted
+  /// the mute transition, false if the call was unknown or already ended
+  /// (matching the API contract in packages/api/src/node-service.ts).
+  Future<bool> setCallMuted(String callId, bool muted) async {
+    final result = await _client.call('setCallMuted', {
+      'callId': callId,
+      'muted': muted,
+    });
+    return result == true;
   }
 }

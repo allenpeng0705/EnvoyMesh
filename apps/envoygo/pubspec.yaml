@@ -24,8 +24,9 @@ dependencies:
   image_picker: ^1.1.2
   # Audio recording (voice messages)
   record: ^5.1.2
-  # WebRTC (voice/video calls, Phase 38)
-  flutter_webrtc: ^0.12.0
+  # WebRTC (voice/video calls, Phase 38/42). Phase 42D bumps to ^0.14.0
+  # for the API surface used by WebRtcCallTransport.
+  flutter_webrtc: ^0.14.0
   # Phase 42I — iOS CallKit integration for backgrounded VoIP calls.
   # flutter_callkit_incoming surfaces the native iOS incoming-call UI
   # when a VoIP push wakes the app from background, and bridges the

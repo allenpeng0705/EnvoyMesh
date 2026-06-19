@@ -1,4 +1,5 @@
 import AVFoundation
+import CallKit
 import Flutter
 import PushKit
 import UIKit
@@ -10,6 +11,21 @@ import UIKit
   // forwards the device token to the home node and surfaces incoming
   // call metadata to CallProvider.
   private let voipChannelName = "envoygo/voip_push"
+
+  // Phase 42I — CallKit provider + call controller. `cxProvider`
+  // must exist for the lifetime of the app so we can report incoming
+  // calls synchronously in the PushKit delegate (Apple requires
+  // `reportNewIncomingCall` to be called within a few seconds of
+  // receiving a VoIP push, or the OS terminates the app and may
+  // revoke future VoIP delivery). The Dart side cannot satisfy this
+  // contract reliably (MethodChannel.invokeMethod is async and the
+  // Flutter engine may not even be running when a terminated app is
+  // woken), so we own the CXProvider here in Swift.
+  private var cxProvider: CXProvider?
+  private var cxController: CXCallController?
+  // callId → UUID map so CallKit answer/end actions (which carry the
+  // UUID) can be correlated back to the EnvoyMesh callId handed to Dart.
+  private var callUuids: [String: UUID] = [:]
 
   override func application(
     _ application: UIApplication,
@@ -69,6 +85,11 @@ import UIKit
       }
     }
 
+    // Phase 42I — configure CallKit. Done synchronously at launch so
+    // the provider is ready the moment a VoIP push arrives (which may
+    // be before the Flutter engine is fully up).
+    configureCallKit()
+
     // Phase 42I — register the voip_push method channel and the
     // PKPushRegistry. iOS wakes the app via this channel when a VoIP
     // push arrives, even if the app is terminated. The token is
@@ -78,9 +99,39 @@ import UIKit
       name: voipChannelName,
       binaryMessenger: controller.binaryMessenger
     )
+    voipChannel.setMethodCallHandler { [weak self] (call, result) in
+      // Dart → native bridge. The two methods let CallProvider tell
+      // CallKit to end a call (on local hangup/decline) without going
+      // through the native answer/end delegate flow.
+      switch call.method {
+      case "endCall":
+        let args = (call.arguments as? [String: Any]) ?? [:]
+        let callId = args["callId"] as? String
+        self?.endCallKitCall(callId: callId)
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
     registerVoipPushRegistry(channel: voipChannel)
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  /// Phase 42I — set up the CXProvider with an audio-call configuration.
+  private func configureCallKit() {
+    let config = CXProviderConfiguration()
+    config.maximumCallGroups = 1
+    config.maximumCallsPerCallGroup = 1
+    config.supportsVideo = false
+    config.supportedHandleTypes = [.generic]
+    // Keep audio active when the app backgrounds during a call.
+    config.includesCallsInRecents = false
+
+    let provider = CXProvider(configuration: config)
+    provider.setDelegate(self, queue: nil)
+    cxProvider = provider
+    cxController = CXCallController()
   }
 
   /// Phase 42I — register PushKit for VoIP pushes.
@@ -91,30 +142,41 @@ import UIKit
   ///   1. The device token (as a hex string) to Dart so it can be
   ///      registered with the home node.
   ///   2. The incoming call metadata (callerOwnerId, callId,
-  ///      callerName) to Dart so it can update CallProvider state
-  ///      and present a CallKit screen via flutter_callkit_incoming.
+  ///      callerName) to Dart so it can update CallProvider state.
   private func registerVoipPushRegistry(channel: FlutterMethodChannel) {
     let registry = PKPushRegistry(queue: DispatchQueue.main)
     registry.delegate = self
     registry.desiredPushTypes = [.voIP]
-    // The delegate is `self` (UIResponder conformance); we stash the
-    // channel via associated object so the delegate callbacks can
-    // forward payloads without an instance-property dance.
     objc_setAssociatedObject(
       registry,
-      UnsafePointer(bitPattern: "voip_channel"),
+      &VoipChannelKey,
       channel,
       .OBJC_ASSOCIATION_RETAIN
     )
   }
+
+  /// Phase 42I — tell CallKit a call ended locally (Dart-side hangup/
+  /// decline). Reports the end action so the native call screen
+  /// dismisses; no-ops if CallKit doesn't know this callId.
+  private func endCallKitCall(callId: String?) {
+    guard let callId = callId, let provider = cxProvider, let uuid = callUuids[callId] else {
+      return
+    }
+    let end = CXEndCallAction(call: uuid)
+    let transaction = CXTransaction(action: end)
+    cxController?.request(transaction) { _ in }
+  }
+
+  // File-private associated-object key (idiomatic Swift; the previous
+  // `UnsafePointer(bitPattern: "voip_channel")` relied on string-literal
+  // pointer decay and was brittle across compiler versions).
+  private static var VoipChannelKey: UInt8 = 0
 }
 
 // MARK: - Phase 42I — PKPushRegistryDelegate
 
 extension AppDelegate: PKPushRegistryDelegate {
   /// Phase 42I — forward the VoIP device token to Dart as a hex string.
-  /// The Dart PushService picks it up and registers it with the home
-  /// node (with `tokenType: "voip"`) on the next push-token sync.
   func pushRegistry(
     _ registry: PKPushRegistry,
     didUpdate pushCredentials: PKPushCredentials,
@@ -125,30 +187,97 @@ extension AppDelegate: PKPushRegistryDelegate {
     let hex = tokenBytes.map { String(format: "%02x", $0) }.joined()
     let channel = objc_getAssociatedObject(
       registry,
-      UnsafePointer(bitPattern: "voip_channel")
+      &AppDelegate.VoipChannelKey
     ) as? FlutterMethodChannel
     channel?.invokeMethod("onVoipToken", arguments: ["token": hex])
   }
 
-  /// Phase 42I — surface an incoming VoIP push to Dart. The push
-  /// payload from the home node has shape:
-  ///   { aps: { voip: 1 }, data: { callId, callerOwnerId, callerName? } }
-  /// We forward the `data` block to Dart, which calls
-  /// `CallProvider.onIncomingCallFromPush` and presents a CallKit
-  /// screen via flutter_callkit_incoming.
+  /// Phase 42I — surface an incoming VoIP push.
+  ///
+  /// CRITICAL: on iOS 13+, Apple requires `CXProvider.reportNewIncomingCall`
+  /// to be called synchronously before `completion()`, or the OS terminates
+  /// the app and may revoke future VoIP push delivery. The previous
+  /// implementation only forwarded the payload to Dart and immediately
+  /// called `completion()` — the Dart round-trip (async, and the Flutter
+  /// engine may not even be running for a terminated-app wake) could not
+  /// satisfy the contract. We now report to CallKit directly in Swift,
+  /// THEN forward metadata to Dart for the WebRTC handshake.
   func pushRegistry(
     _ registry: PKPushRegistry,
     didReceiveIncomingPushWith payload: PKPushPayload,
     for type: PKPushType,
     completion: @escaping () -> Void
   ) {
-    defer { completion() }
-    guard type == .voIP else { return }
-    let userInfo = payload.dictionaryPayload["data"] as? [String: Any] ?? [:]
+    guard type == .voIP else {
+      completion()
+      return
+    }
+
+    // The home's VoIP push payload: { aps: { voip: 1 }, data: { callId,
+    // callerOwnerId, callerName? } } (see apps/node/src/push-notification.ts
+    // sendVoipPush). Fall back to the top-level payload if `data` is absent.
+    let userInfo = payload.dictionaryPayload
+    let data = userInfo["data"] as? [String: Any] ?? [:]
+    let callId = data["callId"] as? String
+    let callerName = (data["callerName"] as? String) ?? "Incoming call"
+
+    // Synchronously report to CallKit BEFORE completion(). Use a stable
+    // UUID per callId so the answer/end delegate can correlate back.
+    let uuid = UUID()
+    if let callId = callId {
+      callUuids[callId] = uuid
+    }
+    let update = CXCallUpdate()
+    update.remoteHandle = CXHandle(type: .generic, value: callerName)
+    update.hasVideo = false
+    cxProvider?.reportNewIncomingCall(with: uuid, update: update) { _ in
+      // CallKit has been told about the call — safe to complete.
+      completion()
+    }
+
+    // Forward the metadata to Dart so CallProvider can start the WebRTC
+    // handshake (the SDP arrives later over the WebSocket call:incoming
+    // event, not in the push). Best-effort: if the Flutter engine isn't
+    // up yet, the Dart PushService will still receive the call:incoming
+    // WS event once the app finishes resuming.
     let channel = objc_getAssociatedObject(
       registry,
-      UnsafePointer(bitPattern: "voip_channel")
+      &AppDelegate.VoipChannelKey
     ) as? FlutterMethodChannel
-    channel?.invokeMethod("onIncomingCall", arguments: userInfo)
+    channel?.invokeMethod("onIncomingCall", arguments: data)
+  }
+}
+
+// MARK: - Phase 42I — CXProviderDelegate (CallKit answer/end → Dart)
+
+extension AppDelegate: CXProviderDelegate {
+  /// CallKit → "the user tapped Accept". Bridge to Dart so
+  /// CallProvider.acceptCall() runs the WebRTC answer flow.
+  func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
+    // The UUID correlates to a callId; find it. (UUIDs are unique per
+    // call, so the reverse lookup is at most one match.)
+    if let callId = callUuids.first(where: { $0.value == action.callUUID })?.key {
+      let channel = (window?.rootViewController as? FlutterViewController).map {
+        FlutterMethodChannel(name: voipChannelName, binaryMessenger: $0.binaryMessenger)
+      }
+      channel?.invokeMethod("onCallAccepted", arguments: ["callId": callId])
+    }
+    action.fulfill()
+  }
+
+  /// CallKit → "the user tapped Decline / ended the call". Bridge to Dart.
+  func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
+    if let callId = callUuids.first(where: { $0.value == action.callUUID })?.key {
+      callUuids.removeValue(forKey: callId)
+      let channel = (window?.rootViewController as? FlutterViewController).map {
+        FlutterMethodChannel(name: voipChannelName, binaryMessenger: $0.binaryMessenger)
+      }
+      channel?.invokeMethod("onCallDeclined", arguments: ["callId": callId])
+    }
+    action.fulfill()
+  }
+
+  func providerDidReset(_ provider: CXProvider) {
+    callUuids.removeAll()
   }
 }

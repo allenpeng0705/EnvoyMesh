@@ -214,7 +214,14 @@ export class DirectCallClient implements NodeServiceClient {
   }
 
   // Phase 31I — Push Notifications
-  registerPushToken(params: { platform: string; token: string; ownerId: string; deviceId?: string }): void {
+  registerPushToken(params: {
+    platform: string;
+    token: string;
+    ownerId: string;
+    deviceId?: string;
+    /** Phase 42I — "alert" (default) or "voip" (iOS CallKit). */
+    tokenType?: "alert" | "voip";
+  }): void {
     return this._ns.registerPushToken(params);
   }
 

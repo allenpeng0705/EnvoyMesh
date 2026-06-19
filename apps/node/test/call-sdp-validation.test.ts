@@ -85,6 +85,22 @@ describe("validateIceCandidate", () => {
     ).toBe(true);
   });
 
+  it("accepts an ICE-TCP candidate with tcptype (RFC 6544)", () => {
+    expect(
+      validateIceCandidate(
+        "candidate:1 1 tcp 1518280447 192.0.2.3 9 typ host tcptype active",
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts a relay TCP candidate with tcptype + raddr/rport", () => {
+    expect(
+      validateIceCandidate(
+        "candidate:2 1 TCP 1518280447 198.51.100.5 12345 typ relay tcptype passive raddr 192.0.2.1 rport 9",
+      ),
+    ).toBe(true);
+  });
+
   it("rejects an empty candidate", () => {
     expect(validateIceCandidate("")).toBe(false);
   });
@@ -113,5 +129,112 @@ describe("validateIceCandidate", () => {
 
   it("rejects candidates longer than 1024 bytes", () => {
     expect(validateIceCandidate("candidate:" + "x".repeat(1100))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 42I — callee-side VoIP push dispatch hook (handleCallInvite)
+// ---------------------------------------------------------------------------
+
+import { handleCallIntent, type CallInboundDeps } from "../src/call-inbound.js";
+import { createCallInvitePayload, type EnvoyEnvelope } from "@envoymesh/protocol";
+import { describe as describe2, expect as expect2, it as it2, vi } from "vitest";
+
+function buildInviteEnvelope(callerOwnerId: string, callId: string): EnvoyEnvelope {
+  const payload = createCallInvitePayload({
+    callId,
+    callerOwnerId,
+    callerPeerId: `envoy_peer_${callerOwnerId}`,
+    sdpOffer: "v=0\r\no=- 1 1 IN IP4 0.0.0.0\r\n",
+  });
+  // Minimal envelope. senderPeerId is set to the owner ID because
+  // senderOwnerId() falls back to senderPeerId when there's no
+  // agentCredential — identity binding requires sender == callerOwnerId.
+  return {
+    version: "0.1",
+    messageId: "m1",
+    createdAt: new Date().toISOString(),
+    senderPeerId: callerOwnerId,
+    senderPublicKey: "pk",
+    senderRole: "human",
+    recipientRole: "human",
+    intent: "call.invite",
+    payload,
+    signature: "sig",
+  } as unknown as EnvoyEnvelope;
+}
+
+function buildDeps(overrides: Partial<CallInboundDeps> = {}): CallInboundDeps {
+  return {
+    callManager: {
+      inboundCallReceived: vi.fn(() => true),
+    } as unknown as CallInboundDeps["callManager"],
+    trustStore: {
+      getTrustRecord: vi.fn(async () => ({ level: "direct", displayName: "Alice" })),
+    } as unknown as CallInboundDeps["trustStore"],
+    peerDirectoryStore: {} as unknown as CallInboundDeps["peerDirectoryStore"],
+    sendResponseEnvelope: vi.fn(async () => {}),
+    calleeOwnerId: "envoy:owner:callee",
+    ...overrides,
+  } as CallInboundDeps;
+}
+
+describe2("call.invite VoIP push dispatch (Phase 42I)", () => {
+  const caller = "envoy:owner:alice";
+  const callId = "11111111-1111-4111-8111-111111111111";
+
+  it2("dispatches a VoIP push when the phone has no authenticated WS", async () => {
+    const dispatch = vi.fn(async () => {});
+    const deps = buildDeps({
+      isDeviceOnline: () => false,
+      dispatchIncomingCallPush: dispatch,
+    });
+    await handleCallIntent(buildInviteEnvelope(caller, callId), deps);
+    expect2(dispatch).toHaveBeenCalledWith({
+      callId,
+      callerOwnerId: caller,
+      callerName: "Alice",
+      calleeOwnerId: "envoy:owner:callee",
+    });
+  });
+
+  it2("suppresses the push when the phone already has a WS session", async () => {
+    const dispatch = vi.fn(async () => {});
+    const deps = buildDeps({
+      isDeviceOnline: () => true,
+      dispatchIncomingCallPush: dispatch,
+    });
+    await handleCallIntent(buildInviteEnvelope(caller, callId), deps);
+    expect2(dispatch).not.toHaveBeenCalled();
+  });
+
+  it2("defaults to online (no push) when isDeviceOnline is not wired", async () => {
+    const dispatch = vi.fn(async () => {});
+    const deps = buildDeps({ dispatchIncomingCallPush: dispatch });
+    await handleCallIntent(buildInviteEnvelope(caller, callId), deps);
+    expect2(dispatch).not.toHaveBeenCalled();
+  });
+
+  it2("does not push for an untrusted (public) caller", async () => {
+    const dispatch = vi.fn(async () => {});
+    const deps = buildDeps({
+      trustStore: { getTrustRecord: vi.fn(async () => ({ level: "public" })) } as unknown as CallInboundDeps["trustStore"],
+      isDeviceOnline: () => false,
+      dispatchIncomingCallPush: dispatch,
+    });
+    await handleCallIntent(buildInviteEnvelope(caller, callId), deps);
+    expect2(dispatch).not.toHaveBeenCalled();
+  });
+
+  it2("swallows push-delivery errors without failing the call", async () => {
+    const dispatch = vi.fn(async () => {
+      throw new Error("APNs 503");
+    });
+    const deps = buildDeps({
+      isDeviceOnline: () => false,
+      dispatchIncomingCallPush: dispatch,
+    });
+    // Should not throw.
+    await expect2(handleCallIntent(buildInviteEnvelope(caller, callId), deps)).resolves.toBe(true);
   });
 });

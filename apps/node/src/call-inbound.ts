@@ -31,6 +31,31 @@ export interface CallInboundDeps {
   peerDirectoryStore: LocalPeerDirectoryStore;
   /** Callback to send a signed envelope back to the remote party. */
   sendResponseEnvelope: (envelope: EnvoyEnvelope) => Promise<void>;
+  /**
+   * Phase 42I — the local node's owner ID (the callee). Used to dispatch
+   * a VoIP push so the callee's iOS app can wake from background.
+   */
+  calleeOwnerId?: string;
+  /**
+   * Phase 42I — returns true if the owner has at least one authenticated
+   * thin-client WebSocket connected right now. When true, the
+   * `call:incoming` event reaches the phone directly over the WS and a
+   * VoIP push is suppressed (avoids a double prompt). Defaults to
+   * `() => true` (assume online → don't push) when not wired.
+   */
+  isDeviceOnline?: (ownerId: string) => boolean;
+  /**
+   * Phase 42I — dispatch a VoIP push for an incoming call. Optional: if
+   * push is not configured (no APNs VoIP credentials / token store empty),
+   * the implementation should no-op gracefully. Best-effort — the
+   * signaling path does not block on it.
+   */
+  dispatchIncomingCallPush?: (params: {
+    callId: string;
+    callerOwnerId: string;
+    callerName: string;
+    calleeOwnerId: string;
+  }) => Promise<void>;
 }
 
 const LOG = "[call-inbound]";
@@ -50,15 +75,16 @@ export const MAX_SDP_BYTES = 64 * 1024;
 /**
  * SDP ICE candidate grammar (subset of RFC 5245 §15.1).
  *
- * Format: `candidate:<foundation> <component-id> <protocol> <priority> <address> <port> typ <type> [raddr <address>] [rport <port>] [generation <num>] [network-cost <num>]`
+ * Format: `candidate:<foundation> <component-id> <protocol> <priority> <address> <port> typ <type> [tcptype active|passive|so] [raddr <address>] [rport <port>] [generation <num>] [network-cost <num>]`
  *
  * The first 6 tokens after `candidate:` are mandatory; `typ <type>` is
- * mandatory; `raddr` / `rport` / `generation` / `network-cost` are optional
- * keywords each followed by their own value. The regex below matches the
- * whole line. `foundation` is a 1-32 char string of alphanumerics and `+/`.
+ * mandatory; `tcptype` (RFC 6544, ICE-TCP), `raddr` / `rport` /
+ * `generation` / `network-cost` are optional keywords each followed by
+ * their own value. The regex below matches the whole line. `foundation`
+ * is a 1-32 char string of alphanumerics and `+/`.
  */
 const ICE_CANDIDATE_REGEX =
-  /^candidate:[A-Za-z0-9+/_-]{1,32} [0-9]+ (udp|UDP|tcp|TCP) [0-9]+ (\d+\.\d+\.\d+\.\d+|[0-9a-fA-F:]+) [0-9]+ typ (host|srflx|relay|prflx|HOST|SRFLX|RELAY|PRFLX)( raddr (\d+\.\d+\.\d+\.\d+|[0-9a-fA-F:]+))?( rport [0-9]+)?( generation [0-9]+)?( network-cost [0-9]+)?$/;
+  /^candidate:[A-Za-z0-9+/_-]{1,32} [0-9]+ (udp|UDP|tcp|TCP) [0-9]+ (\d+\.\d+\.\d+\.\d+|[0-9a-fA-F:]+) [0-9]+ typ (host|srflx|relay|prflx|HOST|SRFLX|RELAY|PRFLX)( tcptype (active|passive|so))?( raddr (\d+\.\d+\.\d+\.\d+|[0-9a-fA-F:]+))?( rport [0-9]+)?( generation [0-9]+)?( network-cost [0-9]+)?$/;
 
 /** Returns true when [sdp] is a non-empty string within the size cap. */
 export function validateSdpString(sdp: unknown): sdp is string {
@@ -146,9 +172,42 @@ async function handleCallInvite(
     payload.callerPeerId,
     displayName,
     payload.sdpOffer,
+    payload.iceServers,
   );
 
+  // Phase 42I — fire a VoIP push so the callee's iOS EnvoyGo app can wake
+  // from background/terminated and surface a CallKit screen. The push
+  // belongs on the CALLEE's home (this node), which is where the phone
+  // registered its VoIP token. It is suppressed when the phone already
+  // has an authenticated WS session, because the `call:incoming` event
+  // then reaches it directly and a push would only double-prompt.
+  dispatchIncomingCallPushIfOffline(deps, payload, displayName);
+
   return true;
+}
+
+function dispatchIncomingCallPushIfOffline(
+  deps: CallInboundDeps,
+  payload: { callId: string; callerOwnerId: string },
+  callerName: string,
+): void {
+  if (!deps.dispatchIncomingCallPush || !deps.calleeOwnerId) return;
+  const isOnline = deps.isDeviceOnline ?? (() => true);
+  if (isOnline(deps.calleeOwnerId)) return;
+  // Best-effort: never block the signaling path on push delivery.
+  void deps
+    .dispatchIncomingCallPush({
+      callId: payload.callId,
+      callerOwnerId: payload.callerOwnerId,
+      callerName,
+      calleeOwnerId: deps.calleeOwnerId,
+    })
+    .catch((err) => {
+      console.warn(
+        `${LOG} call.invite VoIP push dispatch failed:`,
+        err instanceof Error ? err.message : err,
+      );
+    });
 }
 
 // ------------------------------------------------------------------

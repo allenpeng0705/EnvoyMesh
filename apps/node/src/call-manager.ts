@@ -140,6 +140,7 @@ export class CallManager {
     callerPeerId: string,
     callerDisplayName: string,
     sdpOffer: string,
+    iceServers?: { urls: string; username?: string; credential?: string }[],
   ): string | null {
     // Deduplicate: same (callId, callerOwnerId) → ignore
     const existing = this._sessions.get(callId);
@@ -178,6 +179,7 @@ export class CallManager {
       peerDisplayName: callerDisplayName,
       callType: "audio",
       sdpOffer,
+      iceServers,
     });
 
     return callId;

@@ -62,6 +62,23 @@ class MockWebSocket implements WebSocketLike {
   @override
   void send(String data) {
     sentMessages.add(data);
+    // Auto-reply to getNodeConfig so _loadIceServers resolves promptly
+    // without the test having to simulate it. Returns an empty iceServers
+    // list, which the provider falls back from to the 3-STUN default.
+    // (Sent on the next microtask so onMessage is set, mirroring a real server.)
+    try {
+      final msg = jsonDecode(data) as Map<String, dynamic>;
+      if (msg['method'] == 'getNodeConfig' && msg['id'] != null) {
+        Future<void>.microtask(() {
+          onMessage?.call(WsMessageEvent(jsonEncode({
+            'id': msg['id'],
+            'result': <String, dynamic>{},
+          })));
+        });
+      }
+    } catch (_) {
+      // Not a JSON-RPC message — ignore.
+    }
   }
 
   @override
@@ -288,6 +305,43 @@ void main() {
       expect(provider.state.isIncoming, isFalse);
       expect(provider.state.isActive, isTrue);
       expect(provider.state.connectionState, 'connected');
+    });
+
+    test(
+        'acceptCall builds the transport with iceServers from the call:incoming envelope',
+        () async {
+      final mock = MockWebSocket();
+      final transports = <FakeTransport>[];
+      final provider = await buildProvider(mock: mock, transports: transports);
+
+      // The home embeds iceServers (e.g. a TURN entry) in the call:incoming
+      // event. The callee must build its RTCPeerConnection from THAT list,
+      // not a fresh lookup — so both ends agree on ICE config.
+      provider.handleTestEvent({
+        'type': 'call:incoming',
+        'callId': '55556666-5555-4666-8666-555566665555',
+        'peerOwnerId': 'envoy:owner:eve',
+        'peerDisplayName': 'Eve',
+        'sdpOffer': 'v=0\r\no=- remote-offer\r\n',
+        'iceServers': [
+          {'urls': 'turn:turn.example.com:3478', 'username': 'u', 'credential': 'c'},
+          {'urls': 'stun:stun.example.com:3478'},
+        ],
+      });
+
+      final acceptFuture = provider.acceptCall();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(transports, hasLength(1));
+      expect(transports.first.iceServers, hasLength(2));
+      expect(transports.first.iceServers.first.urls,
+          'turn:turn.example.com:3478');
+      expect(transports.first.iceServers.first.username, 'u');
+      expect(transports.first.iceServers.first.credential, 'c');
+
+      // Reply so acceptCallInvite resolves and the provider exits cleanly.
+      _replyToLast(mock, true);
+      expect(await acceptFuture, isTrue);
     });
 
     test('acceptCall returns false when no remote SDP is cached', () async {
@@ -737,6 +791,37 @@ void main() {
       );
       // The WebSocket-resolved name wins.
       expect(voipProvider.state.peerDisplayName, 'Bob (from ws)');
+    });
+  });
+
+  // Phase 42 — eventStream is a real stream (it used to be
+  // `const Stream.empty()`, which silently dropped every call:* event in
+  // production; tests hid the gap via handleTestEvent). This group drives
+  // the real HomeRemoteClient → NodeServiceClient.eventStream → CallProvider
+  // path.
+  group('eventStream (Phase 42 wiring)', () {
+    test('a call:incoming push over the WS reaches CallProvider via eventStream',
+        () async {
+      final mock = MockWebSocket();
+      final transports = <FakeTransport>[];
+      final provider = await buildProvider(mock: mock, transports: transports);
+
+      // Simulate the home pushing a call:incoming event over the WebSocket.
+      mock.simulateMessage({
+        'event': 'call:incoming',
+        'data': {
+          'type': 'call:incoming',
+          'callId': '77778888-7777-4888-8888-777788887777',
+          'peerOwnerId': 'envoy:owner:frank',
+          'peerDisplayName': 'Frank',
+          'sdpOffer': 'v=0\r\no=- frank-offer\r\n',
+        },
+      });
+      await Future<void>.delayed(Duration.zero);
+
+      expect(provider.state.callId, '77778888-7777-4888-8888-777788887777');
+      expect(provider.state.peerDisplayName, 'Frank');
+      expect(provider.state.isIncoming, isTrue);
     });
   });
 }

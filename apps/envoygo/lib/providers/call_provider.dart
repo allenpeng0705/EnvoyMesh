@@ -100,6 +100,18 @@ class CallProvider extends ChangeNotifier {
   /// Held on the provider (not the state) so it's not visible to UI
   /// consumers — only `acceptCall` reads it.
   String? _incomingRemoteSdp;
+  /// The `iceServers` the home embedded in the most recent `call:incoming`
+  /// event. Preferred over a fresh `_loadIceServers()` lookup on the callee
+  /// side, because it reflects exactly what the caller used (so both ends
+  /// build their `RTCPeerConnection` from the same ICE config).
+  List<IceServer> _incomingIceServers = const [];
+
+  /// Transport built mid-flight (between `_buildTransport()` and the
+  /// `sendCallInvite`/`acceptCallInvite` RPC reply). Held separately so
+  /// `_closeTransport()` (called from dispose() or a remote `call:ended`
+  /// event arriving during the RPC window) can close it instead of
+  /// leaking the `RTCPeerConnection` + `MediaStream`.
+  WebRtcCallTransport? _pendingTransport;
 
   CallProvider(this._nodeService, {this.transportFactory})
       : _audioSession = AudioSessionHelper() {
@@ -190,6 +202,7 @@ class CallProvider extends ChangeNotifier {
     switch (type) {
       case 'call:incoming':
         _incomingRemoteSdp = event['sdpOffer'] as String?;
+        _incomingIceServers = _parseIceServers(event['iceServers']);
         _state = _state.copyWith(
           callId: event['callId'] as String?,
           peerOwnerId: event['peerOwnerId'] as String?,
@@ -259,17 +272,63 @@ class CallProvider extends ChangeNotifier {
     return s.peerOwnerId != callerOwnerId;
   }
 
-  /// Look up the home's `iceServers` config (best-effort — falls back
-  /// to empty list if the RPC fails, in which case the home injects the
-  /// 3-server STUN default).
+  /// Parse a raw `iceServers` list (from a `call:incoming` event payload or
+  /// the node config RPC) into typed [IceServer]s. Tolerates missing/malformed
+  /// entries by skipping them.
+  List<IceServer> _parseIceServers(dynamic raw) {
+    if (raw is! List) return const [];
+    final out = <IceServer>[];
+    for (final entry in raw) {
+      if (entry is! Map) continue;
+      final urls = entry['urls'];
+      if (urls is! String || urls.isEmpty) continue;
+      out.add(IceServer(
+        urls: urls,
+        username: entry['username'] as String?,
+        credential: entry['credential'] as String?,
+      ));
+    }
+    return out;
+  }
+
+  /// Build a list of [IceServer]s for the caller side.
+  ///
+  /// Order of preference:
+  /// 1. The home's `nodeConfig.iceServers` (user-configured STUN/TURN).
+  /// 2. The hard-coded 3-server STUN default (Google / Cloudflare / Twilio),
+  ///    matching the home's `DEFAULT_ICE_SERVERS` so both ends build their
+  ///    `RTCPeerConnection` from the same ICE config when the user hasn't
+  ///    configured anything.
+  ///
+  /// Previously this returned `const []` — a stub that meant every non-LAN
+  /// call could only gather host candidates and never connected. The
+  /// callee side additionally prefers [_incomingIceServers] (from the
+  /// `call:incoming` envelope) in [acceptCall].
+  static const _defaultIceServers = [
+    IceServer(urls: 'stun:stun.l.google.com:19302'),
+    IceServer(urls: 'stun:stun.cloudflare.com:3478'),
+    IceServer(urls: 'stun:global.stun.twilio.com:3478'),
+  ];
+
   Future<List<IceServer>> _loadIceServers() async {
     try {
-      // The home exposes node config via the NodeServiceClient getNodeConfig
-      // path (used by the Social UI too). If a future refactor changes the
-      // API, the worst case is we return [] and let the home inject defaults.
-      return const [];
+      // Bounded timeout: a slow / unreachable home must not block call setup.
+      // 4s is generous for a LAN home and short enough that the caller falls
+      // back to the 3-STUN default promptly if the RPC stalls.
+      final config = await _nodeService
+          .getNodeConfig()
+          .timeout(const Duration(seconds: 4), onTimeout: () => const {});
+      final parsed = _parseIceServers(config['iceServers']);
+      if (parsed.isNotEmpty) return parsed;
+      return _defaultIceServers;
     } catch (_) {
-      return const [];
+      // Node config RPC unavailable / failed — fall back to the STUN default
+      // so the call still has a reasonable chance of connecting on LAN / most
+      // non-symmetric-NAT setups. The home would inject the same default if
+      // the envelope's list were empty, but the phone needs it locally too
+      // (the home's envelope default doesn't reach the caller's offer path
+      // before the offer is generated).
+      return _defaultIceServers;
     }
   }
 
@@ -296,11 +355,16 @@ class CallProvider extends ChangeNotifier {
       callId: tempCallId,
       iceServers: iceServers,
     );
+    // Stash on `_pendingTransport` so `_closeTransport()` (called from
+    // dispose() or a remote `call:ended` event during the RPC window)
+    // can close it instead of leaking the RTCPeerConnection + MediaStream.
+    _pendingTransport = transport;
 
     String sdpOffer;
     try {
       sdpOffer = await transport.startOffer();
     } catch (err) {
+      _pendingTransport = null;
       await transport.close();
       await _safeResetAudioSession();
       return null;
@@ -318,6 +382,7 @@ class CallProvider extends ChangeNotifier {
           .toList(),
     );
     if (callId == null) {
+      _pendingTransport = null;
       await transport.close();
       await _safeResetAudioSession();
       return null;
@@ -332,6 +397,8 @@ class CallProvider extends ChangeNotifier {
       connectionState: 'connecting',
       transport: transport,
     );
+    // Promoted to `_state.transport` — clear the in-flight handle.
+    _pendingTransport = null;
     notifyListeners();
     return callId;
   }
@@ -355,16 +422,24 @@ class CallProvider extends ChangeNotifier {
       print('[CallProvider] audio session configure failed');
     }
 
-    final iceServers = await _loadIceServers();
+    // Prefer the iceServers the home embedded in the `call:incoming` envelope
+    // — they reflect exactly what the caller used, so both ends agree on ICE
+    // config. Fall back to a fresh lookup (which itself falls back to the
+    // 3-STUN default) only if the envelope didn't carry any.
+    final iceServers = _incomingIceServers.isNotEmpty
+        ? _incomingIceServers
+        : await _loadIceServers();
     final transport = _buildTransport(
       callId: callId,
       iceServers: iceServers,
     );
+    _pendingTransport = transport;
 
     String sdpAnswer;
     try {
       sdpAnswer = await transport.startAnswer(remoteSdp);
     } catch (err) {
+      _pendingTransport = null;
       await transport.close();
       await _safeResetAudioSession();
       return false;
@@ -382,6 +457,7 @@ class CallProvider extends ChangeNotifier {
           .toList(),
     );
     if (!ok) {
+      _pendingTransport = null;
       await transport.close();
       await _safeResetAudioSession();
       return false;
@@ -394,7 +470,9 @@ class CallProvider extends ChangeNotifier {
       transport: transport,
       clearTransport: false,
     );
+    _pendingTransport = null;
     _incomingRemoteSdp = null;
+    _incomingIceServers = const [];
     notifyListeners();
     return true;
   }
@@ -426,7 +504,9 @@ class CallProvider extends ChangeNotifier {
   }
 
   /// Toggle mute on the local audio track and notify the peer via
-  /// `setCallMuted`.
+  /// `setCallMuted`. Rolls back the local track + state if the home
+  /// refuses the mute (e.g. the call ended concurrently), so the UI
+  /// never claims a mute succeeded when the peer wasn't told.
   Future<void> toggleMute() async {
     final callId = _state.callId;
     if (callId == null) return;
@@ -435,7 +515,22 @@ class CallProvider extends ChangeNotifier {
     if (transport is WebRtcCallTransport) {
       transport.setMute(newMuted);
     }
-    await _nodeService.setCallMuted(callId, newMuted);
+    try {
+      final ok = await _nodeService.setCallMuted(callId, newMuted);
+      if (!ok) {
+        // Home refused the mute — roll back the local track and state.
+        if (transport is WebRtcCallTransport) {
+          transport.setMute(!newMuted);
+        }
+        return;
+      }
+    } catch (_) {
+      // RPC failed — roll back so UI state stays consistent with reality.
+      if (transport is WebRtcCallTransport) {
+        transport.setMute(!newMuted);
+      }
+      return;
+    }
     _state = _state.copyWith(isMuted: newMuted);
     notifyListeners();
   }
@@ -444,12 +539,23 @@ class CallProvider extends ChangeNotifier {
   /// at this point because we haven't built one yet.
   void dismissIncoming() {
     _incomingRemoteSdp = null;
+    _incomingIceServers = const [];
     _state = CallState.idle();
     notifyListeners();
   }
 
   /// Tear down the active transport (best-effort).
   void _closeTransport() {
+    // Close the in-flight transport first (the one that's still being
+    // built during sendCallInvite/acceptCallInvite RPC round-trips);
+    // otherwise dispose() / a remote-end event during that window
+    // would leak the RTCPeerConnection + MediaStream.
+    final pending = _pendingTransport;
+    if (pending != null) {
+      _pendingTransport = null;
+      // ignore: unawaited_futures
+      pending.close();
+    }
     final transport = _state.transport;
     if (transport is WebRtcCallTransport) {
       // Fire-and-forget; close() is idempotent.

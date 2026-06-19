@@ -58,7 +58,14 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
     final visible = widget.callProvider.state.isIncoming;
     if (visible) {
       if (!_pulseCtrl.isAnimating) _pulseCtrl.repeat(reverse: true);
-      _ringTimer ??= Timer(const Duration(seconds: 60), () {
+      // Always cancel + re-arm the ring timer so a second incoming
+      // call that arrives while the overlay is already visible (the
+      // first timer hasn't fired yet) gets a full 60s instead of
+      // being auto-dismissed by the stale timer. The previous
+      // `_ringTimer ??= Timer(...)` skipped the reassignment and let
+      // the old timer fire against the new call.
+      _ringTimer?.cancel();
+      _ringTimer = Timer(const Duration(seconds: 60), () {
         if (mounted) widget.callProvider.dismissIncoming();
       });
     } else {
