@@ -31,18 +31,46 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
     _pulseAnim = Tween<double>(begin: 0.8, end: 1.0).animate(
       CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
     );
-    _pulseCtrl.repeat(reverse: true);
+    // The pulse + ring timer only run when the overlay is actually
+    // visible (state.isIncoming). This keeps the widget cheap when
+    // idle (it sits in the HomeScreen Stack permanently) and avoids
+    // binding-invariants failures in widget tests when no call is
+    // incoming.
+    widget.callProvider.addListener(_onProviderChanged);
+    _syncAnimationWithState();
+  }
 
-    // Auto-dismiss after 60 seconds (ring timeout)
-    _ringTimer = Timer(const Duration(seconds: 60), () {
-      if (mounted) {
-        widget.callProvider.dismissIncoming();
-      }
-    });
+  @override
+  void didUpdateWidget(covariant IncomingCallOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.callProvider != widget.callProvider) {
+      oldWidget.callProvider.removeListener(_onProviderChanged);
+      widget.callProvider.addListener(_onProviderChanged);
+    }
+    _syncAnimationWithState();
+  }
+
+  void _onProviderChanged() {
+    if (mounted) _syncAnimationWithState();
+  }
+
+  void _syncAnimationWithState() {
+    final visible = widget.callProvider.state.isIncoming;
+    if (visible) {
+      if (!_pulseCtrl.isAnimating) _pulseCtrl.repeat(reverse: true);
+      _ringTimer ??= Timer(const Duration(seconds: 60), () {
+        if (mounted) widget.callProvider.dismissIncoming();
+      });
+    } else {
+      if (_pulseCtrl.isAnimating) _pulseCtrl.stop();
+      _ringTimer?.cancel();
+      _ringTimer = null;
+    }
   }
 
   @override
   void dispose() {
+    widget.callProvider.removeListener(_onProviderChanged);
     _pulseCtrl.dispose();
     _ringTimer?.cancel();
     super.dispose();

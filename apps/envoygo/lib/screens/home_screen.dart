@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/chat_provider.dart';
+import '../providers/node_provider.dart';
 import '../widgets/connection_indicator.dart';
+import '../widgets/incoming_call_overlay.dart';
 import 'chat/chat_list_screen.dart';
 import 'inbox/inbox_screen.dart';
 import 'me/me_screen.dart';
@@ -14,6 +16,7 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final chatState = ref.watch(chatProvider);
+    final callProviderRef = ref.watch(callProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -23,12 +26,23 @@ class HomeScreen extends ConsumerWidget {
           SizedBox(width: 12),
         ],
       ),
-      body: IndexedStack(
-        index: chatState.selectedTab,
-        children: const [
-          ChatListScreen(),
-          InboxScreen(),
-          MeScreen(),
+      // Stack the IncomingCallOverlay above the IndexedStack so the
+      // ring overlay appears on top of whatever tab is currently
+      // visible. The overlay widget itself returns `SizedBox.shrink()`
+      // when no call is incoming, so this doesn't affect layout.
+      body: Stack(
+        children: [
+          IndexedStack(
+            index: chatState.selectedTab,
+            children: const [
+              ChatListScreen(),
+              InboxScreen(),
+              MeScreen(),
+            ],
+          ),
+          Positioned.fill(
+            child: IncomingCallOverlay(callProvider: callProviderRef),
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(

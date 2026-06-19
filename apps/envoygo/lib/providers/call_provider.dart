@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../models/call_event.dart';
+import '../services/audio_session_helper.dart';
 import '../services/node_service_client.dart';
 import '../webrtc_call_transport.dart';
 
@@ -20,6 +21,13 @@ class CallState {
   /// so the state class doesn't depend on the transport type at the
   /// field level — useful for tests that mock the provider.
   final Object? transport;
+  /// The peer's audio/video [MediaStream] from the active transport.
+  /// Phase 42F — the call screen binds this onto an [RTCVideoRenderer]
+  /// so the remote audio plays through the device speaker. Held as a
+  /// `dynamic` field to avoid forcing the state class to depend on
+  /// `flutter_webrtc` at compile time (callbacks that aren't used by
+  /// the call screen still work).
+  final dynamic remoteStream;
 
   const CallState({
     this.callId,
@@ -30,6 +38,7 @@ class CallState {
     this.isMuted = false,
     this.connectionState = 'disconnected',
     this.transport,
+    this.remoteStream,
   });
 
   CallState copyWith({
@@ -41,6 +50,7 @@ class CallState {
     bool? isMuted,
     String? connectionState,
     Object? transport,
+    dynamic remoteStream,
     bool clearTransport = false,
   }) {
     return CallState(
@@ -52,6 +62,7 @@ class CallState {
       isMuted: isMuted ?? this.isMuted,
       connectionState: connectionState ?? this.connectionState,
       transport: clearTransport ? null : (transport ?? this.transport),
+      remoteStream: remoteStream ?? this.remoteStream,
     );
   }
 
@@ -69,6 +80,7 @@ class CallState {
 /// runs.
 class CallProvider extends ChangeNotifier {
   final NodeServiceClient _nodeService;
+  final AudioSessionHelper _audioSession;
 
   /// Optional transport factory — production callers leave this null and
   /// use the default [WebRtcCallTransport] constructor. Tests inject a
@@ -89,13 +101,25 @@ class CallProvider extends ChangeNotifier {
   /// consumers — only `acceptCall` reads it.
   String? _incomingRemoteSdp;
 
-  CallProvider(this._nodeService, {this.transportFactory}) {
+  CallProvider(this._nodeService, {this.transportFactory})
+      : _audioSession = AudioSessionHelper() {
+    _sub = _nodeService.eventStream.listen(_onEvent);
+  }
+
+  /// Test seam — pass an [AudioSessionHelper] that talks to a mock
+  /// method channel so the helper can be exercised without iOS.
+  CallProvider.withAudioSession(
+    this._nodeService, {
+    required AudioSessionHelper audioSession,
+    this.transportFactory,
+  }) : _audioSession = audioSession {
     _sub = _nodeService.eventStream.listen(_onEvent);
   }
 
   /// No-op provider for when the node is disconnected.
   CallProvider.noop()
       : _nodeService = NodeServiceClient.noop(),
+        _audioSession = AudioSessionHelper(),
         transportFactory = null {
     // Don't subscribe — no connection.
   }
@@ -122,7 +146,12 @@ class CallProvider extends ChangeNotifier {
       return transportFactory!(
         callId: callId,
         iceServers: iceServers,
-        onRemoteStream: (_) {},
+        onRemoteStream: (stream) {
+          // Phase 42F — store the remote stream on state so the
+          // VoiceCallScreen can bind it to an RTCVideoRenderer.
+          _state = _state.copyWith(remoteStream: stream);
+          notifyListeners();
+        },
         onConnectionStateChange: (_) {},
         onSdpGenerated: (_, __) {},
         onIceCandidate: (_) {},
@@ -131,7 +160,12 @@ class CallProvider extends ChangeNotifier {
     return WebRtcCallTransport(
       callId: callId,
       iceServers: iceServers,
-      onRemoteStream: (_) {},
+      onRemoteStream: (stream) {
+        // Phase 42F — store the remote stream on state so the
+        // VoiceCallScreen can bind it to an RTCVideoRenderer.
+        _state = _state.copyWith(remoteStream: stream);
+        notifyListeners();
+      },
       onConnectionStateChange: (state) {
         // Map the WebRTC connection state onto the provider's coarse
         // "connecting"/"connected" string for the UI.
@@ -176,6 +210,8 @@ class CallProvider extends ChangeNotifier {
       case 'call:rejected':
       case 'call:error':
         _closeTransport();
+        // ignore: unawaited_futures
+        _safeResetAudioSession();
         _state = CallState.idle();
         break;
       case 'call:remote-mute':
@@ -204,6 +240,16 @@ class CallProvider extends ChangeNotifier {
   Future<String?> startCall(String targetOwnerId) async {
     final iceServers = await _loadIceServers();
 
+    // Configure the platform audio session for the voice call (no-op
+    // on non-iOS). Wrapped in try/catch — audio session config is a
+    // nice-to-have; a failure shouldn't block the call.
+    try {
+      await _audioSession.configureForVoiceCall();
+    } catch (_) {
+      // ignore: avoid_print
+      print('[CallProvider] audio session configure failed');
+    }
+
     // Build the transport up front so we can capture the offer SDP.
     // We use a temporary callId and let the home assign the real one
     // when we sendCallInvite.
@@ -218,6 +264,7 @@ class CallProvider extends ChangeNotifier {
       sdpOffer = await transport.startOffer();
     } catch (err) {
       await transport.close();
+      await _safeResetAudioSession();
       return null;
     }
 
@@ -234,6 +281,7 @@ class CallProvider extends ChangeNotifier {
     );
     if (callId == null) {
       await transport.close();
+      await _safeResetAudioSession();
       return null;
     }
 
@@ -262,6 +310,13 @@ class CallProvider extends ChangeNotifier {
     final remoteSdp = _incomingRemoteSdp;
     if (remoteSdp == null) return false;
 
+    try {
+      await _audioSession.configureForVoiceCall();
+    } catch (_) {
+      // ignore: avoid_print
+      print('[CallProvider] audio session configure failed');
+    }
+
     final iceServers = await _loadIceServers();
     final transport = _buildTransport(
       callId: callId,
@@ -273,6 +328,7 @@ class CallProvider extends ChangeNotifier {
       sdpAnswer = await transport.startAnswer(remoteSdp);
     } catch (err) {
       await transport.close();
+      await _safeResetAudioSession();
       return false;
     }
 
@@ -289,6 +345,7 @@ class CallProvider extends ChangeNotifier {
     );
     if (!ok) {
       await transport.close();
+      await _safeResetAudioSession();
       return false;
     }
 
@@ -310,6 +367,7 @@ class CallProvider extends ChangeNotifier {
     final callId = _state.callId;
     if (callId == null) return false;
     _closeTransport();
+    await _safeResetAudioSession();
     final ok = await _nodeService.declineCallInvite(callId, 'declined');
     if (ok) _state = CallState.idle();
     notifyListeners();
@@ -322,6 +380,7 @@ class CallProvider extends ChangeNotifier {
     final callId = _state.callId;
     if (callId == null) return false;
     _closeTransport();
+    await _safeResetAudioSession();
     final ok = await _nodeService.endCall(callId);
     if (ok) _state = CallState.idle();
     notifyListeners();
@@ -361,10 +420,24 @@ class CallProvider extends ChangeNotifier {
     }
   }
 
+  /// Reset the platform audio session. Safe to call when not on iOS —
+  /// the helper no-ops. Best-effort: failures are logged but don't
+  /// bubble up because the audio session is auxiliary to the call.
+  Future<void> _safeResetAudioSession() async {
+    try {
+      await _audioSession.reset();
+    } catch (_) {
+      // ignore: avoid_print
+      print('[CallProvider] audio session reset failed');
+    }
+  }
+
   @override
   void dispose() {
     _sub?.cancel();
     _closeTransport();
+    // ignore: unawaited_futures
+    _safeResetAudioSession();
     super.dispose();
   }
 }

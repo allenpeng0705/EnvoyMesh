@@ -12,6 +12,7 @@ import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
 import '../../widgets/chat_bubble.dart';
 import '../../widgets/chat_audio_player.dart';
+import '../call/voice_call_screen.dart';
 
 /// Chat detail view — message list with compose bar.
 ///
@@ -218,6 +219,15 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       appBar: AppBar(
         title: Text(widget.displayName),
         actions: [
+          // Phase 42F — voice call action for direct-message chats
+          // (not rooms / agents). Routes through CallProvider.startCall
+          // which generates the SDP and posts sendCallInvite.
+          if (!_isAgent && !_isRoom && widget.contactOwnerId != null)
+            IconButton(
+              icon: const Icon(Icons.call),
+              tooltip: 'Voice call',
+              onPressed: _startCall,
+            ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             tooltip: 'Clear thread',
@@ -340,6 +350,28 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     // Send as a data URI so ChatBubble can detect and render it.
     final text = 'data:image/jpeg;base64,$base64';
     _sendText(text);
+  }
+
+  /// Phase 42F — start an outbound voice call from this chat thread.
+  /// Delegates to [CallProvider.startCall] which builds the WebRTC
+  /// transport, generates the SDP offer, and posts sendCallInvite
+  /// to the home. On success we push the [VoiceCallScreen] so the
+  /// user sees the active-call UI right away.
+  Future<void> _startCall() async {
+    final contactOwnerId = widget.contactOwnerId;
+    if (contactOwnerId == null) return;
+    final callProviderRef = ref.read(callProvider);
+    final callId = await callProviderRef.startCall(contactOwnerId);
+    if (!mounted) return;
+    if (callId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to start call')),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const VoiceCallScreen()),
+    );
   }
 
   void _sendMessage() {

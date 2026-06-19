@@ -40,6 +40,8 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Scan the pairing QR code from your home node to connect.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Microphone access is used during voice calls so you can talk to your contacts.</string>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

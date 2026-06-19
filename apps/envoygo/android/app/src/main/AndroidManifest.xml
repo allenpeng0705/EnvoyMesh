@@ -1,4 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Phase 42F — voice calls. flutter_webrtc's getUserMedia prompts
+         the user at runtime; this permission must be declared for the
+         prompt to appear and for the mic to be opened. INTERNET is
+         required for the WebSocket transport that streams audio. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <application
         android:label="envoygo"
         android:name="${applicationName}"

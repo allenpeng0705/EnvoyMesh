@@ -1,4 +1,5 @@
 // Phase 42E — CallProvider drives WebRtcCallTransport.
+// Phase 42F — CallProvider drives AudioSessionHelper for AVAudioSession.
 //
 // Tests cover the provider lifecycle:
 //   startCall builds a transport, generates SDP, posts sendCallInvite,
@@ -9,21 +10,29 @@
 //   toggleMute flips setMute on the transport and posts setCallMuted.
 //   onEvent('call:ended') / ('call:rejected') close the transport
 //     and reset state, even when the user didn't drive the transition.
+//   42F — startCall / acceptCall configure AVAudioSession via the
+//     injected AudioSessionHelper; endCall / declineCall / dispose
+//     reset it; remote `call:ended`/`call:rejected`/`call:error` events
+//     also reset it.
 //
 // The transport is injected via the `transportFactory` hook so the
 // tests don't need flutter_webrtc (which requires real platform
 // channels). The NodeServiceClient is exercised through the
 // `MockWebSocket` + `HomeRemoteClient` pattern from
-// `node_service_client_test.dart`.
+// `node_service_client_test.dart`. The AudioSessionHelper is exercised
+// via the `CallProvider.withAudioSession` constructor + a mock
+// MethodChannel.
 
 import 'dart:convert';
 
 import 'package:envoygo/providers/call_provider.dart';
+import 'package:envoygo/services/audio_session_helper.dart';
 import 'package:envoygo/services/home_remote_client.dart';
 import 'package:envoygo/services/node_service_client.dart';
 import 'package:envoygo/services/web_socket_like.dart';
 import 'package:envoygo/models/call_event.dart';
 import 'package:envoygo/webrtc_call_transport.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Mock WebSocket — same pattern as `node_service_client_test.dart`.
@@ -182,6 +191,8 @@ class _StubTransport extends WebRtcCallTransport {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('CallProvider (Phase 42E)', () {
     test('startCall builds a transport, generates SDP, sends sendCallInvite',
         () async {
@@ -472,4 +483,217 @@ void main() {
       expect(transports, isEmpty);
     });
   });
+
+  group('CallProvider audio session (Phase 42F)', () {
+    /// Records audio-session method calls. Tests assert on this list
+    /// to verify the provider drives the AVAudioSession correctly.
+    final audioCalls = <MethodCall>[];
+    late MethodChannel audioChannel;
+    late AudioSessionHelper audioHelper;
+    late List<FakeTransport> transports;
+    late MockWebSocket mock;
+    late CallProvider provider;
+
+    setUp(() async {
+      audioCalls.clear();
+      audioChannel = const MethodChannel('envoygo/audio_session_provider_test');
+      TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(audioChannel, (call) async {
+        audioCalls.add(call);
+        return null;
+      });
+      audioHelper = AudioSessionHelper(
+        channelOverride: audioChannel,
+        forceEnabled: true,
+      );
+      mock = MockWebSocket();
+      transports = <FakeTransport>[];
+      provider = CallProvider.withAudioSession(
+        NodeServiceClient(await connectWithTrackedMock(mock)),
+        audioSession: audioHelper,
+        transportFactory: ({
+          required String callId,
+          required List<IceServer> iceServers,
+          required void Function(dynamic) onRemoteStream,
+          required void Function(dynamic) onConnectionStateChange,
+          required void Function(String, String) onSdpGenerated,
+          required void Function(CallIceCandidate) onIceCandidate,
+        }) {
+          final t = FakeTransport(callId: callId, iceServers: iceServers);
+          transports.add(t);
+          return _StubTransport(t);
+        },
+      );
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(audioChannel, null);
+      provider.dispose();
+    });
+
+    Future<void> _replyToSendCallInvite(String callId) async {
+      final sent = _lastSent(mock);
+      mock.simulateMessage({'id': sent['id'], 'result': callId});
+    }
+
+    test('startCall configures the audio session before posting sendCallInvite',
+        () async {
+      final future = provider.startCall('envoy:owner:bob');
+      // The provider calls configureForVoiceCall synchronously after
+      // the iceServers load; no transport work happens until the
+      // sendCallInvite reply, so by the time the provider awaits the
+      // JSON-RPC the audio session call is already on the channel.
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        audioCalls.map((c) => c.method).toList(),
+        contains('configureForVoiceCall'),
+      );
+      await _replyToSendCallInvite(
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      );
+      await future;
+    });
+
+    test('endCall resets the audio session', () async {
+      final startFuture = provider.startCall('envoy:owner:bob');
+      await Future<void>.delayed(Duration.zero);
+      await _replyToSendCallInvite(
+        'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      );
+      await startFuture;
+      audioCalls.clear();
+
+      final endFuture = provider.endCall();
+      await Future<void>.delayed(Duration.zero);
+      _replyToLast(mock, true);
+      await endFuture;
+
+      expect(
+        audioCalls.map((c) => c.method).toList(),
+        contains('reset'),
+      );
+    });
+
+    test('declineCall resets the audio session', () async {
+      provider.handleTestEvent({
+        'type': 'call:incoming',
+        'callId': 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        'peerOwnerId': 'envoy:owner:carol',
+        'peerDisplayName': 'Carol',
+        'sdpOffer': 'v=0\r\n',
+      });
+      audioCalls.clear();
+
+      final declineFuture = provider.declineCall();
+      await Future<void>.delayed(Duration.zero);
+      _replyToLast(mock, true);
+      await declineFuture;
+
+      expect(
+        audioCalls.map((c) => c.method).toList(),
+        contains('reset'),
+      );
+    });
+
+    test('call:ended event from the home resets the audio session',
+        () async {
+      final startFuture = provider.startCall('envoy:owner:bob');
+      await Future<void>.delayed(Duration.zero);
+      await _replyToSendCallInvite(
+        'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      );
+      await startFuture;
+      audioCalls.clear();
+
+      provider.handleTestEvent({
+        'type': 'call:ended',
+        'callId': 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        'reason': 'normal',
+      });
+
+      expect(
+        audioCalls.map((c) => c.method).toList(),
+        contains('reset'),
+      );
+    });
+
+    test('startCall failure during transport setup resets the audio session',
+        () async {
+      // Inject a transport factory that fails startOffer so the
+      // provider runs its audio-session reset path on the failure.
+      final failingProvider = CallProvider.withAudioSession(
+        NodeServiceClient(await connectWithTrackedMock(MockWebSocket())),
+        audioSession: audioHelper,
+        transportFactory: ({
+          required String callId,
+          required List<IceServer> iceServers,
+          required void Function(dynamic) onRemoteStream,
+          required void Function(dynamic) onConnectionStateChange,
+          required void Function(String, String) onSdpGenerated,
+          required void Function(CallIceCandidate) onIceCandidate,
+        }) {
+          final t = _FailingOfferTransport();
+          return _StubFailingTransport(t);
+        },
+      );
+
+      final callId =
+          await failingProvider.startCall('envoy:owner:bob');
+      expect(callId, isNull);
+      expect(
+        audioCalls.map((c) => c.method).toList(),
+        containsAll(['configureForVoiceCall', 'reset']),
+      );
+      failingProvider.dispose();
+    });
+  });
+}
+
+void _replyToLast(MockWebSocket mock, dynamic result) {
+  final sent = _lastSent(mock);
+  mock.simulateMessage({'id': sent['id'], 'result': result});
+}
+
+class _FailingOfferTransport {
+  bool closeCalled = false;
+  Future<String> startOffer() async {
+    throw Exception('mic denied');
+  }
+
+  Future<String> startAnswer(String remoteSdp) async => 'v=0\r\n';
+  void setMute(bool muted) {}
+  Future<void> close() async {
+    closeCalled = true;
+  }
+}
+
+class _StubFailingTransport extends WebRtcCallTransport {
+  final _FailingOfferTransport _inner;
+  _StubFailingTransport(this._inner)
+      : super(
+          callId: 'failing',
+          iceServers: const [],
+          onRemoteStream: (_) {},
+          onConnectionStateChange: (_) {},
+          onSdpGenerated: (_, __) {},
+          onIceCandidate: (_) {},
+          peerConnectionFactory: null,
+          getUserMedia: null,
+        );
+
+  @override
+  Future<String> startOffer() => _inner.startOffer();
+
+  @override
+  Future<String> startAnswer(String remoteSdp) =>
+      _inner.startAnswer(remoteSdp);
+
+  @override
+  void setMute(bool muted) => _inner.setMute(muted);
+
+  @override
+  Future<void> close() => _inner.close();
 }
