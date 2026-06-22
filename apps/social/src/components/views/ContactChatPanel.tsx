@@ -733,6 +733,14 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       ? "checking"
       : "offline";
 
+  const chatInputPlaceholder = !nodeMeshOnline
+    ? t("contactChat.inputOffline")
+    : !contactReachable && !reachabilityChecking
+      ? isHomeBridgeThread
+        ? t("contactChat.homeOfflineHint")
+        : t("contactChat.contactOfflineHint")
+      : t("contactChat.inputOnline");
+
   return (
     <>
       {/* Phase 38 — incoming call modal (shown over chat when a call arrives) */}
@@ -1010,13 +1018,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         {/* Floating overlays — render above the input row without pushing it down */}
         <div className="chat-composer-overlays">
           {sendError && <div className="chat-send-error">{sendError}</div>}
-          {!contactReachable && nodeMeshOnline && !reachabilityChecking && (
-            <div className="chat-reachability-hint">
-              {isHomeBridgeThread
-                ? t("contactChat.homeOfflineHint")
-                : t("contactChat.contactOfflineHint")}
-            </div>
-          )}
           {pendingOutbound.some((m) => m.metadata.deliveryReceipt === "pending") && (
             <div className="typing-indicator">
               <span /><span /><span />
@@ -1057,7 +1058,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
           value={chatInput}
           onChange={(next) => draftRef.current?.setPlainText(next)}
           onSend={handleSendMessage}
-          placeholder={nodeMeshOnline ? t("contactChat.inputOnline") : t("contactChat.inputOffline")}
+          placeholder={chatInputPlaceholder}
           sendLabel={t("contactChat.send")}
           disabled={!nodeMeshOnline}
           leading={
