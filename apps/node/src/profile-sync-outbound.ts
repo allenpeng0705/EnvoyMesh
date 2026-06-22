@@ -9,6 +9,7 @@ import {
 import type { NodeProfile } from "@envoymesh/api";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { derivePeerId } from "@envoymesh/identity";
+import { shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
 import { loadProfileThumbnailInline } from "./profile-thumbnail-inline.js";
 
 export async function buildSignedProfilePayloadEnvelope(input: {
@@ -116,7 +117,7 @@ export async function sendProfileRequest(input: {
   });
   const envelope = signUnsignedEnvelope(unsigned, input.profile.device.privateKeyPem);
   const dialHints = await input.dialHintsFor(input.transportPeerId, input.listenAddrs);
-  const preferCircuits = dialHints.some((h) => h.includes("/p2p-circuit/"));
+  const preferCircuits = shouldPreferCircuitDialHints(input.listenAddrs, dialHints, input.transportPeerId);
   const timeoutMs = input.timeoutMs ?? 30_000;
   if (typeof input.mesh.sendExpectReply !== "function") {
     await input.mesh.send(input.transportPeerId, envelope, { dialHints });

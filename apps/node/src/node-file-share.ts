@@ -8,6 +8,7 @@ import type { EnvoyMesh } from "@envoymesh/network";
 import { voucherJsonBytesFromObject } from "@envoymesh/network";
 import { ENVOY_DATA_PROTOCOL } from "@envoymesh/network/protocols";
 import type { NodeProfile, TransferStatus } from "@envoymesh/api";
+import { shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
 import { isSafeVaultPath } from "./share-inbound.js";
 
 /** Read a vault file and send it as verified chunks to `toPeerId` (FS-B). */
@@ -61,6 +62,7 @@ export async function sendVaultFileViaDataTransfer(input: {
   for (let offset = 0; offset < content.length; offset += chunkSize) {
     chunks.push(content.subarray(offset, Math.min(offset + chunkSize, content.length)));
   }
+  const preferCircuits = shouldPreferCircuitDialHints(undefined, dialHints ?? [], toPeerId);
   const latencyMs = await mesh.sendDataTransfer(
     toPeerId,
     voucherUtf8,
@@ -68,7 +70,7 @@ export async function sendVaultFileViaDataTransfer(input: {
     dialHints?.length
       ? {
           dialHints,
-          preferCircuitHints: dialHints.some((h) => h.includes("/p2p-circuit/")),
+          preferCircuitHints: preferCircuits,
         }
       : undefined,
   );

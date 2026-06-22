@@ -3465,7 +3465,9 @@ nodeService.on("bond:established", (data) => {
   console.log(`[index.ts] nodeService bond:established event fired, peerOwnerId=${data.peerOwnerId}`);
   wsServer.emitEvent("bond:established", data);
   if (nodeService instanceof NodeServiceImpl) {
-    void nodeService.refreshBondPeerProfiles();
+    void nodeService.refreshBondPeerProfiles().catch((err) => {
+      console.warn("[profile] refreshBondPeerProfiles after bond:established failed:", err);
+    });
   }
 });
 nodeService.on("config:updated", (data) => {

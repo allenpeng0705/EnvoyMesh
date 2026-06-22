@@ -632,13 +632,28 @@ function summarizeAgentCard(row: {
 /** Unblocks when an underlying `fs.readFile` or mutex never settles (seen on some Windows setups). */
 function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    let settled = false;
+    const t = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
     promise.then(
       (v) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         clearTimeout(t);
         resolve(v);
       },
       (e) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         clearTimeout(t);
         reject(e);
       },
@@ -1337,7 +1352,7 @@ class NodeServiceImpl implements NodeService {
     );
     const reachability = await mesh.ensurePeerReachable(input.remotePeerId, ENVOY_DATA_PROTOCOL, {
       dialHints,
-      preferCircuitHints: dialHints.some((h) => h.includes("/p2p-circuit/")),
+      preferCircuitHints: shouldPreferCircuitDialHints(undefined, dialHints, input.remotePeerId),
     });
     if (!reachability.connected) {
       console.warn(
@@ -2834,7 +2849,9 @@ class NodeServiceImpl implements NodeService {
     void this._flushPendingRoomSyncs();
     void this._flushPendingRoomMessages();
 
-    void this.refreshBondPeerProfiles();
+    void this.refreshBondPeerProfiles().catch((err) => {
+      console.warn("[profile] refreshBondPeerProfiles after hello accept failed:", err);
+    });
     void this._tagBondedContactReachability(pending.remotePeerId);
 
     // Remove from pending requests
@@ -10831,7 +10848,7 @@ class NodeServiceImpl implements NodeService {
       await this._deliverChatEnvelope(transportPeerId, envelope, hints);
     } else {
       const hints = dialHints ?? [];
-      const preferCircuits = hints.some((h) => h.includes("/p2p-circuit/"));
+      const preferCircuits = shouldPreferCircuitDialHints(undefined, hints, transportPeerId);
       await mesh.send(transportPeerId, envelope as any, {
         dialHints: hints,
         preferCircuitHints: preferCircuits,

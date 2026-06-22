@@ -157,9 +157,13 @@ export function createAgentCardAutoFetcher(
         deps.bridgeIdentity.agentPrivateKeyPem,
       );
 
+      const sendWork = deps.mesh.send(transportPeerId, envelope);
+      void sendWork.catch(() => {
+        /* late failure after Promise.race timeout — must not crash the process */
+      });
       try {
         await Promise.race([
-          deps.mesh.send(transportPeerId, envelope),
+          sendWork,
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error("agent-card-auto-fetch-timeout")), fetchTimeoutMs).unref?.(),
           ),

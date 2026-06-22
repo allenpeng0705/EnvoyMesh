@@ -97,13 +97,28 @@ const HINT_DIAL_TIMEOUT_MS = 3_500;
 
 function promiseWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    let settled = false;
+    const t = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
     promise.then(
       (v) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         clearTimeout(t);
         resolve(v);
       },
       (e: unknown) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         clearTimeout(t);
         reject(e);
       },
@@ -470,7 +485,7 @@ export class EnvoyMesh {
           out.push(raw);
         }
       }
-      return out;
+      return filterUsableOutboundPeerDialHints(out, idStr);
     } catch {
       return [];
     }
@@ -1290,6 +1305,9 @@ export class EnvoyMesh {
   ): Promise<{ stream: any; remotePeerId?: string }> {
     const node = this.requireNode();
     const peerIdStr = parsePeerIdFromDialTarget(target);
+    const hintList = sendOptions?.dialHints ?? [];
+    const skipLimitedReuse =
+      hasDirectTcpDialHints(hintList) && !sendOptions?.preferCircuitHints;
 
     if (peerIdStr && !sendOptions?.forceFreshDial) {
       const existing = this.findOpenConnectionToPeer(node, peerIdStr);
@@ -1300,11 +1318,13 @@ export class EnvoyMesh {
         }
       }
 
-      const limitedExisting = this.findLimitedConnectionToPeer(node, peerIdStr);
-      if (limitedExisting) {
-        const opened = await this.openStreamOnConnection(limitedExisting, protocol, true);
-        if (opened) {
-          return opened;
+      if (!skipLimitedReuse) {
+        const limitedExisting = this.findLimitedConnectionToPeer(node, peerIdStr);
+        if (limitedExisting) {
+          const opened = await this.openStreamOnConnection(limitedExisting, protocol, true);
+          if (opened) {
+            return opened;
+          }
         }
       }
     }
@@ -1319,7 +1339,7 @@ export class EnvoyMesh {
     protocol: string,
     sendOptions?: MeshOutboundOptions,
   ): Promise<{ stream: any; remotePeerId?: string }> {
-    const hintsRaw = sendOptions?.dialHints ?? [];
+    const hintsRaw = filterUsableOutboundPeerDialHints(sendOptions?.dialHints ?? [], peerIdStr);
     const barePeerDial = !target.trim().startsWith("/");
 
     const openStreamOnLimitedConn = async (): Promise<{ stream: any; remotePeerId?: string } | undefined> => {
@@ -1334,38 +1354,30 @@ export class EnvoyMesh {
     };
 
     const dialOnce = async (addr: Multiaddr | string): Promise<{ stream: any; remotePeerId?: string }> => {
-      try {
-        const stream = await promiseWithTimeout(
-          node.dialProtocol(addr as any, protocol),
-          HINT_DIAL_TIMEOUT_MS,
-          `dial ${String(addr).slice(0, 64)}`,
-        );
-        const s = stream as { connection?: { remotePeer?: { toString(): string } } };
-        const remotePeerId = s.connection?.remotePeer?.toString();
-        if (peerIdStr && remotePeerId && remotePeerId !== peerIdStr) {
-          try {
-            await stream.close();
-          } catch {
-            /* ignore */
-          }
-          throw new Error(`connected to ${remotePeerId.slice(0, 12)}…, expected ${peerIdStr.slice(0, 12)}…`);
+      const stream = await promiseWithTimeout(
+        node.dialProtocol(addr as any, protocol),
+        HINT_DIAL_TIMEOUT_MS,
+        `dial ${String(addr).slice(0, 64)}`,
+      );
+      const s = stream as { connection?: { remotePeer?: { toString(): string } } };
+      const remotePeerId = s.connection?.remotePeer?.toString();
+      if (peerIdStr && remotePeerId && remotePeerId !== peerIdStr) {
+        try {
+          await stream.close();
+        } catch {
+          /* ignore */
         }
-        if (!this.isOutboundStreamWritable(stream as { writeStatus?: string; status?: string })) {
-          await this.closeConnection(
-            s.connection as { close?: () => Promise<void> } | undefined,
-          );
-          throw new Error(
-            `dial opened non-writable stream status=${(stream as { status?: string }).status}`,
-          );
-        }
-        return { stream, remotePeerId };
-      } catch (e) {
-        const viaLimited = await openStreamOnLimitedConn();
-        if (viaLimited) {
-          return viaLimited;
-        }
-        throw e;
+        throw new Error(`connected to ${remotePeerId.slice(0, 12)}…, expected ${peerIdStr.slice(0, 12)}…`);
       }
+      if (!this.isOutboundStreamWritable(stream as { writeStatus?: string; status?: string })) {
+        await this.closeConnection(
+          s.connection as { close?: () => Promise<void> } | undefined,
+        );
+        throw new Error(
+          `dial opened non-writable stream status=${(stream as { status?: string }).status}`,
+        );
+      }
+      return { stream, remotePeerId };
     };
 
     // Peer-ID-less multiaddrs (e.g. WebTransport certhash addresses from the
@@ -1432,7 +1444,7 @@ export class EnvoyMesh {
       }
     }
 
-    const hints = preferNonLoopbackDialHints(sendOptions?.dialHints ?? []);
+    const hints = preferNonLoopbackDialHints(hintsRaw);
     for (const ma of dialHintsToMultiaddrs(sortDialHints(hints), peerIdStr)) {
       try {
         return await dialOnce(ma);
@@ -2155,10 +2167,28 @@ export function isUnusableBootstrapMultiaddr(addr: string): boolean {
   return false;
 }
 
-/** Browser/WebTransport multiaddrs from the public DHT — not dialable by desktop TCP nodes. */
+/** Browser/WebTransport/QUIC multiaddrs from the public DHT — not dialable by desktop TCP nodes. */
 export function isBrowserOnlyTransportDialHint(addr: string): boolean {
   const a = addr.trim();
-  return a.includes("/webtransport/") || a.includes("/certhash/");
+  return (
+    a.includes("/webtransport/") ||
+    a.includes("/certhash/") ||
+    a.includes("/quic-v1/") ||
+    a.includes("/quic/")
+  );
+}
+
+/**
+ * Circuit paths whose relay hop is not TCP (e.g. QUIC bootstrap relays from the public libp2p DHT).
+ * Desktop TCP nodes cannot open app streams on those limited relay connections.
+ */
+export function isUnusableDesktopCircuitDialHint(addr: string): boolean {
+  const a = addr.trim();
+  if (!a.includes("/p2p-circuit/")) {
+    return false;
+  }
+  const relayHop = a.split("/p2p-circuit/")[0] ?? "";
+  return !relayHop.includes("/tcp/");
 }
 
 /**
@@ -2196,7 +2226,11 @@ export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string
   if (isPublicLibp2pBootstrapMultiaddr(a) || a.includes("bootstrap.libp2p.io")) {
     return false;
   }
-  if (isBrowserOnlyTransportDialHint(a) || isIncompleteCircuitDialHint(a)) {
+  if (
+    isBrowserOnlyTransportDialHint(a) ||
+    isIncompleteCircuitDialHint(a) ||
+    isUnusableDesktopCircuitDialHint(a)
+  ) {
     return false;
   }
   if (targetPeerId?.trim()) {

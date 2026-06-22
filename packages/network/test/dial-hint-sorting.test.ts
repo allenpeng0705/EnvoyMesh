@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  filterUsableOutboundPeerDialHints,
   hasDirectPrivateLanDialHints,
   hasDirectTcpDialHints,
+  isBrowserOnlyTransportDialHint,
   isLoopbackOrUnspecifiedDialHint,
   isPrivateLanTcpDialHint,
   isQuicDialHint,
+  isUnusableDesktopCircuitDialHint,
+  isUsableOutboundPeerDialHint,
   preferNonLoopbackDialHints,
 } from "../src/index.js";
 
@@ -16,6 +20,7 @@ describe("dial hint sorting", () => {
 
     it("returns true for quic-v1 with peerid", () => {
       expect(isQuicDialHint("/ip4/1.2.3.4/udp/4000/quic-v1/p2p/12D3KooWTest")).toBe(true);
+      expect(isBrowserOnlyTransportDialHint("/ip4/1.2.3.4/udp/4000/quic-v1/p2p/12D3KooWTest")).toBe(true);
     });
 
     it("returns false for tcp-only multiaddr", () => {
@@ -154,6 +159,30 @@ describe("dial hint sorting", () => {
 
     it("returns empty array for empty input", () => {
       expect(preferNonLoopbackDialHints([])).toEqual([]);
+    });
+
+    it("filters QUIC bootstrap circuit paths for desktop outbound dials", () => {
+      const quicCircuit =
+        "/ip4/65.109.147.95/udp/4001/quic-v1/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWPeer";
+      const tcpCircuit =
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWPeer";
+      expect(isUnusableDesktopCircuitDialHint(quicCircuit)).toBe(true);
+      expect(isUnusableDesktopCircuitDialHint(tcpCircuit)).toBe(false);
+      expect(isUsableOutboundPeerDialHint(quicCircuit, "12D3KooWPeer")).toBe(false);
+      expect(isUsableOutboundPeerDialHint(tcpCircuit, "12D3KooWPeer")).toBe(true);
+      expect(
+        filterUsableOutboundPeerDialHints(
+          [
+            "/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWPeer",
+            quicCircuit,
+            tcpCircuit,
+          ],
+          "12D3KooWPeer",
+        ),
+      ).toEqual([
+        "/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWPeer",
+        tcpCircuit,
+      ]);
     });
 
     it("handles single hint", () => {
