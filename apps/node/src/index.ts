@@ -31,6 +31,7 @@ import {
   type RelayManagerRuntimeState,
   type ChatDraftStore,
   createAutoReplyLimitStore,
+  AUDIT_QUERY_INDEX_FILE,
 } from "@envoymesh/local-store";
 import {
   createAgentCredential,
@@ -116,7 +117,7 @@ import {
 } from "@envoymesh/protocol";
 import { buildVaultIndex } from "@envoymesh/vault";
 import { createHash, randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseNodeArgs, applyPersistedDiscoveryConfig, type NodeArgs } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
@@ -231,6 +232,20 @@ const args = parseNodeArgs(process.argv.slice(2));
 const profile = await loadOrCreateNodeProfile(args.profileDir);
 const taskDispatcher = createTaskDispatcher();
 const taskStore = createLocalTaskStore(args.profileDir);
+try {
+  const auditIndexPath = join(args.profileDir, AUDIT_QUERY_INDEX_FILE);
+  const auditIndexStat = await stat(auditIndexPath);
+  const auditIndexMb = auditIndexStat.size / (1024 * 1024);
+  if (auditIndexMb > 32) {
+    await unlink(auditIndexPath);
+    console.warn(
+      `[audit] removed bloated ${AUDIT_QUERY_INDEX_FILE} (${auditIndexMb.toFixed(0)}MB) — ` +
+        "wan-default inbound traffic was starving the Social WebSocket; index rebuilds on next query",
+    );
+  }
+} catch {
+  // missing index is fine
+}
 const trustStore = createLocalTrustStore(args.profileDir);
 const peerDirectoryStore = createLocalPeerDirectoryStore(args.profileDir);
 const humanProfileStore = createHumanProfileStore(args.profileDir);
@@ -368,13 +383,14 @@ async function refreshRagService(): Promise<void> {
         knowledgeBase: currentAiSettings?.knowledgeBase,
         modelProviders: currentModelProviders,
       });
-      await ragService.backfillChatHistory(chatLogStore);
     }
     if (vaultIndex) {
-      await ragService.reindexVault({
-        vaultIndex,
-        knowledgeBase: currentAiSettings?.knowledgeBase,
-      });
+      void ragService
+        .reindexVault({
+          vaultIndex,
+          knowledgeBase: currentAiSettings?.knowledgeBase,
+        })
+        .catch((err) => console.warn(`[rag] deferred vault reindex failed:`, err));
     }
   } catch (error) {
     console.warn(`[rag] service refresh failed:`, error);
@@ -486,6 +502,10 @@ if (peerDirCompact.addrsRemoved > 0) {
   console.log(
     `[peer-directory] compacted ${peerDirCompact.addrsRemoved} stale listen addrs across ${peerDirCompact.recordsTouched} record(s)`,
   );
+}
+const peerDirPrune = await peerDirectoryStore.capPeerRecordCount();
+if (peerDirPrune.recordsRemoved > 0) {
+  console.log(`[peer-directory] pruned ${peerDirPrune.recordsRemoved} oldest peer record(s)`);
 }
 const peerDirectoryRecords = await peerDirectoryStore.listPeerRecords();
 const peerDirectorySeedAddrs = peerDirectoryRecords.flatMap((record) => record.listenAddrs);
@@ -601,8 +621,6 @@ const seenMessageIds = new Set<string>();
 const MAX_SEEN_MESSAGE_IDS = 100_000;
 
 // Maximum payload size to prevent memory exhaustion (1MB)
-const MAX_ENVELOPE_BYTES = 1 * 1024 * 1024;
-
 function checkInboundRateLimit(peerId: string): boolean {
   if (!peerId || typeof peerId !== "string") {
     return false;
@@ -665,7 +683,7 @@ function markMessageSeen(messageId: string): void {
 
 /** Throttle peer-directory listen-addr merges — each merge rewrites the whole JSON file. */
 const lastListenAddrMergeByPeer = new Map<string, number>();
-const LISTEN_ADDR_MERGE_MIN_MS = 30_000;
+const LISTEN_ADDR_MERGE_MIN_MS = 120_000;
 
 let bootstrapReprobeTimer: ReturnType<typeof setTimeout> | undefined;
 let bootstrapReprobeCursor = 0;
@@ -742,7 +760,7 @@ mesh.onPeerDiscovered(async (peer) => {
   if (
     shouldRecordPeerDiscoveryAudit(peer.peerId, source, { force: args.peerDiscoveryLog })
   ) {
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "p2p.trace",
         remotePeerId: peer.peerId,
@@ -761,60 +779,24 @@ mesh.onPeerDiscovered(async (peer) => {
 // Bridge message handler — set to no-op until bridge is created below
 let bridgeHandleMessage: (envelope: any, remotePeerId: string) => Promise<void> = async () => {};
 
-mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelope, remoteAddr }) => {
+type InboundMeshMessageParams = {
+  envelope: EnvoyEnvelope;
+  remotePeerId: string;
+  replyWithEnvelope?: (envelope: EnvoyEnvelope) => Promise<void>;
+  remoteAddr?: string;
+};
+
+async function handleInboundMeshMessage({
+  envelope: inboundEnvelope,
+  remotePeerId,
+  replyWithEnvelope,
+  remoteAddr,
+}: InboundMeshMessageParams): Promise<void> {
   const receivedAt = Date.now();
-
-  // Guard: payload size limit to prevent memory exhaustion
-  try {
-    const payloadBytes = JSON.stringify(inboundEnvelope.payload).length;
-    if (payloadBytes > MAX_ENVELOPE_BYTES) {
-      console.warn(`[node] payload too large ${payloadBytes} > ${MAX_ENVELOPE_BYTES} bytes from ${remotePeerId}, dropping`);
-      return;
-    }
-  } catch {
-    console.warn(`[node] failed to measure payload size from ${remotePeerId}, dropping`);
-    return;
-  }
-
-  // Guard: deduplication — skip if we've already processed this message ID
-  if (isMessageSeen(inboundEnvelope.messageId)) {
-    return;
-  }
-
-  // Guard: per-peer rate limiting (profile + share handshakes exempt — UI polls / file accept)
-  const isRateLimitExemptIntent =
-    inboundEnvelope.intent === "profile.sync" ||
-    inboundEnvelope.intent === "profile.request" ||
-    inboundEnvelope.intent === "profile.response" ||
-    inboundEnvelope.intent === "share.preview" ||
-    inboundEnvelope.intent === "share.request" ||
-    inboundEnvelope.intent === "share.accept" ||
-    inboundEnvelope.intent === "chat.delivered";
-  if (!isRateLimitExemptIntent && !checkInboundRateLimit(remotePeerId)) {
-    console.warn(`[node] rate limited for peer ${remotePeerId}, dropping message`);
-    return;
-  }
-
-  markMessageSeen(inboundEnvelope.messageId);
 
   const guardDecision = inboundGuard.inspect(inboundEnvelope);
 
   if (guardDecision.action === "reject") {
-    await taskStore.appendAuditEvent(
-      createAuditEvent({
-        type: "message.rejected",
-        intent: inboundEnvelope.intent,
-        messageId: guardDecision.messageId ?? inboundEnvelope.messageId,
-        correlationId: inboundEnvelope.correlationId,
-        remotePeerId,
-        direction: "inbound",
-        verificationStatus: "rejected",
-        latencyMs: Date.now() - receivedAt,
-        outcome: "deny",
-        summary: `Rejected message: ${guardDecision.reason}.`,
-        createdAt: inboundEnvelope.createdAt,
-      }),
-    );
     console.warn(
       `[rejected] ${inboundEnvelope.intent} from ${inboundEnvelope.senderPeerId} via libp2p peer ${remotePeerId}: ${guardDecision.reason}`,
     );
@@ -844,7 +826,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
   const correlationId = deriveCorrelationIdFromEnvelope(envelope);
   const rolePolicyDecision = evaluateInboundEnvelopeRolePolicy(envelope);
   if (!rolePolicyDecision.ok) {
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.rejected",
         intent: envelope.intent,
@@ -923,7 +905,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       console.warn(
         `[rejected signal] from ${payload.ownerId}/${payload.deviceId} via libp2p peer ${remotePeerId}: unauthorized device`,
       );
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
           intent: envelope.intent,
@@ -945,7 +927,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       console.warn(
         `[rejected signal] from ${payload.ownerId}/${payload.deviceId}: ${capabilityDecision.reason}`,
       );
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
           intent: envelope.intent,
@@ -966,7 +948,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     console.log(
       `[verified signal] owner=${payload.ownerId} device=${payload.deviceId} profile=${payload.deviceProfile} capabilities=${payload.capabilities.join(",")}`,
     );
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.verified",
         intent: envelope.intent,
@@ -1001,7 +983,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         replyWithEnvelope,
       });
       if (handled) {
-        await taskStore.appendAuditEvent(
+        void taskStore.appendAuditEvent(
           createAuditEvent({
             type: "message.verified",
             intent: envelope.intent,
@@ -1026,7 +1008,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     console.log(
       `[verified ping] from ${envelope.senderPeerId} via libp2p peer ${remotePeerId}: ${payload.message ?? payload.nonce}`,
     );
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.verified",
         intent: envelope.intent,
@@ -1101,7 +1083,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       contactSyndicationMaxSensitivity,
     });
     if (!kq.ok) {
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
           intent: envelope.intent,
@@ -1131,7 +1113,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     });
     const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
     const latencyMs = await mesh.send(remotePeerId, signedResponse);
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.sent",
         intent: signedResponse.intent,
@@ -1209,7 +1191,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       capabilityManifest,
     });
     if (!share.ok) {
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
           intent: envelope.intent,
@@ -1251,7 +1233,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       );
     }
     const latencyMs = await mesh.send(remotePeerId, signedResponse, { dialHints: previewDialHints });
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.sent",
         intent: signedResponse.intent,
@@ -1372,7 +1354,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
   if (envelope.intent === "sync.state") {
     const syncResult = handleInboundSyncStateIntent({ envelope, profile });
     if (!syncResult.ok) {
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
           intent: envelope.intent,
@@ -1397,7 +1379,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         remotePeerId,
       });
     }
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.verified",
         intent: envelope.intent,
@@ -1440,7 +1422,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       },
     });
     if (!discovery.ok) {
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
           intent: envelope.intent,
@@ -1475,7 +1457,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       } else {
         latencyMs = await mesh.send(remotePeerId, signedResponse);
       }
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.sent",
           intent: signedResponse.intent,
@@ -1553,7 +1535,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         anonymousSensitivityCeiling: nodeConfig?.anonymousSensitivityCeiling ?? "public",
       });
       if (!result.ok) {
-        await taskStore.appendAuditEvent(
+        void taskStore.appendAuditEvent(
           createAuditEvent({
             type: "message.rejected",
             intent: envelope.intent,
@@ -1586,7 +1568,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         });
         const signedResponse = signEnv(unsignedResponse, profile.device.privateKeyPem);
         const latencyMs = await mesh.send(envelope.senderPeerId, signedResponse);
-        await taskStore.appendAuditEvent(
+        void taskStore.appendAuditEvent(
           createAuditEvent({
             type: "message.sent",
             intent: signedResponse.intent,
@@ -1655,7 +1637,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       relayMultiaddrs: relayDialMultiaddrsForCircuitRelay(mesh, args.advertiseAddrs),
     });
     if (!relayPeers.ok) {
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
           intent: envelope.intent,
@@ -1682,7 +1664,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         for (const addr of relayedAddrs) {
           try {
             await mesh.dial(addr);
-            await taskStore.appendAuditEvent(
+            void taskStore.appendAuditEvent(
               createAuditEvent({
                 type: "p2p.trace",
                 direction: "outbound",
@@ -1694,7 +1676,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
             );
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            await taskStore.appendAuditEvent(
+            void taskStore.appendAuditEvent(
               createAuditEvent({
                 type: "p2p.trace",
                 direction: "outbound",
@@ -1720,7 +1702,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       });
       const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
       const latencyMs = await mesh.send(remotePeerId, signedResponse);
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.sent",
           intent: signedResponse.intent,
@@ -1837,7 +1819,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     try {
       payload = parseChatMessagePayload(envelope.payload);
     } catch (error) {
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
           intent: envelope.intent,
@@ -1858,7 +1840,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
 
     const deviceAuth = await verifyInboundChatDevice(envelope, payload);
     if (!deviceAuth.ok) {
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
           intent: envelope.intent,
@@ -1919,7 +1901,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         .upsert(payload.senderOwnerId, payload.ownerPublicKeyPem)
         .catch((err) => console.warn(`[contact-owner-key] upsert failed:`, err));
     }
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.verified",
         intent: envelope.intent,
@@ -2265,7 +2247,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     const payload = parseDevicePairRequestPayload(envelope.payload);
     const expectedRequester = derivePeerId(payload.requesterDevicePublicKeyPem);
     if (expectedRequester !== envelope.senderPeerId) {
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
           intent: "device.pair.request",
@@ -2339,7 +2321,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       // token-mismatch, …) emit a `message.rejected` audit so the operator
       // can see why nothing happened.
       if (decision.reason === "token-mismatch" || decision.reason === "disabled") {
-        await taskStore.appendAuditEvent(
+        void taskStore.appendAuditEvent(
           createAuditEvent({
             type: "message.rejected",
             intent: "device.pair.request",
@@ -2371,7 +2353,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         peerId: remotePeerId,
         listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
       });
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.verified",
           intent: "device.pair.request",
@@ -2412,7 +2394,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         peerDeviceId: payload.requesterDeviceId,
       }),
     );
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.verified",
         intent: "device.pair.request",
@@ -2445,7 +2427,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
         profile.device.privateKeyPem,
       );
       const latencyMs = await mesh.send(remotePeerId, deferredEnvelope);
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.sent",
           intent: "device.pair.deferred",
@@ -2472,7 +2454,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       cert.ownerId !== profile.owner.ownerId ||
       !verifyDeviceCertificate(cert, profile.owner.publicKeyPem)
     ) {
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
           intent: "device.pair.approve",
@@ -2491,7 +2473,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     }
 
     await saveNodeProfile(args.profileDir, { ...profile, deviceCertificate: cert });
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.verified",
         intent: "device.pair.approve",
@@ -2512,7 +2494,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
 
   if (envelope.intent === "device.pair.deferred") {
     const payload = parseDevicePairDeferredPayload(envelope.payload);
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.verified",
         intent: "device.pair.deferred",
@@ -2561,7 +2543,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       },
     });
     if (!intro.ok) {
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
           intent: envelope.intent,
@@ -2656,7 +2638,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       },
     );
     if (!bond.ok) {
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.rejected",
           intent: envelope.intent,
@@ -2701,7 +2683,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
           config: undefined,
         });
         const latencyMs = await mesh.send(requesterPeerId, signedAccept, { dialHints });
-        await taskStore.appendAuditEvent(
+        void taskStore.appendAuditEvent(
           createAuditEvent({
             type: "message.sent",
             intent: signedAccept.intent,
@@ -2766,7 +2748,7 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     return;
   }
 
-  await taskStore.appendAuditEvent(
+  void taskStore.appendAuditEvent(
     createAuditEvent({
       type: "message.verified",
       intent: envelope.intent,
@@ -2782,6 +2764,54 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
     }),
   );
   console.log(`[verified message] ${envelope.intent} from ${envelope.senderPeerId}`);
+}
+
+/** Process one inbound libp2p message per event-loop turn so WS upgrade can interleave. */
+const MESH_INBOUND_QUEUE_MAX = 128;
+const meshInboundQueue: InboundMeshMessageParams[] = [];
+let meshInboundDrainScheduled = false;
+
+function scheduleMeshInboundDrain(): void {
+  if (meshInboundDrainScheduled) {
+    return;
+  }
+  meshInboundDrainScheduled = true;
+  setImmediate(() => {
+    meshInboundDrainScheduled = false;
+    const params = meshInboundQueue.shift();
+    if (!params) {
+      return;
+    }
+    void handleInboundMeshMessage(params).finally(() => {
+      if (meshInboundQueue.length > 0) {
+        scheduleMeshInboundDrain();
+      }
+    });
+  });
+}
+
+mesh.onMessage((params) => {
+  const { envelope: inboundEnvelope, remotePeerId } = params;
+  if (isMessageSeen(inboundEnvelope.messageId)) {
+    return;
+  }
+  const isRateLimitExemptIntent =
+    inboundEnvelope.intent === "profile.sync" ||
+    inboundEnvelope.intent === "profile.request" ||
+    inboundEnvelope.intent === "profile.response" ||
+    inboundEnvelope.intent === "share.preview" ||
+    inboundEnvelope.intent === "share.request" ||
+    inboundEnvelope.intent === "share.accept" ||
+    inboundEnvelope.intent === "chat.delivered";
+  if (!isRateLimitExemptIntent && !checkInboundRateLimit(remotePeerId)) {
+    return;
+  }
+  markMessageSeen(inboundEnvelope.messageId);
+  if (meshInboundQueue.length >= MESH_INBOUND_QUEUE_MAX) {
+    return;
+  }
+  meshInboundQueue.push(params);
+  scheduleMeshInboundDrain();
 });
 
 const approvalQueue = new ApprovalQueue();
@@ -2795,6 +2825,30 @@ const nodeService = createNodeService(
   profile,
   vaultDirForNode,
 );
+
+// Start Social WS as early as possible — RAG backfill and libp2p must not delay port 3030.
+const modeController = new ModeController(createDefaultModeConfig(), taskStore);
+const sessionManager = new SessionManager(new FileSessionStore(join(args.profileDir, "sessions")));
+const styleAdapter = new StyleAdapter();
+const triggerStore = new TriggerStore();
+const digestGenerator = new DigestGenerator(
+  createDefaultDigestConfig(join(args.profileDir, "digests")),
+);
+const wsServer = new WsServer(3030, "/ws", {
+  onConnectionChange: (connectedCount) => {
+    if (connectedCount > 0) {
+      modeController.markOwnerConnected();
+    } else {
+      modeController.markOwnerDisconnected();
+    }
+  },
+});
+wsServer.start(nodeService);
+wsServerForEvents = wsServer;
+if (nodeService instanceof NodeServiceImpl) {
+  nodeService.setWsListenAddress(3030, "/ws");
+}
+
 if (nodeService instanceof NodeServiceImpl) {
   emitRagReindexProgress = (progress) => {
     if (nodeService.hasListeners("rag:reindex")) {
@@ -2836,7 +2890,7 @@ if (nodeService instanceof NodeServiceImpl) {
   console.log(`[model] provider mode=${currentModelProviders.mode}`);
   console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
   console.log(`[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`);
-  await refreshRagService();
+  void refreshRagService();
 }
 
 // ── Public IP discovery ────────────────────────────────────────────────────────
@@ -3014,24 +3068,6 @@ rateLimitCleanupInterval = setInterval(() => {
 
 startEventLoopLagMonitor();
 
-// Start WebSocket server for app connections
-const modeController = new ModeController(createDefaultModeConfig(), taskStore);
-const sessionManager = new SessionManager(new FileSessionStore(join(args.profileDir, "sessions")));
-const styleAdapter = new StyleAdapter();
-const triggerStore = new TriggerStore();
-const digestGenerator = new DigestGenerator(
-  createDefaultDigestConfig(join(args.profileDir, "digests")),
-);
-const wsServer = new WsServer(3030, "/ws", {
-  onConnectionChange: (connectedCount) => {
-    if (connectedCount > 0) {
-      modeController.markOwnerConnected();
-    } else {
-      modeController.markOwnerDisconnected();
-    }
-  },
-});
-
 const { loadPersistedAssistState } = await import("./terminal-assist-persist.js");
 const initialAssistPersist = await loadPersistedAssistState(args.profileDir);
 let terminalAgentAssist!: TerminalAgentAssist;
@@ -3134,11 +3170,7 @@ const terminalWsServer = new TerminalWsServer({
 terminalWsServer.start();
 terminalManager.setTerminalWsListenAddress(TERMINAL_WS_PORT, "/ws/terminal");
 
-wsServer.start(nodeService);
-wsServerForEvents = wsServer;
-// Tell NodeServiceImpl the ws listen address so it can generate pairing QR data
 if (nodeService instanceof NodeServiceImpl) {
-  nodeService.setWsListenAddress(3030, "/ws");
   nodeService.setTerminalManager(terminalManager);
   nodeService.setTerminalAgentAssist(terminalAgentAssist);
 }
@@ -3676,7 +3708,7 @@ if (args.enableRelayServer && args.discoveryProfile === "wan-default" && args.ad
   );
 }
 
-await taskStore.appendAuditEvent(
+void taskStore.appendAuditEvent(
   createAuditEvent({
     type: "p2p.trace",
     direction: "outbound",
@@ -3687,7 +3719,7 @@ await taskStore.appendAuditEvent(
 );
 for (const warning of connectivityWarnings) {
   console.warn(`[connectivity warning] ${warning}`);
-  await taskStore.appendAuditEvent(
+  void taskStore.appendAuditEvent(
     createAuditEvent({
       type: "p2p.trace",
       direction: "outbound",
@@ -3710,7 +3742,7 @@ if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length > 
         const latencyMs = await mesh.probePeer(peer);
         pushBootstrapProbeResult({ peer, ok: true, latencyMs });
         await discoverySeedStore.upsertSuccess(peer, "bootstrap-probe");
-        await taskStore.appendAuditEvent(
+        void taskStore.appendAuditEvent(
           createAuditEvent({
             type: "p2p.trace",
             direction: "outbound",
@@ -3724,7 +3756,7 @@ if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length > 
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         pushBootstrapProbeResult({ peer, ok: false, error: message });
-        await taskStore.appendAuditEvent(
+        void taskStore.appendAuditEvent(
           createAuditEvent({
             type: "p2p.trace",
             direction: "outbound",
@@ -3848,7 +3880,7 @@ if (resolvedArgs.pingTarget) {
   const signedEnvelope = signUnsignedEnvelope(unsignedEnvelope, profile.device.privateKeyPem);
 
   const latencyMs = await mesh.send(resolvedArgs.pingTarget, signedEnvelope);
-  await taskStore.appendAuditEvent(
+  void taskStore.appendAuditEvent(
     createAuditEvent({
       type: "message.sent",
       intent: signedEnvelope.intent,
@@ -3889,7 +3921,7 @@ if (resolvedArgs.signalTarget) {
   const signedEnvelope = signUnsignedEnvelope(unsignedEnvelope, profile.device.privateKeyPem);
 
   const latencyMs = await mesh.send(resolvedArgs.signalTarget, signedEnvelope);
-  await taskStore.appendAuditEvent(
+  void taskStore.appendAuditEvent(
     createAuditEvent({
       type: "message.sent",
       intent: signedEnvelope.intent,
@@ -3920,7 +3952,7 @@ if (resolvedArgs.relayPeersQueryTarget) {
   const signedEnvelope = signUnsignedEnvelope(unsignedEnvelope, profile.device.privateKeyPem);
 
   const latencyMs = await mesh.send(resolvedArgs.relayPeersQueryTarget, signedEnvelope);
-  await taskStore.appendAuditEvent(
+  void taskStore.appendAuditEvent(
     createAuditEvent({
       type: "message.sent",
       intent: signedEnvelope.intent,
@@ -3948,7 +3980,7 @@ for (const outbound of buildOutboundCliEnvelopes(resolvedArgs, profile)) {
       console.warn(`[reachability] CLI outbound chat tag failed:`, err),
     );
   }
-  await taskStore.appendAuditEvent(
+  void taskStore.appendAuditEvent(
     createAuditEvent({
       type: "message.sent",
       intent: outbound.envelope.intent,
@@ -3990,7 +4022,7 @@ if (resolvedArgs.dataSendTarget && resolvedArgs.dataRelativePath) {
     chunks.push(content.subarray(offset, Math.min(offset + chunkSize, content.length)));
   }
   const latencyMs = await mesh.sendDataTransfer(resolvedArgs.dataSendTarget, voucherUtf8, chunks);
-  await taskStore.appendAuditEvent(
+  void taskStore.appendAuditEvent(
     createAuditEvent({
       type: "message.sent",
       intent: "sync.state",
@@ -4147,7 +4179,7 @@ function scheduleCapabilityDiscovery(): void {
     void runLocalCapabilityDiscoveryCycle("periodic")
       .catch(async (error) => {
         const message = error instanceof Error ? error.message : String(error);
-        await taskStore.appendAuditEvent(
+        void taskStore.appendAuditEvent(
           createAuditEvent({
             type: "p2p.trace",
             direction: "outbound",
@@ -4172,7 +4204,7 @@ function scheduleRelayPeersQuery(peers: string[]): void {
     void runRelayPeersQueryCycle("periodic")
       .catch(async (error) => {
         const message = error instanceof Error ? error.message : String(error);
-        await taskStore.appendAuditEvent(
+        void taskStore.appendAuditEvent(
           createAuditEvent({
             type: "p2p.trace",
             direction: "outbound",
@@ -4203,7 +4235,7 @@ async function runRelayPeersQueryCycle(source: "startup" | "periodic"): Promise<
 
     try {
       const latencyMs = await mesh.send(target, signedEnvelope);
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "p2p.trace",
           direction: "outbound",
@@ -4216,7 +4248,7 @@ async function runRelayPeersQueryCycle(source: "startup" | "periodic"): Promise<
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "p2p.trace",
           direction: "outbound",
@@ -4465,7 +4497,7 @@ async function exitForNodeSupervisor(reason: string): Promise<void> {
 }
 
 async function appendNodeHealthTrace(protocol: string, summary: string): Promise<void> {
-  await taskStore.appendAuditEvent(
+  void taskStore.appendAuditEvent(
     createAuditEvent({
       type: "p2p.trace",
       direction: "outbound",
@@ -4630,7 +4662,7 @@ async function runRelayManagerSnapshotCycle(source: "startup" | "periodic"): Pro
     auditEvents,
     runtime: buildRelayManagerRuntimeState(),
   });
-  await taskStore.appendAuditEvent(
+  void taskStore.appendAuditEvent(
     createAuditEvent({
       type: "p2p.trace",
       direction: "outbound",
@@ -5044,7 +5076,7 @@ async function handleRelayControlEnvelope(input: {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.rejected",
         intent: envelope.intent,
@@ -5263,7 +5295,7 @@ async function appendRelayInboundAudit(
   correlationId: string | undefined,
   summary: string,
 ): Promise<void> {
-  await taskStore.appendAuditEvent(
+  void taskStore.appendAuditEvent(
     createAuditEvent({
       type: "message.verified",
       intent: envelope.intent,
@@ -5362,7 +5394,7 @@ async function relayTaskCancelIfNeeded(input: {
         profile.device.privateKeyPem,
       );
       const latencyMs = await mesh.send(targetPeer, signed);
-      await taskStore.appendAuditEvent(
+      void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.sent",
           intent: "task.cancel",
@@ -5414,7 +5446,7 @@ async function appendP2pTrace(event: P2pDebugEvent): Promise<void> {
     summaryParts.push(`direction=${event.direction}`);
   }
 
-  await taskStore.appendAuditEvent(
+  void taskStore.appendAuditEvent(
     createAuditEvent({
       type: "p2p.trace",
       remotePeerId: "remotePeerId" in event ? event.remotePeerId : undefined,
@@ -5552,7 +5584,7 @@ async function appendRelayTrace(
   latencyMs?: number,
 ): Promise<void> {
   try {
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "p2p.trace",
         direction: "outbound",
@@ -5603,7 +5635,7 @@ async function runBootstrapReprobe(peers: string[]): Promise<void> {
     const latencyMs = await mesh.probePeer(peer);
     pushBootstrapProbeResult({ peer, ok: true, latencyMs });
     await discoverySeedStore.upsertSuccess(peer, "bootstrap-probe");
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "p2p.trace",
         direction: "outbound",
@@ -5617,7 +5649,7 @@ async function runBootstrapReprobe(peers: string[]): Promise<void> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     pushBootstrapProbeResult({ peer, ok: false, error: message });
-    await taskStore.appendAuditEvent(
+    void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "p2p.trace",
         direction: "outbound",

@@ -524,9 +524,11 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
   };
 
   if (input.chatLogStore) {
-    void service.backfillChatHistory(input.chatLogStore).catch((error) =>
-      console.warn(`[rag] chat backfill failed: ${error}`),
-    );
+    setTimeout(() => {
+      void service.backfillChatHistory(input.chatLogStore!).catch((error) =>
+        console.warn(`[rag] chat backfill failed: ${error}`),
+      );
+    }, 120_000);
   }
 
   return service;

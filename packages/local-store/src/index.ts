@@ -956,6 +956,9 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     },
 
     async appendAuditEvent(event) {
+      if (event.type === "p2p.trace" || event.type === "message.rejected") {
+        return;
+      }
       await appendAuditQueued(event);
       await appendAuditIndexQueued(auditEventToIndexEntry(event));
     },
@@ -1403,6 +1406,8 @@ export interface LocalPeerDirectoryStore {
   mergeListenAddrsForPeerId(peerId: string, addrs: string[]): Promise<void>;
   /** Cap stored listen addrs per peer (repairs bloated directories from pre-cap merges). */
   compactListenAddrs(maxPerRecord?: number): Promise<{ recordsTouched: number; addrsRemoved: number }>;
+  /** Drop oldest peer rows when the directory grows too large (repairs WAN discovery bloat). */
+  capPeerRecordCount(maxRecords?: number): Promise<{ recordsRemoved: number }>;
   /**
    * Learn device signing key from a verified inbound human envelope (`senderPublicKey`).
    * Repairs placeholder rows created by {@link ensurePeerFromInboundChat} (`deviceId: chat-inbound`,
@@ -1826,7 +1831,7 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
       await withDirectory(async (file) => {
         let dirty = false;
         for (const record of file.records) {
-          const capped = capPeerListenAddrs(record.listenAddrs);
+          const capped = capPeerListenAddrs(record.listenAddrs, maxPerRecord);
           const removed = record.listenAddrs.length - capped.length;
           if (removed <= 0) {
             continue;
@@ -1841,6 +1846,20 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         }
       });
       return { recordsTouched, addrsRemoved };
+    },
+
+    async capPeerRecordCount(maxRecords = MAX_PEER_DIRECTORY_RECORDS) {
+      let recordsRemoved = 0;
+      await withDirectory(async (file) => {
+        if (file.records.length <= maxRecords) {
+          return;
+        }
+        file.records.sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+        recordsRemoved = file.records.length - maxRecords;
+        file.records = file.records.slice(0, maxRecords);
+        await writePeerDirectoryFileAtomic(directoryPath, file);
+      });
+      return { recordsRemoved };
     },
 
     async mergeInboundDeviceBinding(input) {
@@ -1988,9 +2007,11 @@ function filterDialableListenAddrs(addrs: string[]): string[] {
 
 /** Max dial hints retained per peer row — matches ensurePeerFromInboundChat / bond paths. */
 export const MAX_PEER_LISTEN_ADDRS_PER_RECORD = 8;
+/** Max peer rows retained on disk — WAN DHT discovery can accumulate thousands of ephemeral peers. */
+export const MAX_PEER_DIRECTORY_RECORDS = 500;
 
-function capPeerListenAddrs(addrs: string[]): string[] {
-  return filterDialableListenAddrs(addrs).slice(-MAX_PEER_LISTEN_ADDRS_PER_RECORD);
+function capPeerListenAddrs(addrs: string[], maxPerRecord = MAX_PEER_LISTEN_ADDRS_PER_RECORD): string[] {
+  return filterDialableListenAddrs(addrs).slice(-maxPerRecord);
 }
 
 export function parseTrustLevel(value: string): TrustRecord["level"] {

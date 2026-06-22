@@ -37,6 +37,19 @@ function inboundIntentFromUnknown(input: unknown): string | undefined {
   return typeof intent === "string" ? intent : undefined;
 }
 
+/**
+ * Payload dominates envelope size; fixed overhead covers signatures, PEM keys, metadata.
+ */
+function estimateEnvelopeUtf8Bytes(input: unknown, abortAbove: number): number {
+  if (input == null || typeof input !== "object") {
+    return Buffer.byteLength(JSON.stringify(input), "utf8");
+  }
+  const obj = input as { payload?: unknown };
+  const payloadBytes = Buffer.byteLength(JSON.stringify(obj.payload ?? null), "utf8");
+  const byteLength = payloadBytes + 4096;
+  return byteLength > abortAbove ? byteLength : byteLength;
+}
+
 export function createInboundMessageGuard(
   options: InboundMessageGuardOptions = {},
 ): InboundMessageGuard {
@@ -47,9 +60,9 @@ export function createInboundMessageGuard(
 
   return {
     inspect(input) {
-      const byteLength = Buffer.byteLength(JSON.stringify(input), "utf8");
       const intentHint = inboundIntentFromUnknown(input);
       const sizeLimit = maxBytesForInboundIntent(intentHint, maxEnvelopeBytes);
+      const byteLength = estimateEnvelopeUtf8Bytes(input, sizeLimit + 1);
 
       if (byteLength > sizeLimit) {
         return { action: "reject", reason: "envelope exceeds maximum size" };
