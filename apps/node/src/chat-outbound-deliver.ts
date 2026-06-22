@@ -3,6 +3,7 @@ import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { ENVOY_MESSAGE_PROTOCOL, prioritizeCircuitDialHints } from "@envoymesh/network";
 import { parseChatDeliveredAck } from "@envoymesh/api/chat-delivered";
+
 import { shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
 
 const CHAT_SEND_MAX_ATTEMPTS = 3;
@@ -95,22 +96,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
     } else {
       const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
       try {
-        if (conn.connected && conn.direct) {
-          /* Trust existing LAN direct path — stream probes can false-fail. */
-        } else if (conn.connected) {
-          const verified = await input.mesh.ensurePeerReachable(
-            input.transportPeerId,
-            input.chatProtocol,
-            { verifyConnection: true },
-          );
-          if (!verified.connected) {
-            await input.mesh.closeConnectionsToPeer(input.transportPeerId);
-            await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
-              dialHints: hints,
-              preferCircuitHints: preferCircuits,
-            });
-          }
-        } else {
+        if (!conn.connected) {
           await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
             dialHints: hints,
             preferCircuitHints: preferCircuits,
@@ -124,8 +110,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
       }
     }
 
-    const preferCircuitsOnAttempt =
-      (attempt === 0 ? preferCircuits : false) || attempt > 0;
+    const preferCircuitsOnAttempt = preferCircuits || attempt > 0;
     const forceFreshDial = attempt > 0;
     let usedAck = false;
 

@@ -777,7 +777,7 @@ function createWsNodeServiceClient(
           ...(options?.redial ? { redial: true } : {}),
           ...(options?.verifyOnly ? { verifyOnly: true } : {}),
         },
-        { timeoutMs: options?.redial ? 90_000 : options?.verifyOnly ? 20_000 : 25_000 },
+        { timeoutMs: 90_000 },
       );
     },
     async getChatDiagnostics(peerOwnerId?: string) {

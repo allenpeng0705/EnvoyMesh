@@ -60,4 +60,10 @@ describe("pickBestLibp2pPeerDirectoryRecord", () => {
     expect(recipient).toBeTruthy();
     expect(recipient).not.toBe("12D3KooWWinStaleConnected");
   });
+
+  it("omits recipientPeerId when no device key is known (avoids misaddressed drops)", () => {
+    const ownerId = "envoy_1KoMqLW3ZC7LAhZGVvWvu7vsSYe7wHnkiVQmby3v_Y0";
+    const records = [{ ownerId, peerId: "12D3KooWWin", lastSeenAt: "2026-05-29T12:00:00.000Z" }];
+    expect(resolveRecipientEnvelopePeerId(records, ownerId, "12D3KooWWin")).toBeUndefined();
+  });
 });

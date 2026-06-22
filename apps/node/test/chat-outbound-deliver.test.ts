@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  deliverCallEnvelopeWithRetry,
   deliverChatEnvelopeWithRetry,
   isChatAckFailureLikelyAfterWrite,
   rotateDialHintsForRetry,
@@ -163,5 +164,77 @@ describe("deliverChatEnvelopeWithRetry", () => {
     expect(sendChatExpectReply).toHaveBeenCalledTimes(1);
     expect(sendChat).not.toHaveBeenCalled();
     expect(result).toEqual({ delivered: false });
+  });
+});
+
+describe("deliverCallEnvelopeWithRetry (Phase 42A — call.* on message protocol)", () => {
+  const callEnvelope = { intent: "call.invite" } as EnvoyEnvelope;
+
+  it("uses mesh.send (not sendChat) for call envelopes", async () => {
+    const send = vi.fn().mockResolvedValue({ connected: true, direct: true });
+    const sendChat = vi.fn();
+    const mesh = {
+      send,
+      sendChat,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: true }),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: true }),
+    };
+
+    const result = await deliverCallEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWCallPeer",
+      envelope: callEnvelope,
+      dialHints: ["/p2p/12D3KooWCallPeer"],
+      maxAttempts: 1,
+    });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(sendChat).not.toHaveBeenCalled();
+    expect(result.delivered).toBe(true);
+  });
+
+  it("warms before first send when not connected (same as pre-merge chat path)", async () => {
+    const send = vi.fn().mockResolvedValue({ connected: true, direct: true });
+    const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: true });
+    const mesh = {
+      send,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
+    };
+
+    await deliverCallEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWWarmCallPeer",
+      envelope: callEnvelope,
+      dialHints: ["/p2p/12D3KooWWarmCallPeer"],
+      maxAttempts: 1,
+    });
+
+    expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips warm when already connected (pre-merge stable-LAN behavior)", async () => {
+    const send = vi.fn().mockResolvedValue({ connected: true, direct: true });
+    const ensurePeerReachable = vi.fn();
+    const mesh = {
+      send,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: true }),
+    };
+
+    await deliverCallEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWConnectedCallPeer",
+      envelope: callEnvelope,
+      dialHints: ["/p2p/12D3KooWConnectedCallPeer"],
+      maxAttempts: 1,
+    });
+
+    expect(ensurePeerReachable).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });

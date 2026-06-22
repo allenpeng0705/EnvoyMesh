@@ -2916,37 +2916,30 @@ class NodeServiceImpl implements NodeService {
     recipientEnvelopePeerId: string | undefined;
     listenAddrs: string[] | undefined;
   }> {
-    const records = await raceWithTimeout(
-      this._peerDirectoryStore.listPeerRecords(),
-      25_000,
-      "listPeerRecords",
-    );
-    const ownerListenAddrs = records
-      .filter((r) => r.ownerId === targetOwnerId)
-      .flatMap((r) => r.listenAddrs ?? []);
+    const mesh = this._reachableMesh();
+    const isConnected = mesh
+      ? (peerId: string) => mesh.getPeerConnectionInfo(peerId).connected
+      : undefined;
 
-    let cachedTransport = this._lastLibp2pTransportByOwner.get(targetOwnerId);
-    const bestDir = pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId);
-    if (cachedTransport && isLibp2pPeerId(cachedTransport.peerId) && bestDir) {
-      const mesh = this._reachableMesh();
-      const cachedConnected =
-        mesh?.getPeerConnectionInfo(cachedTransport.peerId).connected ?? false;
-      if (bestDir.peerId !== cachedTransport.peerId && !cachedConnected) {
-        this._lastLibp2pTransportByOwner.delete(targetOwnerId);
-        cachedTransport = undefined;
-      }
-    }
-
+    const cachedTransport = this._lastLibp2pTransportByOwner.get(targetOwnerId);
     if (cachedTransport && isLibp2pPeerId(cachedTransport.peerId)) {
-      const dirRow =
-        records.find(
-          (r) => r.ownerId === targetOwnerId && r.peerId === cachedTransport!.peerId,
-        ) ?? records.find((r) => r.peerId === cachedTransport!.peerId);
-      const recipientEnvelopePeerId = resolveRecipientEnvelopePeerId(
-        records,
-        targetOwnerId,
-        cachedTransport.peerId,
+      const records = await raceWithTimeout(
+        this._peerDirectoryStore.listPeerRecords(),
+        25_000,
+        "listPeerRecords",
       );
+      let dirRow = records.find(
+        (r) => r.ownerId === targetOwnerId && r.peerId === cachedTransport.peerId,
+      );
+      if (!dirRow) {
+        dirRow = records.find((r) => r.peerId === cachedTransport.peerId);
+      }
+      if (!dirRow) {
+        dirRow = pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected });
+      }
+      const ownerListenAddrs = records
+        .filter((r) => r.ownerId === targetOwnerId)
+        .flatMap((r) => r.listenAddrs ?? []);
       const listenAddrs = mergeDialablePeerListenAddrs(
         cachedTransport.peerId,
         cachedTransport.listenAddrs,
@@ -2955,7 +2948,11 @@ class NodeServiceImpl implements NodeService {
       );
       return {
         transportPeerId: cachedTransport.peerId,
-        recipientEnvelopePeerId,
+        recipientEnvelopePeerId: resolveRecipientEnvelopePeerId(
+          records,
+          targetOwnerId,
+          cachedTransport.peerId,
+        ),
         listenAddrs: listenAddrs.length ? listenAddrs : undefined,
       };
     }
@@ -2971,34 +2968,95 @@ class NodeServiceImpl implements NodeService {
       throw err;
     }
     if (!targetPeer) {
+      const records = await raceWithTimeout(this._peerDirectoryStore.listPeerRecords(), 25_000, "listPeerRecords");
       targetPeer =
-        bestDir ??
+        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected }) ??
         records.find((r) => r.ownerId === targetOwnerId) ??
         records.find((r) => r.peerId === targetOwnerId) ??
         undefined;
     } else if (!isLibp2pPeerId(targetPeer.peerId)) {
-      targetPeer = bestDir ?? targetPeer;
+      const records = await raceWithTimeout(this._peerDirectoryStore.listPeerRecords(), 25_000, "listPeerRecords");
+      targetPeer =
+        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected }) ?? targetPeer;
     }
     if (!targetPeer?.peerId) {
       throw new Error(`Peer not found for owner: ${targetOwnerId}`);
     }
     const transportPeerId = targetPeer.peerId;
     if (!isLibp2pPeerId(transportPeerId)) {
+      const meshConn = this._reachableMesh();
+      if (meshConn) {
+        const records = await this._peerDirectoryStore.listPeerRecords();
+        for (const rec of records.filter((r) => r.ownerId === targetOwnerId && isLibp2pPeerId(r.peerId))) {
+          const info = meshConn.getPeerConnectionInfo(rec.peerId);
+          if (info.connected) {
+            const listenAddrs = mergeDialablePeerListenAddrs(
+              rec.peerId,
+              rec.listenAddrs,
+              records.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
+            );
+            return {
+              transportPeerId: rec.peerId,
+              recipientEnvelopePeerId: resolveRecipientEnvelopePeerId(records, targetOwnerId, rec.peerId),
+              listenAddrs: listenAddrs.length ? listenAddrs : undefined,
+            };
+          }
+        }
+      }
       throw new Error(`Peer directory has Envoy envelope id for this owner (not libp2p).`);
     }
-    const recipientEnvelopePeerId = resolveRecipientEnvelopePeerId(
-      records,
-      targetOwnerId,
-      transportPeerId,
+    const allRecords = await raceWithTimeout(
+      this._peerDirectoryStore.listPeerRecords(),
+      25_000,
+      "listPeerRecords",
     );
-    const listenAddrs = mergeDialablePeerListenAddrs(
+    let listenAddrs = mergeDialablePeerListenAddrs(
       transportPeerId,
       targetPeer.listenAddrs,
-      ownerListenAddrs,
+      allRecords.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
     );
+    return this._finalizePeerTransportResolve(
+      targetOwnerId,
+      transportPeerId,
+      allRecords,
+      listenAddrs,
+      isConnected,
+    );
+  }
+
+  /** Prefer a live libp2p connection for this owner when the primary route is down. */
+  private _finalizePeerTransportResolve(
+    targetOwnerId: string,
+    transportPeerId: string,
+    records: Awaited<ReturnType<LocalPeerDirectoryStore["listPeerRecords"]>>,
+    listenAddrs: string[],
+    isConnected: ((peerId: string) => boolean) | undefined,
+  ): {
+    transportPeerId: string;
+    recipientEnvelopePeerId: string | undefined;
+    listenAddrs: string[] | undefined;
+  } {
+    if (isConnected && !isConnected(transportPeerId)) {
+      const connected = records
+        .filter((r) => r.ownerId === targetOwnerId && isLibp2pPeerId(r.peerId) && isConnected(r.peerId))
+        .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+      const live = connected[0];
+      if (live) {
+        const merged = mergeDialablePeerListenAddrs(
+          live.peerId,
+          live.listenAddrs,
+          records.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
+        );
+        return {
+          transportPeerId: live.peerId,
+          recipientEnvelopePeerId: resolveRecipientEnvelopePeerId(records, targetOwnerId, live.peerId),
+          listenAddrs: merged.length ? merged : undefined,
+        };
+      }
+    }
     return {
       transportPeerId,
-      recipientEnvelopePeerId,
+      recipientEnvelopePeerId: resolveRecipientEnvelopePeerId(records, targetOwnerId, transportPeerId),
       listenAddrs: listenAddrs.length ? listenAddrs : undefined,
     };
   }
@@ -10758,204 +10816,61 @@ class NodeServiceImpl implements NodeService {
     }
   }
 
-  private async _listLibp2pTransportCandidatesForOwner(
-    targetOwnerId: string,
-  ): Promise<Array<{ transportPeerId: string; listenAddrs: string[] | undefined }>> {
-    let records: Awaited<ReturnType<LocalPeerDirectoryStore["listPeerRecords"]>>;
-    try {
-      records = await raceWithTimeout(
-        this._peerDirectoryStore.listPeerRecords(),
-        15_000,
-        "listPeerRecords",
-      );
-    } catch {
-      records = [];
-    }
-
-    const matches = records.filter((r) => r.ownerId === targetOwnerId && isLibp2pPeerId(r.peerId));
-    matches.sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
-    const ownerListenAddrs = records
-      .filter((r) => r.ownerId === targetOwnerId)
-      .flatMap((r) => r.listenAddrs ?? []);
-
-    const out: Array<{ transportPeerId: string; listenAddrs: string[] | undefined }> = [];
-    const seen = new Set<string>();
-    const push = (transportPeerId: string, listenAddrs: string[]) => {
-      if (!isLibp2pPeerId(transportPeerId) || seen.has(transportPeerId)) return;
-      seen.add(transportPeerId);
-      out.push({ transportPeerId, listenAddrs: listenAddrs.length ? listenAddrs : undefined });
-    };
-
-    const cached = this._lastLibp2pTransportByOwner.get(targetOwnerId);
-    if (cached?.peerId) {
-      push(
-        cached.peerId,
-        mergeDialablePeerListenAddrs(
-          cached.peerId,
-          cached.listenAddrs,
-          records.find((r) => r.peerId === cached.peerId)?.listenAddrs,
-          ownerListenAddrs,
-        ),
-      );
-    }
-
-    for (const rec of matches) {
-      push(
-        rec.peerId,
-        mergeDialablePeerListenAddrs(rec.peerId, rec.listenAddrs, ownerListenAddrs),
-      );
-    }
-
-    if (out.length === 0) {
-      try {
-        const resolved = await this._resolvePeerTransportForOwner(targetOwnerId);
-        push(resolved.transportPeerId, resolved.listenAddrs ?? []);
-      } catch {
-        /* no candidates */
-      }
-    }
-
-    return out;
-  }
-
-  private async _warmSingleTransportPeer(
-    transportPeerId: string,
-    listenAddrs: string[] | undefined,
-    aggressive: boolean,
-    verifyOnly = false,
-  ): Promise<PeerConnectionInfo> {
-    const mesh = this._requireMesh();
-    void this._tagBondedContactReachability(transportPeerId);
-
-    const existing = mesh.getPeerConnectionInfo(transportPeerId);
-    if (verifyOnly) {
-      if (!existing.connected) {
-        return { connected: false, direct: false };
-      }
-      // LAN direct connections are stable — stream probes can false-fail and tear down good paths.
-      if (existing.direct) {
-        return existing;
-      }
-      const verified = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
-        verifyConnection: true,
-      });
-      if (verified.connected) {
-        return verified;
-      }
-      return { connected: false, direct: false, relayPeerId: existing.relayPeerId };
-    }
-
-    if (existing.connected) {
-      const verified = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
-        verifyConnection: true,
-      });
-      if (verified.connected) {
-        return verified;
-      }
-      try {
-        await mesh.closeConnectionsToPeer(transportPeerId);
-      } catch {
-        /* ignore */
-      }
-    } else if (aggressive) {
-      try {
-        await mesh.closeConnectionsToPeer(transportPeerId);
-      } catch {
-        /* ignore */
-      }
-    }
-
-    let dialHints: string[] = [];
-    if (aggressive || !existing.connected) {
-      try {
-        dialHints = await raceWithTimeout(
-          this._dialHintsForChat(transportPeerId, listenAddrs),
-          aggressive ? 15_000 : 10_000,
-          "_dialHintsForChat",
-        );
-      } catch (err) {
-        console.warn(
-          `[warmContact] dial hints failed for ${transportPeerId.slice(0, 12)}…:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
-    }
-
-    const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
-    let result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
-      dialHints,
-      preferCircuitHints,
-      forceFreshDial: aggressive,
-    });
-    if (!result.connected && aggressive) {
-      try {
-        const rebuilt = await this._dialHintsForChat(transportPeerId, listenAddrs);
-        result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
-          dialHints: rebuilt,
-          preferCircuitHints: shouldPreferCircuitDialHints(listenAddrs, rebuilt, transportPeerId),
-          forceFreshDial: true,
-        });
-      } catch {
-        /* keep first result */
-      }
-    }
-    return result;
-  }
-
   async warmContactConnection(
     peerOwnerId: string,
     options?: { redial?: boolean; verifyOnly?: boolean },
   ): Promise<PeerConnectionInfo> {
-    const aggressive = options?.redial === true;
-    const verifyOnly = options?.verifyOnly === true;
     this._assertOnline();
     const mesh = this._requireMesh();
-
-    if (!aggressive && !verifyOnly) {
-      try {
-        const { transportPeerId } = await this._resolvePeerTransportForOwner(peerOwnerId);
-        const existing = mesh.getPeerConnectionInfo(transportPeerId);
-        if (existing.connected && existing.direct) {
-          return existing;
-        }
-      } catch {
-        /* fall through to warm */
-      }
-    }
-
-    const candidates = await this._listLibp2pTransportCandidatesForOwner(peerOwnerId);
-    if (candidates.length === 0) {
+    let transportPeerId: string;
+    let listenAddrs: string[] | undefined;
+    try {
+      const resolved = await this._resolvePeerTransportForOwner(peerOwnerId);
+      transportPeerId = resolved.transportPeerId;
+      listenAddrs = resolved.listenAddrs;
+    } catch {
       return { connected: false, direct: false };
     }
 
-    const toWarm = aggressive ? candidates : candidates.slice(0, 3);
-    let lastResult: PeerConnectionInfo = { connected: false, direct: false };
-    for (const candidate of toWarm) {
-      lastResult = await this._warmSingleTransportPeer(
-        candidate.transportPeerId,
-        candidate.listenAddrs,
-        aggressive,
-        verifyOnly,
-      );
-      if (lastResult.connected) {
-        this._lastLibp2pTransportByOwner.set(peerOwnerId, {
-          peerId: candidate.transportPeerId,
-          listenAddrs: candidate.listenAddrs ?? [],
-        });
-        void this._flushPendingRoomSyncs();
-        void this._flushPendingRoomMessages();
-        return lastResult;
-      }
-      if (aggressive) {
-        console.warn(
-          `[warmContact] dial failed for owner ${peerOwnerId.slice(0, 20)}… via ${candidate.transportPeerId.slice(0, 12)}…`,
-        );
+    void this._tagBondedContactReachability(transportPeerId);
+    const existing = mesh.getPeerConnectionInfo(transportPeerId);
+
+    if (options?.verifyOnly) {
+      return existing;
+    }
+
+    if (existing.connected && !options?.redial) {
+      return existing;
+    }
+
+    if (options?.redial) {
+      try {
+        await mesh.closeConnectionsToPeer(transportPeerId);
+      } catch {
+        /* ignore */
       }
     }
 
+    let dialHints: string[];
+    try {
+      dialHints = await raceWithTimeout(
+        this._dialHintsForChat(transportPeerId, listenAddrs),
+        30_000,
+        "_dialHintsForChat",
+      );
+    } catch {
+      return existing.connected ? existing : { connected: false, direct: false };
+    }
+
+    const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
+    const result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
+      dialHints,
+      preferCircuitHints,
+      forceFreshDial: options?.redial === true,
+    });
     void this._flushPendingRoomSyncs();
     void this._flushPendingRoomMessages();
-    return lastResult;
+    return result;
   }
 
   private _startBondWarmInterval(): void {

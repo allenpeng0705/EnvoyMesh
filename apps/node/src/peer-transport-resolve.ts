@@ -8,8 +8,8 @@ export type PickLibp2pPeerOptions = {
 };
 
 /**
- * Device envelope peer id for chat.message — must match the contact's device key,
- * not whichever libp2p transport row happens to be connected.
+ * Device envelope peer id for chat.message — must match the contact's device key.
+ * When unknown, return undefined so the receiver accepts the message (no misaddress filter).
  */
 export function resolveRecipientEnvelopePeerId(
   records: PeerDirectoryRecord[],
@@ -22,14 +22,12 @@ export function resolveRecipientEnvelopePeerId(
   if (byTransport?.devicePublicKeyPem?.trim()) {
     return derivePeerId(byTransport.devicePublicKeyPem);
   }
-  const byOwner = records.find(
-    (r) => r.ownerId === targetOwnerId && r.devicePublicKeyPem?.trim(),
-  );
-  if (byOwner?.devicePublicKeyPem?.trim()) {
-    return derivePeerId(byOwner.devicePublicKeyPem);
-  }
-  if (targetOwnerId.startsWith("envoy_")) {
-    return targetOwnerId;
+  const withDevice = records
+    .filter((r) => r.ownerId === targetOwnerId && r.devicePublicKeyPem?.trim())
+    .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+  const latest = withDevice[0];
+  if (latest?.devicePublicKeyPem?.trim()) {
+    return derivePeerId(latest.devicePublicKeyPem);
   }
   return undefined;
 }

@@ -172,7 +172,10 @@ function buildDeps(overrides: Partial<CallInboundDeps> = {}): CallInboundDeps {
     trustStore: {
       getTrustRecord: vi.fn(async () => ({ level: "direct", displayName: "Alice" })),
     } as unknown as CallInboundDeps["trustStore"],
-    peerDirectoryStore: {} as unknown as CallInboundDeps["peerDirectoryStore"],
+    peerDirectoryStore: {
+      listPeerRecords: vi.fn(async () => []),
+      getPeerByPeerId: vi.fn(async () => undefined),
+    } as unknown as CallInboundDeps["peerDirectoryStore"],
     sendResponseEnvelope: vi.fn(async () => {}),
     calleeOwnerId: "envoy:owner:callee",
     ...overrides,

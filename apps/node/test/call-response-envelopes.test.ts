@@ -44,13 +44,19 @@ interface CapturedSend {
 }
 
 function buildHarness(sendsRef: CapturedSend[]) {
+  const capture = (transportPeerId: string, envelope: EnvoyEnvelope) => {
+    sendsRef.push({ transportPeerId, envelope });
+  };
   const mockMesh = {
     peerId: "12D3KooWSelfPeerIdForCallResponseTest",
+    send: vi.fn(async (transportPeerId: string, envelope: EnvoyEnvelope) => {
+      capture(transportPeerId, envelope);
+      return { connected: true, direct: true };
+    }),
     sendChat: vi.fn(async (transportPeerId: string, envelope: EnvoyEnvelope) => {
-      sendsRef.push({ transportPeerId, envelope });
+      capture(transportPeerId, envelope);
     }),
     sendChatExpectReply: vi.fn(async () => undefined as unknown as EnvoyEnvelope),
-    send: vi.fn(async () => ({ connected: true, direct: true })),
     ensurePeerReachable: vi.fn(async () => ({ connected: true, direct: true })),
     getPeerConnectionInfo: vi.fn(() => ({ connected: true, direct: true })),
     closeConnectionsToPeer: vi.fn(async () => 0),
