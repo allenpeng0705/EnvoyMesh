@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { generateDeviceIdentity, generateOwnerIdentity, signUnsignedEnvelope } from "@envoymesh/identity";
+import { generateDeviceIdentity, generateOwnerIdentity, signHumanProfile, signUnsignedEnvelope } from "@envoymesh/identity";
 import {
   createProfileRequestPayload,
   createUnsignedEnvelope,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
-import { isLibp2pPeerId, sendProfileRequest } from "../src/profile-sync-outbound.js";
+import { isLibp2pPeerId, sendProfileRequest, sendProfileSyncToBonds } from "../src/profile-sync-outbound.js";
 
 describe("isLibp2pPeerId", () => {
   it("accepts libp2p peer ids and rejects Envoy envelope ids", () => {
@@ -38,5 +38,91 @@ describe("sendProfileRequest", () => {
     expect(sendExpectReply).toHaveBeenCalledTimes(1);
     expect(send).not.toHaveBeenCalled();
     expect(reply).toBe(responseEnvelope);
+  });
+});
+
+describe("sendProfileSyncToBonds", () => {
+  function signedHumanProfile(owner: ReturnType<typeof generateOwnerIdentity>) {
+    return signHumanProfile(
+      {
+        version: "0.1",
+        ownerId: owner.ownerId,
+        displayName: "Self",
+        username: "self",
+        profileVisibility: "private",
+        updatedAt: new Date().toISOString(),
+        publicThumbnail: {
+          vaultRelativePath: "profile/thumbnail.jpg",
+          mimeType: "image/jpeg",
+          contentSha256: "a".repeat(64),
+        },
+      },
+      owner.privateKeyPem,
+    );
+  }
+
+  it("warms reachability, retries on NO_RESERVATION, and continues after failure", async () => {
+    const owner = generateOwnerIdentity();
+    const device = generateDeviceIdentity();
+    const profile = { owner, device, deviceCertificate: undefined as never };
+    const humanProfile = signedHumanProfile(owner);
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("failed to connect via relay with status NO_RESERVATION"))
+      .mockResolvedValueOnce(undefined);
+    const ensurePeerReachable = vi.fn(async () => ({ connected: true, direct: true }));
+    const closeConnectionsToPeer = vi.fn(async () => 1);
+    const mergePeerStoreDialHints = vi.fn(async () => {});
+
+    await sendProfileSyncToBonds({
+      mesh: { send, ensurePeerReachable, closeConnectionsToPeer, mergePeerStoreDialHints },
+      profile,
+      humanProfile,
+      vaultDir: "/tmp/vault",
+      bondOwnerIds: [owner.ownerId, "envoy:owner:missing"],
+      resolveLibp2pPeer: async (ownerId) => {
+        if (ownerId === owner.ownerId) {
+          return {
+            peerId: "12D3KooWProfileSyncReachability",
+            listenAddrs: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWProfileSyncReachability"],
+          };
+        }
+        return undefined;
+      },
+      dialHintsFor: async () => ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWProfileSyncReachability"],
+    });
+
+    expect(ensurePeerReachable).toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(closeConnectionsToPeer).toHaveBeenCalled();
+    expect(mergePeerStoreDialHints).toHaveBeenCalled();
+  });
+
+  it("isolates dial hint failures per bond", async () => {
+    const owner = generateOwnerIdentity();
+    const device = generateDeviceIdentity();
+    const profile = { owner, device, deviceCertificate: undefined as never };
+    const humanProfile = signedHumanProfile(owner);
+    const send = vi.fn(async () => undefined);
+    const ensurePeerReachable = vi.fn(async () => ({ connected: true, direct: true }));
+
+    await sendProfileSyncToBonds({
+      mesh: { send, ensurePeerReachable, closeConnectionsToPeer: vi.fn(), mergePeerStoreDialHints: vi.fn() },
+      profile,
+      humanProfile,
+      vaultDir: "/tmp/vault",
+      bondOwnerIds: ["envoy:owner:bad-hints", "envoy:owner:good"],
+      resolveLibp2pPeer: async (ownerId) => ({
+        peerId: ownerId === "envoy:owner:good" ? "12D3KooWProfileSyncGoodBond" : "12D3KooWProfileSyncBadBond",
+      }),
+      dialHintsFor: async (peerId) => {
+        if (peerId.includes("BadBond")) {
+          throw new Error("dial hints exploded");
+        }
+        return ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWProfileSyncGoodBond"];
+      },
+    });
+
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });

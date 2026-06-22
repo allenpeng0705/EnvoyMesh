@@ -55,8 +55,6 @@ import {
   filterBootstrapMultiaddrs,
   filterRelayControlTargets,
   filterUsableOutboundPeerDialHints,
-  isLikelyInboundConnSnapshotDialHint,
-  isPrivateLanTcpDialHint,
   voucherJsonBytesFromObject,
   type P2pDebugEvent,
 } from "@envoymesh/network";
@@ -128,6 +126,11 @@ import { chatSenderActorFromEnvelope, shouldSkipAgentChatAssist, resolveEmpSuppo
 import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
 import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
+import {
+  dialableInboundRemoteAddrs,
+  INBOUND_LISTEN_ADDR_MERGE_MIN_MS,
+  mergeInboundPeerDialHintsIfDue,
+} from "./inbound-dial-hint-learn.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
@@ -685,7 +688,7 @@ function markMessageSeen(messageId: string): void {
 
 /** Throttle peer-directory listen-addr merges — each merge rewrites the whole JSON file. */
 const lastListenAddrMergeByPeer = new Map<string, number>();
-const LISTEN_ADDR_MERGE_MIN_MS = 120_000;
+const LISTEN_ADDR_MERGE_MIN_MS = INBOUND_LISTEN_ADDR_MERGE_MIN_MS;
 
 let bootstrapReprobeTimer: ReturnType<typeof setTimeout> | undefined;
 let bootstrapReprobeCursor = 0;
@@ -808,25 +811,13 @@ async function handleInboundMeshMessage({
 
   const envelope = guardDecision.envelope;
   if (remoteAddr?.trim()) {
-    const trimmed = remoteAddr.trim();
-    const dialableRemote = filterUsableOutboundPeerDialHints([trimmed], remotePeerId).filter(
-      (addr) => !addr.includes("/p2p-circuit/") && !isLikelyInboundConnSnapshotDialHint(addr),
-    );
-    const now = Date.now();
-    const lastMerge = lastListenAddrMergeByPeer.get(remotePeerId) ?? 0;
-    const hasLanListen = dialableRemote.some((a) => isPrivateLanTcpDialHint(a));
-    const mergeDue =
-      dialableRemote.length > 0 &&
-      (hasLanListen || now - lastMerge >= LISTEN_ADDR_MERGE_MIN_MS);
-    if (mergeDue) {
-      lastListenAddrMergeByPeer.set(remotePeerId, now);
-      void peerDirectoryStore
-        .mergeListenAddrsForPeerId(remotePeerId, dialableRemote)
-        .catch((err) => console.warn(`[peer-directory] mergeListenAddrsForPeerId failed:`, err));
-      void mesh.mergePeerStoreDialHints(remotePeerId, dialableRemote).catch((err) =>
-        console.warn(`[peer-store] mergePeerStoreDialHints failed:`, err),
-      );
-    }
+    void mergeInboundPeerDialHintsIfDue({
+      remotePeerId,
+      remoteAddr,
+      lastMergeByPeer: lastListenAddrMergeByPeer,
+      peerDirectory: peerDirectoryStore,
+      mesh,
+    }).catch((err) => console.warn(`[peer-directory] inbound dial hint learn failed:`, err));
   }
   if (envelope.senderRole === "human" && envelope.senderPublicKey?.trim()) {
     void peerDirectoryStore
@@ -1910,9 +1901,7 @@ async function handleInboundMeshMessage({
         ownerId: payload.senderOwnerId,
         peerId: remotePeerId,
         listenAddrs: remoteAddr?.trim()
-          ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId).filter(
-              (addr) => !addr.includes("/p2p-circuit/") && !isLikelyInboundConnSnapshotDialHint(addr),
-            )
+          ? dialableInboundRemoteAddrs(remoteAddr, remotePeerId)
           : [],
       })
       .then(() => {
@@ -2629,7 +2618,7 @@ async function handleInboundMeshMessage({
             await peerDirectoryStore.ensurePeerFromInboundChat({
               ownerId: payload.requesterOwnerId,
               peerId: remotePeerId,
-              listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
+              listenAddrs: dialableInboundRemoteAddrs(remoteAddr, remotePeerId),
             });
           } catch (err) {
             console.error(`[bond:established] failed to store peer in directory:`, err);
@@ -2641,7 +2630,7 @@ async function handleInboundMeshMessage({
             await peerDirectoryStore.ensurePeerFromInboundChat({
               ownerId: payload.responderOwnerId,
               peerId: remotePeerId,
-              listenAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : [],
+              listenAddrs: dialableInboundRemoteAddrs(remoteAddr, remotePeerId),
             });
           } catch (err) {
             console.error(`[bond:established] failed to store peer from bond.accept:`, err);
@@ -2805,7 +2794,14 @@ function scheduleMeshInboundDrain(): void {
     if (!params) {
       return;
     }
-    void handleInboundMeshMessage(params).finally(() => {
+    void handleInboundMeshMessage(params)
+      .catch((err) => {
+        console.warn(
+          `[inbound] handler failed for ${params.envelope.intent} from ${params.remotePeerId.slice(0, 12)}…:`,
+          err instanceof Error ? err.message : err,
+        );
+      })
+      .finally(() => {
       if (meshInboundQueue.length > 0) {
         scheduleMeshInboundDrain();
       }

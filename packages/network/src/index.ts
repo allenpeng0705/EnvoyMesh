@@ -1474,9 +1474,13 @@ export class EnvoyMesh {
         lastError = e;
       }
     }
-    const viaLimited = await openStreamOnLimitedConn();
-    if (viaLimited) {
-      return viaLimited;
+    const skipLimitedFallback =
+      hasDirectTcpDialHints(hintsRaw) && !sendOptions?.preferCircuitHints;
+    if (!skipLimitedFallback) {
+      const viaLimited = await openStreamOnLimitedConn();
+      if (viaLimited) {
+        return viaLimited;
+      }
     }
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }

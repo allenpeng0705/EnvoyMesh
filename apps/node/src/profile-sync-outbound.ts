@@ -8,10 +8,20 @@ import {
 } from "@envoymesh/protocol";
 import type { NodeProfile } from "@envoymesh/api";
 import type { EnvoyMesh } from "@envoymesh/network";
-import { isRelayReservationDialError } from "@envoymesh/network";
+import {
+  ENVOY_MESSAGE_PROTOCOL,
+  isRelayReservationDialError,
+} from "@envoymesh/network";
 import { derivePeerId } from "@envoymesh/identity";
 import { shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
 import { loadProfileThumbnailInline } from "./profile-thumbnail-inline.js";
+
+const PROFILE_SYNC_MAX_ATTEMPTS = 3;
+const PROFILE_SYNC_RETRY_BASE_MS = 600;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export async function buildSignedProfilePayloadEnvelope(input: {
   profile: NodeProfile;
@@ -44,8 +54,87 @@ export function isLibp2pPeerId(peerId: string): boolean {
   return id.length > 0 && !id.startsWith("envoy_") && !id.startsWith("envoy:");
 }
 
+type ProfileSyncMesh = Pick<
+  EnvoyMesh,
+  "send" | "closeConnectionsToPeer" | "ensurePeerReachable" | "mergePeerStoreDialHints"
+>;
+
+async function sendProfileSyncWithReachability(input: {
+  mesh: ProfileSyncMesh;
+  ownerId: string;
+  peerId: string;
+  envelope: EnvoyEnvelope;
+  dialHints: string[];
+  listenAddrs?: string[];
+  protocol?: string;
+}): Promise<void> {
+  const protocol = input.protocol ?? ENVOY_MESSAGE_PROTOCOL;
+  let preferCircuits = shouldPreferCircuitDialHints(
+    input.listenAddrs,
+    input.dialHints,
+    input.peerId,
+  );
+  let lastErr: unknown;
+
+  for (let attempt = 0; attempt < PROFILE_SYNC_MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      await sleep(PROFILE_SYNC_RETRY_BASE_MS * attempt);
+      try {
+        const closed = await input.mesh.closeConnectionsToPeer?.(input.peerId);
+        if (closed && closed > 0) {
+          console.log(
+            `[profile.sync] closed ${closed} stale connection(s) to ${input.peerId.slice(0, 12)}… before retry ${attempt + 1}`,
+          );
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const preferCircuitsOnAttempt = preferCircuits || attempt >= 2;
+    const forceFreshDial = attempt > 0;
+
+    try {
+      if (typeof input.mesh.ensurePeerReachable === "function") {
+        await input.mesh.ensurePeerReachable(input.peerId, protocol, {
+          dialHints: input.dialHints,
+          preferCircuitHints: preferCircuitsOnAttempt,
+          forceFreshDial,
+        });
+      }
+      await input.mesh.send(input.peerId, input.envelope, {
+        dialHints: input.dialHints,
+        preferCircuitHints: preferCircuitsOnAttempt,
+        forceFreshDial,
+      });
+      if (attempt > 0) {
+        console.log(
+          `[profile.sync] delivered to ${input.ownerId.slice(0, 16)}… on attempt ${attempt + 1}/${PROFILE_SYNC_MAX_ATTEMPTS}`,
+        );
+      }
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (isRelayReservationDialError(err)) {
+        preferCircuits = false;
+      }
+      if (attempt < PROFILE_SYNC_MAX_ATTEMPTS - 1) {
+        console.warn(
+          `[profile.sync] send to ${input.ownerId.slice(0, 16)}… failed, retrying:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
+
+  console.warn(
+    `[profile.sync] send to ${input.ownerId.slice(0, 16)}… failed after retry:`,
+    lastErr,
+  );
+}
+
 export async function sendProfileSyncToBonds(input: {
-  mesh: EnvoyMesh;
+  mesh: ProfileSyncMesh;
   profile: NodeProfile;
   humanProfile: HumanProfilePayload;
   vaultDir: string;
@@ -63,36 +152,43 @@ export async function sendProfileSyncToBonds(input: {
     intent: "profile.sync",
   });
   for (const ownerId of input.bondOwnerIds) {
-    const resolved = await input.resolveLibp2pPeer(ownerId);
-    if (!resolved?.peerId || !isLibp2pPeerId(resolved.peerId)) {
-      console.warn(`[profile.sync] skip bond ${ownerId.slice(0, 20)}…: no libp2p peer id`);
-      continue;
-    }
-    const dialHints = await input.dialHintsFor(resolved.peerId, resolved.listenAddrs);
-    const preferCircuits = shouldPreferCircuitDialHints(resolved.listenAddrs, dialHints, resolved.peerId);
-    const sendOnce = async (opts?: { preferCircuitHints?: boolean }) => {
-      await input.mesh.send(resolved.peerId, envelope, {
-        dialHints,
-        preferCircuitHints: opts?.preferCircuitHints ?? preferCircuits,
-      });
-    };
     try {
-      await sendOnce();
-    } catch (firstErr) {
-      const reservationMiss = isRelayReservationDialError(firstErr);
-      console.warn(
-        `[profile.sync] send to ${ownerId.slice(0, 16)}… failed, retrying:`,
-        firstErr instanceof Error ? firstErr.message : firstErr,
-      );
-      try {
-        const closed = await input.mesh.closeConnectionsToPeer?.(resolved.peerId);
-        if (closed && closed > 0) {
-          console.log(`[profile.sync] closed ${closed} stale connection(s) to ${resolved.peerId.slice(0, 12)}…`);
-        }
-        await sendOnce({ preferCircuitHints: reservationMiss ? false : preferCircuits });
-      } catch (retryErr) {
-        console.warn(`[profile.sync] send to ${ownerId.slice(0, 16)}… failed after retry:`, retryErr);
+      const resolved = await input.resolveLibp2pPeer(ownerId);
+      if (!resolved?.peerId || !isLibp2pPeerId(resolved.peerId)) {
+        console.warn(`[profile.sync] skip bond ${ownerId.slice(0, 20)}…: no libp2p peer id`);
+        continue;
       }
+
+      let dialHints: string[];
+      try {
+        dialHints = await input.dialHintsFor(resolved.peerId, resolved.listenAddrs);
+      } catch (hintErr) {
+        console.warn(
+          `[profile.sync] dial hints failed for ${ownerId.slice(0, 16)}…:`,
+          hintErr instanceof Error ? hintErr.message : hintErr,
+        );
+        continue;
+      }
+
+      if (typeof input.mesh.mergePeerStoreDialHints === "function") {
+        void Promise.resolve(
+          input.mesh.mergePeerStoreDialHints(resolved.peerId, dialHints),
+        ).catch((err) => console.warn(`[profile.sync] mergePeerStoreDialHints failed:`, err));
+      }
+
+      await sendProfileSyncWithReachability({
+        mesh: input.mesh,
+        ownerId,
+        peerId: resolved.peerId,
+        envelope,
+        dialHints,
+        listenAddrs: resolved.listenAddrs,
+      });
+    } catch (bondErr) {
+      console.warn(
+        `[profile.sync] bond ${ownerId.slice(0, 20)}… failed:`,
+        bondErr instanceof Error ? bondErr.message : bondErr,
+      );
     }
   }
 }

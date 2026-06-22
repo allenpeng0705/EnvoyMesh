@@ -60,6 +60,11 @@ function mockMesh(): EnvoyMesh {
     onMessage: () => {},
     probePeer: async () => undefined,
     getPeerConnectionInfo: () => ({ connected: false, direct: false }),
+    getPeerStoreDialHints: async () => [],
+    mergePeerStoreDialHints: async () => {},
+    tagContactForPersistentReachability: async () => {},
+    ensurePeerReachable: async () => ({ connected: true, direct: true }),
+    closeConnectionsToPeer: async () => 0,
     start: async () => undefined,
     stop: async () => undefined,
   } as unknown as EnvoyMesh;

@@ -76,6 +76,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       ensurePeerReachable,
       closeConnectionsToPeer,
       getPeerConnectionInfo,
+      mergePeerStoreDialHints: vi.fn(async () => {}),
       send: vi.fn(),
       sendChat: vi.fn(),
       sendChatExpectReply: vi.fn(),

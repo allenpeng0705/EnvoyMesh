@@ -448,6 +448,10 @@ import {
   transitionSocialProxySession,
 } from "@envoymesh/api";
 import { buildOutboundDialHints, mergeDialablePeerListenAddrs, shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
+import {
+  dialableInboundRemoteAddrs,
+  mergeInboundPeerDialHintsIfDue,
+} from "./inbound-dial-hint-learn.js";
 import { buildChatDiagnostics } from "./chat-diagnostics.js";
 import { NodeDiscoveryRuntime } from "./node-service-discovery.js";
 import { sendSyncStateUpdateViaMesh } from "./node-service-sync.js";
@@ -833,6 +837,7 @@ class NodeServiceImpl implements NodeService {
     string,
     { peerId: string; listenAddrs?: string[] }
   >();
+  private readonly _inboundListenAddrMergeByPeer = new Map<string, number>();
   /** Inbound push offers waiting for accept/decline — keyed by preview message id. */
   private readonly _pendingInboundShareOffers = new Map<string, ShareOffer>();
   /** Pending vault-relative rename on receive: key `senderPeerId + \\n + voucher source path`
@@ -1321,7 +1326,11 @@ class NodeServiceImpl implements NodeService {
 
     const peerRecords = await this._peerDirectoryStore.listPeerRecords();
     const rec = peerRecords.find((r) => r.peerId === input.remotePeerId);
-    const listenAddrs = this._mergeConnectionDialHints(rec?.listenAddrs, input.inboundConnectionAddrs);
+    const listenAddrs = this._mergeConnectionDialHints(
+      input.remotePeerId,
+      rec?.listenAddrs,
+      input.inboundConnectionAddrs,
+    );
     let dialHints: string[];
     try {
       dialHints = await raceWithTimeout(
@@ -1397,24 +1406,23 @@ class NodeServiceImpl implements NodeService {
 
   /** Prefer stable LAN listen addrs; append live inbound paths (often relay circuits) as fallback. */
   private _mergeConnectionDialHints(
+    peerId: string,
     peerListenAddrs: string[] | undefined,
     inboundConnectionAddrs: string[] | undefined,
   ): string[] | undefined {
-    const stored = (peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
-    const extra = (inboundConnectionAddrs ?? []).map((a) => a.trim()).filter(Boolean);
-    if (extra.length === 0 && stored.length === 0) {
-      return undefined;
-    }
-    const seen = new Set<string>();
-    const merged: string[] = [];
-    for (const addr of [...stored, ...extra]) {
-      if (seen.has(addr)) {
-        continue;
-      }
-      seen.add(addr);
-      merged.push(addr);
-    }
-    return merged;
+    const merged = mergeDialablePeerListenAddrs(peerId, peerListenAddrs, inboundConnectionAddrs);
+    return merged.length > 0 ? merged : undefined;
+  }
+
+  private _learnInboundDialHints(remotePeerId: string, remoteAddr?: string): Promise<string[]> {
+    const mesh = this._reachableMesh();
+    return mergeInboundPeerDialHintsIfDue({
+      remotePeerId,
+      remoteAddr,
+      lastMergeByPeer: this._inboundListenAddrMergeByPeer,
+      peerDirectory: this._peerDirectoryStore,
+      mesh: mesh ?? undefined,
+    });
   }
 
   constructor(
@@ -2158,6 +2166,18 @@ class NodeServiceImpl implements NodeService {
     const bonds = await this.getBonds();
     const bondOwnerIds = bonds.map((b) => b.peerOwnerId);
     if (bondOwnerIds.length === 0) return;
+
+    for (const bond of bonds) {
+      if (bond.level !== "direct" && bond.level !== "referred") {
+        continue;
+      }
+      try {
+        await this.warmContactConnection(bond.peerOwnerId);
+      } catch {
+        /* best-effort — profile.sync still tries ensurePeerReachable per contact */
+      }
+    }
+
     try {
       await sendProfileSyncToBonds({
         mesh,
@@ -2969,9 +2989,13 @@ class NodeServiceImpl implements NodeService {
     if (!transportPeerId || !ownerId) return;
 
     const listenAddrs = context?.remoteAddr?.trim()
-      ? mergeDialablePeerListenAddrs(transportPeerId, [context.remoteAddr.trim()])
+      ? dialableInboundRemoteAddrs(context.remoteAddr, transportPeerId)
       : [];
     this._lastLibp2pTransportByOwner.set(ownerId, { peerId: transportPeerId, listenAddrs });
+
+    void this._learnInboundDialHints(transportPeerId, context?.remoteAddr).catch((err) =>
+      console.warn(`[peer-directory] inbound dial hint learn failed:`, err),
+    );
 
     try {
       await this._peerDirectoryStore.ensurePeerFromInboundChat({
@@ -3015,7 +3039,20 @@ class NodeServiceImpl implements NodeService {
       const records = await this._peerDirectoryStore.listPeerRecords();
       const libp2p = pickBestLibp2pPeerDirectoryRecord(records, ownerId);
       if (libp2p) {
-        return { transportPeerId: libp2p.peerId, listenAddrs: libp2p.listenAddrs };
+        const mesh = this._reachableMesh();
+        let listenAddrs = libp2p.listenAddrs;
+        if (mesh) {
+          try {
+            const storeAddrs = await mesh.getPeerStoreDialHints(libp2p.peerId);
+            const merged = mergeDialablePeerListenAddrs(libp2p.peerId, listenAddrs, storeAddrs);
+            if (merged.length > 0) {
+              listenAddrs = merged;
+            }
+          } catch {
+            /* best-effort */
+          }
+        }
+        return { transportPeerId: libp2p.peerId, listenAddrs };
       }
       console.warn(
         `[profile.sync] no libp2p route to ${ownerId.slice(0, 20)}…: Peer not found for owner (ask contact to message you once, or re-save their profile photo)`,
@@ -3098,23 +3135,21 @@ class NodeServiceImpl implements NodeService {
     const transportPeerId = targetPeer.peerId;
     if (!isLibp2pPeerId(transportPeerId)) {
       const meshConn = this._reachableMesh();
-      if (meshConn) {
-        const records = await this._peerDirectoryStore.listPeerRecords();
-        for (const rec of records.filter((r) => r.ownerId === targetOwnerId && isLibp2pPeerId(r.peerId))) {
-          const info = meshConn.getPeerConnectionInfo(rec.peerId);
-          if (info.connected) {
-            const listenAddrs = mergeDialablePeerListenAddrs(
-              rec.peerId,
-              rec.listenAddrs,
-              records.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
-            );
-            return {
-              transportPeerId: rec.peerId,
-              recipientEnvelopePeerId: resolveRecipientEnvelopePeerId(records, targetOwnerId, rec.peerId),
-              listenAddrs: listenAddrs.length ? listenAddrs : undefined,
-            };
-          }
-        }
+      const records = await this._peerDirectoryStore.listPeerRecords();
+      const libp2p =
+        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected: meshConn ? (peerId) => meshConn.getPeerConnectionInfo(peerId).connected : undefined }) ??
+        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId);
+      if (libp2p) {
+        const listenAddrs = mergeDialablePeerListenAddrs(
+          libp2p.peerId,
+          libp2p.listenAddrs,
+          records.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
+        );
+        return {
+          transportPeerId: libp2p.peerId,
+          recipientEnvelopePeerId: resolveRecipientEnvelopePeerId(records, targetOwnerId, libp2p.peerId),
+          listenAddrs: listenAddrs.length ? listenAddrs : undefined,
+        };
       }
       throw new Error(`Peer directory has Envoy envelope id for this owner (not libp2p).`);
     }
@@ -8835,6 +8870,12 @@ class NodeServiceImpl implements NodeService {
       const guardDecision = this._inboundGuard!.inspect(envelope);
       if (guardDecision.action === "reject") return;
 
+      if (remoteAddr?.trim()) {
+        void this._learnInboundDialHints(remotePeerId, remoteAddr).catch((err) =>
+          console.warn(`[peer-directory] inbound dial hint learn failed:`, err),
+        );
+      }
+
       // Emit raw envelope for remote P2P clients (e.g. mobile app) with own identity
       try {
         this.emit("p2p:envelope", { envelope: envelope as unknown as Record<string, unknown>, remotePeerId });
@@ -8928,9 +8969,7 @@ class NodeServiceImpl implements NodeService {
                 await this._peerDirectoryStore.ensurePeerFromInboundChat({
                   ownerId: payload.requesterOwnerId,
                   peerId: remotePeerId,
-                  listenAddrs: remoteAddr?.trim()
-                    ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId)
-                    : [],
+                  listenAddrs: dialableInboundRemoteAddrs(remoteAddr, remotePeerId),
                 });
               } catch (err) {
                 console.error(`[bond:established] failed to store peer in directory:`, err);
@@ -8941,9 +8980,7 @@ class NodeServiceImpl implements NodeService {
                 await this._peerDirectoryStore.ensurePeerFromInboundChat({
                   ownerId: payload.responderOwnerId,
                   peerId: remotePeerId,
-                  listenAddrs: remoteAddr?.trim()
-                    ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId)
-                    : [],
+                  listenAddrs: dialableInboundRemoteAddrs(remoteAddr, remotePeerId),
                 });
               } catch (err) {
                 console.error(`[bond:established] failed to store peer from bond.accept:`, err);
@@ -9126,9 +9163,7 @@ class NodeServiceImpl implements NodeService {
           .ensurePeerFromInboundChat({
             ownerId: payload.senderOwnerId,
             peerId: remotePeerId,
-            listenAddrs: remoteAddr?.trim()
-              ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId)
-              : [],
+            listenAddrs: dialableInboundRemoteAddrs(remoteAddr, remotePeerId),
           })
           .catch((err) => console.warn(`[peer-directory] ensurePeerFromInboundChat failed:`, err));
         const incomingMsg: ChatMessage = {
