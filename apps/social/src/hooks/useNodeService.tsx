@@ -214,7 +214,10 @@ export interface NodeServiceClient {
   // Connection Status
   getConnectionStatus(): Promise<ConnectionStatus>;
   getPeerConnectionInfo(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
-  warmContactConnection(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
+  warmContactConnection(
+    peerOwnerId: string,
+    options?: { redial?: boolean; verifyOnly?: boolean },
+  ): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
   getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics>;
   getConnectivityDiagnostics(): Promise<ConnectivityDiagnostics>;
 
@@ -766,8 +769,16 @@ function createWsNodeServiceClient(
     async getNodeConfig() { return wsClient.rpc("getNodeConfig"); },
     async getConnectionStatus() { return wsClient.rpc("getConnectionStatus"); },
     async getPeerConnectionInfo(peerOwnerId: string) { return wsClient.rpc("getPeerConnectionInfo", { peerOwnerId }); },
-    async warmContactConnection(peerOwnerId: string) {
-      return wsClient.rpc("warmContactConnection", { peerOwnerId }, { timeoutMs: 90_000 });
+    async warmContactConnection(peerOwnerId: string, options?: { redial?: boolean; verifyOnly?: boolean }) {
+      return wsClient.rpc(
+        "warmContactConnection",
+        {
+          peerOwnerId,
+          ...(options?.redial ? { redial: true } : {}),
+          ...(options?.verifyOnly ? { verifyOnly: true } : {}),
+        },
+        { timeoutMs: options?.redial ? 90_000 : options?.verifyOnly ? 20_000 : 25_000 },
+      );
     },
     async getChatDiagnostics(peerOwnerId?: string) {
       return wsClient.rpc("getChatDiagnostics", peerOwnerId ? { peerOwnerId } : {});

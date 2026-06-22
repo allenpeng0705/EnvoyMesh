@@ -88,18 +88,31 @@ export async function deliverChatEnvelopeWithRetry(input: {
       }
     } else {
       const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
-      if (!conn.connected) {
-        try {
+      try {
+        if (conn.connected) {
+          const verified = await input.mesh.ensurePeerReachable(
+            input.transportPeerId,
+            input.chatProtocol,
+            { verifyConnection: true },
+          );
+          if (!verified.connected) {
+            await input.mesh.closeConnectionsToPeer(input.transportPeerId);
+            await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
+              dialHints: hints,
+              preferCircuitHints: preferCircuits,
+            });
+          }
+        } else {
           await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
             dialHints: hints,
             preferCircuitHints: preferCircuits,
           });
-        } catch (warmErr) {
-          console.warn(
-            `[sendChat] pre-send warm failed for ${input.transportPeerId.slice(0, 12)}…:`,
-            warmErr instanceof Error ? warmErr.message : warmErr,
-          );
         }
+      } catch (warmErr) {
+        console.warn(
+          `[sendChat] pre-send warm failed for ${input.transportPeerId.slice(0, 12)}…:`,
+          warmErr instanceof Error ? warmErr.message : warmErr,
+        );
       }
     }
 

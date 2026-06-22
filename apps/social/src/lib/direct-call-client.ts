@@ -471,8 +471,8 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getPeerConnectionInfo(peerOwnerId);
   }
 
-  async warmContactConnection(peerOwnerId: string) {
-    return this._ns.warmContactConnection(peerOwnerId);
+  async warmContactConnection(peerOwnerId: string, options?: { redial?: boolean; verifyOnly?: boolean }) {
+    return this._ns.warmContactConnection(peerOwnerId, options);
   }
 
   async getChatDiagnostics(peerOwnerId?: string) {

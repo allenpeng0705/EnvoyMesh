@@ -398,7 +398,7 @@ import {
 } from "./profile-sync-outbound.js";
 import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
 import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
-import { pickBestLibp2pPeerDirectoryRecord } from "./peer-transport-resolve.js";
+import { pickBestLibp2pPeerDirectoryRecord, resolveRecipientEnvelopePeerId } from "./peer-transport-resolve.js";
 import {
   normalizeTransportPeerId,
   ownerIdFromProfileIntent,
@@ -2902,14 +2902,6 @@ class NodeServiceImpl implements NodeService {
       if (libp2p) {
         return { transportPeerId: libp2p.peerId, listenAddrs: libp2p.listenAddrs };
       }
-      const mesh = this._reachableMesh();
-      if (mesh) {
-        for (const rec of records.filter((r) => r.ownerId === ownerId && isLibp2pPeerId(r.peerId))) {
-          if (mesh.getPeerConnectionInfo(rec.peerId).connected) {
-            return { transportPeerId: rec.peerId, listenAddrs: rec.listenAddrs };
-          }
-        }
-      }
       console.warn(
         `[profile.sync] no libp2p route to ${ownerId.slice(0, 20)}…: Peer not found for owner (ask contact to message you once, or re-save their profile photo)`,
       );
@@ -2922,37 +2914,22 @@ class NodeServiceImpl implements NodeService {
     recipientEnvelopePeerId: string | undefined;
     listenAddrs: string[] | undefined;
   }> {
-    const mesh = this._reachableMesh();
-    const isConnected = mesh
-      ? (peerId: string) => mesh.getPeerConnectionInfo(peerId).connected
-      : undefined;
-
     const cachedTransport = this._lastLibp2pTransportByOwner.get(targetOwnerId);
-    if (
-      cachedTransport &&
-      isLibp2pPeerId(cachedTransport.peerId) &&
-      isConnected?.(cachedTransport.peerId)
-    ) {
+    if (cachedTransport && isLibp2pPeerId(cachedTransport.peerId)) {
       const records = await raceWithTimeout(
         this._peerDirectoryStore.listPeerRecords(),
         25_000,
         "listPeerRecords",
       );
-      // First try strict ownerId+peerId match. This works for records created by
-      // ensurePeerFromInboundChat (real ownerId). Stub records from ensurePeerByPeerId
-      // have ownerId=peerId, so they fail this check — fall back to peerId-only match.
-      let dirRow = records.find((r) => r.ownerId === targetOwnerId && r.peerId === cachedTransport.peerId);
-      if (!dirRow) {
-        dirRow = records.find((r) => r.peerId === cachedTransport.peerId);
-      }
-      if (!dirRow) {
-        dirRow = pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected });
-      }
-      const recipientEnvelopePeerId = dirRow?.devicePublicKeyPem
-        ? derivePeerId(dirRow.devicePublicKeyPem)
-        : targetOwnerId.startsWith("envoy_")
-          ? targetOwnerId
-          : undefined;
+      const dirRow =
+        records.find(
+          (r) => r.ownerId === targetOwnerId && r.peerId === cachedTransport.peerId,
+        ) ?? records.find((r) => r.peerId === cachedTransport.peerId);
+      const recipientEnvelopePeerId = resolveRecipientEnvelopePeerId(
+        records,
+        targetOwnerId,
+        cachedTransport.peerId,
+      );
       return {
         transportPeerId: cachedTransport.peerId,
         recipientEnvelopePeerId,
@@ -2974,51 +2951,37 @@ class NodeServiceImpl implements NodeService {
     if (!targetPeer) {
       const records = await raceWithTimeout(this._peerDirectoryStore.listPeerRecords(), 25_000, "listPeerRecords");
       targetPeer =
-        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected }) ??
+        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId) ??
         records.find((r) => r.ownerId === targetOwnerId) ??
         records.find((r) => r.peerId === targetOwnerId) ??
         undefined;
     } else if (!isLibp2pPeerId(targetPeer.peerId)) {
       const records = await raceWithTimeout(this._peerDirectoryStore.listPeerRecords(), 25_000, "listPeerRecords");
-      targetPeer =
-        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected }) ?? targetPeer;
+      targetPeer = pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId) ?? targetPeer;
     }
     if (!targetPeer?.peerId) {
       throw new Error(`Peer not found for owner: ${targetOwnerId}`);
     }
     const transportPeerId = targetPeer.peerId;
     if (!isLibp2pPeerId(transportPeerId)) {
-      const mesh = this._reachableMesh();
-      if (mesh) {
-        const records = await this._peerDirectoryStore.listPeerRecords();
-        for (const rec of records.filter((r) => r.ownerId === targetOwnerId && isLibp2pPeerId(r.peerId))) {
-          const info = mesh.getPeerConnectionInfo(rec.peerId);
-          if (info.connected) {
-            const recipientEnvelopePeerId = rec.devicePublicKeyPem
-              ? derivePeerId(rec.devicePublicKeyPem)
-              : undefined;
-            return {
-              transportPeerId: rec.peerId,
-              recipientEnvelopePeerId,
-              listenAddrs: rec.listenAddrs,
-            };
-          }
-        }
-      }
       throw new Error(`Peer directory has Envoy envelope id for this owner (not libp2p).`);
     }
-    const recipientEnvelopePeerId = targetPeer.devicePublicKeyPem
-      ? derivePeerId(targetPeer.devicePublicKeyPem)
-      : targetOwnerId.startsWith("envoy_")
-        ? targetOwnerId
-        : undefined;
+    const allRecords = await raceWithTimeout(
+      this._peerDirectoryStore.listPeerRecords(),
+      25_000,
+      "listPeerRecords",
+    );
+    const recipientEnvelopePeerId = resolveRecipientEnvelopePeerId(
+      allRecords,
+      targetOwnerId,
+      transportPeerId,
+    );
     // If the found record has no listenAddrs, search all records for one with the
     // same ownerId that has listenAddrs. This catches the stub record created by
     // ensurePeerByPeerId (which holds the real UPnP address) when getPeerByOwnerId
     // returned a newer record with a relay peerId and no addresses.
     let listenAddrs = targetPeer.listenAddrs;
     if (!listenAddrs?.length) {
-      const allRecords = await this._peerDirectoryStore.listPeerRecords();
       const altRecord = allRecords.find(
         (r) => r.ownerId === targetOwnerId && r.listenAddrs?.length,
       );
@@ -3633,6 +3596,13 @@ class NodeServiceImpl implements NodeService {
       deliverResult = await this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
     }
 
+    if (deliverResult.delivered || transportPeerId !== mesh.peerId) {
+      this._lastLibp2pTransportByOwner.set(targetOwnerId, {
+        peerId: transportPeerId,
+        listenAddrs: listenAddrs ?? [],
+      });
+    }
+
     const deliveryReceipt = deliverResult.delivered ? ("delivered" as const) : ("sent" as const);
     const emittedMsg: ChatMessage = {
       messageId: envelope.messageId,
@@ -3730,6 +3700,13 @@ class NodeServiceImpl implements NodeService {
       deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
     } else {
       deliverResult = await this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
+    }
+
+    if (deliverResult.delivered || transportPeerId !== mesh.peerId) {
+      this._lastLibp2pTransportByOwner.set(targetOwnerId, {
+        peerId: transportPeerId,
+        listenAddrs: listenAddrs ?? [],
+      });
     }
 
     const deliveryReceipt = deliverResult.delivered ? ("delivered" as const) : ("sent" as const);
@@ -10750,20 +10727,6 @@ class NodeServiceImpl implements NodeService {
     }
 
     try {
-      const candidates = await this._listLibp2pTransportCandidatesForOwner(peerOwnerId);
-      for (const candidate of candidates) {
-        if (candidate.transportPeerId === mesh.peerId) {
-          return { connected: true, direct: true };
-        }
-        const info = mesh.getPeerConnectionInfo(candidate.transportPeerId);
-        if (info.connected) {
-          return info;
-        }
-      }
-      const fallback = candidates[0];
-      if (fallback) {
-        return mesh.getPeerConnectionInfo(fallback.transportPeerId);
-      }
       const { transportPeerId } = await this._resolvePeerTransportForOwner(peerOwnerId);
       if (transportPeerId === mesh.peerId) {
         return { connected: true, direct: true };
@@ -10777,10 +10740,6 @@ class NodeServiceImpl implements NodeService {
   private async _listLibp2pTransportCandidatesForOwner(
     targetOwnerId: string,
   ): Promise<Array<{ transportPeerId: string; listenAddrs: string[] | undefined }>> {
-    const mesh = this._reachableMesh();
-    const isConnected = mesh
-      ? (peerId: string) => mesh.getPeerConnectionInfo(peerId).connected
-      : undefined;
     let records: Awaited<ReturnType<LocalPeerDirectoryStore["listPeerRecords"]>>;
     try {
       records = await raceWithTimeout(
@@ -10793,15 +10752,7 @@ class NodeServiceImpl implements NodeService {
     }
 
     const matches = records.filter((r) => r.ownerId === targetOwnerId && isLibp2pPeerId(r.peerId));
-    matches.sort((a, b) => {
-      const ac = isConnected?.(a.peerId) ? 1 : 0;
-      const bc = isConnected?.(b.peerId) ? 1 : 0;
-      if (ac !== bc) return bc - ac;
-      const aAddrs = a.listenAddrs?.length ? 1 : 0;
-      const bAddrs = b.listenAddrs?.length ? 1 : 0;
-      if (aAddrs !== bAddrs) return bAddrs - aAddrs;
-      return b.lastSeenAt.localeCompare(a.lastSeenAt);
-    });
+    matches.sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
 
     const out: Array<{ transportPeerId: string; listenAddrs: string[] | undefined }> = [];
     const seen = new Set<string>();
@@ -10811,13 +10762,13 @@ class NodeServiceImpl implements NodeService {
       out.push({ transportPeerId, listenAddrs });
     };
 
-    for (const rec of matches) {
-      push(rec.peerId, rec.listenAddrs);
-    }
-
     const cached = this._lastLibp2pTransportByOwner.get(targetOwnerId);
     if (cached?.peerId) {
       push(cached.peerId, cached.listenAddrs);
+    }
+
+    for (const rec of matches) {
+      push(rec.peerId, rec.listenAddrs);
     }
 
     if (out.length === 0) {
@@ -10835,11 +10786,30 @@ class NodeServiceImpl implements NodeService {
   private async _warmSingleTransportPeer(
     transportPeerId: string,
     listenAddrs: string[] | undefined,
+    aggressive: boolean,
+    verifyOnly = false,
   ): Promise<PeerConnectionInfo> {
     const mesh = this._requireMesh();
     void this._tagBondedContactReachability(transportPeerId);
 
     const existing = mesh.getPeerConnectionInfo(transportPeerId);
+    if (verifyOnly) {
+      if (!existing.connected) {
+        return { connected: false, direct: false };
+      }
+      const verified = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
+        verifyConnection: true,
+      });
+      if (!verified.connected) {
+        try {
+          await mesh.closeConnectionsToPeer(transportPeerId);
+        } catch {
+          /* ignore */
+        }
+      }
+      return verified;
+    }
+
     if (existing.connected) {
       const verified = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
         verifyConnection: true,
@@ -10852,7 +10822,7 @@ class NodeServiceImpl implements NodeService {
       } catch {
         /* ignore */
       }
-    } else {
+    } else if (aggressive) {
       try {
         await mesh.closeConnectionsToPeer(transportPeerId);
       } catch {
@@ -10861,26 +10831,28 @@ class NodeServiceImpl implements NodeService {
     }
 
     let dialHints: string[] = [];
-    try {
-      dialHints = await raceWithTimeout(
-        this._dialHintsForChat(transportPeerId, listenAddrs),
-        15_000,
-        "_dialHintsForChat",
-      );
-    } catch (err) {
-      console.warn(
-        `[warmContact] dial hints failed for ${transportPeerId.slice(0, 12)}…:`,
-        err instanceof Error ? err.message : err,
-      );
+    if (aggressive || !existing.connected) {
+      try {
+        dialHints = await raceWithTimeout(
+          this._dialHintsForChat(transportPeerId, listenAddrs),
+          aggressive ? 15_000 : 10_000,
+          "_dialHintsForChat",
+        );
+      } catch (err) {
+        console.warn(
+          `[warmContact] dial hints failed for ${transportPeerId.slice(0, 12)}…:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     }
 
     const preferCircuitHints = dialHints.some((h) => h.includes("/p2p-circuit/"));
     let result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
       dialHints,
       preferCircuitHints,
-      forceFreshDial: true,
+      forceFreshDial: aggressive,
     });
-    if (!result.connected) {
+    if (!result.connected && aggressive) {
       try {
         const rebuilt = await this._dialHintsForChat(transportPeerId, listenAddrs);
         result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
@@ -10895,18 +10867,26 @@ class NodeServiceImpl implements NodeService {
     return result;
   }
 
-  async warmContactConnection(peerOwnerId: string): Promise<PeerConnectionInfo> {
+  async warmContactConnection(
+    peerOwnerId: string,
+    options?: { redial?: boolean; verifyOnly?: boolean },
+  ): Promise<PeerConnectionInfo> {
+    const aggressive = options?.redial === true;
+    const verifyOnly = options?.verifyOnly === true;
     this._assertOnline();
     const candidates = await this._listLibp2pTransportCandidatesForOwner(peerOwnerId);
     if (candidates.length === 0) {
       return { connected: false, direct: false };
     }
 
+    const toWarm = aggressive ? candidates : candidates.slice(0, 1);
     let lastResult: PeerConnectionInfo = { connected: false, direct: false };
-    for (const candidate of candidates) {
+    for (const candidate of toWarm) {
       lastResult = await this._warmSingleTransportPeer(
         candidate.transportPeerId,
         candidate.listenAddrs,
+        aggressive,
+        verifyOnly,
       );
       if (lastResult.connected) {
         this._lastLibp2pTransportByOwner.set(peerOwnerId, {
@@ -10917,9 +10897,11 @@ class NodeServiceImpl implements NodeService {
         void this._flushPendingRoomMessages();
         return lastResult;
       }
-      console.warn(
-        `[warmContact] dial failed for owner ${peerOwnerId.slice(0, 20)}… via ${candidate.transportPeerId.slice(0, 12)}…`,
-      );
+      if (aggressive) {
+        console.warn(
+          `[warmContact] dial failed for owner ${peerOwnerId.slice(0, 20)}… via ${candidate.transportPeerId.slice(0, 12)}…`,
+        );
+      }
     }
 
     void this._flushPendingRoomSyncs();
@@ -10934,7 +10916,7 @@ class NodeServiceImpl implements NodeService {
     void this._warmAllBondedContacts();
     this._bondWarmTimer = setInterval(() => {
       void this._warmAllBondedContacts();
-    }, 45_000);
+    }, 90_000);
   }
 
   private async _warmAllBondedContacts(): Promise<void> {
@@ -10947,7 +10929,7 @@ class NodeServiceImpl implements NodeService {
         continue;
       }
       try {
-        await this.warmContactConnection(bond.peerOwnerId);
+        await this.warmContactConnection(bond.peerOwnerId, { verifyOnly: true });
       } catch {
         /* best-effort keepalive */
       }

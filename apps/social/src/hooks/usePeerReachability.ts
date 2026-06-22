@@ -2,12 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PeerConnectionInfo } from "@envoymesh/api";
 import { useNodeService } from "./useNodeService.js";
 
-const POLL_ONLINE_MS = 12_000;
-const POLL_OFFLINE_MS = 4_000;
+const POLL_ONLINE_MS = 25_000;
+const POLL_OFFLINE_MS = 12_000;
 /** Keep showing online briefly after a transient libp2p disconnect (idle timeout, mesh repair). */
-const OFFLINE_GRACE_MS = 30_000;
+const OFFLINE_GRACE_MS = 60_000;
 /** Require consecutive failed checks before flipping UI to offline. */
-const FAILURES_BEFORE_OFFLINE = 2;
+const FAILURES_BEFORE_OFFLINE = 3;
+/** After UI shows offline, run a full redial every N gentle probe cycles. */
+const OFFLINE_REDIAL_EVERY = 3;
 
 /** Live libp2p reachability for a bonded contact (direct P2P or relay circuit). */
 export function usePeerReachability(peerOwnerId: string | null, enabled = true) {
@@ -17,6 +19,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
   const infoRef = useRef<PeerConnectionInfo | null>(null);
   const lastConnectedAtRef = useRef(0);
   const consecutiveFailuresRef = useRef(0);
+  const offlineProbeCountRef = useRef(0);
   const refreshInFlightRef = useRef(false);
   const generationRef = useRef(0);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -29,6 +32,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
     if (next.connected) {
       lastConnectedAtRef.current = Date.now();
       consecutiveFailuresRef.current = 0;
+      offlineProbeCountRef.current = 0;
       infoRef.current = next;
       setInfo(next);
       return;
@@ -49,7 +53,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
   }, []);
 
   const refresh = useCallback(
-    async (opts?: { warm?: boolean; silent?: boolean }) => {
+    async (opts?: { warm?: boolean; redial?: boolean; verifyOnly?: boolean; silent?: boolean }) => {
       if (!enabled || !peerOwnerId || !nodeService.isConnected) {
         setInfo(null);
         infoRef.current = null;
@@ -64,15 +68,20 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       if (showChecking) setChecking(true);
       try {
         const showingOnline = infoRef.current?.connected === true;
-        // Once offline (or unknown), every poll must re-dial — cold getPeerConnectionInfo never reconnects.
-        const warm = opts?.warm === true || !showingOnline;
-        let next = warm
-          ? await nodeService.warmContactConnection(peerOwnerId)
-          : await nodeService.getPeerConnectionInfo(peerOwnerId);
-        // During grace (UI still online) start re-dialing as soon as libp2p drops.
-        if (!next.connected && showingOnline && !warm) {
-          next = await nodeService.warmContactConnection(peerOwnerId);
+        let next: PeerConnectionInfo;
+
+        if (opts?.redial === true || opts?.warm === true) {
+          next = await nodeService.warmContactConnection(peerOwnerId, { redial: opts?.redial === true });
+        } else if (opts?.verifyOnly === true || showingOnline) {
+          next = await nodeService.warmContactConnection(peerOwnerId, { verifyOnly: true });
+        } else {
+          offlineProbeCountRef.current += 1;
+          const shouldRedial = offlineProbeCountRef.current % OFFLINE_REDIAL_EVERY === 0;
+          next = await nodeService.warmContactConnection(peerOwnerId, {
+            redial: shouldRedial,
+          });
         }
+
         if (gen !== generationRef.current) {
           return;
         }
@@ -97,6 +106,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       setChecking(false);
       lastConnectedAtRef.current = 0;
       consecutiveFailuresRef.current = 0;
+      offlineProbeCountRef.current = 0;
       generationRef.current += 1;
       if (pollTimerRef.current) {
         clearTimeout(pollTimerRef.current);
@@ -117,7 +127,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       }, delay);
     };
 
-    void refresh({ warm: true }).finally(() => {
+    void refresh({ silent: true }).finally(() => {
       scheduleNext();
     });
 

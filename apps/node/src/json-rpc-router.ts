@@ -387,7 +387,13 @@ export async function routeRpcMethod(
     case "getPeerConnectionInfo":
       return ns.getPeerConnectionInfo(params.peerOwnerId as string);
     case "warmContactConnection":
-      return ns.warmContactConnection(params.peerOwnerId as string);
+      return ns.warmContactConnection(
+        String(params.peerOwnerId ?? ""),
+        {
+          ...(params.redial === true ? { redial: true } : {}),
+          ...(params.verifyOnly === true ? { verifyOnly: true } : {}),
+        },
+      );
     case "getChatDiagnostics":
       return ns.getChatDiagnostics(params.peerOwnerId as string | undefined);
     case "getConnectivityDiagnostics":

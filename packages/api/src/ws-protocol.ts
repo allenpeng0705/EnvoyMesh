@@ -1265,6 +1265,8 @@ export interface GetPeerConnectionInfoParams {
 
 export interface WarmContactConnectionParams {
   peerOwnerId: string;
+  /** When true, close stale paths and force a fresh dial. Default false (probe / gentle reconnect). */
+  redial?: boolean;
 }
 
 export interface GetChatDiagnosticsParams {

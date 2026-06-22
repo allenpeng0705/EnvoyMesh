@@ -846,6 +846,14 @@ export interface PeerConnectionInfo {
   relayPeerId?: string;
 }
 
+/** Options for {@link NodeService.warmContactConnection}. */
+export interface WarmContactConnectionOptions {
+  /** Close stale libp2p paths and force a fresh dial (use after send failure). Default false. */
+  redial?: boolean;
+  /** When true, only verify an existing libp2p path (no dial). Use for online UI polls. Default false. */
+  verifyOnly?: boolean;
+}
+
 export interface ChatDiagnosticsContact {
   peerOwnerId: string;
   peerFound: boolean;
@@ -1997,8 +2005,13 @@ export interface NodeService {
 
   /**
    * Pre-dial a bonded contact so relay/P2P paths are warm before chat or file share.
+   * By default probes existing connections without tearing them down; pass `{ redial: true }`
+   * to close stale paths and force a fresh dial (e.g. after a send failure).
    */
-  warmContactConnection(peerOwnerId: string): Promise<PeerConnectionInfo>;
+  warmContactConnection(
+    peerOwnerId: string,
+    options?: WarmContactConnectionOptions,
+  ): Promise<PeerConnectionInfo>;
 
   /**
    * Operator diagnostics for cross-NAT chat: relay cycles, dial hints, and human-readable hints.

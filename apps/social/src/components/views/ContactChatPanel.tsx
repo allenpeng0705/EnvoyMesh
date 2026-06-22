@@ -341,7 +341,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     void (async () => {
       try {
         const result = await nodeService.sendChat(selectedContact, text);
-        void refreshReachability({ warm: true, silent: true });
+        void refreshReachability({ warm: true, redial: true, silent: true });
         setPendingOutbound((prev) =>
           prev.map((m) =>
             m.messageId === tempId
@@ -475,7 +475,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
             vaultRelativePath: result.vaultRelativePath,
           },
         ]);
-        void refreshReachability({ warm: true, silent: true });
+        void refreshReachability({ warm: true, redial: true, silent: true });
         setPendingOutbound((prev) =>
           prev.map((m) =>
             m.messageId === tempId

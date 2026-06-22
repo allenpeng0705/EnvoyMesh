@@ -313,7 +313,7 @@ export class EnvoyMesh {
     this.node = await createLibp2p({
       ...(libp2pPrivateKey != null ? { privateKey: libp2pPrivateKey } : {}),
       connectionMonitor: {
-        pingInterval: 30_000,
+        pingInterval: 45_000,
         abortConnectionOnPingFailure: false,
       },
       connectionManager: {
@@ -1193,6 +1193,7 @@ export class EnvoyMesh {
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
+      return { connected: false, direct: false };
     }
     return peerIdStr ? this.getPeerConnectionInfo(peerIdStr) : { connected: false, direct: false };
   }
