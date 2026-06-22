@@ -1870,7 +1870,7 @@ async function handleInboundMeshMessage({
     if (
       intendedRecipient &&
       intendedRecipient !== localDevicePeerId &&
-      intendedRecipient !== bridgeIdentity.agentPeerId
+      intendedRecipient !== bridgeIdentity?.agentPeerId
     ) {
       console.warn(
         `[chat.message] ignoring misaddressed message for ${intendedRecipient.slice(0, 16)}… messageId=${envelope.messageId}`,
@@ -1934,7 +1934,7 @@ async function handleInboundMeshMessage({
       }
     }
 
-    if (envelope.recipientPeerId === bridgeIdentity.agentPeerId) {
+    if (bridgeIdentity && envelope.recipientPeerId === bridgeIdentity.agentPeerId) {
       void bridgeHandleMessage(envelope, remotePeerId);
       return;
     }
@@ -2790,7 +2790,7 @@ function scheduleMeshInboundDrain(): void {
   });
 }
 
-mesh.onMessage((params) => {
+mesh.onMessage(async (params) => {
   const { envelope: inboundEnvelope, remotePeerId } = params;
   if (isMessageSeen(inboundEnvelope.messageId)) {
     return;
