@@ -112,6 +112,7 @@ class CallProvider extends ChangeNotifier {
   /// event arriving during the RPC window) can close it instead of
   /// leaking the `RTCPeerConnection` + `MediaStream`.
   WebRtcCallTransport? _pendingTransport;
+  String _iceCallId = '';
 
   CallProvider(this._nodeService, {this.transportFactory})
       : _audioSession = AudioSessionHelper() {
@@ -150,6 +151,15 @@ class CallProvider extends ChangeNotifier {
 
   CallState get state => _state;
 
+  void _forwardIceCandidate(CallIceCandidate candidate) {
+    final callId = _iceCallId.isNotEmpty ? _iceCallId : (_state.callId ?? '');
+    if (callId.isEmpty) return;
+    _nodeService.sendIceCandidate(callId, candidate.toJson()).catchError((_) {
+      // ignore: avoid_print
+      print('[CallProvider] sendIceCandidate failed');
+    });
+  }
+
   WebRtcCallTransport _buildTransport({
     required String callId,
     required List<IceServer> iceServers,
@@ -166,7 +176,7 @@ class CallProvider extends ChangeNotifier {
         },
         onConnectionStateChange: (_) {},
         onSdpGenerated: (_, __) {},
-        onIceCandidate: (_) {},
+        onIceCandidate: _forwardIceCandidate,
       );
     }
     return WebRtcCallTransport(
@@ -191,7 +201,7 @@ class CallProvider extends ChangeNotifier {
         notifyListeners();
       },
       onSdpGenerated: (_, __) {},
-      onIceCandidate: (_) {},
+      onIceCandidate: _forwardIceCandidate,
     );
   }
 
@@ -213,15 +223,43 @@ class CallProvider extends ChangeNotifier {
         );
         break;
       case 'call:answered':
+        final sdpAnswer = event['sdpAnswer'] as String?;
+        final transport = _state.transport ?? _pendingTransport;
+        if (sdpAnswer != null && transport is WebRtcCallTransport) {
+          transport.applyRemoteAnswer(sdpAnswer).catchError((err) {
+            // ignore: avoid_print
+            print('[CallProvider] applyRemoteAnswer failed: $err');
+          });
+        }
         _state = _state.copyWith(
           isIncoming: false,
           isActive: true,
           connectionState: 'connected',
         );
         break;
+      case 'call:ice-candidate':
+        final eventCallId = event['callId'] as String?;
+        final activeCallId = _state.callId ?? _iceCallId;
+        if (eventCallId != null &&
+            activeCallId.isNotEmpty &&
+            eventCallId == activeCallId) {
+          final candidateRaw = event['candidate'];
+          final iceTransport = _state.transport ?? _pendingTransport;
+          if (iceTransport is WebRtcCallTransport && candidateRaw is Map) {
+            iceTransport
+                .addIceCandidate(
+                  CallIceCandidate.fromJson(
+                    Map<String, dynamic>.from(candidateRaw),
+                  ),
+                )
+                .catchError((_) {});
+          }
+        }
+        break;
       case 'call:ended':
       case 'call:rejected':
       case 'call:error':
+        _iceCallId = '';
         _closeTransport();
         // ignore: unawaited_futures
         _safeResetAudioSession();
@@ -351,6 +389,7 @@ class CallProvider extends ChangeNotifier {
     // We use a temporary callId and let the home assign the real one
     // when we sendCallInvite.
     final tempCallId = 'pending-${DateTime.now().microsecondsSinceEpoch}';
+    _iceCallId = '';
     final transport = _buildTransport(
       callId: tempCallId,
       iceServers: iceServers,
@@ -383,11 +422,13 @@ class CallProvider extends ChangeNotifier {
     );
     if (callId == null) {
       _pendingTransport = null;
+      _iceCallId = '';
       await transport.close();
       await _safeResetAudioSession();
       return null;
     }
 
+    _iceCallId = callId;
     _state = _state.copyWith(
       callId: callId,
       peerOwnerId: targetOwnerId,
@@ -429,6 +470,7 @@ class CallProvider extends ChangeNotifier {
     final iceServers = _incomingIceServers.isNotEmpty
         ? _incomingIceServers
         : await _loadIceServers();
+    _iceCallId = callId;
     final transport = _buildTransport(
       callId: callId,
       iceServers: iceServers,
@@ -458,6 +500,7 @@ class CallProvider extends ChangeNotifier {
     );
     if (!ok) {
       _pendingTransport = null;
+      _iceCallId = '';
       await transport.close();
       await _safeResetAudioSession();
       return false;
@@ -546,6 +589,7 @@ class CallProvider extends ChangeNotifier {
 
   /// Tear down the active transport (best-effort).
   void _closeTransport() {
+    _iceCallId = '';
     // Close the in-flight transport first (the one that's still being
     // built during sendCallInvite/acceptCallInvite RPC round-trips);
     // otherwise dispose() / a remote-end event during that window

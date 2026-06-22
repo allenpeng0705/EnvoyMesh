@@ -54,6 +54,19 @@ import type {
   ChainGetDefaultsResult,
   ChainSetDefaultsParams,
   ChainSetDefaultsResult,
+  ChainPreviewGoalParams,
+  ChainPreviewGoalResult,
+  ChainStartFromGoalParams,
+  ChainStartFromGoalResult,
+  ChainExportCostsParams,
+  ChainExportCostsResult,
+  ChainListRecipesParams,
+  ChainListRecipesResult,
+  ChainSaveRecipeParams,
+  ChainSaveRecipeResult,
+  ChainDeleteRecipeParams,
+  ChainDeleteRecipeResult,
+  ChainReportReceivedEvent,
 } from "./ws-protocol.js";
 import type { TransferStatus } from "./transfer-status.js";
 import type {
@@ -1106,6 +1119,12 @@ export interface NodeServiceEvents {
   /** Home terminal PTY tunnel bytes (Phase 30E — mobile HomeRemote). */
   "homeTerminalWs:rx": { dataBase64: string };
   "homeTerminalWs:closed": Record<string, never>;
+
+  /** Phase 43D — live chain state push for ChainsView. */
+  "chain:state": ChainGetStateResult;
+
+  /** Phase 43D — chain report ready for inline chat card. */
+  "chain:report": ChainReportReceivedEvent;
 }
 
 export interface NodeService {
@@ -2095,6 +2114,17 @@ export interface NodeService {
   ): Promise<string | null>;
 
   /**
+   * Path 1 → Path 2 fallback: send an updated SDP offer with STUN/TURN
+   * for an in-progress outbound call (same callId).
+   */
+  sendCallReinvite(
+    callId: string,
+    sdpOffer: string,
+    iceServers?: { urls: string; username?: string; credential?: string }[],
+    reason?: "path1_timeout" | "path1_failed",
+  ): Promise<boolean>;
+
+  /**
    * Accept an incoming call. Returns true if the call was accepted.
    *
    * Phase 42A — `sdpAnswer` is the SDP answer produced by the callee's
@@ -2115,6 +2145,17 @@ export interface NodeService {
 
   /** Mute/unmute the local audio track for a call. */
   setCallMuted(callId: string, muted: boolean): Promise<boolean>;
+
+  /** Send a trickle ICE candidate to the remote peer for an active call. */
+  sendIceCandidate(
+    callId: string,
+    candidate: {
+      candidate: string;
+      sdpMid: string | null;
+      sdpMLineIndex: number | null;
+      usernameFragment?: string | null;
+    },
+  ): Promise<boolean>;
 
   // ----- Phase 31I — Push Notifications -----
 
@@ -2194,6 +2235,24 @@ export interface NodeService {
    * forward (per-chain `ChainMandate` fields still take precedence).
    */
   chainSetDefaults(params: ChainSetDefaultsParams): Promise<ChainSetDefaultsResult>;
+
+  /** Phase 43B — preview a chain plan and worker availability without launching. */
+  chainPreviewGoal(params: ChainPreviewGoalParams): Promise<ChainPreviewGoalResult>;
+
+  /** Phase 43B — launch a chain from a natural-language goal with smart defaults. */
+  chainStartFromGoal(params: ChainStartFromGoalParams): Promise<ChainStartFromGoalResult>;
+
+  /** Phase 43H — export chain cost breakdown as CSV. */
+  chainExportCosts(params: ChainExportCostsParams): Promise<ChainExportCostsResult>;
+
+  /** Phase 43H — list built-in chain goal templates. */
+  chainListRecipes(params?: ChainListRecipesParams): Promise<ChainListRecipesResult>;
+
+  /** Phase 43H — save an owner-defined chain recipe. */
+  chainSaveRecipe(params: ChainSaveRecipeParams): Promise<ChainSaveRecipeResult>;
+
+  /** Phase 43H — delete a saved chain recipe. */
+  chainDeleteRecipe(params: ChainDeleteRecipeParams): Promise<ChainDeleteRecipeResult>;
 }
 
 // --------------------------------------------------------------------------
@@ -2222,8 +2281,34 @@ export type CallEvent =
       /** Phase 42 — ICE servers the callee should use for the RTCPeerConnection. */
       iceServers?: { urls: string; username?: string; credential?: string }[];
     }
-  | { type: "call:answered"; callId: string }
+  | {
+      type: "call:answered";
+      callId: string;
+      /** Present when the remote party accepted — caller applies this as the remote answer SDP. */
+      sdpAnswer?: string;
+      iceServers?: { urls: string; username?: string; credential?: string }[];
+    }
+  | {
+      type: "call:reinvite";
+      callId: string;
+      peerOwnerId: string;
+      sdpOffer: string;
+      iceServers: { urls: string; username?: string; credential?: string }[];
+      reason: "path1_timeout" | "path1_failed";
+      transportPath: "path2";
+    }
   | { type: "call:rejected"; callId: string; reason: "busy" | "declined" | "offline" | "error" | "no_answer" }
+  | {
+      type: "call:ice-candidate";
+      callId: string;
+      candidate: {
+        candidate: string;
+        sdpMid: string | null;
+        sdpMLineIndex: number | null;
+        usernameFragment?: string | null;
+      };
+      fromOwnerId: string;
+    }
   | { type: "call:remote-mute"; callId: string; muted: boolean }
   | { type: "call:ended"; callId: string; reason: "normal" | "error" | "no_answer" }
   | { type: "call:error"; callId: string; error: string };

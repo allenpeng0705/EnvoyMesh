@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CallManager } from "../src/call-manager.js";
 import { CALL_RING_TIMEOUT_MS } from "@envoymesh/protocol";
 
+const LOCAL_OWNER = "envoy:owner:self";
+
 describe("CallManager", () => {
   let cm: CallManager;
 
@@ -19,20 +21,30 @@ describe("CallManager", () => {
   // ------------------------------------------------------------------
   describe("outbound calls", () => {
     it("registers outbound call and returns callId", () => {
-      const callId = cm.outboundCallInitiated("call-1", "envoy:owner:bob", "Bob");
+      const callId = cm.outboundCallInitiated(
+        "call-1",
+        LOCAL_OWNER,
+        "envoy:owner:bob",
+        "Bob",
+      );
       expect(callId).toBe("call-1");
       expect(cm.getActiveCall()).toMatchObject({ callId: "call-1", status: "ringing" });
     });
 
     it("rejects second outbound when already in a call", () => {
-      cm.outboundCallInitiated("call-1", "envoy:owner:bob", "Bob");
-      const second = cm.outboundCallInitiated("call-2", "envoy:owner:charlie", "Charlie");
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
+      const second = cm.outboundCallInitiated(
+        "call-2",
+        LOCAL_OWNER,
+        "envoy:owner:charlie",
+        "Charlie",
+      );
       expect(second).toBeNull();
     });
 
     it("transitions to active when callee accepts", () => {
-      cm.outboundCallInitiated("call-1", "envoy:owner:bob", "Bob");
-      const accepted = cm.outboundCallAccepted("call-1");
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
+      const accepted = cm.outboundCallAccepted("call-1", "v=0\r\nanswer");
       expect(accepted).toBe(true);
       expect(cm.getActiveCall()).toMatchObject({ callId: "call-1", status: "active" });
     });
@@ -41,10 +53,10 @@ describe("CallManager", () => {
       expect(cm.outboundCallAccepted("nonexistent")).toBe(false);
     });
 
-    it("rejects outboundCallAccepted when not in ringing state", () => {
-      cm.outboundCallInitiated("call-1", "envoy:owner:bob", "Bob");
+    it("allows outboundCallAccepted renegotiation when already active", () => {
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
       cm.outboundCallAccepted("call-1"); // now active
-      expect(cm.outboundCallAccepted("call-1")).toBe(false); // not ringing anymore
+      expect(cm.outboundCallAccepted("call-1", "v=0\r\nanswer2")).toBe(true);
     });
   });
 
@@ -56,10 +68,10 @@ describe("CallManager", () => {
       const events: any[] = [];
       cm.onCallEvent((e) => events.push(e));
 
-      const callId = cm.inboundCallReceived(
+      const result = cm.inboundCallReceived(
         "call-1", "envoy:owner:alice", "peer-alice", "Alice", "v=0\r\n...",
       );
-      expect(callId).toBe("call-1");
+      expect(result).toEqual({ ok: true, callId: "call-1" });
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({
         type: "call:incoming",
@@ -78,16 +90,16 @@ describe("CallManager", () => {
       const duplicate = cm.inboundCallReceived(
         "call-1", "envoy:owner:alice", "peer-alice", "Alice", "v=0\r\n...",
       );
-      expect(duplicate).toBeNull();
+      expect(duplicate).toEqual({ ok: false, reason: "duplicate" });
       expect(events).toHaveLength(1); // only one incoming event
     });
 
     it("rejects inbound when already in a call (busy)", () => {
-      cm.outboundCallInitiated("call-1", "envoy:owner:bob", "Bob");
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
       const incoming = cm.inboundCallReceived(
         "call-2", "envoy:owner:alice", "peer-alice", "Alice", "v=0\r\n...",
       );
-      expect(incoming).toBeNull();
+      expect(incoming).toEqual({ ok: false, reason: "busy" });
     });
 
     it("acceptInboundCall transitions to active", () => {
@@ -95,7 +107,7 @@ describe("CallManager", () => {
       const events: any[] = [];
       cm.onCallEvent((e) => events.push(e));
 
-      const accepted = cm.acceptInboundCall("call-1", "envoy:owner:self");
+      const accepted = cm.acceptInboundCall("call-1", LOCAL_OWNER);
       expect(accepted).toBe(true);
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({ type: "call:answered", callId: "call-1" });
@@ -103,7 +115,43 @@ describe("CallManager", () => {
     });
 
     it("rejects acceptInboundCall on non-ringing call", () => {
-      expect(cm.acceptInboundCall("nonexistent", "envoy:owner:self")).toBe(false);
+      expect(cm.acceptInboundCall("nonexistent", LOCAL_OWNER)).toBe(false);
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // ICE trickle
+  // ------------------------------------------------------------------
+  describe("ICE candidates", () => {
+    it("forwards ice candidates to subscribers for participants", () => {
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
+      cm.outboundCallAccepted("call-1");
+
+      const events: any[] = [];
+      cm.onCallEvent((e) => events.push(e));
+
+      const ok = cm.iceCandidateReceived(
+        "call-1",
+        { candidate: "candidate:1", sdpMid: "0", sdpMLineIndex: 0 },
+        "envoy:owner:bob",
+      );
+      expect(ok).toBe(true);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        type: "call:ice-candidate",
+        callId: "call-1",
+      });
+    });
+
+    it("rejects ice from non-participants", () => {
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
+      expect(
+        cm.iceCandidateReceived(
+          "call-1",
+          { candidate: "candidate:1", sdpMid: "0", sdpMLineIndex: 0 },
+          "envoy:owner:mallory",
+        ),
+      ).toBe(false);
     });
   });
 
@@ -135,7 +183,7 @@ describe("CallManager", () => {
       cm.onCallEvent((e) => events.push(e));
 
       cm.inboundCallReceived("call-1", "envoy:owner:alice", "peer-alice", "Alice", "v=0\r\n...");
-      cm.acceptInboundCall("call-1", "envoy:owner:self");
+      cm.acceptInboundCall("call-1", LOCAL_OWNER);
 
       vi.advanceTimersByTime(CALL_RING_TIMEOUT_MS + 100);
 
@@ -171,7 +219,7 @@ describe("CallManager", () => {
       const events: any[] = [];
       cm.onCallEvent((e) => events.push(e));
 
-      cm.outboundCallInitiated("call-1", "envoy:owner:bob", "Bob");
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
       cm.outboundCallAccepted("call-1");
       const result = cm.hangupCall("call-1", "normal");
       expect(result).toBe(true);
@@ -180,7 +228,7 @@ describe("CallManager", () => {
     });
 
     it("can hang up ringing call too", () => {
-      cm.outboundCallInitiated("call-1", "envoy:owner:bob", "Bob");
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
       expect(cm.hangupCall("call-1", "normal")).toBe(true);
       expect(cm.getActiveCall()).toBeNull();
     });
@@ -194,7 +242,7 @@ describe("CallManager", () => {
       const events: any[] = [];
       cm.onCallEvent((e) => events.push(e));
 
-      cm.outboundCallInitiated("call-1", "envoy:owner:bob", "Bob");
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
       cm.outboundCallAccepted("call-1");
 
       const result = cm.setMute("call-1", true);
@@ -209,17 +257,79 @@ describe("CallManager", () => {
   });
 
   // ------------------------------------------------------------------
+  // call.reinvite — Path 1 → Path 2 fallback
+  // ------------------------------------------------------------------
+  describe("call.reinvite", () => {
+    it("inboundCallReinvite emits call:reinvite while ringing", () => {
+      cm.inboundCallReceived("call-1", "envoy:owner:alice", "peer-alice", "Alice", "v=0\r\npath1");
+      const events: any[] = [];
+      cm.onCallEvent((e) => events.push(e));
+
+      const ok = cm.inboundCallReinvite(
+        "call-1",
+        "envoy:owner:alice",
+        "v=0\r\npath2",
+        [{ urls: "stun:stun.l.google.com:19302" }],
+        "path1_timeout",
+      );
+      expect(ok).toBe(true);
+      expect(events).toContainEqual({
+        type: "call:reinvite",
+        callId: "call-1",
+        peerOwnerId: "envoy:owner:alice",
+        sdpOffer: "v=0\r\npath2",
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        reason: "path1_timeout",
+        transportPath: "path2",
+      });
+    });
+
+    it("canSendOutboundReinvite allows ringing and active outbound calls", () => {
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
+      expect(cm.canSendOutboundReinvite("call-1", LOCAL_OWNER)).toBe(true);
+      cm.outboundCallAccepted("call-1", "v=0\r\nanswer");
+      expect(cm.canSendOutboundReinvite("call-1", LOCAL_OWNER)).toBe(true);
+    });
+
+    it("outboundCallAccepted works when already active (renegotiation)", () => {
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
+      cm.outboundCallAccepted("call-1", "v=0\r\nanswer1");
+      const events: any[] = [];
+      cm.onCallEvent((e) => events.push(e));
+      const ok = cm.outboundCallAccepted("call-1", "v=0\r\nanswer2");
+      expect(ok).toBe(true);
+      expect(events).toContainEqual({
+        type: "call:answered",
+        callId: "call-1",
+        sdpAnswer: "v=0\r\nanswer2",
+      });
+    });
+
+    it("acceptInboundCall allows renegotiation when already active", () => {
+      cm.inboundCallReceived("call-1", "envoy:owner:alice", "peer-alice", "Alice", "v=0\r\n...");
+      cm.acceptInboundCall("call-1", LOCAL_OWNER);
+      expect(cm.acceptInboundCall("call-1", LOCAL_OWNER)).toBe(true);
+    });
+
+    it("isCalleeMatch works for outbound calls", () => {
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
+      expect(cm.isCalleeMatch("call-1", "envoy:owner:bob")).toBe(true);
+      expect(cm.isCalleeMatch("call-1", "envoy:owner:alice")).toBe(false);
+    });
+  });
+
+  // ------------------------------------------------------------------
   // Identity binding helpers
   // ------------------------------------------------------------------
   describe("identity binding", () => {
-    it("isParticipant returns true for participant", () => {
-      cm.outboundCallInitiated("call-1", "envoy:owner:bob", "Bob");
-      // In outbound, only peer is in participants initially
+    it("isParticipant returns true for local and remote participants", () => {
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
       expect(cm.isParticipant("call-1", "envoy:owner:bob")).toBe(true);
+      expect(cm.isParticipant("call-1", LOCAL_OWNER)).toBe(true);
     });
 
     it("isParticipant returns false for non-participant", () => {
-      cm.outboundCallInitiated("call-1", "envoy:owner:bob", "Bob");
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
       expect(cm.isParticipant("call-1", "envoy:owner:mallory")).toBe(false);
     });
 

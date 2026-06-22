@@ -299,10 +299,12 @@ export type RpcMethods =
    | "home_claw_core_ws_close"
    // Phase 38 — Voice/Video Calls
    | "sendCallInvite"
+   | "sendCallReinvite"
    | "acceptCallInvite"
    | "declineCallInvite"
    | "endCall"
    | "setCallMuted"
+   | "sendIceCandidate"
    // Phase 31I — Push Notifications
    | "registerPushToken"
    | "unregisterPushToken"
@@ -321,7 +323,13 @@ export type RpcMethods =
   | "chainCounterBid"
   | "chainRebalance"
   | "chainGetDefaults"
-  | "chainSetDefaults";
+  | "chainSetDefaults"
+  | "chainPreviewGoal"
+  | "chainStartFromGoal"
+  | "chainExportCosts"
+  | "chainListRecipes"
+  | "chainSaveRecipe"
+  | "chainDeleteRecipe";
 
 // ============================================
 // Node Configuration Types
@@ -1498,6 +1506,12 @@ export interface ChainGetStateResult {
   budgetMaxUsd: number;
   budgetReservedUsd: number;
   budgetSynthesisUsd: number;
+  /** Phase 43 — natural-language goal (when known). */
+  goal?: string;
+  /** Phase 43 — estimated cost range shown before launch. */
+  estimatedCostRange?: { minUsd: number; maxUsd: number };
+  /** Phase 43G — budget burn warning level. */
+  budgetWarningLevel?: "ok" | "warn" | "exceeded";
   /**
    * Phase 40D — rebalance policy for this chain. Surfaced so the UI can
    * render the rebalance bar in "manual" / "auto" / "never" modes
@@ -1533,6 +1547,8 @@ export interface ChainGetStateResult {
       proposedCostUsd: number;
       proposedEtaAt: string;
       bidExpiresAt: string;
+      /** Phase 43E — worker bid rationale. */
+      rationale?: string;
     }>;
   }>;
 }
@@ -1632,7 +1648,7 @@ export interface ChainGetBidStrategyResult {
 export interface ChainEvaluateBidsParams {
   chainId: string;
   subtaskId: string;
-  policy?: "cheapest" | "fastest" | "highest_confidence";
+  policy?: "composite" | "cheapest" | "fastest" | "highest_confidence";
   maxRounds?: number;
   /** Phase 40D — owner-picked worker. Skips the policy sort. */
   pickWorkerPeerId?: string;
@@ -1709,4 +1725,113 @@ export interface ChainSetDefaultsResult {
   ok: boolean;
   defaults: ChainDefaultsConfig;
   reason?: "validation_failed";
+}
+
+/** Phase 43B — preview a chain plan without launching. */
+export interface ChainPreviewGoalParams {
+  goal: string;
+  templateId?: string;
+  maxChainCostUsd?: number;
+  costCeilingUsd?: number;
+  allowLlm?: boolean;
+}
+
+export interface ChainPreviewGoalResult {
+  ok: boolean;
+  chainId?: string;
+  subtasks: Array<{
+    subtaskId: string;
+    depth: number;
+    requiredCapability: string;
+    objective: string;
+    workerCount: number;
+  }>;
+  estimatedCostRange?: { minUsd: number; maxUsd: number };
+  diagnostics?: string[];
+  reason?: string;
+}
+
+/** Phase 43B — one-click chain launch from a natural-language goal. */
+export interface ChainStartFromGoalParams {
+  goal: string;
+  templateId?: string;
+  maxChainCostUsd?: number;
+  costCeilingUsd?: number;
+  allowLlm?: boolean;
+}
+
+export interface ChainStartFromGoalResult {
+  ok: boolean;
+  chainId?: string;
+  chainMandateId?: string;
+  subtasks?: Array<{
+    subtaskId: string;
+    depth: number;
+    requiredCapability: string;
+    objective: string;
+  }>;
+  estimatedCostRange?: { minUsd: number; maxUsd: number };
+  diagnostics?: string[];
+  error?: string;
+}
+
+/** Phase 43H — export chain cost breakdown as CSV. */
+export interface ChainExportCostsParams {
+  chainId: string;
+}
+
+export interface ChainExportCostsResult {
+  chainId: string;
+  csv: string;
+}
+
+/** Phase 43H — built-in goal templates for quick starts. */
+export interface ChainListRecipesParams {
+  /** No args. */
+}
+
+export interface ChainListRecipesResult {
+  recipes: Array<{
+    id: string;
+    label: string;
+    goal: string;
+    maxChainCostUsd?: number;
+    costCeilingUsd?: number;
+    /** True when persisted by the owner (vs built-in template). */
+    saved?: boolean;
+  }>;
+}
+
+/** Phase 43H — save a chain goal recipe. */
+export interface ChainSaveRecipeParams {
+  id?: string;
+  label: string;
+  goal: string;
+  maxChainCostUsd?: number;
+  costCeilingUsd?: number;
+}
+
+export interface ChainSaveRecipeResult {
+  ok: boolean;
+  recipe?: ChainListRecipesResult["recipes"][number];
+  reason?: "validation_failed";
+}
+
+export interface ChainDeleteRecipeParams {
+  id: string;
+}
+
+export interface ChainDeleteRecipeResult {
+  ok: boolean;
+  deleted: boolean;
+}
+
+/** Phase 43D — push when a chain report is stored for the owner. */
+export interface ChainReportReceivedEvent {
+  chainId: string;
+  executiveSummary?: string;
+  subtaskCount?: number;
+  workerCount?: number;
+  synthesisCostUsd?: number;
+  createdAt?: string;
 }

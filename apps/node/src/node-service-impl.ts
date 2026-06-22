@@ -164,6 +164,18 @@ import type {
   ChainGetDefaultsResult,
   ChainSetDefaultsParams,
   ChainSetDefaultsResult,
+  ChainPreviewGoalParams,
+  ChainPreviewGoalResult,
+  ChainStartFromGoalParams,
+  ChainStartFromGoalResult,
+  ChainExportCostsParams,
+  ChainExportCostsResult,
+  ChainListRecipesParams,
+  ChainListRecipesResult,
+  ChainSaveRecipeParams,
+  ChainSaveRecipeResult,
+  ChainDeleteRecipeParams,
+  ChainDeleteRecipeResult,
 } from "@envoymesh/api";
 
 import { randomUUID } from "node:crypto";
@@ -473,12 +485,50 @@ import {
   counterBid,
   createChainState,
   evaluateBids,
+  handleOrchestratorBid,
+  handleOrchestratorHeartbeat,
+  handleOrchestratorMerge,
+  handleOrchestratorPartial,
   launchChain,
   planChain,
   rebalanceChain,
+  sendChainAccept,
+  trackChain,
   type ChainOrchestratorHandlerDeps,
   type ChainState,
 } from "./chain-orchestrator.js";
+import { CapabilityIndex } from "./capability-index.js";
+import {
+  extractChainIdFromEnvelope,
+  sendChainEnvelopeOverMesh,
+  type ChainTransportResolver,
+} from "./chain-production.js";
+import { dispatchChainEnvelope } from "./chain-inbound.js";
+import type { ChainInboundDeps } from "./chain-inbound-types.js";
+import {
+  handleWorkerAccept,
+  handleWorkerCancel,
+  handleWorkerHeartbeat,
+  handleWorkerMandate,
+  handleWorkerPropose,
+  type ChainWorkerHandlerDeps,
+} from "./chain-worker.js";
+import {
+  evaluateAndAcceptBestBid,
+  subtasksAwaitingAward,
+  tryCompleteChainIfReady,
+  chainBudgetWarningLevel,
+} from "./chain-auto-orchestrator.js";
+import {
+  CHAIN_AUTO_EVALUATE_MS,
+  CHAIN_GOAL_TEMPLATES,
+  DEFAULT_CHAIN_DEFAULTS,
+  estimateChainCostRange,
+  mergeChainDefaults,
+} from "./chain-defaults.js";
+import { executeAcceptedSubtask } from "./chain-worker-executor.js";
+import { chainCostsToCsv } from "./chain-cost-export.js";
+import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
 import { ensureOpenClawWorkspace, openClawGatewayStateDir, openClawWorkspaceDir } from "./openclaw-workspace.js";
 import {
   buildAllLocalFilesList,
@@ -506,8 +556,8 @@ import { recordTaskJournalActivity, emitOwnerReport } from "./agent-activity-hoo
 import { recordCommerceReceiptFromTaskResult } from "./commerce-receipt-inbound.js";
 import type { Report } from "@envoymesh/protocol";
 import type { DispatcherDecision } from "./task-dispatcher.js";
-import type { ApprovalQueue, DiscoveryForwardApprovalPayload } from "@envoymesh/api";
-import { executeApprovedAction } from "@envoymesh/api";
+import type { ApprovalQueue, DiscoveryForwardApprovalPayload, ChainAwardApprovalPayload } from "@envoymesh/api";
+import { createApprovalItem, executeApprovedAction } from "@envoymesh/api";
 import {
   buildForwardedDiscoveryPayload,
   queueDiscoveryForwardApproval,
@@ -658,6 +708,24 @@ class NodeServiceImpl implements NodeService {
   private _pairingKiosk: PairingKioskServerHandle | null = null;
   /** Phase 38 — per-node call session manager (voice/video calls). */
   readonly callManager = new CallManager();
+  /** Phase 40F — worker capability index for chain worker discovery. */
+  private readonly _capabilityIndex = new CapabilityIndex();
+  private _capabilityIndexReady: Promise<void> | null = null;
+  /** Phase 40F — worker-side pending bid expirations (subtaskId → bidExpiresAt). */
+  private readonly _chainPendingBidExpirations = new Map<string, string>();
+  /** Phase 40F — abort handles for background chain heartbeat trackers. */
+  private readonly _chainTrackAbort = new Map<string, AbortController>();
+  /** Phase 43A — worker-side cached subtasks from propose envelopes. */
+  private readonly _chainWorkerSubtasks = new Map<
+    string,
+    { subtask: import("@envoymesh/protocol").ChainSubtask; orchestratorPeerId: string }
+  >();
+  /** Phase 43C — debounced auto-evaluate timers per (chainId, subtaskId). */
+  private readonly _chainAutoEvaluateTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Phase 43B — goal text per chain for UI display. */
+  private readonly _chainGoals = new Map<string, string>();
+  /** Phase 43E — estimated cost range captured at plan time. */
+  private readonly _chainCostEstimates = new Map<string, { minUsd: number; maxUsd: number }>();
 
   /** Latest QR / `getPairingPayload` token for optional companion auto-pair (short TTL). */
   private _pairingToken: string | null = null;
@@ -1406,6 +1474,7 @@ class NodeServiceImpl implements NodeService {
       profileDir && profileDir !== "/tmp/unknown" ? createCapabilityProviderJobStore(profileDir) : null;
     if (profileDir && profileDir !== "/tmp/unknown") {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
+      this._capabilityIndexReady = this._capabilityIndex.init(profileDir);
     }
     if (profile !== undefined) {
       this._profile = profile;
@@ -1413,6 +1482,7 @@ class NodeServiceImpl implements NodeService {
     if (mesh) {
       this._nodeStatus = "running";
     }
+    this._wireCallManagerRemoteSignals();
   }
 
   // ============================================
@@ -1765,6 +1835,9 @@ class NodeServiceImpl implements NodeService {
       const result = await this.requestPeerProfile(bond.peerOwnerId);
       if (!result.ok) failed += 1;
     }
+    void this.refreshCapabilityIndex().catch((err) => {
+      console.warn("[chain] refreshCapabilityIndex after bond refresh failed:", err);
+    });
     return { requested: bonds.length, failed };
   }
 
@@ -6454,6 +6527,7 @@ class NodeServiceImpl implements NodeService {
     const executed = await executeApprovedAction(approved, {
       sendAgentChat: (targetOwnerId, text) => this.sendAgentChat(targetOwnerId, text),
       forwardDiscovery: (payload) => this._discoveryRuntime().executeDiscoveryForward(payload),
+      awardChainWorker: (payload) => this._executeApprovedChainAward(payload),
     });
     if (!executed.ok) {
       return { ok: false, error: executed.reason };
@@ -8557,6 +8631,9 @@ class NodeServiceImpl implements NodeService {
       this.emit("node:online", { peerId: this._mesh.peerId, multiaddrs: this._mesh.multiaddrs.map(a => a.toString()) });
       void this.refreshBondPeerProfiles().catch((err) => {
         console.warn("[profile] refreshBondPeerProfiles after node:online failed:", err);
+      });
+      void this.refreshCapabilityIndex().catch((err) => {
+        console.warn("[chain] refreshCapabilityIndex after node:online failed:", err);
       });
       this._startBondWarmInterval();
 
@@ -11088,61 +11165,7 @@ class NodeServiceImpl implements NodeService {
       // through planChain + chainLaunch. The synthesis happens asynchronously
       // in the background as partials arrive. The runtime stores the
       // ChainState so chainGetState/chainCancel/chainListActive can read it.
-      runChain: async (input) => {
-        const chainId = input.chainId ?? `chain_${randomUUID()}`;
-        const chainMandateId = `chainmandate_${randomUUID()}`;
-        const orchestratorOwnerId = this._profile?.owner.ownerId ?? "envoy:owner:placeholder";
-        const mandate = {
-          version: "0.1" as const,
-          chainMandateId,
-          chainId,
-          issuerOwnerId: orchestratorOwnerId,
-          orchestratorOwnerId,
-          maxChainCostUsd: input.maxChainCostUsd ?? 10,
-          costCeilingUsd: input.costCeilingUsd ?? 3,
-          maxWorkers: 3,
-          allowDepth3: false,
-          maxSensitivity: "public" as const,
-          deadlineAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-          createdAt: new Date().toISOString(),
-          rebalancePolicy: "manual" as const,
-          maxAutoRebalances: 2,
-          autoRebalanceIncrementUsd: 5,
-          signature: "stub",
-        };
-        const state = createChainState(mandate);
-        // Register the chain runtime so chainGetState/chainCancel can find it.
-        this.chainRuntime.set(chainId, { state, bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 60_000, reputationDiscount: 1, etaSlackMs: 60_000 } });
-
-        const plan = await planChain(await this.buildChainOrchestratorDeps(), state, input.goal, { allowLlm: input.allowLlm ?? false });
-        if (!plan.ok) {
-          return { ok: false, chainId, chainMandateId, subtasks: [], error: `plan failed: ${(plan as { reason: string }).reason}` };
-        }
-
-        // Discover workers for each subtask via the capability manifest.
-        const workersBySubtask: Record<string, string[]> = {};
-        for (const subtask of plan.subtasks) {
-          const candidates = await this.findCapabilityProviders(subtask.requiredCapability);
-          workersBySubtask[subtask.subtaskId] = candidates.slice(0, 3);
-        }
-
-        const launch = await launchChain(await this.buildChainOrchestratorDeps(), state, workersBySubtask);
-        if (!launch.ok) {
-          return { ok: false, chainId, chainMandateId, subtasks: plan.subtasks, error: `launch failed: ${(launch as { reason: string }).reason}` };
-        }
-
-        return {
-          ok: true,
-          chainId,
-          chainMandateId,
-          subtasks: plan.subtasks.map((s) => ({
-            subtaskId: s.subtaskId,
-            depth: s.depth,
-            requiredCapability: s.requiredCapability,
-            objective: s.objective,
-          })),
-        };
-      },
+      runChain: async (input) => this._runChainGoal(input),
       // Phase 24D — service-mesh auto-accept gate
       evaluateServiceTask: async (task) => {
         const { evaluateServiceTask } = await import("./service-mesh-worker.js");
@@ -11510,10 +11533,23 @@ class NodeServiceImpl implements NodeService {
 
   async chainPlan(params: ChainPlanParams): Promise<ChainPlanResult> {
     void this.ensureChainMandateLoaded(params.chainMandateId);
-    const state = this.chainRuntime.get(params.chainId)?.state ?? createChainState(this.placeholderMandate(params.chainId, params.chainMandateId));
+    let runtime = this.chainRuntime.get(params.chainId);
+    if (!runtime) {
+      const state = createChainState(this.placeholderMandate(params.chainId, params.chainMandateId));
+      runtime = {
+        state,
+        bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 60_000, reputationDiscount: 1, etaSlackMs: 60_000 },
+      };
+      this.chainRuntime.set(params.chainId, runtime);
+    }
+    const deps = await this.buildChainOrchestratorDeps();
+    const plan = await planChain(deps, runtime.state, params.goal, { allowLlm: params.allowLlm ?? false });
+    if (!plan.ok) {
+      return { chainId: params.chainId, subtasks: [] };
+    }
     return {
       chainId: params.chainId,
-      subtasks: [...state.subtasks.values()].map((s) => ({
+      subtasks: plan.subtasks.map((s) => ({
         subtaskId: s.subtaskId,
         depth: s.depth,
         requiredCapability: s.requiredCapability,
@@ -11524,10 +11560,19 @@ class NodeServiceImpl implements NodeService {
 
   async chainLaunch(params: ChainLaunchParams): Promise<ChainLaunchResult> {
     const runtime = this.chainRuntime.get(params.chainId);
+    if (!runtime) {
+      return { chainId: params.chainId, proposed: 0, mandateBroadcastOk: false };
+    }
+    const deps = await this.buildChainOrchestratorDeps();
+    const launch = await launchChain(deps, runtime.state, params.workersBySubtask);
+    if (launch.ok) {
+      this._startChainTracking(params.chainId);
+      this._emitChainState(params.chainId);
+    }
     return {
       chainId: params.chainId,
-      proposed: runtime ? runtime.state.subtasks.size : 0,
-      mandateBroadcastOk: true,
+      proposed: launch.ok ? launch.proposed : 0,
+      mandateBroadcastOk: launch.ok ? launch.mandateBroadcastOk : false,
     };
   }
 
@@ -11552,6 +11597,9 @@ class NodeServiceImpl implements NodeService {
     }
     const result = this.snapshotToResult(chainStateSnapshot(runtime.state));
     result.bidsBySubtask = this.bidsBySubtask(runtime.state);
+    result.goal = this._chainGoals.get(params.chainId);
+    result.estimatedCostRange = this._chainCostEstimates.get(params.chainId);
+    result.budgetWarningLevel = chainBudgetWarningLevel(runtime.state);
     return result;
   }
 
@@ -11578,18 +11626,35 @@ class NodeServiceImpl implements NodeService {
   }
 
   async chainListReports(params?: ChainListReportsParams): Promise<ChainListReportsResult> {
-    void params;
-    // The persistent store is wired in 40B.10 (chain-e2e). For now, return
-    // an empty list — reports are only persisted when chain-e2e runs.
-    return { reports: [] };
+    if (!this._taskStore) return { reports: [] };
+    const rows = await this._taskStore.listChainReports(params);
+    return {
+      reports: rows.map((row) => ({
+        chainId: row.report.chainId,
+        chainMandateId: row.report.chainMandateId,
+        orchestratorOwnerId: row.report.orchestratorOwnerId,
+        orchestratorPeerId: row.report.orchestratorPeerId,
+        pinned: row.report.pinned ?? false,
+        createdAt: row.report.createdAt,
+        chainSummary: {
+          subtaskCount: row.report.chainSummary.subtaskCount,
+          workerCount: row.report.chainSummary.workerAllocations.length,
+          synthesisCostUsd: row.report.chainSummary.synthesisCostUsd,
+        },
+      })),
+    };
   }
 
   async chainGetReport(params: ChainGetReportParams): Promise<ChainGetReportResult> {
-    void params;
-    return { report: null };
+    if (!this._taskStore) return { report: null };
+    const row = await this._taskStore.getChainReport(params.chainId);
+    return { report: row?.report ?? null };
   }
 
   async chainPinReport(params: ChainPinReportParams): Promise<ChainPinReportResult> {
+    if (this._taskStore) {
+      await this._taskStore.pinChainReport(params.chainId, params.pinned);
+    }
     return { chainId: params.chainId, pinned: params.pinned };
   }
 
@@ -11619,22 +11684,26 @@ class NodeServiceImpl implements NodeService {
     if (!runtime) {
       return { chainId: params.chainId, subtaskId: params.subtaskId, awarded: false };
     }
-    const result = await this.evaluateBidsAsync(runtime.state, params);
-    if (result.ok) {
+    const awarded = await this._evaluateAwardAndAccept(params.chainId, params.subtaskId, {
+      policy: params.policy === "highest_confidence" ? "composite" : params.policy,
+      pickWorkerPeerId: params.pickWorkerPeerId,
+    });
+    if (awarded.ok) {
+      this._emitChainState(params.chainId);
       return {
         chainId: params.chainId,
         subtaskId: params.subtaskId,
         awarded: true,
-        workerPeerId: result.bid.workerPeerId,
-        round: result.round,
-        acceptedCostUsd: result.bid.proposedCostUsd,
+        workerPeerId: awarded.bid.workerPeerId,
+        round: awarded.round,
+        acceptedCostUsd: awarded.bid.proposedCostUsd,
       };
     }
     return {
       chainId: params.chainId,
       subtaskId: params.subtaskId,
       awarded: false,
-      reason: result.reason,
+      reason: awarded.reason,
     };
   }
 
@@ -11696,7 +11765,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
    */
   async chainGetDefaults(_params: ChainGetDefaultsParams): Promise<ChainGetDefaultsResult> {
     const cfg = await this.getNodeConfig();
-    return { defaults: cfg?.chainDefaults ?? {} };
+    return { defaults: mergeChainDefaults(cfg?.chainDefaults) };
   }
 
   /**
@@ -11771,6 +11840,10 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       budgetMaxUsd: snap.budgetMaxUsd,
       budgetReservedUsd: snap.budgetReservedUsd,
       budgetSynthesisUsd: snap.budgetSynthesisUsd,
+      rebalancePolicy: snap.rebalancePolicy,
+      autoRebalanceCount: snap.autoRebalanceCount,
+      maxAutoRebalances: snap.maxAutoRebalances,
+      autoRebalanceHistory: snap.autoRebalanceHistory,
     };
   }
 
@@ -11789,6 +11862,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
         proposedCostUsd: bid.proposedCostUsd,
         proposedEtaAt: bid.proposedEtaAt,
         bidExpiresAt: bid.bidExpiresAt,
+        rationale: bid.rationale,
       });
       groups.set(subtaskId, list);
     }
@@ -11796,17 +11870,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
   }
 
   private async evaluateBidsAsync(state: ChainState, params: ChainEvaluateBidsParams): Promise<Awaited<ReturnType<typeof evaluateBids>>> {
-    const deps: ChainOrchestratorHandlerDeps = {
-      sendEnvelope: async () => true,
-      findWorkers: async () => [],
-      now: () => new Date(),
-      signingKeyPem: "stub",
-      publicKeyPem: "stub",
-      orchestratorPeerId: "12D3KooW-self",
-      orchestratorOwnerId: "envoy:owner:self",
-      audit: { record: () => undefined },
-      storeChainReport: async () => undefined,
-    };
+    const deps = await this.buildChainOrchestratorDeps();
     return await evaluateBids(deps, state, {
       subtaskId: params.subtaskId,
       policy: params.policy,
@@ -11816,25 +11880,708 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
   }
 
   /**
+   * Phase 40F — dispatch an inbound `task.chain.*` envelope through the chain
+   * router. Called from `apps/node/src/index.ts` for every chain intent.
+   */
+  async handleInboundChainEnvelope(envelope: EnvoyEnvelope): Promise<void> {
+    const chainId = extractChainIdFromEnvelope(envelope);
+    const runtime = chainId ? this.chainRuntime.get(chainId) : undefined;
+    const inboundState = runtime?.state;
+    const deps = await this.buildChainInboundDeps();
+    const decision = await dispatchChainEnvelope(deps, envelope, inboundState);
+    if (!decision.ok) {
+      console.warn(`[chain.inbound] rejected ${envelope.intent}: ${decision.reason}`);
+    }
+  }
+
+  /**
+   * Phase 40F — refresh the capability index from cached agent cards.
+   * Called on startup and after bond establishment.
+   */
+  async refreshCapabilityIndex(): Promise<void> {
+    if (this._capabilityIndexReady) {
+      await this._capabilityIndexReady;
+    }
+    const cards = await this.listAgentCards();
+    for (const card of cards) {
+      const peerId = card.sourceAgentPeerId;
+      if (!peerId) continue;
+      this._capabilityIndex.indexWorker({
+        peerId,
+        ownerId: card.ownerId,
+        capabilities: card.capabilities,
+        lastSeenAt: card.cachedAt,
+        displayName: card.displayName,
+      });
+    }
+  }
+
+  private async _chainTransportResolver(): Promise<ChainTransportResolver | null> {
+    const mesh = this._reachableMesh();
+    const profile = this._profile;
+    if (!mesh || !profile) return null;
+    const agentIdentity = await this._ensureAgentIdentity();
+    const agentPeerToOwner = new Map<string, string>();
+    for (const card of await this.listAgentCards()) {
+      if (card.sourceAgentPeerId) {
+        agentPeerToOwner.set(card.sourceAgentPeerId, card.ownerId);
+      }
+    }
+    return {
+      mesh,
+      peerDirectoryStore: this._peerDirectoryStore,
+      localDevicePublicKeyPem: profile.device.publicKeyPem,
+      localAgentPeerId: agentIdentity?.agentPeerId,
+      agentPeerToOwner,
+    };
+  }
+
+  private async buildChainInboundDeps(): Promise<ChainInboundDeps> {
+    const orchDeps = await this.buildChainOrchestratorDeps();
+    const workerDeps = await this.buildChainWorkerDeps();
+    const nodeCapabilities = (await this._localManifestCapabilities()) as ChainInboundDeps["nodeCapabilities"];
+    return {
+      audit: orchDeps.audit,
+      nodeCapabilities,
+      handleWorkerPropose: async (envelope, payload) => {
+        this._chainWorkerSubtasks.set(payload.subtask.subtaskId, {
+          subtask: payload.subtask,
+          orchestratorPeerId: envelope.senderPeerId,
+        });
+        return handleWorkerPropose(workerDeps, envelope, payload);
+      },
+      handleWorkerMandate: (envelope, payload) => handleWorkerMandate(workerDeps, envelope, payload),
+      handleWorkerAccept: async (envelope, payload) => {
+        const result = await handleWorkerAccept(workerDeps, envelope, payload);
+        if (result.ok) {
+          let subtask = this._chainWorkerSubtasks.get(payload.award.subtaskId)?.subtask;
+          if (!subtask) {
+            for (const rt of this.chainRuntime.values()) {
+              subtask = rt.state.subtasks.get(payload.award.subtaskId);
+              if (subtask) break;
+            }
+          }
+          if (subtask) {
+            void executeAcceptedSubtask(
+              workerDeps,
+              { getToolContext: () => this.getToolExecutionContext() },
+              envelope.senderPeerId,
+              subtask,
+            ).catch((err) => console.warn("[chain.worker] execute failed:", err));
+          }
+        }
+        return result;
+      },
+      handleWorkerCancel: (envelope, payload) => handleWorkerCancel(workerDeps, envelope, payload),
+      handleWorkerHeartbeat: (envelope, payload) => handleWorkerHeartbeat(workerDeps, envelope, payload),
+      handleOrchestratorBid: async (envelope, payload, state) => {
+        const runtime = this.chainRuntime.get(state.chainId);
+        if (!runtime) return { ok: false, reason: "handler_denied" as const };
+        const result = await handleOrchestratorBid(orchDeps, envelope, payload, runtime.state);
+        if (result.ok) {
+          this._emitChainState(state.chainId);
+          this._scheduleAutoEvaluate(state.chainId, payload.bid.subtaskId);
+        }
+        return result;
+      },
+      handleOrchestratorPartial: async (envelope, payload, state) => {
+        const runtime = this.chainRuntime.get(state.chainId);
+        if (!runtime) return { ok: false, reason: "handler_denied" as const };
+        const result = await handleOrchestratorPartial(orchDeps, envelope, payload, runtime.state);
+        if (result.ok) {
+          this._emitChainState(state.chainId);
+          const profile = this._profile;
+          if (profile) {
+            void tryCompleteChainIfReady(orchDeps, runtime.state, profile).then(async (done) => {
+              if (done.published) {
+                this._emitChainState(state.chainId);
+                const row = await this._taskStore?.getChainReport(state.chainId);
+                if (row?.report) this._emitChainReport(row.report);
+              }
+            });
+          }
+        }
+        return result;
+      },
+      handleOrchestratorMerge: (envelope, payload, state) => {
+        const runtime = this.chainRuntime.get(state.chainId);
+        if (!runtime) return Promise.resolve({ ok: false, reason: "handler_denied" as const });
+        return handleOrchestratorMerge(orchDeps, envelope, payload, runtime.state);
+      },
+      handleOrchestratorHeartbeat: (envelope, payload, state) => {
+        const runtime = this.chainRuntime.get(state.chainId);
+        if (!runtime) return Promise.resolve({ ok: false, reason: "handler_denied" as const });
+        return handleOrchestratorHeartbeat(orchDeps, envelope, payload, runtime.state);
+      },
+      handleOwnerReport: async (envelope, payload) => {
+        if (!this._taskStore) {
+          return { ok: false, reason: "handler_denied" as const };
+        }
+        await this._taskStore.recordChainReport(payload.report);
+        this._emitChainReport(payload.report);
+        await this._taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "chain.report_received",
+            intent: envelope.intent,
+            messageId: envelope.messageId,
+            correlationId: envelope.correlationId,
+            remotePeerId: envelope.senderPeerId,
+            direction: "inbound",
+            verificationStatus: "verified",
+            outcome: "record",
+            summary: `chain report received chainId=${payload.report.chainId}`,
+            createdAt: envelope.createdAt,
+          }),
+        );
+        return { ok: true };
+      },
+    };
+  }
+
+  private async buildChainWorkerDeps(): Promise<ChainWorkerHandlerDeps> {
+    const agentIdentity = await this._ensureAgentIdentity();
+    const profile = this._profile;
+    if (!agentIdentity || !profile) {
+      throw new Error("agent identity unavailable for chain worker deps");
+    }
+    const baseStrategy = {
+      baseCostUsd: 1,
+      capabilityLocalEtaMs: 60_000,
+      reputationDiscount: 1,
+      etaSlackMs: 60_000,
+    };
+    const transport = await this._chainTransportResolver();
+    return {
+      sendEnvelope: async (recipientPeerId, envelope, _payload) => {
+        if (!transport) return false;
+        return sendChainEnvelopeOverMesh(transport, recipientPeerId, envelope);
+      },
+      now: () => new Date(),
+      signingKeyPem: agentIdentity.agentPrivateKeyPem,
+      publicKeyPem: agentIdentity.agentPublicKeyPem,
+      workerPeerId: agentIdentity.agentPeerId,
+      workerOwnerId: profile.owner.ownerId,
+      audit: {
+        record: (event) => {
+          void this._appendChainAudit({
+            ...event,
+            type: event.type as import("@envoymesh/local-store").AuditEventType,
+          });
+        },
+      },
+      workerContext: {
+        workerPeerId: agentIdentity.agentPeerId,
+        workerOwnerId: profile.owner.ownerId,
+        baseCostUsd: baseStrategy.baseCostUsd,
+        capabilityLocalEtaMs: baseStrategy.capabilityLocalEtaMs,
+      },
+      pendingBidExpirations: this._chainPendingBidExpirations,
+    };
+  }
+
+  private _startChainTracking(chainId: string): void {
+    this._stopChainTracking(chainId);
+    const runtime = this.chainRuntime.get(chainId);
+    if (!runtime || runtime.state.published || runtime.state.chainCancelled) return;
+
+    const abort = new AbortController();
+    this._chainTrackAbort.set(chainId, abort);
+
+    void (async () => {
+      while (!abort.signal.aborted) {
+        const rt = this.chainRuntime.get(chainId);
+        if (!rt || rt.state.published || rt.state.chainCancelled) {
+          this._stopChainTracking(chainId);
+          return;
+        }
+        if (rt.state.awards.size === 0) {
+          await new Promise((r) => setTimeout(r, 5_000));
+          continue;
+        }
+        try {
+          const deps = await this.buildChainOrchestratorDeps();
+          await trackChain(deps, rt.state, { tickMs: 30_000, maxTicks: 1 });
+        } catch (err) {
+          console.warn(`[chain.track] ${chainId} tick failed:`, err);
+        }
+        await new Promise((r) => setTimeout(r, 30_000));
+      }
+    })();
+  }
+
+  private _stopChainTracking(chainId: string): void {
+    const abort = this._chainTrackAbort.get(chainId);
+    if (abort) {
+      abort.abort();
+      this._chainTrackAbort.delete(chainId);
+    }
+  }
+
+  private _emitChainReport(report: import("@envoymesh/protocol").ChainReport): void {
+    this.emit("chain:report", {
+      chainId: report.chainId,
+      executiveSummary: report.executiveSummary,
+      subtaskCount: report.chainSummary.subtaskCount,
+      workerCount: report.chainSummary.workerAllocations.length,
+      synthesisCostUsd: report.chainSummary.synthesisCostUsd,
+      createdAt: report.createdAt,
+    });
+  }
+
+  private async _bondLevelForWorkerOwner(workerOwnerId: string): Promise<import("@envoymesh/api").BondLevel> {
+    const bonds = await this.getBonds();
+    return bonds.find((b) => b.peerOwnerId === workerOwnerId)?.level ?? "public";
+  }
+
+  private async _rollbackSubtaskAward(state: ChainState, subtaskId: string): Promise<void> {
+    if (!state.awards.has(subtaskId)) return;
+    await state.ledger.release(subtaskId, "pending owner approval");
+    state.awards.delete(subtaskId);
+    state.awardedAt.delete(subtaskId);
+  }
+
+  private async _queueChainAwardApproval(
+    chainId: string,
+    subtaskId: string,
+    bid: import("@envoymesh/protocol").ChainSubtaskBid,
+    reason: string,
+  ): Promise<void> {
+    if (!this._approvalQueue) return;
+    const item = createApprovalItem(
+      "chain_award",
+      "Approve chain worker",
+      reason,
+      JSON.stringify({
+        chainId,
+        subtaskId,
+        workerPeerId: bid.workerPeerId,
+        workerOwnerId: bid.workerOwnerId,
+        acceptedCostUsd: bid.proposedCostUsd,
+      } satisfies ChainAwardApprovalPayload),
+      { metadata: { chainId, subtaskId, reason } },
+      "high",
+    );
+    this._approvalQueue.add(item);
+  }
+
+  private async _evaluateAwardAndAccept(
+    chainId: string,
+    subtaskId: string,
+    opts?: {
+      policy?: "composite" | "cheapest" | "fastest";
+      pickWorkerPeerId?: string;
+      skipSensitivityGate?: boolean;
+    },
+  ): Promise<Awaited<ReturnType<typeof evaluateBids>>> {
+    const runtime = this.chainRuntime.get(chainId);
+    if (!runtime) return { ok: false, reason: "no_bids" };
+    const deps = await this.buildChainOrchestratorDeps();
+    const result = await evaluateBids(deps, runtime.state, {
+      subtaskId,
+      policy: opts?.policy ?? "composite",
+      pickWorkerPeerId: opts?.pickWorkerPeerId,
+    });
+    if (!result.ok) return result;
+
+    if (!opts?.skipSensitivityGate) {
+      const bondLevel = await this._bondLevelForWorkerOwner(result.bid.workerOwnerId);
+      const gate = requiresChainAwardApproval(runtime.state.chainMandate, bondLevel);
+      if (gate.required) {
+        await this._rollbackSubtaskAward(runtime.state, subtaskId);
+        await this._queueChainAwardApproval(chainId, subtaskId, result.bid, gate.reason ?? "sensitivity gate");
+        return { ok: false, reason: "no_bids" };
+      }
+    }
+
+    await sendChainAccept(deps, result.bid.workerPeerId, result.award);
+    deps.audit.record({
+      type: "chain.awarded",
+      outcome: "allow",
+      intent: "task.chain.accept",
+      correlationId: chainId,
+      summary: `subtask=${subtaskId} worker=${result.bid.workerPeerId} cost=${result.bid.proposedCostUsd}`,
+    });
+    return result;
+  }
+
+  private async _executeApprovedChainAward(payload: ChainAwardApprovalPayload): Promise<{ ok: boolean; error?: string }> {
+    const result = await this._evaluateAwardAndAccept(payload.chainId, payload.subtaskId, {
+      pickWorkerPeerId: payload.workerPeerId,
+      skipSensitivityGate: true,
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.reason ?? "award failed" };
+    }
+    this._emitChainState(payload.chainId);
+    return { ok: true };
+  }
+
+  private _emitChainState(chainId: string): void {
+    const runtime = this.chainRuntime.get(chainId);
+    if (!runtime) return;
+    const state = this.snapshotToResult(chainStateSnapshot(runtime.state));
+    state.bidsBySubtask = this.bidsBySubtask(runtime.state);
+    state.goal = this._chainGoals.get(chainId);
+    state.estimatedCostRange = this._chainCostEstimates.get(chainId);
+    state.budgetWarningLevel = chainBudgetWarningLevel(runtime.state);
+    this.emit("chain:state", state);
+  }
+
+  private _scheduleAutoEvaluate(chainId: string, subtaskId: string): void {
+    const key = `${chainId}::${subtaskId}`;
+    const existing = this._chainAutoEvaluateTimers.get(key);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      this._chainAutoEvaluateTimers.delete(key);
+      void this._autoEvaluateSubtask(chainId, subtaskId);
+    }, CHAIN_AUTO_EVALUATE_MS);
+    this._chainAutoEvaluateTimers.set(key, timer);
+  }
+
+  private async _autoEvaluateSubtask(chainId: string, subtaskId: string): Promise<void> {
+    const runtime = this.chainRuntime.get(chainId);
+    if (!runtime || runtime.state.chainCancelled || runtime.state.awards.has(subtaskId)) return;
+    if (!subtasksAwaitingAward(runtime.state).includes(subtaskId)) return;
+    const result = await this._evaluateAwardAndAccept(chainId, subtaskId, { policy: "composite" });
+    if (result.ok) {
+      this._emitChainState(chainId);
+    }
+  }
+
+  private _chainDiagnosticsForSubtasks(
+    subtasks: Array<{ subtaskId: string; requiredCapability: string }>,
+    workersBySubtask: Record<string, string[]>,
+  ): string[] {
+    const diagnostics: string[] = [];
+    for (const subtask of subtasks) {
+      const workers = workersBySubtask[subtask.subtaskId] ?? [];
+      if (workers.length === 0) {
+        diagnostics.push(
+          `No workers for \`${subtask.requiredCapability}\` — ask a bonded contact to enable Capability Provider.`,
+        );
+      }
+    }
+    return diagnostics;
+  }
+
+  private async _runChainGoal(input: {
+    goal: string;
+    chainId?: string;
+    maxChainCostUsd?: number;
+    costCeilingUsd?: number;
+    allowLlm?: boolean;
+  }): Promise<{
+    ok: boolean;
+    chainId: string;
+    chainMandateId: string;
+    subtasks: Array<{ subtaskId: string; depth: number; requiredCapability: string; objective: string }>;
+    error?: string;
+  }> {
+    const chainId = input.chainId ?? `chain_${randomUUID()}`;
+    const chainMandateId = `chainmandate_${randomUUID()}`;
+    const orchestratorOwnerId = this._profile?.owner.ownerId ?? "envoy:owner:placeholder";
+    let nodeDefaults = DEFAULT_CHAIN_DEFAULTS;
+    try {
+      const cfg = await this.getNodeConfig();
+      nodeDefaults = mergeChainDefaults(cfg?.chainDefaults);
+    } catch {
+      /* use production defaults */
+    }
+    const mandate = {
+      version: "0.1" as const,
+      chainMandateId,
+      chainId,
+      issuerOwnerId: orchestratorOwnerId,
+      orchestratorOwnerId,
+      maxChainCostUsd: input.maxChainCostUsd ?? 10,
+      costCeilingUsd: input.costCeilingUsd ?? 3,
+      maxWorkers: 3,
+      allowDepth3: false,
+      maxSensitivity: "public" as const,
+      deadlineAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      rebalancePolicy: nodeDefaults.rebalancePolicy ?? "auto",
+      maxAutoRebalances: nodeDefaults.maxAutoRebalances ?? 2,
+      autoRebalanceIncrementUsd: nodeDefaults.autoRebalanceIncrementUsd ?? 5,
+      signature: "stub",
+    };
+    const state = createChainState(mandate);
+    this._chainGoals.set(chainId, input.goal);
+    this.chainRuntime.set(chainId, {
+      state,
+      bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 60_000, reputationDiscount: 1, etaSlackMs: 60_000 },
+    });
+
+    const plan = await planChain(await this.buildChainOrchestratorDeps(), state, input.goal, {
+      allowLlm: input.allowLlm ?? nodeDefaults.allowLlmDecompose ?? false,
+    });
+    if (!plan.ok) {
+      return { ok: false, chainId, chainMandateId, subtasks: [], error: `plan failed: ${(plan as { reason: string }).reason}` };
+    }
+
+    const workersBySubtask: Record<string, string[]> = {};
+    let maxWorkers = 0;
+    for (const subtask of plan.subtasks) {
+      const candidates = await this.findCapabilityProviders(subtask.requiredCapability);
+      workersBySubtask[subtask.subtaskId] = candidates.slice(0, 3);
+      maxWorkers = Math.max(maxWorkers, candidates.length);
+    }
+    this._chainCostEstimates.set(
+      chainId,
+      estimateChainCostRange({
+        subtaskCount: plan.subtasks.length,
+        workerCandidateCount: maxWorkers,
+        maxChainCostUsd: mandate.maxChainCostUsd,
+      }),
+    );
+
+    const launch = await launchChain(await this.buildChainOrchestratorDeps(), state, workersBySubtask);
+    if (!launch.ok) {
+      return {
+        ok: false,
+        chainId,
+        chainMandateId,
+        subtasks: plan.subtasks.map((s) => ({
+          subtaskId: s.subtaskId,
+          depth: s.depth,
+          requiredCapability: s.requiredCapability,
+          objective: s.objective,
+        })),
+        error: `launch failed: ${(launch as { reason: string }).reason}`,
+      };
+    }
+
+    this._startChainTracking(chainId);
+    this._emitChainState(chainId);
+
+    return {
+      ok: true,
+      chainId,
+      chainMandateId,
+      subtasks: plan.subtasks.map((s) => ({
+        subtaskId: s.subtaskId,
+        depth: s.depth,
+        requiredCapability: s.requiredCapability,
+        objective: s.objective,
+      })),
+    };
+  }
+
+  async chainPreviewGoal(params: ChainPreviewGoalParams): Promise<ChainPreviewGoalResult> {
+    const template = params.templateId
+      ? CHAIN_GOAL_TEMPLATES.find((r) => r.id === params.templateId)
+      : undefined;
+    const goal = params.goal.trim() || template?.goal || "";
+    if (!goal) {
+      return { ok: false, subtasks: [], reason: "no_goal" };
+    }
+    const chainId = `chain_preview_${randomUUID()}`;
+    const chainMandateId = `chainmandate_${randomUUID()}`;
+    const mandate = {
+      ...this.placeholderMandate(chainId, chainMandateId),
+      maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd ?? 10,
+      costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd ?? 3,
+    };
+    const state = createChainState(mandate);
+    const deps = await this.buildChainOrchestratorDeps();
+    const plan = await planChain(deps, state, goal, { allowLlm: params.allowLlm ?? true });
+    if (!plan.ok) {
+      return { ok: false, subtasks: [], reason: (plan as { reason: string }).reason };
+    }
+    const workersBySubtask: Record<string, string[]> = {};
+    let maxWorkers = 0;
+    for (const subtask of plan.subtasks) {
+      const candidates = await this.findCapabilityProviders(subtask.requiredCapability);
+      workersBySubtask[subtask.subtaskId] = candidates;
+      maxWorkers = Math.max(maxWorkers, candidates.length);
+    }
+    const estimatedCostRange = estimateChainCostRange({
+      subtaskCount: plan.subtasks.length,
+      workerCandidateCount: maxWorkers,
+      maxChainCostUsd: mandate.maxChainCostUsd,
+    });
+    return {
+      ok: true,
+      chainId,
+      subtasks: plan.subtasks.map((s) => ({
+        subtaskId: s.subtaskId,
+        depth: s.depth,
+        requiredCapability: s.requiredCapability,
+        objective: s.objective,
+        workerCount: (workersBySubtask[s.subtaskId] ?? []).length,
+      })),
+      estimatedCostRange,
+      diagnostics: this._chainDiagnosticsForSubtasks(plan.subtasks, workersBySubtask),
+    };
+  }
+
+  async chainStartFromGoal(params: ChainStartFromGoalParams): Promise<ChainStartFromGoalResult> {
+    const template = params.templateId
+      ? CHAIN_GOAL_TEMPLATES.find((r) => r.id === params.templateId)
+      : undefined;
+    const goal = params.goal.trim() || template?.goal || "";
+    if (!goal) {
+      return { ok: false, error: "no_goal" };
+    }
+    const preview = await this.chainPreviewGoal({
+      goal,
+      templateId: params.templateId,
+      maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
+      costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
+      allowLlm: params.allowLlm,
+    });
+    if (!preview.ok || preview.subtasks.length === 0) {
+      return {
+        ok: false,
+        error: preview.reason ?? "plan_failed",
+        diagnostics: preview.diagnostics,
+      };
+    }
+    const result = await this._runChainGoal({
+      goal,
+      maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
+      costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
+      allowLlm: params.allowLlm,
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error, diagnostics: preview.diagnostics };
+    }
+    return {
+      ok: true,
+      chainId: result.chainId,
+      chainMandateId: result.chainMandateId,
+      subtasks: result.subtasks,
+      estimatedCostRange: preview.estimatedCostRange,
+      diagnostics: preview.diagnostics,
+    };
+  }
+
+  async chainExportCosts(params: ChainExportCostsParams): Promise<ChainExportCostsResult> {
+    const runtime = this.chainRuntime.get(params.chainId);
+    if (!runtime) {
+      return { chainId: params.chainId, csv: "chainId,status\n" + `"${params.chainId}","not_found"\n` };
+    }
+    return { chainId: params.chainId, csv: chainCostsToCsv(runtime.state) };
+  }
+
+  async chainListRecipes(_params?: ChainListRecipesParams): Promise<ChainListRecipesResult> {
+    const builtin = CHAIN_GOAL_TEMPLATES.map(({ id, label, goal, maxChainCostUsd, costCeilingUsd }) => ({
+      id,
+      label,
+      goal,
+      maxChainCostUsd,
+      costCeilingUsd,
+      saved: false as const,
+    }));
+    if (!this._taskStore) return { recipes: builtin };
+    const saved = (await this._taskStore.listChainRecipes()).map((r) => ({
+      id: r.id,
+      label: r.label,
+      goal: r.goal,
+      maxChainCostUsd: r.maxChainCostUsd,
+      costCeilingUsd: r.costCeilingUsd,
+      saved: true as const,
+    }));
+    return { recipes: [...saved, ...builtin] };
+  }
+
+  async chainSaveRecipe(params: ChainSaveRecipeParams): Promise<ChainSaveRecipeResult> {
+    const label = params.label.trim();
+    const goal = params.goal.trim();
+    if (!label || !goal) {
+      return { ok: false, reason: "validation_failed" };
+    }
+    if (!this._taskStore) {
+      return { ok: false, reason: "validation_failed" };
+    }
+    const record = await this._taskStore.saveChainRecipe({
+      id: params.id ?? `recipe_${randomUUID()}`,
+      label,
+      goal,
+      maxChainCostUsd: params.maxChainCostUsd,
+      costCeilingUsd: params.costCeilingUsd,
+    });
+    return {
+      ok: true,
+      recipe: {
+        id: record.id,
+        label: record.label,
+        goal: record.goal,
+        maxChainCostUsd: record.maxChainCostUsd,
+        costCeilingUsd: record.costCeilingUsd,
+        saved: true,
+      },
+    };
+  }
+
+  async chainDeleteRecipe(params: ChainDeleteRecipeParams): Promise<ChainDeleteRecipeResult> {
+    if (!this._taskStore) return { ok: false, deleted: false };
+    const deleted = await this._taskStore.deleteChainRecipe(params.id);
+    return { ok: deleted, deleted };
+  }
+
+  private async _appendChainAudit(event: {
+    type: import("@envoymesh/local-store").AuditEventType;
+    outcome: "allow" | "deny" | "record";
+    intent: string;
+    remotePeerId?: string;
+    correlationId?: string;
+    summary?: string;
+  }): Promise<void> {
+    if (!this._taskStore) return;
+    await this._taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: event.type,
+        intent: event.intent as import("@envoymesh/protocol").EnvoyIntent,
+        correlationId: event.correlationId,
+        remotePeerId: event.remotePeerId,
+        direction: "outbound",
+        verificationStatus: "verified",
+        outcome: event.outcome,
+        summary: event.summary ?? event.type,
+        createdAt: new Date().toISOString(),
+      }),
+    );
+  }
+
+  /**
    * Build the ChainOrchestratorHandlerDeps from the node's runtime state.
    * Used by `runChain`, `chainLaunch`, `chainEvaluateBids`, and the
-   * orchestrator-side inbound handlers. Routes are wired in 40B.10 (chain-e2e)
-   * and 40B.8 (planner hook); for now `sendEnvelope` is a stub that
-   * records-but-doesn't-send (the orchestration state machine still works
-   * end-to-end, which is what 40B.10 verifies).
+   * orchestrator-side inbound handlers.
    */
   private async buildChainOrchestratorDeps(): Promise<ChainOrchestratorHandlerDeps> {
     const llmDecompose = await this.buildLlmDecomposerAsync();
+    const agentIdentity = await this._ensureAgentIdentity();
+    const profile = this._profile;
+    if (!agentIdentity || !profile) {
+      throw new Error("agent identity unavailable for chain orchestrator deps");
+    }
+    const transport = await this._chainTransportResolver();
     return {
-      sendEnvelope: async () => true,
+      sendEnvelope: async (recipientPeerId, envelope, _payload) => {
+        if (!transport) return false;
+        return sendChainEnvelopeOverMesh(transport, recipientPeerId, envelope);
+      },
       findWorkers: async (capability) => this.findCapabilityProviders(capability),
       now: () => new Date(),
-      signingKeyPem: "stub",
-      publicKeyPem: "stub",
-      orchestratorPeerId: "12D3KooW-self",
-      orchestratorOwnerId: "envoy:owner:self",
-      audit: { record: () => undefined },
-      storeChainReport: async () => undefined,
+      signingKeyPem: agentIdentity.agentPrivateKeyPem,
+      publicKeyPem: agentIdentity.agentPublicKeyPem,
+      orchestratorPeerId: agentIdentity.agentPeerId,
+      orchestratorOwnerId: profile.owner.ownerId,
+      audit: {
+        record: (event) => {
+          void this._appendChainAudit({
+            ...event,
+            type: event.type as import("@envoymesh/local-store").AuditEventType,
+          });
+        },
+      },
+      storeChainReport: async (report) => {
+        if (this._taskStore) {
+          await this._taskStore.recordChainReport(report);
+        }
+        this._emitChainReport(report);
+      },
       llmDecompose,
       llmMerge: await this.buildLlmMergeAsync(),
     };
@@ -11929,13 +12676,24 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     return createLlmMergeAdapter(llmProvider);
   }
 
-  /** Discover local capability providers (placeholder; real impl in 40E). */
+  /** Discover workers from the Phase 41B capability index + bonded agent cards. */
   private async findCapabilityProviders(capability: string): Promise<string[]> {
-    // For 40B.8: surface a deterministic placeholder set so the chain pipeline
-    // can be exercised end-to-end. The real P2P-aware implementation lives
-    // in 40E (cross-orchestrator + cross-home chains).
-    void capability;
-    return ["12D3KooW-w1", "12D3KooW-w2", "12D3KooW-w3"];
+    if (this._capabilityIndexReady) {
+      await this._capabilityIndexReady;
+    }
+    const indexed = this._capabilityIndex.findWorkers(capability);
+    if (indexed.length > 0) {
+      return indexed;
+    }
+    const cards = await this.listAgentCards();
+    const peers: string[] = [];
+    for (const card of cards) {
+      if (!card.sourceAgentPeerId) continue;
+      if (card.capabilities.includes(capability) || card.capabilities.includes("task.execute")) {
+        peers.push(card.sourceAgentPeerId);
+      }
+    }
+    return peers;
   }
 
   // ------------------------------------------------------------------
@@ -11963,8 +12721,15 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     // that would fail `parseCallInvitePayload` on the receiving side.
     const callId = randomUUID();
     const senderPeerId = derivePeerId(profile.device.publicKeyPem);
+    const trust = await this._trustStore.getTrustRecord(targetOwnerId);
+    const peerDisplayName = trust?.displayName?.trim() || targetOwnerId;
 
-    const initiated = this.callManager.outboundCallInitiated(callId, targetOwnerId, senderPeerId);
+    const initiated = this.callManager.outboundCallInitiated(
+      callId,
+      profile.owner.ownerId,
+      targetOwnerId,
+      peerDisplayName,
+    );
     if (!initiated) return null;
 
     let transport;
@@ -12037,6 +12802,88 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     return callId;
   }
 
+  async sendCallReinvite(
+    callId: string,
+    sdpOffer: string,
+    iceServers?: { urls: string; username?: string; credential?: string }[],
+    reason: "path1_timeout" | "path1_failed" = "path1_timeout",
+  ): Promise<boolean> {
+    const profile = this._profile;
+    if (!profile || !this._mesh) return false;
+
+    const callerOwnerId = profile.owner.ownerId;
+    if (!this.callManager.canSendOutboundReinvite(callId, callerOwnerId)) return false;
+
+    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
+    if (!peerOwnerId) return false;
+
+    const effectiveIceServers = await this._effectiveCallIceServers(iceServers);
+    if (effectiveIceServers.length === 0) return false;
+
+    let transport;
+    try {
+      transport = await this._resolvePeerTransportForOwner(peerOwnerId);
+    } catch (err) {
+      console.warn(`[sendCallReinvite] peer transport resolve failed for ${peerOwnerId}:`, err);
+      return false;
+    }
+    const { transportPeerId, recipientEnvelopePeerId, listenAddrs } = transport;
+
+    const dialHints = await raceWithTimeout(
+      this._dialHintsForChat(transportPeerId, listenAddrs),
+      30_000,
+      "_dialHintsForChat",
+    );
+
+    const senderPeerId = derivePeerId(profile.device.publicKeyPem);
+    const { createCallReinvitePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+
+    const reinvitePayload = createCallReinvitePayload({
+      callId,
+      callerOwnerId,
+      callerPeerId: senderPeerId,
+      sdpOffer,
+      iceServers: effectiveIceServers,
+      reason,
+      transportPath: "path2",
+    });
+
+    const unsigned = createUnsignedEnvelope({
+      intent: "call.reinvite",
+      senderPeerId,
+      senderPublicKey: profile.device.publicKeyPem,
+      recipientPeerId: recipientEnvelopePeerId,
+      senderRole: "human",
+      recipientRole: "human",
+      payload: reinvitePayload,
+    });
+    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
+
+    const deliverResult = await this._deliverCallEnvelope(
+      transportPeerId,
+      envelope,
+      dialHints,
+      listenAddrs,
+    );
+
+    if (this._taskStore) {
+      await this._taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: deliverResult.delivered ? "message.sent" : "message.rejected",
+          intent: "call.reinvite",
+          outcome: deliverResult.delivered ? "allow" : "deny",
+          summary: deliverResult.delivered
+            ? `call.reinvite sent callId=${callId} reason=${reason}`
+            : `call.reinvite delivery failed callId=${callId}`,
+          remotePeerId: peerOwnerId,
+        }),
+      ).catch(() => undefined);
+    }
+
+    return deliverResult.delivered;
+  }
+
   /**
    * Resolve the iceServers that ship in the `call.invite` payload.
    *
@@ -12048,7 +12895,8 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
   private async _effectiveCallIceServers(
     callerSupplied?: { urls: string; username?: string; credential?: string }[],
   ): Promise<{ urls: string; username?: string; credential?: string }[]> {
-    if (callerSupplied && callerSupplied.length > 0) return callerSupplied;
+    // Explicit `[]` means Path 1 (no STUN/TURN) — do not inject defaults.
+    if (callerSupplied !== undefined) return callerSupplied;
     const config = await this._configStore.load();
     if (config?.iceServers && config.iceServers.length > 0) return config.iceServers;
     return DEFAULT_ICE_SERVERS;
@@ -12195,6 +13043,71 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     });
     await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.mute");
     return true;
+  }
+
+  async sendIceCandidate(
+    callId: string,
+    candidate: {
+      candidate: string;
+      sdpMid: string | null;
+      sdpMLineIndex: number | null;
+      usernameFragment?: string | null;
+    },
+  ): Promise<boolean> {
+    const profile = this._profile;
+    if (!profile) return false;
+    const status = this.callManager.getSessionStatus(callId);
+    if (status !== "ringing" && status !== "active") return false;
+
+    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
+    if (!peerOwnerId) return false;
+
+    const { createCallIceCandidatePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const senderPeerId = derivePeerId(profile.device.publicKeyPem);
+    const payload = createCallIceCandidatePayload({ callId, candidate });
+    const unsigned = createUnsignedEnvelope({
+      intent: "call.ice-candidate",
+      senderPeerId,
+      senderPublicKey: profile.device.publicKeyPem,
+      recipientRole: "human",
+      payload,
+    });
+    await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.ice-candidate");
+    return true;
+  }
+
+  /** Send call.reject to a remote owner without a local ringing session (busy path). */
+  async sendCallRejectToOwner(
+    callId: string,
+    callerOwnerId: string,
+    reason: import("@envoymesh/protocol").CallRejectPayload["reason"],
+  ): Promise<void> {
+    const profile = this._profile;
+    if (!profile) return;
+
+    const { createCallRejectPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+    const calleeOwnerId = profile.owner.ownerId;
+    const calleePeerId = derivePeerId(profile.device.publicKeyPem);
+    const payload = createCallRejectPayload({
+      callId,
+      calleeOwnerId,
+      calleePeerId,
+      reason,
+    });
+    const unsigned = createUnsignedEnvelope({
+      intent: "call.reject",
+      senderPeerId: calleePeerId,
+      senderPublicKey: profile.device.publicKeyPem,
+      recipientRole: "human",
+      payload,
+    });
+    await this._sendCallResponseEnvelope(callerOwnerId, unsigned, "call.reject");
+  }
+
+  private _wireCallManagerRemoteSignals(): void {
+    this.callManager.setRemoteSignalHandler((req) => {
+      void this.sendCallRejectToOwner(req.callId, req.peerOwnerId, req.reason);
+    });
   }
 
   /**

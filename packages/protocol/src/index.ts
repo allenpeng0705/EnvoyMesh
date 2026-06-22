@@ -66,6 +66,7 @@ export const EnvoyIntentSchema = z.enum([
   "profile.response",
   // Phase 38 — Real-time voice/video calls
   "call.invite",
+  "call.reinvite",
   "call.accept",
   "call.reject",
   "call.hangup",
@@ -2092,6 +2093,50 @@ export function createCallInvitePayload(input: CreateCallInvitePayloadInput): Ca
 }
 export function parseCallInvitePayload(input: unknown): CallInvitePayload {
   return CallInvitePayloadSchema.parse(input);
+}
+
+// --- call.reinvite ---
+/** Path 1 → Path 2 fallback: same callId, new SDP offer with STUN/TURN. */
+export const CallReinvitePayloadSchema = z.object({
+  callId: z.string().uuid(),
+  callerOwnerId: z.string().min(1),
+  callerPeerId: z.string().min(1),
+  timestamp: z.string().datetime(),
+  sdpOffer: z.string().min(1),
+  iceServers: z.array(z.object({
+    urls: z.string(),
+    username: z.string().optional(),
+    credential: z.string().optional(),
+  })).min(1),
+  reason: z.enum(["path1_timeout", "path1_failed"]).default("path1_timeout"),
+  transportPath: z.literal("path2").default("path2"),
+});
+export type CallReinvitePayload = z.infer<typeof CallReinvitePayloadSchema>;
+
+export interface CreateCallReinvitePayloadInput {
+  callId: string;
+  callerOwnerId: string;
+  callerPeerId: string;
+  timestamp?: string;
+  sdpOffer: string;
+  iceServers: Array<{ urls: string; username?: string; credential?: string }>;
+  reason?: "path1_timeout" | "path1_failed";
+  transportPath?: "path2";
+}
+export function createCallReinvitePayload(input: CreateCallReinvitePayloadInput): CallReinvitePayload {
+  return CallReinvitePayloadSchema.parse({
+    callId: input.callId,
+    callerOwnerId: input.callerOwnerId,
+    callerPeerId: input.callerPeerId,
+    timestamp: input.timestamp ?? new Date().toISOString(),
+    sdpOffer: input.sdpOffer,
+    iceServers: input.iceServers,
+    reason: input.reason ?? "path1_timeout",
+    transportPath: input.transportPath ?? "path2",
+  });
+}
+export function parseCallReinvitePayload(input: unknown): CallReinvitePayload {
+  return CallReinvitePayloadSchema.parse(input);
 }
 
 // --- call.accept ---

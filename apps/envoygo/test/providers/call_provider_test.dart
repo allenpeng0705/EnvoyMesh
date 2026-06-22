@@ -119,6 +119,10 @@ class FakeTransport {
   final List<IceServer> iceServers;
   bool startOfferCalled = false;
   bool startAnswerCalled = false;
+  bool applyRemoteAnswerCalled = false;
+  String remoteAnswerArg = '';
+  bool addIceCandidateCalled = false;
+  CallIceCandidate? lastIceCandidate;
   String remoteSdpArg = '';
   bool closeCalled = false;
   bool? lastMuted;
@@ -142,6 +146,16 @@ class FakeTransport {
     startAnswerCalled = true;
     remoteSdpArg = remoteSdp;
     return answerSdp;
+  }
+
+  Future<void> applyRemoteAnswer(String remoteSdp) async {
+    applyRemoteAnswerCalled = true;
+    remoteAnswerArg = remoteSdp;
+  }
+
+  Future<void> addIceCandidate(CallIceCandidate candidate) async {
+    addIceCandidateCalled = true;
+    lastIceCandidate = candidate;
   }
 
   void setMute(bool muted) {
@@ -199,6 +213,14 @@ class _StubTransport extends WebRtcCallTransport {
   @override
   Future<String> startAnswer(String remoteSdp) =>
       _inner.startAnswer(remoteSdp);
+
+  @override
+  Future<void> applyRemoteAnswer(String remoteSdp) =>
+      _inner.applyRemoteAnswer(remoteSdp);
+
+  @override
+  Future<void> addIceCandidate(CallIceCandidate candidate) =>
+      _inner.addIceCandidate(candidate);
 
   @override
   void setMute(bool muted) => _inner.setMute(muted);
@@ -822,6 +844,63 @@ void main() {
       expect(provider.state.callId, '77778888-7777-4888-8888-777788887777');
       expect(provider.state.peerDisplayName, 'Frank');
       expect(provider.state.isIncoming, isTrue);
+    });
+
+    test('call:answered with sdpAnswer applies remote answer on caller transport',
+        () async {
+      final mock = MockWebSocket();
+      final transports = <FakeTransport>[];
+      final provider = await buildProvider(mock: mock, transports: transports);
+
+      final startFuture = provider.startCall('envoy:owner:bob');
+      await Future<void>.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      });
+      await startFuture;
+
+      provider.handleTestEvent({
+        'type': 'call:answered',
+        'callId': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        'sdpAnswer': 'v=0\r\no=- remote-answer\r\n',
+      });
+      await Future<void>.delayed(Duration.zero);
+
+      expect(transports.first.applyRemoteAnswerCalled, isTrue);
+      expect(transports.first.remoteAnswerArg, 'v=0\r\no=- remote-answer\r\n');
+      expect(provider.state.isActive, isTrue);
+    });
+
+    test('call:ice-candidate adds candidate to active transport', () async {
+      final mock = MockWebSocket();
+      final transports = <FakeTransport>[];
+      final provider = await buildProvider(mock: mock, transports: transports);
+
+      final startFuture = provider.startCall('envoy:owner:bob');
+      await Future<void>.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      });
+      await startFuture;
+
+      provider.handleTestEvent({
+        'type': 'call:ice-candidate',
+        'callId': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        'candidate': {
+          'candidate': 'candidate:1 1 UDP 2113937159 192.0.2.1 54321 typ host',
+          'sdpMid': '0',
+          'sdpMLineIndex': 0,
+        },
+      });
+      await Future<void>.delayed(Duration.zero);
+
+      expect(transports.first.addIceCandidateCalled, isTrue);
+      expect(transports.first.lastIceCandidate?.candidate,
+          contains('candidate:1'));
     });
   });
 }

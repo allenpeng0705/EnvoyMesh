@@ -243,6 +243,73 @@ void main() {
 
       await expectLater(callFuture, throwsA(isA<Exception>()));
     });
+
+    test('listActiveChains sends chainListActive and parses chains', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+
+      final client = NodeServiceClient(homeClient);
+      final callFuture = client.listActiveChains();
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'chainListActive');
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {
+          'chains': [
+            {
+              'chainId': 'chain_active_1',
+              'chainMandateId': 'cm_1',
+              'subtaskCount': 2,
+              'bidCount': 1,
+              'awardedCount': 1,
+              'partialCount': 0,
+              'chainCancelled': false,
+              'published': false,
+              'budgetSpentUsd': 1.5,
+              'budgetMaxUsd': 10,
+              'goal': 'Summarize Q3',
+            },
+          ],
+        },
+      });
+
+      final chains = await callFuture;
+      expect(chains, hasLength(1));
+      expect(chains.first.chainId, 'chain_active_1');
+      expect(chains.first.goal, 'Summarize Q3');
+    });
+
+    test('getChainState sends chainId and unwraps state', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+
+      final client = NodeServiceClient(homeClient);
+      final callFuture = client.getChainState('chain_live');
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'chainGetState');
+      expect(sent['params'], {'chainId': 'chain_live'});
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {
+          'chainId': 'chain_live',
+          'chainMandateId': 'cm_live',
+          'subtaskCount': 1,
+          'bidCount': 0,
+          'awardedCount': 0,
+          'partialCount': 0,
+          'chainCancelled': false,
+          'published': false,
+          'budgetSpentUsd': 0,
+          'budgetMaxUsd': 5,
+        },
+      });
+
+      final state = await callFuture;
+      expect(state, isNotNull);
+      expect(state!.chainId, 'chain_live');
+    });
   });
 
   // ----------------------------------------------------------------------

@@ -650,6 +650,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     callingState,
     startCall,
     cancelCall,
+    remoteStream,
   } = useCallSession();
 
   const threadKind = resolveChatThreadKind(selectedContact, bridgeStatus?.agentPeerId);
@@ -749,6 +750,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
           peerDisplayName={displayName}
           isMuted={isMuted}
           connectionState={connectionState}
+          remoteStream={remoteStream}
           onToggleMute={toggleMute}
           onEndCall={endCall}
         />

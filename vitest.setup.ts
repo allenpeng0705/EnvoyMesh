@@ -79,6 +79,7 @@ class MockRTCPeerConnection {
   setRemoteDescription: ReturnType<typeof vi.fn>;
   createAnswer: ReturnType<typeof vi.fn>;
   addTrack: ReturnType<typeof vi.fn>;
+  addIceCandidate: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
   onconnectionstatechange: ((() => void) | null) | null;
   onicecandidate: ((event: { candidate: RTCIceCandidate | null }) => void) | null;
@@ -91,6 +92,7 @@ class MockRTCPeerConnection {
     this.setRemoteDescription = vi.fn().mockResolvedValue(undefined);
     this.createAnswer = vi.fn().mockResolvedValue({ sdp: "mock-answer", type: "answer" });
     this.addTrack = vi.fn();
+    this.addIceCandidate = vi.fn().mockResolvedValue(undefined);
     this.close = vi.fn();
     this.onconnectionstatechange = null;
     this.onicecandidate = null;

@@ -154,6 +154,15 @@ class WebRtcCallTransport {
     return answer.sdp ?? '';
   }
 
+  /// Apply the remote SDP answer on the caller side after `call:answered`.
+  Future<void> applyRemoteAnswer(String remoteSdp) async {
+    final pc = _pc;
+    if (pc == null || _isClosed) throw StateError('Transport not ready for remote answer');
+    await pc.setRemoteDescription(
+      RTCSessionDescription(remoteSdp, 'answer'),
+    );
+  }
+
   /// Apply a remote ICE candidate trickled in via `call.ice-candidate`.
   /// Silently ignores failures — a stale candidate from a peer that
   /// has already renegotiated is not actionable.

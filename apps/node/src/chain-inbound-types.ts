@@ -80,8 +80,9 @@ export interface ChainInboundDeps {
   audit: ChainAuditSink;
   /**
    * This node's advertised capabilities (from Agent Card / device cert).
-   * Used for the orchestrator-only capability gate: intents that mint
-   * sub-mandates or publish chain reports require `chain.orchestrate`.
+   * Used for the orchestrator-receive capability gate: intents that arrive
+   * at the orchestrator (`task.chain.bid`, `task.chain.partial`, etc.)
+   * require `chain.orchestrate`.
    */
   nodeCapabilities: Capability[];
 
@@ -90,31 +91,38 @@ export interface ChainInboundDeps {
     envelope: EnvoyEnvelope,
     payload: TaskChainProposePayload,
   ) => Promise<ChainInboundDecision>;
-  handleWorkerBid: (
+  handleWorkerMandate: (
     envelope: EnvoyEnvelope,
-    payload: TaskChainBidPayload,
+    payload: TaskChainMandatePayload,
+  ) => Promise<ChainInboundDecision>;
+  handleWorkerAccept: (
+    envelope: EnvoyEnvelope,
+    payload: TaskChainAcceptPayload,
   ) => Promise<ChainInboundDecision>;
   handleWorkerCancel: (
     envelope: EnvoyEnvelope,
     payload: TaskChainCancelPayload,
   ) => Promise<ChainInboundDecision>;
+  handleWorkerHeartbeat: (
+    envelope: EnvoyEnvelope,
+    payload: TaskChainHeartbeatPayload,
+  ) => Promise<ChainInboundDecision>;
 
   // Orchestrator-side handlers (called when this node is the orchestrator agent)
-  handleOrchestratorMandate: (
+  handleOrchestratorBid: (
     envelope: EnvoyEnvelope,
-    payload: TaskChainMandatePayload,
-  ) => Promise<ChainInboundDecision>;
-  handleOrchestratorAccept: (
-    envelope: EnvoyEnvelope,
-    payload: TaskChainAcceptPayload,
+    payload: TaskChainBidPayload,
+    state: InboundChainState,
   ) => Promise<ChainInboundDecision>;
   handleOrchestratorPartial: (
     envelope: EnvoyEnvelope,
     payload: TaskChainPartialPayload,
+    state: InboundChainState,
   ) => Promise<ChainInboundDecision>;
   handleOrchestratorMerge: (
     envelope: EnvoyEnvelope,
     payload: TaskChainMergePayload,
+    state: InboundChainState,
   ) => Promise<ChainInboundDecision>;
   handleOrchestratorHeartbeat: (
     envelope: EnvoyEnvelope,

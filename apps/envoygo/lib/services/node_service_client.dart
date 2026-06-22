@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../models/chain_report.dart';
+import '../models/chain_active.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../models/contact.dart';
@@ -36,6 +37,7 @@ class NodeServiceClient {
     'call:remote-mute',
     'call:ended',
     'call:error',
+    'call:ice-candidate',
   ];
 
   NodeServiceClient(this._client) {
@@ -406,6 +408,24 @@ class NodeServiceClient {
     return ChainReport.fromJson(report as Map<String, dynamic>);
   }
 
+  /// List in-progress chains from the home node runtime.
+  Future<List<ChainActiveSummary>> listActiveChains() async {
+    final result = await _client.call('chainListActive', {}) as Map<String, dynamic>;
+    final list = (result['chains'] as List<dynamic>?) ?? const [];
+    return list
+        .map((e) => ChainActiveSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Fetch a single chain's live state snapshot.
+  Future<ChainActiveSummary?> getChainState(String chainId) async {
+    final result = await _client.call('chainGetState', {
+      'chainId': chainId,
+    }) as Map<String, dynamic>;
+    if (result['chainId'] == null) return null;
+    return ChainActiveSummary.fromJson(result);
+  }
+
   // -- Voice / video calls (Phase 42C) --
   //
   // Real JSON-RPC implementations for the five call.* RPCs. The home
@@ -481,6 +501,18 @@ class NodeServiceClient {
     final result = await _client.call('setCallMuted', {
       'callId': callId,
       'muted': muted,
+    });
+    return result == true;
+  }
+
+  /// Send a trickle ICE candidate to the remote peer for an active call.
+  Future<bool> sendIceCandidate(
+    String callId,
+    Map<String, dynamic> candidate,
+  ) async {
+    final result = await _client.call('sendIceCandidate', {
+      'callId': callId,
+      'candidate': candidate,
     });
     return result == true;
   }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useNodeService } from "../../hooks/useNodeService.js";
+import { useNodeService, useAgentCards } from "../../hooks/useNodeService.js";
 import type {
   ChatRoom,
   ContactAiPreferences,
@@ -17,6 +17,7 @@ import { CreateGroupModal } from "./CreateGroupModal.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { PullToRefresh } from "../PullToRefresh.js";
 import type { BondRecord } from "@envoymesh/api";
+import { ChainBondHealthBadge } from "../ChainBondHealthBadge.js";
 
 function sortByLatestMessage<T>(
   items: readonly T[],
@@ -40,6 +41,7 @@ interface ChatSidebarProps {
 export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant, onOpenDiscover }: ChatSidebarProps) {
   const t = useT();
   const nodeService = useNodeService();
+  const agentCards = useAgentCards();
   const {
     bonds,
     bridgeStatus,
@@ -341,6 +343,11 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
                   <span className="thread-meta">
                     <span className="thread-title-row">
                       <span className="thread-title">{label}</span>
+                      <ChainBondHealthBadge
+                        bond={contact}
+                        card={agentCards.find((c) => c.ownerId === contact.peerOwnerId)}
+                        compact
+                      />
                       {pv ? <span className="thread-time">{pv.timeLabel}</span> : null}
                     </span>
                     <span className="thread-subtitle">{pv?.text ?? t("chat.noMessagesYet")}</span>

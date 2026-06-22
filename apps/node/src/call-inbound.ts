@@ -1,7 +1,7 @@
 /**
  * call-inbound.ts — Phase 38 call.* intent handler.
  *
- * Routes inbound `call.invite`, `call.accept`, `call.reject`,
+ * Routes inbound `call.invite`, `call.reinvite`, `call.accept`, `call.reject`,
  * `call.hangup`, `call.ice-candidate`, and `call.mute` envelopes
  * through the `CallManager` state machine with identity binding
  * and callId validation per the design doc §4.0.
@@ -14,6 +14,7 @@
 
 import {
   parseCallInvitePayload,
+  parseCallReinvitePayload,
   parseCallAcceptPayload,
   parseCallRejectPayload,
   parseCallIceCandidatePayload,
@@ -31,6 +32,12 @@ export interface CallInboundDeps {
   peerDirectoryStore: LocalPeerDirectoryStore;
   /** Callback to send a signed envelope back to the remote party. */
   sendResponseEnvelope: (envelope: EnvoyEnvelope) => Promise<void>;
+  /** Notify caller that callee is busy (no local session created). */
+  sendBusyReject?: (params: {
+    callId: string;
+    callerOwnerId: string;
+    callerPeerId: string;
+  }) => Promise<void>;
   /**
    * Phase 42I — the local node's owner ID (the callee). Used to dispatch
    * a VoIP push so the callee's iOS app can wake from background.
@@ -107,6 +114,8 @@ export async function handleCallIntent(
   switch (intent) {
     case "call.invite":
       return handleCallInvite(envelope, deps);
+    case "call.reinvite":
+      return handleCallReinvite(envelope, deps);
     case "call.accept":
       return handleCallAccept(envelope, deps);
     case "call.reject":
@@ -166,7 +175,7 @@ async function handleCallInvite(
   // Resolve display name
   const displayName = trust?.displayName ?? payload.callerOwnerId;
 
-  deps.callManager.inboundCallReceived(
+  const result = deps.callManager.inboundCallReceived(
     payload.callId,
     payload.callerOwnerId,
     payload.callerPeerId,
@@ -174,6 +183,17 @@ async function handleCallInvite(
     payload.sdpOffer,
     payload.iceServers,
   );
+
+  if (!result.ok) {
+    if (result.reason === "busy" && deps.sendBusyReject) {
+      await deps.sendBusyReject({
+        callId: payload.callId,
+        callerOwnerId: payload.callerOwnerId,
+        callerPeerId: payload.callerPeerId,
+      });
+    }
+    return true;
+  }
 
   // Phase 42I — fire a VoIP push so the callee's iOS EnvoyGo app can wake
   // from background/terminated and surface a CallKit screen. The push
@@ -211,6 +231,50 @@ function dispatchIncomingCallPushIfOffline(
 }
 
 // ------------------------------------------------------------------
+// call.reinvite — Path 1 → Path 2 fallback
+// ------------------------------------------------------------------
+
+async function handleCallReinvite(
+  envelope: EnvoyEnvelope,
+  deps: CallInboundDeps,
+): Promise<boolean> {
+  let payload: ReturnType<typeof parseCallReinvitePayload>;
+  try {
+    payload = parseCallReinvitePayload(envelope.payload);
+  } catch {
+    console.warn(`${LOG} invalid call.reinvite payload`);
+    return true;
+  }
+
+  const sdpOfferLength = typeof payload.sdpOffer === "string" ? payload.sdpOffer.length : 0;
+  if (!validateSdpString(payload.sdpOffer)) {
+    console.warn(`${LOG} call.reinvite sdpOffer failed validation (length=${sdpOfferLength})`);
+    return true;
+  }
+
+  const senderOwner = senderOwnerId(envelope);
+
+  if (senderOwner !== payload.callerOwnerId) {
+    console.warn(`${LOG} call.reinvite identity binding failed`);
+    return true;
+  }
+
+  if (!deps.callManager.isCallerMatch(payload.callId, payload.callerOwnerId)) {
+    console.warn(`${LOG} call.reinvite caller mismatch: ${payload.callId}`);
+    return true;
+  }
+
+  deps.callManager.inboundCallReinvite(
+    payload.callId,
+    payload.callerOwnerId,
+    payload.sdpOffer,
+    payload.iceServers,
+    payload.reason,
+  );
+  return true;
+}
+
+// ------------------------------------------------------------------
 // call.accept
 // ------------------------------------------------------------------
 
@@ -241,12 +305,16 @@ async function handleCallAccept(
     return true;
   }
 
-  if (!deps.callManager.isCallerMatch(payload.callId, payload.calleeOwnerId)) {
+  if (!deps.callManager.isCalleeMatch(payload.callId, payload.calleeOwnerId)) {
     console.warn(`${LOG} call.accept callee mismatch: ${payload.callId}`);
     return true;
   }
 
-  deps.callManager.outboundCallAccepted(payload.callId);
+  deps.callManager.outboundCallAccepted(
+    payload.callId,
+    payload.sdpAnswer,
+    payload.iceServers,
+  );
   return true;
 }
 
@@ -335,7 +403,7 @@ async function handleCallIceCandidate(
     return true;
   }
 
-  console.log(`${LOG} ICE candidate for call ${payload.callId} from ${senderOwner}`);
+  deps.callManager.iceCandidateReceived(payload.callId, payload.candidate, senderOwner);
   return true;
 }
 

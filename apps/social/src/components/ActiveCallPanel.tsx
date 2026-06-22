@@ -18,6 +18,8 @@ export interface ActiveCallPanelProps {
   isMuted: boolean;
   /** WebRTC connection state. */
   connectionState: string;
+  /** Remote audio stream from the peer connection. */
+  remoteStream?: MediaStream | null;
   /** Called when the user toggles mute. */
   onToggleMute: () => void;
   /** Called when the user ends the call. */
@@ -44,12 +46,25 @@ export function ActiveCallPanel({
   peerDisplayName,
   isMuted,
   connectionState,
+  remoteStream,
   onToggleMute,
   onEndCall,
 }: ActiveCallPanelProps) {
   const t = useT();
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    const audio = remoteAudioRef.current;
+    if (!audio) return;
+    audio.srcObject = remoteStream ?? null;
+    if (remoteStream) {
+      void audio.play().catch(() => {
+        /* autoplay may be blocked until user gesture */
+      });
+    }
+  }, [remoteStream]);
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -64,6 +79,7 @@ export function ActiveCallPanel({
 
   return (
     <div className="active-call-panel" role="region" aria-label={t("call:activeCall", "Active call")}>
+      <audio ref={remoteAudioRef} autoPlay playsInline aria-hidden className="sr-only" />
       <div className="active-call-header">
         <div className="active-call-avatar" aria-hidden>
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

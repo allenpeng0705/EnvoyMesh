@@ -3,10 +3,13 @@ import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useIsInProcessMobileNode } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
+import { ChainStartDialog } from "../ChainStartDialog.js";
+import { ChainReportInlineCard } from "../ChainReportInlineCard.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { openLocalFile } from "../../lib/library-file-actions.js";
 import { stripModelThinking } from "@envoymesh/api";
-import type { AgentActivityRecord, AnswerFormat, ChatMessage, OwnerAgentApprovalSummary, OwnerAgentDomain, OwnerAgentTurnResult, StructuredBlock } from "@envoymesh/api";
+import type { AgentActivityRecord, AnswerFormat, ChainReportReceivedEvent, ChatMessage, OwnerAgentApprovalSummary, OwnerAgentDomain, OwnerAgentTurnResult, StructuredBlock } from "@envoymesh/api";
+import type { ChainReport } from "@envoymesh/protocol";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
 import {
   chatMessageToAiMessage,
@@ -43,6 +46,7 @@ interface AiMessage {
   text: string;
   timestamp: string;
   turn?: AiMessageTurnMeta;
+  chainReport?: { chainId: string; report: ChainReport };
 }
 
 export interface AIChatPanelProps {
@@ -211,6 +215,7 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
   );
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ title: string; message?: string; variant?: "default" | "destructive"; onConfirm: () => void } | null>(null);
+  const [chainGoal, setChainGoal] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const draftRef = useRef<ReturnType<typeof createAssistantDraftCrdt> | null>(null);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -357,6 +362,31 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
     });
     return unsub;
   }, [nodeService, selfOwnerId]);
+
+  useEffect(() => {
+    const unsub = nodeService.on("chain:report", (event: ChainReportReceivedEvent) => {
+      void (async () => {
+        try {
+          const result = await nodeService.chainGetReport({ chainId: event.chainId });
+          if (!result.report) return;
+          const report = result.report as ChainReport;
+          setAiMessages((prev) => [
+            ...prev,
+            {
+              id: `chain-report-${event.chainId}-${event.createdAt ?? Date.now()}`,
+              role: "ai" as const,
+              text: event.executiveSummary ?? report.executiveSummary ?? "",
+              timestamp: event.createdAt ?? new Date().toISOString(),
+              chainReport: { chainId: event.chainId, report },
+            },
+          ]);
+        } catch (err) {
+          console.warn("[AIChatPanel] chain:report handler failed:", err);
+        }
+      })();
+    });
+    return unsub;
+  }, [nodeService]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -586,16 +616,32 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
                             copyText={stripModelThinking(msg.text)}
                             onDelete={() => handleDeleteAiMessage(msg.id)}
                           >
-                            <AnswerRenderer
-                              text={msg.text}
-                              format={msg.role === "ai" ? msg.turn?.format : undefined}
-                              blocks={msg.role === "ai" ? msg.turn?.blocks : undefined}
-                              className="message-text"
-                              onOpenFile={handleOpenAiFile}
-                              openFileLabel={t("library.open")}
-                              openingFileLabel={t("library.opening")}
-                            />
+                            {msg.chainReport ? (
+                              <ChainReportInlineCard
+                                chainId={msg.chainReport.chainId}
+                                report={msg.chainReport.report}
+                              />
+                            ) : (
+                              <AnswerRenderer
+                                text={msg.text}
+                                format={msg.role === "ai" ? msg.turn?.format : undefined}
+                                blocks={msg.role === "ai" ? msg.turn?.blocks : undefined}
+                                className="message-text"
+                                onOpenFile={handleOpenAiFile}
+                                openFileLabel={t("library.open")}
+                                openingFileLabel={t("library.opening")}
+                              />
+                            )}
                           </ChatMessageBubble>
+                          {msg.role === "user" && msg.text.trim().length > 8 ? (
+                            <button
+                              type="button"
+                              className="ai-run-chain-btn"
+                              onClick={() => setChainGoal(stripModelThinking(msg.text))}
+                            >
+                              {t("chains.start.runAsChain")}
+                            </button>
+                          ) : null}
                           {msg.role === "ai" && msg.turn && (
                             <AiTurnMetaChips
                               turn={msg.turn}
@@ -677,6 +723,9 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
           onConfirm={confirm.onConfirm}
           onCancel={() => setConfirm(null)}
         />
+      ) : null}
+      {chainGoal ? (
+        <ChainStartDialog goal={chainGoal} onClose={() => setChainGoal(null)} />
       ) : null}
     </>
   );

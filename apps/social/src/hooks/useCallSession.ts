@@ -1,46 +1,49 @@
 /**
- * useCallSession — React hook for Phase 38 voice/video call state.
+ * useCallSession — React hook for Phase 38/42 voice call state.
  *
- * Subscribes to CallEvent from the NodeService and exposes the
- * current CallSession for UI rendering.
+ * Keeps a live WebRtcCallTransport through the call, applies remote answer
+ * SDP, forwards trickle ICE, and wires end/decline/mute to the home node.
  *
- * Phase 42A — outbound `startCall` now builds an `RTCPeerConnection`
- * via `createWebRtcCallTransport`, generates an offer SDP, and passes
- * it (plus the home's `iceServers` from `getNodeConfig`) to
- * `nodeService.sendCallInvite`. The home embeds the offer in the
- * `call.invite` envelope (see design §3.2).
+ * Outbound calls start on Path 1 (no STUN/TURN). If the direct connection
+ * does not establish within the Path 1 timeout, the hook sends call.reinvite
+ * with a Path 2 offer (STUN/TURN) for the same callId.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNodeService } from "./useNodeService.js";
-import { createWebRtcCallTransport } from "../lib/webrtc-call-transport.js";
+import {
+  createWebRtcCallTransport,
+  type WebRtcCallTransport,
+  type CallTransportPath,
+} from "../lib/webrtc-call-transport.js";
 import type { CallSession, CallEvent } from "@envoymesh/api";
 
+type IceServerConfig = { urls: string; username?: string; credential?: string };
+
 export interface UseCallSessionResult {
-  /** The active call session, or null if no call is in progress. */
   activeCall: CallSession | null;
-  /** The most recent incoming call event (for showing the incoming modal). */
-  incomingCall: { callId: string; peerOwnerId: string; peerDisplayName: string; sdpOffer?: string } | null;
-  /** Accept the current incoming call. */
+  incomingCall: {
+    callId: string;
+    peerOwnerId: string;
+    peerDisplayName: string;
+    sdpOffer?: string;
+    iceServers?: IceServerConfig[];
+  } | null;
   acceptCall: () => Promise<void>;
-  /** Decline the current incoming call. */
   declineCall: () => void;
-  /** End the active call. */
   endCall: () => void;
-  /** Toggle mute on the active call. */
   toggleMute: () => void;
-  /** Whether the local microphone is muted. */
   isMuted: boolean;
-  /** The WebRTC connection state. */
   connectionState: string;
-  /** Dismiss the incoming call notification (without accept/decline — timeout). */
   dismissIncoming: () => void;
-  /** The ID of an outbound call that is currently ringing (null if not calling). */
   callingState: string | null;
-  /** Start an outbound call. Returns the callId. */
   startCall: (targetOwnerId: string) => Promise<void>;
-  /** Cancel an outbound call that is ringing. */
   cancelCall: () => void;
+  remoteStream: MediaStream | null;
+}
+
+function isPath2Invite(iceServers?: IceServerConfig[]): boolean {
+  return Boolean(iceServers && iceServers.length > 0);
 }
 
 export function useCallSession(): UseCallSessionResult {
@@ -49,10 +52,118 @@ export function useCallSession(): UseCallSessionResult {
   const [incomingCall, setIncomingCall] = useState<UseCallSessionResult["incomingCall"]>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [connectionState, setConnectionState] = useState("disconnected");
-  // Store the incoming SDP offer for accept flow
   const [pendingSdpOffer, setPendingSdpOffer] = useState<string | undefined>(undefined);
-  // Phase 38D — outbound calling state
   const [callingState, setCallingState] = useState<string | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
+  const transportRef = useRef<WebRtcCallTransport | null>(null);
+  const activeCallIdRef = useRef<string | null>(null);
+  const iceCallIdRef = useRef<string>("");
+  const activePeerRef = useRef<{ ownerId: string; displayName: string } | null>(null);
+  const pendingInviteIceServersRef = useRef<IceServerConfig[] | undefined>(undefined);
+  const path2FallbackSentRef = useRef(false);
+
+  const closeTransport = useCallback(() => {
+    transportRef.current?.close();
+    transportRef.current = null;
+    setRemoteStream(null);
+  }, []);
+
+  const sendIceCandidate = useCallback(
+    (candidate: Parameters<typeof nodeService.sendIceCandidate>[1]) => {
+      const callId = iceCallIdRef.current;
+      if (!callId) return;
+      void nodeService.sendIceCandidate(callId, candidate).catch((err) => {
+        console.warn("[useCallSession] sendIceCandidate failed:", err);
+      });
+    },
+    [nodeService],
+  );
+
+  const buildTransport = useCallback(
+    (options: {
+      path: CallTransportPath;
+      iceServers: RTCIceServer[];
+      onPath1Timeout?: () => void;
+    }) =>
+      createWebRtcCallTransport({
+        path: options.path,
+        iceServers: options.iceServers,
+        onRemoteStream: (stream) => setRemoteStream(stream),
+        onConnectionStateChange: (state) => setConnectionState(state),
+        onSdpGenerated: () => undefined,
+        onIceCandidate: (candidate) => sendIceCandidate(candidate),
+        onMutePayload: () => undefined,
+        onPath1Timeout: options.onPath1Timeout,
+      }),
+    [sendIceCandidate],
+  );
+
+  const performPath2Fallback = useCallback(
+    async (callId: string, reason: "path1_timeout" | "path1_failed" = "path1_timeout") => {
+      if (path2FallbackSentRef.current || !nodeService) return;
+      path2FallbackSentRef.current = true;
+
+      closeTransport();
+      setConnectionState("connecting");
+
+      const nodeConfig = await nodeService.getNodeConfig();
+      const configIce = (nodeConfig?.iceServers ?? []) as RTCIceServer[];
+
+      try {
+        iceCallIdRef.current = callId;
+        const transport = buildTransport({ path: "path2", iceServers: configIce });
+        transportRef.current = transport;
+        const sdpOffer = await transport.startOffer();
+        const sent = await nodeService.sendCallReinvite(
+          callId,
+          sdpOffer,
+          nodeConfig?.iceServers ?? undefined,
+          reason,
+        );
+        if (!sent) {
+          console.warn("[useCallSession] sendCallReinvite failed for callId:", callId);
+        }
+      } catch (err) {
+        console.warn("[useCallSession] Path 2 fallback failed:", err);
+        closeTransport();
+      }
+    },
+    [nodeService, buildTransport, closeTransport],
+  );
+
+  const onPath1TimeoutHandler = useCallback(() => {
+    const callId = activeCallIdRef.current ?? iceCallIdRef.current;
+    if (callId) {
+      void performPath2Fallback(callId, "path1_timeout");
+    }
+  }, [performPath2Fallback]);
+
+  const renegotiateCalleePath2 = useCallback(
+    async (callId: string, remoteSdp: string, iceServers: IceServerConfig[]) => {
+      if (!nodeService) return;
+
+      closeTransport();
+      iceCallIdRef.current = callId;
+      setConnectionState("connecting");
+
+      try {
+        const transport = buildTransport({
+          path: "path2",
+          iceServers: iceServers as RTCIceServer[],
+        });
+        transportRef.current = transport;
+        const sdpAnswer = await transport.startAnswer(remoteSdp);
+        await nodeService.acceptCallInvite(callId, sdpAnswer, iceServers);
+        setConnectionState("connected");
+      } catch (err) {
+        console.warn("[useCallSession] callee Path 2 renegotiation failed:", err);
+        closeTransport();
+        setConnectionState("disconnected");
+      }
+    },
+    [nodeService, buildTransport, closeTransport],
+  );
 
   useEffect(() => {
     if (!nodeService) return;
@@ -65,44 +176,85 @@ export function useCallSession(): UseCallSessionResult {
             peerOwnerId: event.peerOwnerId,
             peerDisplayName: event.peerDisplayName,
             sdpOffer: event.sdpOffer,
+            iceServers: event.iceServers,
           });
           setPendingSdpOffer(event.sdpOffer);
+          pendingInviteIceServersRef.current = event.iceServers;
+          break;
+        case "call:reinvite":
+          setPendingSdpOffer(event.sdpOffer);
+          pendingInviteIceServersRef.current = event.iceServers;
+          setIncomingCall((prev) =>
+            prev && prev.callId === event.callId
+              ? { ...prev, sdpOffer: event.sdpOffer, iceServers: event.iceServers }
+              : prev,
+          );
+          if (activeCallIdRef.current === event.callId) {
+            void renegotiateCalleePath2(event.callId, event.sdpOffer, event.iceServers);
+          }
           break;
         case "call:answered":
           setIncomingCall(null);
           setPendingSdpOffer(undefined);
           setCallingState(null);
-          setConnectionState("connected");
+          if (event.sdpAnswer && transportRef.current) {
+            void transportRef.current
+              .applyRemoteAnswer(event.sdpAnswer)
+              .then(() => setConnectionState("connected"))
+              .catch((err) =>
+                console.warn("[useCallSession] applyRemoteAnswer failed:", err),
+              );
+          } else {
+            setConnectionState("connected");
+          }
+          setActiveCall({
+            callId: event.callId,
+            peerOwnerId: activePeerRef.current?.ownerId ?? "",
+            callType: "audio",
+            status: "active",
+            muted: false,
+          });
+          activeCallIdRef.current = event.callId;
+          break;
+        case "call:ice-candidate":
+          if (transportRef.current && event.callId === activeCallIdRef.current) {
+            void transportRef.current.addIceCandidate(event.candidate);
+          }
           break;
         case "call:ended":
         case "call:rejected":
+          closeTransport();
           setActiveCall(null);
           setIncomingCall(null);
           setPendingSdpOffer(undefined);
           setCallingState(null);
+          activeCallIdRef.current = null;
+          activePeerRef.current = null;
+          iceCallIdRef.current = "";
+          pendingInviteIceServersRef.current = undefined;
+          path2FallbackSentRef.current = false;
           setConnectionState("disconnected");
           setIsMuted(false);
           break;
         case "call:remote-mute":
-          // Remote party mute indicator — informational only
+          setIsMuted(event.muted);
+          setActiveCall((prev) => (prev ? { ...prev, muted: event.muted } : prev));
           break;
         case "call:error":
+          closeTransport();
           setActiveCall(null);
           setIncomingCall(null);
+          activeCallIdRef.current = null;
+          activePeerRef.current = null;
+          iceCallIdRef.current = "";
+          path2FallbackSentRef.current = false;
           setConnectionState("disconnected");
           break;
-      }
-
-      // Refresh active call from the node
-      const call = nodeService.getActiveCall();
-      setActiveCall(call);
-      if (call) {
-        setIsMuted(call.muted);
       }
     });
 
     return () => unsub();
-  }, [nodeService]);
+  }, [nodeService, closeTransport, renegotiateCalleePath2]);
 
   const acceptCall = useCallback(async () => {
     if (!incomingCall || !nodeService) return;
@@ -111,93 +263,143 @@ export function useCallSession(): UseCallSessionResult {
       console.warn("[useCallSession] cannot accept call: missing remote SDP");
       return;
     }
+
+    const callId = incomingCall.callId;
+    activePeerRef.current = {
+      ownerId: incomingCall.peerOwnerId,
+      displayName: incomingCall.peerDisplayName,
+    };
+    const peerOwnerId = incomingCall.peerOwnerId;
     setIncomingCall(null);
     setConnectionState("connecting");
+    activeCallIdRef.current = callId;
 
-    // Phase 42A — build the RTCPeerConnection and produce a SDP answer
-    // (mirrors the startCall flow but in answerer mode).
+    const inviteIce =
+      pendingInviteIceServersRef.current ?? incomingCall.iceServers;
+    const usePath2 = isPath2Invite(inviteIce);
     const nodeConfig = await nodeService.getNodeConfig();
-    const iceServers = nodeConfig?.iceServers ?? [];
-    let sdpAnswer: string;
-    try {
-      const transport = createWebRtcCallTransport({
-        path: "path2",
-        iceServers: iceServers as RTCIceServer[],
-        onRemoteStream: () => undefined,
-        onConnectionStateChange: () => undefined,
-        onSdpGenerated: () => undefined,
-        onIceCandidate: () => undefined,
-        onMutePayload: () => undefined,
-      });
-      sdpAnswer = await transport.startAnswer(remoteSdp);
-    } catch (err) {
-      console.warn("[useCallSession] failed to build WebRTC answer:", err);
-      return;
-    }
+    const pathIceServers = usePath2
+      ? ((nodeConfig?.iceServers ?? []) as RTCIceServer[])
+      : [];
 
-    await nodeService.acceptCallInvite(incomingCall.callId, sdpAnswer, iceServers);
-  }, [incomingCall, pendingSdpOffer, nodeService]);
+    try {
+      closeTransport();
+      iceCallIdRef.current = callId;
+      const transport = buildTransport({
+        path: usePath2 ? "path2" : "path1",
+        iceServers: pathIceServers,
+      });
+      transportRef.current = transport;
+      const sdpAnswer = await transport.startAnswer(remoteSdp);
+      await nodeService.acceptCallInvite(
+        callId,
+        sdpAnswer,
+        usePath2 ? nodeConfig?.iceServers ?? [] : [],
+      );
+      setActiveCall({
+        callId,
+        peerOwnerId,
+        callType: "audio",
+        status: "active",
+        muted: false,
+      });
+      setConnectionState("connected");
+    } catch (err) {
+      console.warn("[useCallSession] failed to accept call:", err);
+      closeTransport();
+      activeCallIdRef.current = null;
+      setConnectionState("disconnected");
+    }
+  }, [incomingCall, pendingSdpOffer, nodeService, buildTransport, closeTransport]);
 
   const declineCall = useCallback(() => {
-    if (!incomingCall) return;
-    // call.reject is sent by the node service
+    if (!incomingCall || !nodeService) return;
+    void nodeService.declineCallInvite(incomingCall.callId, "declined");
     setIncomingCall(null);
-  }, [incomingCall]);
+    setPendingSdpOffer(undefined);
+    pendingInviteIceServersRef.current = undefined;
+  }, [incomingCall, nodeService]);
 
   const endCall = useCallback(() => {
+    const callId = activeCallIdRef.current ?? activeCall?.callId ?? callingState;
+    closeTransport();
+    if (callId && nodeService) {
+      void nodeService.endCall(callId);
+    }
     setActiveCall(null);
+    setCallingState(null);
+    activeCallIdRef.current = null;
+    activePeerRef.current = null;
+    iceCallIdRef.current = "";
+    path2FallbackSentRef.current = false;
     setConnectionState("disconnected");
     setIsMuted(false);
-  }, []);
+  }, [activeCall, callingState, nodeService, closeTransport]);
 
   const toggleMute = useCallback(() => {
-    setIsMuted((prev) => !prev);
-  }, []);
+    const callId = activeCallIdRef.current ?? activeCall?.callId;
+    if (!callId || !nodeService) return;
+    const next = !isMuted;
+    transportRef.current?.setMute(next, callId);
+    setIsMuted(next);
+    void nodeService.setCallMuted(callId, next);
+  }, [activeCall, isMuted, nodeService]);
 
   const dismissIncoming = useCallback(() => {
     setIncomingCall(null);
     setPendingSdpOffer(undefined);
+    pendingInviteIceServersRef.current = undefined;
   }, []);
 
-  const startCall = useCallback(async (targetOwnerId: string) => {
-    if (!nodeService) return;
+  const startCall = useCallback(
+    async (targetOwnerId: string) => {
+      if (!nodeService) return;
 
-    // Phase 42A — pull the home's iceServers from node config. The home
-    // falls back to a 3-server STUN default when none are configured.
-    const nodeConfig = await nodeService.getNodeConfig();
-    const iceServers = nodeConfig?.iceServers ?? [];
+      path2FallbackSentRef.current = false;
 
-    // Build the RTCPeerConnection and generate an offer SDP. The actual
-    // local stream / ICE wiring happens asynchronously after the call is
-    // accepted by the peer; here we just need the offer string.
-    let sdpOffer: string;
-    try {
-      const transport = createWebRtcCallTransport({
-        path: "path2",
-        iceServers: iceServers as RTCIceServer[],
-        onRemoteStream: () => undefined,
-        onConnectionStateChange: () => undefined,
-        onSdpGenerated: () => undefined,
-        onIceCandidate: () => undefined,
-        onMutePayload: () => undefined,
-      });
-      sdpOffer = await transport.startOffer();
-    } catch (err) {
-      console.warn("[useCallSession] failed to build WebRTC offer:", err);
-      return;
-    }
+      let sdpOffer: string;
+      try {
+        closeTransport();
+        iceCallIdRef.current = "";
+        const tempTransport = buildTransport({
+          path: "path1",
+          iceServers: [],
+          onPath1Timeout: onPath1TimeoutHandler,
+        });
+        sdpOffer = await tempTransport.startOffer();
+        transportRef.current = tempTransport;
+      } catch (err) {
+        console.warn("[useCallSession] failed to build WebRTC offer:", err);
+        closeTransport();
+        return;
+      }
 
-    const callId = await nodeService.sendCallInvite(targetOwnerId, sdpOffer, iceServers);
-    if (callId) {
+      // Explicit `[]` signals Path 1 — home must not inject default STUN.
+      const callId = await nodeService.sendCallInvite(targetOwnerId, sdpOffer, []);
+      if (!callId) {
+        closeTransport();
+        iceCallIdRef.current = "";
+        return;
+      }
+
+      iceCallIdRef.current = callId;
+      activeCallIdRef.current = callId;
+      activePeerRef.current = { ownerId: targetOwnerId, displayName: targetOwnerId };
       setCallingState(callId);
-    }
-  }, [nodeService]);
+      setConnectionState("connecting");
+    },
+    [nodeService, buildTransport, closeTransport, onPath1TimeoutHandler],
+  );
 
   const cancelCall = useCallback(() => {
     if (!nodeService || !callingState) return;
     void nodeService.endCall(callingState);
+    closeTransport();
     setCallingState(null);
-  }, [nodeService, callingState]);
+    activeCallIdRef.current = null;
+    path2FallbackSentRef.current = false;
+    setConnectionState("disconnected");
+  }, [nodeService, callingState, closeTransport]);
 
   return {
     activeCall,
@@ -212,5 +414,6 @@ export function useCallSession(): UseCallSessionResult {
     callingState,
     startCall,
     cancelCall,
+    remoteStream,
   };
 }

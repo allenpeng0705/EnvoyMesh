@@ -28,6 +28,7 @@ export interface ChainBid {
   proposedCostUsd: number;
   proposedEtaAt: string;
   bidExpiresAt: string;
+  rationale?: string;
 }
 
 export interface ChainBidInboxSubtask {
@@ -178,6 +179,7 @@ function ChainBidInboxRow({ chainId, subtask, onAward, onCounterBid, t }: ChainB
               <th>{t("chains.bidInbox.col.worker")}</th>
               <th>{t("chains.bidInbox.col.cost")}</th>
               <th>{t("chains.bidInbox.col.eta")}</th>
+              <th>{t("chains.bidInbox.col.rationale")}</th>
               <th>{t("chains.bidInbox.col.expires")}</th>
               <th>{t("chains.bidInbox.col.actions")}</th>
             </tr>
@@ -198,6 +200,7 @@ function ChainBidInboxRow({ chainId, subtask, onAward, onCounterBid, t }: ChainB
                   </td>
                   <td>${b.proposedCostUsd.toFixed(2)}</td>
                   <td>{b.proposedEtaAt.slice(11, 19)}Z</td>
+                  <td className="chain-bid-inbox-rationale">{b.rationale ?? "—"}</td>
                   <td>{b.bidExpiresAt.slice(11, 19)}Z</td>
                   <td>
                     <button

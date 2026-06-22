@@ -245,6 +245,14 @@ export function wireFullDaemonAgentCardHandlers(
   });
 }
 
+/** Mirror production `index.ts` chain inbound routing on the test mesh. */
+export function wireChainInboundHandler(node: Phase13TestNode): void {
+  node.mesh.onMessage(async ({ envelope }) => {
+    if (!envelope.intent.startsWith("task.chain.")) return;
+    await node.service.handleInboundChainEnvelope(envelope);
+  });
+}
+
 export function wireNodeServiceInboundHandlers(
   node: Phase13TestNode,
   opts?: { approvalQueue?: ApprovalQueue },

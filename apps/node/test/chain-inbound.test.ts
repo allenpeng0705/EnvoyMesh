@@ -286,33 +286,29 @@ function makeDeps(
   audit: ChainAuditSink,
   opts: {
     nodeCapabilities?: CapabilitySchema[];
-    workerPropose?: (envelope: EnvoyEnvelope, payload: TaskChainProposePayload, state: ChainState) => Promise<ChainInboundDecision>;
-    workerBid?: (envelope: EnvoyEnvelope, payload: TaskChainBidPayload, state: ChainState) => Promise<ChainInboundDecision>;
-    workerCancel?: (envelope: EnvoyEnvelope, payload: TaskChainCancelPayload, state: ChainState) => Promise<ChainInboundDecision>;
-    orchestratorMandate?: (envelope: EnvoyEnvelope, payload: TaskChainMandatePayload, state: ChainState) => Promise<ChainInboundDecision>;
-    orchestratorAccept?: (envelope: EnvoyEnvelope, payload: TaskChainAcceptPayload, state: ChainState) => Promise<ChainInboundDecision>;
-    orchestratorPartial?: (envelope: EnvoyEnvelope, payload: TaskChainPartialPayload, state: ChainState) => Promise<ChainInboundDecision>;
-    orchestratorMerge?: (envelope: EnvoyEnvelope, payload: TaskChainMergePayload, state: ChainState) => Promise<ChainInboundDecision>;
-    orchestratorHeartbeat?: (envelope: EnvoyEnvelope, payload: TaskChainHeartbeatPayload, state: ChainState) => Promise<ChainInboundDecision>;
+    workerPropose?: (envelope: EnvoyEnvelope, payload: TaskChainProposePayload) => Promise<ChainInboundDecision>;
+    workerMandate?: (envelope: EnvoyEnvelope, payload: TaskChainMandatePayload) => Promise<ChainInboundDecision>;
+    workerAccept?: (envelope: EnvoyEnvelope, payload: TaskChainAcceptPayload) => Promise<ChainInboundDecision>;
+    workerCancel?: (envelope: EnvoyEnvelope, payload: TaskChainCancelPayload) => Promise<ChainInboundDecision>;
+    workerHeartbeat?: (envelope: EnvoyEnvelope, payload: TaskChainHeartbeatPayload) => Promise<ChainInboundDecision>;
+    orchestratorBid?: (envelope: EnvoyEnvelope, payload: TaskChainBidPayload, state: InboundChainState) => Promise<ChainInboundDecision>;
+    orchestratorPartial?: (envelope: EnvoyEnvelope, payload: TaskChainPartialPayload, state: InboundChainState) => Promise<ChainInboundDecision>;
+    orchestratorMerge?: (envelope: EnvoyEnvelope, payload: TaskChainMergePayload, state: InboundChainState) => Promise<ChainInboundDecision>;
+    orchestratorHeartbeat?: (envelope: EnvoyEnvelope, payload: TaskChainHeartbeatPayload, state: InboundChainState) => Promise<ChainInboundDecision>;
     ownerReport?: (envelope: EnvoyEnvelope, payload: TaskChainReportPayload) => Promise<ChainInboundDecision>;
   } = {},
 ): ChainInboundDeps {
-  // Loose `okHandler` so it can be reused for any handler regardless of
-  // the inbound-state arg shape. Each handler in `ChainInboundDeps`
-  // receives different arguments but we always return the same trivial
-  // success decision in tests that don't care.
   const okHandler = (..._args: unknown[]): Promise<ChainInboundDecision> =>
     Promise.resolve({ ok: true, handlerResult: "ok" });
-  const denyHandler = (reason = "handler_denied"): Promise<ChainInboundDecision> =>
-    Promise.resolve({ ok: false, reason: reason as ChainInboundDecision & { ok: false }["reason"] });
   return {
     audit,
     nodeCapabilities: opts.nodeCapabilities ?? ["chain.orchestrate"],
     handleWorkerPropose: opts.workerPropose ?? okHandler,
-    handleWorkerBid: opts.workerBid ?? okHandler,
+    handleWorkerMandate: opts.workerMandate ?? okHandler,
+    handleWorkerAccept: opts.workerAccept ?? okHandler,
     handleWorkerCancel: opts.workerCancel ?? okHandler,
-    handleOrchestratorMandate: opts.orchestratorMandate ?? okHandler,
-    handleOrchestratorAccept: opts.orchestratorAccept ?? okHandler,
+    handleWorkerHeartbeat: opts.workerHeartbeat ?? okHandler,
+    handleOrchestratorBid: opts.orchestratorBid ?? okHandler,
     handleOrchestratorPartial: opts.orchestratorPartial ?? okHandler,
     handleOrchestratorMerge: opts.orchestratorMerge ?? okHandler,
     handleOrchestratorHeartbeat: opts.orchestratorHeartbeat ?? okHandler,
@@ -321,11 +317,11 @@ function makeDeps(
 }
 
 describe("dispatchChainEnvelope", () => {
-  it("task.chain.mandate dispatches to handleOrchestratorMandate", async () => {
+  it("task.chain.mandate dispatches to handleWorkerMandate", async () => {
     const audit = makeAudit();
     const handler = vi.fn().mockResolvedValue({ ok: true as const });
     const r = await dispatchChainEnvelope(
-      makeDeps(audit.sink, { orchestratorMandate: handler }),
+      makeDeps(audit.sink, { workerMandate: handler, nodeCapabilities: ["task.execute"] }),
       envelope("task.chain.mandate", mandatePayload()),
     );
     expect(r.ok).toBe(true);
@@ -343,22 +339,24 @@ describe("dispatchChainEnvelope", () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it("task.chain.bid dispatches to handleWorkerBid", async () => {
+  it("task.chain.bid dispatches to handleOrchestratorBid", async () => {
     const audit = makeAudit();
     const handler = vi.fn().mockResolvedValue({ ok: true as const });
+    const state = makeInboundState();
     const r = await dispatchChainEnvelope(
-      makeDeps(audit.sink, { workerBid: handler }),
+      makeDeps(audit.sink, { orchestratorBid: handler }),
       envelope("task.chain.bid", bidPayload()),
+      state,
     );
     expect(r.ok).toBe(true);
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it("task.chain.accept dispatches to handleOrchestratorAccept", async () => {
+  it("task.chain.accept dispatches to handleWorkerAccept", async () => {
     const audit = makeAudit();
     const handler = vi.fn().mockResolvedValue({ ok: true as const });
     const r = await dispatchChainEnvelope(
-      makeDeps(audit.sink, { orchestratorAccept: handler }),
+      makeDeps(audit.sink, { workerAccept: handler, nodeCapabilities: ["task.execute"] }),
       envelope("task.chain.accept", acceptPayload()),
     );
     expect(r.ok).toBe(true);
@@ -368,9 +366,11 @@ describe("dispatchChainEnvelope", () => {
   it("task.chain.partial dispatches to handleOrchestratorPartial", async () => {
     const audit = makeAudit();
     const handler = vi.fn().mockResolvedValue({ ok: true as const });
+    const state = makeInboundState();
     const r = await dispatchChainEnvelope(
       makeDeps(audit.sink, { orchestratorPartial: handler }),
       envelope("task.chain.partial", partialPayload()),
+      state,
     );
     expect(r.ok).toBe(true);
     expect(handler).toHaveBeenCalledTimes(1);
@@ -379,9 +379,11 @@ describe("dispatchChainEnvelope", () => {
   it("task.chain.merge dispatches to handleOrchestratorMerge", async () => {
     const audit = makeAudit();
     const handler = vi.fn().mockResolvedValue({ ok: true as const });
+    const state = makeInboundState();
     const r = await dispatchChainEnvelope(
       makeDeps(audit.sink, { orchestratorMerge: handler }),
       envelope("task.chain.merge", mergePayload()),
+      state,
     );
     expect(r.ok).toBe(true);
     expect(handler).toHaveBeenCalledTimes(1);
@@ -445,24 +447,37 @@ describe("dispatchChainEnvelope", () => {
     expect(audit.events.some((e) => (e as { outcome?: string }).outcome === "deny")).toBe(true);
   });
 
-  it("capability gate: task.chain.mandate rejected when node lacks chain.orchestrate", async () => {
+  it("capability gate: task.chain.bid rejected when node lacks chain.orchestrate", async () => {
     const audit = makeAudit();
     const handler = vi.fn().mockResolvedValue({ ok: true as const });
     const r = await dispatchChainEnvelope(
-      makeDeps(audit.sink, { nodeCapabilities: ["task.execute"], orchestratorMandate: handler }),
-      envelope("task.chain.mandate", mandatePayload()),
+      makeDeps(audit.sink, { nodeCapabilities: ["task.execute"], orchestratorBid: handler }),
+      envelope("task.chain.bid", bidPayload()),
+      makeInboundState(),
     );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("missing_orchestrator_capability");
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it("capability gate: task.chain.mandate accepted when node has task.execute only", async () => {
+    const audit = makeAudit();
+    const handler = vi.fn().mockResolvedValue({ ok: true as const });
+    const r = await dispatchChainEnvelope(
+      makeDeps(audit.sink, { nodeCapabilities: ["task.execute"], workerMandate: handler }),
+      envelope("task.chain.mandate", mandatePayload()),
+    );
+    expect(r.ok).toBe(true);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
   it("role-policy gate enforces agent→agent for worker intents (recipientRole=human rejected)", async () => {
     const audit = makeAudit();
     const handler = vi.fn().mockResolvedValue({ ok: true as const });
     const r = await dispatchChainEnvelope(
-      makeDeps(audit.sink, { workerBid: handler }),
+      makeDeps(audit.sink, { orchestratorBid: handler }),
       envelope("task.chain.bid", bidPayload(), { recipientRole: "human" }),
+      makeInboundState(),
     );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("role_policy_denied");
@@ -473,8 +488,9 @@ describe("dispatchChainEnvelope", () => {
     const audit = makeAudit();
     const handler = vi.fn().mockResolvedValue({ ok: true as const });
     const r = await dispatchChainEnvelope(
-      makeDeps(audit.sink, { workerBid: handler }),
+      makeDeps(audit.sink, { orchestratorBid: handler }),
       envelope("task.chain.bid", { wrong: "shape" }),
+      makeInboundState(),
     );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("malformed_bid_payload");
@@ -497,8 +513,9 @@ describe("dispatchChainEnvelope", () => {
     const audit = makeAudit();
     const handler = vi.fn().mockRejectedValue(new Error("boom"));
     const r = await dispatchChainEnvelope(
-      makeDeps(audit.sink, { workerBid: handler }),
+      makeDeps(audit.sink, { orchestratorBid: handler }),
       envelope("task.chain.bid", bidPayload()),
+      makeInboundState(),
     );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("handler_exception");

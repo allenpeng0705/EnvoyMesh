@@ -1,6 +1,7 @@
 import type { BondLevel } from "@envoymesh/bonds";
 import type {
   Capability,
+  ChainReport,
   DeviceCertificate,
   DeviceProfile,
   EnvoyIntent,
@@ -62,6 +63,11 @@ import {
   type ListChainReportsParams,
   type LocalChainReportsStore,
 } from "./chain-reports-store.js";
+import {
+  createLocalChainRecipesStore,
+  type ChainRecipeRecord,
+  type LocalChainRecipesStore,
+} from "./chain-recipes-store.js";
 
 const PEER_DIRECTORY_READ_BUDGET_MS = 20_000;
 
@@ -258,6 +264,7 @@ export type AuditEventType =
   | "chain.merged"
   | "chain.re_bid"
   | "chain.report_published"
+  | "chain.report_received"
   | "chain.depth_exceeded"
   | "chain.budget_exceeded"
   | "chain.bid_expired";
@@ -702,6 +709,8 @@ export interface LocalTaskStore {
   getChainReport(chainId: string): Promise<ChainReportRecord | null>;
   /** List persisted chain reports with optional filters. Newest first. */
   listChainReports(params?: ListChainReportsParams): Promise<ChainReportRecord[]>;
+  /** Persist (upsert) a published chain report. */
+  recordChainReport(report: ChainReport): Promise<ChainReportRecord>;
   /**
    * Toggle the pinned flag on a chain report. Pinned reports are exempt
    * from the 90-day GC and surface in the UI's "Pinned" tab.
@@ -710,6 +719,12 @@ export interface LocalTaskStore {
     chainId: string,
     pinned: boolean,
   ): Promise<ChainReportRecord | null>;
+  /** Phase 43H — list owner-saved chain recipes. */
+  listChainRecipes(): Promise<ChainRecipeRecord[]>;
+  saveChainRecipe(
+    recipe: Omit<ChainRecipeRecord, "createdAt" | "updatedAt"> & { createdAt?: string },
+  ): Promise<ChainRecipeRecord>;
+  deleteChainRecipe(id: string): Promise<boolean>;
 }
 
 export type AbuseFlag = "none" | "slow_response" | "no_answer" | "malicious" | "offensive";
@@ -872,6 +887,7 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
   const companyInviteStore = createLocalCompanyInviteStore(profileDir);
   const fleetManifestStore = createLocalFleetManifestStore(profileDir);
   const chainReportsStore = createLocalChainReportsStore(profileDir);
+  const chainRecipesStore = createLocalChainRecipesStore(profileDir);
 
   const auditEventToIndexEntry = (event: AuditEvent): JsonlIndexEntry => ({
     id: event.eventId,
@@ -1047,8 +1063,21 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
       return chainReportsStore.listChainReports(params);
     },
 
+    async recordChainReport(report) {
+      return chainReportsStore.recordChainReport(report);
+    },
+
     async pinChainReport(chainId, pinned) {
       return chainReportsStore.pinChainReport(chainId, pinned);
+    },
+    async listChainRecipes() {
+      return chainRecipesStore.listRecipes();
+    },
+    async saveChainRecipe(recipe) {
+      return chainRecipesStore.saveRecipe(recipe);
+    },
+    async deleteChainRecipe(id) {
+      return chainRecipesStore.deleteRecipe(id);
     },
   };
 }

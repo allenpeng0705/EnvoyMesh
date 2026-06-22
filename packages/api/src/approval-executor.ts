@@ -16,9 +16,19 @@ export interface DiscoveryForwardApprovalPayload {
   currentHop: number;
 }
 
+export interface ChainAwardApprovalPayload {
+  chainId: string;
+  subtaskId: string;
+  workerPeerId: string;
+  workerOwnerId: string;
+  acceptedCostUsd: number;
+}
+
 export interface ApprovalExecutorDeps {
   sendAgentChat: (targetOwnerId: string, text: string) => Promise<SendChatResult>;
   forwardDiscovery?: (payload: DiscoveryForwardApprovalPayload) => Promise<{ ok: boolean; error?: string }>;
+  /** Phase 43G — award a chain worker after owner approval. */
+  awardChainWorker?: (payload: ChainAwardApprovalPayload) => Promise<{ ok: boolean; error?: string }>;
 }
 
 /** Run an approved queue item (Phase 13 — send_chat uses honest agent role). */
@@ -54,6 +64,22 @@ export async function executeApprovedAction(
         return { ok: false, reason: result.error ?? "discovery forward failed" };
       }
       return { ok: true, actionType: "discovery_forward" };
+    }
+    case "chain_award": {
+      if (!deps.awardChainWorker) {
+        return { ok: false, reason: "chain_award executor not configured" };
+      }
+      let parsed: ChainAwardApprovalPayload;
+      try {
+        parsed = JSON.parse(item.draftContent) as ChainAwardApprovalPayload;
+      } catch {
+        return { ok: false, reason: "chain_award approval has invalid draftContent JSON" };
+      }
+      const result = await deps.awardChainWorker(parsed);
+      if (!result.ok) {
+        return { ok: false, reason: result.error ?? "chain award failed" };
+      }
+      return { ok: true, actionType: "chain_award" };
     }
     default:
       return {

@@ -648,5 +648,22 @@ void main() {
         RTCPeerConnectionState.RTCPeerConnectionStateConnected,
       ]);
     });
+
+    test('applyRemoteAnswer sets remote answer SDP', () async {
+      final pc = FakePeerConnection();
+      final transport = buildTransport(
+        iceCandidates: [],
+        connectionStates: [],
+        remoteStreams: [],
+        sdps: [],
+        pc: pc,
+      );
+
+      await transport.startOffer();
+      await transport.applyRemoteAnswer('v=0\r\no=- remote-answer\r\n');
+
+      expect(pc.setRemoteDescriptionCalls, hasLength(1));
+      expect(pc.setRemoteDescriptionCalls.first.type, 'answer');
+    });
   });
 }

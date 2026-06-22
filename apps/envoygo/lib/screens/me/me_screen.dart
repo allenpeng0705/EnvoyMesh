@@ -7,6 +7,7 @@ import '../../providers/node_provider.dart';
 import '../../widgets/ai_engine_section.dart';
 import '../../widgets/connection_indicator.dart';
 import '../chains/recent_chains_screen.dart';
+import '../chains/active_chains_screen.dart';
 import '../pairing/pairing_scan_screen.dart';
 import 'node_switcher_sheet.dart';
 
@@ -245,6 +246,23 @@ class MeScreen extends ConsumerWidget {
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const RecentChainsScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.pending_actions_outlined),
+              title: const Text('Active chains'),
+              subtitle: const Text(
+                'Monitor in-progress chains on the home node',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ActiveChainsScreen(),
                   ),
                 );
               },

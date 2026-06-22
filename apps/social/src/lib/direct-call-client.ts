@@ -193,6 +193,15 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.sendCallInvite(targetOwnerId, sdpOffer, iceServers);
   }
 
+  async sendCallReinvite(
+    callId: string,
+    sdpOffer: string,
+    iceServers?: { urls: string; username?: string; credential?: string }[],
+    reason?: "path1_timeout" | "path1_failed",
+  ): Promise<boolean> {
+    return this._ns.sendCallReinvite(callId, sdpOffer, iceServers, reason);
+  }
+
   async acceptCallInvite(
     callId: string,
     sdpAnswer: string,
@@ -211,6 +220,18 @@ export class DirectCallClient implements NodeServiceClient {
 
   async setCallMuted(callId: string, muted: boolean): Promise<boolean> {
     return this._ns.setCallMuted(callId, muted);
+  }
+
+  async sendIceCandidate(
+    callId: string,
+    candidate: {
+      candidate: string;
+      sdpMid: string | null;
+      sdpMLineIndex: number | null;
+      usernameFragment?: string | null;
+    },
+  ): Promise<boolean> {
+    return this._ns.sendIceCandidate(callId, candidate);
   }
 
   // Phase 31I — Push Notifications
@@ -274,6 +295,24 @@ export class DirectCallClient implements NodeServiceClient {
   }
   chainSetDefaults(params: Parameters<NodeService["chainSetDefaults"]>[0]): ReturnType<NodeService["chainSetDefaults"]> {
     return this._ns.chainSetDefaults(params);
+  }
+  chainPreviewGoal(params: Parameters<NodeService["chainPreviewGoal"]>[0]): ReturnType<NodeService["chainPreviewGoal"]> {
+    return this._ns.chainPreviewGoal(params);
+  }
+  chainStartFromGoal(params: Parameters<NodeService["chainStartFromGoal"]>[0]): ReturnType<NodeService["chainStartFromGoal"]> {
+    return this._ns.chainStartFromGoal(params);
+  }
+  chainExportCosts(params: Parameters<NodeService["chainExportCosts"]>[0]): ReturnType<NodeService["chainExportCosts"]> {
+    return this._ns.chainExportCosts(params);
+  }
+  chainListRecipes(params?: Parameters<NodeService["chainListRecipes"]>[0]): ReturnType<NodeService["chainListRecipes"]> {
+    return this._ns.chainListRecipes(params);
+  }
+  chainSaveRecipe(params: Parameters<NodeService["chainSaveRecipe"]>[0]): ReturnType<NodeService["chainSaveRecipe"]> {
+    return this._ns.chainSaveRecipe(params);
+  }
+  chainDeleteRecipe(params: Parameters<NodeService["chainDeleteRecipe"]>[0]): ReturnType<NodeService["chainDeleteRecipe"]> {
+    return this._ns.chainDeleteRecipe(params);
   }
 
   // -----------------------------------------------------------------------

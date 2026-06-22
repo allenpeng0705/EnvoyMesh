@@ -32,14 +32,18 @@
 
 import {
   ChainSubtaskBidSchema,
+  TaskChainAcceptPayloadSchema,
   TaskChainBidPayloadSchema,
   TaskChainPartialPayloadSchema,
   ChainSubtaskPartialSchema,
   type ChainSubtask,
   type ChainSubtaskBid,
   type EnvoyEnvelope,
+  type TaskChainAcceptPayload,
   type TaskChainBidPayload,
   type TaskChainCancelPayload,
+  type TaskChainHeartbeatPayload,
+  type TaskChainMandatePayload,
   type TaskChainPartialPayload,
   type TaskChainProposePayload,
 } from "@envoymesh/protocol";
@@ -148,22 +152,83 @@ export async function handleWorkerPropose(
 }
 
 // ---------------------------------------------------------------------------
-// 2. handleWorkerBid — orchestrator-side echo (should not happen on worker)
+// 2. handleWorkerMandate — orchestrator broadcasts chain constraints
 // ---------------------------------------------------------------------------
 
-export async function handleWorkerBid(
-  _deps: ChainWorkerHandlerDeps,
-  _envelope: EnvoyEnvelope,
-  _payload: TaskChainBidPayload,
+export async function handleWorkerMandate(
+  deps: ChainWorkerHandlerDeps,
+  envelope: EnvoyEnvelope,
+  payload: TaskChainMandatePayload,
 ): Promise<ChainInboundDecision> {
-  // The worker never receives its own bid back; this exists only because the
-  // dispatcher routes every chain intent somewhere. We treat it as a no-op
-  // since the inbound guard already validated the envelope.
+  deps.audit.record({
+    type: "chain.mandate_received",
+    outcome: "record",
+    intent: "task.chain.mandate",
+    remotePeerId: envelope.senderPeerId,
+    correlationId: envelope.correlationId,
+    summary: `chainId=${payload.chainMandate.chainId}`,
+  });
   return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
-// 3. handleWorkerCancel — orchestrator (or owner) cancels a subtask
+// 3. handleWorkerAccept — orchestrator awards a subtask to this worker
+// ---------------------------------------------------------------------------
+
+export async function handleWorkerAccept(
+  deps: ChainWorkerHandlerDeps,
+  envelope: EnvoyEnvelope,
+  payload: TaskChainAcceptPayload,
+): Promise<ChainInboundDecision> {
+  const subtaskId = payload.award.subtaskId;
+  const nowMs = (deps.now ?? (() => new Date()))().getTime();
+  const check = checkBidExpiration(deps, subtaskId, nowMs);
+  if (!check.ok) {
+    deps.audit.record({
+      type: "chain.bid_expired",
+      outcome: "deny",
+      intent: "task.chain.accept",
+      remotePeerId: envelope.senderPeerId,
+      correlationId: envelope.correlationId,
+      summary: check.reason,
+    });
+    return { ok: false, reason: "handler_denied" };
+  }
+  acceptChainAward(deps, subtaskId);
+  deps.audit.record({
+    type: "chain.award_accepted",
+    outcome: "allow",
+    intent: "task.chain.accept",
+    remotePeerId: envelope.senderPeerId,
+    correlationId: envelope.correlationId,
+    summary: `subtask=${subtaskId} costUsd=${payload.award.acceptedCostUsd}`,
+  });
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// 4. handleWorkerHeartbeat — orchestrator liveness ping (no-op ack)
+// ---------------------------------------------------------------------------
+
+export async function handleWorkerHeartbeat(
+  deps: ChainWorkerHandlerDeps,
+  envelope: EnvoyEnvelope,
+  payload: TaskChainHeartbeatPayload,
+): Promise<ChainInboundDecision> {
+  void payload;
+  deps.audit.record({
+    type: "chain.heartbeat_received",
+    outcome: "record",
+    intent: "task.chain.heartbeat",
+    remotePeerId: envelope.senderPeerId,
+    correlationId: envelope.correlationId,
+    summary: `subtask=${payload.subtaskId}`,
+  });
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// 5. handleWorkerCancel — orchestrator (or owner) cancels a subtask
 // ---------------------------------------------------------------------------
 
 export async function handleWorkerCancel(

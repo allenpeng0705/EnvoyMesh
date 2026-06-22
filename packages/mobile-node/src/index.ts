@@ -8201,8 +8201,52 @@ You are the owner's personal AI assistant on EnvoyMesh.
   async proposeAgentCircles(): Promise<any[]> { return []; }
   async chatRagSearch(_query: string, _opts?: any): Promise<any[]> { return []; }
   async chatRagFormat(_query: string): Promise<string> { return ""; }
-  async discoverAndCluster(_opts?: any): Promise<any> { throw new Error("Not available on mobile — pair to desktop"); }
   async generateMeshIntelligenceReport(): Promise<string> { throw new Error("Not available on mobile — pair to desktop"); }
+
+  // ---- Phase 38 — Voice/Video Calls ----
+  getActiveCall(): import("@envoymesh/api").CallSession | null { return null; }
+  onCallEvent(_handler: (event: import("@envoymesh/api").CallEvent) => void): () => void { return () => {}; }
+  async sendCallInvite(_targetOwnerId: string, _sdpOffer: string, _iceServers?: { urls: string; username?: string; credential?: string }[]): Promise<string | null> { return null; }
+  async sendCallReinvite(_callId: string, _sdpOffer: string, _iceServers?: { urls: string; username?: string; credential?: string }[], _reason?: "path1_timeout" | "path1_failed"): Promise<boolean> { return false; }
+  async acceptCallInvite(_callId: string, _sdpAnswer: string, _iceServers?: { urls: string; username?: string; credential?: string }[]): Promise<boolean> { return false; }
+  async declineCallInvite(_callId: string, _reason: string): Promise<boolean> { return false; }
+  async endCall(_callId: string): Promise<boolean> { return false; }
+  async setCallMuted(_callId: string, _muted: boolean): Promise<boolean> { return false; }
+  async sendIceCandidate(_callId: string, _candidate: {
+    candidate: string;
+    sdpMid: string | null;
+    sdpMLineIndex: number | null;
+    usernameFragment?: string | null;
+  }): Promise<boolean> { return false; }
+
+  // ---- Phase 40: Agent Network Collaboration Layer (chains) ----
+  async chainPlan(_params: import("@envoymesh/api").ChainPlanParams): Promise<import("@envoymesh/api").ChainPlanResult> { return { chainId: "", subtasks: [] }; }
+  async chainLaunch(_params: import("@envoymesh/api").ChainLaunchParams): Promise<import("@envoymesh/api").ChainLaunchResult> { return { chainId: "", proposed: 0, mandateBroadcastOk: false }; }
+  async chainGetState(_params: import("@envoymesh/api").ChainGetStateParams): Promise<import("@envoymesh/api").ChainGetStateResult> { return { chainId: "", chainMandateId: "", subtaskCount: 0, bidCount: 0, awardedCount: 0, partialCount: 0, cancelledCount: 0, chainCancelled: false, published: false, budgetSpentUsd: 0, budgetMaxUsd: 0, budgetReservedUsd: 0, budgetSynthesisUsd: 0 }; }
+  async chainListActive(_params?: import("@envoymesh/api").ChainListActiveParams): Promise<import("@envoymesh/api").ChainListActiveResult> { return { chains: [] }; }
+  async chainCancel(_params: import("@envoymesh/api").ChainCancelParams): Promise<import("@envoymesh/api").ChainCancelResult> { return { chainId: "", cancelled: [] }; }
+  async chainListReports(_params?: import("@envoymesh/api").ChainListReportsParams): Promise<import("@envoymesh/api").ChainListReportsResult> { return { reports: [] }; }
+  async chainGetReport(_params: import("@envoymesh/api").ChainGetReportParams): Promise<import("@envoymesh/api").ChainGetReportResult> { throw new Error("Not available on mobile"); }
+  async chainPinReport(_params: import("@envoymesh/api").ChainPinReportParams): Promise<import("@envoymesh/api").ChainPinReportResult> { return { chainId: "", pinned: false }; }
+  async listCapabilityProviders(): Promise<Record<string, string[]>> { return {}; }
+  async getPeerReputation(_peerOwnerId?: string): Promise<{ score: number } | null> { return null; }
+  async discoverAndCluster(_seedTopics?: string[], _seedCapabilities?: string[]): Promise<string> { throw new Error("Not available on mobile — pair to desktop"); }
+  registerPushToken(_params: { platform: string; token: string; ownerId: string; deviceId?: string; tokenType?: "alert" | "voip" }): void {}
+  unregisterPushToken(_deviceId: string): boolean { return false; }
+  async chainSetBidStrategy(_params: any): Promise<any> { return { accepted: false }; }
+  async chainGetBidStrategy(_params: any): Promise<any> { return { weights: { cost: 35, reputation: 30, freshness: 20, precision: 15 } }; }
+  async chainEvaluateBids(_params: any): Promise<any> { return { ranked: [] }; }
+  async chainCounterBid(_params: any): Promise<any> { return { ok: false, reason: "Not available on mobile" }; }
+  async chainRebalance(_params: any): Promise<any> { return { ok: false, reason: "Not available on mobile" }; }
+  async chainExportCosts(_params: any): Promise<any> { return { csv: "" }; }
+  async chainPreviewGoal(_params: any): Promise<any> { return { ok: false, subtasks: [] }; }
+  async chainStartFromGoal(_params: any): Promise<any> { return { ok: false, error: "Not available on mobile" }; }
+  async chainListRecipes(_params?: any): Promise<any> { return { recipes: [] }; }
+  async chainSaveRecipe(_params: any): Promise<any> { return { ok: false, reason: "validation_failed" }; }
+  async chainDeleteRecipe(_params: any): Promise<any> { return { ok: false, deleted: false }; }
+  async chainPublishReport(_params: any): Promise<any> { return { published: false }; }
+  async chainGetDefaults(): Promise<any> { return { maxChainBudgetUsd: 10, defaultStallPolicy: "auto_rebid", costEstimationEnabled: false }; }
+  async chainSetDefaults(_params: any): Promise<any> { return { ok: true }; }
 
   private _broadcastToRelaySockets(data: string): void {
     for (const ws of this._relaySockets) {

@@ -9,17 +9,19 @@
  * 2. **Role-policy gate** — `evaluateEnvelopeRolePolicy` from
  *    `@envoymesh/protocol`: all chain intents are `agent↔agent` except
  *    `task.chain.report`, which is `agent→human`.
- * 3. **Capability gate** — orchestrator-only intents (`task.chain.mandate`,
- *    `task.chain.accept`, `task.chain.merge`) require the local node to
- *    advertise `chain.orchestrate`. Other intents require the recipient role
- *    to be `agent` (workers are always agents).
+ * 3. **Capability gate** — orchestrator-receive intents (`task.chain.bid`,
+ *    `task.chain.partial`, `task.chain.merge`, worker-originated
+ *    `task.chain.heartbeat`) require the local node to advertise
+ *    `chain.orchestrate`. Worker-receive intents (`mandate`, `propose`,
+ *    `accept`, `cancel`, orchestrator-originated `heartbeat`) only require
+ *    the recipient role to be `agent`.
  * 4. **Handler dispatch** — calls the matching orchestrator or worker handler
  *    from `chain-orchestrator.ts` / `chain-worker.ts`. Handlers are injected
  *    via `ChainInboundDeps` for testability.
  *
  * All rejections produce a deterministic `{ ok: false, reason }` and an audit
  * event via `audit.record({ outcome: "deny" })`. The dispatcher in
- * `apps/node/src/index.ts` will register this router as the handler for all
+ * `apps/node/src/index.ts` registers this router as the handler for all
  * 9 chain intents.
  *
  * See docs/agent_network.md §7.6.
@@ -60,27 +62,24 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
- * Intents that require the local node to advertise `chain.orchestrate`.
- * Receiving these on a node without the capability is a misroute — the
- * sender should have targeted the orchestrator, not us.
+ * Intents delivered **to the orchestrator**. The recipient must advertise
+ * `chain.orchestrate` and supply matching `InboundChainState`.
  */
-const ORCHESTRATOR_ONLY_INTENTS = new Set<string>([
-  "task.chain.mandate",
-  "task.chain.accept",
+const ORCHESTRATOR_RECEIVE_INTENTS = new Set<string>([
+  "task.chain.bid",
+  "task.chain.partial",
   "task.chain.merge",
 ]);
 
 /**
- * Intents intended for the worker side of a chain. The recipient must be
- * an agent (the orchestrator). `task.chain.report` is excluded here because
- * it's delivered to the owner (agent → human).
+ * Intents delivered **to workers**. The recipient must be an agent but does
+ * not need `chain.orchestrate`.
  */
-const WORKER_INTENTS = new Set<string>([
+const WORKER_RECEIVE_INTENTS = new Set<string>([
+  "task.chain.mandate",
   "task.chain.propose",
-  "task.chain.bid",
-  "task.chain.partial",
+  "task.chain.accept",
   "task.chain.cancel",
-  "task.chain.heartbeat",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -110,15 +109,24 @@ export async function dispatchChainEnvelope(
   }
 
   // Step 3 — capability gate (orchestrator vs. worker)
-  if (ORCHESTRATOR_ONLY_INTENTS.has(intent)) {
+  const orchestratorReceive =
+    ORCHESTRATOR_RECEIVE_INTENTS.has(intent) ||
+    (intent === "task.chain.heartbeat" && state !== undefined);
+  if (orchestratorReceive) {
     if (!deps.nodeCapabilities.includes("chain.orchestrate")) {
       const reason: ChainInboundRejectReason = "missing_orchestrator_capability";
       await emitDeny(deps, envelope, reason);
       return { ok: false, reason };
     }
-  } else if (WORKER_INTENTS.has(intent)) {
+    if (!state) {
+      const reason: ChainInboundRejectReason = "handler_denied";
+      await emitDeny(deps, envelope, reason);
+      return { ok: false, reason };
+    }
+  } else if (WORKER_RECEIVE_INTENTS.has(intent)) {
     // Worker intents are agent↔agent per role policy (already enforced above).
-    // No additional gate needed.
+  } else if (intent === "task.chain.heartbeat") {
+    // Orchestrator-originated heartbeat to a worker — no chain.orchestrate required.
   } else if (intent !== "task.chain.report") {
     const reason: ChainInboundRejectReason = "unknown_chain_intent";
     await emitDeny(deps, envelope, reason);
@@ -201,35 +209,41 @@ async function dispatchToHandler(
     switch (intent) {
       case "task.chain.propose":
         return await deps.handleWorkerPropose(envelope, payload as TaskChainProposePayload);
+      case "task.chain.mandate":
+        return await deps.handleWorkerMandate(envelope, payload as TaskChainMandatePayload);
       case "task.chain.bid":
-        return await deps.handleWorkerBid(envelope, payload as TaskChainBidPayload);
-      case "task.chain.accept":
-        return await deps.handleOrchestratorAccept(
+        return await deps.handleOrchestratorBid(
           envelope,
-          payload as TaskChainAcceptPayload,
+          payload as TaskChainBidPayload,
+          state!,
         );
+      case "task.chain.accept":
+        return await deps.handleWorkerAccept(envelope, payload as TaskChainAcceptPayload);
       case "task.chain.partial":
         return await deps.handleOrchestratorPartial(
           envelope,
           payload as TaskChainPartialPayload,
+          state!,
         );
       case "task.chain.cancel":
         return await deps.handleWorkerCancel(envelope, payload as TaskChainCancelPayload);
       case "task.chain.merge":
-        return await deps.handleOrchestratorMerge(envelope, payload as TaskChainMergePayload);
+        return await deps.handleOrchestratorMerge(
+          envelope,
+          payload as TaskChainMergePayload,
+          state!,
+        );
       case "task.chain.heartbeat":
-        if (!state) {
-          return { ok: false, reason: "handler_denied" };
+        if (state) {
+          return await deps.handleOrchestratorHeartbeat(
+            envelope,
+            payload as TaskChainHeartbeatPayload,
+            state,
+          );
         }
-        return await deps.handleOrchestratorHeartbeat(
+        return await deps.handleWorkerHeartbeat(
           envelope,
           payload as TaskChainHeartbeatPayload,
-          state,
-        );
-      case "task.chain.mandate":
-        return await deps.handleOrchestratorMandate(
-          envelope,
-          payload as TaskChainMandatePayload,
         );
       case "task.chain.report":
         return await deps.handleOwnerReport(envelope, payload as TaskChainReportPayload);
@@ -272,4 +286,4 @@ async function emitDeny(
 // Re-exports for callers
 // ---------------------------------------------------------------------------
 
-export { ORCHESTRATOR_ONLY_INTENTS, WORKER_INTENTS };
+export { ORCHESTRATOR_RECEIVE_INTENTS, WORKER_RECEIVE_INTENTS };

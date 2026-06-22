@@ -84,6 +84,18 @@ import type {
   ChainGetDefaultsResult,
   ChainSetDefaultsParams,
   ChainSetDefaultsResult,
+  ChainPreviewGoalParams,
+  ChainPreviewGoalResult,
+  ChainStartFromGoalParams,
+  ChainStartFromGoalResult,
+  ChainExportCostsParams,
+  ChainExportCostsResult,
+  ChainListRecipesParams,
+  ChainListRecipesResult,
+  ChainSaveRecipeParams,
+  ChainSaveRecipeResult,
+  ChainDeleteRecipeParams,
+  ChainDeleteRecipeResult,
 } from "@envoymesh/api";
 import { isChatRoomThreadKey, ENVOY_AI_THREAD_KEY, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
@@ -222,6 +234,12 @@ export interface NodeServiceClient {
   chainRebalance(params: ChainRebalanceParams): Promise<ChainRebalanceResult>;
   chainGetDefaults(params: ChainGetDefaultsParams): Promise<ChainGetDefaultsResult>;
   chainSetDefaults(params: ChainSetDefaultsParams): Promise<ChainSetDefaultsResult>;
+  chainPreviewGoal(params: ChainPreviewGoalParams): Promise<ChainPreviewGoalResult>;
+  chainStartFromGoal(params: ChainStartFromGoalParams): Promise<ChainStartFromGoalResult>;
+  chainExportCosts(params: ChainExportCostsParams): Promise<ChainExportCostsResult>;
+  chainListRecipes(params?: ChainListRecipesParams): Promise<ChainListRecipesResult>;
+  chainSaveRecipe(params: ChainSaveRecipeParams): Promise<ChainSaveRecipeResult>;
+  chainDeleteRecipe(params: ChainDeleteRecipeParams): Promise<ChainDeleteRecipeResult>;
   runCapabilityDiscovery(params?: { find?: boolean }): Promise<void>;
   discoverCapabilityTopic(params: {
     topic: string;
@@ -457,6 +475,12 @@ export interface NodeServiceClient {
     sdpOffer: string,
     iceServers?: { urls: string; username?: string; credential?: string }[],
   ): Promise<string | null>;
+  sendCallReinvite(
+    callId: string,
+    sdpOffer: string,
+    iceServers?: { urls: string; username?: string; credential?: string }[],
+    reason?: "path1_timeout" | "path1_failed",
+  ): Promise<boolean>;
   acceptCallInvite(
     callId: string,
     sdpAnswer: string,
@@ -465,6 +489,15 @@ export interface NodeServiceClient {
   declineCallInvite(callId: string, reason: string): Promise<boolean>;
   endCall(callId: string): Promise<boolean>;
   setCallMuted(callId: string, muted: boolean): Promise<boolean>;
+  sendIceCandidate(
+    callId: string,
+    candidate: {
+      candidate: string;
+      sdpMid: string | null;
+      sdpMLineIndex: number | null;
+      usernameFragment?: string | null;
+    },
+  ): Promise<boolean>;
 }
 
 const NodeServiceContext = createContext<NodeServiceClient | null>(null);
@@ -786,6 +819,24 @@ function createWsNodeServiceClient(
     async chainSetDefaults(params: ChainSetDefaultsParams) {
       return wsClient.rpc("chainSetDefaults", params as unknown as Record<string, unknown>) as unknown as Promise<ChainSetDefaultsResult>;
     },
+    async chainPreviewGoal(params: ChainPreviewGoalParams) {
+      return wsClient.rpc("chainPreviewGoal", params as unknown as Record<string, unknown>) as unknown as Promise<ChainPreviewGoalResult>;
+    },
+    async chainStartFromGoal(params: ChainStartFromGoalParams) {
+      return wsClient.rpc("chainStartFromGoal", params as unknown as Record<string, unknown>) as unknown as Promise<ChainStartFromGoalResult>;
+    },
+    async chainExportCosts(params: ChainExportCostsParams) {
+      return wsClient.rpc("chainExportCosts", params as unknown as Record<string, unknown>) as unknown as Promise<ChainExportCostsResult>;
+    },
+    async chainListRecipes(params?: ChainListRecipesParams) {
+      return wsClient.rpc("chainListRecipes", (params ?? {}) as unknown as Record<string, unknown>) as unknown as Promise<ChainListRecipesResult>;
+    },
+    async chainSaveRecipe(params: ChainSaveRecipeParams) {
+      return wsClient.rpc("chainSaveRecipe", params as unknown as Record<string, unknown>) as unknown as Promise<ChainSaveRecipeResult>;
+    },
+    async chainDeleteRecipe(params: ChainDeleteRecipeParams) {
+      return wsClient.rpc("chainDeleteRecipe", params as unknown as Record<string, unknown>) as unknown as Promise<ChainDeleteRecipeResult>;
+    },
     async discoverCapabilityTopic(params: {
       topic: string;
       maxResults?: number;
@@ -816,7 +867,24 @@ function createWsNodeServiceClient(
     // Phase 38 — Voice/Video Calls
     getActiveCall() { return null; }, // call state flows via onCallEvent push events
     onCallEvent(handler: (event: import("@envoymesh/api").CallEvent) => void) {
-      return wsClient.on("call:event", handler as any);
+      const callEventTypes = [
+        "call:incoming",
+        "call:reinvite",
+        "call:answered",
+        "call:rejected",
+        "call:ended",
+        "call:remote-mute",
+        "call:ice-candidate",
+        "call:error",
+      ] as const;
+      const unsubs = callEventTypes.map((eventType) =>
+        wsClient.on(eventType, (data) => {
+          handler({ type: eventType, ...(data as object) } as import("@envoymesh/api").CallEvent);
+        }),
+      );
+      return () => {
+        for (const unsub of unsubs) unsub();
+      };
     },
     async sendCallInvite(
       targetOwnerId: string,
@@ -828,6 +896,19 @@ function createWsNodeServiceClient(
         sdpOffer,
         iceServers,
       }) as Promise<string | null>;
+    },
+    async sendCallReinvite(
+      callId: string,
+      sdpOffer: string,
+      iceServers?: { urls: string; username?: string; credential?: string }[],
+      reason?: "path1_timeout" | "path1_failed",
+    ) {
+      return wsClient.rpc("sendCallReinvite", {
+        callId,
+        sdpOffer,
+        iceServers,
+        reason,
+      }) as Promise<boolean>;
     },
     async acceptCallInvite(
       callId: string,
@@ -848,6 +929,17 @@ function createWsNodeServiceClient(
     },
     async setCallMuted(callId: string, muted: boolean) {
       return wsClient.rpc("setCallMuted", { callId, muted }) as Promise<boolean>;
+    },
+    async sendIceCandidate(
+      callId: string,
+      candidate: {
+        candidate: string;
+        sdpMid: string | null;
+        sdpMLineIndex: number | null;
+        usernameFragment?: string | null;
+      },
+    ) {
+      return wsClient.rpc("sendIceCandidate", { callId, candidate }) as Promise<boolean>;
     },
 
     async getBridgeStatus() { return wsClient.rpc("getBridgeStatus"); },

@@ -162,6 +162,12 @@ describe("NodeServiceImpl.sendCallInvite (Phase 42A)", () => {
     expect(parsed.iceServers).toEqual(callerIce);
   });
 
+  it("4b. preserves explicit empty iceServers for Path 1 (no STUN injection)", async () => {
+    await node.sendCallInvite(FAKE_OWNER_ID, "v=0\r\n...", []);
+    const parsed = parseCallInvitePayload(sends[0]!.envelope.payload);
+    expect(parsed.iceServers).toEqual([]);
+  });
+
   it("5. uses node-config iceServers when caller does not provide them", async () => {
     const configIce = [{ urls: "stun:from-config.example.com:3478" }];
     // First save a baseline config so load() returns something to mutate.

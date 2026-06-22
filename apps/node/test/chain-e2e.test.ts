@@ -39,9 +39,8 @@ import {
   computeChainBid,
   type ChainBidWorkerContext,
 } from "../src/chain-bid-strategy.js";
-import { dispatchChainEnvelope, ORCHESTRATOR_ONLY_INTENTS, WORKER_INTENTS } from "../src/chain-inbound.js";
+import { dispatchChainEnvelope, ORCHESTRATOR_RECEIVE_INTENTS, WORKER_RECEIVE_INTENTS } from "../src/chain-inbound.js";
 import {
-  handleWorkerBid,
   handleWorkerCancel,
   handleWorkerPropose,
   deliverChainPartial,
@@ -528,18 +527,15 @@ describe("chain-e2e", () => {
     }
   });
 
-  it("orchestrator-intent gate rejects task.chain.mandate on a worker-only node", async () => {
-    // Sanity check: ORCHESTRATOR_ONLY_INTENTS contains the right set.
-    expect(ORCHESTRATOR_ONLY_INTENTS.has("task.chain.mandate")).toBe(true);
-    expect(ORCHESTRATOR_ONLY_INTENTS.has("task.chain.accept")).toBe(true);
-    expect(ORCHESTRATOR_ONLY_INTENTS.has("task.chain.merge")).toBe(true);
+  it("orchestrator-receive intent sets are correct", async () => {
+    expect(ORCHESTRATOR_RECEIVE_INTENTS.has("task.chain.bid")).toBe(true);
+    expect(ORCHESTRATOR_RECEIVE_INTENTS.has("task.chain.partial")).toBe(true);
+    expect(ORCHESTRATOR_RECEIVE_INTENTS.has("task.chain.merge")).toBe(true);
 
-    // WORKER_INTENTS contains the right set.
-    expect(WORKER_INTENTS.has("task.chain.propose")).toBe(true);
-    expect(WORKER_INTENTS.has("task.chain.bid")).toBe(true);
-    expect(WORKER_INTENTS.has("task.chain.partial")).toBe(true);
-    expect(WORKER_INTENTS.has("task.chain.cancel")).toBe(true);
-    expect(WORKER_INTENTS.has("task.chain.heartbeat")).toBe(true);
+    expect(WORKER_RECEIVE_INTENTS.has("task.chain.mandate")).toBe(true);
+    expect(WORKER_RECEIVE_INTENTS.has("task.chain.propose")).toBe(true);
+    expect(WORKER_RECEIVE_INTENTS.has("task.chain.accept")).toBe(true);
+    expect(WORKER_RECEIVE_INTENTS.has("task.chain.cancel")).toBe(true);
   });
 
   it("handleWorkerCancel removes pending bid expirations", async () => {
@@ -639,9 +635,9 @@ describe("chain-e2e", () => {
     expect(w.pendingBidExpirations.has("subtask_a")).toBe(true);
   });
 
-  it("dispatchChainEnvelope gates task.chain.mandate on missing chain.orchestrate capability", async () => {
+  it("dispatchChainEnvelope gates task.chain.bid on missing chain.orchestrate capability", async () => {
     const orch = makeOrchestrator();
-    let mandateRejected = false;
+    let bidRejected = false;
     const audit: Array<Record<string, unknown>> = [];
     const deps: ChainInboundDeps = {
       audit: {
@@ -649,54 +645,56 @@ describe("chain-e2e", () => {
           audit.push(e as unknown as Record<string, unknown>);
         },
       },
-      nodeCapabilities: [], // Worker node — no chain.orchestrate
+      nodeCapabilities: ["task.execute"],
       handleWorkerPropose: async () => ({ ok: true }),
-      handleWorkerBid: async () => ({ ok: true }),
+      handleWorkerMandate: async () => ({ ok: true }),
+      handleWorkerAccept: async () => ({ ok: true }),
       handleWorkerCancel: async () => ({ ok: true }),
-      handleOrchestratorMandate: async () => {
-        mandateRejected = true;
+      handleWorkerHeartbeat: async () => ({ ok: true }),
+      handleOrchestratorBid: async () => {
+        bidRejected = true;
         return { ok: true };
       },
-      handleOrchestratorAccept: async () => ({ ok: true }),
       handleOrchestratorPartial: async () => ({ ok: true }),
       handleOrchestratorMerge: async () => ({ ok: true }),
       handleOrchestratorHeartbeat: async () => ({ ok: true }),
       handleOwnerReport: async () => ({ ok: true }),
     };
     void orch;
-    const r = await dispatchChainEnvelope(deps, {
-      version: "0.1",
-      messageId: "m",
-      createdAt: NOW,
-      senderPeerId: "12D3KooW-sender",
-      senderPublicKey: "stub",
-      senderRole: "agent",
-      recipientPeerId: "12D3KooW-us",
-      recipientRole: "agent",
-      intent: "task.chain.mandate",
-      payload: {
-        chainMandate: {
-          version: "0.1",
-          chainMandateId: "chainmandate_x",
-          chainId: "chain_x",
-          issuerOwnerId: "envoy:owner:x",
-          orchestratorOwnerId: "envoy:owner:x",
-          maxChainCostUsd: 5,
-          costCeilingUsd: 3,
-          maxWorkers: 3,
-          allowDepth3: false,
-          maxSensitivity: "public",
-          deadlineAt: "2026-06-18T01:00:00.000Z",
-          createdAt: NOW,
-          signature: "stub",
+    const r = await dispatchChainEnvelope(
+      deps,
+      {
+        version: "0.1",
+        messageId: "m",
+        createdAt: NOW,
+        senderPeerId: "12D3KooW-sender",
+        senderPublicKey: "stub",
+        senderRole: "agent",
+        recipientPeerId: "12D3KooW-us",
+        recipientRole: "agent",
+        intent: "task.chain.bid",
+        payload: {
+          bid: {
+            version: "0.1",
+            subtaskId: "subtask_x",
+            chainId: "chain_x",
+            workerPeerId: "12D3KooW-w1",
+            workerOwnerId: "envoy:owner:w1",
+            proposedCostUsd: 1,
+            proposedEtaAt: "2026-06-18T01:00:00.000Z",
+            bidExpiresAt: "2026-06-18T01:00:00.000Z",
+            createdAt: NOW,
+          },
         },
+        correlationId: "chain_x",
+        signature: "stub",
       },
-      signature: "stub",
-    });
+      { chainId: "chain_x", lastHeartbeatAt: new Map(), lastConfidence: new Map() },
+    );
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.reason).toBe("missing_orchestrator_capability");
-    expect(mandateRejected).toBe(false);
+    expect(bidRejected).toBe(false);
     expect(audit.some((e) => e.type === "chain.inbound_denied")).toBe(true);
   });
 });

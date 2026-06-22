@@ -8,13 +8,17 @@
  * yet, so it can be embedded in peer-details panels without flicker.
  */
 import { useT } from "../context/I18nContext.js";
+import { useNodeState } from "../context/NodeStateContext.js";
 import { useAgentCards } from "../hooks/useNodeService.js";
 import type { CachedAgentCardSummary } from "@envoymesh/api";
+import { ChainBondHealthBadge } from "./ChainBondHealthBadge.js";
 
 export function AgentCardPanel(props: { ownerId: string }) {
   const t = useT();
+  const { bonds } = useNodeState();
   const cards = useAgentCards();
   const card = cards.find((c) => c.ownerId === props.ownerId);
+  const bond = bonds.find((b) => b.peerOwnerId === props.ownerId);
 
   if (!card) {
     return (
@@ -28,6 +32,7 @@ export function AgentCardPanel(props: { ownerId: string }) {
     <div className="agent-card-panel">
       <div className="agent-card-header">
         <h4 className="agent-card-name">{card.displayName}</h4>
+        {bond ? <ChainBondHealthBadge bond={bond} card={card} compact /> : null}
         {card.nodeProfile && (
           <span className={`agent-card-profile agent-card-profile--${card.nodeProfile}`}>
             {t(`agentCard.nodeProfileByName.${card.nodeProfile}`, card.nodeProfile)}

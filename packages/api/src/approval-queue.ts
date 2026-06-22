@@ -19,7 +19,8 @@ export type PendingActionType =
   | "follow_up"
   | "proactive_checkin"
   | "external_request"
-  | "discovery_forward";
+  | "discovery_forward"
+  | "chain_award";
 
 /**
  * Approval status.

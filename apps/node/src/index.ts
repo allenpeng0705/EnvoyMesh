@@ -1764,6 +1764,12 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       sendResponseEnvelope: async (responseEnvelope) => {
         await mesh.send(envelope.senderPeerId, responseEnvelope as EnvoyEnvelope);
       },
+      sendBusyReject:
+        nodeService instanceof NodeServiceImpl
+          ? async ({ callId, callerOwnerId }) => {
+              await nodeService.sendCallRejectToOwner(callId, callerOwnerId, "busy");
+            }
+          : undefined,
       // Phase 42I — VoIP push fires on the callee's home (this node) when the
       // phone has no authenticated WS session. See call-inbound.ts.
       calleeOwnerId: profile?.owner.ownerId,
@@ -1782,6 +1788,12 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       },
     });
     if (handled) return;
+  }
+
+  // Phase 40F — task.chain.* intents (agent network collaboration layer)
+  if (envelope.intent.startsWith("task.chain.") && nodeService instanceof NodeServiceImpl) {
+    await nodeService.handleInboundChainEnvelope(envelope);
+    return;
   }
 
   if (envelope.intent === "chat.room.sync" && nodeService instanceof NodeServiceImpl) {
@@ -3385,6 +3397,8 @@ nodeService.on("chat:room-message", (data) => wsServer.emitEvent("chat:room-mess
 nodeService.on("chat:delivered", (data) => wsServer.emitEvent("chat:delivered", data));
 nodeService.on("chat:draft", (data) => wsServer.emitEvent("chat:draft", data));
 nodeService.on("agent:activity", (data) => wsServer.emitEvent("agent:activity", data));
+nodeService.on("chain:state", (data) => wsServer.emitEvent("chain:state", data));
+nodeService.on("chain:report", (data) => wsServer.emitEvent("chain:report", data));
 nodeService.on("bond:established", (data) => {
   console.log(`[index.ts] nodeService bond:established event fired, peerOwnerId=${data.peerOwnerId}`);
   wsServer.emitEvent("bond:established", data);

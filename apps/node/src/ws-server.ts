@@ -291,10 +291,12 @@ export class WsServer {
       "terminal:assistant-proposal",
       // Phase 38 — voice/video call events
       "call:incoming",
+      "call:reinvite",
       "call:answered",
       "call:rejected",
       "call:ended",
       "call:remote-mute",
+      "call:ice-candidate",
       "call:error",
     ];
     for (const event of allEvents) {

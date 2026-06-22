@@ -8,6 +8,7 @@
  */
 
 import React, { useEffect, useState, useCallback } from "react";
+import type { ChainGetStateResult } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
 import { useToast } from "../../hooks/useToast.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
@@ -21,12 +22,15 @@ import { ChainReportView } from "../ChainReportView.js";
 interface ChainSummary {
   chainId: string;
   chainMandateId: string;
+  goal?: string;
   status: "bidding" | "running" | "synthesizing" | "completed" | "cancelled";
   subtaskCount: number;
   awardedCount: number;
   completedCount: number;
   budgetSpentUsd: number;
   budgetMaxUsd: number;
+  budgetWarningLevel?: ChainGetStateResult["budgetWarningLevel"];
+  estimatedCostRange?: ChainGetStateResult["estimatedCostRange"];
   published: boolean;
   chainCancelled: boolean;
 }
@@ -49,27 +53,19 @@ function deriveStatus(r: {
 }
 
 /** Map a ChainGetStateResult to our local ChainSummary. */
-function asChainSummary(r: {
-  chainId: string;
-  chainMandateId: string;
-  subtaskCount: number;
-  awardedCount: number;
-  partialCount: number;
-  cancelledCount: number;
-  chainCancelled: boolean;
-  published: boolean;
-  budgetSpentUsd: number;
-  budgetMaxUsd: number;
-}): ChainSummary {
+function asChainSummary(r: ChainGetStateResult): ChainSummary {
   return {
     chainId: r.chainId,
     chainMandateId: r.chainMandateId,
+    goal: r.goal,
     status: deriveStatus(r),
     subtaskCount: r.subtaskCount,
     awardedCount: r.awardedCount,
     completedCount: r.partialCount,
     budgetSpentUsd: r.budgetSpentUsd,
     budgetMaxUsd: r.budgetMaxUsd,
+    budgetWarningLevel: r.budgetWarningLevel,
+    estimatedCostRange: r.estimatedCostRange,
     published: r.published,
     chainCancelled: r.chainCancelled,
   };
@@ -109,6 +105,18 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
     void loadChains().finally(() => setLoading(false));
   }, [loadChains]);
 
+  useEffect(() => {
+    const unsub = nodeService.on("chain:state", (state) => {
+      setChains((prev) => {
+        const next = asChainSummary(state);
+        const idx = prev.findIndex((c) => c.chainId === next.chainId);
+        if (idx < 0) return [next, ...prev];
+        return prev.map((c, i) => (i === idx ? next : c));
+      });
+    });
+    return unsub;
+  }, [nodeService]);
+
   const handleCancel = useCallback(
     (chainId: string) => {
       setConfirm({
@@ -136,6 +144,25 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
   const handleViewReport = useCallback((chainId: string) => {
     setViewingReport((prev) => (prev === chainId ? null : chainId));
   }, []);
+
+  const handleExportCosts = useCallback(
+    async (chainId: string) => {
+      try {
+        const result = await nodeService.chainExportCosts({ chainId });
+        const blob = new Blob([result.csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${chainId}-costs.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error("[ChainsView] chainExportCosts failed:", err);
+        showToast(t("chains.start.failed"), "error");
+      }
+    },
+    [nodeService, showToast, t],
+  );
 
   // ---- Render ----
 
@@ -176,6 +203,21 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
               <code className="chain-id">{chain.chainId.slice(0, 12)}…</code>
             </div>
 
+            {chain.goal ? <p className="chain-card-goal">{chain.goal}</p> : null}
+            {chain.estimatedCostRange ? (
+              <p className="chain-card-estimate">
+                {t("chains.start.costRange", {
+                  min: chain.estimatedCostRange.minUsd.toFixed(2),
+                  max: chain.estimatedCostRange.maxUsd.toFixed(2),
+                })}
+              </p>
+            ) : null}
+            {chain.budgetWarningLevel === "warn" ? (
+              <p className="chain-budget-warn">{t("chains.rebalance.warn", { percent: 80 })}</p>
+            ) : chain.budgetWarningLevel === "exceeded" ? (
+              <p className="chain-budget-exceeded">{t("chains.rebalance.exceeded")}</p>
+            ) : null}
+
             <div className="chain-card-progress">
               <span>
                 {t("chains.active.progress", {
@@ -193,6 +235,13 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
             </div>
 
             <div className="chain-card-actions">
+              <button
+                type="button"
+                className="btn-sm"
+                onClick={() => void handleExportCosts(chain.chainId)}
+              >
+                {t("chains.start.exportCsv")}
+              </button>
               <button
                 className="btn-sm btn-danger"
                 onClick={() => handleCancel(chain.chainId)}
@@ -225,6 +274,13 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
                 </span>
               </div>
               <div className="chain-card-actions">
+                <button
+                  type="button"
+                  className="btn-sm"
+                  onClick={() => void handleExportCosts(chain.chainId)}
+                >
+                  {t("chains.start.exportCsv")}
+                </button>
                 <button
                   className="btn-sm"
                   onClick={() => handleViewReport(chain.chainId)}

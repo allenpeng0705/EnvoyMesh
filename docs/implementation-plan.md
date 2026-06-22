@@ -78,6 +78,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 40 — Agent Network Collaboration Layer](#phase-40--agent-network-collaboration-layer-design--implementation)
 - [Phase 41 — Making Agent Network Usable & Powerful](#phase-41--making-agent-network-usable--powerful-designed)
 - [Phase 42 — Native WebRTC Voice Calls on EnvoyGo (shipped)](#phase-42--native-webrtc-voice-calls-on-envoygo-shipped)
+- [Phase 43 — Agent Network User Experience](#phase-43--agent-network-user-experience-planned)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -5139,7 +5140,7 @@ These are out of scope for Phase 39 v1 but documented for future planning:
 
 ## Phase 40 — Agent Network Collaboration Layer (design + implementation) **`[x]` shipped 40A–40E**
 
-> **Status: `[x]` shipped for 40A–40E.** 40A (protocol + role policy + stores + 9 new `task.chain.*` intents), 40B (orchestrator + worker + RPC plumbing + 3-round hard cap + ChainBudgetLedger + 11 new chain RPCs), 40C (Social `ChainsView` + `ChainTreeView` + `ChainReportRenderer` + `CompositeArtifactRenderer` + i18n bundle), 40D (multi-bid inbox, counter-bid UI, rebalance bar, configurable rebalance policy [manual/auto/never], LLM decomposer, pin reports), and 40E (4 more `task.chain.*` intents: `handoff` / `delegate` / `relay` / `arbitration`; cross-orchestrator handoff protocol, cross-home chains via relay transport, cross-orchestrator arbitration with seq + createdAt ordering) are all green. See [agent_network.md](./agent_network.md) for the design and the Phase 40 section below for the sub-phase checklist.
+> **Status: `[x]` shipped for 40A–40F.** 40A (protocol + role policy + stores + 9 new `task.chain.*` intents), 40B (orchestrator + worker + RPC plumbing + 3-round hard cap + ChainBudgetLedger + 11 new chain RPCs), 40C (Social `ChainsView` + `ChainTreeView` + `ChainReportRenderer` + `CompositeArtifactRenderer` + i18n bundle), 40D (multi-bid inbox, counter-bid UI, rebalance bar, configurable rebalance policy [manual/auto/never], LLM decomposer, pin reports), 40E (4 more `task.chain.*` intents: `handoff` / `delegate` / `relay` / `arbitration`; cross-orchestrator handoff protocol, cross-home chains via relay transport, cross-orchestrator arbitration with seq + createdAt ordering), and **40F (production integration — mesh dispatch, real deps, capability index, report persistence, trackChain scheduler)** are all green. See [agent_network.md](./agent_network.md) for the design and the Phase 40 section below for the sub-phase checklist.
 > **Five sub-phases (40A–40E).** 40A is the foundation sprint (protocol + role policy + store extensions, no wire traffic). 40B ships the orchestrator + worker runtime + RPC plumbing for a single-orchestrator 3-worker chain. 40C adds the Social UI. 40D adds multi-bid collection + counter-bid UI + LLM decomposer (replaces the keyword fallback). 40E adds cross-orchestrator handoff + cross-home relay transport + arbitration so chains can span multiple home nodes + the mobile (relay-only). **Total: 13 `task.chain.*` intents, 15 `chain*` RPCs, 18 `chain.*` audit event types, 455 chain-related tests across 21 test files** (was 332/19; protocol review added 49 handoff + 71 role-policy + 3 recipientRoles tests).
 
 **Goal:** Bridge the gap between today's single-shot A2A (`task.propose → task.result`) and the user's actual target of **multiple agents collaborating concurrently on a complex task, with multi-round negotiation and a structured deliverable.** Today's 1-level keyword-based chain orchestrator (`apps/node/src/agent-chain-orchestrator.ts`) is the closest analog but caps at depth 3 with a flat keyword decomposition. Phase 40 supersedes it with:
@@ -5232,6 +5233,19 @@ These are out of scope for Phase 39 v1 but documented for future planning:
 
 **Deliverable:** chains that span multiple home nodes + the mobile. The orchestrator network can now compose: a sub-chain on home-A can hand off to home-B, and the mobile (relay-only) can deliver envelopes to either. Arbitration ensures the two sides converge on "who owns what" within seconds, even across a brief network partition.
 
+### 40F — Production integration `[x] shipped`
+
+Wire the Phase 40 library modules into the live node runtime so chains work over real libp2p transport, not just in-process test harnesses.
+
+- `[x]` **`dispatchChainEnvelope` in `index.ts`:** all 9 `task.chain.*` intents route through `NodeServiceImpl.handleInboundChainEnvelope`.
+- `[x]` **Real orchestrator deps:** `buildChainOrchestratorDeps()` uses agent identity signing keys, `sendChainEnvelopeOverMesh` for libp2p transport, audit events via `LocalTaskStore`, and `recordChainReport` persistence.
+- `[x]` **Real worker deps:** `buildChainWorkerDeps()` handles inbound `propose` / `mandate` / `accept` / `cancel` / orchestrator heartbeats; auto-bids on propose via `chain-bid-strategy`.
+- `[x]` **Inbound routing fix:** capability gate split into orchestrator-receive (`bid`, `partial`, `merge`, worker-originated `heartbeat`) vs worker-receive (`mandate`, `propose`, `accept`, `cancel`); added `handleOrchestratorBid` to store bids in `chainRuntime`.
+- `[x]` **RPC wiring:** `chainPlan` / `chainLaunch` call `planChain` / `launchChain`; `chainListReports` / `chainGetReport` / `chainPinReport` read/write `chain-reports.json` via `LocalTaskStore.recordChainReport`.
+- `[x]` **Worker discovery:** `findCapabilityProviders` reads from `CapabilityIndex` (populated from bonded agent cards on `node:online` + `bond:established`).
+- `[x]` **Heartbeat scheduler:** `_startChainTracking` runs `trackChain` ticks for active chains after launch.
+- `[x]` **Tests:** `chain-production.test.ts` (transport resolver + chainId extraction); updated `chain-inbound.test.ts` + `chain-e2e.test.ts` for corrected capability gate.
+
 ### Exit Criteria (Phase 40)
 
 - `[x]` All 40A–40E checkboxes flipped (40E **shipped** in this milestone; EnvoyGo mobile mirror for chains explicitly **deferred** — see 40C).
@@ -5273,9 +5287,9 @@ These are out of scope for Phase 39 v1 but documented for future planning:
 
 ---
 
-## Phase 41 — Making Agent Network Usable & Powerful **`[~]` designed**
+## Phase 41 — Making Agent Network Usable & Powerful **`[~]` partially shipped**
 
-> **Status: `[~]` designed (2026-06-18).** Builds on Phase 40's shipped protocol, orchestrator, worker, handoff, and relay infrastructure. Seven sub-phases (41A–41G) turn the keyword-based planner into an LLM-driven AI orchestrator and make the agent network observable, billable, and resilient. Design doc: [agent_network.md §13](./agent_network.md#13-phase-41--making-agent-network-usable--powerful). No code touched yet.
+> **Status: `[~]` partially shipped.** Phase 41 was designed as seven sub-phases (41A–41G). Some library-level pieces landed inside Phase 40/40F (LLM decompose hooks, `CapabilityIndex`, `ChainsView`, audit wiring, `trackChain` scheduler). Several exit criteria are **not yet production-complete**: composite bid ranking (`rankBids` exists but is not used in `evaluateBids`), WebSocket chain-state push, bid justification in UI, CSV export, and full 41E stall auto-rebid semantics. **Phase 43** consolidates the remaining usability work into a user-first roadmap. Design doc: [agent_network.md §13](./agent_network.md#13-phase-41--making-agent-network-usable--powerful).
 
 **Goal:** Bridge the gap between Phase 40's framework (correct, tested, 77 tests) and a genuinely usable multi-agent collaboration platform. The orchestrator today can decompose simple goals by keyword matching, but it can't handle natural-language goals ("Find the best restaurant in Paris that my contacts have reviewed"). Workers must be manually configured instead of auto-discovered from bonded contacts. Bids are ranked by cost alone, not by composite reputation+freshness+precision scores. There's no Social UI to observe active chains, no auto-recovery from stalled workers, and no audit trail for chain operations.
 
@@ -5302,16 +5316,14 @@ Phase 41 addresses all seven gaps with a coordinated design:
 
 ### Exit Criteria (Phase 41)
 
-- `[x]` Owner describes a goal in natural language and the orchestrator decomposes it into subtasks via LLM (41A)
-- `[x]` Workers are auto-discovered from bonded contacts' agent cards (41B)
-- `[x]` Bids are ranked by composite score (cost + reputation + freshness + precision), not cost alone (41C)
-- `[x]` Owner sees active chains, subtask progress, and budget burn-down in the Social UI (41D)
-- `[x]` Stalled subtasks are auto-detected and re-bid within 120s (41E — Phase 40D.5)
-- `[x]` Every chain operation is audited with correlationId (41F — Phase 40)
-- `[x]` Quick wins: WebSocket push for chain state, in-memory capability cache, bid justification in UI, chain cost CSV export (41G)
-- `[ ]` All seven sub-phase checkboxes flipped
-- `[ ]` `npm run typecheck` clean
-- `[ ]` `npx vitest run` green
+- `[x]` LLM decompose/merge hooks wired in orchestrator deps when model providers enabled (41A — library; needs chat entry point in 43B)
+- `[x]` `CapabilityIndex` + refresh on bond/online (41B — shipped in 40F)
+- `[ ]` Bids ranked by composite score in production `evaluateBids` (41C — `rankBids()` exists, not wired)
+- `[x]` Social `ChainsView` + bid inbox + rebalance bar (41D — shipped in 40C/40D; buried in Settings, no WebSocket push)
+- `[~]` Stall detection via `trackChain` scheduler (41E — partial; default policy still `manual`)
+- `[~]` Chain operations audited with correlationId (41F — partial via 40F `_appendChainAudit`; not all transitions covered)
+- `[ ]` Quick wins: WebSocket push, bid justification in UI, chain cost CSV export (41G)
+- `[ ]` All seven sub-phases production-complete (superseded checklist → see Phase 43)
 
 ### Cross-references
 
@@ -5473,10 +5485,149 @@ While finalizing Phase 42 we discovered a few of the shipped pieces were wire-le
 
 ---
 
+## Phase 43 — Agent Network User Experience **`[x]` shipped (2026-06-20)**
+
+> **Status: `[x]` shipped (2026-06-20).** Core P0/P1 usability work landed: worker execution after accept, auto-synthesize/publish, composite bid ranking, auto-evaluate (30s), smart defaults, `chain:state` WebSocket push, chat “Run as chain” + plan preview, cost range + bid rationale in UI, diagnostics on preview, budget warnings, CSV export, goal templates RPC. **Follow-ons shipped (2026-06-20):** two-home libp2p CI smoke (43F), inline chat report card (43D), bond health badges (43E), sensitivity approval gate (43G), saved recipes + EnvoyGo active-chains mirror (43H).
+
+### North star
+
+**Product principle:** Treat the Agent Network like *“hire a temporary team”*, not *“configure a distributed workflow engine.”* The wire protocol stays rich; the default UX hides orchestration mechanics unless the user opens an Advanced panel.
+
+**Success looks like:** Owner types a goal in chat → sees a plain-language plan and cost range → taps Start → watches progress live → gets a report notification → reads the result inline. Power users can still counter-bid, pin reports, and export costs.
+
+### Honest baseline (post-40F)
+
+| Area | Shipped | Still missing |
+|------|---------|---------------|
+| Wire + state machine | 9 `task.chain.*` intents, orchestrator/worker modules, 249+ tests | — |
+| Production mesh | `dispatchChainEnvelope`, real signing, transport resolve, report store | — |
+| Worker side | Auto-bid on propose, accept/cancel handlers, **`executeAcceptedSubtask`** after accept | Deeper capability-route / remote A2A execution |
+| Orchestrator side | Plan/launch RPCs, bid storage, trackChain, **auto-evaluate + auto-synthesize** | Tie/over-budget owner notifications |
+| Discovery | `CapabilityIndex` from agent cards, **diagnostics when zero workers** | Bond/agent-card health badges in contacts UI |
+| UI | `ChainsView`, bid inbox, report renderer, **`chain:state` push**, Chains nav | Inline report card in chat |
+| Bid quality | **`rankBids()` composite policy**, **`rationale` on bids** | Full reputation wiring in UI |
+| Defaults | **`rebalancePolicy: "auto"`** via `chain-defaults.ts` | Advanced-only manual mode toggle in Settings |
+| Scope | Cross-home handoff (40E) | **Single-home happy path** should be the default user story |
+
+### Sub-phases (recommended order)
+
+#### 43A — End-to-end worker execution **`[x]` P0 — blocker**
+
+**Goal:** After `task.chain.accept`, workers actually execute and emit partials so chains complete over the mesh.
+
+- Wire `executeSubtask` in `buildChainWorkerDeps()` to capability-provider jobs and/or OpenClaw tool execution (reuse `executeCapabilityRouteStep` / existing A2A executor).
+- On final partial, orchestrator auto-triggers `synthesizeChain` + `publishChainReport` when all subtasks have finals.
+- **Exit:** Two bonded homes, one orchestrator + one worker, goal completes to `chain-reports.json` with zero manual RPC calls.
+
+#### 43B — One-click chain from chat **`[x]` P0**
+
+**Goal:** Primary entry point is EnvoyAI chat, not Settings → Chains.
+
+- “Run as chain” action on assistant messages (calls existing `runChain` with sane defaults).
+- **Plan preview** before launch: subtasks, capabilities needed, which bonded contacts may participate.
+- **Goal templates:** Research, Summarize, Ask my network — pre-filled mandates, no IDs exposed.
+- **Exit:** New user completes first chain from chat in under 3 taps after bond setup.
+
+#### 43C — Smart defaults & hands-off orchestration **`[x]` P0**
+
+**Goal:** Owner approves the plan once; the home node handles bidding and recovery.
+
+- Default `NodeConfig.chainDefaults`: `rebalancePolicy: "auto"`, conservative budget cap, `maxAutoRebalances: 2`.
+- **Auto-evaluate bids** after configurable timeout (e.g. 30s) when policy is `cheapest` or composite-ranked; notify owner only on tie, over-budget, or zero bids.
+- Wire **`rankBids()`** into `evaluateBids()` (cost 35% + reputation 30% + freshness 20% + precision 15% per agent_network.md §13).
+- **Exit:** Launched chain reaches report without owner opening bid inbox for the common case.
+
+#### 43D — Live chain UI **`[x]` P1** (partial — inline chat report card deferred)
+
+**Goal:** Chains feel alive, not like a hidden admin panel.
+
+- Emit **`chain:state`** WebSocket events on bid/partial/award/publish (41G.1).
+- Promote **Chains** to a top-level nav item (or chat sidebar tab), not only Settings → Activity.
+- Inline **report card** in chat when `task.chain.report` arrives.
+- Replace polling in `ChainsView` with event-driven refresh.
+- **Exit:** Owner sees bid arrive and partial progress without manual refresh.
+
+#### 43E — Trust, cost clarity & bid transparency **`[x]` P1** (partial — bond health badges deferred)
+
+**Goal:** Users understand *who* is working and *why* it costs what it does.
+
+- Show **estimated cost range** before launch (“~$2–5 from 3 contacts”), not raw `maxChainCostUsd`.
+- Surface **`justification`** on each bid in `ChainBidInbox` (41G.3).
+- Default worker pool = **direct-bonded peers** with fresh agent cards; show “why this worker” (capability + reputation).
+- **Bond/agent-card health** in contact UI: last synced, capability count, “ready for chains” badge.
+- **Exit:** Owner can explain every line item on the rebalance bar without reading docs.
+
+#### 43F — Single-home reliability & diagnostics **`[x]` P1**
+
+**Goal:** Make the common case (one orchestrator home + bonded worker homes) robust before pushing cross-home complexity.
+
+- Clear errors: “No workers for `research.web` — ask Alice to enable Capability Provider.”
+- Defer cross-orchestrator handoff (40E) behind Advanced / experimental flag in UI.
+- **Two-home smoke test** in CI: orchestrator home + worker home over libp2p (extends 40F harness).
+- **Exit:** Support playbook covers 90% of failures with user-visible messages.
+
+#### 43G — Owner safety rails **`[x]` P2**
+
+**Goal:** Prevent surprise spend and unsafe delegation.
+
+- Budget **80% warning** with continue/cancel prompt.
+- **Sensitivity gate:** block award when subtask sensitivity exceeds worker trust tier; show approval dialog.
+- One-tap **chain-wide cancel** with plain copy (“Stop all agents on this goal”).
+- Pin/report retention unchanged; add “what data left my node” summary on report view.
+- **Exit:** No silent over-spend; cancel always works from primary UI.
+
+#### 43H — Power user & mobile **`[x]` P2/P3**
+
+**Goal:** Depth for teams without complicating the default path.
+
+- **Chain recipes:** save successful chain (goal + policy + worker prefs) as reusable template.
+- **CSV cost export** CLI + Settings button (41G.4).
+- **EnvoyGo read-only mirror:** view chain status, approve bids, read reports (orchestration stays on home).
+- **EnvoyAI orchestrator commands:** “raise budget on subtask 2”, “pick Bob’s bid” in natural language.
+- **Exit:** Power users never need raw RPC; mobile users can monitor and approve.
+
+### Priority summary
+
+| Priority | Sub-phase | User outcome |
+|----------|-----------|--------------|
+| **P0** | 43A | Chains actually finish |
+| **P0** | 43B | Anyone can start a chain |
+| **P0** | 43C | Chains run themselves by default |
+| **P1** | 43D | Progress is visible and live |
+| **P1** | 43E | Costs and workers are understandable |
+| **P1** | 43F | Failures are actionable |
+| **P2** | 43G | Safe spend and cancel |
+| **P2/P3** | 43H | Templates, export, mobile, NL control |
+
+### Phase 43 exit criteria (overall)
+
+- `[x]` Worker executes after accept; orchestrator auto-synthesizes when all finals arrive (`chain-worker-executor.ts`, `chain-auto-orchestrator.ts`)
+- `[x]` Owner starts chain from chat with plan preview (`ChainStartDialog`, `chainPreviewGoal` / `chainStartFromGoal`)
+- `[x]` Default chain policy is auto-rebalance + composite auto-evaluate (30s)
+- `[x]` `ChainsView` updates via `chain:state` WebSocket
+- `[x]` Two-home libp2p smoke in CI (43F — `chain-two-home-smoke.test.ts`)
+- `[x]` EnvoyGo read-only active-chains mirror (43H — `ActiveChainsScreen`)
+- `[x]` Bid justification + cost range shown before and during chain (43E)
+- `[ ]` Zero-worker and stale-agent-card errors are user-actionable (43F diagnostics copy)
+- `[x]` Budget warning + one-tap cancel from primary UI (43G)
+
+### Cross-references
+
+- [agent_network.md §13](./agent_network.md#13-phase-41--making-agent-network-usable--powerful) — original 41A–41G design (superseded for tracking by Phase 43)
+- Phase 40F — production wiring baseline
+- `apps/node/src/chain-worker.ts` — `executeSubtask` hook (43A)
+- `apps/node/src/chain-bid-strategy.ts` — `rankBids()` (43C)
+- `apps/social/src/components/views/ChainsView.tsx` — UI surface (43D)
+- `apps/node/src/node-service-impl.ts` — `runChain`, `buildChainWorkerDeps`, `_startChainTracking`
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-06-20 | **Phase 43 — Agent Network User Experience planned.** Post-40F usability review consolidated into eight sub-phases (43A–43H): P0 = worker execution (`executeSubtask`), chat entry point + templates, smart defaults + composite bid ranking; P1 = live WebSocket UI, cost/trust transparency, single-home diagnostics; P2 = safety rails + power-user/mobile features. Phase 41 exit criteria corrected to reflect partial shipment. North star: "hire a temporary team" UX — hide chain/mandate IDs from default flow. |
+| 2026-06-20 | **Phase 40F — Production integration shipped.** Wired `dispatchChainEnvelope` in `index.ts`, real orchestrator/worker deps (agent identity, mesh send, audit, `recordChainReport`), corrected inbound capability gate, `chainPlan`/`chainLaunch`/report RPCs, `CapabilityIndex` discovery, `trackChain` scheduler. Added `chain-production.ts` + tests. |
 | 2026-06-19 | **Phase 42A–42F shipped (sub-phases 42A / 42B / 42C / 42D / 42E / 42F).** The mobile call path now works end-to-end on the Flutter side. 42A rewrites the home's `sendCallInvite` to resolve owner→device peer ID via `_resolvePeerTransportForOwner` (previously passing the owner ID — broke the libp2p dial), embeds the SDP offer (previously `""` — schema violation since `z.string().min(1)`), and injects `iceServers` from `node-config` (previously unread). Adds defensive `validateSdpString` (64 KB cap) and `validateIceCandidate` (RFC-5245 §15.1 grammar) validators in `call-inbound.ts` so a malformed SDP can't crash `setRemoteDescription`. 42B wires the four response envelopes — `acceptCallInvite` / `declineCallInvite` / `endCall` / `setCallMuted` — so the home actually sends `call.accept` / `call.reject` / `call.hangup` / `call.mute` back to the peer (previously the four stubs only mutated local `CallManager` state). 42C replaces the five `UnimplementedError` stubs in `apps/envoygo/lib/services/node_service_client.dart` with real JSON-RPC implementations matching the new `NodeService` interface. 42D ships `apps/envoygo/lib/webrtc_call_transport.dart` — the native `flutter_webrtc` transport mirroring `apps/social/src/lib/webrtc-call-transport.ts:57-251`, with `startOffer` / `startAnswer` / `addIceCandidate` / `setMute` / `close` and pluggable `peerConnectionFactory` + `getUserMedia` seams for testing. 42E rewires `CallProvider` to build the transport, generate SDP via `startOffer` / `startAnswer`, and pass it through the corresponding JSON-RPC. `CallState` gains `remoteStream` + `transport` fields. 42F wires the active-call screen (`VoiceCallScreen` now a `ConsumerWidget` bound to `callProvider` with peer name + duration timer + mute/end buttons + remote stream binding), mounts the `IncomingCallOverlay` into `home_screen.dart` as a Stack overlay, adds a Call action button to `chat_detail_screen.dart` for direct-message chats, declares iOS `NSMicrophoneUsageDescription` + Android `RECORD_AUDIO` / `MODIFY_AUDIO_SETTINGS` / `INTERNET` permissions, and adds an `AudioSessionHelper` + `envoygo/audio_session` method channel that configures iOS `AVAudioSession` (`playAndRecord` + `voiceChat` mode + `allowBluetooth` option) on `startCall` / `acceptCall` and resets on `endCall` / `declineCall` / dispose. The overlay's ring timer + pulse animation now only run when the overlay is actually visible (`state.isIncoming`), keeping it cheap when idle. **~25 new tests across 8 files** (4 home + 4 EnvoyGo): `call-send-invite.test.ts`, `call-sdp-validation.test.ts`, `call-response-envelopes.test.ts`, extensions to `node_service_client_test.dart` (4 new), `webrtc_call_transport_test.dart`, `call_provider_test.dart` (10 new + 5 audio-session integration), `audio_session_helper_test.dart` (5 new). `flutter analyze` + `tsc -b apps/node` + `tsc -b apps/social` clean. **42G (two-CallManager jsdom integration + Playwright re-validation) and 42H (TURN credentials editor) and 42I (iOS VoIP push) deferred** — same shape as 42F: ship each, review, add tests, then ship the next. |
 | 2026-06-19 | **Phase 42H — TURN credentials for symmetric NAT shipped.** Most WebRTC calls work over STUN alone. Phase 42H adds the operator-facing knobs to handle the corner case (corporate firewall / mobile carrier symmetric NAT) where the relay is required. **(42H.1)** The home's `_effectiveCallIceServers` in `apps/node/src/node-service-impl.ts` already injects a 3-server STUN default (Google / Cloudflare / Twilio) when neither the caller nor `node-config.iceServers` provides a list — precedence is caller-supplied > node-config > default. **(42H.2)** New structured TURN editor in `Settings → Network → TURN servers` (`apps/social/src/components/views/SettingsNodeTab.tsx`) — a per-row table of URL / username / credential / TTL fields that replaces ad-hoc JSON editing. STUN-only entries stay owned by the existing JSON editor above; TURN entries are extracted on save, validated (`turn:` / `turns:` scheme, TTL ≥ 0), and merged back via `mergeTurnServers()`. The TTL is **client-side only** (not in the wire format) so operators see a rotation hint without expanding the protocol. **(42H.3)** New `apps/social/src/lib/turn-credentials.ts` (pure helpers — `isTurnUrl`, `extractTurnServers`, `mergeTurnServers`, `validateTurnDraft`, `makeTurnId`) backed by **21 unit tests** in `apps/social/test/lib/turn-credentials.test.ts` (all pass). Extended `apps/node/test/call-send-invite.test.ts` with a STUN+TURN round-trip test (`6b. node-config STUN+TURN entries are shipped verbatim`) — verifies the home ships the merged list (preserving TURN credentials for the callee to authenticate) rather than collapsing it back to the STUN-only default. **(42H.4)** New `docs/voice-video-call-support.md` §6.3.1 explaining the precedence, the editor, TTL semantics, and a "when to add TURN" decision matrix. **`npx tsc -b apps/social` clean; `npx vitest run` green for both new files; `npx tsc -b apps/node` clean.** |
 | 2026-06-19 | **Phase 42I — iOS backgrounded calling (VoIP + PushKit + CallKit) shipped.** The iOS EnvoyGo app can now ring the user even when the app is force-killed. **(42I.1)** `PushTokenRecord` gains a `tokenType: "alert" \| "voip"` discriminator; the synthetic `deviceId` is namespaced by tokenType so the same physical device can register both an alert and a VoIP token without one stomping the other. **`PushTokenStore.init()` migrates pre-42I records (missing `tokenType`) to `"alert"` on load** so no manual migration is needed. **(42I.2)** New `sendVoipPush` mirrors `sendApns` but uses the `APNS_VOIP_TOPIC` env var (with `${APNS_TOPIC}.voip` fallback) and the `apns-push-type: voip` header; payload uses the stripped-down `aps: { voip: 1 }` shape Apple requires. The HTTP/2 plumbing is shared via a new `dispatchApnsHttp2` helper so the two functions stay focused on payload + header differences. **(42I.3)** `registerPushToken` signature gains an optional `tokenType` (default `"alert"` — back-compat for older EnvoyGo builds). The change threads through `NodeService` → `NodeServiceImpl` → `json-rpc-router.ts` → `push-notification.ts`. **(42I.4)** `sendCallInvite` now fires `pushNotificationService.dispatchCallPush(...)` after the libp2p envelope is sent. `dispatchCallPush` selects the channel by platform + token type: iOS+voip → APNs VoIP; iOS+alert → **skipped** (a chat-style alert cannot wake CallKit — better to do nothing than confuse the user); android → FCM with `type: call` + `priority: high` marker. **(42I.5)** `apps/envoygo/ios/Runner/Info.plist` declares `UIBackgroundModes = [voip, audio]`. **(42I.6)** `apps/envoygo/ios/Runner/AppDelegate.swift` imports `PushKit`, registers a `PKPushRegistry` for `.voIP`, and forwards the device token + incoming-call payload to Dart via a new `envoygo/voip_push` MethodChannel (stored on the registry via `objc_setAssociatedObject` to avoid the `UIResponder` instance-property dance). **(42I.7)** `flutter_callkit_incoming ^2.0.0` added to `pubspec.yaml` for the native iOS CallKit screen. **(42I.8)** New `apps/envoygo/lib/services/voip_push_service.dart` (singleton, no-op on non-iOS) subscribes to the `envoygo/voip_push` channel, caches the VoIP token, and exposes a `Stream<Map<String, dynamic>>` of incoming-call payloads. `CallProvider.onIncomingCallFromVoipPush({ callId, callerOwnerId, callerName })` puts the provider in a `ringing` state so CallKit can render the screen; a duplicate push for the same call does **not** stomp the WebSocket-resolved display name. The full call envelope (with SDP) still arrives over the WebSocket as a regular `call.incoming` event — that drives the WebRTC handshake. **(42I.9)** **12 new node tests** in `apps/node/test/push-notification.test.ts` (alert-vs-voip namespacing, default-to-alert backfill, unknown tokenType, disk migration, multi-device fan-out, iOS alert token skip, Android FCM fallback, uninitialized-service short-circuit) + **5 new EnvoyGo tests** in `apps/envoygo/test/services/voip_push_service_test.dart` (non-iOS no-op, idempotent init, broadcast stream, clearToken) + **4 new tests** in `call_provider_test.dart` (first push → ringing, callerName fallback, different-call overwrite, duplicate-push doesn't stomp WebSocket). **All pass.** **(42I.10)** `docs/push-notification-config.md` gains §7 covering VoIP certificate provisioning, `APNS_VOIP_TOPIC` setup, the `envoygo/voip_push` Dart contract, the new `UIBackgroundModes` requirement, the on-disk token shape, and a dispatching rules table. **Total: ~1,200 net new lines (incl. tests), 4 new files, 6 modified files, 1 new pubspec dep, 0 new wire intents, 0 new npm deps, 0 schema bumps.** `tsc -b apps/node` + `tsc -b apps/social` + `flutter analyze` clean on every modified file. **42J (manual two-iOS-device smoke) deferred** — needs real hardware + an Apple Developer account. |

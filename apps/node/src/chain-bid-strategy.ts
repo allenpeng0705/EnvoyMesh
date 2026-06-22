@@ -113,6 +113,7 @@ export function computeChainBid(input: ComputeChainBidInput): ComputeChainBidRes
   // The bid must remain valid long enough to be honored — never in the past.
   bidExpiresMs = Math.max(bidExpiresMs, now.getTime() + 1000);
 
+  const etaMinutes = Math.max(1, Math.round((proposedEtaMs - now.getTime()) / 60_000));
   const bid = ChainSubtaskBidSchema.parse({
     version: "0.1",
     subtaskId: subtask.subtaskId,
@@ -122,6 +123,7 @@ export function computeChainBid(input: ComputeChainBidInput): ComputeChainBidRes
     proposedCostUsd: Number(rawCost.toFixed(6)),
     proposedEtaAt: new Date(proposedEtaMs).toISOString(),
     bidExpiresAt: new Date(bidExpiresMs).toISOString(),
+    rationale: `${subtask.requiredCapability}: $${Number(rawCost.toFixed(2))} · ~${etaMinutes} min`,
     createdAt: now.toISOString(),
   });
   return { ok: true, bid };

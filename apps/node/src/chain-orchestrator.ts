@@ -372,8 +372,8 @@ export async function launchChain(
 
 export interface EvaluateBidsInput {
   subtaskId: string;
-  /** Bid-policy filter: sort bids by cost (asc), ETA (asc), then accept the best. */
-  policy?: "cheapest" | "fastest" | "highest_confidence";
+  /** Bid-policy filter: composite rank (default), cost, ETA, or legacy confidence alias. */
+  policy?: "composite" | "cheapest" | "fastest" | "highest_confidence";
   /** Maximum rounds. Default 3. */
   maxRounds?: number;
   /**
@@ -454,18 +454,27 @@ export async function evaluateBids(
       return { ok: false, reason: "no_bids" };
     }
   } else {
-    // Sort bids by policy.
-    const policy = input.policy ?? "cheapest";
-    const sorted = [...liveBids].sort((a, b) => {
-      if (policy === "fastest") {
-        return Date.parse(a.proposedEtaAt) - Date.parse(b.proposedEtaAt);
-      }
-      // "highest_confidence" falls through to "cheapest" until the wire schema
-      // carries an explicit confidence field. Sort by cost so behavior is
-      // deterministic and bounded.
-      return a.proposedCostUsd - b.proposedCostUsd;
-    });
-    chosen = sorted[0];
+    const policy = input.policy ?? "composite";
+    if (policy === "composite") {
+      const { rankBids } = await import("./chain-bid-strategy.js");
+      const ranked = rankBids(
+        liveBids.map((bid) => ({ bid })),
+        {
+          costCeiling: subtask.costCeilingUsd ?? state.chainMandate.costCeilingUsd,
+          requiredCapability: subtask.requiredCapability,
+          now: deps.now?.() ?? new Date(),
+        },
+      );
+      chosen = ranked[0]?.bid;
+    } else {
+      const sorted = [...liveBids].sort((a, b) => {
+        if (policy === "fastest") {
+          return Date.parse(a.proposedEtaAt) - Date.parse(b.proposedEtaAt);
+        }
+        return a.proposedCostUsd - b.proposedCostUsd;
+      });
+      chosen = sorted[0];
+    }
   }
   if (!chosen) return { ok: false, reason: "no_bids" };
 
@@ -942,6 +951,40 @@ export async function publishChainReport(
 // ---------------------------------------------------------------------------
 // Inbound handlers — called by chain-inbound.ts on the orchestrator side
 // ---------------------------------------------------------------------------
+
+export async function handleOrchestratorBid(
+  deps: ChainOrchestratorHandlerDeps,
+  envelope: EnvoyEnvelope,
+  payload: TaskChainBidPayload,
+  state: ChainState,
+): Promise<ChainInboundDecision> {
+  const bid = payload.bid;
+  if (bid.chainId !== state.chainId) {
+    return { ok: false, reason: "handler_denied" };
+  }
+  const now = (deps.now ?? (() => new Date()))().getTime();
+  if (Date.parse(bid.bidExpiresAt) <= now) {
+    deps.audit.record({
+      type: "chain.bid_expired",
+      outcome: "deny",
+      intent: "task.chain.bid",
+      remotePeerId: envelope.senderPeerId,
+      correlationId: envelope.correlationId,
+      summary: `subtask=${bid.subtaskId}`,
+    });
+    return { ok: false, reason: "handler_denied" };
+  }
+  state.bids.set(`${bid.subtaskId}::${bid.workerPeerId}`, bid);
+  deps.audit.record({
+    type: "chain.bid_received",
+    outcome: "allow",
+    intent: "task.chain.bid",
+    remotePeerId: envelope.senderPeerId,
+    correlationId: envelope.correlationId,
+    summary: `subtask=${bid.subtaskId} costUsd=${bid.proposedCostUsd}`,
+  });
+  return { ok: true };
+}
 
 export async function handleOrchestratorMandate(
   _deps: ChainOrchestratorHandlerDeps,

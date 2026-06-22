@@ -8401,3 +8401,62 @@ button:disabled {
   background: color-mix(in srgb, var(--color-error, #dc2626) 10%, var(--color-surface, #fff));
 }
 
+.chain-bond-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  font-size: var(--text-xs, 0.75rem);
+  padding: 0.125rem 0.375rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  color: var(--color-text-muted, #64748b);
+}
+
+.chain-bond-health--ready {
+  border-color: #16a34a;
+  color: #15803d;
+}
+
+.chain-bond-health--stale,
+.chain-bond-health--missing {
+  border-color: #d97706;
+  color: #b45309;
+}
+
+.chain-bond-health--blocked {
+  border-color: var(--color-error, #dc2626);
+  color: var(--color-error, #dc2626);
+}
+
+.chain-report-inline-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.chain-report-inline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.chain-report-inline-summary {
+  margin: 0;
+  color: var(--color-text-muted, #64748b);
+}
+
+.chain-start-recipe-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-top: 0.75rem;
+  font-size: var(--text-sm, 0.875rem);
+}
+
+.chain-start-recipe-label input {
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-sm, 0.25rem);
+}
+

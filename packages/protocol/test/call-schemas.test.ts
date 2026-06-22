@@ -2,18 +2,21 @@ import { describe, expect, it } from "vitest";
 import {
   CALL_RING_TIMEOUT_MS,
   CallInvitePayloadSchema,
+  CallReinvitePayloadSchema,
   CallAcceptPayloadSchema,
   CallRejectPayloadSchema,
   CallIceCandidatePayloadSchema,
   CallHangupPayloadSchema,
   CallMutePayloadSchema,
   createCallInvitePayload,
+  createCallReinvitePayload,
   createCallAcceptPayload,
   createCallRejectPayload,
   createCallIceCandidatePayload,
   createCallHangupPayload,
   createCallMutePayload,
   parseCallInvitePayload,
+  parseCallReinvitePayload,
   parseCallAcceptPayload,
   parseCallRejectPayload,
   parseCallIceCandidatePayload,
@@ -96,6 +99,38 @@ describe("CallInvitePayloadSchema", () => {
     });
     expect(payload.timestamp).toBeDefined();
     expect(() => new Date(payload.timestamp)).not.toThrow();
+  });
+});
+
+// --------------------------------------------------------------------------
+// call.reinvite
+// --------------------------------------------------------------------------
+describe("CallReinvitePayloadSchema", () => {
+  it("roundtrips via create + parse with Path 2 iceServers", () => {
+    const payload = createCallReinvitePayload({
+      callId: "00000000-0000-4000-a000-000000000008",
+      callerOwnerId: "envoy:owner:alice",
+      callerPeerId: "peer-alice",
+      sdpOffer: "v=0\r\npath2-offer",
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      reason: "path1_timeout",
+    });
+    const parsed = parseCallReinvitePayload(payload);
+    expect(parsed.transportPath).toBe("path2");
+    expect(parsed.reason).toBe("path1_timeout");
+    expect(parsed.iceServers).toHaveLength(1);
+  });
+
+  it("rejects empty iceServers (Path 2 requires STUN/TURN)", () => {
+    expect(() =>
+      createCallReinvitePayload({
+        callId: "00000000-0000-4000-a000-000000000009",
+        callerOwnerId: "envoy:owner:alice",
+        callerPeerId: "peer-alice",
+        sdpOffer: "v=0\r\n...",
+        iceServers: [],
+      }),
+    ).toThrow();
   });
 });
 
@@ -354,6 +389,7 @@ describe("CallMutePayloadSchema", () => {
 describe("call.* role policy", () => {
   const callIntents = [
     "call.invite",
+    "call.reinvite",
     "call.accept",
     "call.reject",
     "call.hangup",

@@ -98,13 +98,17 @@ describe("NodeServiceImpl call response envelopes (Phase 42B)", () => {
   // have something to operate on. The remote "caller" is PEER_TARGET_OWNER_ID;
   // the local node is the callee.
   function stageInbound(callId: string) {
-    return node.callManager.inboundCallReceived(
+    const result = node.callManager.inboundCallReceived(
       callId,
       PEER_TARGET_OWNER_ID,
       PEER_ENVELOPE_PEER_ID,
       "Remote Peer",
       "v=0\r\no=- 1 1 IN IP4 0.0.0.0\r\n",
     );
+    if (!result.ok) {
+      throw new Error(`stageInbound failed: ${result.reason}`);
+    }
+    return result.callId;
   }
 
   beforeEach(async () => {
@@ -419,13 +423,14 @@ describe("NodeServiceImpl call response envelopes (Phase 42B)", () => {
       {
         const s: CapturedSend[] = [];
         const { n, dir } = await freshNode(s);
-        const id = n.callManager.inboundCallReceived(
+        const result = n.callManager.inboundCallReceived(
           "a1a1a1a1-1111-4111-8111-a1a1a1a1a1a1",
           PEER_TARGET_OWNER_ID,
           PEER_ENVELOPE_PEER_ID,
           "Remote",
           "v=0\r\n...",
-        )!;
+        );
+        const id = result.ok ? result.callId : "";
         await n.acceptCallInvite(id, "v=0\r\n...");
         expect(s[0]!.envelope.intent).toBe("call.accept");
         expect(s[0]!.envelope.recipientPeerId).toBe(PEER_ENVELOPE_PEER_ID);
@@ -436,13 +441,14 @@ describe("NodeServiceImpl call response envelopes (Phase 42B)", () => {
       {
         const s: CapturedSend[] = [];
         const { n, dir } = await freshNode(s);
-        const id = n.callManager.inboundCallReceived(
+        const result = n.callManager.inboundCallReceived(
           "b2b2b2b2-2222-4222-8222-b2b2b2b2b2b2",
           PEER_TARGET_OWNER_ID,
           PEER_ENVELOPE_PEER_ID,
           "Remote",
           "v=0\r\n...",
-        )!;
+        );
+        const id = result.ok ? result.callId : "";
         await n.declineCallInvite(id, "busy");
         expect(s[0]!.envelope.intent).toBe("call.reject");
         expect(verifyEnvelope(s[0]!.envelope)).toBe(true);
@@ -452,13 +458,14 @@ describe("NodeServiceImpl call response envelopes (Phase 42B)", () => {
       {
         const s: CapturedSend[] = [];
         const { n, dir } = await freshNode(s);
-        const id = n.callManager.inboundCallReceived(
+        const result = n.callManager.inboundCallReceived(
           "c3c3c3c3-3333-4333-8333-c3c3c3c3c3c3",
           PEER_TARGET_OWNER_ID,
           PEER_ENVELOPE_PEER_ID,
           "Remote",
           "v=0\r\n...",
-        )!;
+        );
+        const id = result.ok ? result.callId : "";
         await n.acceptCallInvite(id, "v=0\r\n...");
         await n.endCall(id);
         const hangupEnv = s.find((x) => x.envelope.intent === "call.hangup")!;
@@ -470,13 +477,14 @@ describe("NodeServiceImpl call response envelopes (Phase 42B)", () => {
       {
         const s: CapturedSend[] = [];
         const { n, dir } = await freshNode(s);
-        const id = n.callManager.inboundCallReceived(
+        const result = n.callManager.inboundCallReceived(
           "d4d4d4d4-4444-4444-8444-d4d4d4d4d4d4",
           PEER_TARGET_OWNER_ID,
           PEER_ENVELOPE_PEER_ID,
           "Remote",
           "v=0\r\n...",
-        )!;
+        );
+        const id = result.ok ? result.callId : "";
         await n.acceptCallInvite(id, "v=0\r\n...");
         await n.setCallMuted(id, true);
         const muteEnv = s.find((x) => x.envelope.intent === "call.mute")!;

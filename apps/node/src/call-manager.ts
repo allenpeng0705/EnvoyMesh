@@ -9,14 +9,9 @@
 import type { CallEvent, CallSession, CallSessionStatus } from "@envoymesh/api";
 import {
   CALL_RING_TIMEOUT_MS,
-  createCallRejectPayload,
-  createCallHangupPayload,
-  type CallInvitePayload,
-  type CallAcceptPayload,
-  type CallRejectPayload,
   type CallIceCandidatePayload,
+  type CallRejectPayload,
   type CallHangupPayload,
-  type CallMutePayload,
 } from "@envoymesh/protocol";
 
 // --------------------------------------------------------------------------
@@ -38,11 +33,19 @@ interface InternalSession {
   participants: Set<string>;
 }
 
-// --------------------------------------------------------------------------
-// Event emitter helpers
-// --------------------------------------------------------------------------
+export type InboundCallResult =
+  | { ok: true; callId: string }
+  | { ok: false; reason: "duplicate" | "busy" };
+
+export type CallRemoteSignalRequest = {
+  callId: string;
+  peerOwnerId: string;
+  intent: "call.reject";
+  reason: CallRejectPayload["reason"];
+};
 
 type EventHandler = (event: CallEvent) => void;
+type RemoteSignalHandler = (req: CallRemoteSignalRequest) => void;
 
 // --------------------------------------------------------------------------
 // CallManager
@@ -51,6 +54,7 @@ type EventHandler = (event: CallEvent) => void;
 export class CallManager {
   private _sessions = new Map<string, InternalSession>();
   private _handlers = new Set<EventHandler>();
+  private _remoteSignalHandler: RemoteSignalHandler | null = null;
 
   // ------------------------------------------------------------------
   // Public API — query
@@ -90,9 +94,18 @@ export class CallManager {
     };
   }
 
+  /** Wire remote reject notifications (busy, ring timeout) to envelope send. */
+  setRemoteSignalHandler(handler: RemoteSignalHandler | null): void {
+    this._remoteSignalHandler = handler;
+  }
+
   private _emit(event: CallEvent): void {
     for (const h of this._handlers) {
-      try { h(event); } catch { /* ignore handler errors */ }
+      try {
+        h(event);
+      } catch {
+        /* ignore handler errors */
+      }
     }
   }
 
@@ -100,12 +113,9 @@ export class CallManager {
   // Outbound — caller initiates a call
   // ------------------------------------------------------------------
 
-  /**
-   * Called when the local user initiates a call to a peer.
-   * Returns the callId or null if already in a call.
-   */
   outboundCallInitiated(
     callId: string,
+    localOwnerId: string,
     peerOwnerId: string,
     peerDisplayName: string,
   ): string | null {
@@ -118,7 +128,7 @@ export class CallManager {
       direction: "outbound",
       status: "ringing",
       muted: false,
-      participants: new Set([peerOwnerId]),
+      participants: new Set([localOwnerId, peerOwnerId]),
     };
 
     this._sessions.set(callId, session);
@@ -129,30 +139,21 @@ export class CallManager {
   // Inbound — callee receives a call.invite
   // ------------------------------------------------------------------
 
-  /**
-   * Called when the local node receives a `call.invite` from a peer.
-   * Deduplicates by (callId, callerOwnerId). Returns the callId if
-   * the call was accepted, or null if rejected (busy / duplicate).
-   */
   inboundCallReceived(
     callId: string,
     callerOwnerId: string,
-    callerPeerId: string,
+    _callerPeerId: string,
     callerDisplayName: string,
     sdpOffer: string,
     iceServers?: { urls: string; username?: string; credential?: string }[],
-  ): string | null {
-    // Deduplicate: same (callId, callerOwnerId) → ignore
+  ): InboundCallResult {
     const existing = this._sessions.get(callId);
-    if (existing) {
-      if (existing.peerOwnerId === callerOwnerId) {
-        return null; // duplicate, silently ignore
-      }
+    if (existing?.peerOwnerId === callerOwnerId) {
+      return { ok: false, reason: "duplicate" };
     }
 
-    // One call at a time — reject with busy
     if (this._hasActiveCall()) {
-      return null; // caller will receive call.reject(reason=busy)
+      return { ok: false, reason: "busy" };
     }
 
     const session: InternalSession = {
@@ -165,7 +166,6 @@ export class CallManager {
       participants: new Set([callerOwnerId]),
     };
 
-    // Start ring timeout (60 s)
     session.ringTimer = setTimeout(() => {
       this._handleRingTimeout(callId);
     }, CALL_RING_TIMEOUT_MS);
@@ -182,12 +182,15 @@ export class CallManager {
       iceServers,
     });
 
-    return callId;
+    return { ok: true, callId };
   }
 
   private _handleRingTimeout(callId: string): void {
     const session = this._sessions.get(callId);
     if (!session || session.status !== "ringing") return;
+
+    const peerOwnerId = session.peerOwnerId;
+    const direction = session.direction;
 
     session.status = "ended";
     if (session.ringTimer) clearTimeout(session.ringTimer);
@@ -198,6 +201,15 @@ export class CallManager {
       callId,
       reason: "no_answer",
     });
+
+    if (direction === "inbound" && this._remoteSignalHandler) {
+      this._remoteSignalHandler({
+        callId,
+        peerOwnerId,
+        intent: "call.reject",
+        reason: "no_answer",
+      });
+    }
   }
 
   // ------------------------------------------------------------------
@@ -206,7 +218,16 @@ export class CallManager {
 
   acceptInboundCall(callId: string, calleeOwnerId: string): boolean {
     const session = this._sessions.get(callId);
-    if (!session || session.status !== "ringing" || session.direction !== "inbound") {
+    if (!session || session.direction !== "inbound") {
+      return false;
+    }
+
+    // Renegotiation after Path 1 → Path 2 reinvite — accept envelope only.
+    if (session.status === "active") {
+      return session.participants.has(calleeOwnerId);
+    }
+
+    if (session.status !== "ringing") {
       return false;
     }
 
@@ -224,16 +245,89 @@ export class CallManager {
   // Outbound accepted — caller receives call.accept
   // ------------------------------------------------------------------
 
-  outboundCallAccepted(callId: string): boolean {
+  outboundCallAccepted(
+    callId: string,
+    sdpAnswer?: string,
+    iceServers?: { urls: string; username?: string; credential?: string }[],
+  ): boolean {
     const session = this._sessions.get(callId);
-    if (!session || session.status !== "ringing" || session.direction !== "outbound") {
+    if (!session || session.direction !== "outbound") {
+      return false;
+    }
+
+    // Path 2 renegotiation after call.reinvite — emit updated answer SDP.
+    if (session.status === "active") {
+      this._emit({ type: "call:answered", callId, sdpAnswer, iceServers });
+      return true;
+    }
+
+    if (session.status !== "ringing") {
       return false;
     }
 
     session.status = "active";
     session.startedAt = new Date().toISOString();
 
-    this._emit({ type: "call:answered", callId });
+    this._emit({ type: "call:answered", callId, sdpAnswer, iceServers });
+    return true;
+  }
+
+  // ------------------------------------------------------------------
+  // call.reinvite — Path 1 → Path 2 fallback (same callId)
+  // ------------------------------------------------------------------
+
+  /** Caller-side guard before sending call.reinvite. */
+  canSendOutboundReinvite(callId: string, callerOwnerId: string): boolean {
+    const session = this._sessions.get(callId);
+    if (!session || session.direction !== "outbound") return false;
+    if (session.status !== "ringing" && session.status !== "active") return false;
+    return session.participants.has(callerOwnerId);
+  }
+
+  /** Callee-side: caller sends an updated Path 2 offer for an existing call. */
+  inboundCallReinvite(
+    callId: string,
+    callerOwnerId: string,
+    sdpOffer: string,
+    iceServers: { urls: string; username?: string; credential?: string }[],
+    reason: "path1_timeout" | "path1_failed" = "path1_timeout",
+  ): boolean {
+    const session = this._sessions.get(callId);
+    if (!session || session.direction !== "inbound") return false;
+    if (session.status !== "ringing" && session.status !== "active") return false;
+    if (session.peerOwnerId !== callerOwnerId) return false;
+
+    this._emit({
+      type: "call:reinvite",
+      callId,
+      peerOwnerId: callerOwnerId,
+      sdpOffer,
+      iceServers,
+      reason,
+      transportPath: "path2",
+    });
+    return true;
+  }
+
+  // ------------------------------------------------------------------
+  // ICE trickle — forward to local UI
+  // ------------------------------------------------------------------
+
+  iceCandidateReceived(
+    callId: string,
+    candidate: CallIceCandidatePayload["candidate"],
+    fromOwnerId: string,
+  ): boolean {
+    const session = this._sessions.get(callId);
+    if (!session || session.status === "ended") return false;
+    if (!session.participants.has(fromOwnerId)) return false;
+
+    this._emit({
+      type: "call:ice-candidate",
+      callId,
+      candidate,
+      fromOwnerId,
+    });
     return true;
   }
 
@@ -294,27 +388,30 @@ export class CallManager {
   // Identity binding / validation helpers (used by call-inbound.ts)
   // ------------------------------------------------------------------
 
-  /** Check if a sender is a participant in the call identified by callId. */
   isParticipant(callId: string, senderOwnerId: string): boolean {
     const session = this._sessions.get(callId);
     if (!session) return false;
     return session.participants.has(senderOwnerId);
   }
 
-  /** Get the session status for callId validation. */
   getSessionStatus(callId: string): CallSessionStatus | null {
     return this._sessions.get(callId)?.status ?? null;
   }
 
-  /** Get the participant's ownerId for a given session (for identity binding). */
   getSessionPeerOwnerId(callId: string): string | null {
     return this._sessions.get(callId)?.peerOwnerId ?? null;
   }
 
-  /** Whether the caller for a given inbound callId matches. */
   isCallerMatch(callId: string, callerOwnerId: string): boolean {
     const session = this._sessions.get(callId);
     if (!session || session.direction !== "inbound") return false;
     return session.peerOwnerId === callerOwnerId;
+  }
+
+  /** Outbound session: remote party is the callee. */
+  isCalleeMatch(callId: string, calleeOwnerId: string): boolean {
+    const session = this._sessions.get(callId);
+    if (!session || session.direction !== "outbound") return false;
+    return session.peerOwnerId === calleeOwnerId;
   }
 }

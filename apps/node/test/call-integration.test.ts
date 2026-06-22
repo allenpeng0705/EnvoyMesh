@@ -23,6 +23,9 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { CallManager } from "../src/call-manager.js";
 
+const CALLER_OWNER = "envoy:owner:caller";
+const CALLEE_OWNER = "envoy:owner:callee";
+
 // SDP samples used in the integration scenarios. Real SDP bodies
 // are larger (10-50 KB) but a short canonical SDP is sufficient
 // to assert round-trip semantics in this test.
@@ -45,7 +48,7 @@ describe("Phase 42G.1 — two-CallManager integration", () => {
 
   it("SDP offer round-trips caller → callee through call.invite", () => {
     const callId = callerCm.outboundCallInitiated(
-      "call-1", "envoy:owner:callee", "Callee",
+      "call-1", CALLER_OWNER, CALLEE_OWNER, "Callee",
     );
     expect(callId).toBe("call-1");
 
@@ -55,9 +58,9 @@ describe("Phase 42G.1 — two-CallManager integration", () => {
     const events: any[] = [];
     calleeCm.onCallEvent((e) => events.push(e));
     const incoming = calleeCm.inboundCallReceived(
-      "call-1", "envoy:owner:caller", "peer-caller", "Caller", SDP_OFFER,
+      "call-1", CALLER_OWNER, "peer-caller", "Caller", SDP_OFFER,
     );
-    expect(incoming).toBe("call-1");
+    expect(incoming).toEqual({ ok: true, callId: "call-1" });
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       type: "call:incoming",
@@ -67,9 +70,9 @@ describe("Phase 42G.1 — two-CallManager integration", () => {
   });
 
   it("SDP answer round-trips callee → caller through call.accept", () => {
-    callerCm.outboundCallInitiated("call-1", "envoy:owner:callee", "Callee");
+    callerCm.outboundCallInitiated("call-1", CALLER_OWNER, CALLEE_OWNER, "Callee");
     calleeCm.inboundCallReceived(
-      "call-1", "envoy:owner:caller", "peer-caller", "Caller", SDP_OFFER,
+      "call-1", CALLER_OWNER, "peer-caller", "Caller", SDP_OFFER,
     );
 
     const callerEvents: any[] = [];
@@ -78,25 +81,26 @@ describe("Phase 42G.1 — two-CallManager integration", () => {
     // Callee accepts — home translates acceptCallInvite into a
     // `call.accept` envelope with `sdpAnswer`. Caller's call-inbound
     // then invokes `outboundCallAccepted`.
-    const accepted = calleeCm.acceptInboundCall("call-1", "envoy:owner:callee");
+    const accepted = calleeCm.acceptInboundCall("call-1", CALLEE_OWNER);
     expect(accepted).toBe(true);
     // The home propagates the answer back to the caller. We simulate
     // this by directly invoking the caller's outboundCallAccepted —
     // the SDP answer here is hypothetical from the production
     // pipeline (it would be carried inside the call.accept envelope).
-    callerCm.outboundCallAccepted("call-1");
+    callerCm.outboundCallAccepted("call-1", SDP_ANSWER);
 
     expect(callerCm.getActiveCall()).toMatchObject({
       callId: "call-1", status: "active",
     });
+    expect(callerEvents.some((e) => e.type === "call:answered" && e.sdpAnswer === SDP_ANSWER)).toBe(true);
   });
 
   it("hangup on either side clears both CallManagers", () => {
-    callerCm.outboundCallInitiated("call-1", "envoy:owner:callee", "Callee");
+    callerCm.outboundCallInitiated("call-1", CALLER_OWNER, CALLEE_OWNER, "Callee");
     calleeCm.inboundCallReceived(
-      "call-1", "envoy:owner:caller", "peer-caller", "Caller", SDP_OFFER,
+      "call-1", CALLER_OWNER, "peer-caller", "Caller", SDP_OFFER,
     );
-    calleeCm.acceptInboundCall("call-1", "envoy:owner:callee");
+    calleeCm.acceptInboundCall("call-1", CALLEE_OWNER);
     callerCm.outboundCallAccepted("call-1");
 
     expect(callerCm.getActiveCall()).not.toBeNull();
@@ -113,9 +117,9 @@ describe("Phase 42G.1 — two-CallManager integration", () => {
   });
 
   it("reject from callee clears both CallManagers", () => {
-    callerCm.outboundCallInitiated("call-1", "envoy:owner:callee", "Callee");
+    callerCm.outboundCallInitiated("call-1", CALLER_OWNER, CALLEE_OWNER, "Callee");
     calleeCm.inboundCallReceived(
-      "call-1", "envoy:owner:caller", "peer-caller", "Caller", SDP_OFFER,
+      "call-1", CALLER_OWNER, "peer-caller", "Caller", SDP_OFFER,
     );
 
     calleeCm.rejectCall("call-1", "declined");
@@ -130,14 +134,14 @@ describe("Phase 42G.1 — two-CallManager integration", () => {
   });
 
   it("one-call-per-node enforced on both sides (caller + callee)", () => {
-    callerCm.outboundCallInitiated("call-1", "envoy:owner:callee", "Callee");
+    callerCm.outboundCallInitiated("call-1", CALLER_OWNER, CALLEE_OWNER, "Callee");
     calleeCm.inboundCallReceived(
-      "call-1", "envoy:owner:caller", "peer-caller", "Caller", SDP_OFFER,
+      "call-1", CALLER_OWNER, "peer-caller", "Caller", SDP_OFFER,
     );
 
     // Caller tries a second outbound — rejected (one-call-per-node).
     const secondOutbound = callerCm.outboundCallInitiated(
-      "call-2", "envoy:owner:third-party", "Third",
+      "call-2", CALLER_OWNER, "envoy:owner:third-party", "Third",
     );
     expect(secondOutbound).toBeNull();
 
@@ -146,17 +150,17 @@ describe("Phase 42G.1 — two-CallManager integration", () => {
     const secondInbound = calleeCm.inboundCallReceived(
       "call-2", "envoy:owner:third-party", "peer-third", "Third", SDP_OFFER,
     );
-    expect(secondInbound).toBeNull();
+    expect(secondInbound).toEqual({ ok: false, reason: "busy" });
   });
 
   it("caller side reflects state transitions in getActiveCall()", () => {
     expect(callerCm.getActiveCall()).toBeNull();
 
-    callerCm.outboundCallInitiated("call-1", "envoy:owner:callee", "Callee");
+    callerCm.outboundCallInitiated("call-1", CALLER_OWNER, CALLEE_OWNER, "Callee");
     expect(callerCm.getActiveCall()).toMatchObject({
       callId: "call-1",
       status: "ringing",
-      peerOwnerId: "envoy:owner:callee",
+      peerOwnerId: CALLEE_OWNER,
     });
 
     callerCm.outboundCallAccepted("call-1");
@@ -173,15 +177,15 @@ describe("Phase 42G.1 — two-CallManager integration", () => {
     expect(calleeCm.getActiveCall()).toBeNull();
 
     calleeCm.inboundCallReceived(
-      "call-1", "envoy:owner:caller", "peer-caller", "Caller", SDP_OFFER,
+      "call-1", CALLER_OWNER, "peer-caller", "Caller", SDP_OFFER,
     );
     expect(calleeCm.getActiveCall()).toMatchObject({
       callId: "call-1",
       status: "ringing",
-      peerOwnerId: "envoy:owner:caller",
+      peerOwnerId: CALLER_OWNER,
     });
 
-    calleeCm.acceptInboundCall("call-1", "envoy:owner:callee");
+    calleeCm.acceptInboundCall("call-1", CALLEE_OWNER);
     expect(calleeCm.getActiveCall()).toMatchObject({
       callId: "call-1",
       status: "active",
@@ -192,11 +196,11 @@ describe("Phase 42G.1 — two-CallManager integration", () => {
   });
 
   it("mute toggle is reflected in getActiveCall()", () => {
-    callerCm.outboundCallInitiated("call-1", "envoy:owner:callee", "Callee");
+    callerCm.outboundCallInitiated("call-1", CALLER_OWNER, CALLEE_OWNER, "Callee");
     calleeCm.inboundCallReceived(
-      "call-1", "envoy:owner:caller", "peer-caller", "Caller", SDP_OFFER,
+      "call-1", CALLER_OWNER, "peer-caller", "Caller", SDP_OFFER,
     );
-    calleeCm.acceptInboundCall("call-1", "envoy:owner:callee");
+    calleeCm.acceptInboundCall("call-1", CALLEE_OWNER);
     callerCm.outboundCallAccepted("call-1");
 
     expect(callerCm.getActiveCall()?.muted).toBe(false);

@@ -172,6 +172,7 @@ describe("task.* (legacy A2A, agent↔agent)", () => {
 describe("call.* (human↔human only)", () => {
   const callIntents = [
     "call.invite",
+    "call.reinvite",
     "call.accept",
     "call.reject",
     "call.hangup",

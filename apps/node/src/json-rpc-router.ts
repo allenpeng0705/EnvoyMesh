@@ -16,6 +16,16 @@ import type {
   ChainSetBidStrategyParams,
   ChainGetBidStrategyParams,
   ChainEvaluateBidsParams,
+  ChainCounterBidParams,
+  ChainRebalanceParams,
+  ChainGetDefaultsParams,
+  ChainSetDefaultsParams,
+  ChainPreviewGoalParams,
+  ChainStartFromGoalParams,
+  ChainExportCostsParams,
+  ChainListRecipesParams,
+  ChainSaveRecipeParams,
+  ChainDeleteRecipeParams,
 } from "@envoymesh/api";
 
 /**
@@ -119,6 +129,15 @@ export async function routeRpcMethod(
           | { urls: string; username?: string; credential?: string }[]
           | undefined,
       );
+    case "sendCallReinvite":
+      return ns.sendCallReinvite(
+        params.callId as string,
+        params.sdpOffer as string,
+        params.iceServers as
+          | { urls: string; username?: string; credential?: string }[]
+          | undefined,
+        params.reason as "path1_timeout" | "path1_failed" | undefined,
+      );
     case "acceptCallInvite":
       return ns.acceptCallInvite(
         params.callId as string,
@@ -133,6 +152,13 @@ export async function routeRpcMethod(
       return ns.endCall(params.callId as string);
     case "setCallMuted":
       return ns.setCallMuted(params.callId as string, Boolean(params.muted));
+    case "sendIceCandidate":
+      return ns.sendIceCandidate(params.callId as string, params.candidate as {
+        candidate: string;
+        sdpMid: string | null;
+        sdpMLineIndex: number | null;
+        usernameFragment?: string | null;
+      });
     // Phase 31I — Push Notifications
     case "registerPushToken":
       ns.registerPushToken({
@@ -167,6 +193,26 @@ export async function routeRpcMethod(
       return ns.chainGetBidStrategy(params as unknown as ChainGetBidStrategyParams);
     case "chainEvaluateBids":
       return ns.chainEvaluateBids(params as unknown as ChainEvaluateBidsParams);
+    case "chainCounterBid":
+      return ns.chainCounterBid(params as unknown as ChainCounterBidParams);
+    case "chainRebalance":
+      return ns.chainRebalance(params as unknown as ChainRebalanceParams);
+    case "chainGetDefaults":
+      return ns.chainGetDefaults((params as unknown as ChainGetDefaultsParams) ?? {});
+    case "chainSetDefaults":
+      return ns.chainSetDefaults(params as unknown as ChainSetDefaultsParams);
+    case "chainPreviewGoal":
+      return ns.chainPreviewGoal(params as unknown as ChainPreviewGoalParams);
+    case "chainStartFromGoal":
+      return ns.chainStartFromGoal(params as unknown as ChainStartFromGoalParams);
+    case "chainExportCosts":
+      return ns.chainExportCosts(params as unknown as ChainExportCostsParams);
+    case "chainListRecipes":
+      return ns.chainListRecipes((params as unknown as ChainListRecipesParams | undefined) ?? {});
+    case "chainSaveRecipe":
+      return ns.chainSaveRecipe(params as unknown as ChainSaveRecipeParams);
+    case "chainDeleteRecipe":
+      return ns.chainDeleteRecipe(params as unknown as ChainDeleteRecipeParams);
     case "sendAgentChat":
       return ns.sendAgentChat(params.targetOwnerId as string, params.text as string);
     case "sendChatAttachment":

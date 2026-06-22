@@ -51,6 +51,8 @@ export interface WebRtcCallTransport {
   startOffer(): Promise<string>;
   /** Start as answerer (callee) with remote SDP. */
   startAnswer(remoteSdp: string): Promise<string>;
+  /** Apply remote answer SDP on the caller side after call.accept. */
+  applyRemoteAnswer(remoteSdp: string): Promise<void>;
   /** Apply a remote ICE candidate (Path 2 trickle). */
   addIceCandidate(candidate: CallIceCandidatePayload["candidate"]): Promise<void>;
   /** Mute/unmute local audio track. */
@@ -224,6 +226,11 @@ export function createWebRtcCallTransport(
     return answer.sdp!;
   }
 
+  async function applyRemoteAnswer(remoteSdp: string): Promise<void> {
+    if (!pc || isClosed) throw new Error("Transport not ready for remote answer");
+    await pc.setRemoteDescription(new RTCSessionDescription({ type: "answer", sdp: remoteSdp }));
+  }
+
   async function addIceCandidate(candidate: CallIceCandidatePayload["candidate"]): Promise<void> {
     if (!pc || isClosed) return;
     try {
@@ -253,6 +260,7 @@ export function createWebRtcCallTransport(
   return {
     startOffer,
     startAnswer,
+    applyRemoteAnswer,
     addIceCandidate,
     setMute,
     close: closeInternal,

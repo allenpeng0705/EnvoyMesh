@@ -167,7 +167,7 @@ function buildInviteEnvelope(callerOwnerId: string, callId: string): EnvoyEnvelo
 function buildDeps(overrides: Partial<CallInboundDeps> = {}): CallInboundDeps {
   return {
     callManager: {
-      inboundCallReceived: vi.fn(() => true),
+      inboundCallReceived: vi.fn(() => ({ ok: true, callId: "call-1" })),
     } as unknown as CallInboundDeps["callManager"],
     trustStore: {
       getTrustRecord: vi.fn(async () => ({ level: "direct", displayName: "Alice" })),

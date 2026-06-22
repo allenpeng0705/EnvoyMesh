@@ -198,6 +198,54 @@ describe("WebRtcCallTransport", () => {
     });
   });
 
+  describe("applyRemoteAnswer", () => {
+    it("sets remote answer SDP on the peer connection", async () => {
+      const { transport } = createTestTransport({ path: "path2" });
+      await transport.startOffer();
+
+      await transport.applyRemoteAnswer("remote-answer-sdp");
+
+      expect(lastCreatedPC.setRemoteDescription).toHaveBeenCalled();
+    });
+
+    it("throws when transport is not ready", async () => {
+      const { transport } = createTestTransport({ path: "path2" });
+      await expect(transport.applyRemoteAnswer("remote-answer-sdp")).rejects.toThrow(
+        "Transport not ready for remote answer",
+      );
+    });
+  });
+
+  describe("addIceCandidate", () => {
+    it("accepts remote ICE candidates without throwing", async () => {
+      const { transport } = createTestTransport({ path: "path2" });
+      await transport.startOffer();
+      if (lastCreatedPC && typeof lastCreatedPC.addIceCandidate !== "function") {
+        lastCreatedPC.addIceCandidate = vi.fn().mockResolvedValue(undefined);
+      }
+
+      await expect(
+        transport.addIceCandidate({
+          candidate: "candidate:1 1 UDP 2113937159 192.0.2.1 54321 typ host",
+          sdpMid: "0",
+          sdpMLineIndex: 0,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it("no-ops when transport is closed", async () => {
+      const { transport } = createTestTransport({ path: "path2" });
+      transport.close();
+      await expect(
+        transport.addIceCandidate({
+          candidate: "candidate:1",
+          sdpMid: "0",
+          sdpMLineIndex: 0,
+        }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
   describe("close", () => {
     it("closes peer connection", async () => {
       const { transport } = createTestTransport();
