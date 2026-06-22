@@ -1,5 +1,5 @@
 import { Component, type ReactNode } from "react";
-import { I18nContext } from "../context/I18nContext.js";
+import { I18nContext } from "../context/i18n-context.js";
 import { translate } from "../i18n/translate.js";
 import { en } from "../i18n/messages/en.js";
 

@@ -1,25 +1,11 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useMemo, type ReactNode } from "react";
 import { useNodeState } from "./NodeStateContext.js";
 import { MESSAGES } from "../i18n/messages/index.js";
-import { translate, type TranslateParams } from "../i18n/translate.js";
+import { translate } from "../i18n/translate.js";
 import { LOCALE_OPTIONS, normalizeLocale, type LocaleId } from "../i18n/types.js";
+import { I18nContext, type I18nContextValue, type TFunction } from "./i18n-context.js";
 
-export type TFunction = (
-  key: string,
-  fallbackOrParams?: TranslateParams | string,
-  params?: TranslateParams,
-) => string;
-
-interface I18nContextValue {
-  locale: LocaleId;
-  setLocale: (locale: LocaleId) => void;
-  t: TFunction;
-  localeOptions: typeof LOCALE_OPTIONS;
-}
-
-const I18nContext = createContext<I18nContextValue | null>(null);
-
-export { I18nContext };
+export type { TFunction, I18nContextValue } from "./i18n-context.js";
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const { appSettings, setAppSettings } = useNodeState();

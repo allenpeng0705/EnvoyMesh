@@ -27,7 +27,7 @@ import type { ChainEvaluateBidsResult, ChainCounterBidResult, ChainRebalanceResu
 
 import { ChainBidInbox, type ChainBidInboxSubtask, suggestCheapestBid } from "../../src/components/ChainBidInbox.js";
 import { ChainRebalanceBar } from "../../src/components/ChainRebalanceBar.js";
-import { I18nContext, type TFunction } from "../../src/context/I18nContext.js";
+import { I18nContext, type TFunction } from "../../src/context/i18n-context.js";
 import { en } from "../../src/i18n/messages/en.js";
 import { translate } from "../../src/i18n/translate.js";
 

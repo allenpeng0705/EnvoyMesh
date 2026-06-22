@@ -107,7 +107,8 @@ export function evaluateNodeHealth(input: NodeHealthInput): { snapshot: NodeHeal
 
   if ((input.eventLoopLagMs ?? 0) > MAX_EVENT_LOOP_LAG_MS) {
     reasons.push(`event loop lag high=${input.eventLoopLagMs}ms`);
-    actions.add("restart-libp2p");
+    // Do not restart libp2p for lag alone — restarts drop all peer sessions and make
+    // contact online status flap under wan-default load (Mac/Windows home nodes).
   }
 
   if ((input.rssBytes ?? 0) > (input.maxRssBytesOverride ?? MAX_RSS_BYTES)) {

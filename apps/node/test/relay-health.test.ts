@@ -71,7 +71,7 @@ describe("relay health", () => {
     expect(result.state.counters.restartRequested).toBe(1);
   });
 
-  it("requests libp2p restart when event-loop lag is too high", () => {
+  it("degrades without libp2p restart when event-loop lag is too high", () => {
     const result = evaluateRelayHealth({
       now: () => now,
       relayEnabled: true,
@@ -86,9 +86,9 @@ describe("relay health", () => {
       previous: createInitialRelayHealthState(),
     });
 
-    expect(result.snapshot.status).toBe("unhealthy");
-    expect(result.snapshot.actions).toContain("restart-libp2p");
-    expect(result.state.counters.restartRequested).toBe(1);
+    expect(result.snapshot.status).toBe("degraded");
+    expect(result.snapshot.actions).not.toContain("restart-libp2p");
+    expect(result.snapshot.reasons.some((r) => r.includes("event loop lag"))).toBe(true);
   });
 
   it("requests supervisor exit when memory is too high", () => {

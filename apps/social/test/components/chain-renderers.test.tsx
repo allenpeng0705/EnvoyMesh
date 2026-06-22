@@ -19,7 +19,7 @@ import type { ChainReport, CompositeArtifact, CompositeArtifactPart } from "@env
 import { ChainTreeView, type ChainSubtaskNode } from "../../src/components/ChainTreeView.js";
 import { ChainReportRenderer } from "../../src/components/ChainReportRenderer.js";
 import { CompositeArtifactRenderer } from "../../src/components/CompositeArtifactRenderer.js";
-import { I18nContext, type TFunction } from "../../src/context/I18nContext.js";
+import { I18nContext, type TFunction } from "../../src/context/i18n-context.js";
 import { en } from "../../src/i18n/messages/en.js";
 import { translate } from "../../src/i18n/translate.js";
 

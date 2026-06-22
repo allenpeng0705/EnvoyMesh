@@ -55,7 +55,7 @@ describe("node health", () => {
     expect(result.snapshot.actions).toContain("restart-libp2p");
   });
 
-  it("requests libp2p restart when event-loop lag is too high", () => {
+  it("degrades without libp2p restart when event-loop lag is too high", () => {
     const result = evaluateNodeHealth({
       now: () => now,
       startedAtMs,
@@ -67,8 +67,10 @@ describe("node health", () => {
       previous: createInitialNodeHealthState(),
     });
 
-    expect(result.snapshot.status).toBe("unhealthy");
-    expect(result.snapshot.actions).toContain("restart-libp2p");
+    expect(result.snapshot.status).toBe("degraded");
+    expect(result.snapshot.actions).not.toContain("restart-libp2p");
+    expect(result.snapshot.actions).toEqual(["none"]);
+    expect(result.snapshot.reasons.some((r) => r.includes("event loop lag"))).toBe(true);
   });
 
   it("exits for supervisor when memory is too high", () => {

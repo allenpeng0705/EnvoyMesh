@@ -10777,18 +10777,44 @@ class NodeServiceImpl implements NodeService {
       return existing;
     }
 
-    let dialHints: string[];
+    try {
+      await mesh.closeConnectionsToPeer(transportPeerId);
+    } catch {
+      /* ignore */
+    }
+
+    let dialHints: string[] = [];
     try {
       dialHints = await raceWithTimeout(
         this._dialHintsForChat(transportPeerId, listenAddrs),
         30_000,
         "_dialHintsForChat",
       );
-    } catch {
-      return { connected: false, direct: false };
+    } catch (err) {
+      console.warn(
+        `[warmContact] dial hints failed for ${transportPeerId.slice(0, 12)}…:`,
+        err instanceof Error ? err.message : err,
+      );
     }
 
-    const result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, { dialHints });
+    const preferCircuitHints = dialHints.some((h) => h.includes("/p2p-circuit/"));
+    let result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
+      dialHints,
+      preferCircuitHints,
+      forceFreshDial: true,
+    });
+    if (!result.connected) {
+      try {
+        const rebuilt = await this._dialHintsForChat(transportPeerId, listenAddrs);
+        result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
+          dialHints: rebuilt,
+          preferCircuitHints: true,
+          forceFreshDial: true,
+        });
+      } catch {
+        /* keep first result */
+      }
+    }
     void this._flushPendingRoomSyncs();
     void this._flushPendingRoomMessages();
     return result;

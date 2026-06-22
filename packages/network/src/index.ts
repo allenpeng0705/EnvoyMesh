@@ -1175,7 +1175,7 @@ export class EnvoyMesh {
     sendOptions?: MeshOutboundOptions,
   ): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }> {
     const peerIdStr = parsePeerIdFromDialTarget(target);
-    if (peerIdStr) {
+    if (peerIdStr && !sendOptions?.forceFreshDial) {
       const before = this.getPeerConnectionInfo(peerIdStr);
       if (before.connected) {
         return before;

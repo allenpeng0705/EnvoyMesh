@@ -144,7 +144,7 @@ export function evaluateRelayHealth(input: RelayHealthInput): { snapshot: RelayH
 
   if ((input.eventLoopLagMs ?? 0) > MAX_EVENT_LOOP_LAG_MS) {
     reasons.push(`event loop lag high=${input.eventLoopLagMs}ms`);
-    actions.add("restart-libp2p");
+    // Lag alone must not restart libp2p — see node-health.ts (contact reachability stability).
   }
 
   if ((input.rssBytes ?? 0) > (input.maxRssBytesOverride ?? MAX_RSS_BYTES)) {
@@ -153,7 +153,7 @@ export function evaluateRelayHealth(input: RelayHealthInput): { snapshot: RelayH
   }
 
   const relayClientOnly = isRelayClientNode(input);
-  const status = statusFor(actions, previous, relayClientOnly);
+  const status = statusFor(actions, reasons, previous, relayClientOnly);
   if (status === "critical") {
     actions.add("exit-for-supervisor");
   }
@@ -167,6 +167,7 @@ export function evaluateRelayHealth(input: RelayHealthInput): { snapshot: RelayH
 
 function statusFor(
   actions: Set<RelayHealthAction>,
+  reasons: string[],
   previous: RelayHealthState,
   relayClientOnly: boolean,
 ): RelayHealthStatus {
@@ -181,6 +182,9 @@ function statusFor(
     return "unhealthy";
   }
   if (actions.has("reprobe-neighbors") || actions.has("refresh-relay-summary")) {
+    return "degraded";
+  }
+  if (reasons.length > 0) {
     return "degraded";
   }
   return "healthy";

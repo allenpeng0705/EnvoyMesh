@@ -2058,6 +2058,237 @@
   font-weight: var(--font-semibold);
 }
 
+/* Phase 37 — voice note recorder bar */
+.voice-note-recorder {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  min-height: 52px;
+  border-radius: var(--radius-xl);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 40%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger) 8%, var(--color-bg));
+  animation: voice-note-enter 0.2s ease-out;
+}
+
+@keyframes voice-note-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.voice-note-recorder.is-ready {
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-bg));
+}
+
+.voice-note-recorder.is-ready .voice-note-recorder-dot {
+  background: var(--color-primary);
+}
+
+.voice-note-recorder.is-sending {
+  justify-content: center;
+  gap: var(--space-3);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-bg));
+}
+
+.voice-note-recorder-sending-text {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+}
+
+.voice-note-recorder-cancel,
+.voice-note-recorder-send {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.voice-note-recorder-cancel {
+  border-color: color-mix(in srgb, var(--color-danger) 40%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface));
+  color: var(--color-danger);
+}
+
+.voice-note-recorder-cancel:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 16%, var(--color-surface));
+}
+
+.voice-note-recorder-send {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast, #fff);
+}
+
+.voice-note-recorder-send:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 88%, #000);
+}
+
+.voice-note-recorder-send:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.voice-note-recorder-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.voice-note-recorder-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-danger);
+}
+
+.voice-note-recorder.is-capturing .voice-note-recorder-dot {
+  animation: voice-note-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes voice-note-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+}
+
+.voice-note-recorder-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 3.5rem;
+}
+
+.voice-note-recorder-label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+  line-height: 1.2;
+}
+
+.voice-note-recorder-timer {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-subtle);
+}
+
+.voice-note-recorder-timer.near-limit {
+  color: var(--color-danger);
+  font-weight: var(--font-semibold);
+}
+
+.voice-note-recorder-wave {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+}
+
+.voice-note-recorder-wave-bar {
+  display: block;
+  width: 3px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-danger) 70%, var(--color-text-subtle));
+}
+
+.voice-note-recorder.is-capturing .voice-note-recorder-wave-bar {
+  animation: voice-note-wave 0.9s ease-in-out infinite;
+}
+
+.voice-note-recorder:not(.is-capturing) .voice-note-recorder-wave-bar {
+  height: 6px;
+  opacity: 0.45;
+}
+
+@keyframes voice-note-wave {
+  0%,
+  100% {
+    height: 8px;
+  }
+  50% {
+    height: 22px;
+  }
+}
+
+.voice-note-recorder-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: voice-note-spin 0.7s linear infinite;
+}
+
+@keyframes voice-note-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 420px) {
+  .voice-note-recorder-wave {
+    display: none;
+  }
+
+  .voice-note-recorder-cancel span,
+  .voice-note-recorder-send span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .voice-note-recorder-cancel,
+  .voice-note-recorder-send {
+    width: 44px;
+    padding: 0;
+  }
+}
+
+.chat-mic-btn.is-armed {
+  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
+  color: var(--color-danger);
+}
+
 .chat-input {
   flex-shrink: 0;
   z-index: var(--z-header);
