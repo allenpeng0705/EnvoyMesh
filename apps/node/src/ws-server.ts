@@ -110,6 +110,7 @@ export class WsServer {
       nodeServiceImpl.on("profile:updated", (data: unknown) => this.emitEvent("profile:updated", data));
       nodeServiceImpl.on("node:status", (data: unknown) => this.emitEvent("node:status", data));
       nodeServiceImpl.on("node:online", (data: unknown) => this.emitEvent("node:online", data));
+      nodeServiceImpl.on("node:ready", (data: unknown) => this.emitEvent("node:ready", data));
       nodeServiceImpl.on("node:offline", (data: unknown) => this.emitEvent("node:offline", data));
       nodeServiceImpl.on("bridge:status", (data: unknown) => this.emitEvent("bridge:status", data));
       nodeServiceImpl.on("p2p:envelope", (data: unknown) => this.emitEvent("p2p:envelope", data));
@@ -348,16 +349,14 @@ export class WsServer {
         if (cs.peerId) payload.peerId = cs.peerId;
         if (ws.readyState === WebSocket.OPEN) {
           this.emitEvent("node:status", payload);
+          if (payload.status === "running") {
+            this.sendEvent(ws, "node:ready", { timestamp: Date.now() });
+          }
         }
       } catch (e) {
         console.warn("[ws-server] deferred node:status snapshot failed:", e);
       }
     }, 350);
-
-    // Send node:ready after a short delay to indicate node is fully initialized
-    setTimeout(() => {
-      this.sendEvent(ws, "node:ready", { timestamp: Date.now() });
-    }, 1000);
   }
 
   private async handleMessage(ws: WebSocket, message: JsonRpcRequest): Promise<void> {

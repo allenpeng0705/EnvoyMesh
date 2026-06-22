@@ -15,8 +15,10 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
 
   const refresh = useCallback(
     async (opts?: { warm?: boolean; redial?: boolean; silent?: boolean }) => {
-      if (!enabled || !peerOwnerId || !nodeService.isConnected) {
-        setInfo(null);
+      if (!enabled || !peerOwnerId || !nodeService.isConnected || !nodeService.isReady) {
+        if (!opts?.silent) {
+          setInfo(null);
+        }
         return;
       }
       const showChecking = !opts?.silent;
@@ -60,7 +62,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
   );
 
   useEffect(() => {
-    if (!enabled || !peerOwnerId || !nodeService.isConnected) {
+    if (!enabled || !peerOwnerId || !nodeService.isConnected || !nodeService.isReady) {
       setInfo(null);
       setChecking(false);
       lastConnectedAtRef.current = 0;
@@ -71,7 +73,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       void refresh({ silent: true });
     }, POLL_MS);
     return () => clearInterval(id);
-  }, [enabled, peerOwnerId, nodeService.isConnected, refresh]);
+  }, [enabled, peerOwnerId, nodeService.isConnected, nodeService.isReady, refresh]);
 
   return { info, checking, refresh };
 }

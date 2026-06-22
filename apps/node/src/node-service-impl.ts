@@ -1501,16 +1501,71 @@ class NodeServiceImpl implements NodeService {
   /**
    * CLI path: the running `EnvoyMesh` from `index.ts` so bond/chat/block paths can set libp2p KEEP_ALIVE-style tags
    * (reconnect queue redials automatically after disconnect).
+   *
+   * Parity with `startNode()` post-online hooks: bond warm, profile refresh, reachability tags.
+   * Without these, `node:dev` never re-dialed LAN peers after restart and Social warmed contacts
+   * while `_nodeStatus` was still offline (WS connected before mesh.start()).
    */
   bindExternalMesh(mesh: EnvoyMesh): void {
     this._externalMesh = mesh;
     this._nodeStatus = "running";
     this.emit("node:status", { status: this._nodeStatus, peerId: mesh.peerId });
+    this.emit("node:online", {
+      peerId: mesh.peerId,
+      multiaddrs: (mesh.multiaddrs ?? []).map((a) => a.toString()),
+    });
+    this.emit("node:ready", { timestamp: Date.now() });
+    void this.resyncBondedContactReachabilityTags();
+    void this.refreshBondPeerProfiles().catch((err) => {
+      console.warn("[profile] refreshBondPeerProfiles after bindExternalMesh failed:", err);
+    });
+    this._startBondWarmInterval();
   }
 
   /** Re-apply contact reachability tags from the trust store (after cold start or mesh restart). */
   async resyncBondedContactReachabilityTags(): Promise<void> {
     await this._resyncBondedContactReachabilityTags();
+  }
+
+  /**
+   * CLI path (`index.ts`): mDNS / relay discovery learned a libp2p peer + dialable addrs.
+   * Merge addrs into an existing peer-directory row and probe for bonded profile sync.
+   */
+  async handleMeshPeerDiscovered(peerId: string, multiaddrs: string[]): Promise<void> {
+    try {
+      const config = await this._configStore.load();
+      const discoveryProfile = config?.discoveryProfile ?? "wan-default";
+      const source = peerDiscoverySourceFromMultiaddrs(multiaddrs);
+      if (
+        shouldPersistPeerDiscoverySeeds(discoveryProfile, source) &&
+        multiaddrs.length > 0 &&
+        this._discoverySeedStore
+      ) {
+        await this._discoverySeedStore.upsertMany(multiaddrs, "peer.discovery");
+      }
+      if (multiaddrs.length > 0) {
+        await this._peerDirectoryStore.mergeListenAddrsForPeerId(peerId, multiaddrs);
+      }
+      const mesh = this._reachableMesh();
+      const profile = this._profile;
+      if (mesh && profile && peerId === mesh.peerId) {
+        return;
+      }
+      const placeholder = {
+        nodeId: peerId,
+        ownerId: peerId,
+        displayName: `Peer ${peerId.slice(0, 8)}`,
+        username: undefined,
+        bio: undefined,
+        interests: [] as string[],
+        profileVisibility: "public" as const,
+      };
+      this.emit("peer:discovered", placeholder);
+      void this._probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs);
+      void this._maybeFireLanAutoBond(peerId);
+    } catch (err) {
+      console.warn(`[node-service] handleMeshPeerDiscovered failed for ${peerId.slice(0, 12)}…:`, err);
+    }
   }
 
   private _reachableMesh(): EnvoyMesh | undefined {
@@ -9113,51 +9168,7 @@ class NodeServiceImpl implements NodeService {
     });
 
     mesh.onPeerDiscovered(async ({ peerId, multiaddrs }) => {
-      try {
-        const config = await this._configStore.load();
-        const discoveryProfile = config?.discoveryProfile ?? "wan-default";
-        const source = peerDiscoverySourceFromMultiaddrs(multiaddrs);
-        if (
-          shouldPersistPeerDiscoverySeeds(discoveryProfile, source) &&
-          multiaddrs.length > 0 &&
-          this._discoverySeedStore
-        ) {
-          await this._discoverySeedStore.upsertMany(multiaddrs, "peer.discovery");
-        }
-        if (multiaddrs.length > 0) {
-          await this._peerDirectoryStore.mergeListenAddrsForPeerId(peerId, multiaddrs);
-        }
-        // Note: Do NOT create peer directory records here from mDNS discovery.
-        // mDNS only provides peerId + multiaddrs, not owner identity.
-        // Peer directory records should only be created when we receive actual identity
-        // info via system.signal, bond.request, or bond.accept handlers.
-        // Creating a record here with ownerId=peerId would corrupt the directory because
-        // later lookups by real ownerId wouldn't find the existing record.
-        const mesh = this._mesh;
-        const profile = this._profile;
-        if (mesh && profile && peerId === mesh.peerId) {
-          return;
-        }
-        const placeholder = {
-          nodeId: peerId,
-          ownerId: peerId,
-          displayName: `Peer ${peerId.slice(0, 8)}`,
-          username: undefined,
-          bio: undefined,
-          interests: [] as string[],
-          profileVisibility: "public" as const,
-        };
-        this.emit("peer:discovered", placeholder);
-        void this._probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs);
-
-        // Phase 35C — LAN auto-bond hook. If both this node and the freshly-
-        // discovered peer have a matching fleet token, send a `device.pair.request`
-        // carrying it. The receiver's dispatcher will auto-accept symmetrically.
-        // The runtime helper is a no-op when the local config doesn't opt in.
-        void this._maybeFireLanAutoBond(peerId);
-      } catch (err) {
-        console.warn(`[node-service] Failed to process peer discovery for ${peerId}:`, err);
-      }
+      await this.handleMeshPeerDiscovered(peerId, multiaddrs);
     });
   }
 
@@ -10811,7 +10822,11 @@ class NodeServiceImpl implements NodeService {
         return { connected: true, direct: true };
       }
       return mesh.getPeerConnectionInfo(transportPeerId);
-    } catch {
+    } catch (err) {
+      console.warn(
+        `[getPeerConnectionInfo] no route to ${peerOwnerId.slice(0, 24)}…:`,
+        err instanceof Error ? err.message : err,
+      );
       return { connected: false, direct: false };
     }
   }
@@ -10828,7 +10843,11 @@ class NodeServiceImpl implements NodeService {
       const resolved = await this._resolvePeerTransportForOwner(peerOwnerId);
       transportPeerId = resolved.transportPeerId;
       listenAddrs = resolved.listenAddrs;
-    } catch {
+    } catch (err) {
+      console.warn(
+        `[warmContact] no route to ${peerOwnerId.slice(0, 24)}…:`,
+        err instanceof Error ? err.message : err,
+      );
       return { connected: false, direct: false };
     }
 

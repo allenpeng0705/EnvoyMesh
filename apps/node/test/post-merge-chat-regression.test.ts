@@ -181,4 +181,22 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(cache.has(PEER_OWNER_ID)).toBe(false);
     });
   });
+
+  describe("bindExternalMesh CLI parity", () => {
+    it("starts bond warm and emits node:ready when external mesh is bound", async () => {
+      const readyHandler = vi.fn();
+      node.on("node:ready", readyHandler);
+
+      const mockMesh = {
+        peerId: "12D3KooWSelfBindExternal",
+        multiaddrs: ["/ip4/127.0.0.1/tcp/4011/p2p/12D3KooWSelfBindExternal"],
+        tagContactForPersistentReachability: vi.fn(async () => {}),
+      };
+      (node as any).bindExternalMesh(mockMesh);
+
+      expect(readyHandler).toHaveBeenCalled();
+      expect((node as any)._nodeStatus).toBe("running");
+      expect((node as any)._bondWarmTimer).toBeTruthy();
+    });
+  });
 });

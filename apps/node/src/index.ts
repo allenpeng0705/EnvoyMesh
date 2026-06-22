@@ -771,8 +771,9 @@ mesh.onPeerDiscovered(async (peer) => {
       }),
     );
   }
-  if (shouldPersistPeerDiscoverySeeds(args.discoveryProfile, source) && peer.multiaddrs.length > 0) {
-    await discoverySeedStore.upsertMany(peer.multiaddrs, "peer.discovery");
+  // Seeds + peer-directory listen addrs: handleMeshPeerDiscovered (same as startNode path).
+  if (nodeService instanceof NodeServiceImpl) {
+    void nodeService.handleMeshPeerDiscovered(peer.peerId, peer.multiaddrs);
   }
 });
 
@@ -3026,7 +3027,6 @@ if (args.enableDht) {
 
 if (nodeService instanceof NodeServiceImpl) {
   nodeService.bindExternalMesh(mesh);
-  void nodeService.resyncBondedContactReachabilityTags();
 }
 
 if (args.enableRelayServer) {

@@ -1483,6 +1483,18 @@ export function NodeServiceProvider({
     const unsubReady = wsClient.on("node:ready", () => {
       if (active) setReady(true);
     });
+    const unsubOnline = wsClient.on("node:online", () => {
+      if (active) setReady(true);
+    });
+    const unsubNodeStatus = wsClient.on("node:status", (data: unknown) => {
+      if (!active) return;
+      const status = (data as { status?: string } | undefined)?.status;
+      if (status === "running") {
+        setReady(true);
+      } else if (status === "offline") {
+        setReady(false);
+      }
+    });
 
     const reconnectInterval = setInterval(() => {
       if (!active) return;
@@ -1498,6 +1510,8 @@ export function NodeServiceProvider({
       clearInterval(reconnectInterval);
       unsubStatus();
       unsubReady();
+      unsubOnline();
+      unsubNodeStatus();
       wsClientRef.current = null;
       nodeService.disconnect();
       setConnected(false);

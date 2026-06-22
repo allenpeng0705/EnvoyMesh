@@ -65,11 +65,12 @@ describe("NodeServiceImpl reachability (KEEP_ALIVE / external mesh)", () => {
 
     const svc = new NodeServiceImpl(undefined, trustStore, peerDirectory, human, profileDir);
     svc.bindExternalMesh(mesh);
+    tagSpy.mockClear();
 
     await svc.resyncBondedContactReachabilityTags();
 
-    expect(tagSpy).toHaveBeenCalledTimes(1);
     expect(tagSpy).toHaveBeenCalledWith("alice-libp2p-peer-id");
+    expect(tagSpy).not.toHaveBeenCalledWith("bob-libp2p-peer-id");
   });
 
   it("blockPeer clears reachability tags when mesh is bound", async () => {

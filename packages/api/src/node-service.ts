@@ -1088,6 +1088,8 @@ export interface NodeServiceEvents {
   "node:online": { peerId: string; multiaddrs: string[] };
   "node:offline": { peerId: string };
   "node:status": { status: NodeStatus; peerId?: string };
+  /** Mesh/libp2p is up — safe to warm contacts and send chat. */
+  "node:ready": { timestamp: number };
 
   // Config events
   "config:updated": { autonomousKillSwitch: boolean; autonomousPolicies: readonly AutonomousPolicy[]; chatAssistEnabled: boolean; modelProviders: ModelProviderConfig; aiSettings?: AiSettings; contactAiPreferences: ContactAiPreferences[] };
