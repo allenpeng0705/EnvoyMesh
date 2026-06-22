@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 const CONTACT_OWNER_KEYS_FILE = "contact-owner-keys.json";
 
@@ -32,12 +32,23 @@ function isMissingFileError(error: unknown): boolean {
 async function readFileJson(path: string): Promise<ContactOwnerKeyFile> {
   try {
     const raw = await readFile(path, "utf8");
+    if (!raw.trim()) {
+      return { version: "0.1", records: [] };
+    }
     const parsed = JSON.parse(raw) as ContactOwnerKeyFile;
     if (parsed.version === "0.1" && Array.isArray(parsed.records)) {
       return parsed;
     }
+    console.warn(
+      `[contact-owner-key-store] invalid shape in ${basename(path)}, starting fresh`,
+    );
   } catch (error) {
-    if (!isMissingFileError(error)) throw error;
+    if (isMissingFileError(error)) {
+      return { version: "0.1", records: [] };
+    }
+    console.warn(
+      `[contact-owner-key-store] failed to read ${basename(path)}, starting fresh: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   return { version: "0.1", records: [] };
 }
