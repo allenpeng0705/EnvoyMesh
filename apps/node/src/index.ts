@@ -56,6 +56,7 @@ import {
   filterRelayControlTargets,
   filterUsableOutboundPeerDialHints,
   isLikelyInboundConnSnapshotDialHint,
+  isPrivateLanTcpDialHint,
   voucherJsonBytesFromObject,
   type P2pDebugEvent,
 } from "@envoymesh/network";
@@ -813,7 +814,11 @@ async function handleInboundMeshMessage({
     );
     const now = Date.now();
     const lastMerge = lastListenAddrMergeByPeer.get(remotePeerId) ?? 0;
-    if (dialableRemote.length > 0 && now - lastMerge >= LISTEN_ADDR_MERGE_MIN_MS) {
+    const hasLanListen = dialableRemote.some((a) => isPrivateLanTcpDialHint(a));
+    const mergeDue =
+      dialableRemote.length > 0 &&
+      (hasLanListen || now - lastMerge >= LISTEN_ADDR_MERGE_MIN_MS);
+    if (mergeDue) {
       lastListenAddrMergeByPeer.set(remotePeerId, now);
       void peerDirectoryStore
         .mergeListenAddrsForPeerId(remotePeerId, dialableRemote)
