@@ -482,12 +482,38 @@ export class EnvoyMesh {
       for (const entry of peerData.addresses ?? []) {
         const raw = entry.multiaddr?.toString?.()?.trim();
         if (raw) {
+          // Circuits belong in discovery seeds (relay.lookup); peerstore copies are often stale → NO_RESERVATION.
+          if (raw.includes("/p2p-circuit/")) {
+            continue;
+          }
           out.push(raw);
         }
       }
       return filterUsableOutboundPeerDialHints(out, idStr);
     } catch {
       return [];
+    }
+  }
+
+  /**
+   * Replace libp2p peer-store dial addrs with filtered direct multiaddrs (drops stale circuits + ephemeral inbound snapshots).
+   */
+  async mergePeerStoreDialHints(peerIdStr: string, addrs: readonly string[]): Promise<void> {
+    const idStr = peerIdStr.trim();
+    if (!idStr || idStr.startsWith("envoy_") || !this.node) {
+      return;
+    }
+    const existingGood = await this.getPeerStoreDialHints(idStr);
+    const merged = filterUsableOutboundPeerDialHints(
+      [...existingGood, ...addrs.filter((a) => !a.includes("/p2p-circuit/"))],
+      idStr,
+    );
+    try {
+      await this.requireNode().peerStore.patch(peerIdFromString(idStr), {
+        multiaddrs: merged.map((a) => ma(a)),
+      });
+    } catch {
+      /* best-effort */
     }
   }
 
@@ -1407,32 +1433,17 @@ export class EnvoyMesh {
       return undefined;
     };
 
-    const coldPeer = peerIdStr ? !this.findOpenConnectionToPeer(node, peerIdStr) : true;
-    const hasDirectTcpHint = hasDirectTcpDialHints(routableHints);
-    const preferCircuits =
-      Boolean(sendOptions?.preferCircuitHints) ||
-      (coldPeer && !hasDirectTcpHint && routableHints.some((h) => h.includes("/p2p-circuit/")));
-
-    if (barePeerDial && preferCircuits) {
+    // Always prefer explicit filtered hints over bare `/p2p/id` (peerstore often has ephemeral inbound snapshots).
+    if (barePeerDial && hasRoutableHint) {
       const viaHints = await tryRoutableHints();
       if (viaHints) {
         return viaHints;
       }
-    }
-
-    // Prefer libp2p peer-id dial (peerstore + active conn) before stale multiaddr hints.
-    if (barePeerDial) {
+    } else if (barePeerDial) {
       try {
         return await dialOnce(dialTarget);
       } catch (e) {
         lastError = e;
-      }
-    }
-
-    if (barePeerDial && hasRoutableHint && !preferCircuits) {
-      const viaHints = await tryRoutableHints();
-      if (viaHints) {
-        return viaHints;
       }
     }
 
@@ -1445,11 +1456,13 @@ export class EnvoyMesh {
     }
 
     const hints = preferNonLoopbackDialHints(hintsRaw);
-    for (const ma of dialHintsToMultiaddrs(sortDialHints(hints), peerIdStr)) {
-      try {
-        return await dialOnce(ma);
-      } catch (e) {
-        lastError = e;
+    if (!(barePeerDial && hasRoutableHint)) {
+      for (const ma of dialHintsToMultiaddrs(sortDialHints(hints), peerIdStr)) {
+        try {
+          return await dialOnce(ma);
+        } catch (e) {
+          lastError = e;
+        }
       }
     }
     /** Last resort: retry any loopback hints only if bare + routable passes failed */
@@ -2109,7 +2122,8 @@ export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
       h.includes("/tcp/") &&
       !h.includes("/p2p-circuit/") &&
       !isLoopbackOrUnspecifiedDialHint(h) &&
-      !isDockerBridgeGatewayDialHint(h),
+      !isDockerBridgeGatewayDialHint(h) &&
+      !isLikelyInboundConnSnapshotDialHint(h),
   );
 }
 
@@ -2191,6 +2205,12 @@ export function isUnusableDesktopCircuitDialHint(addr: string): boolean {
   return !relayHop.includes("/tcp/");
 }
 
+/** libp2p circuit-relay v2: remote peer has no reservation slot on the relay hop. */
+export function isRelayReservationDialError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /NO_RESERVATION|no reservation/i.test(msg);
+}
+
 /**
  * Circuit reservation without a final `/p2p/<remotePeer>` hop — dials the relay, not the contact.
  * Example bad: `…/p2p/<relayId>/p2p-circuit` (no target peer appended).
@@ -2231,6 +2251,9 @@ export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string
     isIncompleteCircuitDialHint(a) ||
     isUnusableDesktopCircuitDialHint(a)
   ) {
+    return false;
+  }
+  if (isLikelyInboundConnSnapshotDialHint(a)) {
     return false;
   }
   if (targetPeerId?.trim()) {

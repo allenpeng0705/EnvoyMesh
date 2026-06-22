@@ -5,6 +5,7 @@ import {
   hasDirectTcpDialHints,
   isBrowserOnlyTransportDialHint,
   isLoopbackOrUnspecifiedDialHint,
+  isLikelyInboundConnSnapshotDialHint,
   isPrivateLanTcpDialHint,
   isQuicDialHint,
   isUnusableDesktopCircuitDialHint,
@@ -159,6 +160,18 @@ describe("dial hint sorting", () => {
 
     it("returns empty array for empty input", () => {
       expect(preferNonLoopbackDialHints([])).toEqual([]);
+    });
+
+    it("filters ephemeral inbound TCP snapshot ports for desktop outbound dials", () => {
+      const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
+      const ephemeral = `/ip4/192.168.3.78/tcp/64595/p2p/${target}`;
+      const stable = `/ip4/192.168.3.78/tcp/4001/p2p/${target}`;
+      expect(isLikelyInboundConnSnapshotDialHint(ephemeral)).toBe(true);
+      expect(isUsableOutboundPeerDialHint(ephemeral, target)).toBe(false);
+      expect(isUsableOutboundPeerDialHint(stable, target)).toBe(true);
+      expect(hasDirectTcpDialHints([ephemeral])).toBe(false);
+      expect(hasDirectTcpDialHints([stable])).toBe(true);
+      expect(filterUsableOutboundPeerDialHints([ephemeral, stable], target)).toEqual([stable]);
     });
 
     it("filters QUIC bootstrap circuit paths for desktop outbound dials", () => {

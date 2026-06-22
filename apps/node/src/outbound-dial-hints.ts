@@ -99,10 +99,17 @@ export async function buildOutboundDialHints(input: {
     }
   }
 
-  const maxSynthetic = nonLoopListen.length > 0 ? 4 : 8;
-  out.push(
-    ...buildSyntheticRelayCircuitHints(recipientPeerId, relayPool, maxSynthetic),
+  const hasDirect = hasDirectTcpDialHints(nonLoopListen);
+  const peerSpecificCircuits = out.filter(
+    (h) => h.includes(recipientPeerId) && h.includes("/p2p-circuit/"),
   );
+  // Synthetic circuits guess the peer reserved on a relay — skip when LAN/direct exists or we already have relay.lookup paths.
+  if (!hasDirect) {
+    const maxSynthetic = peerSpecificCircuits.length > 0 ? 1 : 3;
+    out.push(
+      ...buildSyntheticRelayCircuitHints(recipientPeerId, relayPool, maxSynthetic),
+    );
+  }
 
   return prioritizeDirectLanDialHints(
     dedupeDialHints(out.filter((a) => isUsableChatDialHint(a, recipientPeerId))),

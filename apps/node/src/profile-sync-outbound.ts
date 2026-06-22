@@ -8,6 +8,7 @@ import {
 } from "@envoymesh/protocol";
 import type { NodeProfile } from "@envoymesh/api";
 import type { EnvoyMesh } from "@envoymesh/network";
+import { isRelayReservationDialError } from "@envoymesh/network";
 import { derivePeerId } from "@envoymesh/identity";
 import { shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
 import { loadProfileThumbnailInline } from "./profile-thumbnail-inline.js";
@@ -68,12 +69,17 @@ export async function sendProfileSyncToBonds(input: {
       continue;
     }
     const dialHints = await input.dialHintsFor(resolved.peerId, resolved.listenAddrs);
-    const sendOnce = async () => {
-      await input.mesh.send(resolved.peerId, envelope, { dialHints });
+    const preferCircuits = shouldPreferCircuitDialHints(resolved.listenAddrs, dialHints, resolved.peerId);
+    const sendOnce = async (opts?: { preferCircuitHints?: boolean }) => {
+      await input.mesh.send(resolved.peerId, envelope, {
+        dialHints,
+        preferCircuitHints: opts?.preferCircuitHints ?? preferCircuits,
+      });
     };
     try {
       await sendOnce();
     } catch (firstErr) {
+      const reservationMiss = isRelayReservationDialError(firstErr);
       console.warn(
         `[profile.sync] send to ${ownerId.slice(0, 16)}… failed, retrying:`,
         firstErr instanceof Error ? firstErr.message : firstErr,
@@ -83,7 +89,7 @@ export async function sendProfileSyncToBonds(input: {
         if (closed && closed > 0) {
           console.log(`[profile.sync] closed ${closed} stale connection(s) to ${resolved.peerId.slice(0, 12)}…`);
         }
-        await sendOnce();
+        await sendOnce({ preferCircuitHints: reservationMiss ? false : preferCircuits });
       } catch (retryErr) {
         console.warn(`[profile.sync] send to ${ownerId.slice(0, 16)}… failed after retry:`, retryErr);
       }
@@ -120,7 +126,7 @@ export async function sendProfileRequest(input: {
   const preferCircuits = shouldPreferCircuitDialHints(input.listenAddrs, dialHints, input.transportPeerId);
   const timeoutMs = input.timeoutMs ?? 30_000;
   if (typeof input.mesh.sendExpectReply !== "function") {
-    await input.mesh.send(input.transportPeerId, envelope, { dialHints });
+    await input.mesh.send(input.transportPeerId, envelope, { dialHints, preferCircuitHints: preferCircuits });
     throw new Error("profile.request requires sendExpectReply on mesh");
   }
   const reply = await input.mesh.sendExpectReply(input.transportPeerId, envelope, {
@@ -157,5 +163,6 @@ export async function sendProfileResponse(input: {
     recipientPeerId: input.envelopeRecipientPeerId,
   });
   const dialHints = await input.dialHintsFor(input.transportPeerId, input.listenAddrs);
-  await input.mesh.send(input.transportPeerId, envelope, { dialHints });
+  const preferCircuits = shouldPreferCircuitDialHints(input.listenAddrs, dialHints, input.transportPeerId);
+  await input.mesh.send(input.transportPeerId, envelope, { dialHints, preferCircuitHints: preferCircuits });
 }

@@ -1563,6 +1563,10 @@ class NodeServiceImpl implements NodeService {
         await this._peerDirectoryStore.mergeListenAddrsForPeerId(peerId, multiaddrs);
       }
       const mesh = this._reachableMesh();
+      if (mesh && multiaddrs.length > 0) {
+        const dialable = mergeDialablePeerListenAddrs(peerId, multiaddrs);
+        void mesh.mergePeerStoreDialHints(peerId, dialable);
+      }
       const profile = this._profile;
       if (mesh && profile && peerId === mesh.peerId) {
         return;
@@ -10922,6 +10926,8 @@ class NodeServiceImpl implements NodeService {
     } catch {
       return existing.connected ? existing : { connected: false, direct: false };
     }
+
+    void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
 
     const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
 

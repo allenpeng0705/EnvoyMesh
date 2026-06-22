@@ -818,6 +818,9 @@ async function handleInboundMeshMessage({
       void peerDirectoryStore
         .mergeListenAddrsForPeerId(remotePeerId, dialableRemote)
         .catch((err) => console.warn(`[peer-directory] mergeListenAddrsForPeerId failed:`, err));
+      void mesh.mergePeerStoreDialHints(remotePeerId, dialableRemote).catch((err) =>
+        console.warn(`[peer-store] mergePeerStoreDialHints failed:`, err),
+      );
     }
   }
   if (envelope.senderRole === "human" && envelope.senderPublicKey?.trim()) {
@@ -2806,7 +2809,7 @@ function scheduleMeshInboundDrain(): void {
 }
 
 mesh.onMessage(async (params) => {
-  const { envelope: inboundEnvelope, remotePeerId } = params;
+  const { envelope: inboundEnvelope, remotePeerId, replyWithEnvelope } = params;
   if (isMessageSeen(inboundEnvelope.messageId)) {
     return;
   }
@@ -2822,6 +2825,11 @@ mesh.onMessage(async (params) => {
     return;
   }
   markMessageSeen(inboundEnvelope.messageId);
+  // Same-stream replies must run before the inbound handler closes the libp2p stream.
+  if (replyWithEnvelope) {
+    await handleInboundMeshMessage(params);
+    return;
+  }
   if (meshInboundQueue.length >= MESH_INBOUND_QUEUE_MAX) {
     return;
   }
