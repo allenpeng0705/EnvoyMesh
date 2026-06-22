@@ -18,6 +18,7 @@ import { H2AChannelView } from "./components/views/H2AChannelView.js";
 import { ChainsView } from "./components/views/ChainsView.js";
 import { AutoReplyPausedNotifier } from "./components/AutoReplyPausedNotifier.js";
 import { isTauriShell, restartTauriNodeProcess } from "./lib/tauri-shell.js";
+import { WS_LOOPBACK_URL } from "@envoymesh/api";
 
 export type ViewName = "chat" | "assistant" | "discover" | "library" | "chains" | "profile" | "settings";
 
@@ -149,12 +150,16 @@ export function App() {
   const tauriShell = isTauriShell();
   const [restartNodeBusy, setRestartNodeBusy] = useState(false);
   const [restartNodeError, setRestartNodeError] = useState<string | null>(null);
+  const isLocalWs = /^ws:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(
+    appSettings.wsUrl.trim() || WS_LOOPBACK_URL,
+  );
   const isRelayUnreachable =
-    reconnectAttempts > 3 ||
-    (lastError?.includes("Connection timed out") ||
-      lastError?.includes("ECONNREFUSED") ||
-      lastError?.includes("WebSocket connection closed") ||
-      false);
+    !isLocalWs &&
+    (reconnectAttempts > 3 ||
+      (lastError?.includes("Connection timed out") ||
+        lastError?.includes("ECONNREFUSED") ||
+        lastError?.includes("WebSocket connection closed") ||
+        false));
 
   const handleRetryConnect = () => {
     void nodeService.reconnect();
@@ -202,7 +207,7 @@ export function App() {
           restartNodeError={restartNodeError}
           tauriShell={tauriShell}
           autoConnect={appSettings.autoConnect}
-          wsUrl={appSettings.wsUrl.trim() || "ws://localhost:3030/ws"}
+          wsUrl={appSettings.wsUrl.trim() || WS_LOOPBACK_URL}
         />
       </ToastProvider>
     );

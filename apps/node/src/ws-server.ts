@@ -1,4 +1,5 @@
 import { WebSocketServer, WebSocket } from "ws";
+import { createServer, type Server as HttpServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import type {
   JsonRpcEvent,
@@ -9,7 +10,7 @@ import type {
 import type { NodeService } from "@envoymesh/api";
 import { NodeServiceImpl } from "./node-service-impl.js";
 import { routeRpcMethod } from "./json-rpc-router.js";
-import { TERMINAL_WS_PORT } from "./service-ports.js";
+import { SOCIAL_WS_BIND_HOST, TERMINAL_WS_PORT } from "./service-ports.js";
 import {
   closeHomeClawCoreWsForCompanion,
   rpcHomeClawCoreWsClose,
@@ -34,6 +35,7 @@ import {
  */
 export class WsServer {
   private wss!: WebSocketServer;
+  private httpServer: HttpServer | null = null;
   private nodeService!: NodeService;
   private readonly subscriptions = new Map<string, Set<WebSocket>>();
   private readonly clientSubscriptions = new Map<WebSocket, Set<string>>();
@@ -56,9 +58,29 @@ export class WsServer {
    */
   start(nodeService: NodeService): void {
     this.nodeService = nodeService;
-    this.wss = new WebSocketServer({ port: this.port, path: this.path });
 
-    // Handle WebSocket server errors gracefully to prevent crashes
+    this.httpServer = createServer((_req, res) => {
+      res.writeHead(426, { "Content-Type": "text/plain" });
+      res.end("Upgrade Required");
+    });
+
+    this.wss = new WebSocketServer({ noServer: true });
+
+    this.httpServer.on("upgrade", (req, socket, head) => {
+      const pathname = req.url?.split("?")[0] ?? "";
+      if (pathname !== this.path) {
+        socket.destroy();
+        return;
+      }
+      this.wss.handleUpgrade(req, socket, head, (ws) => {
+        this.wss.emit("connection", ws, req);
+      });
+    });
+
+    this.httpServer.on("error", (err: Error) => {
+      console.error(`[ws-server] HTTP server error: ${err.message}`);
+    });
+
     this.wss.on("error", (err: Error) => {
       console.error(`[ws-server] WebSocket server error: ${err.message}`);
     });
@@ -121,8 +143,10 @@ export class WsServer {
       void this.handleConnection(ws, req);
     });
 
-    this.wss.on("listening", () => {
-      console.log(`[ws-server] Listening on ws://localhost:${this.port}${this.path}`);
+    this.httpServer.listen(this.port, SOCIAL_WS_BIND_HOST, () => {
+      console.log(
+        `[ws-server] Listening on ws://127.0.0.1:${this.port}${this.path} (bound ${SOCIAL_WS_BIND_HOST})`,
+      );
     });
 
     // Start heartbeat
@@ -151,7 +175,9 @@ export class WsServer {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
-    this.wss.close();
+    this.wss?.close();
+    this.httpServer?.close();
+    this.httpServer = null;
   }
 
   /**

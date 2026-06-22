@@ -64,6 +64,8 @@ export const WS_PROTOCOL_VERSION = "envoy/ws-api/0.1.0";
 
 export const WS_PORT = 3030;
 export const WS_PATH = "/ws";
+/** Desktop Social default — use IPv4 loopback (macOS resolves `localhost` to ::1). */
+export const WS_LOOPBACK_URL = `ws://127.0.0.1:${WS_PORT}${WS_PATH}`;
 
 // ============================================
 // RPC Methods

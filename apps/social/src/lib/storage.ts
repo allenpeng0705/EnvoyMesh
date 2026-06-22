@@ -3,6 +3,13 @@
  * Replaces the ad-hoc try/catch patterns previously inlined in App.tsx.
  */
 
+import { WS_LOOPBACK_URL } from "@envoymesh/api";
+
+/** macOS often resolves `localhost` to IPv6 ::1 while the node binds IPv4 — normalize saved URLs. */
+export function normalizeLoopbackWsUrl(url: string): string {
+  return url.replace(/^ws:\/\/localhost\b/i, "ws://127.0.0.1");
+}
+
 export function loadFromStorage<T>(key: string, fallback: T): T {
   try {
     const stored = localStorage.getItem(key);
@@ -29,7 +36,7 @@ export interface AppSettings {
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
-  wsUrl: "ws://localhost:3030/ws",
+  wsUrl: WS_LOOPBACK_URL,
   autoConnect: true,
   notificationsEnabled: true,
   showConnectionStatus: true,
@@ -39,7 +46,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
 const APP_SETTINGS_KEY = "envoymesh:app-settings";
 
 export function loadAppSettings(): AppSettings {
-  return loadFromStorage<AppSettings>(APP_SETTINGS_KEY, DEFAULT_APP_SETTINGS);
+  const loaded = loadFromStorage<AppSettings>(APP_SETTINGS_KEY, DEFAULT_APP_SETTINGS);
+  return { ...loaded, wsUrl: normalizeLoopbackWsUrl(loaded.wsUrl.trim() || DEFAULT_APP_SETTINGS.wsUrl) };
 }
 
 export function saveAppSettings(settings: AppSettings): void {

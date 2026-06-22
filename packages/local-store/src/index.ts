@@ -1401,6 +1401,8 @@ export interface LocalPeerDirectoryStore {
   getPeerByPeerId(peerId: string): Promise<PeerDirectoryRecord | undefined>;
   /** Append dialable multiaddrs learned from inbound libp2p connections (e.g. relay circuit path). */
   mergeListenAddrsForPeerId(peerId: string, addrs: string[]): Promise<void>;
+  /** Cap stored listen addrs per peer (repairs bloated directories from pre-cap merges). */
+  compactListenAddrs(maxPerRecord?: number): Promise<{ recordsTouched: number; addrsRemoved: number }>;
   /**
    * Learn device signing key from a verified inbound human envelope (`senderPublicKey`).
    * Repairs placeholder rows created by {@link ensurePeerFromInboundChat} (`deviceId: chat-inbound`,
@@ -1806,7 +1808,7 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         if (!record) {
           return;
         }
-        const merged = dedupeListenAddrList([...record.listenAddrs, ...trimmed]);
+        const merged = capPeerListenAddrs([...record.listenAddrs, ...trimmed]);
         const same =
           merged.length === record.listenAddrs.length && merged.every((a, i) => a === record.listenAddrs[i]);
         if (same) {
@@ -1816,6 +1818,29 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         record.lastSeenAt = new Date().toISOString();
         await writePeerDirectoryFileAtomic(directoryPath, file);
       });
+    },
+
+    async compactListenAddrs(maxPerRecord = MAX_PEER_LISTEN_ADDRS_PER_RECORD) {
+      let recordsTouched = 0;
+      let addrsRemoved = 0;
+      await withDirectory(async (file) => {
+        let dirty = false;
+        for (const record of file.records) {
+          const capped = capPeerListenAddrs(record.listenAddrs);
+          const removed = record.listenAddrs.length - capped.length;
+          if (removed <= 0) {
+            continue;
+          }
+          record.listenAddrs = capped;
+          recordsTouched += 1;
+          addrsRemoved += removed;
+          dirty = true;
+        }
+        if (dirty) {
+          await writePeerDirectoryFileAtomic(directoryPath, file);
+        }
+      });
+      return { recordsTouched, addrsRemoved };
     },
 
     async mergeInboundDeviceBinding(input) {
@@ -1959,6 +1984,13 @@ function isLikelyEphemeralTcpSnapshot(addr: string): boolean {
 
 function filterDialableListenAddrs(addrs: string[]): string[] {
   return dedupeListenAddrList(addrs.filter((a) => !isLikelyEphemeralTcpSnapshot(a)));
+}
+
+/** Max dial hints retained per peer row — matches ensurePeerFromInboundChat / bond paths. */
+export const MAX_PEER_LISTEN_ADDRS_PER_RECORD = 8;
+
+function capPeerListenAddrs(addrs: string[]): string[] {
+  return filterDialableListenAddrs(addrs).slice(-MAX_PEER_LISTEN_ADDRS_PER_RECORD);
 }
 
 export function parseTrustLevel(value: string): TrustRecord["level"] {

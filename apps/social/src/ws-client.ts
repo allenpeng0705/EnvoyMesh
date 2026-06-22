@@ -3,6 +3,9 @@ import type {
   JsonRpcResponse,
   JsonRpcEvent,
 } from "@envoymesh/api";
+import { WS_LOOPBACK_URL } from "@envoymesh/api";
+
+import { normalizeLoopbackWsUrl } from "./lib/storage.js";
 
 type EventHandler = (data: unknown) => void;
 
@@ -31,13 +34,13 @@ export class WsClient {
   /** True after {@link disconnect} — blocks auto-reconnect and stale close handlers. */
   private _disposed = false;
 
-  constructor(url: string = "ws://localhost:3030/ws") {
-    this.url = url;
+  constructor(url: string = WS_LOOPBACK_URL) {
+    this.url = normalizeLoopbackWsUrl(url);
   }
 
   /** Update the target WebSocket URL (applied on next connect/reconnect). */
   setUrl(url: string): void {
-    this.url = url.trim() || this.url;
+    this.url = normalizeLoopbackWsUrl(url.trim() || this.url);
   }
 
   /** When false, connection drops are not auto-retried (manual connect only). */
@@ -85,7 +88,10 @@ export class WsClient {
         // 15-second connection timeout
         this._connectTimeout = setTimeout(() => {
           if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
-            const err = "Connection timed out after 15s. Relay may be unreachable.";
+            const isLocalDev = /^ws:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(this.url);
+            const err = isLocalDev
+              ? "Connection timed out after 15s. Is npm run node:dev running?"
+              : "Connection timed out after 15s. Relay may be unreachable.";
             this._lastError = err;
             this.ws.close();
             resolved = true;

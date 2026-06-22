@@ -481,6 +481,12 @@ async function dialHintsForTransportPeer(
 
 // WebSocket server reference for event emission
 let wsServerForEvents: WsServer | null = null;
+const peerDirCompact = await peerDirectoryStore.compactListenAddrs();
+if (peerDirCompact.addrsRemoved > 0) {
+  console.log(
+    `[peer-directory] compacted ${peerDirCompact.addrsRemoved} stale listen addrs across ${peerDirCompact.recordsTouched} record(s)`,
+  );
+}
 const peerDirectoryRecords = await peerDirectoryStore.listPeerRecords();
 const peerDirectorySeedAddrs = peerDirectoryRecords.flatMap((record) => record.listenAddrs);
 const persistedSeedAddrs = seedAddrsForDiscoveryProfile(
@@ -657,6 +663,10 @@ function markMessageSeen(messageId: string): void {
   seenMessageIds.add(messageId);
 }
 
+/** Throttle peer-directory listen-addr merges — each merge rewrites the whole JSON file. */
+const lastListenAddrMergeByPeer = new Map<string, number>();
+const LISTEN_ADDR_MERGE_MIN_MS = 30_000;
+
 let bootstrapReprobeTimer: ReturnType<typeof setTimeout> | undefined;
 let bootstrapReprobeCursor = 0;
 let capabilityDiscoveryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -814,9 +824,14 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
   const envelope = guardDecision.envelope;
   if (remoteAddr?.trim()) {
     const trimmed = remoteAddr.trim();
-    void peerDirectoryStore
-      .mergeListenAddrsForPeerId(remotePeerId, [trimmed])
-      .catch((err) => console.warn(`[peer-directory] mergeListenAddrsForPeerId failed:`, err));
+    const now = Date.now();
+    const lastMerge = lastListenAddrMergeByPeer.get(remotePeerId) ?? 0;
+    if (now - lastMerge >= LISTEN_ADDR_MERGE_MIN_MS) {
+      lastListenAddrMergeByPeer.set(remotePeerId, now);
+      void peerDirectoryStore
+        .mergeListenAddrsForPeerId(remotePeerId, [trimmed])
+        .catch((err) => console.warn(`[peer-directory] mergeListenAddrsForPeerId failed:`, err));
+    }
   }
   if (envelope.senderRole === "human" && envelope.senderPublicKey?.trim()) {
     void peerDirectoryStore
