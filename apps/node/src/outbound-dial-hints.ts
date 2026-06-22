@@ -5,6 +5,7 @@
  */
 import {
   isLikelyInboundConnSnapshotDialHint,
+  isLoopbackOrUnspecifiedDialHint,
   isPublicLibp2pBootstrapMultiaddr,
   isUsableOutboundPeerDialHint,
   buildSyntheticRelayCircuitHints,
@@ -102,4 +103,51 @@ export async function buildOutboundDialHints(input: {
   );
 
   return dedupeDialHints(out.filter((a) => isUsableChatDialHint(a, recipientPeerId)));
+}
+
+/** Merge peer-directory / inbound-cache listen addrs, dropping ephemeral TCP snapshots. */
+export function mergeDialablePeerListenAddrs(
+  recipientPeerId: string,
+  ...sources: (string[] | undefined)[]
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const src of sources) {
+    for (const raw of src ?? []) {
+      const a = raw.trim();
+      if (!a || seen.has(a)) continue;
+      if (!isUsableChatDialHint(a, recipientPeerId)) continue;
+      if (isLikelyInboundConnSnapshotDialHint(a)) continue;
+      seen.add(a);
+      out.push(a);
+    }
+  }
+  return out;
+}
+
+/** Prefer direct LAN/TCP dials when we have routable non-circuit hints; avoid jumping to relay on same network. */
+export function shouldPreferCircuitDialHints(
+  listenAddrs: string[] | undefined,
+  dialHints: string[],
+  recipientPeerId?: string,
+): boolean {
+  const peerId = recipientPeerId?.trim() ?? "";
+  const dialableListen = peerId
+    ? mergeDialablePeerListenAddrs(peerId, listenAddrs)
+    : (listenAddrs ?? []).filter(
+        (h) =>
+          h.includes("/tcp/") &&
+          !h.includes("/p2p-circuit/") &&
+          !isLikelyInboundConnSnapshotDialHint(h) &&
+          !isLoopbackOrUnspecifiedDialHint(h),
+      );
+  const directCandidates = [
+    ...dialableListen,
+    ...dialHints.filter((h) => h.includes("/tcp/") && !h.includes("/p2p-circuit/")),
+  ];
+  const hasDirectTcp = directCandidates.some((h) => !isLoopbackOrUnspecifiedDialHint(h));
+  if (hasDirectTcp) {
+    return false;
+  }
+  return dialHints.some((h) => h.includes("/p2p-circuit/"));
 }

@@ -10,6 +10,8 @@ const OFFLINE_GRACE_MS = 60_000;
 const FAILURES_BEFORE_OFFLINE = 3;
 /** After UI shows offline, run a full redial every N gentle probe cycles. */
 const OFFLINE_REDIAL_EVERY = 3;
+/** While connected via relay, verify chat stream every N polls (skip for direct LAN). */
+const RELAY_VERIFY_EVERY = 4;
 
 /** Live libp2p reachability for a bonded contact (direct P2P or relay circuit). */
 export function usePeerReachability(peerOwnerId: string | null, enabled = true) {
@@ -20,6 +22,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
   const lastConnectedAtRef = useRef(0);
   const consecutiveFailuresRef = useRef(0);
   const offlineProbeCountRef = useRef(0);
+  const relayVerifyCountRef = useRef(0);
   const refreshInFlightRef = useRef(false);
   const generationRef = useRef(0);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -53,7 +56,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
   }, []);
 
   const refresh = useCallback(
-    async (opts?: { warm?: boolean; redial?: boolean; verifyOnly?: boolean; silent?: boolean }) => {
+    async (opts?: { warm?: boolean; redial?: boolean; silent?: boolean }) => {
       if (!enabled || !peerOwnerId || !nodeService.isConnected) {
         setInfo(null);
         infoRef.current = null;
@@ -67,19 +70,33 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       const showChecking = !opts?.silent;
       if (showChecking) setChecking(true);
       try {
-        const showingOnline = infoRef.current?.connected === true;
         let next: PeerConnectionInfo;
 
         if (opts?.redial === true || opts?.warm === true) {
           next = await nodeService.warmContactConnection(peerOwnerId, { redial: opts?.redial === true });
-        } else if (opts?.verifyOnly === true || showingOnline) {
-          next = await nodeService.warmContactConnection(peerOwnerId, { verifyOnly: true });
         } else {
-          offlineProbeCountRef.current += 1;
-          const shouldRedial = offlineProbeCountRef.current % OFFLINE_REDIAL_EVERY === 0;
-          next = await nodeService.warmContactConnection(peerOwnerId, {
-            redial: shouldRedial,
-          });
+          next = await nodeService.getPeerConnectionInfo(peerOwnerId);
+          if (next.connected && next.direct) {
+            /* Trust existing LAN direct connection — no warm/verify churn. */
+          } else if (next.connected && !next.direct) {
+            relayVerifyCountRef.current += 1;
+            if (relayVerifyCountRef.current % RELAY_VERIFY_EVERY === 0) {
+              const verified = await nodeService.warmContactConnection(peerOwnerId, {
+                verifyOnly: true,
+              });
+              if (verified.connected) {
+                next = verified;
+              } else {
+                next = verified;
+              }
+            }
+          } else {
+            offlineProbeCountRef.current += 1;
+            const shouldRedial = offlineProbeCountRef.current % OFFLINE_REDIAL_EVERY === 0;
+            next = await nodeService.warmContactConnection(peerOwnerId, {
+              redial: shouldRedial,
+            });
+          }
         }
 
         if (gen !== generationRef.current) {
@@ -107,6 +124,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       lastConnectedAtRef.current = 0;
       consecutiveFailuresRef.current = 0;
       offlineProbeCountRef.current = 0;
+      relayVerifyCountRef.current = 0;
       generationRef.current += 1;
       if (pollTimerRef.current) {
         clearTimeout(pollTimerRef.current);

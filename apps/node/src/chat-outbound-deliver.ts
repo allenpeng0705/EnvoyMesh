@@ -3,6 +3,7 @@ import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { ENVOY_MESSAGE_PROTOCOL, prioritizeCircuitDialHints } from "@envoymesh/network";
 import { parseChatDeliveredAck } from "@envoymesh/api/chat-delivered";
+import { shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
 
 const CHAT_SEND_MAX_ATTEMPTS = 3;
 const CHAT_SEND_RETRY_BASE_MS = 800;
@@ -57,6 +58,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
   transportPeerId: string;
   envelope: EnvoyEnvelope;
   dialHints: string[];
+  peerListenAddrs?: string[];
   chatProtocol: string;
   rebuildDialHints?: () => Promise<string[]>;
   maxAttempts?: number;
@@ -65,7 +67,11 @@ export async function deliverChatEnvelopeWithRetry(input: {
   const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
   let lastErr: unknown;
   let hints = input.dialHints;
-  const preferCircuits = hints.some((h) => h.includes("/p2p-circuit/"));
+  const preferCircuits = shouldPreferCircuitDialHints(
+    input.peerListenAddrs,
+    hints,
+    input.transportPeerId,
+  );
   const canExpectAck =
     input.expectDeliveryAck !== false && typeof input.mesh.sendChatExpectReply === "function";
 
@@ -89,7 +95,9 @@ export async function deliverChatEnvelopeWithRetry(input: {
     } else {
       const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
       try {
-        if (conn.connected) {
+        if (conn.connected && conn.direct) {
+          /* Trust existing LAN direct path — stream probes can false-fail. */
+        } else if (conn.connected) {
           const verified = await input.mesh.ensurePeerReachable(
             input.transportPeerId,
             input.chatProtocol,
@@ -116,7 +124,8 @@ export async function deliverChatEnvelopeWithRetry(input: {
       }
     }
 
-    const preferCircuitsOnAttempt = preferCircuits || attempt > 0;
+    const preferCircuitsOnAttempt =
+      (attempt === 0 ? preferCircuits : false) || attempt > 0;
     const forceFreshDial = attempt > 0;
     let usedAck = false;
 
@@ -220,7 +229,7 @@ export async function deliverCallEnvelopeWithRetry(input: {
   const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
   let lastErr: unknown;
   let hints = input.dialHints;
-  const preferCircuits = hints.some((h) => h.includes("/p2p-circuit/"));
+  const preferCircuits = shouldPreferCircuitDialHints(undefined, hints, input.transportPeerId);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {

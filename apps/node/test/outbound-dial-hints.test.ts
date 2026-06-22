@@ -146,3 +146,31 @@ describe("buildOutboundDialHints", () => {
     }
   });
 });
+
+describe("shouldPreferCircuitDialHints", () => {
+  it("prefers direct LAN TCP over relay when LAN listen addrs exist", async () => {
+    const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    const listen = ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWContact"];
+    const hints = [
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact",
+    ];
+    expect(shouldPreferCircuitDialHints(listen, hints, "12D3KooWContact")).toBe(false);
+  });
+
+  it("allows relay when no direct TCP hints exist", async () => {
+    const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    const hints = ["/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact"];
+    expect(shouldPreferCircuitDialHints([], hints, "12D3KooWContact")).toBe(true);
+  });
+
+  it("mergeDialablePeerListenAddrs drops ephemeral inbound TCP snapshots", async () => {
+    const { mergeDialablePeerListenAddrs } = await import("../src/outbound-dial-hints.js");
+    const peerId = "12D3KooWContact";
+    const merged = mergeDialablePeerListenAddrs(
+      peerId,
+      [`/ip4/192.168.1.50/tcp/55093/p2p/${peerId}`],
+      [`/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`],
+    );
+    expect(merged).toEqual([`/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`]);
+  });
+});
