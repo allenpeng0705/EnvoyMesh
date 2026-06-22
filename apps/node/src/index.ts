@@ -1761,8 +1761,9 @@ mesh.onMessage(async ({ envelope: inboundEnvelope, remotePeerId, replyWithEnvelo
       callManager: (nodeService as NodeServiceImpl).callManager,
       trustStore,
       peerDirectoryStore,
+      remotePeerId,
       sendResponseEnvelope: async (responseEnvelope) => {
-        await mesh.send(envelope.senderPeerId, responseEnvelope as EnvoyEnvelope);
+        await mesh.send(remotePeerId, responseEnvelope as EnvoyEnvelope);
       },
       sendBusyReject:
         nodeService instanceof NodeServiceImpl

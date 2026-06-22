@@ -359,4 +359,54 @@ describe("WebRTC voice call E2E", () => {
       await page.close();
     }
   }, 25_000);
+
+  it("7. call:reinvite updates incoming offer (Path 1 → Path 2 UI)", async (ctx) => {
+    if (!browser) { ctx.skip(true, "Chromium not installed"); return; }
+    const page = await browser.newPage();
+    try {
+      await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "domcontentloaded" });
+      await sleep(2000);
+
+      await page.evaluate(() => {
+        const OrigWS = (window as any).WebSocket;
+        class MockWS extends (OrigWS ?? EventTarget) {
+          url: string; _onmsg: ((e: any) => void) | null = null; readyState = 1;
+          constructor(url: string) { super(); this.url = url; setTimeout(() => this.dispatchEvent(new Event("open")), 10); }
+          set onmessage(fn: ((e: any) => void) | null) { this._onmsg = fn; (window as any).__callEventHandler = fn; }
+          get onmessage() { return this._onmsg; }
+          send(_: string) {} close() { this.readyState = 3; this.dispatchEvent(new Event("close")); }
+        }
+        (window as any).WebSocket = MockWS as any;
+      });
+
+      await sleep(2000);
+
+      await injectCallEvent(page, {
+        type: "call:incoming",
+        callId: "call_test_006",
+        peerOwnerId: "envoy:owner:frank",
+        peerDisplayName: "Frank",
+        callType: "audio",
+        sdpOffer: "path1-offer",
+        iceServers: [],
+      });
+      await page.locator(".incoming-call-modal").waitFor({ state: "visible", timeout: 5_000 });
+
+      await injectCallEvent(page, {
+        type: "call:reinvite",
+        callId: "call_test_006",
+        peerOwnerId: "envoy:owner:frank",
+        sdpOffer: "path2-offer",
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        reason: "path1_timeout",
+        transportPath: "path2",
+      });
+      await sleep(300);
+
+      // Modal stays visible; Path 2 fallback should not dismiss ringing UI.
+      await page.locator(".incoming-call-modal").waitFor({ state: "visible", timeout: 5_000 });
+    } finally {
+      await page.close();
+    }
+  }, 25_000);
 });

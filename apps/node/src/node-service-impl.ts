@@ -397,7 +397,7 @@ import {
   isLibp2pPeerId,
 } from "./profile-sync-outbound.js";
 import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
-import { deliverChatEnvelopeWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
+import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
 import { pickBestLibp2pPeerDirectoryRecord } from "./peer-transport-resolve.js";
 import {
   normalizeTransportPeerId,
@@ -3500,14 +3500,12 @@ class NodeServiceImpl implements NodeService {
   ): Promise<ChatDeliverResult> {
     return this._withChatSendLock(transportPeerId, async () => {
       const mesh = this._requireMesh();
-      return deliverChatEnvelopeWithRetry({
+      return deliverCallEnvelopeWithRetry({
         mesh,
         transportPeerId,
         envelope,
         dialHints,
-        chatProtocol: ENVOY_CHAT_PROTOCOL,
         rebuildDialHints: () => this._dialHintsForChat(transportPeerId, listenAddrs),
-        expectDeliveryAck: false,
       });
     });
   }

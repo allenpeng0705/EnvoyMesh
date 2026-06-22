@@ -63,13 +63,33 @@ export interface CallInboundDeps {
     callerName: string;
     calleeOwnerId: string;
   }) => Promise<void>;
+  /** libp2p transport peer id of the inbound connection (for owner resolution). */
+  remotePeerId?: string;
 }
 
 const LOG = "[call-inbound]";
 
-/** Resolve sender's ownerId from envelope context. */
-function senderOwnerId(envelope: EnvoyEnvelope): string {
-  return envelope.agentCredential?.ownerId ?? envelope.senderPeerId ?? "";
+/** Resolve sender's ownerId from envelope signing key + peer directory. */
+async function resolveSenderOwnerId(
+  envelope: EnvoyEnvelope,
+  deps: CallInboundDeps,
+): Promise<string> {
+  if (envelope.agentCredential?.ownerId) {
+    return envelope.agentCredential.ownerId;
+  }
+  if (deps.remotePeerId) {
+    const byTransport = await deps.peerDirectoryStore.getPeerByPeerId(deps.remotePeerId);
+    if (byTransport?.ownerId && byTransport.devicePublicKeyPem === envelope.senderPublicKey) {
+      return byTransport.ownerId;
+    }
+  }
+  const records = await deps.peerDirectoryStore.listPeerRecords();
+  for (const record of records) {
+    if (record.devicePublicKeyPem === envelope.senderPublicKey) {
+      return record.ownerId;
+    }
+  }
+  return envelope.senderPeerId ?? "";
 }
 
 // --------------------------------------------------------------------------
@@ -157,7 +177,7 @@ async function handleCallInvite(
     return true;
   }
 
-  const senderOwner = senderOwnerId(envelope);
+  const senderOwner = await resolveSenderOwnerId(envelope, deps);
 
   // Identity binding: envelope signer must match callerOwnerId in payload
   if (senderOwner !== payload.callerOwnerId) {
@@ -252,7 +272,7 @@ async function handleCallReinvite(
     return true;
   }
 
-  const senderOwner = senderOwnerId(envelope);
+  const senderOwner = await resolveSenderOwnerId(envelope, deps);
 
   if (senderOwner !== payload.callerOwnerId) {
     console.warn(`${LOG} call.reinvite identity binding failed`);
@@ -297,7 +317,7 @@ async function handleCallAccept(
     return true;
   }
 
-  const senderOwner = senderOwnerId(envelope);
+  const senderOwner = await resolveSenderOwnerId(envelope, deps);
 
   // Identity binding: envelope signer must match calleeOwnerId
   if (senderOwner !== payload.calleeOwnerId) {
@@ -334,7 +354,7 @@ async function handleCallReject(
     return true;
   }
 
-  const senderOwner = senderOwnerId(envelope);
+  const senderOwner = await resolveSenderOwnerId(envelope, deps);
 
   if (senderOwner !== payload.calleeOwnerId) {
     console.warn(`${LOG} call.reject identity binding failed`);
@@ -361,7 +381,7 @@ async function handleCallHangup(
     return true;
   }
 
-  const senderOwner = senderOwnerId(envelope);
+  const senderOwner = await resolveSenderOwnerId(envelope, deps);
 
   if (!deps.callManager.isParticipant(payload.callId, senderOwner)) {
     console.warn(`${LOG} call.hangup sender not a participant: ${senderOwner}`);
@@ -396,7 +416,7 @@ async function handleCallIceCandidate(
     return true;
   }
 
-  const senderOwner = senderOwnerId(envelope);
+  const senderOwner = await resolveSenderOwnerId(envelope, deps);
 
   if (!deps.callManager.isParticipant(payload.callId, senderOwner)) {
     console.warn(`${LOG} call.ice-candidate sender not a participant: ${senderOwner}`);
@@ -423,7 +443,7 @@ async function handleCallMute(
     return true;
   }
 
-  const senderOwner = senderOwnerId(envelope);
+  const senderOwner = await resolveSenderOwnerId(envelope, deps);
 
   if (!deps.callManager.isParticipant(payload.callId, senderOwner)) {
     console.warn(`${LOG} call.mute sender not a participant: ${senderOwner}`);

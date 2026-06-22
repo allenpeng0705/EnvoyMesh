@@ -253,6 +253,31 @@ export function wireChainInboundHandler(node: Phase13TestNode): void {
   });
 }
 
+/** Route inbound `call.*` envelopes through CallManager (production parity with index.ts). */
+export function wireCallInboundHandler(node: Phase13TestNode): void {
+  node.mesh.onMessage(async ({ envelope, remotePeerId }) => {
+    if (!envelope.intent.startsWith("call.")) return;
+    if (!verifyInboundEnvelope(envelope)) return;
+
+    const { handleCallIntent } = await import("../src/call-inbound.js");
+    await handleCallIntent(envelope, {
+      callManager: node.service.callManager,
+      trustStore: node.trustStore,
+      peerDirectoryStore: node.peerDirectory,
+      remotePeerId,
+      sendResponseEnvelope: async (responseEnvelope) => {
+        await node.mesh.send(remotePeerId, responseEnvelope);
+      },
+      sendBusyReject: async ({ callId, callerOwnerId }) => {
+        await node.service.sendCallRejectToOwner(callId, callerOwnerId, "busy");
+      },
+      dispatchIncomingCallPush: async () => {},
+      calleeOwnerId: node.profile.owner.ownerId,
+      isDeviceOnline: () => true,
+    });
+  });
+}
+
 export function wireNodeServiceInboundHandlers(
   node: Phase13TestNode,
   opts?: { approvalQueue?: ApprovalQueue },

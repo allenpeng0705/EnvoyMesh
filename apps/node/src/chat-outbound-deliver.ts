@@ -1,7 +1,7 @@
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
 import type { EnvoyMesh } from "@envoymesh/network";
-import { prioritizeCircuitDialHints } from "@envoymesh/network";
+import { ENVOY_MESSAGE_PROTOCOL, prioritizeCircuitDialHints } from "@envoymesh/network";
 import { parseChatDeliveredAck } from "@envoymesh/api/chat-delivered";
 
 const CHAT_SEND_MAX_ATTEMPTS = 3;
@@ -187,4 +187,79 @@ async function trySendChatWithoutAck(input: {
     );
     return undefined;
   }
+}
+
+/**
+ * Deliver `call.*` envelopes on `/envoymesh/message/0.1.0` (not chat protocol).
+ * Fire-and-forget — no delivery ack wait.
+ */
+export async function deliverCallEnvelopeWithRetry(input: {
+  mesh: Pick<
+    EnvoyMesh,
+    "send" | "closeConnectionsToPeer" | "ensurePeerReachable" | "getPeerConnectionInfo"
+  >;
+  transportPeerId: string;
+  envelope: EnvoyEnvelope;
+  dialHints: string[];
+  rebuildDialHints?: () => Promise<string[]>;
+  maxAttempts?: number;
+}): Promise<ChatDeliverResult> {
+  const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
+  let lastErr: unknown;
+  let hints = input.dialHints;
+  const preferCircuits = hints.some((h) => h.includes("/p2p-circuit/"));
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      hints = rotateDialHintsForRetry(hints, attempt);
+      if (input.rebuildDialHints) {
+        try {
+          hints = await input.rebuildDialHints();
+        } catch {
+          /* keep rotated hints */
+        }
+      }
+      await sleep(CHAT_SEND_RETRY_BASE_MS * attempt);
+      try {
+        await input.mesh.closeConnectionsToPeer(input.transportPeerId);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    try {
+      const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
+      if (!conn.connected) {
+        try {
+          await input.mesh.ensurePeerReachable(input.transportPeerId, ENVOY_MESSAGE_PROTOCOL, {
+            dialHints: hints,
+            preferCircuitHints: preferCircuits || attempt > 0,
+          });
+        } catch (warmErr) {
+          console.warn(
+            `[call] pre-send warm failed for ${input.transportPeerId.slice(0, 12)}…:`,
+            warmErr instanceof Error ? warmErr.message : warmErr,
+          );
+        }
+      }
+
+      await input.mesh.send(input.transportPeerId, input.envelope, {
+        dialHints: hints,
+        preferCircuitHints: preferCircuits || attempt > 0,
+        forceFreshDial: attempt > 0,
+      });
+      if (attempt > 0) {
+        console.log(`[call] delivered on attempt ${attempt + 1}/${maxAttempts}`);
+      }
+      return { delivered: true, deliveredAt: new Date().toISOString() };
+    } catch (err) {
+      lastErr = err;
+      console.warn(
+        `[call] attempt ${attempt + 1}/${maxAttempts} failed for ${input.transportPeerId.slice(0, 12)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
