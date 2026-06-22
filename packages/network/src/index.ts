@@ -153,6 +153,8 @@ export interface MeshOutboundOptions {
   preferCircuitHints?: boolean;
   /** Skip reusing an existing libp2p connection (redial via hints). */
   forceFreshDial?: boolean;
+  /** When a connection exists, open a probe stream instead of trusting connection state alone. */
+  verifyConnection?: boolean;
 }
 
 export interface EnvoyMeshOptions {
@@ -1175,7 +1177,7 @@ export class EnvoyMesh {
     sendOptions?: MeshOutboundOptions,
   ): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }> {
     const peerIdStr = parsePeerIdFromDialTarget(target);
-    if (peerIdStr && !sendOptions?.forceFreshDial) {
+    if (peerIdStr && !sendOptions?.forceFreshDial && !sendOptions?.verifyConnection) {
       const before = this.getPeerConnectionInfo(peerIdStr);
       if (before.connected) {
         return before;

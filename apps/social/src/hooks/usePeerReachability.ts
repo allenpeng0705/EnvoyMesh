@@ -3,9 +3,9 @@ import type { PeerConnectionInfo } from "@envoymesh/api";
 import { useNodeService } from "./useNodeService.js";
 
 const POLL_ONLINE_MS = 12_000;
-const POLL_OFFLINE_MS = 6_000;
+const POLL_OFFLINE_MS = 4_000;
 /** Keep showing online briefly after a transient libp2p disconnect (idle timeout, mesh repair). */
-const OFFLINE_GRACE_MS = 45_000;
+const OFFLINE_GRACE_MS = 30_000;
 /** Require consecutive failed checks before flipping UI to offline. */
 const FAILURES_BEFORE_OFFLINE = 2;
 
@@ -63,14 +63,14 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       const showChecking = !opts?.silent;
       if (showChecking) setChecking(true);
       try {
-        const currentlyConnected = infoRef.current?.connected === true;
-        // Once offline, every poll must re-dial — cold getPeerConnectionInfo never reconnects.
-        const warm = opts?.warm === true || !currentlyConnected;
+        const showingOnline = infoRef.current?.connected === true;
+        // Once offline (or unknown), every poll must re-dial — cold getPeerConnectionInfo never reconnects.
+        const warm = opts?.warm === true || !showingOnline;
         let next = warm
           ? await nodeService.warmContactConnection(peerOwnerId)
           : await nodeService.getPeerConnectionInfo(peerOwnerId);
         // During grace (UI still online) start re-dialing as soon as libp2p drops.
-        if (!next.connected && currentlyConnected && !warm) {
+        if (!next.connected && showingOnline && !warm) {
           next = await nodeService.warmContactConnection(peerOwnerId);
         }
         if (gen !== generationRef.current) {
