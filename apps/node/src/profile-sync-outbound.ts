@@ -109,6 +109,7 @@ async function sendProfileSyncWithReachability(input: {
           dialHints,
           preferCircuitHints: preferCircuits,
           forceFreshDial,
+          upgradeRelayToDirect: !preferCircuits && hasDirectTcpDialHints(dialHints),
         });
       }
       await input.mesh.send(input.peerId, input.envelope, {

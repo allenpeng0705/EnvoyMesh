@@ -1804,15 +1804,12 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
     },
 
     async mergeListenAddrsForPeerId(peerId, addrs) {
-      const trimmed = addrs.map((a) => a.trim()).filter(Boolean);
-      if (trimmed.length === 0) {
-        return;
-      }
       await withDirectory(async (file) => {
         const record = file.records.find((r) => r.peerId === peerId);
         if (!record) {
           return;
         }
+        const trimmed = filterDialableListenAddrs(addrs.map((a) => a.trim()).filter(Boolean));
         const merged = capPeerListenAddrs([...record.listenAddrs, ...trimmed]);
         const same =
           merged.length === record.listenAddrs.length && merged.every((a, i) => a === record.listenAddrs[i]);

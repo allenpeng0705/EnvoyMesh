@@ -852,6 +852,8 @@ export interface WarmContactConnectionOptions {
   redial?: boolean;
   /** When true, only verify an existing libp2p path (no dial). Use for online UI polls. Default false. */
   verifyOnly?: boolean;
+  /** When true, close relay and try direct LAN if hints exist (chat send). Default false. */
+  upgradeRelayToDirect?: boolean;
 }
 
 export interface ChatDiagnosticsContact {

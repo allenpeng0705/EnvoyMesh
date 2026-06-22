@@ -170,6 +170,8 @@ export interface MeshOutboundOptions {
   forceFreshDial?: boolean;
   /** When a connection exists, open a probe stream instead of trusting connection state alone. */
   verifyConnection?: boolean;
+  /** When true, close an existing relay connection and redial direct if LAN hints exist. Default false. */
+  upgradeRelayToDirect?: boolean;
 }
 
 export interface EnvoyMeshOptions {
@@ -495,6 +497,12 @@ export class EnvoyMesh {
     }
   }
 
+  /** Drop libp2p auto-learned ephemeral observed addrs; keep only filtered direct dial paths. */
+  async scrubPeerStoreDialHints(peerIdStr: string, extraAddrs: readonly string[] = []): Promise<string[]> {
+    await this.mergePeerStoreDialHints(peerIdStr, extraAddrs);
+    return this.getPeerStoreDialHints(peerIdStr);
+  }
+
   /**
    * Replace libp2p peer-store dial addrs with filtered direct multiaddrs (drops stale circuits + ephemeral inbound snapshots).
    */
@@ -508,6 +516,9 @@ export class EnvoyMesh {
       [...existingGood, ...addrs.filter((a) => !a.includes("/p2p-circuit/"))],
       idStr,
     );
+    if (merged.length === 0) {
+      return;
+    }
     try {
       await this.requireNode().peerStore.patch(peerIdFromString(idStr), {
         multiaddrs: merged.map((a) => ma(a)),
@@ -1245,7 +1256,9 @@ export class EnvoyMesh {
       sendOptions,
     );
     const canUpgradeRelayToDirect =
-      hasDirectTcpDialHints(hintList) && !sendOptions?.preferCircuitHints;
+      sendOptions?.upgradeRelayToDirect === true &&
+      hasDirectTcpDialHints(hintList) &&
+      !sendOptions?.preferCircuitHints;
     if (peerIdStr && !sendOptions?.forceFreshDial && !sendOptions?.verifyConnection) {
       const before = this.getPeerConnectionInfo(peerIdStr);
       if (before.connected) {
@@ -1379,12 +1392,21 @@ export class EnvoyMesh {
     protocol: string,
     sendOptions?: MeshOutboundOptions,
   ): Promise<{ stream: any; remotePeerId?: string }> {
-    const hintsRaw = filterDialHintsForOutboundSend(
+    let hintsRaw = filterDialHintsForOutboundSend(
       sendOptions?.dialHints ?? [],
       peerIdStr,
       sendOptions,
     );
     const barePeerDial = !target.trim().startsWith("/");
+
+    if (peerIdStr) {
+      const scrubbed = await this.scrubPeerStoreDialHints(peerIdStr, hintsRaw);
+      hintsRaw = filterDialHintsForOutboundSend(
+        [...new Set([...hintsRaw, ...scrubbed])],
+        peerIdStr,
+        sendOptions,
+      );
+    }
 
     const openStreamOnLimitedConn = async (): Promise<{ stream: any; remotePeerId?: string } | undefined> => {
       if (!peerIdStr) {
@@ -1451,11 +1473,24 @@ export class EnvoyMesh {
       return undefined;
     };
 
-    // Always prefer explicit filtered hints over bare `/p2p/id` (peerstore often has ephemeral inbound snapshots).
+    // Always prefer explicit filtered hints over bare `/p2p/id` (libp2p peerstore keeps ephemeral inbound observed addrs).
     if (barePeerDial && hasRoutableHint) {
       const viaHints = await tryRoutableHints();
       if (viaHints) {
         return viaHints;
+      }
+    } else if (barePeerDial && peerIdStr) {
+      const storeHints = filterDialHintsForOutboundSend(
+        await this.getPeerStoreDialHints(peerIdStr),
+        peerIdStr,
+        sendOptions,
+      );
+      for (const ma of dialHintsToMultiaddrs(sortDialHints(storeHints), peerIdStr)) {
+        try {
+          return await dialOnce(ma);
+        } catch (e) {
+          lastError = e;
+        }
       }
     } else if (barePeerDial) {
       try {

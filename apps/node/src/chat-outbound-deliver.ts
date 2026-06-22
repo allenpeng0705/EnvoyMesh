@@ -47,6 +47,7 @@ async function prepareOutboundChatConnection(input: {
       await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
         dialHints: input.dialHints,
         preferCircuitHints: input.preferCircuitHints,
+        upgradeRelayToDirect: upgradeRelayToDirect,
       });
     } catch (warmErr) {
       console.warn(
@@ -67,6 +68,7 @@ async function prepareOutboundChatConnection(input: {
       dialHints: input.dialHints,
       preferCircuitHints: input.preferCircuitHints,
       forceFreshDial: input.forceFreshDial || upgradeRelayToDirect,
+      upgradeRelayToDirect: upgradeRelayToDirect,
     });
   } catch (warmErr) {
     console.warn(
@@ -296,6 +298,7 @@ export async function deliverCallEnvelopeWithRetry(input: {
           await input.mesh.ensurePeerReachable(input.transportPeerId, ENVOY_MESSAGE_PROTOCOL, {
             dialHints: hints,
             preferCircuitHints: preferCircuits || attempt > 0,
+            upgradeRelayToDirect: attempt === 0 && !preferCircuits && hasDirectTcpDialHints(hints),
           });
         } catch (warmErr) {
           console.warn(

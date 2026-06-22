@@ -1362,6 +1362,7 @@ class NodeServiceImpl implements NodeService {
     const reachability = await mesh.ensurePeerReachable(input.remotePeerId, ENVOY_DATA_PROTOCOL, {
       dialHints,
       preferCircuitHints: shouldPreferCircuitDialHints(undefined, dialHints, input.remotePeerId),
+      upgradeRelayToDirect: true,
     });
     if (!reachability.connected) {
       console.warn(
@@ -1540,6 +1541,7 @@ class NodeServiceImpl implements NodeService {
     });
     this.emit("node:ready", { timestamp: Date.now() });
     void this.resyncBondedContactReachabilityTags();
+    void this._scrubBondedContactDialState();
     void this.refreshBondPeerProfiles().catch((err) => {
       console.warn("[profile] refreshBondPeerProfiles after bindExternalMesh failed:", err);
     });
@@ -1549,6 +1551,34 @@ class NodeServiceImpl implements NodeService {
   /** Re-apply contact reachability tags from the trust store (after cold start or mesh restart). */
   async resyncBondedContactReachabilityTags(): Promise<void> {
     await this._resyncBondedContactReachabilityTags();
+  }
+
+  /** Drop stale ephemeral listen addrs from disk + libp2p peerstore for bonded contacts. */
+  private async _scrubBondedContactDialState(): Promise<void> {
+    const mesh = this._reachableMesh();
+    if (!mesh) {
+      return;
+    }
+    try {
+      await this._peerDirectoryStore.compactListenAddrs();
+      const bonds = await this.getBonds();
+      for (const bond of bonds) {
+        if (bond.level !== "direct" && bond.level !== "referred") {
+          continue;
+        }
+        const resolved = await this._resolveLibp2pPeerForBondOwner(bond.peerOwnerId);
+        if (!resolved?.transportPeerId) {
+          continue;
+        }
+        const dialable = mergeDialablePeerListenAddrs(
+          resolved.transportPeerId,
+          resolved.listenAddrs,
+        );
+        await mesh.scrubPeerStoreDialHints(resolved.transportPeerId, dialable);
+      }
+    } catch (err) {
+      console.warn("[reachability] bonded dial scrub failed:", err);
+    }
   }
 
   /**
@@ -10926,7 +10956,7 @@ class NodeServiceImpl implements NodeService {
 
   async warmContactConnection(
     peerOwnerId: string,
-    options?: { redial?: boolean; verifyOnly?: boolean },
+    options?: { redial?: boolean; verifyOnly?: boolean; upgradeRelayToDirect?: boolean },
   ): Promise<PeerConnectionInfo> {
     this._assertOnline();
     const mesh = this._requireMesh();
@@ -10951,6 +10981,10 @@ class NodeServiceImpl implements NodeService {
       return existing;
     }
 
+    if (existing.connected && !options?.redial && !options?.upgradeRelayToDirect) {
+      return existing;
+    }
+
     let dialHints: string[];
     try {
       dialHints = await raceWithTimeout(
@@ -10966,16 +11000,7 @@ class NodeServiceImpl implements NodeService {
 
     const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
 
-    if (existing.connected && !options?.redial) {
-      if (existing.direct || preferCircuitHints) {
-        return existing;
-      }
-      try {
-        await mesh.closeConnectionsToPeer(transportPeerId);
-      } catch {
-        /* ignore */
-      }
-    } else if (options?.redial) {
+    if (options?.redial || options?.upgradeRelayToDirect) {
       try {
         await mesh.closeConnectionsToPeer(transportPeerId);
       } catch {
@@ -10986,7 +11011,8 @@ class NodeServiceImpl implements NodeService {
     const result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
       dialHints,
       preferCircuitHints,
-      forceFreshDial: options?.redial === true,
+      forceFreshDial: options?.redial === true || !existing.connected || options?.upgradeRelayToDirect === true,
+      upgradeRelayToDirect: options?.upgradeRelayToDirect === true || options?.redial === true,
     });
     void this._flushPendingRoomSyncs();
     void this._flushPendingRoomMessages();
@@ -11000,7 +11026,7 @@ class NodeServiceImpl implements NodeService {
     void this._warmAllBondedContacts();
     this._bondWarmTimer = setInterval(() => {
       void this._warmAllBondedContacts();
-    }, 90_000);
+    }, 60_000);
   }
 
   private async _warmAllBondedContacts(): Promise<void> {
