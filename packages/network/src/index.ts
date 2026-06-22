@@ -1239,7 +1239,11 @@ export class EnvoyMesh {
     sendOptions?: MeshOutboundOptions,
   ): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }> {
     const peerIdStr = parsePeerIdFromDialTarget(target);
-    const hintList = sendOptions?.dialHints ?? [];
+    const hintList = filterDialHintsForOutboundSend(
+      sendOptions?.dialHints ?? [],
+      peerIdStr ?? "",
+      sendOptions,
+    );
     const canUpgradeRelayToDirect =
       hasDirectTcpDialHints(hintList) && !sendOptions?.preferCircuitHints;
     if (peerIdStr && !sendOptions?.forceFreshDial && !sendOptions?.verifyConnection) {
@@ -1252,7 +1256,10 @@ export class EnvoyMesh {
       }
     }
     try {
-      const { stream } = await this.openOutboundStream(target, protocol, sendOptions);
+      const { stream } = await this.openOutboundStream(target, protocol, {
+        ...sendOptions,
+        dialHints: hintList,
+      });
       try {
         await stream.close();
       } catch {
@@ -1331,7 +1338,11 @@ export class EnvoyMesh {
   ): Promise<{ stream: any; remotePeerId?: string }> {
     const node = this.requireNode();
     const peerIdStr = parsePeerIdFromDialTarget(target);
-    const hintList = sendOptions?.dialHints ?? [];
+    const hintList = filterDialHintsForOutboundSend(
+      sendOptions?.dialHints ?? [],
+      peerIdStr ?? "",
+      sendOptions,
+    );
     const skipLimitedReuse =
       hasDirectTcpDialHints(hintList) && !sendOptions?.preferCircuitHints;
 
@@ -1355,7 +1366,10 @@ export class EnvoyMesh {
       }
     }
 
-    return this.dialOpenStreamViaHints(node, peerIdStr ?? "", target, protocol, sendOptions);
+    return this.dialOpenStreamViaHints(node, peerIdStr ?? "", target, protocol, {
+      ...sendOptions,
+      dialHints: hintList,
+    });
   }
 
   private async dialOpenStreamViaHints(
@@ -1365,7 +1379,11 @@ export class EnvoyMesh {
     protocol: string,
     sendOptions?: MeshOutboundOptions,
   ): Promise<{ stream: any; remotePeerId?: string }> {
-    const hintsRaw = filterUsableOutboundPeerDialHints(sendOptions?.dialHints ?? [], peerIdStr);
+    const hintsRaw = filterDialHintsForOutboundSend(
+      sendOptions?.dialHints ?? [],
+      peerIdStr,
+      sendOptions,
+    );
     const barePeerDial = !target.trim().startsWith("/");
 
     const openStreamOnLimitedConn = async (): Promise<{ stream: any; remotePeerId?: string } | undefined> => {
@@ -2284,6 +2302,25 @@ export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId:
     out.push(a);
   }
   return out;
+}
+
+/**
+ * When direct TCP/LAN hints exist and circuits are not explicitly preferred, drop `/p2p-circuit/`
+ * paths so libp2p cannot fall through to stale relay reservations (NO_RESERVATION).
+ */
+export function filterDialHintsForOutboundSend(
+  hints: readonly string[],
+  targetPeerId: string,
+  opts?: { preferCircuitHints?: boolean },
+): string[] {
+  const filtered = filterUsableOutboundPeerDialHints([...hints], targetPeerId);
+  if (opts?.preferCircuitHints === true) {
+    return filtered;
+  }
+  if (hasDirectTcpDialHints(filtered)) {
+    return filtered.filter((h) => !h.includes("/p2p-circuit/"));
+  }
+  return filtered;
 }
 
 /** True for libp2p project's public DHT bootstrap dnsaddr multiaddrs (not EnvoyMesh circuit relays). */

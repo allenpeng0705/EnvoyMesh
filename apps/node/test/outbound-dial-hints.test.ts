@@ -42,6 +42,29 @@ describe("buildOutboundDialHints", () => {
     }
   });
 
+  it("drops relay circuits when LAN listen addrs exist for the same peer", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-lan-circuit-"));
+    try {
+      const seedStore = createDiscoverySeedStore(profileDir);
+      const target = "12D3KooWContactLanCircuit";
+      const circuitSeed =
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContactLanCircuit";
+      await seedStore.upsertSuccess(circuitSeed, "relay.lookup");
+
+      const hints = await buildOutboundDialHints({
+        recipientPeerId: target,
+        peerListenAddrs: [`/ip4/192.168.3.78/tcp/4011/p2p/${target}`],
+        discoverySeedStore: seedStore,
+        config: undefined,
+      });
+
+      expect(hints.some((h) => h.includes("192.168.3.78"))).toBe(true);
+      expect(hints.some((h) => h.includes("/p2p-circuit/"))).toBe(false);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
   it("includes circuit seeds that match recipient peer id", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-"));
     try {

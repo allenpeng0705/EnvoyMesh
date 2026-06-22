@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   filterUsableOutboundPeerDialHints,
+  filterDialHintsForOutboundSend,
   hasDirectPrivateLanDialHints,
   hasDirectTcpDialHints,
   isBrowserOnlyTransportDialHint,
@@ -83,6 +84,26 @@ describe("dial hint sorting", () => {
       ];
       expect(hasDirectTcpDialHints(hints)).toBe(true);
       expect(hasDirectPrivateLanDialHints(hints)).toBe(true);
+    });
+  });
+
+  describe("filterDialHintsForOutboundSend", () => {
+    it("strips circuits when direct TCP hints exist and circuits are not preferred", () => {
+      const peerId = "12D3KooWFilterDialHintsPeer";
+      const hints = [
+        `/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`,
+        `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`,
+      ];
+      const out = filterDialHintsForOutboundSend(hints, peerId, { preferCircuitHints: false });
+      expect(out.some((h) => h.includes("/p2p-circuit/"))).toBe(false);
+      expect(out.some((h) => h.includes("192.168.1.50"))).toBe(true);
+    });
+
+    it("keeps circuits when no direct path exists", () => {
+      const peerId = "12D3KooWFilterDialHintsPeer";
+      const circuit = `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`;
+      const out = filterDialHintsForOutboundSend([circuit], peerId, { preferCircuitHints: false });
+      expect(out).toContain(circuit);
     });
   });
 

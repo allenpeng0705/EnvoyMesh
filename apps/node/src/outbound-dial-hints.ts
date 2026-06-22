@@ -12,6 +12,7 @@ import {
   buildSyntheticRelayCircuitHints,
   dedupeDialHintStrings,
   hasDirectTcpDialHints,
+  filterDialHintsForOutboundSend,
 } from "@envoymesh/network";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
@@ -89,17 +90,15 @@ export async function buildOutboundDialHints(input: {
   ]).filter((a) => isUsableOutboundPeerDialHint(a));
 
   let out = [...nonLoopListen];
-  for (const addr of seeds) {
-    if (!addr.includes(recipientPeerId)) {
-      continue;
-    }
+  const peerSeeds = seeds.filter((s) => s.includes(recipientPeerId));
+  for (const addr of peerSeeds) {
     out.push(addr);
     if (addr.includes("/p2p-circuit/")) {
       out.push(...expandCircuitDialCandidates(addr, relayPool));
     }
   }
 
-  const hasDirect = hasDirectTcpDialHints(nonLoopListen);
+  const hasDirect = hasDirectTcpDialHints([...nonLoopListen, ...peerSeeds]);
   const peerSpecificCircuits = out.filter(
     (h) => h.includes(recipientPeerId) && h.includes("/p2p-circuit/"),
   );
@@ -111,9 +110,11 @@ export async function buildOutboundDialHints(input: {
     );
   }
 
-  return prioritizeDirectLanDialHints(
-    dedupeDialHints(out.filter((a) => isUsableChatDialHint(a, recipientPeerId))),
-  );
+  const usable = dedupeDialHints(out.filter((a) => isUsableChatDialHint(a, recipientPeerId)));
+  const ordered = prioritizeDirectLanDialHints(usable);
+  return filterDialHintsForOutboundSend(ordered, recipientPeerId, {
+    preferCircuitHints: !hasDirect,
+  });
 }
 
 /** Put same-LAN direct TCP hints first so Full-WAN profiles still dial locally when possible. */

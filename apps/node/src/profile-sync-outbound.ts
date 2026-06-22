@@ -10,6 +10,7 @@ import type { NodeProfile } from "@envoymesh/api";
 import type { EnvoyMesh } from "@envoymesh/network";
 import {
   ENVOY_MESSAGE_PROTOCOL,
+  hasDirectTcpDialHints,
   isRelayReservationDialError,
 } from "@envoymesh/network";
 import { derivePeerId } from "@envoymesh/identity";
@@ -67,18 +68,27 @@ async function sendProfileSyncWithReachability(input: {
   dialHints: string[];
   listenAddrs?: string[];
   protocol?: string;
+  rebuildDialHints?: () => Promise<string[]>;
 }): Promise<void> {
   const protocol = input.protocol ?? ENVOY_MESSAGE_PROTOCOL;
-  let preferCircuits = shouldPreferCircuitDialHints(
+  const preferCircuits = shouldPreferCircuitDialHints(
     input.listenAddrs,
     input.dialHints,
     input.peerId,
   );
+  let dialHints = input.dialHints;
   let lastErr: unknown;
 
   for (let attempt = 0; attempt < PROFILE_SYNC_MAX_ATTEMPTS; attempt++) {
     if (attempt > 0) {
       await sleep(PROFILE_SYNC_RETRY_BASE_MS * attempt);
+      if (input.rebuildDialHints) {
+        try {
+          dialHints = await input.rebuildDialHints();
+        } catch {
+          /* keep previous hints */
+        }
+      }
       try {
         const closed = await input.mesh.closeConnectionsToPeer?.(input.peerId);
         if (closed && closed > 0) {
@@ -91,20 +101,19 @@ async function sendProfileSyncWithReachability(input: {
       }
     }
 
-    const preferCircuitsOnAttempt = preferCircuits || attempt >= 2;
     const forceFreshDial = attempt > 0;
 
     try {
       if (typeof input.mesh.ensurePeerReachable === "function") {
         await input.mesh.ensurePeerReachable(input.peerId, protocol, {
-          dialHints: input.dialHints,
-          preferCircuitHints: preferCircuitsOnAttempt,
+          dialHints,
+          preferCircuitHints: preferCircuits,
           forceFreshDial,
         });
       }
       await input.mesh.send(input.peerId, input.envelope, {
-        dialHints: input.dialHints,
-        preferCircuitHints: preferCircuitsOnAttempt,
+        dialHints,
+        preferCircuitHints: preferCircuits,
         forceFreshDial,
       });
       if (attempt > 0) {
@@ -115,9 +124,6 @@ async function sendProfileSyncWithReachability(input: {
       return;
     } catch (err) {
       lastErr = err;
-      if (isRelayReservationDialError(err)) {
-        preferCircuits = false;
-      }
       if (attempt < PROFILE_SYNC_MAX_ATTEMPTS - 1) {
         console.warn(
           `[profile.sync] send to ${input.ownerId.slice(0, 16)}… failed, retrying:`,
@@ -127,8 +133,20 @@ async function sendProfileSyncWithReachability(input: {
     }
   }
 
+  const directCount = dialHints.filter(
+    (h) => h.includes("/tcp/") && !h.includes("/p2p-circuit/"),
+  ).length;
+  const circuitCount = dialHints.filter((h) => h.includes("/p2p-circuit/")).length;
+  const hintSummary = `direct=${directCount} circuit=${circuitCount}`;
+  const reservationMiss = isRelayReservationDialError(lastErr);
+  const reachabilityHint =
+    !preferCircuits && hasDirectTcpDialHints(dialHints)
+      ? "direct LAN path failed — check Windows firewall on libp2p TCP port"
+      : reservationMiss
+        ? "stale relay reservation — ask contact to send you a chat message once (learns LAN route)"
+        : "peer unreachable";
   console.warn(
-    `[profile.sync] send to ${input.ownerId.slice(0, 16)}… failed after retry:`,
+    `[profile.sync] send to ${input.ownerId.slice(0, 16)}… failed after retry (${hintSummary}; ${reachabilityHint}):`,
     lastErr,
   );
 }
@@ -183,6 +201,7 @@ export async function sendProfileSyncToBonds(input: {
         envelope,
         dialHints,
         listenAddrs: resolved.listenAddrs,
+        rebuildDialHints: () => input.dialHintsFor(resolved.peerId, resolved.listenAddrs),
       });
     } catch (bondErr) {
       console.warn(
