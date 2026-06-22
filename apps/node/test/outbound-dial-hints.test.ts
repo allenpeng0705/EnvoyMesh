@@ -173,4 +173,14 @@ describe("shouldPreferCircuitDialHints", () => {
     );
     expect(merged).toEqual([`/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`]);
   });
+
+  it("prioritizeDirectLanDialHints puts RFC1918 addresses first", async () => {
+    const { prioritizeDirectLanDialHints } = await import("../src/outbound-dial-hints.js");
+    const peerId = "12D3KooWContact";
+    const ordered = prioritizeDirectLanDialHints([
+      `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`,
+      `/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`,
+    ]);
+    expect(ordered[0]).toContain("192.168.1.50");
+  });
 });

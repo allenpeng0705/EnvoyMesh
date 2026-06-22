@@ -370,6 +370,7 @@ import {
   filterUsableOutboundPeerDialHints,
   ENVOY_CHAT_PROTOCOL,
   ENVOY_DATA_PROTOCOL,
+  isPrivateLanTcpDialHint,
   type EnvoyMeshOptions,
 } from "@envoymesh/network";
 import { stat } from "node:fs/promises";
@@ -1379,19 +1380,19 @@ class NodeServiceImpl implements NodeService {
     }
   }
 
-  /** Prefer live inbound connection addrs (circuit paths) ahead of stale peer-directory listen addrs. */
+  /** Prefer stable LAN listen addrs; append live inbound paths (often relay circuits) as fallback. */
   private _mergeConnectionDialHints(
     peerListenAddrs: string[] | undefined,
     inboundConnectionAddrs: string[] | undefined,
   ): string[] | undefined {
-    const extra = (inboundConnectionAddrs ?? []).map((a) => a.trim()).filter(Boolean);
     const stored = (peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
+    const extra = (inboundConnectionAddrs ?? []).map((a) => a.trim()).filter(Boolean);
     if (extra.length === 0 && stored.length === 0) {
       return undefined;
     }
     const seen = new Set<string>();
     const merged: string[] = [];
-    for (const addr of [...extra, ...stored]) {
+    for (const addr of [...stored, ...extra]) {
       if (seen.has(addr)) {
         continue;
       }
@@ -1563,8 +1564,37 @@ class NodeServiceImpl implements NodeService {
       this.emit("peer:discovered", placeholder);
       void this._probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs);
       void this._maybeFireLanAutoBond(peerId);
+      void this._warmBondedContactAfterLanDiscovery(peerId, multiaddrs);
     } catch (err) {
       console.warn(`[node-service] handleMeshPeerDiscovered failed for ${peerId.slice(0, 12)}…:`, err);
+    }
+  }
+
+  /** mDNS / LAN discovery for a bonded libp2p id — upgrade relay connections to direct automatically. */
+  private async _warmBondedContactAfterLanDiscovery(
+    peerId: string,
+    multiaddrs: string[],
+  ): Promise<void> {
+    if (this._nodeStatus !== "running" || multiaddrs.length === 0) {
+      return;
+    }
+    const hasLanAddr = multiaddrs.some((a) => isPrivateLanTcpDialHint(a));
+    if (!hasLanAddr) {
+      return;
+    }
+    try {
+      const record = await this._peerDirectoryStore.getPeerByPeerId(peerId);
+      const ownerId = record?.ownerId?.trim();
+      if (!ownerId || ownerId === peerId) {
+        return;
+      }
+      const trust = await this._trustStore.getTrustRecord(ownerId);
+      if (!trust || trust.level === "blocked" || trust.level === "public") {
+        return;
+      }
+      await this.warmContactConnection(ownerId);
+    } catch {
+      /* best-effort */
     }
   }
 
@@ -2893,9 +2923,16 @@ class NodeServiceImpl implements NodeService {
    */
   private async _dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]> {
     const config = await this._configStore.load();
-    return buildOutboundDialHints({
+    const mesh = this._reachableMesh();
+    const peerStoreAddrs = mesh ? await mesh.getPeerStoreDialHints(recipientPeerId) : [];
+    const mergedListen = mergeDialablePeerListenAddrs(
       recipientPeerId,
       peerListenAddrs,
+      peerStoreAddrs,
+    );
+    return buildOutboundDialHints({
+      recipientPeerId,
+      peerListenAddrs: mergedListen.length ? mergedListen : peerListenAddrs,
       discoverySeedStore: this._discoverySeedStore,
       config,
       profileDir: this._profileDir,
@@ -10858,18 +10895,6 @@ class NodeServiceImpl implements NodeService {
       return existing;
     }
 
-    if (existing.connected && !options?.redial) {
-      return existing;
-    }
-
-    if (options?.redial) {
-      try {
-        await mesh.closeConnectionsToPeer(transportPeerId);
-      } catch {
-        /* ignore */
-      }
-    }
-
     let dialHints: string[];
     try {
       dialHints = await raceWithTimeout(
@@ -10882,6 +10907,24 @@ class NodeServiceImpl implements NodeService {
     }
 
     const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
+
+    if (existing.connected && !options?.redial) {
+      if (existing.direct || preferCircuitHints) {
+        return existing;
+      }
+      try {
+        await mesh.closeConnectionsToPeer(transportPeerId);
+      } catch {
+        /* ignore */
+      }
+    } else if (options?.redial) {
+      try {
+        await mesh.closeConnectionsToPeer(transportPeerId);
+      } catch {
+        /* ignore */
+      }
+    }
+
     const result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
       dialHints,
       preferCircuitHints,

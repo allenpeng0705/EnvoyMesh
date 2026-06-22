@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  hasDirectPrivateLanDialHints,
+  hasDirectTcpDialHints,
   isLoopbackOrUnspecifiedDialHint,
+  isPrivateLanTcpDialHint,
   isQuicDialHint,
   preferNonLoopbackDialHints,
 } from "../src/index.js";
@@ -50,6 +53,33 @@ describe("dial hint sorting", () => {
     });
   });
 
+  describe("isPrivateLanTcpDialHint", () => {
+    it("returns true for RFC1918 TCP multiaddrs", () => {
+      expect(isPrivateLanTcpDialHint("/ip4/192.168.1.50/tcp/4011/p2p/12D3KooW")).toBe(true);
+      expect(isPrivateLanTcpDialHint("/ip4/10.0.0.5/tcp/4011/p2p/12D3KooW")).toBe(true);
+    });
+
+    it("returns false for relay circuits and loopback", () => {
+      expect(
+        isPrivateLanTcpDialHint(
+          "/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooW",
+        ),
+      ).toBe(false);
+      expect(isPrivateLanTcpDialHint("/ip4/127.0.0.1/tcp/4011/p2p/12D3KooW")).toBe(false);
+    });
+  });
+
+  describe("hasDirectTcpDialHints", () => {
+    it("detects LAN direct TCP among relay hints", () => {
+      const hints = [
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWPeer",
+        "/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWPeer",
+      ];
+      expect(hasDirectTcpDialHints(hints)).toBe(true);
+      expect(hasDirectPrivateLanDialHints(hints)).toBe(true);
+    });
+  });
+
   describe("preferNonLoopbackDialHints", () => {
     it("puts TCP hints before QUIC/WebTransport when both are present", () => {
       const hints = [
@@ -69,6 +99,16 @@ describe("dial hint sorting", () => {
       const sorted = preferNonLoopbackDialHints(hints);
       expect(sorted[0]).toContain("/tcp/");
       expect(sorted[0]).not.toContain("/p2p-circuit/");
+    });
+
+    it("prefers private LAN TCP over public WAN and relay circuits", () => {
+      const hints = [
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWPeer",
+        "/ip4/8.8.8.8/tcp/4001/p2p/12D3KooWPeer",
+        "/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWPeer",
+      ];
+      const sorted = preferNonLoopbackDialHints(hints);
+      expect(sorted[0]).toContain("192.168.1.50");
     });
 
     it("filters loopback when non-loopback exists (QUIC preference does not override loopback filtering)", () => {

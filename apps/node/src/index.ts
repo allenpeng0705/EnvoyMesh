@@ -55,6 +55,7 @@ import {
   filterBootstrapMultiaddrs,
   filterRelayControlTargets,
   filterUsableOutboundPeerDialHints,
+  isLikelyInboundConnSnapshotDialHint,
   voucherJsonBytesFromObject,
   type P2pDebugEvent,
 } from "@envoymesh/network";
@@ -807,12 +808,15 @@ async function handleInboundMeshMessage({
   const envelope = guardDecision.envelope;
   if (remoteAddr?.trim()) {
     const trimmed = remoteAddr.trim();
+    const dialableRemote = filterUsableOutboundPeerDialHints([trimmed], remotePeerId).filter(
+      (addr) => !addr.includes("/p2p-circuit/") && !isLikelyInboundConnSnapshotDialHint(addr),
+    );
     const now = Date.now();
     const lastMerge = lastListenAddrMergeByPeer.get(remotePeerId) ?? 0;
-    if (now - lastMerge >= LISTEN_ADDR_MERGE_MIN_MS) {
+    if (dialableRemote.length > 0 && now - lastMerge >= LISTEN_ADDR_MERGE_MIN_MS) {
       lastListenAddrMergeByPeer.set(remotePeerId, now);
       void peerDirectoryStore
-        .mergeListenAddrsForPeerId(remotePeerId, [trimmed])
+        .mergeListenAddrsForPeerId(remotePeerId, dialableRemote)
         .catch((err) => console.warn(`[peer-directory] mergeListenAddrsForPeerId failed:`, err));
     }
   }
@@ -1873,10 +1877,18 @@ async function handleInboundMeshMessage({
       intendedRecipient !== localDevicePeerId &&
       intendedRecipient !== bridgeIdentity?.agentPeerId
     ) {
+      const senderTrustForAddress = await trustStore.getTrustRecord(payload.senderOwnerId);
+      const bondedSender =
+        senderTrustForAddress?.level === "direct" || senderTrustForAddress?.level === "referred";
+      if (!bondedSender) {
+        console.warn(
+          `[chat.message] ignoring misaddressed message for ${intendedRecipient.slice(0, 16)}… messageId=${envelope.messageId}`,
+        );
+        return;
+      }
       console.warn(
-        `[chat.message] ignoring misaddressed message for ${intendedRecipient.slice(0, 16)}… messageId=${envelope.messageId}`,
+        `[chat.message] misaddressed recipient from bonded contact ${payload.senderOwnerId}; accepting messageId=${envelope.messageId}`,
       );
-      return;
     }
 
     const senderTrustForReach = await trustStore.getTrustRecord(payload.senderOwnerId);
@@ -1890,7 +1902,9 @@ async function handleInboundMeshMessage({
         ownerId: payload.senderOwnerId,
         peerId: remotePeerId,
         listenAddrs: remoteAddr?.trim()
-          ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId)
+          ? filterUsableOutboundPeerDialHints([remoteAddr.trim()], remotePeerId).filter(
+              (addr) => !addr.includes("/p2p-circuit/") && !isLikelyInboundConnSnapshotDialHint(addr),
+            )
           : [],
       })
       .then(() => {

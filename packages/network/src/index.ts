@@ -455,6 +455,27 @@ export class EnvoyMesh {
       .map((addr) => addr.toString());
   }
 
+  /** Dialable multiaddrs from the libp2p peer store (includes mDNS-learned LAN paths). */
+  async getPeerStoreDialHints(peerIdStr: string): Promise<string[]> {
+    const idStr = peerIdStr.trim();
+    if (!idStr || !this.node) {
+      return [];
+    }
+    try {
+      const peerData = await this.requireNode().peerStore.get(peerIdFromString(idStr));
+      const out: string[] = [];
+      for (const entry of peerData.addresses ?? []) {
+        const raw = entry.multiaddr?.toString?.()?.trim();
+        if (raw) {
+          out.push(raw);
+        }
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
   /**
    * Mark a bonded contact's libp2p dial id for persistent reachability (libp2p KEEP_ALIVE + reconnect-queue).
    * Call when bonds settle and after outbound chat so NAT/relay idle drops trigger automatic redials.
@@ -1177,10 +1198,16 @@ export class EnvoyMesh {
     sendOptions?: MeshOutboundOptions,
   ): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }> {
     const peerIdStr = parsePeerIdFromDialTarget(target);
+    const hintList = sendOptions?.dialHints ?? [];
+    const canUpgradeRelayToDirect =
+      hasDirectTcpDialHints(hintList) && !sendOptions?.preferCircuitHints;
     if (peerIdStr && !sendOptions?.forceFreshDial && !sendOptions?.verifyConnection) {
       const before = this.getPeerConnectionInfo(peerIdStr);
       if (before.connected) {
-        return before;
+        if (before.direct || !canUpgradeRelayToDirect) {
+          return before;
+        }
+        await this.closeConnectionsToPeer(peerIdStr);
       }
     }
     try {
@@ -1369,9 +1396,10 @@ export class EnvoyMesh {
     };
 
     const coldPeer = peerIdStr ? !this.findOpenConnectionToPeer(node, peerIdStr) : true;
+    const hasDirectTcpHint = hasDirectTcpDialHints(routableHints);
     const preferCircuits =
       Boolean(sendOptions?.preferCircuitHints) ||
-      (coldPeer && routableHints.some((h) => h.includes("/p2p-circuit/")));
+      (coldPeer && !hasDirectTcpHint && routableHints.some((h) => h.includes("/p2p-circuit/")));
 
     if (barePeerDial && preferCircuits) {
       const viaHints = await tryRoutableHints();
@@ -2041,16 +2069,49 @@ const STABLE_LIBP2P_TCP_PORTS = new Set([4001, 4002, 4011, 41641]);
  * Note: addresses that contain `/p2p-circuit/` (circuit relay) are always kept —
  * they are universally dialable regardless of NAT.
  */
+/** True for RFC1918 / link-local direct TCP multiaddrs (same-LAN dial candidates). */
+export function isPrivateLanTcpDialHint(addr: string): boolean {
+  const a = addr.trim();
+  if (!a.includes("/tcp/") || a.includes("/p2p-circuit/")) {
+    return false;
+  }
+  if (isLoopbackOrUnspecifiedDialHint(a) || isDockerBridgeGatewayDialHint(a)) {
+    return false;
+  }
+  if (/\/ip4\/10\.\d+\.\d+\.\d+\//.test(a)) return true;
+  if (/\/ip4\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+\//.test(a)) return true;
+  if (/\/ip4\/192\.168\.\d+\.\d+\//.test(a)) return true;
+  if (/\/ip4\/169\.254\.\d+\.\d+\//.test(a)) return true;
+  return false;
+}
+
+/** True when dial hints include at least one same-LAN direct TCP path. */
+export function hasDirectPrivateLanDialHints(hints: readonly string[]): boolean {
+  return hints.some((h) => isPrivateLanTcpDialHint(h));
+}
+
+/** True for direct (non-circuit) TCP hints that are not loopback. */
+export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
+  return hints.some(
+    (h) =>
+      h.includes("/tcp/") &&
+      !h.includes("/p2p-circuit/") &&
+      !isLoopbackOrUnspecifiedDialHint(h) &&
+      !isDockerBridgeGatewayDialHint(h),
+  );
+}
+
 export function isPrivateOrUnroutableDialHint(addr: string): boolean {
   // Always keep circuit relay addresses — they work through relays regardless of NAT.
   if (addr.includes("/p2p-circuit/")) return false;
   // Filter private/reserved IP ranges.
   if (isLoopbackOrUnspecifiedDialHint(addr)) return true;
   if (isDockerBridgeGatewayDialHint(addr)) return true;
-  // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-  if (/\/ip4\/10\.\d+\.\d+\.\d+\//.test(addr)) return true;
-  if (/\/ip4\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+\//.test(addr)) return true;
-  if (/\/ip4\/192\.168\.\d+\.\d+\//.test(addr)) return true;
+  const a = addr.trim();
+  if (/\/ip4\/10\.\d+\.\d+\.\d+\//.test(a)) return true;
+  if (/\/ip4\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+\//.test(a)) return true;
+  if (/\/ip4\/192\.168\.\d+\.\d+\//.test(a)) return true;
+  if (/\/ip4\/169\.254\.\d+\.\d+\//.test(a)) return true;
   return false;
 }
 
@@ -2221,6 +2282,11 @@ function sortDialHints(hints: string[]): string[] {
     const browserB = isBrowserOnlyTransportDialHint(b) ? 1 : 0;
     if (browserA !== browserB) {
       return browserA - browserB;
+    }
+    const lanA = isPrivateLanTcpDialHint(a) ? 0 : 1;
+    const lanB = isPrivateLanTcpDialHint(b) ? 0 : 1;
+    if (lanA !== lanB) {
+      return lanA - lanB;
     }
     const circuitA = a.includes("/p2p-circuit/p2p/") ? 1 : 0;
     const circuitB = b.includes("/p2p-circuit/p2p/") ? 1 : 0;

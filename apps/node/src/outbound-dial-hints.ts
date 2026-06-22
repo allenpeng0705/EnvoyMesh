@@ -6,10 +6,12 @@
 import {
   isLikelyInboundConnSnapshotDialHint,
   isLoopbackOrUnspecifiedDialHint,
+  isPrivateLanTcpDialHint,
   isPublicLibp2pBootstrapMultiaddr,
   isUsableOutboundPeerDialHint,
   buildSyntheticRelayCircuitHints,
   dedupeDialHintStrings,
+  hasDirectTcpDialHints,
 } from "@envoymesh/network";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
@@ -102,7 +104,23 @@ export async function buildOutboundDialHints(input: {
     ...buildSyntheticRelayCircuitHints(recipientPeerId, relayPool, maxSynthetic),
   );
 
-  return dedupeDialHints(out.filter((a) => isUsableChatDialHint(a, recipientPeerId)));
+  return prioritizeDirectLanDialHints(
+    dedupeDialHints(out.filter((a) => isUsableChatDialHint(a, recipientPeerId))),
+  );
+}
+
+/** Put same-LAN direct TCP hints first so Full-WAN profiles still dial locally when possible. */
+export function prioritizeDirectLanDialHints(hints: string[]): string[] {
+  const lan: string[] = [];
+  const other: string[] = [];
+  for (const h of hints) {
+    if (isPrivateLanTcpDialHint(h)) {
+      lan.push(h);
+    } else {
+      other.push(h);
+    }
+  }
+  return [...lan, ...other];
 }
 
 /** Merge peer-directory / inbound-cache listen addrs, dropping ephemeral TCP snapshots. */
@@ -145,8 +163,7 @@ export function shouldPreferCircuitDialHints(
     ...dialableListen,
     ...dialHints.filter((h) => h.includes("/tcp/") && !h.includes("/p2p-circuit/")),
   ];
-  const hasDirectTcp = directCandidates.some((h) => !isLoopbackOrUnspecifiedDialHint(h));
-  if (hasDirectTcp) {
+  if (hasDirectTcpDialHints(directCandidates)) {
     return false;
   }
   return dialHints.some((h) => h.includes("/p2p-circuit/"));

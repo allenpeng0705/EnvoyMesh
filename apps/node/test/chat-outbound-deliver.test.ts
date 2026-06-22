@@ -10,12 +10,19 @@ import type { EnvoyEnvelope } from "@envoymesh/protocol";
 const envelope = { intent: "chat.message" } as EnvoyEnvelope;
 
 describe("rotateDialHintsForRetry", () => {
-  it("puts circuit hints first on retry attempts", () => {
+  it("keeps direct LAN hints first on the first retry when LAN paths exist", () => {
     const hints = [
       "/ip4/192.168.1.5/tcp/4011/p2p/12D3KooWPeer",
       "/ip4/relay.example/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWPeer",
     ];
-    expect(rotateDialHintsForRetry(hints, 1)[0]).toContain("/p2p-circuit/");
+    expect(rotateDialHintsForRetry(hints, 1)[0]).toContain("192.168.1.5");
+  });
+
+  it("puts circuit hints first on later retries when only relay paths exist", () => {
+    const hints = [
+      "/ip4/relay.example/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWPeer",
+    ];
+    expect(rotateDialHintsForRetry(hints, 2)[0]).toContain("/p2p-circuit/");
   });
 });
 
@@ -81,6 +88,44 @@ describe("deliverChatEnvelopeWithRetry", () => {
 
     expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
     expect(sendChat).toHaveBeenCalledTimes(1);
+  });
+
+  it("upgrades relay connection to direct before send when LAN hints exist", async () => {
+    const sendChatExpectReply = vi.fn().mockResolvedValue({
+      intent: "chat.delivered",
+      payload: {
+        messageId: "msg-1",
+        recipientOwnerId: "envoy:owner:abc",
+        deliveredAt: "2026-05-28T12:00:00.000Z",
+      },
+    });
+    const closeConnectionsToPeer = vi.fn().mockResolvedValue(1);
+    const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: true });
+    const mesh = {
+      sendChat: vi.fn(),
+      sendChatExpectReply,
+      closeConnectionsToPeer,
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: false }),
+    };
+
+    await deliverChatEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWUpgradePeer",
+      envelope: { ...envelope, messageId: "msg-1" },
+      dialHints: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWUpgradePeer"],
+      peerListenAddrs: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWUpgradePeer"],
+      chatProtocol: "/envoy/chat/0.1",
+      maxAttempts: 1,
+    });
+
+    expect(closeConnectionsToPeer).toHaveBeenCalledWith("12D3KooWUpgradePeer");
+    expect(ensurePeerReachable).toHaveBeenCalledWith(
+      "12D3KooWUpgradePeer",
+      "/envoy/chat/0.1",
+      expect.objectContaining({ preferCircuitHints: false, forceFreshDial: true }),
+    );
+    expect(sendChatExpectReply).toHaveBeenCalledTimes(1);
   });
 
   it("uses sendChatExpectReply when available and returns delivered ack", async () => {

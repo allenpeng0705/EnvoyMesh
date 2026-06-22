@@ -1,7 +1,11 @@
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
 import type { EnvoyMesh } from "@envoymesh/network";
-import { ENVOY_MESSAGE_PROTOCOL, prioritizeCircuitDialHints } from "@envoymesh/network";
+import {
+  ENVOY_MESSAGE_PROTOCOL,
+  hasDirectTcpDialHints,
+  prioritizeCircuitDialHints,
+} from "@envoymesh/network";
 import { parseChatDeliveredAck } from "@envoymesh/api/chat-delivered";
 
 import { shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
@@ -14,12 +18,62 @@ export type ChatDeliverResult = {
   deliveredAt?: string;
 };
 
-/** On retry, try relay circuit paths before direct / stale LAN hints. */
+/** On late retries, fall back to relay circuits; keep direct/LAN first while attempts remain low. */
 export function rotateDialHintsForRetry(hints: string[], attempt: number): string[] {
   if (attempt <= 0 || hints.length === 0) {
     return hints;
   }
+  if (attempt < 2 && hasDirectTcpDialHints(hints)) {
+    return hints;
+  }
   return prioritizeCircuitDialHints(hints);
+}
+
+async function prepareOutboundChatConnection(input: {
+  mesh: Pick<
+    EnvoyMesh,
+    "closeConnectionsToPeer" | "ensurePeerReachable" | "getPeerConnectionInfo"
+  >;
+  transportPeerId: string;
+  chatProtocol: string;
+  dialHints: string[];
+  preferCircuitHints: boolean;
+  forceFreshDial: boolean;
+}): Promise<void> {
+  const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
+  const upgradeRelayToDirect = conn.connected && !conn.direct && !input.preferCircuitHints;
+  if (!conn.connected && !input.forceFreshDial && !upgradeRelayToDirect) {
+    try {
+      await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
+        dialHints: input.dialHints,
+        preferCircuitHints: input.preferCircuitHints,
+      });
+    } catch (warmErr) {
+      console.warn(
+        `[sendChat] pre-send warm failed for ${input.transportPeerId.slice(0, 12)}…:`,
+        warmErr instanceof Error ? warmErr.message : warmErr,
+      );
+    }
+    return;
+  }
+  if (!upgradeRelayToDirect && conn.connected && !input.forceFreshDial) {
+    return;
+  }
+  try {
+    if (upgradeRelayToDirect || input.forceFreshDial) {
+      await input.mesh.closeConnectionsToPeer(input.transportPeerId);
+    }
+    await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
+      dialHints: input.dialHints,
+      preferCircuitHints: input.preferCircuitHints,
+      forceFreshDial: input.forceFreshDial || upgradeRelayToDirect,
+    });
+  } catch (warmErr) {
+    console.warn(
+      `[sendChat] pre-send warm failed for ${input.transportPeerId.slice(0, 12)}…:`,
+      warmErr instanceof Error ? warmErr.message : warmErr,
+    );
+  }
 }
 
 /** ACK read failed after chat.message was written — do not retry (avoids duplicate sends). */
@@ -94,23 +148,17 @@ export async function deliverChatEnvelopeWithRetry(input: {
         );
       }
     } else {
-      const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
-      try {
-        if (!conn.connected) {
-          await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
-            dialHints: hints,
-            preferCircuitHints: preferCircuits,
-          });
-        }
-      } catch (warmErr) {
-        console.warn(
-          `[sendChat] pre-send warm failed for ${input.transportPeerId.slice(0, 12)}…:`,
-          warmErr instanceof Error ? warmErr.message : warmErr,
-        );
-      }
+      await prepareOutboundChatConnection({
+        mesh: input.mesh,
+        transportPeerId: input.transportPeerId,
+        chatProtocol: input.chatProtocol,
+        dialHints: hints,
+        preferCircuitHints: preferCircuits || attempt >= 2,
+        forceFreshDial: attempt > 0,
+      });
     }
 
-    const preferCircuitsOnAttempt = preferCircuits || attempt > 0;
+    const preferCircuitsOnAttempt = preferCircuits || attempt >= 2;
     const forceFreshDial = attempt > 0;
     let usedAck = false;
 
@@ -160,6 +208,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
       transportPeerId: input.transportPeerId,
       envelope: input.envelope,
       dialHints: rotateDialHintsForRetry(hints, maxAttempts),
+      peerListenAddrs: input.peerListenAddrs,
     });
     if (fallback) {
       return fallback;
@@ -174,7 +223,13 @@ async function trySendChatWithoutAck(input: {
   transportPeerId: string;
   envelope: EnvoyEnvelope;
   dialHints: string[];
+  peerListenAddrs?: string[];
 }): Promise<ChatDeliverResult | undefined> {
+  const preferCircuits = shouldPreferCircuitDialHints(
+    input.peerListenAddrs,
+    input.dialHints,
+    input.transportPeerId,
+  );
   try {
     const closed = await input.mesh.closeConnectionsToPeer(input.transportPeerId);
     if (closed > 0) {
@@ -182,7 +237,7 @@ async function trySendChatWithoutAck(input: {
     }
     await input.mesh.sendChat(input.transportPeerId, input.envelope, {
       dialHints: input.dialHints,
-      preferCircuitHints: true,
+      preferCircuitHints: preferCircuits,
       forceFreshDial: true,
     });
     console.log("[sendChat] delivered without ack (fallback after ack failures)");

@@ -22,13 +22,7 @@ export function resolveRecipientEnvelopePeerId(
   if (byTransport?.devicePublicKeyPem?.trim()) {
     return derivePeerId(byTransport.devicePublicKeyPem);
   }
-  const withDevice = records
-    .filter((r) => r.ownerId === targetOwnerId && r.devicePublicKeyPem?.trim())
-    .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
-  const latest = withDevice[0];
-  if (latest?.devicePublicKeyPem?.trim()) {
-    return derivePeerId(latest.devicePublicKeyPem);
-  }
+  // Do not guess from another peer-directory row — wrong recipientPeerId causes silent drops inbound.
   return undefined;
 }
 
