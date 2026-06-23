@@ -11,11 +11,11 @@ export const REACHABILITY_OFFLINE_GRACE_MS = 5 * 60_000;
 /** Minimum gap between redial attempts when libp2p reports disconnected (background). */
 export const REACHABILITY_MIN_REDIAL_MS = 90_000;
 /** Faster redial while an active chat panel is open. */
-export const REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS = 45_000;
+export const REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS = 20_000;
 /** Consecutive disconnected polls before flipping Online → Offline. */
 export const REACHABILITY_STABLE_OFFLINE_POLLS = 4;
 /** Consecutive connected polls before flipping Offline → Online. */
-export const REACHABILITY_STABLE_ONLINE_POLLS = 2;
+export const REACHABILITY_STABLE_ONLINE_POLLS = 1;
 /** Consecutive polls before switching Direct ↔ Relay label. */
 export const REACHABILITY_STABLE_PATH_POLLS = 5;
 

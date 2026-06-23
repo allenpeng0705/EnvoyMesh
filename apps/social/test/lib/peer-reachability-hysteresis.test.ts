@@ -4,7 +4,6 @@ import {
   createReachabilityHysteresisState,
   REACHABILITY_OFFLINE_GRACE_MS,
   REACHABILITY_STABLE_OFFLINE_POLLS,
-  REACHABILITY_STABLE_ONLINE_POLLS,
 } from "../../src/lib/peer-reachability-hysteresis.js";
 
 describe("peer-reachability-hysteresis", () => {
@@ -54,13 +53,8 @@ describe("peer-reachability-hysteresis", () => {
     expect(offline.info?.connected).toBe(false);
 
     let r = applyReachabilityHysteresis(state, { connected: true, direct: true }, t0 + 5000);
-    state = r.state;
-    expect(r.shouldUpdate).toBe(false);
-
-    r = applyReachabilityHysteresis(state, { connected: true, direct: true }, t0 + 10_000);
     expect(r.shouldUpdate).toBe(true);
     expect(r.info?.connected).toBe(true);
-    expect(REACHABILITY_STABLE_ONLINE_POLLS).toBeGreaterThan(1);
   });
 
   it("never flips Online → Offline while holdOnline is set (open chat)", () => {
