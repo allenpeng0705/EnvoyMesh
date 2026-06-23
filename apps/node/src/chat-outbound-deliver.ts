@@ -2,6 +2,7 @@ import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
 import type { EnvoyMesh } from "@envoymesh/network";
 import {
+  ENVOY_DATA_PROTOCOL,
   ENVOY_MESSAGE_PROTOCOL,
   hasDirectTcpDialHints,
   prioritizeCircuitDialHints,
@@ -29,7 +30,8 @@ export function rotateDialHintsForRetry(hints: string[], attempt: number): strin
   return prioritizeCircuitDialHints(hints);
 }
 
-async function prepareOutboundPeerConnection(input: {
+/** Verify / warm libp2p path before outbound send (chat, message, data). */
+export async function prepareOutboundPeerConnection(input: {
   mesh: Pick<
     EnvoyMesh,
     "closeConnectionsToPeer" | "ensurePeerReachable" | "getPeerConnectionInfo"
@@ -370,6 +372,90 @@ export async function deliverCallEnvelopeWithRetry(input: {
       lastErr = err;
       console.warn(
         `[call] attempt ${attempt + 1}/${maxAttempts} failed for ${input.transportPeerId.slice(0, 12)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+/** Deliver chunked vault data on {@link ENVOY_DATA_PROTOCOL} with verify + retries. */
+export async function deliverDataTransferWithRetry(input: {
+  mesh: Pick<
+    EnvoyMesh,
+    | "sendDataTransfer"
+    | "closeConnectionsToPeer"
+    | "ensurePeerReachable"
+    | "getPeerConnectionInfo"
+  >;
+  transportPeerId: string;
+  voucherUtf8: Uint8Array;
+  chunks: Uint8Array[];
+  dialHints: string[];
+  peerListenAddrs?: string[];
+  maxAttempts?: number;
+  rebuildDialHints?: () => Promise<string[]>;
+}): Promise<number> {
+  const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
+  let lastErr: unknown;
+  let hints = input.dialHints;
+  const preferCircuits = shouldPreferCircuitDialHints(
+    input.peerListenAddrs,
+    hints,
+    input.transportPeerId,
+  );
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      hints = rotateDialHintsForRetry(hints, attempt);
+      if (input.rebuildDialHints) {
+        try {
+          hints = await input.rebuildDialHints();
+        } catch {
+          /* keep rotated hints */
+        }
+      }
+      await sleep(CHAT_SEND_RETRY_BASE_MS * attempt);
+      try {
+        await input.mesh.closeConnectionsToPeer(input.transportPeerId);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const ready = await prepareOutboundPeerConnection({
+      mesh: input.mesh,
+      transportPeerId: input.transportPeerId,
+      protocol: ENVOY_DATA_PROTOCOL,
+      dialHints: hints,
+      preferCircuitHints: preferCircuits || attempt > 0,
+      forceFreshDial: attempt > 0,
+    });
+    if (!ready) {
+      lastErr = new Error(`No reachable data path to ${input.transportPeerId.slice(0, 12)}…`);
+      continue;
+    }
+
+    try {
+      const latencyMs = await input.mesh.sendDataTransfer(
+        input.transportPeerId,
+        input.voucherUtf8,
+        input.chunks,
+        {
+          dialHints: hints,
+          preferCircuitHints: preferCircuits || attempt > 0,
+          forceFreshDial: attempt > 0,
+        },
+      );
+      if (attempt > 0) {
+        console.log(`[data-transfer] delivered on attempt ${attempt + 1}/${maxAttempts}`);
+      }
+      return latencyMs;
+    } catch (err) {
+      lastErr = err;
+      console.warn(
+        `[data-transfer] attempt ${attempt + 1}/${maxAttempts} failed for ${input.transportPeerId.slice(0, 12)}…:`,
         err instanceof Error ? err.message : err,
       );
     }

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   deliverCallEnvelopeWithRetry,
   deliverChatEnvelopeWithRetry,
+  deliverDataTransferWithRetry,
   isChatAckFailureLikelyAfterWrite,
   rotateDialHintsForRetry,
 } from "../src/chat-outbound-deliver.js";
@@ -366,5 +367,56 @@ describe("deliverCallEnvelopeWithRetry (Phase 42A — call.* on message protocol
       expect.objectContaining({ verifyConnection: true }),
     );
     expect(send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("deliverDataTransferWithRetry", () => {
+  it("retries after first transfer failure and succeeds on second attempt", async () => {
+    const sendDataTransfer = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("stale data stream"))
+      .mockResolvedValueOnce(42);
+    const mesh = {
+      sendDataTransfer,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(1),
+      ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: false }),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
+    };
+
+    const latencyMs = await deliverDataTransferWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWDataPeer",
+      voucherUtf8: new Uint8Array([1, 2, 3]),
+      chunks: [new Uint8Array([4, 5])],
+      dialHints: ["/p2p/12D3KooWDataPeer"],
+      maxAttempts: 3,
+    });
+
+    expect(latencyMs).toBe(42);
+    expect(sendDataTransfer).toHaveBeenCalledTimes(2);
+    expect(mesh.closeConnectionsToPeer).toHaveBeenCalledWith("12D3KooWDataPeer");
+  });
+
+  it("warms data path before first transfer when not connected", async () => {
+    const sendDataTransfer = vi.fn().mockResolvedValue(10);
+    const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: true });
+    const mesh = {
+      sendDataTransfer,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
+    };
+
+    await deliverDataTransferWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWWarmDataPeer",
+      voucherUtf8: new Uint8Array([1]),
+      chunks: [new Uint8Array([2])],
+      dialHints: ["/p2p/12D3KooWWarmDataPeer"],
+      maxAttempts: 1,
+    });
+
+    expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
+    expect(sendDataTransfer).toHaveBeenCalledTimes(1);
   });
 });

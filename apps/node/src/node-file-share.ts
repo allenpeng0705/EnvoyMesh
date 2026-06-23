@@ -8,7 +8,7 @@ import type { EnvoyMesh } from "@envoymesh/network";
 import { voucherJsonBytesFromObject } from "@envoymesh/network";
 import { ENVOY_DATA_PROTOCOL } from "@envoymesh/network/protocols";
 import type { NodeProfile, TransferStatus } from "@envoymesh/api";
-import { shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
+import { deliverDataTransferWithRetry } from "./chat-outbound-deliver.js";
 import { isSafeVaultPath } from "./share-inbound.js";
 
 /** Read a vault file and send it as verified chunks to `toPeerId` (FS-B). */
@@ -20,6 +20,8 @@ export async function sendVaultFileViaDataTransfer(input: {
   relativePath: string;
   toPeerId: string;
   dialHints?: string[];
+  peerListenAddrs?: string[];
+  rebuildDialHints?: () => Promise<string[]>;
   transferHooks?: {
     onUpdate: (status: Partial<TransferStatus> & { correlationId: string }) => void;
     correlationId: string;
@@ -62,18 +64,15 @@ export async function sendVaultFileViaDataTransfer(input: {
   for (let offset = 0; offset < content.length; offset += chunkSize) {
     chunks.push(content.subarray(offset, Math.min(offset + chunkSize, content.length)));
   }
-  const preferCircuits = shouldPreferCircuitDialHints(undefined, dialHints ?? [], toPeerId);
-  const latencyMs = await mesh.sendDataTransfer(
-    toPeerId,
+  const latencyMs = await deliverDataTransferWithRetry({
+    mesh,
+    transportPeerId: toPeerId,
     voucherUtf8,
     chunks,
-    dialHints?.length
-      ? {
-          dialHints,
-          preferCircuitHints: preferCircuits,
-        }
-      : undefined,
-  );
+    dialHints: dialHints ?? [],
+    peerListenAddrs: input.peerListenAddrs,
+    rebuildDialHints: input.rebuildDialHints,
+  });
   transferHooks?.onUpdate({
     correlationId: transferHooks.correlationId,
     phase: "verified",

@@ -1360,16 +1360,6 @@ class NodeServiceImpl implements NodeService {
     console.log(
       `[share] data transfer start: ${pending.relativePath} → ${input.remotePeerId.slice(0, 12)}… (${dialHints.length} dial hints)`,
     );
-    const reachability = await mesh.ensurePeerReachable(input.remotePeerId, ENVOY_DATA_PROTOCOL, {
-      dialHints,
-      preferCircuitHints: shouldPreferCircuitDialHints(undefined, dialHints, input.remotePeerId),
-      upgradeRelayToDirect: true,
-    });
-    if (!reachability.connected) {
-      console.warn(
-        `[share] data channel not reachable for ${input.remotePeerId.slice(0, 12)}…; attempting transfer anyway`,
-      );
-    }
     await sendVaultFileViaDataTransfer({
       mesh,
       profile,
@@ -1378,6 +1368,8 @@ class NodeServiceImpl implements NodeService {
       relativePath: pending.relativePath,
       toPeerId: input.remotePeerId,
       dialHints,
+      peerListenAddrs: listenAddrs,
+      rebuildDialHints: () => this._dialHintsForChat(input.remotePeerId, listenAddrs),
       transferHooks: {
         correlationId,
         remotePeerOwnerId: rec?.ownerId,
@@ -7787,17 +7779,16 @@ class NodeServiceImpl implements NodeService {
   ): Promise<{ shareRequestMessageId: string }> {
     this._assertOnline();
     this.recordOwnerActivity();
-    const mesh = this._requireMesh();
     const profile = this._requireProfile();
     if (!this._taskStore) {
       throw new Error("Task store not initialized — node is not fully wired");
     }
 
-    const { transportPeerId, recipientEnvelopePeerId } =
+    const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
       await this._resolvePeerTransportForOwner(targetOwnerId);
     const peerPath = file.relativePath.replace(/^[\\/]+/, "");
     const dialHints = await raceWithTimeout(
-      this._dialHintsForChat(transportPeerId, undefined),
+      this._dialHintsForChat(transportPeerId, listenAddrs),
       30_000,
       "_dialHintsForChat",
     );
@@ -7828,7 +7819,7 @@ class NodeServiceImpl implements NodeService {
       sensitivity: file.sensitivity,
     });
     this._correlationByRequestMsgId.set(envelope.messageId, correlationId);
-    await mesh.send(transportPeerId, envelope as any, { dialHints });
+    await this._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
     this._upsertTransferStatus({
       correlationId,
       phase: "negotiating",
@@ -7853,47 +7844,13 @@ class NodeServiceImpl implements NodeService {
   ): Promise<{ shareRequestMessageId: string }> {
     this._assertOnline();
     this.recordOwnerActivity();
-    const mesh = this._requireMesh();
     const profile = this._requireProfile();
     if (!this._taskStore) {
       throw new Error("Task store not initialized — node is not fully wired");
     }
 
-    let targetPeer: Awaited<ReturnType<LocalPeerDirectoryStore["getPeerByOwnerId"]>>;
-    try {
-      targetPeer = await raceWithTimeout(
-        this._peerDirectoryStore.getPeerByOwnerId(targetOwnerId),
-        25_000,
-        "getPeerByOwnerId",
-      );
-    } catch (err) {
-      throw err;
-    }
-    if (!targetPeer) {
-      const records = await raceWithTimeout(
-        this._peerDirectoryStore.listPeerRecords(),
-        25_000,
-        "listPeerRecords",
-      );
-      targetPeer =
-        records.find((r) => r.ownerId === targetOwnerId) ??
-        records.find((r) => r.peerId === targetOwnerId) ??
-        undefined;
-    }
-    if (!targetPeer?.peerId) {
-      throw new Error(`Peer not found for owner: ${targetOwnerId}`);
-    }
-    const transportPeerId = targetPeer.peerId;
-    if (transportPeerId.startsWith("envoy_")) {
-      throw new Error(
-        `Peer directory has Envoy envelope id for this owner (not libp2p).`,
-      );
-    }
-    const recipientEnvelopePeerId = targetPeer.devicePublicKeyPem
-      ? derivePeerId(targetPeer.devicePublicKeyPem)
-      : targetOwnerId.startsWith("envoy_")
-        ? targetOwnerId
-        : undefined;
+    const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
+      await this._resolvePeerTransportForOwner(targetOwnerId);
 
     const norm = file.path.replace(/^[\\/]+/, "");
     if (!isSafeVaultPath(this._vaultDir, norm)) {
@@ -7906,7 +7863,7 @@ class NodeServiceImpl implements NodeService {
     let dialHints: string[];
     try {
       dialHints = await raceWithTimeout(
-        this._dialHintsForChat(transportPeerId, targetPeer.listenAddrs),
+        this._dialHintsForChat(transportPeerId, listenAddrs),
         30_000,
         "_dialHintsForChat",
       );
@@ -7935,7 +7892,7 @@ class NodeServiceImpl implements NodeService {
       correlationId,
     });
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
-    await mesh.send(transportPeerId, envelope as any, { dialHints });
+    await this._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
     this._pendingPushShareByRequestMsgId.set(envelope.messageId, {
       relativePath: norm,
       toPeerId: transportPeerId,
@@ -10946,12 +10903,9 @@ class NodeServiceImpl implements NodeService {
         dialHints?.length ? dialHints : await this._dialHintsForChat(transportPeerId, undefined);
       await this._deliverChatEnvelope(transportPeerId, envelope, hints);
     } else {
-      const hints = dialHints ?? [];
-      const preferCircuits = shouldPreferCircuitDialHints(undefined, hints, transportPeerId);
-      await mesh.send(transportPeerId, envelope as any, {
-        dialHints: hints,
-        preferCircuitHints: preferCircuits,
-      });
+      const hints =
+        dialHints?.length ? dialHints : await this._dialHintsForChat(transportPeerId, undefined);
+      await this._deliverCallEnvelope(transportPeerId, envelope, hints);
     }
 
     // Tag reachability for the transport peer
